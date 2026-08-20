@@ -9,9 +9,20 @@
  * a visible UI; every consumer just calls startJob() and this renders.
  *
  * Shape: a collapsed PILL (active job title + candy-stripe bar + cancel ✕) that
- * expands to per-job rows. Hidden entirely when the registry is empty. Below
- * modals (native <dialog> top-layer always wins) and topbar dropdowns, above
- * content - the z-index is in parts/job-toast.css.
+ * expands to per-job rows. Hidden entirely when the registry is empty. Above
+ * topbar dropdowns and content (z-index in parts/job-toast.css) - and above
+ * OPEN MODALS too: z-index can never beat the native <dialog> top layer, and
+ * everything outside a showModal() dialog is inert (a popover overlay would
+ * paint but not click), so the toast lives in the shared FLOATING CLUSTER
+ * (lib/float-cluster.ts) that mountModal (components/modal.ts) adopts into
+ * each dialog it opens. position:fixed keeps the viewport spot; being a dialog
+ * descendant makes it paint over the modal and stay interactive - a catalog
+ * grade/process job stays visible and cancellable while the asset details
+ * modal is up.
+ *
+ * DRAGGABLE: a pointer-drag on the pill or the panel header repositions it
+ * (threshold'd so the buttons still click), clamped fully on-screen, same
+ * idiom as the perf HUD below. Position is in-memory only - resets on reload.
  *
  * DESKTOP NOTIFICATION (an EXTRA, never the channel - the in-toast completed
  * state always shows too):
@@ -26,6 +37,7 @@
  *     see notifyDone()/requestNotifyPermission().
  */
 import { subscribe, jobsSnapshot, cancelJob, type Job, type JobStatus } from './jobs.ts';
+import { getFloatCluster } from './float-cluster.ts';
 import { t, tRaw } from '../i18n.ts';
 import { isTauriShell } from './instance-choice.ts';
 import { mountPerfHud } from './perf-hud.ts';
@@ -57,7 +69,11 @@ export function mountJobToast(): void {
   root.setAttribute('aria-live', 'polite');
   root.setAttribute('aria-label', tRaw('Background jobs'));
   root.addEventListener('click', onClick);
-  document.body.appendChild(root);
+  root.addEventListener('pointerdown', onPointerDown);
+  root.addEventListener('pointermove', onPointerMove);
+  root.addEventListener('pointerup', onPointerEnd);
+  root.addEventListener('pointercancel', onPointerEnd);
+  getFloatCluster().appendChild(root);
   // Esc collapses the expanded panel (no browser-default hijack - only acts when
   // the panel is open and no modal is up, which owns Esc via its own <dialog>).
   document.addEventListener('keydown', onKeydown);
@@ -69,6 +85,65 @@ export function mountJobToast(): void {
   mountPerfHud();
 }
 
+// ── Drag ─────────────────────────────────────────────────────────────────────
+// Delegated on root (the pill/panel innerHTML is replaced on re-render, root
+// never is). A drag starts on the pill or the panel header but only becomes a
+// drag past a small threshold, so the buttons living there still click; once
+// dragging, pointer capture retargets the stream (and the trailing click) to
+// root, and the `dragged` flag swallows any click that still lands on a button.
+const DRAG_THRESHOLD_PX = 4;
+let dragPointer = -1;
+let dragging = false;
+let dragged = false;
+let dragDx = 0; let dragDy = 0; let dragSx = 0; let dragSy = 0;
+
+/** Keep the toast fully inside the viewport, given a proposed top-left. */
+function clampPos(left: number, top: number): { left: number; top: number } {
+  const r = root!.getBoundingClientRect();
+  return {
+    left: Math.min(Math.max(0, left), Math.max(0, window.innerWidth - r.width)),
+    top: Math.min(Math.max(0, top), Math.max(0, window.innerHeight - r.height)),
+  };
+}
+
+function onPointerDown(e: PointerEvent): void {
+  dragged = false;
+  if (!root || e.button !== 0) return;
+  if (!(e.target as HTMLElement | null)?.closest('.job-pill, .job-panel-head')) return;
+  dragPointer = e.pointerId;
+  dragSx = e.clientX; dragSy = e.clientY;
+  const r = root.getBoundingClientRect();
+  dragDx = e.clientX - r.left; dragDy = e.clientY - r.top;
+}
+
+function onPointerMove(e: PointerEvent): void {
+  if (!root || e.pointerId !== dragPointer) return;
+  if (!dragging) {
+    if (Math.hypot(e.clientX - dragSx, e.clientY - dragSy) < DRAG_THRESHOLD_PX) return;
+    dragging = true;
+    root.classList.add('is-dragging');
+    try { root.setPointerCapture(e.pointerId); } catch { /* capture is best-effort */ }
+  }
+  // Pin to explicit top/left (releasing the CSS bottom/right corner) so the
+  // clamp math has one coordinate space - the perf HUD idiom.
+  const { left, top } = clampPos(e.clientX - dragDx, e.clientY - dragDy);
+  root.style.left = `${left}px`;
+  root.style.top = `${top}px`;
+  root.style.right = 'auto';
+  root.style.bottom = 'auto';
+  e.preventDefault();
+}
+
+function onPointerEnd(e: PointerEvent): void {
+  if (e.pointerId !== dragPointer) return;
+  dragPointer = -1;
+  if (!dragging) return;
+  dragging = false;
+  dragged = true;
+  root?.classList.remove('is-dragging');
+  try { root?.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+}
+
 function onKeydown(e: KeyboardEvent): void {
   if (e.key !== 'Escape' || !expanded) return;
   if (typeof document !== 'undefined' && document.querySelector('dialog[open]')) return; // a modal owns Esc
@@ -77,6 +152,7 @@ function onKeydown(e: KeyboardEvent): void {
 }
 
 function onClick(e: MouseEvent): void {
+  if (dragged) { dragged = false; return; } // the click that ends a drag is not a press
   const el = (e.target as HTMLElement | null)?.closest<HTMLElement>('[data-act]');
   if (!el) return;
   const act = el.dataset.act;
@@ -119,6 +195,13 @@ function render(jobs: readonly Job[]): void {
   if (expanded) root.innerHTML = renderPanel(jobs);
   else root.innerHTML = renderPill(active[0] ?? jobs[jobs.length - 1]!, jobs, active);
   patchProgress(jobs);
+  // A dragged toast sits at explicit top/left; pill↔panel swaps change its size,
+  // so re-clamp to keep the new box fully on-screen.
+  if (root.style.left) {
+    const p = clampPos(parseFloat(root.style.left) || 0, parseFloat(root.style.top) || 0);
+    root.style.left = `${p.left}px`;
+    root.style.top = `${p.top}px`;
+  }
 }
 
 /** Update only the live numbers/widths in place - keeps the bar's width transition. */

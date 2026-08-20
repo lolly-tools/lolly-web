@@ -21,6 +21,7 @@
  */
 
 import { t } from '../../../i18n.ts';
+import { isTrashedSlot } from '../../batch-slots.ts';
 import { icon } from '../../icons.ts';
 import { createFolderStore, folderPath } from '../../../folders.ts';
 import type { Folder, FolderHost } from '../../../folders.ts';
@@ -81,7 +82,7 @@ export function createProjectsProvider(host: ProjectsSearchHost): SearchProvider
     if (cache && Date.now() < cache.expires) return cache.promise;
     const promise = Promise.all([
       store.list().catch(() => [] as Folder[]),
-      host.state.list().then((rows) => [...rows]).catch(() => [] as ProjectsSearchSession[]),
+      host.state.list().then((rows) => rows.filter(r => !isTrashedSlot(r.slot))).catch(() => [] as ProjectsSearchSession[]),
     ]).then(([folders, entries]): Snapshot => {
       const names = toolNames();
       const nameOf = (id: string): string => names.get(id) || id || t('Saved session');
@@ -89,7 +90,7 @@ export function createProjectsProvider(host: ProjectsSearchHost): SearchProvider
       for (const f of folders) for (const it of f.items) ownerByRef.set(it.ref, f);
       return {
         folders,
-        folderRows: folders.map((folder) => ({ folder, haystack: buildFolderHaystack(folder.name) })),
+        folderRows: folders.map((folder) => ({ folder, haystack: buildFolderHaystack(folder.name, (folder as { tags?: string[] }).tags) })),
         sessions: entries.map((entry) => {
           const batch = isBatchSlot(entry.slot);
           return { entry, batch, haystack: buildSessionHaystack(entry, nameOf, batch) };

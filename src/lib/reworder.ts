@@ -11,6 +11,7 @@
  */
 
 import { REWORD_SYSTEM_PROMPT } from '@lolly/engine';
+import type { TextWatermarkScore } from '@lolly/engine';
 import {
   REWORD_STAGED, REWORD_MODEL_BYTES, REWORD_MODEL_CACHE_URL, REWORD_MODEL_DIR,
   REWORD_MODEL_FILES, REWORD_SAMPLES, REWORD_TEMPERATURE, REWORD_TOP_P,
@@ -39,12 +40,22 @@ interface Pending {
 let worker: Worker | null = null;
 let seq = 0;
 const pending = new Map<number, Pending>();
+/** Watermark detections in flight - resolved with null on any failure, since a
+ *  detection that cannot run is an absence of signal, never an error state. */
+const pendingWm = new Map<number, (r: TextWatermarkScore | null) => void>();
 
 function ensureWorker(): Worker {
   if (worker) return worker;
   worker = new Worker(new URL('./reword-worker.ts', import.meta.url), { type: 'module' });
   worker.onmessage = (e: MessageEvent<RewordWorkerReply>): void => {
-    const { id, progress, result, error } = e.data;
+    const { id, progress, result, wm, error } = e.data;
+    const w = pendingWm.get(id);
+    if (w) {
+      if (progress) return;
+      pendingWm.delete(id);
+      w(wm ?? null);
+      return;
+    }
     const p = pending.get(id);
     if (!p) return; // late reply for an aborted request - already rejected
     if (progress) { p.onProgress?.(progress); return; }
@@ -55,6 +66,8 @@ function ensureWorker(): Worker {
   worker.onerror = (): void => {
     for (const p of pending.values()) p.reject(new Error('reword worker error'));
     pending.clear();
+    for (const w of pendingWm.values()) w(null);
+    pendingWm.clear();
     // Terminate, then drop, the dead worker so the next reword() spawns a fresh
     // one - detaching alone would leak the broken thread and its model session.
     if (worker) { worker.onmessage = null; worker.onerror = null; worker.terminate(); }
@@ -189,10 +202,34 @@ export function rewordSentence(
   };
 }
 
+/**
+ * Score a text against the reword watermark (engine text-watermark.ts, the
+ * Kirchenbauer green-list scheme every reword sample is generated under).
+ * Tokenizer-only - the worker never downloads the model for this - so it is
+ * cheap enough for the verify view to run on every analysed text. Resolves
+ * null wherever the check cannot run (models unstaged, no Worker, worker
+ * failure): a missing check is an absence of signal, not a claim.
+ *
+ * The NATIVE desktop generate path (reword.rs) embeds the same scheme; this
+ * detection path is the one detector for both, so it stays worker-side even
+ * on desktop (the tokenizer files come from MODELS_BASE and cache).
+ */
+export function detectRewordWatermark(text: string): Promise<TextWatermarkScore | null> {
+  if (!rewordAvailable() || !text.trim()) return Promise.resolve(null);
+  const w = ensureWorker();
+  const id = ++seq;
+  return new Promise<TextWatermarkScore | null>((resolve) => {
+    pendingWm.set(id, resolve);
+    w.postMessage({ id, type: 'wm-detect', text } satisfies RewordWorkerRequest);
+  });
+}
+
 /** Tear the worker down (view unmount) - pending requests reject. */
 export function disposeReworder(): void {
   for (const p of pending.values()) p.reject(new Error('reworder disposed'));
   pending.clear();
+  for (const w of pendingWm.values()) w(null);
+  pendingWm.clear();
   if (worker) { worker.onmessage = null; worker.onerror = null; worker.terminate(); }
   worker = null;
 }

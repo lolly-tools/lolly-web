@@ -533,7 +533,11 @@ test('an unversioned head write is the same record it always was', async () => {
   assert.equal(rec.type, 'tokens');
   assert.equal(rec.format, 'json');
   assert.equal(rec.version, '1.0.0');
-  assert.deepEqual(rec.meta, { name: 'My brand' });
+  // The bridge stamps meta.modifiedAt on every record write (plans/132 WP-A) -
+  // the ONLY field the write path may add; everything else is the caller's record.
+  const { modifiedAt, ...meta } = rec.meta as Record<string, unknown>;
+  assert.equal(typeof modifiedAt, 'number');
+  assert.deepEqual(meta, { name: 'My brand' });
   assert.equal(await (rec.blob as Blob).text(), JSON.stringify(doc()),
     'no ledger, no marker, nothing added to the document');
 });

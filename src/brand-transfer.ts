@@ -117,6 +117,8 @@ export interface BrandImportSummary extends BrandPackSummary {
   packAssets: number;
   packName?: string;
   packSignature?: 'verified' | 'unverified' | 'unsigned';
+  /** The instance base the pack pointed this shell at, when it carried one. */
+  packInstance?: string;
 }
 
 /** One stored face's manifest row: its full asset record sans blob, plus the
@@ -624,6 +626,7 @@ export async function importBrandPack(
     summary.packAssets = result.assets;
     summary.packName = result.name;
     summary.packSignature = result.signature;
+    if (result.instance) summary.packInstance = result.instance;
   }
 
   summary.skipped = Object.keys(files).filter(p => !isKnownPart(p)).length;

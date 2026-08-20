@@ -41,6 +41,8 @@ export interface ModalOptions<T> {
   onClose?: (result: T | undefined) => void;
 }
 
+import { adoptFloatCluster, releaseFloatCluster } from '../lib/float-cluster.ts';
+
 export function mountModal<T = void>(content: string, opts: ModalOptions<T>): ModalHandle<T> {
   const dlg = document.createElement('dialog');
   dlg.className = opts.className;
@@ -55,6 +57,7 @@ export function mountModal<T = void>(content: string, opts: ModalOptions<T>): Mo
   const close = (result?: T): void => {
     if (settled) return;
     settled = true;
+    releaseFloatCluster(dlg); // rescue the adopted floating cluster BEFORE the node goes away
     if (dlg.open) dlg.close(); // runs the native dialog-closing steps (incl. focus restore)
     dlg.remove();
     opts.onClose?.(result);
@@ -78,6 +81,10 @@ export function mountModal<T = void>(content: string, opts: ModalOptions<T>): Mo
   });
 
   dlg.showModal();
+  // Everything outside a modal dialog is inert and below the top layer, so the
+  // body-level floating cluster (job toast + undo toasts) moves in with us -
+  // progress and Undo stay visible and interactive over the dialog.
+  adoptFloatCluster(dlg);
   opts.initialFocus?.(dlg)?.focus();
 
   return { el: dlg, close };

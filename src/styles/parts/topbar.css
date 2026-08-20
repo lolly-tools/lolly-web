@@ -30,8 +30,9 @@
   /* Reduce the tabs to icons here so the toggle stays compact and never collides with
      the fixed top-right cluster (labels are too wide — "Catalog" pushed under them). */
   .gallery-topbar .view-toggle-label { display: none; }
-  .gallery-topbar .view-toggle-ic { display: inline-flex; align-items: center; justify-content: center; }
-  .gallery-topbar .view-toggle-opt { padding: 8px 11px; }
+  /* Label hidden → the glyph is the whole tab: drop its label gap so it centres. */
+  .gallery-topbar .view-toggle-ic { display: inline-flex; align-items: center; justify-content: center; margin-inline-end: 0; }
+  .gallery-topbar .view-toggle-opt { padding: 8px 8px 8px 12px ; }
   .gallery-topbar .gallery-topright {
     position: static; top: auto; right: auto;
     order: 1; margin-left: auto; gap: 8px; /* pushed to the right edge */
@@ -89,7 +90,7 @@
     transform: none;      /* bounded box now, so the translateX(-50%) centring goes */
     justify-content: center;
   }
-  .gallery-topbar .view-toggle-opt { padding: 6px 12px; }
+  .gallery-topbar .view-toggle-opt { padding: 6px ; }
 }
 
 /* ── Consolidated profile menu (mobile) — opened by tapping the avatar. ─────────

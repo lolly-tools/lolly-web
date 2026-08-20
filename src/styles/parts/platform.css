@@ -132,6 +132,22 @@
   background: hsl(0 0% 100% / .88); color: hsl(0 0% 10%);
 }
 .plat-chip-flag.is-static { position: static; display: inline-block; }
+/* The favourites star a host view may render on a swatch card (swatch() opts.fav) - the
+   Catalog wires it to the favourites strip. Over the chip's top-LEFT corner (the
+   SPOT/CMYK flag owns the right). Always visible (no hover-only controls - an invisible
+   button over the chip would swallow copy taps on touch), quiet until on. */
+.plat-swatch { position: relative; }
+.plat-swatch-fav {
+  position: absolute; top: .25rem; left: .3rem; z-index: 1;
+  display: grid; place-content: center;
+  width: 24px; height: 24px; padding: 0;
+  border: 0; border-radius: 999px; cursor: pointer;
+  color: hsl(0 0% 100% / .9); background: hsl(0 0% 0% / .35);
+  opacity: .55; transition: opacity .12s;
+}
+.plat-swatch:hover .plat-swatch-fav, .plat-swatch-fav.is-on { opacity: 1; }
+.plat-swatch-fav.is-on svg { fill: currentColor; }
+.plat-swatch-fav:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; opacity: 1; }
 .plat-swatch-name { margin: .45rem .55rem 0; font-size: calc(.8rem * var(--a11y-fs)); font-weight: 600; }
 .plat-swatch-hex { margin: .12rem .55rem 0; font-size: calc(.72rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .plat-swatch-cmyk { margin: .05rem .55rem .55rem; font-size: calc(.68rem * var(--a11y-fs)); color: hsl(var(--foreground)); }

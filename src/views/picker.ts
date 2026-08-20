@@ -30,6 +30,7 @@
  */
 
 import '../styles/picker.css';   // async CSS chunk (lazy view - not on the landing)
+import { isTrashedSlot } from '../lib/batch-slots.ts';
 import DOMPurify from 'dompurify';
 import { serializeUrlState, buildEmbedUrl, parseThemedAssetId, buildThemedAssetId, restyleIconTheme, sniffAnimatedRaster, sniffVideoContainer, parseTreatedAssetId, buildTreatedAssetId, treatmentFilterSvg, stripAssetModifiers, extractC2paStore, prepareC2paIngredientFromStore, stripMetadata, midiToZzfxm, bakeAssetRef, decodeBmp, isBmp, decodeIco, isIco, gunzip, packPng, analyzeTextSignals, LEXICON_VERSION } from '@lolly/engine';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
@@ -63,6 +64,17 @@ import { categoryGlyph } from '../lib/category-icons.ts';
 import { icon } from '../lib/icons.ts';
 import { isChromium } from '../capabilities.ts';
 import { loadFavouriteAssets, loadHiddenAssets, assetBaseId } from '../lib/asset-favourites.ts';
+import { matchesType as pickerMatchesType, type TypeFilter as PickerTypeFilter } from './catalog-filter.ts';
+
+/** The type pills an untyped pick offers (plans/134 P5) - the catalog's buckets. */
+const PICKER_TYPE_FILTERS: ReadonlyArray<{ key: PickerTypeFilter; label: string }> = [
+  { key: 'all', label: 'All' },
+  { key: 'image', label: 'Image' },
+  { key: 'vector', label: 'Vector' },
+  { key: 'motion', label: 'Motion' },
+  { key: 'audio', label: 'Audio' },
+  { key: 'text', label: 'Text' },
+];
 import { VISUAL_TYPES, isPlaceableAsset } from '../lib/asset-kinds.ts';
 import { autoplayLottieThumbs } from './lottie-mount.ts';
 import { previewMedia } from '../lib/preview-media.ts';
@@ -505,7 +517,16 @@ async function render(
   // opens straight on Tools, because the primary intent there is starting a fresh
   // creation rather than picking an existing image; the slot-fill picker keeps Library.
   const requestedTab = opts.initialTab && tabs.some(tb => tb.id === opts.initialTab) ? opts.initialTab : null;
-  let activeTab: TabId = requestedTab ?? (collect && embedTools.length ? 'tools' : 'library');
+  // Last-used tab for this pick type (plans/134 P1) - a remembered DEFAULT that an
+  // explicit initialTab (and collect mode's Tools opening) still outranks.
+  const rememberedTab = ((): TabId | null => {
+    const m = readTabMemory(opts.type ?? 'any') as TabId | null;
+    return m && tabs.some(tb => tb.id === m) ? m : null;
+  })();
+  let activeTab: TabId = requestedTab ?? (collect && embedTools.length ? 'tools' : rememberedTab ?? 'library');
+  // Declared before the boot code that applies the initial tab (applyTab is
+  // hoisted and runs during setup, so this must already be initialised).
+  let tabMemoryArmed = false;
 
   const placeholderFor = (id: TabId): string =>
     id === 'tools'    ? t('Search tools…')
@@ -536,7 +557,9 @@ async function render(
       </div>` : ''}
       <div class="asset-picker-body">
         <section class="asset-picker-pane"${paneAria('library')} data-pane="library">
+          <div class="asset-picker-typebar" role="group" aria-label="${escapeHtml(t('Filter by type'))}" hidden></div>
           <div class="asset-picker-catbar" role="group" aria-label="${escapeHtml(t('Filter by category'))}" hidden></div>
+          <section class="asset-picker-recents" hidden></section>
           <section class="asset-picker-favourites" hidden></section>
           ${showUserAssets ? `<section class="asset-picker-userassets" hidden></section>` : ''}
           <section class="asset-picker-library">
@@ -562,10 +585,33 @@ async function render(
           ${canScriptAudio ? `<button type="button" class="asset-picker-scriptaudio">${icon('mic', { size: 14 })} ${t('Script audio')}</button>` : ''}
           ${canUpscale ? `<button type="button" class="asset-picker-upscale">${icon('aiSpark', { size: 14 })} ${t('Upscale')}</button>` : ''}
           ${canMatte ? `<button type="button" class="asset-picker-matte">${icon('scissors', { size: 14 })} ${t('Remove background')}</button>` : ''}
+          <span class="asset-picker-footer-error" role="alert" hidden></span>
         </footer>
       ` : ''}
     </div>
   `;
+
+  /** Per-tab match counts while a query is active (plans/134 P3). Cheap: the
+   *  same in-memory filters each pane renders from; badges clear with the query. */
+  function syncTabCounts(q: string): void {
+    const counts = new Map<TabId, number>();
+    if (q) {
+      counts.set('library', typeFiltered(libraryCandidates).filter(c => searchMatches(q, String(c.meta?.name ?? c.id), c.id)).length);
+      if (sessions) counts.set('sessions', sessions.filter(s2 => searchMatches(q, s2.toolName, s2.label, s2.toolId)).length);
+      counts.set('tools', embedTools.filter(t2 => searchMatches(q, t2.name, t2.description ?? '', t2.id)).length);
+    }
+    for (const btn of root.querySelectorAll<HTMLElement>('.asset-picker-tab')) {
+      btn.querySelector('.asset-picker-tabcount')?.remove();
+      const id = btn.dataset.tab as TabId;
+      const n = counts.get(id);
+      if (q && n !== undefined && id !== activeTab) {
+        const badge = document.createElement('span');
+        badge.className = 'asset-picker-tabcount';
+        badge.textContent = String(n);
+        btn.appendChild(badge);
+      }
+    }
+  }
 
   function tabBtn(tab: Tab): string {
     const on = tab.id === activeTab;
@@ -589,6 +635,7 @@ async function render(
   let pendingTrim: (() => void) | null = null;
   let trap: FocusTrap | undefined;
   const close = (value: AssetRef | null): void => {
+    stopAudition();
     NAV_EVENTS.forEach(ev => window.removeEventListener(ev, onNav));
     trap?.release();
     lottieThumbs?.destroy();
@@ -648,6 +695,14 @@ async function render(
   };
   const libraryEl    = root.querySelector<HTMLElement>('.asset-picker-library')!;
   const favEl        = root.querySelector<HTMLElement>('.asset-picker-favourites');
+  const recentsEl    = root.querySelector<HTMLElement>('.asset-picker-recents');
+  let auditionEl: HTMLAudioElement | null = null;
+  const stopAudition = (): void => {
+    auditionEl?.pause();
+    auditionEl = null;
+    root.querySelectorAll<HTMLElement>('[data-audition-src]').forEach(b => { b.textContent = '▶'; b.setAttribute('aria-pressed', 'false'); });
+  };
+  const typebarEl    = root.querySelector<HTMLElement>('.asset-picker-typebar');
   const userEl       = root.querySelector<HTMLElement>('.asset-picker-userassets');
   const searchInput  = root.querySelector<HTMLInputElement>('.asset-picker-search')!;
   // Contain keyboard focus within the modal (inert the page behind + wrap Tab) and
@@ -741,6 +796,16 @@ async function render(
     focusCard(best);
   }
 
+  // Drag a card out of the picker (plans/134 P7): carries `text/lolly-asset`,
+  // the same payload catalog tiles set - a slot behind the dialog can take it.
+  root.addEventListener('dragstart', (e) => {
+    const cardEl = (e.target as HTMLElement).closest?.('[data-asset-id]') as HTMLElement | null;
+    if (!cardEl || !(e as DragEvent).dataTransfer) return;
+    const dt = (e as DragEvent).dataTransfer!;
+    dt.setData('text/lolly-asset', cardEl.dataset.assetId!);
+    dt.setData('text/plain', cardEl.dataset.assetId!);
+    dt.effectAllowed = 'copy';
+  });
   root.querySelector<HTMLElement>('.asset-picker-panel')?.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { e.preventDefault(); close(null); return; }
     if (e.target === searchInput) {
@@ -880,7 +945,6 @@ async function render(
         userAssets = userAssets.filter(a => a.id !== id);
         renderUserAssets();
         renderFavourites();
-        updateUploadAffordance();
         announce(tRaw('Deleted {name}.', { name }));
       } catch (err) {
         host.log('error', 'Failed to delete user image', { id, error: String(err) });
@@ -1007,6 +1071,30 @@ async function render(
       if (collect) { collect.onOpenTool(tool.dataset.toolId!); close(null); return; }
       embedTool(tool.dataset.toolId!); return;
     }
+    const pill = (e.target as HTMLElement).closest<HTMLElement>('[data-typepill]');
+    if (pill) {
+      libTypeFilter = pill.dataset.typepill as PickerTypeFilter;
+      renderTypebar();
+      restoreLibrary(searchInput.value.trim().toLowerCase());
+      return;
+    }
+    // Audition (plans/134 P4): one shared <audio>; pressing another ▶ swaps the
+    // track, pressing the playing one stops it. Never picks.
+    const aud = (e.target as HTMLElement).closest<HTMLElement>('[data-audition-src]');
+    if (aud) {
+      e.stopPropagation();
+      const src = aud.dataset.auditionSrc!;
+      const playing = auditionEl && !auditionEl.paused && auditionEl.src === new URL(src, location.href).href;
+      stopAudition();
+      if (!playing) {
+        auditionEl = new Audio(src);
+        auditionEl.play().catch(() => { /* refused - the tile still picks fine */ });
+        aud.textContent = '⏸';
+        aud.setAttribute('aria-pressed', 'true');
+        auditionEl.addEventListener('ended', stopAudition);
+      }
+      return;
+    }
     const pick = (e.target as HTMLElement).closest<HTMLElement>('[data-asset-id]');
     if (pick) {
       // A non-default icon theme / photo treatment rides in the picked id so it
@@ -1020,6 +1108,7 @@ async function render(
       }
       try {
         const resolved = await host.assets.get(pickId);
+        recordRecentAsset(pickId);   // feeds the "Recent" section (plans/134 P1)
         if (collect) { flashCard(pick, await collect.onAsset(resolved)); return; }
         close(resolved);
       } catch (err) {
@@ -1067,12 +1156,17 @@ async function render(
 
   // `focusFirstCard` is false only while arrow-roving the strip (see wireTabs above).
   function applyTab(id: TabId, focusFirstCard: boolean): void {
+    stopAudition();
     activeTab = id;
+    // Remember USER switches only - the boot application of the initial tab is
+    // not a preference (and must not teach the memory the caller's default).
+    if (tabMemoryArmed) recordTabMemory(opts.type ?? 'any', id);
+    else tabMemoryArmed = true;
     toolcardHost.hidden = true;
     toolcardHost.innerHTML = '';
     if (currentEl) currentEl.hidden = false;
     root.querySelectorAll<HTMLElement>('.asset-picker-pane').forEach(p => { p.hidden = p.dataset.pane !== id; });
-    setFooter(id === 'library');
+    setFooter(true);   // plans/134 P6: upload/webcam are never wrong, whatever the pane
     searchInput.placeholder = placeholderFor(id);
     const raw = searchInput.value.trim();
     const q = raw.toLowerCase();
@@ -1127,16 +1221,6 @@ async function render(
     refreshLottieThumbs();
     refreshAudioThumbs();
     refreshTextThumbs();
-  }
-
-  function updateUploadAffordance(): void {
-    // No upload cap any more - the affordance is always available. Kept as a hook
-    // so the label stays correct if a section re-render leaves it disabled.
-    const labelEl   = root.querySelector<HTMLElement>('.asset-picker-upload-label');
-    const fileInput = root.querySelector<HTMLInputElement>('.asset-picker-upload input[type="file"]');
-    if (fileInput) fileInput.disabled = false;
-    root.querySelector('.asset-picker-upload')?.classList.remove('is-disabled');
-    if (labelEl) labelEl.textContent = t('Upload your own…');
   }
 
   /**
@@ -1202,6 +1286,40 @@ async function render(
 
   if (opts.allowUpload) {
     const fileInput = root.querySelector<HTMLInputElement>('input[type="file"]')!;
+    // Drag a file onto the open picker, or paste an image (plans/134 P6): both
+    // hand the file to the input's own change pipeline (DataTransfer), so the
+    // PDF/PPTX routing and the trim-to-content offer all run unchanged.
+    const panel = root.querySelector<HTMLElement>('.asset-picker-panel');
+    const ingestDropped = (file: File | undefined | null): void => {
+      if (!file) return;
+      root.querySelector<HTMLElement>('.asset-picker-footer-error')?.setAttribute('hidden', '');
+      try {
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        fileInput.files = dt.files;
+        fileInput.dispatchEvent(new Event('change'));
+      } catch { /* DataTransfer construction unsupported - the Upload button remains */ }
+    };
+    panel?.addEventListener('dragover', (e) => {
+      if (!e.dataTransfer?.types.includes('Files')) return;
+      e.preventDefault();
+      panel.classList.add('is-dropping');
+    });
+    panel?.addEventListener('dragleave', (e) => {
+      if (e.target === panel) panel.classList.remove('is-dropping');
+    });
+    panel?.addEventListener('drop', (e) => {
+      if (!e.dataTransfer?.files.length) return;
+      e.preventDefault();
+      panel.classList.remove('is-dropping');
+      ingestDropped(e.dataTransfer.files[0]);
+    });
+    panel?.addEventListener('paste', (e) => {
+      const file = [...(e.clipboardData?.files ?? [])][0];
+      if (!file) return;
+      e.preventDefault();
+      ingestDropped(file);
+    });
     fileInput.addEventListener('change', async () => {
       const file = fileInput.files?.[0];
       if (!file) return;
@@ -1242,6 +1360,10 @@ async function render(
         close(ref);
       } catch (e) {
         host.log('error', 'Upload failed', { error: String(e) });
+        // Visible, not just announced (plans/134 P6): the footer keeps the reason
+        // on screen until the next attempt clears it.
+        const errEl = root.querySelector<HTMLElement>('.asset-picker-footer-error');
+        if (errEl) { errEl.hidden = false; errEl.textContent = (e as { code?: unknown }).code ? (e as Error).message : t('Upload failed. Try another file.'); }
         // Cap/quota errors carry a user-ready message; prefix only the rest.
         announce((e as { code?: unknown }).code ? (e as Error).message : tRaw('Upload failed: {message}', { message: (e as Error).message }), { assertive: true });
       } finally {
@@ -1589,11 +1711,27 @@ async function render(
   let libraryCandidates: AssetRef[] = [];
   let candidateById = new Map<string, AssetRef>();
   let libraryLoaded = false;
+  // Type filter (plans/134 P5): the catalog's All/Image/Vector/Motion/Audio
+  // buckets, offered only when the slot itself is untyped (a typed pick is
+  // already narrowed at the query). Client-side over the loaded candidates.
+  let libTypeFilter: PickerTypeFilter = 'all';
+  const typeFiltered = (list: readonly AssetRef[]): AssetRef[] =>
+    libTypeFilter === 'all' ? [...list] : list.filter(a => pickerMatchesType(a, libTypeFilter));
+  function renderTypebar(): void {
+    if (!typebarEl) return;
+    if (opts.type) { typebarEl.hidden = true; return; }   // slot already narrows the type
+    const present = PICKER_TYPE_FILTERS.filter(f => f.key === 'all' || libraryCandidates.some(a => pickerMatchesType(a, f.key)));
+    if (present.length <= 2) { typebarEl.hidden = true; return; }   // one real bucket - nothing to filter
+    typebarEl.hidden = false;
+    typebarEl.innerHTML = present.map(f =>
+      `<button type="button" class="asset-picker-typepill${libTypeFilter === f.key ? ' is-on' : ''}" data-typepill="${f.key}" aria-pressed="${libTypeFilter === f.key}">${escapeHtml(t(f.label))}</button>`).join('');
+  }
+
   function restoreLibrary(q: string): void {
     renderUserAssets();
     if (!libraryLoaded) { libraryEl.innerHTML = `<div class="asset-picker-loading">${t('Loading…')}</div>`; return; }
-    if (!q) { renderLibrary(libraryCandidates); return; }
-    renderLibrary(libraryCandidates.filter(c => searchMatches(q, String(c.meta?.name ?? c.id), c.id)));
+    if (!q) { renderLibrary(typeFiltered(libraryCandidates)); return; }
+    renderLibrary(typeFiltered(libraryCandidates).filter(c => searchMatches(q, String(c.meta?.name ?? c.id), c.id)));
   }
 
   // ── Favourites - a pinned, collapsible section at the top of the library pane ──
@@ -1602,7 +1740,32 @@ async function render(
   // picked like any other card (delegated [data-asset-id] handler resolves it, incl.
   // user ids). Starring itself happens in the Catalog view. Rebuilt whenever the sources
   // or the favourites set change; unaffected by the search box (it's a fixed shortcut).
+  /** The pinned "Recent" section (plans/134 P1): recently picked assets that
+   *  this pick could still place, newest first, capped at 8. */
+  function renderRecents(): void {
+    if (!recentsEl) return;
+    const order = readRecentAssets();
+    if (!order.length) { recentsEl.hidden = true; recentsEl.innerHTML = ''; return; }
+    const byBase = new Map<string, AssetRef>();
+    for (const ref of [...libraryCandidates, ...userAssets]) {
+      const base = assetBaseId(ref.id);
+      if (!byBase.has(base)) byBase.set(base, ref);
+    }
+    const items = order.map(b => byBase.get(b)).filter((r): r is AssetRef => !!r).slice(0, 8);
+    if (!items.length) { recentsEl.hidden = true; recentsEl.innerHTML = ''; return; }
+    recentsEl.hidden = false;
+    recentsEl.innerHTML = sectionHtml(
+      { key: 'recents', label: t('Recent') },
+      items.length, '',
+      `<div class="asset-picker-grid">${items.map(card).join('')}</div>`,
+    );
+    refreshLottieThumbs();
+    refreshAudioThumbs();
+    refreshTextThumbs();
+  }
+
   function renderFavourites(): void {
+    renderRecents();
     if (!favEl) return;
     if (favSet.size === 0) { favEl.hidden = true; favEl.innerHTML = ''; return; }
     // Candidates the picker can actually pick, deduped by base id, in library-then-user
@@ -2086,7 +2249,6 @@ async function render(
         userAssets = list.filter(a => typeOk(a.type)).filter(a => !hiddenSet.has(assetBaseId(a.id)));
         renderUserAssets();
         renderFavourites();
-        updateUploadAffordance();
         // Images just landed - refresh Projects so folder item tiles + counts fill in.
         if (activeTab === 'projects') renderProjects(searchInput.value.trim().toLowerCase());
       })
@@ -2105,7 +2267,7 @@ async function render(
     host.state.list()
       .then(list => {
         sessions = (list ?? [])
-          .filter(e => e.slot && !e.slot.startsWith('__batch__:')) // single-tool only (see pro/sessions.js)
+          .filter(e => e.slot && !e.slot.startsWith('__batch__:') && !isTrashedSlot(e.slot)) // single-tool, not trashed
           // Collect mode files the SESSION itself (kept editable), so any single-tool
           // session whose tool still ships qualifies — it needn't render to an image.
           .filter(e => e.toolId && (collect ? toolById.has(e.toolId) : isEmbeddable(toolById.get(e.toolId), needsSvg)))
@@ -2171,16 +2333,23 @@ async function render(
       if (activeTreatment && !photoTreatments.some(t => t.id === activeTreatment)) activeTreatment = null;
     }
 
-    renderLibrary(candidates);
+    renderTypebar();
+    renderLibrary(typeFiltered(candidates));
     renderFavourites();
 
-    // Land focus on an asset (the current one if provided) so the keyboard can
-    // drive the picker straight away. A themed current id matches its base card.
-    // Only when Library is the active pane - in collect mode we've already switched
-    // to Tools and landed focus there, so don't yank it back to a hidden card.
+    // Bring the current asset into view - but NEVER steal the caret (2026-08-20
+    // audit): the search field starts focused (trapFocus's initialFocus) and
+    // ArrowDown already drops into the grid, so yanking focus onto a card here
+    // lost mid-type keystrokes. Only land focus on a card when the user isn't in
+    // the search field. Library pane only - collect mode landed focus on Tools.
     if (activeTab === 'library') {
       const libCards = [...libraryEl.querySelectorAll<HTMLElement>('[data-asset-id]')];
-      (libCards.find(c => c.dataset.assetId === currentBaseId) || libCards[0])?.focus({ preventScroll: true });
+      const target = libCards.find(c => c.dataset.assetId === currentBaseId) || libCards[0];
+      if (searchInput && document.activeElement === searchInput) {
+        try { target?.scrollIntoView({ block: 'nearest' }); } catch { /* jsdom: scrollIntoView unimplemented */ }
+      } else {
+        target?.focus({ preventScroll: true });
+      }
     }
 
     // A Lolly tool URL pasted into the search box flips the picker into a "render
@@ -2209,7 +2378,7 @@ async function render(
         if (currentEl) currentEl.hidden = false;
         const pane = root.querySelector<HTMLElement>(`.asset-picker-pane[data-pane="${activeTab}"]`);
         if (pane) pane.hidden = false;
-        setFooter(activeTab === 'library');
+        setFooter(true);
       }
       // Debounce only the filter dispatch (rebuilds the whole pane DOM) so fast typing
       // doesn't rebuild per keystroke; the shared search debounce (lib/search/match.ts)
@@ -2221,27 +2390,13 @@ async function render(
         else if (activeTab === 'sessions') renderSessions(q);
         else if (activeTab === 'projects') renderProjects(q);
         else if (activeTab === 'tools') renderTools(q);
+        syncTabCounts(q);
       }, SEARCH_DEBOUNCE_MS);
     });
   } catch (e) {
     libraryEl.innerHTML = `<p class="asset-picker-error">${t('Failed to load: {message}', { message: (e as Error).message })}</p>`;
   }
 }
-
-
-// Video containers (need a <video>) vs animated rasters (animate in an <img>). A
-// motion slot offers both; a still/image slot offers animated rasters but not video.
-
-// Constrain the offered child-render formats to the slot's asset type. A 'vector'
-// slot semantically wants vector (e.g. an inline-recolourable logo) → restrict to
-// SVG. A motion slot ('video' / 'lottie', i.e. the free-canvas Video/Animation
-// add-kinds) wants MOVEMENT → offer every motion format the tool supports. Every
-// other slot accepts an SVG render fine and animated rasters (gif/apng animate in an
-// <img>), but not <video>-only formats (webm/mp4 need the video slot). assetType
-// constrains the LIBRARY picker, not what a tool render can produce; a constraint that
-// empties falls back to the full list.
-
-
 
 
 
@@ -2521,6 +2676,34 @@ function vidMatteButton(ref: AssetRef, name: string): string {
   return `<button type="button" class="asset-picker-card-matte" data-vidmatte-id="${escapeHtml(ref.id)}" title="${escapeHtml(t('Remove background'))}" aria-label="${escapeHtml(tRaw('Remove background from {name}', { name }))}">${icon('scissors', { size: 14 })}</button>`;
 }
 
+// ── Recents (plans/134 P1) ───────────────────────────────────────────────────
+// Most-recently PICKED asset base ids, device-local. Rendered as a pinned
+// section above Favourites; recorded on every successful pick / collect add.
+const RECENTS_KEY = 'lolly:recentAssets';
+function readRecentAssets(): string[] {
+  try { const v = JSON.parse(localStorage.getItem(RECENTS_KEY) || '[]'); return Array.isArray(v) ? v.filter(x => typeof x === 'string') : []; }
+  catch { return []; }
+}
+function recordRecentAsset(id: string): void {
+  try {
+    const base = assetBaseId(id);
+    localStorage.setItem(RECENTS_KEY, JSON.stringify([base, ...readRecentAssets().filter(x => x !== base)].slice(0, 24)));
+  } catch { /* storage off */ }
+}
+// Last-used tab per pick type (plans/134 P1) - a default, exactly like initialTab.
+const TABMEM_KEY = 'lolly:pickerTab';
+function readTabMemory(kind: string): string | null {
+  try { return (JSON.parse(localStorage.getItem(TABMEM_KEY) || '{}') as Record<string, string>)[kind] ?? null; }
+  catch { return null; }
+}
+function recordTabMemory(kind: string, tab: string): void {
+  try {
+    const m = JSON.parse(localStorage.getItem(TABMEM_KEY) || '{}') as Record<string, string>;
+    m[kind] = tab;
+    localStorage.setItem(TABMEM_KEY, JSON.stringify(m));
+  } catch { /* storage off */ }
+}
+
 function card(ref: AssetRef): string {
   const isPlaceholder = ref.meta?._placeholder;
   const name = ref.meta?.name ?? ref.id;
@@ -2541,16 +2724,23 @@ function card(ref: AssetRef): string {
   const upBtn = upscaleButton(ref, String(name));
   const cutBtn = matteButton(ref, String(name));
   const vidBtn = vidMatteButton(ref, String(name));
+  // Audio audition (plans/134 P4): a ▶ sibling that previews without picking.
+  const audBtn = ref.type === 'audio' && !isPlaceholder
+    ? `<button type="button" class="asset-picker-audition" data-audition-src="${escapeHtml(ref.url)}" aria-pressed="false" aria-label="${escapeHtml(t('Play preview'))}" title="${escapeHtml(t('Play preview'))}">▶</button>`
+    : '';
+  // Dimensions on the tile (plans/134 P4) - captured at ingest, finally surfaced.
+  const dims = ref.width && ref.height ? `${Math.round(+ref.width)}×${Math.round(+ref.height)}` : '';
+  const tip = dims ? `${name} · ${dims} px` : String(name);
   const inner = `${thumb}
-      <span class="asset-picker-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
-      <span class="asset-picker-id">${escapeHtml(ref.id)}</span>`;
+      <span class="asset-picker-name" title="${escapeHtml(tip)}">${escapeHtml(name)}</span>
+      <span class="asset-picker-id">${escapeHtml(ref.id)}${dims ? ` <span class="asset-picker-dims">· ${escapeHtml(dims)}</span>` : ''}</span>`;
   // A raster library card splits into wrapper + pick button (mirroring the user card)
   // so the Upscale / Remove-background siblings are valid HTML; a video card does the
-  // same for its Remove-background sibling. Everything with no action stays the exact
-  // single plain pick button it was before.
-  if (!upBtn && !cutBtn && !vidBtn) {
+  // same for its Remove-background sibling (and an audio card for its audition ▶).
+  // Everything with no action stays the exact single plain pick button it was before.
+  if (!upBtn && !cutBtn && !vidBtn && !audBtn) {
     return `
-    <button type="button" class="asset-picker-card" data-asset-id="${escapeHtml(ref.id)}">
+    <button type="button" class="asset-picker-card" data-asset-id="${escapeHtml(ref.id)}" draggable="true">
       ${inner}
       ${formatBadge(ref)}
     </button>
@@ -2558,12 +2748,13 @@ function card(ref: AssetRef): string {
   }
   return `
     <div class="asset-picker-card asset-picker-card-actionable">
-      <button type="button" class="asset-picker-card-pick" data-asset-id="${escapeHtml(ref.id)}">
+      <button type="button" class="asset-picker-card-pick" data-asset-id="${escapeHtml(ref.id)}" draggable="true">
         ${inner}
       </button>
       ${upBtn}
       ${cutBtn}
       ${vidBtn}
+      ${audBtn}
       ${formatBadge(ref)}
     </div>
   `;
@@ -2682,7 +2873,7 @@ function userCard(ref: AssetRef): string {
           : `<img class="asset-picker-thumb" src="${escapeHtml(ref.url)}" alt="" loading="lazy" decoding="async">`;
   return `
     <div class="asset-picker-card asset-picker-card-user">
-      <button type="button" class="asset-picker-card-pick" data-asset-id="${escapeHtml(ref.id)}">
+      <button type="button" class="asset-picker-card-pick" data-asset-id="${escapeHtml(ref.id)}" draggable="true">
         ${thumb}
         <span class="asset-picker-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
       </button>

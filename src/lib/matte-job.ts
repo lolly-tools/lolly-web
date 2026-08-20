@@ -28,8 +28,9 @@
  * asset id shape are byte-identical to the modal path they replace.
  */
 
-import { extractC2paStore, prepareC2paIngredientFromStore } from '@lolly/engine';
+import { chromaKeyAlpha, extractC2paStore, prepareC2paIngredientFromStore } from '@lolly/engine';
 import { startJob, type JobHandle } from './jobs.ts';
+import { CHROMA_DEFAULT_SOFTNESS, CHROMA_DEFAULT_SPILL, CHROMA_DEFAULT_TOLERANCE } from './video-jobs.ts';
 import { classifyMatteError, type MatteErrorKind } from './matte-error.ts';
 import { t, tRaw } from '../i18n.ts';
 import type {
@@ -132,6 +133,13 @@ export interface MatteJobRequest {
   model: MatteModelId;
   /** The alpha-capable output format the user chose. */
   outFormat: OutFormat;
+  /** 'model' (default) runs the staged AI matte. 'chroma' keys out a flat
+   *  colour on-device with the engine's chromaKeyAlpha - no model, no
+   *  download, works on any device (the video matte's second method, brought
+   *  to stills: most of the time people just want the white gone). */
+  method?: 'model' | 'chroma';
+  /** Colour-key colour (sRGB bytes). Default white - the usual margin. */
+  keyColor?: { r: number; g: number; b: number };
 }
 
 /** The container-level C2PA stamp options runMatteJob assembles (a subset of
@@ -210,28 +218,51 @@ function reportProgress(ctx: MatteJobCtx, p: MatteProgress): void {
 export async function runMatteJob(
   host: MatteJobHost, req: MatteJobRequest, ctx: MatteJobCtx = {}, deps: MatteJobDeps = {},
 ): Promise<AssetRef | null> {
-  const matte = host.matte;
-  if (!matte?.isAvailable()) throw new Error(t("Couldn't remove the background. Try a smaller image, or a different model."));
-  const info = matteModelInfo(matte.models(), req.model);
-
   let out: MatteFrame;
-  try {
-    // run() TRANSFERS (neuters) the frame's buffer to the worker, so hand it a FRESH
-    // COPY and leave the request's frame intact for the caller.
-    const runFrame = { width: req.frame.width, height: req.frame.height, data: new Uint8ClampedArray(req.frame.data) };
-    out = await matte.run(runFrame, {
-      model: req.model,
-      ...(ctx.signal ? { signal: ctx.signal } : {}),
-      onProgress: (p) => reportProgress(ctx, p),
+  /** The honest c2pa.edited description + the saved meta.matte record, per method. */
+  let editDescription: string;
+  let matteMeta: Record<string, unknown>;
+
+  if (req.method === 'chroma') {
+    // Colour key: pure per-pixel maths (engine chromaKeyAlpha), no capability, no
+    // model, nothing to download - so none of the model path's gates apply. The
+    // key/soft/spill constants are the video matte's, so the two methods cut the
+    // same colour the same way on a still and a clip.
+    const key = req.keyColor ?? { r: 255, g: 255, b: 255 };
+    ctx.onProgress?.(0, 0, t('Removing background…'));
+    const data = chromaKeyAlpha(req.frame.data, req.frame.width, req.frame.height, {
+      keyColor: [key.r, key.g, key.b],
+      tolerance: CHROMA_DEFAULT_TOLERANCE,
+      softness: CHROMA_DEFAULT_SOFTNESS,
+      spill: CHROMA_DEFAULT_SPILL,
     });
-  } catch (e) {
-    // Belt-and-braces: never surface a raw runtime string (e.g. ort-web's
-    // "failed to call OrtRun()… std::bad_alloc"). Classify to an actionable
-    // message. An abort is the user's own cancel, so it is silent. See lib/matte-error.ts.
-    const kind = classifyMatteError(e);
-    if (kind === 'aborted') return null;
-    host.log('error', 'Matte run failed', { error: String(e), kind });
-    throw new Error(matteErrorMessage(kind));
+    out = { width: req.frame.width, height: req.frame.height, data };
+    editDescription = 'Background removed with a colour key (on-device)';
+    matteMeta = { method: 'chroma' };
+  } else {
+    const matte = host.matte;
+    if (!matte?.isAvailable()) throw new Error(t("Couldn't remove the background. Try a smaller image, or a different model."));
+    const info = matteModelInfo(matte.models(), req.model);
+    editDescription = `Background removed with ${info.name} ${info.version} (on-device)`;
+    matteMeta = { model: req.model, version: info.version };
+    try {
+      // run() TRANSFERS (neuters) the frame's buffer to the worker, so hand it a FRESH
+      // COPY and leave the request's frame intact for the caller.
+      const runFrame = { width: req.frame.width, height: req.frame.height, data: new Uint8ClampedArray(req.frame.data) };
+      out = await matte.run(runFrame, {
+        model: req.model,
+        ...(ctx.signal ? { signal: ctx.signal } : {}),
+        onProgress: (p) => reportProgress(ctx, p),
+      });
+    } catch (e) {
+      // Belt-and-braces: never surface a raw runtime string (e.g. ort-web's
+      // "failed to call OrtRun()… std::bad_alloc"). Classify to an actionable
+      // message. An abort is the user's own cancel, so it is silent. See lib/matte-error.ts.
+      const kind = classifyMatteError(e);
+      if (kind === 'aborted') return null;
+      host.log('error', 'Matte run failed', { error: String(e), kind });
+      throw new Error(matteErrorMessage(kind));
+    }
   }
   if (ctx.isCancelled?.()) return null;
 
@@ -249,7 +280,7 @@ export async function runMatteJob(
     blob = await (deps.stamp ?? defaultStamp)(host, rawBlob, format, {
       title: req.sourceName,
       tool: 'Remove background',
-      actions: [{ action: 'c2pa.edited', description: `Background removed with ${info.name} ${info.version} (on-device)` }],
+      actions: [{ action: 'c2pa.edited', description: editDescription }],
       ...(ingredient ? { ingredients: [ingredient] } : {}),
       dimensions: `${out.width}×${out.height}`,
     });
@@ -264,9 +295,9 @@ export async function runMatteJob(
     meta: {
       name,
       bytes: blob.size,
-      // NOT aiGenerated: the RGB is 100% the original; only alpha is model-
+      // NOT aiGenerated: the RGB is 100% the original; only the alpha is
       // computed. The operation is disclosed in the credential as an edit.
-      matte: { model: req.model, version: info.version },
+      matte: matteMeta,
     },
   });
   return await host.assets.get(id);
@@ -287,7 +318,9 @@ export function startMatteJob(
   deps: MatteJobDeps = {},
 ): JobHandle {
   const controller = new AbortController();
-  const job = startJob({ title: t('Removing background'), cancel: () => controller.abort() });
+  // A colour key is a pixel loop, not wasm inference - it must never hold the
+  // heavy slot a model run queues on.
+  const job = startJob({ title: t('Removing background'), cancel: () => controller.abort(), heavy: req.method !== 'chroma' });
   void (async (): Promise<void> => {
     await job.started;
     if (job.cancelled) return;

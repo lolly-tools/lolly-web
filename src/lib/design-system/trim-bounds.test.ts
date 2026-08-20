@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { svgContentBounds, trimSvgToContent, rasterAlphaBounds } from './trim-bounds.ts';
+import { svgContentBounds, trimSvgToContent, rasterAlphaBounds, rasterContentBounds } from './trim-bounds.ts';
 
 test('svgContentBounds unions a rect and a path, ignoring the wider artboard', () => {
   const svg = `<svg viewBox="0 0 200 200" width="200" height="200">
@@ -121,4 +121,59 @@ test('rasterAlphaBounds respects alphaMin', () => {
   const data = makeRgba(4, 4, [[2, 2, 10]]);
   assert.deepEqual(rasterAlphaBounds(data, 4, 4), { x: 2, y: 2, width: 1, height: 1 });
   assert.equal(rasterAlphaBounds(data, 4, 4, { alphaMin: 20 }), null);
+});
+
+// ── rasterContentBounds: flat white/black margins count as margin too ─────────
+
+/** Opaque frame filled with `bg`, with `ink` pixels painted at the given spots. */
+function makeFlat(width: number, height: number, bg: [number, number, number], ink: Array<[number, number, [number, number, number]]>): Uint8Array {
+  const data = new Uint8Array(width * height * 4);
+  for (let i = 0; i < width * height; i++) {
+    data[i * 4] = bg[0]; data[i * 4 + 1] = bg[1]; data[i * 4 + 2] = bg[2]; data[i * 4 + 3] = 255;
+  }
+  for (const [x, y, [r, g, b]] of ink) {
+    const i = (y * width + x) * 4;
+    data[i] = r; data[i + 1] = g; data[i + 2] = b; data[i + 3] = 255;
+  }
+  return data;
+}
+
+test('rasterContentBounds trims flat white margins around dark ink', () => {
+  const ink: Array<[number, number, [number, number, number]]> = [];
+  for (let y = 3; y <= 6; y++) for (let x = 2; x <= 7; x++) ink.push([x, y, [20, 20, 20]]);
+  const data = makeFlat(10, 10, [255, 255, 255], ink);
+  assert.deepEqual(rasterContentBounds(data, 10, 10), { x: 2, y: 3, width: 6, height: 4 });
+});
+
+test('rasterContentBounds trims flat black margins around light ink', () => {
+  const data = makeFlat(8, 8, [0, 0, 0], [[3, 3, [240, 240, 240]], [5, 4, [200, 60, 60]]]);
+  assert.deepEqual(rasterContentBounds(data, 8, 8), { x: 3, y: 3, width: 3, height: 2 });
+});
+
+test('rasterContentBounds tolerates JPEG-ish noise in a white margin', () => {
+  const ink: Array<[number, number, [number, number, number]]> = [[4, 4, [10, 10, 10]]];
+  // Noisy near-white margin pixels (within the flat-background distance) stay margin.
+  ink.push([0, 2, [251, 253, 250]], [7, 6, [248, 252, 253]]);
+  const data = makeFlat(9, 9, [254, 254, 254], ink);
+  assert.deepEqual(rasterContentBounds(data, 9, 9), { x: 4, y: 4, width: 1, height: 1 });
+});
+
+test('rasterContentBounds leaves a flat brand-colour card alone (alpha scan only)', () => {
+  // Red background is not white/black, so the whole opaque frame is content.
+  const data = makeFlat(6, 6, [200, 30, 30], [[2, 2, [255, 255, 255]]]);
+  assert.deepEqual(rasterContentBounds(data, 6, 6), { x: 0, y: 0, width: 6, height: 6 });
+});
+
+test('rasterContentBounds falls back to the alpha scan when a corner is transparent', () => {
+  const on: Array<[number, number, number]> = [[3, 3, 255]];
+  const data = makeRgba(8, 8, on);
+  // Paint white onto the opaque pixel so a (wrong) bg pass would erase it.
+  const i = (3 * 8 + 3) * 4;
+  data[i] = 255; data[i + 1] = 255; data[i + 2] = 255;
+  assert.deepEqual(rasterContentBounds(data, 8, 8), { x: 3, y: 3, width: 1, height: 1 });
+});
+
+test('rasterContentBounds returns null for an entirely flat white frame', () => {
+  const data = makeFlat(5, 5, [255, 255, 255], []);
+  assert.equal(rasterContentBounds(data, 5, 5), null);
 });

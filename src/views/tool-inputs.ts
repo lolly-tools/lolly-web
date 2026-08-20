@@ -716,6 +716,23 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
         } as Parameters<WebToolHost['assets']['pick']>[0]);
         if (ref) { runtime.setInput(id, ref); onDirty?.(id); }
       });
+      // Drag-in from the Catalog / asset picker (plans/132 WP-F): a tile drag
+      // carries its asset id as `text/lolly-asset`; dropping it here fills the
+      // slot exactly like picking it would.
+      control.addEventListener('dragover', (e) => {
+        if (!e.dataTransfer?.types.includes('text/lolly-asset')) return;
+        e.preventDefault();
+        control.classList.add('is-dragover');
+      });
+      control.addEventListener('dragleave', () => control.classList.remove('is-dragover'));
+      control.addEventListener('drop', async (e) => {
+        const assetId = e.dataTransfer?.getData('text/lolly-asset');
+        if (!assetId) return;
+        e.preventDefault();
+        control.classList.remove('is-dragover');
+        const dropped = await host.assets.get(assetId).catch(() => null);
+        if (dropped) { runtime.setInput(id, dropped); onDirty?.(id); }
+      });
       return;
     }
 

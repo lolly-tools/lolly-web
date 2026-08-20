@@ -420,6 +420,9 @@ body.pro-col-resizing, body.pro-col-resizing * { cursor: col-resize !important; 
 .pro-tpl-list { list-style: none; margin: 0; padding: .25rem; overflow-y: auto; flex: 1; min-height: 0; }
 .pro-tpl-opt { display: flex; align-items: center; gap: .5rem; width: 100%; text-align: left; font: inherit; font-size: calc(.85rem * var(--a11y-fs)); cursor: pointer; background: transparent; border: none; border-radius: calc(var(--radius) * .35); padding: .45rem .55rem; color: hsl(var(--foreground)); }
 .pro-tpl-opt:hover, .pro-tpl-opt.is-active { background: hsl(var(--accent)); }
+/* Fixed-width even when a tool ships no icon, so every name starts in the same column. */
+.pro-tpl-opt-ic { flex: none; display: inline-flex; align-items: center; justify-content: center; width: calc(16px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.pro-tpl-opt-ic svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
 .pro-tpl-opt-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .pro-tpl-opt-exp { flex: none; font-size: calc(.6rem * var(--a11y-fs)); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: hsl(var(--destructive)); }
 .pro-tpl-none { padding: .6rem .7rem; font-size: calc(.8rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }

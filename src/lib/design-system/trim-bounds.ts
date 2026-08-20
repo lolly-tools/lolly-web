@@ -316,10 +316,55 @@ export function trimSvgToContent(svgText: string, opts?: { pad?: number }): { sv
   return { svg, box };
 }
 
+/** Shared edge-scan: tight box over whichever pixels `hit` calls content.
+ *  Scans inward and stops at the first hit per edge, never allocating a
+ *  scratch buffer - this runs against full-resolution upload bytes. */
+function scanBounds(width: number, height: number, hit: (x: number, y: number) => boolean): Box | null {
+  let top = -1;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (hit(x, y)) { top = y; break; }
+    }
+    if (top !== -1) break;
+  }
+  if (top === -1) return null;
+
+  let bottom = top;
+  for (let y = height - 1; y >= top; y--) {
+    let found = false;
+    for (let x = 0; x < width; x++) {
+      if (hit(x, y)) { found = true; break; }
+    }
+    if (found) { bottom = y; break; }
+  }
+
+  let left = 0;
+  for (let x = 0; x < width; x++) {
+    let found = false;
+    for (let y = top; y <= bottom; y++) {
+      if (hit(x, y)) { found = true; break; }
+    }
+    if (found) { left = x; break; }
+  }
+
+  let right = width - 1;
+  for (let x = width - 1; x >= left; x--) {
+    let found = false;
+    for (let y = top; y <= bottom; y++) {
+      if (hit(x, y)) { found = true; break; }
+    }
+    if (found) { right = x; break; }
+  }
+
+  return { x: left, y: top, width: right - left + 1, height: bottom - top + 1 };
+}
+
 /**
- * Tight pixel box over premultiplied-agnostic alpha bytes. Edges are found by
- * scanning inward and stopping at the first hit, never allocating a scratch
- * buffer - this runs against full-resolution upload bytes.
+ * Tight pixel box over premultiplied-agnostic alpha bytes. Alpha ONLY - an
+ * opaque image always reports the whole frame. Kept for callers that really
+ * mean ink-vs-transparent (brand-editor's logo classify); trims should use
+ * {@link rasterContentBounds}, which also treats a flat white/black border
+ * as margin.
  */
 export function rasterAlphaBounds(
   data: Uint8Array | Uint8ClampedArray,
@@ -328,43 +373,68 @@ export function rasterAlphaBounds(
   opts?: { alphaMin?: number },
 ): Box | null {
   const alphaMin = opts?.alphaMin ?? 0;
-  const alphaAt = (x: number, y: number): number => data[(y * width + x) * 4 + 3]!;
-
-  let top = -1;
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      if (alphaAt(x, y) > alphaMin) { top = y; break; }
-    }
-    if (top !== -1) break;
-  }
-  if (top === -1) return null;
-
-  let bottom = top;
-  for (let y = height - 1; y >= top; y--) {
-    let hit = false;
-    for (let x = 0; x < width; x++) {
-      if (alphaAt(x, y) > alphaMin) { hit = true; break; }
-    }
-    if (hit) { bottom = y; break; }
-  }
-
-  let left = 0;
-  for (let x = 0; x < width; x++) {
-    let hit = false;
-    for (let y = top; y <= bottom; y++) {
-      if (alphaAt(x, y) > alphaMin) { hit = true; break; }
-    }
-    if (hit) { left = x; break; }
-  }
-
-  let right = width - 1;
-  for (let x = width - 1; x >= left; x--) {
-    let hit = false;
-    for (let y = top; y <= bottom; y++) {
-      if (alphaAt(x, y) > alphaMin) { hit = true; break; }
-    }
-    if (hit) { right = x; break; }
-  }
-
-  return { x: left, y: top, width: right - left + 1, height: bottom - top + 1 };
+  return scanBounds(width, height, (x, y) => data[(y * width + x) * 4 + 3]! > alphaMin);
 }
+
+/** Squared RGB distance below which a pixel still counts as the flat background.
+ *  The logo-wall tool's proven constant (hooks.js measureContent): ~34 of
+ *  Euclidean RGB distance, wide enough for JPEG noise on flat white, tight
+ *  enough that any real ink registers as content. */
+const BG_DIST2 = 1200;
+
+/**
+ * The flat border colour of an opaque image, or null when margins are not a
+ * flat near-white/near-black fill. Same detection the logo-wall tool ships: a
+ * flat background fills every edge, so its colour shows in ALL four corners;
+ * the reference is the per-channel MEDIAN of the corners, so artwork running
+ * into one corner doesn't poison it the way a mean would. Restricted to
+ * near-white / near-black fills (the margins users actually mean - plan 97
+ * trim, Andy 2026-08-20): a flat brand-colour card stays untouched.
+ */
+function flatBorderColor(
+  data: Uint8Array | Uint8ClampedArray,
+  width: number,
+  height: number,
+): [number, number, number] | null {
+  const corner = (x: number, y: number): [number, number, number, number] => {
+    const p = (y * width + x) * 4;
+    return [data[p]!, data[p + 1]!, data[p + 2]!, data[p + 3]!];
+  };
+  const cs = [corner(0, 0), corner(width - 1, 0), corner(0, height - 1), corner(width - 1, height - 1)];
+  // Any (near-)transparent corner means the image is alpha-keyed - alpha alone marks content.
+  if (cs.some(c => c[3] < 200)) return null;
+  const med4 = (a: number[]): number => {
+    const s = a.slice().sort((m, n) => m - n);
+    return (s[1]! + s[2]!) / 2;
+  };
+  const bg: [number, number, number] = [0, 1, 2].map(k => med4(cs.map(c => c[k]!))) as [number, number, number];
+  const nearWhite = bg.every(v => v >= 243);
+  const nearBlack = bg.every(v => v <= 12);
+  return nearWhite || nearBlack ? bg : null;
+}
+
+/**
+ * Content bounds for a TRIM: transparent pixels are margin, and - when the
+ * image is opaque with a flat near-white or near-black border - pixels of that
+ * background colour are margin too. A white-matted JPEG logo trims exactly
+ * like its transparent-PNG twin. Detection is corner-driven (see
+ * {@link flatBorderColor}); an image whose corners disagree, or whose flat
+ * border is any other colour, falls back to the plain alpha scan.
+ */
+export function rasterContentBounds(
+  data: Uint8Array | Uint8ClampedArray,
+  width: number,
+  height: number,
+  opts?: { alphaMin?: number },
+): Box | null {
+  const alphaMin = opts?.alphaMin ?? 0;
+  const bg = flatBorderColor(data, width, height);
+  if (!bg) return rasterAlphaBounds(data, width, height, opts);
+  return scanBounds(width, height, (x, y) => {
+    const p = (y * width + x) * 4;
+    if (data[p + 3]! <= alphaMin) return false;
+    const dr = data[p]! - bg[0], dg = data[p + 1]! - bg[1], db = data[p + 2]! - bg[2];
+    return dr * dr + dg * dg + db * db > BG_DIST2;
+  });
+}
+

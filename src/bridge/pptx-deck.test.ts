@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { deckColor, deckFill, deckPara, deckSyncShape, deckTheme, parseDeckModel, emuOf, asStr } from './pptx-deck.ts';
+import { deckColor, deckFill, deckPara, deckPh, deckPlaceholder, deckSyncShape, deckTheme, parseDeckModel, emuOf, asStr } from './pptx-deck.ts';
 import { buildPptxParts, EMU_PER_PX } from '../../../../engine/src/pptx.ts';
 import type { PptxTable, PptxText, PptxRect, PptxSlide } from '../../../../engine/src/pptx.ts';
 
@@ -149,4 +149,41 @@ test('M4: table rows/cols are capped at the engine limits', () => {
   const t = deckSyncShape({ t: 'table', x: 0, y: 0, w: 500, h: 500, cols, rows }) as PptxTable;
   assert.ok(t.cols.length <= 128, `cols capped, got ${t.cols.length}`);
   assert.ok(t.rows.length <= 512, `rows capped, got ${t.rows.length}`);
+});
+
+// ─── layout gallery lowering (engine 1.135) ──────────────────────────────────
+test('deckPh whitelists placeholder types and coerces idx', () => {
+  assert.deepEqual(deckPh({ type: 'title' }), { type: 'title' });
+  assert.deepEqual(deckPh({ type: 'body', idx: 1.4 }), { type: 'body', idx: 1 });
+  assert.equal(deckPh({ type: 'evil"><x' }), undefined);
+  assert.equal(deckPh({ type: 'body', idx: -3 })!.idx, undefined);   // negative idx dropped, type kept
+  assert.equal(deckPh(null), undefined);
+  assert.equal(deckPh('title'), undefined);
+});
+
+test('deckPlaceholder lowers box, style, prompt; rejects unbindable input', () => {
+  const p = deckPlaceholder({
+    type: 'body', idx: 1, x: 32, y: 96, w: 896, h: 380, anchor: 't',
+    style: { font: 'SUSE', sizePt: 18, color: '#01564A', align: 'l', bullet: true },
+    prompt: 'Add your points',
+  })!;
+  assert.equal(p.type, 'body'); assert.equal(p.idx, 1);
+  assert.equal(p.x, Math.round(32 * EMU_PER_PX));
+  assert.equal(p.cx, Math.round(896 * EMU_PER_PX));
+  assert.deepEqual(p.style, { font: 'SUSE', sizePt: 18, color: '01564A', align: 'l', bullet: true });
+  assert.equal(p.prompt, 'Add your points');
+  assert.equal(deckPlaceholder({ x: 0, y: 0, w: 10, h: 10 }), null);          // no binding → null
+  assert.equal(deckPlaceholder({ type: 'nope', x: 0, y: 0, w: 10, h: 10 }), null);
+  assert.equal(deckPlaceholder('x'), null);
+});
+
+test('a text element with ph lowers to a bound PptxText and round-trips into <p:ph>', () => {
+  const t = deckSyncShape({ t: 'text', x: 0, y: 0, w: 300, h: 80, paras: [{ runs: [{ text: 'Hi', sizePt: 28 }] }], ph: { type: 'title' } }) as PptxText;
+  assert.deepEqual(t.ph, { type: 'title' });
+  const slide: PptxSlide = { shapes: [t], media: [] };
+  const xml = buildPptxParts([slide], {})['ppt/slides/slide1.xml'] as string;
+  assert.match(xml, /<p:nvPr><p:ph type="title"\/><\/p:nvPr>/);
+  // Hostile ph on the element is dropped at the boundary, not carried.
+  const loose = deckSyncShape({ t: 'text', x: 0, y: 0, w: 10, h: 10, paras: [], ph: { type: '<script>' } }) as PptxText;
+  assert.equal(loose.ph, undefined);
 });

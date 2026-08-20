@@ -19,7 +19,7 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
 const dom = new JSDOM('<!doctype html><html><body><div id="mount"></div></body></html>', {
-  url: 'http://localhost/#/pro',
+  url: 'http://localhost/#/batch',
 });
 globalThis.window = dom.window as unknown as typeof globalThis.window;
 globalThis.document = dom.window.document;
@@ -73,7 +73,7 @@ test('a skipped row is listed by its source number and its label, never by a uid
     skipped: [{ reason: 'No template selected', row: { toolId: '', values: {}, uid: 'r7' }, srcIndex: 0, uid: 'r7' }],
   });
   const skipList = mount.querySelector('.pro-log-skiplist')!.textContent!;
-  assert.match(skipList, /row 1 — \(no template\) — No template selected/);
+  assert.match(skipList, /row 1 - \(no template\) - No template selected/);
   assert.doesNotMatch(skipList, /r7/);   // an internal id must never reach the UI
 });
 

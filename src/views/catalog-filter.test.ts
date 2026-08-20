@@ -14,6 +14,9 @@ import {
   matchesType, visibleAssets, buildSearchHaystack, matchesQuery,
   favItems, selectableIds, pruneSelection, TYPE_FILTER_TYPES,
   type TypeFilter,
+  sortAssets,
+  assetAddedAt,
+  assetModifiedAt,
 } from './catalog-filter.ts';
 import type { AssetRef } from '@lolly-tools/core/host-v1';
 
@@ -227,4 +230,33 @@ test('a hidden asset is not selectable even when it matches the search', () => {
   const hay = buildSearchHaystack(assets, cat);
   const ids = selectableIds(visible, { query: '', haystack: hay, typeFilter: 'all' });
   assert.deepEqual([...ids], ['u2']);
+});
+
+
+// ── sort + dates (plans/132 WP-A) ────────────────────────────────────────────
+
+const mk = (id: string, meta: Record<string, unknown> = {}, format = 'png') =>
+  ({ id, type: 'raster', format, url: '', source: id.startsWith('user/') ? 'user' : 'library', meta }) as AssetRef;
+
+test('assetAddedAt reads the upload id timestamp, meta.addedAt wins, catalog is null', () => {
+  assert.equal(assetAddedAt({ id: 'user/upload/1787058652322-x.jpg' }), 1787058652322);
+  assert.equal(assetAddedAt({ id: 'user/upload/1787058652322-x.jpg', meta: { addedAt: 5 } }), 5);
+  assert.equal(assetAddedAt({ id: 'suse/logo/primary' }), null);
+});
+
+test('assetModifiedAt prefers meta.modifiedAt and falls back to added', () => {
+  assert.equal(assetModifiedAt({ id: 'user/upload/1700000000000-x.png', meta: { modifiedAt: 1800000000000 } }), 1800000000000);
+  assert.equal(assetModifiedAt({ id: 'user/upload/1700000000000-x.png' }), 1700000000000);
+});
+
+test('sortAssets: default preserves order; name/size/added order correctly', () => {
+  const older = mk('user/upload/1700000000000-b.png', { name: 'Beta', bytes: 10 });
+  const newer = mk('user/upload/1800000000000-a.png', { name: 'alpha', bytes: 999 });
+  const cat = mk('suse/logo/primary', { name: 'Zeta' }, 'svg');
+  const list = [older, cat, newer];
+  assert.deepEqual(sortAssets(list, 'default').map((a: { id: string }) => a.id), [older, cat, newer].map(a => (a as { id: string }).id));
+  assert.deepEqual(sortAssets(list, 'name').map((a) => a.meta?.name), ['alpha', 'Beta', 'Zeta']);
+  assert.deepEqual(sortAssets(list, 'size')[0], newer);
+  // Newest first; the dateless catalog asset keeps its relative position after dated ones.
+  assert.deepEqual(sortAssets(list, 'added').map((a: { id: string }) => a.id), [newer.id, older.id, cat.id].map(String));
 });

@@ -44,7 +44,7 @@
  * default would quietly make dismissal mean "commit" wherever a caller forgot.
  */
 
-import { svgContentBounds, trimSvgToContent, rasterAlphaBounds } from './trim-bounds.ts';
+import { svgContentBounds, trimSvgToContent, rasterContentBounds } from './trim-bounds.ts';
 import type { Box } from './trim-bounds.ts';
 import { escape } from '../../utils.ts';
 import { icon } from '../icons.ts';
@@ -309,8 +309,8 @@ function pixelBox(box: Box, width: number, height: number): Box {
   return { x, y, width: w, height: h };
 }
 
-function pngName(name: string): string {
-  return /\.png$/i.test(name) ? name : `${name.replace(/\.[a-z0-9]+$/i, '')}.png`;
+function withExt(name: string, ext: string): string {
+  return new RegExp(`\\.${ext}$`, 'i').test(name) ? name : `${name.replace(/\.[a-z0-9]+$/i, '')}.${ext}`;
 }
 
 async function encodeCrop(src: HTMLCanvasElement, box: Box, file: File): Promise<File | null> {
@@ -320,12 +320,14 @@ async function encodeCrop(src: HTMLCanvasElement, box: Box, file: File): Promise
   const ctx = out.getContext('2d');
   if (!ctx) return null;
   ctx.drawImage(src, box.x, box.y, box.width, box.height, 0, 0, box.width, box.height);
-  const blob = await new Promise<Blob | null>((resolve) => { out.toBlob(resolve, 'image/png'); });
+  // A JPEG source has no alpha to lose (only flat white/black margins get it
+  // here), so it stays JPEG - re-encoding a photo as PNG would balloon it.
+  // Everything else encodes PNG, which keeps alpha for the transparent case.
+  const jpeg = file.type === 'image/jpeg';
+  const type = jpeg ? 'image/jpeg' : 'image/png';
+  const blob = await new Promise<Blob | null>((resolve) => { out.toBlob(resolve, type, jpeg ? 0.92 : undefined); });
   if (!blob) return null;
-  // Always PNG: the crop is only ever offered for artwork with alpha (an opaque
-  // JPEG's alpha bounds are the whole frame, so it never gets here), and JPEG
-  // would throw that alpha away on the way out.
-  return new File([blob], pngName(file.name), { type: 'image/png', lastModified: file.lastModified });
+  return new File([blob], withExt(file.name, jpeg ? 'jpg' : 'png'), { type, lastModified: file.lastModified });
 }
 
 /** The decoded canvas stays in the closure so a pad change re-crops the ORIGINAL
@@ -350,8 +352,11 @@ async function deriveRasterProposal(file: File, decoded: DecodedRaster, content:
 async function prepareRasterTrim(file: File): Promise<TrimProposal | null> {
   const decoded = await decodeRaster(file);
   if (!decoded) return null;
-  const content = rasterAlphaBounds(decoded.data, decoded.width, decoded.height, { alphaMin: ALPHA_MIN });
-  // No content at all means a fully transparent file: there is no box to trim to.
+  // Content = opaque pixels that also differ from a flat white/black border
+  // (rasterContentBounds) - so a logo matted onto white trims like its
+  // transparent twin, not "already tight" (Andy, 2026-08-20).
+  const content = rasterContentBounds(decoded.data, decoded.width, decoded.height, { alphaMin: ALPHA_MIN });
+  // No content at all means a fully transparent (or fully flat) file: there is no box to trim to.
   if (!content) return null;
   const artboard: Box = { x: 0, y: 0, width: decoded.width, height: decoded.height };
   if (!isMeaningfulTrim(artboard, padTrimBox(content, artboard, 0))) return null;

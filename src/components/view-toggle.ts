@@ -20,8 +20,11 @@
  *   as a double animation. Hoisted, there is exactly one control; its pill
  *   slides once, continuously, while the views cross-fade beneath it. While the
  *   jelly pill is shown, `:root[data-jelly-nav]` hides the per-view native
- *   toggle on desktop; mobile always keeps the native icons (jelly-segment
- *   labels are textContent-only - no icon glyphs).
+ *   toggle on desktop; mobile always keeps the native icons. Desktop icons
+ *   (Andy, 2026-08-20: the tabs must be identifiable by glyph on BOTH form
+ *   factors): jelly-segment labels are textContent-only and the vendored
+ *   bundle is refresh-pinned, so the glyphs are injected into the OPEN shadow
+ *   root from here - see injectJellyIcons below.
  *
  * `active` is 'tools', 'utilities', 'projects' or 'catalog'.
  */
@@ -39,11 +42,12 @@ export type ViewToggleKey = 'tools' | 'utilities' | 'projects' | 'catalog';
  *  and is a persisted key - it stays 'cat-developer'. */
 export const UTILITIES_FLAG_ID = 'cat-developer';
 
-// Lucide glyphs - wrench (Tools), hammer (Utilities), folder (Projects),
-// layout-grid (Catalog).
+// Glyphs - hammer (Tools) and a lightning bolt (Utilities), Andy 2026-08-20:
+// the hammer reads as "build things", the bolt as "quick powered actions" -
+// plus folder (Projects) and layout-grid (Catalog).
 const ICONS: Record<ViewToggleKey, string> = {
-  tools: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>',
-  utilities: icon('hammer'),
+  tools: icon('hammer'),
+  utilities: icon('zap'),
   projects: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>',
   catalog: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>',
 };
@@ -92,6 +96,36 @@ export function viewToggle(active: ViewToggleKey): string {
 // ── The persistent jelly pill ────────────────────────────────────────────────
 
 let jellyNav: HTMLElement | null = null;
+let jellyIconsObserver: MutationObserver | null = null;
+
+/**
+ * Put the tab glyphs INTO the jelly pill's shadow buttons. The vendored
+ * jelly-segmented rebuilds its shadow markup from each segment's textContent
+ * (HTML-escaped), and jelly.mjs must not be hand-edited - so the icons are
+ * prepended from outside into the open shadow root instead: once into the
+ * visible label span and once into the squish clone under it, so the physics
+ * copy matches. Idempotent (guarded by the .vt-jelly-ic marker); the caller's
+ * MutationObserver re-runs it after every internal rebuild, since sync()
+ * wipes the wrap whenever the value or a segment attribute changes.
+ */
+function injectJellyIcons(seg: HTMLElement, keys: readonly ViewToggleKey[]): void {
+  const buttons = seg.shadowRoot?.querySelectorAll<HTMLElement>('button.segment');
+  if (!buttons?.length) return;
+  buttons.forEach((btn, i) => {
+    const key = keys[i];
+    if (!key || btn.querySelector('.vt-jelly-ic')) return;
+    for (const span of btn.querySelectorAll(':scope > .segment-top > span')) {
+      const ic = document.createElement('span');
+      ic.className = 'vt-jelly-ic';
+      ic.setAttribute('aria-hidden', 'true');
+      // Inline styles: page CSS cannot reach the vendored shadow tree.
+      ic.style.cssText = 'display:inline-flex;align-items:center;vertical-align:-0.18em;margin-inline-end:0.4em';
+      ic.innerHTML = ICONS[key]; // trusted registry glyphs only - never user text
+      for (const svg of ic.querySelectorAll('svg')) { svg.setAttribute('width', '15'); svg.setAttribute('height', '15'); }
+      span.prepend(ic);
+    }
+  });
+}
 
 function segmentsHtml(keys: ViewToggleKey[]): string {
   return keys.map(k => `<jelly-segment value="${VIEW_TOGGLE_HREFS[k]}">${escape(t(LABELS[k]))}</jelly-segment>`).join('');
@@ -142,4 +176,23 @@ export function syncJellyNavToggle(active: ViewToggleKey | null): void {
   }
   jellyNav.removeAttribute('hidden');
   document.documentElement.setAttribute('data-jelly-nav', '');
+  // Glyphs next to the labels (see injectJellyIcons). Re-observe each sync:
+  // a tab-set rebuild replaces the whole <jelly-segmented> node.
+  const seg = jellyNav.querySelector<HTMLElement>('jelly-segmented');
+  if (seg) wireJellyIcons(seg, keys);
+}
+
+/** Inject now and keep injecting across the component's internal rebuilds. The
+ *  shadow root appears in the vendor's connectedCallback, which can land a
+ *  frame after our innerHTML assignment - hence the short rAF retry. */
+function wireJellyIcons(seg: HTMLElement, keys: readonly ViewToggleKey[], attempt = 0): void {
+  if (!seg.isConnected) return;
+  if (!seg.shadowRoot) {
+    if (attempt < 5) requestAnimationFrame(() => wireJellyIcons(seg, keys, attempt + 1));
+    return;
+  }
+  injectJellyIcons(seg, keys);
+  jellyIconsObserver?.disconnect();
+  jellyIconsObserver = new MutationObserver(() => injectJellyIcons(seg, keys));
+  jellyIconsObserver.observe(seg.shadowRoot, { childList: true, subtree: true });
 }

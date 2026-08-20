@@ -43,9 +43,10 @@ export function buildSessionHaystack(
   );
 }
 
-/** A folder's haystack is just its folded name (folders carry no other text). */
-export function buildFolderHaystack(name: string): string {
-  return fold(name);
+/** A folder's haystack: its folded name plus any user tags (2026-08-20) -
+ *  tagging a folder "client, q3" makes it findable by either word. */
+export function buildFolderHaystack(name: string, tags?: readonly string[]): string {
+  return fold([name, ...(tags ?? [])].join(' '));
 }
 
 /**
@@ -82,6 +83,6 @@ export function armSessionReturn(returnTo: string): void {
  */
 export function sessionOpenHref(entry: { slot: string; toolId: string }, isBatch: boolean): string {
   return isBatch
-    ? `#/pro?session=${encodeURIComponent(entry.slot)}`
+    ? `#/batch?session=${encodeURIComponent(entry.slot)}`
     : `#/tool/${entry.toolId || ''}?slot=${encodeURIComponent(entry.slot)}`;
 }

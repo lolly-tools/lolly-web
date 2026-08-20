@@ -113,10 +113,11 @@ const readMatteModel = (): string => { try { return localStorage.getItem(MATTE_M
 const saveMatteModel = (id: string): void => { try { localStorage.setItem(MATTE_MODEL_KEY, id); } catch { /* private mode — no persistence, harmless */ } };
 
 export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Promise<void> {
+  // The model path needs the capability + a staged model; the colour-key path
+  // needs neither, so the dialog opens regardless and offers what works here.
   const matte = host.matte;
-  if (!matte?.isAvailable()) return Promise.resolve();
-  const models = matte.models();
-  if (models.length === 0) return Promise.resolve();
+  const models = matte?.isAvailable() ? matte.models() : [];
+  const modelAvailable = models.length > 0;
 
   return new Promise((resolve) => {
     let trap: FocusTrap | undefined;
@@ -135,7 +136,7 @@ export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Pr
     // available). Only ever preselects a model that is actually in the offered list.
     const defaultModel = models.find(m => m.id === readMatteModel())?.id
       ?? models.find(m => m.id === MATTE_DEFAULT_MODEL)?.id
-      ?? models[0]!.id;
+      ?? models[0]?.id ?? ('' as MatteModelId);   // '' only when model-less: the chroma method never reads it
 
     const overlay = document.createElement('div');
     overlay.className = 'matte-overlay';
@@ -154,8 +155,19 @@ export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Pr
           <div class="matte-source" data-source aria-live="polite" hidden></div>
           <div class="matte-controls" data-controls hidden>
             <label class="matte-field">
+              <span class="matte-field-label">${t('Method')}</span>
+              <select class="field-select" data-method>
+                ${modelAvailable ? `<option value="model">${t('AI model (photos)')}</option>` : ''}
+                <option value="chroma">${t('Colour key (flat background)')}</option>
+              </select>
+            </label>
+            <label class="matte-field" data-model-field${modelAvailable ? '' : ' hidden'}>
               <span class="matte-field-label">${t('Model')}</span>
               <select class="field-select" data-model>${modelOptions}</select>
+            </label>
+            <label class="matte-field" data-key-field hidden>
+              <span class="matte-field-label">${t('Key out colour')}</span>
+              <input type="color" data-key value="#ffffff">
             </label>
             <label class="matte-field">
               <span class="matte-field-label">${t('Save as')}</span>
@@ -185,6 +197,10 @@ export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Pr
     const fileInput  = overlay.querySelector<HTMLInputElement>('[data-file]')!;
     const sourceEl   = overlay.querySelector<HTMLElement>('[data-source]')!;
     const controlsEl = overlay.querySelector<HTMLElement>('[data-controls]')!;
+    const methodSel  = overlay.querySelector<HTMLSelectElement>('[data-method]')!;
+    const modelField = overlay.querySelector<HTMLElement>('[data-model-field]')!;
+    const keyField   = overlay.querySelector<HTMLElement>('[data-key-field]')!;
+    const keyInput   = overlay.querySelector<HTMLInputElement>('[data-key]')!;
     const modelSel   = overlay.querySelector<HTMLSelectElement>('[data-model]')!;
     const formatSel  = overlay.querySelector<HTMLSelectElement>('[data-format]')!;
     const consentEl  = overlay.querySelector<HTMLElement>('[data-consent]')!;
@@ -223,8 +239,28 @@ export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Pr
     const hideStatus = (): void => { statusEl.hidden = true; statusEl.classList.remove('matte-error'); };
 
     const currentModel = (): MatteModelId => (modelSel.value || defaultModel) as MatteModelId;
+    const currentMethod = (): 'model' | 'chroma' => (methodSel.value === 'chroma' || !modelAvailable ? 'chroma' : 'model');
+
+    // Method decides which fields make sense: the model + its download consent,
+    // or the key colour (white preset - the margin people usually key out).
+    // A colour key is always feasible, so its Run gate is just "a source loaded".
+    const syncMethod = (): void => {
+      const chroma = currentMethod() === 'chroma';
+      modelField.hidden = chroma || !modelAvailable;
+      keyField.hidden = !chroma;
+      if (chroma) {
+        consentEl.hidden = true;
+        feasEl.hidden = true;
+        feasible = !!srcFrame;
+        runBtn.disabled = !srcFrame;
+      } else {
+        void paintConsent();
+        void recheck();
+      }
+    };
 
     const paintConsent = async (): Promise<void> => {
+      if (!matte || currentMethod() === 'chroma') { consentEl.hidden = true; return; }
       const id = currentModel();
       try {
         if (await matte.cached(id)) {
@@ -255,6 +291,8 @@ export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Pr
     let checkSeq = 0;
     const recheck = async (): Promise<void> => {
       if (!srcFrame) { feasible = false; runBtn.disabled = true; return; }
+      // A colour key is per-pixel maths with no model budget - always feasible.
+      if (!matte || currentMethod() === 'chroma') { feasible = true; feasEl.hidden = true; runBtn.disabled = false; return; }
       const seq = ++checkSeq;
       runBtn.disabled = true;
       let res;
@@ -277,6 +315,7 @@ export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Pr
     };
 
     modelSel.addEventListener('change', () => { saveMatteModel(modelSel.value); void paintConsent(); void recheck(); });
+    methodSel.addEventListener('change', syncMethod);
     formatSel.addEventListener('change', paintFormatNote);
 
     const adoptFrame = (frame: MatteFrame, bytes: Uint8Array, name: string, format: string): void => {
@@ -287,8 +326,7 @@ export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Pr
       formatSel.value = outputFormatFor(format);
       controlsEl.hidden = false;
       paintFormatNote();
-      void paintConsent();
-      void recheck();
+      syncMethod();   // consent + feasibility for the model path; instant-ready for chroma
     };
 
     const loadSource = async (source: MatteSource, fallbackName?: string): Promise<void> => {
@@ -319,6 +357,11 @@ export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Pr
       if (!srcFrame || !feasible) return;
       hideStatus();
       runBtn.disabled = true;
+      // #rrggbb → sRGB bytes; a colour input always yields the long form.
+      const hex = /^#([0-9a-f]{6})$/i.exec(keyInput.value)?.[1];
+      const keyColor = hex
+        ? { r: parseInt(hex.slice(0, 2), 16), g: parseInt(hex.slice(2, 4), 16), b: parseInt(hex.slice(4, 6), 16) }
+        : { r: 255, g: 255, b: 255 };
       const req: MatteJobRequest = {
         frame: srcFrame,
         // The credential's title is the DECODED source's own name; the saved asset's
@@ -329,6 +372,8 @@ export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Pr
         ...(srcBytes ? { sourceBytes: srcBytes } : {}),
         model: currentModel(),
         outFormat: formatSel.value as OutFormat,
+        method: currentMethod(),
+        ...(currentMethod() === 'chroma' ? { keyColor } : {}),
       };
       startMatteJob(host, req, {
         onComplete: (ref) => opts.onComplete?.(ref),

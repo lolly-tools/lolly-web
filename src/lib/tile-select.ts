@@ -56,6 +56,27 @@ export interface TileSelectAdapter {
   clear(): void;
   /** CSS selector a marquee must never START on: tiles, controls, bars, chrome, drop zones. */
   noStart: string;
+  /** Opt-in KEYBOARD grid model (plans/132 WP-L + 133 WP-3). Absent = gestures only. */
+  keyboard?: TileKeyboardAdapter;
+}
+
+/**
+ * The keyboard grid model both tile views share: arrows move focus between
+ * tiles geometrically (nearest-centre, like the picker's grid nav), Shift+arrow
+ * extends the selection range as it moves, Space toggles the focused tile's
+ * selection, Cmd/Ctrl+A selects everything on screen, Delete/Backspace routes
+ * to the view's (undo-toasted) delete, F2 to its rename, and plain typing
+ * jumps to the next tile whose label starts with what was typed. Enter needs
+ * no handling - focus rides each tile's own open BUTTON, which activates
+ * natively. All of it yields to inputs, dialogs and menus.
+ */
+export interface TileKeyboardAdapter {
+  /** Delete/Backspace over these refs (the selection, or the focused tile). */
+  remove?(refs: string[]): void;
+  /** F2 on a tile. The element is passed for views whose inline rename swaps tile markup. */
+  rename?(ref: string, tile: HTMLElement): void;
+  /** Type-ahead label; defaults to the tile's `.tile-title`/full text. */
+  labelOf?(tile: HTMLElement): string;
 }
 
 /** The handle a view holds onto - it feeds dot clicks in, the gestures do the rest. */
@@ -248,6 +269,115 @@ export function wireTileSelect(a: TileSelectAdapter): TileSelect {
     releaseHost = () => a.host.removeEventListener('mousedown', onDown);
   }
 
+  // ── keyboard grid (opt-in; plans/132 WP-L + 133 WP-3) ───────────────────────
+  let releaseKeys: (() => void) | null = null;
+  if (a.keyboard) {
+    const kb = a.keyboard;
+    let typeahead = '';
+    let typeaheadTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const inField = (el: Element | null): boolean =>
+      !!el && (el.matches('input, textarea, select, [contenteditable="true"], [contenteditable=""]') || !!el.closest('[contenteditable="true"]'));
+    const uiOpen = (): boolean =>
+      !!document.querySelector('dialog[open], .folder-menu, [role="menu"], [role="listbox"], .ctx-menu');
+
+    /** The tile that currently owns focus, if any. */
+    const focusedTile = (): HTMLElement | null => {
+      const el = document.activeElement as HTMLElement | null;
+      if (!el || !a.host.contains(el)) return null;
+      return a.tiles().find(t2 => t2.contains(el)) ?? null;
+    };
+    /** Where focus lands on a tile: its primary open button (Enter then opens natively). */
+    const focusOf = (tile: HTMLElement): HTMLElement =>
+      tile.querySelector<HTMLElement>('button.tile-primary, .cat-tile-open') ?? tile.querySelector<HTMLElement>('button') ?? tile;
+
+    const labelOf = (tile: HTMLElement): string =>
+      (kb.labelOf?.(tile) ?? tile.querySelector('.tile-title, .cat-tile-name')?.textContent ?? tile.textContent ?? '').trim().toLowerCase();
+
+    /** Geometric arrow move - nearest tile centre in the pressed direction. */
+    function arrowTarget(from: DOMRect, dir: string, tiles: Array<{ tile: HTMLElement; r: DOMRect }>): HTMLElement | null {
+      const cx = (from.left + from.right) / 2, cy = (from.top + from.bottom) / 2;
+      let best: HTMLElement | null = null;
+      let bestScore = Infinity;
+      for (const { tile, r } of tiles) {
+        const tx = (r.left + r.right) / 2, ty = (r.top + r.bottom) / 2;
+        const dx = tx - cx, dy = ty - cy;
+        const ahead = dir === 'ArrowRight' ? dx > 1 : dir === 'ArrowLeft' ? dx < -1 : dir === 'ArrowDown' ? dy > 1 : dy < -1;
+        if (!ahead) continue;
+        // Distance along the axis dominates; cross-axis drift is a tie-breaker,
+        // so Down lands on the tile below, not the nearest diagonal neighbour.
+        const score = dir === 'ArrowLeft' || dir === 'ArrowRight'
+          ? Math.abs(dx) + Math.abs(dy) * 3
+          : Math.abs(dy) + Math.abs(dx) * 3;
+        if (score < bestScore) { bestScore = score; best = tile; }
+      }
+      return best;
+    }
+
+    const toggleRef = (ref: string): void => {
+      const next = new Set(a.current());
+      if (next.has(ref)) next.delete(ref); else next.add(ref);
+      a.setRefs(next);
+      anchor = ref;
+    };
+
+    const onKeydown = (e: KeyboardEvent): void => {
+      if (inField(document.activeElement) || uiOpen()) return;
+      // Select all: works from anywhere on the view (not just tile focus).
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'a' || e.key === 'A')) {
+        const all = orderedRefs();
+        if (!all.length) return;
+        e.preventDefault();
+        a.setRefs(new Set(all));
+        anchor = all[all.length - 1]!;
+        return;
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && kb.remove) {
+        const sel = [...a.current()];
+        const focused = focusedTile();
+        const refs = sel.length ? sel : (focused ? [a.refOf(focused)] : []);
+        if (!refs.length) return;
+        e.preventDefault();
+        kb.remove(refs);
+        return;
+      }
+      const tile = focusedTile();
+      if (!tile) return;
+      const ref = a.refOf(tile);
+      if (e.key.startsWith('Arrow')) {
+        const target = arrowTarget(tile.getBoundingClientRect(), e.key, liveTiles().filter(t2 => t2.tile !== tile));
+        if (!target) return;
+        e.preventDefault();
+        focusOf(target).focus();
+        target.scrollIntoView?.({ block: 'nearest' });
+        if (e.shiftKey) extendTo(a.refOf(target));   // range grows as focus walks
+        return;
+      }
+      if (e.key === ' ') {
+        e.preventDefault();       // Space would otherwise ACTIVATE the open button
+        toggleRef(ref);
+        return;
+      }
+      if (e.key === 'F2' && kb.rename) {
+        e.preventDefault();
+        kb.rename(ref, tile);
+        return;
+      }
+      // Type-ahead: printable characters accumulate briefly and jump to the
+      // first on-screen tile whose label starts with the buffer.
+      if (e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey && /\S/.test(e.key)) {
+        typeahead += e.key.toLowerCase();
+        clearTimeout(typeaheadTimer);
+        typeaheadTimer = setTimeout(() => { typeahead = ''; }, 600);
+        const hit = liveTiles().find(t2 => labelOf(t2.tile).startsWith(typeahead));
+        if (hit) { e.preventDefault(); focusOf(hit.tile).focus(); hit.tile.scrollIntoView?.({ block: 'nearest' }); }
+      }
+    };
+
+    document.addEventListener('keydown', onKeydown);
+    releaseKeys = () => { document.removeEventListener('keydown', onKeydown); clearTimeout(typeaheadTimer); };
+  }
+
   return {
     onDotClick(ref, shiftKey, toggle): void {
       if (shiftKey && anchor !== null) { extendTo(ref); return; }
@@ -258,6 +388,8 @@ export function wireTileSelect(a: TileSelectAdapter): TileSelect {
     destroy(): void {
       endDrag?.();
       releaseHost?.();
+      releaseKeys?.();
+      releaseKeys = null;
       releaseHost = null;
       endDrag = null;
       anchor = null;

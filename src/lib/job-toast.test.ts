@@ -36,7 +36,8 @@ test('the toast survives a router view swap and stays live', () => {
   mountJobToast();
   const toast = document.querySelector<HTMLElement>('.job-toast')!;
   assert.ok(toast, 'toast mounted');
-  assert.equal(toast.parentElement, document.body, 'mounted directly on body, outside #view');
+  assert.equal(toast.parentElement?.className, 'float-cluster', 'mounted in the floating cluster');
+  assert.equal(toast.parentElement?.parentElement, document.body, 'cluster sits directly on body, outside #view');
   assert.equal(toast.hidden, true, 'hidden while there are no jobs');
 
   // A heavy job appears - the toast shows it.
@@ -50,7 +51,7 @@ test('the toast survives a router view swap and stays live', () => {
   view.innerHTML = '<section>a completely different view</section>';
 
   assert.ok(document.body.contains(toast), 'toast still in the document after the swap');
-  assert.equal(toast.parentElement, document.body, 'still a direct child of body');
+  assert.equal(toast.parentElement?.parentElement, document.body, 'cluster still a direct child of body');
   assert.equal(document.querySelector('#view .job-toast'), null, 'never lived inside #view');
 
   // …and still LIVE: a progress update repaints its candy bar in place.

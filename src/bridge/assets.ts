@@ -560,6 +560,11 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
         const kind = detectAiGenerated(record, await loadC2paVerify());
         if (kind) record.aiGenerated = kind;
       }
+      // Content-modification stamp (plans/132 WP-A): every write through this
+      // path is a content change (ingest, replace, trim, duplicate), so the
+      // catalog can sort/show "Modified". _importUserAsset (backup restore)
+      // deliberately does NOT stamp - a restore preserves history.
+      record.meta = { ...record.meta, modifiedAt: Date.now() };
       await db.put('user-assets', record);
     },
 

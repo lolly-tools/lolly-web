@@ -18,6 +18,9 @@ import { dropboxSendTarget } from './dropbox-send.ts';
 import { oneDriveSendTarget } from './onedrive-send.ts';
 import { s3SendTarget } from './s3-send.ts';
 import { nextcloudSendTarget } from './nextcloud-send.ts';
+import { mastodonSendTarget } from './mastodon-send.ts';
+import { blueskySendTarget } from './bluesky-send.ts';
+import { discordSendTarget } from './discord-send.ts';
 import { primeConnections } from './provider-connections.ts';
 
 export function registerBuiltinSendTargets(): void {
@@ -26,8 +29,12 @@ export function registerBuiltinSendTargets(): void {
   registerSendTarget(oneDriveSendTarget());
   registerSendTarget(s3SendTarget());
   registerSendTarget(nextcloudSendTarget());
-  // Credential kinds (s3, webdav) gate on hasConnection(), a sync read of the
-  // in-memory cache - warm it now so a saved bucket surfaces in the export
-  // panel without a /profile visit first.
+  // The publish tier (plans/129 WP5): post-shaped destinations.
+  registerSendTarget(mastodonSendTarget());
+  registerSendTarget(blueskySendTarget());
+  registerSendTarget(discordSendTarget());
+  // Connection-gated kinds (s3, webdav, mastodon, bluesky, discord) gate on
+  // hasConnection(), a sync read of the in-memory cache - warm it now so a
+  // saved connection surfaces in the export panel without a /profile visit.
   primeConnections();
 }

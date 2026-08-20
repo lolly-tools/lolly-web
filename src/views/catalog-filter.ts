@@ -184,3 +184,49 @@ export function pruneSelection(selected: Set<string>, selectable: ReadonlySet<st
   }
   return dropped;
 }
+
+// ── Sort + dates (plans/132 WP-A) ────────────────────────────────────────────
+
+export type CatSort = 'default' | 'name' | 'added' | 'modified' | 'size' | 'type';
+
+/**
+ * When an asset was added. Uploads embed their mint time in the id
+ * (`user/<kind>/<Date.now()>-…`), so every existing upload has a date with no
+ * migration; a stored `meta.addedAt` (future writers) wins. Catalog assets
+ * have no date - null, and they keep their curated order under a date sort
+ * (Array.sort is stable).
+ */
+export function assetAddedAt(ref: Pick<AssetRef, 'id' | 'meta'>): number | null {
+  const meta = Number(ref.meta?.addedAt);
+  if (Number.isFinite(meta) && meta > 0) return meta;
+  const m = /^user\/[^/]+\/(\d{12,})(?:-|$)/.exec(ref.id);
+  return m ? Number(m[1]) : null;
+}
+
+/** Last content modification: `meta.modifiedAt` (stamped by the bridge on every
+ *  record write - replace/trim/etc.), falling back to the added time. */
+export function assetModifiedAt(ref: Pick<AssetRef, 'id' | 'meta'>): number | null {
+  const meta = Number(ref.meta?.modifiedAt);
+  if (Number.isFinite(meta) && meta > 0) return meta;
+  return assetAddedAt(ref);
+}
+
+/**
+ * Sort a section's assets. 'default' preserves the curated manifest order
+ * (uploads: newest-first from the bridge). Date sorts are newest-first with
+ * dateless (catalog) assets keeping their relative order after the dated ones;
+ * name/type are A→Z; size is largest-first.
+ */
+export function sortAssets(list: readonly AssetRef[], sortBy: CatSort): AssetRef[] {
+  if (sortBy === 'default') return [...list];
+  const arr = [...list];
+  const name = (a: AssetRef): string => String(a.meta?.name ?? a.id).toLowerCase();
+  switch (sortBy) {
+    case 'name': arr.sort((a, b) => name(a).localeCompare(name(b))); break;
+    case 'added': arr.sort((a, b) => (assetAddedAt(b) ?? -1) - (assetAddedAt(a) ?? -1)); break;
+    case 'modified': arr.sort((a, b) => (assetModifiedAt(b) ?? -1) - (assetModifiedAt(a) ?? -1)); break;
+    case 'size': arr.sort((a, b) => (Number(b.meta?.bytes) || 0) - (Number(a.meta?.bytes) || 0)); break;
+    case 'type': arr.sort((a, b) => String(a.format ?? a.type).localeCompare(String(b.format ?? b.type))); break;
+  }
+  return arr;
+}

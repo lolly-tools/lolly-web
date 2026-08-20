@@ -5,10 +5,10 @@
  * A gallery-style page over the FOLDERS of saved sessions (the same data the folder
  * overlay manages, surfaced as a first-class destination). Two modes:
  *
- *   ROOT (/p) - a grid of the TOP-LEVEL folder tiles: an always-present
- *                          "Uncategorised" folder (every saved session not filed into a
- *                          folder), the user's folders, then a "+ New folder" + "+ New
- *                          tool" tile. Open a folder → /p/<id>.
+ *   ROOT (/p) - a grid of the TOP-LEVEL folder tiles, then the LOOSE saved
+ *                          sessions (those in no folder - also reachable as the
+ *                          synthetic /p/__uncat__ route), then the "+ New folder" /
+ *                          "+ New asset" create tiles. Open a folder → /p/<id>.
  *   FOLDER (/p/<id>) - that folder's SUB-FOLDERS and saved sessions as tiles, a
  *                          breadcrumb of its ancestors, "+ New folder" (nests here) and
  *                          "+ New tool" tiles, a "Move to" rail of other folders as drop
@@ -25,11 +25,15 @@ import { escape } from '../utils.ts';
 import { t, tRaw } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
 import { isPlaceableAsset } from '../lib/asset-kinds.ts';
-import { createFolderStore, childFolders, folderPath, descendantFolderIds } from '../folders.ts';
-import type { Folder } from '../folders.ts';
+import { createFolderStore, childFolders, folderPath, descendantFolderIds, TRASH_RETENTION_MS, FOLDER_COLORS } from '../folders.ts';
+import type { Folder, TrashEntry } from '../folders.ts';
+import { TRASH_SLOT_PREFIX, isTrashedSlot } from '../lib/batch-slots.ts';
+import { showUndoToast, flushUndoToasts } from '../lib/undo-toast.ts';
+import { livePalette } from '../lib/live-palette.ts';
+import { svgDataUrl } from '../lib/format.ts';
 import {
   folderTile, sessionTile, imageTile, FOLDER_ICON, MENU_ICON,
-  isBatchSlot, BATCH_SLOT_PREFIX,
+  isBatchSlot, BATCH_SLOT_PREFIX, fmtBytes,
   type MemberPreview,
 } from '../folder-tiles.ts';
 import type { PickerHost } from './picker.ts';   // type-only (erased); the value is lazy-imported in openAddPicker
@@ -111,7 +115,7 @@ type Entry = Awaited<ReturnType<WebStateAPI['list']>>[number];
 // 'added' = creation time (createdAt, with a slot-timestamp fallback for legacy rows);
 // 'modified' = last save (updatedAt) - the old catch-all 'date', which stored prefs
 // migrate to on load. 'tool' groups by the owning tool (folder views only).
-type SortBy = 'modified' | 'added' | 'name' | 'tool';
+type SortBy = 'modified' | 'added' | 'name' | 'tool' | 'size';
 type ViewMode = 'preview' | 'list';
 type SelectKind = 'folder' | 'session' | 'image';   // images join via marquee (no checkbox)
 
@@ -173,6 +177,8 @@ const STAR_FILLED_ICON = icon('star', { filled: true });
 const SHEET_ICON = icon('grid', { strokeWidth: 1.9 });
 const MOVE_ICON = icon('move', { strokeWidth: 1.9 });
 const TRASH_ICON = icon('trash', { strokeWidth: 1.9 });
+const PALETTE_ICON = icon('palette', { strokeWidth: 1.9 });
+const INFO_ICON = icon('info', { strokeWidth: 1.9 });
 const CHEVRON_ICON = icon('chevronRight');
 // lucide "link" - the shareable-link glyph (matches the tool view's Share button).
 const SHARE_ICON = icon('share', { strokeWidth: 1.9 });
@@ -203,6 +209,7 @@ export async function mountProjects(
   // Live data, re-read on every reload() so a move/rename/delete reflects at once.
   let folders: Folder[] = [];
   let entries: Entry[] = [];          // host.state.list() rows
+  let trashEntries: TrashEntry[] = []; // profile.trash (plans/133 WP-4)
   let sizes: Record<string, number> = {};            // slot -> bytes
   // Derived indices, rebuilt once per reload() (see reindex()). `folders`/`entries` only
   // change in reload(), so these stay valid between renders and turn the per-tile lookups
@@ -231,6 +238,7 @@ export async function mountProjects(
   let favourites = new Set<string>();
   let viewMode: ViewMode = 'preview';  // 'preview' (tile grid) | 'list'
   let sortBy: SortBy = 'modified';   // display preference - see the SortBy type note
+  let sortRev = false;               // list-header second click reverses (plans/133 WP-2)
   // The results-mode query (trimmed). Non-empty ONLY via the ?q= URL param - the
   // spotlight's explicit "See all in Projects →" handoff (plans/99 section 2a): typing in the
   // bottom bar feeds the overlay and NEVER reshapes this view, so the user's items
@@ -268,8 +276,15 @@ export async function mountProjects(
   try {
     if (localStorage.getItem('lolly:projectsView') === 'list') viewMode = 'list';
     const s = localStorage.getItem('lolly:projectsSort');
-    if (s === 'name' || s === 'tool' || s === 'added' || s === 'modified') sortBy = s;
+    if (s === 'name' || s === 'tool' || s === 'added' || s === 'modified' || s === 'size') sortBy = s;
     else if (s === 'date') sortBy = 'modified';   // pre-'added' prefs stored 'date'
+    // Per-folder memory (plans/133 WP-2) wins over the device-global default.
+    const perFolder = (JSON.parse(localStorage.getItem('lolly:projectsViewPrefs') || '{}') as Record<string, { v?: string; s?: string; r?: boolean }>)[folderId ?? '__root__'];
+    if (perFolder) {
+      if (perFolder.v === 'list' || perFolder.v === 'preview') viewMode = perFolder.v;
+      if (perFolder.s === 'name' || perFolder.s === 'tool' || perFolder.s === 'added' || perFolder.s === 'modified' || perFolder.s === 'size') sortBy = perFolder.s;
+      sortRev = !!perFolder.r;
+    }
   } catch { /* localStorage unavailable */ }
 
   async function reload(): Promise<void> {
@@ -279,6 +294,10 @@ export async function mountProjects(
       (host as ProjectsHost).state.sizes().catch(() => ({}) as Record<string, number>),
       host.profile.get().catch(() => null),
     ]);
+    // Trashed sessions keep their state records under `__trash__:` slots - they
+    // exist only for the Trash surface, never as browsable tiles.
+    entries = entries.filter(e => !isTrashedSlot(e.slot));
+    trashEntries = await store.trashList().catch(() => []);
     favourites = loadProjectFavourites(profile);
     headshotUrl = profile?.headshot?.id
       ? (await host.assets.get(profile.headshot.id).catch(() => null))?.url || ''
@@ -340,7 +359,12 @@ export async function mountProjects(
     if (sortBy === 'name') a.sort((x, y) => x.name.localeCompare(y.name));
     else if (sortBy === 'added') a.sort((x, y) => +new Date(y.createdAt || 0) - +new Date(x.createdAt || 0));
     else if (sortBy === 'modified') a.sort((x, y) => +new Date(y.updatedAt || y.createdAt || 0) - +new Date(x.updatedAt || x.createdAt || 0));
+    else if (sortBy === 'size') a.sort((x, y) => tileItemCount(y) - tileItemCount(x));
     // 'tool' has no meaning for folders → keep stored order.
+    if (sortRev) a.reverse();
+    // Starred folders PIN first (plans/133 WP-1) - a stable second pass, so the
+    // chosen sort still orders within the starred and unstarred bands.
+    a.sort((x, y) => Number(favourites.has(y.id)) - Number(favourites.has(x.id)));
     return a;
   }
   // Tile / header count = every renderable file (session or image) in a folder's WHOLE
@@ -387,6 +411,29 @@ export async function mountProjects(
     for (const ref of [...selected.keys()]) if (!visible.has(ref)) selected.delete(ref);
   }
 
+  /** Persist view + sort for THIS folder (plans/133 WP-2). */
+  function saveViewPrefs(): void {
+    try {
+      const key = folderId ?? '__root__';
+      const map = JSON.parse(localStorage.getItem('lolly:projectsViewPrefs') || '{}') as Record<string, unknown>;
+      map[key] = { v: viewMode, s: sortBy, r: sortRev };
+      localStorage.setItem('lolly:projectsViewPrefs', JSON.stringify(map));
+    } catch { /* storage off */ }
+  }
+
+  /** The list view's clickable column header (plans/133 WP-2). Click sorts by
+   *  that column; a second click reverses. Rendered only in list mode. */
+  function listHeadHtml(): string {
+    const col = (key: SortBy, label: string): string => {
+      const on = sortBy === key;
+      return `<button type="button" class="listhead-col${on ? ' is-on' : ''}" data-listsort="${key}" aria-sort="${on ? (sortRev ? 'descending' : 'ascending') : 'none'}">${escape(label)}${on ? `<span class="listhead-dir" aria-hidden="true">${sortRev ? '▾' : '▴'}</span>` : ''}</button>`;
+    };
+    return `<div class="projects-listhead" role="row">
+      <span class="listhead-name">${col('name', t('Name'))}</span>
+      ${col('tool', t('Kind'))}${col('size', t('Size'))}${col('modified', t('Modified'))}
+    </div>`;
+  }
+
   const sessionTitle = (e: Entry): string => (e.label || e.filename || toolName(e.toolId) || '').toLowerCase();
   // A session's creation time for the "Date added" sort: the stored createdAt when the
   // row has one, else the timestamp minted into the slot (`<toolId>:<Date.now()>` - 
@@ -402,7 +449,9 @@ export async function mountProjects(
     if (sortBy === 'name') a.sort((x, y) => sessionTitle(x).localeCompare(sessionTitle(y)));
     else if (sortBy === 'tool') a.sort((x, y) => (toolName(x.toolId) || '').localeCompare(toolName(y.toolId) || '') || sessionTitle(x).localeCompare(sessionTitle(y)));
     else if (sortBy === 'added') a.sort((x, y) => sessionAdded(y) - sessionAdded(x));
+    else if (sortBy === 'size') a.sort((x, y) => (sizes[y.slot] || 0) - (sizes[x.slot] || 0));
     else a.sort((x, y) => +new Date(y.updatedAt || 0) - +new Date(x.updatedAt || 0)); // modified
+    if (sortRev) a.reverse();
     return a;
   }
 
@@ -441,7 +490,7 @@ export async function mountProjects(
     // string building. Folders match on name (there are far fewer of them). Results
     // keep the view's sort preference (date/name/tool), not match score: this is a
     // browse surface; score-ranking lives in the spotlight overlay.
-    const mf = sortFolders(scope.folders.filter(f => matchesHaystack(buildFolderHaystack(f.name), tokens) > 0));
+    const mf = sortFolders(scope.folders.filter(f => matchesHaystack(buildFolderHaystack(f.name, f.tags), tokens) > 0));
     const ms = sortSessions(scope.sessions.filter(e => matchesHaystack(searchIndex.get(e.slot) ?? '', tokens) > 0));
     const total = mf.length + ms.length;
     const cf = total > SEARCH_LIMIT ? mf.slice(0, SEARCH_LIMIT) : mf;
@@ -479,7 +528,7 @@ export async function mountProjects(
     const folderTiles = topFolders.map(f => folderTile(f, {
       memberPreviews: f.items.map(i => previewForRef(i.ref)).filter(Boolean) as MemberPreview[],
       count: tileItemCount(f),
-      selectable: true, selected: isSelected(f.id),
+      selectable: true, selected: isSelected(f.id), starred: favourites.has(f.id),
     })).join('');
     // Loose (uncategorised) saved sessions render as tiles directly on the root grid - 
     // a just-added creation shows here at once instead of vanishing into an
@@ -504,11 +553,19 @@ export async function mountProjects(
     const teamTile = getSessionSource()
       ? createTile('team', TEAM_ICON, t('Team projects'), t('Shared with you on this instance'))
       : '';
+    // Trash (plans/133 WP-4): a muted system tile, only while it holds anything.
+    const trashTile = trashEntries.length
+      ? `<div class="folder-tile folder-tile--trash"><button type="button" class="tile-primary" data-open-trash aria-label="${escape(t('Open Trash'))}">
+           <span class="tile-cover tile-cover--batch" aria-hidden="true">${TRASH_ICON}</span>
+           <span class="tile-meta"><span class="tile-title">${t('Trash')}</span><span class="tile-sub">${trashEntries.length === 1 ? t('1 item') : tRaw('{n} items', { n: trashEntries.length })}</span></span>
+         </button></div>`
+      : '';
     return shell(t('Projects'), 'projects', `
       ${favourites.size ? `<div class="projects-featured" data-fav-strip></div>` : ''}
       ${invite}
       <div class="folder-grid projects-grid${viewMode === 'list' ? ' projects-list' : ''}">
-        ${folderTiles}${looseTiles}${createFolder}${createTool}${teamTile}
+        ${viewMode === 'list' ? listHeadHtml() : ''}
+        ${folderTiles}${looseTiles}${createFolder}${createTool}${teamTile}${trashTile}
       </div>`);
   }
 
@@ -567,7 +624,7 @@ export async function mountProjects(
     const railTargets = isUncat
       ? childFolders(folders, null).map(f => ({ id: f.id, name: f.name }))
       : [
-          { id: UNCAT, name: t('Top level') },
+          { id: '__root__', name: t('Top level') },
           ...(parentId ? [{ id: parentId, name: folders.find(f => f.id === parentId)?.name || t('Parent') }] : []),
           ...childFolders(folders, folder!.parentId ?? null).filter(f => f.id !== id).map(f => ({ id: f.id, name: f.name })),
         ];
@@ -607,7 +664,7 @@ export async function mountProjects(
       ...subfolders.map(f => folderTile(f, {
         memberPreviews: f.items.map(i => previewForRef(i.ref)).filter(Boolean) as MemberPreview[],
         count: tileItemCount(f),
-        selectable: true, selected: isSelected(f.id),
+        selectable: true, selected: isSelected(f.id), starred: favourites.has(f.id),
       })),
       ...sessions.map(e => sessionTile(e, {
         toolName: toolName(e.toolId), sizeBytes: sizes[e.slot] || 0, tool: toolById.get(e.toolId),
@@ -645,7 +702,7 @@ export async function mountProjects(
     // would hide a freshly-created empty sub-folder.
     const hasTiles = subfolders.length > 0 || sessions.length > 0 || images.length > 0;
     const body = hasTiles
-      ? `<div class="${gridClass}">${tiles}${createFolder}${createTool}</div>`
+      ? `<div class="${gridClass}">${viewMode === 'list' ? listHeadHtml() : ''}${tiles}${createFolder}${createTool}</div>`
       : `<div class="${gridClass}">${createFolder}${createTool}</div><p class="projects-empty">${isUncat ? t('No saved sessions are uncategorised yet.') : t('This folder is empty — add a tool or a sub-folder.')}</p>`;
 
     return shell(title, 'projects', `${ribbon}${stripSwitch}${rail}${header}${body}`, { inFolder: true });
@@ -686,7 +743,7 @@ export async function mountProjects(
   function folderResultTile(f: Folder): string {
     const tile = folderTile(f, {
       memberPreviews: f.items.map(i => previewForRef(i.ref)).filter(Boolean) as MemberPreview[],
-      count: tileItemCount(f), selectable: true, selected: isSelected(f.id),
+      count: tileItemCount(f), selectable: true, selected: isSelected(f.id), starred: favourites.has(f.id),
     });
     const anc = folderPath(folders, f.id).slice(0, -1);   // this folder's ancestors
     const parent = anc.length ? anc[anc.length - 1]!.id : null;
@@ -837,11 +894,11 @@ export async function mountProjects(
     return refs.length ? refs : null;
   }
 
-  /** Open the selection as rows in the /pro batch grid (#/pro?s=slot,slot…). */
+  /** Open the selection as rows in the Batch grid (#/batch?s=slot,slot…). */
   function editAsSheet(): void {
     const refs = sheetableSelection();
     if (!refs) return;
-    window.location.hash = `#/pro?s=${refs.map(encodeURIComponent).join(',')}`;
+    window.location.hash = `#/batch?s=${refs.map(encodeURIComponent).join(',')}`;
   }
 
   // ── wiring ─────────────────────────────────────────────────────────────────
@@ -869,7 +926,7 @@ export async function mountProjects(
   const tileMenu = wireTileContextMenu({
     host: viewEl,
     tileSelector: '.folder-tile[data-ref][data-kind]',
-    refOf: (tile) => (tile.classList.contains('folder-tile--create') || tile.classList.contains('folder-tile--uncat'))
+    refOf: (tile) => tile.classList.contains('folder-tile--create')
       ? null : tile.dataset.ref ?? null,
     isBulkTarget: (ref) => selected.size > 1 && selected.has(ref),
     singleHtml: (tgt) => tileMenuHtml(tgt.data ?? tgt.tile?.dataset.kind ?? 'session', tgt.ref),
@@ -946,12 +1003,31 @@ export async function mountProjects(
       const bulk = t.closest<HTMLElement>('[data-bulk]');
       if (bulk) { e.preventDefault(); e.stopPropagation(); handleBulk(bulk.dataset.bulk!); return; }
 
+      // Trash tile opens the trash browser (plans/133 WP-4).
+      if (t.closest('[data-open-trash]')) { openTrashDialog(); return; }
+
+      // List-view column headers: click sorts, second click reverses (WP-2).
+      const colBtn = t.closest<HTMLElement>('[data-listsort]');
+      if (colBtn) {
+        const key = colBtn.dataset.listsort as SortBy;
+        if (key === sortBy) sortRev = !sortRev;
+        else { sortBy = key; sortRev = false; }
+        try { localStorage.setItem('lolly:projectsSort', sortBy); } catch { /* ignore */ }
+        saveViewPrefs();
+        render();
+        return;
+      }
+
       // Open a folder (folder tile primary). Hash navigation (folders are hash-routed).
       const open = t.closest<HTMLElement>('[data-open-folder]');
       if (open) { window.location.hash = '#/p/' + open.dataset.openFolder; return; }
       // Rail chip navigates (drops are handled separately)
       const navChip = t.closest<HTMLElement>('[data-open-folder-nav]');
-      if (navChip) { window.location.hash = '#/p/' + navChip.dataset.openFolderNav; return; }
+      if (navChip) {
+        const dest = navChip.dataset.openFolderNav;
+        window.location.hash = (!dest || dest === '__root__') ? '#/p' : '#/p/' + dest;
+        return;
+      }
 
       // Create tiles
       const create = t.closest<HTMLElement>('[data-create]');
@@ -1061,7 +1137,7 @@ export async function mountProjects(
   // reset the Shift-anchor mid-gesture).
   const selectableTiles = (): HTMLElement[] =>
     [...viewEl.querySelectorAll<HTMLElement>('.folder-tile[data-ref][data-kind]')]
-      .filter(t => !t.classList.contains('folder-tile--uncat') && !t.classList.contains('folder-tile--create'));
+      .filter(t => !t.classList.contains('folder-tile--create'));
 
   const tileSelect = wireTileSelect({
     host: viewEl,
@@ -1086,6 +1162,22 @@ export async function mountProjects(
     clear: () => { dropSelection(); render(); },
     // Never start a box on a tile, control, chip, bar, breadcrumb, etc. - only in a gap.
     noStart: '.folder-tile, button, a, input, label, dialog, .projects-bulkbar, .projects-rail, .projects-crumbs, .projects-head, .gallery-topbar',
+    // Keyboard grid (plans/133 WP-3): arrows/Space/Cmd-A come from the shared
+    // model; Delete routes through the Trash path, F2 into the inline renames.
+    keyboard: {
+      remove: (refs) => {
+        selected.clear();
+        for (const ref of refs) {
+          const kind: SelectKind = folders.some(f => f.id === ref) ? 'folder' : entryMap.has(ref) ? 'session' : 'image';
+          selected.set(ref, kind);
+        }
+        void deleteSelection();
+      },
+      rename: (ref, tile) => {
+        if (folders.some(f => f.id === ref)) startRename(tile, ref);
+        else if (entryMap.has(ref)) startRenameSession(tile, ref);
+      },
+    },
   });
 
   // Empty the selection AND forget the Shift-anchor together. They have to move as one:
@@ -1134,7 +1226,7 @@ export async function mountProjects(
     // Session, image AND real folder tiles are draggable (not the synthetic Uncategorised,
     // not the create tiles). A folder carries 'text/lolly-folder'; a session 'text/lolly-session';
     // an image 'text/lolly-image' - the kind lets the drop target pick store.moveItem's type.
-    root.querySelectorAll<HTMLElement>('.folder-tile[data-kind="session"], .folder-tile[data-kind="image"], .folder-tile--folder:not(.folder-tile--uncat)').forEach(tile => {
+    root.querySelectorAll<HTMLElement>('.folder-tile[data-kind="session"], .folder-tile[data-kind="image"], .folder-tile--folder').forEach(tile => {
       const kind = tile.dataset.kind as SelectKind;   // 'folder' | 'session' | 'image'
       const mime = kind === 'folder' ? 'text/lolly-folder' : kind === 'image' ? 'text/lolly-image' : 'text/lolly-session';
       tile.setAttribute('draggable', 'true');
@@ -1154,20 +1246,63 @@ export async function mountProjects(
       ...root.querySelectorAll<HTMLElement>('[data-drop-folder]'),
       ...[...root.querySelectorAll('.folder-tile--folder')].map(t => t.querySelector<HTMLElement>('[data-open-folder]')).filter(Boolean) as HTMLElement[],
     ];
+    // Spring-loaded folders (plans/133 WP-5): hovering a folder target mid-drag
+    // for ~650ms navigates INTO it, so a deep move never needs two trips. The
+    // timer resets when the pointer leaves or the drop lands first.
+    let springTimer: ReturnType<typeof setTimeout> | undefined;
+    const armSpring = (dest: string | null): void => {
+      clearTimeout(springTimer);
+      springTimer = setTimeout(() => {
+        window.location.hash = dest ? `#/p/${dest}` : '#/p';
+      }, 650);
+    };
+    const disarmSpring = (): void => clearTimeout(springTimer);
+    // Edge auto-scroll while dragging (file-manager convention).
+    root.addEventListener('dragover', (e) => {
+      const y = (e as DragEvent).clientY;
+      if (y < 90) window.scrollBy(0, -14);
+      else if (window.innerHeight - y < 90) window.scrollBy(0, 14);
+    });
+    // Breadcrumb segments + the back arrow are drop-NAV targets too: hovering
+    // springs up the tree; dropping moves to that ancestor.
+    for (const crumb of root.querySelectorAll<HTMLElement>('.projects-crumbs [data-open-folder-nav], .projects-back')) {
+      const dest = crumb.dataset.openFolderNav ?? (folders.find(f => f.id === folderId)?.parentId ?? null) ?? '';
+      const destId = dest === '' ? null : dest;
+      crumb.addEventListener('dragover', (e) => { e.preventDefault(); crumb.classList.add('is-drop'); armSpring(destId); });
+      crumb.addEventListener('dragleave', () => { crumb.classList.remove('is-drop'); disarmSpring(); });
+      crumb.addEventListener('drop', async (e) => {
+        e.preventDefault(); crumb.classList.remove('is-drop'); disarmSpring();
+        const dt = (e as DragEvent).dataTransfer!;
+        const draggedRef = dt.getData('text/lolly-session') || dt.getData('text/lolly-image') || dt.getData('text/lolly-folder');
+        if (!draggedRef) return;
+        const kind: SelectKind = dt.getData('text/lolly-folder') ? 'folder' : dt.getData('text/lolly-image') ? 'image' : 'session';
+        if (kind === 'folder') await store.moveFolder(draggedRef, destId);
+        else await store.moveItem(draggedRef, destId, kind);
+        await reload(); render();
+      });
+    }
     targets.forEach(target => {
       const folderRef = (target.dataset.dropFolder || target.dataset.openFolder)!;
       const hit = target.closest('[data-drop-folder]') || target.closest('.folder-tile');
-      target.addEventListener('dragover', (e) => { e.preventDefault(); (e as DragEvent).dataTransfer!.dropEffect = 'move'; hit?.classList.add('is-drop'); });
-      target.addEventListener('dragleave', () => hit?.classList.remove('is-drop'));
+      const springDest = (folderRef === UNCAT || folderRef === '__root__') ? null : folderRef;
+      target.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        (e as DragEvent).dataTransfer!.dropEffect = 'move';
+        // Spring only on FOLDER TILES - a rail chip is already a visible target,
+        // navigating under the drag there would be rug-pulling.
+        if (target.closest('.folder-tile--folder') && !hit?.classList.contains('is-drop')) armSpring(springDest);
+        hit?.classList.add('is-drop');
+      });
+      target.addEventListener('dragleave', () => { hit?.classList.remove('is-drop'); disarmSpring(); });
       target.addEventListener('drop', async (e) => {
-        e.preventDefault(); hit?.classList.remove('is-drop');
+        e.preventDefault(); hit?.classList.remove('is-drop'); disarmSpring();
         const dt = (e as DragEvent).dataTransfer!;
         const slot = dt.getData('text/lolly-session');
         const image = dt.getData('text/lolly-image');
         const draggedFolder = dt.getData('text/lolly-folder');
         const draggedRef = slot || image || draggedFolder;
         if (!draggedRef) return;
-        const dest = folderRef === UNCAT ? null : folderRef;
+        const dest = (folderRef === UNCAT || folderRef === '__root__') ? null : folderRef;
         // Grabbing one tile of a multi-selection drags the WHOLE set - move every
         // selected folder/session/image so they all follow, matching the "Move to…" bar.
         if (selected.size > 1 && selected.has(draggedRef)) {
@@ -1203,18 +1338,19 @@ export async function mountProjects(
         fav(),
         menuItem('move-folder', MOVE_ICON, t('Move to…')),
         menuItem('render', RENDER_ICON, t('Render folder'), { render: true }),
-        menuItem('delete', TRASH_ICON, t('Delete folder'), { danger: true }),
+        menuItem('style-folder', PALETTE_ICON, t('Colour and icon…')),
+        menuItem('info', INFO_ICON, t('Get info')),
+        menuItem('delete', TRASH_ICON, t('Move to Trash'), { danger: true }),
       ].join('');
     }
     if (kind === 'image') {
-      // A catalog reference can be REMOVED from the folder (it's a pointer, never deleted);
-      // your own upload is permanently DELETED. deleteImage() picks the right one by ref.
-      const isUpload = ref.startsWith('user/');
+      // Every folder image is a REFERENCE (plans/133 WP-4): removing it only takes
+      // it out of this project - the bytes stay in the Catalog, which owns deletion.
       return [
         menuItem('open-image', OPEN_ICON, t('Preview')),
         fav(),
         menuItem('move-image', MOVE_ICON, t('Move to…')),
-        menuItem('delete-image', TRASH_ICON, isUpload ? t('Delete image') : t('Remove from folder'), { danger: true }),
+        menuItem('delete-image', TRASH_ICON, t('Remove from project'), { danger: true }),
       ].join('');
     }
     // A batch session is a multi-row group with no single tool URL, so it can't be
@@ -1227,8 +1363,9 @@ export async function mountProjects(
       fav(),
       menuItem('move', MOVE_ICON, t('Move to…')),
       canShare ? menuItem('share', SHARE_ICON, t('Share link')) : '',
+      menuItem('info', INFO_ICON, t('Get info')),
       menuItem('render-session', RENDER_ICON, t('Render'), { render: true }),
-      menuItem('delete-session', TRASH_ICON, t('Delete'), { danger: true }),
+      menuItem('delete-session', TRASH_ICON, t('Move to Trash'), { danger: true }),
     ].join('');
   }
 
@@ -1265,6 +1402,8 @@ export async function mountProjects(
     else if (act === 'render') renderFolder(ref);
     else if (act === 'fav') toggleFavourite(ref);
     else if (act === 'delete') deleteFolderCascade(ref);
+    else if (act === 'style-folder') void openFolderStyleDialog(ref);
+    else if (act === 'info') openInfoSheet(ref);
     else if (act === 'open-folder') { window.location.hash = '#/p/' + ref; }
     else if (act === 'move-folder') {
       // A folder can't move into itself or its own subtree - block those targets.
@@ -1285,14 +1424,7 @@ export async function mountProjects(
     }
     else if (act === 'render-session') renderSession(ref);
     else if (act === 'share') shareSession(ref);
-    else if (act === 'delete-session') {
-      const ok = await confirmDialog({
-        title: t('Delete this saved session?'),
-        message: t('This permanently deletes the saved session and its preview. This cannot be undone.'),
-        confirmLabel: t('Delete'),
-      });
-      if (ok && mounted) { await host.state.delete(ref).catch(() => {}); await reload(); render(); announce(t('Session deleted')); }
-    }
+    else if (act === 'delete-session') { await trashSessions([ref]); }
     else if (act === 'open-image') openImagePreview(ref);
     else if (act === 'move-image') {
       openMovePicker({
@@ -1324,18 +1456,26 @@ export async function mountProjects(
     announce(allFav ? t('Removed from favourites') : t('Added to favourites'));
   }
 
-  // Remove a folder image: a catalog REFERENCE just leaves the folder (the shared asset is
-  // never deleted); your own upload is permanently deleted (matching the picker / gallery).
+  // Remove a folder image. Images are REFERENCES here (2026-08-20, plans/133
+  // WP-4): removing one only takes it out of this project - uploads and catalog
+  // assets alike keep their bytes in the Catalog, which owns real deletion (and
+  // has its own undo there). No confirm; the undo toast is the way back.
   async function deleteImage(ref: string): Promise<void> {
-    const isUpload = ref.startsWith('user/');
-    const ok = await confirmDialog(isUpload
-      ? { title: t('Delete this image?'), message: t('This permanently deletes the saved image. This cannot be undone.'), confirmLabel: t('Delete') }
-      : { title: t('Remove from folder?'), message: t('This removes the catalog asset from this folder. The asset itself is unchanged.'), confirmLabel: t('Remove') });
-    if (!ok || !mounted) return;
-    if (isUpload) await (host as ProjectsHost).assets._deleteUserAsset(ref).catch(() => {});
-    else { const owner = ownerByRef.get(ref); if (owner) await store.removeItem(owner.id, ref); }
+    const owner = ownerByRef.get(ref);
+    if (!owner) return;
+    const name = String(imageRefs.get(ref)?.meta?.name ?? ref.split('/').pop() ?? ref);
+    await store.removeItem(owner.id, ref);
+    if (!mounted) return;
     await reload(); render();
-    announce(isUpload ? t('Image deleted') : t('Removed from folder'));
+    announce(t('Removed from project'));
+    showUndoToast({
+      message: tRaw('Removed "{name}" from the project. It is still in the Catalog.', { name }),
+      undo: async () => {
+        await store.addItem(owner.id, { type: 'image', ref });
+        if (!mounted) return;
+        await reload(); render();
+      },
+    });
   }
 
   // A lightbox preview for a folder image - the resolved AssetRef carries the url + name.
@@ -1369,6 +1509,181 @@ export async function mountProjects(
   // dumping every folder at once): click a folder to drill in, breadcrumb to climb, then
   // "Move to «here»" commits at the current level. `blocked` folder ids (a folder's own
   // subtree, to prevent a cycle) are shown disabled. onPick(destId|null) - null = top level.
+  /** The Trash browser (plans/133 WP-4): restore / delete forever / empty. */
+  function openTrashDialog(): void {
+    const fmtWhen = (iso: string): string => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const rows = trashEntries.map((e, i) => {
+      const name = e.kind === 'session' ? e.label : e.name;
+      const kind = e.kind === 'session' ? t('Saved session') : t('Folder');
+      return `<li class="trash-row">
+        <span class="trash-row-icon" aria-hidden="true">${e.kind === 'folder' ? FOLDER_ICON : FILE_PLUS_ICON}</span>
+        <span class="trash-row-meta"><span class="trash-row-name">${escape(name)}</span><span class="trash-row-sub">${kind} · ${escape(fmtWhen(e.deletedAt))}</span></span>
+        <button type="button" class="btn btn--sm" data-trash-restore="${i}">${t('Restore')}</button>
+        <button type="button" class="btn btn--sm cat-act-danger" data-trash-purge="${i}">${t('Delete forever')}</button>
+      </li>`;
+    }).join('');
+    const modal = mountModal<void>(`
+      <div class="trash-dialog-body">
+        <h2>${t('Trash')}</h2>
+        <p class="trash-note">${t('Items here are removed for good after 30 days.')}</p>
+        ${rows ? `<ul class="trash-list">${rows}</ul>` : `<p class="trash-note">${t('The Trash is empty.')}</p>`}
+        <div class="trash-actions">
+          ${rows ? `<button type="button" class="btn cat-act-danger" data-trash-empty>${t('Empty Trash')}</button>` : ''}
+          <button type="button" class="btn" data-trash-close>${t('Close')}</button>
+        </div>
+      </div>`, { className: 'trash-dialog', ariaLabel: t('Trash') });
+    modal.el.addEventListener('click', async (e) => {
+      const el = e.target as HTMLElement;
+      const restore = el.closest<HTMLElement>('[data-trash-restore]');
+      const purge = el.closest<HTMLElement>('[data-trash-purge]');
+      if (el.closest('[data-trash-close]')) { modal.close(); return; }
+      if (el.closest('[data-trash-empty]')) {
+        for (const entry of [...trashEntries]) await purgeTrashEntry(entry).catch(() => {});
+        modal.close();
+        if (mounted) { await reload(); render(); }
+        announce(t('Trash emptied'));
+        return;
+      }
+      if (restore) {
+        const entry = trashEntries[Number(restore.dataset.trashRestore)];
+        modal.close();
+        if (entry) { await restoreTrashEntry(entry); announce(t('Restored')); }
+        return;
+      }
+      if (purge) {
+        const entry = trashEntries[Number(purge.dataset.trashPurge)];
+        modal.close();
+        if (entry) { await purgeTrashEntry(entry).catch(() => {}); if (mounted) { await reload(); render(); } }
+      }
+    });
+  }
+
+  /** Get info (plans/133 WP-8): path, dates, counts, aggregate size. */
+  function openInfoSheet(ref: string): void {
+    closeMenu();
+    const fmtIso = (iso: string | null | undefined): string => iso ? new Date(iso).toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+    const rows: Array<[string, string]> = [];
+    let title = '';
+    const folder = folders.find(f => f.id === ref);
+    if (folder) {
+      title = folder.name;
+      const subtree = [folder.id, ...descendantFolderIds(folders, folder.id)];
+      const items = folders.filter(f => subtree.includes(f.id)).flatMap(f => f.items ?? []);
+      const sessionSlots = items.filter(i => i.type === 'session').map(i => i.ref);
+      const bytes = sessionSlots.reduce((n, slot) => n + (sizes[slot] || 0), 0);
+      rows.push(
+        [t('Kind'), t('Folder')],
+        [t('Where'), folderPath(folders, folder.id).slice(0, -1).map(f => f.name).join(' / ') || t('Top level')],
+        [t('Contains'), tRaw('{s} sessions, {i} images, {f} sub-folders', { s: sessionSlots.length, i: items.length - sessionSlots.length, f: subtree.length - 1 })],
+        [t('Size'), bytes ? fmtBytes(bytes) : t('Empty')],
+        [t('Created'), fmtIso(folder.createdAt)],
+        [t('Modified'), fmtIso(folder.updatedAt)],
+        [t('Tags'), (folder.tags ?? []).join(', ')],
+        [t('Favourite'), favourites.has(ref) ? t('Yes') : t('No')],
+      );
+    } else {
+      const e = entryMap.get(ref);
+      if (!e) return;
+      title = e.label || e.filename || toolName(e.toolId) || ref;
+      const owner = ownerByRef.get(ref);
+      rows.push(
+        [t('Kind'), isBatchSlot(ref) ? t('Batch session') : tRaw('{tool} session', { tool: toolName(e.toolId) || e.toolId || '' })],
+        [t('Where'), owner ? folderPath(folders, owner.id).map(f => f.name).join(' / ') : t('Top level')],
+        [t('Size'), sizes[ref] ? fmtBytes(sizes[ref]!) : ''],
+        [t('Added'), fmtIso(e.createdAt)],
+        [t('Modified'), fmtIso(e.updatedAt)],
+        [t('Favourite'), favourites.has(ref) ? t('Yes') : t('No')],
+      );
+    }
+    mountModal<void>(`
+      <div class="trash-dialog-body">
+        <h2>${escape(title)}</h2>
+        <dl class="cat-details-meta">${rows.filter(([, v]) => v).map(([k, v]) => `<div><dt>${escape(k)}</dt><dd>${escape(v)}</dd></div>`).join('')}</dl>
+      </div>`, { className: 'trash-dialog', ariaLabel: t('Info') });
+  }
+
+  /** Colour + emoji accents for a folder (plans/133 WP-1). */
+  async function openFolderStyleDialog(ref: string): Promise<void> {
+    closeMenu();
+    const folder = folders.find(f => f.id === ref);
+    if (!folder) return;
+    // The colour options are the ACTIVE design system's palette (Andy,
+    // 2026-08-20) - the same live token resolution the swatch surfaces use -
+    // so a folder tint always speaks the brand's language. Lead with the core
+    // brand colours, then the spectrum, deduped by hex and capped so the row
+    // stays a row; the fixed FOLDER_COLORS survive only as the no-palette
+    // fallback (livePalette itself already falls back to the starter set).
+    const palette = await livePalette(host as Parameters<typeof livePalette>[0]).catch(() => []);
+    if (!mounted) return;
+    // Only accent-worthy hues: a palette also carries transparent, white/black
+    // and neutral chrome tokens (borders, foregrounds) that make no folder
+    // tint - drop non-hex values, near-greys, and the near-white/near-black
+    // extremes by inspection of the colour itself, not its name.
+    const tintWorthy = (hex: string): boolean => {
+      const m = /^#([0-9a-f]{6})$/i.exec(hex.trim());
+      if (!m) return false;
+      const [r, g, b] = [0, 2, 4].map(i => parseInt(m[1]!.slice(i, i + 2), 16)) as [number, number, number];
+      const hi = Math.max(r, g, b), lo = Math.min(r, g, b);
+      return hi - lo >= 24 && lo <= 235 && hi >= 30;
+    };
+    // One dot per colour FAMILY: a ramp contributes "Jungle", not Jungle 2…7 -
+    // the family key is the label minus a trailing step number.
+    const seen = new Set<string>();
+    const famSeen = new Set<string>();
+    const swatches = [...palette.filter(p => !p.group), ...palette.filter(p => p.group)]
+      .filter(p => tintWorthy(p.hex))
+      .filter(p => { const hx = p.hex.toLowerCase(); if (seen.has(hx)) return false; seen.add(hx); return true; })
+      .filter(p => {
+        const fam = (p.label || p.hex).replace(/\s+\d+$/, '').toLowerCase();
+        if (famSeen.has(fam)) return false;
+        famSeen.add(fam);
+        return true;
+      })
+      .slice(0, 14)
+      .map(p => ({ hex: p.hex, label: p.label || p.hex }));
+    const options = swatches.length ? swatches : FOLDER_COLORS.map(c => ({ hex: c, label: c }));
+    const isOn = (hx: string): boolean => (folder.color ?? '').toLowerCase() === hx.toLowerCase();
+    const dots = options.map(o =>
+      `<button type="button" class="folder-color-dot${isOn(o.hex) ? ' is-on' : ''}" data-style-color="${escape(o.hex)}" style="background:${escape(o.hex)}" title="${escape(o.label)}" aria-label="${escape(tRaw('Colour {color}', { color: o.label }))}" aria-pressed="${isOn(o.hex)}"></button>`).join('');
+    const modal = mountModal<void>(`
+      <div class="folder-style-body">
+        <h2>${tRaw('Colour and icon for "{name}"', { name: folder.name })}</h2>
+        <div class="folder-style-row" role="group" aria-label="${escape(t('Folder colour'))}">
+          ${dots}
+          <button type="button" class="btn btn--sm" data-style-color="">${t('No colour')}</button>
+        </div>
+        <label class="folder-style-row folder-style-emoji">
+          <span>${t('Icon (an emoji)')}</span>
+          <input type="text" maxlength="4" data-style-emoji value="${escape(folder.emoji ?? '')}" placeholder="📁">
+        </label>
+        <label class="folder-style-row folder-style-tags">
+          <span>${t('Tags')}</span>
+          <input type="text" data-style-tags value="${escape((folder.tags ?? []).join(', '))}" placeholder="${escape(t('client, q3, print'))}">
+          <span class="trash-note">${t('Comma-separated. Search finds the folder by any of them.')}</span>
+        </label>
+        <div class="trash-actions">
+          <button type="button" class="btn modal-primary" data-style-save>${t('Save')}</button>
+        </div>
+      </div>`, { className: 'folder-style-dialog', ariaLabel: t('Folder colour and icon') });
+    let color: string | null = folder.color ?? null;
+    modal.el.addEventListener('click', async (e) => {
+      const dot = (e.target as HTMLElement).closest<HTMLElement>('[data-style-color]');
+      if (dot) {
+        color = dot.dataset.styleColor || null;
+        modal.el.querySelectorAll<HTMLElement>('.folder-color-dot').forEach(d =>
+          d.setAttribute('aria-pressed', String(!!color && (d.dataset.styleColor ?? '').toLowerCase() === color.toLowerCase())));
+        return;
+      }
+      if ((e.target as HTMLElement).closest('[data-style-save]')) {
+        const emoji = modal.el.querySelector<HTMLInputElement>('[data-style-emoji]')?.value.trim() ?? '';
+        const tags = (modal.el.querySelector<HTMLInputElement>('[data-style-tags]')?.value ?? '').split(',').map(x => x.trim()).filter(Boolean);
+        modal.close();
+        await store.setStyle(ref, { color, emoji: emoji || null, tags });
+        if (mounted) { await reload(); render(); }
+      }
+    });
+  }
+
   function openMovePicker({ title, blocked = new Set<string>(), onPick }: { title: string; blocked?: Set<string>; onPick: (dest: string | null) => void }): void {
     closeMenu();
     let cursor: string | null = null; // current folder id (null = top level)
@@ -1486,6 +1801,7 @@ export async function mountProjects(
       ${opt(sortBy === 'name', 'sort', 'name', t('Name'))}
       ${opt(sortBy === 'added', 'sort', 'added', t('Date added'))}
       ${opt(sortBy === 'modified', 'sort', 'modified', t('Last modified'))}
+      ${opt(sortBy === 'size', 'sort', 'size', t('Size'))}
       ${atRoot ? '' : opt(sortBy === 'tool', 'sort', 'tool', t('By tool'))}
       ${soundSegmentHtml('folder-menu-head')}`;
     document.body.appendChild(pop);
@@ -1499,8 +1815,8 @@ export async function mountProjects(
     document.addEventListener('keydown', onMenuKey, true);
     pop.addEventListener('click', (e) => {
       const vm = (e.target as HTMLElement).closest<HTMLElement>('[data-vm]'); const so = (e.target as HTMLElement).closest<HTMLElement>('[data-sort]');
-      if (vm) { viewMode = vm.dataset.vm as ViewMode; try { localStorage.setItem('lolly:projectsView', viewMode); } catch { /* ignore */ } closeMenu(); render(); }
-      else if (so) { sortBy = so.dataset.sort as SortBy; try { localStorage.setItem('lolly:projectsSort', sortBy); } catch { /* ignore */ } closeMenu(); render(); }
+      if (vm) { viewMode = vm.dataset.vm as ViewMode; try { localStorage.setItem('lolly:projectsView', viewMode); } catch { /* ignore */ } saveViewPrefs(); closeMenu(); render(); }
+      else if (so) { sortBy = so.dataset.sort as SortBy; sortRev = false; try { localStorage.setItem('lolly:projectsSort', sortBy); } catch { /* ignore */ } saveViewPrefs(); closeMenu(); render(); }
     });
   }
 
@@ -1839,6 +2155,41 @@ export async function mountProjects(
   // user's starred folders / sessions / images, like the gallery + catalog favourites strips.
   // Mounts only at root (its [data-fav-strip] element exists only in rootHtml), so it is
   // mutually exclusive with the Uncategorised ribbon and both can share featuredHandle.
+  /** The folder silhouette as a standalone SVG (for the favourites carousel):
+   *  tab flush with a SQUARE top-left body corner (exactly the folders.css
+   *  cover geometry - radius 0 where the tab sits, rounded elsewhere), a 2×2
+   *  mosaic of member previews inside the body, tint + overhanging emoji.
+   *  Member thumbs embed only as data: URLs (an SVG loaded via <img> cannot
+   *  fetch blob:/http resources) - anything else renders as a tinted cell. */
+  function folderCoverDataUrl(folder: Folder): string {
+    const tint = folder.color || '#8d8d8d';
+    const escXml = (s: string): string => s.replace(/[&<>"]/g, c => (({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } as Record<string, string>)[c]!));
+    // Up to four member previews, resolved the same way the grid tile's mosaic is.
+    const thumbs = folder.items.slice(0, 4).map(i => {
+      const p = previewForRef(i.ref);
+      const src = p && 'thumb' in p && p.thumb ? p.thumb : p && 'url' in p && p.url ? p.url : '';
+      return typeof src === 'string' && src.startsWith('data:') ? src : '';
+    });
+    // Body x14..166, y30..112; cells inset 8 with a 4px gutter.
+    const CELL_W = 66, CELL_H = 31;
+    const cellPos: Array<[number, number]> = [[22, 38], [92, 38], [22, 73], [92, 73]];
+    const cells = cellPos.map(([x, y], i) => {
+      const src = thumbs[i];
+      const frame = `<rect x="${x}" y="${y}" width="${CELL_W}" height="${CELL_H}" rx="5" fill="#ffffff" fill-opacity="${src ? '0.9' : '0.35'}"/>`;
+      if (!src) return frame;
+      return `${frame}<clipPath id="fc${i}"><rect x="${x}" y="${y}" width="${CELL_W}" height="${CELL_H}" rx="5"/></clipPath>`
+        + `<image href="${escXml(src)}" x="${x}" y="${y}" width="${CELL_W}" height="${CELL_H}" preserveAspectRatio="xMidYMid slice" clip-path="url(#fc${i})"/>`;
+    }).join('');
+    const emoji = folder.emoji ? `<text x="152" y="118" font-size="32" text-anchor="middle">${escXml(folder.emoji)}</text>` : '';
+    return svgDataUrl(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 130">
+      <path d="M14 30 v-10 a8 8 0 0 1 8 -8 h44 a10 10 0 0 1 10 10 v8 z" fill="${escXml(tint)}" fill-opacity="0.72"/>
+      <path d="M14 30 H154 A12 12 0 0 1 166 42 V100 A12 12 0 0 1 154 112 H26 A12 12 0 0 1 14 100 Z" fill="${escXml(tint)}" fill-opacity="0.3"/>
+      <path d="M14 30 H154 A12 12 0 0 1 166 42 V100 A12 12 0 0 1 154 112 H26 A12 12 0 0 1 14 100 Z" fill="none" stroke="${escXml(tint)}" stroke-opacity="0.55"/>
+      ${cells}
+      ${emoji}
+    </svg>`);
+  }
+
   function favEntries(): FeaturedEntry[] {
     const out: FeaturedEntry[] = [];
     for (const ref of favourites) {
@@ -1850,14 +2201,11 @@ export async function mountProjects(
         continue;
       }
       const folder = folders.find(f => f.id === ref);
-      if (folder) {   // a favourited folder - cover = its first member's preview
-        let cover: string | undefined;
-        for (const i of folder.items) {
-          const p = previewForRef(i.ref);
-          if (p && 'thumb' in p && p.thumb) { cover = p.thumb; break; }
-          if (p && 'url' in p && p.url) { cover = p.url; break; }
-        }
-        out.push({ id: ref, name: folder.name, preview: cover, href: '#/p/' + ref, featured: { blurb: t('Folder') } });
+      if (folder) {
+        // A favourited folder shows AS a folder (Andy, 2026-08-20) - the same
+        // tabbed silhouette its tile wears, tint + emoji included, as a pure
+        // vector data URL - never one member's render masquerading as an asset.
+        out.push({ id: ref, name: folder.name, preview: folderCoverDataUrl(folder), href: '#/p/' + ref, featured: { blurb: tRaw('Folder · {n} items', { n: tileItemCount(folder) }) } });
         continue;
       }
       const img = imageRefs.get(ref);   // a favourited folder image - opens the folder it lives in
@@ -1944,47 +2292,129 @@ export async function mountProjects(
   // Unlike store.remove() (which only drops one record and lifts its contents up), this
   // permanently deletes the folder, every SUB-FOLDER beneath it, and every saved session
   // and image they hold - including stored previews - then the folder records. Confirmed.
-  async function deleteFolderCascade(id: string): Promise<void> {
+  // ── Trash (plans/133 WP-4) ───────────────────────────────────────────────
+  // Deletes are soft: sessions move their state record into the `__trash__:`
+  // slot namespace, folders lift their subtree records into a profile.trash
+  // entry, and both get an undo toast. Real deletion happens on Delete forever,
+  // Empty trash, or the 30-day sweep. Image items are references - "deleting"
+  // one only removes it from the project; the bytes stay in the Catalog, whose
+  // own delete has its own soft path.
+
+  /** Move one session's state record between slots (thumb preserved). */
+  async function moveSlot(from: string, to: string): Promise<boolean> {
+    try {
+      const h = host as ProjectsHost;
+      const data = await h.state.load(from);
+      if (!data) return false;
+      const thumb = (await h.state.list().catch(() => [] as Entry[])).find(r => r.slot === from)?.thumb ?? undefined;
+      await h.state.save(to, data, thumb);
+      await host.state.delete(from).catch(() => {});
+      return true;
+    } catch (e) {
+      host.log?.('warn', 'projects: trash slot move failed', { from, to, error: String(e) });
+      return false;
+    }
+  }
+
+  /** Trash a set of loose/foldered sessions with ONE undo toast. */
+  async function trashSessions(slots: readonly string[]): Promise<void> {
+    const moved: Array<{ entry: import('../folders.ts').TrashedSession }> = [];
+    for (const slot of slots) {
+      const e = entryMap.get(slot);
+      const parentId = ownerByRef.get(slot)?.id ?? null;
+      const label = e?.label || e?.filename || toolName(e?.toolId ?? '') || slot;
+      const tslot = TRASH_SLOT_PREFIX + slot;
+      if (!(await moveSlot(slot, tslot))) continue;
+      await store.moveItem(slot, null, 'session');
+      const entry: import('../folders.ts').TrashedSession = {
+        kind: 'session', slot: tslot, originalSlot: slot, label, parentId, deletedAt: new Date().toISOString(),
+      };
+      await store.trashAdd(entry);
+      moved.push({ entry });
+    }
+    if (!mounted) return;
+    await reload(); render();
+    if (!moved.length) return;
+    const first = moved[0]!.entry.label;
+    showUndoToast({
+      message: moved.length === 1 ? tRaw('Moved "{name}" to Trash.', { name: first }) : tRaw('Moved {n} sessions to Trash.', { n: moved.length }),
+      undo: async () => { for (const m of moved) await restoreTrashEntry(m.entry); },
+    });
+  }
+
+  /** Trash a folder subtree (records + member sessions) with an undo toast. */
+  async function trashFolder(id: string): Promise<void> {
     closeMenu();
     if (!id || id === UNCAT) return;
     const folder = folders.find(f => f.id === id);
     if (!folder) return;
-    // The whole subtree: this folder + all descendants, and every item they contain.
     const subtreeIds = [id, ...descendantFolderIds(folders, id)];
-    const subtree = folders.filter(f => subtreeIds.includes(f.id));
-    const items = subtree.flatMap(f => f.items ?? []);
-    const subCount = subtreeIds.length - 1;            // sub-folders beneath this one
-    const n = items.length;                            // sessions + images across the subtree
-    const parts: string[] = [];
-    if (subCount) parts.push(subCount === 1 ? t('1 sub-folder') : t('{n} sub-folders', { n: subCount }));
-    if (n) parts.push(n === 1 ? t('1 item (saved sessions and images, including previews)') : t('{n} items (saved sessions and images, including previews)', { n }));
-    const ok = await confirmDialog({
-      title: tRaw('Delete “{name}”?', { name: folder.name }),
-      message: parts.length
-        ? tRaw('This permanently deletes the folder, {parts}. This cannot be undone.', { parts: parts.join(t(' and ')) })
-        : t('This permanently deletes the folder. This cannot be undone.'),
-      confirmLabel: t('Delete folder'),
-    });
-    if (!ok || !mounted) return;
-    for (const it of items) {
-      try {
-        // A catalog reference owns no bytes - removeSubtree drops its folder membership;
-        // only an uploaded image (user/…) is a real asset to delete.
-        if (it.type === 'image') { if (it.ref.startsWith('user/')) await (host as ProjectsHost).assets._deleteUserAsset(it.ref); }
-        else await host.state.delete(it.ref);
-      } catch (err) { host.log?.('warn', 'projects: folder item delete failed', { ref: it.ref, error: String(err) }); }
+    const tree = await store.detachSubtree(id);
+    if (!tree) return;
+    const sessionRefs = tree.flatMap(f => f.items.filter(i => i.type === 'session').map(i => i.ref));
+    const moves: Array<{ originalSlot: string; slot: string }> = [];
+    for (const ref of sessionRefs) {
+      const tslot = TRASH_SLOT_PREFIX + ref;
+      if (await moveSlot(ref, tslot)) moves.push({ originalSlot: ref, slot: tslot });
     }
-    await store.removeSubtree(id);
-    announce(tRaw('Folder “{name}” deleted', { name: folder.name }));
+    const entry: import('../folders.ts').TrashedFolder = {
+      kind: 'folder', tree, rootId: id, name: folder.name, sessions: moves, deletedAt: new Date().toISOString(),
+    };
+    await store.trashAdd(entry);
+    announce(tRaw('Moved "{name}" to Trash', { name: folder.name }));
     if (!mounted) return;
-    // If we were viewing the deleted folder (or one now-deleted beneath it), climb to its
-    // parent (or root); otherwise just re-render in place.
+    showUndoToast({
+      message: tRaw('Moved "{name}" to Trash.', { name: folder.name }),
+      undo: async () => { await restoreTrashEntry(entry); },
+    });
+    // If we were viewing the trashed folder (or one beneath it), climb out.
     if (folderId != null && subtreeIds.includes(folderId)) {
       const parentId = folder.parentId ?? null;
       window.location.hash = parentId ? `#/p/${parentId}` : '#/p';
       return;
     }
     await reload(); render();
+  }
+
+  /** Put a trash entry back: records + slots + membership. */
+  async function restoreTrashEntry(entry: TrashEntry): Promise<void> {
+    if (entry.kind === 'session') {
+      await moveSlot(entry.slot, entry.originalSlot);
+      const live = await store.list();
+      if (entry.parentId && live.some(f => f.id === entry.parentId)) {
+        await store.moveItem(entry.originalSlot, entry.parentId, 'session');
+      }
+      await store.trashDrop(new Set([entry.slot]));
+    } else {
+      for (const m of entry.sessions) await moveSlot(m.slot, m.originalSlot);
+      await store.restoreSubtree(entry.tree);
+      await store.trashDrop(new Set([entry.rootId]));
+    }
+    if (!mounted) return;
+    await reload(); render();
+  }
+
+  /** Really delete a trash entry's data (Delete forever / Empty trash / sweep). */
+  async function purgeTrashEntry(entry: TrashEntry): Promise<void> {
+    if (entry.kind === 'session') {
+      await host.state.delete(entry.slot).catch(() => {});
+      await store.trashDrop(new Set([entry.slot]));
+    } else {
+      for (const m of entry.sessions) await host.state.delete(m.slot).catch(() => {});
+      await store.trashDrop(new Set([entry.rootId]));
+    }
+  }
+
+  /** Age out entries past the retention window. Runs once per mount, silently. */
+  async function sweepTrash(): Promise<void> {
+    const cutoff = Date.now() - TRASH_RETENTION_MS;
+    const old = trashEntries.filter(e => +new Date(e.deletedAt) < cutoff);
+    for (const e of old) await purgeTrashEntry(e).catch(() => {});
+    if (old.length) trashEntries = await store.trashList().catch(() => trashEntries);
+  }
+
+  async function deleteFolderCascade(id: string): Promise<void> {
+    await trashFolder(id);
   }
 
   const authorForExport = (): Profile | null => (profile?.useDetails ? profile : null);
@@ -2216,47 +2646,32 @@ export async function mountProjects(
   }
 
   async function deleteSelection(): Promise<void> {
+    // Everything goes through the Trash (plans/133 WP-4) - no confirm, an undo
+    // toast per kind is the safety net. Images are references: they just leave
+    // their project (bytes stay in the Catalog).
     const sessionRefs = selectedByKind('session');
     const imageSelRefs = selectedByKind('image');   // standalone-selected folder images
     const folderIds = topLevelSelectedFolders();
     if (!sessionRefs.length && !imageSelRefs.length && !folderIds.length) return;
-    // Count everything the delete will remove (subtree items across selected folders +
-    // the directly-selected sessions/images).
-    const subtreeIds = folderIds.flatMap(id => [id, ...descendantFolderIds(folders, id)]);
-    const folderItems = folders.filter(f => subtreeIds.includes(f.id)).flatMap(f => f.items ?? []);
-    const totalSessions = sessionRefs.length + folderItems.filter(i => i.type !== 'image').length;
-    const totalImages = imageSelRefs.length + folderItems.filter(i => i.type === 'image').length;
-    const bits: string[] = [];
-    if (folderIds.length) bits.push((folderIds.length === 1 ? t('1 folder') : t('{n} folders', { n: folderIds.length })) + (subtreeIds.length > folderIds.length ? ` ${t('(and everything inside)')}` : ''));
-    if (totalSessions) bits.push(totalSessions === 1 ? t('1 saved session') : t('{n} saved sessions', { n: totalSessions }));
-    if (totalImages) bits.push(totalImages === 1 ? t('1 image') : t('{n} images', { n: totalImages }));
-    const ok = await confirmDialog({
-      title: selected.size === 1 ? t('Delete 1 selected item?') : t('Delete {n} selected items?', { n: selected.size }),
-      message: tRaw('This permanently deletes {list}, including previews. This cannot be undone.', { list: bits.join(', ') }),
-      confirmLabel: t('Delete'),
-    });
-    if (!ok || !mounted) return;
-    announce(selected.size === 1 ? t('1 item deleted') : t('{n} items deleted', { n: selected.size }));
-    for (const slot of sessionRefs) await host.state.delete(slot).catch(() => {});
-    // A standalone image: an upload is deleted; a catalog reference just leaves its folder.
-    for (const ref of imageSelRefs) {
-      try {
-        if (ref.startsWith('user/')) await (host as ProjectsHost).assets._deleteUserAsset(ref);
-        else { const owner = ownerByRef.get(ref); if (owner) await store.removeItem(owner.id, ref); }
-      } catch (err) { host.log?.('warn', 'projects: bulk image delete failed', { ref, error: String(err) }); }
-    }
-    for (const id of folderIds) {
-      const items = folders.filter(f => [id, ...descendantFolderIds(folders, id)].includes(f.id)).flatMap(f => f.items ?? []);
-      for (const it of items) {
-        try {
-          if (it.type === 'image') { if (it.ref.startsWith('user/')) await (host as ProjectsHost).assets._deleteUserAsset(it.ref); }
-          else await host.state.delete(it.ref);
-        }
-        catch (err) { host.log?.('warn', 'projects: bulk delete item failed', { ref: it.ref, error: String(err) }); }
-      }
-      await store.removeSubtree(id);
-    }
     dropSelection();
+    const removedImages: Array<{ owner: string; ref: string }> = [];
+    for (const ref of imageSelRefs) {
+      const owner = ownerByRef.get(ref);
+      if (!owner) continue;
+      try { await store.removeItem(owner.id, ref); removedImages.push({ owner: owner.id, ref }); }
+      catch (err) { host.log?.('warn', 'projects: bulk image remove failed', { ref, error: String(err) }); }
+    }
+    if (removedImages.length) {
+      showUndoToast({
+        message: tRaw('Removed {n} images from the project. They are still in the Catalog.', { n: removedImages.length }),
+        undo: async () => {
+          for (const r of removedImages) await store.addItem(r.owner, { type: 'image', ref: r.ref }).catch(() => {});
+          if (mounted) { await reload(); render(); }
+        },
+      });
+    }
+    for (const id of folderIds) await trashFolder(id);
+    if (sessionRefs.length) await trashSessions(sessionRefs);
     if (!mounted) return;
     await reload(); render();
   }
@@ -2267,8 +2682,9 @@ export async function mountProjects(
   try { sessionStorage.removeItem(FILE_INTO_KEY); sessionStorage.removeItem(RETURN_KEY); } catch { /* ignore */ }
   // NB tileSelect.destroy() is not optional: its mousedown is bound to viewEl (#view), which
   // the router REUSES for every route - leave it bound and the next mount stacks another.
-  (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { mounted = false; cancelArrivalAah(); tileSelect.destroy(); tileMenu.destroy(); unwireEscape(); featuredHandle?.destroy(); featuredHandle = null; closeMenu(); closeConfirmDialogs(); overlayModal?.close(); releaseSearch?.(); };
+  (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => { mounted = false; flushUndoToasts(); cancelArrivalAah(); tileSelect.destroy(); tileMenu.destroy(); unwireEscape(); featuredHandle?.destroy(); featuredHandle = null; closeMenu(); closeConfirmDialogs(); overlayModal?.close(); releaseSearch?.(); };
   await reload();
+  void sweepTrash();   // age out trash entries past the 30-day retention (silent)
   // A stale /p/<id> deep link to a deleted folder falls back to root.
   if (folderId && folderId !== UNCAT && !folders.some(f => f.id === folderId)) folderId = null;
   // Claim the shell search bar AFTER reload() - the scope-aware placeholder needs

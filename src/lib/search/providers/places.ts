@@ -46,7 +46,7 @@ const PLACES: readonly PlaceEntry[] = [
 
 /** Gated on the Pro flag per call - the same flagEnabledSync gate the footer's
  *  Batch link uses, so the two can't disagree. */
-const PRO_PLACE: PlaceEntry = { label: 'Batch mode', href: '#/pro', glyph: 'zap', keywords: 'pro batch' };
+const PRO_PLACE: PlaceEntry = { label: 'Batch mode', href: '#/batch', glyph: 'table', keywords: 'pro batch' };
 
 export function createPlacesProvider(): SearchProvider {
   return {

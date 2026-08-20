@@ -83,17 +83,21 @@ const FRAME_STEP = 1 / 30;
 const PREVIEW_MAX_EDGE = 960;
 /** Output bitrate for both ops - the crop job's value, a good 1080p default. */
 const OUT_BITRATE = 8_000_000;
-/** Grain PRNG seed. Fixed so a preview and its render agree frame-for-frame. */
-const GRAIN_SEED = 7;
+/** Grain PRNG seed. Fixed so a preview and its render agree frame-for-frame.
+ *  Exported for the still-image grade mode (views/grade-inline.ts), so a still
+ *  and a video graded with the same sliders draw the same texture. */
+export const GRAIN_SEED = 7;
 
 /**
  * The open (CC0) preset LUTs darkroom ships, offered here by the same ids and
  * fetched from the same served path - `community/darkroom/hooks.js` owns the
  * files, this is a second reader of them, never a copy. Keys double as the
  * whitelist: an id that is not in here is never interpolated into a URL.
+ * Exported for the still-image grade mode (views/grade-inline.ts) - one list,
+ * so the two Grade buttons can never offer different looks.
  */
-const PRESET_LUT_BASE = '/tools/darkroom/assets/luts/';
-const PRESET_LUTS: Array<{ id: string; label: string; credit?: LutCredit }> = [
+export const PRESET_LUT_BASE = '/tools/darkroom/assets/luts/';
+export const PRESET_LUTS: Array<{ id: string; label: string; credit?: LutCredit }> = [
   { id: 'slide-standard', label: 'Standard slide' },
   { id: 'slide-vivid', label: 'Vivid slide' },
   { id: 'chrome-muted', label: 'Muted chrome' },

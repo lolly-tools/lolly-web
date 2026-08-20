@@ -80,7 +80,7 @@ test('a loose session (no folder) subtitles with the tool name alone; filename t
 test("the 'batch' keyword surfaces batch sessions, opening in /pro", async () => {
   const hits = await provider.search(tokenize('batch'), 8);
   assert.equal(hits.length, 1);
-  assert.ok(hits[0]!.href.startsWith('#/pro?session=__batch__%3A'));
+  assert.ok(hits[0]!.href.startsWith('#/batch?session=__batch__%3A'));
   assert.equal(hits[0]!.title, 'Saved session'); // no label/filename, no tool id
 });
 

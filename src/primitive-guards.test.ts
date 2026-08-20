@@ -225,7 +225,7 @@ const INLINE_GLYPH_ALLOWED: Record<string, number> = {
   'components/help-tip.ts': 1,
   'components/music-player.ts': 6,   // play/pause now come from lib/icons.ts (2026-07-29)
   'components/profile-menu.ts': 2,
-  'components/view-toggle.ts': 3,
+  'components/view-toggle.ts': 2,   // 3 → 2, 2026-08-20: the Tools tab's inline wrench went - it's icon('hammer') from lib/icons.ts now
   'lib/audio-coaching.ts': 1,
   // 5 → 0, plan 97 M1 (2026-08-09): the five BRAND_TABS glyphs went with the tab
   // bar they fed. The design-system studio is rooms now, and views/start.ts
@@ -744,7 +744,7 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // interpolations come from inlineMarkup(), which escape()s the manifest string
   // and then re-admits `**bold**` alone.
   'components/tool-guide.ts': 1,
-  'components/view-toggle.ts': 1,
+  'components/view-toggle.ts': 2,  // +1 2026-08-20: injectJellyIcons' ic.innerHTML — ICONS registry glyphs only (trusted, never user text), prepended into the jelly pill's open shadow buttons
   'components/viz-overlay.ts': 5,
   'components/welcome-dialog.ts': 2,
   'components/zoom-hud.ts': 1,
@@ -961,10 +961,11 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // markup of its own - the card is trim-offer.ts's sink, mounted into an empty
   // div - and the fix only taught the dialog's capture-phase Escape handler to
   // answer for a card that focus had left.
-  'views/catalog.ts': 15,  // +1 2026-08-18: interpBtn.innerHTML = INTERP_ICON — a trusted inline SVG constant, no interpolation; +2 2026-08-18 (plans/125): the [data-tsig] box (renderTextPanel, catTextWorkHtml escape()s every value) + read-text — the read-text <pre> is filled via textContent, never markup; +1 2026-08-18 (plans/126 markdown reading view): setTextRenderMode's [data-md-rendered] fill — user markdown through lib/markdown mdToHtml then DOMPurify.sanitize, the same pairing doc-editor's paste path uses; 2026-08-19 (inline-edits UX pass): the analyse-text fill folded into renderTextPanel, and the freed slot is openEditCard's card.innerHTML — sugCardHtml/rwCardHtml escape() every interpolated value
+  'views/catalog.ts': 17,  // +1 2026-08-20 (WP-G): the [data-usage] Used-in fill — labels escape()d, mirrors the [data-tech] sink; +1 2026-08-20: the Download-as toolbar menu (body-popover render `el.innerHTML`) — format values/labels are constants (plus the escape()d source format), no user text; +1 2026-08-18: interpBtn.innerHTML = INTERP_ICON — a trusted inline SVG constant, no interpolation; +2 2026-08-18 (plans/125): the [data-tsig] box (renderTextPanel, catTextWorkHtml escape()s every value) + read-text — the read-text <pre> is filled via textContent, never markup; +1 2026-08-18 (plans/126 markdown reading view): setTextRenderMode's [data-md-rendered] fill — user markdown through lib/markdown mdToHtml then DOMPurify.sanitize, the same pairing doc-editor's paste path uses; 2026-08-19 (inline-edits UX pass): the analyse-text fill folded into renderTextPanel, and the freed slot is openEditCard's card.innerHTML — sugCardHtml/rwCardHtml escape() every interpolated value
   'lib/job-toast.ts': 2,   // +2 2026-08-17 (plan 124 WP-F): the pill + panel innerHTML — title/note/id/count all ESC()d
   'lib/perf-hud.ts': 1,    // +1 2026-08-18 (perf-hud flag): root.innerHTML = scaffold() — only icon() glyphs + tRaw() strings, no interpolated values; the live FPS number is written via textContent, not markup
   'views/video-job-dialog.ts': 1, // +1 2026-08-18 (plan 124 WP-G): the Resolution <select> rebuild (resSel.innerHTML) — resOptionHtml() emits a numeric px value + an escapeHtml()d "{px}p" label, no user text
+  'views/grade-inline.ts': 1, // +1 2026-08-20: the still-grade mode's work.innerHTML — static controls; every interpolation is escapeHtml()d (t() labels, the whitelisted PRESET_LUTS ids/labels, format values)
   // The authenticated-capture sign-in panel (url-shot, desktop only). Four sinks -
   // the head, the sign-in button, the clear button, and the active-session status - 
   // each interpolating only icon() registry glyphs (lib/icons.ts) and t() literal
@@ -1072,7 +1073,10 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // adds no sink (the card is trim-offer.ts's own, mounted into the existing
   // `.asset-picker-trim` slot); the fix made offerTrim's answer nullable so a
   // dismissal stores nothing.
-  'views/picker.ts': 27,
+  // +2 2026-08-20 (plans/134): the Recent section (recentsEl.innerHTML - card() output,
+  // every value escapeHtml()d) and the type-pill bar (typebarEl.innerHTML - constant
+  // labels through t(), no user text).
+  'views/picker.ts': 29,
   // Personal send targets (plans/129): the connections section body. One sink; every
   // dynamic value (labels, provider kind, account names, scopes notes, field values)
   // goes through escape() in oauthRowHtml/credentialRowsHtml, the rest is t() output.

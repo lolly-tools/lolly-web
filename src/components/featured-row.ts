@@ -164,7 +164,7 @@ function tileMarkup(entry: FeaturedEntry, eager = false, menu = false): string {
   // seeded URL, so opening the tile lands in the look you're watching; see refreshLinkHref).
   return `
     <li class="ftile${iconHero ? ' ftile--icon' : ''}" data-tool="${escape(entry.id)}">
-      ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - every entry.href is a fixed-prefix in-app route ('#/tool/…', '#/c?asset=…', '#/pro?session=…'), else the '#/tool/<id>' fallback */ ''}
+      ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - every entry.href is a fixed-prefix in-app route ('#/tool/…', '#/c?asset=…', '#/batch?session=…'), else the '#/tool/<id>' fallback */ ''}
       <a class="ftile-link" href="${escape(href)}" data-basehref="${escape(href)}" aria-label="${escape(label)}" draggable="false">
         <span class="ftile-stage" aria-hidden="true">
           ${iconFill}

@@ -16,6 +16,7 @@ export const NAV_ICONS = {
   search: icon('search'),
   shield: icon('shieldCheck'),
   zap: icon('zap'),
+  table: icon('table'),
   help: icon('help'),
   dashboard: icon('dashboard'),
   open: icon('upload'),
@@ -100,7 +101,7 @@ function navItem(o: { href: string; nativeClass: string; variant?: string; style
     // `.gallery-nav-link` (their `.gallery-footer > .btn` display/flex rules would
     // fight the jelly host box). `size="sm"` gives compact padding; the visible
     // .gallery-nav-label span keeps its class so the mobile label-hide still works.
-    // nosemgrep: lolly-href-escape-is-not-scheme-validation - footerNav()'s four literal routes ('#/pro', '#/d', '#/verify', docsAppHref('index') → '#/docs/index')
+    // nosemgrep: lolly-href-escape-is-not-scheme-validation - footerNav()'s four literal routes ('#/batch', '#/d', '#/verify', docsAppHref('index') → '#/docs/index')
     return `<jelly-button class="gallery-nav-jelly" size="sm"${o.variant ? ` variant="${o.variant}"` : ''}${o.style ?? ''} data-href="${escape(o.href)}"${sfxAttr} aria-label="${escape(o.aria)}">${o.inner}</jelly-button>`;
   }
   // nosemgrep: lolly-href-escape-is-not-scheme-validation - same four literal footerNav() routes as the jelly branch above
@@ -119,9 +120,11 @@ export function footerNav({ proEnabled, searchHtml }: FooterNavOpts): string {
   const open = jellyActive()
     ? `<jelly-button class="gallery-nav-jelly" size="sm" variant="platinum" data-open-file data-sfx="click" aria-label="${escape(openAria)}">${openInner}</jelly-button>`
     : `<button type="button" class="gallery-nav-link btn" data-open-file data-sfx="click" aria-label="${escape(openAria)}">${openInner}</button>`;
+  // "Batch", table icon (Andy, 2026-08-20 - formerly "Pro" on #/pro; route
+  // renamed with no redirect inside the pre-08-29 break window).
   const pro = proEnabled ? navItem({
-    href: '#/pro', nativeClass: 'gallery-batch-link btn', variant: 'platinum',
-    aria: t('Open Batch mode — for power users'), inner: `${NAV_ICONS.zap}${label(t('Pro'))}`,
+    href: '#/batch', nativeClass: 'gallery-batch-link btn', variant: 'platinum',
+    aria: t('Open Batch mode — for power users'), inner: `${NAV_ICONS.table}${label(t('Batch'))}`,
   }) : '';
   const dashboard = navItem({
     href: '#/d', nativeClass: 'gallery-nav-link btn', variant: 'platinum', sfx: 'dashboard',

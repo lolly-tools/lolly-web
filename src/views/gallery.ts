@@ -18,6 +18,7 @@
  */
 
 import { escape } from '../utils.ts';
+import { isTrashedSlot } from '../lib/batch-slots.ts';
 import { t, tRaw } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
 import { isPlaceableAsset } from '../lib/asset-kinds.ts';
@@ -419,7 +420,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // featured + utility strips, pill counts) excludes them with no per-site guard. They
   // still load via #/tool/<id>, URL mode and the CLI - this only hides them from the listing.
   const index: { tools: GalleryTool[] } = { tools: rawIndex.tools.filter(t => t.listed !== false) };
-  const [savedEntries, profile, sessionSizes, pinnedTools] = await Promise.all([
+  const [savedEntriesRaw, profile, sessionSizes, pinnedTools] = await Promise.all([
     host.state.list(),
     host.profile.get(),
     host.state.sizes().catch((): Record<string, number> => ({})),
@@ -427,6 +428,8 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     // pin toggle state. Unreadable pins just render every card unpinned.
     pinnedToolIds().catch(() => new Set<string>()),
   ]);
+  // Trashed sessions (projects Trash, `__trash__:` slots) never list here.
+  const savedEntries = savedEntriesRaw.filter(e => !isTrashedSlot(e.slot));
 
   // Profile-personalized previews (see ../personalize-previews.js). `sig` is empty
   // unless the user opted in ("use my details"); only cache entries matching the
@@ -1681,7 +1684,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       showRecentExports: true,
       onResume: (entry) => {
         window.location.hash = isBatchSlot(entry.slot)
-          ? `#/pro?session=${encodeURIComponent(entry.slot)}`
+          ? `#/batch?session=${encodeURIComponent(entry.slot)}`
           : `#/tool/${entry.toolId}?slot=${encodeURIComponent(entry.slot)}`;
       },
       onDelete: (ref) => {

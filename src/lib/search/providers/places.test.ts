@@ -52,10 +52,10 @@ test('a label hit (w3) outranks a keyword-only hit (w1)', async () => {
 test('Batch mode is always in the registry (available to everyone; pro-batch flag retired)', async () => {
   // No flag gate any more - Batch mode is present regardless of the mirror.
   localStorage.removeItem(FLAG_MIRROR_KEY);
-  assert.equal((await provider.search(tokenize('batch'), 5))[0]?.href, '#/pro');
+  assert.equal((await provider.search(tokenize('batch'), 5))[0]?.href, '#/batch');
   // A stale 'pro-batch' entry (from before the flag was retired) no longer hides it.
   localStorage.setItem(FLAG_MIRROR_KEY, JSON.stringify({ 'pro-batch': false }));
-  assert.equal((await provider.search(tokenize('batch'), 5))[0]?.href, '#/pro');
+  assert.equal((await provider.search(tokenize('batch'), 5))[0]?.href, '#/batch');
   localStorage.removeItem(FLAG_MIRROR_KEY);
 });
 

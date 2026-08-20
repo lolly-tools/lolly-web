@@ -2,8 +2,11 @@
 /*
  * Global job progress toast (lib/job-toast.ts) - the async-job foundation's
  * only chrome (plans/124 section 9, WP-F). Body-level fixed, so router view
- * teardown never reaches it; below modals (native <dialog> top-layer always
- * wins) and the topbar dropdowns, above ordinary content.
+ * teardown never reaches it; above the topbar dropdowns and ordinary content,
+ * and above open modals too - mountModal adopts the toast node into each open
+ * <dialog> (see job-toast.ts) since z-index can never beat the top layer.
+ * Draggable by the pill / panel header (threshold'd pointer-drag in the TS,
+ * which switches it to inline top/left, clamped on-screen).
  *
  * The bar is a CANDY STRIPE built from brand tokens, never colour literals (the
  * box-colour rule): it re-themes with the active brand and stays visually tied
@@ -47,6 +50,14 @@
   box-shadow: 0 8px 28px hsl(0 0% 0% / 0.24);
 }
 .job-pill:hover { border-color: hsl(var(--ring)); }
+/* Drag handles: the whole pill and the panel header. touch-action:none so a
+   touch-drag repositions instead of scrolling the page under it (the job list
+   keeps its own touch scrolling); no text selection mid-drag. */
+.job-pill, .job-panel-head { touch-action: none; user-select: none; }
+.job-panel-head { cursor: grab; }
+.job-toast.is-dragging .job-pill,
+.job-toast.is-dragging .job-panel-head,
+.job-toast.is-dragging .job-pill-main { cursor: grabbing; }
 .job-pill-main {
   flex: 1 1 auto; min-width: 0;
   display: flex; flex-direction: column; gap: 0.3rem;
@@ -261,3 +272,44 @@ html[data-a11y-motion="reduce"] .job-bar-fill { animation: none; transition: non
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
+
+/* ── Undo toasts (lib/undo-toast.ts) — the same floating cluster ─────────────
+   Bottom-centre, above the bulk bars (9000) and below the job toast (9500).
+   Chrome-only: type rides the --a11y-fs multiplier; the drain bar is decorative
+   and stops entirely under reduced motion (OS query AND the app pref). */
+.undo-toasts {
+  position: fixed;
+  left: 50%; transform: translateX(-50%);
+  bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+  z-index: 9400;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  max-width: min(520px, calc(100vw - 2rem));
+}
+.undo-toast {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--card)); color: hsl(var(--foreground));
+  box-shadow: 0 8px 28px hsl(0 0% 0% / 0.24);
+  font-size: calc(13px * var(--a11y-fs));
+  max-width: 100%;
+}
+.undo-toast-msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.undo-toast-btn {
+  flex: none; border: 0; background: none; cursor: pointer;
+  font: inherit; font-weight: 700;
+  color: var(--brand-primary, hsl(var(--primary)));
+  padding: 2px 8px; border-radius: var(--radius);
+}
+.undo-toast-btn:hover { background: hsl(var(--muted)); }
+.undo-toast-bar {
+  position: absolute; left: 0; bottom: 0; height: 2px; width: 100%;
+  background: var(--brand-primary, hsl(var(--primary)));
+  transform-origin: left;
+  animation: undo-toast-drain linear forwards;
+}
+@keyframes undo-toast-drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+html[data-a11y-motion="reduce"] .undo-toast-bar { animation: none; }
+@media (prefers-reduced-motion: reduce) { .undo-toast-bar { animation: none; } }

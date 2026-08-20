@@ -10,9 +10,9 @@
  * later, lift those shared helpers into a common render-util module.)
  */
 import { buildPptxParts, EMU_PER_PX, parseGradientAngle, parseGradientStop, splitCssArgs, svgToNativePptx } from "@lolly/engine";
-import type { PptxSlide, PptxShape, PptxFill, PptxMedia } from "../../../../engine/src/pptx.ts";
+import type { PptxSlide, PptxShape, PptxFill, PptxMedia, PptxLayout } from "../../../../engine/src/pptx.ts";
 import { parseCssColorFull } from "./export-css.ts";
-import { asStr, deckBox, deckFill, deckSrcRect, deckSyncShape, deckTheme, emuOf, parseDeckModel, type DeckBox } from "./pptx-deck.ts";
+import { asStr, deckBox, deckFill, deckPlaceholder, deckSrcRect, deckSyncShape, deckTheme, emuOf, parseDeckModel, type DeckBox } from "./pptx-deck.ts";
 import { pureRotationDeg, detectUnsupportedCss, inlineBlobUrlsInEl, rasterizeNodeToDataUrl, imprintEmbedCanvas, stripCommentNodes, _host, type ExportOpts, type ImprintState } from "./export.ts";
 
 type Rgba = [number, number, number, number];
@@ -337,7 +337,7 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
         const png = await svgBytesToPng(buf, r.width * 2, r.height * 2);
         if (png) shapes.push({ kind: 'pic', ...boxOf(r), media: addMedia(png, 'png'), svg: addMedia(buf, 'svg'), name: 'background' });
       }
-    } catch { /* asset unreachable — skip */ }
+    } catch { /* asset unreachable - skip */ }
   }
 
   // An <img>. A SVG-sourced logo (the common case in Lolly - assets arrive as
@@ -497,7 +497,7 @@ async function deckImageShape(el: Record<string, unknown>, box: DeckBox, addMedi
       const png = await svgBytesToPng(buf, (box.cx / EMU_PER_PX) * 2, (box.cy / EMU_PER_PX) * 2);
       if (png) return { kind: 'pic', ...box, media: addMedia(png, 'png'), svg: addMedia(buf, 'svg') };
     }
-  } catch { /* asset unreachable — drop the element, keep the deck */ }
+  } catch { /* asset unreachable - drop the element, keep the deck */ }
   return null;
 }
 
@@ -513,10 +513,38 @@ function readDeckModel(node: Element): Record<string, unknown> | null {
   return parseDeckModel(el?.textContent);
 }
 
+const MAX_DECK_LAYOUTS = 64;          // upper bound on a gallery (SUSE's template has 26)
+const MAX_LAYOUT_PLACEHOLDERS = 16;   // placeholders per layout
+
+// Lower an authored layout gallery (untrusted tool JSON → engine PptxLayout[]). Same
+// element vocabulary as slides, so a layout's vector logo rides the same async image
+// fetch (svgBlip + PNG fallback). Returns undefined when there is no gallery.
+async function deckLayoutsFrom(raw: unknown): Promise<PptxLayout[] | undefined> {
+  const arr = Array.isArray(raw) ? raw.slice(0, MAX_DECK_LAYOUTS) : [];
+  if (!arr.length) return undefined;
+  const layouts: PptxLayout[] = [];
+  for (const L of arr as Array<Record<string, unknown>>) {
+    const media: PptxMedia[] = [];
+    const addMedia = (bytes: Uint8Array, ext: PptxMedia['ext']): number => (media.push({ bytes, ext }), media.length - 1);
+    const shapes: PptxShape[] = [];
+    const els = (Array.isArray(L?.elements) ? L.elements : []).slice(0, MAX_DECK_ELEMENTS);
+    for (const el of els) {
+      if (shapes.length >= MAX_PPTX_SHAPES) break;
+      const shape = await deckElementToShape(el, addMedia);
+      if (shape) shapes.push(shape);
+    }
+    const placeholders = (Array.isArray(L?.placeholders) ? L.placeholders : []).slice(0, MAX_LAYOUT_PLACEHOLDERS)
+      .map(deckPlaceholder).filter((p): p is NonNullable<ReturnType<typeof deckPlaceholder>> => p != null);
+    layouts.push({ name: asStr(L?.name) ?? 'Layout', bg: deckFill(L?.bg), shapes, media, placeholders });
+  }
+  return layouts;
+}
+
 async function renderPptxFromDeck(deck: Record<string, unknown>, opts: ExportOpts): Promise<Blob> {
   const size = deck.size as { w?: unknown; h?: unknown } | undefined;
   const emuW = Math.max(1, emuOf(size?.w, 1280));
   const emuH = Math.max(1, emuOf(size?.h, 720));
+  const layouts = await deckLayoutsFrom(deck.layouts);
   const slidesIn = (deck.slides as Array<Record<string, unknown>>).slice(0, MAX_DECK_SLIDES);
   const slides: PptxSlide[] = [];
   for (const s of slidesIn) {
@@ -536,10 +564,12 @@ async function renderPptxFromDeck(deck: Record<string, unknown>, opts: ExportOpt
     const slide: PptxSlide = { shapes, media };
     const notes = asStr(s?.notes)?.trim();
     if (notes) slide.notes = notes;
+    // Gallery binding: which layout this slide builds on (the engine clamps the index).
+    if (layouts && typeof s?.layout === 'number' && Number.isFinite(s.layout)) slide.layout = s.layout;
     slides.push(slide);
     opts.onProgress?.(slides.length, slidesIn.length);
   }
-  const parts = buildPptxParts(slides, { emuW, emuH, theme: deckTheme(deck.theme), meta: pptxMeta(opts), now: new Date().toISOString() });
+  const parts = buildPptxParts(slides, { emuW, emuH, theme: deckTheme(deck.theme), layouts, meta: pptxMeta(opts), now: new Date().toISOString() });
   return zipPptxParts(parts);
 }
 
@@ -557,9 +587,35 @@ export async function renderPptx(node: Element, opts: ExportOpts): Promise<Blob>
   const emuW = Math.max(1, Math.round((r0.width || 1) * EMU_PER_PX));
   const emuH = Math.max(1, Math.round((r0.height || 1) * EMU_PER_PX));
 
+  // A walker tool may still attach a branded layout gallery WITHOUT authoring a full
+  // deck model: <script type="application/json" data-pptx-layouts>{ ref?, theme?,
+  // layouts:[…] }</script> plus a data-pptx-layout="i" binding per page. `ref` is the
+  // px space the gallery was authored in - the tool can't know what size the export
+  // stage renders at, so its geometry is rescaled into page-0's real box here. The
+  // node may also carry the brand `theme` (the walker path had none before).
+  let layouts: PptxLayout[] | undefined;
+  let walkTheme: ReturnType<typeof deckTheme>;
+  const layoutsEl = node.querySelector?.('[data-pptx-layouts]');
+  if (layoutsEl?.textContent?.trim()) {
+    try {
+      const raw = JSON.parse(layoutsEl.textContent) as Record<string, unknown> | unknown[];
+      const arr = Array.isArray(raw) ? raw : (raw as Record<string, unknown>)?.layouts;
+      const ref = Array.isArray(raw) ? undefined : (raw as { ref?: { w?: number; h?: number } }).ref;
+      if (ref && typeof ref.w === 'number' && ref.w > 0 && typeof ref.h === 'number' && ref.h > 0) {
+        scaleDeckLayouts(arr, (r0.width || ref.w) / ref.w, (r0.height || ref.h) / ref.h);
+      }
+      layouts = await deckLayoutsFrom(arr);
+      if (!Array.isArray(raw)) walkTheme = deckTheme(raw?.theme);
+    } catch { /* malformed gallery - export without one */ }
+  }
+
   const slides: PptxSlide[] = [];
   for (const el of pageEls) {
     const slide = await pptxSlideFromPage(el, opts);
+    if (layouts) {
+      const li = parseInt(el.getAttribute?.('data-pptx-layout') ?? '', 10);
+      if (Number.isFinite(li)) slide.layout = li; // engine clamps
+    }
     // Speaker notes: a display:none [data-slide-notes] node inside the page (the
     // convention any tool can emit). Hidden from the shape walk above and from
     // every rasteriser, but readable here - and it is NOT [data-export-hide], so
@@ -570,6 +626,32 @@ export async function renderPptx(node: Element, opts: ExportOpts): Promise<Blob>
     opts.onProgress?.(slides.length, pageEls.length);
   }
 
-  const parts = buildPptxParts(slides, { emuW, emuH, meta: pptxMeta(opts), now: new Date().toISOString() });
+  const parts = buildPptxParts(slides, { emuW, emuH, layouts, theme: walkTheme, meta: pptxMeta(opts), now: new Date().toISOString() });
   return zipPptxParts(parts);
+}
+
+// Rescale an authored layout gallery (untrusted JSON, px in its `ref` space) into the
+// rendered page space, in place: geometry by axis, font points by the vertical factor.
+function scaleDeckLayouts(layouts: unknown, sx: number, sy: number): void {
+  if (!Array.isArray(layouts) || (sx === 1 && sy === 1)) return;
+  for (const L of layouts as Array<Record<string, unknown>>) {
+    for (const list of [L?.elements, L?.placeholders]) {
+      if (!Array.isArray(list)) continue;
+      for (const el of list as Array<Record<string, unknown>>) {
+        if (!el || typeof el !== 'object') continue;
+        if (typeof el.x === 'number') el.x *= sx;
+        if (typeof el.w === 'number') el.w *= sx;
+        if (typeof el.y === 'number') el.y *= sy;
+        if (typeof el.h === 'number') el.h *= sy;
+        const st = el.style as Record<string, unknown> | undefined;
+        if (st && typeof st.sizePt === 'number') st.sizePt *= sy;
+        if (Array.isArray(el.paras)) {
+          for (const p of el.paras as Array<Record<string, unknown>>) {
+            if (!Array.isArray(p?.runs)) continue;
+            for (const r of p.runs as Array<Record<string, unknown>>) if (typeof r?.sizePt === 'number') r.sizePt *= sy;
+          }
+        }
+      }
+    }
+  }
 }

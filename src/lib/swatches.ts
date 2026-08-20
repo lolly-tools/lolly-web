@@ -18,6 +18,7 @@
  */
 import { escape } from '../utils.ts';
 import { t, tRaw } from '../i18n.ts';
+import { icon } from './icons.ts';
 import type { PaletteEntry } from '../palette.ts';
 
 export const isTransparent = (hex: string): boolean => !hex || hex.toLowerCase() === 'transparent';
@@ -76,7 +77,11 @@ export function groupPalette(palette: readonly PaletteEntry[]): GroupedPalette {
   return { brand, spectrum, ramps: [...ramps] };
 }
 
-export function swatch(c: PaletteEntry): string {
+/** `opts.fav` (host views that wire a favourites overlay, e.g. the Catalog) renders a
+ *  star toggle on the card; omit it (or call via `.map(swatch)`, whose index lands here
+ *  and is ignored) for the plain read-only card. */
+export function swatch(c: PaletteEntry, opts?: { fav?: boolean } | number): string {
+  const fav = typeof opts === 'object' && opts ? opts.fav : undefined;
   const measured = isLockedInk(c);
   const trans = isTransparent(c.hex);
   const chipStyle = trans ? '' : `style="background:${escape(c.hex)}"`;
@@ -84,15 +89,16 @@ export function swatch(c: PaletteEntry): string {
   // it N/A. Locked colours show their exact/spot values; everything else, the generic note.
   const cmykLabel = trans ? 'CMYK N/A' : inkText(c);
   const flag = c.spot
-    ? `<span class="plat-chip-flag" title="${escape(`Spot colour: ${c.spot.name}${c.spot.book ? ' · ' + c.spot.book : ''} — its CMYK equivalent is substituted into CMYK PDF exports`)}">SPOT</span>`
-    : '<span class="plat-chip-flag" title="Exact CMYK ink values — substituted directly into CMYK PDF exports">CMYK</span>';
+    ? `<span class="plat-chip-flag" title="${escape(`Spot colour: ${c.spot.name}${c.spot.book ? ' · ' + c.spot.book : ''} - its CMYK equivalent is substituted into CMYK PDF exports`)}">SPOT</span>`
+    : '<span class="plat-chip-flag" title="Exact CMYK ink values - substituted directly into CMYK PDF exports">CMYK</span>';
   return `
     <div class="plat-swatch${measured ? ' is-measured' : ''}">
       <button type="button" class="plat-swatch-chip${trans ? ' is-transparent' : ''}" ${chipStyle}
               data-copy="${trans ? 'transparent' : escape(c.hex)}"
-              aria-label="${escape(c.label)} — ${trans ? 'transparent' : escape(c.hex)} (click to copy)">
+              aria-label="${escape(c.label)} - ${trans ? 'transparent' : escape(c.hex)} (click to copy)">
         ${measured ? flag : ''}
       </button>
+      ${fav === undefined ? '' : `<button type="button" class="plat-swatch-fav${fav ? ' is-on' : ''}" data-fav-swatch="${escape(c.label)}" aria-pressed="${fav}" aria-label="${escape(fav ? t('Remove from favourites') : t('Add to favourites'))}" title="${escape(fav ? t('Remove from favourites') : t('Add to favourites'))}">${icon('star', { size: 13 })}</button>`}
       <span class="plat-swatch-name">${escape(c.label)}</span>
       <code class="plat-swatch-hex">${trans ? 'transparent' : escape(c.hex)}</code>
       <span class="plat-swatch-cmyk${measured || trans ? '' : ' is-generic'}">${cmykLabel}</span>
@@ -136,8 +142,8 @@ export interface SwatchTileOptions {
 export function tileLabel(name: string, hex: string, locked: boolean): string {
   const hexPart = hex || t('unset');
   return locked
-    ? tRaw('{name} — {hex} (print colour locked)', { name, hex: hexPart })
-    : tRaw('{name} — {hex}', { name, hex: hexPart });
+    ? tRaw('{name} - {hex} (print colour locked)', { name, hex: hexPart })
+    : tRaw('{name} - {hex}', { name, hex: hexPart });
 }
 
 export function swatchTile(entry: SwatchTileEntry, opts: SwatchTileOptions = {}): string {

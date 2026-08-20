@@ -1199,7 +1199,7 @@ function parseRoute(): Route {
     if (parts[0] === 'data') return { name: 'data', params: query || '' }; // on-device spreadsheet viewer/editor
     if (parts[0] === 'start') return { name: 'start', params: query || '' }; // brand wizard
     if (parts[0] === 'multi') return { name: 'multi', params: query || '' }; // multi-edit (?s=slot,slot…)
-    if (parts[0] === 'pro') return { name: 'pro', params: query || '' }; // /pro batch mode
+    if (parts[0] === 'batch') return { name: 'pro', params: query || '' }; // /batch mode (formerly /pro - renamed 2026-08-20, no redirect)
     if (parts[0] === 'p') return { name: 'projects', folderId: parts[1] || null, params: query || '' };
     if (parts[0] === 'c' || parts[0] === 'catalog') return { name: 'catalog', params: query || '' };
     if (parts[0] === 'u' || parts[0] === 'utilities') return { name: 'utilities', params: query || '' }; // gallery filtered to the utility category
@@ -1256,9 +1256,9 @@ function parseRoute(): Route {
     if (pathParts[0] === 'design') {
       return { name: 'tool', toolId: 'design', params: window.location.search.slice(1) };
     }
-    // /pro and /d are real routes; everything else is a tool shortcut. /platform and
+    // /batch and /d are real routes; everything else is a tool shortcut. /platform and
     // /capabilities are retired aliases that fold into the Dashboard.
-    if (pathParts[0] === 'pro') { window.location.replace('/#/pro'); return { name: 'pro' }; }
+    if (pathParts[0] === 'batch') { window.location.replace('/#/batch'); return { name: 'pro' }; }
     if (pathParts[0] === 'd' || pathParts[0] === 'dashboard' || pathParts[0] === 'platform' || pathParts[0] === 'capabilities') {
       // Preserve any deep-link query (e.g. /platform?print) across the redirect,
       // like the hash-form branch and the tool-shortcut fallback below.

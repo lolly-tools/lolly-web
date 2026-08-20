@@ -4870,6 +4870,12 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const importPack = async (file: File): Promise<void> => {
     const summary = await importBrandPack(transferHost, await file.arrayBuffer());
     await reload();
+    if (summary.packInstance) {
+      // The pack chose the instance base - the first-run chooser must not re-ask.
+      void import('./instance-choice.ts')
+        .then(({ markInstanceChoiceMade }) => markInstanceChoiceMade())
+        .catch(() => { /* best-effort */ });
+    }
     if (summary.packTools > 0) {
       // An instance pack (plans/131) landed tools + catalog entries beside the
       // brand: resync now so the gallery lists them without a reload/boot, then

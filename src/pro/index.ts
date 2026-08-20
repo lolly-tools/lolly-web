@@ -13,6 +13,7 @@
  * To remove the feature: delete this folder and that one route case.
  */
 import './pro.css';
+import { isTrashedSlot } from '../lib/batch-slots.ts';
 import { serializeUrlState, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION } from '@lolly/engine';
 import { marksToCsv, csvToMarks } from '../lib/print-marks-csv.ts';
 
@@ -66,6 +67,9 @@ interface IndexedTool {
   status?: string;
   exportable?: boolean;
   capabilities?: readonly string[];
+  /** The tool's inline-SVG mark from catalog/tools/index.json - first-party
+   *  generated data, injected raw exactly like the gallery's tool cards. */
+  icon?: string;
 }
 
 // The host surface /pro needs: HostV1 plus the web state store's size query.
@@ -630,10 +634,15 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
 
     // Dock to the cell's top-left (overlays it), escaping the scroll container.
     // Nudge 2px left so the popover's flat left edge aligns flush with the grid.
+    // Height: claim the whole viewport below the anchor (Andy, 2026-08-20 - the
+    // list should show as much of itself as it can), overriding the sheet's
+    // 60vh cap; the list inside scrolls for whatever still doesn't fit.
     const r = td.getBoundingClientRect();
     const W = Math.max(240, Math.round(r.width));
     const left = Math.max(6, Math.min(r.left - 2, window.innerWidth - W - 8));
-    pop.style.cssText = `position:fixed;top:${Math.round(r.top)}px;left:${left}px;width:${W}px;z-index:9999;`;
+    const top = Math.round(r.top);
+    const maxH = Math.max(240, window.innerHeight - top - 10);
+    pop.style.cssText = `position:fixed;top:${top}px;left:${left}px;width:${W}px;max-height:${maxH}px;z-index:9999;`;
 
     const search = pop.querySelector<HTMLInputElement>('.pro-tpl-search')!;
     const listEl = pop.querySelector<HTMLElement>('.pro-tpl-list')!;
@@ -656,7 +665,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
       active = Math.min(active, Math.max(0, shown.length - 1));
       listEl.innerHTML = shown.length
         ? shown.map((t, i) => `<li><button type="button" role="option" id="pro-tpl-opt-${i}" aria-selected="${i === active ? 'true' : 'false'}" class="pro-tpl-opt${i === active ? ' is-active' : ''}" data-tool="${escape(t.name)}">
-            <span class="pro-tpl-opt-name">${escape(t.name)}</span>${t.status === 'experimental' ? '<span class="pro-tpl-opt-exp">exp</span>' : ''}
+            <span class="pro-tpl-opt-ic" aria-hidden="true">${t.icon ?? ''}</span><span class="pro-tpl-opt-name">${escape(t.name)}</span>${t.status === 'experimental' ? '<span class="pro-tpl-opt-exp">exp</span>' : ''}
           </button></li>`).join('')
         : `<li class="pro-tpl-none">${t('No templates match “{query}”.', { query: q })}</li>`;
       syncActiveDescendant();
@@ -1320,10 +1329,11 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   async function openFoldersOverlay() {
     if (!opts.openFolderOverlay) return;
     closeSessions();
-    const [entries, sizes] = await Promise.all([
+    const [entriesRaw, sizes] = await Promise.all([
       host.state.list(),
       host.state.sizes().catch(() => ({})),
     ]);
+    const entries = entriesRaw.filter(e => !isTrashedSlot(e.slot));
     const nameById = new Map(((window as WindowWithIndex).__toolIndex?.tools ?? []).map(t => [t.id, t.name]));
     opts.openFolderOverlay(host, {
       context: 'pro',

@@ -33,11 +33,17 @@ import {
   favItems as favItemsRule,
   selectableIds as selectableIdsRule,
   pruneSelection as pruneSelectionRule,
+  sortAssets,
+  assetAddedAt,
+  assetModifiedAt,
   type TypeFilter,
+  type CatSort,
 } from './catalog-filter.ts';
 import { audioTransportHtml, wireAudioTransport } from '../lib/audio-transport.ts';
 import type { VizHandle } from '../lib/butterchurn-viz.ts';
 import { t, tRaw } from '../i18n.ts';
+import { showUndoToast, flushUndoToasts } from '../lib/undo-toast.ts';
+import { createFolderStore, folderPath, type FolderHost } from '../folders.ts';
 import { genAiPill, assetAiKind, GENAI_CLAIM } from '../lib/genai-pill.ts';
 import { announce } from '../a11y.ts';
 import { mountModal } from '../components/modal.ts';
@@ -96,7 +102,10 @@ import { songUrlToWavBlobUrl } from '../lib/zzfxm-render.ts';
 import { modUrlToWavBlobUrl, isModuleFormat } from '../lib/mod-render.ts';
 import { attachAudioMeter } from '../lib/audio-meter.ts';
 import { exportSwatches, paletteEntriesToSwatches, type SwatchExportFormat } from '../lib/swatch-export.ts';
-import { groupPalette, swatch } from '../lib/swatches.ts';
+import { groupPalette, isTransparent, swatch } from '../lib/swatches.ts';
+import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
+import { parseHex, hexToOklch } from '../../../../engine/src/brand-derive.ts';
+import { rgbToCmyk } from '../../../../engine/src/color.ts';
 import { categoryGlyph } from '../lib/category-icons.ts';
 import { staggerReveal } from '../lib/reveal.ts';
 import { PALETTE } from '../palette.ts';
@@ -616,6 +625,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   let profile: Profile | null = null;
   let allAssets: AssetRef[] = [];
   let assetById = new Map<string, AssetRef>();
+  // Uploads soft-deleted behind a live undo toast (lib/undo-toast.ts): out of
+  // sight immediately, actually deleted only when the toast settles. reload()
+  // filters them so a mid-toast refresh can't resurrect the tile.
+  const pendingDeletes = new Set<string>();
   let favSet = new Set<string>();
   let hiddenSet = new Set<string>();
   let overrides: Record<string, string> = {};
@@ -705,6 +718,19 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     noStart: '.cat-tile, button, a, input, label, textarea, select, dialog, .cat-bulkbar, '
       + '.cat-toolbar, .cat-fav-strip, .featured, .gallery-topbar, .gallery-footer, .updz, '
       + '[data-dropzone-mount], .cat-dl-section, .cat-uploads-bar',
+    // Keyboard grid (plans/132 WP-L): arrows/Space/Cmd-A from the shared model;
+    // Delete soft-deletes uploads (catalog assets are a permanent contract -
+    // they are silently skipped); F2 renames a single upload.
+    keyboard: {
+      remove: (refs) => {
+        const uploads = refs.map(id => assetById.get(id)).filter((r): r is AssetRef => !!r && r.source === 'user');
+        if (uploads.length) softDeleteUploads(uploads);
+      },
+      rename: (ref) => {
+        const a = assetById.get(ref);
+        if (a && a.source === 'user') void renameUserAsset(a);
+      },
+    },
   });
 
   // ── Context menu: right-click / long-press on any asset tile (lib/context-menu.ts,
@@ -723,6 +749,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       menuItemHtml('download', icon('download'), t('Download…')),
       menuItemHtml('share', icon('link'), t('Copy link')),
       menuItemHtml('select', icon('check'), selected.has(id) ? t('Deselect') : t('Select')),
+      menuItemHtml('add-to-project', icon('folder'), t('Add to project…')),
       isUser ? menuItemHtml('duplicate', icon('duplicate'), t('Duplicate')) : '',
       menuItemHtml('hide', icon('eye'), hiddenSet.has(base) ? t('Unhide') : t('Hide')),
       isUser ? menuItemHtml('delete', icon('trash'), t('Delete'), { danger: true }) : '',
@@ -735,6 +762,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     return `<p class="folder-menu-head">${t('{n} selected', { n: selected.size })}</p>`
       + `<div class="folder-menu-list" role="menu" aria-label="${escape(t('Selection actions'))}">${[
         menuItemHtml('fav', icon('star'), allSelectedFav() ? t('Unfavourite') : t('Favourite')),
+        menuItemHtml('add-to-project', icon('folder'), t('Add to project…')),
         menuItemHtml('hide', icon('eye'), allSelectedHidden() ? t('Unhide') : t('Hide')),
         uploads ? menuItemHtml('duplicate', icon('duplicate'), t('Duplicate')) : '',
         uploads ? menuItemHtml('download', icon('download'), t('Download')) : '',
@@ -754,6 +782,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       return;
     }
     if (act === 'select') { toggleSelect(id); return; }
+    if (act === 'add-to-project') { await addToProject([id]); return; }
     if (act === 'duplicate' || act === 'delete') {
       // "This tile", not "the selection": a multi-selection containing the tile would
       // have opened the bulk menu instead, so replacing the selection here is faithful.
@@ -792,22 +821,43 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   let textThumbs: { destroy(): void } | null = null;     // on-screen-gated text-excerpt upgrader
   let viewOptsOpen = false;
   let closeViewOpts: () => void = () => {};              // set in wire(); called on teardown
+  // Section sort (plans/132 WP-A) - applied per section, persisted per device.
+  // Last modified is the DEFAULT (Andy, 2026-08-20 - matches Projects): uploads
+  // lead with what was touched most recently; catalog assets carry no dates, so
+  // the stable sort leaves their curated order untouched. The menu's 'Default'
+  // option = the curated manifest order (uploads newest-first from the bridge).
+  const SORT_PREF_KEY = 'lolly-catalog-sort';
+  // Layout + density (plans/132 WP-I): grid (default) | list rows, and a
+  // comfortable | compact tile size. Both persisted, both pure CSS classes.
+  const LAYOUT_PREF_KEY = 'lolly-catalog-layout';
+  const DENSITY_PREF_KEY = 'lolly-catalog-density';
+  let catLayout: 'grid' | 'list' = localStorage.getItem(LAYOUT_PREF_KEY) === 'list' ? 'list' : 'grid';
+  let catDensity: 'comfortable' | 'compact' = localStorage.getItem(DENSITY_PREF_KEY) === 'compact' ? 'compact' : 'comfortable';
+  const CAT_SORTS: readonly CatSort[] = ['default', 'name', 'added', 'modified', 'size', 'type'];
+  let catSort: CatSort = 'modified';
+  try {
+    const stored = localStorage.getItem(SORT_PREF_KEY) as CatSort | null;
+    if (stored && CAT_SORTS.includes(stored)) catSort = stored;
+  } catch { /* storage off */ }
   try {
     const v = localStorage.getItem(FAV_VIEW_KEY);
     if (v === 'coverflow' || v === 'gallery') favView = v;
     if (localStorage.getItem(FAV_STRIP_KEY) === 'off') favStripOn = false;
   } catch { /* storage off */ }
 
-  // Section fold state persists across reloads (like the fav-strip prefs above). The great
-  // default for a big catalogue is EVERYTHING FOLDED - the page opens as a tidy stack of
-  // section headers you expand on demand - so an absent key seeds every collapsible section.
+  // Section fold state persists across reloads (like the fav-strip prefs above).
+  // First-visit default (2026-08-20 audit): the ASSET sections open - a library
+  // should lead with its content, not a stack of closed headers - with only the
+  // reference material (swatches/fonts) folded. Once the user touches any fold
+  // the stored set is the whole truth, exactly as before.
   const COLLAPSE_KEY = 'lolly-catalog-collapsed';
   const ALL_SECTION_KEYS = ['your-uploads', ...LIB_GROUPS.map(g => g.key), 'hidden', 'swatches', 'fonts'];
+  const FIRST_VISIT_COLLAPSED = ['swatches', 'fonts'];
   try {
     const stored = localStorage.getItem(COLLAPSE_KEY);
-    const keys = stored ? (JSON.parse(stored) as string[]) : ALL_SECTION_KEYS;
+    const keys = stored ? (JSON.parse(stored) as string[]) : FIRST_VISIT_COLLAPSED;
     for (const k of keys) collapsed.add(k);
-  } catch { for (const k of ALL_SECTION_KEYS) collapsed.add(k); }
+  } catch { for (const k of FIRST_VISIT_COLLAPSED) collapsed.add(k); }
   const persistCollapsed = (): void => {
     try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...collapsed])); } catch { /* storage off */ }
   };
@@ -891,6 +941,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         // palettes) covered by their own surfaces, and without this split every
         // brand-pack data file would flood the grid.
         || ((a.type === 'text' || a.type === 'data') && a.source === 'user'));
+    if (pendingDeletes.size) allAssets = allAssets.filter(a => !pendingDeletes.has(a.id));
     assetById = new Map(allAssets.map(a => [a.id, a]));
     searchHaystack = null; // asset set changed - drop the stale search index
 
@@ -918,6 +969,24 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         <div class="cat-viewopts filter-popover" role="group" aria-label="${escape(t('Catalog view options'))}"${viewOptsOpen ? '' : ' hidden'}>
           ${themeSegmentHtml()}
           ${soundSegmentHtml()}
+          <p class="filter-pop-head">${t('Layout')}</p>
+          ${segHtml('catalog-layout', [
+            { id: 'grid', label: t('Grid') },
+            { id: 'list', label: t('List') },
+          ], catLayout, t('Catalog layout'), { attr: 'data-catlayout' })}
+          ${segHtml('catalog-density', [
+            { id: 'comfortable', label: t('Comfortable') },
+            { id: 'compact', label: t('Compact') },
+          ], catDensity, t('Tile density'), { attr: 'data-catdensity' })}
+          <p class="filter-pop-head">${t('Sort by')}</p>
+          ${segHtml('catalog-sort', [
+            { id: 'default', label: t('Default') },
+            { id: 'name', label: t('Name') },
+            { id: 'added', label: t('Added') },
+            { id: 'modified', label: t('Modified') },
+            { id: 'size', label: t('Size') },
+            { id: 'type', label: t('Type') },
+          ], catSort, t('Sort assets by'), { attr: 'data-catsort' })}
           <p class="filter-pop-head">${t('Favourites')}</p>
           ${segHtml('favourites-view', [
             { id: 'gallery', label: t('Gallery') },
@@ -1371,12 +1440,15 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // gallery cards.
     const sel = selected.has(ref.id);
     return `
-      <div class="cat-tile${fav ? ' is-fav' : ''}${hidden ? ' is-hidden-asset' : ''}${sel ? ' is-selected' : ''}" data-id="${escape(ref.id)}">
+      <div class="cat-tile${fav ? ' is-fav' : ''}${hidden ? ' is-hidden-asset' : ''}${sel ? ' is-selected' : ''}" data-id="${escape(ref.id)}" draggable="true">
         <button type="button" class="cat-check" data-select="${escape(ref.id)}" aria-pressed="${sel}" aria-label="${escape(tRaw('Select {name}', { name }))}" title="${escape(t('Select'))}">${CHECK_ICON}</button>
         <button type="button" class="cat-tile-open" data-open="${escape(ref.id)}" aria-label="${escape(tRaw('View {name} details', { name }))}">
           <span class="cat-tile-fig">${thumbHtml(ref, true)}</span>
           <span class="cat-tile-cap">
-            <span class="cat-tile-name" title="${escape(name)}">${escape(name)}</span>
+            <span class="cat-tile-name" title="${escape((() => {
+              const added = assetAddedAt(ref);
+              return added ? `${name} — ${tRaw('added {date}', { date: new Date(added).toLocaleDateString() })}` : name;
+            })())}">${escape(name)}</span>
             <span class="cat-tile-sub"><span class="cat-src cat-src--${isUser ? 'user' : 'lib'}">${sourceLabel}</span>${fmt ? ` · ${escape(fmt)}` : ''}${aiKind ? genAiPill(aiKind) : ''}${aiSignalsChip(ref)}</span>
           </span>
         </button>
@@ -1402,6 +1474,12 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   const matchesQuery = (a: AssetRef): boolean =>
     !query || matchesQueryRule(a, query, haystack());
   const favItems = (): AssetRef[] => favItemsRule(visibleAssets(), favSet, assetBaseId);
+
+  // Favourite SWATCHES ride the same favourites set under a `swatch:` prefix (a palette
+  // entry has no asset id; its stable key is its label). Prefixed keys never match an
+  // asset id, so every asset-only consumer of the set ignores them.
+  const swatchFavKey = (label: string): string => `swatch:${label}`;
+  const favSwatches = (): PaletteEntry[] => palette.filter(c => favSet.has(swatchFavKey(c.label)));
 
   // The "Your uploads" section - a standard `.cat-group` that is ALWAYS rendered in the
   // browse view (even with zero uploads): its body leads with a drop area, so adding files
@@ -1482,12 +1560,12 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // Favourited items still appear in their category group below (the strip is a
     // shortcut, matching the picker's favourites-plus-groups behaviour). Hidden while
     // searching so the results grid is the whole focus.
-    const showStrip = favStripOn && !query && favItems().length > 0;
+    const showStrip = favStripOn && !query && (favItems().length > 0 || favSwatches().length > 0);
 
     // The user's OWN uploads lead the grid (right after the favourites strip): pulled out
     // of the category groups into one "Your uploads" section they manage in one place.
     // Catalog assets keep their category bucketing below.
-    const userItems = visible.filter(a => a.source === 'user');
+    const userItems = sortAssets(visible.filter(a => a.source === 'user'), catSort);
     const catalogItems = visible.filter(a => a.source !== 'user');
 
     // Bucket the catalog assets by (override-aware) category, in LIB_GROUPS order.
@@ -1504,7 +1582,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const showUploads = userItems.length > 0 || !query;
     if (showUploads) parts.push(uploadsSectionHtml(userItems));
     for (const g of LIB_GROUPS) {
-      const items = buckets.get(g.key);
+      const items = buckets.get(g.key) && sortAssets(buckets.get(g.key)!, catSort);
       if (!items?.length) continue;
       // A category of themable icons gets the same colour swatches as the download/details
       // views - pick one and the whole grid recolours (see the .cat-dl-theme handler in wire).
@@ -1522,7 +1600,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // Hidden assets never match a search (they're not in `visible`); keep them under a
     // dedicated group only in the normal (non-search) view.
     if (showHidden && !query && hiddenItems.length) {
-      parts.push(sectionHtml('hidden', 'Hidden', hiddenItems.length, hiddenItems.map(assetTile).join('')));
+      parts.push(sectionHtml('hidden', 'Hidden', hiddenItems.length, sortAssets(hiddenItems, catSort).map(assetTile).join('')));
     }
 
     // No asset matched the active filters → a clear empty line instead of a bare toolbar.
@@ -1594,30 +1672,77 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // Mount (or re-mount) the favourites strip into its placeholder using the shared
   // featured-row component - same Gallery/Cover-Flow presentation as the Tools hero,
   // but each tile links to the asset's share deep link (→ its details modal).
+  // A favourite swatch's tile art: pure fills only (no strokes), because the strip's
+  // icon-hero CSS restyles glyph strokes and must leave a colour chip untouched.
+  function swatchStripArt(c: PaletteEntry): string {
+    const trans = isTransparent(c.hex);
+    const fill = trans ? 'hsl(var(--muted-foreground) / .25)' : c.hex;
+    return `<svg viewBox="0 0 64 64" aria-hidden="true"><rect x="6" y="7" width="53" height="53" rx="14" fill="#00000033"/><rect x="5" y="5" width="53" height="53" rx="14" fill="${escape(fill)}"/></svg>`;
+  }
+
+  // The detail line under a favourite swatch: hex, RGB, ink (measured CMYK/spot when
+  // locked, generic RGB→CMYK otherwise) and OKLCH - the "what do I put in the deck /
+  // the CSS / the print job" readout, in one glance.
+  function swatchStripBlurb(c: PaletteEntry): string {
+    if (isTransparent(c.hex)) return '';
+    const parts: string[] = [c.hex.toUpperCase()];
+    const rgba = parseHex(c.hex);
+    if (rgba) {
+      parts.push(`RGB ${rgba[0]} ${rgba[1]} ${rgba[2]}`);
+      const cmyk = Array.isArray(c.cmyk)
+        ? c.cmyk
+        : rgbToCmyk(rgba[0] / 255, rgba[1] / 255, rgba[2] / 255).map(v => Math.round(v * 100));
+      parts.push(`CMYK ${cmyk.join(' ')}`);
+    }
+    const ok = hexToOklch(c.hex);
+    if (ok) parts.push(`OKLCH ${ok.l.toFixed(2)} ${ok.c.toFixed(3)} ${Number.isFinite(ok.h) ? Math.round(ok.h) : 0}`);
+    if (c.spot) parts.push(`Spot · ${c.spot.name}`);
+    return parts.join(' · ');
+  }
+
+  // Open on a favourite-swatch tile → reveal the Swatches reference panel below.
+  function revealSwatches(): void {
+    const sec = viewEl.querySelector<HTMLElement>('.cat-group[data-group="swatches"]');
+    if (!sec) return;
+    if (sec.classList.contains('is-collapsed')) sec.querySelector<HTMLElement>('[data-cat-toggle]')?.click();
+    sec.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
+  }
+
   function mountFavStrip(): void {
     featuredHandle?.destroy();
     featuredHandle = null;
     const mount = viewEl.querySelector<HTMLElement>('.cat-fav-strip');
     if (!mount) return;
     const items = favItems();
-    if (!items.length) return;
+    const swatchEntries: FeaturedEntry[] = favSwatches().map(c => ({
+      id: swatchFavKey(c.label),
+      name: c.label,
+      icon: swatchStripArt(c),
+      href: '#/c',
+      featured: { blurb: swatchStripBlurb(c) },
+    }));
+    if (!items.length && !swatchEntries.length) return;
     const entries: FeaturedEntry[] = items.map(a => ({
       id: a.id,
       name: String(a.meta?.name ?? a.id),
-      // A user-uploaded lottie's url is JSON, a video's is mp4/webm, and an AUDIO asset's
-      // is an .opus/.mp3/.xm - an <img> (what the featured-row renders) breaks on all of
-      // them, so omit the preview rather than ship a broken tile.
-      preview: (a.meta?._placeholder || (a.type === 'lottie' && a.source === 'user') || a.type === 'video' || a.type === 'audio') ? undefined : a.url,
-      // ...and for audio, fill the strip's `icon` slot with the SAME waveform the grid
-      // draws. That slot exists to be the always-present art behind a missing preview,
-      // which is exactly what a favourited track needs - otherwise a starred audio asset
-      // is a card with a name and nothing above it (the fourth renderer to hit this).
-      icon: a.type === 'audio' ? audioCardArt(a) : undefined,
+      // A user-uploaded lottie's url is JSON, a video's is mp4/webm, an AUDIO asset's is
+      // an .opus/.mp3/.xm, and a TEXT/data asset's bytes ARE the text - an <img> (what
+      // the featured-row renders) breaks on all of them, so omit the preview rather than
+      // ship a broken tile.
+      preview: (a.meta?._placeholder || (a.type === 'lottie' && a.source === 'user') || a.type === 'video' || a.type === 'audio' || a.type === 'text' || a.type === 'data') ? undefined : a.url,
+      // ...and fill the strip's `icon` slot so those tiles still carry art. Audio gets
+      // the SAME waveform the grid draws; motion and text get their type glyphs (the
+      // icon-hero treatment) - otherwise a starred one is a card with a name and
+      // nothing above it (the fourth renderer to hit this).
+      icon: a.type === 'audio' ? audioCardArt(a)
+        : (a.type === 'video' || a.type === 'lottie') ? CAT_ICONS.motion
+        : (a.type === 'text' || a.type === 'data') ? CAT_ICONS.text
+        : undefined,
       formats: a.format ? [a.format] : undefined,
       href: `#/c?asset=${encodeURIComponent(a.id)}`,   // → this view + the details modal
       featured: {},                                     // no tool variants: strip just shows the preview
     }));
-    featuredHandle = mountFeaturedRow(mount, entries, host, {
+    featuredHandle = mountFeaturedRow(mount, [...entries, ...swatchEntries], host, {
       viewMode: favView,
       label: t('Favourites'),
       ariaLabel: t('Favourite assets'),
@@ -1625,7 +1750,11 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       // (#/c?asset=…), so a route navigation would be swallowed by the router's same-route
       // dedupe (→ "Open does nothing"); opening the modal directly also preserves the grid's
       // scroll/expansion state and lets the same favourite be reopened repeatedly.
-      onActivate: (id) => { const ref = assetById.get(id); if (ref) openDetails(ref, catIconTheme, catPhotoTreatment); },
+      // A swatch tile has no details modal - it reveals the Swatches panel instead.
+      onActivate: (id) => {
+        if (id.startsWith('swatch:')) { revealSwatches(); return; }
+        const ref = assetById.get(id); if (ref) openDetails(ref, catIconTheme, catPhotoTreatment);
+      },
     });
   }
 
@@ -1639,7 +1768,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const assets = viewEl.querySelector<HTMLElement>('.cat-assets');
     if (!assets) return;
     let mount = viewEl.querySelector<HTMLElement>('.cat-fav-strip');
-    if (favItems().length) {
+    if (favItems().length || favSwatches().length) {
       if (!mount) {
         mount = document.createElement('div'); mount.className = 'cat-fav-strip';
         assets.insertBefore(mount, assets.firstChild);
@@ -1683,7 +1812,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   function swatchesSectionHtml(): string {
     const { brand, spectrum, ramps } = groupPalette(palette);
     const total = brand.length + spectrum.length + ramps.reduce((n, [, cols]) => n + cols.length, 0);
-    const grid = (list: typeof brand) => `<div class="plat-swatch-grid">${list.map(swatch).join('')}</div>`;
+    const grid = (list: typeof brand) => `<div class="plat-swatch-grid">${list.map(c => swatch(c, { fav: favSet.has(swatchFavKey(c.label)) })).join('')}</div>`;
     const rampBlocks = ramps.map(([fam, cols]) =>
       `<h3 class="cat-panel-subhead">${escape(fam)}</h3>${grid(cols)}`).join('');
     const downloads = `<div class="cat-font-downloads cat-swatch-downloads">${SWATCH_DOWNLOADS.map(d =>
@@ -1745,6 +1874,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     count: () => selected.size,
     actions: [
       { id: 'fav', icon: STAR_ICON, label: () => (allSelectedFav() ? t('Unfavourite') : t('Favourite')) },
+      { id: 'add-to-project', icon: icon('folder'), label: () => t('Add to project'), title: () => t('Reference the selection into a project folder — no copies, the assets stay in the Catalog') },
       { id: 'hide', icon: icon('eye'), label: () => (allSelectedHidden() ? t('Unhide') : t('Hide')) },
       { id: 'replace', icon: REPLACE_ICON, label: () => t('Replace'), title: () => t('Swap in a new file, keeping the same image — every saved session, tool and project that uses it updates to the new one'), hidden: () => !singleSelectedUploadRef() },
       { id: 'rename', icon: PENCIL_ICON, label: () => t('Rename'), title: () => t('Change this upload’s name'), hidden: () => !singleSelectedUploadRef() },
@@ -1758,7 +1888,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   function render(): void {
     pruneSelection();
     viewEl.innerHTML = `
-      <div class="catalog">
+      <div class="catalog${catLayout === 'list' ? ' cat-layout-list' : ''}${catDensity === 'compact' ? ' cat-density-compact' : ''}">
         ${catalogTopbarHtml()}
         <h1 class="visually-hidden">${t('Catalogue')}</h1>
         <div class="catalog-body">${bodyHtml()}</div>
@@ -2166,8 +2296,15 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // no model and no capability gate - honest on any device that decodes the
     // image. Static rasters only, like matte.
     const canRetouch = zoomable && ref.type === 'raster' && !ref.meta?.animated && !ref.meta?._placeholder;
-    const canMatte = zoomable && ref.type === 'raster' && !ref.meta?.animated
-      && host.matte?.isAvailable() === true && host.matte.models().length > 0;
+    // Grade + Open in Darkroom (2026-08-20): still bitmaps only - a LUT applied
+    // here would flatten an animated raster to one frame. Grade is the quick
+    // inline look (the video Grade tab's still sibling, views/grade-inline.ts);
+    // Darkroom is the deep editor, opened with this image preloaded.
+    const canGrade = zoomable && ref.type === 'raster' && !ref.meta?.animated && !ref.meta?._placeholder;
+    // No model gate any more (2026-08-20): the matte dialog now offers a colour
+    // key alongside the AI model, and the key needs no capability at all - so
+    // "Remove background" works on every device, model staged or not.
+    const canMatte = zoomable && ref.type === 'raster' && !ref.meta?.animated;
     // Read text OUT of an image (host.ocr, plans/125). Gated on a STAGED model, so it
     // is invisible until one is vendored - honest progressive enhancement. Raster only.
     const canOcr = ref.type === 'raster' && !ref.meta?._placeholder
@@ -2222,6 +2359,65 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           : thumbHtml(ref, false, true)}
       </div>
       <div class="cat-details-body">
+        <!-- Toolbar FIRST: the meta/tech/credential sections below are variable
+             length, so the actions live at a fixed spot at the top of the column
+             instead of drifting down with the content (Andy, 2026-08-20). -->
+        ${(() => {
+          // Grouped toolbar (plans/132 WP-J): four rows - pinned verbs, the EDIT
+          // family, manage, destructive last - instead of ~16 flat buttons. The
+          // edit row collapses behind an "Edit…" expander under 860px (the
+          // toggle-edit act below); every button and gate is unchanged.
+          const pinned = [
+            `<button type="button" class="btn cat-act-fav${fav ? ' is-fav' : ''}" data-act="fav" data-sfx="twinkle" aria-pressed="${fav}">${STAR_ICON}<span>${fav ? t('Favourited') : t('Favourite')}</span></button>`,
+            `<button type="button" class="btn cat-act-download" data-act="download">${DOWNLOAD_ICON}<span>${configurable ? t('Download…') : t('Download')}</span></button>`,
+            isTextAsset ? `<button type="button" class="btn cat-act-dl-as" data-act="dl-as" aria-haspopup="menu" aria-expanded="false">${DOWNLOAD_ICON}<span>${t('Download as')}</span></button>` : '',
+            `<button type="button" class="btn cat-act-share" data-act="share">${SHARE_ICON}<span>${t('Copy link')}</span></button>`,
+          ];
+          const edit = [
+            croppable ? `<button type="button" class="btn cat-act-crop" data-act="crop">${CROP_ICON}<span>${t('Crop…')}</span></button>` : '',
+            canRetouch ? `<button type="button" class="btn cat-act-retouch" data-act="retouch">${icon('stamp', { size: 14 })}<span>${t('Retouch…')}</span></button>` : '',
+            canGrade ? `<button type="button" class="btn cat-act-grade" data-act="grade">${icon('palette', { size: 14 })}<span>${t('Grade…')}</span></button>` : '',
+            canGrade ? `<button type="button" class="btn cat-act-darkroom" data-act="darkroom">${icon('camera', { size: 14 })}<span>${t('Open in Darkroom')}</span></button>` : '',
+            canUpscale ? `<button type="button" class="btn cat-act-upscale" data-act="upscale">${icon('aiSpark', { size: 14 })}<span>${t('Upscale…')}</span></button>` : '',
+            canMatte ? `<button type="button" class="btn cat-act-matte" data-act="matte">${icon('scissors', { size: 14 })}<span>${t('Remove background…')}</span></button>` : '',
+            trimmable ? `<button type="button" class="btn cat-act-trim" data-act="trim">${icon('fitContain', { size: 14 })}<span>${t('Trim margins')}</span></button>` : '',
+            canOcr ? `<button type="button" class="btn cat-act-read-text" data-act="read-text">${icon('aiSpark', { size: 14 })}<span>${t('Read text')}</span></button>` : '',
+            canExtractAudio ? `<button type="button" class="btn cat-act-extract-audio" data-act="extract-audio">${icon('music', { size: 14 })}<span>${t('Extract audio…')}</span></button>` : '',
+            canVideoMatte ? `<button type="button" class="btn cat-act-vid-matte" data-act="vid-matte">${icon('scissors', { size: 14 })}<span>${t('Remove background…')}</span></button>` : '',
+            canVideoCrop ? `<button type="button" class="btn cat-act-vid-crop" data-act="vid-crop">${CROP_ICON}<span>${t('Crop…')}</span></button>` : '',
+            canVideoUpscale ? `<button type="button" class="btn cat-act-vid-upscale" data-act="vid-upscale">${icon('aiSpark', { size: 14 })}<span>${t('Upscale…')}</span></button>` : '',
+            canVideoGrade ? `<button type="button" class="btn cat-act-vid-grade" data-act="vid-grade">${icon('palette', { size: 14 })}<span>${t('Grade…')}</span></button>` : '',
+            canVideoTrim ? `<button type="button" class="btn cat-act-vid-trim" data-act="vid-trim">${icon('filmStrip', { size: 14 })}<span>${t('Trim…')}</span></button>` : '',
+            isTextAsset ? `<button type="button" class="btn cat-act-analyse-text" data-act="analyse-text">${icon('aiSpark', { size: 14 })}<span>${t('Analyse text')}</span></button>
+            <button type="button" class="btn cat-act-humanize" data-act="humanize">${icon('wrench', { size: 14 })}<span>${t('Fix characters')}</span></button>
+            <button type="button" class="btn cat-act-copy-text" data-act="copy-text">${icon('duplicate', { size: 14 })}<span>${t('Copy text')}</span></button>` : '',
+          ];
+          const manage = [
+            `<button type="button" class="btn" data-act="add-to-project">${icon('folder', { size: 14 })}<span>${t('Add to project…')}</span></button>`,
+            `<button type="button" class="btn" data-act="recategorise">${TAG_ICON}<span>${t('Recategorise…')}</span></button>`,
+            isUser && !aiKind ? `<button type="button" class="btn cat-act-declare-ai" data-act="declare-ai-origins" title="${escape(t('If this came from AI, flag its AI origins on the asset so that travels honestly wherever it is used.'))}">${icon('aiSpark', { size: 14 })}<span>${t('Flag AI origins')}</span></button>` : '',
+            isUser ? `<button type="button" class="btn" data-act="rename">${PENCIL_ICON}<span>${t('Rename')}</span></button>
+               <button type="button" class="btn" data-act="replace">${REPLACE_ICON}<span>${t('Replace…')}</span></button>` : '',
+          ];
+          const danger = [
+            isUser
+              ? `<button type="button" class="btn cat-act-danger" data-act="delete">${TRASH_ICON}<span>${t('Delete')}</span></button>`
+              : (hidden
+                  ? `<button type="button" class="btn" data-act="unhide">${EYE_ICON}<span>${t('Unhide')}</span></button>`
+                  : `<button type="button" class="btn cat-act-danger" data-act="hide">${EYE_OFF_ICON}<span>${t('Hide')}</span></button>`),
+          ];
+          const row = (btns: string[], cls = ''): string => {
+            const inner = btns.filter(Boolean).join('');
+            return inner ? `<span class="cat-act-row${cls ? ` ${cls}` : ''}">${inner}</span>` : '';
+          };
+          const editRow = row(edit, 'cat-act-row--edit');
+          const editToggle = editRow
+            ? `<button type="button" class="btn cat-act-more" data-act="toggle-edit" aria-expanded="false">${PENCIL_ICON}<span>${t('Edit…')}</span></button>`
+            : '';
+          return `<div class="cat-details-actions">
+            ${row(pinned)}${editToggle}${editRow}${row(manage)}${row(danger, 'cat-act-row--danger')}
+          </div>`;
+        })()}
         <h2 class="cat-details-name">${escape(name)}${aiSignalsChip(ref)}</h2>
         ${ref.type === 'audio' ? `<div class="cat-details-art" data-audio-art aria-hidden="true">${audioCardArt(ref)}</div>` : ''}
         <dl class="cat-details-meta">
@@ -2229,10 +2425,30 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           <div><dt>${t('Category')}</dt><dd>${escape(t(categoryLabel(libCategory(ref, overrides))))}</dd></div>
           <div><dt>${t('Format')}</dt><dd>${escape(String(ref.format ?? ref.type).toUpperCase())}</dd></div>
           ${aiKind ? `<div><dt>${t('AI content')}</dt><dd class="cat-details-ai">${genAiPill(aiKind)}<span>${t('Is or contains genAI content')}</span></dd></div>` : ''}
+          ${(() => {
+            // Added/Modified (plans/132 WP-A): uploads always have a date (the id
+            // embeds mint time); catalog assets have none and show no row.
+            const added = assetAddedAt(ref);
+            const modified = assetModifiedAt(ref);
+            const fmtDate = (ts: number): string => new Date(ts).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+            return (added ? `<div><dt>${t('Added')}</dt><dd>${escape(fmtDate(added))}</dd></div>` : '')
+              + (modified && added && modified - added > 60_000 ? `<div><dt>${t('Modified')}</dt><dd>${escape(fmtDate(modified))}</dd></div>` : '');
+          })()}
+          ${(() => {
+            // Which projects reference this asset (plans/132 WP-D) - read straight
+            // off the profile's folder records, no extra fetch.
+            const profFolders = ((profile as unknown as { folders?: Array<{ name: string; items?: Array<{ ref?: string }> }> })?.folders ?? []);
+            const inFolders = profFolders.filter(f => (f.items ?? []).some(it => it.ref === ref.id || String(it.ref ?? '').split('?')[0] === ref.id));
+            if (!inFolders.length) return '';
+            const names = inFolders.slice(0, 2).map(f => escape(f.name)).join(', ');
+            const extra = inFolders.length > 2 ? ` +${inFolders.length - 2}` : '';
+            return `<div><dt>${t('Projects')}</dt><dd>${names}${extra}</dd></div>`;
+          })()}
           <div><dt>${t('ID')}</dt><dd><code>${escape(ref.id)}</code></dd></div>
           ${tags.length ? `<div><dt>${t('Tags')}</dt><dd class="cat-details-tags">${tags.map(tag => `<span class="cat-tag">${escape(String(tag))}</span>`).join('')}</dd></div>` : ''}
         </dl>
         <div class="cat-details-tech" data-tech hidden></div>
+        <div class="cat-details-tech" data-usage hidden></div>
         ${isTextAsset || canOcr ? `<div class="cat-details-tsig" data-tsig hidden></div>` : ''}
         ${showVerify ? `<div class="cat-details-cred">
           <div class="cat-cred-lolly" hidden>${lollyBadge('lg')}<span class="cat-cred-lolly-sub">${t('This file’s Content Credential records a Lolly export, intact.')}</span></div>
@@ -2241,47 +2457,14 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         </div>` : ''}
         ${themable ? `<div class="cat-dl-section"><span class="cat-dl-label">${t('Colours')}</span>${iconSwatchRow(dTheme)}</div>` : ''}
         ${treatable ? `<div class="cat-dl-section"><span class="cat-dl-label">${t('Colour')}</span>${treatmentSwatchRow(dTreatment)}</div>` : ''}
-        <div class="cat-details-actions">
-          <button type="button" class="btn cat-act-fav${fav ? ' is-fav' : ''}" data-act="fav" data-sfx="twinkle" aria-pressed="${fav}">${STAR_ICON}<span>${fav ? t('Favourited') : t('Favourite')}</span></button>
-          <button type="button" class="btn cat-act-download" data-act="download">${DOWNLOAD_ICON}<span>${configurable ? t('Download…') : t('Download')}</span></button>
-          ${isTextAsset ? `<button type="button" class="btn cat-act-analyse-text" data-act="analyse-text">${icon('aiSpark', { size: 14 })}<span>${t('Analyse text')}</span></button>
-          <button type="button" class="btn cat-act-humanize" data-act="humanize">${icon('wrench', { size: 14 })}<span>${t('Fix characters')}</span></button>
-          <button type="button" class="btn cat-act-copy-text" data-act="copy-text">${icon('duplicate', { size: 14 })}<span>${t('Copy text')}</span></button>` : ''}
-          ${croppable ? `<button type="button" class="btn cat-act-crop" data-act="crop">${CROP_ICON}<span>${t('Crop…')}</span></button>` : ''}
-          ${canUpscale ? `<button type="button" class="btn cat-act-upscale" data-act="upscale">${icon('aiSpark', { size: 14 })}<span>${t('Upscale…')}</span></button>` : ''}
-          ${canMatte ? `<button type="button" class="btn cat-act-matte" data-act="matte">${icon('scissors', { size: 14 })}<span>${t('Remove background…')}</span></button>` : ''}
-          ${canRetouch ? `<button type="button" class="btn cat-act-retouch" data-act="retouch">${icon('stamp', { size: 14 })}<span>${t('Retouch…')}</span></button>` : ''}
-          ${canOcr ? `<button type="button" class="btn cat-act-read-text" data-act="read-text">${icon('aiSpark', { size: 14 })}<span>${t('Read text')}</span></button>` : ''}
-          ${canExtractAudio ? `<button type="button" class="btn cat-act-extract-audio" data-act="extract-audio">${icon('music', { size: 14 })}<span>${t('Extract audio…')}</span></button>` : ''}
-          ${canVideoMatte ? `<button type="button" class="btn cat-act-vid-matte" data-act="vid-matte">${icon('scissors', { size: 14 })}<span>${t('Remove background…')}</span></button>` : ''}
-          ${canVideoCrop ? `<button type="button" class="btn cat-act-vid-crop" data-act="vid-crop">${CROP_ICON}<span>${t('Crop…')}</span></button>` : ''}
-          ${canVideoUpscale ? `<button type="button" class="btn cat-act-vid-upscale" data-act="vid-upscale">${icon('aiSpark', { size: 14 })}<span>${t('Upscale…')}</span></button>` : ''}
-          ${canVideoGrade ? `<button type="button" class="btn cat-act-vid-grade" data-act="vid-grade">${icon('palette', { size: 14 })}<span>${t('Grade…')}</span></button>` : ''}
-          ${canVideoTrim ? `<button type="button" class="btn cat-act-vid-trim" data-act="vid-trim">${icon('filmStrip', { size: 14 })}<span>${t('Trim…')}</span></button>` : ''}
-          <button type="button" class="btn" data-act="recategorise">${TAG_ICON}<span>${t('Recategorise…')}</span></button>
-          <button type="button" class="btn cat-act-share" data-act="share">${SHARE_ICON}<span>${t('Copy link')}</span></button>
-          ${trimmable ? `<button type="button" class="btn cat-act-trim" data-act="trim">${icon('fitContain', { size: 14 })}<span>${t('Trim margins')}</span></button>` : ''}
-          ${isUser
-            ? `<button type="button" class="btn" data-act="replace">${REPLACE_ICON}<span>${t('Replace…')}</span></button>
-               <button type="button" class="btn" data-act="rename">${PENCIL_ICON}<span>${t('Rename')}</span></button>
-               <button type="button" class="btn cat-act-danger" data-act="delete">${TRASH_ICON}<span>${t('Delete')}</span></button>`
-            : (hidden
-                ? `<button type="button" class="btn" data-act="unhide">${EYE_ICON}<span>${t('Unhide')}</span></button>`
-                : `<button type="button" class="btn cat-act-danger" data-act="hide">${EYE_OFF_ICON}<span>${t('Hide')}</span></button>`)}
-        </div>
-        ${isTextAsset ? `<div class="cat-text-dl" role="group" aria-label="${escape(t('Download as'))}">
-          <span class="cat-dl-label">${t('Download as')}</span>
-          <button type="button" class="btn btn--sm" data-act="dl-text" data-fmt="raw">${escape((ref.format || 'txt').toUpperCase())}</button>
-          <button type="button" class="btn btn--sm" data-act="dl-text" data-fmt="html">HTML</button>
-          <button type="button" class="btn btn--sm" data-act="dl-text" data-fmt="rtf">RTF</button>
-          <button type="button" class="btn btn--sm" data-act="dl-text" data-fmt="docx">DOCX</button>
-          <button type="button" class="btn btn--sm" data-act="dl-text" data-fmt="odt">ODT</button>
-        </div>` : ''}
       </div>`;
     // Exits inline trim mode, or null when no card is up. Assigned by enterInlineTrim
     // below; declared here so the modal's onClose can answer an open card (its teardown
     // revokes the two preview object URLs) when the dialog goes away under it.
     let inlineTrim: (() => void) | null = null;
+    // The toolbar's "Download as" format menu (text assets) - a body-popover
+    // mounted INSIDE this dialog so it paints above the ::backdrop.
+    let dlAsPopover: import('../components/body-popover.ts').BodyPopoverHandle | null = null;
     const modal = mountModal(content, {
       className: 'cat-details',
       initialFocus: (el) => el.querySelector<HTMLElement>('.cat-details-close'),
@@ -2302,6 +2485,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         inlineTrim?.();           // …and answer an open trim card, so its preview URLs are revoked
         inlineRetouch?.exit();    // …and stand a brush session down (aborts any in-flight fill)
         inlineVideoEdit?.exit();  // …and the video Grade/Trim mode (its own <video> would keep decoding)
+        inlineGrade?.exit();      // …and the still grade mode (an enqueued job keeps running - by design)
+        dlAsPopover?.close(false); // …and the Download-as menu (it lives inside this dialog's subtree)
         syncAssetUrl(null);       // the bar goes back to the plain catalog URL
         detailsDialog = null;
         detailsModal = null;
@@ -2330,6 +2515,22 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
             .join('')}</dl>`;
       box.hidden = false;
     }).catch(() => { /* never blocks the modal */ });
+
+    // "Used in" (plans/132 WP-G): which saved sessions reference this asset -
+    // async off the lazy per-mount session index, same stale-guard as the tech
+    // panel. Makes Replace's "everything that uses it updates" claim inspectable.
+    void usedInSessions(ref).then(uses => {
+      if (detailsDialog !== dlg || !uses.length) return;
+      const box = dlg.querySelector<HTMLElement>('[data-usage]');
+      if (!box) return;
+      const shown = uses.slice(0, 5);
+      const extra = uses.length - shown.length;
+      box.innerHTML = `<div class="cat-tech-head">${t('Used in')}</div>`
+        + `<dl class="cat-details-meta">${shown
+            .map(u => `<div><dt>${escape(t('Session'))}</dt><dd>${escape(u.label)}</dd></div>`)
+            .join('')}${extra > 0 ? `<div><dt></dt><dd>${escape(tRaw('and {n} more', { n: extra }))}</dd></div>` : ''}</dl>`;
+      box.hidden = false;
+    }).catch(() => { /* best-effort - the panel just stays hidden */ });
 
     // "Made with Lolly" is only honest when the stored file genuinely carries an intact
     // Lolly credential, so reveal the lockup lazily off the authoritative verifier rather
@@ -2580,10 +2781,100 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // this preview - the look and the in/out points are both decisions about what is
     // on screen, so they are made at the frame. Applying enqueues a background job and
     // leaves; the global toast owns progress, exactly like the vid-* dialog path.
+    // Inline STILL grade (2026-08-20): the video Grade tab's bitmap sibling. Same
+    // takeover shape as the video mode; Apply enqueues a background job and exits,
+    // so the toast (riding above this modal now) owns progress and cancel.
+    let inlineGrade: import('./grade-inline.ts').GradeInlineHandle | null = null;
+    let gradeEntering = false;
+    async function enterInlineGrade(): Promise<void> {
+      if (inlineGrade || gradeEntering || inlineCrop || inlineRetouch || inlineVideoEdit) return;
+      const preview = dlg.querySelector<HTMLElement>('.cat-details-preview');
+      if (!preview) return;
+      gradeEntering = true;
+      let modeCleared = false;
+      try {
+        // prepCropSource bakes the selected photo treatment into the source, so a
+        // treated preview grades (and saves) what the user is actually looking at.
+        const src = await prepCropSource(ref, dTreatment);
+        if (detailsDialog !== dlg || inlineGrade) return;
+        if (!src) return;
+        const { mountInlineGrade } = await import('./grade-inline.ts');
+        if (detailsDialog !== dlg || inlineGrade) return;
+        cropModeActive = true;   // pause attachZoom's wheel/drag while the mode owns the stage
+        preview.classList.add('is-grading');
+        dlg.classList.add('is-grading');
+        const handle = await mountInlineGrade({
+          stage: preview,
+          rasterSrc: src.rasterSrc,
+          name,
+          formats: [['png', 'PNG'], ['jpg', 'JPG'], ['webp', 'WebP']],
+          log: (level, msg, data) => host.log?.(level, msg, { id: ref.id, ...data }),
+          deliver: async (blob, format, g) => {
+            // Sign + save exactly like the crop mode's "Save to catalog": the same
+            // signed bytes a download would carry, with the honest colour step. The
+            // video grade's provenance builder is op-level, so the credited-LUT
+            // attribution (SUSE7 is CC BY) rides the same c2pa.color_adjustments
+            // action parameters here as it does on a graded clip.
+            const { videoProvenanceFor } = await import('../lib/video-jobs.ts');
+            const prov = videoProvenanceFor('grade', { lutLabel: g.lutLabel || undefined, lutCredit: g.lutCredit });
+            const detail: Record<string, string> = {
+              ...(g.lutLabel ? { look: g.lutLabel } : {}),
+              intensity: String(Math.round(g.intensity * 100)),
+              ...(g.grain > 0 ? { grain: String(Math.round(g.grain * 100)), grainSize: String(g.grainSize) } : {}),
+              ...(g.vignette > 0 ? { vignette: String(Math.round(g.vignette * 100)) } : {}),
+            };
+            const signed = await signDerived(ref, blob, format, { edits: prov.actions as C2paActionInput[], detail });
+            const base = String(ref.meta?.name ?? ref.id.split('/').pop() ?? 'image').replace(/\.[a-z0-9]+$/i, '');
+            const slug = base.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+            const id = `user/grade/${Date.now()}-${slug || 'grade'}`;
+            const aiKind = assetAiKind(ref);
+            const assets = host.assets as unknown as {
+              _uploadUserAsset(r: { id: string; type: AssetRef['type']; format: string; blob: Blob; version: string; meta: Record<string, unknown> }): Promise<void>;
+            };
+            await assets._uploadUserAsset({
+              id,
+              type: 'raster',
+              format,
+              blob: signed,
+              version: '1.0.0',
+              meta: {
+                name: tRaw('{name} — graded', { name: base }),
+                bytes: signed.size,
+                ...(aiKind ? { aiGenerated: aiKind } : {}),
+              },
+            });
+            announce(tRaw('Graded copy saved to your uploads as "{name}".', { name: tRaw('{name} — graded', { name: base }) }));
+            // A landing job refreshes the grid; it never opens a modal over the
+            // user, who may be well past this edit by then (the vid-* precedent).
+            if (mounted) void reload().then(rerender);
+          },
+          onDone: () => {
+            if (modeCleared) return;
+            modeCleared = true;
+            inlineGrade = null;
+            cropModeActive = false;
+            preview.classList.remove('is-grading');
+            dlg.classList.remove('is-grading');
+          },
+        });
+        if (detailsDialog !== dlg) { handle.exit(); return; }
+        inlineGrade = handle;
+      } finally {
+        gradeEntering = false;
+        // A mount that threw must not leave the takeover classes - and attachZoom's
+        // pause - standing over a stage with no mode on it (the video mode's rule).
+        if (!inlineGrade && !modeCleared) {
+          preview.classList.remove('is-grading');
+          dlg.classList.remove('is-grading');
+          if (detailsDialog === dlg) cropModeActive = false;
+        }
+      }
+    }
+
     let inlineVideoEdit: import('./video-edit-inline.ts').VideoEditInlineHandle | null = null;
     let videoEditEntering = false;
     async function enterInlineVideoEdit(tab: import('./video-edit-inline.ts').VideoEditTab): Promise<void> {
-      if (inlineVideoEdit || videoEditEntering || inlineCrop || inlineRetouch) return;
+      if (inlineVideoEdit || videoEditEntering || inlineCrop || inlineRetouch || inlineGrade) return;
       const preview = dlg.querySelector<HTMLElement>('.cat-details-preview');
       const thumb = preview?.querySelector<HTMLVideoElement>('video.cat-thumb');
       if (!preview || !thumb) return;
@@ -2672,6 +2963,27 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
             <button type="button" class="btn cat-crop-go modal-primary">${escape(t('Download crop'))}</button>
           </span>
         </div>
+        ${vector ? '' : `<div class="cat-vid-panel cat-crop-tf">
+          <label class="cat-vid-slider">
+            <span class="cat-vid-slider-label">${escape(t('Rotate'))}</span>
+            <input type="range" data-tf="rotate" min="-45" max="45" step="0.1" value="0">
+            <output data-tf-out="rotate">0°</output>
+          </label>
+          <button type="button" class="btn btn--sm cat-tf-quarter" title="${escape(t('Rotate 90 degrees'))}" aria-label="${escape(t('Rotate 90 degrees'))}">90°↷</button>
+          <label class="cat-vid-slider">
+            <span class="cat-vid-slider-label">${escape(t('Skew X'))}</span>
+            <input type="range" data-tf="skewX" min="-30" max="30" step="0.1" value="0">
+            <output data-tf-out="skewX">0°</output>
+          </label>
+          <label class="cat-vid-slider">
+            <span class="cat-vid-slider-label">${escape(t('Skew Y'))}</span>
+            <input type="range" data-tf="skewY" min="-30" max="30" step="0.1" value="0">
+            <output data-tf-out="skewY">0°</output>
+          </label>
+          <button type="button" class="btn btn--sm cat-tf-flip" data-flip="h" aria-pressed="false" title="${escape(t('Flip horizontally'))}">⇋</button>
+          <button type="button" class="btn btn--sm cat-tf-flip" data-flip="v" aria-pressed="false" title="${escape(t('Flip vertically'))}">⇵</button>
+          <button type="button" class="btn btn--sm cat-tf-reset" hidden>${escape(t('Reset'))}</button>
+        </div>`}
         <div class="cat-crop-body">
           <div class="cat-crop-viewport">
             <div class="cat-crop-stage">
@@ -2690,6 +3002,49 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       const hudEl = work.querySelector<HTMLElement>('.cat-zoom-hud');
       const crop = wireCropBox({ viewport, stage, imgEl, boxEl, hudEl, vector, aspect });
       const fmt = (): string => work.querySelector<HTMLInputElement>('input[name="cat-crop-fmt"]:checked')?.value ?? (vector ? 'svg' : 'png');
+
+      // Straighten transforms (2026-08-20, Andy - phone photos need aligning
+      // before filtering): rotate (fine ±45° + 90° steps), skew X/Y, flips.
+      // Preview = a CSS transform on the image UNDER the axis-aligned crop
+      // frame (the standard straighten UX; the viewport clips the overhang);
+      // export applies the identical matrix in downloadCrop's raster path.
+      const tf = { rotate: 0, quarter: 0, skewX: 0, skewY: 0, flipH: false, flipV: false };
+      const tfActive = (): boolean => !!(tf.rotate || tf.quarter || tf.skewX || tf.skewY || tf.flipH || tf.flipV);
+      const applyTf = (): void => {
+        const deg = tf.quarter * 90 + tf.rotate;
+        imgEl.style.transform = tfActive()
+          ? `rotate(${deg}deg) skewX(${tf.skewX}deg) skewY(${tf.skewY}deg) scale(${tf.flipH ? -1 : 1}, ${tf.flipV ? -1 : 1})`
+          : '';
+        for (const key of ['rotate', 'skewX', 'skewY'] as const) {
+          const out = work.querySelector<HTMLElement>(`[data-tf-out="${key}"]`);
+          if (out) out.textContent = `${key === 'rotate' ? tf.quarter * 90 + tf.rotate : tf[key]}°`;
+        }
+        const reset = work.querySelector<HTMLElement>('.cat-tf-reset');
+        if (reset) reset.hidden = !tfActive();
+      };
+      for (const slider of work.querySelectorAll<HTMLInputElement>('[data-tf]')) {
+        slider.addEventListener('input', () => {
+          tf[slider.dataset.tf as 'rotate' | 'skewX' | 'skewY'] = parseFloat(slider.value) || 0;
+          applyTf();
+        });
+      }
+      work.querySelector<HTMLButtonElement>('.cat-tf-quarter')?.addEventListener('click', () => {
+        tf.quarter = (tf.quarter + 1) % 4;
+        applyTf();
+      });
+      for (const flip of work.querySelectorAll<HTMLButtonElement>('.cat-tf-flip')) {
+        flip.addEventListener('click', () => {
+          if (flip.dataset.flip === 'h') tf.flipH = !tf.flipH; else tf.flipV = !tf.flipV;
+          flip.setAttribute('aria-pressed', String(flip.dataset.flip === 'h' ? tf.flipH : tf.flipV));
+          applyTf();
+        });
+      }
+      work.querySelector<HTMLButtonElement>('.cat-tf-reset')?.addEventListener('click', () => {
+        tf.rotate = 0; tf.quarter = 0; tf.skewX = 0; tf.skewY = 0; tf.flipH = false; tf.flipV = false;
+        for (const slider of work.querySelectorAll<HTMLInputElement>('[data-tf]')) slider.value = '0';
+        for (const flip of work.querySelectorAll<HTMLButtonElement>('.cat-tf-flip')) flip.setAttribute('aria-pressed', 'false');
+        applyTf();
+      });
 
       const exit = (): void => {
         if (inlineCrop !== exit) return;   // idempotent
@@ -2737,7 +3092,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
             });
             made.ref = await host.assets.get(id);
           };
-          try { await downloadCrop(ref, vector, svgText, imgEl, crop.getFrac(), fmt(), { theme, treatment, origSvg }, save); }
+          try { await downloadCrop(ref, vector, svgText, imgEl, crop.getFrac(), fmt(), { theme, treatment, origSvg, transform: tfActive() ? tf : undefined }, save); }
           catch (err) { host.log?.('error', 'Catalog crop save failed', { id: ref.id, error: String(err) }); }
           exit();
           if (made.ref) {
@@ -2747,7 +3102,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           return;
         }
         if (tgt.closest('.cat-crop-go')) {
-          try { await downloadCrop(ref, vector, svgText, imgEl, crop.getFrac(), fmt(), { theme, treatment, origSvg }); }
+          try { await downloadCrop(ref, vector, svgText, imgEl, crop.getFrac(), fmt(), { theme, treatment, origSvg, transform: tfActive() ? tf : undefined }); }
           catch (err) { host.log?.('error', 'Catalog crop failed', { id: ref.id, error: String(err) }); }
           exit();   // back to the detail view after a successful (or failed) download
         }
@@ -2855,6 +3210,23 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       if (!mounted) return;
       rerender();
       announce(t('Margins trimmed.'));
+      // The pre-trim record (blob included) is still in `record` - offer the way
+      // back. Undo re-uploads the original bytes at the same id (its checksum
+      // describes those bytes again, so it rides along untouched).
+      showUndoToast({
+        message: tRaw('Trimmed "{name}".', { name: String(record.meta?.name ?? ref.id) }),
+        undo: async () => {
+          try { await host.assets._uploadUserAsset({ ...record, version: String(Date.now()) }); }
+          catch (err) { host.log?.('error', 'Trim undo failed', { id: ref.id, error: String(err) }); return; }
+          if (!mounted) return;
+          await reload();
+          if (!mounted) return;
+          rerender();
+          announce(t('Restored the untrimmed image.'));
+          const back = assetById.get(ref.id);
+          if (back && detailsDialog === dlg) openDetails(back, dTheme, dTreatment);
+        },
+      });
       // Reopen on the fresh ref (new version ⇒ new object URL) so the preview shows
       // the trimmed bytes rather than the ones the modal opened with.
       const fresh = assetById.get(ref.id);
@@ -3315,10 +3687,52 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           const rec = recs.find((r) => r.id === ref.id);
           if (rec) {
             await host.assets._updateUserAssetMeta(ref.id, { ...rec.meta, aiOriginsDeclared: true }, { aiGenerated: 'partial' });
-            if (btn) { btn.textContent = t('AI origins flagged'); btn.setAttribute('disabled', ''); }
+            // The toolbar button keeps its icon (label lives in a <span>); the
+            // text-panel note button is bare text.
+            if (btn) {
+              const label = btn.querySelector('span');
+              if (label) label.textContent = t('AI origins flagged');
+              else btn.textContent = t('AI origins flagged');
+              btn.setAttribute('disabled', '');
+            }
             announce(t('Flagged as having AI origins. It travels with the asset.'));
           }
         } catch { announce(t('Could not flag AI origins.')); }
+        return;
+      }
+      if (act === 'add-to-project') { await addToProject([ref.id]); return; }
+      // Mobile toolbar: the EDIT row folds behind this expander under 860px.
+      if (act === 'toggle-edit') {
+        const actions = dlg.querySelector<HTMLElement>('.cat-details-actions');
+        const btn = target.closest<HTMLElement>('.cat-act-more');
+        const open = actions?.classList.toggle('is-edit-open') ?? false;
+        btn?.setAttribute('aria-expanded', String(open));
+        return;
+      }
+      // "Download as" (text assets): a format menu anchored to its toolbar button,
+      // mounted inside THIS dialog. The items carry data-act="dl-text", so their
+      // clicks bubble to this same dispatcher - the menu is pure presentation.
+      if (act === 'dl-as') {
+        const anchor = dlg.querySelector<HTMLElement>('.cat-act-dl-as');
+        if (!anchor) return;
+        if (dlAsPopover?.isOpen()) { dlAsPopover.close(); return; }
+        if (!dlAsPopover) {
+          const { mountBodyPopover } = await import('../components/body-popover.ts');
+          const fmts: [string, string][] = [
+            ['raw', String(ref.format || 'txt').toUpperCase()],
+            ['html', 'HTML'], ['rtf', 'RTF'], ['docx', 'DOCX'], ['odt', 'ODT'],
+          ];
+          dlAsPopover = mountBodyPopover(anchor, (el, popover) => {
+            el.innerHTML = fmts.map(([v, l]) =>
+              `<button type="button" class="cat-dl-as-item" data-act="dl-text" data-fmt="${escape(v)}">${escape(l)}</button>`).join('');
+            // Let the item click bubble to this dispatcher first, then fold the menu.
+            el.addEventListener('click', (ev) => {
+              if ((ev.target as HTMLElement | null)?.closest('[data-act="dl-text"]')) setTimeout(() => popover.close(false), 0);
+            });
+            return el.querySelector<HTMLElement>('button');
+          }, { className: 'cat-dl-as-menu', ariaLabel: tRaw('Download as'), container: dlg });
+        }
+        dlAsPopover.open();
         return;
       }
       // Crop stays IN this detail modal - an inline mode over the current preview, not a
@@ -3330,6 +3744,13 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       if (act === 'retouch') {
         try { await enterInlineRetouch(); }
         catch (err) { host.log('error', 'Retouch failed', { id: ref.id, error: String(err) }); }
+        return;
+      }
+      // Still grade: the look is chosen AT the image (the video Grade rule), and
+      // Apply enqueues a background job so the toast owns progress over this modal.
+      if (act === 'grade') {
+        try { await enterInlineGrade(); }
+        catch (err) { host.log('error', 'Grade failed', { id: ref.id, error: String(err) }); }
         return;
       }
       // Crop, Grade and Trim are three tabs of one inline video mode (plans/130) - the
@@ -3347,6 +3768,13 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         if (isVector(ref) || isThemable(ref)) await openDownloadDialog(ref, dTheme);
         else if (treatable) await openPhotoDownloadDialog(ref, dTreatment);
         else await directDownload(ref);
+      }
+      else if (act === 'darkroom') {
+        // Refined edits happen in the Darkroom tool, seeded with THIS image. The
+        // asset input takes the library id straight off the URL; every other input
+        // stays at its (all-off) default except the house look at a light touch -
+        // the SUSE7 LUT at 25% (Andy, 2026-08-20).
+        window.location.hash = `#/tool/darkroom?image=${encodeURIComponent(ref.id)}&lutSource=preset&lutPreset=suse7-slog3-heavy&lutIntensity=25`;
       }
       else if (act === 'upscale') {
         // Enlarge THIS asset on-device. The dialog validates, consents and decodes, then
@@ -3971,12 +4399,21 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     announce(on ? tRaw('Added {name} to favourites', { name }) : tRaw('Removed {name} from favourites', { name }));
   }
 
-  async function setHidden(base: string, hide: boolean): Promise<void> {
+  async function setHidden(base: string, hide: boolean, opts: { toast?: boolean } = {}): Promise<void> {
     if (hide) hiddenSet.add(base); else hiddenSet.delete(base);
     if (profile) await saveHiddenAssets(host, profile, hiddenSet);
     if (!mounted) return;
     const hidName = String(assetById.get(base)?.meta?.name ?? base);
     announce(hide ? tRaw('{name} hidden', { name: hidName }) : tRaw('{name} unhidden', { name: hidName }));
+    // Hide is already reversible, so the toast carries no deferred commit - it is
+    // pure convenience: one press instead of finding the Show-hidden toggle.
+    // toast:false on the undo path so undoing can't spawn a counter-toast.
+    if (opts.toast !== false) {
+      showUndoToast({
+        message: hide ? tRaw('Hid "{name}".', { name: hidName }) : tRaw('Unhid "{name}".', { name: hidName }),
+        undo: () => { void setHidden(base, !hide, { toast: false }); },
+      });
+    }
     // Hiding relocates a tile between buckets (category grid ↔ Hidden section), so a naive
     // class-toggle isn't faithful. Try a minimal in-place DOM move for the common case and
     // fall back to a full re-render for the structural sub-cases where splicing a section
@@ -4039,26 +4476,52 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     rerender();
   }
 
-  async function deleteUserAsset(ref: AssetRef): Promise<void> {
-    const base = assetBaseId(ref.id);
-    const ok = await confirmDialog({
-      title: t('Delete this image?'),
-      message: t('This permanently removes your uploaded image from this device. This cannot be undone.'),
-      confirmLabel: t('Delete'),
-    });
-    if (!ok || !mounted) return;
-    // The bridge announces the delete ('lolly:user-asset-deleted', wired in main.ts),
-    // which also drops an audio upload from the Neurospicy player.
-    await host.assets._deleteUserAsset(ref.id).catch(() => {});
-    // Prune any dangling per-user overlay entries for the gone asset (one write each,
-    // only when actually present).
-    if (profile && favSet.delete(base)) await saveFavouriteAssets(host, profile, favSet);
-    if (profile && hiddenSet.delete(base)) await saveHiddenAssets(host, profile, hiddenSet);
-    if (profile && overrides[base]) { await saveAssetCategory(host, profile, base, null); setOverrides(loadAssetCategories(profile)); }
-    allAssets = allAssets.filter(a => a.id !== ref.id);
-    assetById.delete(ref.id);
-    selected.delete(ref.id);
+  /**
+   * Soft-delete uploads behind an undo toast (plans/132 WP-E): the tiles leave
+   * the view NOW, the bytes leave the device only when the toast settles. No
+   * confirm dialog any more - the toast IS the safety net, and it costs nothing
+   * on the (overwhelmingly common) intentional path.
+   */
+  function softDeleteUploads(refs: readonly AssetRef[]): void {
+    if (!refs.length) return;
+    for (const r of refs) {
+      pendingDeletes.add(r.id);
+      allAssets = allAssets.filter(a => a.id !== r.id);
+      assetById.delete(r.id);
+      selected.delete(r.id);
+    }
     rerender();
+    const firstName = String(refs[0]!.meta?.name ?? refs[0]!.id.split('/').pop());
+    showUndoToast({
+      message: refs.length === 1
+        ? tRaw('Deleted "{name}".', { name: firstName })
+        : tRaw('Deleted {n} uploads.', { n: refs.length }),
+      undo: async () => {
+        for (const r of refs) pendingDeletes.delete(r.id);
+        if (!mounted) return;
+        await reload();
+        if (mounted) rerender();
+        announce(refs.length === 1 ? tRaw('Restored "{name}".', { name: firstName }) : tRaw('Restored {n} uploads.', { n: refs.length }));
+      },
+      commit: async () => {
+        for (const r of refs) {
+          const base = assetBaseId(r.id);
+          // The bridge announces the delete ('lolly:user-asset-deleted', wired in
+          // main.ts), which also drops an audio upload from the Neurospicy player.
+          await host.assets._deleteUserAsset(r.id).catch(() => {});
+          pendingDeletes.delete(r.id);
+          // Prune any dangling per-user overlay entries for the gone asset (one
+          // write each, only when actually present).
+          if (profile && favSet.delete(base)) await saveFavouriteAssets(host, profile, favSet);
+          if (profile && hiddenSet.delete(base)) await saveHiddenAssets(host, profile, hiddenSet);
+          if (profile && overrides[base]) { await saveAssetCategory(host, profile, base, null); setOverrides(loadAssetCategories(profile)); }
+        }
+      },
+    });
+  }
+
+  async function deleteUserAsset(ref: AssetRef): Promise<void> {
+    softDeleteUploads([ref]);
   }
 
   async function renameUserAsset(ref: AssetRef): Promise<void> {
@@ -4120,13 +4583,24 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     } catch { /* dimensions are a nicety, not a gate */ }
     if (!mounted) return;
 
+    // Name the blast radius (plans/132 WP-G): the confirm now says HOW MANY
+    // saved sessions actually reference this image, not just that some might.
+    const uses = await usedInSessions(ref).catch(() => [] as Array<{ slot: string; label: string }>);
+    if (!mounted) return;
     const message = [
       reflow ? t('The new image is a different shape, so layouts sized to the old one may shift.') : '',
       t('The new file replaces this image at the same address, so every saved session, tool and project that uses it shows the new one. Anything you’ve already exported, downloaded or shared keeps the old image.'),
+      uses.length ? (uses.length === 1 ? t('It is used in 1 saved session.') : tRaw('It is used in {n} saved sessions.', { n: uses.length })) : '',
     ].filter(Boolean).join(' ');
 
     const ok = await confirmDialog({ title: t('Replace this image?'), message, confirmLabel: t('Replace'), danger: false });
     if (!ok || !mounted) return;
+
+    // The stored record (bytes included) BEFORE the swap - the undo toast below
+    // re-uploads it wholesale if the user changes their mind.
+    const prevRecord = (await host.assets._exportUserAssets().catch(() => [] as UserAssetRecordLike[]))
+      .find(r => r.id === ref.id) ?? null;
+    if (!mounted) return;
 
     try {
       await replaceUserUpload(host as unknown as Parameters<typeof replaceUserUpload>[0], ref.id, file);
@@ -4141,6 +4615,20 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     if (!mounted) return;
     rerender();
     announce(t('Image replaced.'));
+    if (prevRecord?.blob) {
+      showUndoToast({
+        message: tRaw('Replaced "{name}".', { name: String(prevRecord.meta?.name ?? ref.id) }),
+        undo: async () => {
+          try { await host.assets._uploadUserAsset({ ...prevRecord, version: String(Date.now()) }); }
+          catch (err) { host.log?.('error', 'Replace undo failed', { id: ref.id, error: String(err) }); return; }
+          if (!mounted) return;
+          await reload();
+          if (!mounted) return;
+          rerender();
+          announce(t('Restored the previous image.'));
+        },
+      });
+    }
   }
 
   // ── trim margins (plan 97 section 7.3) ─────────────────────────────────────────────────
@@ -4326,6 +4814,70 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     clear: () => handleBulk('clear'),
   });
 
+  // ── Where-used (plans/132 WP-G) ─────────────────────────────────────────
+  // A lazy reverse index over saved sessions: each session's stored data as one
+  // JSON string, scanned for an asset's base id. Built once per mount on first
+  // demand (details open / Replace confirm); sessions are local IndexedDB reads.
+  let sessionTexts: Array<{ slot: string; label: string; text: string }> | null = null;
+  let sessionTextsLoading: Promise<void> | null = null;
+  async function ensureSessionTexts(): Promise<void> {
+    if (sessionTexts) return;
+    if (!sessionTextsLoading) {
+      sessionTextsLoading = (async () => {
+        const h = host as unknown as { state?: { list?: () => Promise<Array<{ slot: string; label?: string | null; toolId?: string }>>; load?: (slot: string) => Promise<unknown> } };
+        const rows = (await h.state?.list?.().catch(() => [])) ?? [];
+        const out: Array<{ slot: string; label: string; text: string }> = [];
+        for (const row of rows) {
+          if (typeof row.slot !== 'string' || row.slot.startsWith('__trash__:')) continue;
+          const data = await h.state?.load?.(row.slot).catch(() => null);
+          if (!data) continue;
+          try { out.push({ slot: row.slot, label: String(row.label ?? row.toolId ?? row.slot), text: JSON.stringify(data) }); }
+          catch { /* unserialisable session - skip */ }
+        }
+        sessionTexts = out;
+      })();
+    }
+    await sessionTextsLoading;
+  }
+  /** Saved sessions whose stored values reference this asset (base-id substring
+   *  inside the serialized data - honest as "appears in", not a strict parse). */
+  async function usedInSessions(ref: AssetRef): Promise<Array<{ slot: string; label: string }>> {
+    await ensureSessionTexts();
+    const needle = `"${assetBaseId(ref.id)}`;
+    return (sessionTexts ?? []).filter(s2 => s2.text.includes(needle)).map(({ slot, label }) => ({ slot, label }));
+  }
+
+  /**
+   * "Add to project…" (plans/132 WP-D): reference the assets into a folder via
+   * the SAME store Projects uses - no byte copies (folder image items are refs;
+   * the projects reconciler already keeps catalog refs alive). Offers every
+   * folder path-labelled, plus creating a new one on the spot.
+   */
+  async function addToProject(ids: string[]): Promise<void> {
+    if (!ids.length) return;
+    const store = createFolderStore(host as unknown as FolderHost);
+    const folders = await store.list();
+    const pathLabel = (id: string): string => folderPath(folders, id).map(f => f.name).join(' / ');
+    const chosen = await choiceDialog({
+      title: ids.length === 1 ? t('Add to project') : tRaw('Add {n} assets to project', { n: ids.length }),
+      message: t('The assets stay in the Catalog; the project holds a reference.'),
+      choices: [
+        ...folders.map(f => ({ id: f.id, label: pathLabel(f.id) })),
+        { id: '__new__', label: t('New project…'), primary: folders.length === 0 },
+      ],
+    });
+    if (!chosen || !mounted) return;
+    let target = chosen;
+    if (chosen === '__new__') {
+      const name = await promptDialog({ title: t('New project'), message: t('Name the project folder.'), placeholder: t('Project name'), confirmLabel: t('Create') });
+      if (!name || !mounted) return;
+      try { target = (await store.create(name)).id; }
+      catch (err) { announce(String((err as Error).message ?? err), { assertive: true }); return; }
+    }
+    for (const id of ids) await store.addItem(target, { type: 'image', ref: id }).catch(() => {});
+    announce(ids.length === 1 ? t('Added to the project') : tRaw('Added {n} assets to the project', { n: ids.length }));
+  }
+
   function handleBulk(action: string): void {
     if (action === 'clear') {
       // Deselect in place - drop the highlight from every selected tile, no full re-render.
@@ -4343,6 +4895,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // The destructive trio is hidden unless the whole selection is uploads; the
     // guard re-checks at dispatch so a selection that changed under a stale menu
     // can never route a catalog asset into a delete.
+    else if (action === 'add-to-project') { void addToProject([...selected]); }
     else if (action === 'delete') { if (allSelectedUploads()) void deleteSelection(); }
     else if (action === 'download') { if (allSelectedUploads()) void downloadSelection(); }
     else if (action === 'duplicate') { if (allSelectedUploads()) void duplicateSelection(); }
@@ -4383,6 +4936,14 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     tileSelect.resetAnchor();
     announce(unhide ? t('{n} unhidden', { n: bases.size }) : t('{n} hidden', { n: bases.size }));
     rerender();
+    showUndoToast({
+      message: unhide ? tRaw('Unhid {n} assets.', { n: bases.size }) : tRaw('Hid {n} assets.', { n: bases.size }),
+      undo: async () => {
+        for (const b of bases) { if (unhide) hiddenSet.add(b); else hiddenSet.delete(b); }
+        if (profile) await saveHiddenAssets(host, profile, hiddenSet);
+        if (mounted) rerender();
+      },
+    });
   }
 
   /**
@@ -4488,28 +5049,11 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   }
 
   async function deleteSelection(): Promise<void> {
-    const ids = [...selected];
-    if (!ids.length) return;
-    const ok = await confirmDialog({
-      title: ids.length === 1 ? t('Delete 1 selected image?') : t('Delete {n} selected images?', { n: ids.length }),
-      message: t('This permanently removes your uploaded images from this device. This cannot be undone.'),
-      confirmLabel: t('Delete'),
-    });
-    if (!ok || !mounted) return;
-    for (const id of ids) {
-      const base = assetBaseId(id);
-      await host.assets._deleteUserAsset(id).catch(() => {});
-      // Prune any dangling per-user overlay entries (one write each, only when present).
-      if (profile && favSet.delete(base)) await saveFavouriteAssets(host, profile, favSet);
-      if (profile && hiddenSet.delete(base)) await saveHiddenAssets(host, profile, hiddenSet);
-      if (profile && overrides[base]) { await saveAssetCategory(host, profile, base, null); setOverrides(loadAssetCategories(profile)); }
-      allAssets = allAssets.filter(a => a.id !== id);
-      assetById.delete(id);
-    }
+    const refs = [...selected].map(id => assetById.get(id)).filter((r): r is AssetRef => !!r);
+    if (!refs.length) return;
     selected.clear();
     tileSelect.resetAnchor();           // the anchor was almost certainly one of the deleted
-    if (!mounted) return;
-    rerender();
+    softDeleteUploads(refs);
   }
 
   // ── downloads ──────────────────────────────────────────────────────────────────
@@ -4864,10 +5408,13 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // resolution. Every output is a modified copy, so it goes out signed
   // (downloadSigned): the crop, plus any theme/treatment already baked into the crop
   // source, in the action history, and the source's own credential as an ingredient.
+  /** Straighten transforms the inline crop can bake in (rasters only). */
+  interface CropTransform { rotate: number; quarter: number; skewX: number; skewY: number; flipH: boolean; flipV: boolean }
+
   async function downloadCrop(
     ref: AssetRef, vector: boolean, svgText: string | null, imgEl: HTMLImageElement,
     frac: { fx: number; fy: number; fw: number; fh: number }, fmt: string,
-    baked: { theme?: IconTheme | null; treatment?: PhotoTreatment | null; origSvg?: string | null } = {},
+    baked: { theme?: IconTheme | null; treatment?: PhotoTreatment | null; origSvg?: string | null; transform?: CropTransform } = {},
     deliver?: CropDeliver,
   ): Promise<void> {
     const send: CropDeliver = deliver
@@ -4919,15 +5466,48 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('No 2D context');
     if (fmt === 'jpg') { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, swp, shp); }   // JPEG has no alpha
-    ctx.drawImage(imgEl, sxp, syp, swp, shp, 0, 0, swp, shp);
+    const tf = baked.transform;
+    if (tf) {
+      // The exact matrix the preview showed: CSS `rotate() skewX() skewY()
+      // scale()` composes left-to-right, and canvas calls post-multiply in the
+      // same order - both about the IMAGE CENTRE (CSS's default transform
+      // origin), with the crop rect measured in the untransformed layout box.
+      const rad = ((tf.quarter * 90 + tf.rotate) * Math.PI) / 180;
+      ctx.translate(-sxp, -syp);
+      ctx.translate(NW / 2, NH / 2);
+      ctx.rotate(rad);
+      ctx.transform(1, 0, Math.tan((tf.skewX * Math.PI) / 180), 1, 0, 0);
+      ctx.transform(1, Math.tan((tf.skewY * Math.PI) / 180), 0, 1, 0, 0);
+      ctx.scale(tf.flipH ? -1 : 1, tf.flipV ? -1 : 1);
+      ctx.translate(-NW / 2, -NH / 2);
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(imgEl, 0, 0, NW, NH);
+    } else {
+      ctx.drawImage(imgEl, sxp, syp, swp, shp, 0, 0, swp, shp);
+    }
     const mime = fmt === 'jpg' ? 'image/jpeg' : fmt === 'webp' ? 'image/webp' : 'image/png';
     const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, mime, 0.97));
     if (!blob) throw new Error('crop encode failed');
     const outFmt = fmt === 'jpg' ? 'jpg' : fmt;
     detail.crop = `${swp}×${shp}px @ ${sxp},${syp}`;
+    const tfEdits: C2paActionInput[] = [];
+    if (tf) {
+      const bits = [
+        tf.quarter * 90 + tf.rotate ? `rotated ${(tf.quarter * 90 + tf.rotate).toFixed(1)}°` : '',
+        tf.skewX ? `skewed X ${tf.skewX.toFixed(1)}°` : '',
+        tf.skewY ? `skewed Y ${tf.skewY.toFixed(1)}°` : '',
+        tf.flipH ? 'flipped horizontally' : '',
+        tf.flipV ? 'flipped vertically' : '',
+      ].filter(Boolean).join(', ');
+      if (bits) {
+        tfEdits.push({ action: 'c2pa.edited', description: `Straightened (${bits})` });
+        detail.straighten = bits;
+      }
+    }
     await send(blob, outFmt, {
       edits: [
         ...bakedEdits,
+        ...tfEdits,
         { action: 'c2pa.cropped', description: `Cropped to ${swp}×${shp}px (from ${NW}×${NH}px)` },
         { action: 'c2pa.converted', description: `Rendered to ${outFmt.toUpperCase()}` },
       ],
@@ -5378,6 +5958,22 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
 
       if (target.closest('.cat-showhidden')) { showHidden = !showHidden; rerender(); return; }
 
+      // Star toggle on a swatch card → flip its membership in the favourites strip.
+      const sFav = target.closest<HTMLElement>('.plat-swatch-fav');
+      if (sFav) {
+        const key = swatchFavKey(sFav.dataset.favSwatch ?? '');
+        const on = !favSet.has(key);
+        if (on) favSet.add(key); else favSet.delete(key);
+        if (profile) void saveFavouriteAssets(host, profile, favSet);
+        sFav.classList.toggle('is-on', on);
+        sFav.setAttribute('aria-pressed', String(on));
+        const label = on ? t('Remove from favourites') : t('Add to favourites');
+        sFav.setAttribute('aria-label', label);
+        sFav.title = label;
+        refreshFavStrip();
+        return;
+      }
+
       // Read-only convenience: click a swatch chip to copy its hex.
       const chip = target.closest<HTMLElement>('.plat-swatch-chip[data-copy]');
       if (chip) {
@@ -5433,6 +6029,35 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     closeViewOpts = () => voDisclosure.close();
     // Gallery ↔ Cover Flow: switch the live strip in place (no full re-render).
     voPop?.addEventListener('click', (e) => {
+      const layoutSeg = (e.target as HTMLElement).closest<HTMLElement>('[data-catlayout]');
+      if (layoutSeg) {
+        const next = layoutSeg.dataset.catlayout === 'list' ? 'list' : 'grid';
+        if (next === catLayout) return;
+        catLayout = next;
+        try { localStorage.setItem(LAYOUT_PREF_KEY, catLayout); } catch { /* storage off */ }
+        rerender();
+        return;
+      }
+      const densitySeg = (e.target as HTMLElement).closest<HTMLElement>('[data-catdensity]');
+      if (densitySeg) {
+        const next = densitySeg.dataset.catdensity === 'compact' ? 'compact' : 'comfortable';
+        if (next === catDensity) return;
+        catDensity = next;
+        try { localStorage.setItem(DENSITY_PREF_KEY, catDensity); } catch { /* storage off */ }
+        rerender();
+        return;
+      }
+      // Sort segment (plans/132 WP-A): re-orders every section in place.
+      const sortSeg = (e.target as HTMLElement).closest<HTMLElement>('[data-catsort]');
+      if (sortSeg) {
+        const next = sortSeg.dataset.catsort as CatSort;
+        if (!CAT_SORTS.includes(next) || next === catSort) return;
+        catSort = next;
+        try { localStorage.setItem(SORT_PREF_KEY, catSort); } catch { /* storage off */ }
+        voPop.querySelectorAll<HTMLElement>('[data-catsort]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.catsort === catSort)));
+        rerender();
+        return;
+      }
       const seg = (e.target as HTMLElement).closest<HTMLElement>('[data-favview]');
       if (!seg) return;
       const next: FeaturedViewMode = seg.dataset.favview === 'coverflow' ? 'coverflow' : 'gallery';
@@ -5453,7 +6078,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       const assets = viewEl.querySelector<HTMLElement>('.cat-assets');
       let mount = viewEl.querySelector<HTMLElement>('.cat-fav-strip');
       if (favStripOn) {
-        if (!mount && assets && favItems().length) {
+        if (!mount && assets && (favItems().length || favSwatches().length)) {
           mount = document.createElement('div'); mount.className = 'cat-fav-strip';
           assets.insertBefore(mount, assets.firstChild);
         }
@@ -5487,8 +6112,24 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       renderBody();
     },
   });
+  // Drag-out (plans/132 WP-F): a tile drag carries the asset id in the app's
+  // own `text/lolly-asset` type (tool slots + free-canvas accept it) and as
+  // plain text. Delegated on the persistent viewEl; bound once per mount.
+  const onTileDragStart = (e: DragEvent): void => {
+    const tile = (e.target as HTMLElement).closest?.('.cat-tile[data-id]') as HTMLElement | null;
+    if (!tile || !e.dataTransfer) return;
+    const id = tile.dataset.id!;
+    e.dataTransfer.setData('text/lolly-asset', id);
+    e.dataTransfer.setData('text/plain', id);
+    e.dataTransfer.effectAllowed = 'copy';
+  };
+  viewEl.addEventListener('dragstart', onTileDragStart);
+
   (viewEl as ViewElement)._cleanup = () => {
     mounted = false;
+    viewEl.removeEventListener('dragstart', onTileDragStart);
+    // Deferred deletions must not outlive the view that owns their Undo.
+    flushUndoToasts();
     cancelArrivalAah();
     releaseSearch();
     // Not optional: the marquee's mousedown is bound to viewEl (#view), which the router

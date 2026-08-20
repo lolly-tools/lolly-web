@@ -43,3 +43,16 @@ export function blobToDataUrl(blob: Blob): Promise<string> {
     fr.readAsDataURL(blob);
   });
 }
+
+/**
+ * Compact count for tight badges: 1105 → "1.1K", 7 → "7". Intl's compact
+ * notation (locale-aware - German says "1,1 Tsd."), one fraction digit at
+ * most. Callers keep the exact number in a title/aria-label.
+ */
+export function compactCount(n: number): string {
+  try {
+    return new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(n);
+  } catch {
+    return String(n);
+  }
+}

@@ -143,6 +143,10 @@ const TOKENS_ICON = `<svg viewBox="0 0 26.0005 20.000443" width="28" height="22"
 const SVG_ICON = `<svg viewBox="0 0 390 390" width="26" height="26" fill="currentColor" aria-hidden="true"><path d="m 216.63,37.47 53.15,53.98 c 5.04,5.15 4.97,15.13 2.15,18 L 245.54,88.34 240.35,119.6 218.3,107.96 182.99,130.27 171.3,83.24 152.33,116.06 h -29 c -11.82,0 -13.21,-15 -2.47,-25.74 18.76,-20.25 40.29,-40.89 51.99,-52.85 11.76,-12.02 32.25,-11.68 43.78,0 z M 131,238.6 c 3.59,2.23 57.89,13.26 71.16,15.46 4.6,0.97 1.34,5.71 -5,8.91 C 182.86,266.77 113.5,238.6 131,238.6 Z M 163.15,27.83 28.81,165.3 C -16.58,221.51 59.7,214.97 92.4,231.16 104.13,243.15 47.44,252 59.17,264 c 11.73,11.99 70.93,23.1 82.68,35.09 11.73,11.99 -24.01,24.71 -12.28,36.7 11.73,11.99 38.86,0.63 43.94,28.31 3.62,19.78 48.89,8.5 71.03,-7.7 11.73,-12 -22.44,-10.87 -10.71,-22.86 29.17,-29.83 56.33,-10.84 66.31,-40.73 4.93,-14.77 -42.94,-22.77 -31.19,-34.76 33.75,-19.71 150.4,-32.54 95.05,-87.89 L 224.75,27.83 c -17.03,-16.35 -45.45,-16.53 -61.6,0 z m 154.31,264.98 c 0,6.82 50.25,11.29 50.25,-1.61 -7.16,-20.72 -44.31,-19.32 -50.25,1.61 z M 91.1,329.05 c 11.9,10.29 30.28,-2.56 35.79,-16.92 -11.53,-15.32 -54.69,0.55 -35.79,16.92 z m 220.06,-22.23 c -15.34,13.76 1.72,27.72 16.84,18.83 3.37,-3.42 -0.09,-15.41 -16.84,-18.83 z"/></svg>`;
 
 const IMPORT_FORMATS: ReadonlyArray<{ icon: string; name: string; ext: string }> = [
+  // The instance pack leads (plans/131): one file that switches the whole
+  // brand - tokens, fonts, logos, the brand's tools and catalog. Routed by
+  // content (routeDesignFile reads the manifest), same as the .zip brand file.
+  { icon: `<img src="/icons/icon-192.png" alt="" width="26" height="26" decoding="async">`, name: 'Brand Pack', ext: '.lolly' },
   { icon: `<img src="/icons/icon-192.png" alt="" width="26" height="26" decoding="async">`, name: 'LollyBrand', ext: '.zip' },
   { icon: PENPOT_ICON, name: 'Penpot', ext: '.penpot' },
   { icon: TOKENS_ICON, name: 'Design Tokens', ext: '.json' },

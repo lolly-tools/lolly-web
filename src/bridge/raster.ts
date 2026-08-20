@@ -31,6 +31,9 @@ import { makeCanvas } from './pdf.ts';
 import { sniffImageMime } from './images.ts';
 import { sniffAnimatedRaster } from '@lolly/engine';
 
+/** How much extra resolution a vector source is rasterised at (see decodeViaImg). */
+const SVG_DECODE_SCALE = 12;
+
 const MIME_OF: Record<ImageEncodeFormat, string> = {
   webp: 'image/webp',
   jpeg: 'image/jpeg',
@@ -103,7 +106,7 @@ async function decodeViaImg(blob: Blob): Promise<ImageBitmap> {
         const w = parseFloat(m?.[1] ?? '0'), h = parseFloat(m?.[2] ?? '0');
         if (w > 0 && h > 0) blob = new Blob([text.replace(/<svg\b/i, `<svg width="${w}" height="${h}"`)], { type: 'image/svg+xml' });
       }
-    } catch { /* unreadable — keep the original blob and its default rasterisation */ }
+    } catch { /* unreadable - keep the original blob and its default rasterisation */ }
   }
   const url = URL.createObjectURL(blob);
   try {
@@ -113,10 +116,39 @@ async function decodeViaImg(blob: Blob): Promise<ImageBitmap> {
       im.onerror = () => reject(new Error('host.raster: that source could not be decoded as an image.'));
       im.src = url;
     });
+    // An SVG has no native resolution, so its intrinsic size is an arbitrary floor - the
+    // demo lolly's 286px viewBox rasterised at 286px made every pixel tool (darkroom,
+    // filter) visibly soft. Re-render the vector at SVG_DECODE_SCALE (capped by the pixel guard) so
+    // downstream drawImage always downsamples. createImageBitmap's resize re-rasterises
+    // from the vector source, not from a 1x bitmap.
+    if (/svg/i.test(blob.type)) {
+      const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+      const scale = Math.min(SVG_DECODE_SCALE, Math.sqrt(MAX_SOURCE_PIXELS / Math.max(1, w * h)));
+      if (scale > 1) {
+        try {
+          return await createImageBitmap(img, {
+            resizeWidth: Math.round(w * scale),
+            resizeHeight: Math.round(h * scale),
+            resizeQuality: 'high',
+          });
+        } catch { /* resize options unsupported - fall through to the 1x decode */ }
+      }
+    }
     return await createImageBitmap(img);
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+/** The shared decode ladder for measure() and decode(). SVG goes STRAIGHT to the `<img>`
+ *  tier - never through `createImageBitmap(blob)` - both because that's the reliable SVG
+ *  path and because the `<img>` tier is where the vector upsample lives; a sized SVG
+ *  that happened to decode natively would come back at its arbitrary intrinsic size, and
+ *  measure/decode must agree on the dimensions they report. */
+async function decodeAny(blob: Blob, mime: string | null): Promise<ImageBitmap> {
+  if (mime === 'image/svg+xml') return decodeViaImg(blob);
+  try { return await decodeImageBitmap(blob as Blob & { name?: string }); }
+  catch { return decodeViaImg(blob); }
 }
 
 function guardPixels(width: number, height: number): void {
@@ -151,9 +183,7 @@ export function createRasterAPI(): RasterAPI {
 
     async measure(src: RasterSource): Promise<ImageInfo> {
       const { bytes, blob, mime } = await normaliseSource(src);
-      let bitmap: ImageBitmap;
-      try { bitmap = await decodeImageBitmap(blob as Blob & { name?: string }); }
-      catch { bitmap = await decodeViaImg(blob); }
+      const bitmap = await decodeAny(blob, mime);
       try {
         const info: ImageInfo = {
           width: bitmap.width,
@@ -170,10 +200,8 @@ export function createRasterAPI(): RasterAPI {
     },
 
     async decode(src: RasterSource): Promise<ImageBitmap> {
-      const { blob } = await normaliseSource(src);
-      let bitmap: ImageBitmap;
-      try { bitmap = await decodeImageBitmap(blob as Blob & { name?: string }); }
-      catch { bitmap = await decodeViaImg(blob); }
+      const { blob, mime } = await normaliseSource(src);
+      const bitmap = await decodeAny(blob, mime);
       try { guardPixels(bitmap.width, bitmap.height); }
       catch (e) { bitmap.close?.(); throw e; }
       return bitmap;
@@ -181,7 +209,7 @@ export function createRasterAPI(): RasterAPI {
 
     async encode(source: ImageBitmap | RasterFrame, opts: ImageEncodeOpts): Promise<ImageResult> {
       const type = MIME_OF[opts.format];
-      if (!type) throw new Error(`host.raster: unsupported format "${opts.format}" — use webp, jpeg or png.`);
+      if (!type) throw new Error(`host.raster: unsupported format "${opts.format}" - use webp, jpeg or png.`);
       const width = source.width;
       const height = source.height;
       const canvas = makeCanvas(width, height);

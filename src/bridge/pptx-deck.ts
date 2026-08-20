@@ -12,8 +12,11 @@
  * node-testable. The engine (buildPptxParts) frames the OOXML; this never touches a DOM.
  *
  * Contract (the deck model a tool emits) - all positions/sizes in the deck's px space:
- *   { size?:{w,h}, theme?:DeckTheme, slides:[ { bg?:DeckFill, notes?, elements:[DeckEl] } ] }
+ *   { size?:{w,h}, theme?:DeckTheme, layouts?:[DeckLayout], slides:[ { bg?:DeckFill, layout?:number, notes?, elements:[DeckEl] } ] }
  *   DeckEl.t ∈ 'rect' | 'text' | 'table' | 'image'   (image handled by the caller)
+ *   A text DeckEl may carry ph:{type,idx} to bind to a layout placeholder.
+ *   DeckLayout = { name, bg?:DeckFill, elements?:[DeckEl], placeholders?:[{type,idx?,x,y,w,h,anchor?,style?,prompt?}] }
+ *   - the branded layout gallery (engine PptxLayout); slide.layout indexes into it.
  *   colours are CSS strings: '#30BA78', '#3bfa', 'rrggbb', 'rgb(…)', 'rgba(…)'.
  *
  * EMITTER OBLIGATION (the tool, not this module): when serialising the deck INTO the
@@ -26,7 +29,7 @@
  * DOM-breakout hole in the tool's OWN render, so it is mandatory on the emit side.
  */
 import { EMU_PER_PX, MAX_TABLE_COLS, MAX_TABLE_ROWS } from "../../../../engine/src/pptx.ts";
-import type { PptxFill, PptxPara, PptxRun, PptxShape, PptxTable, PptxTableCell, PptxLine, PptxPic, PptxTheme } from "../../../../engine/src/pptx.ts";
+import type { PptxFill, PptxPara, PptxRun, PptxShape, PptxTable, PptxTableCell, PptxLine, PptxPic, PptxTheme, PptxPhType, PptxPlaceholder } from "../../../../engine/src/pptx.ts";
 
 export type DeckBox = { x: number; y: number; cx: number; cy: number };
 
@@ -102,6 +105,7 @@ export function deckPara(p: Record<string, unknown>): PptxPara {
   const b = p?.bullet;
   if (b === true || b === false || b === 'number') para.bullet = b;
   else if (b && typeof b === 'object' && typeof (b as { char?: unknown }).char === 'string') para.bullet = { char: (b as { char: string }).char };
+  const bc = deckColor(p?.bulletColor); if (bc) para.bulletColor = bc.hex;
   for (const k of ['lineSpacingPct', 'spaceBeforePt', 'spaceAfterPt'] as const)
     if (typeof p?.[k] === 'number' && Number.isFinite(p[k])) para[k] = p[k] as number;
   return para;
@@ -142,6 +146,38 @@ export const deckBox = (el: Record<string, unknown>): DeckBox => ({
   x: emuOf(el?.x), y: emuOf(el?.y), cx: Math.max(1, emuOf(el?.w, 1)), cy: Math.max(1, emuOf(el?.h, 1)),
 });
 
+// A placeholder binding on a deck text element: { type, idx? }. Whitelisted types only
+// (the engine drops unknowns too; filtering here keeps the model honest at the boundary).
+const DECK_PH_TYPES = ['title', 'ctrTitle', 'subTitle', 'body', 'sldNum'] as const;
+export function deckPh(v: unknown): { type: PptxPhType; idx?: number } | undefined {
+  const type = oneOf((v as { type?: unknown } | null)?.type, DECK_PH_TYPES);
+  if (!type) return undefined;
+  const idx = (v as { idx?: unknown }).idx;
+  return typeof idx === 'number' && Number.isFinite(idx) && idx >= 0 ? { type, idx: Math.round(idx) } : { type };
+}
+
+// One layout placeholder: binding + a px-space box + role text style + prompt.
+export function deckPlaceholder(p: unknown): PptxPlaceholder | null {
+  if (!p || typeof p !== 'object') return null;
+  const el = p as Record<string, unknown>;
+  const bind = deckPh(el);
+  if (!bind) return null;
+  const st = el.style as Record<string, unknown> | undefined;
+  const out: PptxPlaceholder = { ...bind, ...deckBox(el) };
+  const anchor = oneOf(el.anchor, ['t', 'ctr', 'b'] as const); if (anchor) out.anchor = anchor;
+  const prompt = asStr(el.prompt); if (prompt) out.prompt = prompt;
+  if (st && typeof st === 'object') {
+    const style: NonNullable<PptxPlaceholder['style']> = {};
+    const font = asStr(st.font); if (font) style.font = font;
+    if (typeof st.sizePt === 'number' && Number.isFinite(st.sizePt)) style.sizePt = st.sizePt;
+    style.color = deckColor(st.color)?.hex;
+    const align = oneOf(st.align, ['l', 'ctr', 'r'] as const); if (align) style.align = align;
+    const bullet = asBool(st.bullet); if (bullet != null) style.bullet = bullet;
+    out.style = style;
+  }
+  return out;
+}
+
 // The synchronous shapes (rect / text / table). Returns null for 'image' (the caller
 // resolves those async) and for any unknown/malformed element.
 export function deckSyncShape(el: Record<string, unknown>): PptxShape | null {
@@ -151,7 +187,7 @@ export function deckSyncShape(el: Record<string, unknown>): PptxShape | null {
     case 'rect':
       return { kind: 'rect', ...box, fill: deckFill(el.fill), line: deckLine(el.line), radius: el.radius != null ? emuOf(el.radius) : undefined };
     case 'text':
-      return { kind: 'text', ...box, anchor: oneOf(el.anchor, ['t', 'ctr', 'b'] as const), paras: (Array.isArray(el.paras) ? el.paras : []).map(deckPara) };
+      return { kind: 'text', ...box, anchor: oneOf(el.anchor, ['t', 'ctr', 'b'] as const), paras: (Array.isArray(el.paras) ? el.paras : []).map(deckPara), ph: deckPh(el.ph) };
     case 'table': {
       // Cap rows/cols at the engine's own limits (the engine slices too, but doing it
       // here avoids building a huge intermediate - a 5000×200 table is 1e6 cell objects).

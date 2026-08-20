@@ -21,6 +21,14 @@
  */
 
 import { t } from '../i18n.ts';
+import { instanceFetch } from './instance.ts';
+import { isTauriShell } from './instance-choice.ts';
+
+/** Provider API fetch: plain fetch on the web (the provider must answer CORS,
+ *  noted per driver), the CORS-free Tauri HTTP client on the desktop shells -
+ *  where the webview origin would otherwise fail every provider's CORS policy. */
+export const providerFetch: typeof fetch = (input, init) =>
+  isTauriShell() ? instanceFetch(String(input), init) : fetch(input, init);
 
 /** What the return page delivers (public/oauth-return.html): the fragment
  *  (token grants) and the query string (code grants), verbatim. */
@@ -111,9 +119,16 @@ export async function pkceChallenge(verifier: string): Promise<string> {
 export interface CodeGrantConfig {
   /** e.g. https://www.dropbox.com/oauth2/authorize */
   authorizeUrl: string;
-  /** e.g. https://api.dropboxapi.com/oauth2/token - must answer CORS. */
+  /** e.g. https://api.dropboxapi.com/oauth2/token - must answer CORS (or be
+   *  reached through a CORS-free fetchFn, e.g. instanceFetch under Tauri). */
   tokenUrl: string;
   clientId: string;
+  /** Google's Desktop-app clients only: the issued "secret" that Google's own
+   *  docs state is NOT treated as confidential for installed apps - it ships
+   *  in every native binary using this flow. Included in code/refresh
+   *  exchanges when present. Never set this for a genuinely confidential
+   *  secret: there is no server here to keep it in. */
+  clientSecret?: string;
   /** Space-separated provider scopes. */
   scopes: string;
   /** Extra authorize-URL params (e.g. Dropbox token_access_type=offline). */
@@ -123,6 +138,59 @@ export interface CodeGrantConfig {
 
 /** The return page - the SAME registered redirect the token grant uses. */
 export const oauthRedirectUri = (): string => `${location.origin}/oauth-return.html`;
+
+// ── Authorize legs: browser popup vs system-browser loopback ─────────────────
+
+/** How an authorization URL reaches the user and how its redirect comes back.
+ *  The popup leg is the web default; the loopback leg (plans/129 WP4) is the
+ *  desktop one - the system browser carries the sign-in (managed-account SSO
+ *  and Google's webview ban both demand it), and the redirect lands on a
+ *  single-shot 127.0.0.1 listener the Tauri side owns (src-tauri/src/oauth.rs). */
+export interface AuthorizeVia {
+  redirectUri: string;
+  run(url: string): Promise<OAuthReturn>;
+}
+
+/** The minimal Tauri invoke surface loopbackVia rides - injectable for tests,
+ *  defaulting to the live __TAURI_INTERNALS__ (the lib/instance.ts pattern:
+ *  this file is bundled by the web shell's Vite too, so @tauri-apps/* cannot
+ *  be a static import). */
+export interface LoopbackTransport {
+  invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T>;
+}
+
+function tauriTransport(): LoopbackTransport {
+  const internals = (window as unknown as { __TAURI_INTERNALS__?: LoopbackTransport }).__TAURI_INTERNALS__;
+  if (!internals) throw new Error(t('System-browser sign-in needs the desktop app'));
+  return internals;
+}
+
+/**
+ * The desktop authorize leg: bind the loopback port FIRST (the redirect URI
+ * needs it), open the provider page in the system browser, then wait for the
+ * one redirect. The port listener is single-shot; a cancelled sign-in simply
+ * times out and the next attempt binds fresh.
+ */
+export async function loopbackVia(transport?: LoopbackTransport): Promise<AuthorizeVia> {
+  const inv = transport ?? tauriTransport();
+  const port = await inv.invoke<number>('oauth_listen');
+  return {
+    redirectUri: `http://127.0.0.1:${port}/oauth-return`,
+    async run(url: string): Promise<OAuthReturn> {
+      await inv.invoke('plugin:shell|open', { path: url });
+      const search = await inv.invoke<string>('oauth_wait', { port, timeoutMs: AUTH_TIMEOUT_MS });
+      return { hash: '', search };
+    },
+  };
+}
+
+/** The web authorize leg: the popup + return-page machinery above. */
+export function popupVia(windowName = 'lolly-oauth'): AuthorizeVia {
+  return {
+    redirectUri: oauthRedirectUri(),
+    run: (url: string) => popupOAuth(url, windowName),
+  };
+}
 
 /** Map one token-endpoint JSON response to a TokenSet. Exported for tests. */
 export function tokenSetFrom(json: Record<string, unknown>): TokenSet {
@@ -147,14 +215,18 @@ export function parseCodeReturn(search: string, expectedState: string): string {
   return code;
 }
 
-/** The full interactive code+PKCE flow: popup → code → token exchange. */
-export async function codeGrant(cfg: CodeGrantConfig, fetchFn: typeof fetch = fetch): Promise<TokenSet> {
+/** The full interactive code+PKCE flow: authorize leg → code → token
+ *  exchange. The leg defaults to the web popup; a desktop caller passes
+ *  `loopbackVia()` for the system-browser + 127.0.0.1 return (WP4). */
+export async function codeGrant(
+  cfg: CodeGrantConfig, fetchFn: typeof fetch = fetch, via?: AuthorizeVia,
+): Promise<TokenSet> {
   const state = randomState();
   const { verifier, challenge } = await makePkce();
-  const redirectUri = oauthRedirectUri();
+  const leg = via ?? popupVia(cfg.windowName ?? 'lolly-oauth');
   const url = `${cfg.authorizeUrl}?${new URLSearchParams({
     client_id: cfg.clientId,
-    redirect_uri: redirectUri,
+    redirect_uri: leg.redirectUri,
     response_type: 'code',
     scope: cfg.scopes,
     state,
@@ -162,7 +234,7 @@ export async function codeGrant(cfg: CodeGrantConfig, fetchFn: typeof fetch = fe
     code_challenge_method: 'S256',
     ...cfg.extraAuthParams,
   })}`;
-  const ret = await popupOAuth(url, cfg.windowName ?? 'lolly-oauth');
+  const ret = await leg.run(url);
   const code = parseCodeReturn(ret.search, state);
   const res = await fetchFn(cfg.tokenUrl, {
     method: 'POST',
@@ -171,8 +243,9 @@ export async function codeGrant(cfg: CodeGrantConfig, fetchFn: typeof fetch = fe
       grant_type: 'authorization_code',
       code,
       client_id: cfg.clientId,
+      ...(cfg.clientSecret ? { client_secret: cfg.clientSecret } : {}),
       code_verifier: verifier,
-      redirect_uri: redirectUri,
+      redirect_uri: leg.redirectUri,
       ...(cfg.scopes && cfg.tokenUrl.includes('microsoftonline') ? { scope: cfg.scopes } : {}),
     }),
   });
@@ -186,7 +259,7 @@ export async function codeGrant(cfg: CodeGrantConfig, fetchFn: typeof fetch = fe
 /** Exchange a refresh token for a fresh set. Providers may ROTATE the refresh
  *  token (Microsoft does) - the caller must store the returned one. */
 export async function refreshGrant(
-  cfg: { tokenUrl: string; clientId: string; scopes?: string },
+  cfg: { tokenUrl: string; clientId: string; clientSecret?: string; scopes?: string },
   refreshToken: string,
   fetchFn: typeof fetch = fetch,
 ): Promise<TokenSet> {
@@ -197,6 +270,7 @@ export async function refreshGrant(
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
       client_id: cfg.clientId,
+      ...(cfg.clientSecret ? { client_secret: cfg.clientSecret } : {}),
       ...(cfg.scopes && cfg.tokenUrl.includes('microsoftonline') ? { scope: cfg.scopes } : {}),
     }),
   });

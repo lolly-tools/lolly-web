@@ -64,7 +64,7 @@ test('folder haystack folds the name', () => {
 
 test('sessionOpenHref: single-tool resumes the tool with the slot; batch opens /pro', () => {
   assert.equal(sessionOpenHref(entry, false), '#/tool/qr-code?slot=qr-code%3A1');
-  assert.equal(sessionOpenHref({ slot: '__batch__:Q3 run', toolId: '' }, true), '#/pro?session=__batch__%3AQ3%20run');
+  assert.equal(sessionOpenHref({ slot: '__batch__:Q3 run', toolId: '' }, true), '#/batch?session=__batch__%3AQ3%20run');
 });
 
 test('armSessionReturn writes the one-shot marker under the shared key', () => {

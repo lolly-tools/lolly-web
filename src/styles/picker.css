@@ -1242,3 +1242,69 @@
 .asset-picker-card-upscale svg,
 .asset-picker-card-matte svg { display: block; }
 }
+
+/* ── Phase-4 additions (plans/134) ──────────────────────────────────────────*/
+
+/* Type pills (P5) - untyped picks only. */
+.asset-picker-typebar { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 0; }
+.asset-picker-typebar[hidden] { display: none; }
+.asset-picker-typepill {
+  border: 1px solid hsl(var(--border)); border-radius: 999px;
+  background: hsl(var(--background)); color: hsl(var(--muted-foreground));
+  font: inherit; font-size: calc(12px * var(--a11y-fs)); font-weight: 600;
+  padding: 4px 12px; cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.asset-picker-typepill:hover { color: hsl(var(--foreground)); border-color: hsl(var(--ring)); }
+.asset-picker-typepill.is-on { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
+
+/* Tile dims (P4). */
+.asset-picker-dims { color: hsl(var(--muted-foreground)); }
+
+/* Audio audition ▶ (P4) - sibling of the pick button, bottom-left over the wave. */
+.asset-picker-audition {
+  position: absolute; left: 6px; bottom: 34px;
+  width: calc(26px * var(--a11y-fs)); height: calc(26px * var(--a11y-fs));
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid hsl(var(--border)); border-radius: 50%;
+  background: hsl(var(--card)); color: hsl(var(--foreground));
+  font-size: calc(12px * var(--a11y-fs)); line-height: 1; cursor: pointer;
+  box-shadow: 0 2px 8px hsl(0 0% 0% / .18);
+}
+.asset-picker-audition:hover { border-color: hsl(var(--ring)); }
+.asset-picker-audition[aria-pressed="true"] { background: hsl(var(--accent)); }
+
+/* Whole-panel drop target ring (P6) - dashed = drop area, per the house rule. */
+.asset-picker-panel.is-dropping { outline: 2px dashed hsl(var(--primary)); outline-offset: -6px; }
+
+/* Visible upload failure (P6). */
+.asset-picker-footer-error { font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--destructive)); }
+.asset-picker-footer-error[hidden] { display: none; }
+
+/* Mobile pass (P8): a full-screen sheet, and per-tile actions that touch can see. */
+@media (max-width: 640px) {
+  .asset-picker-panel {
+    inset: 0;
+    border-radius: 0;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+@media (pointer: coarse) {
+  /* Hover-revealed per-tile actions are invisible to touch - keep them softly
+     present instead (the catalog's always-visible-dot rule). */
+  .asset-picker-card .asset-picker-upscale-btn,
+  .asset-picker-card .asset-picker-matte-btn,
+  .asset-picker-card .asset-picker-delete,
+  .asset-picker-audition { opacity: 0.75; }
+}
+
+/* Cross-tab match counts while searching (P3). */
+.asset-picker-tabcount {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs));
+  margin-inline-start: 6px; padding: 0 4px;
+  border-radius: 999px;
+  background: hsl(var(--muted)); color: hsl(var(--muted-foreground));
+  font-size: calc(10.5px * var(--a11y-fs)); font-weight: 700;
+}

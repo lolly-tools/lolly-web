@@ -30,13 +30,64 @@ export interface Folder {
   items: FolderItem[];
   createdAt: string;
   updatedAt: string;
+  /** Optional identity accents (plans/133 WP-1, additive - legacy folders have
+   *  neither): a tag colour from the fixed FOLDER_COLORS palette, and a single
+   *  emoji shown on the folder cover in place of the generic glyph. */
+  color?: string;
+  emoji?: string;
+  /** Free-form search tags (2026-08-20) - matched by projects search + the
+   *  spotlight alongside the name. */
+  tags?: string[];
 }
+
+/** FALLBACK folder accents only (2026-08-20): the style dialog offers the
+ *  ACTIVE design system's palette (lib/live-palette.ts) first; these fixed
+ *  hues appear only when no palette resolves at all. */
+export const FOLDER_COLORS: readonly string[] = [
+  '#e5484d', '#f76b15', '#ffc53d', '#30a46c', '#0090ff', '#8e4ec6', '#8d8d8d',
+];
+
+// ── Trash (plans/133 WP-4) ───────────────────────────────────────────────────
+// Deleted sessions/folders park here (profile.trash) instead of vanishing: a
+// session's state record is MOVED to a `__trash__:`-prefixed slot (so every
+// session-listing surface filters it out - see lib/batch-slots.ts), a folder's
+// subtree records are lifted out of `profile.folders` wholesale into the entry.
+// Restore reverses both; purge (30 days, or Delete forever) does the real
+// deletion. Image items ride inside a trashed folder's records as plain refs -
+// bytes live in the catalog and are never deleted from here.
+
+export interface TrashedSession {
+  kind: 'session';
+  /** The `__trash__:`-prefixed slot the record now lives at. */
+  slot: string;
+  originalSlot: string;
+  label: string;
+  /** Folder the session lived in (null = loose) - restore puts it back. */
+  parentId: string | null;
+  deletedAt: string;
+}
+export interface TrashedFolder {
+  kind: 'folder';
+  /** The removed subtree's folder records, root first; item refs keep their
+   *  ORIGINAL session slots (the moves map below tracks the trash slots). */
+  tree: Folder[];
+  rootId: string;
+  name: string;
+  /** Session slot moves performed when this folder was trashed. */
+  sessions: Array<{ originalSlot: string; slot: string }>;
+  deletedAt: string;
+}
+export type TrashEntry = TrashedSession | TrashedFolder;
+
+/** How long a trash entry survives before the purge sweep removes it for real. */
+export const TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** The profile record as this module sees it: folders + whatever else rides
  * along (spread untouched via `{ ...profile }` - no index signature needed, so
  * the host's own Profile type satisfies this slice structurally). */
 interface FolderProfile {
   folders?: Folder[];
+  trash?: TrashEntry[];
   /** Shared with the host's Profile type so it satisfies this weak slice. */
   custom?: Record<string, string>;
 }
@@ -176,6 +227,22 @@ export function createFolderStore(host: FolderHost) {
       });
     },
 
+    /** Set/clear the identity accents + tags (plans/133 WP-1). `undefined`
+     *  leaves a field alone; `null`/empty clears it. */
+    async setStyle(folderId: string, style: { color?: string | null; emoji?: string | null; tags?: string[] | null }): Promise<void> {
+      await mutate(folders => {
+        const f = folders.find(x => x.id === folderId);
+        if (!f) return;
+        if (style.color !== undefined) { if (style.color) f.color = style.color; else delete f.color; }
+        if (style.emoji !== undefined) { if (style.emoji) f.emoji = style.emoji; else delete f.emoji; }
+        if (style.tags !== undefined) {
+          const clean = (style.tags ?? []).map(t => t.trim()).filter(Boolean);
+          if (clean.length) f.tags = clean; else delete f.tags;
+        }
+        f.updatedAt = now();
+      });
+    },
+
     /**
      * Soft-delete a single folder: its items return to the root (not deleted) and its
      * direct sub-folders are LIFTED to its parent (not orphaned), so the record drops
@@ -216,19 +283,6 @@ export function createFolderStore(host: FolderHost) {
         }
         f.parentId = newParentId ?? null;
         f.updatedAt = now();
-      });
-    },
-
-    /**
-     * Reorder folders to match a list of ids (drag-to-reorder in the Projects view).
-     * Ids not present keep their relative order after the listed ones; unknown ids
-     * are ignored. Persists the new stored order.
-     */
-    async reorder(orderedIds: readonly string[]): Promise<void> {
-      const rank = new Map(orderedIds.map((id, i) => [id, i]));
-      await mutate(folders => {
-        folders.sort((a, b) =>
-          (rank.has(a.id) ? rank.get(a.id)! : Infinity) - (rank.has(b.id) ? rank.get(b.id)! : Infinity));
       });
     },
 
@@ -282,6 +336,55 @@ export function createFolderStore(host: FolderHost) {
           const it = f.items.find(x => x.ref === oldSlot);
           if (it) { it.ref = newSlot; f.updatedAt = now(); }
         }
+      });
+    },
+
+    // ── Trash (plans/133 WP-4) ───────────────────────────────────────────────
+    // The store owns the profile.trash entries and the folder-record halves; the
+    // Projects view owns the host.state slot moves (save+remove), since this
+    // module's host slice deliberately has no state write access.
+
+    async trashList(): Promise<TrashEntry[]> {
+      const profile = await host.profile.get();
+      return profile.trash ?? [];
+    },
+
+    async trashAdd(entry: TrashEntry): Promise<void> {
+      const profile = await host.profile.get();
+      await host.profile.set({ ...profile, trash: [entry, ...(profile.trash ?? [])] });
+    },
+
+    /** Drop entries by identity key (a session's `slot` / a folder's `rootId`) -
+     *  after a restore, a Delete-forever, or the retention sweep. */
+    async trashDrop(keys: ReadonlySet<string>): Promise<void> {
+      const profile = await host.profile.get();
+      const trash = (profile.trash ?? []).filter(e => !keys.has(e.kind === 'session' ? e.slot : e.rootId));
+      await host.profile.set({ ...profile, trash });
+    },
+
+    /**
+     * Lift a folder subtree OUT of the live records (for trashing): removes the
+     * records and returns them (root first, item refs untouched). The inverse of
+     * restoreSubtree. Returns null when the folder doesn't exist.
+     */
+    async detachSubtree(folderId: string): Promise<Folder[] | null> {
+      return mutate(folders => {
+        const root = folders.find(f => f.id === folderId);
+        if (!root) return null;
+        const ids = new Set([folderId, ...descendantFolderIds(folders, folderId)]);
+        const tree = [root, ...folders.filter(f => f.id !== folderId && ids.has(f.id))];
+        for (let i = folders.length - 1; i >= 0; i--) if (ids.has(folders[i]!.id)) folders.splice(i, 1);
+        return tree.map(f => ({ ...f, items: [...f.items] }));
+      });
+    },
+
+    /** Re-insert a trashed subtree's records. A root whose original parent no
+     *  longer exists surfaces at the top level via the orphan rule - nothing is
+     *  lost. Skips ids that already exist (double-restore safety). */
+    async restoreSubtree(tree: readonly Folder[]): Promise<void> {
+      await mutate(folders => {
+        const live = new Set(folders.map(f => f.id));
+        for (const f of tree) if (!live.has(f.id)) folders.push({ ...f, items: [...f.items], updatedAt: now() });
       });
     },
 

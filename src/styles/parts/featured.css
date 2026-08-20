@@ -151,13 +151,15 @@
    ribbon, and the Catalogue favourites strip all inherit this (they only add their own
    framing, never their own height). Keep it here; don't re-add per-view --ftile-h. */
 .featured { --ftile-h: max(42vh, 400px); }
-/* Mobile: still commanding, but sized so the whole tile — art AND its title/description
-   lockup at the bottom — sits inside the viewport, clear of the fixed top cluster + the
-   heading above and the fixed search footer below. (svh tracks the mobile toolbar; the
-   vh line is the fallback.) */
+/* Tablet: the hero yields sooner so the grid below is reachable without a long scroll. */
+@media (max-width: 1024px) {
+  .featured { --ftile-h: max(32vh, 300px); }
+}
+/* Mobile: a banner, not a takeover — the view's own content must start inside the first
+   screen. (svh tracks the mobile toolbar; the vh line is the fallback.) */
 @media (max-width: 640px) {
-  .featured { --ftile-h: 60vh; }
-  .featured { --ftile-h: 60svh; }   /* leaves ~40vh to grab for scrolling the page */
+  .featured { --ftile-h: 34vh; }
+  .featured { --ftile-h: 34svh; }
 }
 
 /* A studio "product shot" per tile: a soft cyclorama sweep (a touch of light up top
@@ -249,9 +251,14 @@
 /* NOT on the icon scale: this is stand-in ARTWORK filling a picture frame, not a
    mark labelling a control — it is sized to the tile's stage, and growing it with
    the type would push it into the 18% padding that keeps it off the floor shadow. */
-.ftile-iconfill svg { max-width: 120px; max-height: 120px; stroke-width: 2px; }
+.ftile-iconfill svg { max-width: 120px; max-height: 120px; }
+/* The stroke treatment is for ICON GLYPHS. Audio waveform art ([data-audio-shape],
+   lib/audio-thumb.ts) tunes its own per-shape stroke widths in its viewBox — the
+   screen-space overrides turned its ring spokes into fat blobs — so it is exempt
+   from every stroke rule here and scales naturally. */
+.ftile-iconfill svg:not([data-audio-shape]) { stroke-width: 2px; }
 /* A true hairline regardless of scale (vector-effect isn't inherited → put it on the shapes). */
-.ftile-iconfill svg :is(path, circle, rect, line, polyline, polygon, ellipse) { vector-effect: non-scaling-stroke; }
+.ftile-iconfill svg:not([data-audio-shape]) :is(path, circle, rect, line, polyline, polygon, ellipse) { vector-effect: non-scaling-stroke; }
 /* Real art decoded → drop the icon so a transparent image never shows it through. */
 .ftile.has-art .ftile-iconfill { display: none; }
 
@@ -296,15 +303,15 @@
   height: var(--fic-size);
   max-width: none;
   max-height: none;
-  stroke-width: var(--fic-stroke);
 }
+.ftile--icon .ftile-iconfill svg:not([data-audio-shape]) { stroke-width: var(--fic-stroke); }
 /* A shape carrying its OWN stroke-width attribute declared itself deliberately
    heavier than its icon's base weight — redact's redaction bar is 3.4 against a
    1.8 base. Inheritance loses to a presentation attribute, so that shape would
    keep its literal user-space width while everything around it jumped to the em
    stroke, and the emphasis line would read as a hairline in exactly the context
    it matters most. Restate it at 2x the base so the intent survives the scale-up. */
-.ftile--icon .ftile-iconfill svg :is(path, circle, rect, line, polyline, polygon, ellipse)[stroke-width] {
+.ftile--icon .ftile-iconfill svg:not([data-audio-shape]) :is(path, circle, rect, line, polyline, polygon, ellipse)[stroke-width] {
   stroke-width: calc(var(--fic-stroke) * 2);
 }
 /* The title, in the artwork. Sized off height for the same reason as the icon.
@@ -517,7 +524,7 @@
   /* The track stands taller than the covers, so align-items centres them with room to
      spare — the covers, their shadows and the lit centre cover float clear of the strip's
      top/bottom edges instead of butting against (and being clipped by) overflow:hidden.
-     CAPPED: --ftile-h is tuned for the immersive Gallery strip (42vh / 60svh), which on a
+     CAPPED: --ftile-h is tuned for the immersive Gallery strip (42vh desktop), which on a
      TALL device makes the Cover Flow band — and the near-square covers in it — balloon far
      past their content. Cap the band so tall screens don't show a giant, mostly-empty fan. */
   min-height: min(var(--ftile-h), 440px);
@@ -655,7 +662,7 @@
 
    1. PROPORTION. The base width and height cap against different budgets: the
       width bottoms out at its 200px clamp floor (25vw is only ~97px at 390px wide)
-      while the height rides --ftile-h (60svh) up to its 360px cap. That made a
+      while the height rode the then-60svh --ftile-h up to its 360px cap. That made a
       200×360 cover — w/h 0.56, a tall portrait card around landscape preview art,
       the slack spent on empty floor. The base rule's "~square-ish" only holds at
       the 320px max width, i.e. desktop. Drive BOTH axes off one vw basis so the

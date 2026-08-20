@@ -61,11 +61,13 @@
 }
 .cat-showhidden:hover { border-color: hsl(var(--primary) / .5); }
 .cat-showhidden.is-on { background: hsl(var(--muted)); }
-/* Both .cat-showhidden buttons (Collapse-all + Show-hidden) are icon-only on the toolbar:
-   a stable square footprint that never re-widths as their label toggles (Collapse↔Expand,
-   Show↔Hide, or the "(N)" count changing), and whose icon can't be clobbered. The state
-   lives entirely in the swapped glyph; aria-label + title (set in JS) keep them named. */
-.cat-showhidden .cat-btn-label { display: none; }
+/* The .cat-showhidden buttons (Collapse-all + Show-hidden) show their LABELS on
+   desktop (2026-08-20 audit: icon-only left "Show hidden (N)" - and 20 shipped
+   hidden assets behind it - effectively undiscoverable). Under 640px they fold
+   back to icons for width; aria-label + title keep them named there. */
+@media (max-width: 640px) {
+  .cat-showhidden .cat-btn-label { display: none; }
+}
 /* Mobile: the fixed topbar is taller (safe-area inset) — clear it — and let the pill wrap
    / drop the count rather than overflow a narrow viewport. */
 @media (max-width: 640px) {
@@ -941,9 +943,36 @@ button.cat-download { font: inherit; cursor: pointer; }
 /* Now the SOLE .cat-tag — catalogue-summary's same-named status chip was
    renamed to .cat-stat-tag (components.css, component audit M1.2). */
 .cat-tag { font-size: calc(.7rem * var(--a11y-fs)); padding: 1px 7px; border-radius: 999px; background: hsl(var(--muted) / .8); color: hsl(var(--muted-foreground)); }
-.cat-details-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.cat-details-actions .btn { display: inline-flex; align-items: center; gap: 6px; }
-.cat-details-actions .btn svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
+/* A top TOOLBAR now (2026-08-20): first child of .cat-details-body, above the
+   name, so the variable-length meta/tech/credential sections below never move
+   the actions around. Grouped into rows (plans/132 WP-J): pinned verbs, the
+   EDIT family, manage, destructive - whitespace does the grouping (no dividers,
+   per the border rules). Compact pills, same size .btn--sm uses. */
+.cat-details-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 9px; margin: 0 0 14px; }
+.cat-act-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.cat-details-actions .btn { display: inline-flex; align-items: center; gap: 5px; padding: .3rem .6rem; font-size: calc(.76rem * var(--a11y-fs)); }
+.cat-details-actions .btn svg { width: calc(13px * var(--a11y-fs)); height: calc(13px * var(--a11y-fs)); }
+/* The Edit… expander exists only below 860px; above, the edit row is always out. */
+.cat-act-more { display: none; }
+@media (max-width: 859px) {
+  .cat-act-more { display: inline-flex; }
+  .cat-details-actions:not(.is-edit-open) .cat-act-row--edit { display: none; }
+}
+/* The toolbar's "Download as" format menu (a body-popover mounted inside the
+   details dialog, so it paints above the ::backdrop). Box-coloured from tokens. */
+.cat-dl-as-menu {
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 110px; padding: 4px;
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+  background: hsl(var(--card)); color: hsl(var(--foreground));
+  box-shadow: 0 12px 40px hsl(0 0% 0% / 0.28);
+}
+.cat-dl-as-item {
+  border: 0; background: none; color: inherit; font: inherit; cursor: pointer;
+  text-align: start; padding: 6px 10px; border-radius: calc(var(--radius) * 0.7);
+  font-size: calc(.8rem * var(--a11y-fs));
+}
+.cat-dl-as-item:hover, .cat-dl-as-item:focus-visible { background: hsl(var(--muted)); }
 /* fill (background/color) is aliased in parts/buttons.css's .btn--primary list */
 .cat-act-fav.is-fav { border-color: hsl(var(--primary)); }
 .cat-act-fav.is-fav svg { fill: currentColor; }
@@ -1084,9 +1113,18 @@ button.cat-download { font: inherit; cursor: pointer; }
 .cat-details-preview.is-video-editing .cat-stage-bar,
 .cat-details-preview.is-video-editing .cat-thumb,
 .cat-details-preview.is-video-editing .cat-details-nav { display: none; }
+/* The still grade mode (views/grade-inline.ts) is the fourth, same takeover shape. */
+.cat-details-preview.is-grading .cat-zoom-stage,
+.cat-details-preview.is-grading .cat-stage-bar,
+.cat-details-preview.is-grading .cat-thumb,
+.cat-details-preview.is-grading .cat-details-nav { display: none; }
 .cat-details.is-cropping .cat-details-actions,
 .cat-details.is-retouching .cat-details-actions,
-.cat-details.is-video-editing .cat-details-actions { display: none; }
+.cat-details.is-video-editing .cat-details-actions,
+.cat-details.is-grading .cat-details-actions { display: none; }
+/* The graded still flows in the viewport (no <video> under it to align with,
+   unlike .cat-vid-canvas's absolute overlay). */
+.cat-grade-canvas { display: block; max-width: 100%; max-height: 100%; }
 /* The work centres in the preview (its grid place-items:center); the viewport carries its
    own rounded corners, so the wrapper's dialog margin is dropped. */
 .cat-crop-work.cat-crop-inline {
@@ -1448,3 +1486,40 @@ mark.cat-hl--t5 { background: hsl(0 92% 55% / 0.48); }
 .cat-reword-alts li { display: flex; align-items: baseline; gap: 0.4em; flex-wrap: wrap; }
 .cat-reword-alt { font-size: calc(0.82rem * var(--a11y-fs)); font-weight: 550; }
 .cat-reword-go { align-self: flex-start; font-size: calc(0.76rem * var(--a11y-fs)); }
+
+/* ── Layout + density (plans/132 WP-I) — view-options choices, pure CSS ──────*/
+.catalog.cat-density-compact .cat-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--grid-gap-tight); }
+.catalog.cat-density-compact .cat-tile-cap { padding: 6px 8px; }
+/* List rows: the same tiles reflowed - thumb chip, name, sub inline. */
+.catalog.cat-layout-list .cat-grid { display: flex; flex-direction: column; gap: 4px; }
+.catalog.cat-layout-list .cat-tile { container-type: normal; }
+.catalog.cat-layout-list .cat-tile-open { display: flex; align-items: center; gap: 12px; padding: 6px 10px; text-align: start; }
+.catalog.cat-layout-list .cat-tile-fig {
+  aspect-ratio: auto; position: relative; flex: none;
+  width: 52px; height: 40px; overflow: hidden;
+  border-radius: calc(var(--radius) / 1.6); border: 1px solid hsl(var(--border));
+}
+.catalog.cat-layout-list .cat-tile-cap { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 10px; padding: 0; }
+.catalog.cat-layout-list .cat-tile-name { flex: 0 1 auto; }
+.catalog.cat-layout-list .cat-check { top: 50%; left: auto; right: 10px; transform: translateY(-50%); }
+
+/* The view-options segments (Layout / Density / Sort) wrap inside the popover -
+   six sort options otherwise run past its edge. */
+.cat-viewopts .view-seg { flex-wrap: wrap; }
+
+/* ── Straighten transforms in the inline crop (2026-08-20) ───────────────────
+   A second bar under the mode bar: rotate / 90° / skew X / skew Y / flips /
+   Reset. Rasters only (the phone-photo case). The image transforms under the
+   axis-aligned crop frame; .cat-crop-viewport's overflow:hidden clips the
+   overhang, exactly like a straighten tool. */
+.cat-crop-tf {
+  padding: 6px 12px;
+  border-bottom: 1px solid hsl(var(--border));
+  background: hsl(var(--card));
+}
+.cat-crop-tf .cat-vid-slider input[type="range"] { width: 96px; }
+.cat-tf-flip[aria-pressed="true"] { background: hsl(var(--accent)); }
+/* Smooth the straighten preview a touch (transform only - never layout). */
+.cat-crop-img { transition: transform 0.08s linear; }
+html[data-a11y-motion="reduce"] .cat-crop-img { transition: none; }
+@media (prefers-reduced-motion: reduce) { .cat-crop-img { transition: none; } }

@@ -194,3 +194,92 @@ html[data-a11y-previews="hidden"] img.folder-cell,
 html[data-a11y-previews="hidden"] .folder-export-tile img {
   filter: saturate(.5) contrast(.5);
 }
+
+/* ── Folder silhouette (plans/133 WP-1) ──────────────────────────────────────
+   Containers read differently from documents: the folder cover is a tabbed
+   folder shape (body + a ::before tab), not the sessions' 4/3 preview card.
+   The optional accent (--folder-tint, a fixed tag palette - identity data the
+   user picked, not chrome theming) tints body and tab; without one the shape
+   sits on the muted surface. Shared by every folderTile consumer (projects,
+   folder overlay, picker). */
+.folder-cover {
+  --ftint: var(--folder-tint, hsl(var(--muted-foreground) / 0.5));
+  position: relative;
+  display: block;
+  margin-top: 9px;                        /* room for the tab */
+  height: 74px;
+  border-radius: 0 10px 10px 10px;
+  background: color-mix(in oklab, var(--ftint) 30%, hsl(var(--card)));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ftint) 55%, transparent);
+}
+.folder-cover::before {
+  content: '';
+  position: absolute;
+  top: -9px; left: 0;
+  width: 42%; height: 10px;
+  border-radius: 7px 10px 0 0;
+  background: color-mix(in oklab, var(--ftint) 72%, hsl(var(--card)));
+}
+/* The member mosaic sits INSIDE the folder body now. */
+.folder-cover .folder-mosaic {
+  position: absolute; inset: 7px;
+  height: auto; aspect-ratio: auto;
+  background: none; border: 0;
+}
+.folder-cover-glyph { position: absolute; inset: 0; display: grid; place-items: center; }
+.folder-cover-glyph svg { width: calc(28px * var(--a11y-fs)); height: calc(28px * var(--a11y-fs)); opacity: 0.5; }
+.folder-emoji {
+  /* Pronounced identity mark (Andy, 2026-08-20): big, OVERHANGING the cover's
+     bottom-right corner - the sticker read. Negative offsets poke it past the
+     rounded body (the cover has no overflow clip); the drop shadow lifts it
+     off busy mosaics. */
+  position: absolute; bottom: -9px; right: -4px; z-index: 2;
+  font-size: calc(27px * var(--a11y-fs)); line-height: 1;
+  filter: drop-shadow(0 2px 3px hsl(0 0% 0% / 0.3));
+  pointer-events: none;
+}
+.folder-star {
+  position: absolute; top: 3px; right: 6px; z-index: 1;
+  color: var(--brand-primary, hsl(var(--primary)));
+  font-size: calc(12px * var(--a11y-fs)); line-height: 1;
+}
+
+/* ── Trash dialog + folder style dialog (plans/133 WP-4 / WP-1) ─────────────*/
+.trash-dialog, .folder-style-dialog { border: 0; border-radius: calc(var(--radius) * 1.2); padding: 0; background: hsl(var(--card)); color: hsl(var(--foreground)); width: min(440px, calc(100vw - 32px)); box-shadow: 0 1.5rem 4rem #0007; }
+.trash-dialog::backdrop, .folder-style-dialog::backdrop { background: #0008; }
+.trash-dialog-body, .folder-style-body { padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+.trash-dialog h2, .folder-style-body h2 { margin: 0; font-size: calc(16px * var(--a11y-fs)); }
+.trash-note { margin: 0; font-size: calc(12.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.trash-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 50vh; overflow-y: auto; }
+.trash-row { display: flex; align-items: center; gap: 10px; padding: 6px 4px; }
+.trash-row-icon { display: inline-flex; color: hsl(var(--muted-foreground)); }
+.trash-row-icon svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
+.trash-row-meta { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.trash-row-name { font-size: calc(13px * var(--a11y-fs)); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trash-row-sub { font-size: calc(11px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.trash-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.folder-style-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.folder-color-dot { width: calc(24px * var(--a11y-fs)); height: calc(24px * var(--a11y-fs)); border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
+.folder-color-dot[aria-pressed="true"] { border-color: hsl(var(--foreground)); box-shadow: 0 0 0 2px hsl(var(--card)) inset; }
+.folder-style-emoji span { font-size: calc(13px * var(--a11y-fs)); }
+.folder-style-emoji input { width: 4em; font: inherit; padding: 4px 8px; border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--background)); color: inherit; }
+
+/* ── Folder count pill (2026-08-20) ── replaces the "N items" subline: a dot
+   at one character (min-width = height makes a circle) that widens into a pill
+   as the compact count grows (7 → 24 → 1.1K). The exact number lives in the
+   title/aria-label. Type + box ride the a11y multiplier together. */
+.folder-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: calc(18px * var(--a11y-fs));
+  height: calc(18px * var(--a11y-fs));
+  padding: 0 5px;
+  border-radius: 999px;
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+  font-size: calc(10.5px * var(--a11y-fs));
+  font-weight: 700;
+  line-height: 1;
+  align-self: flex-start;
+}
+.folder-style-tags { flex-direction: column; align-items: flex-start; gap: 4px; }
+.folder-style-tags input { width: 100%; box-sizing: border-box; font: inherit; padding: 6px 8px; border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--background)); color: inherit; }

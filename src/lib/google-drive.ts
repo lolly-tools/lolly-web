@@ -31,7 +31,10 @@
  * client id, no UI, no requests - a plain build stays byte-identical in
  * behaviour. The client id is public by design (implicit/public OAuth flows
  * have no secret); each deploy origin must be registered on the client with
- * redirect URI `<origin>/oauth-return.html`.
+ * redirect URI `<origin>/oauth-return.html`. The TAURI shells gate on the
+ * separate Desktop-type client instead (VITE_GOOGLE_DESKTOP_CLIENT_ID +
+ * VITE_GOOGLE_DESKTOP_CLIENT_SECRET, or setDriveDesktopClient at runtime) -
+ * see the desktop-client section below for why that pair is safe to ship.
  *
  * Surfaced through the PROVIDER-AGNOSTIC send-target seam (lib/send-target.ts):
  * this module is the `gdrive` driver, and googleDriveSendTarget() is what
@@ -41,7 +44,11 @@
  */
 
 import type { SendTarget } from './send-target.ts';
-import { popupOAuth } from './provider-auth.ts';
+import { codeGrant, loopbackVia, popupOAuth, refreshGrant, type TokenSet } from './provider-auth.ts';
+import {
+  cachedToken, cacheToken, dropToken, getConnection, removeConnection, saveConnection,
+} from './provider-connections.ts';
+import { instanceFetch } from './instance.ts';
 import { isTauriShell } from './instance-choice.ts';
 import { t } from '../i18n.ts';
 
@@ -57,8 +64,11 @@ export interface DriveSendOutcome {
   converted: boolean;
 }
 
+const KIND = 'gdrive';
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
+const TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const ABOUT_URL = 'https://www.googleapis.com/drive/v3/about?fields=user';
 const UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,mimeType,webViewLink';
 const METAFILE_MIME = 'application/x-msmetafile';
 const DRAWING_MIME = 'application/vnd.google-apps.drawing';
@@ -74,8 +84,117 @@ export function driveClientId(): string {
   return env?.VITE_GOOGLE_CLIENT_ID || '';
 }
 
-/** Whether the Send-to-Drive affordance should exist at all. */
+/** Whether the Send-to-Drive affordance should exist at all (web shells). */
 export function driveAvailable(): boolean { return !!driveClientId(); }
+
+// ─── Desktop client (plans/129 WP4) ──────────────────────────────────────────
+//
+// The Tauri shells run sign-in in the SYSTEM browser with a loopback return
+// (provider-auth's loopbackVia + src-tauri/src/oauth.rs): Google refuses OAuth
+// in embedded webviews, and for managed Workspace accounts the default browser
+// already holds the SSO session - so desktop sign-in is an account-chooser
+// click, not a password. A Google "Desktop app" client uses code+PKCE and
+// grants REFRESH tokens (the implicit web grant cannot), so desktop users can
+// opt into staying connected. Google issues Desktop clients a pseudo-secret it
+// documents as NON-confidential for installed apps; it ships in config exactly
+// like the client id. Both are runtime-overridable so a brand instance or
+// `.lolly` pack can supply an org-owned client - a Workspace-internal client
+// id skips the unverified-app interstitial entirely.
+
+let desktopClientOverride: { id: string; secret: string } | null = null;
+
+/** Runtime override (an instance config or a test); null restores env values. */
+export function setDriveDesktopClient(id: string | null, secret = ''): void {
+  desktopClientOverride = id === null ? null : { id, secret };
+}
+
+export function driveDesktopClientId(): string {
+  if (desktopClientOverride !== null) return desktopClientOverride.id;
+  const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
+  return env?.VITE_GOOGLE_DESKTOP_CLIENT_ID || '';
+}
+
+function driveDesktopClientSecret(): string {
+  if (desktopClientOverride !== null) return desktopClientOverride.secret;
+  const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
+  return env?.VITE_GOOGLE_DESKTOP_CLIENT_SECRET || '';
+}
+
+/** Whether the desktop Send-to-Drive affordance exists (Tauri shells). */
+export function driveDesktopAvailable(): boolean { return !!driveDesktopClientId(); }
+
+/** googleapis fetches ride the CORS-free Tauri HTTP client on desktop. */
+const driveFetch: typeof fetch = (input, init) =>
+  isTauriShell() ? instanceFetch(String(input), init) : fetch(input, init);
+
+const desktopGrantCfg = () => ({
+  authorizeUrl: AUTH_URL,
+  tokenUrl: TOKEN_URL,
+  clientId: driveDesktopClientId(),
+  clientSecret: driveDesktopClientSecret(),
+  scopes: SCOPE,
+  // offline = a refresh token; consent forces Google to re-issue one on a
+  // repeat grant (it otherwise omits it); whether it PERSISTS is the user's
+  // custody choice, same as every other provider.
+  extraAuthParams: { access_type: 'offline', prompt: 'consent select_account', include_granted_scopes: 'true' },
+});
+
+/** A valid desktop access token: cache → refresh (stored connection) →
+ *  interactive system-browser sign-in. The dropbox custody pattern verbatim. */
+async function desktopToken(): Promise<string> {
+  const held = cachedToken(KIND);
+  if (held) return held;
+  const conn = await getConnection(KIND);
+  if (conn?.refreshToken) {
+    try {
+      const set = await refreshGrant(
+        { tokenUrl: TOKEN_URL, clientId: driveDesktopClientId(), clientSecret: driveDesktopClientSecret() },
+        conn.refreshToken, driveFetch,
+      );
+      cacheToken(KIND, set.accessToken, set.expiresAt);
+      return set.accessToken;
+    } catch { /* refresh revoked/expired - fall through to interactive */ }
+  }
+  const set = await codeGrant(desktopGrantCfg(), driveFetch, await loopbackVia());
+  cacheToken(KIND, set.accessToken, set.expiresAt);
+  if (conn) await saveConnection({ ...conn, ...(conn.persist && set.refreshToken ? { refreshToken: set.refreshToken } : {}) });
+  return set.accessToken;
+}
+
+/** Interactive connect from /profile (desktop): grant, identity, custody. */
+export async function connectDriveDesktop(persist: boolean): Promise<string> {
+  const set: TokenSet = await codeGrant(desktopGrantCfg(), driveFetch, await loopbackVia());
+  cacheToken(KIND, set.accessToken, set.expiresAt);
+  let account = t('Google account');
+  try {
+    const res = await driveFetch(ABOUT_URL, { headers: { Authorization: `Bearer ${set.accessToken}` } });
+    if (res.ok) {
+      const about = await res.json() as { user?: { emailAddress?: string; displayName?: string } };
+      account = about.user?.emailAddress || about.user?.displayName || account;
+    }
+  } catch { /* identity is cosmetic; the connection stands */ }
+  await saveConnection({
+    kind: KIND,
+    account,
+    persist,
+    ...(persist && set.refreshToken ? { refreshToken: set.refreshToken } : {}),
+    scopes: SCOPE,
+    connectedAt: new Date().toISOString(),
+  });
+  return account;
+}
+
+/** Disconnect (desktop): best-effort Google-side revocation, then wipe. */
+export async function disconnectDriveDesktop(): Promise<void> {
+  const conn = await getConnection(KIND);
+  const tok = cachedToken(KIND) ?? conn?.refreshToken;
+  if (tok) {
+    try {
+      await driveFetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(tok)}`, { method: 'POST' });
+    } catch { /* revocation is a courtesy; the wipe below is the guarantee */ }
+  }
+  await removeConnection(KIND);
+}
 
 // ─── OAuth (implicit token grant via popup + same-origin return page) ────────
 
@@ -111,7 +230,7 @@ export function parseOAuthReturn(hash: string, expectedState: string): { token: 
 let cached: { token: string; expiresAt: number } | null = null;
 
 /** Drop the in-memory token (a 401 from the API, or a test). */
-export function resetDriveToken(): void { cached = null; }
+export function resetDriveToken(): void { cached = null; dropToken(KIND); }
 
 /** Seed the in-memory token so tests can exercise the upload path without the
  *  interactive popup (same spirit as the runtime's exported-mutable HOOK_BUDGET_MS). */
@@ -137,6 +256,9 @@ async function requestToken(): Promise<string> {
 }
 
 async function driveToken(): Promise<string> {
+  // Desktop: code+PKCE via the system browser (WP4), custody in
+  // provider-connections. Web: the implicit popup grant, session-only.
+  if (isTauriShell()) return desktopToken();
   if (cached && cached.expiresAt > Date.now()) return cached.token;
   cached = null;
   return requestToken();
@@ -157,7 +279,7 @@ export function buildMultipart(metadata: object, contentType: string, bytes: Uin
 }
 
 async function driveCreate(metadata: object, contentType: string, bytes: Uint8Array,
-                           fetchFn: typeof fetch = fetch): Promise<DriveUploadResult> {
+                           fetchFn: typeof fetch = driveFetch): Promise<DriveUploadResult> {
   const boundary = `lolly-${crypto.getRandomValues(new Uint32Array(2)).join('')}`;
   const doPost = async (token: string) => fetchFn(UPLOAD_URL, {
     method: 'POST',
@@ -207,13 +329,14 @@ export async function sendEmfToDrive(bytes: Uint8Array, baseName: string,
 /** The Google Drive destination the built-ins registration installs. EVERY
  *  export format Lolly makes is welcome (plans/129 - "drive can take all media
  *  made by lolly"); EMF keeps its special journey, converting into a native
- *  Google Drawing for the Slides workflow. Not offered in the Tauri shells:
- *  the popup + postMessage return leg needs a browser window model (WP4). */
+ *  Google Drawing for the Slides workflow. On the Tauri shells (WP4) the
+ *  sign-in runs in the SYSTEM browser via the loopback leg and needs the
+ *  Desktop-type client configured; on the web it is the popup grant. */
 export function googleDriveSendTarget(): SendTarget {
   return {
     kind: 'gdrive',
     label: t('Google Drive'),
-    available: () => driveAvailable() && !isTauriShell(),
+    available: () => (isTauriShell() ? driveDesktopAvailable() : driveAvailable()),
     actionLabel: () => t('Send to Google Drive'),
     hint: t('Uploads this file to your Google Drive. Lolly can only see files it created (drive.file scope), and the sign-in token is kept in memory for this session only. An EMF lands as a Google Drawing, ready for Slides.'),
     send: async ({ bytes, name, format, mime }) => {

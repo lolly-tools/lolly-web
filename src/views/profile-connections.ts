@@ -22,11 +22,17 @@
 
 import { t } from '../i18n.ts';
 import { escape } from '../utils.ts';
-import { driveAvailable } from '../lib/google-drive.ts';
+import {
+  driveAvailable, driveDesktopAvailable, connectDriveDesktop, disconnectDriveDesktop,
+} from '../lib/google-drive.ts';
+import { isTauriShell } from '../lib/instance-choice.ts';
 import { dropboxAvailable, connectDropbox, disconnectDropbox } from '../lib/dropbox-send.ts';
 import { oneDriveAvailable, connectOneDrive, disconnectOneDrive } from '../lib/onedrive-send.ts';
 import { connectS3, disconnectS3, testS3, type S3Config } from '../lib/s3-send.ts';
 import { connectWebdav, disconnectWebdav, testWebdav, type WebdavConfig } from '../lib/nextcloud-send.ts';
+import { connectMastodon, disconnectMastodon } from '../lib/mastodon-send.ts';
+import { connectBluesky, disconnectBluesky, testBluesky, type BlueskyConfig } from '../lib/bluesky-send.ts';
+import { connectDiscord, disconnectDiscord, testDiscord } from '../lib/discord-send.ts';
 import { listConnections, type ProviderConnection } from '../lib/provider-connections.ts';
 
 const OAUTH_ROWS: Array<{
@@ -37,6 +43,17 @@ const OAUTH_ROWS: Array<{
   connect: (persist: boolean) => Promise<string>;
   disconnect: () => Promise<void>;
 }> = [
+  {
+    // Desktop only (plans/129 WP4): system-browser sign-in + refresh custody.
+    // On the web, Google Drive keeps its session-only implicit grant and shows
+    // the static row below instead.
+    kind: 'gdrive',
+    label: () => t('Google Drive'),
+    scopesNote: () => t('Signs in through your own browser. Lolly can only see files it created.'),
+    available: () => isTauriShell() && driveDesktopAvailable(),
+    connect: connectDriveDesktop,
+    disconnect: disconnectDriveDesktop,
+  },
   {
     kind: 'dropbox',
     label: () => t('Dropbox'),
@@ -123,6 +140,64 @@ function credentialRowsHtml(conns: Map<string, ProviderConnection>): string {
           <span class="pconn-status" data-pconn-status="webdav" role="status"></span>
         </div>
       </div>
+    </details>
+    ${publishRowsHtml(conns)}`;
+}
+
+/** The publish tier (plans/129 WP5): Mastodon (per-server OAuth), Bluesky (app
+ *  password), Discord (webhook). Same details-block shape as the credential
+ *  providers - these need nobody's app-review queue, so the rows always exist. */
+function publishRowsHtml(conns: Map<string, ProviderConnection>): string {
+  const masto = conns.get('mastodon');
+  const bsky = conns.get('bluesky');
+  const bskyCfg = (bsky?.config ?? {}) as Partial<BlueskyConfig>;
+  const discord = conns.get('discord');
+  return `
+    <details class="pconn-cred" data-pconn="mastodon">
+      <summary><span class="store-manage-name">${t('Mastodon')}
+        ${masto ? `<span class="pconn-account">${escape(masto.account)}</span>` : `<span class="pconn-note">${t('Post to any Mastodon server - no central app, your server issues the sign-in')}</span>`}
+      </span></summary>
+      <div class="pconn-form">
+        ${masto ? '' : `
+        ${field('server', t('Your server'), '', 'text', 'mastodon.social')}
+        <label class="pconn-persist"><input type="checkbox" data-pconn-persist="mastodon"> ${t('Stay connected on this device')}</label>`}
+        <div class="pconn-actions">
+          ${masto
+            ? `<button type="button" class="btn-link-danger" data-pconn-disconnect="mastodon">${t('Disconnect')}</button>`
+            : `<button type="button" class="btn" data-pconn-save="mastodon">${t('Connect')}</button>`}
+          <span class="pconn-status" data-pconn-status="mastodon" role="status"></span>
+        </div>
+      </div>
+    </details>
+    <details class="pconn-cred" data-pconn="bluesky">
+      <summary><span class="store-manage-name">${t('Bluesky')}
+        ${bsky ? `<span class="pconn-account">${escape(bsky.account)}</span>` : `<span class="pconn-note">${t('Image posts with an app password - no OAuth, revocable any time')}</span>`}
+      </span></summary>
+      <div class="pconn-form">
+        ${field('service', t('Service URL'), bskyCfg.service ?? 'https://bsky.social')}
+        ${field('identifier', t('Handle'), bskyCfg.identifier ?? '', 'text', 'you.bsky.social')}
+        ${field('appPassword', t('App password'), bskyCfg.appPassword ?? '', 'password')}
+        <p class="pconn-note">${t('Make an app password in Bluesky under Settings → App passwords - never your account password. Stays on this device.')}</p>
+        <div class="pconn-actions">
+          <button type="button" class="btn" data-pconn-save="bluesky">${t('Save & test')}</button>
+          ${bsky ? `<button type="button" class="btn-link-danger" data-pconn-disconnect="bluesky">${t('Disconnect')}</button>` : ''}
+          <span class="pconn-status" data-pconn-status="bluesky" role="status"></span>
+        </div>
+      </div>
+    </details>
+    <details class="pconn-cred" data-pconn="discord">
+      <summary><span class="store-manage-name">${t('Discord')}
+        ${discord ? `<span class="pconn-account">${escape(discord.account)}</span>` : `<span class="pconn-note">${t('Post files into a channel through its webhook - no sign-in needed')}</span>`}
+      </span></summary>
+      <div class="pconn-form">
+        ${field('url', t('Webhook URL'), (discord?.config?.url as string | undefined) ?? '', 'password', 'https://discord.com/api/webhooks/…')}
+        <p class="pconn-note">${t('Channel settings → Integrations → Webhooks. Anyone holding this URL can post to the channel - it stays on this device, never in backups.')}</p>
+        <div class="pconn-actions">
+          <button type="button" class="btn" data-pconn-save="discord">${t('Save & test')}</button>
+          ${discord ? `<button type="button" class="btn-link-danger" data-pconn-disconnect="discord">${t('Disconnect')}</button>` : ''}
+          <span class="pconn-status" data-pconn-status="discord" role="status"></span>
+        </div>
+      </div>
     </details>`;
 }
 
@@ -131,7 +206,7 @@ export async function mountConnectionsBody(body: HTMLElement): Promise<void> {
   const conns = new Map((await listConnections()).map((c) => [c.kind, c]));
   const oauthRows = OAUTH_ROWS.filter((r) => r.available())
     .map((r) => oauthRowHtml(r.kind, r.label(), r.scopesNote(), conns.get(r.kind) ?? null)).join('');
-  const gdriveRow = driveAvailable()
+  const gdriveRow = driveAvailable() && !isTauriShell()
     ? `<div class="store-manage--row pconn-row" data-pconn="gdrive">
         <span class="store-manage-name">${t('Google Drive')}
           <span class="pconn-note">${t('Signs in when you send; nothing is remembered between sessions.')}</span>
@@ -173,7 +248,42 @@ export async function mountConnectionsBody(body: HTMLElement): Promise<void> {
       } else if (disconnectKind) {
         if (disconnectKind === 's3') await disconnectS3();
         else if (disconnectKind === 'webdav') await disconnectWebdav();
+        else if (disconnectKind === 'mastodon') await disconnectMastodon();
+        else if (disconnectKind === 'bluesky') await disconnectBluesky();
+        else if (disconnectKind === 'discord') await disconnectDiscord();
         else await OAUTH_ROWS.find((r) => r.kind === disconnectKind)?.disconnect();
+      } else if (saveKind === 'mastodon') {
+        const f = readForm('mastodon');
+        if (!f.server) {
+          status('mastodon', t('Enter your server like mastodon.social'));
+          return;
+        }
+        const persist = body.querySelector<HTMLInputElement>('[data-pconn-persist="mastodon"]')?.checked ?? false;
+        status('mastodon', t('Opening sign-in…'));
+        await connectMastodon(persist, f.server);
+      } else if (saveKind === 'bluesky') {
+        const f = readForm('bluesky');
+        if (!f.service || !f.identifier || !f.appPassword) {
+          status('bluesky', t('Service, handle and app password are required'));
+          return;
+        }
+        const cfg: BlueskyConfig = { service: f.service, identifier: f.identifier, appPassword: f.appPassword };
+        status('bluesky', t('Testing…'));
+        const res = await testBluesky(cfg);
+        status('bluesky', res.note);
+        if (!res.ok) return;
+        await connectBluesky(cfg, res.handle);
+      } else if (saveKind === 'discord') {
+        const f = readForm('discord');
+        if (!f.url) {
+          status('discord', t('Paste the channel webhook URL'));
+          return;
+        }
+        status('discord', t('Testing…'));
+        const res = await testDiscord(f.url);
+        status('discord', res.note);
+        if (!res.ok) return;
+        await connectDiscord(f.url, res.name);
       } else if (saveKind === 's3') {
         const f = readForm('s3');
         if (!f.endpoint || !f.bucket || !f.accessKeyId || !f.secretAccessKey) {

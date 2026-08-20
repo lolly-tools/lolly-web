@@ -130,6 +130,8 @@ export interface SessionTileOpts {
   tool?: TileToolInfo | null;
   selectable?: boolean;
   selected?: boolean;
+  /** List-view column strings (plans/133 WP-2). */
+  cols?: TileCols;
 }
 
 /**
@@ -142,7 +144,7 @@ export interface SessionTileOpts {
  *                 same "what you'll get" spec as the gallery card. Explicit `meta`
  *                 values win over it.
  */
-export function sessionTile(entry: SessionEntry, { toolName = '', sizeBytes = 0, meta = {}, tool = null, selectable = false, selected = false }: SessionTileOpts = {}): string {
+export function sessionTile(entry: SessionEntry, { toolName = '', sizeBytes = 0, meta = {}, tool = null, selectable = false, selected = false, cols }: SessionTileOpts = {}): string {
   const batch = isBatchSlot(entry.slot);
   const title = batch
     ? (entry.label || 'Batch session')
@@ -183,6 +185,11 @@ export function sessionTile(entry: SessionEntry, { toolName = '', sizeBytes = 0,
     openAttr: 'data-open-session',
     openLabel: batch ? `Open batch ${title}` : `Resume ${title}`,
     selectable, selected,
+    cols: cols ?? {
+      kind: batch ? 'Batch' : (toolName || 'Session'),
+      count: sizeBytes ? fmtBytes(sizeBytes) : '',
+      when: relativeTime(entry.updatedAt),
+    },
   });
 }
 
@@ -213,6 +220,7 @@ export function imageTile(ref: ImageTileRef, { selectable = false, selected = fa
     openAttr: 'data-open-image',
     openLabel: `Use image ${name}`,
     selectable, selected,
+    cols: { kind: 'Image', count: ref.format ? fmtLabel(ref.format) : '', when: '' },
   });
 }
 
@@ -222,6 +230,9 @@ export interface FolderTileOpts {
   count?: number;
   selectable?: boolean;
   selected?: boolean;
+  /** Favourited folder - shows the corner star (the Projects view also sorts
+   *  starred folders first). */
+  starred?: boolean;
 }
 
 /**
@@ -232,7 +243,7 @@ export interface FolderTileOpts {
  *                       the Projects view passes items + sub-folders so a nested folder
  *                       reads "N items" inclusive of its sub-folders.
  */
-export function folderTile(folder: { id: string; name: string; items?: readonly unknown[] }, { memberPreviews = [], count, selectable = false, selected = false }: FolderTileOpts = {}): string {
+export function folderTile(folder: { id: string; name: string; items?: readonly unknown[]; color?: string; emoji?: string; updatedAt?: string }, { memberPreviews = [], count, selectable = false, selected = false, starred = false }: FolderTileOpts = {}): string {
   count = count ?? folder.items?.length ?? 0;
   const cells = memberPreviews.slice(0, 4).map(p => {
     if (p.batch) return `<span class="folder-cell folder-cell--batch" aria-hidden="true">${PACKAGE_ICON}</span>`;
@@ -241,19 +252,30 @@ export function folderTile(folder: { id: string; name: string; items?: readonly 
       ? `<img class="folder-cell" src="${escape(src)}" alt="" loading="lazy" decoding="async">`
       : `<span class="folder-cell folder-cell--empty" aria-hidden="true"></span>`;
   }).join('');
-  const mosaic = cells
+  // A folder-SHAPED cover (plans/133 WP-1): a tabbed silhouette so containers
+  // read differently from the sessions' 4/3 document cards, tinted by the
+  // folder's optional accent colour, with an optional emoji identity mark and
+  // the favourite star in the corner.
+  const accent = folder.color ? ` style="--folder-tint:${escape(folder.color)}"` : '';
+  const inner = cells
     ? `<span class="folder-mosaic">${cells}</span>`
-    : `<span class="tile-cover tile-cover--batch" aria-hidden="true">${FOLDER_ICON}</span>`;
+    : `<span class="folder-cover-glyph">${FOLDER_ICON}</span>`;
+  const cover = `<span class="folder-cover"${accent} aria-hidden="true">
+      ${folder.emoji ? `<span class="folder-emoji">${escape(folder.emoji)}</span>` : ''}
+      ${inner}
+      ${starred ? `<span class="folder-star">★</span>` : ''}
+    </span>`;
 
   return `
     <div class="folder-tile folder-tile--folder${selected ? ' is-selected' : ''}" data-ref="${escape(folder.id)}" data-kind="folder">
       ${selectable ? selectToggle(folder.id, 'folder', selected, folder.name) : ''}
       <button type="button" class="tile-primary" data-open-folder="${escape(folder.id)}" aria-label="Open folder ${escape(folder.name)}">
-        ${mosaic}
+        ${cover}
         <span class="tile-meta">
           <span class="tile-title" title="${escape(folder.name)}">${escape(folder.name)}</span>
-          <span class="tile-sub">${count} item${count === 1 ? '' : 's'}</span>
+          <span class="folder-count" title="${count} item${count === 1 ? '' : 's'}" aria-label="${count} item${count === 1 ? '' : 's'}">${escape(compactCount(count))}</span>
         </span>
+        <span class="tile-cols" aria-hidden="true"><span class="tile-col">Folder</span><span class="tile-col">${count} item${count === 1 ? '' : 's'}</span><span class="tile-col">${folder.updatedAt ? relativeTime(folder.updatedAt) : ''}</span></span>
       </button>
       <button type="button" class="tile-menu-btn" data-menu="${escape(folder.id)}" data-menu-kind="folder" aria-label="Folder actions">${MENU_ICON}</button>
     </div>`;
@@ -370,6 +392,9 @@ export function sessionRow(entry: SessionEntry, opts: SessionRowOpts): string {
 }
 
 // Shared wrapper for session/image tiles.
+/** List-view column strings (pre-formatted by the caller). */
+export interface TileCols { kind: string; count: string; when: string }
+
 interface TileShellOpts {
   ref: string;
   kind: string;
@@ -382,9 +407,16 @@ interface TileShellOpts {
   openLabel: string;
   selectable?: boolean;
   selected?: boolean;
+  cols?: TileCols;
 }
 
-function tileShell({ ref, kind, batch, cover, title, sub, badges, openAttr, openLabel, selectable = false, selected = false }: TileShellOpts): string {
+function tileShell({ ref, kind, batch, cover, title, sub, badges, openAttr, openLabel, selectable = false, selected = false, cols }: TileShellOpts): string {
+  // .tile-cols renders the list view's aligned columns (Kind · Items/Size ·
+  // Modified, plans/133 WP-2); grid mode hides it in CSS, so every caller can
+  // pass it unconditionally.
+  const colsHtml = cols
+    ? `<span class="tile-cols" aria-hidden="true"><span class="tile-col">${escape(cols.kind)}</span><span class="tile-col">${escape(cols.count)}</span><span class="tile-col">${escape(cols.when)}</span></span>`
+    : '';
   return `
     <div class="folder-tile${selected ? ' is-selected' : ''}" data-ref="${escape(ref)}" data-kind="${kind}"${batch ? ' data-batch="1"' : ''}>
       ${selectable ? selectToggle(ref, kind, selected, title) : ''}
@@ -395,6 +427,7 @@ function tileShell({ ref, kind, batch, cover, title, sub, badges, openAttr, open
           ${sub ? `<span class="tile-sub">${escape(sub)}</span>` : ''}
           ${badges ? `<span class="tile-badges">${badges}</span>` : ''}
         </span>
+        ${colsHtml}
       </button>
       <button type="button" class="tile-menu-btn" data-menu="${escape(ref)}" data-menu-kind="${kind}" aria-label="Item actions">${MENU_ICON}</button>
     </div>`;
@@ -405,4 +438,4 @@ function tileShell({ ref, kind, batch, cover, title, sub, badges, openAttr, open
 // existing importers of these names keep working.
 export { relativeTime, fmtBytes } from './lib/format.ts';
 // Local bindings for the two used above (a re-export creates no in-scope name).
-import { relativeTime, fmtBytes } from './lib/format.ts';
+import { relativeTime, fmtBytes, compactCount } from './lib/format.ts';

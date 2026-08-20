@@ -49,6 +49,7 @@ import type { ToolManifest } from '../../../../engine/src/loader.ts';
 import { setPendingVerify } from './verify-handoff.ts';
 import type { PickerHost } from '../views/picker.ts';
 import type { BeamPackHost } from './beam-pack.ts';
+import type { Unzipped } from 'fflate';
 
 type PickerModule = typeof import('../views/picker.ts');
 
@@ -453,10 +454,90 @@ export function dropChooserMessage(s: Sniff, name: string, ctx: ChooserContext):
 /** Open a dropped/shared `.lolly`: land its assets + session (reusing the beam ingest
  *  via lib/lolly-pack.ts), then navigate into the tool at the imported session. Lazy
  *  import keeps the pack/ingest code off the drop cold path. */
+/** True when unzipped `.lolly` parts are a BRAND/INSTANCE pack (plans/131)
+ *  rather than a saved session - same container, routed by manifest format.
+ *  Pure - exported for the co-located test. */
+export function isBrandPackParts(manifest: { format?: unknown } | null): boolean {
+  return manifest?.format === 'lolly-brand';
+}
+
+/**
+ * A brand/instance `.lolly` opened from the Open button (or dropped anywhere):
+ * switch this install's brand WHOLE - tokens, fonts, logos, and for an
+ * instance pack the brand tools + catalog + instance base too - with one
+ * honest gate: when the person has BUILT a brand here (the editor writes every
+ * brand change through the user tokens doc, so its presence is the signal),
+ * confirm the replacement first. A factory-default install switches silently -
+ * there is nothing of theirs to lose.
+ */
+async function importBrandLollyDrop(
+  file: File, files: Unzipped, host: PickerHost,
+): Promise<void> {
+  const bt = await import('../brand-transfer.ts');
+  const { readJson } = await import('./bundle.ts');
+  const manifest = readJson(files, 'manifest.json') as { label?: string } | null;
+  const label = manifest?.label || file.name.replace(/\.lolly$/i, '');
+
+  const { USER_TOKENS_ID } = await import('../bridge/tokens.ts');
+  const assets = (host as unknown as { assets?: { _getBlob(id: string): Promise<Blob | null> } }).assets;
+  const tweaked = !!(await assets?._getBlob(USER_TOKENS_ID).catch(() => null));
+  if (tweaked) {
+    const ok = await confirmDialog({
+      title: t('Replace your brand?'),
+      message: tRaw('Loading “{name}” will replace the colours, fonts and logos you set up on this device.', { name: label }),
+      confirmLabel: t('Replace brand'),
+      danger: true,
+    });
+    if (!ok) return;
+  }
+
+  try {
+    const summary = await bt.importBrandPack(
+      { host: host as unknown as Parameters<typeof bt.importBrandPack>[0]['host'], storage: localStorage },
+      files,
+    );
+    playSfx('drop');
+    // The pack may carry a theme pref; repainting from storage covers both
+    // "it did" and "keep what was there".
+    const { applyTheme } = await import('../theme.ts');
+    applyTheme(localStorage.getItem('theme') || 'light');
+    if (summary.packInstance) {
+      // The pack chose where community content comes from - that IS the
+      // instance choice, so the first-run chooser must not re-ask.
+      const { markInstanceChoiceMade } = await import('./instance-choice.ts');
+      await markInstanceChoiceMade();
+    }
+    if (summary.packTools > 0) {
+      const { syncCatalog } = await import('../catalog/sync.ts');
+      await syncCatalog(host as unknown as Parameters<typeof syncCatalog>[0]).catch(() => { /* next boot */ });
+      const it = await import('./installed-tools.ts');
+      await it.mergeInstalledToolsIntoIndex().catch(() => { /* boot merge covers it */ });
+      announce(tRaw('Brand switched to “{name}” — {n} tools installed.', { name: label, n: summary.packTools }));
+    } else {
+      announce(tRaw('Brand switched to “{name}”.', { name: label }));
+    }
+    // Repaint the current view whole so nothing keeps wearing the old brand.
+    window.dispatchEvent(new Event('lolly:remount'));
+  } catch (err) {
+    announce(tRaw('Could not load this brand file: {message}', { message: (err as Error).message }), { assertive: true });
+  }
+}
+
 async function importLollyDrop(file: File, host: PickerHost): Promise<void> {
   try {
     const lp = await import('./lolly-pack.ts');
     const bytes = new Uint8Array(await file.arrayBuffer());
+    // Same container, two payloads: a brand/instance pack (plans/131) routes
+    // to the brand importer; everything else is the saved-session path below.
+    try {
+      const bt = await import('../brand-transfer.ts');
+      const { readJson } = await import('./bundle.ts');
+      const parts = await bt.unzipBrandBytes(bytes);
+      if (isBrandPackParts(readJson(parts, 'manifest.json') as { format?: unknown } | null)) {
+        await importBrandLollyDrop(file, parts, host);
+        return;
+      }
+    } catch { /* not even a readable zip - let the session path report it */ }
     // A .lolly may carry the tool itself (plans/114 Wave 7). Provision it - behind a
     // "do you trust the author?" gate - BEFORE landing the session, so the session can
     // open. `available` is whether the session's tool can load here afterwards.
