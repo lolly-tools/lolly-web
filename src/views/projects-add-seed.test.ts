@@ -114,7 +114,7 @@ test('the add-picker folds in the user\'s own saved tools as LOCAL cards', () =>
 });
 
 test('opening a user tool seeds its base tool via the in-memory pending seed', () => {
-  const body = bodyAfter(CODE, 'onOpenTool: (toolId) =>');
+  const body = bodyAfter(CODE, 'onOpenTool: async (toolId) =>');
   assert.match(body, /const ut = userToolById\.get\(toolId\);/, 'recognises a user-tool id');
   assert.match(body, /const openId = ut \? ut\.userTool\.baseToolId : toolId;/, 'routes to the base tool');
   assert.match(body, /setPendingToolSeed\(openId, ut\.userTool\.values\)/, 'stashes the saved values as the mount seed');

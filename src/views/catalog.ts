@@ -30,6 +30,7 @@ import {
   visibleAssets as visibleAssetsRule,
   buildSearchHaystack,
   matchesQuery as matchesQueryRule,
+  matchContext as matchContextRule,
   favItems as favItemsRule,
   selectableIds as selectableIdsRule,
   pruneSelection as pruneSelectionRule,
@@ -46,12 +47,13 @@ import { showUndoToast, flushUndoToasts } from '../lib/undo-toast.ts';
 import { createFolderStore, folderPath, type FolderHost } from '../folders.ts';
 import { genAiPill, assetAiKind, aiSignalsChip, GENAI_CLAIM } from '../lib/genai-pill.ts';
 import { announce } from '../a11y.ts';
+import { fmtBytes } from '../lib/format.ts';
 import { mountModal } from '../components/modal.ts';
 import type { ModalHandle } from '../components/modal.ts';
 import { mountFeaturedRow } from '../components/featured-row.ts';
 import type { FeaturedEntry, FeaturedRowHandle, FeaturedViewMode } from '../components/featured-row.ts';
 import { viewTopbarHtml, mountViewTopbar } from '../components/view-topbar.ts';
-import { claimSearchBar, clearSearchBar } from '../components/search-bar.ts';
+import { claimSearchBar, clearSearchBar, setSearchBarQuery } from '../components/search-bar.ts';
 import { themeSegmentHtml, wireThemeSegment } from '../components/theme-toggle.ts';
 import { soundSegmentHtml, wireSoundSegment } from '../components/sound-toggle.ts';
 import { segHtml } from '../lib/seg.ts';
@@ -1491,7 +1493,13 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
               const added = assetAddedAt(ref);
               return added ? `${name} - ${tRaw('added {date}', { date: new Date(added).toLocaleDateString() })}` : name;
             })())}">${escape(name)}</span>
-            <span class="cat-tile-sub"><span class="cat-src cat-src--${isUser ? 'user' : 'lib'}">${sourceLabel}</span>${fmt ? ` · ${escape(fmt)}` : ''}${aiKind ? genAiPill(aiKind) : ''}${aiSignalsChip(ref)}</span>
+            <span class="cat-tile-sub"><span class="cat-src cat-src--${isUser ? 'user' : 'lib'}">${sourceLabel}</span>${fmt ? ` · ${escape(fmt)}` : ''}${aiKind ? genAiPill(aiKind) : ''}${aiSignalsChip(ref)}${(() => {
+              // Match context (plans/132 WP-C item 4): while searching, say WHY a tile
+              // is in the result set when the name alone doesn't show it.
+              if (!query) return '';
+              const ctx = matchContextRule(ref, query, x => categoryLabel(libCategory(x, overrides)));
+              return ctx ? ` <span class="cat-match-chip" title="${escape(t('This is what the search matched'))}">${escape(ctx)}</span>` : '';
+            })()}</span>
           </span>
         </button>
       </div>`;
@@ -1565,7 +1573,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       <div class="cat-group-body">
         ${dropzone}
         ${scriptAudio}
-        ${items.length ? `<div class="cat-uploads-bar"><button type="button" class="cat-uploads-selectall" data-selectall aria-pressed="${allSel}">${allSel ? t('Deselect all') : t('Select all')}</button></div>` : ''}
+        ${items.length ? `<div class="cat-uploads-bar"><button type="button" class="cat-uploads-selectall" data-selectall aria-pressed="${allSel}">${allSel ? t('Deselect all') : t('Select all')}</button><span class="cat-storage-chip" data-storage-chip hidden></span></div>` : ''}
         ${colourRow}
         ${items.length ? `<div class="cat-grid">${items.map(assetTile).join('')}</div>` : ''}
       </div>
@@ -1920,6 +1928,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       { id: 'hide', icon: icon('eye'), label: () => (allSelectedHidden() ? t('Unhide') : t('Hide')) },
       { id: 'replace', icon: REPLACE_ICON, label: () => t('Replace'), title: () => t('Swap in a new file, keeping the same image - every saved session, tool and project that uses it updates to the new one'), hidden: () => !singleSelectedUploadRef() },
       { id: 'rename', icon: PENCIL_ICON, label: () => t('Rename'), title: () => t('Change this upload’s name'), hidden: () => !singleSelectedUploadRef() },
+      { id: 'edit-tags', icon: TAG_ICON, label: () => t('Edit tags'), title: () => t('Set one comma-separated tag list on every selected upload'), hidden: () => !allSelectedUploads() },
       { id: 'duplicate', icon: COPY_ICON, label: () => t('Duplicate'), title: () => t('Make a copy of each selected image - the copies are selected, ready to move or edit'), hidden: () => !allSelectedUploads() },
       { id: 'download', icon: DOWNLOAD_ICON, label: () => t('Download'), title: () => t('Download the selection as one zip - Content Credentials checked and preserved'), hidden: () => !allSelectedUploads() },
       { id: 'delete', icon: TRASH_ICON, label: () => t('Delete'), extraClass: 'cat-bulk-danger', hidden: () => !allSelectedUploads() },
@@ -2014,6 +2023,20 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     mountAudioThumbGrid();
     mountTextThumbGrid();
     mountDropzone();
+    fillStorageChip();
+  }
+
+  // Device-storage chip in the uploads bar (plans/132 WP-K item 2) - the same
+  // navigator.storage.estimate() read the /profile meter uses, one quiet line.
+  // Async fill after paint; absent API (or a refusal) just leaves it hidden.
+  function fillStorageChip(): void {
+    const chip = viewEl.querySelector<HTMLElement>('[data-storage-chip]');
+    if (!chip || !navigator.storage?.estimate) return;
+    void navigator.storage.estimate().then(({ usage = 0, quota = 0 }) => {
+      if (!mounted || !quota) return;
+      chip.textContent = tRaw('{used} of {total} device storage used', { used: fmtBytes(usage), total: fmtBytes(quota) });
+      chip.hidden = false;
+    }).catch(() => { /* leave hidden */ });
   }
 
   // Re-render from state, preserving the document scroll position so an in-page action
@@ -2492,7 +2515,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
             return `<div><dt>${t('Projects')}</dt><dd>${names}${extra}</dd></div>`;
           })()}
           <div><dt>${t('ID')}</dt><dd><code>${escape(ref.id)}</code></dd></div>
-          ${tags.length ? `<div><dt>${t('Tags')}</dt><dd class="cat-details-tags">${tags.map(tag => `<span class="cat-tag">${escape(String(tag))}</span>`).join('')}</dd></div>` : ''}
+          ${tags.length || isUser ? `<div><dt>${t('Tags')}</dt><dd class="cat-details-tags">${tags.map(tag => `<button type="button" class="cat-tag" data-tag="${escape(String(tag))}" title="${escape(t('Show everything with this tag'))}">${escape(String(tag))}</button>`).join('')}${isUser ? `<button type="button" class="cat-tag cat-tag--edit" data-act="edit-tags">${tags.length ? t('Edit…') : t('Add tags…')}</button>` : ''}</dd></div>` : ''}
         </dl>
         <div class="cat-details-tech" data-tech hidden></div>
         <div class="cat-details-tech" data-usage hidden></div>
@@ -3445,6 +3468,14 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         } catch { /* recolour is best-effort - leaves the base preview */ }
         return;
       }
+      // A tag chip filters the grid: close the modal and hand `tag:x` to the
+      // shared search bar (its onQuery path re-renders, same as typing it).
+      const tagBtn = target.closest<HTMLElement>('[data-tag]');
+      if (tagBtn?.dataset.tag) {
+        closeDetails();
+        setSearchBarQuery(`tag:${tagBtn.dataset.tag}`);
+        return;
+      }
       const act = target.closest<HTMLElement>('[data-act]')?.dataset.act;
       if (!act) return;
       if (act === 'close') { closeDetails(); return; }
@@ -4100,6 +4131,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       else if (act === 'recategorise') await recategorise(ref);
       else if (act === 'replace') await replaceUserAsset(ref);
       else if (act === 'rename') await renameUserAsset(ref);
+      else if (act === 'edit-tags') { await editTags([ref]); openDetails(assetById.get(ref.id) ?? ref); }
       else if (act === 'hide') await setHidden(base, true);
       else if (act === 'unhide') await setHidden(base, false);
       else if (act === 'delete') await deleteUserAsset(ref);
@@ -4767,6 +4799,38 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     rerender();
   }
 
+  /** Edit the free-form tags on one or many uploads (plans/132 WP-C item 2).
+   *  One comma-separated field - the same read-then-merge meta write the
+   *  declare-AI-origins action uses; an empty field clears the tags. Tags feed
+   *  the search haystack, so the memoised index is dropped after a write. */
+  async function editTags(refs: AssetRef[]): Promise<void> {
+    const uploads = refs.filter(r => r.source === 'user');
+    const first = uploads[0];
+    if (!first) return;
+    const current = uploads.length === 1 ? (((first.meta?.tags as string[] | undefined) ?? []).join(', ')) : '';
+    const raw = await promptDialog({
+      title: uploads.length === 1 ? t('Edit tags') : tRaw('Edit tags on {n} uploads', { n: uploads.length }),
+      message: uploads.length === 1
+        ? t('Comma-separated tags. They show in the details, feed search, and click-to-filter.')
+        : t('Comma-separated tags to set on every selected upload, replacing what each has now.'),
+      value: current,
+      placeholder: t('e.g. logo, dark, print'),
+      confirmLabel: t('Save'),
+    });
+    if (raw == null || !mounted) return;
+    const tags = [...new Set(raw.split(',').map(x => x.trim()).filter(Boolean))];
+    for (const ref of uploads) {
+      const rec = assetById.get(ref.id);
+      if (!rec) continue;
+      const meta: Record<string, unknown> = { ...rec.meta };
+      if (tags.length) meta.tags = tags; else delete meta.tags;
+      await host.assets._updateUserAssetMeta(ref.id, meta).catch(() => {});
+      rec.meta = meta;
+    }
+    searchHaystack = null;
+    rerender();
+  }
+
   /** Open a single-file OS picker and resolve the chosen File (null if cancelled). */
   function pickOneFile(accept: string): Promise<File | null> {
     return new Promise((resolve) => {
@@ -5123,6 +5187,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     else if (action === 'delete') { if (allSelectedUploads()) void deleteSelection(); }
     else if (action === 'download') { if (allSelectedUploads()) void downloadSelection(); }
     else if (action === 'duplicate') { if (allSelectedUploads()) void duplicateSelection(); }
+    else if (action === 'edit-tags') {
+      if (allSelectedUploads()) void editTags([...selected].map(id => assetById.get(id)).filter((r): r is AssetRef => !!r));
+    }
     // Replace + Rename act on exactly one upload; the guard re-checks at dispatch so a
     // selection that grew under a stale bar can never misroute them.
     else if (action === 'replace') { const r = singleSelectedUploadRef(); if (r) void replaceUserAsset(r); }
@@ -6377,6 +6444,15 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     closeConfirmDialogs();
   };
 
+  // Loading skeleton (plans/132 WP-M): a toolbar shell and one quiet grid row
+  // paint immediately while reload() is in flight, replaced wholesale by the
+  // first real render(). Static markup, no events, no motion - so it needs no
+  // reduced-motion gate and can never leak wiring.
+  viewEl.innerHTML = `
+    <div class="catalog cat-skeleton" aria-hidden="true">
+      <div class="cat-skel-toolbar"><span class="cat-skel-pill"></span><span class="cat-skel-pill"></span><span class="cat-skel-pill cat-skel-pill--wide"></span></div>
+      <div class="cat-skel-grid">${'<span class="cat-skel-tile"></span>'.repeat(6)}</div>
+    </div>`;
   await reload();
   if (!mounted) return;
   // Deep link: expand the linked sections (validated) BEFORE the first paint so they render

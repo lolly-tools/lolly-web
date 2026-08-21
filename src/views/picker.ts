@@ -3283,7 +3283,28 @@ function scheduleProxyBuild(
 /** How long the proxy build may wait for an idle slot before running anyway. */
 const PROXY_IDLE_TIMEOUT_MS = 5000;
 
-export async function storeUserUpload(host: PickerHost, file: File): Promise<AssetRef> {
+/** The first existing upload whose bytes are identical to `file`, or null.
+ *  Size-gates before hashing: the new file is hashed once, and only same-size
+ *  candidates are read back and hashed. Object URLs resolve from memory (the
+ *  bridge holds the blobs), so the walk costs no network. */
+async function findIdenticalUpload(host: PickerHost, file: File): Promise<AssetRef | null> {
+  if (!crypto?.subtle || file.size === 0 || file.size > 256 * 1024 * 1024) return null;
+  const uploads = await host.assets._listUserAssets();
+  let want: string | null = null;
+  const hex = (buf: ArrayBuffer): string => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+  for (const a of uploads) {
+    if (a.meta?._placeholder || !a.url) continue;
+    try {
+      const b = await (await fetch(a.url)).blob();
+      if (b.size !== file.size) continue;
+      want ??= hex(await crypto.subtle.digest('SHA-256', await file.arrayBuffer()));
+      if (hex(await crypto.subtle.digest('SHA-256', await b.arrayBuffer())) === want) return a;
+    } catch { /* unreadable candidate - not a duplicate we can prove */ }
+  }
+  return null;
+}
+
+export async function storeUserUpload(host: PickerHost, file: File, o: { skipDupCheck?: boolean } = {}): Promise<AssetRef> {
   // Read the file as a blob, stash it in the user-assets IDB store, return
   // a `user/...` AssetRef. The bridge's assets.get() resolves these via the
   // same lookup path as library assets - uniform from the tool's POV.
@@ -3336,6 +3357,54 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
       const png = packPng(rgba, { width, height, channels: 4 });
       const base = file.name.replace(/\.bmp$/i, '') || 'image';
       return storeUserUpload(host, new File([png as BlobPart], `${base}.png`, { type: 'image/png' }));
+    }
+  }
+  // A .zip of assets unpacks and re-enters per entry (plans/132 WP-K item 3) - the
+  // bulk Download-zip's inverse. Gated on the .zip EXTENSION plus the PK magic so
+  // the zip-shaped formats with their own journeys (.lottie, .xlsx, .pptx) never
+  // land here. Per-entry failures skip (a mixed zip imports what it can); the
+  // duplicate check is skipped per entry so a re-imported archive never asks
+  // fifty questions - identical entries simply store as copies.
+  if (/\.zip$/i.test(file.name) && head4[0] === 0x50 && head4[1] === 0x4b) {
+    const { unzipSync } = await import('fflate');
+    const entries = unzipSync(new Uint8Array(await file.arrayBuffer()));
+    const MEDIA_RE = /\.(png|jpe?g|webp|apng|gif|avif|heic|heif|bmp|ico|svg|svgz|mp4|m4v|webm|mov|mp3|wav|ogg|oga|opus|m4a|aac|flac|mid|midi|json|lottie|pdf|txt|md|markdown|csv|tsv|xlsx)$/i;
+    const CAP = 200;
+    let last: AssetRef | null = null;
+    let n = 0;
+    let skipped = 0;
+    for (const [path, bytes] of Object.entries(entries)) {
+      const nm = path.split('/').pop() || '';
+      if (!nm || nm.startsWith('.') || path.includes('__MACOSX') || !bytes.length || !MEDIA_RE.test(nm)) continue;
+      if (n >= CAP) { skipped++; continue; }
+      try {
+        last = await storeUserUpload(host, new File([bytes as BlobPart], nm), { skipDupCheck: true });
+        n++;
+      } catch { skipped++; }
+    }
+    if (!last) throw new Error(t('Nothing usable found in that zip.'));
+    announce(skipped
+      ? tRaw('{n} files imported from the zip; {skipped} skipped.', { n, skipped })
+      : tRaw('{n} files imported from the zip.', { n }));
+    return last;
+  }
+  // Duplicate detection (plans/132 WP-K item 1): byte-identical to an existing
+  // upload -> offer "use existing" before spending the full ingest. Size-gated
+  // candidate walk (hashing only size-matches keeps this near-free); best-effort
+  // by contract - any failure just proceeds with a normal ingest. The replace
+  // flow opts out: replacing an asset with its own bytes is the user's call.
+  if (!o.skipDupCheck) {
+    const dup = await findIdenticalUpload(host, file).catch(() => null);
+    if (dup) {
+      const picked = await choiceDialog({
+        title: t('Already in your library'),
+        message: tRaw('“{name}” is byte-identical to “{existing}” in your uploads. Use the existing one, or keep both?', {
+          name: file.name, existing: String(dup.meta?.name ?? dup.id),
+        }),
+        choices: [{ id: 'use', label: t('Use existing'), primary: true }, { id: 'both', label: t('Keep both') }],
+      });
+      if (picked === 'use') return host.assets.get(dup.id);
+      // 'both' or Escape -> the non-destructive path: a normal ingest.
     }
   }
   // ICO/CUR → decode the largest image. A PNG-payload entry (png===true) hands its
@@ -3854,7 +3923,9 @@ function assetKindOf(type?: string): string {
 
 export async function replaceUserUpload(host: ReplaceHost, targetId: string, file: File): Promise<AssetRef> {
   // Full ingest of the NEW bytes to a throwaway id. Its provenance is the new file's own.
-  const fresh = await storeUserUpload(host, file);
+  // skipDupCheck: replacing an asset with bytes identical to something in the
+  // library is a deliberate act - the duplicate dialog would only second-guess it.
+  const fresh = await storeUserUpload(host, file, { skipDupCheck: true });
   const bail = async (msg: string, code?: string): Promise<never> => {
     await host.assets._deleteUserAsset(fresh.id).catch(() => {});
     throw Object.assign(new Error(msg), code ? { code } : {});

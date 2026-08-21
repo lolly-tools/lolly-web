@@ -81,17 +81,108 @@ export function buildSearchHaystack(
   return index;
 }
 
+// ── Structured query prefixes (plans/132 WP-C item 3) ────────────────────────
+// `tag:x` / `type:x` / `is:genai` / `is:upload` narrow structurally; everything
+// else stays a folded text token (the AND-across-terms default path). A prefix
+// with no value (`tag:`) is kept as text so half-typed prefixes never blank the
+// grid mid-keystroke.
+export interface ParsedCatQuery {
+  /** Plain text tokens (folded), matched against the haystack as before. */
+  text: string[];
+  /** `tag:` values (folded) - each must prefix-match one of the asset's tags. */
+  tags: string[];
+  /** `type:` values - a TypeFilter bucket name or a raw format/type string. */
+  types: string[];
+  /** `is:` values - 'genai' (declared AI origins) and 'upload' are recognised;
+   *  anything else matches nothing (a typo narrows to empty, honestly). */
+  flags: string[];
+}
+
+export function parseCatQuery(query: string): ParsedCatQuery {
+  const out: ParsedCatQuery = { text: [], tags: [], types: [], flags: [] };
+  for (const raw of query.split(/\s+/)) {
+    if (!raw) continue;
+    const m = /^(tag|type|is):(.+)$/i.exec(raw);
+    if (m) {
+      const value = fold(m[2]!);
+      const key = m[1]!.toLowerCase();
+      if (key === 'tag') out.tags.push(value);
+      else if (key === 'type') out.types.push(value);
+      else out.flags.push(value);
+    } else {
+      out.text.push(...tokenize(raw));
+    }
+  }
+  return out;
+}
+
 // matchesQuery runs once per asset per keystroke over one unchanging query, so
-// the tokenization (fold + split) is memoised on the last query seen rather
-// than recomputed per asset.
+// the parse (fold + split + prefix carve) is memoised on the last query seen
+// rather than recomputed per asset.
 let lastQuery = '';
-let lastTokens: string[] = [];
-function queryTokens(query: string): string[] {
+let lastParsed: ParsedCatQuery = { text: [], tags: [], types: [], flags: [] };
+function parsedQuery(query: string): ParsedCatQuery {
   if (query !== lastQuery) {
     lastQuery = query;
-    lastTokens = tokenize(query);
+    lastParsed = parseCatQuery(query);
   }
-  return lastTokens;
+  return lastParsed;
+}
+
+/** The asset's tags, folded once per call site (small lists; no memo needed). */
+function foldedTags(asset: AssetRef): string[] {
+  return ((asset.meta?.tags as string[] | undefined) ?? []).map((t) => fold(String(t)));
+}
+
+/** Does the asset satisfy every STRUCTURED term of a parsed query? */
+function matchesStructured(asset: AssetRef, q: ParsedCatQuery): boolean {
+  for (const tag of q.tags) {
+    if (!foldedTags(asset).some((t) => t.startsWith(tag))) return false;
+  }
+  for (const ty of q.types) {
+    const bucket = TYPE_FILTER_TYPES[ty as Exclude<TypeFilter, 'all'>];
+    const own = fold(String(asset.format ?? asset.type ?? ''));
+    const kind = fold(String(asset.type ?? ''));
+    if (!(bucket ? bucket.has(String(asset.type)) : (own === ty || kind === ty))) return false;
+  }
+  for (const flag of q.flags) {
+    if (flag === 'genai') {
+      const ai = asset.meta?.aiGenerated;
+      if (ai !== 'full' && ai !== 'partial') return false;
+    } else if (flag === 'upload') {
+      if (asset.source !== 'user') return false;
+    } else return false;
+  }
+  return true;
+}
+
+/**
+ * While a search is active: the first thing that matched OUTSIDE the name -
+ * a tag, or the category - so a tile can show WHY it is in the result set
+ * (plans/132 WP-C item 4). Null when the name itself carries the match (no
+ * chip needed) or nothing structured matched.
+ */
+export function matchContext(
+  asset: AssetRef,
+  query: string,
+  categoryOf: (asset: AssetRef) => string,
+): string | null {
+  if (!query) return null;
+  const q = parsedQuery(query);
+  const rawTags = (asset.meta?.tags as string[] | undefined) ?? [];
+  for (const t of q.tags) {
+    const hit = rawTags.find((raw) => fold(String(raw)).startsWith(t));
+    if (hit) return String(hit);
+  }
+  const name = fold(String(asset.meta?.name ?? asset.id));
+  for (const token of q.text) {
+    if (name.includes(token)) continue;
+    const hit = rawTags.find((raw) => fold(String(raw)).includes(token));
+    if (hit) return String(hit);
+    const cat = categoryOf(asset);
+    if (fold(cat).includes(token)) return cat;
+  }
+  return null;
 }
 
 /**
@@ -111,9 +202,12 @@ export function matchesQuery(
   haystack: ReadonlyMap<string, string>,
 ): boolean {
   if (!query) return true;
+  const q = parsedQuery(query);
+  if (!matchesStructured(asset, q)) return false;
+  if (!q.text.length) return true;
   const text = haystack.get(asset.id);
   if (text === undefined) return false;
-  return scoreHaystack([{ text, weight: 1 }], queryTokens(query)) > 0;
+  return scoreHaystack([{ text, weight: 1 }], q.text) > 0;
 }
 
 /**

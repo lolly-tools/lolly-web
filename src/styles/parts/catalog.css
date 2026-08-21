@@ -309,7 +309,17 @@
 .cat-uploads-tts .btn { display: inline-flex; align-items: center; gap: 6px; }
 .cat-uploads-tts .btn svg { display: block; }
 
-.cat-uploads-bar { display: flex; justify-content: flex-end; margin-bottom: .7rem; }
+.cat-uploads-bar { display: flex; justify-content: flex-end; align-items: center; gap: .8rem; margin-bottom: .7rem; }
+/* Device-storage chip (plans/132 WP-K item 2): one quiet line, left of the bar's controls. */
+.cat-storage-chip { margin-right: auto; font-size: calc(.7rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+/* Loading skeleton (plans/132 WP-M): static muted blocks while the first
+   reload() is in flight - deliberately motionless, so no reduced-motion gate. */
+.cat-skeleton { padding: 1rem 0; }
+.cat-skel-toolbar { display: flex; gap: 8px; margin-bottom: 1rem; }
+.cat-skel-pill { width: 92px; height: calc(30px * var(--a11y-fs)); border-radius: 999px; background: hsl(var(--muted) / .5); }
+.cat-skel-pill--wide { width: 220px; margin-left: auto; }
+.cat-skel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+.cat-skel-tile { aspect-ratio: 4 / 3; border-radius: calc(var(--radius) * 0.8); background: hsl(var(--muted) / .35); }
 .cat-uploads-selectall {
   flex: none; font: inherit; font-size: calc(12.5px * var(--a11y-fs)); font-weight: 600;
   color: hsl(var(--foreground)); background: hsl(var(--background));
@@ -973,7 +983,12 @@ button.cat-download { font: inherit; cursor: pointer; }
 .cat-details-tags { display: flex; flex-wrap: wrap; gap: 4px; }
 /* Now the SOLE .cat-tag - catalogue-summary's same-named status chip was
    renamed to .cat-stat-tag (components.css, component audit M1.2). */
-.cat-tag { font-size: calc(.7rem * var(--a11y-fs)); padding: 1px 7px; border-radius: 999px; background: hsl(var(--muted) / .8); color: hsl(var(--muted-foreground)); }
+.cat-tag { font-size: calc(.7rem * var(--a11y-fs)); padding: 1px 7px; border-radius: 999px; background: hsl(var(--muted) / .8); color: hsl(var(--muted-foreground)); border: none; font-family: inherit; cursor: pointer; }
+.cat-tag:hover, .cat-tag:focus-visible { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+.cat-tag--edit { background: none; outline: 1px solid hsl(var(--border)); outline-offset: -1px; }
+/* Match context (plans/132 WP-C item 4): the why-this-matched chip on a tile
+   during search - same quiet chip family as .cat-tag, never louder than the name. */
+.cat-match-chip { font-size: calc(.66rem * var(--a11y-fs)); padding: 0 6px; border-radius: 999px; background: hsl(var(--accent) / .5); color: hsl(var(--muted-foreground)); white-space: nowrap; }
 /* A top TOOLBAR now (2026-08-20): first child of .cat-details-body, above the
    name, so the variable-length meta/tech/credential sections below never move
    the actions around. Grouped into rows (plans/132 WP-J): pinned verbs, the

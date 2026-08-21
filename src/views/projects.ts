@@ -24,7 +24,6 @@
 import { escape } from '../utils.ts';
 import { t, tRaw } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
-import { isPlaceableAsset } from '../lib/asset-kinds.ts';
 import { createFolderStore, childFolders, folderPath, descendantFolderIds, TRASH_RETENTION_MS, FOLDER_COLORS } from '../folders.ts';
 import type { Folder, TrashEntry } from '../folders.ts';
 import { TRASH_SLOT_PREFIX, isTrashedSlot } from '../lib/batch-slots.ts';
@@ -61,7 +60,6 @@ import { announce } from '../a11y.ts';
 import { soundSegmentHtml, wireSoundSegment } from '../components/sound-toggle.ts';
 import { openShareDialog } from '../components/share-dialog.ts';
 import { themeSegmentHtml, wireThemeSegment } from '../components/theme-toggle.ts';
-import { openFolderOverlay } from '../folder-overlay.ts';
 import { serializeUrlState } from '@lolly/engine';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
 import { getTool } from '../bridge/tool-loader.ts';
@@ -162,7 +160,6 @@ const FILE_PLUS_ICON = icon('filePlus', { strokeWidth: 1.8 });
 const BACK_ICON = icon('chevronLeft');
 const RENDER_ICON = icon('play');
 // "history" (clock-rewind) - matches the gallery's saved-sessions button.
-const HISTORY_ICON = icon('history');
 // "sliders-horizontal" - the gallery's filter/view-options button, reused here for
 // view mode (preview/list) + sort.
 const FILTER_ICON = icon('filterLines');
@@ -273,6 +270,20 @@ export async function mountProjects(
   // Memoised searchMatches() result (invalidated on data reload + query change) so the two
   // callers in a render - pruneSelection + searchBodyHtml - don't each re-scan the tree.
   let searchCache: { q: string; scope: string | null; matches: SearchMatches } | null = null;
+  // Recent-exports rail (plans/133 WP-10): the downloads log's reopen tiles,
+  // rendered at the ROOT of /p now that this view is the one folder manager.
+  // Collapsible, remembered per device (a convenience, not state that matters).
+  let recentExports: Array<{ href: string; thumb: string; caption: string; at: number }> = [];
+  const RECENTS_COLLAPSED_KEY = 'lolly-projects-recents-collapsed';
+  let recentsCollapsed = ((): boolean => { try { return localStorage.getItem(RECENTS_COLLAPSED_KEY) === '1'; } catch { return false; } })();
+  async function loadRecentExports(): Promise<void> {
+    try {
+      const { listExports, exportReopenHref } = await import('../lib/export-history.ts');
+      recentExports = (await listExports(12))
+        .filter(x => x.thumb)
+        .map(x => ({ href: exportReopenHref(x), thumb: x.thumb!, caption: x.filename || x.label, at: x.at }));
+    } catch { recentExports = []; }
+  }
   try {
     if (localStorage.getItem('lolly:projectsView') === 'list') viewMode = 'list';
     const s = localStorage.getItem('lolly:projectsSort');
@@ -288,6 +299,7 @@ export async function mountProjects(
   } catch { /* localStorage unavailable */ }
 
   async function reload(): Promise<void> {
+    await loadRecentExports();
     [folders, entries, sizes, profile] = await Promise.all([
       store.list(),
       (host as ProjectsHost).state.list().catch(() => []),
@@ -566,7 +578,22 @@ export async function mountProjects(
       <div class="folder-grid projects-grid${viewMode === 'list' ? ' projects-list' : ''}">
         ${viewMode === 'list' ? listHeadHtml() : ''}
         ${folderTiles}${looseTiles}${createFolder}${createTool}${teamTile}${trashTile}
-      </div>`);
+      </div>
+      ${recentExports.length ? `
+        <section class="projects-exports folder-exports">
+          <button type="button" class="projects-exports-head" data-recents-toggle aria-expanded="${!recentsCollapsed}">
+            <span class="folder-exports-title">${t('Recent exports')}</span>
+            <span class="projects-exports-count">${recentExports.length}</span>
+          </button>
+          ${recentsCollapsed ? '' : `<div class="folder-exports-rail">
+            ${recentExports.map(x => `
+              ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - exportReopenHref() builds a fixed '#/tool/<id>' hash route */ ''}
+              <a class="folder-export-tile" href="${escape(x.href)}" data-open-export
+                 title="${escape(x.caption)} · ${escape(new Date(x.at).toLocaleDateString())}">
+                <img src="${escape(x.thumb)}" alt="${escape(x.caption)}" loading="lazy">
+              </a>`).join('')}
+          </div>`}
+        </section>` : ''}`);
   }
 
   // The flat results grid for the ?tools= filter - every saved session belonging to
@@ -783,15 +810,15 @@ export async function mountProjects(
       </div>`;
   }
 
-  // Projects' own trigger buttons in the shared top bar's `right` slot: view/sort
-  // options + saved-sessions (history). The rest of the cluster - language FAB and
-  // profile pill - is the shared chrome (components/view-topbar.ts), same as Tools
-  // and Catalog. (No tool filters here - they're meaningless for projects.)
+  // Projects' own trigger button in the shared top bar's `right` slot: view/sort
+  // options. The rest of the cluster - language FAB and profile pill - is the
+  // shared chrome (components/view-topbar.ts), same as Tools and Catalog. (No
+  // tool filters here - they're meaningless for projects; the old history fab
+  // retired with the folder-overlay mount, plans/133 WP-10.)
   function topRightSlot(): string {
-    const saved = entries.length;
     return `
         <button type="button" class="filter-fab projects-viewopts" aria-label="${escape(t('View and sort options'))}" aria-haspopup="true" title="${escape(t('View & sort'))}">${FILTER_ICON}</button>
-        ${saved ? `<button type="button" class="history-fab" title="${escape(t('Saved sessions'))}" aria-label="${escape(t('Saved sessions ({n})', { n: saved }))}">${HISTORY_ICON}<span class="history-fab-count" aria-hidden="true">${saved}</span></button>` : ''}`;
+        `;
   }
 
   function shell(heading: string, active: 'tools' | 'projects' | 'catalog', inner: string, { inFolder = false }: { inFolder?: boolean } = {}): string {
@@ -1070,34 +1097,24 @@ export async function mountProjects(
     // View-options (filter) button → preview/list + sort popover.
     root.querySelector('.projects-viewopts')?.addEventListener('click', (e) => { e.stopPropagation(); openViewOpts(e.currentTarget as HTMLElement); });
 
-    // History → the quick saved-sessions overlay (same as the gallery). It can
-    // move/rename folders behind the page, so refresh Projects when it closes.
-    // Reached from the history button AND, on mobile, the consolidated profile menu.
-    async function openHistory(): Promise<void> {
-      // Filtered: the user-asset store also holds fonts, the tokens doc and ICC
-      // profiles, and the overlay tiles whatever it is handed as an image.
-      const stored = await (host as ProjectsHost).assets._listUserAssets?.().catch(() => []) ?? [];
-      const imageRefs = stored.filter(isPlaceableAsset);
-      openFolderOverlay(host as ProjectsHost, {
-        context: 'projects',
-        sessionEntries: [...entries].sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt)),
-        imageRefs, sessionSizes: sizes, nameById,
-        showCreateFolder: true,
-        allowBatchExport: true,   // Batch is available to everyone now (Pro flag retired)
-        showRecentExports: true,
-        onResume: (entry) => resumeSession(entry.slot),
-        onDelete: () => {},
-      });
-      document.querySelector('dialog.folder-overlay')
-        ?.addEventListener('close', async () => { if (!mounted) return; await reload(); render(); }, { once: true });
-    }
-    root.querySelector('.history-fab')?.addEventListener('click', openHistory);
+    // Recent-exports collapse (plans/133 WP-10) - device-remembered, render() redraws.
+    root.querySelector('[data-recents-toggle]')?.addEventListener('click', () => {
+      recentsCollapsed = !recentsCollapsed;
+      try { localStorage.setItem(RECENTS_COLLAPSED_KEY, recentsCollapsed ? '1' : '0'); } catch { /* storage off */ }
+      render();
+    });
+
+    // The folder-overlay mount is RETIRED here (plans/133 WP-10): this view IS
+    // the folder manager, and the one thing the overlay added that the grid
+    // lacked - the Recent-exports reopen rail - now renders at the root above.
+    // The history fab went with it; the mobile profile menu keeps its saved
+    // count but hands off nowhere (you are already looking at your saved work).
 
     // The invariant top-bar wiring - language menu, plus the mobile profile menu (on
     // mobile the avatar opens theme + saved sessions + Settings; on desktop it stays a
     // plain link to the profile page). Same call Tools and Catalog make.
     mountViewTopbar(root, host as ProjectsHost, {
-      profileMenu: { savedCount: entries.length, onHistory: openHistory },
+      profileMenu: { savedCount: entries.length },
     });
 
     wireDrag(root);
@@ -2038,13 +2055,21 @@ export async function mountProjects(
           await store.moveItem(slot, target, 'session');   // target null → filed loose (Uncategorised)
           return { ok: true };
         },
-        onOpenTool: (toolId) => {
+        onOpenTool: async (toolId) => {
           // A user tool opens its BASE tool seeded with its saved values, via the same
           // in-memory pending-seed the drop/PSD route uses (the mount consumes it as
-          // `seededDirect`, so no URL packing and no chooser). A real tool opens as before.
+          // `seededDirect`, so no URL packing and no chooser). A REAL tool with saved
+          // variations offers the same default-or-variation chooser the quick-add path
+          // does (plans/134 WP-P10) - configure-first and quick-add can't diverge on
+          // whether your saved work is offered. A tool with none opens as before.
           const ut = userToolById.get(toolId);
           const openId = ut ? ut.userTool.baseToolId : toolId;
           if (ut) setPendingToolSeed(openId, ut.userTool.values);
+          else {
+            const choice = await chooseAddSeed(toolId);
+            if (choice.cancelled) return;   // stay in the picker
+            if (choice.values) setPendingToolSeed(openId, choice.values);
+          }
           try { sessionStorage.setItem(FILE_INTO_KEY, target ?? ''); } catch { /* private mode */ }
           armReturn();
           window.location.hash = '#/tool/' + openId;
@@ -2696,6 +2721,21 @@ export async function mountProjects(
   releaseSearch = claimSearchBar({
     placeholder: searchPlaceholder(),
     value: query,
+    // Live subtree filter (plans/133 WP-9, the catalog's dual pattern): typing
+    // still feeds the spotlight overlay on top (ROUTE_DOMAIN projects is 'live'
+    // now, same as catalog), and the grid behind live-filters through the SAME
+    // scope-aware results renderer the ?q= handoff uses. Clearing restores the
+    // browse grid - through exitSearch when a ?q= URL is standing (so the URL
+    // and the view can't disagree), in place otherwise.
+    onQuery: (raw) => {
+      if (!mounted) return;
+      const q = raw.trim();
+      if (q === query) return;
+      if (!q && window.location.hash.includes('q=')) { exitSearch(); return; }
+      query = q;
+      searchCache = null;
+      render();
+    },
     onClear: exitSearch,
   });
   render();

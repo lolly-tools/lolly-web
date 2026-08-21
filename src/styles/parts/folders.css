@@ -28,6 +28,19 @@
 /* Recent exports - the downloads log's reopen rail (moved here from the export
    popup), shown alongside the saved sessions in the history overlay. */
 .folder-exports { margin-top: 4px; }
+/* The /p root rail's collapsible head (plans/133 WP-10) - a plain disclosure row. */
+.projects-exports { margin-top: 18px; }
+.projects-exports-head {
+  display: flex; align-items: center; gap: 8px;
+  background: none; border: none; padding: 0 0 6px; cursor: pointer; font: inherit;
+}
+.projects-exports-head .folder-exports-title { margin: 0; }
+.projects-exports-count { font-size: calc(.72rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+/* The thin recents dialog (components/recents-dialog.ts) - rail + hand-off. */
+.recents-dialog { display: flex; flex-direction: column; gap: 14px; min-width: min(480px, 82vw); }
+.recents-dialog-title { margin: 0; font-size: calc(1.05rem * var(--a11y-fs)); }
+.recents-dialog-empty { margin: 0; color: hsl(var(--muted-foreground)); font-size: calc(.85rem * var(--a11y-fs)); }
+.recents-dialog-go { align-self: flex-start; }
 .folder-exports-title {
   margin: 0 0 6px; font-size: calc(11px * var(--a11y-fs)); font-weight: 600;
   color: hsl(var(--muted-foreground)); text-transform: uppercase; letter-spacing: 0.04em;

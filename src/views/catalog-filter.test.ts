@@ -17,6 +17,8 @@ import {
   sortAssets,
   assetAddedAt,
   assetModifiedAt,
+  parseCatQuery,
+  matchContext,
 } from './catalog-filter.ts';
 import type { AssetRef } from '@lolly-tools/core/host-v1';
 
@@ -259,4 +261,59 @@ test('sortAssets: default preserves order; name/size/added order correctly', () 
   assert.deepEqual(sortAssets(list, 'size')[0], newer);
   // Newest first; the dateless catalog asset keeps its relative position after dated ones.
   assert.deepEqual(sortAssets(list, 'added').map((a: { id: string }) => a.id), [newer.id, older.id, cat.id].map(String));
+});
+
+// ── Structured query prefixes (plans/132 WP-C item 3) ────────────────────────
+
+const tagged = (id: string, extra: Record<string, unknown> = {}): AssetRef => ({
+  source: 'user', id, type: 'raster', format: 'png', url: `blob:${id}`, version: '1.0.0',
+  meta: { name: id, ...extra },
+} as unknown as AssetRef);
+
+test('parseCatQuery carves tag:/type:/is: out and keeps the rest as text tokens', () => {
+  const q = parseCatQuery('tag:logo dark type:image is:upload');
+  assert.deepEqual(q.tags, ['logo']);
+  assert.deepEqual(q.types, ['image']);
+  assert.deepEqual(q.flags, ['upload']);
+  assert.deepEqual(q.text, ['dark']);
+});
+
+test('a bare half-typed prefix stays text, never blanking the grid mid-keystroke', () => {
+  const q = parseCatQuery('tag:');
+  assert.deepEqual(q.tags, []);
+  assert.ok(q.text.length >= 1);
+});
+
+test('tag: prefix-matches a folded tag; a miss excludes the asset', () => {
+  const a = tagged('user/upload/1-a.png', { tags: ['Logos', 'dark'] });
+  const hay = buildSearchHaystack([a], () => 'brand');
+  assert.equal(matchesQuery(a, 'tag:logo', hay), true);
+  assert.equal(matchesQuery(a, 'tag:print', hay), false);
+});
+
+test('type: accepts a bucket name or a raw format; is:upload and is:genai gate structurally', () => {
+  const up = tagged('user/upload/2-b.png', { aiGenerated: 'full' });
+  const hay = buildSearchHaystack([up], () => 'brand');
+  assert.equal(matchesQuery(up, 'type:image', hay), true);
+  assert.equal(matchesQuery(up, 'type:png', hay), true);
+  assert.equal(matchesQuery(up, 'type:audio', hay), false);
+  assert.equal(matchesQuery(up, 'is:upload', hay), true);
+  assert.equal(matchesQuery(up, 'is:genai', hay), true);
+  assert.equal(matchesQuery(up, 'is:nonsense', hay), false);
+});
+
+test('structured terms AND with text tokens', () => {
+  const a = tagged('user/upload/3-c.png', { name: 'Hero banner', tags: ['dark'] });
+  const hay = buildSearchHaystack([a], () => 'brand');
+  assert.equal(matchesQuery(a, 'tag:dark hero', hay), true);
+  assert.equal(matchesQuery(a, 'tag:dark nomatch', hay), false);
+});
+
+test('matchContext names the matched tag or category, and stays null on a name match', () => {
+  const a = tagged('user/upload/4-d.png', { name: 'Hero', tags: ['Print ready'] });
+  assert.equal(matchContext(a, 'tag:print', () => 'brand'), 'Print ready');
+  assert.equal(matchContext(a, 'print', () => 'brand'), 'Print ready');
+  assert.equal(matchContext(a, 'hero', () => 'brand'), null);
+  assert.equal(matchContext(a, 'brand', () => 'Brand photos'), 'Brand photos');
+  assert.equal(matchContext(a, '', () => 'brand'), null);
 });

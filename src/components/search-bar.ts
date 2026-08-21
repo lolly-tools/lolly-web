@@ -297,6 +297,19 @@ export function claimSearchBar(claim: SearchBarClaim): () => void {
   };
 }
 
+/** Set the field to a given query and notify the claim immediately (no
+ *  debounce) - the write path behind in-view "search for this" affordances
+ *  (e.g. a catalogue tag chip setting `tag:x`). Mirrors clearSearchBar. */
+export function setSearchBarQuery(value: string, opts: { focus?: boolean } = {}): void {
+  clearTimeout(debounce);
+  const input = inputEl();
+  if (input) input.value = value;
+  syncClear();
+  currentClaim?.onQuery?.(value);
+  spotlightHook?.onQueryChanged(value);
+  if (opts.focus) input?.focus({ preventScroll: true });
+}
+
 /** Empty the field and notify the claim immediately (no debounce) - the shared
  *  path behind the ✕, a handled Escape, and every in-view "clear search" link
  *  ([data-search-clear] anywhere in the footer; views route their own body

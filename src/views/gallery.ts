@@ -21,7 +21,6 @@ import { escape } from '../utils.ts';
 import { isTrashedSlot } from '../lib/batch-slots.ts';
 import { t, tRaw } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
-import { isPlaceableAsset } from '../lib/asset-kinds.ts';
 import { claimSearchBar, clearSearchBar, setSearchBarValue } from '../components/search-bar.ts';
 import { fold, tokenize, scoreHaystack, type SearchField } from '../lib/search/match.ts';
 import { toolSupport, capabilityLabel } from '../capabilities.ts';
@@ -504,7 +503,6 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     // the hidden set must name that key too or they'd leak into the only-view.
     ? new Set<string | undefined>([...new Set(index.tools.map(t => t.category ?? 'other'))].filter(c => c !== opts.only))
     : hiddenCategories(profile).add('utility');
-  const proEnabled = true;   // Batch/Pro is available to everyone now (flag retired)
 
   // The user's starred tools - held in memory for this mount, persisted to the profile
   // on every toggle. Read here (before the featured row) because a favourite is also
@@ -1665,41 +1663,11 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // User images are loaded lazily so folders that also hold images render here too.
   const historyFab = viewEl.querySelector<HTMLButtonElement>('.history-fab');
   async function openHistoryOverlay(): Promise<void> {
-    // Filtered: the user-asset store also holds fonts, the tokens doc and ICC
-    // profiles, and the overlay tiles whatever it is handed as an image.
-    const stored = await host.assets._listUserAssets?.().catch(() => []) ?? [];
-    const imageRefs = stored.filter(isPlaceableAsset);
-    // Lazy: folder-overlay (+ folders/folder-tiles chunks) only loads on this
-    // deliberate click, not on the gallery boot preload. main.ts's idle prewarm
-    // of projects.ts already warms it, so the click still resolves instantly.
-    const { openFolderOverlay } = await import('../folder-overlay.ts');
-    openFolderOverlay(host, {
-      context: 'gallery',
-      sessionEntries: sortedSaved,
-      imageRefs,
-      sessionSizes,
-      nameById,
-      showCreateFolder: true,
-      allowBatchExport: proEnabled,
-      showRecentExports: true,
-      onResume: (entry) => {
-        window.location.hash = isBatchSlot(entry.slot)
-          ? `#/batch?session=${encodeURIComponent(entry.slot)}`
-          : `#/tool/${entry.toolId}?slot=${encodeURIComponent(entry.slot)}`;
-      },
-      onDelete: (ref) => {
-        const i = sortedSaved.findIndex(s => s.slot === ref);
-        if (i >= 0) sortedSaved.splice(i, 1);
-        for (const arr of entriesByTool.values()) {
-          const j = arr.findIndex(s => s.slot === ref);
-          if (j >= 0) { arr.splice(j, 1); break; }
-        }
-        const count = historyFab?.querySelector('.history-fab-count');
-        if (count) count.textContent = String(sortedSaved.length);
-        if (historyFab && sortedSaved.length === 0) historyFab.hidden = true;
-        render();
-      },
-    });
+    // The thin recents dialog (plans/133 WP-10): the reopen rail + a Projects
+    // hand-off. The full folder manager lives in /p now - one folder UI to
+    // maintain; per-tool resume stays on the gallery cards' saved badges.
+    const { openRecentsDialog } = await import('../components/recents-dialog.ts');
+    await openRecentsDialog({ savedCount: sortedSaved.length });
   }
   historyFab?.addEventListener('click', openHistoryOverlay);
 

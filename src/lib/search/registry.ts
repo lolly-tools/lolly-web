@@ -65,7 +65,7 @@ export const ROUTE_DOMAIN: Record<string, { group: SearchGroupId; tier: 'live' |
   gallery: { group: 'tools', tier: 'live' },
   utilities: { group: 'utilities', tier: 'live' },
   catalog: { group: 'catalog', tier: 'live' },
-  projects: { group: 'projects', tier: 'overlay' },
+  projects: { group: 'projects', tier: 'live' },  // plans/133 WP-9: typing live-filters the grid behind the overlay, like catalog
   profile: { group: 'settings', tier: 'overlay' },
   dashboard: { group: 'settings', tier: 'overlay' },
 };
