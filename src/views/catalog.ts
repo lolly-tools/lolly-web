@@ -2606,6 +2606,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       const kind = assetAiKind(ref);
       const sig = ref.meta?.aiSignals as (AiSignalsNote & { at?: string }) | undefined;
       const sigFresh = sig && sig.v === LEXICON_VERSION ? sig : undefined;
+      const maker = ref.meta?.makerLikely as { vendor?: string; hint?: string } | undefined;
       const lamps: TrustLamp[] = [
         cred === 'checking'
           ? { id: 'provenance', label: t('Provenance'), state: 'unlit', word: t('checking…') }
@@ -2623,7 +2624,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
             : { id: 'integrity', label: t('Integrity'), state: 'warn', word: t('bytes changed') },
         kind
           ? { id: 'origin', label: t('Origin'), state: 'fact', word: kind === 'full' ? t('AI-generated') : t('AI-assisted') }
-          : { id: 'origin', label: t('Origin'), state: 'unlit', word: t('not declared') },
+          : maker?.vendor
+            ? { id: 'origin', label: t('Origin'), state: 'hint', word: t('likely AI-made'), detail: tRaw('This file is packaged the way {vendor} AI products package downloads ({hint}). A signal, not proof.', { vendor: maker.vendor, hint: maker.hint ?? '' }) }
+            : { id: 'origin', label: t('Origin'), state: 'unlit', word: t('not declared') },
         sigFresh
           ? (sigFresh.band === 'notable' || sigFresh.band === 'strong'
             ? { id: 'signals', label: t('Content signals'), state: 'hint', word: t('signals found'), ...(sigFresh.at ? { detail: tRaw('Analysed {date}.', { date: new Date(sigFresh.at).toLocaleDateString() }) } : {}) }

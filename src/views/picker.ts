@@ -32,7 +32,7 @@
 import '../styles/picker.css';   // async CSS chunk (lazy view - not on the landing)
 import { isTrashedSlot } from '../lib/batch-slots.ts';
 import DOMPurify from 'dompurify';
-import { serializeUrlState, buildEmbedUrl, parseThemedAssetId, buildThemedAssetId, restyleIconTheme, sniffAnimatedRaster, sniffVideoContainer, parseTreatedAssetId, buildTreatedAssetId, treatmentFilterSvg, stripAssetModifiers, extractC2paStore, prepareC2paIngredientFromStore, stripMetadata, midiToZzfxm, bakeAssetRef, decodeBmp, isBmp, decodeIco, isIco, gunzip, packPng, analyzeTextSignals, LEXICON_VERSION } from '@lolly/engine';
+import { serializeUrlState, buildEmbedUrl, parseThemedAssetId, buildThemedAssetId, restyleIconTheme, sniffAnimatedRaster, sniffVideoContainer, parseTreatedAssetId, buildTreatedAssetId, treatmentFilterSvg, stripAssetModifiers, extractC2paStore, prepareC2paIngredientFromStore, stripMetadata, midiToZzfxm, bakeAssetRef, decodeBmp, isBmp, decodeIco, isIco, gunzip, packPng, analyzeTextSignals, LEXICON_VERSION, extractFileMetadata } from '@lolly/engine';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
 // Format + embeddability rules - pure and unit-tested in ./picker-formats.test.ts.
 import {
@@ -3722,6 +3722,26 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
     try { storedDepth = (await depthHint(blob)).bitsPerChannel; } catch { storedDepth = null; }
   }
 
+  // Bare-metadata provenance for the STORED image/video bytes, read at ingest
+  // so an uncredentialed generator output still tells its story from birth
+  // (the verify view reads the same fields; this persists them on the record).
+  // Two registers, never conflated:
+  //  - fm.ai is the IPTC DigitalSourceType sidecar generators WRITE - a genuine
+  //    declaration, so it sets the same aiGenerated flag a C2PA credential or
+  //    the user's own declare-AI-origins action does;
+  //  - fm.producer is a packaging fingerprint - evidence, not a declaration, so
+  //    it stores as meta.makerLikely and only ever surfaces as a hedged signal.
+  // Best-effort by contract: a parse error must never block an upload.
+  let bareAi: 'full' | 'partial' | undefined;
+  let makerLikely: { vendor: string; hint: string } | undefined;
+  if (!isLottie && !isAudio && !isMidi && !isVector && !isData && !isText && blob.size <= MAX_CREDENTIAL_SCAN_BYTES) {
+    try {
+      const fm = extractFileMetadata(new Uint8Array(await blob.arrayBuffer()));
+      if (fm.ai) bareAi = fm.ai.kind === 'composite' ? 'partial' : 'full';
+      else if (fm.producer?.signature === 'ai-download') makerLikely = { vendor: fm.producer.vendor, hint: fm.producer.hint };
+    } catch { /* nothing readable - the upload proceeds unlabelled */ }
+  }
+
   // Content Credentials for the STORED bytes - the raw C2PA manifest store only (no
   // pixels/EXIF), so `host.assets.credential(id)` can serve it as an export ingredient.
   // Prefer the stored blob's own credential: a verbatim/stripped copy keeps the original's
@@ -3770,7 +3790,12 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
       // A text asset's AI-writing note, analysed at ingest (see the isText branch).
       // A signal for the user's own confidence in an ingredient, never a verdict.
       ...(aiSignals ? { aiSignals } : {}),
+      // A maker-pipeline fingerprint (see the bare-metadata sniff above): the
+      // file is packaged the way a known AI product packages downloads. A
+      // signal the chips render hedged, never a verdict.
+      ...(makerLikely ? { makerLikely } : {}),
     },
+    ...(bareAi ? { aiGenerated: bareAi } : {}),
   };
 
   // Reach into the underlying IDB the bridge owns. The bridge exposes a

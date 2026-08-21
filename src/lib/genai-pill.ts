@@ -13,7 +13,7 @@
  */
 
 import { LEXICON_VERSION } from '@lolly/engine';
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import { escape } from '../utils.ts';
 
 export type AiKind = 'full' | 'partial';
@@ -59,7 +59,14 @@ export function genAiPill(_kind: AiKind, iconOnly = false): string {
  */
 export function aiSignalsChip(ref: { meta?: Record<string, unknown> } | null | undefined): string {
   const sig = ref?.meta?.aiSignals as AiSignalsNote | undefined;
-  if (!sig || sig.v !== LEXICON_VERSION) return '';
-  if (sig.band !== 'notable' && sig.band !== 'strong') return '';
-  return `<span class="cat-ai-chip" data-band="${escape(sig.band)}" title="${escape(t('Signals consistent with AI-generated text were found in this asset. A signal, not proof.'))}">${escape(t('AI?'))}</span>`;
+  if (sig && sig.v === LEXICON_VERSION && (sig.band === 'notable' || sig.band === 'strong')) {
+    return `<span class="cat-ai-chip" data-band="${escape(sig.band)}" title="${escape(t('Signals consistent with AI-generated text were found in this asset. A signal, not proof.'))}">${escape(t('AI?'))}</span>`;
+  }
+  // The image/video twin: a maker-pipeline fingerprint persisted at ingest
+  // (picker.ts's bare-metadata sniff). Same chip, its own hedged title.
+  const maker = ref?.meta?.makerLikely as { vendor?: string; hint?: string } | undefined;
+  if (maker?.vendor) {
+    return `<span class="cat-ai-chip" data-band="notable" title="${escape(tRaw('This file is packaged the way {vendor} AI products package downloads ({hint}). A signal, not proof.', { vendor: maker.vendor, hint: maker.hint ?? '' }))}">${escape(t('AI?'))}</span>`;
+  }
+  return '';
 }

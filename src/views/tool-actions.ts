@@ -10,7 +10,7 @@
  * This module never value-imports from ./tool.ts (that would create a runtime
  * cycle) - it only `import type`s the shell-side aliases it needs from there.
  */
-import { serializeUrlState, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS, composeSong, generatedSongSpec, HDR_DEFAULTS, preflight, PRINT_MARK_FORMATS, SEPARATING_FORMATS, computeCost, parseRateCard, isRateCardError, validateRateCard, isNonAffineTransform, selectFramePage, frameFilterApplies } from '@lolly/engine';
+import { serializeUrlState, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS, composeSong, generatedSongSpec, HDR_DEFAULTS, preflight, PRINT_MARK_FORMATS, SEPARATING_FORMATS, computeCost, parseRateCard, isRateCardError, validateRateCard, isNonAffineTransform, selectFramePage, frameFilterApplies, LEXICON_VERSION } from '@lolly/engine';
 import type {
   Fact, PreflightInput, PreflightJob, PreflightManifest, PreflightSwatch, StageFacts, Count, CostWorking,
 } from '@lolly/engine';
@@ -639,7 +639,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // embeds, never the native vector slides/shapes or byte-faithful user uploads.
   // A deck of headings, boxes and a vector logo (or one whose only pictures are
   // your own photos) therefore carries no detectable Imprint even with it on - so
-  // say so rather than let the toggle over-promise. It lands on baked content:
+  // say so rather than let the toggle over-promise. It rides baked content:
   // rotated or CSS-filtered elements, effect layers, inline SVG art, rendered charts.
   const containerImprintFmt = imprintFmts.some((f) => f === 'pptx' || f === 'pdf' || f === 'pdf-cmyk');
   const imprintTip = imprintFmts.length ? helpTip(
@@ -993,11 +993,56 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // The panel host (#tool-actions) is present for every export-capable tool that
   // reaches here; guard the type for strict null-safety (never null in practice).
   if (!el) return;
+  // Ingredient provenance note (plans/126 WP-B item 2): when this design's
+  // chosen ASSET ingredients carry an AI declaration or AI-writing signals,
+  // the export sheet says so in one hedged line each - the moment the file is
+  // about to travel is the moment the maker deserves the reminder. UI note
+  // only: nothing here changes what exports or what gets signed (the declared
+  // flag already rides as a C2PA ingredient on its own path). Computed at
+  // sheet-render time from top-level asset inputs; assets nested inside
+  // `blocks` groups are not walked here.
+  async function fillIngredientNote(): Promise<void> {
+    const slot = el?.querySelector<HTMLElement>('[data-ingredient-note]');
+    if (!slot) return;
+    const ids = [...new Set(runtime.getModel()
+      .filter((i) => i.type === 'asset' && typeof i.value === 'string' && i.value)
+      .map((i) => String(i.value)))];
+    if (!ids.length) return;
+    const declared: string[] = [];
+    const flagged: string[] = [];
+    for (const id of ids) {
+      try {
+        const ref = await host.assets.get(id);
+        const meta = (ref.meta ?? {}) as { name?: unknown; aiGenerated?: unknown; aiSignals?: { v?: number; band?: string } };
+        const name = String(meta.name ?? id);
+        if (meta.aiGenerated === 'full' || meta.aiGenerated === 'partial') declared.push(name);
+        else if (meta.aiSignals && meta.aiSignals.v === LEXICON_VERSION
+          && (meta.aiSignals.band === 'notable' || meta.aiSignals.band === 'strong')) flagged.push(name);
+      } catch { /* a missing asset has nothing to disclose */ }
+    }
+    if (!declared.length && !flagged.length) return;
+    slot.replaceChildren();
+    if (declared.length) {
+      const line = document.createElement('p');
+      line.className = 'guide-fact';
+      line.textContent = tRaw('AI-declared ingredient in this design: {names}. Its provenance rides the export as a C2PA ingredient.', { names: declared.join(', ') });
+      slot.appendChild(line);
+    }
+    if (flagged.length) {
+      const line = document.createElement('p');
+      line.className = 'guide-hint';
+      line.textContent = tRaw('An ingredient carries AI-writing signals: {names}. A signal, not proof - review it in the catalogue before this file travels.', { names: flagged.join(', ') });
+      slot.appendChild(line);
+    }
+    slot.hidden = false;
+  }
+
   el.innerHTML = `
-    ${actions.includes('download') ? `${filenameRow}${dimsRow}${aspectWarnRow}${fidelityWarnRow}${hdrRow}${cmykRow}${printRow}${protectionRow}${audioRow}${settingsRow}${sendRow}${preflightRow}${costRow}` : ''}
+    ${actions.includes('download') ? `${filenameRow}${dimsRow}${aspectWarnRow}${fidelityWarnRow}${hdrRow}${cmykRow}${printRow}${protectionRow}<div class="export-ingredient-note" data-ingredient-note hidden></div>${audioRow}${settingsRow}${sendRow}${preflightRow}${costRow}` : ''}
     ${secondaryRow}
     ${downloadRow}
   `;
+  void fillIngredientNote();
 
   exportOpts.forEach(i => {
     el.querySelector<HTMLInputElement>(`[data-input-id="${escape(i.id)}"]`)

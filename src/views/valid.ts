@@ -3516,17 +3516,31 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
         word: l.querySelector('.lamp-word')?.textContent ?? '',
       }));
       const receiptLine = scope.querySelector('.valid-receipt .guide-fact')?.textContent ?? '';
+      // The card wears the ACTIVE BRAND (Andy, 2026-08-21): surface, text,
+      // accent and type come from the runtime --brand-*/--font-brand vars
+      // (brand-vars.ts), falling back to the neutral scheme on a brandless
+      // deploy. Lamp-state colours stay SEMANTIC on purpose - a warning must
+      // read as a warning under any brand, so the brand dresses the chrome,
+      // never the verdicts.
+      const rootStyle = getComputedStyle(document.documentElement);
+      const bv = (name: string, fb: string): string => (rootStyle.getPropertyValue(name).trim() || fb);
+      const cardBg = bv('--brand-surface', '#101318');
+      const cardText = bv('--brand-text', '#f2f5f8');
+      const cardAccent = bv('--brand-primary', '#e0457b');
+      const cardMuted = bv('--brand-muted', '#8a94a0');
+      const cardEdge = bv('--brand-edge', 'rgba(255,255,255,.14)');
+      const cardFont = bv('--font-brand', 'ui-sans-serif,system-ui,sans-serif');
       const node = document.createElement('div');
-      node.style.cssText = 'position:fixed;left:-12000px;top:0;width:880px;padding:36px 40px;background:#101318;color:#f2f5f8;font-family:ui-sans-serif,system-ui,sans-serif;border-radius:16px;';
+      node.style.cssText = `position:fixed;left:-12000px;top:0;width:880px;padding:36px 40px;background:${cardBg};color:${cardText};font-family:${cardFont};border:1px solid ${cardEdge};border-radius:16px;`;
       const dotColor: Record<string, string> = { fact: '#2fae62', warn: '#e0453a', hint: '#eba13c', unlit: '#5a6472' };
       const esc = escape;
       node.innerHTML = `
-        <div style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;opacity:.7">${esc(t('Verification report'))} · Lolly</div>
+        <div style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:${esc(cardAccent)}">${esc(t('Verification report'))} · Lolly</div>
         <div style="font-size:26px;font-weight:700;margin:10px 0 2px;overflow-wrap:anywhere">${esc(heroName)}</div>
-        <div style="font-size:16px;margin:0 0 18px;opacity:.9">${esc(verdict)}</div>
-        ${lampRows.map((l) => `<div style="display:flex;align-items:center;gap:10px;margin:7px 0;font-size:15px"><span style="width:11px;height:11px;border-radius:50%;background:${dotColor[l.state] ?? dotColor.unlit}"></span><strong>${esc(l.label)}</strong><span style="opacity:.8">${esc(l.word)}</span></div>`).join('')}
-        <div style="margin-top:16px;font-size:13px;opacity:.85">${esc(receiptLine)}</div>
-        <div style="margin-top:14px;font-size:12px;opacity:.6">${esc(tRaw('Checked on this device with Lolly · {date} · lolly.tools/verify', { date: new Date().toLocaleString() }))}</div>`;
+        <div style="font-size:16px;margin:0 0 18px;color:${esc(cardMuted)}">${esc(verdict)}</div>
+        ${lampRows.map((l) => `<div style="display:flex;align-items:center;gap:10px;margin:7px 0;font-size:15px"><span style="width:11px;height:11px;border-radius:50%;background:${dotColor[l.state] ?? dotColor.unlit}"></span><strong>${esc(l.label)}</strong><span style="color:${esc(cardMuted)}">${esc(l.word)}</span></div>`).join('')}
+        <div style="margin-top:16px;font-size:13px;opacity:.9">${esc(receiptLine)}</div>
+        <div style="margin-top:14px;font-size:12px;color:${esc(cardMuted)}">${esc(tRaw('Checked on this device with Lolly · {date} · lolly.tools/verify', { date: new Date().toLocaleString() }))}</div>`;
       document.body.appendChild(node);
       try {
         const png = await host.export.render(node, 'png');
