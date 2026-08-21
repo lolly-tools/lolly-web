@@ -72,6 +72,9 @@ import { wmNoteSlot } from '../lib/wm-note.ts';
 // estimate row and honesty copy for the classifier check, re-rendering this
 // panel through its own builder on a conclusive estimate.
 import { aiModelSlot } from './tsig-model-note.ts';
+// Invisible characters rendered as named chips in the extract - shared with
+// the catalog so both surfaces show identical evidence.
+import { visibleTextHtml } from '../lib/invisible-chars.ts';
 // Deep engine import, NOT the `@lolly/engine` barrel - the beam-pack.ts:125
 // precedent: index.ts does not re-export the c2pa-extract surface, and widening
 // that one shared facade for a single lazy view is what the bundle budget is
@@ -673,13 +676,15 @@ function heatGradeWord(bucket: 1 | 2 | 3 | 4 | 5): string {
 /** The extracted text with its flagged spans wrapped in <mark>, coloured by its
  *  confidence temperature (cool amber = a soft style hint, hot red = a hard
  *  byte-level artifact) so the reader sees at a glance what is ignorable.
- *  `textContent`-safe: every run is escape()d. */
+ *  Every run renders through visibleTextHtml (escape()d, with each invisible
+ *  character surfaced as a named chip - a zero-width character inside a mark
+ *  is otherwise a hairline nobody can see). */
 function highlightExtractHtml(text: string, marks: TextSignalMark[]): string {
   const runs = buildHighlightSegments(text, marks).map((s) => {
-    if (!s.tier) return escape(s.text);
+    if (!s.tier) return visibleTextHtml(s.text, 'valid-invis');
     const title = TSIG_KIND_TITLE[s.kind ?? ''] ?? (s.kind ?? '');
     const bucket = heatBucket(s.heat ?? 0);
-    return `<mark class="valid-hl valid-hl--${escape(s.tier)} valid-hl--t${bucket}" title="${escape(`${t(title)} · ${heatGradeWord(bucket)}`)}">${escape(s.text)}</mark>`;
+    return `<mark class="valid-hl valid-hl--${escape(s.tier)} valid-hl--t${bucket}" title="${escape(`${t(title)} · ${heatGradeWord(bucket)}`)}">${visibleTextHtml(s.text, 'valid-invis')}</mark>`;
   }).join('');
   const legend = marks.length > 0
     ? `<span class="valid-tsig-legend">${escape(t('Cooler marks are weak hints you can freely ignore. Hotter marks are harder evidence. Everything here is a signal, not a verdict.'))}</span>`

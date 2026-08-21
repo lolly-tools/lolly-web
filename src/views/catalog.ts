@@ -44,7 +44,7 @@ import type { VizHandle } from '../lib/butterchurn-viz.ts';
 import { t, tRaw } from '../i18n.ts';
 import { showUndoToast, flushUndoToasts } from '../lib/undo-toast.ts';
 import { createFolderStore, folderPath, type FolderHost } from '../folders.ts';
-import { genAiPill, assetAiKind, GENAI_CLAIM } from '../lib/genai-pill.ts';
+import { genAiPill, assetAiKind, aiSignalsChip, GENAI_CLAIM } from '../lib/genai-pill.ts';
 import { announce } from '../a11y.ts';
 import { mountModal } from '../components/modal.ts';
 import type { ModalHandle } from '../components/modal.ts';
@@ -126,6 +126,7 @@ import type { RewordStatus } from '../lib/reworder.ts';
 // The shared "Reworded with Lolly" note - constants + a queued check only; the
 // reworder facade behind it stays a lazy import (see wm-note.ts's header).
 import { wmNoteSlot } from '../lib/wm-note.ts';
+import { appendVisibleText, visibleTextHtml } from '../lib/invisible-chars.ts';
 // The on-device model tier's shared seam (plans/126 WP-A): consent line,
 // estimate row and honesty copy for the classifier check.
 import { aiModelSlot } from './tsig-model-note.ts';
@@ -243,7 +244,7 @@ interface CatalogHost extends HostV1 {
     _uploadUserAsset(record: UserAssetRecordLike): Promise<void>;
     // The meta-only annotation write (AI-signals note, declare-AI-origins): no
     // quota metering, no pin-preserve - the stored bytes are untouched.
-    _updateUserAssetMeta(id: string, meta: Record<string, unknown>, patch?: { aiGenerated?: 'full' | 'partial' }): Promise<void>;
+    _updateUserAssetMeta(id: string, meta: Record<string, unknown>, patch?: { aiGenerated?: 'full' | 'partial' | null }): Promise<void>;
     _iconThemes?(): Promise<IconTheme[]>;
     _photoTreatments?(): Promise<PhotoTreatment[]>;
   };
@@ -1254,9 +1255,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // copy maps buckets exactly as valid.ts's heatGradeWord does.
     const grade = (b: number): string => b >= 4 ? t('a strong tell') : b === 3 ? t('a moderate signal') : t('a weak hint, safe to ignore');
     return buildHighlightSegments(text, marks).map((s) => {
-      if (!s.tier) return escape(s.text);
+      if (!s.tier) return visibleTextHtml(s.text, 'cat-invis');
       const b = heatBucket(s.heat ?? 0);
-      return `<mark class="cat-hl cat-hl--${escape(s.tier)} cat-hl--t${b}" title="${escape(grade(b))}">${escape(s.text)}</mark>`;
+      return `<mark class="cat-hl cat-hl--${escape(s.tier)} cat-hl--t${b}" title="${escape(grade(b))}">${visibleTextHtml(s.text, 'cat-invis')}</mark>`;
     }).join('');
   }
 
@@ -1370,16 +1371,34 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       + `</div>`;
   };
 
-  /** The persisted AI-likelihood pill (plans/125). Rendered ONLY while the stored
-   *  note matches the CURRENT tell lexicon (a lexicon bump retires stale verdicts
-   *  rather than letting them outlive the rules that produced them), and only at
-   *  the two bands worth a glance. A signal, never proof - the title says so. */
-  function aiSignalsChip(ref: AssetRef): string {
-    const sig = ref.meta?.aiSignals as AiSignalsNote | undefined;
-    if (!sig || sig.v !== LEXICON_VERSION) return '';
-    if (sig.band !== 'notable' && sig.band !== 'strong') return '';
-    return `<span class="cat-ai-chip" data-band="${escape(sig.band)}" title="${escape(t('Signals consistent with AI-generated text were found in this asset. A signal, not proof.'))}">${escape(t('AI?'))}</span>`;
+  // aiSignalsChip moved to lib/genai-pill.ts (shared with the asset picker so
+  // the risk shows at the moment an ingredient is chosen).
+  /** A DOM-built copy of genAiPill (text form) - for in-place updates where a
+   *  string would need a new raw-HTML sink. */
+  function genAiPillEl(): HTMLElement {
+    const pill = document.createElement('span');
+    pill.className = 'chip genai-pill';
+    pill.title = GENAI_CLAIM;
+    const lbl = document.createElement('span');
+    lbl.className = 'genai-pill-lbl';
+    lbl.textContent = 'Gen AI';
+    pill.appendChild(lbl);
+    return pill;
   }
+
+  /** Add/remove the declared Gen AI pill on this asset's grid tile in place -
+   *  the reflectAiChipInPlace discipline (DOM API only, idempotent). */
+  function reflectGenAiInPlace(ref: AssetRef): void {
+    const sub = viewEl.querySelector<HTMLElement>(`.cat-tile[data-id="${CSS.escape(ref.id)}"] .cat-tile-sub`);
+    if (!sub) return;
+    const existing = sub.querySelector<HTMLElement>('.genai-pill');
+    if (!assetAiKind(ref)) { existing?.remove(); return; }
+    if (existing) return;
+    const chip = sub.querySelector('.cat-ai-chip');
+    const pill = genAiPillEl();
+    if (chip) sub.insertBefore(pill, chip); else sub.appendChild(pill);
+  }
+
 
   /** Drop the chip into the open modal's title row + this asset's grid tile in
    *  place - the same in-place discipline as reflectFavInGrid (no full re-render).
@@ -2410,7 +2429,6 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           const manage = [
             `<button type="button" class="btn" data-act="add-to-project">${icon('folder', { size: 14 })}<span>${t('Add to project…')}</span></button>`,
             `<button type="button" class="btn" data-act="recategorise">${TAG_ICON}<span>${t('Recategorise…')}</span></button>`,
-            isUser && !aiKind ? `<button type="button" class="btn cat-act-declare-ai" data-act="declare-ai-origins" title="${escape(t('If this came from AI, flag its AI origins on the asset so that travels honestly wherever it is used.'))}">${icon('aiSpark', { size: 14 })}<span>${t('Flag AI origins')}</span></button>` : '',
             isUser ? `<button type="button" class="btn" data-act="rename">${PENCIL_ICON}<span>${t('Rename')}</span></button>
                <button type="button" class="btn" data-act="replace">${REPLACE_ICON}<span>${t('Replace…')}</span></button>` : '',
           ];
@@ -2439,7 +2457,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           <div><dt>${t('Source')}</dt><dd>${isUser ? t('Your upload') : t('SUSE catalog')}</dd></div>
           <div><dt>${t('Category')}</dt><dd>${escape(t(categoryLabel(libCategory(ref, overrides))))}</dd></div>
           <div><dt>${t('Format')}</dt><dd>${escape(String(ref.format ?? ref.type).toUpperCase())}</dd></div>
-          ${aiKind ? `<div><dt>${t('AI content')}</dt><dd class="cat-details-ai">${genAiPill(aiKind)}<span>${t('Is or contains genAI content')}</span></dd></div>` : ''}
+          <div class="cat-details-origins-row"><dt>${t('Origins')}</dt><dd class="cat-details-ai" data-origins></dd></div>
           ${(() => {
             // Added/Modified (plans/132 WP-A): uploads always have a date (the id
             // embeds mint time); catalog assets have none and show no row.
@@ -2515,6 +2533,54 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // re-syncs it per asset (Andy, 2026-08-19).
     syncAssetUrl(ref.id);
     if (!wasOpen) playSfx('whisper'); // airy elevation as the asset details rise in (silent on ←/→ paging)
+
+    // The Origins row (plans/126 WP-B): the user may know more provenance than
+    // the file does. State + (for their own assets) a declare control - the
+    // declaration writes aiGenerated, which the export path already carries as
+    // a C2PA ingredient, so it follows the asset wherever it is used. DOM-built
+    // (reflectAiChipInPlace discipline, no raw-HTML sink); re-run after every
+    // origins change.
+    const renderOrigins = (): void => {
+      const dd = dlg.querySelector<HTMLElement>('[data-origins]');
+      if (!dd) return;
+      dd.replaceChildren();
+      const kind = assetAiKind(ref);
+      const declaredByUser = !!(ref.meta as Record<string, unknown> | undefined)?.aiOriginsDeclared;
+      const state = document.createElement('span');
+      state.className = 'cat-origins-state';
+      if (kind) {
+        state.appendChild(genAiPillEl());
+        state.append(` ${kind === 'full' ? t('AI-generated') : t('AI-assisted')}`);
+        if (!declaredByUser) state.append(` · ${isUser ? t('read from the file') : t('recorded by the catalog')}`);
+      } else {
+        state.textContent = t('Not recorded');
+      }
+      dd.appendChild(state);
+      if (isUser) {
+        const ctl = document.createElement('span');
+        ctl.className = 'cat-origins-ctl';
+        const mk = (label: string, act: string, active: boolean): HTMLButtonElement => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'btn cat-origin-btn';
+          b.dataset.act = act;
+          b.setAttribute('aria-pressed', String(active));
+          b.textContent = label;
+          return b;
+        };
+        ctl.append(
+          mk(t('AI-generated'), 'origin-full', kind === 'full' && declaredByUser),
+          mk(t('AI-assisted'), 'origin-partial', kind === 'partial' && declaredByUser),
+        );
+        if (declaredByUser) ctl.append(mk(t('Remove declaration'), 'origin-clear', false));
+        dd.appendChild(ctl);
+        const note = document.createElement('span');
+        note.className = 'cat-origins-note';
+        note.textContent = t('Declaring origins travels with the asset wherever it is used - so collaborators can talk about the work, not guess about the file.');
+        dd.appendChild(note);
+      }
+    };
+    renderOrigins();
 
     // Technical metadata (resolution, DPI, EXIF, audio/video props, page count, viewBox…):
     // extract off-thread and fill the initially-hidden panel. Cancel/stale-safe - ←/→ paging
@@ -2633,38 +2699,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // byte-accurate against the raw text, so the rendered-markdown view drops
     // back to monospace first. The preview shows the first 8 KB - Apply all in
     // the sidebar still covers the whole text.
-    const INVISIBLE_NAME: Record<string, string> = {
-      '\u00A0': 'NBSP', '\u00AD': 'SHY', '\u034F': 'CGJ', '\u180E': 'MVS',
-      '\u200B': 'ZWSP', '\u200C': 'ZWNJ', '\u200D': 'ZWJ', '\u200E': 'LRM', '\u200F': 'RLM',
-      '\u202A': 'LRE', '\u202B': 'RLE', '\u202C': 'PDF', '\u202D': 'LRO', '\u202E': 'RLO',
-      '\u2028': 'LS', '\u2029': 'PS', '\u2060': 'WJ', '\u2066': 'LRI', '\u2067': 'RLI',
-      '\u2068': 'FSI', '\u2069': 'PDI', '\u3000': 'IDSP', '\uFEFF': 'BOM',
-    };
-    const invisName = (ch: string): string | null => {
-      const named = INVISIBLE_NAME[ch];
-      if (named) return named;
-      const cp = ch.codePointAt(0) ?? 0;
-      if (cp >= 0x2000 && cp <= 0x200A) return 'SP'; // width-variant spaces
-      if (cp >= 0xE000 && cp <= 0xF8FF) return 'PUA'; // private-use (leaked model delimiters live here)
-      return null;
-    };
-    /** Text → nodes, surfacing invisible characters as titled chips. */
-    const appendVisible = (parent: Node, text: string): void => {
-      let plain = '';
-      const flush = (): void => { if (plain) { parent.appendChild(document.createTextNode(plain)); plain = ''; } };
-      for (const ch of text) {
-        const name = invisName(ch);
-        if (!name) { plain += ch; continue; }
-        flush();
-        const cp = (ch.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, '0');
-        const chip = document.createElement('span');
-        chip.className = 'cat-invis';
-        chip.title = `${name} · U+${cp}`;
-        chip.textContent = name;
-        parent.appendChild(chip);
-      }
-      flush();
-    };
+    // The shared invisible-character renderer (lib/invisible-chars.ts) - the
+    // same chips verify's extract shows, so the two surfaces can never drift.
+    const appendVisible = (parent: Node, text: string): void => appendVisibleText(parent, text, 'cat-invis');
     const paintWorkPreview = (): void => {
       setTextRenderMode(false);
       const pre = dlg.querySelector<HTMLElement>('.cat-text-preview');
@@ -2739,7 +2776,11 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           dTextContent = text;
           if (pre) {
             const shown = text.length > 8192 ? text.slice(0, 8192) : text;
-            pre.textContent = shown + (text.length > shown.length ? `\n\n${t('…preview truncated.')}` : '');
+            // Chips from the FIRST paint: hidden characters must not wait for
+            // an Analyse click to become visible.
+            pre.replaceChildren();
+            appendVisible(pre, shown);
+            if (text.length > shown.length) pre.appendChild(document.createTextNode(`\n\n${t('…preview truncated.')}`));
           }
           // Markdown-shaped text gets the render toggle; a real .md defaults to
           // the rendered view (the raw bytes stay one tap away).
@@ -3688,6 +3729,31 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
             btn.disabled = false;
           }
         }
+        return;
+      }
+      if (act === 'origin-full' || act === 'origin-partial' || act === 'origin-clear') {
+        // The Origins control: the user asserting what they know about how this
+        // asset was made (or withdrawing that assertion - never a claim that it
+        // is NOT AI; absence stays honest silence). Same safe read-then-merge as
+        // declare-ai-origins; null clears the record-level flag, and an asset
+        // whose C2PA credential itself declares AI re-derives on the next list -
+        // the signed file outranks a mistaken clearing.
+        if (!isUser) return;
+        const kind = act === 'origin-full' ? 'full' as const : act === 'origin-partial' ? 'partial' as const : null;
+        try {
+          const recs = await host.assets._exportUserAssets();
+          const rec = recs.find((r) => r.id === ref.id);
+          if (!rec) return;
+          const meta: Record<string, unknown> = { ...(rec.meta ?? {}) };
+          if (kind) meta.aiOriginsDeclared = true; else delete meta.aiOriginsDeclared;
+          await host.assets._updateUserAssetMeta(ref.id, meta, { aiGenerated: kind });
+          const local: Record<string, unknown> = { ...meta };
+          if (kind) local.aiGenerated = kind; else delete local.aiGenerated;
+          ref.meta = local as typeof ref.meta;
+          renderOrigins();
+          reflectGenAiInPlace(ref);
+          announce(kind ? t('Origins declared. It travels with the asset.') : t('Origins declaration removed.'));
+        } catch { announce(t('Could not update origins.')); }
         return;
       }
       if (act === 'declare-ai-origins') {

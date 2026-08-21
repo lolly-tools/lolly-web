@@ -238,6 +238,25 @@
 }
 /* Details modal: a touch larger, sits on the "AI content" meta row. */
 .cat-details-meta .genai-pill { font-size: calc(.62rem * var(--a11y-fs)); }
+/* The Origins row: state line, then (own assets) the declare control + one
+   quiet line of why. Buttons are ordinary .btn chips; the pressed one reads
+   as chosen without colour doing the whole job. */
+.cat-origins-state { display: inline-flex; align-items: center; gap: 6px; }
+.cat-origins-ctl { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.cat-origin-btn { font-size: calc(11px * var(--a11y-fs)); padding: 3px 9px; }
+.cat-origin-btn[aria-pressed="true"] {
+  border-color: hsl(var(--primary) / .6);
+  background: hsl(var(--primary) / .12);
+  font-weight: 600;
+}
+.cat-origins-note {
+  display: block;
+  margin-top: 6px;
+  font-size: calc(11px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  max-width: 46ch;
+  line-height: 1.45;
+}
 
 /* (The per-tile favourite star chip is gone - favourite lives in the context menu
    and the selection toolbar, matching the gallery cards.) */

@@ -12,7 +12,14 @@
  * content credential (bridge/assets.ts, via the engine's digitalSourceType chain).
  */
 
+import { LEXICON_VERSION } from '@lolly/engine';
+import { t } from '../i18n.ts';
+import { escape } from '../utils.ts';
+
 export type AiKind = 'full' | 'partial';
+
+/** The persisted AI-likelihood note ingest/analyse writes to meta.aiSignals. */
+export interface AiSignalsNote { v: number; band: string; score: number; source: string; family?: string; confidence?: string }
 
 // A filled sparkle (big + small twinkle) - the "generative AI" glyph, matching the
 // verify view's aiSpark. Only visible when the pill collapses to a circle.
@@ -39,4 +46,20 @@ export function genAiPill(_kind: AiKind, iconOnly = false): string {
   // audit rec 3); `.genai-pill`'s own rule keeps only its deltas - the fixed
   // violet --vf-ai-* gradient, mono type, uppercase - which stay brand-independent.
   return `<span class="chip genai-pill${iconOnly ? ' genai-pill--icon' : ''}" title="${GENAI_CLAIM}">${AI_SPARK_ICON}<span class="genai-pill-lbl">Gen AI</span></span>`;
+}
+
+/**
+ * The persisted AI-likelihood chip ("AI?") - the SIGNALS glance, distinct from
+ * the declared genAiPill above (a fact). Rendered ONLY while the stored note
+ * matches the CURRENT tell lexicon (a lexicon bump retires stale verdicts
+ * rather than letting them outlive the rules that produced them), and only at
+ * the two bands worth a glance. A signal, never proof - the title says so.
+ * Shared by the catalog (tiles + details) and the asset picker, so the risk is
+ * visible at the moment an ingredient is CHOSEN, not only in the library.
+ */
+export function aiSignalsChip(ref: { meta?: Record<string, unknown> } | null | undefined): string {
+  const sig = ref?.meta?.aiSignals as AiSignalsNote | undefined;
+  if (!sig || sig.v !== LEXICON_VERSION) return '';
+  if (sig.band !== 'notable' && sig.band !== 'strong') return '';
+  return `<span class="cat-ai-chip" data-band="${escape(sig.band)}" title="${escape(t('Signals consistent with AI-generated text were found in this asset. A signal, not proof.'))}">${escape(t('AI?'))}</span>`;
 }

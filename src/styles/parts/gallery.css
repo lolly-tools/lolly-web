@@ -17,8 +17,12 @@
   padding: .6rem 1rem;
   /* viewport-fit=cover (see index.html) lets the footer reach the screen edge;
      pad its content up past the iOS home-indicator so the controls stay tappable
-     and the bar reads as pinned to the visible viewport bottom. */
+     and the bar reads as pinned to the visible viewport bottom. The side insets
+     matter in LANDSCAPE, where the notch/Dynamic Island sits in the bar's ends
+     (plans/132 wave 1). */
   padding-bottom: calc(.6rem + env(safe-area-inset-bottom));
+  padding-left: calc(1rem + env(safe-area-inset-left, 0px));
+  padding-right: calc(1rem + env(safe-area-inset-right, 0px));
   background: hsl(var(--background) / .82);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);

@@ -81,7 +81,7 @@ import { previewMedia } from '../lib/preview-media.ts';
 import { escapeHtml } from '../lib/html.ts';
 import { NAV_EVENTS } from '../utils.ts';
 import { t, tRaw, docsAppHref } from '../i18n.ts';
-import { genAiPill, assetAiKind } from '../lib/genai-pill.ts';
+import { genAiPill, assetAiKind, aiSignalsChip } from '../lib/genai-pill.ts';
 import { isFlagOn, STRIP_UPLOAD_META_FLAG } from '../feature-flags.ts';
 import type { AssetRef, AssetPickerOpts, ComposeUrlOpts, ExportFormat, HostV1, Profile } from '@lolly-tools/core/host-v1';
 import type { InputValue } from '../../../../engine/src/inputs.ts';
@@ -2835,9 +2835,12 @@ function fmtDur(ms: number): string {
 
 function formatBadge(ref: AssetRef): string {
   // Generative-AI provenance badge - a sparkle-circle top-left (the format badge owns
-  // bottom-right). Authored on catalog entries; auto-detected on uploads via C2PA.
+  // bottom-right). Authored on catalog entries; auto-detected on uploads via C2PA;
+  // user-declared through the catalog's Origins control. When nothing is DECLARED
+  // but the ingest analysis left signals, the "AI?" chip takes the same corner -
+  // the risk belongs at the moment an ingredient is chosen (plans/126 WP-B).
   const ai = assetAiKind(ref);
-  const aiBadge = ai ? genAiPill(ai, true) : '';
+  const aiBadge = ai ? genAiPill(ai, true) : aiSignalsChip(ref);
   // Playback length, shown in the same corner badge as the format - video, lottie
   // and audio only, and only when a duration actually resolved at ingest time.
   const durMs = typeof ref.meta?.durationMs === 'number' && Number.isFinite(ref.meta.durationMs) && ref.meta.durationMs > 0

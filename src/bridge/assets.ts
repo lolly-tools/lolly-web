@@ -740,11 +740,20 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
      * survive and _listUserAssets order is preserved. No-op if the asset is
      * gone.
      */
-    async _updateUserAssetMeta(id: string, meta: Record<string, unknown>, patch: { aiGenerated?: 'full' | 'partial' } = {}): Promise<void> {
+    async _updateUserAssetMeta(id: string, meta: Record<string, unknown>, patch: { aiGenerated?: 'full' | 'partial' | null } = {}): Promise<void> {
       const rec = await db.get('user-assets', id);
       if (!rec) return;
       rec.meta = meta;
-      if (patch.aiGenerated) rec.aiGenerated = patch.aiGenerated;
+      // null WITHDRAWS a declaration (the catalog's Origins control): the
+      // record-level flag and its memo go, so the next list re-derives from
+      // the file's own credential - a signed declaration cannot be cleared
+      // away, only a user's assertion can.
+      if (patch.aiGenerated === null) {
+        delete rec.aiGenerated;
+        AI_KIND_MEMO.delete(id);
+      } else if (patch.aiGenerated) {
+        rec.aiGenerated = patch.aiGenerated;
+      }
       await db.put('user-assets', rec);
     },
 

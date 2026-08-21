@@ -1360,6 +1360,24 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
   border-radius: calc(var(--radius) * 0.6); color: hsl(var(--foreground));
 }
 mark.valid-hl { color: inherit; border-radius: 2px; padding: 0 0.06em; }
+/* An invisible/format character, made visible: a tiny named chip (ZWSP, RLO,
+   TAG...) with the codepoint in its tooltip. Mirrors .cat-invis so verify and
+   the catalog show identical evidence; select-none keeps the label out of a
+   copy of the extract. */
+.valid-invis {
+  display: inline-block;
+  padding: 0 3px;
+  margin: 0 1px;
+  border-radius: 4px;
+  background: hsl(275 65% 55% / .18);
+  color: hsl(275 45% 45%);
+  font-size: 0.72em;
+  font-weight: 700;
+  line-height: 1.5;
+  vertical-align: 0.08em;
+  user-select: none;
+  cursor: help;
+}
 mark.valid-hl--heuristic { background: hsl(42 92% 55% / 0.38); }
 mark.valid-hl--artifact { background: hsl(0 82% 60% / 0.42); }
 /* The graded 5-step temperature scale (heatBucket: t1 coolest, t5 hottest) -

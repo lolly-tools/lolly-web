@@ -15,8 +15,10 @@
     gap: 8px;
     position: fixed;
     top: calc(.5em + env(safe-area-inset-top, 0px) + var(--vv-top, 0px));
-    left: calc(.75em + var(--vv-left, 0px));
-    right: calc(.75em + var(--vv-right, 0px));
+    /* Side insets: in landscape the notch/Dynamic Island sits at the bar's
+       ends under viewport-fit=cover (plans/132 wave 1). */
+    left: calc(.75em + env(safe-area-inset-left, 0px) + var(--vv-left, 0px));
+    right: calc(.75em + env(safe-area-inset-right, 0px) + var(--vv-right, 0px));
     z-index: 99999;
     pointer-events: none; /* empty middle lets taps fall through to the masonry */
   }
