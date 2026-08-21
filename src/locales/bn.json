@@ -113,7 +113,7 @@
   "AI sentence structure": "AI বাক্য গঠন",
   "AI stock phrasing": "AI স্টক ভাষা",
   "AI upscaling": "AI আপস্কেলিং",
-  "AI-declared ingredient in this design: {names}. Its provenance rides the export as a C2PA ingredient.": "এই ডিজাইনে AI-ঘোষিত উপাদান: {names}। এর উৎস-তথ্য C2PA উপাদান হিসেবে এক্সপোর্টের সাথে যায়।",
+  "AI-declared ingredient in this design: {names}. The export's own credential declares this AI origin, signed and machine-readable.": "এই ডিজাইনে AI-ঘোষিত উপাদান: {names}। এক্সপোর্টের নিজস্ব ক্রেডেনশিয়াল এই AI উৎস ঘোষণা করে, স্বাক্ষরিত ও মেশিনে পাঠযোগ্য।",
   "AI-favoured vocabulary": "AI-প্রিয় শব্দভান্ডার",
   "AI-generated content": "AI-জেনারেটেড কনটেন্ট",
   "AI?": "AI?",

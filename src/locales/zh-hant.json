@@ -113,7 +113,7 @@
   "AI sentence structure": "AI 句子結構",
   "AI stock phrasing": "AI 制式措辭",
   "AI upscaling": "AI 放大",
-  "AI-declared ingredient in this design: {names}. Its provenance rides the export as a C2PA ingredient.": "此設計中聲明為 AI 生成的素材：{names}。其來源會作為 C2PA 素材隨匯出一起攜帶。",
+  "AI-declared ingredient in this design: {names}. The export's own credential declares this AI origin, signed and machine-readable.": "此設計中聲明為 AI 生成的素材：{names}。匯出檔案自身的憑證會聲明該 AI 來源，已簽名且可機讀。",
   "AI-favoured vocabulary": "AI 偏好用詞",
   "AI-generated content": "AI 生成內容",
   "AI?": "AI?",

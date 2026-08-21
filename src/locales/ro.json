@@ -113,7 +113,7 @@
   "AI sentence structure": "Structură de propoziție AI",
   "AI stock phrasing": "Formulare standard AI",
   "AI upscaling": "Upscaling AI",
-  "AI-declared ingredient in this design: {names}. Its provenance rides the export as a C2PA ingredient.": "Ingredient declarat ca operă AI în acest design: {names}. Proveniența lui călătorește cu exportul ca ingredient C2PA.",
+  "AI-declared ingredient in this design: {names}. The export's own credential declares this AI origin, signed and machine-readable.": "Ingredient declarat ca operă AI în acest design: {names}. Credențialul propriu al exportului declară această origine AI, semnat și lizibil de mașină.",
   "AI-favoured vocabulary": "Vocabular favorizat de AI",
   "AI-generated content": "Conținut generat de AI",
   "AI?": "AI?",

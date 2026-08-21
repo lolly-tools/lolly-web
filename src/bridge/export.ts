@@ -143,6 +143,7 @@ export interface ExportOpts {
   c2paCapture?: { camera?: boolean; microphone?: boolean; screen?: boolean }; // sensor/screen origin → created step = digitalCapture/screenCapture (runtime-supplied)
   c2paTextAdded?: { sample?: string };   // text over an opened asset → a c2pa.edited "Added text" step (runtime-supplied)
   c2paAiUpscale?: { model: string; version: string }; // AI-upscaled essence → created = compositeWithTrainedAlgorithmicMedia + a model-naming edit step (runtime-supplied)
+  c2paAiIngredients?: Array<{ name: string; kind: 'full' | 'partial' }>; // placed assets the user declared AI-made (runtime-supplied) → composite created step + c2pa.placed + a section 18.28 ai-disclosure
   colorProfile?: string;
   thumbnail?: boolean;
   audio?: ExportAudio;
@@ -5445,6 +5446,10 @@ async function stampC2pa(blob: Blob, format: string, opts: ExportOpts, dimension
       // AI-upscaled asset - created → compositeWithTrainedAlgorithmicMedia + a step
       // naming the model. Honest AI disclosure, surfaced on /verify automatically.
       ...(opts.c2paAiUpscale ? { aiUpscale: opts.c2paAiUpscale } : {}),
+      // The runtime sets c2paAiIngredients from the user's own AI-origins
+      // assertions on placed assets - the fresh credential declares the
+      // composite and names each declared piece (plans/126 WP-B3).
+      ...(opts.c2paAiIngredients?.length ? { aiIngredients: opts.c2paAiIngredients } : {}),
     });
     return await signAndEmbedC2pa(blob, format, {
       title: opts.meta?.tool,
@@ -5454,6 +5459,11 @@ async function stampC2pa(blob: Blob, format: string, opts: ExportOpts, dimension
       rights: c2paRights(opts.meta),
       actions,
       ingredients: opts.ingredients,
+      // section 18.28.3: the machine-readable AI-transparency assertion travels WITH
+      // the composite created action. Generic model type by design - the user
+      // asserted THAT a model made the ingredient, never which one, and a
+      // disclosure must not invent what nobody observed.
+      ...(opts.c2paAiIngredients?.length ? { aiDisclosure: {} } : {}),
       days,
     });
   } catch (err) {
@@ -5478,6 +5488,7 @@ async function signAndEmbedC2pa(blob: Blob, format: string, o: {
   rights?: string;
   actions: C2paActionInput[];
   ingredients?: IngredientCredential[];
+  aiDisclosure?: Record<string, never>;
   days?: number;
 }, host: WebHost | null = _host): Promise<Blob> {
   // Enrolled-identity signer (device key + CA cert, see bridge/identity.js) - 
@@ -5495,6 +5506,7 @@ async function signAndEmbedC2pa(blob: Blob, format: string, o: {
     ...(o.rights ? { rights: o.rights } : {}),
     actions: o.actions,
     ...(o.ingredients?.length ? { ingredients: o.ingredients } : {}),
+    ...(o.aiDisclosure ? { aiDisclosure: o.aiDisclosure } : {}),
     dates: signer ? {} : { notBefore: new Date(Date.now() - 60_000), notAfter: new Date(Date.now() + days * 86_400_000) },
     ...(signer ? { signer } : {}),
   });

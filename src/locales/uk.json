@@ -113,7 +113,7 @@
   "AI sentence structure": "Структура речень ШІ",
   "AI stock phrasing": "Штампові фрази ШІ",
   "AI upscaling": "Апскейлінг за допомогою ШІ",
-  "AI-declared ingredient in this design: {names}. Its provenance rides the export as a C2PA ingredient.": "Складник цього дизайну, задекларований як робота ШІ: {names}. Його походження мандрує з експортом як складник C2PA.",
+  "AI-declared ingredient in this design: {names}. The export's own credential declares this AI origin, signed and machine-readable.": "Складник цього дизайну, задекларований як робота ШІ: {names}. Власні облікові дані експорту декларують це ШІ-походження, підписані й машинозчитувані.",
   "AI-favoured vocabulary": "Лексика, характерна для ШІ",
   "AI-generated content": "Контент, згенерований ШІ",
   "AI?": "ШІ?",

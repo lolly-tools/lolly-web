@@ -1025,7 +1025,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     if (declared.length) {
       const line = document.createElement('p');
       line.className = 'guide-fact';
-      line.textContent = tRaw('AI-declared ingredient in this design: {names}. Its provenance rides the export as a C2PA ingredient.', { names: declared.join(', ') });
+      line.textContent = tRaw("AI-declared ingredient in this design: {names}. The export's own credential declares this AI origin, signed and machine-readable.", { names: declared.join(', ') });
       slot.appendChild(line);
     }
     if (flagged.length) {

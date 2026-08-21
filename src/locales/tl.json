@@ -113,7 +113,7 @@
   "AI sentence structure": "AI sentence structure",
   "AI stock phrasing": "AI stock phrasing",
   "AI upscaling": "AI upscaling",
-  "AI-declared ingredient in this design: {names}. Its provenance rides the export as a C2PA ingredient.": "Sangkap na idineklarang gawa ng AI sa disenyong ito: {names}. Sumasama ang pinagmulan nito sa export bilang C2PA na sangkap.",
+  "AI-declared ingredient in this design: {names}. The export's own credential declares this AI origin, signed and machine-readable.": "Sangkap na idineklarang gawa ng AI sa disenyong ito: {names}. Idinedeklara mismo ng credential ng export ang AI na pinagmulang ito, may lagda at nababasa ng makina.",
   "AI-favoured vocabulary": "Bokabularyong paborito ng AI",
   "AI-generated content": "AI-generated na content",
   "AI?": "AI?",

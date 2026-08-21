@@ -113,7 +113,7 @@
   "AI sentence structure": "AI的な文構造",
   "AI stock phrasing": "AIによる定型表現",
   "AI upscaling": "AIアップスケーリング",
-  "AI-declared ingredient in this design: {names}. Its provenance rides the export as a C2PA ingredient.": "このデザインのAI申告済み素材：{names}。その来歴はC2PA素材としてエクスポートに載って運ばれます。",
+  "AI-declared ingredient in this design: {names}. The export's own credential declares this AI origin, signed and machine-readable.": "このデザインのAI申告済み素材：{names}。エクスポート自身のクレデンシャルがこのAI由来を宣言します。署名済みで機械可読です。",
   "AI-favoured vocabulary": "AIが好む語彙",
   "AI-generated content": "AI生成コンテンツ",
   "AI?": "AI？",

@@ -113,7 +113,7 @@
   "AI sentence structure": "AI-zinsstructuur",
   "AI stock phrasing": "AI-standaardformuleringen",
   "AI upscaling": "AI-upscaling",
-  "AI-declared ingredient in this design: {names}. Its provenance rides the export as a C2PA ingredient.": "Als AI-werk gedeclareerd ingrediënt in dit ontwerp: {names}. De herkomst reist met de export mee als C2PA-ingrediënt.",
+  "AI-declared ingredient in this design: {names}. The export's own credential declares this AI origin, signed and machine-readable.": "Als AI-werk gedeclareerd ingrediënt in dit ontwerp: {names}. De eigen credential van de export declareert deze AI-herkomst, ondertekend en machineleesbaar.",
   "AI-favoured vocabulary": "Door AI bevoorrechte woordenschat",
   "AI-generated content": "Door AI gegenereerde inhoud",
   "AI?": "AI?",

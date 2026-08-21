@@ -113,7 +113,7 @@
   "AI sentence structure": "Yapay zeka cümle yapısı",
   "AI stock phrasing": "Yapay zeka klişe ifadeleri",
   "AI upscaling": "Yapay zeka büyütme",
-  "AI-declared ingredient in this design: {names}. Its provenance rides the export as a C2PA ingredient.": "Bu tasarımda yapay zeka işi olarak bildirilen bileşen: {names}. Kaynağı, dışa aktarmayla birlikte C2PA bileşeni olarak yolculuk eder.",
+  "AI-declared ingredient in this design: {names}. The export's own credential declares this AI origin, signed and machine-readable.": "Bu tasarımda yapay zeka işi olarak bildirilen bileşen: {names}. Dışa aktarmanın kendi kimlik bilgisi bu yapay zeka kaynağını bildirir; imzalı ve makine tarafından okunabilir.",
   "AI-favoured vocabulary": "Yapay zekanın tercih ettiği kelime dağarcığı",
   "AI-generated content": "AI ile oluşturulan içerik",
   "AI?": "Yapay zeka mı?",

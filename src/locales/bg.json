@@ -113,7 +113,7 @@
   "AI sentence structure": "Структура на изречението от ИИ",
   "AI stock phrasing": "Шаблонни фрази на ИИ",
   "AI upscaling": "Уголемяване с ИИ",
-  "AI-declared ingredient in this design: {names}. Its provenance rides the export as a C2PA ingredient.": "Съставка в този дизайн, декларирана като дело на ИИ: {names}. Произходът ѝ пътува с експорта като C2PA съставка.",
+  "AI-declared ingredient in this design: {names}. The export's own credential declares this AI origin, signed and machine-readable.": "Съставка в този дизайн, декларирана като дело на ИИ: {names}. Собственото удостоверение на експорта декларира този ИИ произход, подписано и машинно четимо.",
   "AI-favoured vocabulary": "Предпочитана от ИИ лексика",
   "AI-generated content": "Съдържание, генерирано от AI",
   "AI?": "ИИ?",

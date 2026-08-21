@@ -113,7 +113,7 @@
   "AI sentence structure": "AI 문장 구조",
   "AI stock phrasing": "AI 상투적 표현",
   "AI upscaling": "AI 업스케일링",
-  "AI-declared ingredient in this design: {names}. Its provenance rides the export as a C2PA ingredient.": "이 디자인에 AI로 만들었다고 선언된 재료가 있어요: {names}. 그 출처는 C2PA 재료로 내보내기에 함께 실려요.",
+  "AI-declared ingredient in this design: {names}. The export's own credential declares this AI origin, signed and machine-readable.": "이 디자인에 AI로 만들었다고 선언된 재료가 있어요: {names}. 내보내기 자체의 자격 증명이 이 AI 출처를 선언해요. 서명되어 있고 기계가 읽을 수 있어요.",
   "AI-favoured vocabulary": "AI 선호 어휘",
   "AI-generated content": "AI 생성 콘텐츠",
   "AI?": "AI?",

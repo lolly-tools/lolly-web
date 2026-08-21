@@ -113,7 +113,7 @@
   "AI sentence structure": "Struktur kalimat AI",
   "AI stock phrasing": "Frasa baku AI",
   "AI upscaling": "Upscaling AI",
-  "AI-declared ingredient in this design: {names}. Its provenance rides the export as a C2PA ingredient.": "Bahan yang dideklarasikan sebagai karya AI dalam desain ini: {names}. Asal-usulnya ikut dalam ekspor sebagai bahan C2PA.",
+  "AI-declared ingredient in this design: {names}. The export's own credential declares this AI origin, signed and machine-readable.": "Bahan yang dideklarasikan sebagai karya AI dalam desain ini: {names}. Kredensial ekspor ini sendiri mendeklarasikan asal AI tersebut, ditandatangani dan terbaca mesin.",
   "AI-favoured vocabulary": "Kosakata yang disukai AI",
   "AI-generated content": "Konten yang dihasilkan AI",
   "AI?": "AI?",

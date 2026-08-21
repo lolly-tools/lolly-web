@@ -113,7 +113,7 @@
   "AI sentence structure": "AI-meningsstruktur",
   "AI stock phrasing": "AI-standardfraser",
   "AI upscaling": "AI-uppskalning",
-  "AI-declared ingredient in this design: {names}. Its provenance rides the export as a C2PA ingredient.": "Ingrediens deklarerad som AI-verk i den här designen: {names}. Dess ursprung reser med exporten som en C2PA-ingrediens.",
+  "AI-declared ingredient in this design: {names}. The export's own credential declares this AI origin, signed and machine-readable.": "Ingrediens deklarerad som AI-verk i den här designen: {names}. Exportens eget credential deklarerar detta AI-ursprung, signerat och maskinläsbart.",
   "AI-favoured vocabulary": "AI-favoriserat ordval",
   "AI-generated content": "AI-genererat innehåll",
   "AI?": "AI?",

@@ -113,7 +113,7 @@
   "AI sentence structure": "Cấu trúc câu kiểu AI",
   "AI stock phrasing": "Cách diễn đạt sáo rỗng của AI",
   "AI upscaling": "Nâng cấp độ phân giải bằng AI",
-  "AI-declared ingredient in this design: {names}. Its provenance rides the export as a C2PA ingredient.": "Thành phần được khai báo là tác phẩm AI trong thiết kế này: {names}. Nguồn gốc của nó đi cùng bản xuất dưới dạng thành phần C2PA.",
+  "AI-declared ingredient in this design: {names}. The export's own credential declares this AI origin, signed and machine-readable.": "Thành phần được khai báo là tác phẩm AI trong thiết kế này: {names}. Credential riêng của bản xuất tự khai báo nguồn gốc AI này, có chữ ký và máy đọc được.",
   "AI-favoured vocabulary": "Từ vựng AI ưa dùng",
   "AI-generated content": "Nội dung do AI tạo",
   "AI?": "AI?",

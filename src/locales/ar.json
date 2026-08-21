@@ -113,7 +113,7 @@
   "AI sentence structure": "بنية جملة تخص الذكاء الاصطناعي",
   "AI stock phrasing": "صياغة نمطية للذكاء الاصطناعي",
   "AI upscaling": "تكبير بالذكاء الاصطناعي",
-  "AI-declared ingredient in this design: {names}. Its provenance rides the export as a C2PA ingredient.": "مكوِّن مُعلَن كعمل ذكاء اصطناعي في هذا التصميم: {names}. ينتقل مصدره مع التصدير كمكوِّن C2PA.",
+  "AI-declared ingredient in this design: {names}. The export's own credential declares this AI origin, signed and machine-readable.": "مكوِّن مُعلَن كعمل ذكاء اصطناعي في هذا التصميم: {names}. يُعلن اعتمادُ التصدير نفسه هذا الأصلَ الاصطناعي، موقَّعًا وقابلًا للقراءة الآلية.",
   "AI-favoured vocabulary": "مفردات مفضّلة لدى الذكاء الاصطناعي",
   "AI-generated content": "محتوى مولد بالذكاء الاصطناعي",
   "AI?": "ذكاء اصطناعي؟",

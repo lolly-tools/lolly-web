@@ -113,7 +113,7 @@
   "AI sentence structure": "Struktura vět typická pro AI",
   "AI stock phrasing": "Standardní fráze typické pro AI",
   "AI upscaling": "AI zvětšení",
-  "AI-declared ingredient in this design: {names}. Its provenance rides the export as a C2PA ingredient.": "Součást tohoto návrhu deklarovaná jako dílo AI: {names}. Její původ cestuje s exportem jako součást C2PA.",
+  "AI-declared ingredient in this design: {names}. The export's own credential declares this AI origin, signed and machine-readable.": "Součást tohoto návrhu deklarovaná jako dílo AI: {names}. Vlastní credential exportu tento AI původ deklaruje, podepsaný a strojově čitelný.",
   "AI-favoured vocabulary": "Slovní zásoba oblíbená u AI",
   "AI-generated content": "Obsah vygenerovaný AI",
   "AI?": "AI?",

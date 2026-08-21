@@ -113,7 +113,7 @@
   "AI sentence structure": "KI-Satzstruktur",
   "AI stock phrasing": "KI-typische Formulierungen",
   "AI upscaling": "KI-Hochskalierung",
-  "AI-declared ingredient in this design: {names}. Its provenance rides the export as a C2PA ingredient.": "Als KI-Werk deklarierter Bestandteil in diesem Design: {names}. Seine Herkunft reist als C2PA-Bestandteil mit dem Export.",
+  "AI-declared ingredient in this design: {names}. The export's own credential declares this AI origin, signed and machine-readable.": "Als KI-Werk deklarierter Bestandteil in diesem Design: {names}. Die eigene Credential des Exports deklariert diese KI-Herkunft, signiert und maschinenlesbar.",
   "AI-favoured vocabulary": "KI-bevorzugtes Vokabular",
   "AI-generated content": "KI-generierter Inhalt",
   "AI?": "KI?",

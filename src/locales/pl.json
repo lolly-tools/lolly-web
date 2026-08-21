@@ -113,7 +113,7 @@
   "AI sentence structure": "Struktura zdań typowa dla AI",
   "AI stock phrasing": "Sformułowania typowe dla AI",
   "AI upscaling": "Skalowanie AI",
-  "AI-declared ingredient in this design: {names}. Its provenance rides the export as a C2PA ingredient.": "Składnik zadeklarowany jako dzieło AI w tym projekcie: {names}. Jego pochodzenie podróżuje z eksportem jako składnik C2PA.",
+  "AI-declared ingredient in this design: {names}. The export's own credential declares this AI origin, signed and machine-readable.": "Składnik zadeklarowany jako dzieło AI w tym projekcie: {names}. Własne poświadczenie eksportu deklaruje to pochodzenie AI, podpisane i czytelne maszynowo.",
   "AI-favoured vocabulary": "Słownictwo preferowane przez AI",
   "AI-generated content": "Treść wygenerowana przez AI",
   "AI?": "AI?",
