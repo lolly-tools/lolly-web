@@ -33,8 +33,8 @@ async function dom() {
   return { win, DOMPurify: createDOMPurify(win as unknown as Window & typeof globalThis) };
 }
 
-// A literal non-breaking space (U+00A0,  ) inside SVG text, beside real geometry.
-const NBSP = ' ';
+// A literal non-breaking space (U+00A0,  ) inside SVG text, beside real geometry.
+const NBSP = '\u00a0';
 const SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 40">`
   + `<rect x="0" y="0" width="100" height="40" fill="tomato"/>`
   + `<circle cx="50" cy="20" r="8" fill="white"/>`

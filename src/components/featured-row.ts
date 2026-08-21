@@ -131,7 +131,7 @@ function byFeaturedOrder(a: FeaturedEntry, b: FeaturedEntry): number {
 }
 
 function tileMarkup(entry: FeaturedEntry, eager = false, menu = false): string {
-  const label = `${entry.isNew ? 'New — ' : ''}Open ${entry.name}${entry.featured.blurb ? ` — ${entry.featured.blurb}` : ''}`;
+  const label = `${entry.isNew ? 'New - ' : ''}Open ${entry.name}${entry.featured.blurb ? ` - ${entry.featured.blurb}` : ''}`;
   // The committed preview is the instant first frame; rendered variants are appended
   // as layers as they arrive. A tool whose preview is missing (dev, before
   // `npm run previews`) simply starts on the themed backdrop until its first variant.
@@ -736,7 +736,7 @@ export function mountFeaturedRow(
   }, { signal });
 
   const endDrag = (e: PointerEvent): void => {
-    if (e.pointerType === 'touch' && !coverflow) {           // no JS gesture to unwind — just the grab tint
+    if (e.pointerType === 'touch' && !coverflow) {           // no JS gesture to unwind - just the grab tint
       section.classList.remove('is-grabbing');
       manualUntil = performance.now() + RESUME_DELAY_MS;
       return;

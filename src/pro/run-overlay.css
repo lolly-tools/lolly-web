@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 /* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
    (order declared once in styles/app.css). Wrapping it means its rules keep a
-   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   fixed priority - above chrome/primitives/base, below overrides/a11y - no
    matter when Vite injects this chunk at runtime. Do not rely on load order. */
 @layer views {
 /*
@@ -9,12 +9,12 @@
  *
  * These mirror the .pro-quip / .pro-log / .pro-progress-* rules in pro.css, but
  * live here too because the shell also renders in a floating toast launched from
- * the gallery's folder overlay — a context where pro.css is NOT loaded. Importing
+ * the gallery's folder overlay - a context where pro.css is NOT loaded. Importing
  * this file from run-overlay.js guarantees the shell is styled wherever it runs.
  * The duplicated rules are identical to pro.css, so the docked path is unaffected.
  */
 
-/* Floating toast (folder/group export from the shared overlay). Full screen length — it spans
+/* Floating toast (folder/group export from the shared overlay). Full screen length - it spans
    the whole width (small side gutters) so a long batch's live log + quips have room to breathe,
    rather than a narrow corner card. */
 .pro-toast {
@@ -33,7 +33,7 @@
   color: hsl(var(--foreground));
   box-shadow: 0 10px 36px hsl(0 0% 0% / 0.28);
 }
-/* The /profile "render everything" job docks TOP-right instead — its wait-time quips
+/* The /profile "render everything" job docks TOP-right instead - its wait-time quips
    are easy to miss at the bottom of a long, scrolled profile page, so bring them up
    into view (and slide them in from the top so they read as an arrival). */
 .pro-toast--top {
@@ -85,7 +85,7 @@
 .pro-progress-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 0.6rem; }
 .pro-progress-msg { color: hsl(var(--muted-foreground)); font-size: calc(0.9rem * var(--a11y-fs)); margin: 0; }
 
-/* ── Progress bar — a real fill that advances as items finish (complements the head count). */
+/* ── Progress bar - a real fill that advances as items finish (complements the head count). */
 .pro-progress-track {
   height: 8px; margin: 0 0 0.85rem;
   background: hsl(var(--muted));
@@ -100,11 +100,11 @@
 }
 @media (prefers-reduced-motion: reduce) { .pro-progress-fill { transition: none; } }
 /* Safety net: no icon inside the progress shell can ever balloon to the intrinsic SVG
-   default — a belt to the width/height braces on the individual glyphs (the "giant tick").
+   default - a belt to the width/height braces on the individual glyphs (the "giant tick").
    NOT on the --a11y-fs icon scale, unlike the glyphs it backstops: this is a
    CEILING against an unsized SVG's intrinsic 300×150, not a size, so it stays a
-   flat literal. It has room — the only sized mark in here is .pro-card-fmticon's
-   13px, which is 15.6px at the current largeText factor — but if a glyph in this
+   flat literal. It has room - the only sized mark in here is .pro-card-fmticon's
+   13px, which is 15.6px at the current largeText factor - but if a glyph in this
    subtree ever grows past 24px, raise this rather than leaving it to clamp. */
 .pro-progress-body svg { max-width: 24px; max-height: 24px; }
 
@@ -129,11 +129,11 @@
 /* Skipped rows, listed by NAME (a skipped row has no queue position to cite). */
 .pro-log-skip summary { cursor: pointer; }
 .pro-log-skiplist { list-style: none; margin: 0.2rem 0 0; padding: 0 0 0 1rem; }
-/* The RUNNER position on a failure line — context, never the row number the user acts
+/* The RUNNER position on a failure line - context, never the row number the user acts
    on (that leads the line, in source space). Muted so the two can't be misread as one. */
 .pro-log-queue { color: hsl(var(--muted-foreground)); font-size: 0.9em; }
 
-/* ── Live preview wall — each finished export pops in as a thumbnail card ── */
+/* ── Live preview wall - each finished export pops in as a thumbnail card ── */
 .pro-cardwall {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
@@ -151,7 +151,7 @@
   overflow: hidden;
   background: hsl(var(--card));
   box-shadow: 0 2px 10px hsl(0 0% 0% / 0.14);
-  /* Floaty "stack building up" entrance: rise, overshoot, settle — with a small tilt. */
+  /* Floaty "stack building up" entrance: rise, overshoot, settle - with a small tilt. */
   animation: pro-card-in 0.44s cubic-bezier(0.2, 0.9, 0.25, 1.15) both;
 }
 /* Per-format glyph chip, top-left over the preview (pen = vector, frame = raster, …). */
@@ -175,13 +175,13 @@
 }
 .pro-card-fmticon svg { display: block; width: calc(13px * var(--a11y-fs)); height: calc(13px * var(--a11y-fs)); }
 
-/* Findings chip, top-RIGHT — mirrors .pro-card-fmticon exactly (same 22px box, same
+/* Findings chip, top-RIGHT - mirrors .pro-card-fmticon exactly (same 22px box, same
    frosted treatment) so the two corners read as one system.
 
    Tone is --primary, deliberately the same accent .pro-card-time's ⚡ pill already uses:
    that pill is this file's precedent for "an extra fact about a successful render", and
    it reads as pride, not damage. --destructive belongs to .pro-log-err alone and must
-   never appear on a card — a row that rendered is not a failure. Never a one-sided
+   never appear on a card - a row that rendered is not a failure. Never a one-sided
    border either; card-level emphasis, if it is ever needed, is a full hairline + tint. */
 .pro-card-note {
   position: absolute;
@@ -204,7 +204,7 @@
   box-shadow: 0 1px 4px #0004;
   cursor: help;
 }
-/* A finding that IS a warning stays on the SAME ramp — it is weighted, not recoloured.
+/* A finding that IS a warning stays on the SAME ramp - it is weighted, not recoloured.
    No new token is invented here (the app declares no --warning), and the destructive
    ramp stays the log's: a row that produced a file is not a failure. */
 .pro-card-note--warn { background: hsl(var(--primary) / 0.22); border-color: hsl(var(--primary) / 0.5); font-weight: 700; }
@@ -234,7 +234,7 @@
   color: hsl(var(--muted-foreground));
   background: hsl(var(--muted) / 0.5);
 }
-/* Render-time brag pill — a small accent pill under the preview (above the name), showing how
+/* Render-time brag pill - a small accent pill under the preview (above the name), showing how
    fast this one rendered. Centred so it reads as a badge on the card, not another caption. */
 .pro-card-time {
   align-self: center;
@@ -267,7 +267,7 @@
   .pro-card { animation: none; }
 }
 
-/* ── Render-time chart — shown when the queue finishes: one horizontal bar per asset,
+/* ── Render-time chart - shown when the queue finishes: one horizontal bar per asset,
    sorted shortest → longest, so the slow renders stand out. Scrolls for a big batch. */
 .pro-timechart { margin: 0.7rem 0 0.2rem; }
 .pro-tc-head {
@@ -292,7 +292,7 @@
   border-radius: var(--radius);
   animation: pro-tc-grow 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
-/* After the shortest→longest sort the last row is the slowest — give it the full accent. */
+/* After the shortest→longest sort the last row is the slowest - give it the full accent. */
 .pro-tc-list .pro-tc-row:last-child .pro-tc-fill { background: hsl(var(--primary)); }
 .pro-tc-val {
   font-size: calc(0.68rem * var(--a11y-fs)); font-weight: 700; font-variant-numeric: tabular-nums;

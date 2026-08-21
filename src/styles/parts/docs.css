@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 /*
- * In-app documentation reader (#/docs/<slug>) — plan "this-is-a-very-sparkling-eich" M2,
+ * In-app documentation reader (#/docs/<slug>) - plan "this-is-a-very-sparkling-eich" M2,
  * Phase 1 (reader only).
  *
  * The reader FETCHES a built /info page and rehosts its `.docs-content` fragment into
@@ -12,7 +12,7 @@
  *   1. BRAND-REACTIVE. The static build inlines the app tokens at NEUTRAL values; here the
  *      running app's tokens.css + brand-vars.ts are already in force, so the legacy-var
  *      bridge below resolves --page/--text/--green/… to the ACTIVE brand's app slots. The
- *      docs pick up the active profile's design system for free — the whole point of M2.
+ *      docs pick up the active profile's design system for free - the whole point of M2.
  *   2. SCOPED. The static build's bridge lives on a global `:root`; here it is scoped to
  *      `.docs-content` so importing this stylesheet can never clobber the app chrome's own
  *      `:root` tokens (which would un-brand the shell while the reader is mounted).
@@ -24,7 +24,7 @@
  * with build.ts, full doc-primitive + provenance-pill parity) stays a dedicated follow-up.
  */
 
-/* The legacy docs token names, expressed in the app's design-token slots — a scoped copy
+/* The legacy docs token names, expressed in the app's design-token slots - a scoped copy
  * of docs/build.ts's DOCS_BRIDGE. Because the app's --background/--foreground/--primary/…
  * are brand-reactive (tokens.css + brand-vars.ts), every var() call site in the fragment
  * follows the active brand and the app's [data-theme] light/dark/brand system. */
@@ -103,7 +103,7 @@
 .docs-top-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px hsl(var(--primary) / 0.4); }
 .docs-top-btn svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
 
-/* A pending / failed state — the reader renders chrome first, then swaps this out. */
+/* A pending / failed state - the reader renders chrome first, then swaps this out. */
 .docs-status {
   padding: 4rem 1rem;
   text-align: center;
@@ -140,7 +140,7 @@
 
 /* Narration follow-along highlight (lib/docs-narration-host.ts): the currently
    spoken block. Mirrors the static docs player's `.ldp-here` (docs/player/player.css)
-   — a soft, SYMMETRIC brand-tinted surround wash (no one-sided edge), brand-reactive
+   - a soft, SYMMETRIC brand-tinted surround wash (no one-sided edge), brand-reactive
    via the scoped bridge above so it reads in light/dark/brand. Clicking it re-engages
    follow-along (hence the pointer). Only present while the Listen dock is playing;
    the class is added/removed by the narration host. */
@@ -231,7 +231,7 @@
  * CSS-only :focus-within reveal, or link the puck to #/verify?src=. */
 .docs-content .shot-cred, .docs-landing .shot-cred { display: none; }
 
-/* "Try it in the app" deep link under a screenshot — points at a real app route. */
+/* "Try it in the app" deep link under a screenshot - points at a real app route. */
 .docs-content .shot-try {
   display: block; margin-block-start: 0.5rem; text-align: center;
   font-size: 0.8125rem; font-weight: 600; color: var(--muted);
@@ -243,10 +243,10 @@
  * PROGRESSIVE ENHANCEMENT, hydrated only over shots whose capture recipe is a live
  * TOOL render. The overlay pills sit ON the shot and reveal on hover / keyboard focus;
  * the in-place <iframe> boots the tool live over the (retained) static image. Brand-
- * reactive via the app's own token slots — NOT the scoped legacy bridge — since these
+ * reactive via the app's own token slots - NOT the scoped legacy bridge - since these
  * are app chrome painted over docs content. */
 
-/* Once the overlay exists, the static below-shot text link is redundant — but it stays in
+/* Once the overlay exists, the static below-shot text link is redundant - but it stays in
  * the DOM as the no-JS baseline, hidden only here. */
 .docs-content .shot-try--superseded { display: none; }
 
@@ -366,14 +366,14 @@
 }
 
 /* ── In-app docs reader: chrome + navigation (M2) ─────────────────────────────
-   The reader rehosts a docs page's CONTENT plus its real navigation — the section
-   pathways, the docs sidebar rail, the footer sitemap — and a DERIVED on-page TOC.
+   The reader rehosts a docs page's CONTENT plus its real navigation - the section
+   pathways, the docs sidebar rail, the footer sitemap - and a DERIVED on-page TOC.
    All token-driven so it themes light/dark/brand and follows the active brand. */
 
 .docs-reader { max-width: 84rem; margin: 0 auto; padding: 4.75rem 1.5rem 3rem; box-sizing: border-box; }
 
 /* SAFETY FIRST: never let a rehosted/chrome icon size itself to the page (the
-   blown-up palette bug). Scoped to CHROME + NAV only — never .docs-content, whose
+   blown-up palette bug). Scoped to CHROME + NAV only - never .docs-content, whose
    shots/figures are meant to be full width. */
 .docs-topright .docs-top-btn svg,
 .docs-back-pill svg { width: 20px; height: 20px; }
@@ -421,8 +421,8 @@
    site, so here the grid must be re-declared or every section's links run together on
    one line (icon jammed against text, each .sitemap-col a full-width block row).
    auto-fill rather than a fixed column count so the index fills as many ~11rem tracks
-   as the reader width offers — more columns on a wide viewport, folding down to two on
-   a phone — with each column's links stacked vertically inside it. */
+   as the reader width offers - more columns on a wide viewport, folding down to two on
+   a phone - with each column's links stacked vertically inside it. */
 .docs-sitemap-slot .footer-sitemap { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); align-items: start; gap: 1.5rem 1.75rem; }
 .docs-sitemap-slot .sitemap-col { display: flex; flex-direction: column; min-width: 0; }
 .docs-sitemap-slot .footer-sitemap a { display: flex; align-items: flex-start; gap: .5em; padding: .12rem 0; line-height: 1.4; }
@@ -431,14 +431,14 @@
 .docs-sitemap-slot .sitemap-title { font-size: .7rem; text-transform: uppercase; letter-spacing: .09em; font-weight: 700; color: hsl(var(--foreground)); margin-bottom: .35rem; }
 .docs-sitemap-slot a.sitemap-title:hover { color: hsl(var(--primary)); }
 
-/* footer contact block (extracted <footer> minus the sitemap) — the "Questions? Contact
-   Andy Fitzsimon — fitzy@suse.com" line, the Open-Source/Privacy/Inclusive-Design line,
+/* footer contact block (extracted <footer> minus the sitemap) - the "Questions? Contact
+   Andy Fitzsimon - fitzy@suse.com" line, the Open-Source/Privacy/Inclusive-Design line,
    and the Founded-by-SUSE badge. The built page's own footer CSS lives in its <head>,
-   which the reader never keeps, so re-declare the centred muted look here — and, load-
+   which the reader never keeps, so re-declare the centred muted look here - and, load-
    bearing, size the badge image: /info/founded-by.svg ships with NO intrinsic width or
    height, so without an explicit width the inline anchor + image collapse to 0×0. */
 .docs-contact-slot { margin-top: 2.25rem; padding-top: 1.5rem; border-top: 1px solid hsl(var(--border)); font-size: .82rem; color: hsl(var(--muted-foreground)); }
-/* Centre the block — a global `footer { text-align: right }` (base.css) directly
+/* Centre the block - a global `footer { text-align: right }` (base.css) directly
    matches the adopted <footer>, so it must be overridden on the element itself. */
 .docs-contact-slot .docs-contact-footer { text-align: center; }
 .docs-contact-slot p { margin: 0 0 .5rem; }
@@ -558,12 +558,12 @@
 .docs-content .fmt-dialog-unsup-label { display: block; font-size: .62rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--orange); margin-bottom: .5rem; }
 .docs-content .fmt-dialog-unsup-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: .4rem .9rem; }
 .docs-content .fmt-dialog-unsup-list li { font-size: .82rem; line-height: 1.3; display: flex; align-items: flex-start; gap: .45em; opacity: .9; }
-.docs-content .fmt-dialog-unsup-list li::before { content: '—'; color: var(--orange); font-weight: 800; flex: none; }
+.docs-content .fmt-dialog-unsup-list li::before { content: '-'; color: var(--orange); font-weight: 800; flex: none; }
 @media (max-width: 520px) {
   .docs-content .fmt-dialog-specs, .docs-content .fmt-dialog-unsup-list { grid-template-columns: 1fr; }
 }
 /* Narrow reader: stack each category as its own block with per-zone labels, the
- * same fold the static site makes — the flex row's edge alignment has too little
+ * same fold the static site makes - the flex row's edge alignment has too little
  * width to read below ~640px. */
 @media (max-width: 640px) {
   .docs-content .fmt-row { display: block; padding: .6rem 0; border-bottom: 1px solid var(--border); }

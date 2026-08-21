@@ -115,7 +115,7 @@ export function footerNav({ proEnabled, searchHtml }: FooterNavOpts): string {
   // "Open" is an ACTION, not a route - it opens the OS file picker to import a
   // .lolly / design / image (drop-router's openDropFilePicker). So it's a button,
   // not a link, wired document-level in main.ts on the [data-open-file] hook.
-  const openAria = t('Open a file — import a .lolly, design or image');
+  const openAria = t('Open a file - import a .lolly, design or image');
   const openInner = `${NAV_ICONS.open}${label(t('Open'))}`;
   const open = jellyActive()
     ? `<jelly-button class="gallery-nav-jelly" size="sm" variant="platinum" data-open-file data-sfx="click" aria-label="${escape(openAria)}">${openInner}</jelly-button>`
@@ -124,18 +124,18 @@ export function footerNav({ proEnabled, searchHtml }: FooterNavOpts): string {
   // renamed with no redirect inside the pre-08-29 break window).
   const pro = proEnabled ? navItem({
     href: '#/batch', nativeClass: 'gallery-batch-link btn', variant: 'platinum',
-    aria: t('Open Batch mode — for power users'), inner: `${NAV_ICONS.table}${label(t('Batch'))}`,
+    aria: t('Open Batch mode - for power users'), inner: `${NAV_ICONS.table}${label(t('Batch'))}`,
   }) : '';
   const dashboard = navItem({
     href: '#/d', nativeClass: 'gallery-nav-link btn', variant: 'platinum', sfx: 'dashboard',
-    aria: t('Dashboard — this device, the brand system & the full feature set'), inner: `${NAV_ICONS.dashboard}${label(t('Dashboard'))}`,
+    aria: t('Dashboard - this device, the brand system & the full feature set'), inner: `${NAV_ICONS.dashboard}${label(t('Dashboard'))}`,
   });
   // Verify keeps its solid SUSE Pine Green pill (explicit green in every theme,
   // matching the native rule) via an inline --jelly-fill / --jelly-label.
   const verify = navItem({
     href: '#/verify', nativeClass: 'gallery-nav-link gallery-nav-link--verify btn', sfx: 'verify',
     style: ' style="--jelly-fill:hsl(151 57% 42%);--jelly-label:#fff"',
-    aria: t('Verify Content Credentials — check any file on-device'), inner: `${NAV_ICONS.shield}${label(t('Verify'))}`,
+    aria: t('Verify Content Credentials - check any file on-device'), inner: `${NAV_ICONS.shield}${label(t('Verify'))}`,
   });
   // In-app route, not the static /info page (Andy, 2026-08-16): the reader who
   // taps "What?" keeps the app experience - the music keeps playing and the a11y
@@ -143,7 +143,7 @@ export function footerNav({ proEnabled, searchHtml }: FooterNavOpts): string {
   // shell. The static /info URLs remain the share/SEO surface (docsHref).
   const whatIs = navItem({
     href: docsAppHref('index'), nativeClass: 'gallery-info-link btn', variant: 'platinum',
-    aria: t('What is Lolly? — about & help'), inner: `${NAV_ICONS.help}${label(t('What?'))}`,
+    aria: t('What is Lolly? - about & help'), inner: `${NAV_ICONS.help}${label(t('What?'))}`,
   });
   return `
     <footer class="gallery-footer${jellyActive() ? ' gallery-footer--jelly' : ''}">

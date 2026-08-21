@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 /* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
    (order declared once in styles/app.css). Wrapping it means its rules keep a
-   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   fixed priority - above chrome/primitives/base, below overrides/a11y - no
    matter when Vite injects this chunk at runtime. Do not rely on load order. */
 @layer views {
 /* Interactive recent-creations card stack (see recent-stack.ts). */
@@ -92,7 +92,7 @@
 @media (prefers-reduced-motion: reduce) {
   .dash-stack-card { transition: opacity 0.2s ease; }
 }
-/* An explicit "Open" affordance under the deck — the front card is already a
+/* An explicit "Open" affordance under the deck - the front card is already a
    real link, but swipe-to-browse isn't a discoverable interaction on its own
    (especially for keyboard/screen-reader use), so this always targets whichever
    item swiped to the front (kept in sync by layout()). */
@@ -110,5 +110,5 @@
   font-weight: 400; color: hsl(var(--muted-foreground));
   max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.dash-stack-open-label::before { content: '— '; }
+.dash-stack-open-label::before { content: '- '; }
 }

@@ -1,6 +1,6 @@
 /* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
    (order declared once in styles/app.css). Wrapping it means its rules keep a
-   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   fixed priority - above chrome/primitives/base, below overrides/a11y - no
    matter when Vite injects this chunk at runtime. Do not rely on load order. */
 @layer views {
 /* ─── Profile layout ────────────────────────────────────────────────────── */
@@ -24,7 +24,7 @@
   gap: 1.6rem;
   align-items: start;
 }
-/* The scrolling column of setting cards — the old single-column stack, now the
+/* The scrolling column of setting cards - the old single-column stack, now the
    second grid track. Its own gap keeps the cards evenly spaced. */
 .profile-view .profile-panes {
   display: flex;
@@ -32,7 +32,7 @@
   gap: 1.1rem;
   min-width: 0;
 }
-/* (The visually-hidden <h1> is `position: absolute` — it never occupies a grid
+/* (The visually-hidden <h1> is `position: absolute` - it never occupies a grid
    track, so it needs no special handling here.) */
 
 /* ─── Settings nav rail ──────────────────────────────────────────────────────
@@ -47,7 +47,7 @@
   max-height: calc(100dvh - 5rem);
   /* Overflow lives on .profile-nav-list, NOT here: the search input's focus ring
      is an OUTWARD outline (offset +1px), and a scroll container clips paint at its
-     padding box on both axes — so a clip here shaves the ring. The list scrolls
+     padding box on both axes - so a clip here shaves the ring. The list scrolls
      instead, and its items use inset rings, which never reach the clip edge. */
   min-height: 0;
 }
@@ -77,7 +77,7 @@
   outline: 2px solid hsl(var(--primary));
   outline-offset: 1px;
 }
-/* Silence the native search "×" clear (WebKit) — the input is short-lived scratch. */
+/* Silence the native search "×" clear (WebKit) - the input is short-lived scratch. */
 .profile-view .profile-nav-search-input::-webkit-search-cancel-button { -webkit-appearance: none; }
 
 .profile-view .profile-nav-list {
@@ -136,7 +136,7 @@
 /* Below the two-column threshold the fixed side rail can't stay a side column, and a
    horizontally-scrolling text strip ran its section labels off-screen at tablet width.
    So fold the layout to one column and turn the section nav into a SOLID, floating
-   icon-only bar pinned above the persistent search footer — the same bar phones already
+   icon-only bar pinned above the persistent search footer - the same bar phones already
    used, now across the whole tablet band. The cutoff is the full tablet-landscape width
    (1024px): between ~861px and ~1024px the fixed 216px rail plus a details column that
    can't shrink below its fixed headshot overran the viewport and forced a horizontal
@@ -198,10 +198,10 @@
 
 /* (Phones share the tablet band's treatment now: the floating icon-only section bar,
    the single-column layout, and the overflow guard all live in the max-width:1024px
-   block above. The phone-specific details-card layout — headshot on top, fields stacked
-   and centred — stays in the max-width:640px block below.) */
+   block above. The phone-specific details-card layout - headshot on top, fields stacked
+   and centred - stays in the max-width:640px block below.) */
 
-/* (The old two-button .profile-footer toolbar is retired — the shell's persistent
+/* (The old two-button .profile-footer toolbar is retired - the shell's persistent
    search bar shows on this route instead; see components/search-bar.ts.) */
 
 .profile-view .profile-card {
@@ -217,7 +217,7 @@
   letter-spacing: .07em;
   color: hsl(var(--muted-foreground));
 }
-/* Language picker sits top-right of the details card, level with its h2 — a
+/* Language picker sits top-right of the details card, level with its h2 - a
    permanent preference, unlike the welcome dialog's one-time chips. */
 .profile-view .profile-card-header {
   display: flex;
@@ -226,12 +226,12 @@
   gap: 1rem;
 }
 .profile-view .profile-card-header h2 { margin: 0 0 1rem; }
-/* (`.profile-lang-picker` / `.profile-lang-select` lived here — a fourth copy of
+/* (`.profile-lang-picker` / `.profile-lang-select` lived here - a fourth copy of
    the select chevron data-URI, matched by no markup since the language switcher
    moved to the topbar's `.lang-fab` body-popover. Deleted 2026-07-25; the chevron
    itself now lives once as `var(--field-chevron)` in parts/fields.css.) */
 
-/* Collapsible sections (Activity / Storage / Feature flags) — collapsed by
+/* Collapsible sections (Activity / Storage / Feature flags) - collapsed by
    default. Card chrome sits on the <details>; the <summary> is the header. */
 .profile-view .profile-collapse { padding: 0; }
 .profile-view .profile-collapse > summary {
@@ -337,7 +337,7 @@
   background: hsl(var(--primary) / .15); color: hsl(var(--primary));
 }
 
-/* Feature flags — a list of labelled toggle switches (auto-save on change). */
+/* Feature flags - a list of labelled toggle switches (auto-save on change). */
 .profile-view .feature-flags { list-style: none; margin: .5rem 0 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
 .profile-view .feature-flag {
   
@@ -369,7 +369,7 @@
   color: hsl(var(--primary));
   font-size: calc(.7rem * var(--a11y-fs)); font-weight: 600; letter-spacing: .02em;
 }
-/* Small (i) explainer beside a flag label — the shared help-tip button now
+/* Small (i) explainer beside a flag label - the shared help-tip button now
    (component audit rec 13); .feature-flag-info stays as its positioning host
    (see profile.ts's flagRow), its own .help-tip-btn/-pop styling lives in tool.css. */
 .profile-view .feature-flag-info { position: relative; display: inline-flex; vertical-align: middle; margin-left: .35rem; }
@@ -408,11 +408,11 @@
 .profile-view .profile-btn-primary { padding: 1em 2em; border-radius: calc(var(--radius) *2); border-color: hsl(var(--primary)); }
 .headshot-heading{text-align:center;}
 
-/* ── Appearance card — theme preview cards (the picker moved here from the
+/* ── Appearance card - theme preview cards (the picker moved here from the
    dashboard). Each preview is a real <button> carrying its own [data-theme], so
    tokens.css resolves the dots/sample/border vars in THAT theme's colours no
    matter which theme the app is wearing. platform.css (.plat-theme*) is a
-   dashboard-only sheet — not on this route — so the equivalents live here under
+   dashboard-only sheet - not on this route - so the equivalents live here under
    profile-scoped names. Same full-border card chrome as every .profile-card. */
 .profile-view .profile-appearance-sub {
   margin: -.4rem 0 1rem; max-width: 74ch;
@@ -445,7 +445,7 @@
 .profile-view .profile-theme-sample { font-size: calc(1.6rem * var(--a11y-fs)); font-weight: 600; }
 @media (prefers-reduced-motion: reduce) { .profile-view .profile-theme { transition: none; } }
 
-/* ── Accessibility card — the three opt-in comfort prefs (lib/a11y-prefs.ts).
+/* ── Accessibility card - the three opt-in comfort prefs (lib/a11y-prefs.ts).
    Sits directly under Appearance and reuses the .feature-flag toggle-row
    primitive above wholesale, so there is exactly one switch look in this view;
    only the two deltas the card actually needs live here. */
@@ -461,10 +461,10 @@
   min-width: 12rem; max-width: min(24rem, 68vw);
 }
 
-/* Activity — stat tiles, a format leaderboard (proportional bars), meta line.
+/* Activity - stat tiles, a format leaderboard (proportional bars), meta line.
    The declarations byte-identical with the Dashboard's copy of this same
    component (lib/activity-summary.ts) now live once in components.css,
-   scoped to both view roots (component audit rec 13) — only this view's own
+   scoped to both view roots (component audit rec 13) - only this view's own
    sizing stays here. */
 /* On desktop the stat tiles sit beside the format leaderboard; they stack below. */
 .profile-view .activity-split {
@@ -510,14 +510,14 @@
 /* Clear cache + Clear all my data sit together on their own row, right-aligned. */
 .profile-view .storage-actions { display: flex; align-items: center; justify-content: flex-end; gap: .6rem; margin-top: 1.25em; }
 
-/* ─── Storage "Reconciliation Meter" — the redesigned Storage section ───────
+/* ─── Storage "Reconciliation Meter" - the redesigned Storage section ───────
    One honest composition: a hero total (the browser's real device usage), a
    breakdown bar whose measured slices + an explicit hatched "Other/overhead"
    remainder reconcile to that total by construction, a legend that doubles as an
    explore control, a quiet quota gauge, and per-category in-place manage/clear. */
 .profile-view .store-meter { display: flex; flex-direction: column; gap: 1.1rem; }
 
-/* (A) Hero — the ground-truth total, count-up, tabular so it doesn't jitter. */
+/* (A) Hero - the ground-truth total, count-up, tabular so it doesn't jitter. */
 .profile-view .store-hero { display: flex; flex-direction: column; gap: .1rem; }
 .profile-view .store-hero-num {
   margin: 0; font-size: clamp(2.2rem, 7vw, 3.2rem); font-weight: 700; line-height: 1;
@@ -526,7 +526,7 @@
 .profile-view .store-hero-cap { margin: .4rem 0 0; font-size: calc(13px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .profile-view .store-headroom { margin: .1rem 0 0; font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 
-/* (B) Breakdown bar — whole width == usage; flex-grow carries each slice's bytes
+/* (B) Breakdown bar - whole width == usage; flex-grow carries each slice's bytes
    (zero percent math; segments auto-proportion). Solid = measured exactly,
    hatch + "~" = derived by subtraction. */
 .profile-view .store-bar {
@@ -557,7 +557,7 @@
 .profile-view .store-bar[data-active] .seg:not(.is-active) { opacity: .3; }
 .profile-view .store-bar[data-active] .seg.is-active { box-shadow: inset 0 0 0 2px hsl(var(--ring)); }
 
-/* (C) Legend — chips ARE the explore control. */
+/* (C) Legend - chips ARE the explore control. */
 .profile-view .store-legend { list-style: none; display: flex; flex-wrap: wrap; gap: .35rem .85rem; padding: 0; margin: 0; }
 .profile-view .store-legend > li { display: inline-flex; }
 .profile-view .store-chip {
@@ -576,13 +576,13 @@
 .profile-view .store-chip-name { font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--foreground)); }
 .profile-view .store-chip-val { font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
 
-/* (D) Quota gauge + reclaim line — the quiet used-of-budget truth. */
+/* (D) Quota gauge + reclaim line - the quiet used-of-budget truth. */
 .profile-view .store-quota { display: flex; align-items: center; gap: 8px; margin: 0; flex-wrap: wrap; }
 .profile-view .store-quota-text, .profile-view .store-reclaim { font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); margin: 0; }
 .profile-view .store-quota-text strong, .profile-view .store-reclaim strong { color: hsl(var(--foreground)); }
 .profile-view .store-footnote { font-size: calc(11px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); opacity: .8; margin: .1rem 0 0; }
 
-/* Manage panels — one per measured category. */
+/* Manage panels - one per measured category. */
 .profile-view .store-manages { display: flex; flex-direction: column; margin-top: .3rem; }
 .profile-view .store-manage { border-top: 1px solid hsl(var(--border)); }
 .profile-view .store-manage-sum {
@@ -603,7 +603,7 @@
 .profile-view .store-manage-link { font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); text-decoration: none; display: inline-block; margin-top: .55rem; }
 .profile-view .store-manage-link:hover { color: hsl(var(--foreground)); }
 
-/* Session list — independently scrollable, selectable rows. */
+/* Session list - independently scrollable, selectable rows. */
 .profile-view .store-sess-tools { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .4rem; }
 .profile-view .store-selall { display: inline-flex; align-items: center; gap: .4rem; font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); cursor: pointer; }
 .profile-view .store-sort { border: 0; background: none; font: inherit; font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); cursor: pointer; padding: 2px 6px; border-radius: 6px; }
@@ -650,10 +650,10 @@
 }
 
 /* The "i" badge beside a heading (.info-dot/.info-tip) moved onto the shared
-   help-tip component (component audit rec 13) — infoDot() in profile.ts now
+   help-tip component (component audit rec 13) - infoDot() in profile.ts now
    emits .help-tip-host/.help-tip-btn/.help-tip-pop (tool.css) instead. */
 
-/* Headshot widget — a large circle; "Edit" overlays it (on hover, or always
+/* Headshot widget - a large circle; "Edit" overlays it (on hover, or always
    when empty), and a small ✕ badge top-right removes it. */
 .profile-view .headshot {     position: relative;
     width: 200px;
@@ -682,8 +682,8 @@
 }
 /* Jelly variant (flag): the soft-body button is a content-sized capsule, so
    centre it in the circle rather than letting it sit at the top-left inline
-   origin (where the label clipped). The whole circle is the hit-area — a click
-   handler on .headshot-preview triggers the file picker (see profile.ts) — so
+   origin (where the label clipped). The whole circle is the hit-area - a click
+   handler on .headshot-preview triggers the file picker (see profile.ts) - so
    this element is a purely visual affordance; it fades in on hover, and stays
    shown while the circle is empty (the "Upload" prompt) or the button is focused. */
 .profile-view .headshot-edit-jelly {
@@ -704,7 +704,7 @@
 
 @media (max-width: 640px) {
   /* Single-column flow. Flatten both column wrappers (display: contents) so the
-     headshot — which lives in .profile-side — can sit above the name/email
+     headshot - which lives in .profile-side - can sit above the name/email
      fields, while Save + opt-in (.profile-actions) drop to the bottom. Order:
      headshot → details → sound → actions. */
   .profile-view .profile-details-grid { display: flex; flex-direction: column; gap: 1.4rem; align-items: center; }
@@ -713,7 +713,7 @@
   .profile-view .profile-side .profile-field:has(.headshot) { order: 1; }
   /* Explicit width: the centred flex column above sizes children to fit-content,
      and in jelly mode a <jelly-input>'s width:100% contributes no intrinsic width
-     — so without this the whole grid (and every field in it) collapses to the
+     - so without this the whole grid (and every field in it) collapses to the
      widest label. Native inputs mask it with their own intrinsic size. */
   .profile-view .profile-fields { grid-template-columns: 1fr; order: 2; margin-bottom: 0; width: 100%; }
   .profile-view .profile-side .profile-field--sound { order: 3; }
@@ -769,7 +769,7 @@
 /* fill (background/color) + hover are aliased in parts/buttons.css's .btn--primary list */
 .cropper-btn--primary { border-color: hsl(var(--primary)); }
 
-/* "Verify a file" CTA in the Content Credentials section — matches the gallery's
+/* "Verify a file" CTA in the Content Credentials section - matches the gallery's
    green Verify button (explicit green so it reads the same in every theme). */
 .identity-verify-link {
   display: inline-flex;

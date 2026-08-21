@@ -1,14 +1,14 @@
 /* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
    (order declared once in styles/app.css). Wrapping it means its rules keep a
-   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   fixed priority - above chrome/primitives/base, below overrides/a11y - no
    matter when Vite injects this chunk at runtime. Do not rely on load order. */
 @layer views {
-/* ─── #/script — Script audio, the writing surface ─────────────────────────────
+/* ─── #/script - Script audio, the writing surface ─────────────────────────────
    The script sheet is the hero: a page-like card with generous reading type,
    the word count and listening estimate as a quiet margin note beneath it, and
    everything mechanical (voice, speed, generate, save) in a side rail. The
    shared progress track and preview row keep their .script-audio-* classes
-   (styles/script-audio.css) — one recipe for both Script-audio surfaces. */
+   (styles/script-audio.css) - one recipe for both Script-audio surfaces. */
 
 .scriptst-view { overflow-y: auto; }
 .scriptst-view .scriptst-layout {
@@ -46,7 +46,7 @@
   color: hsl(var(--muted-foreground));
 }
 /* The hero: reading-sized type on a borderless page. The sheet card carries the
-   visual edge, so the field's own box dissolves into the page — the focus ring
+   visual edge, so the field's own box dissolves into the page - the focus ring
    (a11y layer, :focus-visible) still draws on the textarea itself. */
 .scriptst-text {
   resize: vertical;

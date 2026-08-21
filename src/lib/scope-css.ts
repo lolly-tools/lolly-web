@@ -86,7 +86,7 @@ function atName(prelude: string): string | null {
 /**
  * Split a selector-list prelude on TOP-LEVEL commas only - bracket-, string-,
  * and comment-aware. A comma inside `:is()`/`:where()`/`:not()`/`:nth-child(… of …)`,
- * inside an `[attr="a,b"]` value, or inside a `/* … *​/` comment is NOT a list
+ * inside an `[attr="a,b"]` value, or inside a CSS block comment is NOT a list
  * separator, so it must not trigger a split (and thus a spurious scope prefix).
  * Returns raw (untrimmed) segments; the caller trims and filters empties.
  */

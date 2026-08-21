@@ -341,7 +341,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
         <header class="start-head">
           <p class="start-eyebrow">${t('Brand')}</p>
           <h1 class="start-title">${t('This brand is set')}</h1>
-          <p class="start-sub">${t('This build ships with a fixed brand — its colours, fonts and tokens are what every tool and export use. Brand adjustment is turned off here, so there’s nothing to change.')}</p>
+          <p class="start-sub">${t('This build ships with a fixed brand - its colours, fonts and tokens are what every tool and export use. Brand adjustment is turned off here, so there’s nothing to change.')}</p>
         </header>
       </div>`;
     attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
@@ -439,7 +439,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
       </div>
 
       <!-- The import card lives here at rest, inside a hidden holder, and is MOVED
-           into the modal when "Add from…" is clicked (and back on close) — so the
+           into the modal when "Add from…" is clicked (and back on close) - so the
            file input, the drop target and every delegated listener below are wired
            once against nodes that outlive any one dialog. -->
       <div class="start-import-home" data-start-import-home hidden>
@@ -710,7 +710,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   };
   viewEl.querySelector<HTMLButtonElement>('[data-start-export]')?.addEventListener('click', async (e) => {
     const btn = e.currentTarget as HTMLButtonElement;
-    if (!editor) { showNote(t('The brand editor didn’t open — reload to export.'), true); return; }
+    if (!editor) { showNote(t('The brand editor didn’t open - reload to export.'), true); return; }
     btn.disabled = true;
     try { const { filename } = await editor.exportPack(); showNote(tRaw('Exported {filename}', { filename })); }
     catch (err) { showNote(String((err as { message?: unknown })?.message ?? err), true); }
@@ -795,7 +795,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     // and a late "nothing to publish yet" must not take it away underneath.
     versionsOffered ||= offered;
     syncVersionsEntry();
-  }).catch(() => { /* undiscoverable storage — the entry stays hidden */ });
+  }).catch(() => { /* undiscoverable storage - the entry stays hidden */ });
 
   /**
    * One token per colour, through the Colours room's own write (plan 97 section 2b).
@@ -815,7 +815,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   const addColorsToSystem = (entries: ColorEntry[]): number => {
     const own = editor?.addColors;
     if (!own) {
-      showNote(t('The brand editor didn’t open — reload the page and try again.'), true);
+      showNote(t('The brand editor didn’t open - reload the page and try again.'), true);
       return 0;
     }
     return own(entries);
@@ -2014,7 +2014,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
       btn.disabled = false;
       btn.textContent = prevLabel;
       selectRoom('color');
-      announce(tRaw('{label} installed — the studio now shows it', { label }));
+      announce(tRaw('{label} installed - the studio now shows it', { label }));
       playSfx('saveProfile');
     } catch (err) {
       installing = false;
@@ -2078,7 +2078,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
       case 'unknown-zip':
         return tRaw('{filename} isn’t a design system pack, a Penpot export or a zip of token set files.', { filename });
       case 'not-json':
-        return tRaw('Couldn’t read {filename} — is it valid JSON?', { filename });
+        return tRaw('Couldn’t read {filename} - is it valid JSON?', { filename });
       default:
         return tRaw('No tokens found: {reason}.', { reason: route.detail ?? t('unrecognised document') });
     }
@@ -2204,8 +2204,8 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
       showImportResult(`
         <p class="start-import-name">${escape(file.name)}<span class="start-import-source">${t('colours in use')}</span></p>
         <p class="start-import-warn">${t(svgColors.length === 1
-          ? 'Found {n} colour — none are linked to a design token, so review and drop any you don’t want. The first one kept becomes your main brand colour.'
-          : 'Found {n} colours — none are linked to a design token, so review and drop any you don’t want. The first one kept becomes your main brand colour.',
+          ? 'Found {n} colour - none are linked to a design token, so review and drop any you don’t want. The first one kept becomes your main brand colour.'
+          : 'Found {n} colours - none are linked to a design token, so review and drop any you don’t want. The first one kept becomes your main brand colour.',
           { n: svgColors.length })}</p>
         <div class="start-color-actions">
           <button type="button" class="be-btn be-btn--sm" data-colors-all>${t('Select all')}</button>
@@ -2241,7 +2241,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     // map and the importer verifies it (brand-transfer.ts).
     if (fileRoute.kind === 'pack') {
       if (!editor) {
-        showImportError(t('The brand editor didn’t open — reload the page and try again.'));
+        showImportError(t('The brand editor didn’t open - reload the page and try again.'));
         return;
       }
       showImportResult(`<p class="start-import-stats">${t('Loading {filename}…', { filename: file.name })}</p>`,
@@ -2280,7 +2280,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
         const roles = proposeBrandRoles(usage);
         if (!roles) {
           showImportError(tRaw(warnings[0]
-            ? 'No design tokens found in {filename} — {warning}. Try exporting an SVG instead so we can read its colours.'
+            ? 'No design tokens found in {filename} - {warning}. Try exporting an SVG instead so we can read its colours.'
             : 'No design tokens found in {filename}. Try exporting an SVG instead so we can read its colours.',
             { filename: file.name, warning: warnings[0] ?? '' }));
           return;
@@ -2582,7 +2582,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
       if (cb?.checked && hex) kept.push(hex);
     });
     if (!kept.length) {
-      showImportError(t('None of the kept colours could be used — try a different selection.'));
+      showImportError(t('None of the kept colours could be used - try a different selection.'));
       return;
     }
     const doc = deriveBrandTokens({ primary: kept[0]!, name: importedLabel });

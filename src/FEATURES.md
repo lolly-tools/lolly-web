@@ -23,7 +23,7 @@ Users can now upload custom fonts in TTF, OTF, or WOFF formats and set them as t
 
 ### Gotchas
 - **File size:** Large font files (especially full-charset, multi-weight variables) increase project size. Keep individual fonts under 1 MB where possible; subset fonts for faster load times.
-- **Subsetting:** Lolly does not subset fonts automatically—uploaded fonts are used verbatim. If you upload a 500 KB CJK font but only need Latin, pre-subset with tools like FontTools or Glyphhanger.
+- **Subsetting:** Lolly does not subset fonts automatically-uploaded fonts are used verbatim. If you upload a 500 KB CJK font but only need Latin, pre-subset with tools like FontTools or Glyphhanger.
 - **Fallback chain:** If an uploaded font lacks glyphs for your text (e.g., Arabic in a Latin-only typeface), the engine's `fallbackFonts` chain will attempt recovery with system fonts. Check exports with diverse character sets.
 - **License compliance:** Ensure your TTF/OTF/WOFF license permits embedding and redistribution in exported assets (not all do). Lolly embeds fonts in PDFs and EMF files.
 - **Platform quirks:** Variable fonts may render with slightly different default instances on macOS vs. Linux vs. Windows; test on-brand exports on the target platform.
@@ -73,7 +73,7 @@ Text strokes (outlines) are now preserved when exporting to SVG, PDF, and EMF fo
 ### Benefits
 - **Editability:** Exported text outlines can be further edited in downstream design tools (change stroke width, color, or font without re-rendering)
 - **File size:** Vector-only outlines are much smaller than rasterized fallback (SVG ~50–200 bytes per glyph vs. 2–5 KB rasterized at 300 DPI)
-- **Quality at scale:** Strokes remain crisp at any zoom level or print resolution—no pixelation
+- **Quality at scale:** Strokes remain crisp at any zoom level or print resolution-no pixelation
 - **Print fidelity:** Outlines preserve stroke specifications for CMYK and spot-color separations (critical for branded print assets)
 - **Mixed media:** Combine stroked text with other vector elements (illustrations, shapes) without file-format conversions
 

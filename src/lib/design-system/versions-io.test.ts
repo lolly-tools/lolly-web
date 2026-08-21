@@ -106,7 +106,7 @@ async function seedSystem(h: ReturnType<typeof makeHost>, jungle?: string): Prom
   await installUserTokens(h.host as unknown as Parameters<typeof installUserTokens>[0], doc(jungle), { label: 'My brand' });
 }
 
-test('publish writes the version asset first, then the ledger — and the version carries no ledger of its own', async () => {
+test('publish writes the version asset first, then the ledger - and the version carries no ledger of its own', async () => {
   stubFetch();
   const h = makeHost();
   await seedSystem(h);
@@ -156,7 +156,7 @@ test('a token naming a file this device does not have is skipped, not faked', as
   assert.deepEqual(pins, [], 'a dangling token is not a pin');
 });
 
-test('republishing a name is refused — a published version is permanent', async () => {
+test('republishing a name is refused - a published version is permanent', async () => {
   stubFetch();
   const h = makeHost();
   await seedSystem(h);
@@ -197,7 +197,7 @@ test('activate, then follow the latest again', async () => {
   await assert.rejects(setActiveVersion(h.ctx, 'nope'), /not on this device/);
 });
 
-test('restoring from a version keeps the ledger — the history is not what gets overwritten', async () => {
+test('restoring from a version keeps the ledger - the history is not what gets overwritten', async () => {
   stubFetch();
   const h = makeHost();
   await seedSystem(h, '#30ba78');
@@ -267,7 +267,7 @@ test('publishPreview reports the name, the token diff and which files changed', 
 
 // ── Copy-on-write: the M7 acceptance ─────────────────────────────────────────
 
-test('a pinned logo survives being replaced — the version renders the old bytes, the head the new', async () => {
+test('a pinned logo survives being replaced - the version renders the old bytes, the head the new', async () => {
   stubFetch();
   const h = makeHost();
   await seedSystem(h);
@@ -288,7 +288,7 @@ test('a pinned logo survives being replaced — the version renders the old byte
   assert.equal(pin?.sha256, oldHex, 'the pin still records what was published');
   const stored = await readVersionDoc(h.ctx, 'v1') as Record<string, unknown>;
   assert.equal(await docChecksum(stored), (await readIndex(h.ctx)).versions[0]?.checksum,
-    'the version asset itself is untouched — that is what immutable means');
+    'the version asset itself is untouched - that is what immutable means');
 
   // Resolution: the version sees the preserved copy, the head sees the new file.
   assert.equal(await h.tokens.forVersion('v1').resolve('{asset.logo.horizontal-primary}'), frozenId);
@@ -338,7 +338,7 @@ test('preserved rows are hidden from the library listing but counted in storage'
   assert.equal(storage.bytes > 0, true);
 });
 
-test('a FONT pin is recorded but never frozen — nothing could ever read the copy', async () => {
+test('a FONT pin is recorded but never frozen - nothing could ever read the copy', async () => {
   stubFetch();
   const h = makeHost();
   await seedSystem(h);
@@ -431,7 +431,7 @@ test('with nothing published the copy-on-write hook reads nothing and writes not
   await h.assets._uploadUserAsset({ id: LOGO_ID, type: 'raster', format: 'png', blob: bytes('LOGO-B') });
   await h.assets._deleteUserAsset('user/upload/1-nothing');
 
-  assert.equal(h.reads.n - before, 1, 'only _deleteUserAsset’s own record read — the hook adds none');
+  assert.equal(h.reads.n - before, 1, 'only _deleteUserAsset’s own record read - the hook adds none');
   assert.equal(h.stores['user-assets']!.size, rows, 'no frozen row was minted');
   assert.equal(readVersionIndex(await h.tokens.raw()).versions.length, 0);
 });
@@ -511,7 +511,7 @@ test('every user-asset write path that destroys bytes calls the preserver, and t
   const src = await readFile(new URL('../../bridge/assets.ts', import.meta.url), 'utf8');
   const calls = src.match(/preservePinned\?\.\(/g) ?? [];
   assert.equal(calls.length, 4,
-    'upload / delete / restamp / import — a fifth way to overwrite user bytes must call it too');
+    'upload / delete / restamp / import - a fifth way to overwrite user bytes must call it too');
   // The upload guard has to run BEFORE the quota check, or a tight device would
   // refuse the replacement having already lost the version's bytes.
   const upload = src.slice(src.indexOf('async _uploadUserAsset('));
@@ -520,7 +520,7 @@ test('every user-asset write path that destroys bytes calls the preserver, and t
 
   const wiring = await readFile(new URL('../../bridge/index.ts', import.meta.url), 'utf8');
   assert.match(wiring, /createAssetsAPI\([\s\S]{0,200}preservePinned/,
-    'the assembled bridge passes the hook — an unwired guard guards nothing');
+    'the assembled bridge passes the hook - an unwired guard guards nothing');
   assert.match(wiring, /createPinPreserver\(/);
 });
 

@@ -1,5 +1,5 @@
 /*
- * RTL baseline — correctness rules for right-to-left languages (Arabic).
+ * RTL baseline - correctness rules for right-to-left languages (Arabic).
  *
  * i18n.ts stamps <html dir="rtl"> alongside <html lang>, and the app's
  * flex/grid layouts mirror themselves from that alone. This sheet holds only
@@ -14,7 +14,7 @@
  *
  * Anything cosmetic (physical left/right offsets on FABs, border accents)
  * deliberately stays unmirrored until it's verified broken in a real RTL
- * pass — a fixed top-right control cluster is fine in RTL, and blanket
+ * pass - a fixed top-right control cluster is fine in RTL, and blanket
  * mirroring rules are how layouts break in BOTH directions.
  */
 

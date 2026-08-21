@@ -58,9 +58,9 @@ import type { PinRecord } from '../lib/offline-pins.ts';
 import { prefetchAssetsById, catalogDownloadSummary, catalogScopeSize, downloadCatalogScope } from '../catalog/sync.ts';
 import {
   fetchPrecacheManifest, fetchInfoManifest, docsFileList,
-  downloadApp, downloadDocs, downloadVerify, downloadSpeech, downloadUpscale, downloadMatte, downloadOcr, downloadReword, downloadAsk,
+  downloadApp, downloadDocs, downloadVerify, downloadSpeech, downloadUpscale, downloadMatte, downloadOcr, downloadReword, downloadAsk, downloadAiDetect,
   recordCatalogDownload, partRecords, removePart, storageHeadroom, persistenceState, speechCacheBytes,
-  rewordCacheBytes,
+  rewordCacheBytes, aiDetectCacheBytes, clearAiDetectCaches,
 } from '../lib/offline-manager.ts';
 import type { OfflinePartId, PrecacheManifest, InfoManifest, DownloadProgress, PartState } from '../lib/offline-manager.ts';
 import { beginOfflineRun, cancelOfflineRun, offlineRunActive, offlineRunLine, subscribeOfflineRun } from '../lib/offline-run.ts';
@@ -174,6 +174,9 @@ interface StorageModel {
    *  filled by the 'reword' offline part OR the humanize panel's consent
    *  download, so this measures the cache, not a record (twin of `speech`). */
   reword: { bytes: number; files: number };
+  /** The AI-text detector's slice (plans/126 WP-A) - filled by the verify /
+   *  catalog panel's consent download (cache-measured, twin of `reword`). */
+  aiDetect: { bytes: number; files: number };
   measured: number;
   hasEstimate: boolean;
   usage: number | null;
@@ -1170,7 +1173,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const estP = navigator.storage?.estimate
       ? navigator.storage.estimate().catch(() => null)
       : Promise.resolve(null);
-    const [estimate, sessions, sessionSizes, blobCacheBytes, derivedBytes, allImages, imagesBytes, previews, pins, speech, upscale, matte, ocr, reword] = await Promise.all([
+    const [estimate, sessions, sessionSizes, blobCacheBytes, derivedBytes, allImages, imagesBytes, previews, pins, speech, upscale, matte, ocr, reword, aiDetect] = await Promise.all([
       estP,
       host.state.list().catch((): SessionEntry[] => []),
       host.state.sizes!().catch((): Record<string, number> => ({})),
@@ -1185,6 +1188,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       matteCacheBytes().catch(() => ({ bytes: 0, files: 0 })),
       ocrCacheBytes().catch(() => ({ bytes: 0, files: 0 })),
       rewordCacheBytes().catch(() => ({ bytes: 0, files: 0 })),
+      aiDetectCacheBytes().catch(() => ({ bytes: 0, files: 0 })),
     ]);
     const sessBytes = Object.values(sessionSizes).reduce((s, n) => s + n, 0);
     // Derived scrub proxies (lib/clip-proxy.ts) are folded into the Asset cache
@@ -1200,7 +1204,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     // would render as broken tiles. Their bytes stay in the slice either way.
     const VISUAL = new Set(['raster', 'vector', 'video', 'lottie']);
     const imageList = allImages.filter(a => a.id !== HEADSHOT_ID && VISUAL.has(a.type));
-    const measured = sessBytes + imagesBytes + cacheBytes + previews.bytes + pins.bytes + speech.bytes + upscale.bytes + matte.bytes + ocr.bytes;
+    const measured = sessBytes + imagesBytes + cacheBytes + previews.bytes + pins.bytes + speech.bytes + upscale.bytes + matte.bytes + ocr.bytes + reword.bytes + aiDetect.bytes;
     const hasEstimate = !!(estimate && estimate.usage != null);
     const usage: number | null = hasEstimate ? estimate!.usage! : null;
     const quota: number | null = (estimate && estimate.quota) || null;
@@ -1218,6 +1222,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       matte,
       ocr,
       reword,
+      aiDetect,
       measured, hasEstimate, usage, quota, overshoot, other, total,
     };
   }
@@ -1299,6 +1304,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const hasMatte = m.matte.bytes > 0;
     const hasOcr = m.ocr.bytes > 0;
     const hasReword = m.reword.bytes > 0;
+    const hasAiDetect = m.aiDetect.bytes > 0;
     return `
       <section class="store-meter" aria-label="${escape(t('Storage on this device'))}">
         <header class="store-hero">
@@ -1318,6 +1324,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           <button type="button" class="seg" data-cat="matte" style="flex-grow:0"${hasMatte ? '' : ' hidden'}></button>
           <button type="button" class="seg" data-cat="ocr" style="flex-grow:0"${hasOcr ? '' : ' hidden'}></button>
           <button type="button" class="seg" data-cat="reword" style="flex-grow:0"${hasReword ? '' : ' hidden'}></button>
+          <button type="button" class="seg" data-cat="aidetect" style="flex-grow:0"${hasAiDetect ? '' : ' hidden'}></button>
           <span class="seg seg--other" data-cat="other" style="flex-grow:0" aria-hidden="true" hidden></span>
         </div>
         <p class="visually-hidden" id="store-aria-sentence"></p>
@@ -1333,6 +1340,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           ${hasMatte ? `<li><button type="button" class="store-chip" data-cat="matte"><span class="store-chip-sw" data-cat="matte"></span><span class="store-chip-name">${t('Background removal')}</span><span class="store-chip-val" data-size="matte">-</span></button></li>` : ''}
           ${hasOcr ? `<li><button type="button" class="store-chip" data-cat="ocr"><span class="store-chip-sw" data-cat="ocr"></span><span class="store-chip-name">${t('Text recognition')}</span><span class="store-chip-val" data-size="ocr">-</span></button></li>` : ''}
           ${hasReword ? `<li><button type="button" class="store-chip" data-cat="reword"><span class="store-chip-sw" data-cat="reword"></span><span class="store-chip-name">${t('Rewriter model')}</span><span class="store-chip-val" data-size="reword">-</span></button></li>` : ''}
+          ${hasAiDetect ? `<li><button type="button" class="store-chip" data-cat="aidetect"><span class="store-chip-sw" data-cat="aidetect"></span><span class="store-chip-name">${t('AI text detector')}</span><span class="store-chip-val" data-size="aidetect">-</span></button></li>` : ''}
           ${m.hasEstimate ? `<li><span class="store-chip store-chip--other"><span class="store-chip-sw is-hatch"></span><span class="store-chip-name">${t('Other')}</span><span class="store-chip-val" data-size="other">-</span>${infoDot(t('Your profile, internal indexes, the offline app cache and storage overhead - everything not itemised above. Calculated as total used minus the measured items. Clear it with "Clear all my data" below.'))}</span></li>` : ''}
         </ul>
 
@@ -1406,6 +1414,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           ${hasReword ? `<div class="store-manage store-manage--row" data-cat="reword">
             <span class="store-manage-name">${t('Rewriter model')} ${infoDot(t('The on-device rewriter for Humanize. Removing it frees the space; it downloads again with your consent when next used.'))} <span class="storage-count" data-size-label="reword">0 KB</span></span>
             <button type="button" id="clear-reword-btn" class="btn-link-danger">${t('Remove model')}</button>
+          </div>` : ''}
+          ${hasAiDetect ? `<div class="store-manage store-manage--row" data-cat="aidetect">
+            <span class="store-manage-name">${t('AI text detector')} ${infoDot(t('The on-device detector behind the deeper AI-text check. Removing it frees the space; it downloads again with your consent when next used.'))} <span class="storage-count" data-size-label="aidetect">0 KB</span></span>
+            <button type="button" id="clear-aidetect-btn" class="btn-link-danger">${t('Remove model')}</button>
           </div>` : ''}
         </div>
 
@@ -1510,6 +1522,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         ['matte', m.matte.bytes, t('Background removal'), m.matte.bytes > 0],
         ['ocr', m.ocr.bytes, t('Text recognition'), m.ocr.bytes > 0],
         ['reword', m.reword.bytes, t('Rewriter model'), m.reword.bytes > 0],
+        ['aidetect', m.aiDetect.bytes, t('AI text detector'), m.aiDetect.bytes > 0],
       ];
       for (const [cat, bytes, label, avail] of segs) {
         const seg = bar?.querySelector<HTMLElement>(`.seg[data-cat="${cat}"]`);
@@ -1531,6 +1544,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       setText('[data-size="upscale"]', fmtBytes(m.upscale.bytes));
       setText('[data-size="matte"]', fmtBytes(m.matte.bytes));
       setText('[data-size="ocr"]', fmtBytes(m.ocr.bytes));
+      setText('[data-size="reword"]', fmtBytes(m.reword.bytes));
+      setText('[data-size="aidetect"]', fmtBytes(m.aiDetect.bytes));
       setText('[data-size="other"]', `~${fmtBytes(m.other)}`);
       setText('[data-count="sessions"]', String(m.sessions.count));
       setText('[data-size-hint="sessions"]', fmtBytes(m.sessions.bytes));
@@ -1541,6 +1556,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       setText('[data-size-label="upscale"]', fmtBytes(m.upscale.bytes));
       setText('[data-size-label="matte"]', fmtBytes(m.matte.bytes));
       setText('[data-size-label="ocr"]', fmtBytes(m.ocr.bytes));
+      setText('[data-size-label="reword"]', fmtBytes(m.reword.bytes));
+      setText('[data-size-label="aidetect"]', fmtBytes(m.aiDetect.bytes));
       const imgCount = body.querySelector('#userimg-count');
       const imgSize = body.querySelector('#userimg-size');
       if (imgCount) imgCount.textContent = `${m.images.count}`;
@@ -1737,6 +1754,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       if (ocrBtn) { await clearRegenerable(ocrBtn, () => removePart('ocr'), t('Removed text-recognition models')); return; }
       const rewordBtn = (e.target as Element).closest<HTMLButtonElement>('#clear-reword-btn');
       if (rewordBtn) { await clearRegenerable(rewordBtn, () => removePart('reword'), t('Removed the rewriter model')); return; }
+      const aiDetectBtn = (e.target as Element).closest<HTMLButtonElement>('#clear-aidetect-btn');
+      if (aiDetectBtn) { await clearRegenerable(aiDetectBtn, () => clearAiDetectCaches(), t('Removed the AI text detector')); return; }
 
       if ((e.target as Element).closest('.store-selbar-clear')) { body.querySelectorAll<HTMLInputElement>('.store-sess-check').forEach(c => { c.checked = false; }); syncSelbar(); return; }
       const selDel = (e.target as Element).closest<HTMLButtonElement>('.store-selbar-del');
@@ -2147,6 +2166,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       reword: precache?.groups.reword?.length ? sum(precache.groups.reword) + sum(precache.groups.ortHf ?? []) : 0,
       // The Ask embed model (plans/103 M1) - same shared-runtime accounting.
       ask: precache?.groups.embed?.length ? sum(precache.groups.embed) + sum(precache.groups.ortHf ?? []) : 0,
+      // The AI-text detector (plans/126 WP-A) - same shared-runtime accounting.
+      'ai-detect': precache?.groups.aiDetect?.length ? sum(precache.groups.aiDetect) + sum(precache.groups.ortHf ?? []) : 0,
     };
     // Model parts are release-versioned in IndexedDB (invalidated by their own
     // cache-version, not a manifest watermark), so they have no live manifest
@@ -2180,6 +2201,13 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         id: 'ask' as const,
         name: t('Ask matching model'),
         desc: t('The small on-device model that helps Ask Lolly match questions to the right docs section. Pull it down now (~{size}) and better matching works offline from the first question.', { size: fmtBytes(plannedBytes.ask) }),
+      }] : []),
+      // Only on builds carrying a staged detector (plans/126 WP-A) - the group
+      // is empty on builds where no model is staged.
+      ...(precache?.groups.aiDetect?.length ? [{
+        id: 'ai-detect' as const,
+        name: t('AI text detector'),
+        desc: t('The on-device model behind the deeper AI-text check on Verify and in the catalog. Pull it down now (~{size}) and the check runs offline, with no wait when you need it.', { size: fmtBytes(plannedBytes['ai-detect']) }),
       }] : []),
     ];
 
@@ -2425,6 +2453,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       ocr: !!precache && plannedBytes.ocr > 0,
       reword: !!precache && plannedBytes.reword > 0,
       ask: !!precache && plannedBytes.ask > 0,
+      'ai-detect': !!precache && plannedBytes['ai-detect'] > 0,
     };
     const isStale = (id: OfflinePartId): boolean => {
       const rec = partState[id];
@@ -2478,7 +2507,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     // sweep (hiding a multi-GB download inside one button misleads) - but the opt-in
     // checkbox below folds them in, with their combined size stated up front so it stays
     // honest. availableModelParts() filters to what THIS server actually offers.
-    const MODEL_PARTS = ['speech', 'upscale', 'matte', 'ocr', 'reword', 'ask', 'verify'] as const;
+    const MODEL_PARTS = ['speech', 'upscale', 'matte', 'ocr', 'reword', 'ask', 'ai-detect', 'verify'] as const;
     const inclModels = (): boolean => !!body.querySelector<HTMLInputElement>('#odl-incl-models')?.checked;
     const availableModelParts = (): OfflinePartId[] => MODEL_PARTS.filter(id => partAvailable[id]);
     const modelsRow = body.querySelector<HTMLElement>('#odl-models-row');
@@ -2500,7 +2529,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         modelsSizeEl.textContent = modelsRemaining ? t('about {size}', { size: fmtBytes(modelsRemaining) })
           : modelIds.length ? t('all saved') : '';
       }
-      for (const id of ['app', 'docs', 'speech', 'upscale', 'matte', 'ocr', 'reword', 'ask', 'verify', 'catalog'] as const) syncPartRow(id);
+      for (const id of ['app', 'docs', 'speech', 'upscale', 'matte', 'ocr', 'reword', 'ask', 'ai-detect', 'verify', 'catalog'] as const) syncPartRow(id);
       // A live run owns row enablement: syncPartRow reads storage state, so it
       // would re-enable rows the run just froze. This fires from async
       // re-pricing (tag chips, the recorded-scope restore) too, which is
@@ -2560,6 +2589,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         else if (id === 'speech' && precache) await downloadSpeech(precache, { signal, onProgress });
         else if (id === 'reword' && precache) await downloadReword(precache, { signal, onProgress });
         else if (id === 'ask' && precache) await downloadAsk(precache, { signal, onProgress });
+        else if (id === 'ai-detect' && precache) await downloadAiDetect(precache, { signal, onProgress });
         else if (id === 'upscale') await downloadUpscale({ signal, onProgress });
         else if (id === 'matte') await downloadMatte({ signal, onProgress });
         else if (id === 'ocr') await downloadOcr({ signal, onProgress });

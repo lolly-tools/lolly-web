@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 const STYLES_DIR = dirname(fileURLToPath(import.meta.url));            // src/styles/
 const CSS = readFileSync(join(STYLES_DIR, 'parts', 'catalog.css'), 'utf8');
 
-/** Drop /* … *​/ comments while preserving byte offsets, so any interior braces in
+/** Drop CSS block comments while preserving byte offsets, so any interior braces in
  *  the prose can't confuse the brace matcher below. */
 function stripComments(css: string): string {
   return css.replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '));

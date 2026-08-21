@@ -1,16 +1,16 @@
 /* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
    (order declared once in styles/app.css). Wrapping it means its rules keep a
-   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   fixed priority - above chrome/primitives/base, below overrides/a11y - no
    matter when Vite injects this chunk at runtime. Do not rely on load order. */
 @layer views {
-/* ─── Dashboard chrome (.plat-* / .cap-*) — shared card, section, swatch, table,
+/* ─── Dashboard chrome (.plat-* / .cap-*) - shared card, section, swatch, table,
    font, theme and device-card styles, loaded by the Dashboard view (#/d). The
    live dashboard is `.dashboard-view` (see dashboard.css); the verify view (#/valid)
    reuses the `.plat-*` chrome and `.platform-layout` (see valid.css).
    ─────────────────────────────────────────────────────────────────────────── */
 
 /* .plat-header/.plat-title/.plat-sub compose the shared .section-header
-   primitive (chips.css) — only the page-hero sizing deltas stay local. */
+   primitive (chips.css) - only the page-hero sizing deltas stay local. */
 .plat-header { margin: .5rem 0 1.85rem; }
 .plat-title { font-size: clamp(1.7rem, 3.4vw, 2.3rem); }
 .plat-sub { margin: 0 0 1rem; max-width: 62ch; font-size: calc(1rem * var(--a11y-fs)); line-height: 1.55; }
@@ -19,7 +19,7 @@
 /* .plat-note is now fully folded into components.css's `.note` family (component
    audit rec 13, finished): the border/radius went first, and its spacing, type,
    colour, background and `strong` rule were byte-identical too, so they live
-   there as well. Nothing about the class is local to this view any more — the
+   there as well. Nothing about the class is local to this view any more - the
    only .plat-note rule left in this sheet is the `code` styling further down,
    which it genuinely shares with .plat-section-desc. */
 
@@ -32,23 +32,23 @@
   .plat-header-text .plat-sub { margin-bottom: .7rem; }
 }
 
-/* Entrance cascade — ONE continuous ladder over the page's top-level nodes:
+/* Entrance cascade - ONE continuous ladder over the page's top-level nodes:
    the back pill (i=0) → the header band (i=1) → each section (i=2,3…).
    The header rides the SAME motion as the cards, so the page reveals as one
    wave instead of the old behaviour where the header snapped in at full opacity
    while only the sections faded under it (that split read as a flicker). Inner
-   cards do NOT animate independently — they ride their section's single fade,
+   cards do NOT animate independently - they ride their section's single fade,
    which kills the old parent×child double-stagger.
 
    JS (the view's mount, via armViewEnter) arms this by adding `.is-entering` to
    the view and an inline `--enter-i` index on each node, synchronously right after
-   innerHTML so the FIRST paint already has the hidden `from` state — no flash.
+   innerHTML so the FIRST paint already has the hidden `from` state - no flash.
    The class is removed once the wave finishes, so it never replays when a user
    later expands a <details> section.
 
    Gated behind `no-preference`: under reduced motion the hidden `from` state is
    never authored and `.is-entering` is never added, so content renders
-   instantly — no specificity fight with the global !important reduce rule and
+   instantly - no specificity fight with the global !important reduce rule and
    none of the "held-invisible-by-a-surviving-delay then pop" that zeroing only
    the duration would cause. (Mirrors the masonry pattern above.) */
 @media (prefers-reduced-motion: no-preference) {
@@ -63,7 +63,7 @@
 /* Deferred content (the "This device" grid + brand-asset counts on Platform) is
    filled AFTER first paint, so it would otherwise pop into an already-revealed
    section. The view adds `.plat-hydrated` in the same tick it injects the
-   content, so this opacity-only fade (no translate — the box is already in place)
+   content, so this opacity-only fade (no translate - the box is already in place)
    carries it in. No-preference gated; under reduced motion it just appears. */
 @keyframes plat-fade { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: no-preference) {
@@ -73,9 +73,9 @@
 /* Collapsible sections are profile-style cards: card chrome lives on the
    <details>, the title is its <summary>, and an SVG chevron rotates 90° on open. */
 /* Surface (background/color/radius) composes the shared .card primitive
-   (chips.css, the merged declaration); the disclosure anatomy itself — the
+   (chips.css, the merged declaration); the disclosure anatomy itself - the
    page-layout margin, plus the summary/title/chevron/body rules that used to
-   sit here below the "Collapsible sections" heading further down — composes
+   sit here below the "Collapsible sections" heading further down - composes
    the shared `.section-card` fold primitive (disclosure.css, component audit
    rec 7). Both merges keep `.plat-section*` as the live class names in
    markup (dashboard.ts) so nothing there needs to change. */
@@ -94,7 +94,7 @@
   text-transform: uppercase; letter-spacing: .07em; color: hsl(var(--muted-foreground));
 }
 /* Box + font-size/weight/padding merged into .chip--count (chips.css, byte-
-   identical to .cat-group-count) — nothing left to restate here. */
+   identical to .cat-group-count) - nothing left to restate here. */
 .plat-ramp-note { margin: -.3rem 0 .8rem; max-width: 74ch; color: hsl(var(--muted-foreground)); font-size: calc(.82rem * var(--a11y-fs)); line-height: 1.5; }
 .plat-ramp-note strong { color: hsl(var(--foreground)); }
 
@@ -121,7 +121,7 @@
 }
 .plat-swatch-chip.is-copied::after { opacity: 1; }
 .plat-swatch-chip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
-/* A small absolute-positioned overlay flag on a swatch chip — same family as
+/* A small absolute-positioned overlay flag on a swatch chip - same family as
    .chip--flag in shape (small, bold, letter-spaced label) but a different
    species (3px corner-badge radius, not a 999px pill; positioned, not inline)
    so it stays its own full recipe rather than joining that merge. */
@@ -159,21 +159,21 @@
 .plat-table td code { font-size: .85em; }
 .plat-table tr.is-default td:first-child { font-weight: 600; }
 /* Box (font-size/weight/letter-spacing/padding/radius) merged into
-   .chip--flag (chips.css) — only the inline-qualifier layout stays a local
+   .chip--flag (chips.css) - only the inline-qualifier layout stays a local
    delta; the fill (background/color) is aliased in buttons.css's .btn--primary
    list. */
 .plat-pill {
   display: inline-block; margin-left: .4rem;
   text-transform: uppercase; vertical-align: middle;
 }
-/* Informational, not a highlight — used to qualify a value (e.g. cookies are
+/* Informational, not a highlight - used to qualify a value (e.g. cookies are
    available but never set). Muted so it reads as a footnote, not a badge. */
 .plat-pill--muted {
   background: hsl(var(--muted)); color: hsl(var(--muted-foreground));
 }
 
 .plat-font-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
-/* Surface composes .card--sub (chips.css) — only the padding is a local delta. */
+/* Surface composes .card--sub (chips.css) - only the padding is a local delta. */
 .plat-font { padding: 1.1rem 1.2rem; }
 .plat-font-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: .5rem; }
 .plat-font-name { font-size: calc(1.4rem * var(--a11y-fs)); font-weight: 600; }
@@ -187,25 +187,25 @@
 .plat-kv dt { flex: 0 0 4.25rem; color: hsl(var(--muted-foreground)); }
 .plat-kv dd { margin: 0; min-width: 0; }
 
-/* Collapsible sections — every platform section is a <details>; the title is
+/* Collapsible sections - every platform section is a <details>; the title is
    its <summary>, with an SVG chevron that rotates 90° when open. The full
    disclosure anatomy (box margin, summary/title/chevron/body) now lives in
    the shared `.section-card` fold primitive (disclosure.css, component audit
    rec 7), merged onto these same `.plat-section*` class names. */
 
-/* "This device" runtime snapshot — a grid of grouped key/value cards. Cards sit
+/* "This device" runtime snapshot - a grid of grouped key/value cards. Cards sit
    at their natural height (`start`, not `stretch`) so a short card like the
    single-row System Graphics one doesn't balloon to match its row. */
 .plat-client-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 1rem; align-items: start; }
 /* Where the browser supports grid masonry, pack the columns tightly while
-   KEEPING left-to-right reading order — unlike column-count masonry, which runs
+   KEEPING left-to-right reading order - unlike column-count masonry, which runs
    top-to-bottom down each column. Falls back to the top-aligned grid above. */
 @supports (grid-template-rows: masonry) {
   .plat-client-grid { grid-template-rows: masonry; }
 }
 /* Sub-cards sit on the cleanest base background so they read as distinct panels
    nested inside the section card (which uses --card). Surface composes
-   .card--sub (chips.css) — only the padding is a local delta. */
+   .card--sub (chips.css) - only the padding is a local delta. */
 .plat-client-card { padding: 1rem 1.15rem; }
 .plat-client-title {
   display: flex; align-items: center; gap: .5rem;
@@ -236,7 +236,7 @@
 }
 
 .plat-theme-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: .85rem; }
-/* Surface composes .card--sub (chips.css) — padding + text colour are local deltas. */
+/* Surface composes .card--sub (chips.css) - padding + text colour are local deltas. */
 .plat-theme { padding: 1rem; color: hsl(var(--foreground)); }
 .plat-theme-name { font-weight: 600; text-transform: capitalize; }
 .plat-theme-dots { display: flex; gap: .35rem; margin: .85rem 0; }
@@ -248,7 +248,7 @@
 
 .plat-stats { display: flex; flex-wrap: wrap; gap: .6rem; }
 /* Box merged into .chip--stat (chips.css, [hidden] reassert folded in there
-   too) — capitalize is the only local delta left. */
+   too) - capitalize is the only local delta left. */
 .plat-stat { text-transform: capitalize; }
 .plat-stat strong { font-size: calc(1rem * var(--a11y-fs)); }
 .plat-chip {
@@ -256,7 +256,7 @@
   background: hsl(var(--secondary)); color: hsl(var(--secondary-foreground));
 }
 
-/* Capabilities (features) card list — reuses the platform chrome (.plat-*), a
+/* Capabilities (features) card list - reuses the platform chrome (.plat-*), a
    feature-card list whose feature name leads and its description follows. */
 .cap-grid { align-items: start; }
 .cap-card { display: flex; flex-direction: column; }

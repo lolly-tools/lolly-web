@@ -64,7 +64,7 @@
 .dg-del-col:focus-visible { opacity: 1; }
 .dg-del-col:hover { background: hsl(var(--destructive) / .15); color: hsl(var(--destructive)); }
 
-/* Per-row delete gutter — a real trailing flex cell so it stays aligned while the
+/* Per-row delete gutter - a real trailing flex cell so it stays aligned while the
    grid virtualizes. The × fades in on row hover; the header's corner is empty. */
 .dg-rowctl {
   box-sizing: border-box;

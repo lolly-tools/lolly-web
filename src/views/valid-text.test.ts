@@ -515,7 +515,7 @@ const LLM_PARAGRAPH =
   'comprehensive systems to garner real results across the board every single day.';
 
 test('textSignalPanel maps band/tone/rows and carries the summary', () => {
-  const p = analyzeVerifyText('hello​world a perfectly ordinary looking line of text', 'digital');
+  const p = analyzeVerifyText('hello\u200bworld a perfectly ordinary looking line of text', 'digital');
   assert.equal(p.band !== 'none', true, 'a zero-width char should register');
   assert.ok(p.rows.some((r) => r.kind === 'invisible-char' && r.tier === 'artifact'));
   assert.equal(typeof p.summary, 'string');
@@ -535,7 +535,7 @@ test('the lexicon paragraph yields a hedged style guess, tone stays info', () =>
 });
 
 test('an OCR-sourced panel is pixelSourced with no artifact rows', () => {
-  const p = analyzeVerifyText('read ​ from an image with an invisible char', 'ocr');
+  const p = analyzeVerifyText('read \u200b from an image with an invisible char', 'ocr');
   assert.equal(p.pixelSourced, true);
   assert.ok(p.rows.every((r) => r.tier !== 'artifact'));
 });
@@ -555,7 +555,7 @@ test('the lexicon paragraph produces heuristic marks and a best-guess family', (
 });
 
 test('an invisible char yields an artifact mark on the exact span', () => {
-  const p = analyzeVerifyText('hello​world and a good deal more ordinary text follows here', 'digital');
+  const p = analyzeVerifyText('hello\u200bworld and a good deal more ordinary text follows here', 'digital');
   const art = p.marks.find((m) => m.tier === 'artifact');
   assert.ok(art, 'expected an artifact mark');
   assert.equal(art?.index, 5); // the zero-width char sits between "hello" and "world"

@@ -509,7 +509,7 @@ export async function mountProjects(
     const titleName = folderId == null ? t('Projects')
       : folderId === UNCAT ? t('Uncategorised')
       : (folders.find(f => f.id === folderId)?.name || t('Projects'));
-    document.title = tRaw('{name} — Lolly', { name: titleName });
+    document.title = tRaw('{name} - Lolly', { name: titleName });
     featuredHandle?.destroy(); featuredHandle = null;  // stop the prior ribbon's rAF loop + listeners before its DOM is wiped
     searchCache = null;   // recompute matches once for this render (sort/data may have changed); the two callers below then share it
     pruneSelection();     // forget refs that vanished since the last render
@@ -542,7 +542,7 @@ export async function mountProjects(
     // First run: no folders AND no loose sessions → lead with a one-line invite explaining
     // what Projects hold, instead of a grid that's only the two "new" tiles.
     const invite = (!topFolders.length && !loose.length)
-      ? `<p class="projects-empty">${t('Your saved sessions land here — save one from any tool to start a project.')}</p>`
+      ? `<p class="projects-empty">${t('Your saved sessions land here - save one from any tool to start a project.')}</p>`
       : '';
     // Folders lead (the file-manager convention - containers first, so the structure
     // reads before the loose items), then loose creations (newest first within their
@@ -703,7 +703,7 @@ export async function mountProjects(
     const hasTiles = subfolders.length > 0 || sessions.length > 0 || images.length > 0;
     const body = hasTiles
       ? `<div class="${gridClass}">${viewMode === 'list' ? listHeadHtml() : ''}${tiles}${createFolder}${createTool}</div>`
-      : `<div class="${gridClass}">${createFolder}${createTool}</div><p class="projects-empty">${isUncat ? t('No saved sessions are uncategorised yet.') : t('This folder is empty — add a tool or a sub-folder.')}</p>`;
+      : `<div class="${gridClass}">${createFolder}${createTool}</div><p class="projects-empty">${isUncat ? t('No saved sessions are uncategorised yet.') : t('This folder is empty - add a tool or a sub-folder.')}</p>`;
 
     return shell(title, 'projects', `${ribbon}${stripSwitch}${rail}${header}${body}`, { inFolder: true });
   }
@@ -730,7 +730,7 @@ export async function mountProjects(
     // When the match set is capped, name the true total and that only a slice is shown so a
     // broad query never silently looks "complete".
     const countText = capped
-      ? t('{total} results — showing the first {shown}, refine to narrow', { total: total.toLocaleString(), shown })
+      ? t('{total} results - showing the first {shown}, refine to narrow', { total: total.toLocaleString(), shown })
       : (total === 1 ? t('1 result') : t('{n} results', { n: total }));
     const status = `<p class="projects-search-status" role="status" aria-live="polite">${tRaw('{count} for “{query}” in {scope}', { count: countText, query: escape(query), scope: escape(scope) })} · ${clearBtn}</p>`;
     const gridClass = `folder-grid projects-grid projects-search-grid${viewMode === 'list' ? ' projects-list' : ''}`;
@@ -856,7 +856,7 @@ export async function mountProjects(
     actions: [
       { id: 'render', icon: RENDER_ICON, label: () => t('Render selection'), extraClass: 'projects-render projects-bulk-render' },
       { id: 'edit', icon: EDIT_ICON, label: () => t('Edit together'), title: () => t('Open the selected sessions side by side with one combined sidebar'), hidden: () => !editableSelection() },
-      { id: 'sheet', icon: SHEET_ICON, label: () => t('Edit as sheet'), title: () => t('Open the whole selection as rows in the batch grid — no size limit'), hidden: () => !sheetableSelection() },
+      { id: 'sheet', icon: SHEET_ICON, label: () => t('Edit as sheet'), title: () => t('Open the whole selection as rows in the batch grid - no size limit'), hidden: () => !sheetableSelection() },
       { id: 'duplicate', icon: DUPLICATE_ICON, label: () => t('Duplicate'), title: () => t('Copy each selected creation beside the original'), hidden: () => ![...selected.values()].includes('session') },
       { id: 'favourite', icon: STAR_ICON, label: () => [...selected.keys()].every(r => favourites.has(r)) ? t('Unfavourite') : t('Favourite') },
       { id: 'move', icon: MOVE_ICON, label: () => t('Move to…') },

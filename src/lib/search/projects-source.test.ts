@@ -28,7 +28,7 @@ const { tokenize } = await import('./match.ts');
 const toolName = (id: string): string => (id === 'qr-code' ? 'QR Code' : id);
 const entry = { slot: 'qr-code:1', toolId: 'qr-code', label: 'Café Menu', filename: 'menu-a4' };
 
-test('haystack composes label, filename, tool name, tool id — folded', () => {
+test('haystack composes label, filename, tool name, tool id - folded', () => {
   const hay = buildSessionHaystack(entry, toolName, false);
   for (const q of ['cafe', 'menu-a4', 'qr code', 'qr-code']) {
     assert.ok(matchesHaystack(hay, tokenize(q)) > 0, `matches '${q}'`);

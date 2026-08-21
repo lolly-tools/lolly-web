@@ -1,8 +1,8 @@
 /* Cascade layer: lazy-loaded with the tool view, so it sits in the `views` layer
-   (order declared once in styles/app.css) — a fixed priority regardless of when
+   (order declared once in styles/app.css) - a fixed priority regardless of when
    Vite injects this chunk. Mirrors picker.css's wrapping. */
 @layer views {
-/* "New from template" chooser — host-owned chrome shown only on a blank fresh open. */
+/* "New from template" chooser - host-owned chrome shown only on a blank fresh open. */
 
 .tmpl-chooser-modal:empty { display: none; }
 
@@ -83,7 +83,7 @@
   padding: 16px 20px 24px;
 }
 
-/* Tag-filter chips — one row of pills (replaces the old per-category sections); "All" plus
+/* Tag-filter chips - one row of pills (replaces the old per-category sections); "All" plus
    one per category, narrowing the single grid below. */
 .tmpl-chooser-filters {
   display: flex;

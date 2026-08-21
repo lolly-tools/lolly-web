@@ -31,7 +31,7 @@ const REPO = join(SRC_DIR, '..', '..', '..');                 // repo root
 const A11Y = readFileSync(join(STYLES_DIR, 'parts', 'a11y.css'), 'utf8');
 const APP = readFileSync(join(STYLES_DIR, 'app.css'), 'utf8');
 
-/** Drop /* … *​/ comments while preserving byte offsets (so line numbers hold). */
+/** Drop CSS block comments while preserving byte offsets (so line numbers hold). */
 function stripComments(css: string): string {
   return css.replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '));
 }

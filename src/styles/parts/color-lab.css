@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 /* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
    (order declared once in styles/app.css). Wrapping it means its rules keep a
-   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   fixed priority - above chrome/primitives/base, below overrides/a11y - no
    matter when Vite injects this chunk at runtime. Do not rely on load order. */
 @layer views {
 /* Colour Lab (#/lab, views/color-lab.ts).
 
    A report, not a workspace: one column that scrolls, no stage, no sidebar. The
-   page's own scrollbar is the only one — nothing here is an inner scroller, so
+   page's own scrollbar is the only one - nothing here is an inner scroller, so
    Cmd-F, print and "scroll to the bottom" all behave the way a document does. */
 
 .lab {
@@ -25,14 +25,14 @@
 
 /* The page furniture row: back pill on the left, with the Home + theme capsule
    packed right beside it (Home immediately to the right of Back, like every other
-   view). STICKY, not fixed — and that is a fix, not a preference.
+   view). STICKY, not fixed - and that is a fix, not a preference.
 
    Both used to be out of flow (.tools-home.home-full is `position: fixed` in
    tool.css; the capsule matched it) over a `.lab-back` that reserved 2rem. Out of
    flow they overlaid live controls for the WHOLE length of the report and won the
    hit-test against them: measured, `elementFromPoint(120, 28)` returned the back
    pill rather than the picker's value field under it, so ~95px of a 335px control
-   could not be pressed while the page sat near the top — and the pill's part-opaque
+   could not be pressed while the page sat near the top - and the pill's part-opaque
    glass put its label on top of chart ink.
 
    Sticky keeps every property that made floating attractive (the theme switch stays
@@ -40,7 +40,7 @@
    a colour READS) and drops the one that broke: the row occupies real height, so
    nothing is ever underneath it unseen, and the strip is opaque, so content scrolls
    UNDER the bar rather than through it. `position: static` beats tool.css's fixed
-   rule on specificity (0,3,0 vs 0,2,0) rather than on load order — both sheets are
+   rule on specificity (0,3,0 vs 0,2,0) rather than on load order - both sheets are
    in the `views` layer, so order between two lazy chunks is not something to rely on. */
 .lab-back {
   position: sticky;
@@ -61,7 +61,7 @@
 .lab-back .tools-home.home-full { position: static; }
 .lab-chrome { position: static; }
 
-/* The capsule the theme toggle sits in — modelled on the canvas zoom HUD
+/* The capsule the theme toggle sits in - modelled on the canvas zoom HUD
    (.stage-nav in editor.css), which this view cannot borrow because that file is
    only loaded on the editor routes. Same idiom: a soft-bordered pill of 26px
    icon-only buttons that light up on hover. Room for a second control later.
@@ -160,7 +160,7 @@
 
 /* ── The subject: swatch, any-value field, and the real picker ─────────────
    Three columns on a wide screen, stacked on a narrow one. The picker is the
-   shell's own mountColorField, so it brings its own rings and slider styling —
+   shell's own mountColorField, so it brings its own rings and slider styling -
    nothing here restyles it, only gives it room. */
 .lab-subject {
   display: grid;
@@ -168,7 +168,7 @@
      the brand palette on the right.
 
      As three columns the swatch had about a quarter of the page, and it holds
-     values like `color(display-p3 0.390131 0.780583 0.903738)` — which wrapped over
+     values like `color(display-p3 0.390131 0.780583 0.903738)` - which wrapped over
      three lines. Stacking gives the swatch AND the palette roughly double the
      width and costs only vertical space, which a scrolling report has to spare.
      Fractions rather than minmax floors so the row grows with the page instead of
@@ -214,7 +214,7 @@
   overflow-wrap: anywhere;
 }
 
-/* The alternate expressions. Quieter than the authored one — they are the same
+/* The alternate expressions. Quieter than the authored one - they are the same
    colour said differently, not competing values. */
 .lab-sw-alts {
   list-style: none;
@@ -234,7 +234,7 @@
   align-items: baseline;
   font-size: clamp(0.6rem, 0.7cqw + 0.42rem, 0.72rem);
   /* `anywhere` and nothing fighting it. A `white-space: nowrap` used to sit here to
-     get "one line each now there is width for it" — but nowrap defeats its own
+     get "one line each now there is width for it" - but nowrap defeats its own
      overflow-wrap, and where the width was NOT there the value simply left the page:
      measured 71px of horizontal document scroll at 660px wide and 47px at 720px,
      from `color(display-p3 0.390131 0.780583 0.903738)` in this list. The band was
@@ -269,8 +269,8 @@
    chrome buttons where that never showed; here every host is a block.
 
    So the Lab caps its own: wrapped at every width, never wider than the phone
-   case allows. The proper fix belongs in the primitive — a bubble nobody is
-   looking at should be `display: none` and out of layout entirely — and is
+   case allows. The proper fix belongs in the primitive - a bubble nobody is
+   looking at should be `display: none` and out of layout entirely - and is
    written up as a handoff rather than reached for from here. */
 .lab [data-tip]::after {
   white-space: normal;
@@ -280,7 +280,7 @@
   text-align: center;
 }
 /* …and a pill at the END of a segmented row sits close enough to the page edge that
-   even a capped bubble runs off it — measured 23px of document scroll at 390px wide
+   even a capped bubble runs off it - measured 23px of document scroll at 390px wide
    and 6px at 840px, both from the blend row's last pill alone. Anchored to the row's
    edge rather than the pill's centre it travels LEFT instead, which costs nothing:
    a page cannot be scrolled that way. */
@@ -321,7 +321,7 @@
 
 .lab-picker { min-width: 0; }
 
-/* ── Brand rail — a third way IN, so it sits inside step 1 ─────────────────── */
+/* ── Brand rail - a third way IN, so it sits inside step 1 ─────────────────── */
 .lab-brand-rail { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.35rem; }
 .lab-brand { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .lab-brand-sw {
@@ -332,7 +332,7 @@
   border: 0;
   border-radius: calc(var(--radius) * 1);
   /* Hex first as the universally-parseable fallback, then the token's authored
-     value — a browser that understands it renders the real wide-gamut colour and
+     value - a browser that understands it renders the real wide-gamut colour and
      does its own per-display mapping. */
   background: var(--sw);
   background: var(--sw-real, var(--sw));
@@ -346,7 +346,7 @@
   outline: none;
 }
 /* Out-of-gamut indicator: a corner dot, NOT a border on the rounded tile (house
-   rule). Amber for "heads up, this clips" rather than --destructive — a colour
+   rule). Amber for "heads up, this clips" rather than --destructive - a colour
    the current target cannot hold is a caution, not an error. The card-coloured
    halo lifts the dot off whatever swatch colour sits behind it; the full verdict
    (target, clipped hex, ΔE) rides the tile's title/aria-label. Carries no glyph,
@@ -402,10 +402,10 @@
 
 /* The gamut card wears its own verdict as an accent stripe, and the headroom
    number is coloured too. SEEING THE BOUNDS is the point of the card, so the
-   signalling stays — a colour that leaves sRGB should be visibly different from
+   signalling stays - a colour that leaves sRGB should be visibly different from
    one that doesn't.
    The line to hold: caution, never block, and never scold. A colour outside sRGB
-   is frequently the intent — a vivid colour modern displays genuinely reach — and
+   is frequently the intent - a vivid colour modern displays genuinely reach - and
    for print the right target depends on the technique and profile in play rather
    than on sRGB as a default yardstick. So this stripe reports where you are; it
    does not tell you that you are wrong, and nothing here refuses a value. */
@@ -429,11 +429,11 @@
 .lab-ceil-name { color: hsl(var(--muted-foreground)); }
 .lab-ceil-val { font-weight: 600; }
 .lab-ceil-gain { font-weight: 400; color: hsl(var(--muted-foreground)); font-size: calc(0.78rem * var(--a11y-fs)); }
-/* A ceiling this colour is already beyond — struck through so the bound is
+/* A ceiling this colour is already beyond - struck through so the bound is
    unmistakable at a glance. It marks a boundary crossed, not a value rejected. */
 .lab-ceil.is-past .lab-ceil-val { text-decoration: line-through; opacity: 0.55; }
 
-/* The press card — MEASURED numbers, so it wears the profile's own name and
+/* The press card - MEASURED numbers, so it wears the profile's own name and
    nothing derived or approximate is allowed into it. The stripe follows the same
    rule as the gamut card's: it reports where you are, it does not scold. */
 .lab-press[data-state="in"] { box-shadow: 0 0 0 2px oklch(0.62 0.16 150); }
@@ -456,7 +456,7 @@
 }
 .lab-press-k { color: hsl(var(--muted-foreground)); }
 .lab-press-v { font-weight: 600; display: inline-flex; align-items: center; gap: 0.4rem; }
-/* The substrate, painted in CSS lab() — the space the number beside it is in. */
+/* The substrate, painted in CSS lab() - the space the number beside it is in. */
 .lab-press-chip {
   width: 0.85rem;
   height: 0.85rem;
@@ -510,7 +510,7 @@
 /* ── Press conditions ──────────────────────────────────────────────────────
    The bridge between what a Print PDF DECLARES and what the Lab can EVALUATE.
    Declaring needs no file; comparing needs the profile's measurements. The two
-   states are carried by weight and a dot, never by a border — and a condition with
+   states are carried by weight and a dot, never by a border - and a condition with
    no profile is not an error, so nothing here is red. */
 .labp-conds { margin-top: 1rem; }
 .labp-conds-h {
@@ -523,7 +523,7 @@
 }
 .labp-conds-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; }
 .labp-cond { display: grid; }
-/* The whole row is the control — a real <button>, so it is focusable, Enter/Space
+/* The whole row is the control - a real <button>, so it is focusable, Enter/Space
    activated and announced with its own action. Solid tint, never a dashed border:
    this is not a drop area. */
 .labp-cond-btn {
@@ -676,7 +676,7 @@
   gap: 0.5rem 0.9rem;
 }
 .lab-target .lab-limit { flex: 1 1 20rem; }
-/* The row is a `.field-toggle` and the box a `.field-check` — the ONE form-control
+/* The row is a `.field-toggle` and the box a `.field-check` - the ONE form-control
    recipe (styles/parts/fields.css). It was a bare `<input type=checkbox>`, which the
    UA drew at 13×13 and which therefore missed the recipe's coarse-pointer bump to
    20px. This rule is left with only what is specific to sitting in the target row. */
@@ -686,23 +686,23 @@
   white-space: nowrap;
 }
 
-/* Full width above the charts — it governs the whole row, so it spans it. The
+/* Full width above the charts - it governs the whole row, so it spans it. The
    shared segmented control is normally content-width; these options split the
    space evenly instead.
    Flex rather than a fixed 3-column grid: the row carries the three display
    gamuts, then AT MOST ONE press-profile pill, then the `+` that opens the
-   profile panel — so the count is 3, 4 or 5 and only the first four share the
+   profile panel - so the count is 3, 4 or 5 and only the first four share the
    width. `+` is a fixed-width affordance, not a fourth option. */
 /* Styled as the app's own view tabs (`.view-toggle`, parts/projects.css): a
    trough holding borderless pills, rather than a row of separately outlined
-   buttons. Same control, same look — this row does for gamuts what that one does
+   buttons. Same control, same look - this row does for gamuts what that one does
    for views, and the reader has already learned to read it. The trough also lets
    the row be TALLER without four heavy outlines: by this point down the page this
    is the focal control, and the previous height was set by a toolbar it does not
    sit in.
    Kept as `.lab-limit` overrides rather than by adopting `.view-toggle`'s classes
    because that control is a fixed, centred nav of links and this one is a
-   full-width group of buttons — sharing the class would drag its `position:
+   full-width group of buttons - sharing the class would drag its `position:
    fixed` wrapper and mobile icon rules along with the paint. */
 .lab-seg {
   display: flex;
@@ -724,7 +724,7 @@
    section; the blend rows sit beside a picker and a ramp and would shout over
    them at the same size. */
 .lab-limit .view-seg-btn { padding-block: 0.62rem; }
-/* The trough IS the unpressed surface — a fill per pill would draw a second box
+/* The trough IS the unpressed surface - a fill per pill would draw a second box
    inside it. Left transparent rather than removed, so the pill still has a hover
    and focus surface of its own. */
 .lab-seg .view-seg-btn:not([aria-pressed="true"]) { background: transparent; }
@@ -734,7 +734,7 @@
 }
 /* Jelly effects: the same row as one <jelly-segmented>. The control paints its
    own track, so the trough above is left to be the surface (transparent track)
-   exactly as the nav pill does — otherwise a canvas fill sits inside a CSS box
+   exactly as the nav pill does - otherwise a canvas fill sits inside a CSS box
    and the two edges disagree by a pixel. */
 .lab-seg .lab-limit-seg {
   flex: 1 1 0;
@@ -767,18 +767,18 @@
 }
 .lab-limit .view-seg-btn.lab-limit-add { flex: 0 0 auto; font-weight: 700; }
 
-/* The solid's two embeddings — a compact pair under the figure's own caption,
+/* The solid's two embeddings - a compact pair under the figure's own caption,
    not a page-level control: it changes one picture. */
 .lab-embed { display: flex; margin: 0.15rem 0; }
 .lab-embed .view-seg-btn { flex: 1 1 0; font-size: calc(0.75rem * var(--a11y-fs)); padding-block: 0.3rem; }
 
-/* As many charts per row as fit at a readable size — 2-up on a laptop, all four
+/* As many charts per row as fit at a readable size - 2-up on a laptop, all four
    in a row on a wide display. A 20rem floor is about where a plot stops being
    worth reading; `min(…, 100%)` keeps it from overflowing a narrow screen, where
    auto-fit would otherwise hold the track wider than its container.
    A second `.lab-charts` block used to follow this one and dead-override it with a
    hard `1fr 1fr 1fr 1fr` plus two width breakpoints. Same specificity, later in the
-   file, so it always won — and four fixed columns crushed every plot to 122×76 CSS
+   file, so it always won - and four fixed columns crushed every plot to 122×76 CSS
    px on a 840px window, which are the charts this whole view exists for. The loser
    is deleted rather than out-specified: two rules for one grid is how this happened. */
 .lab-charts {
@@ -872,7 +872,7 @@
 
 /* The 3D solid. It has no axis gutter or legend, so rather than matching the 2D
    plots' aspect ratio and leaving a gap below, it GROWS into the space they spend
-   on those — the chart gets bigger and the captions still align. */
+   on those - the chart gets bigger and the captions still align. */
 .lab-solid {
   display: block;
   width: 100%;
@@ -884,7 +884,7 @@
   cursor: grab;
   /* `pan-y`, exactly as the 2D plots do (lib/oklch-slice.css), and for the same
      reason: this canvas takes ~60% of a phone's viewport height, so with
-     `touch-action: none` a vertical swipe anywhere on it moved NOTHING — the page
+     `touch-action: none` a vertical swipe anywhere on it moved NOTHING - the page
      was frozen and the solid does not turn on vertical travel alone. The rotation
      survives because the gesture is axis-locked in JS (see the pointerdown handler
      in views/color-lab.ts): mostly-sideways travel claims the pointer and turns the
@@ -899,7 +899,7 @@
 /* The blend, as two columns: the far-end PICKER beside the ramp it is changing.
    Stacked, the expanded picker (tab strip, four dials, three channel sliders, the
    alpha rail) is ~554px tall, which pushed the style pills, the stop slider and
-   every swatch about 600px down the page — so you could not see the ramp move while
+   every swatch about 600px down the page - so you could not see the ramp move while
    you picked, which is the entire point of picking here. Side by side you can.
 
    The picker column is capped rather than fractional: it is a fixed-size control, so
@@ -910,7 +910,7 @@
   gap: 1rem 1.5rem;
   align-items: start;
 }
-/* One column when there is not room for two side by side — below this the picker
+/* One column when there is not room for two side by side - below this the picker
    and the ramp would each be too narrow to read, so they stack in source order (pick
    first, then the result). 48rem is where 18rem + gutter + 18rem stops fitting inside
    the page's own padding. */
@@ -952,14 +952,14 @@
 
 /* The stop count wears the channel sliders' skin (.gsl, in lib/oklch-slice.css)
    so the two read as the same kind of control, and its rail carries the blend
-   itself — the continuous gradient the stops are sampling from. That rail is why
+   itself - the continuous gradient the stops are sampling from. That rail is why
    there is no separate preview strip: one gradient, with the thumb on it. */
 .lab-mix { margin-bottom: 0.7rem; }
 .lab-mix .gsl-key { font-variant-numeric: normal; }
 
 /* ── Readability: APCA leads, WCAG follows ─────────────────────────────────
-   The order is the hierarchy. APCA models polarity — which WCAG 2's ratio cannot
-   express, since it scores dark-on-light and light-on-dark identically — so the Lc
+   The order is the hierarchy. APCA models polarity - which WCAG 2's ratio cannot
+   express, since it scores dark-on-light and light-on-dark identically - so the Lc
    is the number to design against and the ratio is the one to report. Hence the Lc
    is set large and the ratio sits under it at body size. */
 .lab-apca {
@@ -1022,7 +1022,7 @@
 }
 .lab-step:hover, .lab-step:focus-visible { transform: translateY(-2px); outline: none; }
 .lab-step:focus-visible { box-shadow: inset 0 0 0 1px hsl(0 0% 0% / 0.12), 0 0 0 3px hsl(var(--primary) / 0.45); }
-/* OKLCH leads, hex supports — hex is sRGB-only, the weakest way to name a colour
+/* OKLCH leads, hex supports - hex is sRGB-only, the weakest way to name a colour
    on a page about colour spaces. */
 /* Each value line is its own copy target, so it needs to look clickable without
    turning the step into a wall of buttons. */
@@ -1107,8 +1107,8 @@
   }
 
   /* ── The notation table becomes a row PER SPACE ──────────────────────────
-     Four columns do not fit in 390px, and the previous answer — one inner
-     `overflow-x` scroller with `nowrap` — kept the body from widening (good) at the
+     Four columns do not fit in 390px, and the previous answer - one inner
+     `overflow-x` scroller with `nowrap` - kept the body from widening (good) at the
      cost of putting the step's primary action off-screen: the Copy button sat at
      x 557–604 in a 390px viewport, with nothing on the page saying the table
      scrolled sideways at all. So it stops being a table on a phone: the space name
@@ -1239,7 +1239,7 @@ tbody .lab-mx-h .lab-mx-name { display: inline-block; vertical-align: middle; }
 .lab-mx-corner { min-width: 1.5rem; }
 /* A cell: the pairing painted as itself (bg = column, ink = row), the |Lc| centred,
    and a fixed-scale band strip along the bottom keyed to the APCA use-band. The
-   strip is a data cue, not a card border — no accent colour, no rounded pill. */
+   strip is a data cue, not a card border - no accent colour, no rounded pill. */
 .lab-mx-cell {
   position: relative;
   min-width: 2.4rem;
@@ -1260,7 +1260,7 @@ tbody .lab-mx-h .lab-mx-name { display: inline-block; vertical-align: middle; }
   border-bottom-right-radius: 4px;
   background: var(--mx-band, transparent);
 }
-/* The band scale — six fixed steps read off the existing APCA bands, not the brand
+/* The band scale - six fixed steps read off the existing APCA bands, not the brand
    accent, so the cue means the same thing in every brand. High to low. */
 .lab-mx-cell[data-use="body-preferred"] { --mx-band: hsl(146 60% 42%); }
 .lab-mx-cell[data-use="body-minimum"]   { --mx-band: hsl(122 46% 46%); }
@@ -1279,7 +1279,7 @@ tbody .lab-mx-h .lab-mx-name { display: inline-block; vertical-align: middle; }
    The second way into the report: a colour, or an image plotted in the solid.
    The control sits in the solid's own caption because that is where its result
    appears. */
-/* The image entry is a WAY IN to the report, not one more caption button — Andy:
+/* The image entry is a WAY IN to the report, not one more caption button - Andy:
    "make the plot an image feature more prominent". So it gets a full-width card
    with its own glyph and a line saying what it does, while Clear stays a quiet
    pill beside it: one is an invitation, the other is an undo. */
@@ -1320,7 +1320,7 @@ tbody .lab-mx-h .lab-mx-name { display: inline-block; vertical-align: middle; }
   line-height: 1.35;
   color: hsl(var(--muted-foreground));
 }
-/* The file input is `hidden`, so the LABEL carries the focus ring — without this
+/* The file input is `hidden`, so the LABEL carries the focus ring - without this
    a keyboard user gets no indication the control is focused at all. */
 .lab-cloud-add:hover { border-color: hsl(var(--primary)); background: hsl(var(--primary) / 0.12); }
 .lab-cloud-clear {
@@ -1354,8 +1354,8 @@ tbody .lab-mx-h .lab-mx-name { display: inline-block; vertical-align: middle; }
 .lab-pop-btn:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
 .lab-pop-btn[aria-pressed="true"] { border-color: hsl(var(--primary)); color: hsl(var(--primary)); }
 .lab-pop-btn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 1px; }
-/* Inside the panel the figure's own pop button is redundant — the panel's bar
-   already carries fullscreen and put-back — and two ⤢ glyphs one above the other
+/* Inside the panel the figure's own pop button is redundant - the panel's bar
+   already carries fullscreen and put-back - and two ⤢ glyphs one above the other
    read as two different actions. */
 .floatp .lab-pop-btn { display: none; }
 /* The solid's caption head is a plain stack; give its new title row the same
@@ -1379,13 +1379,13 @@ tbody .lab-mx-h .lab-mx-name { display: inline-block; vertical-align: middle; }
    turn-only control and a pointer cursor would promise a pick that does nothing. */
 .lab-chart--solid.has-cloud .lab-solid { cursor: crosshair; }
 
-/* ── "This screen" — the device cards at the foot of the page ──────────────
+/* ── "This screen" - the device cards at the foot of the page ──────────────
    The cards themselves are the Dashboard's (.plat-client-* in platform.css,
    rendered by lib/device-info.ts), imported unchanged so the two readouts look
    the same as well as saying the same thing. Only the block around them is
    local: it is the page's colophon rather than a sixth step, so it is quieter
    than the numbered blocks above and separated from them by a rule.
-   The grid's own floor is 290px in platform.css — three cards side by side on a
+   The grid's own floor is 290px in platform.css - three cards side by side on a
    laptop, stacking themselves on a phone; nothing to restate here. */
 .lab-device {
   margin-top: 0.5rem;
@@ -1409,7 +1409,7 @@ tbody .lab-mx-h .lab-mx-name { display: inline-block; vertical-align: middle; }
 /* ── Vector (SVG) stills: the single-solid snapshot and the gamut comparison ──
    Diagnostics that fold away. The live turntable is the canvas above; these are
    still, self-contained vector images. No dashed borders (drop-zones only) and no
-   accent-coloured border on the rounded panels (house rules) — a quiet top rule
+   accent-coloured border on the rounded panels (house rules) - a quiet top rule
    is all the separation they need. */
 .lab-vecsnap { margin-top: 0.6rem; }
 .lab-compare {

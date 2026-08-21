@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 /* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer (order
-   declared once in styles/app.css), exactly like tray.css and dropzone.css — so
+   declared once in styles/app.css), exactly like tray.css and dropzone.css - so
    its rules keep a fixed priority (above chrome/primitives/base, below
    overrides/a11y) no matter when Vite injects this chunk. Do not rely on load
    order. */
@@ -18,7 +18,7 @@
  * does NOT: it is the measurement, and a preference must not silently move the
  * thing being measured. The person comparing faces has a slider for exactly this.
  *
- * SEPARATION is a full uniform border on theme tokens plus the card background —
+ * SEPARATION is a full uniform border on theme tokens plus the card background -
  * never a single accent edge on a rounded card. The one dashed border in this
  * sheet is `.tycmp-drop`, which is a drop area; dashed means "drop here" and
  * nothing else.
@@ -95,7 +95,7 @@
   font-size: calc(13.5px * var(--a11y-fs));
 }
 /* The only way to take a card off the stage by pointer, and on a phone every
-   card carries one at the top-right — so it gets a real touch target. The box is
+   card carries one at the top-right - so it gets a real touch target. The box is
    32px (it has to stay small enough not to crowd the family name beside it) and
    the ::after carries the rest: `inset: calc((44px - 100%) / -2)` resolves
    against the button's own padding box, so the hit area is 44×44 and grows with
@@ -122,7 +122,7 @@
 .tycmp-x svg { width: calc(14px * var(--a11y-fs)); height: calc(14px * var(--a11y-fs)); }
 
 /* The card is programmatically focusable (tabindex="-1") so a repaint can hand
-   the keyboard back to it rather than to its Remove — it must show where it is
+   the keyboard back to it rather than to its Remove - it must show where it is
    when that happens, and never draw a ring on a plain click. */
 .tycmp-card:focus { outline: none; }
 .tycmp-card:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
@@ -137,7 +137,7 @@
 }
 
 /* The measurement. Shared size, no a11y multiplier (see the sheet note), and it
-   wraps rather than clipping — a face is judged on its shapes, and a cut-off
+   wraps rather than clipping - a face is judged on its shapes, and a cut-off
    line hides half of them. `word-break` guards a single long word typed into the
    specimen field from pushing the grid wider than the room. */
 .tycmp-specimen {
@@ -163,12 +163,12 @@
 
 .tycmp-chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 0; padding: 0; list-style: none; }
 /* The chips are the honesty, and the longest of them are the licence sentences
-   ("Licence flags not readable in this format", "Embedding not permitted") —
+   ("Licence flags not readable in this format", "Embedding not permitted") -
    which is exactly the text a fixed max-width would cut in half. Nothing else in
    the stage states these facts, and a truncated one is worse than a long one, so
    a chip WRAPS instead: no nowrap, no ellipsis, and the only limit is the card
    it sits in. (The old 12rem cap did not track --a11y-fs either, so large text
-   clipped strictly more of the sentence — the pref made the problem worse.) */
+   clipped strictly more of the sentence - the pref made the problem worse.) */
 .tycmp-chip {
   padding: 1px 7px;
   border: 1px solid hsl(var(--border));
@@ -222,7 +222,7 @@
 .tycmp-drop:focus-within { border-color: hsl(var(--primary) / .55); color: hsl(var(--foreground)); }
 .tycmp-drop:focus-within { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 .tycmp-drop.is-dragover { border-color: hsl(var(--primary)); background: hsl(var(--primary) / .08); color: hsl(var(--foreground)); }
-/* At the cap the zone stays VISIBLE and keeps its focus ring — it is not
+/* At the cap the zone stays VISIBLE and keeps its focus ring - it is not
    disabled, it is full, and the message line says which. A drop while full is
    refused with a sentence rather than swallowed by pointer-events: none. */
 .tycmp-drop.is-full { opacity: .6; }

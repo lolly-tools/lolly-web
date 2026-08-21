@@ -81,7 +81,7 @@ export function frameToBlob(frame: MatteFrame, fmt: OutFormat): Promise<{ blob: 
 export function matteAssetIds(sourceName: string, now: number): { id: string; name: string } {
   const base = sourceName.replace(/\.[a-z0-9]+$/i, '');
   const slug = base.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
-  return { id: `user/matte/${now}-${slug || 'cutout'}`, name: tRaw('{name} — cutout', { name: base || t('image') }) };
+  return { id: `user/matte/${now}-${slug || 'cutout'}`, name: tRaw('{name} - cutout', { name: base || t('image') }) };
 }
 
 /** A human, actionable message for a failed matte run - never the raw runtime

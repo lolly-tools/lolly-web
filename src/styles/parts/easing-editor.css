@@ -1,5 +1,5 @@
 /* Cascade layer: this lazy-loaded sheet sits in the `views` layer (order declared
-   once in styles/app.css) — same reasoning as instance-sheet.css. It is imported
+   once in styles/app.css) - same reasoning as instance-sheet.css. It is imported
    directly by components/easing-editor.ts rather than through app.css's static
    list, so wrapping pins its priority whenever Vite injects the chunk. */
 @layer views {
@@ -8,7 +8,7 @@
  * The cubic-bezier curve editor (components/easing-editor.ts).
  *
  * The readout is a shared `.field-row`/`.field-label`/`.field-input` (parts/fields.css
- * owns that look) — nothing about padding, radius or shadow is restated here. What is
+ * owns that look) - nothing about padding, radius or shadow is restated here. What is
  * here is the plot: its own grid, curve and handles, which no other control has.
  *
  * Every line is SOLID. Dashed strokes mean "drop something here" everywhere else in
@@ -58,7 +58,7 @@
 .ease-ed-handle:hover { fill: hsl(var(--primary) / 0.25); }
 .ease-ed-handle:active { cursor: grabbing; }
 /* :focus-visible alone loses the ring on a pointer-then-keyboard handoff, which is
-   exactly how these are used — grab one, then fine-tune it with the arrows. */
+   exactly how these are used - grab one, then fine-tune it with the arrows. */
 .ease-ed-handle:focus {
   outline: none;
   stroke: hsl(var(--ring));

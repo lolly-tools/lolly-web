@@ -2,10 +2,10 @@
    styles/app.css), so its rules keep a fixed priority regardless of when Vite injects
    the chunk. Do not rely on load order. */
 @layer views {
-/* ─── Deck Builder — on-canvas editor overlay (render.layout:'deck') ──────────
+/* ─── Deck Builder - on-canvas editor overlay (render.layout:'deck') ──────────
    Mounted into the stage subtree by deck-editor.ts, OVER the live #tool-canvas, so it
    survives the canvas's innerHTML repaint. The 'deck' layout keeps the input sidebar, so
-   this overlay only decorates the canvas — it must never block pointer events meant for
+   this overlay only decorates the canvas - it must never block pointer events meant for
    the canvas underneath (interactive children opt back in with pointer-events:auto). */
 
 .deck-editor {
@@ -16,7 +16,7 @@
   overflow: visible;
 }
 
-/* ── Filmstrip (pagination) — a docked HUD at the bottom of the stage ──────── */
+/* ── Filmstrip (pagination) - a docked HUD at the bottom of the stage ──────── */
 .deck-strip {
   pointer-events: auto;
   position: absolute;
@@ -86,7 +86,7 @@
 
 /* ── Thumbnail ─────────────────────────────────────────────────────────────
    A data-driven mini-preview: the slide's background colour, its first image (if any),
-   and its title — enough to recognise each slide without rendering the full deck. */
+   and its title - enough to recognise each slide without rendering the full deck. */
 .deck-thumb {
   flex: 0 0 auto;
   position: relative;
@@ -102,7 +102,7 @@
   overflow: hidden;
   transition: border-color 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
 }
-/* Active slide: a prominent ring + slight lift so the current thumbnail clearly stands out —
+/* Active slide: a prominent ring + slight lift so the current thumbnail clearly stands out -
    border/ring only, never a tint over the face, so the mini-render stays colour-accurate. */
 .deck-thumb.is-active {
   border-color: hsl(var(--primary, 231 60% 55%));
@@ -112,7 +112,7 @@
 }
 .deck-thumb:hover:not(.is-active) { border-color: hsl(var(--border, 220 13% 70%)); transform: translateY(-1px); }
 
-/* ── Faithful mini-slide — mirrors the tool's .sl-slide structure + .sl-l-* layouts at
+/* ── Faithful mini-slide - mirrors the tool's .sl-slide structure + .sl-l-* layouts at
       thumbnail scale (px units, since the thumb is a fixed size). Background + ink colour
       are set inline from the slide data. ────────────────────────────────────────────── */
 .deck-thumb__slide {
@@ -160,7 +160,7 @@
 .deck-thumb__slot.is-filled { background: none; }
 .deck-thumb__slot-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 
-/* Per-layout grid templates — the same shapes as the tool's .sl-l-* rules. */
+/* Per-layout grid templates - the same shapes as the tool's .sl-l-* rules. */
 .deck-thumb__slide[data-layout="title"] { justify-content: center; align-items: center; text-align: center; }
 .deck-thumb__slide[data-layout="title"] .deck-thumb__t-title { font-size: 10px; -webkit-line-clamp: 3; }
 .deck-thumb__slide[data-layout="full"], .deck-thumb__slide[data-layout="hero"] { padding: 0; gap: 0; }
@@ -273,7 +273,7 @@
   font-size: calc(0.78rem * var(--a11y-fs));
   color: hsl(var(--destructive, 0 70% 45%));
 }
-/* Drag-a-deck-file feedback — mirrors the app's dropzone affordance. */
+/* Drag-a-deck-file feedback - mirrors the app's dropzone affordance. */
 .deck-load.is-dragover {
   border-color: hsl(var(--primary, 231 60% 55%));
   background: color-mix(in oklab, hsl(var(--primary, 231 60% 55%)) 8%, hsl(var(--background, 0 0% 100%)));
@@ -298,7 +298,7 @@
 }
 .deck-load__btn--go:hover { filter: brightness(1.05); }
 
-/* ── Slide toolbar (step 7) — deck theme (global) + per-slide theme/logo/mode + Edit text.
+/* ── Slide toolbar (step 7) - deck theme (global) + per-slide theme/logo/mode + Edit text.
       A docked HUD at the TOP of the stage (the filmstrip owns the bottom). ─────────────── */
 .deck-bar {
   pointer-events: auto;
@@ -334,7 +334,7 @@
   border-radius: 7px;
 }
 .deck-bar__field:hover { background: color-mix(in oklab, hsl(var(--primary, 231 60% 55%)) 10%, transparent); }
-/* The icon replaces the old text caption — the control's meaning rides in the field's `title`
+/* The icon replaces the old text caption - the control's meaning rides in the field's `title`
    tooltip and the select's aria-label, so the bar stays uncluttered without losing clarity. */
 .deck-bar__ico {
   display: inline-flex;
@@ -354,7 +354,7 @@
 }
 .deck-bar__sel:hover { background: hsl(var(--background, 0 0% 100%) / 0.6); }
 .deck-bar__sel:focus-visible { outline: 2px solid hsl(var(--ring, 231 60% 55%)); outline-offset: 2px; }
-/* Icon action button in the bar (Edit text) — square, ghost, matches .deck-free__btn--icon. */
+/* Icon action button in the bar (Edit text) - square, ghost, matches .deck-free__btn--icon. */
 .deck-bar__btn {
   display: inline-flex;
   align-items: center;
@@ -373,7 +373,7 @@
 .deck-bar__btn svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); display: block; }
 
 /* ── Inline layout-slide text editing (step 5) ──────────────────────────────────
-   The REAL rendered `.sl-head` / `.sl-body` in the tool canvas become contenteditable —
+   The REAL rendered `.sl-head` / `.sl-body` in the tool canvas become contenteditable -
    you type on the slide itself, at its true size/position, no popup. These rules only
    dress the editing state: a soft ring so it's clear what's live, and a text caret. The
    tool's own CSS still owns the type. */
@@ -386,12 +386,12 @@
 }
 .sl-head.is-editing { outline-offset: 6px; }
 
-/* The floating format bar — bold / italic / heading / lists — while inline editing. Styled
+/* The floating format bar - bold / italic / heading / lists - while inline editing. Styled
    like the freeform toolbar (.deck-free__grp) so the tool's two editing surfaces match. */
 .deck-fmt {
   pointer-events: auto;
   position: absolute;
-  z-index: 14;   /* above the top bar (z 12) — it's the active inline-edit toolbar */
+  z-index: 14;   /* above the top bar (z 12) - it's the active inline-edit toolbar */
   display: flex;
   gap: 2px;
   padding: 3px;
@@ -404,7 +404,7 @@
   font: inherit;
   font-size: calc(0.82rem * var(--a11y-fs));
   font-weight: 600;
-  /* B/I/U carry their letter as TYPE, which already scales — the box has to
+  /* B/I/U carry their letter as TYPE, which already scales - the box has to
      follow it on the icon scale or the letter clips at the first factor up. */
   min-width: calc(26px * var(--a11y-fs));
   height: calc(26px * var(--a11y-fs));
@@ -419,16 +419,16 @@
 .deck-fmt__btn--b { font-weight: 800; }
 .deck-fmt__btn--i { font-style: italic; }
 
-/* ── Per-slide free-canvas (step 6) — draggable/resizable box rectangles over the slide. ─ */
+/* ── Per-slide free-canvas (step 6) - draggable/resizable box rectangles over the slide. ─ */
 .deck-free {
   pointer-events: none;   /* only the boxes + tools opt back in */
   position: absolute;
   z-index: 4;
 }
-/* The freeform chrome band — the arrange toolbar + inspector, docked to the STAGE below the
+/* The freeform chrome band - the arrange toolbar + inspector, docked to the STAGE below the
    slide bar (deck-editor.ts sets `top` to the slide bar's measured height), NOT over the
    canvas. fitCanvas reserves this band (--stage-reserve-top) + the filmstrip band so the
-   fitted canvas sits between them — the toolbars never cover the content being edited.
+   fitted canvas sits between them - the toolbars never cover the content being edited.
    pointer-events:none keeps the band's empty space click-through to the stage; the bars
    opt back in. */
 .deck-free-chrome {
@@ -483,7 +483,7 @@
 .deck-free__btn--icon svg { width: calc(17px * var(--a11y-fs)); height: calc(17px * var(--a11y-fs)); display: block; }
 .deck-free__btn--del:not(:disabled) { color: hsl(var(--destructive, 0 70% 45%)); }
 
-/* ── The box inspector — a second row under the arrange toolbar ─────────────────
+/* ── The box inspector - a second row under the arrange toolbar ─────────────────
    Shown only when the selection holds a text box or a shape. It reuses .deck-free__grp
    so it reads as the same toolbar family, but carries LABELLED fields rather than icons:
    its controls set what's inside a box, while the row above aligns boxes to each other,
@@ -491,7 +491,7 @@
 /* .deck-free__insp shares the flow layout with .deck-free__tools (see the rule above); it
    only needs its own cell/field styling below. */
 
-/* Layout-mode slots are click-to-fill on the FROZEN (focused/editable) slide — deck-editor.ts
+/* Layout-mode slots are click-to-fill on the FROZEN (focused/editable) slide - deck-editor.ts
    opens the picker for them. Only the frozen slide takes the click (styles.css / buildAnimCss
    gate pointer-events), so only its slots advertise it. `sl-frozen` is an editor-only state
    (exports are sl-static), so this never leaks a cursor into a rendered deck. */
@@ -524,7 +524,7 @@
 .deck-free__num::placeholder { opacity: 0.5; font-weight: 500; }
 .deck-free__check { width: calc(14px * var(--a11y-fs)); height: calc(14px * var(--a11y-fs)); accent-color: hsl(var(--primary, 231 60% 55%)); cursor: pointer; }
 /* Colour picker (the app's OKLCH float field) + its clear button. An unset colour means
-   "inherit the slide's ink / no fill" — a state the picker can't show — so the trigger is
+   "inherit the slide's ink / no fill" - a state the picker can't show - so the trigger is
    dimmed when unset, and the clear button sets it back to inherit. */
 .deck-free__colour { display: inline-flex; align-items: center; gap: 2px; }
 .deck-free__cpick { display: inline-flex; }
@@ -557,14 +557,14 @@
 .deck-free__guide { position: absolute; }
 .deck-free__guide--v { width: 0; border-left: 1px dashed hsl(330 90% 60%); }
 .deck-free__guide--h { height: 0; border-top: 1px dashed hsl(330 90% 60%); }
-/* Group bounding box (multi-selection) — outline only; clicks pass to the boxes beneath. */
+/* Group bounding box (multi-selection) - outline only; clicks pass to the boxes beneath. */
 .deck-free-bbox {
   position: absolute;
   z-index: 4;
   pointer-events: none;
   border: 1px dashed hsl(var(--primary, 231 60% 55%));
 }
-/* Rotate handle — a small knob on a stalk above the box / group box. */
+/* Rotate handle - a small knob on a stalk above the box / group box. */
 .deck-free-rot {
   position: absolute;
   left: 50%;
@@ -623,7 +623,7 @@
 .deck-free-box__text h1, .deck-free-box__text h2, .deck-free-box__text h3 { margin: 0 0 0.18em; line-height: 1.1; }
 .deck-free-box__text p { margin: 0 0 0.3em; }
 .deck-free-box__text ul { margin: 0 0 0.3em; padding-left: 1.2em; }
-/* Editing a text box in place — the editable opts back into pointer events + shows a caret. */
+/* Editing a text box in place - the editable opts back into pointer events + shows a caret. */
 .deck-free-box.is-editing { overflow: visible; cursor: text; }
 .deck-free-box.is-editing .deck-free-box__text {
   pointer-events: auto;

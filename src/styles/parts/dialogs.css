@@ -2,11 +2,11 @@
    The shared chrome for confirm/choice/notice/prompt (confirm-dialog.ts) plus
    any other mountModal() caller reusing the plain chrome (e.g. the New-folder
    name prompt in projects.ts, the export-lock password prompt). Named `.modal-*`
-   — it long ago outgrew being Projects-only (component audit rec 4), so it moved
+   - it long ago outgrew being Projects-only (component audit rec 4), so it moved
    here out of parts/projects.css rather than staying under that view's sheet. */
 .modal {
   border: 0; padding: 22px; width: min(420px, 92vw);
-  /* Centring is normally the UA's `dialog:modal { margin: auto }` — but a mounted
+  /* Centring is normally the UA's `dialog:modal { margin: auto }` - but a mounted
      tool's template <style> is injected unscoped and may carry a universal
      `* { margin: 0 }` reset (e.g. event-name-badge), which pins the modal to the
      top-left. Re-assert at class specificity so it stays centred inside tools. */
@@ -24,12 +24,12 @@
   border-color: hsl(var(--destructive, 0 70% 50%));
 }
 /* choiceDialog: the lead choice gets the brand fill (two-class scope beats the
-   generic .btn base — same trick as .modal-danger). Fill + hover are
+   generic .btn base - same trick as .modal-danger). Fill + hover are
    aliased in parts/buttons.css's .btn--primary list. */
 .modal .modal-primary {
   border-color: hsl(var(--primary));
 }
-/* Choice buttons can carry longer labels than OK/Cancel — on a narrow screen they
+/* Choice buttons can carry longer labels than OK/Cancel - on a narrow screen they
    wrap (and the modal stays 420px). On desktop there's no need to cramp them: let
    the modal grow to fit its options on ONE row (same idea as .unsaved-dialog's
    widening), capped so a very wordy chooser still can't run off the screen. */
@@ -41,14 +41,14 @@
 /* askExportLock's password + zip-tier controls (lib/export-lock.ts). Both are
    plain `.field-input` / `.field-select` now; the only thing the old inline
    recipe carried that the primitive doesn't is the hairline gap between the two
-   stacked blocks (and before .modal-actions). Nothing else styles them — this
+   stacked blocks (and before .modal-actions). Nothing else styles them - this
    dialog is body-mounted, so no view sheet reaches it. */
 .export-lock-pw,
 .export-lock-tier { margin: 0.1rem 0; }
 
 /* ─── Unsaved changes dialog ─────────────────────────────────────────────── */
 /* pro/index.ts's leave-guard and views/tool.ts's clear/unsaved pair are all
-   mountModal-built (className: 'unsaved-dialog') — same class names everywhere,
+   mountModal-built (className: 'unsaved-dialog') - same class names everywhere,
    so this chrome serves every leave-guard without a fork. */
 
 .unsaved-dialog,
@@ -71,14 +71,14 @@
 .save-dialog { max-width: 480px; }
 /* The unsaved-changes guard has three actions ("Save & leave" / "Leave without
    saving" / "Cancel"); at 380px they wrap to two rows (worse with the wider
-   jelly capsules). Give it room to lay them out on one line — applies in both
+   jelly capsules). Give it room to lay them out on one line - applies in both
    jelly on/off. Still clamped to 90vw above, so mobile stacks them as before. */
 .unsaved-dialog { max-width: 540px; }
 
 /* The dimmed-and-blurred backdrop, declared once for every dialog that wants it.
    `.tool-meta-dialog` (gallery.css) and `.welcome-dialog` (welcome.css) each used
    to restate these three declarations verbatim; they alias here instead.
-   Deliberately NOT a blanket `dialog::backdrop` — several dialogs run a plainer
+   Deliberately NOT a blanket `dialog::backdrop` - several dialogs run a plainer
    scrim at a different alpha and no blur (projects, instance-sheet, storage,
    catalog), and a default would silently blur all of them. */
 .unsaved-dialog::backdrop,
@@ -154,7 +154,7 @@
 }
 .save-link:hover { text-decoration: underline; }
 
-/* Share dialog — a ready-to-copy link plus on-visit behaviour toggles. */
+/* Share dialog - a ready-to-copy link plus on-visit behaviour toggles. */
 .share-dialog-body {
   padding: 24px;
   display: flex;
@@ -172,7 +172,7 @@
   gap: 8px;
 }
 /* Box + color/font come from the shared .field-input alias (components.css,
-   component audit rec 13) — this keeps only its own row-item layout. */
+   component audit rec 13) - this keeps only its own row-item layout. */
 .share-link-field {
   flex: 1 1 auto;
   min-width: 0;
@@ -189,11 +189,11 @@
   transition: opacity 0.12s;
 }
 .share-copy-btn:hover { opacity: 0.88; }
-/* Complexity caution — shown (JS toggles [hidden]) when even the shortest achievable
+/* Complexity caution - shown (JS toggles [hidden]) when even the shortest achievable
    link is too long to paste reliably, so the user knows to trim elements. Amber, kept
    distinct from the accented "Shortest link" pack row below.
    border-radius is the literally-identical line folded into the shared `.note`
-   selector list in components.css (component audit M1.3) — the amber border is a
+   selector list in components.css (component audit M1.3) - the amber border is a
    true delta and stays here. */
 .share-warning {
   margin: 0;
@@ -205,20 +205,20 @@
   line-height: 1.45;
 }
 .share-warning[hidden] { display: none; }
-/* The content-loss verdict — device-local images, or text/blocks past the link
-   caps, that a URL simply cannot carry — is a harder failure than an over-long
+/* The content-loss verdict - device-local images, or text/blocks past the link
+   caps, that a URL simply cannot carry - is a harder failure than an over-long
    link: packing can rescue length, nothing rescues dropped content. So it reads
    red, not amber. The default (.is-warn / no modifier) stays the amber length cue. */
 .share-warning.is-error {
   border-color: hsl(0 72% 51% / 0.6);
   background: hsl(0 72% 51% / 0.12);
 }
-/* Local-image caveat — persistent (no [hidden] toggle), shown only for tools that
+/* Local-image caveat - persistent (no [hidden] toggle), shown only for tools that
    accept images. Catalog image refs ride in the link, but device-local images
    never leave this browser, so the recipient won't get them. Calm/neutral, so it
    reads as a standing heads-up distinct from the amber complexity warning above.
    border + border-radius are the literally-identical lines folded into the shared
-   `.note` selector lists in components.css (component audit M1.3) — only this
+   `.note` selector lists in components.css (component audit M1.3) - only this
    dialog's own layout/spacing/tint stays here. */
 .share-note {
   margin: 0;
@@ -231,7 +231,7 @@
   line-height: 1.45;
 }
 .share-note-ico { flex: 0 0 auto; font-size: calc(14px * var(--a11y-fs)); line-height: 1.3; }
-/* The .lolly download card (plans/114) — the faithful vehicle a link can't be. A
+/* The .lolly download card (plans/114) - the faithful vehicle a link can't be. A
    prominent primary-tinted block, distinct from the calm .share-note above; the
    content-loss verdict points here. */
 .share-file {
@@ -271,7 +271,7 @@
 .share-file-text strong { font-size: calc(13px * var(--a11y-fs)); }
 .share-file-note { font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); line-height: 1.4; }
 .share-file-btn { flex: 0 0 auto; }
-/* "Include the tool" toggle — revealed once its offer resolves (see share-dialog.ts). */
+/* "Include the tool" toggle - revealed once its offer resolves (see share-dialog.ts). */
 .share-file-tool {
   flex: 1 1 100%;
   display: flex;
@@ -295,7 +295,7 @@
   line-height: 1.45;
 }
 .share-file-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-/* "Shortest link" — shown only when packing beats the readable URL (JS toggles
+/* "Shortest link" - shown only when packing beats the readable URL (JS toggles
    [hidden]). A prominent accented row: it changes what the link IS, not just an
    on-visit flag like the ones in the fieldset below. */
 .share-shortest {
@@ -355,13 +355,13 @@
    shared `.field-toggle` + `.field-check` primitive (parts/fields.css); the type
    size is this dialog's own delta. */
 .share-toggle-row { font-size: calc(13px * var(--a11y-fs)); }
-/* Inside a collapsible section the fieldset drops its own border — the section owns it. */
+/* Inside a collapsible section the fieldset drops its own border - the section owns it. */
 .share-section > .share-toggles {
   border: 0;
   padding: 0 14px 12px;
 }
 /* Inside a section the summary already names the group visually, so the legend is
-   hidden — but VISUALLY, not with `display: none`, which would drop it from the
+   hidden - but VISUALLY, not with `display: none`, which would drop it from the
    accessibility tree and leave the shell's only <fieldset> unnamed. Same
    declarations as `.visually-hidden` (parts/base.css). */
 .share-section > .share-toggles legend {
@@ -388,11 +388,11 @@
   font-weight: 600;
   color: hsl(var(--muted-foreground));
 }
-/* Each label carries `.field-toggle` and each box `.field-check` — the row's
+/* Each label carries `.field-toggle` and each box `.field-check` - the row's
    flex/centre/gap/cursor and the tick's whole appearance live there now. */
 .share-toggles label { font-size: calc(13px * var(--a11y-fs)); }
 /* Kept: the disabled treatment is set on the LABEL by JS (`full` wins over
-   `options`), and this dimmer/cursor pair is the dialog's own value — it beats
+   `options`), and this dimmer/cursor pair is the dialog's own value - it beats
    the primitive's `:has(.field-check:disabled)` fallback from the `chrome` layer. */
 .share-toggles label.is-disabled {
   opacity: 0.45;
@@ -428,7 +428,7 @@
   margin: 0;
 }
 
-/* Size/detail line (e.g. "Includes a 6.2 MB video clip") — a quieter chip below the prompt. */
+/* Size/detail line (e.g. "Includes a 6.2 MB video clip") - a quieter chip below the prompt. */
 .unsaved-dialog-detail {
   font-size: calc(12px * var(--a11y-fs));
   font-weight: 600;
@@ -484,7 +484,7 @@
      a lone button). Stack them full-width with comfortable tap targets; the
      primary "Save & leave" stays on top. */
   /* Jelly variant (flag): the soft-body buttons paint their own capsule on a
-     canvas, so they don't take the .unsaved-* box classes — just keep them from
+     canvas, so they don't take the .unsaved-* box classes - just keep them from
      stretching oddly in the flex row. */
   .unsaved-dialog-actions jelly-button { flex: 0 0 auto; }
 
@@ -524,7 +524,7 @@
 
 
 /* ─── Tool guide (components/tool-guide.ts) ─────────────────────────────────
-   The tool's own "now what?" walkthrough — manifest data, rendered as a dialog
+   The tool's own "now what?" walkthrough - manifest data, rendered as a dialog
    behind the help button beside the sidebar title. Box + backdrop alias the
    share dialog's (it's the same size of thing: one focused panel of steps);
    only the step list and its tabs are new here. */
@@ -557,7 +557,7 @@
   font-size: calc(15px * var(--a11y-fs));
   font-weight: 600;
 }
-/* Track tabs — only rendered when a tool declares more than one route
+/* Track tabs - only rendered when a tool declares more than one route
    (e.g. desktop vs phone). Segmented, so the alternative is visible rather
    than hidden behind a menu. */
 .tool-guide-tabs {

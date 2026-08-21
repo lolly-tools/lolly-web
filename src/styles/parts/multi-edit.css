@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 /* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
    (order declared once in styles/app.css). Wrapping it means its rules keep a
-   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   fixed priority - above chrome/primitives/base, below overrides/a11y - no
    matter when Vite injects this chunk at runtime. Do not rely on load order. */
 @layer views {
-/* ── Multi-edit (views/multi-edit.ts) — a grid of live canvases + ONE combined
+/* ── Multi-edit (views/multi-edit.ts) - a grid of live canvases + ONE combined
       sidebar for 2–8 saved sessions. Layout mirrors the tool view's sidebar/stage
       split; the input controls themselves are styled by tool.css (.tool-inputs). */
 
@@ -19,7 +19,7 @@
   backdrop-filter: blur(10px);
   position: sticky; top: 0; z-index: 20;
 }
-/* Icon-only back square — the shared back pill in its compact form
+/* Icon-only back square - the shared back pill in its compact form
    (components/back-pill.ts, iconOnly), so it goes back to wherever the
    multi-edit session was opened from instead of the hardcoded "#/p" it used to
    point at, and draws the same stroked arrow as every other back control. */
@@ -95,7 +95,7 @@
 }
 @media (prefers-reduced-motion: reduce) { .me-card.me-flash { animation: none; } }
 
-/* Condensed export block — one row of compact fields at each card's foot. */
+/* Condensed export block - one row of compact fields at each card's foot. */
 .me-export {
   display: flex; flex-wrap: wrap; align-items: end; gap: .45rem;
   padding: .6rem .8rem .75rem;
@@ -126,7 +126,7 @@
   background: hsl(var(--background) / .9);
   -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
 }
-/* Zoom cluster: [Fit] | [−] N across [+] — markup/click-wiring/disabled-state
+/* Zoom cluster: [Fit] | [−] N across [+] - markup/click-wiring/disabled-state
    come from components/zoom-hud.ts (mountZoomHud); this file only skins it. */
 .me-zoom {
   display: inline-flex; align-items: center; gap: .1rem;
@@ -168,14 +168,14 @@
   background: hsl(var(--card));
   overflow: hidden;
   /* Each cell is as tall as its own tool (its stage adopts the tool's real aspect in
-     multi-edit.ts's fit()) — don't stretch a short cell to a tall neighbour's row
+     multi-edit.ts's fit()) - don't stretch a short cell to a tall neighbour's row
      height, so the grid reads as a bento of true-aspect previews, top-aligned. */
   align-self: start;
 }
 .me-cell:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 .me-cell.is-active { border-color: hsl(var(--primary) / .7); box-shadow: 0 0 0 1px hsl(var(--primary) / .7); }
 .me-stage { position: relative; overflow: hidden; background: hsl(var(--muted) / .3); contain: paint; }
-/* The session's stored thumbnail — this cell's FIRST paint, shown while its runtime
+/* The session's stored thumbnail - this cell's FIRST paint, shown while its runtime
    hydrates (createRuntime resolves assets over the network). A plain sibling under
    .me-scale, so the transform that fits the native-size canvas never touches it; paint()
    removes it once the live canvas has content. */

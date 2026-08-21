@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 /* The rate-cards manager (components/rate-cards-manager.ts). Ships with that
    component's chunk and sits in the `views` layer, whose order is declared once in
-   styles/app.css — so its priority is fixed no matter when Vite injects the chunk.
+   styles/app.css - so its priority is fixed no matter when Vite injects the chunk.
 
    House rules honoured here: the ONE drop area is the `.updz` at the top (dropzone.css,
-   dashed — the only place a dash is allowed). Every card below is a full four-sided box,
+   dashed - the only place a dash is allowed). Every card below is a full four-sided box,
    never a one-sided-border card. Escape-to-close comes from the native <dialog> (modal.ts). */
 @layer views {
 
@@ -40,7 +40,7 @@
 }
 .rcm-new:hover { background: hsl(var(--muted)); }
 
-/* The status line — a refusal or a confirmation, stated once, never in a nested modal. */
+/* The status line - a refusal or a confirmation, stated once, never in a nested modal. */
 .rcm-msg {
   margin: 0;
   font-size: calc(0.9rem * var(--a11y-fs));
@@ -52,7 +52,7 @@
 .rcm-list:empty { display: none; }
 .rcm-empty { margin: 0; color: hsl(var(--muted-foreground)); font-size: calc(0.9rem * var(--a11y-fs)); }
 
-/* One stored card — a full box, all four borders. */
+/* One stored card - a full box, all four borders. */
 .rcm-row {
   border: 1px solid hsl(var(--border));
   border-radius: 0.6rem;
@@ -67,7 +67,7 @@
 .rcm-row-name { font-weight: 600; font-size: calc(0.95rem * var(--a11y-fs)); word-break: break-word; }
 /* The FACTS Lolly knows: digest, size, date. */
 .rcm-row-fact { color: hsl(var(--muted-foreground)); font-size: calc(0.8rem * var(--a11y-fs)); }
-/* The CLAIM the file makes — reported speech, visibly a quote, never merged with facts. */
+/* The CLAIM the file makes - reported speech, visibly a quote, never merged with facts. */
 .rcm-row-claim {
   color: hsl(var(--muted-foreground));
   font-size: calc(0.8rem * var(--a11y-fs));

@@ -55,7 +55,7 @@
   padding: 14px 16px;
   overflow-y: auto;
 }
-/* "Choose an image" step — a dashed drop/choose target (drop areas are the ONLY
+/* "Choose an image" step - a dashed drop/choose target (drop areas are the ONLY
    dashed-border surface in this design language). */
 .matte-choose {
   display: flex;
@@ -97,7 +97,7 @@
   align-items: center;
   gap: 4px;
 }
-/* The (i) beside a face-restoring model — its data-tip carries the warning. */
+/* The (i) beside a face-restoring model - its data-tip carries the warning. */
 .matte-info {
   display: inline-flex;
   align-items: center;
@@ -115,7 +115,7 @@
   font-size: calc(12px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
 }
-/* The honest confession when a job won't fit — plus the concrete lever button(s). */
+/* The honest confession when a job won't fit - plus the concrete lever button(s). */
 .matte-feasibility {
   padding: 8px 10px;
   border: 1px solid hsl(var(--destructive) / 0.5);

@@ -55,7 +55,7 @@
   padding: 14px 16px;
   overflow-y: auto;
 }
-/* "Choose an image" step — a dashed drop/choose target (drop areas are the ONLY
+/* "Choose an image" step - a dashed drop/choose target (drop areas are the ONLY
    dashed-border surface in this design language). */
 .upscale-choose {
   display: flex;
@@ -97,7 +97,7 @@
   align-items: center;
   gap: 4px;
 }
-/* Visible warning banner for a face-restoring model (GFPGAN) — an important
+/* Visible warning banner for a face-restoring model (GFPGAN) - an important
    safety note, shown inline rather than behind a hover tooltip (which is
    invisible on touch and was clipped by the panel's rounded overflow). */
 .upscale-warning {
@@ -106,7 +106,7 @@
   gap: 6px;
   margin: 0;
   padding: 8px 10px;
-  /* A caution, not an error — the same amber the unsaved-changes / Save warning
+  /* A caution, not an error - the same amber the unsaved-changes / Save warning
      uses (var(--brand-warn), #b28727), NOT the destructive red. --brand-warn is a
      full colour (hex), so tint/border go through color-mix rather than hsl(). */
   border: 1px solid color-mix(in srgb, var(--brand-warn, #b28727) 50%, transparent);
@@ -127,7 +127,7 @@
 }
 .upscale-check .upscale-checkbox { flex: 0 0 auto; margin: 0; }
 .upscale-check .upscale-field-label { font-weight: 600; }
-/* An informational note (e.g. "Illustration uses the general model for now") — muted,
+/* An informational note (e.g. "Illustration uses the general model for now") - muted,
    NOT the amber caution styling of .upscale-warning. */
 .upscale-note {
   margin: 0;
@@ -149,7 +149,7 @@
   font-size: calc(12px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
 }
-/* The honest confession when a job won't fit — plus the concrete lever button(s). */
+/* The honest confession when a job won't fit - plus the concrete lever button(s). */
 .upscale-feasibility {
   padding: 8px 10px;
   border: 1px solid hsl(var(--destructive) / 0.5);

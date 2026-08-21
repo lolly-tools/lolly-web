@@ -77,7 +77,7 @@
    never fire on touch, so these add the tactile cues a finger otherwise misses. */
 
 /* Kill the translucent grey/blue flash iOS & Android paint over tapped
-   controls — we provide our own :active feedback instead. */
+   controls - we provide our own :active feedback instead. */
 .btn,
 .color-trigger,
 .color-swatch,
@@ -112,7 +112,7 @@ button {
 }
 
 @media (pointer: coarse) {
-  /* 16px is the threshold below which iOS Safari zooms the page on focus — a
+  /* 16px is the threshold below which iOS Safari zooms the page on focus - a
      jarring jump that strands the sticky sidebar header and can lose the user
      mid-edit. Enforce it on EVERY text-entry control, not just the tool sidebar:
      <input> never inherits the page font, so search boxes, the export panel,
@@ -153,7 +153,7 @@ button {
   .input-row--checkbox { padding: 11px 12px; }
 
   /* Finger-friendly hit areas for toolbar / nav / dismiss controls. (Corner
-     overlay deletes are left for a visual pass — enlarging them risks stealing
+     overlay deletes are left for a visual pass - enlarging them risks stealing
      taps from the card beneath.) */
   .nav-btn,
   .privacy-notice-dismiss { min-height: 44px; }
@@ -167,7 +167,7 @@ button {
   .gallery-footer .btn { min-height: 44px; }
   .gallery-footer .btn { display: inline-flex; align-items: center; justify-content: center; }
   .gtile-iconbtn { width: 44px; height: 44px; }
-  /* The whole top row — back pill, FABs, language and profile pills — grows to
+  /* The whole top row - back pill, FABs, language and profile pills - grows to
      the 44px finger target through the ONE property they all size from. That
      override lives in tokens.css (which is unlayered, so a :root rule here
      could not win against it); bumping each control separately, as this block

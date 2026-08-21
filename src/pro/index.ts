@@ -199,14 +199,14 @@ const DEFAULT_ROWS = 1;
 const blankRows = (): GridRow[] => Array.from({ length: DEFAULT_ROWS }, newRow);
 
 export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMountOpts = {}): Promise<void> {
-  document.title = 'Batch — Lolly';
+  document.title = 'Batch - Lolly';
 
   const assetPicker = typeof host.assets?.pick === 'function';
   const tools = [...((window as WindowWithIndex).__toolIndex?.tools ?? [])]
     // Batch renders data → asset, so hide render-only / on-device utilities: they
     // export themselves via their own exportFile flow, never the batch path, and
     // would only ever be skipped at run time. (`!== false` fails open if an older
-    // cached index predates the `exportable` flag — see build-catalog-index.js.)
+    // cached index predates the `exportable` flag - see build-catalog-index.js.)
     .filter(t => t.exportable !== false)
     .filter(t => shellCanRun(t, host))
     .sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id));
@@ -217,7 +217,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     format: 'png',
     unit: 'px',           // unit for the Width/Height columns (px/mm/cm/in/pt)
     dpi: 300,             // raster resolution for physical units (print default)
-    profile: '',          // CMYK press condition — unset until the user picks one
+    profile: '',          // CMYK press condition - unset until the user picks one
     bleed: '',            // e.g. "3mm"; empty = trim-sized, no bleed
     marks: '',            // `marks` CSV; empty = no crop/registration/bleed marks
     running: false,
@@ -362,12 +362,12 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     ariaLabel: t('Zoom interface'),
     classes: { btn: 'pro-zoom-btn', pct: 'pro-zoom-pct' },
     onZoom: (dir) => stepZoom(dir),
-    onFit: () => applyZoom(1), // the readout's own click — "reset to 100%", this HUD's stand-in for Fit
+    onFit: () => applyZoom(1), // the readout's own click - "reset to 100%", this HUD's stand-in for Fit
     outAriaLabel: t('Zoom out'),
     inAriaLabel: t('Zoom in'),
     pctAriaLabel: t('Reset zoom to 100%'),
-    outTitle: t('Zoom out — shrink the whole interface'),
-    inTitle: t('Zoom in — enlarge the whole interface'),
+    outTitle: t('Zoom out - shrink the whole interface'),
+    inTitle: t('Zoom in - enlarge the whole interface'),
     pctTitle: t('Reset zoom to 100%'),
     min: ZOOM_STEPS[0],
     max: ZOOM_STEPS[ZOOM_STEPS.length - 1],
@@ -952,7 +952,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
       : '';
     btn.textContent = n ? `${n} row${n === 1 ? '' : 's'}${preview ? ' · ' + preview : ''}` : 'Add…';
     btn.classList.toggle('is-empty', n === 0);
-    btn.title = `Edit “${input.label ?? key}” — ${n} item${n === 1 ? '' : 's'}`;
+    btn.title = `Edit “${input.label ?? key}” - ${n} item${n === 1 ? '' : 's'}`;
   }
   async function bulkEditBlocks(key: string) {
     const col = colByKey(key);
@@ -1082,7 +1082,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     const on = Boolean(state.bleed || state.marks || state.profile);
     printBtn.classList.toggle('is-on', on);
     printBtn.setAttribute('aria-label', on
-      ? t('Print settings for every row — on')
+      ? t('Print settings for every row - on')
       : t('Print settings for every row'));
     if (printBtn.hidden) closePrintPopover();
   }
@@ -1268,7 +1268,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
           </button>
           <button type="button" class="pro-sess-del" data-del="${escape(s.slot)}" title="Delete" aria-label="Delete ${escape(s.name)}">✕</button>
         </li>`).join('')}</ul>`
-        : `<p class="pro-sess-empty">No saved sessions yet — save the current grid below.</p>`}
+        : `<p class="pro-sess-empty">No saved sessions yet - save the current grid below.</p>`}
       <div class="pro-sess-save">
         <input type="text" class="pro-sess-input" placeholder="Session name" value="${escape(state.zipName.trim())}" autocomplete="off" spellcheck="false" maxlength="60">
         <button type="button" class="pro-btn pro-btn--primary" data-save>Save</button>
@@ -1353,7 +1353,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
         const rows = await rowsForFolder(host, folder);
         if (!rows.length) { showProgress(`<p class="pro-progress-msg">That folder has no renderable rows.</p>`); return; }
         await applySnapshot({ rows, zipName: folder.name });
-        showProgress(`<p class="pro-progress-msg">Opened folder “${escape(folder.name)}” — ${rows.length} row${rows.length === 1 ? '' : 's'} flattened into the grid.</p>`);
+        showProgress(`<p class="pro-progress-msg">Opened folder “${escape(folder.name)}” - ${rows.length} row${rows.length === 1 ? '' : 's'} flattened into the grid.</p>`);
       },
     });
   }
@@ -1614,7 +1614,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     const plan = await planBatch<Finding>(state.rows, { check });
     const { renderable, skipped, srcIndex, findings } = plan;
     if (renderable.length === 0) {
-      showProgress(`<p class="pro-progress-msg">Nothing to render — pick at least one exportable template.</p>`);
+      showProgress(`<p class="pro-progress-msg">Nothing to render - pick at least one exportable template.</p>`);
       return;
     }
 

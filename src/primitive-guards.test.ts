@@ -85,12 +85,12 @@ function checkRatchet(actual: Map<string, number[]>, allowed: Record<string, num
     if (lines.length > max) {
       problems.push(`${key} (line${lines.length > 1 ? 's' : ''} ${lines.join(', ')}): ${lines.length} hit(s), allowlist permits ${max}. ${remedy}`);
     } else if (lines.length < max) {
-      problems.push(`${key}: allowlist permits ${max} hit(s) but only ${lines.length} remain — attrition win! Ratchet its entry down in primitive-guards.test.ts.`);
+      problems.push(`${key}: allowlist permits ${max} hit(s) but only ${lines.length} remain - attrition win! Ratchet its entry down in primitive-guards.test.ts.`);
     }
   }
   for (const [key, max] of Object.entries(allowed)) {
     if (max > 0 && !actual.has(key)) {
-      problems.push(`${key}: allowlisted for ${max} hit(s) but has none (fixed or file gone) — remove its entry from primitive-guards.test.ts.`);
+      problems.push(`${key}: allowlisted for ${max} hit(s) but has none (fixed or file gone) - remove its entry from primitive-guards.test.ts.`);
     }
   }
   assert.equal(problems.length, 0, `\n${problems.join('\n')}\n`);
@@ -139,9 +139,9 @@ test('R1 (rec 4): the <dialog> lifecycle is minted only by components/modal.ts (
     if (s.length) shows.set(f.rel, s);
   }
   checkRatchet(creates, DIALOG_CREATE_ALLOWED,
-    "Don't hand-roll a <dialog> — use mountModal(content, opts) from components/modal.ts (the one lifecycle: open/Escape/backdrop/focus/teardown).");
+    "Don't hand-roll a <dialog> - use mountModal(content, opts) from components/modal.ts (the one lifecycle: open/Escape/backdrop/focus/teardown).");
   checkRatchet(shows, SHOW_MODAL_ALLOWED,
-    "Don't call showModal() yourself — mountModal (components/modal.ts) owns opening; for a confirm/notice/prompt use confirm-dialog.ts's wrappers.");
+    "Don't call showModal() yourself - mountModal (components/modal.ts) owns opening; for a confirm/notice/prompt use confirm-dialog.ts's wrappers.");
 });
 
 // ── R2 (rec 2 - one primary fill) ────────────────────────────────────────────
@@ -204,7 +204,7 @@ test('R2 (rec 2): the primary-fill button recipe is declared once, in buttons.cs
     }
   }
   checkRatchet(found, PRIMARY_FILL_ALLOWED,
-    "New primary-fill button: use class=\"btn btn--primary\" (styles/parts/buttons.css), or add your selector to its alias selector-list — never restate the fill pair.");
+    "New primary-fill button: use class=\"btn btn--primary\" (styles/parts/buttons.css), or add your selector to its alias selector-list - never restate the fill pair.");
 });
 
 // ── R3 (rec 5 - one icon registry) ───────────────────────────────────────────
@@ -217,7 +217,7 @@ test('R2 (rec 2): the primary-fill button recipe is declared once, in buttons.cs
 const LUCIDE_VIEWBOX = 'viewBox="0 0 24 24"';
 
 const INLINE_GLYPH_ALLOWED: Record<string, number> = {
-  'lib/icons.ts': 1,             // the registry itself — icon()'s one <svg viewBox…> template
+  'lib/icons.ts': 1,             // the registry itself - icon()'s one <svg viewBox…> template
   'views/components-data.ts': 2, // #/components static specimen markup demonstrating icon output
   // Frozen legacy inline glyphs, pre-dating lib/icons.ts (rec 5 migrated only the seven
   // named maps; these were never in scope). Counts surveyed 2026-07-13 - down only.
@@ -232,7 +232,7 @@ const INLINE_GLYPH_ALLOWED: Record<string, number> = {
   // builds its own navigation out of lib/icons.ts.
   'lib/brand-seal.ts': 1,
   'lib/capabilities-data.ts': 1,
-  'lib/device-info.ts': 18,      // TITLE_ICONS map — the known landmine, biggest holdout after doc-editor/catalog
+  'lib/device-info.ts': 18,      // TITLE_ICONS map - the known landmine, biggest holdout after doc-editor/catalog
   'lib/genai-pill.ts': 1,
   'lib/lolly-badge.ts': 1,
   'lib/recording-tips.ts': 1,
@@ -255,7 +255,7 @@ const INLINE_GLYPH_ALLOWED: Record<string, number> = {
   'views/tool.ts': 6,
 };
 
-test('R3 (rec 5): inline 24×24 Lucide glyphs only shrink — new icons go through lib/icons.ts', () => {
+test('R3 (rec 5): inline 24×24 Lucide glyphs only shrink - new icons go through lib/icons.ts', () => {
   const found = new Map<string, number[]>();
   for (const f of TS) {
     const lines: number[] = [];
@@ -267,7 +267,7 @@ test('R3 (rec 5): inline 24×24 Lucide glyphs only shrink — new icons go throu
     if (lines.length) found.set(f.rel, lines);
   }
   checkRatchet(found, INLINE_GLYPH_ALLOWED,
-    "Don't inline a 24×24 SVG — render it via icon(name, opts) from lib/icons.ts (add the glyph's path to its PATHS registry if it's missing).");
+    "Don't inline a 24×24 SVG - render it via icon(name, opts) from lib/icons.ts (add the glyph's path to its PATHS registry if it's missing).");
 });
 
 // ── R4 (contract sync) - #/components stays the browsable contract ───────────
@@ -346,25 +346,25 @@ function topLevelObjectKeys(src: string, openIdx: number): string[] {
 test('R4: components-data.ts specimen live-keys ≡ components.ts LIVE renderer keys', () => {
   const dataFile = TS.find(f => f.rel === 'views/components-data.ts');
   const viewFile = TS.find(f => f.rel === 'views/components.ts');
-  assert.ok(dataFile, 'views/components-data.ts not found — did the contract move?');
-  assert.ok(viewFile, 'views/components.ts not found — did the contract move?');
+  assert.ok(dataFile, 'views/components-data.ts not found - did the contract move?');
+  assert.ok(viewFile, 'views/components.ts not found - did the contract move?');
 
   const specimenKeys = new Set<string>();
   for (const m of dataFile.text.matchAll(/\blive:\s*["']([$\w]+)["']/g)) specimenKeys.add(m[1] ?? '');
 
   const open = /const LIVE\b[\s\S]*?=\s*\{/.exec(viewFile.text);
-  assert.ok(open, "couldn't locate `const LIVE … = {` in views/components.ts — update this parser alongside the map");
+  assert.ok(open, "couldn't locate `const LIVE … = {` in views/components.ts - update this parser alongside the map");
   const liveKeys = new Set(topLevelObjectKeys(viewFile.text, open.index + open[0].length - 1));
 
   // Floor so a rotted regex can't pass on empty == empty (27 = 27 at authoring time).
-  assert.ok(specimenKeys.size >= 20, `only ${specimenKeys.size} live: specimen keys parsed — the live: regex has rotted`);
-  assert.ok(liveKeys.size >= 20, `only ${liveKeys.size} LIVE map keys parsed — the object-key parser has rotted`);
+  assert.ok(specimenKeys.size >= 20, `only ${specimenKeys.size} live: specimen keys parsed - the live: regex has rotted`);
+  assert.ok(liveKeys.size >= 20, `only ${liveKeys.size} LIVE map keys parsed - the object-key parser has rotted`);
 
   const onlyData = [...specimenKeys].filter(k => !liveKeys.has(k)).sort();
   const onlyLive = [...liveKeys].filter(k => !specimenKeys.has(k)).sort();
   const problems: string[] = [];
-  if (onlyData.length) problems.push(`specimens reference LIVE renderers that don't exist (stage falls back to source view): ${onlyData.join(', ')} — add renderers to views/components.ts's LIVE map or fix the key.`);
-  if (onlyLive.length) problems.push(`LIVE renderers with no specimen (unreachable in #/components): ${onlyLive.join(', ')} — add a components-data.ts entry with live: "<key>".`);
+  if (onlyData.length) problems.push(`specimens reference LIVE renderers that don't exist (stage falls back to source view): ${onlyData.join(', ')} - add renderers to views/components.ts's LIVE map or fix the key.`);
+  if (onlyLive.length) problems.push(`LIVE renderers with no specimen (unreachable in #/components): ${onlyLive.join(', ')} - add a components-data.ts entry with live: "<key>".`);
   assert.equal(problems.length, 0, `\n${problems.join('\n')}\n`);
 });
 
@@ -379,7 +379,7 @@ test('R5 (rec 9): NAV_EVENTS is declared only in utils.ts', () => {
     if (lines.length) found.set(f.rel, lines);
   }
   checkRatchet(found, { 'utils.ts': 1 /* the one home */ },
-    "Don't redeclare the nav-event triple — import { NAV_EVENTS } from utils.ts.");
+    "Don't redeclare the nav-event triple - import { NAV_EVENTS } from utils.ts.");
 });
 
 // ── R6 (recs 1/4/13 - deleted names stay dead) ───────────────────────────────
@@ -390,10 +390,10 @@ test('R5 (rec 9): NAV_EVENTS is declared only in utils.ts', () => {
 // and storage.css's tombstone comments don't trip it).
 
 const DEAD_NAMES: Record<string, string> = {
-  'segmented-control': 'deleted by rec 1 — build segmented controls with segHtml() / .view-seg (lib/seg.ts)',
-  'projects-toast': 'renamed by rec 13 — use .pro-toast with a positioning modifier (--bar or --top)',
-  'clear-dialog-overlay': 'deleted by rec 4 — the clear/hoard/import gates are native <dialog class="clear-dialog"> on mountModal, no overlay wrapper',
-  'userimg-lightbox-overlay': 'deleted by rec 4 — the lightbox is a native <dialog class="userimg-lightbox"> on mountModal, no overlay wrapper',
+  'segmented-control': 'deleted by rec 1 - build segmented controls with segHtml() / .view-seg (lib/seg.ts)',
+  'projects-toast': 'renamed by rec 13 - use .pro-toast with a positioning modifier (--bar or --top)',
+  'clear-dialog-overlay': 'deleted by rec 4 - the clear/hoard/import gates are native <dialog class="clear-dialog"> on mountModal, no overlay wrapper',
+  'userimg-lightbox-overlay': 'deleted by rec 4 - the lightbox is a native <dialog class="userimg-lightbox"> on mountModal, no overlay wrapper',
 };
 
 function deadNameTsPatterns(name: string): RegExp[] {
@@ -411,13 +411,13 @@ test('R6 (recs 1/4/13): deleted class names stay dead in selectors and markup', 
     const cssRe = new RegExp(`\\.${name}(?![\\w-])`);
     for (const f of CSS) {
       for (const line of hitLines(stripCssComments(f.text), cssRe)) {
-        problems.push(`${f.rel}:${line} — .${name} selector resurrected; ${why}.`);
+        problems.push(`${f.rel}:${line} - .${name} selector resurrected; ${why}.`);
       }
     }
     for (const f of TS) {
       for (const re of deadNameTsPatterns(name)) {
         for (const line of hitLines(f.text, re)) {
-          problems.push(`${f.rel}:${line} — "${name}" used as a live class; ${why}.`);
+          problems.push(`${f.rel}:${line} - "${name}" used as a live class; ${why}.`);
         }
       }
     }
@@ -455,7 +455,7 @@ function specimenPathCandidates(token: string): string[] {
 
 test('R7: components-data.ts `defined:` paths point at files that exist', () => {
   const data = ALL.find(f => f.rel === 'views/components-data.ts');
-  assert.ok(data, 'views/components-data.ts not found — did the specimen data move?');
+  assert.ok(data, 'views/components-data.ts not found - did the specimen data move?');
   const known = new Set(ALL.map(f => f.rel));
 
   const problems: string[] = [];
@@ -471,13 +471,13 @@ test('R7: components-data.ts `defined:` paths point at files that exist', () => 
     }
   }
   // Floor so a rotted regex can't pass on nothing-checked (74 at authoring time).
-  assert.ok(checked >= 60, `only ${checked} defined: paths parsed — the specimen regex has rotted`);
+  assert.ok(checked >= 60, `only ${checked} defined: paths parsed - the specimen regex has rotted`);
   assert.equal(problems.length, 0, `\n${problems.join('\n')}\n`);
 });
 
 test('R7: components-data.ts `css:` selectors name classes that are still live', () => {
   const data = ALL.find(f => f.rel === 'views/components-data.ts');
-  assert.ok(data, 'views/components-data.ts not found — did the specimen data move?');
+  assert.ok(data, 'views/components-data.ts not found - did the specimen data move?');
   // The haystack is the whole shell EXCEPT the specimen file: a class that only
   // this file still mentions is precisely the dead one we're hunting.
   const haystack = ALL.filter(f => f.rel !== 'views/components-data.ts').map(f => f.text).join('\n');
@@ -493,7 +493,7 @@ test('R7: components-data.ts `css:` selectors name classes that are still live',
       }
     }
   }
-  assert.ok(checked >= 200, `only ${checked} css: classes parsed — the specimen regex has rotted`);
+  assert.ok(checked >= 200, `only ${checked} css: classes parsed - the specimen regex has rotted`);
   assert.equal(problems.length, 0, `\n${problems.join('\n')}\n`);
 });
 
@@ -511,7 +511,7 @@ test('R7: components-data.ts `css:` selectors name classes that are still live',
 // ancestor rule is imported by views/components.ts, so each entry records which.
 test('R8: form controls in components-data specimens are styled, not raw UA chrome', () => {
   const data = ALL.find(f => f.rel === 'views/components-data.ts');
-  assert.ok(data, 'views/components-data.ts not found — did the specimen data move?');
+  assert.ok(data, 'views/components-data.ts not found - did the specimen data move?');
 
   // Controls styled by an ancestor rule in their own specimen markup.
   // key → number of class-less occurrences permitted.
@@ -538,14 +538,14 @@ test('R8: form controls in components-data specimens are styled, not raw UA chro
       actual.set(key, bucket);
       if (!(key in ANCESTOR_STYLED)) {
         problems.push(
-          `views/components-data.ts:${at} — specimen control <${key}> has no class, so it renders as raw UA chrome on the .cl-stage checkerboard. ` +
+          `views/components-data.ts:${at} - specimen control <${key}> has no class, so it renders as raw UA chrome on the .cl-stage checkerboard. ` +
           `Give it the shared primitive (.field-input / .field-select / .field-check / .field-radio / .field-range), or add it to R8's ANCESTOR_STYLED allowlist naming the sheet that styles it.`,
         );
       }
     }
   }
 
-  assert.ok(checked >= 20, `only ${checked} specimen form controls parsed — the R8 regex has rotted`);
+  assert.ok(checked >= 20, `only ${checked} specimen form controls parsed - the R8 regex has rotted`);
   assert.equal(problems.length, 0, `\n${problems.join('\n')}\n`);
   checkRatchet(actual, ANCESTOR_STYLED, 'Style it with the shared field primitive instead.');
 });
@@ -563,7 +563,7 @@ test('R8: form controls in components-data specimens are styled, not raw UA chro
 // caught it: balanced quotes, and one close for every open tag.
 test('R9: lib/icons.ts glyph bodies are well-formed (balanced quotes and tags)', () => {
   const f = ALL.find((x) => x.rel === 'lib/icons.ts');
-  assert.ok(f, 'lib/icons.ts not found — did the icon registry move?');
+  assert.ok(f, 'lib/icons.ts not found - did the icon registry move?');
 
   const problems: string[] = [];
   const seen = new Set<string>();
@@ -598,19 +598,19 @@ test('R9: lib/icons.ts glyph bodies are well-formed (balanced quotes and tags)',
     const opens = (body.match(/<[a-zA-Z]/g) ?? []).length;
     const closes = (body.match(/\/>|<\//g) ?? []).length;
     if (quotes % 2 !== 0) {
-      problems.push(`lib/icons.ts:${at} — glyph "${name}" has ${quotes} double quotes (odd, so an attribute is unterminated).`);
+      problems.push(`lib/icons.ts:${at} - glyph "${name}" has ${quotes} double quotes (odd, so an attribute is unterminated).`);
     }
     if (opens !== closes) {
-      problems.push(`lib/icons.ts:${at} — glyph "${name}" opens ${opens} element(s) but closes ${closes}. Every tag needs \`/>\` or a closing tag.`);
+      problems.push(`lib/icons.ts:${at} - glyph "${name}" opens ${opens} element(s) but closes ${closes}. Every tag needs \`/>\` or a closing tag.`);
     }
   }
 
   // Named explicitly, because these four are the ones the old regex silently dropped - 
   // if a future refactor takes them back out of range the count floor alone would not say so.
   for (const must of ['MAGNIFIER', 'zoomIn', 'zoomOut', 'search']) {
-    assert.ok(seen.has(must), `R9 no longer scans "${must}" — the glyph regex has rotted again.`);
+    assert.ok(seen.has(must), `R9 no longer scans "${must}" - the glyph regex has rotted again.`);
   }
-  assert.ok(scanned >= 60, `only ${scanned} markup glyphs parsed — the R9 regex has rotted`);
+  assert.ok(scanned >= 60, `only ${scanned} markup glyphs parsed - the R9 regex has rotted`);
   assert.equal(problems.length, 0, `\n${problems.join('\n')}\n`);
 });
 
@@ -744,7 +744,7 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // interpolations come from inlineMarkup(), which escape()s the manifest string
   // and then re-admits `**bold**` alone.
   'components/tool-guide.ts': 1,
-  'components/view-toggle.ts': 2,  // +1 2026-08-20: injectJellyIcons' ic.innerHTML — ICONS registry glyphs only (trusted, never user text), prepended into the jelly pill's open shadow buttons
+  'components/view-toggle.ts': 2,  // +1 2026-08-20: injectJellyIcons' ic.innerHTML - ICONS registry glyphs only (trusted, never user text), prepended into the jelly pill's open shadow buttons
   'components/viz-overlay.ts': 5,
   'components/welcome-dialog.ts': 2,
   'components/zoom-hud.ts': 1,
@@ -961,11 +961,11 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // markup of its own - the card is trim-offer.ts's sink, mounted into an empty
   // div - and the fix only taught the dialog's capture-phase Escape handler to
   // answer for a card that focus had left.
-  'views/catalog.ts': 17,  // +1 2026-08-20 (WP-G): the [data-usage] Used-in fill — labels escape()d, mirrors the [data-tech] sink; +1 2026-08-20: the Download-as toolbar menu (body-popover render `el.innerHTML`) — format values/labels are constants (plus the escape()d source format), no user text; +1 2026-08-18: interpBtn.innerHTML = INTERP_ICON — a trusted inline SVG constant, no interpolation; +2 2026-08-18 (plans/125): the [data-tsig] box (renderTextPanel, catTextWorkHtml escape()s every value) + read-text — the read-text <pre> is filled via textContent, never markup; +1 2026-08-18 (plans/126 markdown reading view): setTextRenderMode's [data-md-rendered] fill — user markdown through lib/markdown mdToHtml then DOMPurify.sanitize, the same pairing doc-editor's paste path uses; 2026-08-19 (inline-edits UX pass): the analyse-text fill folded into renderTextPanel, and the freed slot is openEditCard's card.innerHTML — sugCardHtml/rwCardHtml escape() every interpolated value
-  'lib/job-toast.ts': 2,   // +2 2026-08-17 (plan 124 WP-F): the pill + panel innerHTML — title/note/id/count all ESC()d
-  'lib/perf-hud.ts': 1,    // +1 2026-08-18 (perf-hud flag): root.innerHTML = scaffold() — only icon() glyphs + tRaw() strings, no interpolated values; the live FPS number is written via textContent, not markup
-  'views/video-job-dialog.ts': 1, // +1 2026-08-18 (plan 124 WP-G): the Resolution <select> rebuild (resSel.innerHTML) — resOptionHtml() emits a numeric px value + an escapeHtml()d "{px}p" label, no user text
-  'views/grade-inline.ts': 1, // +1 2026-08-20: the still-grade mode's work.innerHTML — static controls; every interpolation is escapeHtml()d (t() labels, the whitelisted PRESET_LUTS ids/labels, format values)
+  'views/catalog.ts': 17,  // +1 2026-08-20 (WP-G): the [data-usage] Used-in fill - labels escape()d, mirrors the [data-tech] sink; +1 2026-08-20: the Download-as toolbar menu (body-popover render `el.innerHTML`) - format values/labels are constants (plus the escape()d source format), no user text; +1 2026-08-18: interpBtn.innerHTML = INTERP_ICON - a trusted inline SVG constant, no interpolation; +2 2026-08-18 (plans/125): the [data-tsig] box (renderTextPanel, catTextWorkHtml escape()s every value) + read-text - the read-text <pre> is filled via textContent, never markup; +1 2026-08-18 (plans/126 markdown reading view): setTextRenderMode's [data-md-rendered] fill - user markdown through lib/markdown mdToHtml then DOMPurify.sanitize, the same pairing doc-editor's paste path uses; 2026-08-19 (inline-edits UX pass): the analyse-text fill folded into renderTextPanel, and the freed slot is openEditCard's card.innerHTML - sugCardHtml/rwCardHtml escape() every interpolated value
+  'lib/job-toast.ts': 2,   // +2 2026-08-17 (plan 124 WP-F): the pill + panel innerHTML - title/note/id/count all ESC()d
+  'lib/perf-hud.ts': 1,    // +1 2026-08-18 (perf-hud flag): root.innerHTML = scaffold() - only icon() glyphs + tRaw() strings, no interpolated values; the live FPS number is written via textContent, not markup
+  'views/video-job-dialog.ts': 1, // +1 2026-08-18 (plan 124 WP-G): the Resolution <select> rebuild (resSel.innerHTML) - resOptionHtml() emits a numeric px value + an escapeHtml()d "{px}p" label, no user text
+  'views/grade-inline.ts': 1, // +1 2026-08-20: the still-grade mode's work.innerHTML - static controls; every interpolation is escapeHtml()d (t() labels, the whitelisted PRESET_LUTS ids/labels, format values)
   // The authenticated-capture sign-in panel (url-shot, desktop only). Four sinks -
   // the head, the sign-in button, the clear button, and the active-session status - 
   // each interpolating only icon() registry glyphs (lib/icons.ts) and t() literal
@@ -1193,7 +1193,14 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // listWrap.innerHTML = bodyHtml and the multi-file card rebuild. Same discipline:
   // summaryInner escape()s the filename (${escape(fileName)}), bodyHtml reuses
   // renderReportBody, and the static parts are t() strings.
-  'views/valid.ts': 25,  // +1 2026-08-18 (plans/125): readImageText's [data-ocr-result].innerHTML = textSignalsHtml(...) — that helper escape()s every interpolated value (band/kind titles, the highlighted extract via escape()d segments, guess, summary), no user text reaches markup; +1 2026-08-19 (plans/126): readDocumentText's same [data-ocr-result] sink for the PDF text-layer read — textSignalsHtml again, plus a page-cap note whose only interpolations are escape()d t() output and two numbers
+  'views/valid.ts': 25,  // +1 2026-08-18 (plans/125): readImageText's [data-ocr-result].innerHTML = textSignalsHtml(...) - that helper escape()s every interpolated value (band/kind titles, the highlighted extract via escape()d segments, guess, summary), no user text reaches markup; +1 2026-08-19 (plans/126): readDocumentText's same [data-ocr-result] sink for the PDF text-layer read - textSignalsHtml again, plus a page-cap note whose only interpolations are escape()d t() output and two numbers
+  // 1 as of 2026-08-21 (plans/126 WP-A): the model-tier re-render, host.outerHTML
+  // = render(panel), where render is the OWNING view's own panel builder
+  // (textSignalsHtml / catTextSignalsHtml), the exact escaped-template family the
+  // panel was first painted with; the estimate row's own values arrive through
+  // the engine's finding detail and are escape()d there like every other row.
+  // Everything else in the file is createElement/textContent.
+  'views/tsig-model-note.ts': 1,
   // 3 as of 2026-08-06 (the model warning became an inline banner). Reviewed: the
   // panel build escapeHtml()s every interpolated value - the model <option> id/name
   // pairs, both aria-labels - the options sink escapeHtml()s id + label, and the new
@@ -1258,7 +1265,7 @@ test('R10: raw-HTML sinks are a pinned inventory, not a growing one', () => {
   // Non-vacuity: the regex must still find the tree it was written against.
   const total = [...found.values()].reduce((n, l) => n + l.length, 0);
   assert.ok(total > 300,
-    `only ${total} raw-HTML sinks found — RAW_HTML_SINK has rotted and this guard is passing vacuously`);
+    `only ${total} raw-HTML sinks found - RAW_HTML_SINK has rotted and this guard is passing vacuously`);
   checkRatchet(found, RAW_HTML_ALLOWED,
     'A new raw-HTML sink needs review: every interpolated value must be escape()d ' +
     '(utils.ts) or provably safe markup. If it is right, bump this file\'s allowlist entry.');
@@ -1297,7 +1304,7 @@ test('R11: HTML escaping is implemented once (utils.ts escape), never re-forked'
     if (hits.length) defs.set(f.rel, hits);
   }
   checkRatchet(defs, ESCAPE_DEF_ALLOWED,
-    "Don't re-implement HTML escaping — `import { escape } from '<...>/utils.ts'`. " +
+    "Don't re-implement HTML escaping - `import { escape } from '<...>/utils.ts'`. " +
     'A hand-rolled one drifts: the pro/index.ts fork omitted the single quote and ' +
     "would have injected inside any single-quoted attribute.");
 });
@@ -1309,7 +1316,7 @@ test('R11: the shared escape covers every character an attribute or text node ne
   assert.ok(src.includes('export function escape'), 'utils.ts no longer exports escape');
   for (const ch of ['&', '<', '>', '"', "'"]) {
     assert.ok(src.includes(`'${ch}'`) || src.includes(`"${ch}"`) || (ch === "'" && src.includes('"\'"')),
-      `utils.ts escape does not mention ${ch} — an unescaped ${ch} breaks out of an attribute`);
+      `utils.ts escape does not mention ${ch} - an unescaped ${ch} breaks out of an attribute`);
   }
   assert.match(src, /&#39;|&apos;/, "escape must map the single quote to an entity (the pro/index.ts fork's omission)");
 });
@@ -1363,7 +1370,7 @@ test('R12: the candidate tray is created once per surface, and the Logos room ta
 
 // ── R13: no literal NUL byte anywhere in the source ──────────────────────────
 
-test('R13: no source file carries a literal NUL — one makes the whole file "binary" to grep', () => {
+test('R13: no source file carries a literal NUL - one makes the whole file "binary" to grep', () => {
   // A U+0000 written as a RAW BYTE (rather than the `\u0000` escape) makes grep/rg
   // classify the ENTIRE file as binary: it prints nothing without `-a`. Every guard,
   // audit, codemod and agent that shells out to grep then silently skips that file - 
@@ -1383,7 +1390,7 @@ test('R13: no source file carries a literal NUL — one makes the whole file "bi
     'bridge/pdf-structure.ts',                  // compound Map key: name + NUL + bytes
     'lib/beam-sink.test.ts',                    // ditto, in a test's dedupe key
     'org/collab-protocol.ts',                   // the lock-key separator, throughout
-    'lib/markdown.ts',                          // CODE_MARK — a placeholder the input cannot contain
+    'lib/markdown.ts',                          // CODE_MARK - a placeholder the input cannot contain
     'lib/markdown.test.ts',                     // …and the test that feeds it one anyway
     'lib/design-system/add-color.test.ts',      // binary fixture bytes
     'lib/design-system/trim-offer.test.ts',     // RIFF / BMP / ftyp magic under test

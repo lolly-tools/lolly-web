@@ -105,6 +105,9 @@ export interface PrecacheManifest {
     /** The reword model (plans/127) - transformers-cache path keys, like speech.
      *  Empty on builds where the model is not staged. */
     reword?: ManifestFile[];
+    /** The AI-text detector (plans/126 WP-A) - transformers-cache path keys,
+     *  like speech and reword. Empty on builds where no model is staged. */
+    aiDetect?: ManifestFile[];
     /** The Ask embedding model (plans/103 M1) - transformers-cache path keys,
      *  like speech and reword. Empty on builds where the model is not staged. */
     embed?: ManifestFile[];
@@ -119,7 +122,7 @@ export interface InfoManifest {
   groups: { en: ManifestFile[]; shots: ManifestFile[]; audio?: ManifestFile[]; locales: Record<string, ManifestFile[]> };
 }
 
-export type OfflinePartId = 'app' | 'docs' | 'verify' | 'catalog' | 'speech' | 'upscale' | 'matte' | 'ocr' | 'reword' | 'ask';
+export type OfflinePartId = 'app' | 'docs' | 'verify' | 'catalog' | 'speech' | 'upscale' | 'matte' | 'ocr' | 'reword' | 'ask' | 'ai-detect';
 
 /** What one downloaded part records. `version` is the manifest watermark the
  *  download completed against; resyncOfflineParts re-downloads the delta when
@@ -598,6 +601,21 @@ export async function rewordCacheBytes(): Promise<{ bytes: number; files: number
   return cacheDirBytes(TRANSFORMERS_CACHE, ['/models/reword/']);
 }
 
+/** Delete the AI-text detector's slice of the shared transformers bucket. The
+ *  /ort-hf/ runtime goes too unless another downloaded part still holds it. */
+export async function clearAiDetectCaches(opts: { keepOrtHf?: boolean } = {}): Promise<void> {
+  if (!('caches' in globalThis)) return;
+  await clearCacheDirs(TRANSFORMERS_CACHE, ['/models/ai-detect/']);
+  if (!opts.keepOrtHf) await caches.delete(ORT_HF_CACHE);
+}
+
+/** Measure the AI-text detector's slice for the storage meter. Fills through
+ *  the panel's own consent download, so no part record is required. */
+export async function aiDetectCacheBytes(): Promise<{ bytes: number; files: number }> {
+  if (!('caches' in globalThis)) return { bytes: 0, files: 0 };
+  return cacheDirBytes(TRANSFORMERS_CACHE, ['/models/ai-detect/']);
+}
+
 /** Delete the Ask embed model's slice of the shared transformers bucket. The
  *  /ort-hf/ runtime goes too unless another downloaded part still holds it. */
 export async function clearAskCaches(opts: { keepOrtHf?: boolean } = {}): Promise<void> {
@@ -612,6 +630,46 @@ export async function clearAskCaches(opts: { keepOrtHf?: boolean } = {}): Promis
 export async function askCacheBytes(): Promise<{ bytes: number; files: number }> {
   if (!('caches' in globalThis)) return { bytes: 0, files: 0 };
   return cacheDirBytes(TRANSFORMERS_CACHE, ['/models/embed/']);
+}
+
+/** The cache work of the ai-detect part (plans/126 WP-A): the detector files
+ *  into transformers.js's own bucket under the path keys its hub probes
+ *  (lib/ai-detect.ts's status() matches the same shape), plus the shared
+ *  /ort-hf/ runtime - the reword part's exact contract. */
+export async function downloadAiDetectFiles(
+  manifest: PrecacheManifest,
+  opts: { signal?: AbortSignal; onProgress?: OnProgress } = {},
+): Promise<{ bytes: number; files: number }> {
+  const { signal, onProgress } = opts;
+  const model = manifest.groups.aiDetect ?? [];
+  const ortHf = manifest.groups.ortHf ?? [];
+  const total = [...model, ...ortHf].reduce((n, f) => n + f.size, 0);
+  const count = model.length + ortHf.length;
+  const zero: DownloadProgress = { loaded: 0, total: 0, done: 0, count: 0 };
+  let modelP = zero, ortHfP = zero;
+  const report = (): void => onProgress?.({
+    loaded: modelP.loaded + ortHfP.loaded,
+    total,
+    done: modelP.done + ortHfP.done,
+    count,
+  });
+  const a = await downloadList(TRANSFORMERS_CACHE, model, { signal, onProgress: p => { modelP = p; report(); } });
+  const b = await downloadList(ORT_HF_CACHE, ortHf, { signal, onProgress: p => { ortHfP = p; report(); } });
+  return { bytes: a.bytes + b.bytes, files: a.files + b.files };
+}
+
+/** Download the ai-detect part - the on-device AI-text detector (plans/126
+ *  WP-A), into the exact cache the detector worker reads. Guarded on the
+ *  group: a build without a staged model records nothing. */
+export async function downloadAiDetect(
+  manifest: PrecacheManifest,
+  opts: { signal?: AbortSignal; onProgress?: OnProgress } = {},
+): Promise<PartRecord> {
+  if (!manifest.groups.aiDetect?.length) throw new Error('offline download: this build carries no AI-text detector');
+  const res = await downloadAiDetectFiles(manifest, opts);
+  const rec: PartRecord = { at: new Date().toISOString(), version: manifest.version, ...res };
+  await recordPart('ai-detect', rec);
+  return rec;
 }
 
 /** The cache work of the reword part (plans/127), IDB-free (tested directly):
@@ -778,15 +836,16 @@ export async function removePart(id: OfflinePartId): Promise<void> {
     if (id === 'docs') await caches.delete(INFO_CACHE);
     if (id === 'verify') await caches.delete(ORT_CACHE);
   }
-  // speech, reword and ask share the transformers bucket AND the /ort-hf/
-  // runtime: each clears only its own model directory, and the runtime bucket
-  // survives while ANY other of the three still holds a download that needs it.
-  if (id === 'speech' || id === 'reword' || id === 'ask') {
+  // speech, reword, ask and ai-detect share the transformers bucket AND the
+  // /ort-hf/ runtime: each clears only its own model directory, and the runtime
+  // bucket survives while ANY other of the four still holds a download.
+  if (id === 'speech' || id === 'reword' || id === 'ask' || id === 'ai-detect') {
     const parts = await readParts();
-    const others = (['speech', 'reword', 'ask'] as const).some(p => p !== id && !!parts[p]);
+    const others = (['speech', 'reword', 'ask', 'ai-detect'] as const).some(p => p !== id && !!parts[p]);
     if (id === 'speech') await clearSpeechCaches({ keepOrtHf: others });
     if (id === 'reword') await clearRewordCaches({ keepOrtHf: others });
     if (id === 'ask') await clearAskCaches({ keepOrtHf: others });
+    if (id === 'ai-detect') await clearAiDetectCaches({ keepOrtHf: others });
   }
   if (id === 'verify' || id === 'upscale' || id === 'matte' || id === 'ocr') {
     try {
@@ -812,7 +871,7 @@ export async function removePart(id: OfflinePartId): Promise<void> {
  */
 export async function resyncOfflineParts(): Promise<void> {
   const parts = await readParts();
-  if (parts.app || parts.verify || parts.speech || parts.reword || parts.ask) {
+  if (parts.app || parts.verify || parts.speech || parts.reword || parts.ask || parts['ai-detect']) {
     const manifest = await fetchPrecacheManifest();
     if (manifest) {
       if (parts.app && parts.app.version !== manifest.version) {
@@ -831,6 +890,9 @@ export async function resyncOfflineParts(): Promise<void> {
       }
       if (parts.ask && parts.ask.version !== manifest.version && manifest.groups.embed?.length) {
         await downloadAsk(manifest).catch(() => {});
+      }
+      if (parts['ai-detect'] && parts['ai-detect'].version !== manifest.version && manifest.groups.aiDetect?.length) {
+        await downloadAiDetect(manifest).catch(() => {});
       }
     }
   }

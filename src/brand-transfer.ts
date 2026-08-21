@@ -159,7 +159,7 @@ function brandReadme(summary: BrandPackSummary, label: string, filename: string)
     '',
     `[[ 🎨 ${filename} ]]`,
     '',
-    `A portable Lolly brand${label ? ` — ${label}` : ''}: design tokens, fonts and theme in one file.`,
+    `A portable Lolly brand${label ? ` - ${label}` : ''}: design tokens, fonts and theme in one file.`,
     'Open Lolly, go to Profile → Adjust your brand → “Load a brand file…” (or the',
     '#/start wizard) and choose this .zip. Everything installs on-device;',
     'nothing is uploaded anywhere.',
@@ -177,7 +177,7 @@ function brandReadme(summary: BrandPackSummary, label: string, filename: string)
     'manifest.json   what the app reads to load this brand',
     'tokens.json     the brand’s design tokens (W3C DTCG / Tokens Studio)',
     'fonts.json      the installed font faces (metadata)',
-    'fonts/          the font files themselves (woff2, from Google Fonts — OFL/Apache)',
+    'fonts/          the font files themselves (woff2, from Google Fonts - OFL/Apache)',
     'logos.json      the brand’s logo marks (metadata)',
     'logos/          the logo images themselves (SVG/PNG/JPEG/WebP per slot)',
     ...versionFiles,
@@ -374,7 +374,7 @@ export async function unzipBrandBytes(bytes: ArrayBuffer | Uint8Array): Promise<
   // this payload's policy.
   return unzipBundle(bytes, {
     tooLarge: name => `That brand file expands too large to load (${name}).`,
-    invalid: "That file isn't a valid brand pack — it couldn't be unzipped.",
+    invalid: "That file isn't a valid brand pack - it couldn't be unzipped.",
   });
 }
 

@@ -890,7 +890,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       time_24hr:     true,
       disableMobile: true,
       onReady(_: Date[], __: string, fp: { altInput?: HTMLInputElement }) {
-        if (fp.altInput) fp.altInput.placeholder = control.placeholder || 'Live — current time';
+        if (fp.altInput) fp.altInput.placeholder = control.placeholder || 'Live - current time';
       },
       // onClose fires once when the picker closes, after the user has finished
       // picking both the date and time. onChange would fire mid-interaction and
@@ -1194,10 +1194,10 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
           commit(parsed);
           announce(`Table replaced: ${parsed.rows.length} rows, ${parsed.columns.length} columns`);
         } else {
-          announce('No table on the clipboard — copy cells from your spreadsheet first');
+          announce('No table on the clipboard - copy cells from your spreadsheet first');
         }
       } catch {
-        announce('Clipboard unavailable — click a cell and paste instead');
+        announce('Clipboard unavailable - click a cell and paste instead');
       }
     });
     // Pop-out: lift the grid into a floating, resizable window (lib/float-panel)
@@ -2042,7 +2042,7 @@ function attachedControlHtml(input: InputModelItem): string {
   const cur = opts[at]!;
   const next = opts[(at + 1) % opts.length]!;
   const glyph = cur.icon && hasIcon(cur.icon) ? icon(cur.icon, { size: 16 }) : escape(cur.label ?? cur.value);
-  const title = `${input.label ?? input.id}: ${cur.label ?? cur.value} — switch to ${next.label ?? next.value}`;
+  const title = `${input.label ?? input.id}: ${cur.label ?? cur.value} - switch to ${next.label ?? next.value}`;
   // Jelly soft-body icon button (flag-gated). Its inner <button> click is
   // composed, so it bubbles to the host and the [data-toggle-id] click handler
   // fires unchanged; `label` sets the accessible name, `title` the tooltip.
@@ -2270,7 +2270,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
     case 'time-input':
       return `<div class="time-input-wrap"><input type="time" data-input-id="${id}" value="${val}"></div>`;
     case 'datetime-local-input':
-      return `<input type="text" class="fp-datetime" data-input-id="${id}" data-fp-value="${val}" placeholder="Live — current time" readonly>`;
+      return `<input type="text" class="fp-datetime" data-input-id="${id}" data-fp-value="${val}" placeholder="Live - current time" readonly>`;
     case 'table': {
       // A user-defined grid: columns AND rows are data (unlike blocks, whose
       // fields come from the manifest). Cells carry data-field-id so typing
@@ -2293,7 +2293,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       // TableValue contract, so the toolbar/paste/copy/pop all keep working. Small
       // tables keep the exact existing <table> (per-cell textareas, del-row/col ×).
       const grid = !t.columns.length
-        ? `<p class="table-empty-hint">Paste a table copied from your spreadsheet, doc, or chat — or start one below.</p>`
+        ? `<p class="table-empty-hint">Paste a table copied from your spreadsheet, doc, or chat - or start one below.</p>`
         : t.rows.length > TABLE_VIRTUALIZE_ROWS
           ? `<div class="table-vgrid" data-table-vgrid></div>`
           : `<div class="table-scroll"><table class="table-grid">
@@ -2345,7 +2345,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
         if (f.icon && hasIcon(f.icon)) {
           const glyph = icon(f.icon, { size: 15, strokeWidth: 2 });
           if (f.help) {
-            const ht = helpTip(`${f.label ?? f.id} — ${f.help}`);
+            const ht = helpTip(`${f.label ?? f.id} - ${f.help}`);
             return `<div class="block-control block-control--ico${cls}">`
               + `<button type="button" class="help-tip-btn block-control-ico" aria-label="${name}" aria-expanded="false" aria-controls="${ht.id}">${glyph}</button>`
               + `${inner}${ht.pop}</div>`;
@@ -2389,14 +2389,14 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
             const listId = `dl-${id}-${idx}-${escape(f.id)}`;
             const dlOpts = options.map(o => `<option value="${escape(o.value)}">${escape(o.label)}</option>`).join('');
             return labelled(f, `<input class="block-field block-field--ref" list="${listId}" data-field-id="${fieldId}"
-              value="${escape(cur)}" placeholder="${escape(f.placeholder ?? emptyLabel ?? '— none —')}"
+              value="${escape(cur)}" placeholder="${escape(f.placeholder ?? emptyLabel ?? '- none -')}"
               aria-label="${escape(f.label ?? f.id)}"><datalist id="${listId}">${dlOpts}</datalist>`);
           }
           // Strict select. A stored value matching no current row is surfaced as a
           // selected "(unknown)" option rather than silently dropped - so a stale or
           // mistyped reference is visible instead of just "the link didn't work".
           const known = options.some(o => o.value === cur);
-          const empty = `<option value=""${cur === '' ? ' selected' : ''}>${escape(emptyLabel ?? '— none —')}</option>`;
+          const empty = `<option value=""${cur === '' ? ' selected' : ''}>${escape(emptyLabel ?? '- none -')}</option>`;
           const unknown = (cur !== '' && !known)
             ? `<option value="${escape(cur)}" selected>${escape(cur)} (unknown)</option>` : '';
           const opts = options.map(o =>
@@ -2481,9 +2481,9 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
             <button type="button" class="block-asset-trigger" data-block-asset="${fieldId}" aria-label="${escape(f.label ?? f.id)}">
               ${trigger}
             </button>
-            ${fromTool ? `<button type="button" class="block-asset-edit" data-block-asset-edit="${fieldId}" title="Edit — from ${escape(fromTool)}" aria-label="Edit image, from ${escape(fromTool)}">&#10022;</button>` : ''}
-            ${canRebake ? `<button type="button" class="block-asset-edit block-asset-edit--baked" data-block-baked-edit="${fieldId}" title="Edit — baked from ${escape(bakedName)}" aria-label="Edit image, baked from ${escape(bakedName)}">&#10052;</button>
-            <button type="button" class="block-asset-edit block-asset-edit--baked" data-block-rebake="${fieldId}" title="Re-bake — from ${escape(bakedName)}" aria-label="Re-bake image from ${escape(bakedName)}">&#8635;</button>` : ''}
+            ${fromTool ? `<button type="button" class="block-asset-edit" data-block-asset-edit="${fieldId}" title="Edit - from ${escape(fromTool)}" aria-label="Edit image, from ${escape(fromTool)}">&#10022;</button>` : ''}
+            ${canRebake ? `<button type="button" class="block-asset-edit block-asset-edit--baked" data-block-baked-edit="${fieldId}" title="Edit - baked from ${escape(bakedName)}" aria-label="Edit image, baked from ${escape(bakedName)}">&#10052;</button>
+            <button type="button" class="block-asset-edit block-asset-edit--baked" data-block-rebake="${fieldId}" title="Re-bake - from ${escape(bakedName)}" aria-label="Re-bake image from ${escape(bakedName)}">&#8635;</button>` : ''}
             ${has ? `<button type="button" class="block-asset-clear" data-block-asset-clear="${fieldId}" aria-label="Remove ${escape(f.label ?? 'image')}">&#x2715;</button>` : ''}
           </div>`, ' block-control--full');
         }
@@ -2674,7 +2674,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
           <span class="vec-scrub" data-vec-scrub="${escape(f.id)}" title="Drag to adjust ${lab}" aria-hidden="true">${sym}</span>
           <input type="number" class="vec-num" data-vec-field="${escape(f.id)}"
             value="${escape(fv)}"${f.min !== undefined ? ` min="${f.min}"` : ''}${f.max !== undefined ? ` max="${f.max}"` : ''} step="${f.step ?? 1}"
-            aria-label="${escape((input.label ? input.label + ' — ' : '') + (f.label ?? f.id))}">
+            aria-label="${escape((input.label ? input.label + ' - ' : '') + (f.label ?? f.id))}">
         </span>`;
       };
       return `<div class="vector-input" data-input-id="${id}">${fields.map(fieldHtml).join('')}</div>`;
@@ -2708,7 +2708,7 @@ function showRebakeError(btn: HTMLElement): void {
   const row = btn.closest('.asset-from-tool, .block-asset');
   if (!row) return;
   row.parentElement?.querySelector('.asset-rebake-error')?.remove();
-  row.insertAdjacentHTML('afterend', `<p class="asset-picker-error asset-rebake-error">Couldn't re-bake this image — the source render failed.</p>`);
+  row.insertAdjacentHTML('afterend', `<p class="asset-picker-error asset-rebake-error">Couldn't re-bake this image - the source render failed.</p>`);
 }
 
 /**
@@ -2828,7 +2828,7 @@ async function openEmbedEditor(host: WebToolHost, { editUrl, slotLabel, mode = '
       } as Parameters<NonNullable<ComposeAPI['renderUrl']>>[1]).catch(() => null) : null;
       if (seq !== renderSeq) return; // a newer change supersedes this render
       if (!ref) {
-        previewEl.innerHTML = `<p class="asset-picker-error">Couldn't render this — the inputs may be too large to re-apply as a link.</p>`;
+        previewEl.innerHTML = `<p class="asset-picker-error">Couldn't render this - the inputs may be too large to re-apply as a link.</p>`;
         return;
       }
       pending = ref;
@@ -2881,7 +2881,7 @@ async function openEmbedEditor(host: WebToolHost, { editUrl, slotLabel, mode = '
       // shrink it and re-apply, or cancel to keep the current bytes.
       try { close(bakeAssetRef(pending)); }
       catch {
-        previewEl.innerHTML = `<p class="asset-picker-error">This render is too large to freeze — make it smaller, or cancel to keep the current image.</p>`;
+        previewEl.innerHTML = `<p class="asset-picker-error">This render is too large to freeze - make it smaller, or cancel to keep the current image.</p>`;
         applyBtn.disabled = true;
         pending = null;
       }

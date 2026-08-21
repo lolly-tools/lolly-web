@@ -1,22 +1,22 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 /* ── Cross-cutting overrides (@layer overrides) ───────────────────────────────
    The home for the rare rule that must win over view chrome regardless of which
-   view is mounted. It sits in the `overrides` layer — above `views`, below
-   `a11y` (order declared in app.css) — so it beats every earlier layer by layer
+   view is mounted. It sits in the `overrides` layer - above `views`, below
+   `a11y` (order declared in app.css) - so it beats every earlier layer by layer
    rank, not by load order. Keep this sheet small; most styling belongs in a
    view or a primitive, not here. */
 
-/* dom-to-image-more's decode wrapper — park it off-screen.
+/* dom-to-image-more's decode wrapper - park it off-screen.
    makeImage() builds `<svg><img src="data:image/svg+xml,…"></svg>` and appends it
    to <body> to force the snapshot to decode. Its own comment says "(invisible)"
    but it sets no styles, so the UA default sizing (width:100%, height:auto→150px)
    paints a full-width band of the half-decoded page snapshot across the bottom of
-   <body> for the frame or two before onload removes it — the FOUC of giant icons
+   <body> for the frame or two before onload removes it - the FOUC of giant icons
    seen on any view that rasterises (personalize-previews at boot, thumbnails,
    /pro batch). Off-screen positioning doesn't affect it: onload fires on resource
    load and the caller reads naturalWidth/drawImage, neither of which needs layout.
-   :not([style]) targets the bare wrapper only — our own body-level scratch <svg>s
-   (bridge/export.ts) always set an inline style — and self-disables if a future
+   :not([style]) targets the bare wrapper only - our own body-level scratch <svg>s
+   (bridge/export.ts) always set an inline style - and self-disables if a future
    version of the library styles it itself. */
 body > svg:not([style]) {
   position: fixed;
@@ -25,8 +25,8 @@ body > svg:not([style]) {
   pointer-events: none;
 }
 
-/* Top-right chrome cluster — the .tools-home surface, no border.
-   The view FABs (.filter-fab / .history-fab — catalog's "View options" and the
+/* Top-right chrome cluster - the .tools-home surface, no border.
+   The view FABs (.filter-fab / .history-fab - catalog's "View options" and the
    projects view-sort button both reuse the .filter-fab class), the language FAB,
    and the profile pill all wear the same soft glowing glass as the .tools-home
    back pill: the primary bottom-glow gives the filled "contrast" look, and the
@@ -34,10 +34,10 @@ body > svg:not([style]) {
    transparent (kept 1px wide so nothing reflows). Because this lives in the
    `overrides` layer it beats those borders and the lighter hover tints without
    depending on file load order. Since .lang-fab and .profile-link are shared
-   chrome, it reaches every view the cluster appears in — Tools, Catalog,
+   chrome, it reaches every view the cluster appears in - Tools, Catalog,
    Projects, the Dashboard/Verify .plat-header, /start, /profile, /valid, /pro,
    multi-edit.
-   :not(.lang-fab-sm) — the tool sidebar's compact language switcher deliberately
+   :not(.lang-fab-sm) - the tool sidebar's compact language switcher deliberately
    strips the glass look (tool.css: border/background/backdrop-filter:none, a plain
    30px control in a button group), so it opts OUT of the glow here. */
 .filter-fab,
@@ -65,7 +65,7 @@ body > svg:not([style]) {
 
 /* ── Top-LEFT chrome island (components/back-pill.ts backHomeHtml) ────────────
    The back pill + the always-Home FAB, pinned to the top-left corner as ONE
-   level row — the mirror of the top-right `.gallery-topright` cluster, sharing
+   level row - the mirror of the top-right `.gallery-topright` cluster, sharing
    its box metrics and offsets (tokens.css) so both ends of the top row line up.
    It lives in the overrides layer (not chrome) on purpose: the `position: static`
    reset below has to out-rank the back pill's own `position: fixed`, which sits
@@ -85,7 +85,7 @@ body > svg:not([style]) {
 .chrome-topleft .tools-home.home-full { position: static; left: auto; top: auto; }
 
 /* While a drag-scrub is live (lib/scrub.ts) every surface shows the ew-resize cursor
-   and nothing selects — otherwise dragging a number field paints a text selection
+   and nothing selects - otherwise dragging a number field paints a text selection
    across whatever the pointer crosses. In the overrides layer because an `!important`
    only beats `!important` in EARLIER layers, and this has to win over the field's own
    cursor wherever that is declared. */

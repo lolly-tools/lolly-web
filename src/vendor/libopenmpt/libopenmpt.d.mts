@@ -8,7 +8,7 @@ export interface LibopenmptModule {
   cwrap(name: string, ret: 'number' | null, argTypes: Array<'number'>): (...args: number[]) => number;
   _malloc(size: number): number;
   _free(ptr: number): void;
-  /** Live heap views — re-read after any allocation, ALLOW_MEMORY_GROWTH can detach them. */
+  /** Live heap views - re-read after any allocation, ALLOW_MEMORY_GROWTH can detach them. */
   readonly HEAPU8: Uint8Array;
   readonly HEAPF32: Float32Array;
 }

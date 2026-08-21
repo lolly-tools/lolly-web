@@ -3,21 +3,21 @@
  * The beam consent + progress toast (plan 100 section 6.4, section 4.6 point 6). Same visual
  * idiom as the `.pro-toast` progress-pill family (`pro/run-overlay.css`'s
  * `.pro-toast`/`.pro-toast-close`/`.pro-progress-track`/`.pro-progress-fill`,
- * the plan's own named reference) — translucent-free solid card, close corner
- * button, a real progress fill — but declared fresh under its own `.beam-toast`
+ * the plan's own named reference) - translucent-free solid card, close corner
+ * button, a real progress fill - but declared fresh under its own `.beam-toast`
  * namespace rather than importing that sheet. Two reasons: `pro/` is a heavy,
  * deliberately lazy-loaded batch/export subsystem (cardwall, quips, a render-time
  * chart) that a corner consent toast has no business pulling in just to borrow a
  * handful of small rules, and `.pro-toast`'s own footprint (spans the viewport
  * width with side gutters, for a batch log that needs room to breathe) is the
- * wrong shape for a small "corner toast" (section 6.4: never a blocking modal) — fighting
+ * wrong shape for a small "corner toast" (section 6.4: never a blocking modal) - fighting
  * that with an override would mean winning a cross-file cascade-layer/specificity
  * contest instead of just declaring the right box once. `.btn`/`.btn--primary`/
  * `.btn--ghost`/`.btn--sm` (buttons.css, critical path, always loaded) cover every
  * button here with no import needed at all.
  *
  * Layered `chrome`, like the other always-available cross-view chrome (topbar,
- * collab pill's own parts/collab.css) — this can appear over any view, not just
+ * collab pill's own parts/collab.css) - this can appear over any view, not just
  * one lazily-loaded route.
  */
 @layer chrome {
@@ -116,7 +116,7 @@
   border-radius: var(--radius);
   transition: width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-/* Total bytes is the secondary bar — dimmer than the current-item bar, so the
+/* Total bytes is the secondary bar - dimmer than the current-item bar, so the
    two never read as equally weighted (mirrors run-overlay's shortest/slowest
    dim-vs-full-accent convention in its render-time chart). */
 .beam-toast-fill--total { background: hsl(var(--primary) / 0.55); }

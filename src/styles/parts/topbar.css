@@ -1,9 +1,9 @@
 /* ── Unified top bar (Tools|Projects toggle + the action cluster) ──────────────
    On desktop the toggle is centred and the cluster is right-anchored as two
-   independent fixed elements — there's room, so leave them be: the wrapper is
+   independent fixed elements - there's room, so leave them be: the wrapper is
    display:contents (no box), and each child keeps its own fixed positioning.
    On mobile there ISN'T room and the two fixed elements overlapped, so the
-   wrapper becomes ONE fixed flex row that holds them both — now they share a
+   wrapper becomes ONE fixed flex row that holds them both - now they share a
    layout and can't collide. The cluster also collapses there: the standalone
    history button and the "Profile" wordmark fold into the avatar's menu. */
 .gallery-topbar { display: contents; }
@@ -28,7 +28,7 @@
     order: 0; min-width: 0; /* shrinkable if space is tight */
   }
   /* Reduce the tabs to icons here so the toggle stays compact and never collides with
-     the fixed top-right cluster (labels are too wide — "Catalog" pushed under them). */
+     the fixed top-right cluster (labels are too wide - "Catalog" pushed under them). */
   .gallery-topbar .view-toggle-label { display: none; }
   /* Label hidden → the glyph is the whole tab: drop its label gap so it centres. */
   .gallery-topbar .view-toggle-ic { display: inline-flex; align-items: center; justify-content: center; margin-inline-end: 0; }
@@ -57,30 +57,30 @@
    The pill is centred on the VIEWPORT while the action cluster is right-anchored,
    so the two know nothing about each other. That's fine in English, but a language
    with long labels (pt: "Ferramentas · Projetos · Catálogo") grows the pill until
-   its right edge runs under the cluster — "Catálogo" ends up beneath the filter and
+   its right edge runs under the cluster - "Catálogo" ends up beneath the filter and
    history buttons. Above the 640px collapse there's still room, we're just centring
    against the wrong box: centre the pill in the space to the LEFT of the cluster
    instead of the whole viewport, and tighten the tab padding so long labels fit.
 
    The reserve has to TRACK the cluster, not sit at a frozen px. `19em` resolves
-   against the wrapper's own inherited 14px — a size --a11y-fs never touches —
+   against the wrapper's own inherited 14px - a size --a11y-fs never touches -
    while every control it is standing in for (three var(--chrome-h) FABs and the
    profile pill's 13px label) grows with the multiplier, so under largeText the
    reserve stayed put while the thing it reserves for got wider and the labels
    slid straight back under the buttons the reserve exists to avoid.
 
    So the bounded box is written as a WIDTH minus the reserve rather than as a
-   right inset. Same box — the wrapper is position:fixed, so its containing block
+   right inset. Same box - the wrapper is position:fixed, so its containing block
    is the viewport and `left:.75em` + `width:100% - .75em - 19em` is exactly the
-   old `left:.75em; right:19em` — but width is a size, which is what the type
+   old `left:.75em; right:19em` - but width is a size, which is what the type
    multiplier is allowed to scale (see the a11y contract test); an inset is not,
    deliberately, because scaling insets is how a type preference turns back into
    a whole-UI zoom. `* 1` computes byte-identically to the bare 19em it replaces.
    The fallback is spelled out because an undefined var makes a calc() invalid at
-   computed-value time, which for `width` means falling back to `auto` — an
+   computed-value time, which for `width` means falling back to `auto` - an
    unbounded pill, i.e. the collision this whole block prevents.
    (The 10px gaps inside the cluster don't grow, so this slightly OVER-reserves at
-   large factors — the safe direction: the pill narrows, it never runs under the
+   large factors - the safe direction: the pill narrows, it never runs under the
    buttons.) */
 @media (min-width: 641px) and (max-width: 900px) {
   .gallery-topbar .view-toggle-wrap {
@@ -93,7 +93,7 @@
   .gallery-topbar .view-toggle-opt { padding: 6px ; }
 }
 
-/* ── Consolidated profile menu (mobile) — opened by tapping the avatar. ─────────
+/* ── Consolidated profile menu (mobile) - opened by tapping the avatar. ─────────
    Gathers what the bar can't show at this width: theme switcher, saved sessions,
    and a link to the full Settings page. Body-mounted popover; matches the filter
    popover's surface + the view-toggle's segmented control. */
@@ -144,7 +144,7 @@
 .profile-menu-item:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }
 .profile-menu-item svg { color: hsl(var(--muted-foreground)); flex: none; }
 .profile-menu-count {
-  /* Box scales with the numeral inside it — see .history-fab-count. */
+  /* Box scales with the numeral inside it - see .history-fab-count. */
   min-width: calc(20px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); padding: 0 6px;
   display: inline-flex; align-items: center; justify-content: center;
   font-size: calc(11px * var(--a11y-fs)); font-weight: 700; line-height: 1;
@@ -154,7 +154,7 @@
    transition come from the shared .btn--glass alias (buttons.css), which loads
    after utilities.css so it wins the cascade without needing an edit there. */
 /* hover tint centralised with the top-right cluster in overrides.css (@layer overrides). */
-/* The glyph rides the SAME --a11y-fs the row's type does — this button carries no
+/* The glyph rides the SAME --a11y-fs the row's type does - this button carries no
    visible label, so under largeText the mark IS the label, and the box around it
    (var(--chrome-h)) already grows. One knob, so the two can't drift apart. */
 .history-fab svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
@@ -162,7 +162,7 @@
   position: absolute;
   top: -4px;
   right: -4px;
-  /* The badge box scales with its own digits — a fixed 16px round at a 20% larger
+  /* The badge box scales with its own digits - a fixed 16px round at a 20% larger
      numeral stops being round and starts cropping the descender of a "9". */
   min-width: calc(16px * var(--a11y-fs));
   height: calc(16px * var(--a11y-fs));
@@ -175,15 +175,15 @@
   border-radius: var(--radius);
 }
 
-/* ── Language switcher — a regular icon FAB, matching .filter-fab/.history-fab's
+/* ── Language switcher - a regular icon FAB, matching .filter-fab/.history-fab's
    box chrome exactly (bordered, backdrop-blurred, primary-colour) even though
    its mark is a solid fill rather than a stroked Lucide glyph like its
-   neighbours — it reads as "one of the set", not a bare exception. Lives in
+   neighbours - it reads as "one of the set", not a bare exception. Lives in
    the top-right cluster on Tools, Catalog, and Projects, and floats top-right
    in the Dashboard/Verify .plat-header. Opens a popover the same way the
    filter FAB does; the popover itself reuses the mobile profile menu's surface. ── */
 /* background/color/backdrop-filter/transition come from the shared .btn--glass
-   alias (buttons.css) — matches .filter-fab/.history-fab/.profile-link. */
+   alias (buttons.css) - matches .filter-fab/.history-fab/.profile-link. */
 .lang-fab {
   position: relative;
   display: inline-flex;
@@ -191,7 +191,7 @@
   justify-content: center;
   flex: none;
   box-sizing: border-box;
-  /* Square, on the row's shared height (tokens.css) — see .tools-home. */
+  /* Square, on the row's shared height (tokens.css) - see .tools-home. */
   width: var(--chrome-h);
   height: var(--chrome-h);
   padding: 0;
@@ -199,14 +199,14 @@
   border-radius: var(--radius);
   cursor: pointer;
 }
-/* Same one-knob rule as .history-fab/.filter-fab — an unlabelled mark inside a box
+/* Same one-knob rule as .history-fab/.filter-fab - an unlabelled mark inside a box
    that already scales. */
 .lang-fab svg { width: calc(24px * var(--a11y-fs)); height: calc(24px * var(--a11y-fs));  }
 /* hover + open (aria-expanded) tint centralised with the top-right cluster in
-   overrides.css (@layer overrides — the tools-home glass treatment). */
+   overrides.css (@layer overrides - the tools-home glass treatment). */
 
 /* The always-home FAB (components/home-fab.ts) and the theme-cycle FAB
-   (components/theme-toggle.ts, className 'theme-fab') — the pair of history-free
+   (components/theme-toggle.ts, className 'theme-fab') - the pair of history-free
    controls twinned with the language FAB in the fixed top-right cluster of the
    nav-less views (#/start, Dashboard, Verify, Convert, Spreadsheet, PDF, Script).
    Box mirrors .lang-fab; the glass fill (buttons.css) and transparent-border glow
@@ -236,18 +236,18 @@
   position: fixed;
   z-index: 100000;
   /* A DEFINED, capped width (not the screen) drives the layout: a comfortable single column of
-     flag+name on desktop, shrinking with the viewport, and — only in a genuinely tiny context —
+     flag+name on desktop, shrinking with the viewport, and - only in a genuinely tiny context -
      collapsing to a flags-only strip via the @container rule below. container-type needs this
      explicit width or the popover has no size to measure and collapses to nothing. */
   container-type: inline-size;
   width: clamp(76px, 272px, calc(100vw - 16px));   /* reasonable min (a clean flags strip) → full names */
   max-width: calc(100vw - 16px);
-  /* Ceiling only — position() in lang-menu.ts sets the actual inline max-height
+  /* Ceiling only - position() in lang-menu.ts sets the actual inline max-height
      per-open, clamped to whatever room sits between the trigger and either the
      viewport edge or a fixed bottom bar (.gallery-footer etc), so the full
      language list shows uncropped whenever there's room for it. */
   max-height: 90vh;
-  /* The LIST scrolls, not the menu — keeps the sort tabs pinned at the top on
+  /* The LIST scrolls, not the menu - keeps the sort tabs pinned at the top on
      height-capped opens (small viewports / pinned bottom bars), matching the
      /info site's menu. */
   overflow: hidden;
@@ -271,7 +271,7 @@
   background: transparent; color: hsl(var(--foreground));
   font: inherit; font-size: calc(13.5px * var(--a11y-fs)); font-weight: 500; text-align: left; cursor: pointer;
 }
-/* Flag garnish beside each language — the emoji flags are natively rounded; the
+/* Flag garnish beside each language - the emoji flags are natively rounded; the
    soft drop-shadow gives them the lifted-sticker look. A fixed column width sized
    for up to three flags keeps every language NAME aligned in one column, so a
    single-flag row and English's three-flag row line up. */
@@ -290,7 +290,7 @@
   color: hsl(var(--primary));
   font-weight: 700;
 }
-/* Sort toggle at the top of the menu — Speakers (default) vs A–Z. Styles
+/* Sort toggle at the top of the menu - Speakers (default) vs A–Z. Styles
    mirror the colour picker's space tabs (.color-mode-tabs / .color-mode-tab in
    components.css); the menu's own padding/gap handles spacing beyond the 4px. */
 .lang-sort-tabs {
@@ -312,7 +312,7 @@
 }
 
 
-/* Columns track the MENU's OWN width (container query), capped at TWO — never the old 3-column
+/* Columns track the MENU's OWN width (container query), capped at TWO - never the old 3-column
    screen-width sprawl. One column below the 2-col threshold; when it's really narrow (a
    collapsed sidebar) the names drop away and only the flags remain. */
 @container (min-width: 300px) {

@@ -1,4 +1,4 @@
-/* css-editor.css — the shared CSS code editor (lib/css-code-editor.ts). Imported by
+/* css-editor.css - the shared CSS code editor (lib/css-code-editor.ts). Imported by
  * app.css with layer(chrome). The overlay trick needs the <textarea> and the <pre> to
  * share EXACTLY the same text metrics so tokens sit under the characters; every font /
  * spacing / padding rule below is therefore applied to BOTH via `.css-ed-hl, .css-ed-ta`.
@@ -70,7 +70,7 @@
   border: 1px solid var(--cssed-hair);
 }
 
-/* Shared text metrics — the two layers MUST match to the pixel. */
+/* Shared text metrics - the two layers MUST match to the pixel. */
 .css-ed-hl,
 .css-ed-ta {
   margin: 0;
@@ -119,7 +119,7 @@
 .css-ed-hl .tk-kw { color: var(--tk-kw); font-weight: 600; }
 .css-ed-hl .tk-punc { color: var(--tk-punc); }
 
-/* Autocomplete dropdown — anchored to the editor; positioned near the caret is overkill
+/* Autocomplete dropdown - anchored to the editor; positioned near the caret is overkill
    for M4, so it docks under the top-left of the editor and lists prefix matches. */
 .css-ed-ac {
   position: absolute;

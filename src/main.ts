@@ -717,7 +717,7 @@ async function boot(): Promise<void> {
         const current = await profileApi.get();
         if (!current.offlineNudgeDismissed) return;   // nudge is still armed anyway
         await profileApi.set?.({ ...current, offlineNudgeDismissed: false });
-      } catch { /* best-effort — worst case the nudge simply doesn't reappear */ }
+      } catch { /* best-effort - worst case the nudge simply doesn't reappear */ }
     })();
   });
 
@@ -809,7 +809,7 @@ async function boot(): Promise<void> {
       await setA11yPref(host, 'hidePreviews', true);
     }
     localStorage.removeItem('lolly-hide-previews');
-  } catch { /* storage off — nothing to migrate */ }
+  } catch { /* storage off - nothing to migrate */ }
 
   // Language - same precedence chain as the theme, plus a session-only `lang`
   // URL override (never written back to the profile - see i18n.ts). Awaited
@@ -957,7 +957,7 @@ async function boot(): Promise<void> {
     // Now that the real track list has landed, heal a persisted selection pointing at an
     // asset we've since retired from the catalog (it would otherwise sit enabled-but-silent).
     await m.reconcileNeurospicySelection(host as unknown as Parameters<typeof m.reconcileNeurospicySelection>[0]);
-  }).catch(() => { /* offline boot — cache-skip above already re-queries */ });
+  }).catch(() => { /* offline boot - cache-skip above already re-queries */ });
 
   // First-run seed: give a brand-new user the catalog's curated default asset favourites
   // (see catalog/assets/index.json → defaultFavourites) so those headshots are pinned in
@@ -978,7 +978,7 @@ async function boot(): Promise<void> {
   catalogReady.then(() => {
     const tools = window.__toolIndex?.tools?.length;
     console.log(
-      `%cLolly ready%c  ${tools ?? '—'} tools · works offline · lolly.tools/docs`,
+      `%cLolly ready%c  ${tools ?? '-'} tools · works offline · lolly.tools/docs`,
       "font:600 12px 'SUSE Mono',ui-monospace,monospace;color:#e0457b",
       "font:400 12px 'SUSE Mono',ui-monospace,monospace;color:#8a94a0",
     );

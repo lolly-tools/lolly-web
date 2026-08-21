@@ -1,9 +1,9 @@
 /* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
    (order declared once in styles/app.css). Wrapping it means its rules keep a
-   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   fixed priority - above chrome/primitives/base, below overrides/a11y - no
    matter when Vite injects this chunk at runtime. Do not rely on load order. */
 @layer views {
-/* ─── Dashboard view (#/d) — the read-only instrument panel ──────────────────
+/* ─── Dashboard view (#/d) - the read-only instrument panel ──────────────────
    Layout + the pieces unique to this view (device hero, palette ink-ribbon,
    storage glance, capability disclosure). The card/section chrome (.plat-*,
    .cap-feat) and the catalogue tiles (.cat-*) come from platform.css /
@@ -12,18 +12,18 @@
 .dashboard-view { overflow-y: auto; }
 .dashboard-view .dash-layout {
   width: 100%;
-  max-width: 100vw;      /* full-bleed — the instrument panel earns the whole screen */
+  max-width: 100vw;      /* full-bleed - the instrument panel earns the whole screen */
   margin: 0 auto;
   padding: 3.25rem clamp(1rem, 3.2vw, 3rem) 5rem; /* top clears the fixed "Tools" pill; sides scale with width */
 }
 
-/* Mono is the instrument typeface here — labels, readouts, hex. */
+/* Mono is the instrument typeface here - labels, readouts, hex. */
 .dashboard-view .dash-dev-stat-label,
 .dashboard-view .dash-dev-stat-value.is-mono,
 .dashboard-view .dash-readout,
 .dashboard-view .dash-readout-hex { font-family: var(--font-mono); }
 
-/* ── Entrance cascade — one ladder over the back-link, header and each section.
+/* ── Entrance cascade - one ladder over the back-link, header and each section.
    armViewEnter() stamps --enter-i on every .tools-home/.plat-header/.plat-section
    (document order) and toggles .is-entering; the CSS owns the motion. Gated on
    no-preference so reduced motion renders instantly. Mirrors platform.css. */
@@ -115,7 +115,7 @@
    <details> chrome (.plat-section-summary / .plat-section-body handle the chevron +
    padding). The mount plays a soft hydraulic cue on toggle (data-dash-collapse). */
 .dash-collapse { margin: 0 0 1.1rem; }
-/* A prominent, sentence-case title (these anchor the page — not the tiny uppercase
+/* A prominent, sentence-case title (these anchor the page - not the tiny uppercase
    reference-panel labels at the foot). */
 .dash-collapse-summary .plat-section-title {
   font-size: calc(.95rem * var(--a11y-fs)); font-weight: 700; letter-spacing: -.01em;
@@ -128,13 +128,13 @@
 .dash-collapse:not([open]) .dash-collapse-summary { opacity: .82; box-shadow: 0 .2px 12px #0002;}
 .dash-collapse:not([open]) .dash-collapse-summary:hover { opacity: 1; box-shadow: 0 .2px 7px #0003;}
 /* Icon + glance chips, hydrated in once collectDevice() resolves (see
-   dashboard.ts's collapse() and its collectDevice().then(...) hookup) — empty
+   dashboard.ts's collapse() and its collectDevice().then(...) hookup) - empty
    until then, so an unsupported browser just shows the title, never a gap. */
 .dash-collapse-icon { display: flex; width: calc(19px * var(--a11y-fs)); height: calc(19px * var(--a11y-fs)); flex: 0 0 auto; color: hsl(var(--muted-foreground)); }
 .dash-collapse-icon:empty { display: none; }
 .dash-collapse-icon svg { width: 100%; height: 100%; display: block; }
 .dash-collapse-chips { display: flex; flex-wrap: wrap; gap: .3rem; justify-content: flex-end; }
-/* Box composes .chip directly (chips.css) — font/padding/background alpha
+/* Box composes .chip directly (chips.css) - font/padding/background alpha
    are the only real deltas (see the note there on why it skips --status). */
 .dash-chip {
   font-family: var(--font-mono); font-size: calc(.66rem * var(--a11y-fs)); line-height: 1.4;
@@ -142,33 +142,33 @@
   background: hsl(var(--muted) / .7);
 }
 
-/* ── This device tab — "This device" and the Sound/Storage stack side by side
+/* ── This device tab - "This device" and the Sound/Storage stack side by side
    on wide screens (roughly equal columns); one column, top to bottom, on
    anything narrower. Every header in here is a collapsible <details> (via
    collapse()), so mobile can fold each one independently. */
 .dash-device-grid { display: grid; gap: 1.1rem; grid-template-columns: 1fr; margin: 0 0 1.1rem; }
 @media (min-width: 900px) { .dash-device-grid { grid-template-columns: 1.618fr .7fr; align-items: start; } }
 .dash-device-col > .dash-collapse { margin: 0; }
-/* Sound stacked above Storage, not side by side — overrides the fan-and-wrap
+/* Sound stacked above Storage, not side by side - overrides the fan-and-wrap
    behaviour below, which is for the Design system tab's bento row. */
 .dash-device-grid .dash-bento { flex-direction: column; margin: 0; }
 .dash-device-grid .dash-bento > .plat-section { flex: 0 1 auto; }
 
-/* ── Bento — the instrument tiles fan across the full width and grow to fill each row.
+/* ── Bento - the instrument tiles fan across the full width and grow to fill each row.
    Flex-wrap + grow (not a fixed column grid) means the last row's tiles simply widen to
-   close any remainder, so there are never stranded empty cells — the old grid left a hole
+   close any remainder, so there are never stranded empty cells - the old grid left a hole
    whenever the tile count didn't divide evenly across its columns. */
 .dash-bento { display: flex; flex-wrap: wrap; gap: 1.1rem; margin: 0 0 1.1rem; }
 .dash-bento > .plat-section { margin: 0; flex: 1 1 340px; min-width: 0; }
-/* The stats strip isn't a card — it's a header bar, so it always takes the full
+/* The stats strip isn't a card - it's a header bar, so it always takes the full
    row (forcing whatever follows in the bento onto the next row) rather than
    sitting beside the first card at whatever width its own content happens to be. */
 .dash-bento > .plat-stats { flex: 1 1 100%; margin: 0 0 .2rem; }
 /* Recent / Exports tiles start [hidden] until their data loads. The card `display:flex`
    below outranks the UA [hidden] rule, so without this they'd reserve an empty tile-sized
-   gap in the flow — force them out until unhidden. */
+   gap in the flow - force them out until unhidden. */
 .dash-bento > .plat-section[hidden] { display: none; }
-/* The instrument tiles read as cards — a hair more presence than a bare section.
+/* The instrument tiles read as cards - a hair more presence than a bare section.
    .dash-card always co-applies with .plat-section/.card in markup, so it only
    ever adds this flex layout + shadow, never restates the surface (component
    audit rec 10). */
@@ -176,11 +176,11 @@
 .dash-bento .dash-card .dash-sec-head { margin-bottom: 0.7rem; }
 
 
-/* ── Brand hero — the Design-system tab's opening statement. A read-only card
+/* ── Brand hero - the Design-system tab's opening statement. A read-only card
    that WEARS the loaded brand: surface, text and edge come from the --brand-*
    slots applyBrandVars paints onto the section (see dashboard.ts), and every
    use keeps a shell-token fallback so an unbranded install (or a doc with no
-   semantic slots) reads perfectly in both themes. Full border or none — never
+   semantic slots) reads perfectly in both themes. Full border or none - never
    a one-sided stripe. */
 .dash-hero {
   padding: clamp(1.5rem, 3.2vw, 2.4rem);
@@ -196,7 +196,7 @@
   text-transform: uppercase; letter-spacing: .18em;
   color: var(--brand-muted, hsl(var(--muted-foreground)));
 }
-/* The horizontal-primary mark, when installed — an <img>, theme-aware (the
+/* The horizontal-primary mark, when installed - an <img>, theme-aware (the
    reverse form is preferred on dark-leaning themes; see the hero hydration). */
 .dash-hero-logo { display: block; max-height: 52px; max-width: min(320px, 100%); width: auto; height: auto; margin-top: .2rem; }
 .dash-hero-name {
@@ -209,11 +209,11 @@
 }
 .dash-hero-status { margin: 0; max-width: 52ch; font-size: calc(.86rem * var(--a11y-fs)); line-height: 1.6; color: var(--brand-muted, hsl(var(--muted-foreground))); }
 .dash-hero-status strong { color: var(--brand-text, hsl(var(--foreground))); }
-/* The one action on the whole tab — dressed in the brand's own primary. NOT
+/* The one action on the whole tab - dressed in the brand's own primary. NOT
    aliased onto buttons.css's .btn--primary list (component audit rec 2): the
    fill here is `var(--brand-primary, hsl(var(--primary)))`, a real delta (the
    brand-var indirection the rest of the shared list doesn't carry), not just
-   duplicated decoration — folding it in would drop brand-var override on the
+   duplicated decoration - folding it in would drop brand-var override on the
    dashboard's one hero CTA. */
 .dash-hero-cta {
   display: inline-flex; align-items: center; gap: .5rem;
@@ -231,7 +231,7 @@
 .dash-hero-cta:hover .dash-hero-cta-arrow,
 .dash-hero-cta:focus-visible .dash-hero-cta-arrow { transform: translateX(3px); }
 
-/* The primary field — a generous swatch of the brand's lead colour, and the
+/* The primary field - a generous swatch of the brand's lead colour, and the
    hero's quiet instrument: hover (or focus) brightens a mono hex · oklch
    readout; click copies the hex (wireCopyButtons). The inset hairline keeps a
    near-white primary legible on a pale surface. */
@@ -261,7 +261,7 @@
   font-size: calc(.68rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .04em;
 }
 
-/* The faces in force — each name set in its own face; the hairline is the
+/* The faces in force - each name set in its own face; the hairline is the
    brand's own edge where one is declared. */
 .dash-hero-type {
   display: flex; flex-wrap: wrap; gap: .9rem 2.4rem;
@@ -285,7 +285,7 @@
 .dash-typedemo { container-type: inline-size; }
 @media (min-width: 781px) { .dash-bento > .dash-typedemo { flex-basis: 100%; } }
 
-/* Type facts — the compact figures under the live specimen (they carry what the old
+/* Type facts - the compact figures under the live specimen (they carry what the old
    Typography reference panel showed: variable/static, weights, styles, source). */
 .dash-type-facts {
   list-style: none; margin: .9rem 0 0; padding: .9rem 0 0;
@@ -304,7 +304,7 @@
    picker moved to #/profile's Appearance panel). */
 .dash-sound-mount { margin-top: .1rem; }
 
-/* ── Storage ring — a rounded-cap donut of used vs. device budget. Sized to fill the
+/* ── Storage ring - a rounded-cap donut of used vs. device budget. Sized to fill the
    card so the Storage block reads as tall as its neighbours, not a small dial. */
 .dash-store-donut { position: relative; width: min(240px, 88%); margin: 0.6rem auto 1.1rem; }
 .dash-store-donut svg { width: 100%; display: block; }
@@ -316,7 +316,7 @@
 .dash-store-donut-c em { font-size: calc(0.68rem * var(--a11y-fs)); font-style: normal; font-weight: 700; color: hsl(var(--primary)); margin-top: 0.28rem; letter-spacing: 0.02em; }
 @media (prefers-reduced-motion: reduce) { .dash-donut-arc { transition: none; } }
 
-/* ── This device — a full-width collapsible section. Six big readouts, the machine
+/* ── This device - a full-width collapsible section. Six big readouts, the machine
    leading with a green spine, then the full card grid below the "Full readout" rule. */
 .dash-dev-hero {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
@@ -336,15 +336,15 @@
 .dash-dev-stat-value { font-size: calc(1.15rem * var(--a11y-fs)); font-weight: 700; line-height: 1.15; word-break: break-word; padding-right: 1.4rem; }
 .dash-dev-stat-value.is-mono { letter-spacing: -.01em; }
 .dash-dev-stat-sub { font-size: calc(.68rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
-/* The machine is the star — green spine, bigger value, primary-tinted panel. */
+/* The machine is the star - green spine, bigger value, primary-tinted panel. */
 .dash-dev-hero .dash-dev-stat:first-child { background: hsl(var(--primary) / .06); border-color: hsl(var(--primary) / .35); }
 .dash-dev-hero .dash-dev-stat:first-child .dash-dev-stat-value { font-size: calc(1.45rem * var(--a11y-fs)); }
 .dash-dev-hero .dash-dev-stat:first-child .dash-dev-stat-icon { color: hsl(var(--primary) / .6); }
 
-/* Summary vs. detail — the two box kinds in "This device" read differently on sight.
+/* Summary vs. detail - the two box kinds in "This device" read differently on sight.
    SUMMARY (the hero readouts) are FILLED chips: solid muted panel, borderless, the
    headline glance. DETAIL (the full card grid below) are OUTLINED: no fill, a hairline
-   border and an underlined title — a reference spec-sheet that recedes behind the glance. */
+   border and an underlined title - a reference spec-sheet that recedes behind the glance. */
 .dash-device .dash-dev-stat {
   background: hsl(var(--muted) / .55);
   border-color: transparent;
@@ -372,7 +372,7 @@
    correctly here). In this narrow card the stats stack above the leaderboard.
    The declarations byte-identical with the Profile page's copy of this same
    component (lib/activity-summary.ts) now live once in components.css,
-   scoped to both view roots (component audit rec 13) — only this card's own
+   scoped to both view roots (component audit rec 13) - only this card's own
    sizing stays here. */
 .dashboard-view .activity-split { display: grid; grid-template-columns: 1fr; gap: 1.1rem; }
 .dashboard-view .activity-grid { grid-template-columns: repeat(auto-fit, minmax(74px, 1fr)); }
@@ -389,7 +389,7 @@
 .dashboard-view .activity-meta .activity-fav::after { content: " →"; opacity: .6; }
 .dashboard-view .storage-hint-text { margin: 0; color: hsl(var(--muted-foreground)); font-size: calc(.85rem * var(--a11y-fs)); line-height: 1.6; }
 
-/* ── Storage glance — a read-only composition bar. */
+/* ── Storage glance - a read-only composition bar. */
 .dash-store-headline { margin: 0 0 .65rem; font-size: calc(.95rem * var(--a11y-fs)); }
 .dash-store-headline strong { font-weight: 700; }
 .dash-store-bar { display: flex; gap: 2px; height: .8rem; border-radius: 999px; overflow: hidden; background: hsl(var(--muted)); box-shadow: inset 0 0 0 1px hsl(var(--border) / .6); }
@@ -407,7 +407,7 @@
 .dash-store-dot { width: .7rem; height: .7rem; border-radius: 3px; flex: 0 0 auto; box-shadow: inset 0 0 0 1px hsl(var(--foreground) / .18); }
 .dash-store-note { margin: .85rem 0 0; font-size: calc(.74rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); line-height: 1.5; }
 
-/* ── Colour palette — the compact ink ribbon. Each family is a labelled row of
+/* ── Colour palette - the compact ink ribbon. Each family is a labelled row of
    thin bars; hover/focus drives the mono readout, click copies the hex. */
 .dash-ribbon { display: flex; flex-wrap: wrap; gap: 1rem 1.5rem; margin: 0 0 1rem; }
 .dash-ink-group { display: flex; flex-direction: column; gap: .45rem; flex: 1 1 200px; min-width: 0; }
@@ -462,7 +462,7 @@
 .dash-readout:not(.is-active) .dash-readout-cmyk { display: none; }
 .dash-readout:not(.is-active) .dash-readout-swatch { opacity: .5; }
 
-/* All values — the classic swatch grid, disclosed on demand (no figure hidden). */
+/* All values - the classic swatch grid, disclosed on demand (no figure hidden). */
 .dash-values { margin: 1rem 0 0; border-top: 1px solid hsl(var(--border)); }
 .dash-values-summary {
   list-style: none; cursor: pointer; display: flex; align-items: center; gap: .5rem;
@@ -476,10 +476,10 @@
 .dash-values[open] .dash-values-summary .plat-section-chev { transform: rotate(90deg); }
 .dash-values-body { padding: .4rem 0 .2rem; }
 
-/* ── Brand tokens — read-only chips for the brand's non-colour primitives
+/* ── Brand tokens - read-only chips for the brand's non-colour primitives
    (corner radius, spacing, opacity, shadows, gradients …), each with a tiny
    true-to-value preview. The section renders hidden and only appears once the
-   async hydration finds any (see dashboard.ts). Full borders — never a stripe. */
+   async hydration finds any (see dashboard.ts). Full borders - never a stripe. */
 .dash-token-grid {
   list-style: none; margin: 0; padding: 0;
   display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: .7rem;
@@ -499,7 +499,7 @@
   flex: 0 0 auto; font-family: var(--font-mono); font-size: calc(.7rem * var(--a11y-fs)); color: hsl(var(--muted-foreground));
   max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-/* Kind previews — every inline value is validated before it reaches a style
+/* Kind previews - every inline value is validated before it reaches a style
    attribute (see studioPreview in dashboard.ts). The radius square wears its
    own border-radius; the bar/rule take their real length/thickness (clamped);
    the alpha chip layers the brand primary over a checkerboard at the token's
@@ -531,7 +531,7 @@
 .dash-token-shadow { display: block; width: 26px; height: 26px; border-radius: 6px; background: hsl(var(--card)); border: 1px solid hsl(var(--border)); }
 .dash-token-grad { display: block; width: 44px; height: 26px; border-radius: 6px; box-shadow: inset 0 0 0 1px hsl(var(--foreground) / .12); }
 
-/* ── Capabilities — each sub-section is a full-width banner (one big icon +
+/* ── Capabilities - each sub-section is a full-width banner (one big icon +
       title/desc), then a grid of boxes that FILL the row; a box previews its modal
       subheadings in tiny SUSE Mono, then pops the detail into a dialog. ── */
 /* Two-up: the heading + description live in their own left rail (sticky, so they
@@ -542,7 +542,7 @@
 /* ── Capabilities search ──────────────────────────────────────────────────
    Eleven sections and ~60 cards is too much to read top-to-bottom, so the
    search is the primary way in and sits above the accordion. Sticky, because a
-   query you can no longer see is a query you cannot refine — the offset clears
+   query you can no longer see is a query you cannot refine - the offset clears
    the panel's own header. */
 .dash-cap-search {
   position: sticky; top: 0; z-index: 3;
@@ -559,7 +559,7 @@
 .dash-cap-search-input {
   flex: 1 1 auto; min-width: 0;
   /* The left inset clears the lens glyph. Expressed in `em` so it follows this
-     input's own font-size — which already carries --a11y-fs — rather than
+     input's own font-size - which already carries --a11y-fs - rather than
      restating the multiplier on a geometry property, which the a11y contract
      (lib/a11y-prefs-contract.test.ts) forbids at a use site. */
   padding: .55rem .8rem .55rem 1.95em;
@@ -592,7 +592,7 @@
    `[hidden] { display: none }` is a plain type-less rule, so the class rules
    below (`display: flex` on an item) would out-specify it and the "hidden"
    card would stay on screen. These two lines are what actually make the filter
-   filter — do not fold them into the rules above. */
+   filter - do not fold them into the rules above. */
 .dash-cap-item[hidden], .dash-cap-group[hidden] { display: none; }
 
 .dash-cap-group {
@@ -618,7 +618,7 @@
 .dash-cap-group-icon svg { width: 1.85rem; height: 1.85rem; display: block; }
 .dash-cap-group-text { min-width: 0; flex: 1 1 auto; }
 .dash-cap-group-title { margin: 0; font-size: calc(1rem * var(--a11y-fs)); font-weight: 700; letter-spacing: -.01em; }
-/* How many cards are behind a folded section — otherwise the summary gives no
+/* How many cards are behind a folded section - otherwise the summary gives no
    clue whether opening it reveals one card or eight. */
 .dash-cap-group-n {
   display: inline-block; margin-left: .45rem; vertical-align: .08em;
@@ -630,7 +630,7 @@
 .dash-cap-group-head .plat-section-chev { flex: 0 0 auto; margin-left: .4rem; color: hsl(var(--muted-foreground)); }
 .dash-cap-group[open] > .dash-cap-group-head .plat-section-chev { transform: rotate(90deg); }
 
-/* Full-width grid of boxes — many, evenly sized, so the row never looks squished. */
+/* Full-width grid of boxes - many, evenly sized, so the row never looks squished. */
 .dash-cap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 264px), 1fr)); gap: .8rem; align-items: stretch; padding: 0 1rem 1rem; }
 .dash-cap-item { min-width: 0; display: flex; }
 
@@ -665,7 +665,7 @@
 }
 .dash-cap-title { flex: 1 1 auto; min-width: 0; font-size: calc(.92rem * var(--a11y-fs)); font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
 
-/* The mono sneak — the exact subheadings the modal will show, small + muted. */
+/* The mono sneak - the exact subheadings the modal will show, small + muted. */
 .dash-cap-peek {
   flex: 1 1 auto; list-style: none; margin: 0; padding: 0;
   font-family: var(--font-mono); font-size: calc(.64rem * var(--a11y-fs)); line-height: 1.7;
@@ -696,7 +696,7 @@
 
 /* ── Capability detail popup (native <dialog>). ──────────────────────────────
    Two shapes, one dialog. A card that names a screenshot opens WIDE and
-   two-pane — the shot carries the left, the prose the right — because a 560px
+   two-pane - the shot carries the left, the prose the right - because a 560px
    column on a 1600px desktop wasted the screen and forced the feature list into
    a narrow scroll. A card with no shot keeps a single reading column and stays
    narrow: the reason to be wide is the picture, so with no picture the width
@@ -729,7 +729,7 @@
 .dash-cap-modal.has-shot .dash-cap-modal-panes { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
 .dash-cap-modal-body { padding: 1.25rem 1.35rem 1.5rem; max-height: min(70vh, 640px); overflow: auto; }
 /* The measure. Prose set across a 500px+ pane reads badly, so the column is
-   capped in `ch` — the unit that tracks the actual font — and the pane keeps
+   capped in `ch` - the unit that tracks the actual font - and the pane keeps
    the leftover space rather than the line growing into it. */
 .dash-cap-modal-body > * { max-width: 62ch; }
 
@@ -757,7 +757,7 @@
 .dash-cap-modal .dash-cap-feat dd strong { color: hsl(var(--foreground)); font-weight: 650; }
 
 /* The screenshot pane. The image sits on a pad that MATCHES the capture shown:
-   a light shot on white, a dark shot on the theme background — because the pad
+   a light shot on white, a dark shot on the theme background - because the pad
    is really the shot's own bezel, and a light image on a dark pad (or the
    reverse) reads as a rendering fault rather than a frame. Which capture is
    shown is decided in JS by theme, with `.is-dark-shot` set when the dark twin
@@ -787,7 +787,7 @@
 .dash-cap-modal-shot[hidden] { display: none; }
 
 /* Below the two-pane threshold the panes stack, shot first, and the dialog
-   drops back to one width — a 1120px dialog on a narrow window is just 94vw
+   drops back to one width - a 1120px dialog on a narrow window is just 94vw
    with a stretched measure. */
 @media (max-width: 900px) {
   .dash-cap-modal.has-shot { width: min(600px, 94vw); }
@@ -795,12 +795,12 @@
   .dash-cap-modal-shot { border-right: 0; border-bottom: 1px solid hsl(var(--border)); padding-bottom: 1rem; }
   .dash-cap-modal-shot img { max-height: 42vh; }
   .dash-cap-modal-body { max-height: none; }
-  /* Stacked, the whole card scrolls as one — two independently scrolling panes
+  /* Stacked, the whole card scrolls as one - two independently scrolling panes
      in a phone-height dialog is a trap. */
   .dash-cap-modal-card { max-height: 86vh; overflow: auto; }
 }
 
-/* ── Reference panels (typography / themes / print) — collapsible <details>. */
+/* ── Reference panels (typography / themes / print) - collapsible <details>. */
 .dash-ref-grid { display: grid; gap: 1.1rem; margin: 0 0 1.1rem; }
 .dash-ref-grid > .plat-section { margin: 0; }
 

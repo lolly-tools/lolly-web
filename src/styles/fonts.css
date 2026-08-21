@@ -1,10 +1,10 @@
 /* Platform typefaces.
-   DEFAULTS (shell-served from public/fonts/ — profile-independent, work on every
+   DEFAULTS (shell-served from public/fonts/ - profile-independent, work on every
    brand pack): SUSE for UI/body, SUSE Mono for code/readouts. Both OFL 1.1
    (Copyright 2025 The SUSE Project Authors, github.com/SUSE/suse-font, no Reserved
    Font Name); licence files sit beside the binaries. The UI consumes them via the
    :root --font-brand / --font-mono stacks in tokens.css, which applyChromeBrandVars
-   overrides when the active brand's tokens declare font.brand / font.mono — so the
+   overrides when the active brand's tokens declare font.brand / font.mono - so the
    UI always follows the brand font once one is loaded.
 
    SUSE replaced Outfit as the default face on 2026-08-10. Outfit stays on disk
@@ -12,14 +12,14 @@
    it in a text style; it is simply no longer the default. Beyond looking better,
    the swap fixes a real export hole: Outfit is upright-only, so every italic run
    under the neutral profile failed to outline and fell back to an SVG <text>
-   element (see font-registry.ts's pickFaces — italic is deliberately strict).
+   element (see font-registry.ts's pickFaces - italic is deliberately strict).
    SUSE ships a true italic, so italic outlines like everything else.
 
    The SUSE faces list public/fonts/ FIRST and the brand catalog second: the
    shell copy is present on every profile, while /catalog/fonts/ only resolves
    under a pack that ships it (brands/suse). Same bytes either way. */
 
-/* Outfit — variable, upright only (the family has no italics). No longer the
+/* Outfit - variable, upright only (the family has no italics). No longer the
    default face (SUSE is), kept registered so a session/brand that names Outfit
    still renders it. Latin split from latin-ext exactly as Google Fonts serves
    it, so a load that needs it fetches ~32 KB. */
@@ -41,9 +41,9 @@
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
-/* SUSE Mono — shell-served (public/fonts/), NOT the catalog: it is the platform's
+/* SUSE Mono - shell-served (public/fonts/), NOT the catalog: it is the platform's
    default mono on every profile, so it must not 404 when the SUSE catalog isn't
-   mounted. (The font itself is OFL — the family name is not a brand dependency.) */
+   mounted. (The font itself is OFL - the family name is not a brand dependency.) */
 @font-face {
   font-family: 'SUSE Mono';
   src: url('/fonts/SUSEMono[wght].woff2') format('woff2-variations');
@@ -60,7 +60,7 @@
   font-display: swap;
 }
 
-/* SUSE — the platform's default UI/body face (--font-brand). Shell-served from
+/* SUSE - the platform's default UI/body face (--font-brand). Shell-served from
    public/fonts/ so it resolves on EVERY profile; the catalog copies follow as
    src fallbacks for a pack that ships its own (identical) bytes. Unlike Outfit
    these are unsubsetted single files, so there is no unicode-range split. */

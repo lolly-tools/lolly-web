@@ -2,12 +2,12 @@
    Two blocks. The PARTS list (.odl-part rows: the app, the catalogue with its
    tag scoping, guides & docs, the verify deep scan) drives lib/
    offline-manager.ts, with one shared byte-accurate progress bar and a
-   Download-everything sweep. Below it, the searchable TOOLS list — each with
+   Download-everything sweep. Below it, the searchable TOOLS list - each with
    the same three-layer download → progress → circled-tick button the gallery
-   cards carry (gallery.css's .gtile-pin — duplicated here under .odl-pin
+   cards carry (gallery.css's .gtile-pin - duplicated here under .odl-pin
    because the two sheets are separate lazy chunks; keep the two state machines
    visually in step when touching either). Sizes shown are the tool FILES
-   measured at pin time (lib/offline-pins.ts PinRecord.bytes) — catalog asset
+   measured at pin time (lib/offline-pins.ts PinRecord.bytes) - catalog asset
    blobs are counted by the Storage section's Asset-cache slice, never double
    here. */
 
@@ -254,7 +254,7 @@
    states: at rest the download glyph; .is-busy shrinks it under a spinning
    arc; .is-pinned shows the accent-filled circled tick; .is-celebrating is the
    one-shot completion flourish (pop + tick draw). Animations die under both
-   reduced-motion paths via base.css's global kills — every state still reads
+   reduced-motion paths via base.css's global kills - every state still reads
    statically. */
 .odl-pin {
   position: relative;
@@ -292,7 +292,7 @@
 .odl-pin.is-busy .pin-dl { opacity: 0.35; transform: scale(0.7); }
 .odl-pin.is-busy .pin-ring { opacity: 1; transform: none; }
 .odl-pin.is-busy .pin-ring svg {
-  /* r=9 circle, circumference ≈ 56.5 — a ~70% arc that spins while fetching */
+  /* r=9 circle, circumference ≈ 56.5 - a ~70% arc that spins while fetching */
   stroke-dasharray: 40 16.55;
   transform-origin: 50% 50%;
   animation: odl-spin 0.9s linear infinite;

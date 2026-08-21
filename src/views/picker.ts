@@ -552,7 +552,7 @@ async function render(
       </header>
       ${tabs.length > 1 ? `<div class="asset-picker-tabs" role="tablist" aria-label="${escapeHtml(t('Asset sources'))}">${tabs.map(tabBtn).join('')}</div>` : ''}
       ${currentToolUrl ? `<div class="asset-picker-current">
-        <span class="asset-picker-current-label"><span class="asset-picker-current-spark" aria-hidden="true">✦</span> ${t('Current image is from <strong>{name}</strong> — tweak it, or pick a different image below', { name: opts.currentToolName ?? t('a Lolly tool') })}</span>
+        <span class="asset-picker-current-label"><span class="asset-picker-current-spark" aria-hidden="true">✦</span> ${t('Current image is from <strong>{name}</strong> - tweak it, or pick a different image below', { name: opts.currentToolName ?? t('a Lolly tool') })}</span>
         <button type="button" class="asset-picker-current-edit">${t('Edit inputs…')}</button>
       </div>` : ''}
       <div class="asset-picker-body">
@@ -955,7 +955,7 @@ async function render(
           msg.className = 'asset-picker-card-error';
           msg.setAttribute('role', 'alert');
           msg.style.cssText = 'margin:4px 0 0;font-size:11px;color:hsl(var(--destructive));text-align:center';
-          msg.textContent = t('Couldn’t delete — try again.');
+          msg.textContent = t('Couldn’t delete - try again.');
           card.appendChild(msg);
         }
       }
@@ -1123,7 +1123,7 @@ async function render(
           msg.className = 'asset-picker-card-error';
           msg.setAttribute('role', 'alert');
           msg.style.cssText = 'margin:4px 0 0;font-size:11px;color:hsl(var(--destructive));text-align:center';
-          msg.textContent = t('Couldn’t load — try again.');
+          msg.textContent = t('Couldn’t load - try again.');
           card.appendChild(msg);
         }
       }
@@ -1800,7 +1800,7 @@ async function render(
     if (list.length === 0) {
       sessionsPane.innerHTML = `<p class="asset-picker-empty">${sessions.length
         ? t('No saved creations match.')
-        : t('No saved creations yet — save a tool you’ve made, then embed it here as an image.')}</p>`;
+        : t('No saved creations yet - save a tool you’ve made, then embed it here as an image.')}</p>`;
       return;
     }
     sessionsPane.innerHTML =
@@ -1890,7 +1890,7 @@ async function render(
 
     if (!folders.length) {
       projectsPane.innerHTML = crumbs
-        + `<p class="asset-picker-empty">${t('No projects yet — group your saved creations and images into folders to browse them here.')}</p>`;
+        + `<p class="asset-picker-empty">${t('No projects yet - group your saved creations and images into folders to browse them here.')}</p>`;
       return;
     }
 
@@ -2038,7 +2038,7 @@ async function render(
       if (!ref) { previewEl.innerHTML = `<p class="asset-picker-error">${t("Couldn't render this link.")}</p>`; return; }
       posterRef = ref;
       const note = isMotion(fmtSel.value)
-        ? `<p class="asset-picker-toolcard-note" style="margin:.4rem 0 0;font-size:.8rem;opacity:.7;">▶ ${t('Placed as a moving {format} — the clip renders when you add it.', { format: fmtSel.value.toUpperCase() })}</p>`
+        ? `<p class="asset-picker-toolcard-note" style="margin:.4rem 0 0;font-size:.8rem;opacity:.7;">▶ ${t('Placed as a moving {format} - the clip renders when you add it.', { format: fmtSel.value.toUpperCase() })}</p>`
         : '';
       previewEl.innerHTML = `<img class="asset-picker-toolcard-img" src="${escapeHtml(ref.url)}" alt="${escapeHtml(tRaw('Preview of the {name} render', { name: desc.name }))}">${note}`;
       useBtn.disabled = false;
@@ -2069,13 +2069,13 @@ async function render(
       if (!freezeEl.checked) { deliver(ref); return; }
       try { deliver(bakeAssetRef(ref)); }
       catch (e) {
-        host.log?.('warn', `freeze failed (${(e as { code?: string }).code ?? (e as Error).message}) — placing live`);
+        host.log?.('warn', `freeze failed (${(e as { code?: string }).code ?? (e as Error).message}) - placing live`);
         // Freeze the card while the note shows - a back/edit click here would
         // race the delayed commit below.
         cardEl.querySelectorAll<HTMLButtonElement>('button').forEach(b => { b.disabled = true; });
         previewEl.insertAdjacentHTML('beforeend',
-          `<p class="asset-picker-toolcard-note" style="margin:.4rem 0 0;font-size:.8rem;opacity:.7;">${t('Placed live — this render is too large to freeze.')}</p>`);
-        announce(t('Placed live — this render is too large to freeze.'));
+          `<p class="asset-picker-toolcard-note" style="margin:.4rem 0 0;font-size:.8rem;opacity:.7;">${t('Placed live - this render is too large to freeze.')}</p>`);
+        announce(t('Placed live - this render is too large to freeze.'));
         setTimeout(() => deliver(ref), 1500);
       }
     };
@@ -2120,7 +2120,7 @@ async function render(
     const offerExtension = captureCouldServe && isChromium();
     showTakeover(`
       <p class="asset-picker-empty">${t("That isn't a Lolly tool link this app can open.")}${offerExtension
-        ? `<br>${t('Add the free Lolly screenshot extension and any web page can drop in here as an image — install it, then reload.')}`
+        ? `<br>${t('Add the free Lolly screenshot extension and any web page can drop in here as an image - install it, then reload.')}`
         : ''}</p>
       ${offerExtension ? `<div class="asset-picker-toolcard-actions" style="justify-content:center">
         ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - docsAppHref() returns a build-time `#/docs/…` route from a literal slug */ ''}
@@ -2138,7 +2138,7 @@ async function render(
         <div class="asset-picker-toolcard-head">
           <button type="button" class="asset-picker-toolcard-back" aria-label="${escapeHtml(t('Back to list'))}">←</button>
           ${icon('monitor', { size: 16 })}
-          <span>${t('Not a Lolly link — screenshot this page as your image?')}</span>
+          <span>${t('Not a Lolly link - screenshot this page as your image?')}</span>
         </div>
         <p class="asset-picker-capture-url">${escapeHtml(url)}</p>
         <p class="asset-picker-error cap-error" hidden></p>
@@ -2269,7 +2269,7 @@ async function render(
         sessions = (list ?? [])
           .filter(e => e.slot && !e.slot.startsWith('__batch__:') && !isTrashedSlot(e.slot)) // single-tool, not trashed
           // Collect mode files the SESSION itself (kept editable), so any single-tool
-          // session whose tool still ships qualifies — it needn't render to an image.
+          // session whose tool still ships qualifies - it needn't render to an image.
           .filter(e => e.toolId && (collect ? toolById.has(e.toolId) : isEmbeddable(toolById.get(e.toolId), needsSvg)))
           .map(e => {
             const t = toolById.get(e.toolId);
@@ -2574,7 +2574,7 @@ export function mountAudioThumbs(
       img.onload = img.onerror = () => URL.revokeObjectURL(url);
       img.src = url;
       el.replaceChildren(img);
-    } catch { /* no bake, no change — the waveform stands */ }
+    } catch { /* no bake, no change - the waveform stands */ }
   };
 
   const drain = async (): Promise<void> => {
@@ -2785,7 +2785,7 @@ function toolCard(t: PickerTool, quickAdd = false): string {
       <span class="asset-picker-name">${escapeHtml(t.name)}</span>
     </button>`;
   if (!quickAdd) return openBtn;
-  return `<div class="asset-picker-toolcell">${openBtn}<button type="button" class="asset-picker-toolquick" data-quickadd-tool="${escapeHtml(t.id)}" title="${escapeHtml('Add to this folder with default settings — without opening the editor')}" aria-label="${escapeHtml(`Add ${t.name} to this folder without opening`)}">+ Add</button></div>`;
+  return `<div class="asset-picker-toolcell">${openBtn}<button type="button" class="asset-picker-toolquick" data-quickadd-tool="${escapeHtml(t.id)}" title="${escapeHtml('Add to this folder with default settings - without opening the editor')}" aria-label="${escapeHtml(`Add ${t.name} to this folder without opening`)}">+ Add</button></div>`;
 }
 
 // A previous saved creation. Its thumbnail is a PNG data-URL (raster tools) or raw SVG
@@ -3171,7 +3171,7 @@ const HUGE_UPLOAD_BYTES = 40 * 1024 * 1024;         // 40 MB
 function assertVerbatimSize(file: File, max: number, kind: string): void {
   if (file.size > max) {
     throw Object.assign(
-      new Error(tRaw('This {kind} is {size} MB — over the {max} MB limit. Trim or compress it and try again.', {
+      new Error(tRaw('This {kind} is {size} MB - over the {max} MB limit. Trim or compress it and try again.', {
         kind, size: (file.size / 1e6).toFixed(1), max: Math.round(max / 1e6),
       })),
       { code: 'FILE_TOO_LARGE' },
@@ -3531,7 +3531,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
       const song = midiToZzfxm(new Uint8Array(await file.arrayBuffer()), { name: file.name.replace(/\.midi?$/i, '') });
       blob = new Blob([JSON.stringify(song)], { type: 'application/json' });
     } catch {
-      const e: Error & { code?: string } = new Error(t('Couldn’t read that MIDI file — it may be empty, corrupt, or use an unsupported format.'));
+      const e: Error & { code?: string } = new Error(t('Couldn’t read that MIDI file - it may be empty, corrupt, or use an unsupported format.'));
       e.code = 'unsupported-format';
       throw e;
     }
@@ -3653,7 +3653,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
             ...(ingredient ? { ingredients: [ingredient] } : {}),
             dimensions: `${width}×${height}`,
           });
-        } catch { /* re-sign failed — ship the resized bytes; the record still preserves the original credential below */ }
+        } catch { /* re-sign failed - ship the resized bytes; the record still preserves the original credential below */ }
       }
     };
     const canStripInPlace = format === 'png' || format === 'jpeg';
@@ -3675,7 +3675,7 @@ export async function storeUserUpload(host: PickerHost, file: File): Promise<Ass
       const resizePart = r.width ? ` to ${r.width}×${r.height}px` : '';
       const picked = await choiceDialog({
         title: t('Very large image'),
-        message: tRaw('“{name}” is {size}{dims}. Keep the original — best for a Content Credential — or resize it{resize} to save space?', {
+        message: tRaw('“{name}” is {size}{dims}. Keep the original - best for a Content Credential - or resize it{resize} to save space?', {
           name: file.name, size: fmtBytes(file.size), dims: dimsPart, resize: resizePart,
         }),
         choices: [{ id: 'resize', label: t('Resize') }, { id: 'keep', label: t('Keep original'), primary: true }],

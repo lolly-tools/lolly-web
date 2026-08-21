@@ -1,5 +1,5 @@
 /**
- * Service worker — three strategies, chosen per request:
+ * Service worker - three strategies, chosen per request:
  *
  *   1. Navigations (the app shell document) → NETWORK-FIRST with a cached-shell
  *      fallback. A healthy network always serves the current deploy's HTML, so a
@@ -10,13 +10,13 @@
  *      bundled variable fonts → CACHE-FIRST. Vite content-hashes these filenames,
  *      so a cached copy can never be stale: a new deploy emits new filenames that
  *      simply miss the cache and fetch fresh. This is what makes the offline cold
- *      load actually serve the app's JS/CSS — without the stale-chunk risk a
+ *      load actually serve the app's JS/CSS - without the stale-chunk risk a
  *      precache-everything approach would create. (Fonts keep the same filename;
  *      a font swap propagates on the next CACHE bump.)
  *
  *   3. Tool files under /tools/ (template.html, styles.css, hooks.js, tool-local
  *      assets) → NETWORK-FIRST with a timeout race, so a deploy propagates
- *      immediately and a slow/dead connection still falls back to cache — first
+ *      immediately and a slow/dead connection still falls back to cache - first
  *      this generation's cache, then the separate PIN_CACHE bucket that holds
  *      tools the user pinned "available offline" (lib/offline-pins.ts).
  *
@@ -24,13 +24,13 @@
  *      STALE-WHILE-REVALIDATE: serve the cached copy instantly (no blocking
  *      network on repeat loads, and they work offline) while a background fetch
  *      freshens the cache for next time. Previews are regenerable, non-critical
- *      art (a one-load-stale thumbnail is harmless, and a stale look self-heals —
+ *      art (a one-load-stale thumbnail is harmless, and a stale look self-heals -
  *      preview-bundle.ts rejects a sig mismatch and live-renders), so unlike the
  *      catalog INDEX they don't need to be fetch-fresh. This is the repeat-visit
  *      request cut: dozens of preview + look-bundle requests become cache hits.
  *
  *   5. The /info docs site → NETWORK-FIRST per URL out of its own persistent
- *      bucket (INFO_CACHE, filled by the offline download manager) — real
+ *      bucket (INFO_CACHE, filled by the offline download manager) - real
  *      static HTML that is NOT the SPA shell and must never be cached as it
  *      (see networkFirstInfo and isShellNavigation). /ort/ (the ONNX runtime)
  *      is CACHE-FIRST out of its own bucket the same way (ORT_CACHE).
@@ -47,23 +47,23 @@
  */
 
 // v14: the Kokoro speech buckets ('transformers-cache', 'lolly-speech') join
-// the activate keep-list — before this, every SW update deleted the ~92 MB
+// the activate keep-list - before this, every SW update deleted the ~92 MB
 // model and the voice bins.
-// v13: the "Available offline" download manager (profile view) ships — /fonts/
+// v13: the "Available offline" download manager (profile view) ships - /fonts/
 // gains a cache-first rule, and three page-owned unversioned buckets join
 // lolly-pins: lolly-app (pre-downloaded build assets), lolly-ort (the ONNX
 // runtime for /verify's deep scan), lolly-info (the /info docs site).
 const CACHE = 'lolly-v14';
 
 // Tools pinned "available offline": the page writes /tools/<id>/* copies into
-// this SEPARATE, unversioned bucket (shells/web/src/lib/offline-pins.ts — keep
+// this SEPARATE, unversioned bucket (shells/web/src/lib/offline-pins.ts - keep
 // the two literals in sync). Deliberately NOT tied to the CACHE generation:
 // activate below never deletes it, so pins survive service-worker updates. The
 // page owns its lifecycle (pin writes, unpin deletes); the fetch path only
 // READS it, as the last-resort fallback for /tools/ requests.
 const PIN_CACHE = 'lolly-pins';
 
-// Tools SIDELOADED from a .lolly share file (shells/web/src/lib/installed-tools.ts —
+// Tools SIDELOADED from a .lolly share file (shells/web/src/lib/installed-tools.ts -
 // keep the two literals in sync). The page writes /tools/<id>/* copies here; unlike a
 // catalog tool these have no network home, so this bucket is served CACHE-FIRST for
 // /tools/ (below) rather than as a last-resort fallback. Same persistence contract as
@@ -72,24 +72,24 @@ const INSTALLED_CACHE = 'lolly-installed';
 
 // The other three page-owned, unversioned buckets, written by the profile
 // view's "Available offline" download manager (shells/web/src/lib/
-// offline-manager.ts — keep the literals in sync). Same lifecycle contract as
+// offline-manager.ts - keep the literals in sync). Same lifecycle contract as
 // PIN_CACHE: activate never deletes them, the page owns writes/evictions.
 //
-//   APP_CACHE  — the full build payload enumerated by dist/precache.json
+//   APP_CACHE  - the full build payload enumerated by dist/precache.json
 //                (hashed /assets/ chunks, /fonts/, icons, share stubs). Read as
 //                the fallback when the versioned CACHE misses on an immutable
 //                path, so a pre-downloaded app boots fully offline even across
 //                a CACHE-generation bump (hashed filenames can't go stale; the
 //                manager re-syncs the bucket against each deploy's manifest).
-//   ORT_CACHE  — /ort/ + /ort-hf/ (two onnxruntime-web wasm runtimes: the 1.27
+//   ORT_CACHE  - /ort/ + /ort-hf/ (two onnxruntime-web wasm runtimes: the 1.27
 //                build the watermark scanners use, and the build transformers.js
-//                pins for Kokoro speech — different versions, both same-origin,
+//                pins for Kokoro speech - different versions, both same-origin,
 //                ~95 MB + ~22 MB). Cache-first
 //                HERE TOO (not just on explicit download): the runtime imports
 //                these via dynamic import()/fetch at scan time, and re-pulling
 //                tens of MB per session helps nobody. Opt-in bulk download
 //                fills it; a normal deep scan tops it up organically.
-//   INFO_CACHE — the /info docs site, keyed PER URL (never SHELL_URL — see the
+//   INFO_CACHE - the /info docs site, keyed PER URL (never SHELL_URL - see the
 //                /info hazard note in BYPASS_PATTERNS). Network-first so docs
 //                stay current; the bucket only answers when the network can't.
 const APP_CACHE = 'lolly-app';
@@ -102,11 +102,11 @@ const ORT_HF_CACHE = 'lolly-ort-hf';
 const INFO_CACHE = 'lolly-info';
 
 // The Kokoro speech buckets. 'transformers-cache' is transformers.js's OWN
-// Cache Storage bucket name (hard-coded in the library's hub.js) — it holds
+// Cache Storage bucket name (hard-coded in the library's hub.js) - it holds
 // the ~92 MB model + tokenizer the speech worker loads; keep the literal in
 // sync with the library. 'lolly-speech' is ours: the voice style vectors,
 // written by shells/web/src/lib/speech-kokoro-worker.ts. Neither is written
-// by this worker, but both MUST survive activate — before v14 the generation
+// by this worker, but both MUST survive activate - before v14 the generation
 // sweep deleted them on every SW update, re-downloading the model each time.
 const TRANSFORMERS_CACHE = 'transformers-cache';
 const SPEECH_CACHE = 'lolly-speech';
@@ -116,7 +116,7 @@ const PERSISTENT_CACHES = [PIN_CACHE, INSTALLED_CACHE, APP_CACHE, ORT_CACHE, ORT
 
 // Stable key the app-shell document is cached under for the offline fallback.
 // Every SPA navigation (/, /pro, /tool/...) resolves to the same index.html, so
-// one canonical entry serves them all — but ONLY navigations the SPA actually
+// one canonical entry serves them all - but ONLY navigations the SPA actually
 // owns may be stored under it. See isShellNavigation.
 const SHELL_URL = '/';
 
@@ -128,7 +128,7 @@ const NETWORK_TIMEOUT_MS = 2500;
 // Assets pre-cached on install so map tools work offline / after session restore.
 // Offline-first: precache the app SHELL at install so a cold offline load works
 // immediately (even before the first successful navigation caches it). We do NOT
-// precache tool-specific libs — the old ~395 KB meeting-planner map bundle (d3 +
+// precache tool-specific libs - the old ~395 KB meeting-planner map bundle (d3 +
 // countries-110m) was paid by every visitor on install regardless of ever opening
 // that tool; it now caches network-first under /tools/ on first actual use, so
 // meeting-planner still works offline for anyone who's opened it once online.
@@ -136,7 +136,7 @@ const PRECACHE_URLS = [
   SHELL_URL,
 ];
 
-// The preview-look bundle — one small file that lets every example carousel + featured look
+// The preview-look bundle - one small file that lets every example carousel + featured look
 // render from cache instead of live-rendering on the client. Precached (best-effort, so a
 // missing/404 bundle can't fail the atomic shell install) so it's ready before the first
 // carousel hydrates on a return visit, and works offline.
@@ -147,12 +147,12 @@ const PREVIEW_BUNDLE_URL = '/catalog/previews/bundle.json';
 const PREVIEW_PATTERN = /^\/catalog\/previews\//;
 
 // Cache-first: content-hashed Vite build output, plus the bundled variable fonts
-// (stable filenames, effectively immutable — refreshed by a CACHE bump). Checked
+// (stable filenames, effectively immutable - refreshed by a CACHE bump). Checked
 // before CACHE_PATTERNS so fonts under /tools/ take this path, not network-first.
 const IMMUTABLE_PATTERNS = [
   /^\/assets\//,
   // The bundled app UI fonts (SUSE + SUSE Mono variable woff2, and the legacy
-  // Outfit face, all under /fonts/) —
+  // Outfit face, all under /fonts/) -
   // stable filenames, preloaded on every page. Before v13 these had NO rule at
   // all, so an HTTP-cache eviction meant system-ui offline.
   /^\/fonts\//,
@@ -174,7 +174,7 @@ const ORT_PATTERN = /^\/ort\//;
 const ORT_HF_PATTERN = /^\/ort-hf\//;
 
 // The /info docs site: network-first per URL with INFO_CACHE as the offline
-// fallback — see INFO_CACHE above and the /info note in BYPASS_PATTERNS.
+// fallback - see INFO_CACHE above and the /info note in BYPASS_PATTERNS.
 const INFO_PATTERN = /^\/info(\/|$)/;
 
 // Network-first tool assets; let catalog + API requests pass through to network.
@@ -183,7 +183,7 @@ const CACHE_PATTERNS = [
 ];
 
 // TrustMark ONNX watermark-decoder models (/verify's "Deep scan for
-// watermarks", tens of MB each) bypass the SW's own Cache Storage entirely —
+// watermarks", tens of MB each) bypass the SW's own Cache Storage entirely -
 // shells/web/src/lib/trustmark.ts fetches and caches the bytes itself in
 // IndexedDB (mirroring the Google-Fonts fetch-once pattern), so letting the
 // SW ALSO cache them here would just double the on-device copies for no
@@ -197,7 +197,7 @@ const BYPASS_PATTERNS = [
   // JSON policy data: a NAVIGATION to it must not run through the document
   // branch below, which would cache a non-HTML body as the app shell.
   /^\/\.well-known\//,
-  // NOTE /info is no longer in this list. It used to be bypassed outright — a
+  // NOTE /info is no longer in this list. It used to be bypassed outright - a
   // navigation there is REAL static HTML, and storing one under SHELL_URL once
   // poisoned the offline boot (reading the privacy policy replaced the cached
   // app shell). It now has its own handler (networkFirstInfo, matched BEFORE
@@ -209,15 +209,15 @@ const BYPASS_PATTERNS = [
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE).then(async cache => {
-      await cache.addAll(PRECACHE_URLS);                    // shell — atomic, must succeed
+      await cache.addAll(PRECACHE_URLS);                    // shell - atomic, must succeed
       await cache.add(PREVIEW_BUNDLE_URL).catch(() => {});  // best-effort, never fails install
     }).then(() => self.skipWaiting())
   );
 });
 
 self.addEventListener('activate', event => {
-  // Remove caches from previous versions — never the page-owned persistent
-  // buckets (pins, pre-downloaded app/ort/info — see PERSISTENT_CACHES).
+  // Remove caches from previous versions - never the page-owned persistent
+  // buckets (pins, pre-downloaded app/ort/info - see PERSISTENT_CACHES).
   event.waitUntil(
     caches.keys().then(keys =>
       Promise.all(keys.filter(k => k !== CACHE && !PERSISTENT_CACHES.includes(k)).map(k => caches.delete(k)))
@@ -232,7 +232,7 @@ self.addEventListener('fetch', event => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // Immutable hashed build assets + fonts: cache-first (safe — filenames are
+  // Immutable hashed build assets + fonts: cache-first (safe - filenames are
   // content-hashed or stable). Checked BEFORE the bypass so /catalog/fonts/ is
   // cached rather than passed straight to network like the rest of /catalog/.
   if (IMMUTABLE_PATTERNS.some(p => p.test(url.pathname))) {
@@ -263,13 +263,13 @@ self.addEventListener('fetch', event => {
 
   // The /info docs site: network-first per URL, offline fallback from the
   // downloaded-docs bucket. Handles navigations too (checked BEFORE the
-  // navigate branch), and never writes SHELL_URL — see networkFirstInfo.
+  // navigate branch), and never writes SHELL_URL - see networkFirstInfo.
   if (INFO_PATTERN.test(url.pathname)) {
     event.respondWith(networkFirstInfo(event));
     return;
   }
 
-  // Same-origin /api/ + /catalog/: always straight to the network — even for a
+  // Same-origin /api/ + /catalog/: always straight to the network - even for a
   // navigation. The CA OAuth popup NAVIGATES to /api/ca/auth/<provider>, which
   // must 302 to the provider; serving it the cached SPA shell (as the navigate
   // branch below would) lands the popup on the gallery and enrollment can never
@@ -292,7 +292,7 @@ self.addEventListener('fetch', event => {
   // stubs under /t/ and /view/, manifest.webmanifest, …): pass straight to the
   // network as before, but fall back to the pre-downloaded APP_CACHE when the
   // network fails. Without this, most of what "download the app" stores could
-  // never be SERVED — the download filled the bucket and only /assets/ +
+  // never be SERVED - the download filled the bucket and only /assets/ +
   // fonts ever read it back. Online behaviour is byte-identical (network
   // response wins; nothing is written).
   event.respondWith(networkThenAppCache(event));
@@ -301,7 +301,7 @@ self.addEventListener('fetch', event => {
 // Cache-first for immutable resources: serve the cached copy if present;
 // otherwise fetch, cache an ok response, and return it. The versioned CACHE is
 // consulted first (organic runtime caching), then the page-owned APP_CACHE
-// bucket the offline download manager fills — so a pre-downloaded install
+// bucket the offline download manager fills - so a pre-downloaded install
 // serves every chunk/font offline even when this CACHE generation is fresh
 // and empty (immutable content-hashed filenames make the fallback safe).
 async function cacheFirst(event) {
@@ -314,7 +314,7 @@ async function cacheFirst(event) {
     // Serve the pre-downloaded copy, but freshen the generation cache in the
     // background: /fonts/ names are stable, so without this a CACHE bump
     // could pin a downloaded font forever (hashed /assets/ names make the
-    // revalidate a cheap no-op-equivalent there — same bytes come back).
+    // revalidate a cheap no-op-equivalent there - same bytes come back).
     event.waitUntil(
       fetch(request).then(r => { if (r && r.ok) return cache.put(request, r.clone()); }).catch(() => {})
     );
@@ -329,7 +329,7 @@ async function cacheFirst(event) {
   }
 }
 
-// Network-first with the pre-downloaded app bucket as the offline fallback —
+// Network-first with the pre-downloaded app bucket as the offline fallback -
 // the read path for everything in the `app` download group that no earlier
 // rule owns. Never caches online responses itself: the page-owned download
 // (and its resync) is the sole writer of APP_CACHE.
@@ -360,7 +360,7 @@ async function cacheFirstIn(cacheName, event) {
   }
 }
 
-// Like cacheFirstIn, but checks a SECOND (legacy) bucket on a miss before the network —
+// Like cacheFirstIn, but checks a SECOND (legacy) bucket on a miss before the network -
 // the migration path for /ort-hf/. New downloads land in the PRIMARY bucket (ORT_HF_CACHE,
 // speech-owned); a user who pre-downloaded the runtime via the Verify part still has it in
 // the fallback (ORT_CACHE), so serve that before giving up to the network. A network fetch
@@ -387,14 +387,14 @@ async function cacheFirstInEither(primaryCache, fallbackCache, event) {
 // downloaded docs set tracks the live site instead of freezing at download
 // time. Offline: serve the bucket copy. A directory URL (/info/, /info/de/)
 // normalises to its index.html, matching how the manager stores the manifest's
-// file paths. NEVER touches SHELL_URL — that hazard is documented at
+// file paths. NEVER touches SHELL_URL - that hazard is documented at
 // BYPASS_PATTERNS.
 async function networkFirstInfo(event) {
   const { request } = event;
   const url = new URL(request.url);
   // The candidate cache keys for this URL, canonical first. A trailing slash
   // (or bare /info) is a directory index; an extensionless last segment
-  // (/info/de — how a typed locale URL usually arrives) resolves to that
+  // (/info/de - how a typed locale URL usually arrives) resolves to that
   // directory's index.html on the server, so it must here too.
   const p = url.pathname;
   const last = p.slice(p.lastIndexOf('/') + 1);
@@ -426,7 +426,7 @@ async function networkFirstInfo(event) {
 // Stale-while-revalidate for preview art: serve the cached copy immediately (fast, offline-
 // capable) and kick off a background fetch that refreshes the cache for next time. With
 // nothing cached yet, wait on the network. Only ok responses are cached, so a transient 404/
-// 5xx never poisons the cache. Used for /catalog/previews/ (thumbnails + the look bundle) —
+// 5xx never poisons the cache. Used for /catalog/previews/ (thumbnails + the look bundle) -
 // regenerable art where one-load staleness is harmless, unlike the fetch-fresh catalog index.
 async function staleWhileRevalidate(event) {
   const { request } = event;
@@ -450,7 +450,7 @@ async function staleWhileRevalidate(event) {
 // network actually fails (offline). This is deliberately NOT stale-while-revalidate:
 // serving a one-deploy-stale shell is unsafe because the shell's module graph points
 // at that build's content-hashed chunk names, and its LAZY chunks (the tool view, the
-// profile view, …) were never cached during the session — so after a new deploy removes
+// profile view, …) were never cached during the session - so after a new deploy removes
 // those files, the first navigation into a tool fetches a chunk that's gone and dies
 // with "Failed to fetch dynamically imported module". Network-first eliminates that at
 // the source; the cost is only the small HTML round-trip (the hashed JS/CSS it pulls
@@ -463,17 +463,17 @@ async function networkFirstDocument(event) {
   const ownsShell = isShellNavigation(new URL(request.url).pathname);
   try {
     const fresh = await fetch(request);
-    // Only a navigation the SPA actually owns may be written to the shell key —
+    // Only a navigation the SPA actually owns may be written to the shell key -
     // storing a real static document there poisons the offline boot for every
     // other route. BYPASS_PATTERNS already keeps the known static paths out of
     // this function; this is the backstop for the next one somebody adds.
     if (fresh && fresh.ok) { if (ownsShell) cache.put(SHELL_URL, fresh.clone()); return fresh; }
-    // Server reachable but unhappy (5xx) — a cached shell beats an error page,
+    // Server reachable but unhappy (5xx) - a cached shell beats an error page,
     // but only where the shell is what the URL should have served anyway.
     const cached = ownsShell ? await matchShell(cache) : null;
     return cached || fresh;
   } catch {
-    // Offline — serve the last good shell so the app still boots. A non-shell
+    // Offline - serve the last good shell so the app still boots. A non-shell
     // document gets the offline sentinel instead: answering it with the app
     // would be the same lie the shell-key bug used to tell, just in reverse.
     const cached = ownsShell ? await matchShell(cache) : null;
@@ -482,7 +482,7 @@ async function networkFirstDocument(event) {
 }
 
 // The offline shell: this generation's SHELL_URL entry first, then the
-// pre-downloaded app bucket's /index.html — so an install whose versioned
+// pre-downloaded app bucket's /index.html - so an install whose versioned
 // cache was evicted (or never navigated since the last bump) still cold-boots
 // from an explicit "download the app".
 async function matchShell(cache) {
@@ -501,7 +501,7 @@ async function matchShell(cache) {
  * top-level navigation, and must never be written to SHELL_URL.
  *
  * A trailing slash reads as a directory index (`/info/de/`), which is a real
- * document too — but those live under paths already in BYPASS_PATTERNS, and
+ * document too - but those live under paths already in BYPASS_PATTERNS, and
  * treating a bare `/` as the shell is the whole point, so only a non-empty final
  * segment is inspected.
  */

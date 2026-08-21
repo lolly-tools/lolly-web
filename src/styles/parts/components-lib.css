@@ -1,16 +1,16 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 /* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
    (order declared once in styles/app.css). Wrapping it means its rules keep a
-   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   fixed priority - above chrome/primitives/base, below overrides/a11y - no
    matter when Vite injects this chunk at runtime. Do not rely on load order. */
 @layer views {
-/* The browsable component library (#/components — views/components.ts). Its own
+/* The browsable component library (#/components - views/components.ts). Its own
    chrome only; every SAMPLE inside is styled by the real part sheets, which this
    view imports so the specimens look exactly as they do in the app. */
 
 .cl-view { max-width: 1180px; margin: 0 auto; padding: 1rem 1.1rem 5rem; }
 
-/* Header — the back affordance is the app's shared fixed corner pill
+/* Header - the back affordance is the app's shared fixed corner pill
    (.tools-home.home-full, as on /profile, /pro and /valid); title + sub share one
    baseline row (same layout as the brand studio's Colour-tab header), jump-nav on
    its own row. The top margin clears the fixed pill on narrow viewports. */
@@ -33,7 +33,7 @@
 }
 .cl-jump a:hover { border-color: hsl(var(--ring) / .6); color: hsl(var(--foreground)); }
 
-/* "Still open" panel — the audit is executed; this is the short list of what
+/* "Still open" panel - the audit is executed; this is the short list of what
    remains (full per-recommendation history: plans/76-component-audit.md). */
 .cl-recs {
   margin: 0 0 2.4rem; padding: 1.1rem 1.2rem; border-radius: var(--radius);
@@ -54,7 +54,7 @@
 .cl-section-head h2 { margin: 0; font-size: calc(1.25rem * var(--a11y-fs)); letter-spacing: -.01em; }
 .cl-section-kind { font-size: calc(.66rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
 
-/* The specimen grid — cards auto-fit, wide ones can opt to span. */
+/* The specimen grid - cards auto-fit, wide ones can opt to span. */
 .cl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
 .cl-card {
   display: flex; flex-direction: column; min-width: 0;
@@ -63,10 +63,10 @@
 .cl-card--wide { grid-column: 1 / -1; }
 .cl-card--tall { grid-row: span 2; }
 
-/* Specimen stage — a neutral, subtly-checkered field so translucency reads, with
+/* Specimen stage - a neutral, subtly-checkered field so translucency reads, with
    the live sample centred. It is NOT the app background; it's a viewing surface. */
 /* The footerNav SPECIMEN renders in-flow inside its stage (like the back pill's
-   in-flow form) — .gallery-footer is position:fixed for the real shell bar, which
+   in-flow form) - .gallery-footer is position:fixed for the real shell bar, which
    would pin the demo copy over the viewport bottom (plans/99 M1). */
 .cl-view .gallery-footer { position: static; }
 
@@ -75,7 +75,7 @@
   gap: .6rem; flex-wrap: wrap; min-height: 108px; padding: 1.1rem;
   background:
     repeating-conic-gradient(hsl(var(--muted) / .5) 0% 25%, transparent 0% 50%) 50% / 16px 16px;
-  /* Several specimens are overlays/toasts/sheets that use `position: fixed` — inside
+  /* Several specimens are overlays/toasts/sheets that use `position: fixed` - inside
      the app they cover the viewport. `contain` makes each stage the containing block
      for its fixed descendants (and clips them), so an overlay renders as a contained
      mini-preview in its own card instead of escaping over the whole page. Same
@@ -91,7 +91,7 @@
 /* Samples that lay out in a column rather than centred inline. */
 .cl-stage--stack { flex-direction: column; align-items: stretch; }
 
-/* A host-bound component can't render without the bridge — show its call instead. */
+/* A host-bound component can't render without the bridge - show its call instead. */
 .cl-code {
   display: block; max-width: 100%; overflow-x: auto; white-space: pre-wrap; word-break: break-word;
   font-family: var(--font-mono, ui-monospace, monospace); font-size: calc(.68rem * var(--a11y-fs)); line-height: 1.5;
@@ -116,12 +116,12 @@
 /* Flag a sample whose render threw, rather than showing a silent empty stage. */
 .cl-broken { font-size: calc(.72rem * var(--a11y-fs)); color: hsl(var(--destructive)); font-family: var(--font-mono, monospace); }
 
-/* ── Primitives-section live-specimen scaffolding — the app CSS these borrow
+/* ── Primitives-section live-specimen scaffolding - the app CSS these borrow
    (lib/icons.ts glyphs, .stage-nav, mountBodyPopover content) has no opinion on
    how a DEMO grid/anchor should lay out, so that little bit is local to the
    library itself. */
 
-/* Icon registry grid (lib/icons.ts) — every registered glyph + its name. */
+/* Icon registry grid (lib/icons.ts) - every registered glyph + its name. */
 .cl-icon-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: .3rem;
   width: 100%;
@@ -134,7 +134,7 @@
 .cl-icon-cell svg { color: hsl(var(--muted-foreground)); }
 .cl-icon-cell span { font-size: calc(.6rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); text-align: center; word-break: break-word; }
 
-/* Zoom HUD live demo — .stage-nav positions itself absolute bottom/right, so
+/* Zoom HUD live demo - .stage-nav positions itself absolute bottom/right, so
    the specimen needs a sized, positioned host to dock into (normally the tool
    canvas stage). */
 .cl-zoomhud-demo {
@@ -143,7 +143,7 @@
 }
 .cl-zoomhud-demo .stage-nav { opacity: 1; }
 
-/* Body-popover live demo — mountBodyPopover only owns lifecycle, not a look;
+/* Body-popover live demo - mountBodyPopover only owns lifecycle, not a look;
    this is a minimal stand-in for a caller's real menu chrome (contrast
    lang-menu.css's fuller .lang-menu, the real thing this primitive backs). */
 .cl-popover-demo {

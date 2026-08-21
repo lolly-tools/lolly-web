@@ -1,15 +1,15 @@
 /* SPDX-License-Identifier: MPL-2.0 */
-/* Eight resize grips (lib/panel-grips.ts) — four edges, four corners. Worn by the
+/* Eight resize grips (lib/panel-grips.ts) - four edges, four corners. Worn by the
    popped-out figures (lib/float-panel.ts) and the visualizer's enlarged player
    (components/viz-overlay.ts). Cascade layer: `views`, declared in styles/app.css. */
 @layer views {
 
-/* Invisible, and generous — 10px reads as an edge on a mouse and is still findable
+/* Invisible, and generous - 10px reads as an edge on a mouse and is still findable
    with a thumb, where a 4px hairline is not. `touch-action: none` on each, or the
    browser claims the drag for a scroll before the first pointermove arrives.
    No z-index, deliberately: being positioned and LAST in the panel's markup already
    puts a grip over the canvas, body and toolbar it shares an edge with, while an
-   overlay that raises itself (the visualizer's options menu) still wins — a 10px
+   overlay that raises itself (the visualizer's options menu) still wins - a 10px
    strip must not eat clicks on a menu item that happens to reach the edge. */
 .panel-grip { position: absolute; touch-action: none; }
 .panel-grip--n, .panel-grip--s { left: 10px; right: 10px; height: 10px; cursor: ns-resize; }

@@ -110,7 +110,7 @@ async function sourceToFrame(source: MatteSource, fallbackName?: string): Promis
 // the default is exactly the accidental-wrong-model case this avoids).
 const MATTE_MODEL_KEY = 'lolly:matteModel';
 const readMatteModel = (): string => { try { return localStorage.getItem(MATTE_MODEL_KEY) || ''; } catch { return ''; } };
-const saveMatteModel = (id: string): void => { try { localStorage.setItem(MATTE_MODEL_KEY, id); } catch { /* private mode — no persistence, harmless */ } };
+const saveMatteModel = (id: string): void => { try { localStorage.setItem(MATTE_MODEL_KEY, id); } catch { /* private mode - no persistence, harmless */ } };
 
 export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Promise<void> {
   // The model path needs the capability + a staged model; the colour-key path
@@ -265,7 +265,7 @@ export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Pr
       try {
         if (await matte.cached(id)) {
           consentEl.hidden = false;
-          consentEl.textContent = t('This model is already downloaded — it runs on-device and your image is never uploaded.');
+          consentEl.textContent = t('This model is already downloaded - it runs on-device and your image is never uploaded.');
         } else {
           consentEl.hidden = false;
           consentEl.textContent = t('The first run downloads a {size} model once. It runs on-device and your image is never uploaded.', { size: fmtBytes(matte.modelBytes(id)) });
@@ -322,7 +322,7 @@ export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Pr
       srcFrame = frame; srcBytes = bytes; srcName = name; srcFormat = format;
       chooseEl.hidden = true;
       sourceEl.hidden = false;
-      sourceEl.textContent = tRaw('{name} — {w}×{h}px', { name, w: frame.width, h: frame.height });
+      sourceEl.textContent = tRaw('{name} - {w}×{h}px', { name, w: frame.width, h: frame.height });
       formatSel.value = outputFormatFor(format);
       controlsEl.hidden = false;
       paintFormatNote();

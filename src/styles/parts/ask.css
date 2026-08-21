@@ -2,7 +2,7 @@
    declared once in styles/app.css), so its rules keep a fixed priority no matter
    when Vite injects this chunk at runtime. Do not rely on load order. */
 @layer views {
-/* ─── #/ask — Ask Lolly, the in-app help surface (plans/103) ───────────────────
+/* ─── #/ask - Ask Lolly, the in-app help surface (plans/103) ───────────────────
    A conversation column: a scrollable transcript of question bubbles and answer
    cards, with the composer pinned at the foot. Answer text is documentation
    prose rendered by lib/ask/render-md; the citation and open-in-docs link sit
@@ -19,7 +19,7 @@
   padding: 3.25rem 1.25rem 0; /* top clears the fixed back pill */
 }
 .ask-view .plat-header { flex: none; }
-/* The header stays wordmark-only — the eye goes to the Lolly mark on the Ask
+/* The header stays wordmark-only - the eye goes to the Lolly mark on the Ask
    button below, where the action is. */
 
 /* ─── top-right cluster: theme switcher + profile link ─────────────────────────── */
@@ -198,9 +198,9 @@
 
 .ask-empty { margin: 0; font-size: calc(14px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 
-/* ─── composer — the "talking to Lolly" hero ─────────────────────────────────────
+/* ─── composer - the "talking to Lolly" hero ─────────────────────────────────────
    A big pill input and a candy Ask button carrying the Lolly mark. Its swirl
-   spins on hover, the whole button lifts, and a press squishes it — the moment
+   spins on hover, the whole button lifts, and a press squishes it - the moment
    worth making delicious, since this is where you actually talk to Lolly. */
 .ask-composer {
   flex: none;
@@ -253,7 +253,7 @@
 }
 .ask-send-label { line-height: 1; }
 
-/* The Lolly mark on the button — bigger than the label, spiral brand-tinted; its
+/* The Lolly mark on the button - bigger than the label, spiral brand-tinted; its
    three layers counter-spin on hover / press (transform-box: fill-box, so each
    turns about its own centre). Motion is interaction-only and calm at rest. */
 .ask-send-mark {
@@ -272,7 +272,7 @@
 .ask-send:focus-visible .ask-send-mark .lolly-mark__spin-2 { animation: ask-mark-spin 4.6s linear infinite reverse; }
 .ask-send:hover .ask-send-mark .lolly-mark__spin-3,
 .ask-send:focus-visible .ask-send-mark .lolly-mark__spin-3 { animation: ask-mark-spin 7s linear infinite; }
-/* A quick eager flick of the whole mark on press — the tactile "sent" beat. */
+/* A quick eager flick of the whole mark on press - the tactile "sent" beat. */
 .ask-send:active .ask-send-mark { animation: ask-mark-pop 0.28s ease; }
 @keyframes ask-mark-spin { to { transform: rotate(360deg); } }
 @keyframes ask-mark-pop {
@@ -301,7 +301,7 @@ html[data-a11y-motion="reduce"] .ask-send .ask-send-mark .lolly-mark__spin-3 { a
   .ask-q, .ask-answer { max-width: 100%; }
 }
 
-/* ─── M1 consent chip — the "better matching" on-device model offer ─────────
+/* ─── M1 consent chip - the "better matching" on-device model offer ─────────
    One quiet line between the transcript and the composer. Buttons reuse the
    shared .btn / .btn-link recipes; only layout is declared here. */
 .ask-consent {

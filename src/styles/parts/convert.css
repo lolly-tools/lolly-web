@@ -1,4 +1,4 @@
-/* #/convert — the on-device converter view. Sibling of valid.css (Verify). */
+/* #/convert - the on-device converter view. Sibling of valid.css (Verify). */
 @layer chrome {
   .convert-view .plat-sub { color: hsl(var(--muted-foreground)); margin: 4px 0 0; max-width: 60ch; }
 

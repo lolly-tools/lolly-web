@@ -1,25 +1,25 @@
-/* ─── Projects view (/p) — gallery-style page over folders of saved sessions ─ */
+/* ─── Projects view (/p) - gallery-style page over folders of saved sessions ─ */
 .projects-view { display: block; }
 /* Full-bleed like the gallery so the window uses all the space; the top-right
    profile/history cluster reuses .gallery-topright (position:fixed; right:2em) verbatim,
    so the profile button sits in the SAME window spot when toggling Tools ↔ Projects. */
 /* Fill the viewport so the empty area BELOW the tiles is still part of the Projects
-   surface — desktop marquee-drag + click-to-deselect need somewhere to grab. */
+   surface - desktop marquee-drag + click-to-deselect need somewhere to grab. */
 /* top clears the fixed toggle band; bottom clears the fixed footer bar (search + nav links).
    NOTE: these clearances do NOT follow the type multiplier, and the band they clear does
-   (--chrome-h) — 52px is only 2.4px clear of it at rest, so the band's bottom edge crosses
+   (--chrome-h) - 52px is only 2.4px clear of it at rest, so the band's bottom edge crosses
    the padding at a factor of ~1.05. Fixing it here would mean scaling `padding`, which the
    a11y contract deliberately forbids at a use site (that is how the multiplier turns back
    into a whole-UI zoom); it wants a scaled TOKEN in styles/tokens.css instead. */
-/* (Footer clearance comes from #view's shared .has-search-footer padding — gallery.css.) */
+/* (Footer clearance comes from #view's shared .has-search-footer padding - gallery.css.) */
 .projects { padding: calc(52px + var(--chrome-grow)) 20px 0; min-height: 100vh; box-sizing: border-box; }
 
-/* Tools | Projects segmented toggle — FIXED at the SAME top as the profile/history
+/* Tools | Projects segmented toggle - FIXED at the SAME top as the profile/history
    cluster (.gallery-topright top:.5em) and horizontally centred, so it's vertically
    centred with those icons AND sits identically on the gallery and Projects views
    (in-flow positioning made it drift between the two). Shrinks to the pill so it
    never blocks clicks elsewhere in the top band. */
-/* Top offset comes from the shared top-row geometry (--chrome-top, tokens.css) —
+/* Top offset comes from the shared top-row geometry (--chrome-top, tokens.css) -
    the same property .gallery-topright and the back pill read. The old `.5em`
    resolved against the wrapper's inherited 14px (7px) rather than the row's
    0.5rem (8px), which is why the pill sat a pixel proud of the cluster it is
@@ -29,7 +29,7 @@
   z-index: 99999; display: flex; justify-content: center; margin: 0;
 }
 /* The pill was padding-driven, so its height was whatever its own font-size and
-   paddings happened to add up to — 3.4px short of the row at rest, and a growing
+   paddings happened to add up to - 3.4px short of the row at rest, and a growing
    gap under largeText, because the type inside scales on --a11y-fs while the px
    paddings do not. It is a member of the top row like any other, so it takes the
    row's height from the one source of truth instead: min-height (not height) so a
@@ -81,12 +81,12 @@
 /* Jelly effects mode (lib/jelly.ts): ONE persistent <jelly-segmented> pill,
    mounted at body level by syncJellyNavToggle (view-toggle.ts) so it lives
    ABOVE the view-fade snapshot layer (z 100000) and never re-mounts on
-   navigation — the pill slides once, continuously, while views cross-fade
+   navigation - the pill slides once, continuously, while views cross-fade
    beneath. Desktop only: while it's shown, [data-jelly-nav] hides each view's
    own centred toggle; the ≤640px topbar keeps the native icon links (segments
    can't render icons) and hides the floating pill instead. */
 .jelly-nav-wrap {
-  /* Same --chrome-top as the native pill it stands in for — the two are never on
+  /* Same --chrome-top as the native pill it stands in for - the two are never on
      screen together, so a differing offset would make the row jump when the jelly
      flag is toggled. Height is left to the segmented component: it paints to a
      canvas it sizes itself, and a min-height here would stretch the frosted track
@@ -95,7 +95,7 @@
   z-index: 100001;
   /* The frosted pill: same glass recipe as the native .view-toggle. The
      segmented control's own canvas track is made transparent below, so this
-     wrapper IS the track surface — giving the inactive-tab area the blurred
+     wrapper IS the track surface - giving the inactive-tab area the blurred
      backdrop a canvas fill can't produce. */
   padding: 3px;
   border: 1px solid hsl(var(--border));
@@ -107,7 +107,7 @@
 .jelly-nav-wrap[hidden] { display: none; }
 .jelly-nav-wrap .view-toggle-seg {
   --jelly-segmented-font-size: calc(13px * var(--a11y-fs));
-  /* Painted per-frame via getComputedStyle — `transparent` resolves to a no-op
+  /* Painted per-frame via getComputedStyle - `transparent` resolves to a no-op
      fill, leaving only the sliding accent pill on the frosted wrapper. */
   --jelly-track: transparent;
   /* Tighter halo around the active pill (component defaults: 4px / 18px). */
@@ -120,7 +120,7 @@
 @media (max-width: 640px) {
   .jelly-nav-wrap { display: none; }
 }
-/* The gallery no longer needs its own top clearance for the fixed toggle band — the
+/* The gallery no longer needs its own top clearance for the fixed toggle band - the
    featured hero (.featured, 3.4rem top pad) or the .tool-masonry (3.6rem top pad, when
    no hero) already holds that space, so a .gallery padding-top just doubled it up. */
 
@@ -132,11 +132,11 @@
    above the taller session cards - the Finder read. */
 .projects-grid {
   grid-template-columns: repeat(auto-fill, 180px); justify-content: start;
-  gap: var(--grid-gap);   /* tokens.css — collapses to --grid-gap-tight ≤640px */
+  gap: var(--grid-gap);   /* tokens.css - collapses to --grid-gap-tight ≤640px */
   align-items: start;
   padding:3.6rem 0 1rem;
 }
-/* Create covers keep the sessions' 4/3 — projects grid only, and NOT in list mode
+/* Create covers keep the sessions' 4/3 - projects grid only, and NOT in list mode
    (whose own row rule sizes covers to a 52×40 chip and must keep winning). */
 .projects-grid:not(.projects-list) .tile-cover--create {
   aspect-ratio: 4 / 3; height: auto;
@@ -156,7 +156,7 @@
   }
 }
 
-/* List view mode — reflow the same tiles into compact full-width rows. */
+/* List view mode - reflow the same tiles into compact full-width rows. */
 .projects-grid.projects-list { display: flex; flex-direction: column; gap: 6px; max-width: 760px; }
 .projects-list .folder-tile { width: 100%; }
 .projects-list .folder-tile .tile-primary { flex-direction: row; align-items: center; gap: 14px; padding: 8px 12px; }
@@ -168,13 +168,13 @@
 .projects-list .tile-meta { padding: 0; flex: 1; min-width: 0; }
 .projects-list .tile-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .projects-list .tile-menu-btn { top: 50%; right: 10px; transform: translateY(-50%); }
-/* In a compact row the top-left grid position would sit over the 52px cover thumbnail —
+/* In a compact row the top-left grid position would sit over the 52px cover thumbnail -
    move the selection toggle into the right gutter, just inside the ⋯ menu button. */
 .projects-list .tile-check { top: 50%; left: auto; right: 42px; transform: translateY(-50%); }
 
 /* ── Search results mode (a query reaches INTO sub-folders) ────────
    The field itself is the shell's persistent bar (components/search-bar.ts,
-   plans/99 M1 — gallery.css owns its chrome); this block styles only the
+   plans/99 M1 - gallery.css owns its chrome); this block styles only the
    in-body results chrome. */
 .projects-search-status { margin: 0.6rem 0 0; font-size: calc(12.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .projects-search-grid { padding-top: 0.7rem; }
@@ -206,18 +206,18 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
    view-options popover above). */
 .projects-menu { position: fixed; }
 /* The bulk menu's "{n} selected" head sits outside its nested role="menu" (see
-   views/projects.ts bulkMenuHtml) — same flex-column list layout as the outer
+   views/projects.ts bulkMenuHtml) - same flex-column list layout as the outer
    .folder-menu, just one level deeper. */
 .projects-menu .folder-menu-list { display: flex; flex-direction: column; gap: 1px; }
 
-/* "Render folder" progress toast — the .pro-toast family's BAR variant (projects +
+/* "Render folder" progress toast - the .pro-toast family's BAR variant (projects +
    multi-edit): pin to the TOP (under the profile/history row, not the default bottom)
    and span the full screen length so the rotating quip + per-render log read at a
    glance. Two classes outrank the base .pro-toast positioning from run-overlay.css.
    (Distinct from .pro-toast--top, profile's compact corner variant.) */
 .pro-toast.pro-toast--bar { top: calc(56px + var(--chrome-grow)); left: 2em; right: 2em; bottom: auto; }
 
-/* "Create new" tiles (dashed, + icon) — kept deliberately muted so they read as
+/* "Create new" tiles (dashed, + icon) - kept deliberately muted so they read as
    affordances, not content. Unlike a real tile, the icon area has NO preview fill and
    NO divider border: it's one continuous transparent panel flowing straight into the
    label, so the whole tile is just a quiet dashed outline. */
@@ -226,12 +226,12 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
 .tile-cover--create {
   display: flex; align-items: center; justify-content: center; height: 90px;   /* compact, matches folder tiles */
   color: hsl(var(--muted-foreground)); background: transparent;
-  border-bottom: 0;   /* override the base .tile-cover divider — create tiles are seamless */
+  border-bottom: 0;   /* override the base .tile-cover divider - create tiles are seamless */
 }
 .folder-tile--create:hover .tile-cover--create { color: hsl(var(--primary)); }
 .tile-cover--create svg { width: calc(30px * var(--a11y-fs)); height: calc(30px * var(--a11y-fs)); }
 
-/* Breadcrumb trail above a folder's header — links each ancestor back up the tree. */
+/* Breadcrumb trail above a folder's header - links each ancestor back up the tree. */
 .projects-crumbs {
   display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
   margin: 0 0 8px; font-size: calc(12.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground));
@@ -259,9 +259,9 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
 .projects-head-spacer { flex: 1; }
 .projects-render { display: inline-flex; align-items: center; gap: 7px; }
 .projects-render svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
-/* Render is the primary action — fill it with the brand colour so it reads as the
+/* Render is the primary action - fill it with the brand colour so it reads as the
    pronounced CTA (folder header, bulk bar, move-picker confirm all share this class).
-   Two-class `.projects-render.btn` beats the generic `.btn` base by specificity —
+   Two-class `.projects-render.btn` beats the generic `.btn` base by specificity -
    same trick as .modal-danger. Fill (background/color) + hover are
    aliased in parts/buttons.css's .btn--primary list; only the border-color delta lives here. */
 .projects-render.btn {
@@ -269,10 +269,10 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
 }
 .projects-render.btn svg { opacity: 1; }
 
-/* Uncategorised preview ribbon — the gallery's Featured strip (drift · Cover Flow ·
+/* Uncategorised preview ribbon - the gallery's Featured strip (drift · Cover Flow ·
    mobile grip, see components/featured-row.ts) reused over the loose sessions, floated
    above the "Move to" rail. The hero is full-bleed + square by design; here it's the same
-   commanding height as the Tools hero (--ftile-h lives in featured.css — one source for
+   commanding height as the Tools hero (--ftile-h lives in featured.css - one source for
    all three strips) inside a CONTAINED rounded frame, so it reads as a browsable ribbon
    atop the folder view. All the motion/interaction chrome comes from featured.css unchanged. */
 .projects-featured {
@@ -282,7 +282,7 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
   box-shadow: inset 0 0 0 1px hsl(var(--border));
 }
 .projects-featured .featured-viewport { border-radius: inherit; }
-/* Preview-strip view switcher — the shared .view-seg (Gallery | Cover Flow), centred just
+/* Preview-strip view switcher - the shared .view-seg (Gallery | Cover Flow), centred just
    below the ribbon. Pulled up under the ribbon's own bottom gap so the two read as a unit.
    width:fit-content keeps it a compact segmented control (its .view-seg-btn children are
    flex:1, which would otherwise stretch across the full-width row). */
@@ -292,7 +292,7 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
   .projects-featured { margin-bottom: 16px; }
 }
 
-/* "Move to" rail — drop targets in a folder view. */
+/* "Move to" rail - drop targets in a folder view. */
 .projects-rail { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 16px; }
 .projects-chip {
   padding: 6px 12px; border: 1px solid hsl(var(--border)); border-radius: 999px;
@@ -320,16 +320,16 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
 .projects-empty { color: hsl(var(--muted-foreground)); font-size: calc(14px * var(--a11y-fs)); margin: 18px 2px; }
 
 /* .folder-menu-head (the per-tile menu's group label) now shares the .folder-menu-sep
-   recipe in parts/folders.css — the whole .folder-menu-* family lives there. */
+   recipe in parts/folders.css - the whole .folder-menu-* family lives there. */
 
-/* The bespoke "+ New tool" chooser is retired — the shared asset picker (views/picker.ts)
+/* The bespoke "+ New tool" chooser is retired - the shared asset picker (views/picker.ts)
    now handles "+ New asset" in "collect into this folder" mode, so its Library / Saved
    creations / Projects / Tools tabs are reused here. Its own SVG-sizing rule was shared
    with the Move-to picker rows, kept below. */
 .movepicker-row-icon svg,
 .movepicker-row-chev svg { width: 100%; height: 100%; }
 
-/* Folder-image lightbox — a plain preview modal (mountModal chrome + Escape-to-close);
+/* Folder-image lightbox - a plain preview modal (mountModal chrome + Escape-to-close);
    clicking the figure also dismisses it. */
 .projects-imgpreview-modal { max-width: min(92vw, 1100px); }
 .projects-imgpreview {
@@ -347,13 +347,13 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
 
 /* The shared modal chrome (.modal / .modal-title / .modal-actions / …) used by the
    confirm/choice/notice/prompt dialogs, the New-folder name prompt below, and the
-   password/lock prompts elsewhere now lives in dialogs.css (component audit rec 4) —
+   password/lock prompts elsewhere now lives in dialogs.css (component audit rec 4) -
    moved out of this file since it long outgrew being a Projects-only thing. */
 
 /* New-folder-from-selection name prompt (reuses .modal chrome). */
 .projects-prompt-input { width: 100%; margin: 0 0 16px; }
 
-/* The desktop click-drag marquee box now lives in components.css (.tile-marquee) — it is
+/* The desktop click-drag marquee box now lives in components.css (.tile-marquee) - it is
    shared verbatim with the Catalogue, along with the gesture itself (lib/tile-select.ts). */
 
 /* ─── Multi-select bulk-action bar ──────────────────────────────────────────
@@ -373,7 +373,7 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
 .projects-bulkbar-actions .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: calc(12.5px * var(--a11y-fs)); }
 .projects-bulkbar-actions .btn svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
 /* Two-class so the destructive red beats the generic `.btn { color: foreground }`
-   defined later in the file (equal specificity, later wins) — same trick as
+   defined later in the file (equal specificity, later wins) - same trick as
    .projects-render.btn / .modal-danger. */
 .projects-bulk-danger.btn { color: hsl(var(--destructive, 0 70% 50%)); }
 .projects-bulk-danger.btn:hover { background: hsl(var(--destructive, 0 70% 50%) / 0.1); }
@@ -403,20 +403,20 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
 /* ─── Projects: mobile layout ────────────────────────────────────────────────
    The folder header can't fit its back button + full title + count + a text
    "Render folder" button + ⋯ menu on one phone row, so it collapses to TWO rows:
-   [‹ back] [title — truncates] [count] [⋯]  /  [ Render folder — full-width CTA ].
+   [‹ back] [title - truncates] [count] [⋯]  /  [ Render folder - full-width CTA ].
    Placed after the base rules so these win without needing extra specificity. */
 @media (max-width: 640px) {
   /* Clear the fixed top bar (offset by the safe-area inset on notched PWAs). */
   .projects { padding-top: calc(52px + var(--chrome-grow) + env(safe-area-inset-top, 0px)); }
 
   .projects-head { flex-wrap: wrap; column-gap: 8px; row-gap: 10px; margin-bottom: 14px; }
-  /* flex-basis 0 so a long title never forces the count/menu to wrap — it just
+  /* flex-basis 0 so a long title never forces the count/menu to wrap - it just
      grows into the leftover space on row 1 and ellipsis-truncates. */
   .projects-title { flex: 1 1 0; font-size: calc(17px * var(--a11y-fs)); }
   .projects-head-spacer { display: none; }
   .projects-count { order: 3; flex: 0 0 auto; }
   .projects-head-menu { order: 4; }
-  /* Scoped to the header — `.projects-render.btn` is a SHARED class (bulk bar's
+  /* Scoped to the header - `.projects-render.btn` is a SHARED class (bulk bar's
      "Render selection", move-picker confirm, new-folder Create), and an unscoped
      order/flex here would reorder + full-width those too (e.g. shove the bulk bar's
      primary Render below Delete). The header button is a direct child of .projects-head. */
@@ -429,7 +429,7 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
 
 /* Touch: no hover, so reveal the per-tile ⋯ menu (its only trigger otherwise is
    desktop right-click) and grow the small header/overlay controls to a comfortable
-   ~40-44px tap size — matching the app-wide coarse-pointer target convention.
+   ~40-44px tap size - matching the app-wide coarse-pointer target convention.
    Each target carries the type multiplier so the floor rises WITH largeText: these
    rules sit after the base ones and would otherwise clamp a scaled control back
    down to the touch minimum, leaving the only unlabelled controls on the page as

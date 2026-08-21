@@ -1,13 +1,13 @@
 /* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
    (order declared once in styles/app.css). Wrapping it means its rules keep a
-   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   fixed priority - above chrome/primitives/base, below overrides/a11y - no
    matter when Vite injects this chunk at runtime. Do not rely on load order. */
 @layer views {
 /*
- * #/start — the Design System studio shell (views/start.ts). Async CSS chunk,
+ * #/start - the Design System studio shell (views/start.ts). Async CSS chunk,
  * loaded with the view. The rooms themselves are the brand studio's panels
  * (lib/brand-editor.ts, .be-* styles from brand-studio.css, imported by that
- * module); this sheet styles what sits around them — header, the rail of rooms
+ * module); this sheet styles what sits around them - header, the rail of rooms
  * (a left sidebar from 900px, a horizontal chip strip below it), the rail's
  * foot actions, the Overview room, and the import card. Chrome colours flow
  * through tokens.css.
@@ -18,7 +18,7 @@
 
 /* Full-viewport on EVERY tab: the hero wash (.start::before) paints on this
    container, so any narrower cap visibly clips the gradient at the container
-   edge — and the studio panels want the room. The 2650px ceiling only kicks in
+   edge - and the studio panels want the room. The 2650px ceiling only kicks in
    on ultra-wide monitors, where margin:auto recenters the page. */
 .start {
   max-width: 2650px;
@@ -27,7 +27,7 @@
   position: relative;
 }
 /* A soft brand-tinted wash behind the hero so a first-run page reads as crafted,
-   not blank — the accent the user is about to define, hinted. Theme-aware via the
+   not blank - the accent the user is about to define, hinted. Theme-aware via the
    primary token; pointer-events-through so it never blocks the controls. */
 .start::before {
   content: "";
@@ -40,14 +40,14 @@
   pointer-events: none;
   z-index: 0;
 }
-/* Lift real content above the ::before wash — but NOT the language cluster, whose
+/* Lift real content above the ::before wash - but NOT the language cluster, whose
    own `position: fixed` (gallery.css) pins it top-right like every other view.
    Without the exclusion this rule's `position: relative` wins (equal specificity,
    later sheet) and drops the selector into flow. */
 .start > *:not(.gallery-topright) { position: relative; z-index: 1; }
 
 /* The studio's return pill is a real .tools-home glass pill (arrow + label from
-   components/back-pill.ts, paint from components.css/buttons.css) — this keeps
+   components/back-pill.ts, paint from components.css/buttons.css) - this keeps
    only the studio's own placement. It sits in flow rather than pinned to the
    corner, so align-self + fit-content hold it to content size on the colour
    tab, where .start becomes a flex column (≥1100px below) and a stretched flex
@@ -58,7 +58,7 @@
   width: fit-content;
 }
 /* Back pill + always-home FAB as ONE in-flow row. The studio's back pill sits in
-   flow (not pinned — see .start-back), so its Home twin rides right beside it here
+   flow (not pinned - see .start-back), so its Home twin rides right beside it here
    rather than in the top-right cluster, matching every other view's back+home pair.
    align-self keeps the row content-width when .start becomes a flex column (≥1100px);
    the row owns the bottom gap so the pill inside it drops its own. */
@@ -71,11 +71,11 @@
 }
 .start-back-row .start-back { margin-bottom: 0; }
 /* The always-home FAB that twins the language FAB in this view's top-right
-   cluster is shared chrome now — its box + glass live in topbar.css/.home-fab
+   cluster is shared chrome now - its box + glass live in topbar.css/.home-fab
    (components/home-fab.ts), so nothing about it is styled here. */
 
-/* ── Header — .start-head/-eyebrow/-title/-sub compose .section-header
-      (chips.css). ONE compact header for every tab — eyebrow, title and sub on
+/* ── Header - .start-head/-eyebrow/-title/-sub compose .section-header
+      (chips.css). ONE compact header for every tab - eyebrow, title and sub on
       a single wrapping line. It used to run hero-sized with the Colour tab
       alone folding it down (a :has(data-active-tab) variant), but that jumped
       the whole top chrome on every switch to/from Colours; the steps should
@@ -87,7 +87,7 @@
   flex-wrap: wrap;
   gap: 4px 12px;
   margin-bottom: 12px;
-  /* Leave the fixed top-right cluster its room — the Home + language FABs now
+  /* Leave the fixed top-right cluster its room - the Home + language FABs now
      that the whole-system actions sit in the rail's foot (two 2.6rem squares +
      gap fit inside 8rem). Capped against the viewport so a narrow window doesn't
      reserve most of the line. */
@@ -107,18 +107,18 @@
   line-height: 1.2;
 }
 .start-sub { font-size: calc(12.5px * var(--a11y-fs)); line-height: 1.5; flex: 1 1 26ch; }
-/* Short screens: the sentence goes entirely — the tabs already say where we are. */
+/* Short screens: the sentence goes entirely - the tabs already say where we are. */
 @media (max-height: 720px) {
   .start-sub { display: none; }
 }
 
 /* ── The studio: a rail of rooms beside the open room ─────────────────────────
       The rooms are PEERS. There is no order to walk, so there is nothing here
-      that counts, numbers or nudges — an item is either where you are or where
+      that counts, numbers or nudges - an item is either where you are or where
       you could go.
 
       Stacking: this takes `.start > *`'s z-index 1, so the rail (15) and the
-      swatch popover (.be-editor, 30) both live in THIS context — the popover
+      swatch popover (.be-editor, 30) both live in THIS context - the popover
       paints over the rail, and the palette sheet (a direct child of .start at
       50) still paints over everything, exactly as before. ───────────────────── */
 .ds-shell {
@@ -133,7 +133,7 @@
 
 .ds-rail { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 /* Phones: the rail folds to a wrapping chip strip under the header. Only the
-   CHIPS pin (the wayfinding); the action buttons scroll away with the page —
+   CHIPS pin (the wayfinding); the action buttons scroll away with the page -
    pinning both ate a fifth of a phone screen. */
 @media (max-width: 899px) {
   .ds-rail { gap: 6px; }
@@ -185,7 +185,7 @@
   transition: background 0.12s, color 0.12s;
 }
 .ds-room:hover { background: hsl(var(--muted) / 0.7); color: hsl(var(--foreground)); }
-/* The current room reads as a TINTED FILL, never a coloured outline — the house
+/* The current room reads as a TINTED FILL, never a coloured outline - the house
    rule for anything with a border-radius. */
 .ds-room[aria-current="page"] { background: hsl(var(--primary) / 0.14); color: hsl(var(--foreground)); }
 .ds-room[aria-current="page"] .ds-room-ic { color: hsl(var(--primary)); }
@@ -239,7 +239,7 @@
 .ds-main { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
 .ds-panel[hidden] { display: none; }
 
-/* ── The Overview room — counts and doors, no progress ─────────────────────── */
+/* ── The Overview room - counts and doors, no progress ─────────────────────── */
 .ds-ov { display: flex; flex-direction: column; gap: 14px; }
 .ds-ov-loading { margin: 0; font-size: calc(13px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .ds-ov-title { margin: 0; font-size: calc(17px * var(--a11y-fs)); font-weight: 800; letter-spacing: -0.01em; }
@@ -296,13 +296,13 @@
 .ds-ov-exit { font-size: calc(12.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 
 /* ── The import card, and the modal it now opens in ──────────────────────── */
-/* Import is the inviting way in — bringing your existing brand across is the best
+/* Import is the inviting way in - bringing your existing brand across is the best
    first move, so the button wears the house glowing-CTA look (the same brand-
    coloured gloss as .be-cta.is-active): a top-lit gradient mixed off --primary, a
    soft glow in the same hue, and a gentle lift + brighter glow on hover. A slow,
    low-amplitude breathing glow draws the eye without nagging. */
 /* Combined selector (.be-btn.start-import-cta) so this beats .be-btn's own
-   background — same tie-break the glowing CTA uses. */
+   background - same tie-break the glowing CTA uses. */
 .be-btn.start-import-cta {
   color: hsl(var(--primary-foreground));
   border-color: hsl(0 0% 100% / .28);
@@ -343,7 +343,7 @@
   gap: 12px;
 }
 .start-import-panel[hidden] { display: none; }
-/* The card IS the control — a label wrapping the file input, so a click
+/* The card IS the control - a label wrapping the file input, so a click
    anywhere opens the picker; drops land on the same routing. */
 .start-import-drop {
   display: flex;
@@ -363,13 +363,13 @@
   border-color: hsl(var(--primary));
   background: hsl(var(--primary) / 0.07);
 }
-/* Keyboard path: the visually-hidden file input inside is focusable — surface
+/* Keyboard path: the visually-hidden file input inside is focusable - surface
    its focus on the card. */
 .start-import-drop:has(.start-import-file:focus-visible) {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
 }
-/* The four accepted formats, in preference order — recognition over prose. */
+/* The four accepted formats, in preference order - recognition over prose. */
 .start-import-formats {
   display: flex;
   justify-content: center;
@@ -442,11 +442,11 @@
    so the whole page reads as one column of evenly-spaced cards. */
 .start-editor-mount .be { gap: 22px; }
 .start-editor-mount .be-tab { gap: 22px; }
-/* Main pane only — the side pane spaces its panels inside .be-split-scroll
+/* Main pane only - the side pane spaces its panels inside .be-split-scroll
    (brand-studio.css margins), and ≥1100px it's a flex column whose gap would
    double-space the download dock. */
 .start-editor-mount .be-split-main { gap: 22px; }
-/* The .be-tab gap above would re-widen the split's gutter — the divider's own
+/* The .be-tab gap above would re-widen the split's gutter - the divider's own
    16px track is the whole gutter there (brand-studio.css). */
 @media (min-width: 1100px) {
   .start-editor-mount .be-tab--split { column-gap: 0; }
@@ -485,8 +485,8 @@
   .start:has(.be[data-active-tab="color"]) .ds-rail { max-height: 100%; }
 }
 
-/* ── SVG colour review (the "no formal tokens — pick which colours to keep"
-      path) — a checkbox grid, each chip a uniform-border rounded swatch card
+/* ── SVG colour review (the "no formal tokens - pick which colours to keep"
+      path) - a checkbox grid, each chip a uniform-border rounded swatch card
       (never a single accent edge). ─────────────────────────────────────────── */
 .start-color-actions { display: flex; gap: 8px; margin: 10px 0; }
 .start-color-grid {
@@ -528,7 +528,7 @@
 
 /* ── The source picker (plan 97 section 8) ──────────────────────────────────────────
       Stage 1 asks WHAT you have; stage 2 is that source's own control. Only the
-      sources that can actually be used are here — there is no disabled tile and
+      sources that can actually be used are here - there is no disabled tile and
       no "coming soon" line, because a control nobody can press is an apology
       taking up a slot. ─────────────────────────────────────────────────────── */
 .ds-src-tiles {
@@ -548,7 +548,7 @@
   width: 100%;
   min-height: 44px;
   padding: 16px;
-  /* A uniform border on all four sides — the house rule for a rounded card. */
+  /* A uniform border on all four sides - the house rule for a rounded card. */
   border: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius) * 1.2);
   background: hsl(var(--card));
@@ -572,7 +572,7 @@
 
 .ds-src-stage { display: flex; flex-direction: column; gap: 12px; }
 .ds-src-stage[hidden] { display: none; }
-/* The only way back out of a stage, on every stage — so it holds the same 44px
+/* The only way back out of a stage, on every stage - so it holds the same 44px
    floor .ds-src-tile, .ds-src-url-go, .ds-pdf-add and .ds-roles-chip hold to.
    .be-btn--sm's padding alone leaves it near 27px, which is a thumb-sized miss
    on the one control that undoes a wrong turn. */
@@ -585,7 +585,7 @@
 }
 .ds-src-back:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 /* The image drop card composes .start-import-drop, so it inherits the dashed
-   edge — this file's dashed borders mark drop areas and nothing else. */
+   edge - this file's dashed borders mark drop areas and nothing else. */
 .ds-src-drop:has(.ds-src-imgfile:focus-visible) {
   outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
@@ -604,14 +604,14 @@
 }
 .ds-src-stage-note,
 .ds-src-note { margin: 0; font-size: calc(12.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
-/* Colour is NOT the signal. Every refusal in the picker — a bad address, a page
-   that would not answer, a mark over the limit — arrives through this one line,
+/* Colour is NOT the signal. Every refusal in the picker - a bad address, a page
+   that would not answer, a mark over the limit - arrives through this one line,
    and `color: hsl(var(--destructive))` on 12.5px text is the case tokens.css
    writes up under KNOWN LIMITS: Lc 16.6 on the dark page, Lc 23.5 with the
    darkened value, against a bar of 75, and no red reaches it. It would make the
    error state markedly LESS readable than the muted state it replaces. So the
    ink stays --foreground with a weight, and the semantics ride a mark that does
-   not depend on telling two colours apart — exactly what .ds-v-slugline.is-error
+   not depend on telling two colours apart - exactly what .ds-v-slugline.is-error
    does on the Versions panel, and what that KNOWN LIMITS entry prescribes. */
 .ds-src-note.is-error { color: hsl(var(--foreground)); font-weight: 600; }
 .ds-src-note.is-error::before { content: '\26A0'; color: hsl(var(--destructive)); margin-inline-end: 0.4em; }
@@ -641,7 +641,7 @@
   flex-direction: column;
   gap: 6px;
 }
-/* A uniform border on all four sides — the house rule for a rounded card. */
+/* A uniform border on all four sides - the house rule for a rounded card. */
 .ds-pdf-font {
   display: flex;
   flex-wrap: wrap;
@@ -666,7 +666,7 @@
 /* The warning chip carries the SUBSET / reuse-forbidden caveat, so it has to be
    the most readable thing in the row, not the least. Destructive-on-destructive
    measured 3.86 : 1 in light, 2.49 : 1 in dark and 2.00 : 1 in teal against a
-   4.5 : 1 requirement — and at 10.5px uppercase nothing here is large text. The
+   4.5 : 1 requirement - and at 10.5px uppercase nothing here is large text. The
    tint alone carries the warning and the text keeps the sheet's own foreground,
    which is what .pdfx-tag--warn does on the sibling surface. */
 .ds-pdf-chip--warn { background: hsl(var(--destructive) / 0.18); color: hsl(var(--foreground)); }
@@ -685,7 +685,7 @@
   min-height: 44px;
 }
 .ds-pdf-add { margin-inline-start: auto; }
-/* Busy and added are aria-disabled, never `disabled` — the control keeps focus
+/* Busy and added are aria-disabled, never `disabled` - the control keeps focus
    (views/start.ts), so it needs the resting look the attribute usually brings. */
 .ds-pdf-add[aria-disabled="true"] { cursor: default; }
 /* Added reads as a tinted fill, never a coloured edge on a rounded control. */
@@ -722,7 +722,7 @@
   min-width: 10rem;
 }
 /* The consent line: what will be read, and by what. Muted because it is a
-   statement of fact rather than a warning — there is nothing to alarm anyone
+   statement of fact rather than a warning - there is nothing to alarm anyone
    about until they press, and nothing happens if they do not. */
 .ds-src-url-consent {
   margin: 0;
@@ -731,7 +731,7 @@
   overflow-wrap: anywhere;
 }
 /* The result card's presses, on the same floor as the PDF card's. Busy and done
-   are aria-disabled, never `disabled` — the control keeps focus
+   are aria-disabled, never `disabled` - the control keeps focus
    (views/start.ts), so it needs the resting look the attribute usually brings. */
 .ds-site-act {
   display: inline-flex;
@@ -743,7 +743,7 @@
 /* Done reads as a tinted fill, never a coloured edge on a rounded control. */
 .ds-site-act.is-added { background: hsl(var(--primary) / 0.16); font-weight: 700; }
 
-/* ── The semantic mapping review — ONE decision, in the result card ────────── */
+/* ── The semantic mapping review - ONE decision, in the result card ────────── */
 .ds-roles-card { display: flex; flex-direction: column; gap: 8px; }
 .ds-roles-q { margin: 0; font-size: calc(13.5px * var(--a11y-fs)); font-weight: 700; }
 .ds-roles-choices {
@@ -758,7 +758,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  /* The same 44px .ds-src-tile and .ds-tray-row hold to — this is the one
+  /* The same 44px .ds-src-tile and .ds-tray-row hold to - this is the one
      decision the mapping card asks for, on every width including a phone. */
   min-height: 44px;
   padding: 6px 10px;
@@ -813,12 +813,12 @@
 /* ── The Versions panel (plan 97 section 6a) ─────────────────────────────────────────
       A foot-pinned panel, not a room, and it looks like one: the same quiet
       surface the Overview room uses, no colour of its own, and NO ANIMATION
-      anywhere — there is nothing here worth drawing the eye to, and reduced
+      anywhere - there is nothing here worth drawing the eye to, and reduced
       motion then needs no exception because there is no motion to reduce.
 
       The one place colour is spent is the breaking half of the compat card
       (--destructive on the disclosure's own text) and the Active pill (a tinted
-      FILL, never a coloured outline — the house rule for anything rounded). */
+      FILL, never a coloured outline - the house rule for anything rounded). */
 .ds-versions-toggle[hidden] { display: none; }
 .ds-versions-toggle-ic {
   display: grid;
@@ -832,7 +832,7 @@
 .ds-v-loading { margin: 0; font-size: calc(13px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .ds-v-title { margin: 0; font-size: calc(17px * var(--a11y-fs)); font-weight: 800; letter-spacing: -0.01em; }
 /* The heading is the landing spot after an action removes the control that was
-   pressed, so it takes focus programmatically — and must show a ring when it
+   pressed, so it takes focus programmatically - and must show a ring when it
    does, without growing one on a mouse click. */
 .ds-v-title:focus { outline: none; }
 .ds-v-title:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 3px; border-radius: 4px; }
@@ -907,7 +907,7 @@
   color: hsl(var(--muted-foreground));
   overflow-wrap: anywhere;
 }
-/* Colour is not the signal — the two states put the same neutral sentence in the
+/* Colour is not the signal - the two states put the same neutral sentence in the
    same place, so a mark and a weight carry the refusal for anyone who cannot
    tell them apart. The programmatic half is aria-invalid on the field
    (rooms/versions.ts). */
@@ -924,7 +924,7 @@
 }
 .ds-v-compat-head { font-weight: 700; color: hsl(var(--foreground)); }
 /* `display: flex` on a <summary> takes it out of `list-item`, which removes the
-   native disclosure triangle in every engine — so one is drawn back. Without it
+   native disclosure triangle in every engine - so one is drawn back. Without it
    the diff rows read as plain bold sentences with nothing saying the token paths
    are behind them, and the breaking set is the one thing here a person must not
    skim past. Same construction as .lab-diag-summary (color-lab.css). The 44px is

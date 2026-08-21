@@ -1,5 +1,5 @@
 /*
- * Design tokens — three themes using shadcn's HSL-triple convention.
+ * Design tokens - three themes using shadcn's HSL-triple convention.
  *
  * Values are bare "H S% L%" triples, NOT wrapped in hsl(). This lets callers
  * use both hsl(var(--x)) and hsl(var(--x) / 0.5) for alpha compositing.
@@ -13,7 +13,7 @@
  * shell-served (styles/fonts.css). applyChromeBrandVars (brand-vars.ts)
  * overrides these two properties inline on <html> when the active brand's
  * tokens declare font.brand / font.mono, so the UI always follows the brand
- * font once one is loaded — the stacks below are the unbranded fallback tail
+ * font once one is loaded - the stacks below are the unbranded fallback tail
  * it appends. Tool templates may consume var(--font-brand, …) too (they
  * inherit through the canvas root). */
 :root {
@@ -22,10 +22,10 @@
 }
 
 /* ─── Top-row chrome geometry ───────────────────────────────────────────────
- * The controls that float along the top of a view — the back pill on the left
+ * The controls that float along the top of a view - the back pill on the left
  * (.tools-home, components/back-pill.ts) and the right-hand cluster
  * (.gallery-topright: .filter-fab / .history-fab / .lang-fab / .profile-link)
- * — are laid out in DIFFERENT files and used to be sized independently, so the
+ * - are laid out in DIFFERENT files and used to be sized independently, so the
  * two ends of the row never lined up: each carried its own padding, its own
  * top offset, and heights that landed a few px apart. These three properties
  * are the one source of truth for that row; every member reads them, so the
@@ -41,7 +41,7 @@
  * the calc() below the row's type would grow inside a box that didn't and the
  * pill's label would crush against its own edge. The multiplier is applied here
  * rather than in a second attribute-gated block over in a11y.css so this file
- * stays the one place the row's geometry is written — the same reason the two
+ * stays the one place the row's geometry is written - the same reason the two
  * media queries below live here instead of in each part sheet.
  *
  * The offsets are NOT scaled: --chrome-top clears the notch and --chrome-inset
@@ -57,14 +57,14 @@
   --chrome-top: 0.5rem;    /* distance from the top of the viewport */
   --chrome-inset: 2rem;    /* distance from the left/right edge */
 
-  /* How much TALLER the top row is than at rest — 0 unless largeText is on.
+  /* How much TALLER the top row is than at rest - 0 unless largeText is on.
      The row floats over the page, so several views hold content clear of it with
      a hardcoded padding or offset (.projects' 52px top, the bulk bar, the
      .pro-toast--bar). Those numbers were measured against a 41.6px row: once the
      row grows, content slides underneath it from a factor of about 1.05, which
      would make the preference break the very views it is meant to help.
      Adding only the GROWTH keeps every one of those call sites byte-identical at
-     rest — `2.6rem * (1 - 1)` is exactly 0 — so the clearances stay the authored
+     rest - `2.6rem * (1 - 1)` is exactly 0 - so the clearances stay the authored
      numbers and simply track the row when it moves.
      Derived from the base rem rather than from --chrome-h on purpose: at a coarse
      pointer --chrome-h is pinned flat to the 44px finger target, so a difference
@@ -74,7 +74,7 @@
 
 /* ─── Tile-grid gutters ─────────────────────────────────────────────────────
  * One breathing-room decision for every tile grid (tools/utilities gallery,
- * catalog assets, projects) instead of a hard-coded gap per sheet — the three
+ * catalog assets, projects) instead of a hard-coded gap per sheet - the three
  * had drifted to 14/16/16px. The tight value is what every grid drops to on
  * phones, where the wide gutter would cost a whole tile column. The folder
  * OVERLAY's .folder-grid deliberately keeps its own denser 12px: a dialog
@@ -90,8 +90,8 @@
 }
 
 /* On phones the row drops clear of the notch and the content scrolls under it.
-   Overriding the token here — rather than restating the offset in each part
-   sheet's own media query, as they used to — keeps both ends of the row on the
+   Overriding the token here - rather than restating the offset in each part
+   sheet's own media query, as they used to - keeps both ends of the row on the
    same line at every width. */
 @media (max-width: 640px) {
   :root {
@@ -105,7 +105,7 @@
    they drifted apart on phones.
 
    Deliberately a FLAT 44px, NOT max(44px, calc(2.6rem * var(--a11y-fs))). The
-   max() form looks equivalent — 2.6rem is 41.6px, so the floor wins — but only
+   max() form looks equivalent - 2.6rem is 41.6px, so the floor wins - but only
    while the root font size is 16px, and nothing in this codebase pins it: a user
    who raises their browser's default type to 20px makes 2.6rem 52px, and the
    touch row would silently grow 8px for someone who set no Lolly preference at
@@ -131,7 +131,7 @@
 
 /* ─── Chrome ICONS follow the type ──────────────────────────────────────────
  * Recorded here beside --chrome-h because it is the same decision about the same
- * row, and the next reader will look for it here — but unlike the row height it
+ * row, and the next reader will look for it here - but unlike the row height it
  * needs NO token: an icon size is written at its own rule as
  * `width: calc(18px * var(--a11y-fs))`, and calc(… * 1) computes byte-identically
  * to the bare 18px it replaces, so there is nothing for a token to keep in step.
@@ -139,7 +139,7 @@
  * WHY icons scale at all, when this file's own note above says the offsets do
  * not: 41 controls in the web shell are an aria-label plus an <svg> and carry no
  * visible text whatsoever, and below 640px the view toggle hides its label and
- * navigates on an 18px glyph alone (parts/topbar.css) — so with a fixed icon size
+ * navigates on an 18px glyph alone (parts/topbar.css) - so with a fixed icon size
  * the app's top-level navigation is the one thing that does NOT answer the
  * preference, on the smallest screen, for exactly the user who set it. And since
  * --chrome-h already grows, a fixed mark leaves a shrinking icon in a growing
@@ -153,11 +153,11 @@
  * checkerboard/sprite background tiles (a transparency indicator is a texture,
  * not a mark), stand-in artwork sized to a picture frame rather than to a label
  * (.ftile-iconfill), chart handles positioned from JS coordinates
- * (lib/palette-wheel.css, lib/oklch-slice.css), and touch-target floors — 44px is
+ * (lib/palette-wheel.css, lib/oklch-slice.css), and touch-target floors - 44px is
  * a finger, not a glyph, and it is written flat for the reason spelled out in the
  * coarse-pointer block above. */
 
-/* Generative-AI flag — a fixed violet, deliberately OUTSIDE any brand palette (and
+/* Generative-AI flag - a fixed violet, deliberately OUTSIDE any brand palette (and
    outside the verify pass/fail hues) so "made by a model" reads the same in every
    brand and never looks like a verdict. Space-separated HSL channels, used as
    hsl(var(--vf-ai-1) / <a>). Shared by the /verify AI banner (parts/valid.css) and
@@ -166,7 +166,7 @@
   --vf-ai-1: 276 86% 67%;  --vf-ai-2: 262 74% 48%;  --vf-ai: 270 80% 58%;
 }
 
-/* The RAIL behind any gamut-sliced axis — the picker's tracks and dials
+/* The RAIL behind any gamut-sliced axis - the picker's tracks and dials
    (parts/color-field.css, where JS appends it as the bottom background layer) and
    the Colour Lab sliders' wells (lib/oklch-slice.css). One declaration because the
    two surfaces must not disagree about what "the axis continues here" looks like,
@@ -176,18 +176,18 @@
   --track-rail: hsl(var(--muted) / 0.55);
 }
 
-/* The SURFACE a tool preview composites onto — the gallery tiles and example strips
+/* The SURFACE a tool preview composites onto - the gallery tiles and example strips
    (parts/gallery.css), and any other box that shows a tool's own render.
 
    A preview is the tool's real output, so it is transparent wherever the tool paints
    nothing: a lifted card SVG has no HTML container behind it, and most tools draw art,
    not a full-bleed background. Something has to stand behind that, and it cannot be a
-   baked-in colour — cards used to carry one (bag-video's was `#0c322c`, which is this
+   baked-in colour - cards used to carry one (bag-video's was `#0c322c`, which is this
    codebase's `[data-theme="brand"]` --background, i.e. one theme's surface frozen into
    art that the other two themes then had to live with).
 
    So it is a token, derived from --muted: one step off --card in EVERY theme, and in
-   the direction each theme needs — a soft grey paper under light, a LIFTED slate under
+   the direction each theme needs - a soft grey paper under light, a LIFTED slate under
    dark and brand (so dark art doesn't vanish into a dark tile). A runtime brand palette
    gets it free, since brand-vars.ts emits --muted. Tune here, not in a card. */
 :root {
@@ -200,7 +200,7 @@
     transparent 0% 50%) 50% / 14px 14px;
 }
 
-/* Onion-ring gamut washes — the ONE opacity scale for "outside the active gamut".
+/* Onion-ring gamut washes - the ONE opacity scale for "outside the active gamut".
    Tier 0 is the limit itself and always paints fully opaque, so it has no token;
    each ring out is roughly half the previous, which keeps the onion order readable
    while the reachable stretch keeps the prominence.
@@ -211,13 +211,13 @@
    (the Colour Lab sliders, where each run IS an element). One scale, two
    mechanisms, no drift.
 
-   `beyond` is 0% — past Rec.2020 the browser clamps the stop colour, so a visible
+   `beyond` is 0% - past Rec.2020 the browser clamps the stop colour, so a visible
    band there would be a flat wrong colour, and the rail already says the axis
    continues without naming one. It is an ordinary run and disappears only because
    of this value, which is the point: raising it later is a token edit.
 
    On :root rather than on the picker's own rule so `lib/gamut-slider.ts`'s segments
-   read the same numbers — they are nowhere near a `.color-lch-slider`. Tuning these
+   read the same numbers - they are nowhere near a `.color-lch-slider`. Tuning these
    is a design judgement (if a ring starts to look AVAILABLE, lower it); no code
    needs to change. */
 :root {
@@ -229,14 +229,14 @@
 /* Dark needs more of the colour for the SAME apparent hint. A 28% wash over a
    near-white rail lands as a pastel; over a near-black one it lands as a dark
    low-contrast smudge, and in the picker's dials the rings all but vanished.
-   Measured by eye on #/lab in both themes — the ratios between the rings are
+   Measured by eye on #/lab in both themes - the ratios between the rings are
    unchanged, only the amount.
 
    `brand` is listed here because it IS a dark theme: its static block below declares
    `color-scheme: dark`, and brand-vars.ts's generated version of that block declares
    it unconditionally too, so no brand palette is ever a light ground. Left on the
    dark-only selector its rail sat next to dark's while its rings paid light's amounts
-   — the faintest rings of the three themes, in the one that is the pre-JS default and
+   - the faintest rings of the three themes, in the one that is the pre-JS default and
    the standing look under the suse profile. Same grouping brand-vars.ts already uses
    for --lolly-mark. */
 [data-theme="dark"],
@@ -253,12 +253,12 @@
 
   --background:             0 0% 100%;
   --foreground:             224 71% 4%;
-  /* The theme's ink as the RENDER CANVAS sees it — always the base value, never
+  /* The theme's ink as the RENDER CANVAS sees it - always the base value, never
      the high-contrast one. parts/base.css's `body { color: hsl(var(--foreground)) }`
      is inherited by tool markup (most templates set no colour of their own and
      several draw with `currentColor`), on the live canvas AND on the offscreen
      stages an export is captured from. Following the THEME there is intended and
-     long-standing; following a comfort PREFERENCE is not — it would change
+     long-standing; following a comfort PREFERENCE is not - it would change
      exported pixels and bake into cached session thumbnails. So each theme
      declares its ink twice and the canvas boundary in parts/a11y.css restores
      this one. Keep the two in step; brand-vars.ts emits the same pair for a
@@ -271,7 +271,7 @@
   --popover:                0 0% 100%;
   --popover-foreground:     224 71% 4%;
 
-  --primary:                171 62% 12%;      /* SUSE dark teal — #0c322c */
+  --primary:                171 62% 12%;      /* SUSE dark teal - #0c322c */
   --primary-foreground:     0 0% 100%;
 
   --secondary:              210 40% 96%;
@@ -290,7 +290,7 @@
   --input:                  214 28% 84%;
   --ring:                   171 62% 12%;
 
-  /* Storage-meter palette — one ordered teal→spring-green ramp (on-brand, never
+  /* Storage-meter palette - one ordered teal→spring-green ramp (on-brand, never
      rainbow) for the breakdown segments; --store-other is a desaturated neutral
      ("not a real category", reinforced by a hatch). */
   --store-1:                171 60% 20%;
@@ -309,7 +309,7 @@
 
   --background:             224 71% 4%;
   --foreground:             213 31% 91%;
-  --foreground-canvas:      213 31% 91%;   /* base ink for the render canvas — see the light theme's note */
+  --foreground-canvas:      213 31% 91%;   /* base ink for the render canvas - see the light theme's note */
 
   --card:                   222 47% 7%;
   --card-foreground:        213 31% 91%;
@@ -317,8 +317,8 @@
   --popover:                222 47% 7%;
   --popover-foreground:     213 31% 91%;
 
-  --primary:                151 57% 46%;      /* Pine Green — #30ba78 */
-  --primary-foreground:     0 0% 100%;        /* white — the app-wide inversion rule
+  --primary:                151 57% 46%;      /* Pine Green - #30ba78 */
+  --primary-foreground:     0 0% 100%;        /* white - the app-wide inversion rule
                                                  (contrastText, brand-vars.ts) flips
                                                  mid greens to white; was near-black teal */
 
@@ -327,7 +327,7 @@
 
   --muted:                  217 33% 14%;
   --muted-foreground:       215 20% 76%;      /* was 215 20% 65% (APCA Lc 49 on muted, the theme's
-                                                 weakest text pair) — lifted to Lc 66, clearing APCA's
+                                                 weakest text pair) - lifted to Lc 66, clearing APCA's
                                                  large-text floor with margin while staying a clear
                                                  15% L below --foreground so hierarchy holds */
 
@@ -355,7 +355,7 @@
 /* ─── Brand (mid-toned, palette-driven) ─────────────────────────────────────
    The spiritual successor to the old SUSE theme: a colored, mid-toned chrome
    built from the active brand's palette. These static values ARE that
-   construction for the SUSE palette (Pine surfaces, Jungle accent) — the
+   construction for the SUSE palette (Pine surfaces, Jungle accent) - the
    pre-JS default, and the standing look under the suse profile (whose tokens
    carry no semantic slots). When a brand's `color.semantic.*` resolves,
    brand-vars.ts re-constructs this whole block at runtime from the brand's
@@ -365,7 +365,7 @@
 
   --background:             171 62% 12%;      /* #0c322c dark teal */
   --foreground:             160 30% 92%;
-  --foreground-canvas:      160 30% 92%;      /* base ink for the render canvas — see the light theme's note */
+  --foreground-canvas:      160 30% 92%;      /* base ink for the render canvas - see the light theme's note */
 
   --card:                   171 55% 17%;
   --card-foreground:        160 30% 92%;
@@ -374,13 +374,13 @@
   --popover-foreground:     160 30% 92%;
 
   --primary:                151 57% 46%;      /* #30ba78 Pine Green */
-  --primary-foreground:     0 0% 100%;        /* white — see the dark theme's note */
+  --primary-foreground:     0 0% 100%;        /* white - see the dark theme's note */
 
   --secondary:              171 48% 21%;
   --secondary-foreground:   160 30% 92%;
 
   --muted:                  171 48% 20%;
-  --muted-foreground:       160 18% 86%;      /* was 160 18% 78% (APCA Lc 65 on muted — under the
+  --muted-foreground:       160 18% 86%;      /* was 160 18% 78% (APCA Lc 65 on muted - under the
                                                  Lc 75 body floor; this mid-toned theme is the classic
                                                  mid-on-mid offender). Lifted to Lc 76 on muted / 78 on
                                                  card / 83 on page, still 6% L below --foreground.
@@ -414,13 +414,13 @@
    stores it, lib/a11y-prefs.ts switches html[data-a11y-contrast="high"], and
    these blocks re-point the DESIGN TOKENS so every component gets the stronger
    contrast without a single per-component rule. With the attribute absent not
-   one selector below can match, so the regular experience is untouched — same
+   one selector below can match, so the regular experience is untouched - same
    dormant-by-default shape as jelly effects.
 
    WHY THESE SELECTORS, and why they look over-qualified:
     • They must beat the runtime brand chrome. brand-vars.ts appends a <style>
       to <head> (applyChromeAccent) whose selectors are ':root, [data-theme=
-      "light"]', '[data-theme="dark"]' and '[data-theme="brand"]' — all
+      "light"]', '[data-theme="dark"]' and '[data-theme="brand"]' - all
       specificity (0,1,0), all UNLAYERED, and later in document order than this
       file. Only higher specificity wins, so every block below leads with the
       `html` type selector plus the contrast attribute: (0,1,1) at minimum,
@@ -432,7 +432,7 @@
     • The light theme is BOTH ':root' and '[data-theme="light"]'. index.html
       ships data-theme="light" in the markup and theme.ts always writes
       html.dataset.theme, so at runtime a light document does carry the
-      attribute — but a bare [data-theme="light"] would silently miss any
+      attribute - but a bare [data-theme="light"] would silently miss any
       document that doesn't (a test fixture, a stripped host page), so the
       light block is spelled as "neither dark nor brand" instead.
 
@@ -441,13 +441,13 @@
       teal measures Lc 103, so there is nothing to win; and the accent belongs
       to the brand, which applyChromeAccent replaces from the live palette.
       The dark and brand themes are a different story and ARE fixed below: Pine
-      Green is a mid-tone that NO ink clears (white 54, black 55), so the CTA —
-      the one control a user came to press — sat 25 Lc under the bar in two of
+      Green is a mid-tone that NO ink clears (white 54, black 55), so the CTA -
+      the one control a user came to press - sat 25 Lc under the bar in two of
       three themes while every label and hairline around it snapped into focus.
       brand-vars.ts's highContrastAccent() repairs that at runtime for any brand
       by holding hue and chroma and walking lightness until the ink clears the
       bar, but it only runs when a brand resolves `color.semantic.*`, and
-      brands/lolly-start declares none — which is the fallback for every public
+      brands/lolly-start declares none - which is the fallback for every public
       clone and for CI. So the static pair is repaired here too, and the runtime
       block (same selector shape, later in document order) overrides it whenever
       a brand does supply slots.
@@ -455,21 +455,21 @@
       accent). brandThemeCss CONSTRUCTS them from the active brand's hue; a
       hardcoded teal here would paint a purple brand's chrome green. Instead
       the brand block below raises only hue-agnostic values (neutral inks and
-      edges) over whatever surfaces the brand produced — safe because that
+      edges) over whatever surfaces the brand produced - safe because that
       block always declares `color-scheme: dark` and its lightness stops are
       fixed at OKLCH L .29–.40, i.e. never a light ground: white ink measures
       APCA Lc 94+ against the worst hue at the lightest stop.
 
    Numbers below are APCA Lc (0.98G-4g), sign dropped; the bar is Lc ≥ 75 for
    body text and ≥ 90 for the main ink-on-background pair. This is a CONTRAST
-   pass, not a monochrome one — hues stay where the theme put them, except in
+   pass, not a monochrome one - hues stay where the theme put them, except in
    the brand theme where the hue is unknown at authoring time.
 
-   KNOWN LIMITS — what a token-only pass cannot reach:
+   KNOWN LIMITS - what a token-only pass cannot reach:
     • --destructive AS TEXT. 46 declarations do `color: hsl(var(--destructive))`
       (grep 2026-07-30; pro/pro.css and pro/run-overlay.css alone hold 9). As
       text on the dark page that measures Lc 16.6, and Lc 23.5 with the darkened
-      value below — still nowhere near the bar, and NO red can fix it: even a
+      value below - still nowhere near the bar, and NO red can fix it: even a
       pale hsl(0 80% 80%) only reaches Lc 64.4, at which point it has stopped
       reading as an error. Darkening --destructive helps ink-on-destructive-FILL,
       which is the MINORITY use, and by construction cannot help the majority
@@ -480,7 +480,7 @@
     • ALPHA-COMPOSITED TEXT. 27 declarations fade ink with
       `color: hsl(var(--foreground) / 0.6)`-style alpha (14 files; 663 uses of
       `hsl(var(--x) / a)` overall, most of them surfaces and hairlines rather
-      than text). Re-pointing a triple cannot reach any of them — the alpha is
+      than text). Re-pointing a triple cannot reach any of them - the alpha is
       applied after the token resolves, so a stronger ink is faded by the same
       factor and the composited result barely moves. Each of those needs the
       alpha dropped at the call site under the attribute. */
@@ -495,22 +495,22 @@ html[data-a11y-contrast="high"] {
   --track-rail: hsl(var(--muted) / 0.9);
 }
 
-/* Light. The ink is already maximal (Lc 106 on white — pure black measures the
+/* Light. The ink is already maximal (Lc 106 on white - pure black measures the
    same), so nothing is gained by darkening --foreground and it stays put; the
    wins here are muted text, the hairlines, and the card/page separation. */
 html[data-a11y-contrast="high"]:not([data-theme="dark"]):not([data-theme="brand"]) {
-  /* 0 0% 99% was a wash too faint to read as a surface at all — a card either
+  /* 0 0% 99% was a wash too faint to read as a surface at all - a card either
      separates from the page or leans on its border. Now it does both. */
-  --card:                   210 24% 97%;   /* was 0 0% 99%   — ink on card Lc 101 */
+  --card:                   210 24% 97%;   /* was 0 0% 99%   - ink on card Lc 101 */
   /* Popover stays pure white so a floating layer still reads as ABOVE a card. */
 
-  --muted-foreground:       215 32% 22%;   /* was 215 20% 38% — Lc 95 on page, 92 on muted, 94 on card */
+  --muted-foreground:       215 32% 22%;   /* was 215 20% 38% - Lc 95 on page, 92 on muted, 94 on card */
 
-  --border:                 214 30% 38%;   /* was 214 28% 84% — Lc 23 → 83: a line, not a suggestion */
-  --input:                  214 32% 30%;   /* was 214 28% 84% — Lc 91; interactive edges read stronger than static ones */
-  --ring:                   171 90% 12%;   /* was 171 62% 12% — same ink depth, full chroma so focus reads as focus (Lc 98) */
+  --border:                 214 30% 38%;   /* was 214 28% 84% - Lc 23 → 83: a line, not a suggestion */
+  --input:                  214 32% 30%;   /* was 214 28% 84% - Lc 91; interactive edges read stronger than static ones */
+  --ring:                   171 90% 12%;   /* was 171 62% 12% - same ink depth, full chroma so focus reads as focus (Lc 98) */
 
-  --destructive:            0 80% 34%;     /* was 0 72% 51%   — white on it Lc 77 → 92 */
+  --destructive:            0 80% 34%;     /* was 0 72% 51%   - white on it Lc 77 → 92 */
 
   /* Fill ramp, not text: the goal is separation from the surface and between
      neighbours, so the whole ramp shifts darker with even ~10% L steps. Order
@@ -520,7 +520,7 @@ html[data-a11y-contrast="high"]:not([data-theme="dark"]):not([data-theme="brand"
   --store-3:                159 52% 38%;
   --store-4:                150 58% 48%;
   --store-5:                140 60% 57%;
-  --store-other:            205 14% 42%;   /* was 205 10% 62% — Lc 72 on card */
+  --store-other:            205 14% 42%;   /* was 205 10% 62% - Lc 72 on card */
 }
 
 /* Dark. --background is left at 224 71% 4%: the theme-colour meta and the PWA
@@ -536,31 +536,31 @@ html[data-a11y-contrast="high"][data-theme="dark"] {
   --primary-foreground:     0 0% 0%;         /* was 171 62% 5% */
   --ring:                   147.6 75% 67.1%;
 
-  --foreground:             213 45% 98%;   /* was 213 31% 91% — Lc 92 → 104 on page */
-  --card:                   222 47% 9%;    /* was 222 47% 7%  — ink Lc 104 */
+  --foreground:             213 45% 98%;   /* was 213 31% 91% - Lc 92 → 104 on page */
+  --card:                   222 47% 9%;    /* was 222 47% 7%  - ink Lc 104 */
   --card-foreground:        213 45% 98%;
-  --popover:                222 47% 11%;   /* was 222 47% 7%  — a popover above a card must not read as the card */
+  --popover:                222 47% 11%;   /* was 222 47% 7%  - a popover above a card must not read as the card */
   --popover-foreground:     213 45% 98%;
 
-  --secondary:              217 33% 20%;   /* was 217 33% 14% — ink Lc 99 */
+  --secondary:              217 33% 20%;   /* was 217 33% 14% - ink Lc 99 */
   --secondary-foreground:   213 45% 98%;
   --muted:                  217 33% 17%;   /* was 217 33% 14% */
-  --muted-foreground:       213 35% 86%;   /* was 215 20% 65% — Lc 52 → 83 on page, 80 on muted. The single biggest legibility fix in this theme */
-  --accent:                 217 33% 26%;   /* was 217 33% 18% — hover/active surfaces were nearly indistinguishable from muted */
+  --muted-foreground:       213 35% 86%;   /* was 215 20% 65% - Lc 52 → 83 on page, 80 on muted. The single biggest legibility fix in this theme */
+  --accent:                 217 33% 26%;   /* was 217 33% 18% - hover/active surfaces were nearly indistinguishable from muted */
   --accent-foreground:      213 45% 98%;
 
-  --border:                 215 30% 55%;   /* was 217 33% 18% — Lc 0 (!) → 37; a near-black line on near-black */
-  --input:                  215 32% 62%;   /* was 217 33% 18% — Lc 46 */
+  --border:                 215 30% 55%;   /* was 217 33% 18% - Lc 0 (!) → 37; a near-black line on near-black */
+  --input:                  215 32% 62%;   /* was 217 33% 18% - Lc 46 */
   /* Focus outranks brand: a dim brand primary (applyChromeAccent also writes
      --ring) can be invisible on a near-black page, so high contrast forces the
-     theme's brightest ink instead — Lc 104 against the page, guaranteed for
+     theme's brightest ink instead - Lc 104 against the page, guaranteed for
      every brand. Functional signal, not identity. */
   --ring:                   213 45% 98%;
 
-  --destructive:            0 72% 44%;     /* was 0 63% 38%   — ink on it Lc 74 → 80 */
+  --destructive:            0 72% 44%;     /* was 0 63% 38%   - ink on it Lc 74 → 80 */
   --destructive-foreground: 213 45% 98%;
 
-  --store-other:            215 16% 66%;   /* was 215 12% 46% — Lc 53 on card */
+  --store-other:            215 16% 66%;   /* was 215 12% 46% - Lc 53 on card */
 }
 
 /* Brand. Hue-agnostic on purpose (see the header note): neutral inks and edges
@@ -569,30 +569,30 @@ html[data-a11y-contrast="high"][data-theme="dark"] {
    SUSE-palette instance; the constructed worst case is ~10 Lc better than the
    Lc ≥ 75 bar at every hue. */
 html[data-a11y-contrast="high"][data-theme="brand"] {
-  /* The CTA, same repair and the same computed pair as the dark theme — this
+  /* The CTA, same repair and the same computed pair as the dark theme - this
      block's static values ARE the SUSE-palette instance of the construction, and
      its accent is the same Pine Green. Unlike the surfaces below, the accent is
      safe to state as a hue here: brandThemeCss overrides --primary from the live
      brand whenever one resolves, and its own gated block (highContrastAccent)
      repairs THAT pair in the brand's own hue. */
-  --primary:                147.6 75% 67.1%; /* was 151 57% 46% — Lc 52 → 80 with a black label */
+  --primary:                147.6 75% 67.1%; /* was 151 57% 46% - Lc 52 → 80 with a black label */
   --primary-foreground:     0 0% 0%;         /* was 171 62% 8% */
 
-  --foreground:             0 0% 100%;     /* was 160 30% 92% — Lc 92 → 104 on the dark teal */
+  --foreground:             0 0% 100%;     /* was 160 30% 92% - Lc 92 → 104 on the dark teal */
   --card-foreground:        0 0% 100%;
   --popover-foreground:     0 0% 100%;
   --secondary-foreground:   0 0% 100%;
   --accent-foreground:      0 0% 100%;
   /* Kept a step below the primary ink so "secondary text" still reads as
      secondary rather than collapsing into the body colour. */
-  --muted-foreground:       0 0% 88%;      /* was 160 18% 78% — Lc 65 → 77 on muted, 84 on page */
+  --muted-foreground:       0 0% 88%;      /* was 160 18% 78% - Lc 65 → 77 on muted, 84 on page */
 
-  --border:                 0 0% 72%;      /* was 171 36% 33% — Lc 20 → 59 */
-  --input:                  0 0% 80%;      /* was 171 36% 33% — Lc 67 on card */
+  --border:                 0 0% 72%;      /* was 171 36% 33% - Lc 20 → 59 */
+  --input:                  0 0% 80%;      /* was 171 36% 33% - Lc 67 on card */
   --ring:                   147.6 75% 67.1%; /* follows --primary, as in the base block */
 
-  --destructive:            0 72% 44%;     /* was 0 55% 42%   — white on it Lc 84 */
+  --destructive:            0 72% 44%;     /* was 0 55% 42%   - white on it Lc 84 */
   --destructive-foreground: 0 0% 100%;
 
-  --store-other:            0 0% 68%;      /* was 171 16% 54% — the "not a category" neutral, now visibly neutral */
+  --store-other:            0 0% 68%;      /* was 171 16% 54% - the "not a category" neutral, now visibly neutral */
 }

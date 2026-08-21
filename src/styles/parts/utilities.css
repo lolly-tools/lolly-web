@@ -1,10 +1,10 @@
 /*
- * Shared declaration groups — consolidated duplicated clusters (was: repeated inline).
+ * Shared declaration groups - consolidated duplicated clusters (was: repeated inline).
  * Comma-selector groups keep each selector's original specificity; loaded early so component
  * rules still win any tie. Generated from a per-site cascade-safety audit (GO sites only).
  */
 
-/* was .u-flex-center — 14 rules */
+/* was .u-flex-center - 14 rules */
 .fc-pop-gitem,
 .stage-nav-btn, .stage-nav-pct,
 .folder-cell--batch, .folder-cell--empty,
@@ -24,7 +24,7 @@
   justify-content: center;
 }
 
-/* was .u-label-micro — 3 rules */
+/* was .u-label-micro - 3 rules */
 .fc-panel-head,
 .fc-panel-sub,
 .projects-rail-hint {
@@ -35,7 +35,7 @@
   color: hsl(var(--muted-foreground));
 }
 
-/* was .card-surface — 4 rules */
+/* was .card-surface - 4 rules */
 .gtile,
 .gallery-pill,
 .profile-view .profile-card,
@@ -44,7 +44,7 @@
   color: hsl(var(--card-foreground));
 }
 
-/* was .field-input — 9 rules */
+/* was .field-input - 9 rules */
 .export-pdfpass input[type="password"],
 .print-bleed input[type="number"],
 .video-params input[type="number"],
@@ -62,21 +62,21 @@
   font: inherit;
 }
 
-/* was .icon-fab — 1 rules */
+/* was .icon-fab - 1 rules */
 .history-fab {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  /* Square, on the row's shared height (tokens.css) — see .tools-home. */
+  /* Square, on the row's shared height (tokens.css) - see .tools-home. */
   width: var(--chrome-h);
   height: var(--chrome-h);
   padding: 0;
   border: 1px solid hsl(var(--primary));
   border-radius: var(--radius);
   /* Paint (background/color/blur/transition) comes from buttons.css's .btn--glass
-     alias list — it imports after this sheet, so its single declaration wins. */
+     alias list - it imports after this sheet, so its single declaration wins. */
   cursor: pointer;
 }
 

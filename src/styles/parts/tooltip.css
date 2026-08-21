@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: MPL-2.0 */
-/* ── Tooltip primitive — the app's ONE styled tooltip. ──────────────────────────
+/* ── Tooltip primitive - the app's ONE styled tooltip. ──────────────────────────
    Opt in by putting `data-tip="Label"` on any element (promoted from the asset
    picker's category buttons, the original recipe). A small bubble appears ABOVE
-   the element on hover or keyboard focus — above the pointer, so the finger/cursor
+   the element on hover or keyboard focus - above the pointer, so the finger/cursor
    never covers it; carry the same text in aria-label for assistive tech (the bubble
    is a pseudo-element, presentation only, never read).
 
@@ -11,7 +11,7 @@
    bar) where an above-bubble would be clipped.
 
    Contract: the host element becomes position:relative (anchors the bubble) and
-   must tolerate that. Prefer this over native title= for interactive chrome —
+   must tolerate that. Prefer this over native title= for interactive chrome -
    title is invisible to keyboard and touch users, and the browser draws it BELOW
    the cursor where the pointer covers it. */
 
@@ -57,7 +57,7 @@
 [data-tip]:focus-visible::before { opacity: 1; }
 
 /* TOUCH. The file above promises this is the primitive to prefer over `title=`
-   "because title is invisible to keyboard and touch users" — but on hover and
+   "because title is invisible to keyboard and touch users" - but on hover and
    focus-VISIBLE alone it was invisible to touch too, since a tap grants `:focus`
    and not `:focus-visible`. Where there is no hover, a plain focus opens the
    bubble: tapping the thing is the gesture, and tapping anything else closes it.
@@ -71,7 +71,7 @@
 /* A phone-width bubble wraps instead of running off the screen. `nowrap` is right
    for a two-word label beside a desktop cursor and wrong for the longer strings
    worth putting on a tooltip at all (a colour's name and hex, a blend mode's
-   rationale) — at 390px those would extend the page sideways, which this design
+   rationale) - at 390px those would extend the page sideways, which this design
    language does not allow anywhere. */
 @media (max-width: 40rem) {
   [data-tip]::after {

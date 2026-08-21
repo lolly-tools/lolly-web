@@ -1,6 +1,6 @@
 /* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
    (order declared once in styles/app.css). Wrapping it means its rules keep a
-   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   fixed priority - above chrome/primitives/base, below overrides/a11y - no
    matter when Vite injects this chunk at runtime. Do not rely on load order. */
 @layer views {
 /* ─── Saved section (gallery page) ─────────────────────────────────────── */
@@ -78,8 +78,8 @@
 
 .feature-hint-text {margin-bottom:2em;}
 /* .session-size + the .saved-* session-row component moved to parts/saved-list.css
-   (always-loaded via app.css) so the gallery history modal — which the landing
-   renders without loading storage.css — gets them too. */
+   (always-loaded via app.css) so the gallery history modal - which the landing
+   renders without loading storage.css - gets them too. */
 .btn-link-danger {
   background: hsl(0 72% 51% / 0.1);
   border: 1px solid hsl(0 72% 51% / 0.35);
@@ -93,7 +93,7 @@
 .btn-link-danger:disabled,
 .userimg-delete:disabled{ opacity: 0.4; cursor: default; }
 
-/* My images — personal device-image library */
+/* My images - personal device-image library */
 .userimg-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
@@ -147,7 +147,7 @@
 .userimg-delete:focus-visible { opacity: 1; }
 .userimg-delete:hover { color: hsl(var(--destructive)); background: hsl(var(--accent)); }
 
-/* "Add" tile — sits in the grid as the last cell (or the only cell when empty),
+/* "Add" tile - sits in the grid as the last cell (or the only cell when empty),
    matching the thumb cells in size but dashed to read as an upload affordance. */
 .userimg-add {
   aspect-ratio: 1;
@@ -175,18 +175,18 @@
 .userimg-add-icon { font-size: calc(20px * var(--a11y-fs)); line-height: 1; font-weight: 300; }
 .userimg-add-text { font-size: calc(10px * var(--a11y-fs)); letter-spacing: 0.02em; }
 
-/* My images — full-size preview lightbox. A native <dialog class="userimg-lightbox">
+/* My images - full-size preview lightbox. A native <dialog class="userimg-lightbox">
    mounted via mountModal (profile.ts openImageLightbox); it carries the retired
    body-overlay wrapper's flex-centering + dark backdrop itself (::backdrop below). */
 .userimg-lightbox {
-  /* Reset the <dialog> UA defaults (border/padding/background) — this is a
+  /* Reset the <dialog> UA defaults (border/padding/background) - this is a
      transparent frame around the media, not a card. */
   border: 0;
   padding: 0;
   background: transparent;
-  margin: auto;   /* dialog:modal centring — reasserted per the .modal convention
+  margin: auto;   /* dialog:modal centring - reasserted per the .modal convention
                       (dialogs.css) in case a scoped reset leaks in */
-  /* was .userimg-lightbox-overlay's 6vw/6vh padding — the dialog is now its own
+  /* was .userimg-lightbox-overlay's 6vw/6vh padding - the dialog is now its own
      positioned box, so the old inset becomes a size cap instead. */
   max-width: 88vw;
   max-height: 88vh;
@@ -208,7 +208,7 @@
   background: hsl(var(--muted));
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
 }
-/* viewBox-only SVGs report no intrinsic size — in an <img> they'd fall back to
+/* viewBox-only SVGs report no intrinsic size - in an <img> they'd fall back to
    ~300×150 and look tiny. Give vectors a definite, bounded box and let
    object-fit scale them up to fit (preserving the viewBox aspect, no distortion
    at any size), on a card so transparent art stays visible. */
@@ -274,7 +274,7 @@
   max-width: 360px;
   width: 90%;
   box-shadow: 0 8px 32px hsl(0 0% 0% / 0.2);
-  /* dialog:modal centring — reasserted per the .modal convention (dialogs.css)
+  /* dialog:modal centring - reasserted per the .modal convention (dialogs.css)
      in case a scoped reset leaks in. */
   margin: auto;
 }
@@ -325,7 +325,7 @@
 }
 .clear-confirm-input:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
 
-/* "Export my data & render everything" — the headline archive action, so it's a big,
+/* "Export my data & render everything" - the headline archive action, so it's a big,
    celebratory full-width CTA that stands clearly apart from the smaller export/import row
    above it (it also earns a victory fanfare when it fires). */
 .storage-hoard-btn {
@@ -339,7 +339,7 @@
 .storage-hoard-hint strong { color: hsl(var(--foreground)); font-weight: 600; }
 
 /* The confirm gate reuses the clear-all dialog's layout, but this action is celebratory
-   (a big backup, nothing destroyed) — so the primary "go" button uses the accent colour
+   (a big backup, nothing destroyed) - so the primary "go" button uses the accent colour
    instead of danger red. Same type-a-word speed-bump, opposite mood. */
 .clear-dialog-actions .btn.btn-go {
   border-color: transparent; background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); font-weight: 600;
@@ -351,12 +351,12 @@
 .pro-toast.is-dimmed { opacity: 0.35; pointer-events: none; transition: opacity 0.15s; }
 
 /* The .saved-* session-row component moved to parts/saved-list.css (always-loaded
-   via app.css) — see the note by .session-size above. */
+   via app.css) - see the note by .session-size above. */
 
 /* The storage meter's model-download slices (views/profile.ts): the speech Cache
    Storage buckets and the upscale / matte IndexedDB model stores. The other
    categories colour from profile.css's --store-1..5; tokens.css defines no
-   --store-6..8 yet, so the fallback literal carries the hue — each chosen distinct
+   --store-6..8 yet, so the fallback literal carries the hue - each chosen distinct
    from the teal→green store ramp, from each other, and legible in all four themes
    (a violet, an amber, and a blue). */
 .profile-view .store-bar .seg[data-cat="speech"],
@@ -369,11 +369,13 @@
 .profile-view .store-chip-sw[data-cat="ocr"] { background: hsl(var(--store-9, 330 60% 64%)); }
 .profile-view .store-bar .seg[data-cat="reword"],
 .profile-view .store-chip-sw[data-cat="reword"] { background: hsl(var(--store-10, 75 50% 52%)); }
+.profile-view .store-bar .seg[data-cat="aidetect"],
+.profile-view .store-chip-sw[data-cat="aidetect"] { background: hsl(var(--store-11, 180 45% 48%)); }
 
-/* `.segmented-control`/`.segmented-btn` (component audit rec 1) used to live here —
+/* `.segmented-control`/`.segmented-btn` (component audit rec 1) used to live here -
    a byte-for-byte duplicate of `.view-seg`/`.view-seg-btn` (styles/parts/gallery.css)
    with nothing in shells/web/src ever minting the markup (verified: not one
    .segmented-control/.segmented-btn call-site since the repo's initial extraction).
-   Deleted rather than migrated — there was no live control to re-skin. Any future
+   Deleted rather than migrated - there was no live control to re-skin. Any future
    storage-manager segmented control should render via lib/seg.ts's `segHtml`. */
 }

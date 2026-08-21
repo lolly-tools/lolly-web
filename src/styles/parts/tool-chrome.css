@@ -1,13 +1,13 @@
 /* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
    (order declared once in styles/app.css). Wrapping it means its rules keep a
-   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   fixed priority - above chrome/primitives/base, below overrides/a11y - no
    matter when Vite injects this chunk at runtime. Do not rely on load order. */
 @layer views {
-/* ─── Toast — transient feedback (undo/redo) ────────────────────────────────
+/* ─── Toast - transient feedback (undo/redo) ────────────────────────────────
    Body-mounted, fixed bottom-centre pill in the .stage-nav idiom (translucent
    card + blur + hairline border, theme-aware via tokens). Sits above page chrome
    (z 900) but below modals (1000+). pointer-events:none so canvas clicks fall
-   through — only the action button re-enables them. Entrance is a TRANSITION
+   through - only the action button re-enables them. Entrance is a TRANSITION
    (not a keyframe) so it still plays under prefers-reduced-motion, matching the
    .export-popup philosophy. */
 .toast {
@@ -46,7 +46,7 @@
 .toast-label { color: hsl(var(--muted-foreground)); }
 /* A toast carrying a sentence rather than a label. The default message is
    nowrap + ellipsis, which is right for "Copied link" and silently eats anything
-   longer — so a multi-line notice has to opt in rather than be truncated. */
+   longer - so a multi-line notice has to opt in rather than be truncated. */
 .toast--wrap { max-width: min(92vw, 34rem); border-radius: var(--radius); padding: 10px 14px; }
 .toast--wrap .toast-message { white-space: normal; overflow: visible; line-height: 1.45; }
 .toast.is-muted { padding: 6px 14px; }
@@ -89,11 +89,11 @@
     /* Clearance below the peek bar so the preview doesn't run up under it. Driven
        by --peek-h (the measured header height, set in setupMobileSheet) so the
        taller two-row header still fully shows in peek; 56px is the fallback.
-       Static — independent of the sheet height — so the preview never rescales.
+       Static - independent of the sheet height - so the preview never rescales.
        The FALLBACK carries the type multiplier: --peek-h is measured, so it already
        follows a larger header, but a flat 56px is what applies whenever the measure
        hasn't landed (first paint, or setupMobileSheet not yet run) and at 1.2× that
-       is shorter than the header it is meant to clear — the peek sheet would crop
+       is shorter than the header it is meant to clear - the peek sheet would crop
        its own title row and the preview would start underneath it. */
     --preview-top: calc(var(--peek-h, calc(56px * var(--a11y-fs))) + 0dvh);
   }
@@ -101,7 +101,7 @@
   .tool-layout[data-sheet="half"] { --sheet-h: 50dvh; }
   .tool-layout[data-sheet="full"] { --sheet-h: 90dvh; }
 
-  /* Controls panel — anchored at the top, grip on its bottom edge. The --vv-*
+  /* Controls panel - anchored at the top, grip on its bottom edge. The --vv-*
      offsets (set by the VisualViewport shim in main.js) keep it pinned to the
      VISIBLE area while the page is pinch-zoomed; they're 0px when not zoomed. */
   .sidebar {
@@ -149,7 +149,7 @@
   }
   .tool-layout.is-sheet-dragging .sheet-grip { transition: none; }
 
-  /* Preview — a static backdrop offset below the top bar. The controls sheet
+  /* Preview - a static backdrop offset below the top bar. The controls sheet
      slides over it (it doesn't rescale on half/full), and Fit fits to this region
      since fitCanvas reads the stage rect. Collapse to peek and it re-fits to fill
      the freed space (see setupMobileSheet's peek re-fit in tool.js). */
@@ -164,12 +164,12 @@
   }
   /* Editor (render.layout:'editor'): the stage keeps `height:100dvh !important` from
      the [data-sidebar="hidden"] rule, so a non-zero top inset makes it overflow the
-     viewport bottom by that amount — which pushed the bottom-anchored zoom HUD
+     viewport bottom by that amount - which pushed the bottom-anchored zoom HUD
      (.stage-nav) off-screen. There's no real top bar here, so pin top:0 and the
      fixed stage (top 0 + 100dvh) fills the viewport exactly, HUD included. */
   .tool-layout.is-editor { --preview-top: 0px; }
 
-  /* Track the finger 1:1 while dragging — no easing on the panel height. */
+  /* Track the finger 1:1 while dragging - no easing on the panel height. */
   .tool-layout.is-sheet-dragging .sidebar { transition: none; }
 
   /* The grip replaces the desktop width handle + fullscreen toggles. */
@@ -182,7 +182,7 @@
   /* The sheet is full-width; don't pin the body to the desktop open width. */
   .sidebar-body { min-width: 0; }
 
-  /* Get|Save pill — the primary export/save CTA, floating bottom-centre over the
+  /* Get|Save pill - the primary export/save CTA, floating bottom-centre over the
      preview, always reachable regardless of the controls-sheet position. */
   .render-pill {
     display: inline-flex;
@@ -197,10 +197,10 @@
   .tool-layout.export-open .render-pill { display: none; }
 
   /* .url-budget gauge is defined at top level (after this @media closes) so it applies on
-     ALL viewports — this block is mobile-only, which would have left it unstyled on desktop. */
+     ALL viewports - this block is mobile-only, which would have left it unstyled on desktop. */
 
   /* Recorder tools (render.capture) put a "Warm the mic / Record" button at the foot
-     of the stage — the SAME bottom-centre lane as the Get|Save FAB above, so on mobile
+     of the stage - the SAME bottom-centre lane as the Get|Save FAB above, so on mobile
      the pill sits right on top of it. Lift the record button (and its take timer) to
      stack ABOVE the pill instead. Only needed in this mobile FAB layout: on desktop the
      pill lives inside the sidebar and never shares the stage lane. */
@@ -211,7 +211,7 @@
     bottom: calc(112px + env(safe-area-inset-bottom, 0px));
   }
 
-  /* Export popup — a bottom sheet holding the (moved) actions panel. Hidden until
+  /* Export popup - a bottom sheet holding the (moved) actions panel. Hidden until
      Render is tapped; dismiss via the scrim or the ✕. */
   .export-overlay {
     display: block;
@@ -239,10 +239,10 @@
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   .tool-layout.export-open .export-popup { transform: translateY(0); }
-  /* While the finger is dragging the sheet down, track it 1:1 — the spring-back
+  /* While the finger is dragging the sheet down, track it 1:1 - the spring-back
      / dismiss animation re-enables once the touch ends. */
   .export-popup.is-popup-dragging { transition: none; }
-  /* Grab affordance — hints that the sheet can be flicked away. */
+  /* Grab affordance - hints that the sheet can be flicked away. */
   .export-popup::before {
     content: "";
     position: absolute;
@@ -260,13 +260,13 @@
     border-bottom: 0;
     flex-shrink: 0;
   }
-  /* .export-popup-title/-close: hoisted out of both breakpoints — see tool.css. */
+  /* .export-popup-title/-close: hoisted out of both breakpoints - see tool.css. */
   .export-popup-body { overflow-y: auto; padding: 16px; }
   /* Drop the sidebar-specific spacing now that the panel lives in the popup. */
   .export-popup-body .tool-actions { margin: 0; padding: 0; border-top: none; }
 }
 
-/* Ambient URL-budget gauge (plan 115 P1) — a DRAGGABLE vertical bar showing how much of a
+/* Ambient URL-budget gauge (plan 115 P1) - a DRAGGABLE vertical bar showing how much of a
    shareable link the current edit costs. Chrome-only (position:fixed, never in the canvas);
    reads the cost model, never moves an exported pixel. Default top-left; the user drags it
    anywhere (position persists) and clicks it to open Share. Green → amber → red matches the
@@ -310,14 +310,14 @@
 }
 .url-budget[data-band="warn"] .url-budget-fill { background: hsl(var(--budget-warn)); }
 .url-budget[data-band="over"] .url-budget-fill { background: hsl(var(--budget-over)); }
-/* Reduced motion (OS query OR the app pref): no fill glide — jump straight to the value. */
+/* Reduced motion (OS query OR the app pref): no fill glide - jump straight to the value. */
 @media (prefers-reduced-motion: reduce) {
   .url-budget { transition: box-shadow 0.15s ease; }
   .url-budget-fill { transition: none; }
 }
 html[data-a11y-motion="reduce"] .url-budget-fill { transition: none; }
 
-/* Reassurance toast (url-budget-gauge.ts) — a calm speech-bubble beside the meter the first
+/* Reassurance toast (url-budget-gauge.ts) - a calm speech-bubble beside the meter the first
    time a link fills the bar: "keep going, share the .lolly". NOT a warning, so it uses the
    neutral popover tokens (never the red/amber band colours). Chrome-only (position:absolute in
    #tool-stage, JS-positioned beside the gauge); pointer-events:none so it never intercepts the
@@ -365,8 +365,8 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
 /* The chip wraps INSIDE its own box rather than pushing past the column: these sit
    in a fixed-width sidebar that does not grow, and a label that overflows it is
    both unreadable and untappable at its right edge. `normal` costs nothing while
-   there is room — a flex item's shrink-to-fit width is its max-content width either
-   way — so it only takes effect where the chip could not have fitted anyway: a long
+   there is room - a flex item's shrink-to-fit width is its max-content width either
+   way - so it only takes effect where the chip could not have fitted anyway: a long
    German/Portuguese mark name, or any label at a larger type scale. `anywhere`
    because several of those are one unbreakable compound word. */
 .export-option {
@@ -398,10 +398,10 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   background: hsl(var(--primary) / 0.07);
 }
 
-/* The tick itself is `.field-check` (parts/fields.css) — size, accent, cursor and
+/* The tick itself is `.field-check` (parts/fields.css) - size, accent, cursor and
    flex:none all come from the primitive, so the chip adds nothing of its own. */
 
-/* Tier 2 — dimensions. The headline sizing control: both fields share the full
+/* Tier 2 - dimensions. The headline sizing control: both fields share the full
    width and sit taller than the other inputs. Each field carries a directional
    icon (↔ width, ↕ height) tucked inside on the left. */
 .export-dims {
@@ -439,7 +439,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   background: hsl(var(--background));
   color: hsl(var(--foreground));
   border: 1px solid hsl(var(--input));
-  border-radius: 0;                      /* segmented pill — outer caps added below */
+  border-radius: 0;                      /* segmented pill - outer caps added below */
   font: inherit;
   font-size: calc(14px * var(--a11y-fs));
   font-variant-numeric: tabular-nums;
@@ -458,7 +458,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
 /* Width | height | unit (| dpi) read as ONE seamless segmented pill: no gaps,
    adjacent 1px borders collapsed into a shared line, only the outer corners
    rounded. The leftmost segment (width) carries the left cap; the rightmost
-   VISIBLE segment carries the right cap — normally the unit select, but the DPI
+   VISIBLE segment carries the right cap - normally the unit select, but the DPI
    field when it's shown (physical units). `:has` rather than `:last-child`
    because the DPI field is hidden with display:none, not removed from the DOM. */
 .export-dims > * + * { margin-left: -1px; }              /* overlap borders into one */
@@ -467,7 +467,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
 }
 /* Right cap = the unit select when it's the last visible segment (px, DPI hidden).
    Prefixed with .tool-actions so it OUTRANKS the generic `.tool-actions
-   select:not(.field-select)` radius rule (specificity 0,2,1) below at ~:1291 —
+   select:not(.field-select)` radius rule (specificity 0,2,1) below at ~:1291 -
    without it the unit inherits an all-corner radius and reads as a detached pill
    in px mode (mm mode was unaffected only because the :has() rule below is more
    specific). The row must always read as one pill: flat internal joins, the last
@@ -482,9 +482,9 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
 .export-dims .dim-unit:focus,
 .export-dims .dim-dpi:focus-within { position: relative; z-index: 1; }
 
-/* Units selector — the "value type" (px/mm/cm/in/pt). Its chevron is stacked
+/* Units selector - the "value type" (px/mm/cm/in/pt). Its chevron is stacked
    directly UNDER the unit text (centred, mirroring how the DPI caption sits
-   under its number) instead of to the right of it — so the segment is only as
+   under its number) instead of to the right of it - so the segment is only as
    wide as the "mm" text, with no horizontal arrow gutter to pay for. Frees up
    width for the width & height fields at small sidebar widths.
    Scoped under .export-dims so it outranks the generic `.tool-actions select`
@@ -497,7 +497,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   background-image: var(--field-chevron);  /* the one shared caret (parts/fields.css) */
   background-repeat: no-repeat;
   /* Chevron centred beneath the text. The caret is matched to the 7px DPI caption,
-     which scales with the type, so the caret does too — and the bottom padding IS
+     which scales with the type, so the caret does too - and the bottom padding IS
      the room it needs (gap + caret, 3 + 7), expressed as that sum so the three can
      never drift apart. Scale the caret alone and it grows up into the unit text
      instead of sitting under it. */
@@ -520,13 +520,13 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
 }
 .export-dims .dim-unit:focus { border-color: hsl(var(--ring)); outline: none; }
 
-/* DPI field — only shown for physical units. The whole label is the rightmost
+/* DPI field - only shown for physical units. The whole label is the rightmost
    pill segment: the number sits on top of a micro "DPI" caption, so the segment
    is only as wide as the number itself (no horizontal "dpi" word), leaving more
    room for width & height at small sidebar widths. */
 .dim-dpi {
   flex: 0 0 auto;
-  align-self: stretch;              /* a real segment — match the row height */
+  align-self: stretch;              /* a real segment - match the row height */
   display: inline-flex;
   flex-direction: column;           /* stack the number over the caption */
   align-items: center;
@@ -544,7 +544,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   pointer-events: none;
 }
 .export-dims .dim-dpi input[type="number"] {
-  /* border-box: just fits a 4-digit dpi (max 1200) — "just", so the width follows
+  /* border-box: just fits a 4-digit dpi (max 1200) - "just", so the width follows
      the type or the 1.2× digits are what gets cut. */
   width: calc(2.9rem * var(--a11y-fs));
   border: 0;                 /* the .dim-dpi container carries the segment border */
@@ -636,20 +636,20 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   border-top-color: transparent;
   border-bottom-color: hsl(var(--primary));
 }
-/* A zoom is exactly the vestibular motion reduced-motion targets — drop the
+/* A zoom is exactly the vestibular motion reduced-motion targets - drop the
    scale and keep only the fade for users who ask for less motion. */
 @media (prefers-reduced-motion: reduce) {
   .scrub-readout,
   .scrub-readout.is-visible { transform: none; }
 }
 
-/* Tier 4 — actions. Download is the primary CTA and gets the widest track;
+/* Tier 4 - actions. Download is the primary CTA and gets the widest track;
    any present secondary buttons (copy/save) split the remainder evenly. */
 .export-action-buttons {
   display: flex;
   gap: 6px;
   margin-top: 2px;
-  /* Query container so Copy/Save/Share react to the row's own width — the
+  /* Query container so Copy/Save/Share react to the row's own width - the
      sidebar is resizable, so the viewport isn't a reliable signal here. */
   container-type: inline-size;
 }
@@ -663,11 +663,11 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
 .copy-btn,
 .save-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 /* Copy / Save / Share shed their labels in the @container rule below, at which
-   point the glyph IS the button — so these scale with the type either way. */
+   point the glyph IS the button - so these scale with the type either way. */
 .copy-icon,
 .save-icon { width: calc(14px * var(--a11y-fs)); height: calc(14px * var(--a11y-fs)); flex-shrink: 0; }
 
-/* Share button — equal flex sibling of Copy and Save in the actions row (sized
+/* Share button - equal flex sibling of Copy and Save in the actions row (sized
    by .export-action-buttons button), link glyph riding ahead of the label. */
 .copy-url-btn {
   display: inline-flex;
@@ -691,7 +691,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   .export-action-buttons button { padding-block: 6px; }
 }
 /* Jelly pills run wider than the native buttons (component font + capsule
-   padding), so they shed their labels EARLIER — the Share label was clipping
+   padding), so they shed their labels EARLIER - the Share label was clipping
    at widths where the native row still fit. Icon-only jelly pills zero the
    component's inline padding + slot gap so the glyph sits dead-centre. */
 @container (max-width: 320px) {
@@ -701,11 +701,11 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
     --jelly-button-gap: 0;
   }
 }
-/* The jelly row reads airier than the native one (capsules, no borders) — pull
+/* The jelly row reads airier than the native one (capsules, no borders) - pull
    the three pills closer together. */
 .export-action-buttons:has(jelly-button) { gap: 4px; }
 
-/* Tier 1 — filename · format. The filename fills the row; when a format
+/* Tier 1 - filename · format. The filename fills the row; when a format
    selector exists the two fuse into a single "name.format" segmented control. */
 .filename-extension {
   display: flex;
@@ -726,7 +726,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   border-bottom-left-radius: 0;
 }
 
-/* The depth fact — what the export WILL carry beyond an ordinary 8-bit image
+/* The depth fact - what the export WILL carry beyond an ordinary 8-bit image
    (16-bit HDR PNG, gain-map HDR JPEG). A statement, not a control: no border, no
    background, no icon, not focusable. It is created only when it is true and
    removed when it is not (views/export-depth.ts applyDepthFact), so in the common
@@ -746,7 +746,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   cursor: default;
 }
 /* Tooltip geometry, [data-tip] primitive: the bubble carries a sentence, and this
-   host hugs the right edge of a sidebar that is overflow-x:hidden — so the default
+   host hugs the right edge of a sidebar that is overflow-x:hidden - so the default
    centred nowrap bubble would be sliced. Wrap it and hang it from the right edge
    (the arrow follows). Same wrap treatment parts/tooltip.css already applies at
    phone widths, for the same reason. */
@@ -775,7 +775,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   .export-depth-fact::after { transition: none; transform: none; }
 }
 
-/* Tier 3 — ancillary settings. A single wrapping cluster of chips so optional
+/* Tier 3 - ancillary settings. A single wrapping cluster of chips so optional
    controls never disrupt the rows above. */
 .export-settings {
   display: flex;
@@ -785,13 +785,13 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
 }
 .export-settings:empty { display: none; }
 
-/* Tier 3.5 — "Before you export" (views/export-preflight.ts). The one export
+/* Tier 3.5 - "Before you export" (views/export-preflight.ts). The one export
    card that is a STATEMENT rather than a setting, so it sits last, below every
    control it describes and above the Download button.
 
    It is a real <details>, unlike the other export cards: parts/disclosure.css
    documents why those are JS-toggled (they hold inputs whose values must survive
-   a collapse), and this one holds no fields, only reading matter — so the native
+   a collapse), and this one holds no fields, only reading matter - so the native
    element's keyboard toggling, AT semantics and find-in-page auto-open come free
    and nothing has to be kept in sync. It reuses .section-card for the box and the
    canonical .section-card-head/.section-card-icon anatomy for the summary.
@@ -821,7 +821,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   flex-shrink: 0;
 }
 /* The verdict rides the COLLAPSED summary, so "1 to fix" is legible without
-   opening the card — which is what lets it stay collapsed by default and still
+   opening the card - which is what lets it stay collapsed by default and still
    be honest. Pushed to the trailing edge, logical so RTL follows. */
 .preflight-verdict {
   margin-inline-start: auto;
@@ -863,7 +863,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   gap: 6px;
 }
 /* Severity is a TINTED FILL PLUS A FULL HAIRLINE BORDER (the community/redact
-   .rd-finding shape), never a one-sided border-left stripe — that is the named
+   .rd-finding shape), never a one-sided border-left stripe - that is the named
    house anti-pattern. Dashed borders are reserved for drop areas and appear
    nowhere in this card. */
 .preflight-finding {
@@ -881,7 +881,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
 /* The metaphor chip: a large rounded tile carrying the CONTENT icon (what the
    check is about), with the STATUS badge pinned to its corner. A fixed square
    that never shrinks; nudged onto the first line's cap height. Tone tint is set
-   per severity below — neutral here so a plain note/gap stays calm. */
+   per severity below - neutral here so a plain note/gap stays calm. */
 .preflight-finding-figure {
   position: relative;
   flex: 0 0 auto;
@@ -925,7 +925,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   overflow-wrap: anywhere;
   padding-top: 6px;   /* first line's cap sits against the chip centre; alignment, so NOT --a11y-fs scaled */
 }
-/* The same amber .export-aspect-warning already uses two cards up — there is no
+/* The same amber .export-aspect-warning already uses two cards up - there is no
    --warning token in tokens.css, and inventing one for this card would give the
    panel two different warning hues. Tone drives the chip fill AND the badge/metaphor
    colour, so severity reads from the mark, never colour alone (the badge glyph
@@ -950,7 +950,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   color: hsl(var(--destructive));
 }
 /* A NAMED GAP: "Lolly could not check this". Same tinted-fill + full-hairline
-   anatomy as the other two (never a left stripe), but drawn DOWN rather than up —
+   anatomy as the other two (never a left stripe), but drawn DOWN rather than up -
    a refusal is not a problem and must never be styled as one. It still needs its
    own box, because rendering it identically to a measured fact is most of the way
    back to omitting it, and an omitted gap is indistinguishable from "nothing
@@ -1003,7 +1003,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   max-height: calc(86vh - 56px);
 }
 
-/* Tier 3.6 — "Cost, worked out from your rate card" (views/cost-panel.ts). Sits
+/* Tier 3.6 - "Cost, worked out from your rate card" (views/cost-panel.ts). Sits
    after the preflight card (it consumes preflight's counts) and above Download.
    Chrome only: it carries data-export-hide and must never move a pixel of the
    export. A real <details>, same box + head anatomy as the preflight card. There
@@ -1052,7 +1052,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   margin: 0;
   color: hsl(var(--foreground));
 }
-/* The <details> "Show the arithmetic" table — one row per multiplication. */
+/* The <details> "Show the arithmetic" table - one row per multiplication. */
 .cost-working > summary {
   cursor: pointer;
   font-size: calc(11px * var(--a11y-fs));
@@ -1108,7 +1108,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
 .cost-reveal:hover { background: hsl(var(--muted) / 0.8); }
 
 /* .export-cmyk/.export-audio/.export-pdfpass/.export-c2pa/.export-print all
-   carry the literal `section-card` class now (component audit rec 7) — the
+   carry the literal `section-card` class now (component audit rec 7) - the
    box, icon-head and hint-line anatomy they used to restate here four times
    over live once as `.section-card`/`.section-card-head`/`.section-card-icon`/
    `.section-card__hint` in disclosure.css. Only what's genuinely unique to a
@@ -1151,7 +1151,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
 }
 .audio-preview:disabled { opacity: 0.45; cursor: default; }
 .audio-preview.is-loading { opacity: 0.6; cursor: progress; }
-/* Music-bed fade in/out (seconds) — applies the gain envelope baked into the export. */
+/* Music-bed fade in/out (seconds) - applies the gain envelope baked into the export. */
 .audio-fade {
   display: flex;
   gap: 14px;
@@ -1172,7 +1172,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
 
 /* Editor-only aspect-ratio warning (render.aspectWarning), shown beside the
    dimension fields when the page size leaves the tool's supported orientation.
-   Amber caution rather than destructive red — the export still works, it just
+   Amber caution rather than destructive red - the export still works, it just
    won't lay out as intended. No --warning token exists, so the hue is inline. */
 .export-aspect-warning {
   --aspect-warn: 38 92% 45%;
@@ -1196,11 +1196,11 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   margin-top: 1px;
   color: hsl(var(--aspect-warn));
 }
-/* Clickable disclosure header — the visual treatment (icon-head anatomy) is
+/* Clickable disclosure header - the visual treatment (icon-head anatomy) is
    shared via disclosure.css's `.section-card-head` merge; this is just the
    <button> reset it needs on top, plus a CSS caret (same idiom as
    .input-section-summary) that rotates when the card is open. `.protection-head`
-   (the "Content protection" wrapper folding password/C2PA/imprint/print marks —
+   (the "Content protection" wrapper folding password/C2PA/imprint/print marks -
    see tool-actions.ts) is the identical button + caret idiom under its own name. */
 .pdfpass-head,
 .protection-head {
@@ -1209,7 +1209,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   padding: 0;
   background: none;
   border: 0;
-  /* These are collapsible-section headers, NOT action buttons — cancel the
+  /* These are collapsible-section headers, NOT action buttons - cancel the
      `.tool-actions button` chrome (the inset/drop box-shadow) so the header
      reads as a section label with a caret, not a raised button. */
   box-shadow: none;
@@ -1221,7 +1221,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
 .protection-head::after {
   content: '';
   display: block;
-  /* A caret drawn beside a heading is that heading's glyph — it scales with it. */
+  /* A caret drawn beside a heading is that heading's glyph - it scales with it. */
   width: calc(8px * var(--a11y-fs));
   height: calc(8px * var(--a11y-fs));
   margin-left: auto;
@@ -1239,7 +1239,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   flex-direction: column;
   gap: 8px;
   /* Query container so the C2PA card can lay its "Expires:" control out beside the
-     label when the (resizable) sidebar is wide enough — the viewport isn't the
+     label when the (resizable) sidebar is wide enough - the viewport isn't the
      signal here. See the @container rule under .c2pa-life below. */
   container: protection / inline-size;
 }
@@ -1263,7 +1263,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
    .print-enable never had. Their own class names stay as the hooks the cards and
    the component catalogue reference; the tick is `.field-check`. */
 
-/* HDR author dials — revealed under the toggle when HDR is on. Two-column grid of
+/* HDR author dials - revealed under the toggle when HDR is on. Two-column grid of
    compact labelled range sliders (White peak, glow Reach, Dark lift, Focus). */
 .hdr-body {
   grid-template-columns: 1fr 1fr;
@@ -1279,18 +1279,18 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
 }
 .hdr-slider > span { flex: 0 0 auto; min-width: 52px; }
 /* The track/thumb are the shared `.field-range` drawing; the only delta is the
-   BRAND tint — these dials are about brand colour, so the thumb follows --brand-c1
+   BRAND tint - these dials are about brand colour, so the thumb follows --brand-c1
    rather than --primary. accent-color stays for the (rare) UA that ignores
    appearance:none; the explicit thumb colours below are what actually paints,
    since a custom-drawn thumb no longer answers to accent-color. Vendor pseudos
-   must each get their own rule — one unknown pseudo drops the whole list. */
+   must each get their own rule - one unknown pseudo drops the whole list. */
 .hdr-slider input[type="range"] { flex: 1 1 auto; min-width: 0; accent-color: hsl(var(--brand-c1, var(--ring))); }
 .hdr-slider input[type="range"]::-webkit-slider-thumb { background: hsl(var(--brand-c1, var(--ring))); }
 .hdr-slider input[type="range"]::-moz-range-thumb { background: hsl(var(--brand-c1, var(--ring))); }
 .hdr-slider input[type="range"]::-moz-range-progress { background: hsl(var(--brand-c1, var(--ring))); }
 .c2pa-enable:has(input:disabled) { cursor: default; opacity: 0.55; }
 
-/* C2PA lifetime picker — "Expires:" label + the days <select>, inline. Stacked
+/* C2PA lifetime picker - "Expires:" label + the days <select>, inline. Stacked
    below the enable row by default (the .section-card column). */
 .c2pa-life-pick {
   display: inline-flex;
@@ -1305,7 +1305,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
 /* When the sidebar (→ this container) is wide enough to hold the label/checkbox AND
    the "Expires:" control on one line, float them onto a single row (control pushed to
    the right); below the threshold it collapses back to the stacked column above. Only
-   in the lifetime-picker state — the enrolled-identity "Signed as…" line stays stacked.
+   in the lifetime-picker state - the enrolled-identity "Signed as…" line stays stacked.
    The WebM hint keeps its own full-width line whenever it shows. */
 @container protection (min-width: 380px) {
   .export-c2pa:has(.c2pa-life-pick) {
@@ -1317,9 +1317,9 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   .export-c2pa:has(.c2pa-life-pick) .c2pa-hint { flex-basis: 100%; }
 }
 
-/* Print marks & bleed card — the box is the shared .section-card (disclosure.css,
+/* Print marks & bleed card - the box is the shared .section-card (disclosure.css,
    rec 7); a master checkbox (.print-enable) reveals the body so ordinary PDFs
-   stay plain. Its row gap is wider than the other three cards' — a real delta. */
+   stay plain. Its row gap is wider than the other three cards' - a real delta. */
 .export-print { gap: 10px; }
 .print-body {
   display: flex;
@@ -1360,7 +1360,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
 }
 
 /* :not(:focus) preserves the pre-dedupe outcome. The :focus ring is now the one
-   shared recipe at the foot of tool.css, and tool.css loads BEFORE this sheet —
+   shared recipe at the foot of tool.css, and tool.css loads BEFORE this sheet -
    without the guard this equal-specificity hover would start beating it and dim
    the ring on a hovered, focused field. Same for .tool-actions select below. */
 .export-filename:hover:not(:focus) {
@@ -1370,7 +1370,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
 /* Format selector. This is the OLD outlined generation, kept deliberately: the
    format select is one half of the fused "name.format" pill (see
    .filename-extension above), where the shared 1px edge between the input and
-   the select IS the control — a borderless embossed select has nothing to fuse
+   the select IS the control - a borderless embossed select has nothing to fuse
    with. The four standalone card selects (colour profile, encryption tier,
    credential lifetime, audio track) have moved to `.field-select`, so this rule
    yields to them rather than out-ranking the primitive from a higher layer. */
@@ -1390,7 +1390,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   font-size: calc(13px * var(--a11y-fs));
   cursor: pointer;
   transition: border-color 0.12s;
-  /* Custom chevron + appearance:none — same native-menulist jitter fix as
+  /* Custom chevron + appearance:none - same native-menulist jitter fix as
      .input-row select. The 28px right padding already reserved arrow space. */
   appearance: none;
   -webkit-appearance: none;
@@ -1400,7 +1400,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
 .tool-actions select:not(.field-select):hover:not(:focus) {
   border-color: hsl(var(--ring) / 0.4);
 }
-/* Timing inputs — wait and duration, shown for webm and gif formats */
+/* Timing inputs - wait and duration, shown for webm and gif formats */
 /* Shown only for animated formats. Takes its own full-width row in the Tier-3
    cluster and wraps internally, so the timing controls reflow cleanly instead
    of overflowing a narrow sidebar. */
@@ -1436,11 +1436,11 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   -moz-appearance: textfield;
 }
 
-/* Dither / 60fps toggles — shown inside .video-params for gif / webm. Separated
+/* Dither / 60fps toggles - shown inside .video-params for gif / webm. Separated
    from the timing fields by the cluster gap so they wrap without a stray
    divider hanging at the start of a wrapped line. */
 /* Same reasoning as `.export-option`: the toggle may fold inside its own box rather
-   than push past the sidebar column. `.vp-field` above keeps its nowrap on purpose —
+   than push past the sidebar column. `.vp-field` above keeps its nowrap on purpose -
    there the point is that a "label · input · unit" trio never splits. */
 .gif-dither-toggle {
   display: flex;
@@ -1454,10 +1454,10 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   min-width: 0;
 }
 
-/* Its tick is `.field-check` — nothing to restate here (the 5px row gap above is
+/* Its tick is `.field-check` - nothing to restate here (the 5px row gap above is
    the only genuine delta from `.field-toggle`). */
 
-/* Action buttons — base recipe (.btn + .tool-actions button) now lives in
+/* Action buttons - base recipe (.btn + .tool-actions button) now lives in
    parts/buttons.css, imported globally from app.css. */
 
 /* Inline (i) help buttons (help-tip.js) sit inside the export popup's C2PA and
@@ -1484,7 +1484,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   box-shadow: none;
 }
 
-/* Copy button armed by the ?copy URL action — pulses to invite the click that
+/* Copy button armed by the ?copy URL action - pulses to invite the click that
    gives the clipboard write its required user gesture. */
 .tool-actions [data-action="copy"].copy-armed {
   /* fill (background/color) lives in parts/buttons.css's .btn--primary alias list */
@@ -1497,7 +1497,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   50%      { box-shadow: 0 0 0 5px hsl(var(--primary) / 0); }
 }
 
-/* Download is the primary CTA — the biggest, easiest target in the row. The
+/* Download is the primary CTA - the biggest, easiest target in the row. The
    control-plane "Request approval" CTA takes download's place (same row, same
    weight) when a deployment withholds download but permits an approval request. */
 .tool-actions [data-action="download"],

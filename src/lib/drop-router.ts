@@ -512,7 +512,7 @@ async function importBrandLollyDrop(
       await syncCatalog(host as unknown as Parameters<typeof syncCatalog>[0]).catch(() => { /* next boot */ });
       const it = await import('./installed-tools.ts');
       await it.mergeInstalledToolsIntoIndex().catch(() => { /* boot merge covers it */ });
-      announce(tRaw('Brand switched to “{name}” — {n} tools installed.', { name: label, n: summary.packTools }));
+      announce(tRaw('Brand switched to “{name}” - {n} tools installed.', { name: label, n: summary.packTools }));
     } else {
       announce(tRaw('Brand switched to “{name}”.', { name: label }));
     }
@@ -581,7 +581,7 @@ async function provisionLollyTool(bytes: Uint8Array, lp: typeof import('./lolly-
   const by = parsed.manifest.creator?.name || parsed.manifest.creator?.org;
   const trusted = await confirmDialog({
     title: tRaw('Trust this tool?'),
-    message: tRaw('This file includes a tool — “{name}”{by} — that isn’t installed here. Opening it runs the tool’s own code on your device. Only install it if you trust where this file came from.',
+    message: tRaw('This file includes a tool - “{name}”{by} - that isn’t installed here. Opening it runs the tool’s own code on your device. Only install it if you trust where this file came from.',
       { name, by: by ? tRaw(' by {who}', { who: by }) : '' }),
     confirmLabel: tRaw('Trust & install'),
     danger: true,
@@ -989,7 +989,7 @@ export function initShareTargetIngest(host: PickerHost): void {
       const meta = JSON.parse(raw) as { name?: string; mime?: string; chunks?: number };
       const bytes = assembleShareChunks(meta.chunks ?? 0, (i) => share.sharedFileChunk(i));
       file = new File([bytes], meta.name || 'shared-file', { type: meta.mime || '' });
-    } catch { /* malformed stash — still consumed below so it can't wedge future polls */ }
+    } catch { /* malformed stash - still consumed below so it can't wedge future polls */ }
     share.sharedFileConsumed();
     if (!file) return;
     const mine = ++seq;

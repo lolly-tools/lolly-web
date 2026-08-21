@@ -1,6 +1,6 @@
 /* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
    (order declared once in styles/app.css). Wrapping it means its rules keep a
-   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   fixed priority - above chrome/primitives/base, below overrides/a11y - no
    matter when Vite injects this chunk at runtime. Do not rely on load order. */
 @layer views {
 /*
@@ -26,7 +26,7 @@
   background: hsl(var(--background));
 }
 
-/* Header title + subtitle were removed — the toolbar is the top bar now. */
+/* Header title + subtitle were removed - the toolbar is the top bar now. */
 .pro-exit { font-size: calc(.85rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); white-space: nowrap; }
 .pro-exit:hover { color: hsl(var(--foreground)); }
 
@@ -62,7 +62,7 @@
 
 @media (max-width: 720px) {
   /* Tuck the controls behind a hamburger so even a phone can drive batch mode.
-     Collapse at ≈720px — keeps the full toolbar on laptops/tablets. Keep in sync
+     Collapse at ≈720px - keeps the full toolbar on laptops/tablets. Keep in sync
      with the matchMedia query in index.js that relocates the format/sessions
      controls. */
   .pro-toolbar { position: relative; overflow: visible; padding-left: 7rem; }
@@ -97,7 +97,7 @@
 
 /* UI zoom (the −/100%/+ pill), left of the format select. Markup/click-wiring/
    disabled-state come from components/zoom-hud.ts (mountZoomHud), same as the
-   tool stage/multi-edit/catalog HUDs — this skins it. It's an interface scale
+   tool stage/multi-edit/catalog HUDs - this skins it. It's an interface scale
    (CSS `zoom` on <html>, see pro/index.ts), not a canvas zoom, so there's no
    Fit button; the readout is the interactive control instead (click → 100%). */
 .pro-zoom {
@@ -125,8 +125,8 @@
 }
 .pro-zoom-pct:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
 .pro-zoom-pct:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
-/* The boxed-field recipe that used to live here — font/foreground/background/
-   1px --input/radius — is the shared primitive now (styles/parts/fields.css).
+/* The boxed-field recipe that used to live here - font/foreground/background/
+   1px --input/radius - is the shared primitive now (styles/parts/fields.css).
    The toolbar controls wear `.field-select`/`.field-input --auto --sm` and every
    control the factory emits (pro/controls.ts) carries them too, so only the
    genuine deltas are left below. A control inside a grid cell deliberately opts
@@ -208,7 +208,7 @@
 /* Fixed layout, table sized to its container (width:100%). Data columns carry no
    explicit width, so they flex-share the space and the table fits with little or
    no horizontal scroll. Dragging a column gives it a fixed px width; once the
-   sized columns total more than the viewport the table grows and scrolls — so the
+   sized columns total more than the viewport the table grows and scrolls - so the
    user can still widen a cell to edit, it's just not forced on everyone. */
 .pro-grid { border-collapse: collapse; table-layout: fixed; width: 100%; font-size: calc(.85rem * var(--a11y-fs)); }
 .pro-grid th, .pro-grid td {
@@ -221,7 +221,7 @@
 .pro-grid td { padding: 0; } /* cells own zero spacing; the control fills them */
 
 /* ── Drag-resize grab zones (handled by resize.js via geometry) ─────────────── */
-/* Row height: a strip along each row's bottom grid line — grab anywhere across. */
+/* Row height: a strip along each row's bottom grid line - grab anywhere across. */
 .pro-grid tbody td:not(.pro-cell-template):not(.pro-cell-actions) { position: relative; }
 .pro-grid tbody td::after {
   content: ''; position: absolute; left: 0; right: 0; bottom: -3px; height: 6px;
@@ -239,7 +239,7 @@
 body.pro-row-resizing, body.pro-row-resizing * { cursor: row-resize !important; user-select: none !important; }
 body.pro-col-resizing, body.pro-col-resizing * { cursor: col-resize !important; user-select: none !important; }
 /* The while-dragging cursor/selection lock moved to parts/overrides.css as
-   `body.is-scrubbing` — it is shared with Colour Lab's channel entries now, and an
+   `body.is-scrubbing` - it is shared with Colour Lab's channel entries now, and an
    `!important` in a lazily-loaded view sheet loses to one in a later layer. */
 /* Numeric scrub cells (Width/Height) hint the drag affordance; typing restores the caret. */
 .pro-cell input.pro-num { cursor: ew-resize; }
@@ -263,7 +263,7 @@ body.pro-col-resizing, body.pro-col-resizing * { cursor: col-resize !important; 
 /* The heading is a button: clicking it collapses the column to a tag below.
    It wraps to at most 3 lines and breaks long words, so a column can be dragged
    well below its title width and still read; past 3 lines it clamps with an
-   ellipsis. Pure-CSS line-clamp — no JS measuring — so it's cheap on re-render. */
+   ellipsis. Pure-CSS line-clamp - no JS measuring - so it's cheap on re-render. */
 .pro-col-label {
   font: inherit; font-weight: 700; color: inherit; cursor: pointer;
   background: transparent; border: none; padding: 0; text-align: left;
@@ -310,7 +310,7 @@ body.pro-col-resizing, body.pro-col-resizing * { cursor: col-resize !important; 
 .pro-grid thead .pro-col-template { z-index: 3; }
 
 /* The remove-row column stays pinned to the right edge, mirroring the sticky
-   template column on the left — its border-left is the separator the scrolling
+   template column on the left - its border-left is the separator the scrolling
    cells slide under (their own border-right scrolls away). */
 .pro-col-actions, .pro-cell-actions {
   position: sticky; right: 0; background: hsl(var(--card)); z-index: 1;
@@ -322,7 +322,7 @@ body.pro-col-resizing, body.pro-col-resizing * { cursor: col-resize !important; 
    area is the hit target. The cell's own borders provide the grid lines; the
    control is borderless and transparent, with its padding as the text inset.
    This is why a cell control does NOT take the .field-* primitive (controlHtml
-   is called with `boxed: false` here) — the two treatments are opposites.
+   is called with `boxed: false` here) - the two treatments are opposites.
    The checkbox is the one exception: it is a 16px object, not a stretched box,
    so it keeps the primitive and is excluded from the strip. */
 .pro-cell .pro-control:not([type="checkbox"]),
@@ -339,13 +339,13 @@ body.pro-col-resizing, body.pro-col-resizing * { cursor: col-resize !important; 
   padding: .6rem;
   min-height: 2.5rem;
   max-width: none;
-  min-width: 0; /* form controls otherwise keep an intrinsic width — let them
+  min-width: 0; /* form controls otherwise keep an intrinsic width - let them
                    shrink with the column so it can be dragged arbitrarily narrow */
 }
 .pro-cell .pro-control:focus,
 .pro-cell-template .pro-template-select:focus { outline: none; }
 
-/* Vector cell — N number sub-fields share the one column. Labels are hidden to
+/* Vector cell - N number sub-fields share the one column. Labels are hidden to
    stay dense (the column header names the group; hover a field for its label);
    the sub-fields keep a consistent declared order, e.g. zoom · x · y. */
 .pro-vector { display: flex; width: 100%; height: 100%; }
@@ -360,7 +360,7 @@ body.pro-col-resizing, body.pro-col-resizing * { cursor: col-resize !important; 
 .pro-vec-field:last-child .pro-vec-num { border-right: none; }
 .pro-cell .pro-vec-num::-webkit-outer-spin-button,
 .pro-cell .pro-vec-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-/* Textareas get no drag handle on /pro — rows are resized via the grid line. */
+/* Textareas get no drag handle on /pro - rows are resized via the grid line. */
 .pro-cell textarea.pro-control { display: block; resize: none; line-height: 1.4; }
 .pro-cell select.pro-control { appearance: auto; -webkit-appearance: auto; }
 .pro-cell button[data-asset-pick].pro-control {
@@ -408,7 +408,7 @@ body.pro-col-resizing, body.pro-col-resizing * { cursor: col-resize !important; 
 .pro-template-actions { position: absolute; left: .4rem; top: 50%; transform: translateY(-50%); display: inline-flex; align-items: center; gap: .25rem; pointer-events: none; z-index: 2; }
 .pro-template-actions .pro-eye { pointer-events: auto; } /* interactive; the badge is not */
 
-/* Template trigger button — looks like the old input, opens the search popover. */
+/* Template trigger button - looks like the old input, opens the search popover. */
 .pro-template-trigger { display: flex; align-items: center; text-align: left; cursor: pointer; }
 .pro-template-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pro-template-name.is-placeholder { color: hsl(var(--muted-foreground)); }
@@ -455,11 +455,11 @@ body.pro-col-resizing, body.pro-col-resizing * { cursor: col-resize !important; 
 /* + Row / +5 anchored together at the bottom-left of the table. */
 .pro-addrow { display: inline-flex; gap: .35rem; flex: none; }
 /* ── Bottom-bar hierarchy (most → least prominent) ──
-   1. + Row / +5  — the primary action: filled green, a solid rounded-rect.
-   2. .pro-cols-action (Hide/Show all) — secondary: outlined uppercase pill.
-   3. .pro-collapsed-tag (restore a hidden column) — quietest: small ghost pill. */
+   1. + Row / +5  - the primary action: filled green, a solid rounded-rect.
+   2. .pro-cols-action (Hide/Show all) - secondary: outlined uppercase pill.
+   3. .pro-collapsed-tag (restore a hidden column) - quietest: small ghost pill. */
 
-/* 1 — filled, leads the bar. Fill (background/color) is aliased in
+/* 1 - filled, leads the bar. Fill (background/color) is aliased in
    ../styles/parts/buttons.css's .btn--primary list. */
 .pro-addrow .pro-btn {
   border-color: hsl(var(--primary));
@@ -482,7 +482,7 @@ body.pro-col-resizing, body.pro-col-resizing * { cursor: col-resize !important; 
 }
 .pro-addrow .pro-fill-last:disabled { opacity: .4; cursor: not-allowed; }
 
-/* 3 — small ghost pill: no fill, thin solid border, muted text. Most recessive. */
+/* 3 - small ghost pill: no fill, thin solid border, muted text. Most recessive. */
 .pro-collapsed-tag {
   font: inherit; font-size: calc(.7rem * var(--a11y-fs)); font-weight: 500; cursor: pointer;
   border: 1px solid hsl(var(--border)); background: transparent; color: hsl(var(--muted-foreground));
@@ -492,7 +492,7 @@ body.pro-col-resizing, body.pro-col-resizing * { cursor: col-resize !important; 
 .pro-collapsed-tag span { opacity: .55; font-weight: 700; }
 
 /* Export-column tags (Save as / Width / Height / Unit / DPI) lead the bar and
-   read as a distinct "Output" kind — a soft accent fill + accent text — so they
+   read as a distinct "Output" kind - a soft accent fill + accent text - so they
    never blend into the quiet ghost input tags beside them. */
 .pro-collapsed-tag--export {
   background: hsl(var(--primary) / .1);
@@ -508,7 +508,7 @@ body.pro-col-resizing, body.pro-col-resizing * { cursor: col-resize !important; 
 .pro-collapsed-tag--export span { opacity: .7; }
 
 /* Relevance cue: while the cursor sits on a row, the hidden input tags that that
-   row's tool actually declares get an outline ring — a quick "these collapsed
+   row's tool actually declares get an outline ring - a quick "these collapsed
    fields apply here" hint. Tags the active row doesn't use stay the quiet
    default. Export tags apply to every row, so they're never flagged. */
 .pro-collapsed-tag.is-relevant {
@@ -517,7 +517,7 @@ body.pro-col-resizing, body.pro-col-resizing * { cursor: col-resize !important; 
   box-shadow: 0 0 0 2px hsl(var(--primary) / .3);
 }
 
-/* 2 — solid outlined uppercase pill: clearly an action, below the filled +Row. */
+/* 2 - solid outlined uppercase pill: clearly an action, below the filled +Row. */
 .pro-cols-action {
   font: inherit; font-size: calc(.75rem * var(--a11y-fs)); font-weight: 700; cursor: pointer;
   text-transform: uppercase; letter-spacing: .04em;
@@ -532,7 +532,7 @@ body.pro-col-resizing, body.pro-col-resizing * { cursor: col-resize !important; 
 .pro-grid td { cursor: cell; }
 .pro-grid td:focus { outline: none; } /* suppress the UA ring; we draw our own below */
 /* The `td.` qualifier matches the specificity of `td:focus` above so this WINS on
-   source order — otherwise the focused cell's own :focus rule erases its ring and
+   source order - otherwise the focused cell's own :focus rule erases its ring and
    you can't see where focus is. A faint fill makes the active cell unmistakable. */
 .pro-grid td.pro-cell--focused { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; background: hsl(var(--ring) / .07); }
 .pro-grid td.pro-cell--editing { outline: 2px solid hsl(var(--primary)); outline-offset: -2px; box-shadow: inset 0 0 0 1px hsl(var(--primary)); }
@@ -551,7 +551,7 @@ body.pro-col-resizing, body.pro-col-resizing * { cursor: col-resize !important; 
 .pro-row-remove:hover { color: hsl(var(--destructive)); background: hsl(var(--muted)); }
 /* Two-step delete: the first click "arms" the ✕ into a labelled red confirm pill
    (swapped to "Remove?" in JS); a second click within the window actually deletes,
-   and any other click — or a 3s timeout — disarms it. Prevents stray-click loss. */
+   and any other click - or a 3s timeout - disarms it. Prevents stray-click loss. */
 .pro-row-remove.is-armed {
   background: hsl(var(--destructive)); color: hsl(var(--destructive-foreground));
   font-size: calc(.68rem * var(--a11y-fs)); font-weight: 700; padding: .25rem .4rem;
@@ -576,7 +576,7 @@ body.pro-row-dragging, body.pro-row-dragging * { cursor: grabbing !important; us
 /* Experimental row: the template cell carries .pro-exp. A faint 45° hatch marks
    it (exports are watermarked) without stealing space like a badge would. It's a
    background-image, so the cell's own background-color (card) shows beneath and
-   the template name stays readable — tune the alpha / stripe widths to taste.
+   the template name stays readable - tune the alpha / stripe widths to taste.
 
    Keyed off --foreground (not a hue like --destructive): a dark red at low alpha
    has almost no contrast on the SUSE theme's dark teal card and disappears, but
@@ -599,7 +599,7 @@ body.pro-row-dragging, body.pro-row-dragging * { cursor: grabbing !important; us
   font-size: calc(.85rem * var(--a11y-fs));
   padding: 1rem .25rem;
   max-width: 46rem;
-  /* Toast-style reveal on load — grows in place (no movement) by animating
+  /* Toast-style reveal on load - grows in place (no movement) by animating
      max-height from a sliver up to the panel's height, with a gentle fade. */
   max-height: 40vh;
   overflow: hidden;
@@ -635,12 +635,12 @@ body.pro-row-dragging, body.pro-row-dragging * { cursor: grabbing !important; us
 /* …except a tick, which is a fixed 16px object (.field-check), not a box.
    It has to restate the 16px rather than say `auto`: .field-check drops the
    native widget (appearance:none), and an appearance-less checkbox has no
-   intrinsic size — `width:auto` shrink-to-fits an empty box to ZERO. */
+   intrinsic size - `width:auto` shrink-to-fits an empty box to ZERO. */
 .pro-popover-control input[type="checkbox"].pro-control { width: calc(16px * var(--a11y-fs)); }
 .pro-popover-actions { display: flex; justify-content: flex-end; gap: .5rem; }
 
 /* Run-level print settings popover (bleed, marks, CMYK press profile).
-   Same box as every other /pro popover — only the inner layout is new. */
+   Same box as every other /pro popover - only the inner layout is new. */
 .pro-popover--print { width: 280px; }
 .pro-print-enable { display: flex; align-items: center; gap: .45rem; font-size: calc(.85rem * var(--a11y-fs)); cursor: pointer; }
 .pro-print-body { display: flex; flex-direction: column; gap: .5rem; margin-top: .6rem; }
@@ -740,7 +740,7 @@ body.pro-row-dragging, body.pro-row-dragging * { cursor: grabbing !important; us
 .pro-blocks-trigger:hover { background: hsl(var(--accent)); }
 .pro-blocks-trigger.is-empty { color: hsl(var(--muted-foreground)); font-style: italic; }
 
-/* Right-docked, non-modal panel — the grid stays visible beside it (no dim). */
+/* Right-docked, non-modal panel - the grid stays visible beside it (no dim). */
 .pro-blocks-panel {
   position: fixed; top: 0; right: 0; bottom: 0; z-index: 10000;
   width: clamp(320px, 33vw, 460px);
@@ -861,19 +861,19 @@ body.pro-row-dragging, body.pro-row-dragging * { cursor: grabbing !important; us
 .pro-blocks-panel .pro-control { width: 100%; padding: .45rem .55rem; }
 /* …except a tick, which is a fixed 16px object (.field-check), not a box.
    16px, not `auto`: .field-check sets appearance:none, and a checkbox with no
-   native widget has no intrinsic size — `auto` would collapse it to zero. */
+   native widget has no intrinsic size - `auto` would collapse it to zero. */
 .pro-blocks-panel input[type="checkbox"].pro-control { width: calc(16px * var(--a11y-fs)); padding: 0; }
 /* The tighter padding above is a shorthand, so it also eats the chevron gutter
-   .field-select reserves. Hand it back — the caret must not sit on the text. */
+   .field-select reserves. Hand it back - the caret must not sit on the text. */
 .pro-blocks-panel select.pro-control { padding-inline-end: 32px; }
 .pro-blocks-panel textarea.pro-control { resize: vertical; }
 /* The one .pro-control that isn't produced by controlHtml() (it is hand-written
-   in blocks-editor.ts, which this pass doesn't own) — so it can't be given the
+   in blocks-editor.ts, which this pass doesn't own) - so it can't be given the
    primitive's classes at the markup end and states the box here instead.
    It states the CURRENT generation, not the outlined one it used to inherit:
    every other field in the same card is now `.field-input`/`.field-select`, and
    one outlined button among embossed siblings reads as a mistake. Values are
-   copied verbatim from .field-input (styles/parts/fields.css) — when that
+   copied verbatim from .field-input (styles/parts/fields.css) - when that
    recipe moves, this is the call site to chase. */
 .pro-blk-asset {
   display: inline-flex; align-items: center; gap: .4rem; justify-content: flex-start;

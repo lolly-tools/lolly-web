@@ -354,7 +354,7 @@ const FORBIDDEN_KEYS: ReadonlySet<string> = new Set(['__proto__', 'constructor',
  * painted into - the declaration separator, block delimiters, the quote and markup
  * characters that matter if it is ever interpolated into a `style="…"` attribute or
  * a stylesheet, control characters, and `*` (which exists in no colour value and
- * whose only use here is opening or closing a `/* … *​/` comment that would swallow
+ * whose only use here is opening or closing a CSS block comment that would swallow
  * the rest of the declaration it lands in).
  *
  * `/` is deliberately NOT banned: it is the modern alpha separator, so

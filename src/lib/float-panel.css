@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MPL-2.0 */
-/* Floating, resizable panel (lib/float-panel.ts) — a layout-bearing figure lifted
+/* Floating, resizable panel (lib/float-panel.ts) - a layout-bearing figure lifted
    out of the flow, with a placeholder holding its exact box open behind it.
    Cascade layer: `views`, declared once in styles/app.css. */
 @layer views {
@@ -26,7 +26,7 @@
   padding: 0.35rem 0.4rem 0.35rem 0.7rem;
   background: hsl(var(--muted) / 0.7);
   cursor: grab;
-  /* The bar owns the gesture — without this a touch drag scrolls the page behind
+  /* The bar owns the gesture - without this a touch drag scrolls the page behind
      the panel instead of moving it. */
   touch-action: none;
 }
@@ -52,7 +52,7 @@
 .floatp-btn:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
 .floatp-btn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: -2px; }
 
-/* The body scrolls rather than the panel, so the drag bar is always reachable —
+/* The body scrolls rather than the panel, so the drag bar is always reachable -
    a panel resized smaller than its content must not push its own handle away. */
 .floatp-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0.6rem; }
 /* Whatever was popped out fills the panel. It arrives carrying whatever width its
@@ -60,7 +60,7 @@
    the reader is dragging bigger. */
 .floatp-body > * { width: 100%; max-width: none; margin: 0; }
 
-/* The grips themselves (four edges, four corners) are the shared primitive —
+/* The grips themselves (four edges, four corners) are the shared primitive -
    lib/panel-grips.css, worn by the visualizer's enlarged player too. */
 
 /* Fullscreen: the panel IS the screen, so the grips would resize nothing (they
@@ -70,7 +70,7 @@
 /* ── The placeholder ────────────────────────────────────────────────────────
    Holds the popped-out figure's exact box open so nothing on the page moves.
    Its border IS dashed, and that is the one case the convention allows: this is
-   a drop area in the literal sense — the outline of where the thing goes back. */
+   a drop area in the literal sense - the outline of where the thing goes back. */
 .floatp-slot {
   display: grid;
   place-items: center;

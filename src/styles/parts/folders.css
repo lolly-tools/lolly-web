@@ -25,7 +25,7 @@
 }
 .folder-grid--folders { margin-bottom: 18px; }
 
-/* Recent exports — the downloads log's reopen rail (moved here from the export
+/* Recent exports - the downloads log's reopen rail (moved here from the export
    popup), shown alongside the saved sessions in the history overlay. */
 .folder-exports { margin-top: 4px; }
 .folder-exports-title {
@@ -62,10 +62,10 @@
 .tile-cover--batch svg { width: calc(34px * var(--a11y-fs)); height: calc(34px * var(--a11y-fs)); opacity: 0.55; }
 .folder-mosaic {
   display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 1px;
-  overflow: hidden;   /* clip cells to the 90px banner — belt-and-suspenders with the min-0 below */
+  overflow: hidden;   /* clip cells to the 90px banner - belt-and-suspenders with the min-0 below */
 }
 /* min-width/height:0 defeats the grid item's default `min-*: auto`, which otherwise lets a
-   tall member thumbnail inflate a `1fr` row to the image's intrinsic height — spilling the
+   tall member thumbnail inflate a `1fr` row to the image's intrinsic height - spilling the
    preview down over the folder's name + item count. */
 .folder-cell { width: 100%; height: 100%; min-width: 0; min-height: 0; object-fit: cover; background: hsl(var(--muted)); }
 .folder-cell--batch, .folder-cell--empty { color: hsl(var(--muted-foreground));
@@ -93,7 +93,7 @@
 .tile-badge--rows { background: hsl(var(--primary) / 0.1); color: hsl(var(--primary)); }
 
 .tile-menu-btn {
-  /* The box rides the icon scale with the glyph it holds — a 15px mark growing
+  /* The box rides the icon scale with the glyph it holds - a 15px mark growing
      to 18 inside a fixed 26px circle would swallow the ring it sits in. */
   position: absolute; top: 6px; right: 6px; width: calc(26px * var(--a11y-fs)); height: calc(26px * var(--a11y-fs));
   display: inline-flex; align-items: center; justify-content: center; padding: 0;
@@ -105,7 +105,7 @@
 .tile-menu-btn:hover { background: hsl(var(--muted)); }
 .tile-menu-btn svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
 
-/* Multi-select toggle — a SIBLING of .tile-primary (never nested; Space would double-
+/* Multi-select toggle - a SIBLING of .tile-primary (never nested; Space would double-
    fire the open action). Mirrors .tile-menu-btn but pinned top-LEFT. Hover-revealed on
    fine pointers, filled primary when selected, and always visible on touch / when the
    tile is selected. */
@@ -125,15 +125,15 @@
 }
 .tile-check[aria-pressed="true"] svg { opacity: 1; }
 .folder-tile.is-selected { border-color: hsl(var(--primary)); box-shadow: 0 0 0 2px hsl(var(--primary) / 0.35); }
-/* Touch devices have no hover — keep the toggle visible so selection is discoverable. */
+/* Touch devices have no hover - keep the toggle visible so selection is discoverable. */
 @media (pointer: coarse) { .tile-check { opacity: 1; } }
 
-/* Per-tile action popover (move / rename / delete) — mountBodyPopover-mounted (see
+/* Per-tile action popover (move / rename / delete) - mountBodyPopover-mounted (see
    components/body-popover.ts). Appended to <body> (projects.ts) and z-indexed ABOVE
-   the fixed chrome (top bar 99999, bulk bar 9000) so it's never painted behind them —
+   the fixed chrome (top bar 99999, bulk bar 9000) so it's never painted behind them -
    on mobile the menu can open over the bottom bulk bar. folder-overlay.ts's OWN item
    menu instead mounts inside its host <dialog> (only a modal dialog's own subtree
-   paints above its ::backdrop) — position:absolute there resolves against the dialog
+   paints above its ::backdrop) - position:absolute there resolves against the dialog
    itself, which the UA promotes to position:fixed while showing modally. */
 .folder-menu {
   position: absolute; z-index: 100001; min-width: 180px; padding: 5px;
@@ -149,11 +149,11 @@
 .folder-menu-item svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); flex: none; opacity: 0.8; }
 .folder-menu-item:hover { background: hsl(var(--muted)); }
 .folder-menu-item--danger { color: hsl(var(--destructive, 0 70% 50%)); }
-/* The Render action is the primary affordance — tint its icon + label so it stands
+/* The Render action is the primary affordance - tint its icon + label so it stands
    out from Open/Rename/Move, matching the pronounced header "Render folder" button. */
 .folder-menu-item--render { color: hsl(var(--primary)); font-weight: 600; }
 .folder-menu-item--render svg { opacity: 1; }
-/* Uppercase group label inside a folder menu — `--sep` is the folder overlay's "Move to"
+/* Uppercase group label inside a folder menu - `--sep` is the folder overlay's "Move to"
    separator, `--head` the Projects view's own menu/popover section headings ("View",
    "Sort", "{n} selected", and the theme/sound segment labels). One recipe, one home: the
    whole .folder-menu-* family lives in this sheet (the -head copy used to sit in
@@ -186,7 +186,7 @@
 /* ── "Hide colourful previews" (a11y pref, html[data-a11y-previews="hidden"]) ──
    The Projects grid, folder overlay and export rail are the one EXCEPTION to
    hiding imagery: a session thumbnail you can't see is a session you can't find,
-   so instead of removing them we calm them — half the saturation, half the
+   so instead of removing them we calm them - half the saturation, half the
    contrast (Andy's tuned values), structure intact. Full colour returns inside
    the tool. */
 html[data-a11y-previews="hidden"] img.tile-cover,

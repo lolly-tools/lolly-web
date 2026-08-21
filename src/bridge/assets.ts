@@ -652,7 +652,7 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
       // removes the whole class of "the filmstrip shows the previous file".
       await import('../lib/clip-proxy.ts')
         .then(m => m.deleteProxy(record.id))
-        .catch(() => { /* derived data — a failed evict is not an error */ });
+        .catch(() => { /* derived data - a failed evict is not an error */ });
     },
 
     /** Internal: how many images are in the user's personal library. */
@@ -699,7 +699,7 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
       // object URL) would leak for the lifetime of the database.
       await import('../lib/clip-proxy.ts')
         .then(m => m.deleteProxy(id))
-        .catch(() => { /* derived data — a failed evict is not an error */ });
+        .catch(() => { /* derived data - a failed evict is not an error */ });
       // EVERY user-asset delete funnels through here (catalog, picker,
       // folder overlay, projects). Announce it so cross-cutting reactions
       // (e.g. the Neurospicy player dropping a deleted audio track, wired in
@@ -778,7 +778,7 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
       // _importUserAsset for the rationale).
       await import('../lib/clip-proxy.ts')
         .then(m => m.deleteProxy(id))
-        .catch(() => { /* derived data — a failed evict is not an error */ });
+        .catch(() => { /* derived data - a failed evict is not an error */ });
     },
 
     /**

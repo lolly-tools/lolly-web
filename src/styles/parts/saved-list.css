@@ -1,7 +1,7 @@
-/* Saved-session list rows — the shared component behind the per-tool history
+/* Saved-session list rows - the shared component behind the per-tool history
    modal (gallery.ts `savedItem` / `showHistoryDialog`), the global saved-sessions
    drawer, and the /profile storage view. Lives in an always-loaded part (imported
-   by app.css) so it styles the rows wherever they render — the history modal is
+   by app.css) so it styles the rows wherever they render - the history modal is
    appended to <body>, OUTSIDE `.gallery-view`, and the gallery landing never loads
    storage.css, so scoping these to either would leave the modal's thumbnails
    unsized and ballooning to natural size. */
@@ -17,7 +17,7 @@
   margin: 4px 0;
   gap: 12px;
   align-items: center;
-  /* Keep the row only slightly taller than the 48px .saved-thumb — no dead
+  /* Keep the row only slightly taller than the 48px .saved-thumb - no dead
      space above/below. Override .tool-card's min-height:7em (it's reused for
      the saved-row markup) so the row collapses to the thumb height + padding. */
   padding: 3px 10px;
@@ -36,7 +36,7 @@
    out of flow completely. */
 .gallery-view .saved-list > [hidden] { display: none !important; }
 
-/* Title over subtitle — the row's shared "meta" block (sessionRow()'s
+/* Title over subtitle - the row's shared "meta" block (sessionRow()'s
    metaClass), sharing this stacked layout with the profile Storage manager's
    .store-sess-meta (component-audit rec 6). */
 .saved-label {
@@ -67,7 +67,7 @@
   background: hsl(var(--muted));
 }
 
-/* Batch sessions have no render thumbnail — show a package icon instead. */
+/* Batch sessions have no render thumbnail - show a package icon instead. */
 .saved-thumb--batch {
   display: flex;
   align-items: center;
@@ -82,7 +82,7 @@
 .saved-row:hover { background: hsl(var(--accent)); }
 
 /* date-time + size stamp + delete icon: dim at rest, full on hover. .session-size
-   and .saved-delete are now siblings of .saved-label (not nested inside it —
+   and .saved-delete are now siblings of .saved-label (not nested inside it -
    sessionRow()'s shared shape puts them after the meta block; they used to
    inherit this fade for free by nesting), so all three need the rule now;
    scoped to .saved-row so it doesn't touch the profile Storage manager's rows. */

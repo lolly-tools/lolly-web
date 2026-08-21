@@ -63,11 +63,15 @@ import {
   verifyTextNotices, suppressModifiedBadge, aiDisclosureRows, analyzeVerifyText, buildHighlightSegments, heatBucket,
 } from './valid-text.ts';
 import type { VerifyNotice, NoticeContext, TextSignalPanel, TextSignalMark } from './valid-text.ts';
-// The reword-watermark probe + detector facade (constants and a postMessage
-// seam - the worker, the model and transformers.js all stay behind their own
-// lazy loads; a detection spins up the tokenizer only, never the model).
-import { rewordAvailable, detectRewordWatermark } from '../lib/reworder.ts';
-import { REWORD_WATERMARK } from '@lolly/engine';
+// The shared "Reworded with Lolly" note (lib/wm-note.ts): a hidden slot in the
+// text-signals panel plus a queued post-render check, filled only on a
+// reword-watermark detection. The catalog's Analyse-text panel renders the
+// identical note through the same module.
+import { wmNoteSlot } from '../lib/wm-note.ts';
+// The on-device model tier's shared seam (plans/126 WP-A): consent line,
+// estimate row and honesty copy for the classifier check, re-rendering this
+// panel through its own builder on a conclusive estimate.
+import { aiModelSlot } from './tsig-model-note.ts';
 // Deep engine import, NOT the `@lolly/engine` barrel - the beam-pack.ts:125
 // precedent: index.ts does not re-export the c2pa-extract surface, and widening
 // that one shared facade for a single lazy view is what the bundle budget is
@@ -738,54 +742,6 @@ function buildOverlaySvg(lines: OcrLineBox[], marks: TextSignalMark[], w: number
   return svg;
 }
 
-// ── The reword-watermark check (engine text-watermark.ts) ────────────────────
-// The green-list scheme of Kirchenbauer et al. (arXiv:2301.10226), which every
-// sample from Lolly's reword model is generated under: word choices over-select
-// a hash-keyed quarter of the vocabulary, and a z-test on re-tokenized text
-// recovers that bias with no model in hand. It survives copy/paste, plain-text
-// export and OCR (the signal IS the visible words), so it is the one AI signal
-// that can name its source with confidence even on a pixels-only read.
-//
-// Async and additive: textSignalsHtml renders a hidden slot, this fills it only
-// on a DETECTION. Absence renders nothing - most AI text is not Lolly-reworded,
-// so "not found" carries no information (the Lolly Imprint rule). The check is
-// tokenizer-only and on-device (lib/reworder.ts), feature-detected exactly like
-// OCR: on a deploy without the staged reword pack no slot is even emitted.
-const wmTexts = new Map<number, string>();
-let wmSeq = 0;
-
-/** The hidden slot for one analysed text, queued for a post-render check. */
-function wmSlot(text: string): string {
-  if (!rewordAvailable()) return '';
-  const idx = ++wmSeq;
-  wmTexts.set(idx, text);
-  // After the current task: every caller assigns textSignalsHtml's string into
-  // the DOM synchronously, so the slot is findable by the time this runs.
-  queueMicrotask(runWmChecks);
-  return `<p class="valid-tsig-guess valid-tsig-guess--high" data-tsig-wm="${idx}" hidden></p>`;
-}
-
-function runWmChecks(): void {
-  for (const [idx, text] of [...wmTexts]) {
-    wmTexts.delete(idx);
-    const el = document.querySelector<HTMLElement>(`[data-tsig-wm="${idx}"]`);
-    if (!el) continue; // this report was replaced before the microtask ran
-    void (async (): Promise<void> => {
-      const det = await detectRewordWatermark(text);
-      if (!det?.detected || !el.isConnected) { el.remove(); return; }
-      const viaWhole = det.tokens >= REWORD_WATERMARK.minTokens && det.p <= REWORD_WATERMARK.pThreshold;
-      const z = (viaWhole ? det.z : (det.window?.z ?? det.z)).toFixed(1);
-      const strong = document.createElement('strong');
-      strong.textContent = t('Reworded with Lolly');
-      // textContent/append only - no markup sink for text that came from a file.
-      el.append(strong, ' ', viaWhole
-        ? t('This text carries the statistical watermark Lolly’s on-device reword model leaves in its pattern of word choices (score {z} across {n} tokens). Unmarked text matches this strongly less than once in 10,000 checks.', { z, n: det.tokens })
-        : t('A section of this text carries the statistical watermark Lolly’s on-device reword model leaves in its pattern of word choices (score {z} in the strongest section). Unmarked text matches this strongly less than once in 3 million checks.', { z }));
-      el.hidden = false;
-    })().catch(() => { el.remove(); });
-  }
-}
-
 function textSignalsHtml(panel: TextSignalPanel | undefined): string {
   if (!panel) return '';
   // Static t() so the extractor sees every key; selected by band/kind at render.
@@ -820,6 +776,7 @@ function textSignalsHtml(panel: TextSignalPanel | undefined): string {
     'ai-span': t('Concentrated AI-like section'),
     'family-tell': t('Model-associated phrasing'),
     'spelling-variant-mix': t('Mixed US/British spelling'),
+    'model-estimate': t('On-device model estimate'),
   };
   const rows = panel.rows.map((r) => `
         <li class="valid-aidecl-row">
@@ -857,10 +814,13 @@ function textSignalsHtml(panel: TextSignalPanel | undefined): string {
     ? `<p class="valid-tsig-cands">${escape(t('No leaked model markers were found in this text. Chat apps usually strip them from copied answers, so their absence proves nothing either way.'))}</p>`
     : '';
   // The reword-watermark slot: filled after render ONLY on a detection - the
-  // one signal here that names its source with confidence (see runWmChecks).
-  const wm = panel.text != null ? wmSlot(panel.text) : '';
+  // one signal here that names its source with confidence (see lib/wm-note.ts).
+  const wm = panel.text != null ? wmNoteSlot(panel.text, 'valid-tsig-guess valid-tsig-guess--high') : '';
+  // The model-tier slot (consent button / estimate / honesty line) - a
+  // conclusive estimate re-renders this whole panel via the callback.
+  const modelSlot = aiModelSlot(panel, 'valid-tsig-cands', (p) => textSignalsHtml(p));
   return `
-    <div class="valid-aidecl valid-tsig" role="note" data-tsig-band="${escape(panel.band)}">
+    <div class="valid-aidecl valid-tsig" role="note" data-tsig-band="${escape(panel.band)}" data-tsig-root>
       <span class="valid-aidecl-ic" aria-hidden="true">${svgIcon('aiSpark')}</span>
       <div class="valid-aidecl-text">
         <strong>${escape(heading[panel.band])} <span class="valid-tsig-band" data-band="${escape(panel.band)}">${escape(bandLabel[panel.band])}</span></strong>
@@ -872,6 +832,7 @@ function textSignalsHtml(panel: TextSignalPanel | undefined): string {
         ${guess}
         ${cands}
         ${noMarker}
+        ${modelSlot}
         <span class="valid-aidecl-note">${escape(panel.summary)} ${t('It reads the text for tells; it cannot see a declaration, and a declaration in the credential is the stronger signal.')}</span>
       </div>
       <span class="valid-aidecl-tag" aria-hidden="true">${t('AI?')}</span>

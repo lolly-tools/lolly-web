@@ -273,7 +273,7 @@ html[data-a11y-motion="reduce"] .job-bar-fill { animation: none; transition: non
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Undo toasts (lib/undo-toast.ts) — the same floating cluster ─────────────
+/* ── Undo toasts (lib/undo-toast.ts) - the same floating cluster ─────────────
    Bottom-centre, above the bulk bars (9000) and below the job toast (9500).
    Chrome-only: type rides the --a11y-fs multiplier; the drain bar is decorative
    and stops entirely under reduced motion (OS query AND the app pref). */

@@ -1,13 +1,13 @@
-/* present.css — presentation mode (plan 112, M1). Imported by app.css with
+/* present.css - presentation mode (plan 112, M1). Imported by app.css with
  * layer(chrome), so these rules live in the `chrome` layer; do NOT wrap them in an
  * @layer here (that would nest a second level).
  *
  * The stage is a body-level fixed overlay the conductor (views/present-mode.ts) builds
- * out of CLONED `.lolly-frame-page` nodes — the editor canvas underneath is never
+ * out of CLONED `.lolly-frame-page` nodes - the editor canvas underneath is never
  * touched. Every slide is centred in one co-located stack; the STATE-CLASS CONTRACT
  * (pr-past / pr-active / pr-future, + pr-prev/pr-next/pr-stack, direction on the root as
  * data-nav-dir) is the public API for both the built-in transition here and, later (M4),
- * author custom CSS. Motion is transform+opacity only — the standing rule (easing governs
+ * author custom CSS. Motion is transform+opacity only - the standing rule (easing governs
  * transform; opacity keeps a plain ramp). NOTHING here targets the real tool canvas or an
  * export stage, so a calmer presenter never moves a pixel of an exported file. */
 
@@ -19,7 +19,7 @@
   color: #fff;
   overflow: hidden;
   isolation: isolate;
-  /* Transition tuning — one place to change speed/curve; the app reduced-motion pref
+  /* Transition tuning - one place to change speed/curve; the app reduced-motion pref
      and the OS query both collapse it (see the reduced blocks below). */
   --pr-dur: 0.46s;
   --pr-ease: cubic-bezier(0.4, 0, 0.2, 1);
@@ -76,12 +76,12 @@
 .pr-stage[data-pr-transition="fade"] .pr-page.pr-future { --pr-tx: 0px; --pr-ty: 0px; --pr-op: 0; }
 
 /* Morph (M5): while a morph is in flight, the PAGES crossfade in place (both centred) so
-   only the matched boxes — FLIP-animated by the conductor via WAAPI — appear to travel. */
+   only the matched boxes - FLIP-animated by the conductor via WAAPI - appear to travel. */
 .pr-stage.pr-morphing .pr-page.pr-past,
 .pr-stage.pr-morphing .pr-page.pr-future { --pr-tx: 0px; --pr-ty: 0px; --pr-op: 0; }
 .pr-stage.pr-morphing .pr-page.pr-active { --pr-tx: 0px; --pr-ty: 0px; --pr-op: 1; }
 
-/* Unload window — belt and braces beside a11y.css's global [hidden] rule. */
+/* Unload window - belt and braces beside a11y.css's global [hidden] rule. */
 .pr-page[hidden] { display: none; }
 
 /* ---- Overview: the authored arrangement as an audience-facing map ------------------- */
@@ -93,7 +93,7 @@
   opacity: 1;
   cursor: pointer;
   /* Constrained flight: fade only, no position animation (the Prezi motion-sickness
-     lesson — do not fly the whole map on every open). */
+     lesson - do not fly the whole map on every open). */
   transition: opacity var(--pr-dur) linear;
 }
 .pr-stage.pr-overview .pr-page.pr-active {
@@ -164,7 +164,7 @@
 /* Idle: fade the chrome out after inactivity; any pointer/key/focus wakes it. The HUD
    keeps `pointer-events` while faded so a click (mouse teleport or a touch tap that never
    emits a wake-triggering pointermove first) still lands on its button rather than passing
-   through — otherwise the first tap is silently spent lifting the idle state. */
+   through - otherwise the first tap is silently spent lifting the idle state. */
 .pr-stage.pr-idle { cursor: none; }
 .pr-stage.pr-idle .pr-hud {
   opacity: 0;
@@ -175,7 +175,7 @@
 /* ---- Builds / fragments (M3) ------------------------------------------------------- */
 /* A build box starts hidden and fades in when its step is revealed (`pr-shown`). Reveal
    is opacity-only here; per-box `enter` one-shots are a later refinement. Reduced motion
-   and OS reduce both cut the fade (below). Only inside the presenter — never the editor. */
+   and OS reduce both cut the fade (below). Only inside the presenter - never the editor. */
 .pr-page .pr-build {
   opacity: 0;
   transition: opacity var(--pr-dur) ease;

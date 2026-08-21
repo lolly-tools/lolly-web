@@ -1,6 +1,6 @@
 /* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
    (order declared once in styles/app.css). Wrapping it means its rules keep a
-   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   fixed priority - above chrome/primitives/base, below overrides/a11y - no
    matter when Vite injects this chunk at runtime. Do not rely on load order. */
 @layer views {
 /* ─── Document layout (render.layout:'document') ──────────────────────────────
@@ -11,7 +11,7 @@
    appears in exported files. Shares .is-editor (set on .tool-layout) for the chromeless
    stage + hidden render pill. */
 
-/* Top format ribbon — always visible, docked at the top of the stage. This is the
+/* Top format ribbon - always visible, docked at the top of the stage. This is the
    "settings you can see on the canvas": paragraph style, bold/italic, lists, colour,
    plus per-block controls (width / align / move / delete). */
 .doc-ribbon-dock {
@@ -36,7 +36,7 @@
   isolation: isolate;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22), 0 0 0 1px hsl(var(--border));
 }
-/* Frosted backing (same technique as the editor bars — blur on a ::before behind
+/* Frosted backing (same technique as the editor bars - blur on a ::before behind
    content, never on the element, so hosted popovers keep position:fixed). */
 .doc-ribbon::before {
   content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
@@ -46,12 +46,12 @@
 }
 .doc-ribbon .fc-sep-v { height: 22px; }
 
-/* Ribbon selects — paragraph style, font, line height, letter spacing. The box is
+/* Ribbon selects - paragraph style, font, line height, letter spacing. The box is
    the shared `.field-select .field-select--sm .field-select--auto` primitive
    (fields.css); only three things are genuinely local: the cap width per control,
    the ribbon's 32px control height, and the heavier label weight that lets a
    one-word value hold its own next to the icon buttons. Disabled comes from the
-   primitive (opacity .5 + not-allowed) — do not restate it here, this sheet is in
+   primitive (opacity .5 + not-allowed) - do not restate it here, this sheet is in
    `@layer views` and would silently win. */
 .doc-style-select,
 .doc-font-select,
@@ -70,7 +70,7 @@
 /* Text-colour swatch trigger in the ribbon. */
 .doc-color { position: relative; overflow: hidden; }
 /* Our own colour picker fills the button invisibly (the visible face is the
-   ::after glyph); clicking anywhere opens our popover — never the OS picker. The
+   ::after glyph); clicking anywhere opens our popover - never the OS picker. The
    field collapses to zero box so it doesn't push the glyph around. */
 .doc-color .color-picker-field { position: static; }
 .doc-color .color-trigger {
@@ -83,7 +83,7 @@
 }
 
 /* On-canvas edit affordances (added to the tool's own rendered nodes). These classes
-   are editor-only — doc-editor strips them before any state write, and they sit on
+   are editor-only - doc-editor strips them before any state write, and they sit on
    nodes that are rebuilt each paint, so they never reach export. */
 .doc-rt { cursor: text; }
 .doc-block { position: relative; }
@@ -120,8 +120,8 @@
 .doc-setup-row select,
 .doc-setup-row input[type="text"] { flex: 1; min-width: 0; }
 /* (A `revert-layer` opt-out lived here: the page-setup input sits in a `.fc-panel`,
-   and editor.css's `.fc-panel input[type="text"]` rule — same `views` layer, same
-   specificity — was stranding it on the old outlined generation. Fixed at source
+   and editor.css's `.fc-panel input[type="text"]` rule - same `views` layer, same
+   specificity - was stranding it on the old outlined generation. Fixed at source
    instead: that rule now carries `:not(.field-input)` and yields to the primitive.) */
 .doc-setup-row .doc-setup-color { flex: 1; min-width: 0; display: flex; }
 
@@ -163,7 +163,7 @@
 .doc-tt-holder .ProseMirror { outline: none; min-height: 50vh; white-space: pre-wrap; word-wrap: break-word; }
 .doc-tt-holder .ProseMirror:focus, .doc-tt-holder .ProseMirror-focused { outline: none; }
 
-/* Content — mirrors template.html's .doc-* rules. */
+/* Content - mirrors template.html's .doc-* rules. */
 .doc-tt-holder p { font-size: 15px; line-height: 1.5; margin: 0 0 .55em; }
 .doc-tt-holder h1, .doc-tt-holder h2, .doc-tt-holder h3, .doc-tt-holder h4 {
   font-weight: 700; line-height: 1.15; letter-spacing: -.01em; margin: .8em 0 .3em;
@@ -222,7 +222,7 @@
 /* Placeholder (empty first paragraph). */
 .doc-tt-holder .is-editor-empty:first-child::before { content: attr(data-placeholder); float: left; color: rgba(16, 35, 31, .34); pointer-events: none; height: 0; }
 
-/* Table controls — a second ribbon row, shown only when the caret is in a table. */
+/* Table controls - a second ribbon row, shown only when the caret is in a table. */
 .doc-tablebar-dock { top: 56px; }
 /* Cell-fill swatch reads as a filled square (not the text-colour "A"). */
 .doc-cellfill::after { content: ""; width: 15px; height: 12px; border: 1px solid hsl(var(--border)); border-radius: 2px; background: var(--sw, #e8f6ee); padding: 0; }

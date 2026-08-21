@@ -394,7 +394,7 @@ export interface GalleryMountOpts {
 }
 
 export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts: GalleryMountOpts = {}): Promise<void> {
-  document.title = opts.only ? 'Utilities — Lolly' : 'Lolly';
+  document.title = opts.only ? 'Utilities - Lolly' : 'Lolly';
   // #/?q=<text> restores a handed-off search (plans/99 section 2c): raw for the field's
   // display value, lowercased below for `query` (the same normalisation the input
   // handler applies at each keystroke).
@@ -690,7 +690,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   viewEl.classList.add('has-masonry');
   viewEl.innerHTML = `
     <div class="gallery${featuredEntries.length ? ' has-featured' : ''}">
-      <h1 class="visually-hidden">${opts.only ? t('Lolly — utilities') : t('Lolly — tools gallery')}</h1>
+      <h1 class="visually-hidden">${opts.only ? t('Lolly - utilities') : t('Lolly - tools gallery')}</h1>
       ${viewTopbarHtml({
         active: opts.only ? 'utilities' : 'tools',
         right: `
@@ -1524,9 +1524,9 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     paintSelection();
     if (shown === 0) {
       noResults.innerHTML = query
-        ? tRaw('No tools match "<strong>{query}</strong>" — {button}', { query: escape(query.trim()), button: `<button type="button" class="gallery-retry" data-search-clear>${t('clear search')}</button>` })
+        ? tRaw('No tools match "<strong>{query}</strong>" - {button}', { query: escape(query.trim()), button: `<button type="button" class="gallery-retry" data-search-clear>${t('clear search')}</button>` })
         : activeCat === FAV_CAT
-          ? t('No favourites yet — tap the <span class="star-inline" aria-hidden="true">★</span> on any tool to add it here.')
+          ? t('No favourites yet - tap the <span class="star-inline" aria-hidden="true">★</span> on any tool to add it here.')
           : t('No tools to show.');
     }
     noResults.hidden = shown > 0;
@@ -1629,7 +1629,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       sortDirBtn.classList.toggle('is-asc', asc);
       sortDirBtn.setAttribute('aria-pressed', String(asc));
       sortDirBtn.setAttribute('aria-label', asc ? t('Sort direction: oldest / last first') : t('Sort direction: newest / first first'));
-      sortDirBtn.title = asc ? t('Showing last results first — click for the usual order') : t('Reverse — show the last results first');
+      sortDirBtn.title = asc ? t('Showing last results first - click for the usual order') : t('Reverse - show the last results first');
     };
     syncDirBtn();
     sortDirBtn.addEventListener('click', () => {
@@ -1756,7 +1756,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     dropSelection();
     refreshFeatured();   // a hidden tool leaves the hero strip
     applyView();
-    announce(unhide ? t('{n} unhidden', { n }) : t('{n} hidden — find them under “Show hidden tools”', { n }));
+    announce(unhide ? t('{n} unhidden', { n }) : t('{n} hidden - find them under “Show hidden tools”', { n }));
   }
 
   /** Hide/unhide one tile from its context menu. */
@@ -1767,7 +1767,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     if (selected.delete(ref)) paintSelection();
     refreshFeatured();
     applyView();
-    announce(unhide ? tRaw('{name} unhidden', { name: refName(ref) }) : tRaw('{name} hidden — find it under “Show hidden tools”', { name: refName(ref) }));
+    announce(unhide ? tRaw('{name} unhidden', { name: refName(ref) }) : tRaw('{name} hidden - find it under “Show hidden tools”', { name: refName(ref) }));
   }
 
   /** Pin or unpin one tool (context-menu path) - same lifecycle as the tile button. */
@@ -1788,7 +1788,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       announce(on ? tRaw('{name} is available offline', { name: nm }) : tRaw('{name} removed from offline', { name: nm }));
     } catch (err) {
       host.log('warn', 'Offline pin failed', { toolId: id, error: String(err) });
-      announce(tRaw('Couldn’t save {name} for offline — check your connection', { name: nm }), { assertive: true });
+      announce(tRaw('Couldn’t save {name} for offline - check your connection', { name: nm }), { assertive: true });
     }
   }
 
@@ -1820,7 +1820,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     syncBulkBar();
     const ok = ids.length - failed;
     if (!unpin && ok > 0) playSfx('victory');
-    if (failed) announce(t('{n} saved for offline, {m} failed — check your connection', { n: ok, m: failed }), { assertive: true });
+    if (failed) announce(t('{n} saved for offline, {m} failed - check your connection', { n: ok, m: failed }), { assertive: true });
     else announce(unpin ? t('{n} removed from offline', { n: ok }) : t('{n} available offline', { n: ok }));
   }
 
@@ -2022,7 +2022,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
           tokensId = idx.assets?.find(a => a.type === 'tokens')?.id;
         }
       }
-    } catch { /* IDB unavailable / offline — treat as branded; never block or nag here */ }
+    } catch { /* IDB unavailable / offline - treat as branded; never block or nag here */ }
     const unbranded = tokensId === 'lolly/tokens/brand';
     if (!unbranded || !galleryRoot?.isConnected) return;
     const welcome = await import('../components/welcome-dialog.ts');
@@ -2128,7 +2128,7 @@ const utilityViews = (speechOk: boolean): UtilityView[] => [{
   href: '#/data',
   icon: 'grid',
   name: t('Spreadsheet'),
-  description: t('Open, read and edit an .xlsx, .csv or .tsv on your device — no Excel or internet needed. Switch sheets, edit cells, download as CSV or Excel.'),
+  description: t('Open, read and edit an .xlsx, .csv or .tsv on your device - no Excel or internet needed. Switch sheets, edit cells, download as CSV or Excel.'),
 },
 // Script audio only where the speech bridge exists - a card that opened a dead
 // surface would break the grid's promise that every tile is something you can
@@ -2462,7 +2462,7 @@ function showInfoDialog(tool: GalleryTool | undefined, host: GalleryHost, darkTh
   const hasFmtChips = tool.exportable !== false && rawFormats.length > 0;
   const exportsDd = tool.exportable === false
     ? t('On-device transform (no file export)')
-    : hasFmtChips ? `<div class="meta-fmt-groups">${fmtGroupsHtml}</div>` : '—';
+    : hasFmtChips ? `<div class="meta-fmt-groups">${fmtGroupsHtml}</div>` : '-';
   // Intended canvas size - paired with the format list so the modal answers both
   // "what file" and "how big". Omitted for transforms (size isn't meaningful) and for
   // any tool that declares no render size.
@@ -2605,7 +2605,7 @@ function defaultText(input: Record<string, unknown>): { text: string; swatch?: s
   const d = input.default;
   const type = String(input.type ?? 'text');
   if (type === 'file') return null;                       // user-supplied by nature - no default exists
-  if (d === undefined || d === null || d === '') return { text: '—' };
+  if (d === undefined || d === null || d === '') return { text: '-' };
   switch (type) {
     case 'boolean': return { text: d ? t('On') : t('Off') };
     case 'color': {
@@ -2617,7 +2617,7 @@ function defaultText(input: Record<string, unknown>): { text: string; swatch?: s
       const hit = opts.find(o => (o && typeof o === 'object' ? o.value : o) === d);
       return { text: String((hit && typeof hit === 'object' && hit.label) || d) };
     }
-    case 'blocks': return { text: Array.isArray(d) ? (d.length === 1 ? t('1 item') : t('{n} items', { n: d.length })) : '—' };
+    case 'blocks': return { text: Array.isArray(d) ? (d.length === 1 ? t('1 item') : t('{n} items', { n: d.length })) : '-' };
     case 'vector': return { text: Array.isArray(d) ? d.join(' × ') : String(d) };
     case 'number': return { text: String(d) + (input.unit ? ` ${input.unit}` : '') };
     default: {

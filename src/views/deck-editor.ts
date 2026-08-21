@@ -459,7 +459,7 @@ export function parseMarkdownDeck(text: string): Slide[] {
   // Strip a leading YAML front-matter block (Marp / Jekyll / reveal): `---\n…\n---` at the very
   // top - otherwise its closing `---` reads as a slide separator and the metadata becomes a
   // bogus first slide ("marp: true", …).
-  src = src.replace(/^﻿?[ \t]*\n?---[ \t]*\n[\s\S]*?\n---[ \t]*(?:\n|$)/, '');
+  src = src.replace(/^\uFEFF?[ \t]*\n?---[ \t]*\n[\s\S]*?\n---[ \t]*(?:\n|$)/, '');
   const chunks = src.split(/^[ \t]*---[ \t]*$/m).map(c => c.trim()).filter(Boolean);
   const slides = chunks.map((chunk): Slide => {
     const o: Record<string, unknown> = {};

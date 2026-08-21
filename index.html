@@ -24,28 +24,28 @@
       }
     })();
   </script>
-  <!-- Page pinch-zoom is enabled (WCAG 1.4.4 — never lock it). The mobile
+  <!-- Page pinch-zoom is enabled (WCAG 1.4.4 - never lock it). The mobile
        controls sheet is position:fixed and would otherwise strand off-screen
        while zoomed; a VisualViewport shim (main.js) re-pins it to the visible
        area via the --vv-top/--vv-left CSS vars. The canvas preview also keeps
        its own pinch/pan (setupStagePinchZoom). -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Lolly — assets that stay the same so everything else can change</title>
-  <meta name="description" content="Lolly generates production-ready assets — QR codes, charts, graphics, PDFs and more — from simple inputs. Constraint-first, template-driven, works offline." />
+  <title>Lolly - assets that stay the same so everything else can change</title>
+  <meta name="description" content="Lolly generates production-ready assets - QR codes, charts, graphics, PDFs and more - from simple inputs. Constraint-first, template-driven, works offline." />
   <link rel="canonical" href="https://lolly.tools/" />
   <meta name="theme-color" content="#0c322c" />
 
   <!-- Open Graph / social preview -->
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Lolly" />
-  <meta property="og:title" content="Lolly — assets that stay the same so everything else can change" />
-  <meta property="og:description" content="Generate production-ready assets — QR codes, charts, graphics, PDFs — from simple inputs. Works offline." />
+  <meta property="og:title" content="Lolly - assets that stay the same so everything else can change" />
+  <meta property="og:description" content="Generate production-ready assets - QR codes, charts, graphics, PDFs - from simple inputs. Works offline." />
   <meta property="og:url" content="https://lolly.tools/" />
   <meta property="og:image" content="https://lolly.tools/og.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Lolly — assets that stay the same so everything else can change" />
+  <meta name="twitter:title" content="Lolly - assets that stay the same so everything else can change" />
   <meta name="twitter:description" content="Generate production-ready assets from simple inputs. Works offline." />
   <meta name="twitter:image" content="https://lolly.tools/og.png" />
 
@@ -58,7 +58,7 @@
     "url": "https://lolly.tools/",
     "applicationCategory": "DesignApplication",
     "operatingSystem": "Web, Windows, macOS, Linux, iOS, Android",
-    "description": "Generate production-ready assets — QR codes, charts, graphics, PDFs and more — from simple inputs.",
+    "description": "Generate production-ready assets - QR codes, charts, graphics, PDFs and more - from simple inputs.",
     "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
   }
   </script>
@@ -73,7 +73,7 @@
   <!-- Preload the upright UI face so it isn't discovered only after
        app.css → @import fonts.css resolves (which causes a visible swap).
        SUSE is the shell-served platform default on every profile, so ONE
-       preload covers every brand pack — before 2026-08-10 this was Outfit
+       preload covers every brand pack - before 2026-08-10 this was Outfit
        plus a catalog-served SUSE that 404'd on any pack but brands/suse.
        crossorigin is required for fonts. -->
   <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/SUSE[wght].woff2" />
@@ -84,24 +84,24 @@
   <script>
     (() => {
       var t = localStorage.getItem('theme');
-      if (t === 'suse') t = 'brand'; // retired name — theme.ts migrates the store on apply
+      if (t === 'suse') t = 'brand'; // retired name - theme.ts migrates the store on apply
       if (!t && matchMedia('(prefers-color-scheme: dark)').matches) t = 'dark';
       if (t === 'dark' || t === 'brand') document.documentElement.dataset.theme = t;
       // Restore the brand font stacks the same way (written by applyChromeBrandVars
       // in brand-vars.ts) so a branded profile doesn't flash the platform default
-      // every load. setProperty is CSSOM — the cached value can't inject markup.
+      // every load. setProperty is CSSOM - the cached value can't inject markup.
       try {
         var f = JSON.parse(localStorage.getItem('brand-fonts') || 'null');
         if (f) for (var k in f) {
           if (k === '--font-brand' || k === '--font-mono' || k === '--font-display' || k === '--font-italic') document.documentElement.style.setProperty(k, f[k]);
         }
-      } catch (e) { /* corrupt cache — boot JS rewrites it */ }
-      // Same trick for a customised corner radius (unlocked brands only —
+      } catch (e) { /* corrupt cache - boot JS rewrites it */ }
+      // Same trick for a customised corner radius (unlocked brands only -
       // applyBrandRadius never writes this key for a locked catalog).
       try {
         var r = localStorage.getItem('brand-radius');
         if (r) document.documentElement.style.setProperty('--radius', r);
-      } catch (e) { /* corrupt cache — boot JS rewrites it */ }
+      } catch (e) { /* corrupt cache - boot JS rewrites it */ }
       // Accessibility prefs (lib/a11y-prefs.ts is canonical; this is its FOUC
       // mirror): set the gating attributes before CSS paints so large text /
       // high contrast don't flash the regular look for a beat.
@@ -113,18 +113,18 @@
           if (ax.largeText) document.documentElement.dataset.a11yText = 'large';
           if (ax.hidePreviews) document.documentElement.dataset.a11yPreviews = 'hidden';
         }
-      } catch (e) { /* corrupt cache — boot JS rewrites it */ }
+      } catch (e) { /* corrupt cache - boot JS rewrites it */ }
       // Performance UI (feature-flags.ts perf-ui, its FOUC mirror): reflect the flag from
       // the feature-flag mirror before paint so a lower-powered device never flashes the
       // full-effect chrome for a beat. Absent/false ⇒ no attribute ⇒ full chrome (default).
       try {
         var ff = JSON.parse(localStorage.getItem('lolly:featureFlags') || 'null');
         if (ff && ff['perf-ui']) document.documentElement.setAttribute('data-perf-ui', '');
-      } catch (e) { /* corrupt cache — boot JS rewrites it */ }
+      } catch (e) { /* corrupt cache - boot JS rewrites it */ }
       // Apply the saved language's <html lang> before paint (glyph fallback/Han
-      // unification depends on it) — the FOUC-mirror half of i18n.ts's canonical
+      // unification depends on it) - the FOUC-mirror half of i18n.ts's canonical
       // profile.lang store. A hand-inlined alias map + LANG_META.htmlLang mirror
-      // (kept tiny — this script can't import engine/src/lang.ts). The i18n
+      // (kept tiny - this script can't import engine/src/lang.ts). The i18n
       // catalog itself loads async in main.ts's boot(); this only sets the attr.
       try {
         var lg = localStorage.getItem('lang');
@@ -152,12 +152,12 @@
           };
           if (HTML_LANG[lg]) {
             document.documentElement.lang = HTML_LANG[lg];
-            // RTL mirror of LANG_META.dir — Arabic and Urdu flip the document
+            // RTL mirror of LANG_META.dir - Arabic and Urdu flip the document
             // before paint so the first frame isn't a wrong-direction flash.
             document.documentElement.dir = (lg === 'ar' || lg === 'ur') ? 'rtl' : 'ltr';
           }
         }
-      } catch (e) { /* corrupt cache — boot JS re-derives it */ }
+      } catch (e) { /* corrupt cache - boot JS re-derives it */ }
     })();
   </script>
 
@@ -165,7 +165,7 @@
        off the app can never boot. Rather than strand visitors on a permanent
        "Loading…", this styles a self-contained welcome (revealed by the <noscript>
        in <body>) and hides the two now-misleading shell affordances. Kept in
-       <noscript> so it only applies — and only downloads meaning — when JS is off;
+       <noscript> so it only applies - and only downloads meaning - when JS is off;
        its own colours + dark-mode make it stand alone even if the app CSS never loads. -->
   <noscript>
     <style>

@@ -1,29 +1,29 @@
 /* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer (order
-   declared once in styles/app.css), exactly like start.css — so its rules keep a
+   declared once in styles/app.css), exactly like start.css - so its rules keep a
    fixed priority (above chrome/primitives/base, below overrides/a11y) no matter
    when Vite injects this chunk. Do not rely on load order. */
 @layer views {
 /*
- * The candidate tray (lib/design-system/tray-ui.ts, plan 97 section 8) — one DOM, two
+ * The candidate tray (lib/design-system/tray-ui.ts, plan 97 section 8) - one DOM, two
  * layouts:
  *
  *   ≥641px  a DOCK: a small fixed panel on the inline-end edge of the studio.
  *   ≤640px  a SHEET: the palette sheet's peek/half/full bottom dock, driven by
  *           lib/mobile-sheet.ts through --ds-tray-h / data-ds-tray-sheet /
  *           --ds-tray-peek-h / .is-ds-tray-dragging, all stamped on `.start`
- *           (the common parent, so the grip — a SIBLING kept outside the sheet's
- *           overflow clip — reads the same vars).
+ *           (the common parent, so the grip - a SIBLING kept outside the sheet's
+ *           overflow clip - reads the same vars).
  *
  * SPECIFICITY. start.css gives `.start > *:not(.gallery-topright)` position:
  * relative + z-index:1, which is (0,2,0) and would beat a bare `.ds-tray`. The
- * shipped palette sheet answers that with `.start > .stu-sheet` — a TIE resolved
+ * shipped palette sheet answers that with `.start > .stu-sheet` - a TIE resolved
  * by sheet order, which is not something two lazily-injected chunks in the same
  * layer should be resting on. So the fixed-position rules here are element-
  * qualified (`.start > aside.ds-tray`, `.start > button.ds-tray-grip`) at
  * (0,2,1), which wins deterministically. tray-ui.ts creates exactly those two
  * elements; changing either tag means changing these selectors.
  *
- * Separation is SHADOW + a full uniform border on theme tokens — never a single
+ * Separation is SHADOW + a full uniform border on theme tokens - never a single
  * accent edge on a rounded card, and no colour literals.
  */
 
@@ -43,7 +43,7 @@
   overflow: hidden; /* the body scrolls inside the rounded edge */
 }
 
-/* Dock geometry — bottom inline-end, clear of the phone-only surfaces. */
+/* Dock geometry - bottom inline-end, clear of the phone-only surfaces. */
 @media (min-width: 641px) {
   .start > aside.ds-tray {
     inset-inline-end: 18px;
@@ -190,7 +190,7 @@
 .ds-tray-x svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
 .ds-tray-x:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
 
-/* Keyboard focus — the tray's own controls, since the row backgrounds are
+/* Keyboard focus - the tray's own controls, since the row backgrounds are
    quiet enough that a default ring can be lost against them. */
 .ds-tray :is(button):focus-visible {
   outline: 2px solid hsl(var(--ring));
@@ -208,7 +208,7 @@
   .start[data-ds-tray-sheet="half"] { --ds-tray-h: 50dvh; }
   .start[data-ds-tray-sheet="full"] { --ds-tray-h: 88dvh; }
 
-  /* Page bottom clearance while the tray is up — the last panel must scroll
+  /* Page bottom clearance while the tray is up - the last panel must scroll
      clear of the peek strip. */
   .start:has(> .ds-tray:not([hidden])) {
     padding-bottom: calc(96px + var(--ds-tray-peek-h, 56px) + env(safe-area-inset-bottom, 0px));
@@ -249,7 +249,7 @@
   }
   .start.is-ds-tray-dragging .ds-tray-head { cursor: grabbing; }
 
-  /* The grip — fixed on the sheet's top edge, a full-perimeter pill riding
+  /* The grip - fixed on the sheet's top edge, a full-perimeter pill riding
      `bottom` since this sheet rises from below. */
   .start > button.ds-tray-grip {
     display: flex;

@@ -93,7 +93,7 @@ test('the haystack indexes name, id, tags, category and format', () => {
   }
 });
 
-test('an empty query matches everything — search is a filter, not a mode', () => {
+test('an empty query matches everything - search is a filter, not a mode', () => {
   const a = A('a');
   const hay = buildSearchHaystack([a], cat);
   assert.equal(matchesQuery(a, '', hay), true);
@@ -118,7 +118,7 @@ test('multi-word queries AND across tokens, in any order', () => {
   assert.equal(matchesQuery(a, 'primary missing', hay), false);
 });
 
-test('diacritics fold on both sides — "cafe" finds "Café" and the reverse', () => {
+test('diacritics fold on both sides - "cafe" finds "Café" and the reverse', () => {
   const a = A('photo/cafe', { meta: { name: 'Café Interior' } } as Partial<AssetRef>);
   const hay = buildSearchHaystack([a], cat);
   assert.equal(matchesQuery(a, 'cafe', hay), true);
@@ -166,14 +166,14 @@ const userA = A('u1', { source: 'user' });
 const userB = A('u2', { source: 'user', type: 'vector' });
 const libA = A('c1', { source: 'library' });
 
-test("the default 'uploads' scope keeps catalog assets out — bulk delete safety", () => {
+test("the default 'uploads' scope keeps catalog assets out - bulk delete safety", () => {
   const visible = [userA, libA];
   const hay = buildSearchHaystack(visible, cat);
   const ids = selectableIds(visible, { query: '', haystack: hay, typeFilter: 'all' });
   assert.deepEqual([...ids], ['u1']);
 });
 
-test("scope 'all' admits catalog assets too — every tile selects; destructive actions gate per-kind instead", () => {
+test("scope 'all' admits catalog assets too - every tile selects; destructive actions gate per-kind instead", () => {
   const visible = [userA, libA];
   const hay = buildSearchHaystack(visible, cat);
   const ids = selectableIds(visible, { query: '', haystack: hay, typeFilter: 'all', scope: 'all' });

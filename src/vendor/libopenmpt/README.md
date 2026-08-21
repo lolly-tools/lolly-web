@@ -12,17 +12,17 @@ scripts/build-libopenmpt-wasm.sh
 ```
 
 ## Provenance
-- libopenmpt **0.8.7** — makefile-flavour release tarball from lib.openmpt.org
+- libopenmpt **0.8.7** - makefile-flavour release tarball from lib.openmpt.org
 - Emscripten **6.0.2** (emsdk `latest` at build time)
 - Build target: `CONFIG=emscripten EMSCRIPTEN_TARGET=wasm`, then linked
   `MODULARIZE + EXPORT_ES6 + SINGLE_FILE` (wasm embedded as base64), `ENVIRONMENT=web,worker`,
   `FILESYSTEM=0`, exception catching enabled.
 - **Fixed 256 MB heap, no memory growth** (`INITIAL_MEMORY=268435456`, `ALLOW_MEMORY_GROWTH=0`).
   This is load-bearing: a growable heap is a *resizable* `ArrayBuffer`, and Chrome refuses
-  `crypto.getRandomValues()` on a view into one — which libopenmpt hits while seeding a module,
+  `crypto.getRandomValues()` on a view into one - which libopenmpt hits while seeding a module,
   throwing at decode time. Do not re-enable memory growth.
 
-## Licensing — 100% permissive, no copyleft
+## Licensing - 100% permissive, no copyleft
 Built with libopenmpt's **default internal codecs**, so nothing LGPL is linked:
 | Component | Licence |
 |---|---|

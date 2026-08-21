@@ -1,7 +1,7 @@
 /* ─── Spotlight overlay (plans/99 M2) ────────────────────────────────────────
    The cross-domain search results panel, anchored just above the persistent
    bottom bar (components/spotlight.ts positions `bottom`/`max-height` inline
-   from the footer's live rect). Body-mounted — NEVER a footer child, because
+   from the footer's live rect). Body-mounted - NEVER a footer child, because
    .gallery-footer's backdrop-filter would become the containing block for a
    fixed panel (the fixed-popover trap). Frosted: a translucent --card over a
    light backdrop blur, so it reads as one glass unit with the footer it docks
@@ -16,7 +16,7 @@
   right: var(--vv-right, 0px);
   margin-inline: auto;
   width: min(40rem, calc(100vw - 2rem));
-  z-index: 60; /* above the footer (50) — they read as one stacked unit */
+  z-index: 60; /* above the footer (50) - they read as one stacked unit */
   display: flex;
   flex-direction: column;
   background: hsla(var(--card) / .75);
@@ -30,7 +30,7 @@
 }
 .spotlight-panel[hidden] { display: none; }
 
-/* Entry motion — the class is added by JS only when prefersReducedMotion()
+/* Entry motion - the class is added by JS only when prefersReducedMotion()
    (OS query OR the app a11y pref) allows it; the two gates below are the
    belt-and-braces for a stale class. */
 .spotlight-anim { animation: spotlight-in 0.16s ease; }
@@ -59,8 +59,8 @@ html[data-a11y-motion="reduce"] .spotlight-anim { animation: none; }
   color: hsl(var(--muted-foreground));
 }
 
-/* One result row. Rows are options in a combobox listbox — focus never leaves
-   the field — so hover and the keyboard active state share one look. */
+/* One result row. Rows are options in a combobox listbox - focus never leaves
+   the field - so hover and the keyboard active state share one look. */
 .spotlight-opt {
   display: flex;
   align-items: center;
@@ -116,7 +116,7 @@ html[data-a11y-motion="reduce"] .spotlight-anim { animation: none; }
    Hoisted to the top of the panel (spotlight.ts) and washed in the brand accent
    so the results for the view you're ON read as "here". Discovery no longer
    depends on seeing the live-filtered cards behind the panel, which it can
-   overlap — the same results lead the overlay, highlighted. Uses --primary, the
+   overlap - the same results lead the overlay, highlighted. Uses --primary, the
    shell-chrome accent brand-vars.ts overrides per active brand (same token the
    see-all and Ask rows already tint with). */
 .spotlight-group-label--own { color: hsl(var(--primary)); }
@@ -141,8 +141,8 @@ html[data-a11y-motion="reduce"] .spotlight-anim { animation: none; }
 
 /* ─── The Ask Lolly row (plans/103) ──────────────────────────────────────────
    The assistant affordance: last group, the fallback when concrete hits don't
-   cover the query. It reads as "smart" — the aiSpark glyph in the brand accent
-   over a faint wash — and its glyph twinkles on hover / keyboard-active (the
+   cover the query. It reads as "smart" - the aiSpark glyph in the brand accent
+   over a faint wash - and its glyph twinkles on hover / keyboard-active (the
    same motion the Verify view's AI flag uses). Kept off under reduced motion. */
 .spotlight-opt[data-group="ask"] {
   background: linear-gradient(90deg, hsl(var(--primary) / 0.08), hsl(var(--primary) / 0));

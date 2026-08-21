@@ -2,14 +2,14 @@
 /* ═══ Colour picker (components/color-field.ts) ═══════════════════════════════
    Trigger, popover, colour-space tabs, per-space slider groups, dials, alpha,
    swatch grid. Split out of parts/components.css (2026-07-28) when the picker
-   grew from one OKLCH slider stack to a registry of colour spaces — it was ~450
+   grew from one OKLCH slider stack to a registry of colour spaces - it was ~450
    of that file's lines and is the part still growing. Same cascade layer
    (`chrome`), imported immediately after components.css, so nothing about who
    beats whom changed.
 
    Two files still hold picker-adjacent rules on purpose: `.swatch-name-tip`
    (the floating swatch label) stays in components.css, and the slider geometry
-   note lives in parts/fields.css:302 — these sliders paint their own tracks and
+   note lives in parts/fields.css:302 - these sliders paint their own tracks and
    deliberately do NOT take the `.field-range` primitive.
    Host-specific overrides live with their hosts: parts/editor.css (free-canvas
    toolbars), parts/brand-studio.css, parts/document.css, parts/notfound.css. */
@@ -36,7 +36,7 @@
   justify-content: end;
   /* Query container: the trigger collapses to just the swatch circle when squeezed
      next to other controls, and shows the colour name (+ hex) when there's room. Named
-     + scoped to the button so it can't clash with other @container rules — and crucially
+     + scoped to the button so it can't clash with other @container rules - and crucially
      the popover is a SIBLING of this button, not a descendant, so making the button a
      container never turns it into the fixed popover's containing block. */
   container: colortrig / inline-size;
@@ -55,7 +55,7 @@
   flex-shrink: 0;
 }
 
-/* The friendly colour name ("Persimmon 3") — small, muted SUSE Mono. The hex value is
+/* The friendly colour name ("Persimmon 3") - small, muted SUSE Mono. The hex value is
    NOT shown here; it lives only inside the popover picker. */
 .color-trigger-name {
   font-family: var(--font-mono);
@@ -64,12 +64,12 @@
   color: hsl(var(--muted-foreground));
   white-space: nowrap;
   /* CLAMP, don't overflow. A friendly name is short in most brands ("Pine", "White")
-     and long in others — an imported brand names a token by its whole role, e.g.
-     "Ink — brand ink, semantic text, dark-theme surface". With nowrap and no clamp
+     and long in others - an imported brand names a token by its whole role, e.g.
+     "Ink - brand ink, semantic text, dark-theme surface". With nowrap and no clamp
      that text cannot shrink, and because the trigger is `justify-content: end` the
      overflow goes LEFT, straight across the field's own label. Measured 71px of
      collision, which is what put "MODULE COLOR" on top of its value in the docs
-     screenshots — in English, German and Japanese alike.
+     screenshots - in English, German and Japanese alike.
      `min-width: 0` is the load-bearing half: a flex item's default `min-width: auto`
      refuses to shrink below its content, so ellipsis alone would never engage. */
   min-width: 0;
@@ -79,19 +79,19 @@
 .color-trigger-name:empty { display: none; }   /* custom colours have no name → just the circle */
 
 /* A tool sidebar row FLOATS its label over the control (tool.css, the
-   `:has(input…)` floating-label rule — which a colour row matches because the popover
+   `:has(input…)` floating-label rule - which a colour row matches because the popover
    carries a hex input, even though the row's own control is a button). The label is
    absolutely positioned at the left, OUT OF FLOW, so the trigger cannot see it: a long
    name grew leftward underneath it, and even the swatch circle landed on the label's
    last letter. Reserve the label's side of the row so both stay clear of it.
-   45% measured with headroom — the English labels here end at 34-38% of the trigger,
+   45% measured with headroom - the English labels here end at 34-38% of the trigger,
    and the reserve has to survive translation (German runs longer).
    Scoped away from the empty-name case, which centres a lone swatch in the whole
    trigger on purpose; padding would re-centre it in the remainder and strand it. */
 .input-row .color-trigger:not(:has(.color-trigger-name:empty)) { padding-inline-start: 45%; }
 
 /* When the field is squeezed in next to other controls, drop the name and collapse to
-   just the swatch circle — centred in whatever box the trigger keeps (auto margins beat
+   just the swatch circle - centred in whatever box the trigger keeps (auto margins beat
    justify-content:end, so the lone circle isn't stranded against the right edge with a
    lopsided gap on the left). */
 @container colortrig (max-width: 120px) {
@@ -100,7 +100,7 @@
 }
 /* The same case arrives from the other direction: a CUSTOM colour has no friendly
    name, so the label collapses at ANY width and `justify-content: end` stranded a
-   lone 18px circle against the right edge of a 192px button — which reads as a
+   lone 18px circle against the right edge of a 192px button - which reads as a
    toggle switch in the "on" position, not as a colour you can change. Centre it,
    exactly as the squeezed case above already does. */
 .color-trigger:has(.color-trigger-name:empty) .color-trigger-preview { margin-inline: auto; }
@@ -121,12 +121,12 @@
   gap: 10px;
 }
 
-/* Inline mode — the picker as a spacious, always-open panel (no trigger, no
+/* Inline mode - the picker as a spacious, always-open panel (no trigger, no
    floating): the popover flows in place and sheds its own card chrome (the host
    panel already is one). It carries no swatch palette (see colorFieldHtml: every
    inline host is the brand editor, where the swatches ARE the palette being
-   edited), so it's a single column top-to-bottom — value field, dials + sliders,
-   alpha — and the dials get the host panel's whole width to spread across.
+   edited), so it's a single column top-to-bottom - value field, dials + sliders,
+   alpha - and the dials get the host panel's whole width to spread across.
    `inline` no longer IMPLIES dials: colorFieldHtml has its own `dials` option, so
    the sizing below keys off the dials row being present, and `--inline` only says
    how generous it gets. */
@@ -142,7 +142,7 @@
 /* The dials share the row's width by SLOT, not by sibling count: --dial-slots is the
    widest space's channel count + the output disc (color-field.ts dialsHtml), so a
    3-channel space draws the same size ring as CMYK's 4 and the band's height stops
-   depending on which tab is open — the shift that made switching spaces move
+   depending on which tab is open - the shift that made switching spaces move
    everything below the panel. The cap stops a wide panel blowing them up, and in a
    FLOAT popover it stays near the old fixed 3.25em, because a click-to-open popover
    that opted into dials must not grow 7rem rings under the tab strip. */
@@ -158,7 +158,7 @@
   min-width: 2.25rem;
   aspect-ratio: 1 / 1;
 }
-/* Scale the dial furniture up with the dial — the inline panel is the host with
+/* Scale the dial furniture up with the dial - the inline panel is the host with
    room to spend on rings that restate the sliders under them. */
 .color-field--inline .color-dials { --dial-gap: 0.9rem; --dial-cap: 7rem; }
 .color-field--inline .color-dial-hub { font-size: calc(12px * var(--a11y-fs)); }
@@ -167,18 +167,18 @@
 /* ── Colour-space modes: grouped tab strip + per-space slider groups ─────────
    ONE flat role="tablist" (one tab stop, arrow keys walking every space in
    visual order) laid out as three labelled family rows: Perceptual, Device,
-   Output. The families are visible information, not a control — the headings say
+   Output. The families are visible information, not a control - the headings say
    what kind of numbers you are about to edit, and nothing is hidden behind a
    disclosure.
 
-   The family heading takes its own line at EVERY width. The alternative — the
-   heading as a leading item on the pills' first line — costs ~70px of the first
+   The family heading takes its own line at EVERY width. The alternative - the
+   heading as a leading item on the pills' first line - costs ~70px of the first
    line, which at the ~250px the sidebar popover actually gets pushes 5 perceptual
    pills onto three ragged lines whose wrapped rows sit under the heading with no
    indent. Three headings cost ~42px of height; they are 9.5px, tight-leaded, and
    that is the trade. */
 .color-modes { display: flex; flex-direction: column; gap: 10px; }
-/* The trough is now one box around all three rows, not a 999px pill around one —
+/* The trough is now one box around all three rows, not a 999px pill around one -
    a full box, never a single divider line between families (spacing separates
    them). */
 .color-mode-tabs {
@@ -187,7 +187,7 @@
   background: hsl(var(--muted) / .5);
 }
 /* One family. `align-items: stretch` so every pill on a line matches the tallest
-   on that line — the sublabels below make some of them two-line. */
+   on that line - the sublabels below make some of them two-line. */
 .color-mode-fam {
   display: flex; flex-wrap: wrap; align-items: stretch;
   gap: 3px 4px; min-width: 0;
@@ -198,7 +198,7 @@
   letter-spacing: .06em; text-transform: uppercase;
   color: hsl(var(--muted-foreground));
 }
-/* A family with no tabs collapses to nothing — heading, gap and any scroll well
+/* A family with no tabs collapses to nothing - heading, gap and any scroll well
    with it. Today only a build with the Output entries stripped hits this, but the
    Output group is the one that is populated at runtime, and an empty scroll area
    with a stray edge is exactly what must not appear. */
@@ -234,9 +234,9 @@
   text-align: center;
 }
 .color-mode-tab:hover { color: hsl(var(--foreground)); }
-/* The ACTIVE tab is the bold one — the pill + dark text + weight mark whichever
+/* The ACTIVE tab is the bold one - the pill + dark text + weight mark whichever
    space you're in (OKLCH by default). Bold belongs to the selection, not to any
-   one space. aria-selected is the state (a tab bar, not a segmented control —
+   one space. aria-selected is the state (a tab bar, not a segmented control -
    never aria-pressed; see lib/tabs.ts and lib/seg.ts). */
 .color-mode-tab[aria-selected="true"] {
   background: hsl(var(--card)); color: hsl(var(--foreground)); font-weight: 700;
@@ -245,7 +245,7 @@
 .color-mode-tab:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
 .color-mode-tab-label { display: block; }
 /* The second line ("reference", "Coated FOGRA39 · relative"). Off on a compact
-   pill in a float/sidebar popover — there is no room for it, and what the sub
+   pill in a float/sidebar popover - there is no room for it, and what the sub
    line says still reaches AT through the tab's aria-label and the live note line.
    It IS shown on the wide profile rows, and in the inline panel where the width
    exists, so a profile's name and intent are on screen wherever they can be. */
@@ -255,19 +255,19 @@
   color: hsl(var(--muted-foreground));
   /* One line, always. "reference" under XYZ used to wrap on a phone, which made
      the whole Perceptual row 32% taller than its siblings and lifted "XYZ" off the
-     baseline the other four pills sit on — a two-line pill in a row of one-line
+     baseline the other four pills sit on - a two-line pill in a row of one-line
      pills, over a word that has to be short precisely because it is a footnote. */
   white-space: nowrap;
 }
 .color-mode-tab--wide .color-mode-tab-sub,
 .color-field--inline .color-mode-tab-sub { display: block; }
 /* …but not on a narrow viewport. `nowrap` stopped "reference" WRAPPING, which was the
-   loud half of the bug; the quiet half remained — a one-line footnote still makes the
+   loud half of the bug; the quiet half remained - a one-line footnote still makes the
    XYZ pill two lines tall in a row of one-line pills, so the Perceptual row measured
    24% taller than Device and Output and "XYZ" sat visibly above the baseline its four
    siblings share. Measured at 390px: 57.8 / 46.5 / 46.5.
 
-   The sub-label was granted `display: block` here "where the width exists" — on a
+   The sub-label was granted `display: block` here "where the width exists" - on a
    phone it does not. So drop it below the wide breakpoint and let the tab's
    `aria-label` and the live note line carry the meaning, exactly as they already do
    for the compact popover. A wide PROFILE row keeps its sub-label at every width: the
@@ -303,8 +303,8 @@
 /* Same reason, and the oklch panel carries BOTH classes: .color-lch also survives
    alone in the non-modes picker, whose group never carries [hidden]. */
 .color-lch[hidden] { display: none; }
-/* Every panel in a tab strip is rendered with the WIDEST space's row count — the
-   short ones get empty filler rows (color-field.ts spacePanelHtml) — so switching a
+/* Every panel in a tab strip is rendered with the WIDEST space's row count - the
+   short ones get empty filler rows (color-field.ts spacePanelHtml) - so switching a
    3-channel space ↔ a 4-channel one never shifts what is below the panel. The
    reservation used to be a min-height guessing 18px per row (the thumb) against a
    real row of 2em, so it never bound and the shift was ~39px. Rows stay top-aligned. */
@@ -319,7 +319,7 @@
   pointer-events: none;
 }
 
-/* The live note under the panels (role="status") — the space + whether the value
+/* The live note under the panels (role="status") - the space + whether the value
    is exact, and the out-of-gamut caution that used to be a `title` on the chroma
    readout alone. It reserves its own line so text appearing never shifts the
    popover, and takes the amber the clamped readout already uses when it cautions.
@@ -334,7 +334,7 @@
 }
 /* Only the VISIBLE panel's clamp cautions: every space's panel is in the DOM
    (hidden, not removed), so an unscoped :has() painted the line amber for a pin in
-   a space the user is not looking at — while the line itself read "exact". */
+   a space the user is not looking at - while the line itself read "exact". */
 .color-space-note.is-caution,
 .color-modes:has(.color-space:not([hidden]) .color-lch-val.is-clamped) .color-space-note { color: #d97706; }
 
@@ -347,7 +347,7 @@
    valueless states (transparent, mid-edit junk). */
 /* Wrap = positioning context for the eyedropper button inside the field, and the
    query container the value field's own width is measured against (see
-   .color-input--long) — the same field is 565px in the brand studio's Primary and
+   .color-input--long) - the same field is 565px in the brand studio's Primary and
    316px in its swatch editor, and only the narrow one needs the type stepped down. */
 .color-input-wrap { position: relative; container-type: inline-size; }
 .color-input {
@@ -361,7 +361,7 @@
   font-family: var(--font-mono);
   font-size: calc(17px * var(--a11y-fs));
   /* A fixed line box, so stepping the type down for a long value (below) cannot
-     change the field's height — the controls under it must not move because the
+     change the field's height - the controls under it must not move because the
      colour is now stated in a longer notation. */
   line-height: 20px;
   padding: 16px 44px;   /* symmetric so the centred value clears the eyedropper */
@@ -370,25 +370,25 @@
   transition: background-color .12s, color .12s, border-color .12s, font-size .12s;
 }
 /* A full CSS colour at machine precision ('oklch(61.374% 0.13585 260.14)') does not
-   fit the narrow hosts — a 316px swatch editor cut it off at the hue, with an input's
+   fit the narrow hosts - a 316px swatch editor cut it off at the hue, with an input's
    own scroll giving no hint anything was missing. Step the type down for a long value
    (color-field.ts toggles the class at 22 characters, and puts the whole string in a
    `title` as well); the line box is fixed above, so this never changes the field's
-   height. Wide hosts keep the full 17px — they have the room. */
+   height. Wide hosts keep the full 17px - they have the room. */
 @container (max-width: 460px) {
   .color-input--long {
     font-size: calc(13px * var(--a11y-fs));
     letter-spacing: -.01em;
   }
 }
-/* Text that did not parse: the field keeps the characters — mid-edit text is the
-   user's — but it must not sit there unmarked, claiming to be the colour. */
+/* Text that did not parse: the field keeps the characters - mid-edit text is the
+   user's - but it must not sit there unmarked, claiming to be the colour. */
 .color-input--invalid {
-  /* Amber alone carries it. Not a dashed border — that means DROP AREA here, and an
+  /* Amber alone carries it. Not a dashed border - that means DROP AREA here, and an
      invalid value is not a place to drop something. */
   border-color: #d97706;
 }
-/* Screen eyedropper — sits inside the field's left edge, coloured by the same
+/* Screen eyedropper - sits inside the field's left edge, coloured by the same
    contrast-flipped --color-input-fg as the value text so it reads on any paint.
    Removed at wire time where the EyeDropper API doesn't exist. */
 .color-eyedropper {
@@ -405,7 +405,7 @@
 .color-eyedropper:hover { opacity: 1; background: hsl(0 0% 50% / .22); }
 .color-eyedropper:focus-visible { opacity: 1; outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
 /* Full strength was hover-gated, so on a phone the icon spent its whole life at
-   .7 — dimmed to indicate a state the device can never leave. Where there is no
+   .7 - dimmed to indicate a state the device can never leave. Where there is no
    hover there is nothing to reserve it for. */
 @media (hover: none) {
   .color-eyedropper { opacity: 1; }
@@ -443,7 +443,7 @@
    the track: the colour fading to nothing over a checkerboard, with the two
    gradient ends set from JS (paintAlphaTrack in color-field.ts).
 
-   It was a 4px native rail with `accent-color` — which left the one control whose
+   It was a 4px native rail with `accent-color` - which left the one control whose
    whole subject is transparency as the only one that showed none of it. */
 .color-alpha-slider {
   background:
@@ -460,14 +460,14 @@
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: calc(11px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
-  /* 40px, matching .color-lch-val — the readouts must form a column. */
+  /* 40px, matching .color-lch-val - the readouts must form a column. */
   min-width: 40px;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Dials — a ring per channel, above that channel's slider ─────────────────
-   Inline (brand-editor) pickers only — see .color-field--inline above.
+/* ── Dials - a ring per channel, above that channel's slider ─────────────────
+   Inline (brand-editor) pickers only - see .color-field--inline above.
    The ring's background is the SAME stop list as the slider track under it,
    poured into a conic gradient instead of a linear one (color-field.ts), and the
    needle sits at value → angle. The hub covers the point where the conic's stops
@@ -520,7 +520,7 @@
 }
 /* ── Gamut boundary hairlines on a dial ──────────────────────────────────────
    One radial hairline per tier crossing (color-field.ts dialEdgesHtml), rotated
-   to the SAME fraction the ring's gradient breaks at — so a dial and the slider
+   to the SAME fraction the ring's gradient breaks at - so a dial and the slider
    under it never disagree about where a gamut ends.
 
    The colour runs at full strength on BOTH sides of the line: a dial says "this
@@ -528,27 +528,27 @@
    sliders keep their opacity ladder; this is the dials' answer, not a
    replacement for it.
 
-   Every crossing gets one, not just the first — a hue ring at high chroma leaves
+   Every crossing gets one, not just the first - a hue ring at high chroma leaves
    and re-enters a gamut several times.
 
    An element per crossing rather than a stop pair in the conic gradient because a
    stop pair spans an ANGLE: hair-thin at the hub, several pixels wide at the rim.
    A rotated element holds one width at every radius. It also keeps the whole
-   appearance HERE, tunable like the tier opacities — the ring's `background` is a
+   appearance HERE, tunable like the tier opacities - the ring's `background` is a
    shorthand JS assigns, so nothing declared in this file survives inside it.
 
-   Plain white, at full opacity. It was a white line over a dark hairline shadow —
-   the reasoning being that a light line needs help reading on a pale band — but Andy
+   Plain white, at full opacity. It was a white line over a dark hairline shadow -
+   the reasoning being that a light line needs help reading on a pale band - but Andy
    asked for just white: the outline muddied a 1px feature, and the dials it crosses
    are saturated enough that white alone separates. Not a border, and not dashed. */
 .color-dials {
   --dial-edge-w: 1px;
   /* Rim to the hub's edge: the hub is 46% of the diameter, so its radius is 23%
-     of the diameter — the spoke stops there rather than running under it. */
+     of the diameter - the spoke stops there rather than running under it. */
   --dial-edge-len: 27%;
   --dial-edge-c: #fff;
   /* Kept as a token so it can be dialled back in per-theme if a pale band ever needs
-     it, but empty by default — see the note above. */
+     it, but empty by default - see the note above. */
   --dial-edge-shadow: none;
 }
 .color-dial-edges,
@@ -587,7 +587,7 @@
   color: hsl(var(--muted-foreground));
   pointer-events: none;
 }
-/* The output disc — the picked colour, with its two actions struck through it in
+/* The output disc - the picked colour, with its two actions struck through it in
    whichever of black/white reads on that colour (--out-fg, set by color-field.ts). */
 .color-dial-out {
   display: flex;
@@ -625,7 +625,7 @@
   .color-mode-tab { transition: none; }
 }
 
-/* ── Channel sliders — the per-space custom-colour surface ───────────────────
+/* ── Channel sliders - the per-space custom-colour surface ───────────────────
    Each track paints its own axis sweep (an inline gradient set by
    color-field.ts), so the input needs appearance:none + a custom thumb; the
    gradient IS the input's background. */
@@ -647,7 +647,7 @@
   text-align: center;
 }
 .color-lch-val {
-  /* var(--font-mono), not a bare generic — see .color-alpha-pct above. */
+  /* var(--font-mono), not a bare generic - see .color-alpha-pct above. */
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: calc(11px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
@@ -655,7 +655,7 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
-/* Chroma slider position left sRGB — the emitted colour is the gamut-mapped
+/* Chroma slider position left sRGB - the emitted colour is the gamut-mapped
    (chroma-reduced) one. No --warning token exists, so the amber is inline. */
 .color-lch-val.is-clamped { color: #d97706; }
 
@@ -688,7 +688,7 @@
   flex-shrink: 0;
   box-shadow: inset 0 0 0 1px #0003;
 }
-/* Geometry is ONE recipe under two names (see parts/fields.css:302) — keep both
+/* Geometry is ONE recipe under two names (see parts/fields.css:302) - keep both
    selectors alive; `.color-lch-slider` is the non-modes picker's, `.color-mode-slider`
    the registry's, and they must stay indistinguishable. */
 .color-lch-slider,
@@ -700,7 +700,7 @@
   /* font-size + margin are declared so a channel row is EXACTLY 2em of the panel's
      own font: a range input carries a UA font-size (13.3px) and a 2px vertical UA
      margin, which made the row 4px taller than its slider and left the reserved
-     filler row a different height from a real one — the layout shift the reservation
+     filler row a different height from a real one - the layout shift the reservation
      exists to prevent. */
   font-size: inherit;
   margin: 0;
@@ -723,27 +723,27 @@
 
    The fill is the BOTTOM background layer, appended to the gradient by JS
    (trackFromRuns) out of --track-rail (declared on :root in styles/tokens.css, since
-   lib/oklch-slice.css's sliders need the same rail) — it cannot be a `background-color`
+   lib/oklch-slice.css's sliders need the same rail) - it cannot be a `background-color`
    (the `background` shorthand JS assigns would wipe it) and it cannot be an
    `inset box-shadow` either: an inset shadow paints OVER the background, so a
    full-width one veils the very gradient it is there to frame, muting every track
    and leaving each slider a paler colour than the dial above it.
 
-   Alpha is excluded — its track is continuous by definition, so it needs no rail.
+   Alpha is excluded - its track is continuous by definition, so it needs no rail.
 
    The stretches themselves are no longer empty: each one paints the colour it WOULD
    be in the next gamut out, washed back by the --track-tier-* scale on :root
-   (styles/tokens.css) — onion rings of decreasing opacity around the reachable band.
+   (styles/tokens.css) - onion rings of decreasing opacity around the reachable band.
    The rail stays underneath them, and the beyond-Rec.2020 stretch is rail alone. */
 .color-lch-slider,
 .color-mode-slider,
 .color-dial {
   border: 0;
   /* --track-rail and the --track-tier-* scale are inherited from :root
-     (styles/tokens.css) — one declaration each, shared with the Colour Lab
-     sliders. Keep this rule borderless — see the note above. */
+     (styles/tokens.css) - one declaration each, shared with the Colour Lab
+     sliders. Keep this rule borderless - see the note above. */
 }
-/* Out of the target gamut at the current value — a MARK, not a refusal, paired with
+/* Out of the target gamut at the current value - a MARK, not a refusal, paired with
    the clamped readout beside it. An amber ring rather than a border style, for the
    same reason as above.
 
@@ -812,7 +812,7 @@
   padding:6px; 
 }
 
-/* The result disc's swatch context menu (inline pickers) — a floating card of the
+/* The result disc's swatch context menu (inline pickers) - a floating card of the
    brand swatch grid, anchored under the disc (color-field.ts sets top/left). The
    inline popover is the positioned ancestor those offsets are measured against. */
 .color-field--inline .color-popover { position: relative; }
@@ -867,7 +867,7 @@
 
 /* ─── Touch ──────────────────────────────────────────────────────────────── */
 
-/* The space tabs are the picker's densest control — 30 pills at 29×23 on a tablet,
+/* The space tabs are the picker's densest control - 30 pills at 29×23 on a tablet,
    with a 3px gap between rows. The sliders in this picker already have their own
    coarse-pointer treatment (parts/fields.css does it for `.field-range`, and the
    painted tracks do it themselves); the tab strip was the one component in here

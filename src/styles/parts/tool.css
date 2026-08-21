@@ -1,6 +1,6 @@
 /* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
    (order declared once in styles/app.css). Wrapping it means its rules keep a
-   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   fixed priority - above chrome/primitives/base, below overrides/a11y - no
    matter when Vite injects this chunk at runtime. Do not rely on load order. */
 @layer views {
 /* ─── Tool view layout ──────────────────────────────────────────────────── */
@@ -13,14 +13,14 @@
 
 /* ─── Sidebar ───────────────────────────────────────────────────────────── */
 
-/* Drag grip for the mobile sheet — hidden on desktop. The full mobile sheet
+/* Drag grip for the mobile sheet - hidden on desktop. The full mobile sheet
    layout lives in a media block near the end of this file: it must come AFTER the
    base .sidebar / .tool-stage rules (which appear later in source order) or those
    would override it at equal specificity. */
 .sheet-grip { display: none; }
 
 /* The "Export | Save" render pill + export popup. Shared visual styling here; each
-   breakpoint positions the pill — a bottom-centre FAB + full-screen sheet on
+   breakpoint positions the pill - a bottom-centre FAB + full-screen sheet on
    mobile, a bottom-left sidebar pill + non-modal sticky panel on desktop. Hidden
    until a breakpoint shows it. The export controls (#tool-actions) move into the
    popup on both. The pill is a two-half control: "Export" (left, an up-arrow) opens
@@ -54,7 +54,7 @@
 .render-pill-btn:active { background: rgba(0, 0, 0, 0.12); }
 .render-pill-btn:focus-visible { outline: 2px solid hsl(var(--primary-foreground)); outline-offset: -4px; border-radius: 999px; }
 /* The arrow/check rides the same multiplier as the "Export"/"Save" word beside
-   it — an icon paired with a growing label has to grow with it, or the pill
+   it - an icon paired with a growing label has to grow with it, or the pill
    reads as a big word next to a stale mark. The pill has no fixed height, so
    the taller glyph reflows the padding box instead of being clipped by it. */
 .render-pill-icon { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); flex-shrink: 0; }
@@ -70,10 +70,10 @@
 /* Unsaved cue: the Save half goes amber the instant the first un-saved edit
    lands, with a one-shot flash to draw the eye. The resting amber persists until
    the user saves (markSessionSaved removes the class). No --warning token exists
-   (see tool-chrome.css's aspect-ratio warning), so this is --brand-warn — the
+   (see tool-chrome.css's aspect-ratio warning), so this is --brand-warn - the
    ACTIVE BRAND's own colour closest in hue to red/yellow, scanned + kept current
    by brand-vars.ts's nearestWarmHex (recomputed on every brand change, so a
-   user's own colour choice takes over automatically) — with the static Amber
+   user's own colour choice takes over automatically) - with the static Amber
    #b28727 (src/palette.ts) as the tokenless fallback. --brand-warn-ink is
    whichever of black/white reads legibly on it; hover/flash lighten via
    color-mix() so they too follow whatever hue --brand-warn resolves to. */
@@ -85,7 +85,7 @@
 .render-pill-save.is-unsaved:hover { background: color-mix(in srgb, var(--brand-warn, #b28727) 85%, white 15%); }
 /* Two bright pulses, then settle on the brand's warm accent. Every edge (0%,
    100%) and the resting state share that colour, so a frozen/backgrounded tab
-   or reduced-motion still shows the cue — the flash is pure enhancement. */
+   or reduced-motion still shows the cue - the flash is pure enhancement. */
 @keyframes renderSaveFlash {
   0%   { background: var(--brand-warn, #b28727); }
   14%  { background: color-mix(in srgb, var(--brand-warn, #b28727) 35%, white 65%); }
@@ -101,7 +101,7 @@
 }
 .export-overlay { display: none; }
 
-/* The export panel's head label + close button. Breakpoint-independent — the
+/* The export panel's head label + close button. Breakpoint-independent - the
    desktop (≥641px, below) and mobile (≤640px, tool-chrome.css) copies of the
    export popup were byte-identical here, so they live outside both media
    queries. Only the surrounding .export-popup-head/-body spacing is genuinely
@@ -116,7 +116,7 @@
 }
 
 /* Desktop (>640px): the Render button lives bottom-left of the sidebar and the
-   export panel expands as a NON-MODAL sticky sheet over the sidebar bottom — no
+   export panel expands as a NON-MODAL sticky sheet over the sidebar bottom - no
    scrim, so the inputs above stay live. Sized to the (resizable) sidebar width. */
 @media (min-width: 641px) {
   /* The Get|Save pill is a centred footer INSIDE the sidebar (JS reparents it there
@@ -135,14 +135,14 @@
     left: 0;
     bottom: 0;
     /* Stop 8px short of the sidebar's right edge so the drag handle (which straddles
-       the edge, ±8px) stays clear and grabbable while the export panel is open — the
+       the edge, ±8px) stays clear and grabbable while the export panel is open - the
        handle is trapped in the sidebar's backdrop-filter stacking context, so it
        can't simply be lifted above this z-index:40 panel. */
     width: calc(var(--sidebar-w, 272px) - 8px);
     z-index: 40;
     pointer-events: none;        /* the box never blocks; only the panel is interactive */
   }
-  .export-overlay-scrim { display: none; }   /* no darkening — non-modal */
+  .export-overlay-scrim { display: none; }   /* no darkening - non-modal */
   .export-popup {
     position: absolute;
     left: 0; right: 0; bottom: 0;
@@ -168,7 +168,7 @@
     border-bottom: 0;
     flex-shrink: 0;
   }
-  /* .export-popup-title/-close: hoisted out of both breakpoints — see tool.css. */
+  /* .export-popup-title/-close: hoisted out of both breakpoints - see tool.css. */
   .export-popup-body { overflow-y: auto; padding: 14px; }
   .export-popup-body .tool-actions { margin: 0; padding: 0; border-top: none; }
   /* Let the last input scroll clear of the open export panel. */
@@ -187,7 +187,7 @@
 .export-popup .panel-grip { display: none; }
 
 @media (min-width: 641px) {
-  /* The whole head is the drag handle (its buttons still click — the JS ignores
+  /* The whole head is the drag handle (its buttons still click - the JS ignores
      pointerdowns that land on a button). */
   .export-popup-head { cursor: grab; touch-action: none; }
   .export-popup.is-dragging .export-popup-head { cursor: grabbing; }
@@ -234,7 +234,7 @@
   border-right: 1px solid hsl(var(--border));
   transition: width 0.2s ease;
   /* overflow-x hidden so the contents (frozen at the open width via --sb-open-w,
-     see .sidebar-body) CLIP rather than reflow as the panel width-collapses — a
+     see .sidebar-body) CLIP rather than reflow as the panel width-collapses - a
      smooth glide with no scrollbar flash. overflow-y auto for tall input lists. */
   overflow-x: hidden;
   overflow-y: auto;
@@ -271,7 +271,7 @@
     flex-shrink: 0;
     gap: 8px;
 
-    /* Sticky — pins to the top of the scrolling sidebar so the Tools /
+    /* Sticky - pins to the top of the scrolling sidebar so the Tools /
        fullscreen controls are always reachable, even after scrolling the inputs. */
     position: sticky;
     top: 0;
@@ -286,7 +286,7 @@
 /* Top row of the sidebar header: the Tools back pill (left) + undo/redo (right).
    The theme toggle now lives in the canvas zoom HUD (.stage-nav-theme), not here,
    so every canvas tool carries it and the header stays uncluttered. (The HUD's own
-   rules — .stage-nav/.stage-nav-btn/-pct/-fit/-sep — live in editor.css, not here;
+   rules - .stage-nav/.stage-nav-btn/-pct/-fit/-sep - live in editor.css, not here;
    its markup/click-wiring/disabled-state come from components/zoom-hud.ts.) */
 .sidebar-back-row {
   display: flex;
@@ -297,23 +297,23 @@
 
 /* ─── Icon-only controls and the type scale ──────────────────────────────────
    .history-btn, .lang-fab-sm and .multi-edit-btn carry an <svg> and NOTHING
-   else — their name is an aria-label, so 100% of what a sighted user reads is
+   else - their name is an aria-label, so 100% of what a sighted user reads is
    the glyph. Under largeText every label-bearing control beside them grew and
    these did not, which is exactly backwards: the icon IS the label here.
 
-   An icon is a glyph, so it rides the SAME --a11y-fs the text does — there is
+   An icon is a glyph, so it rides the SAME --a11y-fs the text does - there is
    deliberately no second icon scale to keep in step, and an icon that grows
    with its label is the expectation. The BOXES keep their px lengths: the
    multiplier sizes glyphs, not geometry, and every glyph still clears its box
    at the large-text factor (19.2px in a 30px button, 18px in a 26px one).
 
    In CSS only. lib/icons.ts keeps emitting its inline width/height attributes
-   — a CSS rule outranks a presentational attribute, which is why sizing here
-   works — and templating the factor into that markup would put it somewhere
+   - a CSS rule outranks a presentational attribute, which is why sizing here
+   works - and templating the factor into that markup would put it somewhere
    other code measures and clones. */
 .history-btn svg { flex: none; width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
 
-/* Undo / redo buttons in the sidebar header — compact icon buttons centred
+/* Undo / redo buttons in the sidebar header - compact icon buttons centred
    between Tools (left) and the theme toggle (right). The tappable counterpart to
    Cmd+Z/Cmd+Y and the primary history trigger on touch. Dimmed + non-interactive
    at the ends of history (disabled reflects empty undo/redo stacks). */
@@ -336,7 +336,7 @@
 .history-btn:hover:not(:disabled) { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
 .history-btn:disabled { opacity: 0.3; cursor: default; }
 
-/* Lang-fab riding along in the same compact row — same trigger/popover as the
+/* Lang-fab riding along in the same compact row - same trigger/popover as the
    regular .lang-fab, sized to match .history-btn instead of the 2.9em box. */
 .lang-fab-sm {
   width: 30px;
@@ -348,7 +348,7 @@
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
-/* Icon-only, like .history-btn above — the glyph carries the whole control. */
+/* Icon-only, like .history-btn above - the glyph carries the whole control. */
 .lang-fab-sm svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
 .lang-fab-sm:hover,
 .lang-fab-sm[aria-expanded="true"] { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
@@ -360,7 +360,7 @@
 /* Touch: larger tap targets for the header undo/redo (44px guideline). */
 @media (pointer: coarse) {
   .history-btn { width: 40px; height: 40px; }
-  /* Touch restates the glyph length, so it restates the multiplier with it —
+  /* Touch restates the glyph length, so it restates the multiplier with it -
      left as a bare 18px this rule would win on source order and pin the icon
      out of the type scale on exactly the devices the preference matters on. */
   .history-btn svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
@@ -402,11 +402,11 @@
   pointer-events: none;
 }
 
-/* Multi-edit trigger — icon-only, labelled by the [data-tip] tooltip primitive.
+/* Multi-edit trigger - icon-only, labelled by the [data-tip] tooltip primitive.
    Opens the how-many-copies menu (see tool-actions.ts).
    `.tool-guide-btn` (components/tool-guide.ts) is its neighbour in the sidebar
-   header and the same control shape — an icon-only button whose tooltip is its
-   label — so it aliases onto every rule here rather than restating the box. */
+   header and the same control shape - an icon-only button whose tooltip is its
+   label - so it aliases onto every rule here rather than restating the box. */
 .multi-edit-btn,
 .tool-guide-btn {
   flex-shrink: 0;
@@ -428,11 +428,11 @@
 .multi-edit-btn:focus-visible,
 .tool-guide-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 .multi-edit-btn[disabled] { opacity: 0.5; cursor: default; }
-/* Icon-only, like .history-btn above — the glyph carries the whole control. */
+/* Icon-only, like .history-btn above - the glyph carries the whole control. */
 .multi-edit-btn svg,
 .tool-guide-btn svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
 
-/* The how-many-copies dropdown (body-mounted via mountBodyPopover — position:fixed,
+/* The how-many-copies dropdown (body-mounted via mountBodyPopover - position:fixed,
    so it escapes the sidebar's overflow clipping). Surface mirrors .profile-menu. */
 .multi-edit-menu {
   position: fixed;
@@ -489,7 +489,7 @@
   content: "\02192";
 }
 
-/* Sidebar-collapse state — a sidebar-panel icon (kept class name). A currentColor
+/* Sidebar-collapse state - a sidebar-panel icon (kept class name). A currentColor
    mask so it still inherits the toggle's colour + hover, unlike a coloured glyph. */
 .fullscreen-toggle[open]::before {
   content: "";
@@ -497,7 +497,7 @@
      already grows, off the button's calc(16px * var(--a11y-fs))), the collapsed
      state this masked panel mark (which did not). The mark takes the same
      factor so the control doesn't change size when it changes state. The 28px
-     button keeps its length — 20.4px inside 28px still clears. */
+     button keeps its length - 20.4px inside 28px still clears. */
   width: calc(17px * var(--a11y-fs));
   height: calc(17px * var(--a11y-fs));
   background-color: currentColor;
@@ -511,7 +511,7 @@
   color: hsl(var(--accent-foreground));
 }
 
-/* Mobile sheet grip — a centred drag bar. Positioned (fixed, on the divider) in
+/* Mobile sheet grip - a centred drag bar. Positioned (fixed, on the divider) in
    the mobile media block; this is just its appearance + interaction. */
 .sheet-grip {
   align-items: center;
@@ -525,7 +525,7 @@
 .sheet-grip::before {
   content: "";
   width: 44px;
-  height: 8px;            /* was 5px — ~0.2em taller, easier to spot & grab */
+  height: 8px;            /* was 5px - ~0.2em taller, easier to spot & grab */
   border-radius: 999px;
   background: hsl(var(--primary));
   border: 1px solid #fff5;
@@ -552,24 +552,24 @@
 .sidebar-body {
   flex: 1;
   /* Hold the open width so the controls don't reflow (squish/wrap) frame-by-frame
-     while the panel collapses — they stay put and get clipped, so the collapse
+     while the panel collapses - they stay put and get clipped, so the collapse
      glides. --sb-open-w is set by the shell as the sidebar opens/resizes.
 
      NOT on the largeText multiplier, deliberately, and neither is the 272px on
      --sidebar-w above. The panel's width is not CSS's to decide: setSidebarWidth
-     (views/tool.ts) writes `sidebar.style.width` as an INLINE px value — which
-     outranks every sheet and every layer — from SIDEBAR_DEFAULT (a TS constant)
+     (views/tool.ts) writes `sidebar.style.width` as an INLINE px value - which
+     outranks every sheet and every layer - from SIDEBAR_DEFAULT (a TS constant)
      or from localStorage['sidebarWidth'], and then PUBLISHES that same number
      into --sb-open-w / --sidebar-w. The two literals here are only the pre-JS
      fallback. So scaling them could not widen anything; it could only make this
      min-width exceed the real inline width, and .sidebar is overflow-x:hidden,
-     which would clip the right edge off every control — permanently, for the
+     which would clip the right edge off every control - permanently, for the
      one user who asked for larger text. A dragged width makes it worse again:
      that px number is persisted verbatim and no stylesheet can revise it, so
      the same preference would produce two different layouts depending on
      whether the user had ever touched the drag handle.
      A scaled default therefore belongs at SIDEBAR_DEFAULT, together with a
-     decision about what to do with an already-stored width — not here. What IS
+     decision about what to do with an already-stored width - not here. What IS
      fixed here is the contents: everything in the panel truncates or wraps at
      272px (the grid track is minmax(0,1fr), every trigger/label ellipsises),
      so 20% larger type reflows inside the box rather than being cut off. */
@@ -578,8 +578,8 @@
   overflow-x: hidden;
   /* Don't let scroll anchoring reposition the list when a control's box changes
      under the pointer (e.g. a section un-clipping, a popover opening). Anchoring
-     buys nothing here — the sidebar has no async content loading in above the
-     fold — and its "keep content stable" adjustment is what turned a hover into a
+     buys nothing here - the sidebar has no async content loading in above the
+     fold - and its "keep content stable" adjustment is what turned a hover into a
      scroll nudge. Belt-and-suspenders with the clip-path fix on .input-section. */
   overflow-anchor: none;
   padding: 14px;
@@ -667,26 +667,26 @@
 }
 
 .home-full {
-  /* inline-flex (not block) so it inherits the base .tools-home pill layout —
-     rounded, filled, with the arrow / label gap — matching the sidebar back
+  /* inline-flex (not block) so it inherits the base .tools-home pill layout -
+     rounded, filled, with the arrow / label gap - matching the sidebar back
      pill. Height and padding stay on the base rule (components.css) so this
      variant can't drift off the shared top-row geometry. */
   display: inline-flex;
   position: absolute;
 }
 
-/* Shared back pill — fixed top-left corner. Used identically on the
+/* Shared back pill - fixed top-left corner. Used identically on the
    profile page, /pro batch mode, and full-screen utility tools (color-palette,
    countdown-timer). Combined selector beats the single-class .tools-home/.home-full
    rules so the fixed positioning always wins regardless of source order.
    The glass look itself (background/backdrop-filter/text-shadow) now lives on
    the base .tools-home rule (components.css, via the .btn--glass alias in
-   buttons.css) — every back pill gets it, not just this fixed variant — so this
+   buttons.css) - every back pill gets it, not just this fixed variant - so this
    combined selector is left with ONLY its positioning job. */
 .tools-home.home-full {
   position: fixed;
-  /* Mirror image of the top-right cluster's offsets (tokens.css) — same top,
-     same edge inset, same pinch-zoom re-pin — so the back pill and the
+  /* Mirror image of the top-right cluster's offsets (tokens.css) - same top,
+     same edge inset, same pinch-zoom re-pin - so the back pill and the
      profile/language cluster sit on one line. It used to be pinned at its own
      1.25rem/1.25rem, which put it a few px low and a few px in from where the
      cluster started. */
@@ -704,7 +704,7 @@
 }
 
 /* ─── Sidebar focus, navigation & on-demand help ──────────────────────────────
-   Make a long sidebar guide the eye. Web-shell presentation only — none of this
+   Make a long sidebar guide the eye. Web-shell presentation only - none of this
    touches the engine, the render path, or the CLI/headless export.
      · clicking the canvas glides the matching row into view (scrollToControl, tool.js)
      · focus spotlights the active control and dims the rest (pure :focus-within)
@@ -725,7 +725,7 @@
 }
 .input-row.is-target, .block-item.is-target { animation: spotlight-pulse 0.7s ease; }
 
-/* Focus spotlight — when the panel holds focus, anything not containing it recedes
+/* Focus spotlight - when the panel holds focus, anything not containing it recedes
    so the active control reads as the single target. Pure :focus-within: no JS
    state, survives the per-keystroke innerHTML rebuild (focus is restored after it),
    and releases the instant focus leaves the panel. Opacity only, so dimmed controls
@@ -739,7 +739,7 @@
 .blocks-list:focus-within .block-item:not(:focus-within) { opacity: 0.7; }
 .block-fields:focus-within .block-control:not(:focus-within) { opacity: 0.85; }
 
-/* Colour rows keep their swatch at full opacity — a faded colour indicator reads as
+/* Colour rows keep their swatch at full opacity - a faded colour indicator reads as
    a faded/transparent colour, which misleads. Opacity on the row would cascade to
    the swatch (a child can't exceed its parent's opacity), so instead leave the
    colour row solid and recede only its text. Higher specificity than the dim rules
@@ -754,7 +754,7 @@
 /* A container hosting an OPEN swatch popover never dims: opacity < 1 would make it an
    atomic stacking context, so the fixed popover would render faded AND paint under
    later siblings (same paint phase, later tree order). An open popover means the user
-   is choosing a colour — it must stay solid and on top no matter where focus sits.
+   is choosing a colour - it must stay solid and on top no matter where focus sits.
    Later + more specific than every dim rule above, so it wins. */
 .tool-inputs:focus-within .input-section:has(.color-popover:not([hidden])),
 .tool-inputs:focus-within > .input-row:has(.color-popover:not([hidden])),
@@ -786,7 +786,7 @@
 }
 .help-tip-btn:hover, .help-tip-btn:focus-visible { opacity: 1; color: var(--primary); }
 .help-tip-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; border-radius: 50%; }
-/* Unified "Add data" affordance (plan 87) — a text/longtext input's dataSource button,
+/* Unified "Add data" affordance (plan 87) - a text/longtext input's dataSource button,
    styled like the help-tip button so it reads as label chrome, not a primary control. */
 .input-data-src {
   display: inline-flex; align-items: center; justify-content: center;
@@ -800,7 +800,7 @@
 .input-data-src:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 /* The focus ring sits a few px outside the 16px button. The floating-label rule
    clips .input-label (overflow:hidden, for long-label ellipsis), which crops that
-   ring top/bottom — so un-clip the label when it hosts a help button (selectors
+   ring top/bottom - so un-clip the label when it hosts a help button (selectors
    mirror the floating-label rule's so this wins specificity) and move the
    truncation onto the text span, which keeps long labels ellipsised. */
 .input-row:not(.input-row--static-label):has(input:not([type="checkbox"]):not([type="color"]):not([type="range"])):has(.help-tip-btn) .input-label,
@@ -811,14 +811,14 @@
   display: inline-block; max-width: 100%; vertical-align: middle;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-/* The "i" is the entire button — the 16px box is just its tap target, so the
+/* The "i" is the entire button - the 16px box is just its tap target, so the
    MARK takes the multiplier and the box does not (15.6px still clears 16px at
    the large-text factor, and growing the box would nudge the label's baseline
    on every row that has help text). 13px matches the inline attributes the
    icon ships with (components/help-tip.ts); a CSS rule outranks them. */
 .help-tip-btn svg { display: block; width: calc(13px * var(--a11y-fs)); height: calc(13px * var(--a11y-fs)); }
 .block-control { position: relative; }
-/* Generic tip host (outside the sidebar — e.g. the export dialog's C2PA card):
+/* Generic tip host (outside the sidebar - e.g. the export dialog's C2PA card):
    anchor the drop-down pop to it, same as a .block-control. */
 .help-tip-host { position: relative; }
 .help-tip-pop {
@@ -830,28 +830,28 @@
   font-size: calc(11px * var(--a11y-fs)); font-weight: 400; line-height: 1.4;
   letter-spacing: 0; text-transform: none; white-space: normal;
 }
-/* Block sub-field cells are narrow — let their tip take its own width, capped so a long
+/* Block sub-field cells are narrow - let their tip take its own width, capped so a long
    help string WRAPS to several lines instead of one runaway line (white-space:normal above). */
 .block-control > .help-tip-pop { right: auto; width: max-content; min-width: 150px; max-width: 240px; }
 .help-tip-pop[hidden] { display: none; }
 /* Optional action link at the foot of a tip (e.g. "Check a file →" to /verify). */
 .help-tip-link { display: block; margin-top: 5px; color: hsl(var(--primary)); font-weight: 600; text-decoration: none; }
 .help-tip-link:hover, .help-tip-link:focus-visible { text-decoration: underline; }
-/* Sections clip their contents (clip-path, for rounded corners — see .input-section).
+/* Sections clip their contents (clip-path, for rounded corners - see .input-section).
    Un-clip only while a popover that must escape the edge is active: a help tip, or an
    open colour picker (its absolute swatch panel would otherwise be clipped by the
-   section, hiding the swatches for a colour input placed in a section — e.g. multi-
+   section, hiding the swatches for a colour input placed in a section - e.g. multi-
    page-pdf's Cover background). The focus-visible-summary case un-clips too so the
    section's keyboard focus halo (box-shadow, below) isn't cropped by the clip. Toggling
    clip-path is paint-only and never moves the sidebar scroll (unlike overflow, which it
-   replaced — that flipped the section's scroll-container status on hover and made the
+   replaced - that flipped the section's scroll-container status on hover and made the
    sidebar thrash). Mirrors the block-colour field's "escape the clip" intent, but keeps
    the panel attached to the trigger so it still scrolls with the field. */
 .input-section:has(.help-tip-btn:hover),
 .input-section:has(.help-tip-btn:focus-visible),
 .input-section:has(.help-tip-pop:not([hidden])),
 .input-section:has(.input-section-summary:focus-visible) { overflow: visible; }
-/* Colour popover no longer needs an un-clip — it portals to position:fixed (color-field.ts),
+/* Colour popover no longer needs an un-clip - it portals to position:fixed (color-field.ts),
    escaping the section entirely so it's always on top and never clipped. */
 /* Desktop reveal on hover / keyboard focus of the trigger. Touch toggles via JS. */
 @media (hover: hover) {
@@ -863,7 +863,7 @@
   .help-tip-host:has(.help-tip-btn:focus-visible) > .help-tip-pop { display: block; }
 }
 
-/* Base label — used for selects, checkboxes, asset-pickers, etc. */
+/* Base label - used for selects, checkboxes, asset-pickers, etc. */
 .input-label {
   font-size: calc(11px * var(--a11y-fs));
   font-weight: 600;
@@ -881,7 +881,7 @@
   margin-left: 0.4em;
 }
 
-/* Always-visible fine print between a row's label and its control — the
+/* Always-visible fine print between a row's label and its control - the
    consent-gate disclosure slot (input.notice; e.g. "entering a place here looks
    it up at open-meteo.com"). Sentence case, unlike the uppercase label. Rows
    with a notice render static-labelled (tool-inputs.ts), so this never meets
@@ -908,8 +908,8 @@
   left: 10px;
   /* The vertical offset FOLLOWS THE TYPE instead of being a frozen number.
      The field below is `1px border + 16px padding + one line box` and its line
-     box is `line-height 1.5 × calc(13px * var(--a11y-fs))` — the very same
-     font-size this label carries — so as the type grows the box grows with it
+     box is `line-height 1.5 × calc(13px * var(--a11y-fs))` - the very same
+     font-size this label carries - so as the type grows the box grows with it
      and a hardcoded `top` slides out of position (it drifted from 3.75px above
      the field's centre to 5.7px at the large-text factor, and kept going).
 
@@ -920,7 +920,7 @@
         --a11y-fs 1    →  23px + (9.75px − 9.75px) = 23px      (field centre 26.75px)
         --a11y-fs 1.2  →  23px + (11.7px − 9.75px) = 24.95px   (field centre 28.7px)
      The 3.75px the resting label already sits ABOVE the field's centre is
-     therefore preserved, not silently corrected — that offset predates this
+     therefore preserved, not silently corrected - that offset predates this
      work, it is what every text field in the product looks like today, and
      changing it is a design decision, not an accessibility fix. A <textarea>
      takes the same rule and wants exactly this behaviour: its label is pinned
@@ -953,7 +953,7 @@
   max-width: calc(100% - 20px);
 }
 
-/* Floating state — focused or has content */
+/* Floating state - focused or has content */
 .input-row:not(.input-row--static-label):has(input:not([type="checkbox"]):not([type="color"]):not([type="range"]):focus) .input-label,
 .input-row:not(.input-row--static-label):has(input:not([type="checkbox"]):not([type="color"]):not([type="range"]):not(:placeholder-shown)) .input-label,
 .input-row:not(.input-row--static-label):has(textarea:focus) .input-label,
@@ -961,7 +961,7 @@
   /* BOTTOM-anchored, because what has to be protected here is the gap between
      the micro-label and the value glyphs underneath it. The label's box hangs
      DOWNWARD from `top` (1.5em tall, off its own 10px type), while the field's
-     value starts at a fixed 17px — 1px border + 16px padding — that does not
+     value starts at a fixed 17px - 1px border + 16px padding - that does not
      move. So a fixed `top` means every increase in the label's type is spent
      eating into the value: the two ran ~0.75px clear at rest and overlapped by
      ~1.1px at the large-text factor. Subtracting the line box's GROWTH holds
@@ -987,7 +987,7 @@
   color: hsl(var(--ring));
 }
 
-/* Hide placeholder in resting state — label acts as the visual placeholder.
+/* Hide placeholder in resting state - label acts as the visual placeholder.
    Only reveal hint text once the label has floated up (on focus). */
 .input-row:not(.input-row--static-label) input:not([type="checkbox"]):not([type="color"]):not([type="range"])::placeholder,
 .input-row:not(.input-row--static-label) textarea::placeholder {
@@ -1002,8 +1002,8 @@
 
 /* Shared control appearance.
    `.vec-num` opts OUT: the vector scrubbers are a segmented pill (collapsed inner
-   borders, square inner corners, compact height) and this rule — 4 classes/attrs
-   to their 1 — would otherwise win the cascade and hand them the full-size
+   borders, square inner corners, compact height) and this rule - 4 classes/attrs
+   to their 1 - would otherwise win the cascade and hand them the full-size
    floating-label box. See the .vec-num block below for their real styling. */
 .input-row input:not([type="checkbox"]):not([type="color"]):not([type="range"]):not(.vec-num):not(.table-cell),
 .input-row textarea:not(.table-cell) {
@@ -1021,7 +1021,7 @@
 }
 
 /* The rule above forces appearance:auto on number fields (the vector scrubbers),
-   which re-shows Firefox's spin buttons — Chrome hides them via ::-webkit-*-spin-
+   which re-shows Firefox's spin buttons - Chrome hides them via ::-webkit-*-spin-
    button, which Firefox lacks. Restore appearance:textfield with matching
    specificity so it wins the cascade and the spinners stay hidden everywhere. */
 .input-row input[type="number"]:not([type="checkbox"]):not([type="color"]):not([type="range"]) {
@@ -1033,13 +1033,13 @@
   width: 100%;
   padding: 9px 32px 9px 10px;   /* right room for the custom chevron */
   background-color: hsl(var(--background));
-  background-image: var(--field-chevron);   /* the ONE chevron — parts/fields.css */
+  background-image: var(--field-chevron);   /* the ONE chevron - parts/fields.css */
   background-repeat: no-repeat;
   background-position: right 10px center;
   /* The caret is part of the control's glyph set, not its frame: a fixed 14px
      chevron beside 15.6px text reads as a shrunken select. It is a CSS-painted
      mark, so the multiplier rides background-size. The 32px right padding still
-     clears it — 10px inset + 16.8px at the large-text factor. */
+     clears it - 10px inset + 16.8px at the large-text factor. */
   background-size: calc(14px * var(--a11y-fs));
   color: hsl(var(--foreground));
   border: 0;
@@ -1063,12 +1063,12 @@
 }
 .vec-num:hover { border-color: hsl(var(--ring) / 0.4); }
 
-/* :focus ring — the one shared recipe at the foot of this sheet. */
+/* :focus ring - the one shared recipe at the foot of this sheet. */
 
 
 /* `:not(.table-cell)` for the same reason the box recipe above carries it: a table
    cell is a GRID cell, not a field. It opts out of all three of these. The drag
-   handle is the visible half — a cell dragged taller keeps that explicit height
+   handle is the visible half - a cell dragged taller keeps that explicit height
    while its row-mates stay content-sized, so one resize leaves the row ragged, and
    there is nothing to resize FOR when the only thing a cell holds is text that
    already auto-grows. The min/max-height are the invisible half: an 80px floor on
@@ -1076,7 +1076,7 @@
 .input-row textarea:not(.table-cell) {
   resize: vertical;
   min-height: 80px;
-  /* Grow to fit content as the user types — native, no JS, no jitter — so a
+  /* Grow to fit content as the user types - native, no JS, no jitter - so a
      multi-paragraph cover / body / about field isn't trapped in a cramped 3-row
      scrolly box that has to be dragged bigger by its tiny corner handle. Capped so
      one long field can't swallow the panel; content past the cap scrolls. A manual
@@ -1113,7 +1113,7 @@
   background: hsl(var(--primary) / 0.07);
 }
 /* Jelly-mode boolean rows (lib/jelly.ts): the switch replaces the checkbox and
-   must not grow the compact row — cap its geometry via the host-level tokens. */
+   must not grow the compact row - cap its geometry via the host-level tokens. */
 .input-row--checkbox jelly-switch {
   flex: none;
   --jelly-switch-width: 38px;
@@ -1132,7 +1132,7 @@
 .input-row input[type="checkbox"] {
   flex-shrink: 0;
   /* The tick is a glyph like any other, and it is the whole state readout of a
-     boolean row — a 15px box beside 15.6px type reads as a control that shrank.
+     boolean row - a 15px box beside 15.6px type reads as a control that shrank.
      The row has no fixed height, so it reflows around the taller box. */
   width: calc(15px * var(--a11y-fs));
   height: calc(15px * var(--a11y-fs));
@@ -1165,7 +1165,7 @@
   height: calc(13px * var(--a11y-fs));
 }
 /* Active chip reads as filled (the base .input-row--checkbox:has(:checked) only
-   tints faintly — a pill wants a clearer on-state). */
+   tints faintly - a pill wants a clearer on-state). */
 .input-row--pill:has(input:checked) {
   background: hsl(var(--primary) / 0.14);
   border-color: hsl(var(--primary));
@@ -1228,7 +1228,7 @@
   color: hsl(var(--primary));
 }
 
-/* Segmented select (display:'segmented') — the same radiogroup laid out as a row of
+/* Segmented select (display:'segmented') - the same radiogroup laid out as a row of
    equal-width tabs for a small mode switch (e.g. Hue / Saturation / Luminance). */
 .badge-select--segmented {
   flex-direction: row;
@@ -1250,8 +1250,8 @@
 }
 
 /* (A `.input-row input[type="color"]:not(.color-popover-native)` box lived here.
-   The shell mints exactly ONE native colour input — `.color-popover-native`, the
-   escape hatch inside our own OKLCH picker (components/color-field.ts) — and the
+   The shell mints exactly ONE native colour input - `.color-popover-native`, the
+   escape hatch inside our own OKLCH picker (components/color-field.ts) - and the
    policy that there is never another is stated outright in views/deck-editor.ts.
    So the rule could only ever match nothing. Deleted 2026-07-25; the `:not([type=
    "color"])` guards on the shared text-box rules above are vestigial for the same
@@ -1284,20 +1284,20 @@
   color-scheme: light dark;
 }
 .time-input-wrap input[type="time"]:hover { border-color: hsl(var(--ring) / 0.4); }
-/* :focus ring — the one shared recipe at the foot of this sheet. */
+/* :focus ring - the one shared recipe at the foot of this sheet. */
 
 /* ─── Datetime-local input ──────────────────────────────────────────────── */
 
 /* The datetime control renders a flatpickr-enhanced `.fp-datetime` text input
-   (see controlHtml in tool.js) — it picks up the shared input-box styling above.
+   (see controlHtml in tool.js) - it picks up the shared input-box styling above.
    Its row carries .input-row--static-label so the label stays static rather than
    floating: the panel re-renders on every keystroke and flatpickr re-populates
    the value, which would otherwise make a floating label wobble each time. */
 
 /* ─── Flatpickr datetime picker ─────────────────────────────────────────── */
 /* These override flatpickr's base sheet (flatpickr.min.css, imported lazily in
-   tool.ts AFTER this file). They live here — not on the render-blocking landing
-   sheet — because flatpickr only ever mounts inside the lazy tool view. */
+   tool.ts AFTER this file). They live here - not on the render-blocking landing
+   sheet - because flatpickr only ever mounts inside the lazy tool view. */
 
 input.fp-datetime {
   width: 100%;
@@ -1416,8 +1416,8 @@ span.flatpickr-weekday {
 
 /* ─── Collapsible input section ─────────────────────────────────────────── */
 /* Same disclosure family as the shared `.section-card` fold primitive
-   (disclosure.css, component audit rec 7) — a <details>/<summary> that folds
-   a body — but every rule below is a real, deliberate local delta: the
+   (disclosure.css, component audit rec 7) - a <details>/<summary> that folds
+   a body - but every rule below is a real, deliberate local delta: the
    summary's height matches a sidebar <select> (so a collapsed section lines
    up with the dropdowns beside it), its own CSS-triangle chevron (not the
    shared SVG one), and `overflow: clip` + the `:has()` focus-ring promotion
@@ -1430,12 +1430,12 @@ span.flatpickr-weekday {
 .input-section {
   border: 0; box-shadow: 0 .06rem .3rem #0001;
   border-radius: var(--radius);
-  /* Clip content to the rounded corners with `overflow: clip` — NOT clip-path and
+  /* Clip content to the rounded corners with `overflow: clip` - NOT clip-path and
      NOT overflow:hidden. `overflow: clip` clips only DESCENDANTS (never the element's
-     own border/box-shadow), so the border stays solid + continuous in every state —
+     own border/box-shadow), so the border stays solid + continuous in every state -
      unlike clip-path, which clipped the 1px border itself and let a hovered summary's
      opaque fill break it at the rounded corners. It also creates no stacking context
-     (clip-path did — that trapped the colour popover below sibling sections) and is
+     (clip-path did - that trapped the colour popover below sibling sections) and is
      NOT a scroll container (unlike overflow:hidden), so the popover un-clip toggle
      below can flip it to `visible` without any scroll thrash. */
   overflow: clip;
@@ -1451,7 +1451,7 @@ span.flatpickr-weekday {
   justify-content: space-between;
   padding: 10px 12px;
   /* Match a sidebar <select>'s height (39.5px) so a collapsed section lines up
-     with the dropdowns in the input list — minus the section's 2px border. */
+     with the dropdowns in the input list - minus the section's 2px border. */
   min-height: 32px;
   font-size: calc(11px * var(--a11y-fs));
   font-weight: 600;
@@ -1470,7 +1470,7 @@ background-color:hsl(var(--background) / 1);
 
 /* Keyboard focus ring. The section's overflow:hidden would clip an outline or
    box-shadow on the focused <summary>, so promote the ring to the section
-   wrapper — its own box-shadow paints outside its border box, unclipped — using
+   wrapper - its own box-shadow paints outside its border box, unclipped - using
    the same border + halo idiom as a focused <select> / text field. */
 .input-section-summary:focus-visible { outline: none; }
 .input-section:has(.input-section-summary:focus-visible) {
@@ -1508,7 +1508,7 @@ background-color:hsl(var(--background) / 1);
   border-top: 1px solid hsl(var(--border));
 }
 
-/* Dense sections (opt-in via manifest render.denseSections) — a pro tool with
+/* Dense sections (opt-in via manifest render.denseSections) - a pro tool with
    many short controls (sliders, selects, numbers) fits roughly twice as many per
    screen in a 2-column grid, so the panel scrolls far less. Chrome-only: it
    never touches the render, export, model, or URL. Wide controls span both
@@ -1569,7 +1569,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   transition: border-color 0.12s;
 }
 .block-field:hover { border-color: hsl(var(--ring) / 0.4); }
-/* :focus ring — the one shared recipe at the foot of this sheet. */
+/* :focus ring - the one shared recipe at the foot of this sheet. */
 
 .block-remove {
   width: 28px; height: 28px; flex-shrink: 0;   /* larger tap target (was 24) */
@@ -1598,7 +1598,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 
 /* ── Table input ─────────────────────────────────────────────────────────────
    A user-defined grid (columns AND rows are data). Kept deliberately minimal:
-   the real batch editor is the user's spreadsheet — this is the paste target
+   the real batch editor is the user's spreadsheet - this is the paste target
    and touch-up surface. The grid scrolls horizontally inside its own box so a
    wide table never widens the sidebar. */
 .table-input { display: flex; flex-direction: column; gap: 6px; }
@@ -1612,7 +1612,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .table-grid th { position: relative; }
 .table-grid td + td, .table-grid th + th { border-left: 1px solid hsl(var(--border) / 0.6); }
 .table-grid tbody tr { border-top: 1px solid hsl(var(--border) / 0.6); }
-/* Cells are FLAT — no per-cell border, radius, or shadow (the shared
+/* Cells are FLAT - no per-cell border, radius, or shadow (the shared
    `.input-row input` recipe opts out via :not(.table-cell)); the only rounding
    is the outer .table-scroll box. Body cells are textareas that auto-grow to
    their paragraph (field-sizing: content where supported). */
@@ -1648,7 +1648,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 /* Pop-out, pinned to the grid's top-right. Its own bar rather than an overlay on
    the corner cell, which already carries that column's remove-×. The negative
    margin pulls the icon down onto the grid's top edge so the bar costs almost no
-   vertical space in a sidebar — it reads as sitting ON the table, not above it. */
+   vertical space in a sidebar - it reads as sitting ON the table, not above it. */
 .table-headbar {
   display: flex; justify-content: flex-end;
   min-height: 0; margin-bottom: -8px;
@@ -1703,7 +1703,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   font: inherit; font-size: calc(13px * var(--a11y-fs)); text-align: center; cursor: pointer;
   transition: border-color 0.12s, color 0.12s;
 }
-/* Quick-start group — "Paste Markdown" + "Import CSV/JSON" paired at the TOP of a
+/* Quick-start group - "Paste Markdown" + "Import CSV/JSON" paired at the TOP of a
    blocks list: the fastest ways to fill the whole deck, so they lead as the first,
    most prominent offer before hand-adding blocks. Both share the prominent .blocks-quick
    look; the group is pushed left so the quiet "Collapse all" pill stays right. */
@@ -1728,7 +1728,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   border-color: hsl(var(--primary));
 }
 
-/* "Collapse all / Expand all" — a small pill above a multi-block list so a long
+/* "Collapse all / Expand all" - a small pill above a multi-block list so a long
    stack of opened blocks folds back in one tap. Right-aligned, deliberately quiet
    (it's a tidy-up affordance, not a primary action like the brand-fill Add pill). */
 .blocks-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-bottom: 6px; }
@@ -1743,7 +1743,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   cursor: pointer;
   transition: border-color 0.12s, color 0.12s, background 0.12s;
 }
-/* Paste / Upload flash states — the base look is .blocks-quick; these tint the clicked
+/* Paste / Upload flash states - the base look is .blocks-quick; these tint the clicked
    button green (ok) / amber (nothing usable) briefly after a click. */
 .blocks-io.is-ok { background: hsl(140 60% 45% / 0.9); color: #fff; border-color: transparent; }
 .blocks-io.is-empty { background: hsl(38 92% 50% / 0.9); color: #fff; border-color: transparent; }
@@ -1754,7 +1754,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
    used by name/value blocks (meeting-planner, chart-creator). */
 .blocks-input--cards .blocks-list { margin: 0; gap: 8px; }
 /* Untyped (compact name/value) blocks reuse the card chrome but have no variant
-   label — the header is a bare drag/collapse handle whose empty `.block-type-label`
+   label - the header is a bare drag/collapse handle whose empty `.block-type-label`
    acts as a flex spacer, and the collapsed pill (preview + swatch) is the identity. */
 .block-item.is-typed {
   display: block;
@@ -1788,7 +1788,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .block-item.is-dragging { opacity: 0.4; }
 .block-item.drag-over { outline: 2px dashed hsl(var(--ring)); outline-offset: 2px; }
 
-/* Tree (nested) blocks — diagram-builder org / mind map. The flat reference-by-id
+/* Tree (nested) blocks - diagram-builder org / mind map. The flat reference-by-id
    array is rendered as an indented outline (one step per depth level); drop
    feedback splits into before / after (reorder as a sibling) and inside (re-nest
    as a child). Data stays flat: only this presentation is tree-shaped. */
@@ -1811,7 +1811,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   outline: 2px solid hsl(var(--ring)); outline-offset: 1px;
   background: hsl(var(--ring) / 0.10);
 }
-/* Two-step delete confirm — the armed state reads unmistakably destructive. */
+/* Two-step delete confirm - the armed state reads unmistakably destructive. */
 .block-remove.is-confirming {
   width: auto; height: 22px; padding: 0 9px;
   background: hsl(var(--destructive, 0 72% 51%)); color: #fff;
@@ -1822,14 +1822,14 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 
 /* Compact untyped blocks (bare fields, no per-field labels, ≤3 fields) lay their
    fields side by side in a single row instead of the 2-col grid, which would wrap a
-   3rd field to its own line — e.g. chart-creator's Label / Value / Colour. Scoped by
+   3rd field to its own line - e.g. chart-creator's Label / Value / Colour. Scoped by
    :not(:has(> .block-control)) (excludes labelled blocks like logo-wall) and
    :not(:has(> :nth-child(4))) (excludes many-field blocks like arrows/wayfinding),
    so only genuinely compact rows are affected. */
-/* Gated on :not(.is-collapsed) — this compact-row layout is for the EXPANDED
+/* Gated on :not(.is-collapsed) - this compact-row layout is for the EXPANDED
    state. Without the guard its specificity (0,4,0) out-ranks the collapse rule
    `.block-item.is-collapsed .block-fields { display:none }` (0,3,0), so a folded
-   row block kept its fields visible and stayed two rows tall — the pill's 999px
+   row block kept its fields visible and stayed two rows tall - the pill's 999px
    radius then wrapped that tall block into a runaway stadium. */
 .block-item--row:not(.is-collapsed) .block-fields:not(:has(> .block-control)):not(:has(> :nth-child(4))) {
   display: flex;
@@ -1843,10 +1843,10 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   flex: 0 0 auto;
 }
 /* Text + number inputs sitting side by side in a compact row join into ONE seamless
-   segment — like the position/vector fields: the first rounds its LEFT, the last
+   segment - like the position/vector fields: the first rounds its LEFT, the last
    text/number rounds its RIGHT, and the shared border collapses so there's a single
    divider between them. This is keyed off the RUN of inputs (`:has(+ …)` and the
-   adjacent-sibling combinator) — never `:last-child`, because a compact row often ends
+   adjacent-sibling combinator) - never `:last-child`, because a compact row often ends
    in a colour swatch or a button, and those keep their own shape. `SEAM` below is
    "a text or number block field": input.block-field that isn't a range or a checkbox
    (selects, colour fields, textareas and buttons aren't <input>, so they're excluded). */
@@ -1870,7 +1870,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 /* Icon-labelled field: the icon sits inline to the LEFT of the control (used by dense
    slider grids like flythrough poses), the control flexes to fill the rest of the cell.
    The icon doubles as the help-tip trigger, so these rules also OVERRIDE the .help-tip-btn
-   button chrome (16px round / 0.55 opacity / 13px svg) back to the block icon's look —
+   button chrome (16px round / 0.55 opacity / 13px svg) back to the block icon's look -
    higher specificity than the .help-tip-btn base, matched source order below it. */
 .block-control--ico { flex-direction: row; align-items: center; gap: 6px; }
 .block-control--ico > .block-control-ico {
@@ -1900,7 +1900,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 }
 .block-field--checkbox { width: auto; flex: none; margin: 0; cursor: pointer; }
 .block-item.is-typed .block-field--checkbox { padding: 0 !important; }
-/* Multi-line block text field (e.g. body copy) — grows downward with its content
+/* Multi-line block text field (e.g. body copy) - grows downward with its content
    (native field-sizing, capped) so long body copy isn't stuck in a tiny scrolly box;
    manual vertical resize still wins. */
 .block-field--textarea { min-height: 52px; line-height: 1.4; resize: vertical; field-sizing: content; max-height: 40vh; }
@@ -1910,7 +1910,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .block-item.is-typed .block-color-field { grid-row: auto; grid-column: auto; }
 .block-item.is-typed .color-trigger { width: 100%; }
 
-/* Collapse-to-pill — an icon button in the header folds the block down to a
+/* Collapse-to-pill - an icon button in the header folds the block down to a
    compact pill (type label + colour dot + first line of text). The chevron
    rotates to point right when collapsed. */
 .block-collapse {
@@ -1923,7 +1923,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .block-collapse svg { transition: transform 0.15s ease; width: calc(12px * var(--a11y-fs)); height: calc(12px * var(--a11y-fs)); }
 .block-item.is-collapsed .block-collapse svg { transform: rotate(-90deg); }
 
-/* Per-row copy / paste / clear buttons (rowActions) — same icon-button chrome as collapse,
+/* Per-row copy / paste / clear buttons (rowActions) - same icon-button chrome as collapse,
    a touch smaller since there are three of them. Hidden on the collapsed pill to keep it tidy. */
 .block-act {
   flex: none; display: inline-flex; align-items: center; justify-content: center;
@@ -1944,7 +1944,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .block-item.is-collapsed .block-head:hover { background: hsl(var(--muted-foreground) / 0.07); border-radius: 999px; }
 .block-item.is-collapsed .block-fields { display: none; }
 
-/* Pill summary bits — only shown while collapsed. */
+/* Pill summary bits - only shown while collapsed. */
 .block-head-swatch, .block-head-preview { display: none; }
 .block-item.is-collapsed .block-type-label { flex: none; }
 .block-item.is-collapsed .block-head-swatch {
@@ -1984,18 +1984,18 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   background: none; cursor: pointer; color: hsl(var(--muted-foreground));
   font-size: calc(11px * var(--a11y-fs)); transition: color 0.12s, background 0.12s;
 }
-/* ✦ Edit — shown only for a block image that came from a Lolly link. */
+/* ✦ Edit - shown only for a block image that came from a Lolly link. */
 .block-asset-edit {
   flex-shrink: 0; width: 24px; border: none; border-radius: var(--radius);
   background: none; cursor: pointer; color: hsl(var(--primary));
   font-size: calc(12px * var(--a11y-fs)); transition: background 0.12s, filter 0.12s;
 }
 .block-asset-edit:hover { background: hsl(var(--primary) / 0.1); filter: brightness(1.1); }
-/* ❄ Edit / ↻ Re-bake — a block image that's a baked (frozen) tool render.
+/* ❄ Edit / ↻ Re-bake - a block image that's a baked (frozen) tool render.
    Muted, not brand-tinted: the image is a static copy, not a live render. */
 .block-asset-edit--baked { color: hsl(var(--muted-foreground)); }
 .block-asset-edit--baked:hover { background: hsl(var(--muted-foreground) / 0.1); }
-/* Block image that's a live Lolly render — same is-lolly cue as the top-level slot
+/* Block image that's a live Lolly render - same is-lolly cue as the top-level slot
    (the dashed empty-state border goes solid + brand-tinted). */
 .block-asset.is-lolly .block-asset-trigger {
   border-style: solid;
@@ -2003,12 +2003,12 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 }
 .block-asset.is-lolly .block-asset-trigger:hover { border-color: hsl(var(--primary)); }
 
-/* Per-block range slider — native, kept compact */
-.block-range-input { width: 100%; cursor: pointer; }   /* thumb/track: .field-range (fields.css) — accent-color is inert on an appearance:none range */
+/* Per-block range slider - native, kept compact */
+.block-range-input { width: 100%; cursor: pointer; }   /* thumb/track: .field-range (fields.css) - accent-color is inert on an appearance:none range */
 
 /* Typed add-menu */
 .block-add-menu { position: relative; align-self: stretch; }
-/* Prominent primary call-to-action for adding a block — full width, brand fill. */
+/* Prominent primary call-to-action for adding a block - full width, brand fill. */
 .block-add--prominent {
   display: flex; align-items: center; justify-content: center; gap: 4px;
   width: 100%; padding: 9px 12px;
@@ -2032,16 +2032,16 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .block-add-option:hover:not(:disabled) { background: hsl(var(--muted)); }
 .block-add-option:disabled { opacity: 0.45; cursor: not-allowed; }
 
-/* Vector input — N Figma-style number scrubbers on one row, one control/column.
+/* Vector input - N Figma-style number scrubbers on one row, one control/column.
    The label doubles as a drag handle (scrub left/right); the number field is
    typeable. */
-/* Vector input — N numeric fields joined into one segmented component (e.g. the
+/* Vector input - N numeric fields joined into one segmented component (e.g. the
    background Zoom / X / Y control). Each field overlays a tiny draggable character
    (Figma-style scrub) on the left of a typeable number, mirroring the export-dims
    width/height fields. Only the outer corners round; internal borders collapse so
    the segments read as a single pill. */
 
-/* The row's own label is redundant for a vector control — the section header
+/* The row's own label is redundant for a vector control - the section header
    names it (e.g. "Position") and the per-field scrub symbols + help text carry
    the rest. Left visible it gets the floating-label treatment (the fields are
    <input type=number>) and collides with the scrubbers, so hide it. Each field
@@ -2049,7 +2049,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .input-row:has(.vector-input) .input-label { display: none; }
 
 /* A sub-control belongs to the row above it (mesh-gradient: "Colour 3" then its X/Y
-   — see isSubControl in tool-inputs.ts). The 18px .tool-inputs grid gap gives them
+   - see isSubControl in tool-inputs.ts). The 18px .tool-inputs grid gap gives them
    equal spacing on both sides, so the pair doesn't read as a pair; pull it up until
    it sits nearer its own colour (8px) than the next control (18px). */
 .input-row--sub { margin-top: -10px; }
@@ -2084,7 +2084,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
     -webkit-user-select: none;
     touch-action: none;
     z-index: 1;
-    /* Purely a visual cue — let hover/click/focus fall through to the <input>
+    /* Purely a visual cue - let hover/click/focus fall through to the <input>
        below. Drag-to-scrub still works: that listener is on .vec-field and gets
        pointer events bubbling up from the input. */
     pointer-events: none;
@@ -2210,7 +2210,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
    its next state live in the aria-label + title), so the glyph is the control.
    Scoped to svg on purpose: the same button falls back to a TEXT label when the
    chosen option has no icon, and that path already scales through font-size.
-   The 32px box is unchanged — 19.2px inside it at the large-text factor. */
+   The 32px box is unchanged - 19.2px inside it at the large-text factor. */
 .icon-toggle svg { display: block; width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
 
 .asset-picker-thumb-inline {
@@ -2328,14 +2328,14 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 }
 .slot-play.is-playing {
   /* brand-var indirection (matches .dash-hero-cta) so this reuses the primary fill
-     rather than restating the pair verbatim — the single-source-of-truth guard
+     rather than restating the pair verbatim - the single-source-of-truth guard
      (primitive-guards R2) keeps the bare hsl(var(--primary)) pair to buttons.css. */
   background: var(--brand-primary, hsl(var(--primary)));
   color: var(--brand-on-primary, hsl(var(--primary-foreground)));
   border-color: var(--brand-primary, hsl(var(--primary)));
 }
 
-/* Baked (frozen) provenance row — the inert sibling of the live ✦ badge: a
+/* Baked (frozen) provenance row - the inert sibling of the live ✦ badge: a
    "❄ baked from <tool>" line whose Edit/Re-bake buttons appear only when the
    source URL (meta.bakedFrom) survived baking. Muted, not brand-tinted: this
    image is a static copy, not a live render. */
@@ -2473,7 +2473,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   color: hsl(var(--primary));
 }
 
-/* Live drop feedback — the binding accepts drops on the whole control, so the
+/* Live drop feedback - the binding accepts drops on the whole control, so the
    dashed border keeps its promise. */
 .file-picker.is-dragover .file-trigger {
   border-color: hsl(var(--primary));
@@ -2566,7 +2566,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
      50% / 2em 2em;
 }
 
-/* Live-camera toggle — top-left of the stage (zoom controls sit bottom-right).
+/* Live-camera toggle - top-left of the stage (zoom controls sit bottom-right).
    Only present for tools with an onFrame hook on a camera-capable shell. */
 .canvas-live-toggle {
   position: absolute;
@@ -2592,7 +2592,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .canvas-live-toggle:hover { border-color: hsl(var(--primary)); }
 .canvas-live-toggle:disabled { opacity: 0.6; cursor: progress; }
 .canvas-live-toggle[hidden] { display: none; }
-/* When the stage hosts BOTH toggles (fallback placement — no sidebar row to
+/* When the stage hosts BOTH toggles (fallback placement - no sidebar row to
    ride), stack Play under Go live so they can't overlap at top-left. */
 .canvas-live-toggle + .canvas-anim-toggle { top: 54px; }
 .canvas-live-dot {
@@ -2621,7 +2621,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 /* Click-to-edit-in-place: the small option-list popover a canvas click opens for
    a `select` input (see tool.ts openSelectPopover). position:fixed is set inline
    per-instance (viewport coords, computed off the clicked element); this only
-   carries the visual recipe — same card/border/shadow as .color-popover
+   carries the visual recipe - same card/border/shadow as .color-popover
    (components.css) so the two read as siblings when they appear side by side. */
 .canvas-input-popover {
   display: grid;
@@ -2654,7 +2654,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 /* Device recording (engine v1.17): a Record button centred at the foot of the stage,
    for tools declaring render.capture.
    The pill is shared with the display-capture Screenshot button (engine v1.54,
-   render.capture:"screen") — see .canvas-screen-bar below, which re-anchors both. */
+   render.capture:"screen") - see .canvas-screen-bar below, which re-anchors both. */
 .canvas-record-btn,
 .canvas-screen-btn {
   position: absolute;
@@ -2681,7 +2681,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .canvas-record-btn:hover { border-color: hsl(var(--destructive)); }
 .canvas-record-btn:disabled { opacity: 0.6; cursor: progress; }
 
-/* Animation transport (play / pause / scrub) — reusable across animated tools, driven by
+/* Animation transport (play / pause / scrub) - reusable across animated tools, driven by
    window.__lollyAnim (see views/anim-transport.ts). Bottom-centre pill on the stage,
    hidden until an animation is active; [data-export-hide] keeps it out of captures. */
 .anim-transport {
@@ -2793,7 +2793,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
-/* Flip-camera control (touch video capture) — bottom-right, clear of the centred record btn. */
+/* Flip-camera control (touch video capture) - bottom-right, clear of the centred record btn. */
 .canvas-record-flip {
   position: absolute;
   bottom: 14px;
@@ -2851,7 +2851,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   font-weight: 700;
   letter-spacing: 0.04em;
 }
-/* Last few seconds before the hard cap — pulse the timer as a warning. */
+/* Last few seconds before the hard cap - pulse the timer as a warning. */
 .canvas-record-timer.is-ending { animation: crt-cap-pulse 1s ease-in-out infinite; }
 @keyframes crt-cap-pulse { 50% { transform: translateX(-50%) scale(1.12); filter: brightness(1.28); } }
 @media (prefers-reduced-motion: reduce) { .canvas-record-timer.is-ending { animation: none; filter: brightness(1.3); } }
@@ -2865,7 +2865,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   border: 3px solid hsl(var(--destructive));
   animation: canvas-live-pulse 1.4s ease-in-out infinite;
 }
-/* Coaching HUD for video/av capture — a level bar + warning over the viewfinder, plus an
+/* Coaching HUD for video/av capture - a level bar + warning over the viewfinder, plus an
    exposure warning row (too dark / too bright / overexposed) fed by the live camera frames
    (the tool canvas shows the composited bookends, not a meter). Shell-drawn, never exported
    ([data-export-hide]), never captures pointer events. */
@@ -2948,10 +2948,10 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 }
 
 /* A capture-tool stage is a size container so its coaching overlays can scale their text
-   to the canvas (cqi below) — big on a large canvas, still readable when small. */
+   to the canvas (cqi below) - big on a large canvas, still readable when small. */
 .tool-stage.has-record { container-type: inline-size; }
 
-/* Recording tips — a "?" chip (top-left of the stage) that opens a reference panel of
+/* Recording tips - a "?" chip (top-left of the stage) that opens a reference panel of
    mic/room best-practice (lib/recording-tips.ts). Themed via tokens so it reads on the
    audio tool's light stage and the video viewfinder alike. Never exported. */
 .canvas-record-help { position: absolute; top: 14px; left: 14px; z-index: 7; }
@@ -2998,7 +2998,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   padding: 7px 9px; border-radius: 8px;
   background: hsl(var(--muted) / 0.4);
 }
-/* Per-tip glyph — a primary-tinted Lucide icon that makes each tip scannable; scales with
+/* Per-tip glyph - a primary-tinted Lucide icon that makes each tip scannable; scales with
    the tip text so it stays proportional as the canvas grows. */
 .canvas-record-help .crt-ic {
   flex: 0 0 auto;
@@ -3006,14 +3006,14 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   margin-top: 1px;
   color: hsl(var(--primary));
 }
-/* Spotlight for a detected tip (in-panel flash) — a brief primary pulse. */
+/* Spotlight for a detected tip (in-panel flash) - a brief primary pulse. */
 .canvas-record-help .crt-item.is-flash { animation: crt-flash 1.1s ease-out 2; }
 @keyframes crt-flash {
   0%, 100% { background: hsl(var(--muted) / 0.4); box-shadow: none; }
   30% { background: hsl(var(--primary) / 0.18); box-shadow: 0 0 0 1px hsl(var(--primary) / 0.55) inset; }
 }
 
-/* Transient single-tip nudge — shown by flash() when the panel is closed and a detected
+/* Transient single-tip nudge - shown by flash() when the panel is closed and a detected
    condition holds. Anchored under the "?" (mutually exclusive with the panel). */
 .canvas-record-help .crh-nudge {
   position: absolute; top: 34px; left: 0;
@@ -3061,7 +3061,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   transform: scaleX(-1); /* mirror like a selfie camera for natural framing */
 }
 
-/* "Processing your video" curtain — shown while the record tool auto-composites the
+/* "Processing your video" curtain - shown while the record tool auto-composites the
    intro/outro around a freshly-recorded clip (see record-control.ts autoProcessRecording). */
 .canvas-processing {
   position: absolute;
@@ -3146,7 +3146,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   align-items: center;
   gap: 10px;
 }
-/* Return the two pills to normal flow inside the bar — the shared .canvas-record-btn
+/* Return the two pills to normal flow inside the bar - the shared .canvas-record-btn
    base absolutely-centres a lone button, which would stack them on top of each other. */
 .canvas-screen-bar > .canvas-screen-btn,
 .canvas-screen-bar > .canvas-record-btn {
@@ -3180,7 +3180,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 }
 
 /* The screen clip is offered in the same post-capture bar as a voice take, but the
-   player is a <video>, not <audio> — give it the same full-width, letterboxed frame. */
+   player is a <video>, not <audio> - give it the same full-width, letterboxed frame. */
 .canvas-audio-dl video {
   width: 100%;
   max-height: min(46vh, 320px);
@@ -3200,7 +3200,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 }
 
 /* Editor-only outline pulsed onto the canvas WHILE the export size is being
-   changed (scrub / scroll / type) and removed shortly after — see
+   changed (scrub / scroll / type) and removed shortly after - see
    pulseCanvasResize() in tool.js. Lives on the OUTER wrapper, never the exported
    #tool-canvas, so it can't bleed into output; box-shadow (not outline/border)
    so it sits OUTSIDE the canvas and never draws over its content. A faster
@@ -3212,7 +3212,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   transition: box-shadow 0.09s ease;
 }
 
-/* Editor (free-canvas) only — let boxes dragged off the artboard spill PAST the
+/* Editor (free-canvas) only - let boxes dragged off the artboard spill PAST the
    frame so they stay visible and manageable instead of being clipped at its edge.
    The frame's own box-shadow (above) is kept as the "here's where the export area
    begins" cue; the stage still clips the overflow to the visible viewport, and
@@ -3229,8 +3229,8 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 /* ── Multi-page document editor (render.paged, e.g. multi-page-pdf) ──────────────
    The whole document is laid out at full length and the CANVAS SURFACE scrolls, so
    every page is visible and pages no longer "appear out of nowhere" from a one-page
-   clip. Each [data-pdf-page] box keeps its locked one-page size — that's what export
-   reads — it just stops bounding what the editor shows. The stage stays overflow:hidden
+   clip. Each [data-pdf-page] box keeps its locked one-page size - that's what export
+   reads - it just stops bounding what the editor shows. The stage stays overflow:hidden
    so the docked toggles keep their fixed spot; the outer wrapper is the scroll surface. */
 .tool-layout.is-paged .tool-stage { overflow: hidden; }
 .tool-layout.is-paged .tool-canvas-outer {
@@ -3247,9 +3247,9 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   touch-action: pan-y;                    /* native vertical scroll on touch */
 }
 /* Grow the canvas to the full stacked height (it was locked to one page) and keep it at
-   its content height so the surface — not an inner one-page window — owns the scroll.
+   its content height so the surface - not an inner one-page window - owns the scroll.
    overflow:visible so each page's own drop-shadow shows instead of being clipped at the
-   canvas edge — safe here: export draws each [data-pdf-page] individually (never the whole
+   canvas edge - safe here: export draws each [data-pdf-page] individually (never the whole
    canvas) and every page clips its own content, so nothing can bleed into the output. */
 .tool-layout.is-paged #tool-canvas {
   height: auto !important;
@@ -3295,7 +3295,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   padding: 0; border: 0; background: none; cursor: pointer;
   width: 100%; text-align: left;
 }
-/* Per-slide delete — a small × in the thumbnail's top-right, revealed on hover/focus. */
+/* Per-slide delete - a small × in the thumbnail's top-right, revealed on hover/focus. */
 .pagestrip-del {
   position: absolute; top: 4px; right: 4px;
   width: 20px; height: 20px; padding: 0;
@@ -3316,7 +3316,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16);
   transition: border-color 0.12s, box-shadow 0.12s, transform 0.08s;
 }
-/* The cloned page inside is a decorative mini-render — never interactive. */
+/* The cloned page inside is a decorative mini-render - never interactive. */
 .pagestrip-frame > * { pointer-events: none; }
 .pagestrip-thumb:hover .pagestrip-frame { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.22); }
 .pagestrip-thumb.is-active .pagestrip-frame { border-color: hsl(var(--primary)); box-shadow: 0 0 0 2px hsl(var(--primary) / 0.35); }
@@ -3327,7 +3327,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .pagestrip-thumb.is-active .pagestrip-num { color: hsl(var(--primary)); }
 
 /* ── Bottom filmstrip (render.filmstrip: "bottom") ───────────────────────────
-   Same rail, laid along the bottom edge instead of the left — the deck-strip shape,
+   Same rail, laid along the bottom edge instead of the left - the deck-strip shape,
    for tools whose pages are wide and few (battlecards, decks) where a left rail eats
    the width the card actually needs. The module fixes each thumbnail's HEIGHT in this
    mode (widths follow the page aspect), so --pagestrip-h below is exact and no
@@ -3362,7 +3362,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   100% { box-shadow: 0 0 0 2px hsl(var(--primary) / 0); }
 }
 
-/* Export shutter — a candy-swirl lollipop iris that closes to COVER the whole
+/* Export shutter - a candy-swirl lollipop iris that closes to COVER the whole
    stage while the brief full-res resize during export (the "shake") happens,
    then opens again. Template-agnostic: the live canvas is what's exported
    underneath, so canvas/WebGL document roots keep their real pixels.
@@ -3378,10 +3378,10 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 }
 .export-shutter.is-active { display: block; }
 /* Mobile: the controller moves the shutter to <body> and adds this class so it
-   covers the whole screen — above the sidebar sheet, export popup and FAB — while
+   covers the whole screen - above the sidebar sheet, export popup and FAB - while
    the system download/share sheet appears. Desktop keeps the in-stage shutter. */
 .export-shutter--fullscreen { position: fixed; inset: 0; z-index: 100000; }
-/* Seal plate — an opaque backdrop the swirl closes in front of. The swirl already
+/* Seal plate - an opaque backdrop the swirl closes in front of. The swirl already
    fills the frame at full close, so with WebGL this only fades in over the last
    sliver as belt-and-braces occlusion; without WebGL, lib/shutter.ts ramps it
    across the whole close so the "hide the stage" contract still holds. Sits
@@ -3394,7 +3394,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   opacity: 0;
   background: hsl(var(--background));
 }
-/* The swirl itself — a WebGL canvas painted by lib/shutter.ts. This only sizes
+/* The swirl itself - a WebGL canvas painted by lib/shutter.ts. This only sizes
    and stacks the surface (above the seal, below the mark). */
 .export-shutter__iris {
   position: absolute;
@@ -3422,17 +3422,17 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 /* The mark is STACKED LAYER DIVS (shutter-mark.ts, generated from the repo-root
    icon.svg), each holding one slice of the swirl. The spin animates the DIVS,
    not SVG children: an HTML transform composites off the main thread, so the
-   mark keeps turning while the export render blocks it — the old single-SVG
+   mark keeps turning while the export render blocks it - the old single-SVG
    mark (SVG-child transforms are main-thread in Chromium) froze the moment an
    export started. Cadence is the icon's own 3/6/9s; the hue drift rides the
-   mark container (drop-shadow restated in each keyframe — an animated filter
+   mark container (drop-shadow restated in each keyframe - an animated filter
    replaces, never merges). The coloured spiral is var(--exsh-swirl), set per
    export to the brand tone in lib/shutter.ts, which also self-gates the whole
    flourish under reduced motion. */
 .export-shutter__layer { position: absolute; inset: 0; will-change: transform; }
 .export-shutter__layer svg { display: block; width: 100%; height: 100%; }
 /* The icon's swirl paths paint with mix-blend-mode:multiply, and the layers are
-   concentric — inner darkens mid darkens outer — so the blend must cross the
+   concentric - inner darkens mid darkens outer - so the blend must cross the
    stacked divs exactly as it crossed paint order inside one SVG canvas. The
    generator hoists each multiply run into its own div; isolation on the mark
    keeps the blend from sampling the seal plate behind it. */
@@ -3449,7 +3449,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   50%      { filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.4)) hue-rotate(-15deg); }
 }
 /* Shutter-closed flash. Sits ABOVE the swirl and mark so the sealed cover flashes
-   too, not just the artwork behind it. Fast in, long out — over this duration
+   too, not just the artwork behind it. Fast in, long out - over this duration
    a plain two-stop fade reads as a slow dip rather than a flash, which is why
    the decay is stepped. Fires only at the end of a close. */
 .export-shutter__flash {
@@ -3465,7 +3465,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   0% { opacity: 0; } 6% { opacity: 1; } 22% { opacity: 0.5; } 48% { opacity: 0.18; } 100% { opacity: 0; }
 }
 
-/* Inline render-failure notice — overlays the stage when a template script throws
+/* Inline render-failure notice - overlays the stage when a template script throws
    during render (see the runtime.subscribe catch in tool.js). A sibling of the
    canvas so the per-render innerHTML rebuild doesn't remove it. z-index sits below
    the export shutter (6) so an in-progress export still covers it. */
@@ -3478,7 +3478,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   max-width: min(90%, 420px);
   padding: 10px 14px;
   border-radius: var(--radius);
-  /* Solid destructive pairing — guaranteed AA in light/dark/suse (unlike red text
+  /* Solid destructive pairing - guaranteed AA in light/dark/suse (unlike red text
      on the card, which is low-contrast on the SUSE dark-teal card). */
   background: hsl(var(--destructive));
   color: hsl(var(--destructive-foreground));
@@ -3507,7 +3507,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 /* ─── The focused-field ring ─────────────────────────────────────────────────
    ONE recipe (tinted border + a 3px translucent halo, the browser outline
    suppressed) for every bordered text/number/select control in the tool view.
-   It was restated six times — three here, three in tool-chrome.css.
+   It was restated six times - three here, three in tool-chrome.css.
 
    This sheet owns it, not tool-chrome.css, because it is the one that is ALWAYS
    present wherever these selectors render: views/tool.ts loads both sheets, but
@@ -3519,14 +3519,14 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
    (.time-input-wrap, .block-field) exactly as the six separate rules did.
    tool-chrome.css loads AFTER this sheet, so its two competing :hover rules
    (.export-filename, .tool-actions select) carry a :not(:focus) there to keep
-   the same hover-vs-focus outcome — see the note beside them. The export panel's
+   the same hover-vs-focus outcome - see the note beside them. The export panel's
    card selects have moved to `.field-select`, which owns its own focus state
    (halo OVER the emboss), so they are excluded here rather than having this
    recipe flatten the highlight back out.
 
    Untouched deliberately: the two partial variants that omit `outline: none`
    (.export-dims .dim-dpi:focus-within here's sibling in tool-chrome.css, and
-   .input-section:has(.input-section-summary:focus-visible) above) — they ring a
+   .input-section:has(.input-section-summary:focus-visible) above) - they ring a
    CONTAINER, not the focusable element, so they are not this recipe. And
    a11y.css's :focus-visible rings sit in a higher layer and keep winning. */
 .input-row input:focus,

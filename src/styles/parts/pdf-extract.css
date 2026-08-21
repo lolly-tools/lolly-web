@@ -1,12 +1,12 @@
 /* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
    (order declared once in styles/app.css). Wrapping it means its rules keep a
-   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   fixed priority - above chrome/primitives/base, below overrides/a11y - no
    matter when Vite injects this chunk at runtime. Do not rely on load order. */
 @layer views {
-/* ─── /pdf — take a PDF apart ─────────────────────────────────────────────────
+/* ─── /pdf - take a PDF apart ─────────────────────────────────────────────────
    Shares the platform chrome (.tools-home/.plat-header) with the other utility
    views; these rules cover the drop zone, the action bar and the reconstructed
-   page column. The reading column is deliberately NARROW — this is prose that
+   page column. The reading column is deliberately NARROW - this is prose that
    came out of a document, and it should read like prose, not like a data dump
    spanning a 27" display. */
 
@@ -25,7 +25,7 @@
   display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
   width: 100%; margin: 2rem auto;
   padding: 2.5rem 1.5rem;
-  /* Dashed is reserved app-wide for drop targets — this is one, so it earns it. */
+  /* Dashed is reserved app-wide for drop targets - this is one, so it earns it. */
   border: 2px dashed var(--line, currentColor);
   border-radius: var(--radius-lg, 14px);
   background: var(--surface-2, transparent);
@@ -71,7 +71,7 @@
   align-items: center; justify-content: space-between;
   padding: 0.85rem 0;
   background: var(--surface, canvas);
-  /* A full-bleed hairline under a sticky bar that is itself inset — without the
+  /* A full-bleed hairline under a sticky bar that is itself inset - without the
      negative margin the rule stops short of the reading column's edges. */
   box-shadow: 0 1px 0 var(--line, currentColor);
 }
@@ -112,7 +112,7 @@
 .pdfx-hidden-text {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: calc(0.85rem * var(--a11y-fs)); line-height: 1.5;
-  /* The recovered words are the evidence — they must wrap and stay selectable,
+  /* The recovered words are the evidence - they must wrap and stay selectable,
      never be clipped to an ellipsis. */
   overflow-wrap: anywhere; white-space: pre-wrap;
   user-select: text;
@@ -126,7 +126,7 @@
 /* ─── tabs (the extraction switch) ────────────────────────────────────────────
    Prominent and STICKY on purpose. The whole value of Unpack is that someone who
    opened a file to read it discovers their images, fonts and colours came out
-   too — so the strip pins right under the action bar and rides every scroll,
+   too - so the strip pins right under the action bar and rides every scroll,
    styled as a raised segmented control with a loud count on each asset tab, never
    a thin underline you scroll past and forget. */
 
@@ -166,7 +166,7 @@
 .pdfx-tab-ico svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
 .pdfx-tab-label { white-space: nowrap; }
 
-/* The count is the hook — a filled, brand-tinted badge, so an asset tab reads as
+/* The count is the hook - a filled, brand-tinted badge, so an asset tab reads as
    "there are 12 of these" at a glance rather than a parenthetical you skim past. */
 .pdfx-tab-n {
   display: inline-flex; align-items: center; justify-content: center;
@@ -238,7 +238,7 @@
   display: grid; place-items: center;
   aspect-ratio: 4 / 3; overflow: hidden;
   border-radius: var(--radius-sm, 6px);
-  /* A checkerboard, so a transparent PNG and a white one are distinguishable —
+  /* A checkerboard, so a transparent PNG and a white one are distinguishable -
      "is this asset transparent?" is the first thing you ask of an extracted logo. */
   background-image:
     linear-gradient(45deg, var(--line, #8884) 25%, transparent 25%, transparent 75%, var(--line, #8884) 75%),
@@ -282,18 +282,18 @@
 .pdfx-font-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-inline-start: auto; }
 /* Added is a state, not an offer: the face is installed, so the button stops
    soliciting a second press and reads as a note that it worked. It is marked
-   aria-disabled rather than disabled — a disabled button drops the focus that
-   just pressed it — so the resting look is spelled out here. */
+   aria-disabled rather than disabled - a disabled button drops the focus that
+   just pressed it - so the resting look is spelled out here. */
 .pdfx-font-actions .btn.is-added { opacity: 0.7; }
 .pdfx-result .btn[aria-disabled="true"] { cursor: default; }
 .pdfx-result .btn[aria-disabled="true"]:hover { border-color: hsl(var(--border)); }
-/* 44px on every width — the floor the studio's own copy of this hand-off holds
+/* 44px on every width - the floor the studio's own copy of this hand-off holds
    to (.ds-pdf-add / .ds-pdf-logos in start.css). `.btn` is 5px padding on a 13px
    line, which lands near 29px, and the same feature must not ship two different
    touch targets depending on which door the person came in by. Applied to the
    ACTION ROWS rather than to the three controls M5 added: "Send to Logos" sits
    beside Download SVG and Add to catalogue, and a row of buttons at two heights
-   reads as a mistake. The reading column's inline controls are left alone —
+   reads as a mistake. The reading column's inline controls are left alone -
    they are prose furniture, not a row of targets. */
 .pdfx-bar-actions .btn,
 .pdfx-asset-actions .btn,
@@ -351,7 +351,7 @@
 }
 .pdfx-page-meta { font-weight: 400; letter-spacing: 0; text-transform: none; }
 .pdfx-page-copy { margin-inline-start: auto; }
-/* The per-page copy button is quiet until the page is hovered or it is focused —
+/* The per-page copy button is quiet until the page is hovered or it is focused -
    one button per page would otherwise be a column of noise down the margin. */
 .pdfx-page-copy { opacity: 0; transition: opacity 120ms ease; }
 .pdfx-page:hover .pdfx-page-copy,
@@ -363,7 +363,7 @@
 .pdfx-b--li::before { content: "• "; opacity: 0.6; }
 
 /* Headings keep their RELATIVE weight from the document rather than adopting the
-   app's own scale — the point is to show the structure that was recovered. */
+   app's own scale - the point is to show the structure that was recovered. */
 .pdfx-b--h { font-weight: 700; margin: 1.4em 0 0.5em; line-height: 1.25; }
 .pdfx-b--h[data-level="1"] { font-size: calc(1.6rem * var(--a11y-fs)); }
 .pdfx-b--h[data-level="2"] { font-size: calc(1.35rem * var(--a11y-fs)); }
@@ -378,11 +378,11 @@
   display: grid; gap: 1.5rem;
   grid-template-columns: minmax(0, 1fr) clamp(150px, 24%, 240px);
 }
-/* A page whose SVG render failed hides its figure — collapse the track too, or
+/* A page whose SVG render failed hides its figure - collapse the track too, or
    the prose stays squeezed against a permanently blank right gutter. */
 .pdfx-page-cols:has(.pdfx-page-art[hidden]) { grid-template-columns: minmax(0, 1fr); }
 /* The figure stretches to the row height (default grid alignment) so the img
-   inside it can STICK while a long page's prose scrolls past — sticky needs
+   inside it can STICK while a long page's prose scrolls past - sticky needs
    room to travel, and an align-self:start item has none. */
 .pdfx-page-art {
   margin: 0; min-width: 0;
@@ -405,7 +405,7 @@
 
 @media (max-width: 760px) {
   .pdfx-page-cols { grid-template-columns: 1fr; gap: 0.9rem; }
-  /* On one column the picture leads — a small page image above its prose reads
+  /* On one column the picture leads - a small page image above its prose reads
      as a header, and sticky has nothing useful to do. */
   .pdfx-page-art { order: -1; max-width: 200px; }
   .pdfx-page-art img { position: static; }
@@ -460,7 +460,7 @@
   max-width: min(1080px, calc(100vw - 12rem));
 }
 @media (max-width: 760px) {
-  /* No room beside a one-column layout — the strip would sit ON the prose. */
+  /* No room beside a one-column layout - the strip would sit ON the prose. */
   .pdfx-thumbs { display: none; }
   .pdfx-view:has([data-thumbs]) .platform-layout { max-width: min(1080px, 94vw); }
 }

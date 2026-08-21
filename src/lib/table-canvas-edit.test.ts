@@ -66,7 +66,7 @@ test('contenteditable DIV lines join as paragraph lines; empty DIVs break paragr
 });
 
 test('execCommand B/I tags and nbsp are normalised', () => {
-  const md = cellHtmlToMarkdown(root(e('P', e('B', t('bold')), t(' '), e('I', t('lean')))));
+  const md = cellHtmlToMarkdown(root(e('P', e('B', t('bold')), t(' '), e('I', t('lean')))));
   assert.equal(md, '**bold** *lean*');
 });
 

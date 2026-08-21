@@ -27,7 +27,7 @@
 }
 .data-tab.is-active { background: hsl(var(--background)); color: hsl(var(--foreground)); font-weight: 600; }
 
-/* Honest-limits banner — a calm note, NOT an accent-bordered card. */
+/* Honest-limits banner - a calm note, NOT an accent-bordered card. */
 .data-limits {
   margin: 0;
   padding: .6rem .8rem;

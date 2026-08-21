@@ -1,6 +1,6 @@
 /* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
    (order declared once in styles/app.css). Wrapping it means its rules keep a
-   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   fixed priority - above chrome/primitives/base, below overrides/a11y - no
    matter when Vite injects this chunk at runtime. Do not rely on load order. */
 @layer views {
 /* ─── WYSIWYG editor layout (render.layout:'editor') ──────────────────────────
@@ -23,11 +23,11 @@
   background-position: 0 0, 12px 12px;
 }
 
-/* Figma-style page boundary — a soft drop-shadow + a hairline ring so a frame
+/* Figma-style page boundary - a soft drop-shadow + a hairline ring so a frame
    ([data-pdf-page]) AND the default single artboard (.artboard) read as a board on
    the canvas. Every layer is a box-shadow (OUTSIDE the element's border box), so the
-   per-page / per-canvas export capture — dom-to-image sizes the output to the box, the
-   SVG/PDF walkers draw only box content — clips them out: an editor affordance, never
+   per-page / per-canvas export capture - dom-to-image sizes the output to the box, the
+   SVG/PDF walkers draw only box content - clips them out: an editor affordance, never
    in an exported PNG/SVG/PDF. Both selectors share the treatment so the default artboard
    and a newly-created frame look identical (Andy, 2026-08-08). */
 .tool-layout.is-editor #tool-canvas [data-pdf-page],
@@ -40,12 +40,12 @@
 
 /* Editor mode surfaces Export/Save/Copy/Share as prominent icons in the toolbar
    rail (see .fc-action), so the floating bottom Export|Save pill is removed. The
-   #render-fab / #render-save buttons stay in the DOM (hidden) — the rail icons
+   #render-fab / #render-save buttons stay in the DOM (hidden) - the rail icons
    trigger them, and the Export popup still opens from the rail Export icon. */
 .tool-layout.is-editor .render-pill { display: none; }
 
 /* Hide-controls full preview (Figma/Penpot `\`, toggled in free-canvas.ts): strip every
-   piece of editor chrome to a clean canvas so the artwork reads whole. Chrome ONLY — the
+   piece of editor chrome to a clean canvas so the artwork reads whole. Chrome ONLY - the
    canvas, its artwork and the export geometry are never touched. Escape restores it. */
 .tool-view.is-chrome-hidden .fc-toolbar-dock,
 .tool-view.is-chrome-hidden .stage-nav,
@@ -55,13 +55,13 @@
 .tool-view.is-chrome-hidden [data-back-pill],
 .tool-view.is-chrome-hidden .render-pill { display: none !important; }
 
-/* Floating tool palette — a detached, DRAGGABLE rail rather than a full-height
+/* Floating tool palette - a detached, DRAGGABLE rail rather than a full-height
    slab: auto-hidden at rest on desktop (revealed whenever the pointer is over the
    editor stage, like the mesh-gradient tool's on-canvas controls), always-on for
    touch. At rest a flex DOCK wrapper parks it against the left edge; once dragged
    the dock carries plain left/top (`.is-detached`).
 
-   Neither the dock nor the rail may carry `transform`/`backdrop-filter` — either
+   Neither the dock nor the rail may carry `transform`/`backdrop-filter` - either
    would become the containing block for the colour-picker popover's
    `position:fixed` and knock it off-screen, which is also why the drag writes
    left/top and never a translate. The rail's own full-height frosted ::before is
@@ -75,7 +75,7 @@
   padding-left: calc(10px + var(--vv-left, 0px));
   pointer-events: none;
   /* Above the timeline (z 22) so the draggable rail floats over it rather than being
-     covered — the user can drag it out of the way (fc-grip) if it gets in the way. */
+     covered - the user can drag it out of the way (fc-grip) if it gets in the way. */
   z-index: 24;
 }
 /* Dragged: the dock shrinks to the rail and takes the clamped left/top written by
@@ -97,7 +97,7 @@
   opacity: 0;
   /* Asymmetric on purpose (hysteresis): revealing is instant, hiding waits. The stage's
      `:hover` drops for a frame or two whenever the pointer crosses chrome that is not a
-     stage descendant — the fixed back pill, a popover portalled elsewhere — and with a
+     stage descendant - the fixed back pill, a popover portalled elsewhere - and with a
      symmetric transition the rail vanished for ~0.3s and came back half-faded while the
      user was doing nothing but moving the cursor across the canvas. The grace period is
      longer than any such gap and shorter than a deliberate "I'm done here". */
@@ -112,7 +112,7 @@
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.32), 0 0 0 1px hsl(var(--border));
 }
 
-/* Drag grip — two short bars at the top of the palette. Deliberately NOT a button:
+/* Drag grip - two short bars at the top of the palette. Deliberately NOT a button:
    it is the one part of the rail that lets a pointerdown through to the drag
    handler (every button stops it, so a tool click never moves the rail). */
 .fc-grip {
@@ -140,7 +140,7 @@
    above it. Right-side keeps the whole label on-screen and reads toward the work. Higher
    specificity than the base `[data-tip]::after` so it wins, incl. over the reduced-motion
    resting transform. (A rail dragged to the far-right edge falls back to a possibly-clipped
-   bubble — the common left dock is what this optimises.) */
+   bubble - the common left dock is what this optimises.) */
 .fc-toolbar [data-tip]::after {
   bottom: auto;
   top: 50%;
@@ -165,7 +165,7 @@
 
 /* The Lolly mark at the top of the rail opens the document menu (export, save,
    undo/redo, canvas size, copy, share, info, import). Brand-hued identity mark
-   (--lolly-mark, injected by brand-vars.ts) — never the verify verdict green.
+   (--lolly-mark, injected by brand-vars.ts) - never the verify verdict green.
    Wins over .fc-action-primary, which it also carries so mountTool keeps finding
    the editor's primary affordance to focus. */
 .fc-toolbar .fc-btn.fc-btn-lolly {
@@ -178,18 +178,18 @@
 }
 [data-theme="dark"] .fc-toolbar .fc-btn.fc-btn-lolly { --lolly-accent: 145 52% 60%; }
 .fc-toolbar .fc-btn.fc-btn-lolly:hover:not(:disabled) { background: hsl(var(--muted)); }
-/* The mark is the rail's brand anchor — deliberately larger than the tool glyphs (nearly
+/* The mark is the rail's brand anchor - deliberately larger than the tool glyphs (nearly
    fills its 40px button), so it reads as the app's identity, not just another tool. */
 .fc-toolbar .fc-btn.fc-btn-lolly svg { width: calc(36px * var(--a11y-fs)); height: calc(36px * var(--a11y-fs)); }
-/* Unsaved work (Save lives in the menu now): no background pill — the MARK ITSELF warns.
+/* Unsaved work (Save lives in the menu now): no background pill - the MARK ITSELF warns.
    Its swirl inherits --lolly-swirl (the same variable that brand-tints it), so pointing that
    at the amber warning colour recolours the identity glyph instead of boxing it. The grey
    rings stay neutral; only the spiral goes amber, which is the cue. */
 .fc-toolbar .fc-btn.fc-btn-lolly.is-unsaved { --lolly-swirl: var(--brand-warn, #b28727); }
 
-/* The brand mark's three rings spin (interaction-only, calm at rest) on hover / focus — the
+/* The brand mark's three rings spin (interaction-only, calm at rest) on hover / focus - the
    same treatment as the Ask Lolly send button (parts/ask.css). transform-box:fill-box turns
-   each ring about its own centre; the counter-rotating speeds give it life. Static otherwise —
+   each ring about its own centre; the counter-rotating speeds give it life. Static otherwise -
    Andy's "minus animation unless hover". */
 .fc-btn-lolly svg .lolly-mark__spin-1,
 .fc-btn-lolly svg .lolly-mark__spin-2,
@@ -203,7 +203,7 @@
 @keyframes fc-lolly-spin { to { transform: rotate(360deg); } }
 /* Motion prefs (OS + app): the mark never spins; the button keeps its quiet hover fill. The
    OS media query and the app attribute are kept adjacent (same as parts/ask.css) so the two
-   can't drift — the global base.css app-motion rule already caps duration, this zeroes it. */
+   can't drift - the global base.css app-motion rule already caps duration, this zeroes it. */
 @media (prefers-reduced-motion: reduce) {
   .fc-btn-lolly:hover svg .lolly-mark__spin-1,
   .fc-btn-lolly:hover svg .lolly-mark__spin-2,
@@ -220,7 +220,7 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
 html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spin-3 { animation: none; }
 
 /* (Undo / redo used to be a stacked capsule in the rail. They are menu rows in the
-   Lolly menu now — see lollyItems() in free-canvas.ts — where they keep their live
+   Lolly menu now - see lollyItems() in free-canvas.ts - where they keep their live
    enabled/disabled state and hold the menu open so you can step back repeatedly.) */
 
 .fc-btn {
@@ -233,16 +233,16 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
 }
 /* `hidden` must be restated here. base.css's `[hidden]{display:none}` sits in the `base`
    layer and this sheet is in `views`, which WINS on layer order regardless of
-   specificity — so .fc-btn's own `display: inline-flex` would beat it and leave an
+   specificity - so .fc-btn's own `display: inline-flex` would beat it and leave an
    invisible-but-space-taking 40px hole in the rail (Arrange, the mic button, every
    conditionally-hidden icon). Same restatement as .tl-panel[hidden] in timeline.css. */
 .fc-btn[hidden] { display: none; }
 /* A KNOWN, UNFIXED defect lives here: the dock centres the rail vertically, so a button
    that comes and goes (Arrange, gated on the selection; the recorder's mic) changes the
-   rail's height and therefore its top in the same frame — selecting a card teleports the
+   rail's height and therefore its top in the same frame - selecting a card teleports the
    whole palette ~27px up the stage, with every icon landing somewhere other than where
    the cursor was.
-   The obvious fix — collapse the button to zero height instead of removing it — was
+   The obvious fix - collapse the button to zero height instead of removing it - was
    tried and reverted, because it cannot work and must not: `[hidden] { display: none
    !important }` in parts/a11y.css out-ranks any `display` a sheet asks for, so the
    collapse was inert, and `hidden` means "not rendered AND not in the accessibility
@@ -251,35 +251,35 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
    The two real fixes, neither of which is a CSS one-liner: gate rail buttons with a class
    (plus `inert` + `aria-hidden`) instead of the `hidden` property, which is what the
    guard's own message recommends; or anchor the dock to a fixed top so its height grows
-   downward instead of re-centring — a deliberate change to where the rail sits, which is
+   downward instead of re-centring - a deliberate change to where the rail sits, which is
    a design decision, not a bug fix. */
 /* Every button in this rail is an aria-label + a glyph: the icon carries 100% of
    the control's meaning, so it scales on the type multiplier like any label would
-   (one knob — see the --a11y-fs note in parts/a11y.css). A fixed-px glyph inside a
+   (one knob - see the --a11y-fs note in parts/a11y.css). A fixed-px glyph inside a
    box that already grows would leave largeText doing nothing for the whole palette.
    The 40px box is left alone deliberately: a 1.2× glyph is 25.2px and still clears
    it, and the rail's drag geometry (clampRailPos in free-canvas.ts) measures the box.
    The SELECTION chrome below (handles, pen nodes, gradient stops) is excluded on
-   purpose — those sizes are matched to screen-px hit tolerances owned by JS. */
+   purpose - those sizes are matched to screen-px hit tolerances owned by JS. */
 .fc-btn svg { width: calc(21px * var(--a11y-fs)); height: calc(21px * var(--a11y-fs)); }
 .fc-btn:hover:not(:disabled) { background: hsl(var(--muted)); }
-/* Press feedback — a tactile down-state (audit A4#7). Brightness only, so it needs no reduced-motion guard. */
+/* Press feedback - a tactile down-state (audit A4#7). Brightness only, so it needs no reduced-motion guard. */
 .fc-btn:active:not(:disabled) { filter: brightness(0.92); }
 .fc-btn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
 /* Undo/redo dim out at the ends of history (same treatment as .history-btn). */
 .fc-btn:disabled { opacity: 0.3; cursor: default; }
 .fc-btn.is-armed { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
-/* Primary actions (Export/Save/Copy/Share) — a touch more prominent than the plain
+/* Primary actions (Export/Save/Copy/Share) - a touch more prominent than the plain
    tools: brand-accent icons, with Export filled as the lead call-to-action. */
 .fc-btn.fc-action { color: hsl(var(--primary)); }
 .fc-btn.fc-action:hover:not(:disabled) { background: hsl(var(--primary) / 0.12); }
 .fc-btn.fc-action-primary { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
 .fc-btn.fc-action-primary:hover:not(:disabled) { background: hsl(var(--primary) / 0.85); }
-/* "Unsaved" cue mirrored from the render pill's Save button — --brand-warn, the
+/* "Unsaved" cue mirrored from the render pill's Save button - --brand-warn, the
    active brand's own colour closest in hue to red/yellow (brand-vars.ts
    nearestWarmHex, recomputed on every brand change), falling back to the
-   tokenless Amber #b28727. Shared by every free-canvas host — Design,
-   Carousel Maker, Doc Studio — since they all build their toolbar via toolBtn(). */
+   tokenless Amber #b28727. Shared by every free-canvas host - Design,
+   Carousel Maker, Doc Studio - since they all build their toolbar via toolBtn(). */
 .fc-btn.fc-action-save.is-unsaved,
 .fc-btn.fc-action-save.is-unsaved:hover:not(:disabled) { background: var(--brand-warn, #b28727); color: var(--brand-warn-ink, #0c322c); }
 .fc-sep { height: 1px; background: hsl(var(--border)); margin: 3px 4px; }
@@ -287,7 +287,7 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
 
 /* Toolbar popovers (add / arrange / align / context menu). These host no
    colour-picker (no position:fixed descendants), so the blur can sit on the
-   element itself — which also keeps it correct when the menu scrolls, unlike the
+   element itself - which also keeps it correct when the menu scrolls, unlike the
    ::before technique the picker-hosting bars need. */
 .fc-popover {
   position: absolute; z-index: 24; min-width: 184px;
@@ -299,7 +299,7 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
   padding: 5px; display: flex; flex-direction: column;
 }
 
-/* Import a design (openImportPanel) — the chrome that used to live in `style=` attributes
+/* Import a design (openImportPanel) - the chrome that used to live in `style=` attributes
    on every element, hard-coding a brand green that never themed. Now class-driven, so it
    follows the active brand + dark mode; the choose button is the standard `.btn--primary`. */
 .fc-import-panel { width: 264px; padding: 12px; white-space: normal; gap: 0; }
@@ -351,13 +351,13 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
 }
 .fc-pop-gitem svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); display: block; }
 .fc-pop-gitem:hover:not(:disabled) { background: hsl(var(--muted)); }
-/* Right-click context menu — longer, so cap its height and scroll. */
+/* Right-click context menu - longer, so cap its height and scroll. */
 .fc-context-menu { max-height: min(80vh, 560px); overflow-y: auto; min-width: 210px; }
-/* The boolean row is 4 across, which is wider than the align grid's 3 — let the menu
+/* The boolean row is 4 across, which is wider than the align grid's 3 - let the menu
    grow to fit rather than clipping the fourth glyph. */
 .fc-context-menu .fc-pop-grid { justify-content: start; }
 
-/* One-number prompt (Offset path / Outline stroke) — the `fc-panel` recipe with the
+/* One-number prompt (Offset path / Outline stroke) - the `fc-panel` recipe with the
    field, its unit and the confirm button on one line, so the whole prompt is one row
    under its heading. */
 .fc-num-panel { min-width: 250px; }
@@ -365,14 +365,14 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
 .fc-num-hint { margin: -3px 0 0; font-size: calc(11.5px * var(--a11y-fs)); line-height: 1.4; color: hsl(var(--muted-foreground)); }
 .fc-num-row { display: flex; align-items: center; gap: 7px; }
 .fc-num-row > i { font-style: normal; font-size: calc(11.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
-/* The confirm button is the shared `.btn .btn--primary` primitive (buttons.css) — only
+/* The confirm button is the shared `.btn .btn--primary` primitive (buttons.css) - only
    its behaviour inside this one row is local. Restating the fill pair here would beat the
    primitive from the `views` layer, which is what primitive-guards.test.ts ratchets. */
 .fc-num-go { flex: none; }
 
-/* Selection overlay — siblings of the canvas, never exported. */
+/* Selection overlay - siblings of the canvas, never exported. */
 .fc-overlay { position: absolute; inset: 0; z-index: 12; pointer-events: none; }
-/* Frame dimmer — sits above the artboard but below the selection chrome (no
+/* Frame dimmer - sits above the artboard but below the selection chrome (no
    z-index, first overlay child). Its big outset box-shadow floods everything
    OUTSIDE the frame with a faint background-matched tint, so boxes dragged off the
    artboard read as gently faded (~0.8) while remaining fully visible + selectable.
@@ -389,7 +389,7 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
   border: 1.5px solid hsl(var(--primary));
   transform-origin: 50% 50%;
 }
-/* Group / multi-selection bounding box — dashed to distinguish from a box outline. */
+/* Group / multi-selection bounding box - dashed to distinguish from a box outline. */
 .fc-group-outline { border-style: dashed; }
 .fc-handle {
   position: absolute; width: 12px; height: 12px;
@@ -443,7 +443,7 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
 .fc-cam-hud-v { font-weight: 600; min-width: 3.4em; }
 
 /* Contextual bar PINNED to the top chrome row (JS sets left/top/max-width from ctxTopBand
-   in free-canvas.ts) — a toolbar on the line with the back pill and zoom HUD, no longer a
+   in free-canvas.ts) - a toolbar on the line with the back pill and zoom HUD, no longer a
    float above the selection where it sat over the artwork being edited. Its `left` is
    JS-centred (NOT translateX, and no backdrop-filter) so its colour-picker popover's
    `position:fixed` stays viewport-relative rather than anchoring to a transformed/filtered
@@ -461,14 +461,14 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
   /* Overflow scrolls the controls into reach when the band is narrower than the bar
      (mobile), keeping it a single row on the chrome line. The colour popover is
      `position:fixed` with no transform/filter on this element, so it escapes the clip
-     rather than being trapped by it; the scrollbar itself is hidden — swipe on touch,
+     rather than being trapped by it; the scrollbar itself is hidden - swipe on touch,
      shift-wheel/drag on desktop. */
   max-width: 100%;
   overflow-x: auto;
   scrollbar-width: none;        /* Firefox */
   -ms-overflow-style: none;     /* legacy Edge */
   overscroll-behavior: contain; /* a swipe on the bar never pans the stage behind it */
-  /* Auto-hide with the rail — gone at rest, revealed whenever the pointer is over
+  /* Auto-hide with the rail - gone at rest, revealed whenever the pointer is over
      the editor stage, on the bar's own hover, or while it holds focus (so an open
      colour popover keeps it up). Always-on for touch (see the coarse block below). */
   opacity: 0;
@@ -491,8 +491,8 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
    so the eye is led to the bar rather than ambushed by it.
 
    `backwards` and NOT `forwards` is load-bearing. A transform on this bar is the
-   containing block for its colour popover's `position: fixed` — the reason the bar is
-   centred with a computed `left` rather than a translateX — so the transform must not
+   containing block for its colour popover's `position: fixed` - the reason the bar is
+   centred with a computed `left` rather than a translateX - so the transform must not
    survive the animation. backwards fills the 120ms delay only; afterwards the computed
    transform is `none` again, and free-canvas.ts drops the class on animationend. */
 @keyframes fc-ctxbar-in {
@@ -511,17 +511,17 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
 .fc-cbtn:hover { background: hsl(var(--muted)); }
 .fc-cbtn:active:not(:disabled) { filter: brightness(0.92); }
 /* An action the SELECTION cannot take right now (today: "+Keyframe" on a sound clip,
-   plans/104 section 8). Dimmed and inert, never hidden and never removed — a control that
+   plans/104 section 8). Dimmed and inert, never hidden and never removed - a control that
    comes and goes as you click around teaches nothing, and its tooltip is where the
    reason lives. `aria-disabled` rather than the `disabled` property, so it keeps its
    place in the tab order and can still be read. Same posture, same numbers, as
-   `.tl-btn[aria-disabled="true"]` in parts/timeline.css — the button's other home. */
+   `.tl-btn[aria-disabled="true"]` in parts/timeline.css - the button's other home. */
 .fc-cbtn[aria-disabled="true"] { opacity: 0.35; cursor: default; }
 .fc-cbtn[aria-disabled="true"]:hover { background: transparent; }
 /* The transform readout. `min-width` is the whole point: this text grows from
    "241, -235" to "113, -92 · 1920×1080" DURING a drag, and the bar is centred on the
-   selection, so every character the readout gained shoved half of it — and every
-   button in it — sideways under the cursor. Reserve the settled form's width up front
+   selection, so every character the readout gained shoved half of it - and every
+   button in it - sideways under the cursor. Reserve the settled form's width up front
    (tabular-nums makes a digit's width a constant, so ch is an honest unit here) and the
    bar stops breathing. It still grows past this for genuinely large numbers; the
    placement freeze in positionCtxBar covers what remains. */
@@ -537,11 +537,11 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
    hover so it's clear they're the click targets. */
 .tool-stage.fc-connecting { cursor: crosshair; }
 .tool-stage.fc-connecting .lolly-box { cursor: crosshair; }
-/* Line tool (plan 90): drag anywhere to draw a line/arrow — crosshair everywhere. */
+/* Line tool (plan 90): drag anywhere to draw a line/arrow - crosshair everywhere. */
 .tool-stage.fc-lining { cursor: crosshair; }
 .tool-stage.fc-lining .lolly-box { cursor: crosshair; }
 .tool-stage.fc-connecting .lolly-box:hover { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
-/* Keyboard focus on a card (Tab) — a visible ring; focus also makes it the selection. */
+/* Keyboard focus on a card (Tab) - a visible ring; focus also makes it the selection. */
 .fc-open-canvas .lolly-box:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; border-radius: 2px; }
 
 /* Empty-canvas first-run invite (overlay lets pointer through except the button). */
@@ -556,7 +556,7 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
 .fc-empty-add:hover { border-color: hsl(var(--primary)); color: hsl(var(--foreground)); }
 .fc-empty-add:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
 /* Transient refusal message (a vector operation the engine declined). Bottom-centre of
-   the stage, above the object bar's usual perch, pointer-transparent — it is a statement,
+   the stage, above the object bar's usual perch, pointer-transparent - it is a statement,
    not a control, and it must never sit between the user and the artwork. */
 .fc-flash {
   position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
@@ -568,10 +568,10 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
   -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
 }
 .fc-flash[hidden] { display: none; }
-/* Off-playhead selection — the one rule's reconciliation chip (see free-canvas.ts's
+/* Off-playhead selection - the one rule's reconciliation chip (see free-canvas.ts's
    header). Centred over the artboard because that is where the missing box WOULD be,
    and it is the single pointer-receiving child of the pointer-transparent overlay: its
-   whole job is to be clicked. Above the frame scrim (13) and the object bar (15) —
+   whole job is to be clicked. Above the frame scrim (13) and the object bar (15) -
    which is hidden for the whole time this is up, by construction. Solid border, never
    dashed: dashed is reserved for drop areas throughout this shell. */
 .fc-offplayhead {
@@ -586,10 +586,10 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
 }
 .fc-offplayhead[hidden] { display: none; }
 /* The button IS `.btn.btn--primary.btn--sm` (buttons.css owns the fill, the hover and
-   the focus ring — never restate them here). All that is local is the pill shape, to
+   the focus ring - never restate them here). All that is local is the pill shape, to
    match the chip it sits in. */
 .fc-offplayhead-go { border-radius: 999px; font-weight: 600; }
-/* Frames-as-scenes invitation — the "Play your N frames in order?" prompt shown when the
+/* Frames-as-scenes invitation - the "Play your N frames in order?" prompt shown when the
    timeline opens on an un-sequenced frame doc (free-canvas.ts). Top-centre so it never
    sits over the docked timeline panel (bottom) or fights the object bar; a pointer-
    receiving child of the otherwise pointer-transparent overlay (its buttons are its whole
@@ -616,10 +616,10 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
    box-local coordinates against the real geometry (a handle can sit under another node),
    so free-canvas.ts owns it and there is no element-based second answer. That is also what
    lets the chrome be built once per node COUNT and only repositioned. */
-/* CONTRAST — every pen mark carries a DUAL HALO: a light casing tight around it and a
+/* CONTRAST - every pen mark carries a DUAL HALO: a light casing tight around it and a
    dark edge just beyond. Whatever is underneath, one of the two separates from it: the
    dark edge does the work on a white artboard, the light casing on a black shape, and on
-   a shape filled with the BRAND colour — where the --primary ink itself disappears — the
+   a shape filled with the BRAND colour - where the --primary ink itself disappears - the
    casing pair is the whole of what you see. It is what vector editors have drawn control
    geometry with for decades, and it needs no measurement of the backdrop.
    The alternative considered was `mix-blend-mode: difference` on the layer: it
@@ -640,7 +640,7 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
   filter: drop-shadow(0 0 1px var(--pen-casing)) drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.45));
 }
 .fc-pen-chrome { position: absolute; inset: 0; pointer-events: none; z-index: 16; }
-/* A node: square for a corner, round for smooth, round + ringed for symmetric — so the
+/* A node: square for a corner, round for smooth, round + ringed for symmetric - so the
    continuity a drag will honour is legible without opening the control that sets it.
    The white body plus the dark outer ring is the halo; the --primary rim stays as the
    brand read, but nothing depends on it being visible. */
@@ -652,7 +652,7 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
   box-shadow: 0 0 0 1px var(--pen-edge), 0 1px 3px rgba(0, 0, 0, 0.28);
 }
 .fc-pen-node.is-corner { border-radius: 1px; }
-/* Symmetric keeps its ring, now sandwiched: dark edge, the --primary band, light edge —
+/* Symmetric keeps its ring, now sandwiched: dark edge, the --primary band, light edge -
    so the ring reads as a ring even where the band itself matches the backdrop. */
 .fc-pen-node.is-symmetric {
   box-shadow:
@@ -666,7 +666,7 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
 .fc-pen-node.is-close-target { width: 13px; height: 13px; margin-left: -6.5px; margin-top: -6.5px; border-width: 2px; }
 /* An end ATTACHED to a box (plan 96 P3): the line is a connector at that end, routed to
    the box's border and following it. FILLED rather than hollow, which is the one read the
-   other three states leave free — corner is square, symmetric is ringed, selected is the
+   other three states leave free - corner is square, symmetric is ringed, selected is the
    primary fill with a white rim, and this is the primary fill with the ordinary rim. Drag
    it off every box and it goes hollow again, which is exactly what detaching does. */
 .fc-pen-node.is-bound {
@@ -685,14 +685,14 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
 }
 .fc-pen-handle[hidden] { display: none; }
 /* A SELECTED control point (shift-clicked, for align/distribute). The resting handle is
-   already primary-filled, so selection inverts it — white fill, primary ring — to read
+   already primary-filled, so selection inverts it - white fill, primary ring - to read
    clearly as picked at any size. */
 .fc-pen-handle.is-on {
   background: #ffffff;
   border-color: hsl(var(--primary));
   box-shadow: 0 0 0 2px hsl(var(--primary));
 }
-/* The arms were the worst case — a 1px line at 60% in the brand colour vanished against
+/* The arms were the worst case - a 1px line at 60% in the brand colour vanished against
    anything near it. Full-strength ink, cased both ways, still reads as a hairline. */
 .fc-pen-arm {
   position: absolute; height: 1px; background: hsl(var(--primary) / 0.9);
@@ -703,7 +703,7 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
 /* Armed pen / node-edit cursors, matching .fc-arming's vocabulary. */
 .tool-stage.fc-penning { cursor: crosshair; }
 .tool-stage.fc-node-editing { cursor: default; }
-/* A max-width capping a list of worded options (corner / smooth / symmetric) — it
+/* A max-width capping a list of worded options (corner / smooth / symmetric) - it
    has to follow the type or the wider labels are what gets cut. */
 .fc-pen-kind { --fc-pen-kind-cap: calc(148px * var(--a11y-fs)); max-width: var(--fc-pen-kind-cap); }
 /* The lossy-switch confirmation reuses the one-number prompt's panel; only its row differs
@@ -713,11 +713,11 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
 /* ── Lift layers (plans/104 section 7) ────────────────────────────────────────────────
    The confirm dialog is the same `fc-panel fc-num-panel` recipe as askConfirm; the
    only new furniture is the plan LIST between the sentence and the buttons. It is a
-   preview, not a control: no checkboxes (an unticked layer would have nowhere to go —
+   preview, not a control: no checkboxes (an unticked layer would have nowhere to go -
    see askLiftLayers) and no thumbnails, so the row is a tick, an index and a count. */
 .fc-lift-panel { min-width: 264px; max-width: 340px; }
 /* `aria-busy` on this panel (askLiftLayers, while it reads and while it lifts) is a
-   STATE for assistive tech, not a look — and it has to be pinned as one, because
+   STATE for assistive tech, not a look - and it has to be pinned as one, because
    parts/multi-edit.css declares an UNSCOPED `[aria-busy="true"] { opacity: .6;
    pointer-events: none }` and CSS has no module scope: whether that rule is in the
    document depends on whether the session has been through /multi. Without this the
@@ -757,14 +757,14 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
 .fc-lift-strength { flex: 1 1 auto; min-width: 0; }
 /* A worded ACTION inside the More panel, as opposed to the labelled controls around
    it: full width, glyph then words, so it reads as a button rather than a row that
-   happens to be clickable. The row itself needs nothing — a `.fc-row-act { display:
+   happens to be clickable. The row itself needs nothing - a `.fc-row-act { display:
    block }` used to sit here and never applied, because `.fc-row` below is the same
    specificity and comes later in the same layer, so flex won every time. The whole
    look is the button's, which is where it now says so. */
 .fc-mp-lift { width: 100%; justify-content: flex-start; gap: 7px; }
 body.fc-manipulating { user-select: none; -webkit-user-select: none; }
 
-/* Hide the editor chrome while the export shutter is closing (belt-and-braces —
+/* Hide the editor chrome while the export shutter is closing (belt-and-braces -
    detachExportHidden also removes it during the actual capture). */
 .tool-stage:has(.export-shutter.is-active) .fc-overlay,
 .tool-stage:has(.export-shutter.is-active) .fc-toolbar { opacity: 0; pointer-events: none; }
@@ -773,7 +773,7 @@ body.fc-manipulating { user-select: none; -webkit-user-select: none; }
    prefersReducedMotion() is true (it ORs this query with the app pref), so the bar
    simply appears; these blocks are the belt to that pair of braces, and they neutralise
    the rail's collapse the same way. The app-pref attribute sits beside the OS query it
-   extends — a11y-prefs.ts's model, and what a11y-prefs-contract.test.ts checks for.
+   extends - a11y-prefs.ts's model, and what a11y-prefs-contract.test.ts checks for.
    Both keep the auto-hide's fade-out DELAY: a delay is not motion, and dropping it puts
    the flicker straight back. */
 @media (prefers-reduced-motion: reduce) {
@@ -794,7 +794,7 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
   .fc-handle { width: 16px; height: 16px; margin-left: -8px; margin-top: -8px; }
   .fc-h-rotate { width: 18px; height: 18px; margin-left: -9px; margin-top: -9px; }
   /* Pen nodes are hit-tested against the geometry with a SCREEN-px radius, so the chrome
-     only has to look grabbable at this size — the tolerance is already generous. */
+     only has to look grabbable at this size - the tolerance is already generous. */
   .fc-pen-node { width: 13px; height: 13px; margin-left: -6.5px; margin-top: -6.5px; }
   .fc-pen-node.is-close-target { width: 18px; height: 18px; margin-left: -9px; margin-top: -9px; }
   .fc-pen-handle { width: 11px; height: 11px; margin-left: -5.5px; margin-top: -5.5px; }
@@ -810,7 +810,7 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
   box-shadow: 0 0 0 0.5px rgba(255, 45, 120, 0.35);
 }
 
-/* Frame name labels (Figma-style) — a tab above each artboard's top-left that names it and
+/* Frame name labels (Figma-style) - a tab above each artboard's top-left that names it and
    selects the FRAME on click. Container is click-through (so canvas clicks fall through the
    gaps); only the tabs take a hit. Fixed-size chrome, positioned in stage px by the view. */
 .fc-frame-labels { position: absolute; inset: 0; pointer-events: none; z-index: 15; }
@@ -832,14 +832,14 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
 .fc-frame-label.is-active { color: hsl(var(--primary)); }
 .fc-frame-label:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
 
-/* Toolbar canvas-background — the shared colour picker, compacted to a swatch. */
+/* Toolbar canvas-background - the shared colour picker, compacted to a swatch. */
 .fc-color-btn { padding: 0; overflow: visible; }
 .fc-toolbar .color-picker-field { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; }
 .fc-toolbar .color-trigger { width: 34px; height: 34px; padding: 0; gap: 0; justify-content: center; border-radius: 10px; }
 .fc-toolbar .color-trigger-name { display: none; }
 .fc-toolbar .color-trigger-preview { width: 22px; height: 22px; border-radius: 7px; }
 
-/* Context-bar fill + text-colour fields — compact swatch triggers. */
+/* Context-bar fill + text-colour fields - compact swatch triggers. */
 .fc-cfield { display: inline-flex; }
 .fc-ctxbar .color-picker-field { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; }
 .fc-ctxbar .color-trigger { width: 30px; height: 30px; padding: 0; gap: 0; justify-content: center; border-radius: 8px; }
@@ -849,7 +849,7 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
 /* Any picker-hosting chrome with an OPEN colour popover leapfrogs the rest of the
    stage chrome. The popover stays a DOM descendant of its bar, and the bars form
    stacking contexts (isolation:isolate / their own z-index), so its z-index:10001
-   resolves INSIDE the bar — at z-15/16 it loses overlaps against the zoom HUD (20)
+   resolves INSIDE the bar - at z-15/16 it loses overlaps against the zoom HUD (20)
    and panels (24). Raising the HOST while the popover is open is the only way the
    swatches paint over neighbouring chrome; reverts the moment it closes. */
 .fc-toolbar-dock:has(.color-popover:not([hidden])),
@@ -859,7 +859,7 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
 /* …but raising the BAR only settles it against its own siblings. The bar lives inside
    `.fc-overlay` (z-index 12) while a panel is a direct child of the stage at 24, so the
    two sit in different stacking contexts and the panel wins no matter how high the bar
-   goes — a popover opened from the ctx bar painted UNDER an open panel, and the panel's
+   goes - a popover opened from the ctx bar painted UNDER an open panel, and the panel's
    buttons swallowed the clicks meant for the swatches. (Nothing hit this until the
    gradient panel, which is the first that expects you to use the bar's colour field
    while it is open.) So the panel steps aside instead, for exactly as long as the
@@ -883,24 +883,24 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
 /* The box itself is `.field-select` / `.field-range` (fields.css). All a panel row
    adds is how the control shares the row: fill the cell, never push it wider than
    its label. Restating padding/border/background here would silently beat the
-   primitive — `views` outranks `primitives` — so it deliberately does not. */
+   primitive - `views` outranks `primitives` - so it deliberately does not. */
 .fc-row select, .fc-row input[type="range"] { flex: 1; min-width: 0; }
 .fc-row > b { flex: 0 0 auto; flex-basis: calc(32px * var(--a11y-fs)); text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
-/* Toggle rows (ligatures / stylistic alternates) — checkbox sits at the right edge.
+/* Toggle rows (ligatures / stylistic alternates) - checkbox sits at the right edge.
    The tick is `.field-check` + `.field-toggle` (which also dims the row while the
    box is disabled); only the label's flex behaviour is local. */
 .fc-row-toggle { cursor: pointer; transition: opacity 0.12s; }
 .fc-row-toggle > span { flex: 1 1 auto; }
 /* `.field-toggle`'s disabled dim is the right read for the Credit-me row's INITIAL
    state (it ships `disabled` and is enabled once the profile read resolves), but the
-   change handler also disables the box for the duration of each write — so a plain
+   change handler also disables the box for the duration of each write - so a plain
    dim would flash the row on every toggle. Delay the dim and restore it instantly:
    a fast write never crosses the threshold, a stalled one still reads as inert.
    `cursor` has to be restated because `.fc-row-toggle` above (layer `views`) beats
-   the primitive's `not-allowed` — this is the delta that makes it true. */
+   the primitive's `not-allowed` - this is the delta that makes it true. */
 .fc-row-toggle:has(.field-check:disabled) { cursor: not-allowed; }
 
-/* Connector inspector (org-chart) — the properties popover for a selected line. */
+/* Connector inspector (org-chart) - the properties popover for a selected line. */
 .fc-edge-panel { min-width: 236px; }
 .fc-edge-count {
   font-size: calc(11px * var(--a11y-fs)); font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase;
@@ -915,7 +915,7 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
 }
 .fc-edge-actions .fc-cbtn svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
 
-/* Canvas-size panel — presets grid + custom width/height. */
+/* Canvas-size panel - presets grid + custom width/height. */
 .fc-size-panel { min-width: 262px; }
 .fc-panel-head { }
 .fc-size-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
@@ -934,7 +934,7 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
   border-radius: 7px; border: 1px solid hsl(var(--input)); background: hsl(var(--background)); color: inherit;
 }
 
-/* Pages panel — a page-count stepper above the shared page-size presets. */
+/* Pages panel - a page-count stepper above the shared page-size presets. */
 .fc-pages-panel .fc-panel-head + .fc-panel-head { margin-top: 10px; }
 .fc-pages-step { display: flex; align-items: center; justify-content: center; gap: 14px; }
 .fc-pages-step .fc-step-btn {
@@ -947,17 +947,17 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
 .fc-pages-step .fc-step-btn svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
 .fc-pages-count { min-width: 1.6ch; text-align: center; font-weight: 700; font-size: calc(18px * var(--a11y-fs)); font-variant-numeric: tabular-nums; }
 
-/* Inline text editing — the box's own text element becomes contentEditable. */
+/* Inline text editing - the box's own text element becomes contentEditable. */
 .lolly-box-text.fc-editing {
   outline: 2px solid #2d7ff9; outline-offset: 3px;
-  /* Square the focus ring — an outline follows the element's own radius, so a
+  /* Square the focus ring - an outline follows the element's own radius, so a
      rounded box would otherwise round the blue ring while editing. */
   border-radius: 0 !important;
   cursor: text; min-height: 1em; min-width: 8px; caret-color: #2d7ff9;
 }
 /* While editing, let the caret/text spill past the box so nothing types "into the
    void"; the box re-clips (and grows to fit) on commit. Rounding and clip masks
-   come off too (inline styles, hence !important) — editing happens on a plain
+   come off too (inline styles, hence !important) - editing happens on a plain
    rectangle so corners/masks never hide the caret or the copy. */
 .lolly-box.fc-box-editing {
   overflow: visible;
@@ -985,16 +985,16 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
 /* Frosted-glass backing for the floating chrome that sits over the canvas
    (toolbar rail, object bar, format bar, panels), so it reads as part of the
    scene rather than an opaque slab. The blur lives on a ::before pseudo BEHIND the
-   content — NOT on the element itself — because an element with backdrop-filter
+   content - NOT on the element itself - because an element with backdrop-filter
    becomes the containing block for its position:fixed descendants, which would
    knock the colour-picker popovers these bars host off-screen. The pseudo has no
    descendants, so it frosts the canvas without capturing those popovers. Each host
    sets `isolation:isolate` so the z-index:-1 pseudo stays layered behind its own
    content but above the artboard. The host keeps a translucent solid background too
-   — a graceful fallback where backdrop-filter is unsupported, and it keeps a
+   - a graceful fallback where backdrop-filter is unsupported, and it keeps a
    scrolling panel readable in the strip a scrolled-away pseudo can't cover.
 
-   NOT the tool rail: that palette is opaque and unfrosted on purpose — a floating,
+   NOT the tool rail: that palette is opaque and unfrosted on purpose - a floating,
    draggable object rather than a full-height sheet of glass down the stage edge. */
 .fc-ctxbar::before, .fc-fmtbar::before, .fc-panel::before {
   content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
@@ -1020,12 +1020,12 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
 .fc-fmt-weight, .fc-fmt-font { --fc-fmt-cap: calc(104px * var(--a11y-fs)); max-width: var(--fc-fmt-cap); }
 .fc-fmt-font { --fc-fmt-cap: calc(118px * var(--a11y-fs)); }
 
-/* Type pill — font · weight · colour joined into one connected control. Only the
+/* Type pill - font · weight · colour joined into one connected control. Only the
    pill's outer corners round, so the three read as a single object. The -1px pull
    below dates from when all three segments were outlined and had a shared 1px edge
    to collapse; the two selects are now `.field-select` (embossed, `border: 0`), so
    it survives only to keep the colour trigger's surviving left border flush against
-   its neighbour — it is a 1px nudge now, not a border collapse.
+   its neighbour - it is a 1px nudge now, not a border collapse.
    The `:first-child`/`:last-child` rules also target the colour
    field's nested trigger (its real bordered element), so the ends round whichever
    control sits there. */
@@ -1054,10 +1054,10 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
 .fc-fmt-typegroup > :last-child,
 .fc-fmt-typegroup > :last-child .color-trigger { border-top-right-radius: 9px; border-bottom-right-radius: 9px; }
 
-/* The "Aa" text-options trigger — nudge its glyph so it reads as a type control. */
+/* The "Aa" text-options trigger - nudge its glyph so it reads as a type control. */
 .fc-cbtn-text { font-weight: 800; letter-spacing: -0.02em; }
 
-/* Brand-ligature inserter — force a colour-emoji font for the LABEL so all three
+/* Brand-ligature inserter - force a colour-emoji font for the LABEL so all three
    glyphs read as 🦎💚🐧 (the SUSE text font supplies a chameleon glyph for 🦎 but
    not the heart/penguin, so in that font the label would look truncated). The
    inserted text still renders in the SUSE font, where the trio shapes into the
@@ -1074,7 +1074,7 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
    basis can't hold has to be contained BY the button: without the overflow guard a
    wider label paints outside its own box and over its neighbours, and the segment
    under the pointer stops being the one the label says it is. `min-height` rather
-   than `height` for the same reason on the other axis — the box grows with the type
+   than `height` for the same reason on the other axis - the box grows with the type
    instead of cropping it. Both are inert at --a11y-fs: 1 (26px content in a 26px
    min-height box, labels that already fit), so the control is unchanged for anyone
    who set no preference. */
@@ -1091,14 +1091,14 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
 }
 .fc-text-panel { min-width: 256px; }
 
-/* Icon segment buttons (align / shape / fit) — centre the glyph. */
+/* Icon segment buttons (align / shape / fit) - centre the glyph. */
 .fc-seg-btn.fc-seg-ic { display: inline-flex; align-items: center; justify-content: center; padding: 0 4px; }
 .fc-seg-btn.fc-seg-ic svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
 
 /* Image-position anchor picker: a 3×3 grid where each cell IS its anchor. The dot
    is a target affordance; the selected cell lights up like any .fc-seg-btn.is-on. */
 .fc-seg.fc-posgrid { display: grid; flex: none; grid-template-columns: repeat(3, 24px); grid-auto-rows: 24px; }
-/* A 3×3 cell is sized by its grid track, not by the segment row — so it clears the
+/* A 3×3 cell is sized by its grid track, not by the segment row - so it clears the
    segment's row height BOTH ways (`.fc-seg-btn` sets a min-height as well now, and
    an unreset floor would push each cell past its 24px track). */
 .fc-pos-btn { flex: none; width: auto; height: auto; min-height: 0; padding: 0; display: grid; place-items: center; }
@@ -1113,7 +1113,7 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
 
 /* Text-only inputs / steppers / dims / info panels share the number+text field look.
    This is the OLD outlined generation and it is scoped by element type, so it swallows
-   anything that wanders into a panel — including the Doc Studio page-setup fields, which
+   anything that wanders into a panel - including the Doc Studio page-setup fields, which
    live in a `.fc-panel` and have already moved to `.field-input`. The `:not()` yields to
    the primitive rather than out-ranking it from the same layer; migrate the remaining
    free-canvas panel fields and this rule can go entirely. */
@@ -1121,7 +1121,7 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
   flex: 1; min-width: 0; font: inherit; font-size: calc(12.5px * var(--a11y-fs)); padding: 4px 6px;
   border-radius: 7px; border: 1px solid hsl(var(--input)); background: hsl(var(--background)); color: inherit;
 }
-/* A panel field the code has JUDGED wrong — today only the stroke panel's Dash array,
+/* A panel field the code has JUDGED wrong - today only the stroke panel's Dash array,
    whose validity is a parse ("6 4" yes, "6 x" no) that no HTML constraint expresses, so
    `:user-invalid` (fields.css) can never fire for it. Same destructive ring as the
    primitive's, matched on the attribute the panel already sets for assistive tech, so the
@@ -1148,16 +1148,16 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
 .fc-more-panel .color-trigger { min-width: 0; padding: 3px 7px; border-radius: 7px; }
 .fc-more-panel .color-trigger-preview { width: 18px; height: 18px; border-radius: 5px; }
 /* Shadow colour sits in a LABELLED row ("Colour  [swatch hex]"), so it gets a
-   full-width trigger + hex — not the 30px icon treatment above. The popover is
+   full-width trigger + hex - not the 30px icon treatment above. The popover is
    left:0/right:0 on the field, so a 30px field also made a 30px (unusable) picker;
    filling the row's flex cell gives the swatch and its popover proper room. */
 .fc-more-panel .fc-row .color-picker-field { width: 100%; height: auto; display: block; }
 .fc-more-panel .fc-row .color-trigger { justify-content: flex-start; padding: 5px 10px; border-radius: var(--radius); }
 .fc-more-panel .fc-row .color-trigger-name { display: inline; }
 
-/* Artboards navigator (plan 112) — a bottom-docked filmstrip of the document's frames
+/* Artboards navigator (plan 112) - a bottom-docked filmstrip of the document's frames
    in page order, each a LIVE scaled thumbnail. Clicking one (or the ‹ › steppers) frames
-   that artboard in the viewport. NO reorder — the sequence IS the canvas layout. `bottom`
+   that artboard in the viewport. NO reorder - the sequence IS the canvas layout. `bottom`
    is set inline by the view so the strip rides ABOVE the sequence timeline when it's open;
    left/top/transform re-anchor it from the base `.fc-panel` absolute-at-(left,top) to a
    bottom-centred bar. */
@@ -1198,7 +1198,7 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
   color: hsl(var(--muted-foreground)); font-size: calc(12px * var(--a11y-fs)); padding: 4px 2px;
 }
 .fc-frames-empty-msg { flex: 0 0 auto; }
-/* "Draw an artboard" — the actionable way out of the empty state (arms the Artboard tool).
+/* "Draw an artboard" - the actionable way out of the empty state (arms the Artboard tool).
    Fill pair is aliased onto .btn--primary in buttons.css; only the border + layout are local. */
 .fc-frames-empty-add {
   display: inline-flex; align-items: center; gap: 6px;
@@ -1210,11 +1210,11 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
 .fc-frames-empty-add:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 .fc-frames-empty-add svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
 
-/* Position & size panel — each concept (position / size / rotation) on its own
+/* Position & size panel - each concept (position / size / rotation) on its own
    icon-led row: two labelled number cells (X·Y, W·H) or a number + drag slider. */
 .fc-dims-panel { min-width: 236px; }
 .fc-dims { display: flex; flex-direction: column; gap: 8px; }
-/* The leading icon column is sized to its glyph, so the track scales with it — a
+/* The leading icon column is sized to its glyph, so the track scales with it - a
    fixed 18px track would clip a 1.2× icon against the fields beside it. The track
    widths are tokens (the rotation row below re-points them) rather than a factor
    restated inside each grid-template-columns. */
@@ -1239,7 +1239,7 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
    allowed to shrink below its intrinsic width. */
 .fc-dims-slider { min-width: 0; }
 
-/* Document info panel — editable name + at-a-glance meta rows. */
+/* Document info panel - editable name + at-a-glance meta rows. */
 .fc-info-panel { min-width: 262px; }
 .fc-info-meta { display: flex; flex-direction: column; gap: 5px; padding-top: 9px; border-top: 1px solid hsl(var(--border)); }
 .fc-info-line { display: flex; justify-content: space-between; gap: 14px; font-size: calc(12px * var(--a11y-fs)); }
@@ -1297,7 +1297,7 @@ button.fc-readout:empty { display: none; }
   position: relative;
   transform-origin: top left;
 }
-/* Editor (free-canvas) only — boxes dragged off the artboard stay visible and
+/* Editor (free-canvas) only - boxes dragged off the artboard stay visible and
    selectable: hit-testing follows the visual overflow, and the box DOM still
    lives inside the canvas so clicks bubble to the overlay's handlers. `> *`
    un-clips the tool's own clipping root (e.g. design's .artboard)
@@ -1313,11 +1313,11 @@ button.fc-readout:empty { display: none; }
 .tool-stage.is-grabbable { cursor: grab; }
 .tool-stage.is-grabbing  { cursor: grabbing; }
 
-/* Zoom HUD — a small TOP-RIGHT pill: −  [NN%]  +  Fit. Dimmed until the stage
+/* Zoom HUD - a small TOP-RIGHT pill: −  [NN%]  +  Fit. Dimmed until the stage
    is hovered or the canvas is zoomed, so it stays out of the way at rest.
 
    It used to sit bottom-right, which is the same lane as the docked timeline band
-   (.tl-panel, z-index 22, timeline.css) — with the timeline open the band covered
+   (.tl-panel, z-index 22, timeline.css) - with the timeline open the band covered
    the HUD outright and no z-index shuffle fixes that, since the band legitimately
    owns the bottom of the stage. Top-right removes the collision instead of fighting
    it, and shares the lane with nothing (the live-camera toggle and the fullscreen
@@ -1325,8 +1325,8 @@ button.fc-readout:empty { display: none; }
    both bottom).
 
    Vertical geometry comes from the SHARED top-row tokens (tokens.css: --chrome-top,
-   --chrome-h, --chrome-inset) — the same three the chromeless editor's back pill
-   reads via .tools-home.home-full (tool.css) — so the HUD and the back pill sit on
+   --chrome-h, --chrome-inset) - the same three the chromeless editor's back pill
+   reads via .tools-home.home-full (tool.css) - so the HUD and the back pill sit on
    one line at every width and can't drift apart. min-height (not height) mirrors the
    pill exactly and leaves the mobile stacked capsule below free to grow taller. The
    --vv-* offsets re-pin it to the visible top-right while the page is pinch-zoomed,
@@ -1355,7 +1355,7 @@ button.fc-readout:empty { display: none; }
 .stage-nav:focus-within { opacity: 1; }
 
 /* The pill around these already grows (min-height is --chrome-h, which carries the
-   type multiplier — tokens.css), so the segments inside it grow on the same factor:
+   type multiplier - tokens.css), so the segments inside it grow on the same factor:
    held at a flat 26px they would shrink INSIDE a taller pill, and "100%" at 1.2×
    no longer fits the percentage segment's 48px floor. */
 .stage-nav-btn,
@@ -1376,10 +1376,10 @@ button.fc-readout:empty { display: none; }
 .stage-nav-pct:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
 
 /* Theme cycle + sound toggles docked at the end of the HUD (createThemeToggle /
-   createSoundToggle) — icon-only .stage-nav-btn, set off from the zoom controls by a
+   createSoundToggle) - icon-only .stage-nav-btn, set off from the zoom controls by a
    hairline separator so they don't read as zoom buttons. The explicit svg size pins
-   BOTH icons at 16px; without it a global svg rule wins and — on mobile, where the
-   button becomes width:auto — the icon balloons. */
+   BOTH icons at 16px; without it a global svg rule wins and - on mobile, where the
+   button becomes width:auto - the icon balloons. */
 .stage-nav-theme svg,
 .stage-nav-sound svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
 .stage-nav-sep {
@@ -1396,14 +1396,14 @@ button.fc-readout:empty { display: none; }
    reading + / NN% / − / Fit top-to-bottom like a map zoom control. It hangs DOWN from
    the top-right corner, so nothing here needs a bottom offset any more (the base rule
    is top-anchored, and --chrome-top already carries env(safe-area-inset-top) on phones
-   — see tokens.css — so the capsule clears the notch the same way the back pill does).
+   - see tokens.css - so the capsule clears the notch the same way the back pill does).
    The stacked capsule is taller than --chrome-h, which is why the base rule pins the
    row height with min-height rather than height. */
 @media (max-width: 640px) {
   .stage-nav {
     flex-direction: column;
     align-items: stretch;
-    opacity: 1;                                    /* no hover on touch — keep it visible */
+    opacity: 1;                                    /* no hover on touch - keep it visible */
   }
   .stage-nav-btn { width: auto; }                 /* fill the column when stacked */
   .stage-nav [data-nav="in"]  { order: 1; }       /* + */
@@ -1440,7 +1440,7 @@ button.fc-readout:empty { display: none; }
    The stop handle is a SWATCH: --stop carries the stop's own colour, over a small
    checkerboard so a translucent stop reads as translucent rather than as whatever the
    artwork behind it happens to be. The white casing + dark ring is the same two-tone
-   treatment the pen nodes use, and for the same reason — a handle has to stay legible
+   treatment the pen nodes use, and for the same reason - a handle has to stay legible
    on top of arbitrary artwork, including artwork the same colour as the handle. */
 .fc-grad-layer { pointer-events: none; z-index: 13; }
 .fc-grad-line-halo {
@@ -1464,7 +1464,7 @@ button.fc-readout:empty { display: none; }
 .fc-grad-stop::after { content: ""; position: absolute; inset: -8px; }  /* fat touch target */
 .fc-grad-stop.is-on {
   /* The selected stop is what the Fill field and Delete act on, so it needs to be
-     unmistakable — a primary ring outside the white casing. */
+     unmistakable - a primary ring outside the white casing. */
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 0 0 3.5px hsl(var(--primary)), 0 1px 4px rgba(0, 0, 0, 0.35);
 }
 .fc-grad-dir {

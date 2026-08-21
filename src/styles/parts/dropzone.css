@@ -1,18 +1,18 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 /* Cascade layer: this whole lazy-loaded sheet sits in the `views` layer
    (order declared once in styles/app.css). Wrapping it means its rules keep a
-   fixed priority — above chrome/primitives/base, below overrides/a11y — no
+   fixed priority - above chrome/primitives/base, below overrides/a11y - no
    matter when Vite injects this chunk at runtime. Do not rely on load order. */
 @layer views {
 /* ── Shared upload dropzone (lib/upload-dropzone.ts) ── Neutral `.updz*` classes so any
    surface can mount it (the catalogue's "Your uploads" section, the #/start Catalogue
    tab); visual treatment ported from the catalogue's old .cat-dropzone. A <label> over
    a visually-hidden file input, so :focus-within is the input's keyboard ring.
-   Modifiers (applied by the CALLER — the component can't know its surroundings):
+   Modifiers (applied by the CALLER - the component can't know its surroundings):
      .updz--empty    the roomier column layout when the zone IS the whole section
      .updz--compact  a tighter row for dense surfaces (drops the hint line)
    State classes set by the component: .is-dragover (a file drag is over the zone) and
-   .is-busy (ingest in flight — pointer-events off so a second drop can't land). */
+   .is-busy (ingest in flight - pointer-events off so a second drop can't land). */
 .updz {
   display: flex; align-items: center; justify-content: center; gap: 10px;
   margin-bottom: .9rem; padding: 14px 16px;
@@ -38,7 +38,7 @@
    this sheet because it belongs to the same moment as the zone above: a user file is
    becoming an asset, and every surface that ingests one (the dropzone, the Logos room,
    the asset picker's upload flow, the catalogue details panel) shows the same card.
-   NOT a drop area, so the border is solid — dashed means "drop here" and nothing else.
+   NOT a drop area, so the border is solid - dashed means "drop here" and nothing else.
    Neutral `.trimo*` classes; the caller owns the mount and its surroundings. The pad
    field is the shared `.field-input--sm` primitive (fields.css), the actions are `.btn`
    (buttons.css): nothing here re-forks an atom. */
@@ -56,7 +56,7 @@
 /* Pushed to the end rather than given a colour of its own: the number is the finding,
    not a status. */
 .trimo-savings { margin-inline-start: auto; color: hsl(var(--muted-foreground)); font-size: calc(.8rem * var(--a11y-fs)); }
-/* Backing out of the question entirely — the pointer twin of Escape (the two
+/* Backing out of the question entirely - the pointer twin of Escape (the two
    buttons below both CHOOSE a file; this one chooses none). Sized as a real
    target rather than a decorative glyph. */
 .trimo-x {
@@ -76,7 +76,7 @@
   min-height: 96px; padding: 8px;
   border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) - 2px);
   /* Transparency is the first question of a logo, so the artwork rides the shared
-     preview checker (tokens.css) — a white mark and a transparent one must not look
+     preview checker (tokens.css) - a white mark and a transparent one must not look
      the same in the card that decides what gets stored. */
   background: var(--preview-checker), var(--preview-surface);
 }
@@ -99,7 +99,7 @@
 
 /* The mount the card is rendered into. Neutral, because three surfaces share it: the
    shared dropzone (below its zone), the asset picker (between the scrolling body and the
-   upload footer — flex:none so the panel squeezes the body, not the question) and the
+   upload footer - flex:none so the panel squeezes the body, not the question) and the
    catalogue details modal (below the action row, where catalog.css drops the inset the
    body already carries). Capped + scrollable so a short viewport can still reach the two
    buttons. Empty until an offer stands, so it is `hidden` at rest and carries no padding

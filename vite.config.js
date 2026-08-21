@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 // This file's directory (shells/web/). Computed from import.meta.url rather
 // than the __dirname global only Vite's config bundler shims in, so plain node
-// can import this module too — src/sw.test.ts imports the exported precache
+// can import this module too - src/sw.test.ts imports the exported precache
 // grouping helpers below.
 const webDir = dirname(fileURLToPath(import.meta.url));
 // Repo root is two directories up from shells/web/.
@@ -32,10 +32,10 @@ const MIME = {
   '.wasm': 'application/wasm',
 };
 
-// Vite resolve.alias only rewrites JS import statements — it has no effect on
+// Vite resolve.alias only rewrites JS import statements - it has no effect on
 // browser fetch() calls. This plugin adds an actual HTTP handler for /tools/,
 // /catalog/, and /schemas/ so that fetch('/tools/qr-code/tool.json') works in
-// dev — and so the schema $id URLs (https://lolly.tools/schemas/*.schema.json)
+// dev - and so the schema $id URLs (https://lolly.tools/schemas/*.schema.json)
 // resolve to the real files in both dev and the production build.
 function serveRepoStatic() {
   // This middleware short-circuits BEFORE Vite's own header middleware, so the
@@ -107,14 +107,14 @@ function serveRepoStatic() {
       for (const dir of ['catalog', 'tools', 'schemas']) {
         const src = resolve(repoRoot, dir);
         // dereference: tools/ and catalog are profile VIEWS (symlink farms built
-        // by scripts/use-profile.ts) — copy the real files, not the links.
+        // by scripts/use-profile.ts) - copy the real files, not the links.
         if (existsSync(src)) cpSync(src, resolve(outDir, dir), { recursive: true, dereference: true });
       }
     },
   };
 }
 
-// Emit dist/precache.json — the enumerable answer to "what IS the whole app?".
+// Emit dist/precache.json - the enumerable answer to "what IS the whole app?".
 // Vite has no servable manifest of its output (build.manifest is off, and it
 // wouldn't cover publicDir anyway), so until this existed nothing could
 // precache the ~350 lazy chunks: the SW precaches only '/', every other chunk
@@ -123,17 +123,17 @@ function serveRepoStatic() {
 // "Available offline" manager (src/lib/offline-manager.ts) downloads these
 // groups into the SW's persistent page-owned buckets:
 //
-//   app — index.html + every hashed chunk under /assets/ + the bundled UI
+//   app - index.html + every hashed chunk under /assets/ + the bundled UI
 //         fonts + icons/share stubs. Everything a fully-offline boot of ANY
 //         view needs, minus content that has its own pipeline (below).
-//   ort — the onnxruntime-web runtime files ORT actually loads at scan time
+//   ort - the onnxruntime-web runtime files ORT actually loads at scan time
 //         (ort-wasm-*; the ort.*.mjs package entrypoints ship inside the
 //         /assets/ bundle and are never fetched from /ort/), PLUS the speech
-//         worker's pinned transformers.js runtime under /ort-hf/<version>/ —
+//         worker's pinned transformers.js runtime under /ort-hf/<version>/ -
 //         both read back through the SW's lolly-ort bucket. ~95 MB + ~22 MB,
 //         opt-in.
 //
-//   speech — the on-device voice models (/models/kokoro/, plus /models/whisper/
+//   speech - the on-device voice models (/models/kokoro/, plus /models/whisper/
 //         when staged), downloaded by the 'speech' offline part into the
 //         transformers-cache + lolly-speech buckets the speech runtime reads
 //         (plans/41-tts-stt-programme.md section 3). Opt-in, ~110 MB.
@@ -143,14 +143,14 @@ function serveRepoStatic() {
 // /models/trustmark/ bytes ride the `models` group as size metadata only
 // (lib/trustmark.ts caches those in IndexedDB itself), sw.js
 // (the browser owns SW lifecycle). Runs at closeBundle, AFTER serveRepoStatic's
-// copies, by scanning the real dist/ output — so it can never drift from what
+// copies, by scanning the real dist/ output - so it can never drift from what
 // actually shipped. `version` hashes the listing; the manager stores it as its
 // re-sync watermark (new deploy → new hash → "update your download").
 // Split the scanned dist/ listing into the download groups offline-manager.ts
 // reads. Exported for the grouping test in src/sw.test.ts.
 export function groupPrecacheFiles(all) {
   // The app group is the offline boot payload: everything EXCEPT the opt-in
-  // runtime/model binaries — /ort/, /ort-hf/ (the speech worker's runtime,
+  // runtime/model binaries - /ort/, /ort-hf/ (the speech worker's runtime,
   // which the SW can only serve from lolly-ort, never lolly-app) and /models/.
   const app = all.filter(f => !f.url.startsWith('/ort/') && !f.url.startsWith('/ort-hf/') && !f.url.startsWith('/models/'));
   // The runtime wasm each ONNX runtime loads (ort-wasm-*), split by OWNER so each
@@ -160,55 +160,60 @@ export function groupPrecacheFiles(all) {
   // `ort` group the VERIFY part downloaded, so pre-downloading Speech alone still
   // fetched the ~22 MB /ort-hf/ runtime on first synthesis; owning it here lets the
   // speech part be truly offline-complete. The other ort.*.mjs files are package
-  // dist entrypoints Vite bundles — dead weight.
+  // dist entrypoints Vite bundles - dead weight.
   const ort = all.filter(f => /^\/ort\/ort-wasm-/.test(f.url));
   const ortHf = all.filter(f => /^\/ort-hf\/[^/]+\/ort-wasm-/.test(f.url));
-  // The verify part's models are the TrustMark decoders ONLY — downloaded via
+  // The verify part's models are the TrustMark decoders ONLY - downloaded via
   // lib/trustmark.ts's own IDB path, listed here so the part can state its true
   // size up front. /models/kokoro/ is deliberately NOT here: it belongs to the
-  // 'speech' group below (plans/41-tts-stt-programme.md section 3) — counting it in
+  // 'speech' group below (plans/41-tts-stt-programme.md section 3) - counting it in
   // would make the verify part's size lie by ~95 MB.
   const models = all.filter(f => f.url.startsWith('/models/trustmark/'));
   // The speech part's voice models: Kokoro today, Whisper when its STT models
   // are staged. offline-manager.ts splits the group between transformers.js's
   // 'transformers-cache' bucket (model/config/tokenizer) and the worker's
-  // 'lolly-speech' bucket (voice matrices) — the caches the runtime reads.
+  // 'lolly-speech' bucket (voice matrices) - the caches the runtime reads.
   const speech = all.filter(f => f.url.startsWith('/models/kokoro/') || f.url.startsWith('/models/whisper/'));
-  // The AI-upscaler models (host.upscale, engine 1.101) — downloaded via
+  // The AI-upscaler models (host.upscale, engine 1.101) - downloaded via
   // lib/upscaler.ts's own IDB path (the shared ORT model fetcher), listed here so
   // the offline-download manager can state the part's true size up front. Like the
   // verify/speech models, /models/upscale/ is SW-bypassed (single IDB copy).
   const upscale = all.filter(f => f.url.startsWith('/models/upscale/'));
-  // The background-removal models (host.matte, engine 1.103) — downloaded via
+  // The background-removal models (host.matte, engine 1.103) - downloaded via
   // lib/matter.ts's own IDB path (the shared ORT model fetcher), listed here so
   // the offline-download manager can state the part's true size up front. Like the
   // upscale/speech/verify models, /models/matte/ is SW-bypassed (single IDB copy).
   const matte = all.filter(f => f.url.startsWith('/models/matte/'));
-  // The OCR models (host.ocr, plans/125) — a detector + recogniser + char dict,
+  // The OCR models (host.ocr, plans/125) - a detector + recogniser + char dict,
   // downloaded via lib/ocr.ts's own IDB path (the shared ORT model fetcher), listed
   // here so the offline-download manager can state the part's size up front. Like
   // the other model parts, /models/ocr/ is SW-bypassed (single IDB copy).
   const ocr = all.filter(f => f.url.startsWith('/models/ocr/'));
-  // The reword model (plans/127, SmolLM2-360M-Instruct) — loaded by the reword
+  // The reword model (plans/127, SmolLM2-360M-Instruct) - loaded by the reword
   // worker through transformers.js, which caches under path keys in its own
   // 'transformers-cache' bucket, exactly like the speech models. The 'reword'
   // offline part downloads this group into that bucket (offline-manager.ts), so
   // a pre-download means zero bytes move on first use. Empty on builds where
   // the model is not staged, and the profile row hides itself then.
   const reword = all.filter(f => f.url.startsWith('/models/reword/'));
-  // The Ask embedding model (plans/103 M1, all-MiniLM-L6-v2 q8) — loaded by the
+  // The Ask embedding model (plans/103 M1, all-MiniLM-L6-v2 q8) - loaded by the
   // ask embed worker through transformers.js into the same 'transformers-cache'
   // bucket as speech/reword. The 'ask' offline part downloads this group there,
   // so a pre-download means zero bytes move on first use. Empty on builds where
   // the model is not staged, and the profile row hides itself then.
   const embed = all.filter(f => f.url.startsWith('/models/embed/'));
-  return { app, ort, ortHf, models, speech, upscale, matte, ocr, reword, embed };
+  // The AI-text detector (plans/126 WP-A) - loaded by the ai-detect worker
+  // through transformers.js into the same 'transformers-cache' bucket. Fills
+  // through the verify/catalog panels' consent button; empty on builds where
+  // no model is staged.
+  const aiDetect = all.filter(f => f.url.startsWith('/models/ai-detect/'));
+  return { app, ort, ortHf, models, speech, upscale, matte, ocr, reword, embed, aiDetect };
 }
 
 // Content hash for files whose URL does NOT already encode their bytes.
 // /assets/ chunks are content-hash-named (a change renames them), the /ort/ +
 // /models/ binaries are release-versioned and too big to hash every build, and
-// /ort-hf/ carries its release version in the path — everything else (fonts,
+// /ort-hf/ carries its release version in the path - everything else (fonts,
 // icons, share stubs, index.html, voice, viz-presets) keeps a stable name, so
 // a same-size content change is invisible to a size compare. The hash is what
 // offline-manager.ts's cachedMatches uses to catch that. Exported for the
@@ -292,12 +297,12 @@ function brandChrome() {
 
 // Strip model STAGING dirs from the production build. scripts/fetch-{matte,upscale}-
 // models.ts stage a candidate model under public/models/<cat>/.candidates/ for
-// evaluation before it is promoted into its served /models/<cat>/ path — and the DEV
+// evaluation before it is promoted into its served /models/<cat>/ path - and the DEV
 // server serves them (so a candidate can be tested at that URL), which is why they live
 // under public/. But vite copies publicDir wholesale, so a plain build would SHIP them
 // too: ~700 MB of dead weight nothing references (they are dot-dirs, so precacheManifest's
-// walk already skips them — no manifest/group/client points at them; they were reachable
-// only incidentally). Delete them from dist so they never ship via ANY path — local dist,
+// walk already skips them - no manifest/group/client points at them; they were reachable
+// only incidentally). Delete them from dist so they never ship via ANY path - local dist,
 // git-integration, or the loldev-ship archive. Build-only (`apply: 'build'`), so dev-server
 // candidate evaluation is untouched. Runs before precacheManifest for tidiness; the scan
 // skips dot-dirs regardless, so the emitted manifest is byte-identical either way.
@@ -330,7 +335,7 @@ export default defineConfig({
   // it as an ES module so the import graph survives the build unchanged.
   worker: { format: 'es' },
   // onnxruntime-web (lazy-loaded by the /verify deep-scan: lib/trustmark.ts +
-  // lib/contentseal.ts) must NOT go through Vite's esbuild dep pre-bundler — it
+  // lib/contentseal.ts) must NOT go through Vite's esbuild dep pre-bundler - it
   // rewrites the package's `import.meta.url`-relative wasm/worker loading and the
   // dynamic `import('onnxruntime-web')` then throws at runtime (surfaced as the
   // deep scan's 'error' / "couldn't run in this browser"). Excluding it makes Vite
@@ -344,7 +349,7 @@ export default defineConfig({
       // jspdf lazy-imports html2canvas (199 KB / 46 KB gz, + its own dompurify)
       // ONLY inside its `.html()`/`addHTML()` method, which lolly never calls.
       // Alias it to an empty stub so it's never built or shipped. (dompurify is
-      // NOT stubbed — picker.ts uses the standalone copy directly.)
+      // NOT stubbed - picker.ts uses the standalone copy directly.)
       'html2canvas': resolve(webDir, 'html2canvas-stub.js'),
     },
   },
@@ -362,7 +367,7 @@ export default defineConfig({
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'credentialless',
     },
-    // dev-only: the standalone CA service — node services/ca/server.mjs
+    // dev-only: the standalone CA service - node services/ca/server.mjs
     // (string shorthand preserves the /api/ca path prefix, which the handler routes on).
     proxy: { '/api/ca': 'http://localhost:8787' },
   },
@@ -374,7 +379,7 @@ export default defineConfig({
         // is aliased straight to its barrel (above), so package.json `sideEffects` never
         // applies and the whole engine otherwise lands in one shared chunk the gallery/
         // catalog boot preloads. engine-render is imported only from LAZY views (tool,
-        // projects, picker, pro, compose, featured-render — all dynamic-imported), so as
+        // projects, picker, pro, compose, featured-render - all dynamic-imported), so as
         // its own chunk it loads with those views instead of blocking first paint.
         //
         // Uses rolldown's `advancedChunks` (not the `manualChunks` compat shim): the
@@ -387,12 +392,12 @@ export default defineConfig({
           groups: [
             { name: 'handlebars', test: /\/node_modules\/handlebars\//, minSize: 0, minShareCount: 1 },
             { name: 'ajv', test: /\/node_modules\/ajv\//, minSize: 0, minShareCount: 1 },
-            // Pure engine util files (tokens/tool-url/embed) — NO runtime/template/
+            // Pure engine util files (tokens/tool-url/embed) - NO runtime/template/
             // loader/validate dependency, so no Handlebars/Ajv. runtime.ts imports
             // them, so without their own chunk rolldown tree-shakes the tiny boot-time
-            // helpers the entry legitimately needs — createTokenSet + isTokenValue/
+            // helpers the entry legitimately needs - createTokenSet + isTokenValue/
             // isAssetRef (tokens.ts; used by bridge/tokens.ts token & asset resolution)
-            // and isToolUrl (tool-url.ts) — INTO engine-render, dragging the whole
+            // and isToolUrl (tool-url.ts) - INTO engine-render, dragging the whole
             // render/validate blob (+ Ajv + Handlebars, ~83 KB gz) into the entry's
             // static graph so it modulepreloads at first paint. Isolating them lets the
             // entry import from this light chunk while the lazy views still get the
@@ -403,33 +408,33 @@ export default defineConfig({
             // of shells/web/src finds only lazy views and comment references), but
             // tokens.ts IS a boot import, so co-locating them meant their ~10 KB of
             // source rode the preload set for free. Same isolation reasoning as
-            // engine-util itself — a separate group, still ahead of engine-render, so
+            // engine-util itself - a separate group, still ahead of engine-render, so
             // the lazy views get them on demand without dragging Handlebars/Ajv.
             { name: 'engine-toolurl', test: /engine\/src\/(tool-url|embed)\.ts$/, minSize: 0, minShareCount: 1 },
-            // ENGINE_VERSION — one string constant, but loader.ts imports it too, so
+            // ENGINE_VERSION - one string constant, but loader.ts imports it too, so
             // default chunking parks version.ts INSIDE engine-render. lib/instance.ts
             // (sync base URL, boot) and the geom kernel both read it, and that single
             // edge drags engine-render + Handlebars + Ajv + engine-c2pa (~156 KB gz)
             // onto the preload set. MUST precede engine-render.
             { name: 'engine-version', test: /engine\/src\/version\.ts$/, minSize: 0, minShareCount: 1 },
-            // bytes.ts — the shared byte/crypto primitive leaf (concatBytes, sha256,
+            // bytes.ts - the shared byte/crypto primitive leaf (concatBytes, sha256,
             // sha256Hex, bytesToHex, base64ToBytes) every binary format module in the
             // engine imports. ~0.6 KB, and genuinely on the boot path: design-version.ts
             // (reached from bridge/assets.ts at first paint) re-exports sha256Hex from
             // it. x509.ts imports it too, so WITHOUT this group rolldown co-locates
             // bytes.ts INTO engine-x509 and that one boot edge drags the cert parser +
-            // der-read (~2.4 KB gz) back onto the preload set — the exact mechanism the
+            // der-read (~2.4 KB gz) back onto the preload set - the exact mechanism the
             // engine-util note above describes, measured again on 2026-08-10. MUST
             // precede engine-x509 / engine-c2pa / engine-render.
             { name: 'engine-bytes', test: /engine\/src\/bytes\.ts$/, minSize: 0, minShareCount: 1 },
             // x509 cert parser (pemToDer + the DER walk). NOT a boot dependency any
-            // more — bridge/identity.ts is a lazy facade and catalog-integrity.ts is
-            // dynamically imported by catalog/integrity.ts — but it keeps its own chunk
+            // more - bridge/identity.ts is a lazy facade and catalog-integrity.ts is
+            // dynamically imported by catalog/integrity.ts - but it keeps its own chunk
             // so it never co-locates into engine-c2pa, where its next boot edge would
             // drag the whole 17 KB c2pa blob onto the preload set. MUST precede
             // engine-c2pa.
             { name: 'engine-x509', test: /engine\/src\/x509\.ts$/, minSize: 0, minShareCount: 1 },
-            // Catalog signature verification (catalog-integrity.ts) — inert unless a
+            // Catalog signature verification (catalog-integrity.ts) - inert unless a
             // build pins VITE_CATALOG_PUBLIC_KEY_JWK, and imported dynamically by
             // catalog/integrity.ts for exactly that reason. Its own chunk regardless,
             // so it can never co-locate into engine-render and put the render/validate
@@ -438,11 +443,11 @@ export default defineConfig({
             { name: 'engine-integrity', test: /engine\/src\/catalog-integrity\.ts$/, minSize: 0, minShareCount: 1 },
             // Vector geometry kernel (host.geom, v1.64): bezier flattening, the
             // polynomial root solver, path booleans/offset/stroke-to-fill/spline
-            // lowering — ~28 KB gz. Nothing in the shell reads host.geom; only tool
+            // lowering - ~28 KB gz. Nothing in the shell reads host.geom; only tool
             // hooks and the (lazy) free-canvas vector-ops do. Without its OWN group
             // these files co-locate with the small icon-theme/photo-treatment/
             // session-record helpers the gallery genuinely needs at first paint, so
-            // deferring the bridge's import alone would not move the bytes — same
+            // deferring the bridge's import alone would not move the bytes - same
             // mechanism the engine-util/engine-version notes above describe.
             { name: 'engine-geom', test: /engine\/src\/(geom-api\.ts|geom\/)/, minSize: 0, minShareCount: 1 },
             // Perceptual colour tools (host.color, v1.40) + the ICC/gamut machinery
@@ -451,7 +456,7 @@ export default defineConfig({
             // the first runtime, and a separate group so it can actually leave boot.
             { name: 'engine-color', test: /engine\/src\/(color-tools|gamut|icc|gamut-source|gradient-spec|brand-schemes)\.ts$/, minSize: 0, minShareCount: 1 },
             // On-device C2PA sign/verify + CBOR codec (~17 KB gz). Only the lazy
-            // /valid view and export-with-provenance run these — keep them off the
+            // /valid view and export-with-provenance run these - keep them off the
             // render-blocking gallery boot path.
             { name: 'engine-c2pa', test: /engine\/src\/(c2pa|c2pa-verify)\.ts$/, minSize: 0, minShareCount: 1 },
             // The engine's render + manifest-validate source (runtime/template →

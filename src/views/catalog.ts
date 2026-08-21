@@ -123,6 +123,12 @@ import {
 } from '@lolly/engine';
 import type { HumanizeResult, RewordSuggestion, RewordSpan, RewordCandidate } from '@lolly/engine';
 import type { RewordStatus } from '../lib/reworder.ts';
+// The shared "Reworded with Lolly" note - constants + a queued check only; the
+// reworder facade behind it stays a lazy import (see wm-note.ts's header).
+import { wmNoteSlot } from '../lib/wm-note.ts';
+// The on-device model tier's shared seam (plans/126 WP-A): consent line,
+// estimate row and honesty copy for the classifier check.
+import { aiModelSlot } from './tsig-model-note.ts';
 import { setPendingVerify } from '../lib/verify-handoff.ts';
 import { lollyBadge } from '../lib/lolly-badge.ts';
 import type { C2paActionInput } from '../../../../engine/src/c2pa.ts';
@@ -612,7 +618,7 @@ interface ViewElement extends HTMLElement { _cleanup?: () => void; }
 export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params = ''): Promise<void> {
   const host = hostIn as CatalogHost;
   // Titles the tab AND labels this view for the next view's back pill (lib/back-nav.ts).
-  document.title = tRaw('{name} — Lolly', { name: t('Catalogue') });
+  document.title = tRaw('{name} - Lolly', { name: t('Catalogue') });
   // Deep link: /#/c?asset=<id> focuses (scrolls to + highlights) that asset on load.
   const linkedAsset = new URLSearchParams(params).get('asset');
   // Deep link: /#/c?section=<key>[,<key>…] lands with those sections EXPANDED (over the
@@ -884,7 +890,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       seen.add(key);
       out.push({ family, role, stack, typeLine, downloads, onDevice });
     };
-    const tokenFonts: Array<[string, string]> = [['{font.brand}', t('Brand — UI & body')], ['{font.mono}', t('Brand — monospace')]];
+    const tokenFonts: Array<[string, string]> = [['{font.brand}', t('Brand - UI & body')], ['{font.mono}', t('Brand - monospace')]];
     for (const [ref, role] of tokenFonts) {
       let family = '';
       try { family = familyFromTokenValue(await host.tokens?.resolve?.(ref)); } catch { /* unresolved */ }
@@ -895,10 +901,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     }
     try {
       for (const uf of await listUserFonts(host as unknown as Parameters<typeof listUserFonts>[0])) {
-        push(uf.family, uf.primary ? t('Brand — primary') : t('Added font'),
+        push(uf.family, uf.primary ? t('Brand - primary') : t('Added font'),
           `'${uf.family}', ui-sans-serif, sans-serif`, `${uf.weights}${uf.italic ? ` · ${t('italic')}` : ''} · ${t('on this device')}`, [], true);
       }
-    } catch { /* user fonts unavailable — brand tokens still stand */ }
+    } catch { /* user fonts unavailable - brand tokens still stand */ }
     return out;
   }
 
@@ -1183,8 +1189,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       'ai-span': t('Concentrated AI-like section'),
       'family-tell': t('Model-associated phrasing'),
       'spelling-variant-mix': t('Mixed US/British spelling'),
+      'model-estimate': t('On-device model estimate'),
     };
-    const rows = panel.rows.map((r) => `<li><strong>${escape(title[r.kind] ?? r.kind)}</strong>${r.detail ? ` — ${escape(r.detail)}` : ''}</li>`).join('');
+    const rows = panel.rows.map((r) => `<li><strong>${escape(title[r.kind] ?? r.kind)}</strong>${r.detail ? ` - ${escape(r.detail)}` : ''}</li>`).join('');
     // The heat-bar minimap, start of the text to its end - the same rolling windows
     // the verify view paints. `cell.heat` is a plain 0-1 number the engine already
     // rounded, and it is the ONLY thing interpolated into the style attribute, as a
@@ -1219,14 +1226,22 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       + `<text class="cat-tsig-gauge-num" x="32" y="34">${gn}</text>`
       + '<text class="cat-tsig-gauge-den" x="32" y="45">/100</text>'
       + '</svg></div>';
-    return `<div class="cat-tsig" data-band="${escape(panel.band)}" role="note">
+    // The reword-watermark slot (lib/wm-note.ts): filled after render ONLY on
+    // a detection - the one signal here that names its source with confidence.
+    const wm = panel.text != null ? wmNoteSlot(panel.text, 'cat-tsig-guess cat-tsig-wm') : '';
+    // The model-tier slot (views/tsig-model-note.ts): consent line / estimate /
+    // honesty copy; a conclusive estimate re-renders this panel via the callback.
+    const modelSlot = aiModelSlot(panel, 'cat-tsig-note', (p) => catTextSignalsHtml(p));
+    return `<div class="cat-tsig" data-band="${escape(panel.band)}" role="note" data-tsig-root>
       <p class="cat-tsig-head">${icon('aiSpark', { size: 14 })} <strong>${escape(heading[panel.band])}</strong></p>
+      ${wm}
       ${gauge}
       ${heatbar}
       ${rows ? `<ul class="cat-tsig-list">${rows}</ul>` : ''}
       ${guess}
       ${cands}
       ${noMarker}
+      ${modelSlot}
       <p class="cat-tsig-note">${escape(panel.summary)}</p>
     </div>`;
   }
@@ -1349,7 +1364,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       return `linear-gradient(135deg,${stops.join(',')})`;
     };
     return `<div class="cat-dl-themes" role="group" aria-label="${escape(t('Photo colour treatment'))}">`
-      + `<button type="button" class="cat-dl-theme cat-dl-treat${!active ? ' is-active' : ''}" data-treatment="" data-voice="${escape(t('Original'))}" aria-pressed="${!active}" title="${escape(t('Original — no treatment'))}" style="width:auto;padding:0 9px;font-size:11px;font-weight:600">${t('Original')}</button>`
+      + `<button type="button" class="cat-dl-theme cat-dl-treat${!active ? ' is-active' : ''}" data-treatment="" data-voice="${escape(t('Original'))}" aria-pressed="${!active}" title="${escape(t('Original - no treatment'))}" style="width:auto;padding:0 9px;font-size:11px;font-weight:600">${t('Original')}</button>`
       + photoTreatments.map(tr =>
         `<button type="button" class="cat-dl-theme cat-dl-treat${tr.id === active ? ' is-active' : ''}" data-treatment="${escape(tr.id)}" data-sfx="shimmer" data-voice="${escape(tr.label ?? tr.id)}" aria-pressed="${tr.id === active}" title="${escape(tr.label ?? tr.id)}"><span class="cat-dl-duo" style="background:${swatch(tr)}"></span></button>`).join('')
       + `</div>`;
@@ -1447,7 +1462,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           <span class="cat-tile-cap">
             <span class="cat-tile-name" title="${escape((() => {
               const added = assetAddedAt(ref);
-              return added ? `${name} — ${tRaw('added {date}', { date: new Date(added).toLocaleDateString() })}` : name;
+              return added ? `${name} - ${tRaw('added {date}', { date: new Date(added).toLocaleDateString() })}` : name;
             })())}">${escape(name)}</span>
             <span class="cat-tile-sub"><span class="cat-src cat-src--${isUser ? 'user' : 'lib'}">${sourceLabel}</span>${fmt ? ` · ${escape(fmt)}` : ''}${aiKind ? genAiPill(aiKind) : ''}${aiSignalsChip(ref)}</span>
           </span>
@@ -1552,7 +1567,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     if (allAssets.length === 0) {
       // A genuinely empty library still leads with the uploads section - its drop area
       // is exactly what a brand-new profile needs first.
-      return uploadsSectionHtml([]) + `<p class="cat-empty" role="status">${t("No catalogue assets found. Once the catalogue syncs they'll appear here — or drop your own images in above.")}</p>`;
+      return uploadsSectionHtml([]) + `<p class="cat-empty" role="status">${t("No catalogue assets found. Once the catalogue syncs they'll appear here - or drop your own images in above.")}</p>`;
     }
 
     // Favourites are presented as a cinematic strip (mounted after render, see
@@ -1851,7 +1866,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // Show the licence line only when a bundled (downloadable) face is present.
     const anyBundled = catFonts.some(f => f.downloads.length);
     const body = `
-      <p class="cat-panel-desc">${t('The fonts your brand carries — available to every tool canvas and the app UI. Add more from the brand editor.')}</p>
+      <p class="cat-panel-desc">${t('The fonts your brand carries - available to every tool canvas and the app UI. Add more from the brand editor.')}</p>
       <div class="plat-font-grid cat-font-grid">${cards}</div>
       ${anyBundled ? `<p class="cat-panel-foot">${tRaw('Bundled faces licensed under the {link}.', { link: `<a href="${FONT_LICENSE.href}" target="_blank" rel="noopener">${escape(FONT_LICENSE.label)}</a>` })}</p>` : ''}`;
     return groupSection('fonts', 'Fonts', catFonts.length, body);
@@ -1874,12 +1889,12 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     count: () => selected.size,
     actions: [
       { id: 'fav', icon: STAR_ICON, label: () => (allSelectedFav() ? t('Unfavourite') : t('Favourite')) },
-      { id: 'add-to-project', icon: icon('folder'), label: () => t('Add to project'), title: () => t('Reference the selection into a project folder — no copies, the assets stay in the Catalog') },
+      { id: 'add-to-project', icon: icon('folder'), label: () => t('Add to project'), title: () => t('Reference the selection into a project folder - no copies, the assets stay in the Catalog') },
       { id: 'hide', icon: icon('eye'), label: () => (allSelectedHidden() ? t('Unhide') : t('Hide')) },
-      { id: 'replace', icon: REPLACE_ICON, label: () => t('Replace'), title: () => t('Swap in a new file, keeping the same image — every saved session, tool and project that uses it updates to the new one'), hidden: () => !singleSelectedUploadRef() },
+      { id: 'replace', icon: REPLACE_ICON, label: () => t('Replace'), title: () => t('Swap in a new file, keeping the same image - every saved session, tool and project that uses it updates to the new one'), hidden: () => !singleSelectedUploadRef() },
       { id: 'rename', icon: PENCIL_ICON, label: () => t('Rename'), title: () => t('Change this upload’s name'), hidden: () => !singleSelectedUploadRef() },
-      { id: 'duplicate', icon: COPY_ICON, label: () => t('Duplicate'), title: () => t('Make a copy of each selected image — the copies are selected, ready to move or edit'), hidden: () => !allSelectedUploads() },
-      { id: 'download', icon: DOWNLOAD_ICON, label: () => t('Download'), title: () => t('Download the selection as one zip — Content Credentials checked and preserved'), hidden: () => !allSelectedUploads() },
+      { id: 'duplicate', icon: COPY_ICON, label: () => t('Duplicate'), title: () => t('Make a copy of each selected image - the copies are selected, ready to move or edit'), hidden: () => !allSelectedUploads() },
+      { id: 'download', icon: DOWNLOAD_ICON, label: () => t('Download'), title: () => t('Download the selection as one zip - Content Credentials checked and preserved'), hidden: () => !allSelectedUploads() },
       { id: 'delete', icon: TRASH_ICON, label: () => t('Delete'), extraClass: 'cat-bulk-danger', hidden: () => !allSelectedUploads() },
     ],
   };
@@ -2049,7 +2064,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
               } catch { /* next reload catches up */ }
             }
           }
-        } catch { /* heal is additive — the plain bytes still get checked */ }
+        } catch { /* heal is additive - the plain bytes still get checked */ }
       }
       if (!extractC2paStore(bytes)) {
         // Stored file has no embedded credential - fall back to the one captured at ingest.
@@ -2058,8 +2073,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         if (cred?.store && C2PA_FORMATS.includes(fmt)) {
           try {
             bytes = attachC2paStore(bytes, fmt, cred.store);
-            note = t('This Content Credential was captured when the file was imported. Lolly re-encoded the image on import, so it no longer binds to the stored copy byte-for-byte — the credential reads as "modified", but the provenance claims below are intact.');
-          } catch { /* re-attach failed — hand over the plain bytes and let Verify report */ }
+            note = t('This Content Credential was captured when the file was imported. Lolly re-encoded the image on import, so it no longer binds to the stored copy byte-for-byte - the credential reads as "modified", but the provenance claims below are intact.');
+          } catch { /* re-attach failed - hand over the plain bytes and let Verify report */ }
         }
       }
       const file = new File([bytes as BlobPart], name, { type: resp.headers.get('content-type') || undefined });
@@ -2083,7 +2098,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       if (!(await healTtsProvenance(host, ref, bytes))) return;
       const fresh = await host.assets.get(ref.id);
       if (fresh) assetById.set(ref.id, fresh);
-    } catch { /* best-effort — checkCredentials heals on click too */ }
+    } catch { /* best-effort - checkCredentials heals on click too */ }
   }
 
   // The canonical shareable link that reopens this modal from the catalog view.
@@ -2838,12 +2853,12 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
               blob: signed,
               version: '1.0.0',
               meta: {
-                name: tRaw('{name} — graded', { name: base }),
+                name: tRaw('{name} - graded', { name: base }),
                 bytes: signed.size,
                 ...(aiKind ? { aiGenerated: aiKind } : {}),
               },
             });
-            announce(tRaw('Graded copy saved to your uploads as "{name}".', { name: tRaw('{name} — graded', { name: base }) }));
+            announce(tRaw('Graded copy saved to your uploads as "{name}".', { name: tRaw('{name} - graded', { name: base }) }));
             // A landing job refreshes the grid; it never opens a modal over the
             // user, who may be well past this edit by then (the vid-* precedent).
             if (mounted) void reload().then(rerender);
@@ -3083,7 +3098,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
               blob: signed,
               version: '1.0.0',
               meta: {
-                name: tRaw('{name} — crop', { name: base }),
+                name: tRaw('{name} - crop', { name: base }),
                 bytes: signed.size,
                 // The source's authored AI flag rides onto the copy's meta so
                 // the AI chip survives alongside the credential's record.
@@ -3312,7 +3327,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           const th = iconThemes.find(x => x.id === dTheme);
           const img = dlg.querySelector<HTMLImageElement>('.cat-thumb');
           if (img && th) img.src = svgTextToDataUrl(restyleIconTheme(dBaseSvg, th) || dBaseSvg);
-        } catch { /* recolour is best-effort — leaves the base preview */ }
+        } catch { /* recolour is best-effort - leaves the base preview */ }
         return;
       }
       const act = target.closest<HTMLElement>('[data-act]')?.dataset.act;
@@ -4122,7 +4137,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           // and let it land before mounting; otherwise we mount against silence and stay
           // there until the next re-mount.
           await new Promise(r => setTimeout(r, 60));
-        } catch { /* blocked or unplayable — mount against silence below */ }
+        } catch { /* blocked or unplayable - mount against silence below */ }
       }
       await mountLive();
       cycle.start();
@@ -4166,7 +4181,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           luma: p.luma,
         });
       }
-      // (The opening preset is chosen per FLIP, in pickOpening — not here. Choosing it at
+      // (The opening preset is chosen per FLIP, in pickOpening - not here. Choosing it at
       // load time meant only the first flip was ever random, because the list is loaded
       // once and every later flip reused wherever `at` had been left.)
     };
@@ -5027,7 +5042,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         try {
           const bytes = new Uint8Array(await blob.arrayBuffer());
           if (extractC2paStore(bytes) && (await verifyC2pa(bytes)).found) credentialed++;
-        } catch { /* the check is advisory — never blocks the zip */ }
+        } catch { /* the check is advisory - never blocks the zip */ }
         const orig = downloadName(ref, String(ref.format || 'bin'));
         let name = orig;
         for (let n = 2; names.has(name); n++) {
@@ -5553,7 +5568,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       <div class="cat-dl-section">
         <span class="cat-dl-label">${t('Colours')}</span>
         <div class="cat-dl-themes" role="group" aria-label="${escape(t('Icon colours'))}">
-          <button type="button" class="cat-dl-theme${themeId === ORIGINAL_THEME ? ' is-active' : ''}" data-theme="${ORIGINAL_THEME}" aria-pressed="${themeId === ORIGINAL_THEME}" title="${escape(t('Original — unchanged; keeps its Content Credential'))}" style="width:auto;padding:0 9px;font-size:11px;font-weight:600">${t('Original')}</button>
+          <button type="button" class="cat-dl-theme${themeId === ORIGINAL_THEME ? ' is-active' : ''}" data-theme="${ORIGINAL_THEME}" aria-pressed="${themeId === ORIGINAL_THEME}" title="${escape(t('Original - unchanged; keeps its Content Credential'))}" style="width:auto;padding:0 9px;font-size:11px;font-weight:600">${t('Original')}</button>
           ${iconThemes.map((th) => `
             <button type="button" class="cat-dl-theme${th.id === themeId ? ' is-active' : ''}" data-theme="${escape(th.id)}" data-sfx="shimmer" aria-pressed="${th.id === themeId}" title="${escape(th.label ?? th.id)}">
               <span class="cat-dl-duo" style="background:${escape(th.previewBg ?? '#fff')}"><i style="background:${escape(String(th.c2 ?? '#888'))}"></i><i style="background:${escape(String(th.c1 ?? '#333'))}"></i></span>
