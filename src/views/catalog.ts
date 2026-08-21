@@ -127,6 +127,7 @@ import type { RewordStatus } from '../lib/reworder.ts';
 // reworder facade behind it stays a lazy import (see wm-note.ts's header).
 import { wmNoteSlot } from '../lib/wm-note.ts';
 import { appendVisibleText, visibleTextHtml } from '../lib/invisible-chars.ts';
+import { tsigFactsHtml } from './tsig-facts.ts';
 // The on-device model tier's shared seam (plans/126 WP-A): consent line,
 // estimate row and honesty copy for the classifier check.
 import { aiModelSlot } from './tsig-model-note.ts';
@@ -1243,6 +1244,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       ${cands}
       ${noMarker}
       ${modelSlot}
+      ${panel.facts ? tsigFactsHtml(panel.facts) : ''}
       <p class="cat-tsig-note">${escape(panel.summary)}</p>
     </div>`;
   }

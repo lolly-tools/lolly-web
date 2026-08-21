@@ -17,33 +17,11 @@
  * chip glyph never enters the string.
  */
 import { escape } from '../utils.ts';
+import { invisibleCharName } from '@lolly/engine';
 
-// \u-escaped on purpose: raw invisible characters in SOURCE are exactly the
-// artifact this module exists to expose.
-const INVISIBLE_NAME: Record<string, string> = {
-  '\u00A0': 'NBSP', '\u00AD': 'SHY', '\u034F': 'CGJ', '\u061C': 'ALM', '\u180E': 'MVS',
-  '\u200B': 'ZWSP', '\u200C': 'ZWNJ', '\u200D': 'ZWJ', '\u200E': 'LRM', '\u200F': 'RLM',
-  '\u202A': 'LRE', '\u202B': 'RLE', '\u202C': 'PDF', '\u202D': 'LRO', '\u202E': 'RLO',
-  '\u202F': 'NNBSP', '\u2028': 'LS', '\u2029': 'PS', '\u2060': 'WJ',
-  '\u2061': 'FA', '\u2062': 'IT', '\u2063': 'IS', '\u2064': 'IP',
-  '\u2066': 'LRI', '\u2067': 'RLI', '\u2068': 'FSI', '\u2069': 'PDI',
-  '\u3000': 'IDSP', '\uFEFF': 'BOM', '\uFFF9': 'IAA', '\uFFFA': 'IAS', '\uFFFB': 'IAT',
-  '\uFFFC': 'OBJ',
-};
-
-/** Short display name for an invisible/format character, null for anything a
- *  reader can already see. Covers every range the analyser's byte tier flags. */
-export function invisibleCharName(ch: string): string | null {
-  const named = INVISIBLE_NAME[ch];
-  if (named) return named;
-  const cp = ch.codePointAt(0) ?? 0;
-  if (cp >= 0x2000 && cp <= 0x200A) return 'SP';       // width-variant spaces
-  if (cp >= 0xFE00 && cp <= 0xFE0F) return `VS${cp - 0xFE00 + 1}`;
-  if (cp >= 0xE0100 && cp <= 0xE01EF) return `VS${cp - 0xE0100 + 17}`;
-  if (cp >= 0xE0000 && cp <= 0xE007F) return 'TAG';    // tag chars - invisible ASCII smuggling
-  if (cp >= 0xE000 && cp <= 0xF8FF) return 'PUA';      // private use (leaked model delimiters live here)
-  return null;
-}
+// Naming lives in the ENGINE (text-facts.ts) - the census, the extract chips
+// and the CLI all read one table. Re-exported for existing importers.
+export { invisibleCharName };
 
 const tooltip = (ch: string, name: string): string => {
   const cp = (ch.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, '0');

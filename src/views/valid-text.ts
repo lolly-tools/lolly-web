@@ -25,9 +25,9 @@
  *     words rather than followed quietly.
  */
 import type { VerifyReport, TextBinding } from './valid-verdict.ts';
-import { analyzeTextSignals } from '@lolly/engine';
+import { analyzeTextSignals, textFacts } from '@lolly/engine';
 import type {
-  TextSignalReport, TextSignalBand, TextSignalSource, TextSignalDocKind, TextHeatmap,
+  TextSignalReport, TextSignalBand, TextSignalSource, TextSignalDocKind, TextHeatmap, TextFacts,
 } from '@lolly/engine';
 
 // ── Honest format labels ─────────────────────────────────────────────────────
@@ -593,6 +593,9 @@ export interface TextSignalPanel {
   /** The analyzed text itself, so the view can show it for inspection with the
    *  `marks` highlighted. Set by `analyzeVerifyText`; absent on a bare `textSignalPanel`. */
   text?: string;
+  /** The neutral document census (engine textFacts) - the interrogation
+   *  surface's raw material. Set by `analyzeVerifyText` alongside `text`. */
+  facts?: TextFacts;
 }
 
 /** Flatten a report's finding spans into merged, non-overlapping marks. Overlaps
@@ -663,5 +666,5 @@ export function textSignalPanel(report: TextSignalReport): TextSignalPanel {
  *  'digital' (the bytes ARE the text) runs everything; 'ocr' (read from an image)
  *  runs writing-style signals only and flags `pixelSourced`. */
 export function analyzeVerifyText(text: string, source: TextSignalSource): TextSignalPanel {
-  return { ...textSignalPanel(analyzeTextSignals(text, { source })), text };
+  return { ...textSignalPanel(analyzeTextSignals(text, { source })), text, facts: textFacts(text) };
 }

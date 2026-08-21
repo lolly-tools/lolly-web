@@ -75,6 +75,8 @@ import { aiModelSlot } from './tsig-model-note.ts';
 // Invisible characters rendered as named chips in the extract - shared with
 // the catalog so both surfaces show identical evidence.
 import { visibleTextHtml } from '../lib/invisible-chars.ts';
+// The Document facts census section (shared with the catalog panel).
+import { tsigFactsHtml } from './tsig-facts.ts';
 // Deep engine import, NOT the `@lolly/engine` barrel - the beam-pack.ts:125
 // precedent: index.ts does not re-export the c2pa-extract surface, and widening
 // that one shared facade for a single lazy view is what the bundle budget is
@@ -838,6 +840,7 @@ function textSignalsHtml(panel: TextSignalPanel | undefined): string {
         ${cands}
         ${noMarker}
         ${modelSlot}
+        ${panel.facts ? tsigFactsHtml(panel.facts) : ''}
         <span class="valid-aidecl-note">${escape(panel.summary)} ${t('It reads the text for tells; it cannot see a declaration, and a declaration in the credential is the stronger signal.')}</span>
       </div>
       <span class="valid-aidecl-tag" aria-hidden="true">${t('AI?')}</span>
