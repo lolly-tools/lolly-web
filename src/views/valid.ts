@@ -77,6 +77,7 @@ import { aiModelSlot } from './tsig-model-note.ts';
 import { visibleTextHtml } from '../lib/invisible-chars.ts';
 // The Document facts census section (shared with the catalog panel).
 import { tsigFactsHtml } from './tsig-facts.ts';
+import type { DocReadNotes } from './doc-read.ts';
 // Deep engine import, NOT the `@lolly/engine` barrel - the beam-pack.ts:125
 // precedent: index.ts does not re-export the c2pa-extract surface, and widening
 // that one shared facade for a single lazy view is what the bundle budget is
@@ -1748,8 +1749,8 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
       ${aiFlagHtml(aiOrigin, makerHint, preview?.kind === 'audio')}
       ${aiDisclosureHtml(report, identity)}
       ${textSignalsHtml(textSignals)}
-      ${(ocrReady && preview?.kind === 'image') || report.format === 'pdf' ? `<div class="valid-tsig-ocr">
-        <button type="button" class="btn valid-ocr-read" data-ocr-read data-read-kind="${report.format === 'pdf' ? 'pdf' : 'image'}" data-file-index="${fileIndex}">${svgIcon('aiSpark')}<span>${report.format === 'pdf' ? t('Read the text in this document') : t('Read the text in this image')}</span></button>
+      ${(preview?.kind === 'image' && (ocrReady || report.format === 'svg')) || report.format === 'pdf' ? `<div class="valid-tsig-ocr">
+        <button type="button" class="btn valid-ocr-read" data-ocr-read data-read-kind="${report.format === 'pdf' ? 'pdf' : report.format === 'svg' ? 'svg' : 'image'}" data-file-index="${fileIndex}">${svgIcon('aiSpark')}<span>${report.format === 'pdf' ? t('Read the text in this document') : report.format === 'svg' ? t('Read the text in this vector') : t('Read the text in this image')}</span></button>
         <div class="valid-ocr-result" data-ocr-result hidden></div>
       </div>` : ''}
       ${notesHtml(notes, fileIndex)}
@@ -3233,10 +3234,26 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   // removal) so replacing it also retires the machinery that kept it aligned.
   type OcrOverlayEl = SVGSVGElement & { _ocrUnpin?: () => void };
 
-  // PDF → the text LAYER, digitally - no OCR and no pixels. A born-digital PDF
-  // carries its glyphs, so the byte-level artifact tier still applies (source
-  // 'digital'), which an image read can never offer. Same lazy pdf-import seam
-  // the hidden-text (failed-redaction) check uses.
+  // The read-what-could-not-be-read ledger under a document analysis: what was
+  // capped, what came off pixels, what stayed unread and why. Every line is a
+  // fact the reader can act on - the perceptive-honesty half of best effort.
+  function docReadNotesHtml(notes: DocReadNotes): string {
+    const bits: string[] = [];
+    if (notes.pagesRead < notes.pageCount) bits.push(tRaw('The first {n} of {total} pages were read.', { n: notes.pagesRead, total: notes.pageCount }));
+    if (notes.ocrPages > 0) bits.push(tRaw('{n} scanned pages were read with on-device text recognition, so hidden-character checks could not run on those pages.', { n: notes.ocrPages }));
+    if (notes.scannedUnread > 0) {
+      bits.push(notes.ocrUnavailable
+        ? tRaw('{n} pages are pictures of text and the text-recognition model is not installed, so they were not read.', { n: notes.scannedUnread })
+        : tRaw('{n} scanned pages were left unread to keep this quick.', { n: notes.scannedUnread }));
+    }
+    return bits.map((b) => `<p class="valid-tsig-cands">${escape(b)}</p>`).join('');
+  }
+
+  // PDF → the text LAYER first (digital - the byte-level artifact tier still
+  // applies), then per-page OCR for its SCANNED pages when the on-device model
+  // is present: a picture-of-text document gets a best-effort read, never a
+  // refusal. The shared extractor (views/doc-read.ts) is the same one the
+  // catalog uses, and the result always ends in the risk-assessment panel.
   async function readDocumentText(btn: HTMLButtonElement): Promise<void> {
     const resultEl = btn.parentElement?.querySelector<HTMLElement>('[data-ocr-result]');
     const file = activeFiles[Number(btn.dataset.fileIndex ?? '0')];
@@ -3246,26 +3263,18 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     btn.disabled = true;
     if (span) span.textContent = t('Reading…');
     try {
-      const [{ openPdfFile }, { joinPageText }] = await Promise.all([
-        import('./pdf-import.ts'),
-        import('@lolly/engine'),
-      ]);
-      const handle = await openPdfFile(file);
-      const toText = handle.pageToText;
-      if (!toText) throw new Error('no text pass');
-      const cap = Math.min(handle.pageCount, 30);
-      const pages = Array.from({ length: cap }, (_, i) => toText(i));
-      if (pages.every((p) => p.scanned)) {
-        resultEl.textContent = t('The pages of this document are pictures of text, so there is no text layer to read.');
+      const { extractDocumentText } = await import('./doc-read.ts');
+      const result = await extractDocumentText(file, ocrReady ? (host.ocr ?? null) : null, (done, total) => {
+        if (span) span.textContent = tRaw('Reading page {i} of {n}…', { i: done, n: total });
+      });
+      if (result.text == null) {
+        resultEl.textContent = result.notes.ocrUnavailable
+          ? t('The pages of this document are pictures of text, and the text-recognition model that could read them is not installed.')
+          : t('No readable text was found in this document.');
         resultEl.hidden = false;
         return;
       }
-      const text = joinPageText(pages);
-      if (!text.trim()) { resultEl.textContent = t('No readable text was found in this document.'); resultEl.hidden = false; return; }
-      const capNote = cap < handle.pageCount
-        ? `<p class="valid-tsig-cands">${escape(tRaw('The first {n} of {total} pages were read.', { n: cap, total: handle.pageCount }))}</p>`
-        : '';
-      resultEl.innerHTML = textSignalsHtml(analyzeVerifyText(text, 'digital')) + capNote;
+      resultEl.innerHTML = textSignalsHtml(analyzeVerifyText(result.text, result.source)) + docReadNotesHtml(result.notes);
       resultEl.hidden = false;
       btn.hidden = true; // one read is enough - the result now shows the analysis
     } catch {
@@ -3275,6 +3284,30 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       btn.disabled = false;
       if (span) span.textContent = orig;
     }
+  }
+
+  // SVG → the vector's own <text> elements first (digital, better than any
+  // OCR); a vector whose words are paths or embedded rasters falls through to
+  // the ordinary rasterise-and-OCR read below. Returns true when handled.
+  async function readVectorText(btn: HTMLButtonElement): Promise<boolean> {
+    const resultEl = btn.parentElement?.querySelector<HTMLElement>('[data-ocr-result]');
+    const file = activeFiles[Number(btn.dataset.fileIndex ?? '0')];
+    if (!resultEl || !file) return true;
+    const { extractSvgText } = await import('./doc-read.ts');
+    const text = extractSvgText(await file.text());
+    if (text) {
+      resultEl.innerHTML = textSignalsHtml(analyzeVerifyText(text, 'digital'))
+        + `<p class="valid-tsig-cands">${escape(t('Read from the vector\u2019s own text elements - a digital extraction, no pixels involved.'))}</p>`;
+      resultEl.hidden = false;
+      btn.hidden = true;
+      return true;
+    }
+    if (!ocrReady) {
+      resultEl.textContent = t('This vector draws its words as shapes, and the text-recognition model that could read them is not installed.');
+      resultEl.hidden = false;
+      return true;
+    }
+    return false; // paths-only vector + OCR present: fall through to the raster read
   }
 
   // Image → OCR → the same text-signals read the text path does, but source:'ocr'
@@ -3290,6 +3323,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   // a detached node.
   async function readImageText(btn: HTMLButtonElement): Promise<void> {
     if (btn.dataset.readKind === 'pdf') return readDocumentText(btn);
+    if (btn.dataset.readKind === 'svg' && await readVectorText(btn)) return;
     const scope = btn.closest('.valid-item-body') ?? reportEl;
     const img = scope.querySelector<HTMLImageElement>('.valid-preview img');
     const resultEl = btn.parentElement?.querySelector<HTMLElement>('[data-ocr-result]');

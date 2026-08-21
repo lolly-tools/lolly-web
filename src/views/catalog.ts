@@ -1307,7 +1307,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       ? `<div class="cat-reword-sec">
           <p class="cat-tsig-head"><strong>${t('Suggested edits')}</strong></p>
           <p class="cat-tsig-note">${n ? tRaw('{n} wording swaps are underlined in the preview.', { n }) : ''}
-            ${m ? tRaw('{n} sentences have a dotted underline: the on-device model can offer a plainer version. Accepting one flags the saved copy as AI-assisted.', { n: m }) : ''}
+            ${m ? tRaw('{n} sentences have a dotted underline: the on-device model can offer a plainer version. Accepting one flags the saved copy as AI-assisted, and model wording carries Lolly\'s public reword watermark so AI-written text stays detectable on Verify.', { n: m }) : ''}
             ${t('Click a highlight to decide each one.')}</p>
           ${rw.status === 'need-download' && m ? `<p class="cat-tsig-note">${escape(tRaw('First use downloads the rewriter once (~{mb} MB); it works offline after that.', { mb: Math.round(rw.modelBytes / (1024 * 1024)) }))}</p>` : ''}
           ${n > 1 ? `<button type="button" class="btn cat-reword-apply-all" data-act="reword-suggest-all">${escape(tRaw('Apply all {n} swaps', { n }))}</button>` : ''}
@@ -2342,9 +2342,14 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // "Remove background" works on every device, model staged or not.
     const canMatte = zoomable && ref.type === 'raster' && !ref.meta?.animated;
     // Read text OUT of an image (host.ocr, plans/125). Gated on a STAGED model, so it
-    // is invisible until one is vendored - honest progressive enhancement. Raster only.
-    const canOcr = ref.type === 'raster' && !ref.meta?._placeholder
-      && host.ocr?.isAvailable() === true && (host.ocr?.models().length ?? 0) > 0;
+    // is invisible until one is vendored - honest progressive enhancement.
+    const ocrAvail = host.ocr?.isAvailable() === true && (host.ocr?.models().length ?? 0) > 0;
+    const canOcr = ref.type === 'raster' && !ref.meta?._placeholder && ocrAvail;
+    // PDFs read their text layer (+ per-page OCR of scanned pages when the model
+    // is present) and vectors read their own <text> elements - both digital-first,
+    // so neither needs the OCR gate to OFFER the read. Any media, best effort.
+    const canReadDoc = ref.format === 'pdf' && !ref.meta?._placeholder;
+    const canReadVector = ref.type === 'vector' && !ref.meta?._placeholder;
     // "Extract audio" (WP-C): decode a video's sound track on-device and save it as
     // an audio user asset. Video only - it is nonsensical anywhere else - and only
     // where the browser can decode audio at all. A catalog-side extraction is its own
@@ -2417,7 +2422,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
             canUpscale ? `<button type="button" class="btn cat-act-upscale" data-act="upscale">${icon('aiSpark', { size: 14 })}<span>${t('Upscale…')}</span></button>` : '',
             canMatte ? `<button type="button" class="btn cat-act-matte" data-act="matte">${icon('scissors', { size: 14 })}<span>${t('Remove background…')}</span></button>` : '',
             trimmable ? `<button type="button" class="btn cat-act-trim" data-act="trim">${icon('fitContain', { size: 14 })}<span>${t('Trim margins')}</span></button>` : '',
-            canOcr ? `<button type="button" class="btn cat-act-read-text" data-act="read-text">${icon('aiSpark', { size: 14 })}<span>${t('Read text')}</span></button>` : '',
+            canOcr || canReadDoc || canReadVector ? `<button type="button" class="btn cat-act-read-text" data-act="read-text">${icon('aiSpark', { size: 14 })}<span>${t('Read text')}</span></button>` : '',
             canExtractAudio ? `<button type="button" class="btn cat-act-extract-audio" data-act="extract-audio">${icon('music', { size: 14 })}<span>${t('Extract audio…')}</span></button>` : '',
             canVideoMatte ? `<button type="button" class="btn cat-act-vid-matte" data-act="vid-matte">${icon('scissors', { size: 14 })}<span>${t('Remove background…')}</span></button>` : '',
             canVideoCrop ? `<button type="button" class="btn cat-act-vid-crop" data-act="vid-crop">${CROP_ICON}<span>${t('Crop…')}</span></button>` : '',
@@ -2484,7 +2489,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         </dl>
         <div class="cat-details-tech" data-tech hidden></div>
         <div class="cat-details-tech" data-usage hidden></div>
-        ${isTextAsset || canOcr ? `<div class="cat-details-tsig" data-tsig hidden></div>` : ''}
+        ${isTextAsset || canOcr || canReadDoc || canReadVector ? `<div class="cat-details-tsig" data-tsig hidden></div>` : ''}
         ${showVerify ? `<div class="cat-details-cred">
           <div class="cat-cred-lolly" hidden>${lollyBadge('lg')}<span class="cat-cred-lolly-sub">${t('This file’s Content Credential records a Lolly export, intact.')}</span></div>
           <div class="cat-cred-panels" hidden></div>
@@ -3493,6 +3498,75 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           if (box) { box.textContent = t('This text could not be analysed.'); box.hidden = false; }
         }
         target.closest<HTMLElement>('.cat-act-analyse-text')?.setAttribute('aria-expanded', 'true');
+        return;
+      }
+      if (act === 'read-text' && (ref.format === 'pdf' || ref.type === 'vector')) {
+        // PDF: text layer + per-page OCR of scanned pages (views/doc-read.ts -
+        // the same extractor verify uses). Vector: its own <text> elements,
+        // falling back to rasterise-and-OCR when the words are paths. Either
+        // way the result ends in the risk-assessment panel and honest notes.
+        const box = dlg.querySelector<HTMLElement>('[data-tsig]');
+        const btn = target.closest<HTMLButtonElement>('.cat-act-read-text');
+        if (btn?.disabled) return;
+        const span = btn?.querySelector('span');
+        const orig = span?.textContent ?? t('Read text');
+        if (btn) btn.disabled = true;
+        if (span) span.textContent = t('Reading…');
+        const alive = (): boolean => detailsDialog === dlg;
+        try {
+          const dr = await import('./doc-read.ts');
+          let text: string | null = null;
+          let source: 'digital' | 'ocr' = 'digital';
+          let noteLines: string[] = [];
+          if (ref.format === 'pdf') {
+            const blob = await (await fetch(ref.url)).blob();
+            const result = await dr.extractDocumentText(blob, ocrAvail ? (host.ocr ?? null) : null, (done, total) => {
+              if (span) span.textContent = tRaw('Reading page {i} of {n}…', { i: done, n: total });
+            });
+            text = result.text;
+            source = result.source;
+            const n = result.notes;
+            if (n.pagesRead < n.pageCount) noteLines.push(tRaw('The first {n} of {total} pages were read.', { n: n.pagesRead, total: n.pageCount }));
+            if (n.ocrPages > 0) noteLines.push(tRaw('{n} scanned pages were read with on-device text recognition, so hidden-character checks could not run on those pages.', { n: n.ocrPages }));
+            if (n.scannedUnread > 0) {
+              noteLines.push(n.ocrUnavailable
+                ? tRaw('{n} pages are pictures of text and the text-recognition model is not installed, so they were not read.', { n: n.scannedUnread })
+                : tRaw('{n} scanned pages were left unread to keep this quick.', { n: n.scannedUnread }));
+            }
+            if (text == null && n.ocrUnavailable) noteLines = [t('The pages of this document are pictures of text, and the text-recognition model that could read them is not installed.')];
+          } else {
+            const src = await (await fetch(ref.url)).text();
+            text = dr.extractSvgText(src) || null;
+            if (text) {
+              noteLines.push(t('Read from the vector\u2019s own text elements - a digital extraction, no pixels involved.'));
+            } else if (ocrAvail && host.ocr) {
+              const frame = await dr.svgToOcrFrame(src, ref.width, ref.height);
+              const res = frame ? await host.ocr.run(frame) : null;
+              text = res?.text.trim() || null;
+              source = 'ocr';
+              if (text) noteLines.push(t('This vector draws its words as shapes, so they were read with on-device text recognition.'));
+            } else {
+              noteLines.push(t('This vector draws its words as shapes, and the text-recognition model that could read them is not installed.'));
+            }
+          }
+          if (!alive() || !box) { announce(t('The text was read. Open this asset again to see the result.')); return; }
+          const notesHtml = noteLines.map((b) => `<p class="cat-tsig-note">${escape(b)}</p>`).join('');
+          if (text == null) {
+            box.innerHTML = notesHtml || `<p class="cat-tsig-note">${escape(t('No readable text was found.'))}</p>`;
+            box.hidden = false;
+            return;
+          }
+          const panel = analyzeVerifyText(text, source);
+          box.innerHTML = `<pre class="cat-text-preview cat-text-ocr">${catHighlightHtml(text, panel.marks)}</pre>${catTextSignalsHtml(panel)}${notesHtml}`;
+          box.hidden = false;
+          await persistAiSignals(ref, panel, source);
+        } catch (err) {
+          host.log('warn', 'catalog: doc/vector read failed', { error: String((err as Error)?.message ?? err) });
+          if (alive() && box) { box.textContent = t('The text could not be read.'); box.hidden = false; }
+          else announce(t('The text could not be read.'));
+        } finally {
+          if (btn?.isConnected) { btn.disabled = false; if (span) span.textContent = orig; }
+        }
         return;
       }
       if (act === 'read-text') {
