@@ -15,6 +15,7 @@
 
 /* ── The four voices ── */
 .guide-fact, .guide-warn, .guide-hint, .guide-absent {
+  display: block; /* element-agnostic: a composed <span> still reads as its voice */
   margin: 0.5rem 0 0;
   font-size: calc(0.8rem * var(--a11y-fs));
   line-height: 1.5;

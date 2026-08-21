@@ -696,7 +696,9 @@ button.cat-download { font: inherit; cursor: pointer; }
 .cat-tsig-head { margin: 0 0 .35rem; display: flex; align-items: center; gap: .4rem; }
 .cat-tsig-list { margin: .3rem 0; padding-left: 1.1rem; }
 .cat-tsig-list li { margin: .2rem 0; }
-.cat-tsig-guess, .cat-tsig-note { margin: .4rem 0 0; opacity: .82; }
+.cat-tsig-guess, .cat-tsig-note { margin: .4rem 0 0; }
+/* Dimmed only voiceless - a composed .guide-warn/.guide-hint must not be faded. */
+.cat-tsig-guess, .cat-tsig-note:not(.guide-hint):not(.guide-warn) { opacity: .82; }
 /* A watermark detection reads firmer than a hedged style guess: bold and full
    strength against the muted panel, theme-neutral on purpose. */
 .cat-tsig-wm { font-weight: 600; opacity: 1; }

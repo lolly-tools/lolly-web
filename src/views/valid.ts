@@ -227,7 +227,7 @@ export function scriptHtml(report: VerifyReport): string {
   return `
     <div class="valid-script valid-panel">
       <h3>${svgIcon('mic')}<span>${t('Script')}</span></h3>
-      <p class="valid-script-note">${t('The voice is AI-generated. The credential records the exact script it was synthesized from.')}</p>
+      <p class="valid-script-note guide-fact">${t('The voice is AI-generated. The credential records the exact script it was synthesized from.')}</p>
       ${rows ? `<dl class="valid-input-list">${rows}</dl>` : ''}
       <pre class="valid-script-text${long ? ' is-clamped' : ''}" data-script-text>${escape(script)}</pre>
       <div class="valid-script-actions">
@@ -849,7 +849,7 @@ function textSignalsHtml(panel: TextSignalPanel | undefined): string {
         ${noMarker}
         ${modelSlot}
         ${panel.facts ? tsigFactsHtml(panel.facts) : ''}
-        <span class="valid-aidecl-note">${escape(panel.summary)} ${t('It reads the text for tells; it cannot see a declaration, and a declaration in the credential is the stronger signal.')}</span>
+        <span class="valid-aidecl-note${panel.band === 'strong' ? ' guide-warn' : panel.band === 'notable' ? ' guide-hint' : ''}">${escape(panel.summary)} ${t('It reads the text for tells; it cannot see a declaration, and a declaration in the credential is the stronger signal.')}</span>
       </div>
       <span class="valid-aidecl-tag" aria-hidden="true">${t('AI?')}</span>
     </div>`;
@@ -1634,7 +1634,7 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
   const scriptBlock = report.found && report.claim ? scriptHtml(report) : '';
   const checksBlock = checksHtml(report);
   const selfnoteBlock = report.found && report.claim && !report.madeWithLolly ? `
-        <p class="valid-selfnote">${identity
+        <p class="valid-selfnote guide-absent">${identity
     ? t('As recorded in the credential - asserted by its CA-verified signer:')
     : t('As recorded in the credential - self-asserted by whoever signed it:')}</p>` : '';
   const factsBlock = report.found && report.claim ? `

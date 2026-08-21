@@ -1246,7 +1246,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       ${noMarker}
       ${modelSlot}
       ${panel.facts ? tsigFactsHtml(panel.facts) : ''}
-      <p class="cat-tsig-note">${escape(panel.summary)}</p>
+      <p class="cat-tsig-note${panel.band === 'strong' ? ' guide-warn' : panel.band === 'notable' ? ' guide-hint' : ''}">${escape(panel.summary)}</p>
     </div>`;
   }
 
