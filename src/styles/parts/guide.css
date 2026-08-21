@@ -89,16 +89,8 @@
 }
 
 /* ── Document facts (census) - shared by verify AND the catalog modal ── */
-.tsig-facts-warn {
-  margin: 0.5rem 0 0;
-  padding: 0.45rem 0.6rem;
-  border-radius: calc(var(--radius) * 0.6);
-  background: hsl(0 72% 51% / 0.1);
-  border: 1px solid hsl(0 72% 51% / 0.3);
-  font-size: calc(0.8rem * var(--a11y-fs));
-  font-weight: 600;
-  line-height: 1.5;
-}
+/* Composes .guide-warn (the grammar's warn voice) - only the spacing is its own. */
+.tsig-facts-warn { margin: 0.5rem 0 0; }
 .tsig-facts { margin: 0.5rem 0 0; font-size: calc(0.78rem * var(--a11y-fs)); }
 .tsig-facts > summary {
   cursor: pointer;

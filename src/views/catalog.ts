@@ -1295,10 +1295,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   function catTextWorkHtml(panel: TextSignalPanel, result: HumanizeResult | null, canDeclare: boolean, rw: RewordUiState, edited: boolean, truncated: boolean): string {
     // What Fix characters changed - only once it has run.
     const fixed = result
-      ? `<p class="cat-tsig-head">${icon('wrench', { size: 14 })} <strong>${t('Characters fixed on-device')}</strong></p>
+      ? `<p class="cat-tsig-head">${icon('wrench', { size: 14 })} <strong>${t('Characters fixed to house style, on-device')}</strong></p>
         ${result.changes.length
           ? `<ul class="cat-tsig-list">${result.changes.map((c) => `<li><strong>${escape(c.label)}</strong> ×${c.count}</li>`).join('')}</ul>`
-          : `<p class="cat-tsig-note">${t('Nothing to fix. The characters in this text are already tidy.')}</p>`}`
+          : `<p class="cat-tsig-note">${t('Nothing to fix. The characters in this text already match house style.')}</p>`}`
       : '';
     // The edits live INLINE now: the sidebar narrates what is marked in the
     // preview and offers the bulk apply; each decision happens at the text.

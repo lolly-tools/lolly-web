@@ -30,7 +30,7 @@ export function tsigFactsHtml(facts: TextFacts): string {
   const note = facts.hidden.filter((h) => h.severity === 'note');
 
   const warning = severe.length
-    ? `<p class="tsig-facts-warn">${escape(t('This text contains characters that can disguise, reorder or smuggle content past a reader:'))} ${severe.map((h) => chip(h.name, h.count, true)).join(' ')}</p>`
+    ? `<p class="tsig-facts-warn guide-warn">${escape(t('This text contains characters that can disguise, reorder or smuggle content past a reader:'))} ${severe.map((h) => chip(h.name, h.count, true)).join(' ')}</p>`
     : '';
 
   const rows: string[] = [];
