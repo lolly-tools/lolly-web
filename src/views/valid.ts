@@ -78,6 +78,13 @@ import { visibleTextHtml } from '../lib/invisible-chars.ts';
 // The Document facts census section (shared with the catalog panel).
 import { tsigFactsHtml } from './tsig-facts.ts';
 import type { DocReadNotes } from './doc-read.ts';
+// The illumination strip + the completeness receipt (pure models; the strip
+// renders through this view's existing reviewed sinks).
+import { verifyLampCues } from './valid-text.ts';
+import { lampStripHtml, wireLampScroll, type TrustLamp } from './trust-lamps.ts';
+import { verifyReceiptModel, receiptCounts, type ReceiptInput } from './valid-receipt.ts';
+import { aiDetectAvailable } from '../lib/ai-detect.ts';
+import { rewordAvailable } from '../lib/reworder.ts';
 // Deep engine import, NOT the `@lolly/engine` barrel - the beam-pack.ts:125
 // precedent: index.ts does not re-export the c2pa-extract surface, and widening
 // that one shared facade for a single lazy view is what the bundle budget is
@@ -1724,6 +1731,54 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
   const partsPill = report.partsMadeWithLolly
     ? ` <span class="valid-hero-pill valid-hero-pill--likely-lolly" title="${escape(t('The provenance chain records steps made with Lolly, but the file as it stands was produced by another tool.'))}"><span class="valid-lolly-badge" aria-hidden="true">🍭</span>${t('Parts made with Lolly')}</span>`
     : '';
+  // The illumination strip: four lamps, one glance, C2PA leading. Cues come
+  // from the pure model (valid-text.ts); labels/words localise here.
+  const lamps: TrustLamp[] = verifyLampCues({
+    report,
+    watermarkPresent: !!watermark?.present,
+    sealFound: !!seal?.found,
+    sealValid: !!seal?.valid,
+    aiLikely: !!makerHint,
+    ...(textSignals ? { panel: textSignals } : {}),
+  }).map((c) => ({ id: c.id, label: t(c.label), state: c.state, word: t(c.word), ...(c.detail ? { detail: t(c.detail) } : {}) }));
+  const lampStrip = lampStripHtml(lamps);
+
+  // The completeness receipt: what ran, what could not, and why - the
+  // negative space made visible, with the report-card and keep actions.
+  const receiptInput: ReceiptInput = {
+    imprintScannable: isDeepScannable(report.format, fileName),
+    sealScanned: seal !== undefined,
+    textAnalysed: !!textSignals,
+    pixelSourced: !!textSignals?.pixelSourced,
+    textReadable: preview?.kind === 'image' || report.format === 'pdf' || report.format === 'svg',
+    ocrReady,
+    rewordReady: rewordAvailable(),
+    detectorStaged: aiDetectAvailable(),
+  };
+  const receiptRows = verifyReceiptModel(receiptInput);
+  const counts = receiptCounts(receiptRows);
+  const receiptHtml = `
+    <div class="valid-receipt" data-lamp-section="receipt">
+      <p class="guide-fact">${escape(tRaw('{ran} checks ran on this device · {not} could not run or did not apply · nothing was fetched.', { ran: counts.ran, not: counts.not }))}</p>
+      <details class="valid-receipt-list"><summary>${escape(t('See every check'))}</summary>
+        <ul>${receiptRows.map((r) => r.status === 'ran'
+          ? `<li class="valid-receipt-ran">${escape(t(r.name))}</li>`
+          : `<li class="valid-receipt-not">${escape(t(r.name))} - <span class="guide-absent">${escape(t(r.why ?? ''))}</span></li>`).join('')}</ul>
+      </details>
+      <div class="valid-receipt-actions">
+        <button type="button" class="btn" data-report-card data-file-index="${fileIndex}">${svgIcon('seal')}<span>${t('Save a signed report card')}</span></button>
+        <button type="button" class="btn" data-add-catalog data-file-index="${fileIndex}">${svgIcon('package')}<span>${t('Keep in my catalogue with these findings')}</span></button>
+      </div>
+    </div>`;
+
+  // Unwitnessed files: absence framed deliberately, with language to hand a
+  // colleague - the request itself evangelises credentials.
+  const askCred = !report.found && !noCredSignal && !watermark?.present ? `
+    <div class="valid-askcred">
+      <p class="guide-absent">${escape(t('Nothing vouches for or against this file - it simply carries no provenance. That is common, and fixable at the source.'))}</p>
+      <button type="button" class="btn" data-ask-cred data-file-name="${escape(fileName)}">${svgIcon('seal')}<span>${t('Copy a note asking for credentials')}</span></button>
+    </div>` : '';
+
   return `
     <div class="valid-result ${state.cls}">
       <div class="valid-top">
@@ -1745,22 +1800,29 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
         </div>
         ${report.found || watermark?.present || pips.length ? scorecardHtml(report, watermark, pips) : ''}
       </div>
+      ${lampStrip}
+      ${askCred}
       ${deepScanBlock(fileIndex, report.format, fileName)}
+      <div data-lamp-section="origin">
       ${aiFlagHtml(aiOrigin, makerHint, preview?.kind === 'audio')}
       ${aiDisclosureHtml(report, identity)}
+      </div>
+      <div data-lamp-section="signals">
       ${textSignalsHtml(textSignals)}
       ${(preview?.kind === 'image' && (ocrReady || report.format === 'svg')) || report.format === 'pdf' ? `<div class="valid-tsig-ocr">
         <button type="button" class="btn valid-ocr-read" data-ocr-read data-read-kind="${report.format === 'pdf' ? 'pdf' : report.format === 'svg' ? 'svg' : 'image'}" data-file-index="${fileIndex}">${svgIcon('aiSpark')}<span>${report.format === 'pdf' ? t('Read the text in this document') : report.format === 'svg' ? t('Read the text in this vector') : t('Read the text in this image')}</span></button>
         <div class="valid-ocr-result" data-ocr-result hidden></div>
       </div>` : ''}
+      </div>
       ${notesHtml(notes, fileIndex)}
       ${mine ? mineNote(mine) : ''}
-      ${panelsBlock}
+      <div data-lamp-section="provenance"><span data-lamp-section="integrity"></span>${panelsBlock}</div>
       ${claimPanelHtml(fileIndex, report.format, fileName, report.found)}
       ${watermarkNote(watermark)}
       ${imprintRescanBlock(fileIndex, report.format, fileName, !!watermark?.present, report.madeWithLolly)}
       ${sealNoteHtml(seal)}
       ${appendedPayloadHtml(meta, fileIndex)}
+      ${receiptHtml}
       ${report.found ? deviceNote(report.format === 'webm' || report.format === 'mkv'
     ? t("<strong>Checked entirely on this device</strong> - the file was not uploaded. WebM has no standardised C2PA container mapping yet, so this credential is Lolly's own Matroska attachment: only Lolly (here and via <code>lolly validate</code>) can read it - external C2PA viewers don't support WebM at all.")
     : identity
@@ -3419,9 +3481,102 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     });
   }
 
+  // "Ask for credentials": absence turned into a conversation - copies a
+  // courteous, ready-to-send note so a colleague gets language, not suspicion.
+  async function copyCredentialRequest(btn: HTMLButtonElement): Promise<void> {
+    const name = btn.dataset.fileName ?? t('this file');
+    const note = tRaw('Hi - could you share the original of "{name}" with its Content Credentials attached? I would like to verify where it came from before we use it. Most current tools (Adobe apps, cameras, Lolly) can export with credentials switched on - that version verifies instantly and protects your authorship too. Thanks!', { name });
+    try {
+      await navigator.clipboard.writeText(note);
+      const span = btn.querySelector('span');
+      if (span) span.textContent = t('Copied - paste it to whoever sent the file');
+      btn.disabled = true;
+      announce(t('Request copied to the clipboard.'));
+    } catch { announce(t('That text could not be copied.')); }
+  }
+
+  // The signed report card: a shareable PNG snapshot of THIS verification -
+  // verdict, lamps, receipt counts - itself carrying Content Credentials, so
+  // our statement about a file is provable the same way the file should be.
+  async function saveReportCard(btn: HTMLButtonElement): Promise<void> {
+    const idx = Number(btn.dataset.fileIndex ?? '0');
+    const file = activeFiles[idx];
+    const scope = btn.closest('.valid-result');
+    if (!scope) return;
+    const span = btn.querySelector('span');
+    const orig = span?.textContent ?? '';
+    btn.disabled = true;
+    if (span) span.textContent = t('Preparing…');
+    try {
+      const heroName = scope.querySelector('.valid-hero-filename')?.textContent ?? file?.name ?? 'file';
+      const verdict = scope.querySelector('.valid-hero-pill, .valid-hero-verdict')?.textContent?.trim() ?? '';
+      const lampRows = [...scope.querySelectorAll('.lampstrip .lamp')].map((l) => ({
+        state: l.getAttribute('data-state') ?? 'unlit',
+        label: l.querySelector('.lamp-label')?.textContent ?? '',
+        word: l.querySelector('.lamp-word')?.textContent ?? '',
+      }));
+      const receiptLine = scope.querySelector('.valid-receipt .guide-fact')?.textContent ?? '';
+      const node = document.createElement('div');
+      node.style.cssText = 'position:fixed;left:-12000px;top:0;width:880px;padding:36px 40px;background:#101318;color:#f2f5f8;font-family:ui-sans-serif,system-ui,sans-serif;border-radius:16px;';
+      const dotColor: Record<string, string> = { fact: '#2fae62', warn: '#e0453a', hint: '#eba13c', unlit: '#5a6472' };
+      const esc = escape;
+      node.innerHTML = `
+        <div style="font-size:13px;letter-spacing:.08em;text-transform:uppercase;opacity:.7">${esc(t('Verification report'))} · Lolly</div>
+        <div style="font-size:26px;font-weight:700;margin:10px 0 2px;overflow-wrap:anywhere">${esc(heroName)}</div>
+        <div style="font-size:16px;margin:0 0 18px;opacity:.9">${esc(verdict)}</div>
+        ${lampRows.map((l) => `<div style="display:flex;align-items:center;gap:10px;margin:7px 0;font-size:15px"><span style="width:11px;height:11px;border-radius:50%;background:${dotColor[l.state] ?? dotColor.unlit}"></span><strong>${esc(l.label)}</strong><span style="opacity:.8">${esc(l.word)}</span></div>`).join('')}
+        <div style="margin-top:16px;font-size:13px;opacity:.85">${esc(receiptLine)}</div>
+        <div style="margin-top:14px;font-size:12px;opacity:.6">${esc(tRaw('Checked on this device with Lolly · {date} · lolly.tools/verify', { date: new Date().toLocaleString() }))}</div>`;
+      document.body.appendChild(node);
+      try {
+        const png = await host.export.render(node, 'png');
+        let bytes = new Uint8Array(await png.arrayBuffer());
+        try {
+          if (host.c2pa?.sign) bytes = new Uint8Array(await host.c2pa.sign(bytes, 'png', {}));
+        } catch { /* unsigned beats no report - the card still says what it is */ }
+        await host.export.file(new Blob([bytes as BlobPart], { type: 'image/png' }), { filename: `${heroName.replace(/\.[a-z0-9]+$/i, '')}-verification.png` });
+        announce(t('Report card saved.'));
+      } finally { node.remove(); }
+    } catch {
+      announce(t('The report card could not be created.'));
+    } finally {
+      btn.disabled = false;
+      if (span) span.textContent = orig;
+    }
+  }
+
+  // Keep the verified file in the user's catalogue WITH its findings attached,
+  // so the interrogation becomes the ingredient's standing passport.
+  async function keepInCatalog(btn: HTMLButtonElement): Promise<void> {
+    const idx = Number(btn.dataset.fileIndex ?? '0');
+    const file = activeFiles[idx];
+    if (!file) { announce(t('There is no file here to keep - drop the file itself to add it.')); return; }
+    const span = btn.querySelector('span');
+    const orig = span?.textContent ?? '';
+    btn.disabled = true;
+    if (span) span.textContent = t('Adding…');
+    try {
+      const { storeUserUpload } = await import('./picker.ts');
+      const ref = await storeUserUpload(host as unknown as Parameters<typeof storeUserUpload>[0], file);
+      announce(tRaw('"{name}" is in your catalogue, findings attached.', { name: file.name }));
+      if (span) span.textContent = t('Kept - see your catalogue');
+    } catch {
+      btn.disabled = false;
+      if (span) span.textContent = orig;
+      announce(t('That file could not be added.'));
+    }
+  }
+
+  wireLampScroll(reportEl);
   reportEl.addEventListener('click', (e) => {
     const ocr = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-ocr-read]');
     if (ocr) void readImageText(ocr);
+    const ask = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-ask-cred]');
+    if (ask) void copyCredentialRequest(ask);
+    const card = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-report-card]');
+    if (card) void saveReportCard(card);
+    const keep = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-add-catalog]');
+    if (keep) void keepInCatalog(keep);
     const claim = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-claim-sign]');
     if (claim) { void claimSign(claim); }
     const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-clean-copy]');

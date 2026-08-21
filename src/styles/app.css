@@ -49,6 +49,7 @@
 @import './parts/collab.css'       layer(chrome); /* the Projects live-collab tile badge (plan 100 section 4.6) - sits beside folders.css/projects.css, which it decorates; the rest of the presence chrome is self-styled components (see the file's own header) */
 @import './parts/projects.css'     layer(chrome);
 @import './parts/catalog.css'      layer(chrome); /* Catalog view (a primary tab; kept on the landing sheet) */
+@import './parts/guide.css'        layer(chrome); /* The guidance grammar + trust lamps + shared census (verify AND catalog render these) */
 @import './parts/components.css'   layer(chrome);
 @import './parts/color-field.css'  layer(chrome); /* colour picker - split out of components.css; same layer, so host overrides keep winning */
 @import './parts/dialogs.css'      layer(chrome);

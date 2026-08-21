@@ -128,6 +128,7 @@ import type { RewordStatus } from '../lib/reworder.ts';
 import { wmNoteSlot } from '../lib/wm-note.ts';
 import { appendVisibleText, visibleTextHtml } from '../lib/invisible-chars.ts';
 import { tsigFactsHtml } from './tsig-facts.ts';
+import { lampStripHtml, type TrustLamp } from './trust-lamps.ts';
 // The on-device model tier's shared seam (plans/126 WP-A): consent line,
 // estimate row and honesty copy for the classifier check.
 import { aiModelSlot } from './tsig-model-note.ts';
@@ -1375,6 +1376,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
 
   // aiSignalsChip moved to lib/genai-pill.ts (shared with the asset picker so
   // the risk shows at the moment an ingredient is chosen).
+  /** Inline passport credential results, per id|version - hashing an asset's
+   *  bytes is not free, and paging back should be. */
+  const PASSPORT_CRED_CACHE = new Map<string, { found: boolean; state: string; trusted: boolean } | null>();
+
   /** A DOM-built copy of genAiPill (text form) - for in-place updates where a
    *  string would need a new raw-HTML sink. */
   function genAiPillEl(): HTMLElement {
@@ -1438,7 +1443,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
    */
   async function persistAiSignals(ref: AssetRef, panel: TextSignalPanel, source: 'digital' | 'ocr'): Promise<void> {
     if (ref.source !== 'user') return;
-    const aiSignals: AiSignalsNote = {
+    const aiSignals: AiSignalsNote & { at: string } = {
+      at: new Date().toISOString(),
       v: LEXICON_VERSION, band: panel.band, score: panel.score, source,
       ...(panel.guessFamily ? {
         family: panel.guessFamily,
@@ -2458,6 +2464,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
             ${row(pinned)}${editToggle}${editRow}${row(manage)}${row(danger, 'cat-act-row--danger')}
           </div>`;
         })()}
+        <div class="cat-passport" data-passport></div>
         <h2 class="cat-details-name">${escape(name)}${aiSignalsChip(ref)}</h2>
         ${ref.type === 'audio' ? `<div class="cat-details-art" data-audio-art aria-hidden="true">${audioCardArt(ref)}</div>` : ''}
         <dl class="cat-details-meta">
@@ -2588,6 +2595,63 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       }
     };
     renderOrigins();
+
+    // ── The provenance passport (plans/136 W2a): one glanceable card - the
+    // flat lamp strip over an INLINE credential check of the asset's own
+    // bytes, plus the licensing chips. The check is lazy + stale-guarded like
+    // the tech panel, and cached per id+version so paging back is free.
+    const renderPassport = (cred: 'checking' | { found: boolean; state: string; trusted: boolean } | null): void => {
+      const box = dlg.querySelector<HTMLElement>('[data-passport]');
+      if (!box) return;
+      const kind = assetAiKind(ref);
+      const sig = ref.meta?.aiSignals as (AiSignalsNote & { at?: string }) | undefined;
+      const sigFresh = sig && sig.v === LEXICON_VERSION ? sig : undefined;
+      const lamps: TrustLamp[] = [
+        cred === 'checking'
+          ? { id: 'provenance', label: t('Provenance'), state: 'unlit', word: t('checking…') }
+          : cred?.found && cred.state === 'invalid'
+            ? { id: 'provenance', label: t('Provenance'), state: 'warn', word: t('credential problem'), detail: t('Open Check credentials for the full report.') }
+            : cred?.found && cred.trusted
+              ? { id: 'provenance', label: t('Provenance'), state: 'fact', word: t('verified') }
+              : cred?.found
+                ? { id: 'provenance', label: t('Provenance'), state: 'fact', word: t('credential intact') }
+                : { id: 'provenance', label: t('Provenance'), state: 'unlit', word: t('none carried'), detail: t('An unlit lamp means that check has nothing to read here - it is not a verdict.') },
+        cred === 'checking' || !cred?.found
+          ? { id: 'integrity', label: t('Integrity'), state: 'unlit', word: t('nothing to check against') }
+          : cred.state === 'valid'
+            ? { id: 'integrity', label: t('Integrity'), state: 'fact', word: t('bytes match') }
+            : { id: 'integrity', label: t('Integrity'), state: 'warn', word: t('bytes changed') },
+        kind
+          ? { id: 'origin', label: t('Origin'), state: 'fact', word: kind === 'full' ? t('AI-generated') : t('AI-assisted') }
+          : { id: 'origin', label: t('Origin'), state: 'unlit', word: t('not declared') },
+        sigFresh
+          ? (sigFresh.band === 'notable' || sigFresh.band === 'strong'
+            ? { id: 'signals', label: t('Content signals'), state: 'hint', word: t('signals found'), ...(sigFresh.at ? { detail: tRaw('Analysed {date}.', { date: new Date(sigFresh.at).toLocaleDateString() }) } : {}) }
+            : { id: 'signals', label: t('Content signals'), state: 'fact', word: t('none found'), ...(sigFresh.at ? { detail: tRaw('Analysed {date}.', { date: new Date(sigFresh.at).toLocaleDateString() }) } : {}) })
+          : { id: 'signals', label: t('Content signals'), state: 'unlit', word: t('not analysed') },
+      ];
+      const chips: string[] = [];
+      const license = (ref.meta as { license?: string } | undefined)?.license;
+      if (license) chips.push(`<span class="chip">${escape(String(license))}</span>`);
+      if ((ref.meta as { brandLock?: boolean } | undefined)?.brandLock) chips.push(`<span class="chip">${escape(t('Brand-locked'))}</span>`);
+      box.innerHTML = lampStripHtml(lamps, { flat: true }) + (chips.length ? `<div class="cat-passport-chips">${chips.join(' ')}</div>` : '');
+      box.hidden = false;
+    };
+    renderPassport('checking');
+    void (async () => {
+      const cacheKey = `${ref.id}|${ref.version ?? 'x'}`;
+      let cred = PASSPORT_CRED_CACHE.get(cacheKey) ?? null;
+      if (cred === null && !PASSPORT_CRED_CACHE.has(cacheKey)) {
+        try {
+          const bytes = new Uint8Array(await (await fetch(ref.url)).arrayBuffer());
+          const r = await verifyC2pa(bytes);
+          cred = { found: !!r.found, state: String(r.state), trusted: !!(r as { trusted?: boolean }).trusted };
+        } catch { cred = null; }
+        PASSPORT_CRED_CACHE.set(cacheKey, cred);
+      }
+      if (detailsDialog !== dlg) return; // paged away while hashing
+      renderPassport(cred);
+    })();
 
     // Technical metadata (resolution, DPI, EXIF, audio/video props, page count, viewBox…):
     // extract off-thread and fill the initially-hidden panel. Cancel/stale-safe - ←/→ paging

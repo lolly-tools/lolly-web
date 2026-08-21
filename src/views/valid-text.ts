@@ -25,6 +25,7 @@
  *     words rather than followed quietly.
  */
 import type { VerifyReport, TextBinding } from './valid-verdict.ts';
+import { hashFailed } from './valid-verdict.ts';
 import { analyzeTextSignals, textFacts } from '@lolly/engine';
 import type {
   TextSignalReport, TextSignalBand, TextSignalSource, TextSignalDocKind, TextHeatmap, TextFacts,
@@ -667,4 +668,85 @@ export function textSignalPanel(report: TextSignalReport): TextSignalPanel {
  *  runs writing-style signals only and flags `pixelSourced`. */
 export function analyzeVerifyText(text: string, source: TextSignalSource): TextSignalPanel {
   return { ...textSignalPanel(analyzeTextSignals(text, { source })), text, facts: textFacts(text) };
+}
+
+// ── The trust lamp cues (plans: illumination strip) ──────────────────────────
+//
+// The verify view's four-lamp summary, derived here so it is testable as data.
+// Every `label`/`word`/`detail` is an ENGLISH SOURCE STRING the view passes
+// through t() - the same contract as the notices above. States follow the
+// guidance grammar: fact/warn/hint/unlit, where unlit is never a verdict.
+
+export interface VerifyLampCue {
+  id: 'provenance' | 'integrity' | 'origin' | 'signals';
+  label: string;
+  state: 'fact' | 'warn' | 'hint' | 'unlit';
+  word: string;
+  detail?: string;
+}
+
+export interface VerifyLampInput {
+  report: VerifyReport;
+  watermarkPresent?: boolean;
+  sealFound?: boolean;
+  sealValid?: boolean;
+  /** The maker-pipeline "likely AI-generated" tier fired. */
+  aiLikely?: boolean;
+  panel?: TextSignalPanel;
+}
+
+/** Derive the strip. Pure; ordering is the evidence hierarchy - C2PA leads. */
+export function verifyLampCues(input: VerifyLampInput): VerifyLampCue[] {
+  const { report, panel } = input;
+
+  let provenance: VerifyLampCue;
+  if (report.found && report.state === 'invalid') {
+    provenance = { id: 'provenance', label: 'Provenance', state: 'warn', word: 'credential problem', detail: 'A Content Credential is here but does not check out - the sections below say exactly what and why.' };
+  } else if (report.madeWithLolly || report.trusted) {
+    provenance = { id: 'provenance', label: 'Provenance', state: 'fact', word: 'verified', detail: 'The Content Credential verifies against a pinned trust anchor.' };
+  } else if (report.found && report.state === 'valid') {
+    provenance = { id: 'provenance', label: 'Provenance', state: 'fact', word: 'credential intact', detail: 'The Content Credential is intact; its signer is not one of the pinned anchors.' };
+  } else if (input.sealFound && input.sealValid) {
+    provenance = { id: 'provenance', label: 'Provenance', state: 'fact', word: 'SEAL verified', detail: 'A SEAL signature verifies these bytes against the signer\u2019s DNS key.' };
+  } else if (input.watermarkPresent) {
+    provenance = { id: 'provenance', label: 'Provenance', state: 'hint', word: 'Imprint found', detail: 'The Lolly Imprint pixel watermark is present - a durable hint, not a credential.' };
+  } else {
+    provenance = { id: 'provenance', label: 'Provenance', state: 'unlit', word: 'none carried', detail: 'This file carries no credential this page can read. Absence is not a verdict.' };
+  }
+
+  let integrity: VerifyLampCue;
+  if (hashFailed(report)) {
+    integrity = { id: 'integrity', label: 'Integrity', state: 'warn', word: 'bytes changed', detail: 'These bytes no longer hash to what the credential signed.' };
+  } else if (report.found && report.state === 'valid') {
+    integrity = { id: 'integrity', label: 'Integrity', state: 'fact', word: 'bytes match', detail: 'Every byte the credential covers is unchanged since signing.' };
+  } else {
+    integrity = { id: 'integrity', label: 'Integrity', state: 'unlit', word: 'nothing to check against', detail: 'Without a credential there is no signed hash to compare these bytes to.' };
+  }
+
+  const declared = !!report.aiGenerated || (report.aiDisclosures?.length ?? 0) > 0 || !!report.aiDisclosure;
+  let origin: VerifyLampCue;
+  if (declared) {
+    origin = { id: 'origin', label: 'Origin', state: 'fact', word: 'AI declared', detail: 'The file itself declares AI-generated content - disclosure working as it should.' };
+  } else if (input.aiLikely) {
+    origin = { id: 'origin', label: 'Origin', state: 'hint', word: 'likely AI-generated', detail: 'The maker pipeline recorded in the file matches a known AI generator.' };
+  } else {
+    origin = { id: 'origin', label: 'Origin', state: 'unlit', word: 'not declared', detail: 'No origin declaration either way. Absence is not a verdict.' };
+  }
+
+  let signals: VerifyLampCue;
+  if (!panel) {
+    signals = { id: 'signals', label: 'Content signals', state: 'unlit', word: 'no text analysed', detail: 'Use the Read-the-text action to analyse any words this file carries.' };
+  } else {
+    const severe = (panel.facts?.hidden ?? []).some((h) => h.severity === 'severe');
+    const artifact = panel.rows.some((r) => r.tier === 'artifact');
+    if (severe || artifact) {
+      signals = { id: 'signals', label: 'Content signals', state: 'warn', word: 'hard evidence', detail: 'Byte-level artifacts were found - the analysis section names each one.' };
+    } else if (panel.band !== 'none') {
+      signals = { id: 'signals', label: 'Content signals', state: 'hint', word: 'signals found', detail: 'Writing-style signals were found. Signals are graded evidence, never proof.' };
+    } else {
+      signals = { id: 'signals', label: 'Content signals', state: 'fact', word: 'none found', detail: 'The analysis found no signals. Clean text can be either human or AI.' };
+    }
+  }
+
+  return [provenance, integrity, origin, signals];
 }

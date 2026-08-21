@@ -1379,46 +1379,33 @@ mark.valid-hl { color: inherit; border-radius: 2px; padding: 0 0.06em; }
   cursor: help;
 }
 
-/* ── Document facts: the neutral census (views/tsig-facts.ts, shared by the
-   verify AND catalog panels - parts load globally). The severe warning line
-   stays OUTSIDE the collapsible: a census must not flatten danger. */
-.tsig-facts-warn {
-  margin: 0.5rem 0 0;
-  padding: 0.45rem 0.6rem;
-  border-radius: calc(var(--radius) * 0.6);
-  background: hsl(0 72% 51% / 0.1);
-  border: 1px solid hsl(0 72% 51% / 0.3);
-  font-size: calc(0.8rem * var(--a11y-fs));
-  font-weight: 600;
-  line-height: 1.5;
+/* Document facts (census) styles moved to parts/guide.css - the catalog
+   renders the census too, and this sheet only loads with the verify view. */
+
+/* ── The completeness receipt + the unwitnessed ask ── */
+.valid-receipt {
+  margin-top: 14px;
+  padding: 10px 14px;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--muted) / 0.3);
 }
-.tsig-facts { margin: 0.5rem 0 0; font-size: calc(0.78rem * var(--a11y-fs)); }
-.tsig-facts > summary {
-  cursor: pointer;
-  color: hsl(var(--muted-foreground));
-  font-weight: 600;
-  user-select: none;
+.valid-receipt-list { margin-top: 6px; font-size: calc(0.78rem * var(--a11y-fs)); }
+.valid-receipt-list > summary { cursor: pointer; color: hsl(var(--muted-foreground)); font-weight: 600; user-select: none; }
+.valid-receipt-list ul { margin: 6px 0 0; padding-left: 1.2em; }
+.valid-receipt-list li { margin: 3px 0; }
+.valid-receipt-ran::marker { content: '✓  '; color: hsl(145 55% 42%); }
+.valid-receipt-not::marker { content: '–  '; color: hsl(var(--muted-foreground)); }
+.valid-receipt-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.valid-askcred { margin-top: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.valid-askcred .guide-absent { margin: 0; }
+/* svgIcon() emits no width/height (the giant-sparkle trap) - size the glyphs. */
+.valid-askcred .btn svg, .valid-receipt-actions .btn svg {
+  width: calc(16px * var(--a11y-fs));
+  height: calc(16px * var(--a11y-fs));
+  flex-shrink: 0;
 }
-.tsig-facts-list { margin: 0.4rem 0 0; display: grid; gap: 0.25rem; }
-.tsig-facts-row { display: flex; gap: 0.6rem; align-items: baseline; }
-.tsig-facts-row dt { flex: 0 0 8.5em; color: hsl(var(--muted-foreground)); }
-.tsig-facts-row dd { margin: 0; overflow-wrap: anywhere; }
-.tsig-facts-chip {
-  display: inline-block;
-  padding: 0 4px;
-  border-radius: 4px;
-  background: hsl(275 65% 55% / .16);
-  color: hsl(275 45% 45%);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.86em;
-  font-weight: 700;
-}
-.tsig-facts-chip--severe {
-  background: hsl(0 72% 51% / 0.14);
-  color: hsl(0 72% 45%);
-  border: 1px solid hsl(0 72% 51% / 0.4);
-}
-.tsig-facts-cap { margin: 0.4rem 0 0; color: hsl(var(--muted-foreground)); font-size: calc(0.7rem * var(--a11y-fs)); }
+.valid-askcred .btn, .valid-receipt-actions .btn { display: inline-flex; align-items: center; gap: 7px; }
 mark.valid-hl--heuristic { background: hsl(42 92% 55% / 0.38); }
 mark.valid-hl--artifact { background: hsl(0 82% 60% / 0.42); }
 /* The graded 5-step temperature scale (heatBucket: t1 coolest, t5 hottest) -

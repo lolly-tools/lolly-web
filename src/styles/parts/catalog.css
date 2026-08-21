@@ -684,6 +684,13 @@ button.cat-download { font: inherit; cursor: pointer; }
 /* The formatted-download row under the actions grid. */
 .cat-text-dl { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin-top: .5rem; }
 .cat-text-dl .cat-dl-label { font-size: .74rem; color: hsl(var(--muted-foreground)); margin-right: .15rem; }
+/* The provenance passport (plans/136 W2a): the flat lamp strip + licence chips
+   above the asset name - one glance, whole trust state. */
+.cat-passport { margin: 0 0 6px; }
+.cat-passport .lampstrip { margin: 0; }
+.cat-passport .lamp { font-size: calc(10.5px * var(--a11y-fs)); padding: 3px 8px; cursor: default; }
+.cat-passport-chips { margin-top: 5px; display: flex; gap: 6px; flex-wrap: wrap; }
+
 /* The text AI-likelihood panel: a calm note in the metadata column, never a verdict. */
 .cat-tsig { margin-top: .75rem; padding: .7rem .85rem; border-radius: calc(var(--radius) * .7); background: hsl(var(--muted) / .4); font-size: .82rem; line-height: 1.45; }
 .cat-tsig-head { margin: 0 0 .35rem; display: flex; align-items: center; gap: .4rem; }
