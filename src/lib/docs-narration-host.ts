@@ -32,7 +32,7 @@
  * so it is copied verbatim (minus the hash) and kept in lockstep by eye - the
  * canonical copy stays scripts/lib/docs-spoken-text.ts.
  */
-import type { DockHost, DockNarration, DockNarrationPlayer, DockNowPlaying, DockViz } from '@lolly-tools/audio-dock';
+import type { DockHost, DockNarration, DockNarrationPlayer, DockNowPlaying, DockViz, DockVolume } from '@lolly-tools/audio-dock';
 import { prefersReducedMotion } from './a11y-prefs.ts';
 
 // ── ported spoken-text extraction (see file header) ──────────────────────────
@@ -228,6 +228,7 @@ export async function createDocsNarrationHost(opts: {
 class DocsNarrationHost implements DockHost {
   readonly narration: DockNarration;
   readonly viz: DockViz;
+  readonly volume: DockVolume;
 
   private readonly track: Track;
   private readonly root: HTMLElement;
@@ -280,6 +281,12 @@ class DocsNarrationHost implements DockHost {
       speeds: () => SPEEDS,
       caption: () => this.captionText,
       disclosure: () => DISCLOSURE,
+    };
+    this.volume = {
+      id: 'master',
+      label: 'Volume',
+      get: () => this.audio.volume,
+      set: (v) => { this.audio.volume = Math.max(0, Math.min(1, v)); this.emit(); },
     };
     // The dock draws its OWN 2D frequency backdrop - supported() gates that loop,
     // which a Canvas 2D context always satisfies. getAnalyser() is null until the

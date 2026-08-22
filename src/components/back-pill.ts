@@ -236,9 +236,19 @@ export function mountBackPill(root: HTMLElement, opts: MountBackPillOpts = {}): 
       const me = e as MouseEvent;
       if (me.metaKey || me.ctrlKey || me.shiftKey || me.altKey || me.button > 0) return;
       e.preventDefault();
-      const go = () => leave(el);
-      if (opts.intercept?.(go)) return;
-      go();
+      // The go() handed to an intercept navigates by HREF, never history.back(). An
+      // intercept always shows an unsaved-changes dialog first, and mountModal pushes a
+      // SAME-URL history entry for system-Back to consume. A history.back() from inside
+      // that flow pops the DIALOG's entry - same URL, so no route change - and the tool
+      // never leaves ("Leave without saving does nothing", seen only when the pill was in
+      // history mode, i.e. you navigated INTO the tool). navigateTo moves the URL, which is
+      // exactly the signal mountModal.consume() watches to leave its own entry alone.
+      if (opts.intercept) {
+        const goByHref = (): void => navigateTo(el.getAttribute('href') || HOME_HREF);
+        if (opts.intercept(goByHref)) return;
+      }
+      // No intercept, or it declined (no unsaved work): the plain, history-aware back step.
+      leave(el);
     });
     addHomeEscape(root, el);
   });

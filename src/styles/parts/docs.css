@@ -99,6 +99,9 @@
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
 }
 .docs-top-btn:hover { background: hsl(var(--muted)); border-color: hsl(var(--foreground) / 0.25); }
+/* The full-width toggle is meaningless on a phone (the reader is already full-bleed)
+   and its slot collides with the back-pill island at large Dynamic Type sizes. */
+@media (max-width: 640px) { .docs-top-btn--wide { display: none; } }
 .docs-top-btn:active { transform: scale(0.94); }
 .docs-top-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px hsl(var(--primary) / 0.4); }
 .docs-top-btn svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
@@ -108,7 +111,7 @@
   padding: 4rem 1rem;
   text-align: center;
   color: var(--muted, hsl(var(--muted-foreground)));
-  font-size: 0.9375rem;
+  font-size: calc(0.9375rem * var(--a11y-fs, 1));
 }
 .docs-status a { color: hsl(var(--primary)); }
 
@@ -117,6 +120,10 @@
   min-width: 0;
   padding: 2.75rem 0 5rem;
   color: var(--text);
+  /* Reading text rides the a11y type multiplier (iOS Dynamic Type / largeText):
+     docs prose is exactly what the OS setting is for, and unlike tool canvases
+     nothing here is exported, so nothing byte-identical is at stake. */
+  font-size: calc(1rem * var(--a11y-fs, 1));
   line-height: 1.65;
 }
 
@@ -125,17 +132,17 @@
 .docs-content h3,
 .docs-content h4 { line-height: 1.25; font-weight: 700; }
 .docs-content h1 {
-  font-size: 3rem; color: var(--dark); line-height: 1.15; font-weight: 300;
+  font-size: calc(3rem * var(--a11y-fs, 1)); color: var(--dark); line-height: 1.15; font-weight: 300;
   margin-bottom: 2rem; padding-bottom: 2rem; border-bottom: 1px solid var(--border);
 }
 .docs-content h2 {
-  font-size: 1.5rem; font-weight: 700; color: var(--dark);
+  font-size: calc(1.5rem * var(--a11y-fs, 1)); font-weight: 700; color: var(--dark);
   border-top: 1px solid var(--border); padding-top: 2rem;
   margin-top: 2.5rem; margin-bottom: 0.75rem;
 }
 .docs-content h2:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
-.docs-content h3 { font-size: 1.15rem; color: var(--dark); margin-top: 1.75rem; margin-bottom: 0.5rem; }
-.docs-content h4 { font-size: 1rem; color: var(--muted); margin-top: 1.25rem; margin-bottom: 0.35rem; }
+.docs-content h3 { font-size: calc(1.15rem * var(--a11y-fs, 1)); color: var(--dark); margin-top: 1.75rem; margin-bottom: 0.5rem; }
+.docs-content h4 { font-size: calc(1rem * var(--a11y-fs, 1)); color: var(--muted); margin-top: 1.25rem; margin-bottom: 0.35rem; }
 .docs-content h2[id], .docs-content h3[id], .docs-content h4[id] { scroll-margin-top: 1.5rem; }
 
 /* Narration follow-along highlight (lib/docs-narration-host.ts): the currently
@@ -170,7 +177,7 @@
 .docs-content pre {
   background: hsl(var(--muted)); padding: 1.25rem 1.5rem; border-radius: 8px;
   overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere;
-  font-size: 0.875rem; line-height: 1.5; margin-bottom: 1.25rem;
+  font-size: calc(0.875rem * var(--a11y-fs, 1)); line-height: 1.5; margin-bottom: 1.25rem;
   box-shadow: inset 0 0.2rem 0.4rem #0002;
 }
 .docs-content pre code { background: none; padding: 0; color: inherit; font-size: 1em; }
@@ -187,7 +194,7 @@
   overflow-x: auto; margin-bottom: 2rem; border-radius: 1em;
   box-shadow: 0 0 0 1px hsl(var(--border)), 0 0.2rem 0.4rem #00000018;
 }
-.docs-content table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.docs-content table { width: 100%; border-collapse: collapse; font-size: calc(0.8rem * var(--a11y-fs, 1)); }
 .docs-content th, .docs-content td { padding: 0.6rem 0.9rem; text-align: left; border-bottom: 1px solid var(--border);vertical-align: top;border-bottom:1px solid var(--green) }
 .docs-content th { font-weight: 700; color: var(--dark); }
 .docs-content tr:last-child td { border-bottom: none; }
@@ -234,7 +241,7 @@
 /* "Try it in the app" deep link under a screenshot - points at a real app route. */
 .docs-content .shot-try {
   display: block; margin-block-start: 0.5rem; text-align: center;
-  font-size: 0.8125rem; font-weight: 600; color: var(--muted);
+  font-size: calc(0.8125rem * var(--a11y-fs, 1)); font-weight: 600; color: var(--muted);
 }
 .docs-content .shot-try::after { content: ' →'; }
 .docs-content .shot-try:hover, .docs-content .shot-try:focus-visible { color: var(--green); text-decoration: underline; }
@@ -279,7 +286,7 @@
   background: hsl(var(--background) / 0.9);
   color: hsl(var(--foreground));
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: calc(0.8125rem * var(--a11y-fs, 1));
   font-weight: 600;
   line-height: 1;
   text-decoration: none;
@@ -326,9 +333,9 @@
 
 /* ── Doc primitives: ::: cols, ::: timeline, icon lists, inline logos ────────── */
 .docs-content .md-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.75rem 3rem; margin: 2rem 0 2.5rem; }
-.docs-content .md-cols .md-col > h2:first-child { margin-top: 0; font-size: 1.25rem; border-top: none; padding-top: 0; }
+.docs-content .md-cols .md-col > h2:first-child { margin-top: 0; font-size: calc(1.25rem * var(--a11y-fs, 1)); border-top: none; padding-top: 0; }
 .docs-content .md-cols .md-col > ul { margin-bottom: 0; }
-.docs-content .md-cols .md-col li { font-size: 0.9375rem; }
+.docs-content .md-cols .md-col li { font-size: calc(0.9375rem * var(--a11y-fs, 1)); }
 
 .docs-content ul.icon-list { list-style: none; padding-inline-start: 0; display: flex; flex-direction: column; gap: 0.9rem; }
 .docs-content ul.icon-list > li.ic { display: flex; align-items: flex-start; gap: 0.75rem; margin-bottom: 0; }
@@ -361,7 +368,7 @@
 /* ── Narrow viewports ───────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
   .docs-content { padding: 1.75rem 0 1.5rem; }
-  .docs-content h1 { font-size: 2.25rem; }
+  .docs-content h1 { font-size: calc(2.25rem * var(--a11y-fs, 1)); }
   .docs-content .md-cols { grid-template-columns: 1fr; gap: 2.25rem; }
 }
 
@@ -370,7 +377,13 @@
    pathways, the docs sidebar rail, the footer sitemap - and a DERIVED on-page TOC.
    All token-driven so it themes light/dark/brand and follows the active brand. */
 
-.docs-reader { max-width: 84rem; margin: 0 auto; padding: 4.75rem 1.5rem 3rem; box-sizing: border-box; }
+.docs-reader {
+  /* Clearance for the FIXED chrome row (back-pill island left, home/theme cluster
+     right): --chrome-top carries --safe-top on notched phones and --chrome-h scales
+     with Dynamic Type / largeText, so a static top padding under-clears on device. */
+  --docs-chrome-clear: calc(var(--chrome-top, 0.75rem) + var(--chrome-h, 2.6rem) + 1.5rem);
+  max-width: 84rem; margin: 0 auto; padding: var(--docs-chrome-clear) 1.5rem 3rem; box-sizing: border-box;
+}
 
 /* SAFETY FIRST: never let a rehosted/chrome icon size itself to the page (the
    blown-up palette bug). Scoped to CHROME + NAV only - never .docs-content, whose
@@ -384,7 +397,7 @@
 
 /* top section pathways (Quickstart · For Creators · For Builders · For Operators · Trust) */
 .docs-pathways { display: flex; flex-wrap: wrap; gap: .3rem 1.4rem; padding: 0 0 1rem; border-bottom: 1px solid hsl(var(--border)); margin-bottom: 1.75rem;margin-top:4em; }
-.docs-pathway { font: 600 .95rem/1.4 var(--font-brand, system-ui, sans-serif); color: hsl(var(--muted-foreground)); text-decoration: none; padding: .2rem 0; border-bottom: 2px solid transparent; white-space: nowrap; }
+.docs-pathway { font: 600 calc(.95rem * var(--a11y-fs, 1))/1.4 var(--font-brand, system-ui, sans-serif); color: hsl(var(--muted-foreground)); text-decoration: none; padding: .2rem 0; border-bottom: 2px solid transparent; white-space: nowrap; }
 .docs-pathway:hover { color: hsl(var(--foreground)); }
 .docs-pathway.active { color: hsl(var(--primary)); border-bottom-color: hsl(var(--primary)); }
 
@@ -420,25 +433,25 @@
 .docs-content-col { min-width: 0; }
 
 /* docs sidebar rail (extracted .docs-sidebar) */
-.docs-sidebar-slot { position: sticky; top: 4.75rem; align-self: start; max-height: calc(100vh - 6.5rem); overflow-y: auto; font-size: .9rem; }
+.docs-sidebar-slot { position: sticky; top: var(--docs-chrome-clear, 4.75rem); align-self: start; max-height: calc(100vh - var(--docs-chrome-clear, 4.75rem) - 1.75rem); overflow-y: auto; font-size: calc(.9rem * var(--a11y-fs, 1)); }
 .docs-sidebar-slot :is(ul, ol) { list-style: none; margin: 0; padding: 0; }
 .docs-sidebar-slot a { display: flex; align-items: center; gap: .55rem; color: hsl(var(--muted-foreground)); text-decoration: none; padding: .32rem .55rem; border-radius: 7px; line-height: 1.35; }
 .docs-sidebar-slot a:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
 .docs-sidebar-slot a.active { color: hsl(var(--primary)); font-weight: 600; background: hsl(var(--primary) / .09); }
-.docs-sidebar-slot :is(.docs-sidebar-group, h2, h3, .sidebar-head) { font: 700 .68rem/1 var(--font-mono, ui-monospace, monospace); letter-spacing: .1em; text-transform: uppercase; color: hsl(var(--muted-foreground)); margin: 1.1rem 0 .4rem .55rem; }
+.docs-sidebar-slot :is(.docs-sidebar-group, h2, h3, .sidebar-head) { font: 700 calc(.68rem * var(--a11y-fs, 1))/1 var(--font-mono, ui-monospace, monospace); letter-spacing: .1em; text-transform: uppercase; color: hsl(var(--muted-foreground)); margin: 1.1rem 0 .4rem .55rem; }
 
 /* on-page table of contents (derived from stamped heading ids) */
-.docs-toc-slot { position: sticky; top: 4.75rem; align-self: start; max-height: calc(100vh - 6.5rem); overflow-y: auto; }
-.docs-toc-head { font: 700 .68rem/1 var(--font-mono, ui-monospace, monospace); letter-spacing: .1em; text-transform: uppercase; color: hsl(var(--muted-foreground)); margin-bottom: .65rem; }
+.docs-toc-slot { position: sticky; top: var(--docs-chrome-clear, 4.75rem); align-self: start; max-height: calc(100vh - var(--docs-chrome-clear, 4.75rem) - 1.75rem); overflow-y: auto; }
+.docs-toc-head { font: 700 calc(.68rem * var(--a11y-fs, 1))/1 var(--font-mono, ui-monospace, monospace); letter-spacing: .1em; text-transform: uppercase; color: hsl(var(--muted-foreground)); margin-bottom: .65rem; }
 .docs-toc-list { list-style: none; margin: 0; padding: 0; border-left: 1px solid hsl(var(--border)); }
-.docs-toc-link { display: block; color: hsl(var(--muted-foreground)); text-decoration: none; padding: .28rem .85rem; font-size: .85rem; line-height: 1.35; border-left: 2px solid transparent; margin-left: -1px; }
-.docs-toc-link.is-h3 { padding-left: 1.7rem; font-size: .82rem; }
+.docs-toc-link { display: block; color: hsl(var(--muted-foreground)); text-decoration: none; padding: .28rem .85rem; font-size: calc(.85rem * var(--a11y-fs, 1)); line-height: 1.35; border-left: 2px solid transparent; margin-left: -1px; }
+.docs-toc-link.is-h3 { padding-left: 1.7rem; font-size: calc(.82rem * var(--a11y-fs, 1)); }
 /* Scroll-spy state: the section under the reading line. */
 .docs-toc-link.active { color: hsl(var(--primary)); border-left-color: hsl(var(--primary)); font-weight: 600; }
 .docs-toc-link:hover { color: hsl(var(--foreground)); border-left-color: hsl(var(--muted-foreground) / .5); }
 
 /* footer sitemap (extracted .footer-sitemap) */
-.docs-sitemap-slot { margin-top: 3.5rem; padding-top: 2rem; border-top: 1px solid hsl(var(--border)); font-size: .88rem; color: hsl(var(--muted-foreground)); }
+.docs-sitemap-slot { margin-top: 3.5rem; padding-top: 2rem; border-top: 1px solid hsl(var(--border)); font-size: calc(.88rem * var(--a11y-fs, 1)); color: hsl(var(--muted-foreground)); }
 .docs-sitemap-slot :is(ul, ol) { list-style: none; margin: 0; padding: 0; }
 .docs-sitemap-slot a { color: hsl(var(--muted-foreground)); text-decoration: none; }
 .docs-sitemap-slot a:hover { color: hsl(var(--primary)); }
@@ -455,7 +468,7 @@
 .docs-sitemap-slot .footer-sitemap a { display: flex; align-items: flex-start; gap: .5em; padding: .12rem 0; line-height: 1.4; }
 .docs-sitemap-slot .sitemap-ic { flex: none; margin-top: .1em; opacity: .55; color: hsl(var(--primary)); }
 .docs-sitemap-slot .footer-sitemap a:hover .sitemap-ic { opacity: 1; }
-.docs-sitemap-slot .sitemap-title { font-size: .7rem; text-transform: uppercase; letter-spacing: .09em; font-weight: 700; color: hsl(var(--foreground)); margin-bottom: .35rem; }
+.docs-sitemap-slot .sitemap-title { font-size: calc(.7rem * var(--a11y-fs, 1)); text-transform: uppercase; letter-spacing: .09em; font-weight: 700; color: hsl(var(--foreground)); margin-bottom: .35rem; }
 .docs-sitemap-slot a.sitemap-title:hover { color: hsl(var(--primary)); }
 
 /* footer contact block (extracted <footer> minus the sitemap) - the "Questions? Contact
@@ -464,7 +477,7 @@
    which the reader never keeps, so re-declare the centred muted look here - and, load-
    bearing, size the badge image: /info/founded-by.svg ships with NO intrinsic width or
    height, so without an explicit width the inline anchor + image collapse to 0×0. */
-.docs-contact-slot { margin-top: 2.25rem; padding-top: 1.5rem; border-top: 1px solid hsl(var(--border)); font-size: .82rem; color: hsl(var(--muted-foreground)); }
+.docs-contact-slot { margin-top: 2.25rem; padding-top: 1.5rem; border-top: 1px solid hsl(var(--border)); font-size: calc(.82rem * var(--a11y-fs, 1)); color: hsl(var(--muted-foreground)); }
 /* Centre the block - a global `footer { text-align: right }` (base.css) directly
    matches the adopted <footer>, so it must be overridden on the element itself. */
 .docs-contact-slot .docs-contact-footer { text-align: center; }
@@ -496,7 +509,7 @@
 /* Full-width reading (the topright toggle): the ENTIRE viewport for the big reference
    tables - the rails fold away too, since with them the content track only gains a
    sliver. One click back restores the rails. */
-.docs-reader--wide { max-width: none; padding: 0 1.75rem; }
+.docs-reader--wide { max-width: none; padding: var(--docs-chrome-clear) 1.75rem 3rem; }
 .docs-reader--wide .docs-reader-grid { grid-template-columns: minmax(0, 1fr); }
 .docs-reader--wide [data-sidebar],
 .docs-reader--wide [data-toc] { display: none; }
@@ -510,7 +523,7 @@
    screens it drops below the pill instead, where there is no room beside it. */
 .docs-reader--landing .docs-pathways-slot { padding-inline: 8.5rem 8rem; }
 @media (max-width: 700px) {
-  .docs-reader--landing .docs-pathways-slot { padding-inline: 1rem; margin-top: 3.2rem; }
+  .docs-reader--landing .docs-pathways-slot { padding-inline: 1rem; margin-top: var(--docs-chrome-clear); }
 }
 
 /* ── The three-zone formats table (#/docs/formats) ────────────────────────────
@@ -532,14 +545,14 @@
 .docs-content .formats-section { padding: 2.5rem 0 0; margin: 0; border: 0; background: none; }
 .docs-content .formats-inner { max-width: none; margin: 0; }
 .docs-content .formats-head { margin-bottom: 1.25rem; }
-.docs-content .formats-hint { font-size: .9rem; margin: .5rem 0 0; color: var(--green); font-weight: 600; }
+.docs-content .formats-hint { font-size: calc(.9rem * var(--a11y-fs, 1)); margin: .5rem 0 0; color: var(--green); font-weight: 600; }
 .docs-content .fmt-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .docs-content .fmt-table { display: flex; flex-direction: column; row-gap: .1rem; min-width: 0; padding-bottom: .5rem; }
 .docs-content .fmt-row { display: flex; align-items: baseline; column-gap: 1.25rem; padding: .2rem 0; }
 .docs-content .fmt-row--head { align-items: flex-end; }
 .docs-content .fmt-cat { flex: 0 0 4.5rem; display: flex; flex-direction: column; align-items: flex-start; gap: .3rem; }
 .docs-content .fmt-cat svg { width: 26px; height: 26px; color: var(--green); opacity: .9; flex: none; }
-.docs-content .fmt-cat-label { font-size: .62rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); white-space: nowrap; }
+.docs-content .fmt-cat-label { font-size: calc(.62rem * var(--a11y-fs, 1)); font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); white-space: nowrap; }
 /* No min-width:0 on the zones: a zone's floor is its widest (nowrap) chip, so a
  * squeezed side zone wraps its chips instead of letting one overflow into the
  * neighbouring zone. A row that still cannot fit scrolls via .fmt-scroll. */
@@ -547,12 +560,12 @@
 .docs-content .fmt-zone--in { flex: 1 1 0; justify-content: flex-start; }
 .docs-content .fmt-zone--both { flex: 0 1 auto; justify-content: center; }
 .docs-content .fmt-zone--out { flex: 1 1 0; justify-content: flex-end; }
-.docs-content .fmt-zonelabel { font-size: .6rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); display: inline-flex; align-items: center; gap: .45em; white-space: nowrap; }
+.docs-content .fmt-zonelabel { font-size: calc(.6rem * var(--a11y-fs, 1)); font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); display: inline-flex; align-items: center; gap: .45em; white-space: nowrap; }
 .docs-content .fmt-zonelabel .rt-mark { margin: 0; color: var(--green); }
 .docs-content .fmt-zonelabel b { color: var(--green); background: hsl(var(--primary) / .12); padding: .15em .5em; border-radius: 1em; font-family: 'SUSE Mono', 'SF Mono', monospace; font-size: .92em; font-weight: 700; }
 .docs-content .fmt-divider { height: 0; border-bottom: 2px solid var(--border); margin: .15rem 0 .35rem; }
 .docs-content .fmt-rowsep { height: 0; border-top: 1px solid var(--border); margin: .1rem 0; }
-.docs-content .fmt-chip { display: inline-flex; align-items: center; background: hsl(var(--primary) / .1); color: var(--green); font-size: .74rem; font-family: 'SUSE Mono', 'SF Mono', monospace; font-weight: 700; padding: .3em .64em; border-radius: 1em; letter-spacing: .03em; border: 1px solid transparent; cursor: pointer; transition: transform .1s, box-shadow .12s, background .12s, color .12s; white-space: nowrap; -webkit-appearance: none; appearance: none; }
+.docs-content .fmt-chip { display: inline-flex; align-items: center; background: hsl(var(--primary) / .1); color: var(--green); font-size: calc(.74rem * var(--a11y-fs, 1)); font-family: 'SUSE Mono', 'SF Mono', monospace; font-weight: 700; padding: .3em .64em; border-radius: 1em; letter-spacing: .03em; border: 1px solid transparent; cursor: pointer; transition: transform .1s, box-shadow .12s, background .12s, color .12s; white-space: nowrap; -webkit-appearance: none; appearance: none; }
 .docs-content .fmt-chip:hover { transform: translateY(-1px); box-shadow: 0 3px 10px hsl(var(--foreground) / .16); }
 .docs-content .fmt-chip:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 .docs-content .fmt-chip--both { background: var(--green); color: hsl(var(--primary-foreground)); }
@@ -561,30 +574,30 @@
 .docs-content .fmt-dialog { border: 0; border-radius: 18px; padding: 0; width: min(94vw, 38rem); max-height: 88vh; overflow: auto; margin: auto; color: var(--dark); background: hsl(var(--popover)); box-shadow: 0 30px 80px hsl(var(--foreground) / .34); }
 .docs-content .fmt-dialog::backdrop { background: hsl(220 40% 6% / .5); backdrop-filter: blur(3px); }
 .docs-content .fmt-dialog-inner { padding: 1.75rem 1.75rem 1.6rem; position: relative; }
-.docs-content .fmt-dialog-x { position: absolute; top: .7rem; right: .7rem; border: 0; background: var(--pale); width: 1.9rem; height: 1.9rem; border-radius: 50%; cursor: pointer; color: var(--muted); font-size: .82rem; line-height: 1; }
+.docs-content .fmt-dialog-x { position: absolute; top: .7rem; right: .7rem; border: 0; background: var(--pale); width: 1.9rem; height: 1.9rem; border-radius: 50%; cursor: pointer; color: var(--muted); font-size: calc(.82rem * var(--a11y-fs, 1)); line-height: 1; }
 .docs-content .fmt-dialog-x:hover { background: var(--border); }
-.docs-content .fmt-dialog-dir { display: inline-block; font-size: .62rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--green); background: hsl(var(--primary) / .14); padding: .3em .7em; border-radius: 1em; margin-bottom: .7rem; }
-.docs-content .fmt-dialog h3 { margin: 0; color: inherit; font-size: 1.55rem; line-height: 1.1; }
+.docs-content .fmt-dialog-dir { display: inline-block; font-size: calc(.62rem * var(--a11y-fs, 1)); font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--green); background: hsl(var(--primary) / .14); padding: .3em .7em; border-radius: 1em; margin-bottom: .7rem; }
+.docs-content .fmt-dialog h3 { margin: 0; color: inherit; font-size: calc(1.55rem * var(--a11y-fs, 1)); line-height: 1.1; }
 .docs-content .fmt-dialog-head { display: flex; align-items: flex-start; gap: .9rem; padding-right: 1.8rem; }
 .docs-content .fmt-dialog-icon { flex: none; place-self: end; width: 2.9rem; height: 2.9rem; color: var(--green); margin-top: .1rem; }
 .docs-content .fmt-dialog-icon svg { stroke-width: .5px; width: 100%; height: 100%; display: block; }
 .docs-content .fmt-dialog-icon:empty { display: none; }
 .docs-content .fmt-dialog-headtext { min-width: 0; }
-.docs-content .fmt-dialog-full { margin: .15rem 0 0; color: var(--muted); font-size: .9rem; font-weight: 600; }
-.docs-content .fmt-dialog-desc { margin: .9rem 0 0; color: inherit; font-size: .95rem; line-height: 1.65; opacity: .92; }
+.docs-content .fmt-dialog-full { margin: .15rem 0 0; color: var(--muted); font-size: calc(.9rem * var(--a11y-fs, 1)); font-weight: 600; }
+.docs-content .fmt-dialog-desc { margin: .9rem 0 0; color: inherit; font-size: calc(.95rem * var(--a11y-fs, 1)); line-height: 1.65; opacity: .92; }
 .docs-content .fmt-dialog-specs { list-style: none; margin: 1.1rem 0 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: .45rem .9rem; }
 .docs-content .fmt-dialog-specs:empty { margin: 0; }
-.docs-content .fmt-dialog-specs li { font-size: .82rem; line-height: 1.3; color: inherit; display: flex; align-items: flex-start; gap: .45em; opacity: .95; }
+.docs-content .fmt-dialog-specs li { font-size: calc(.82rem * var(--a11y-fs, 1)); line-height: 1.3; color: inherit; display: flex; align-items: flex-start; gap: .45em; opacity: .95; }
 .docs-content .fmt-dialog-specs li::before { content: '✓'; color: var(--green); font-weight: 800; flex: none; margin-top: .02em; }
 .docs-content .fmt-dialog-feats { list-style: none; margin: 1.15rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: .4rem; }
 .docs-content .fmt-dialog-feats:empty { margin: 0; }
-.docs-content .fmt-dialog-feats li { font-size: .72rem; font-weight: 700; color: inherit; background: var(--pale); border: 1px solid var(--border); padding: .32em .68em; border-radius: 1em; display: inline-flex; align-items: center; gap: .4em; }
+.docs-content .fmt-dialog-feats li { font-size: calc(.72rem * var(--a11y-fs, 1)); font-weight: 700; color: inherit; background: var(--pale); border: 1px solid var(--border); padding: .32em .68em; border-radius: 1em; display: inline-flex; align-items: center; gap: .4em; }
 .docs-content .fmt-dialog-feats li::before { content: ''; width: .5em; height: .5em; border-radius: 50%; background: var(--green); flex: none; }
 .docs-content .fmt-dialog-unsup { margin: 1.2rem 0 0; padding: .85rem 1rem; border-radius: 12px; background: hsl(20 99% 62% / .1); }
 .docs-content .fmt-dialog-unsup[hidden] { display: none; }
-.docs-content .fmt-dialog-unsup-label { display: block; font-size: .62rem; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--orange); margin-bottom: .5rem; }
+.docs-content .fmt-dialog-unsup-label { display: block; font-size: calc(.62rem * var(--a11y-fs, 1)); font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--orange); margin-bottom: .5rem; }
 .docs-content .fmt-dialog-unsup-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: .4rem .9rem; }
-.docs-content .fmt-dialog-unsup-list li { font-size: .82rem; line-height: 1.3; display: flex; align-items: flex-start; gap: .45em; opacity: .9; }
+.docs-content .fmt-dialog-unsup-list li { font-size: calc(.82rem * var(--a11y-fs, 1)); line-height: 1.3; display: flex; align-items: flex-start; gap: .45em; opacity: .9; }
 .docs-content .fmt-dialog-unsup-list li::before { content: '-'; color: var(--orange); font-weight: 800; flex: none; }
 @media (max-width: 520px) {
   .docs-content .fmt-dialog-specs, .docs-content .fmt-dialog-unsup-list { grid-template-columns: 1fr; }
@@ -600,7 +613,7 @@
   .docs-content .fmt-cat svg { width: 20px; height: 20px; }
   .docs-content .fmt-zone { justify-content: flex-start !important; margin: .2rem 0; }
   .docs-content .fmt-zone:empty { display: none; }
-  .docs-content .fmt-zone:not(:empty)::before { flex-basis: 100%; font-size: .56rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: .15rem; }
+  .docs-content .fmt-zone:not(:empty)::before { flex-basis: 100%; font-size: calc(.56rem * var(--a11y-fs, 1)); font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: .15rem; }
   .docs-content .fmt-zone--in:not(:empty)::before { content: 'Import only'; }
   .docs-content .fmt-zone--both:not(:empty)::before { content: '⇄ Both ways'; }
   .docs-content .fmt-zone--out:not(:empty)::before { content: 'Export only'; }

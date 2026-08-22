@@ -25,6 +25,10 @@ globalThis.window = dom.window as unknown as typeof globalThis.window;
 globalThis.document = dom.window.document;
 globalThis.sessionStorage = dom.window.sessionStorage;
 globalThis.MouseEvent = dom.window.MouseEvent;
+// nav.ts's navigateTo uses bare `history`/`Event` - point them at jsdom's so the
+// intercept-leave path (which now navigates by URL) runs under test.
+globalThis.history = dom.window.history as unknown as typeof globalThis.history;
+globalThis.Event = dom.window.Event as unknown as typeof globalThis.Event;
 
 const backNav = await import('../lib/back-nav.ts');
 const { resolveBackTarget, backPillHtml, backHomeHtml, mountBackPill } = await import('./back-pill.ts');
@@ -205,16 +209,26 @@ test('an intercepting view owns the click until it calls go()', () => {
 
   let backCalls = 0;
   Object.defineProperty(dom.window.history, 'back', { value: () => { backCalls++; }, configurable: true });
+  let navigated = 0;
+  const onNav = (): void => { navigated++; };
+  dom.window.addEventListener('lolly:navigate', onNav);
 
   let release: (() => void) | null = null;
   mountBackPill(root, { intercept: (go) => { release = go; return true; } });
   const pill = root.querySelector<HTMLElement>('[data-back-pill]')!;
   pill.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
 
-  assert.equal(backCalls, 0, 'the unsaved-work dialog is up - nothing has navigated yet');
+  assert.equal(backCalls + navigated, 0, 'the unsaved-work dialog is up - nothing has navigated yet');
   assert.equal(typeof release, 'function');
   release!();
-  assert.equal(backCalls, 1, 'the dialog’s "leave" runs the pill’s own navigation');
+  // The dialog's "Leave without saving" navigates by URL, NEVER history.back(): the
+  // unsaved dialog (mountModal) pushes a same-URL history entry, so a back() would pop
+  // THAT entry and keep the user in the tool - the reported bug, hit whenever the tool
+  // was entered by in-app navigation (a history-mode pill). Regression guard.
+  assert.equal(backCalls, 0, 'must not history.back() - it would pop the dialog entry, not leave the tool');
+  assert.equal(navigated, 1, 'the dialog’s "leave" navigates to the resolved target by URL');
+  assert.match(dom.window.location.href, /catalog/, 'and lands on the back target');
+  dom.window.removeEventListener('lolly:navigate', onNav);
 });
 
 /* The Home escape beside the pill (mountBackPill → addHomeEscape). Naming the

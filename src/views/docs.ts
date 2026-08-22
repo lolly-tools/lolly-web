@@ -44,6 +44,9 @@ import { attachLangMenu } from '../components/lang-menu.ts';
 import { mountHomeFab } from '../components/home-fab.ts';
 import { registerNarrationSource, unregisterNarrationSource } from '../lib/audio-dock-singleton.ts';
 import { createDocsNarrationHost, type DocsNarrationHandle } from '../lib/docs-narration-host.ts';
+// The device-voice fallback is the dependency-free docs/player module (audio-dock types
+// only), shared with the static /info site so both readers speak every page identically.
+import { createDocsTtsHost, type DocsTtsHost } from '../../../../docs/player/tts-host.ts';
 import { hydrateDocsTryIt } from '../lib/docs-tryit.ts';
 import { icon } from '../lib/icons.ts';
 import { enhanceDocsFormats } from '../lib/docs-formats.ts';
@@ -143,7 +146,9 @@ export async function mountDocs(
     const readerEl = viewEl.querySelector<HTMLElement>('[data-reader]');
     const wideBtn = document.createElement('button');
     wideBtn.type = 'button';
-    wideBtn.className = 'docs-top-btn';
+    // --wide: hidden at phone widths (docs.css) - the reader is already full-bleed
+    // there, so the toggle is a dead control that only crowds the chrome row.
+    wideBtn.className = 'docs-top-btn docs-top-btn--wide';
     wideBtn.setAttribute('aria-label', t('Use the full window width'));
     wideBtn.innerHTML = icon('full-width');
     const applyWide = (on: boolean): void => {
@@ -400,22 +405,36 @@ export async function mountDocs(
   // re-derived from the English markdown twin). No track / non-English → no narration (the
   // "no dead affordance" rule). Registers into the app-global SINGLETON audio dock (shared
   // with the music player) as the narration BLOCK; unregistered on unmount.
+  // Produced Kokoro audio wins where it exists (English only); every other page - all
+  // locales, the reference pages - falls back to the reader's device voice (plan 131
+  // B.3), so the Listen dock reaches every page here just as it does on /info.
   let narration: DocsNarrationHandle | null = null;
+  let tts: DocsTtsHost | null = null;
   if (lang === 'en') {
     try {
       narration = await createDocsNarrationHost({ slug, contentRoot: node, title: pageTitle || slug });
     } catch {
       narration = null;
     }
-    if (narration) {
-      if (!viewEl.isConnected) {
-        // The reader unmounted while the track was resolving - never leave audio behind.
-        narration.destroy();
-        narration = null;
-      } else {
-        // The narration host is a valid DockNarrationPlayer (transport + narration adapter).
-        registerNarrationSource(narration.host);
-      }
+  }
+  if (!narration) {
+    try {
+      tts = createDocsTtsHost({ slug, title: pageTitle || slug, contentRoot: node });
+    } catch {
+      tts = null;
+    }
+  }
+  const block = narration?.host ?? tts;
+  if (block) {
+    if (!viewEl.isConnected) {
+      // The reader unmounted while the track was resolving - never leave audio behind.
+      narration?.destroy();
+      tts?.destroy();
+      narration = null;
+      tts = null;
+    } else {
+      // Either host is a valid DockNarrationPlayer (transport + narration adapter).
+      registerNarrationSource(block);
     }
   }
 
@@ -429,5 +448,6 @@ export async function mountDocs(
     // is still registered) before dropping the host (stops audio, removes the <audio> tap).
     unregisterNarrationSource();
     narration?.destroy();
+    tts?.destroy();
   };
 }

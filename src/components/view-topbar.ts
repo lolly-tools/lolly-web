@@ -28,6 +28,7 @@ import { escape } from '../utils.ts';
 import { t, LANG_ICON_SVG } from '../i18n.ts';
 import { viewToggle, type ViewToggleKey } from './view-toggle.ts';
 import { attachProfileMenu } from './profile-menu.ts';
+import { LOLLY_MARK_SVG } from '../lib/lolly-mark.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 
 export interface ViewTopbarProfile {
@@ -61,7 +62,7 @@ export function viewTopbarHtml(opts: ViewTopbarHtmlOpts): string {
       <div class="gallery-topright">
         ${right}
         <button type="button" class="lang-fab" aria-label="${escape(t('Language'))}" aria-haspopup="menu" aria-expanded="false" title="${escape(t('Language'))}">${LANG_ICON_SVG}</button>
-        <a href="#/profile" class="profile-link${hasAvatar ? ' has-avatar' : ''}" aria-label="${escape(t('Open your profile'))}">${hasAvatar ? `<img class="profile-link-avatar" src="${escape(profile.headshotUrl!)}" alt="">` : ''}<span class="profile-link-name">${escape(profile.firstname || t('Profile'))}</span></a>
+        <a href="#/profile" class="profile-link${hasAvatar ? ' has-avatar' : ''}" aria-label="${escape(t('Open your profile'))}">${hasAvatar ? `<img class="profile-link-avatar" src="${escape(profile.headshotUrl!)}" alt="">` : ''}<span class="profile-link-mark" aria-hidden="true">${LOLLY_MARK_SVG}</span><span class="profile-link-name">${escape(profile.firstname || t('Profile'))}</span></a>
         ${popover}
       </div>
     </div>`;

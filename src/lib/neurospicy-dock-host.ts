@@ -382,6 +382,7 @@ class NeurospicyDockHost implements DockHost {
   readonly atmosphere: DockAtmosphere;
   readonly viz: NeuroDockViz;
   readonly repeat: DockRepeat;
+  readonly volume: DockVolume;
   readonly volumes: DockVolume[];
 
   private readonly nhost: MusicHost;
@@ -432,12 +433,15 @@ class NeurospicyDockHost implements DockHost {
       set: (v) => { void setNeurospicyRepeat(this.nhost, v); },
     };
 
+    // Music is the MASTER volume - the speaker button + vertical slider on the transport
+    // (same control the docs player uses). Effects (interface sound) stays a labelled
+    // slider in the volumes block; it is a different level, so it is not folded in.
+    this.volume = {
+      id: 'music', label: 'Music',
+      get: () => getNeurospicy().volume,
+      set: (v) => setNeurospicyVolume(this.nhost, v), // persists on every input (as before)
+    };
     this.volumes = [
-      {
-        id: 'music', label: 'Music',
-        get: () => getNeurospicy().volume,
-        set: (v) => setNeurospicyVolume(this.nhost, v), // persists on every input (as before)
-      },
       {
         id: 'effects', label: 'Effects',
         get: () => getSfxVolume(),

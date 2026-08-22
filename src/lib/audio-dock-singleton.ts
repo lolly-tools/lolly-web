@@ -52,7 +52,10 @@ const APP_CSS = `
 @media (prefers-reduced-motion: reduce) { .audio-dock.neuro-managed.is-entering { animation: none; } }
 html[data-a11y-motion="reduce"] .audio-dock.neuro-managed.is-entering { animation: none; }
 @media (max-width: 520px) {
-  .audio-dock.neuro-managed { right: 8px; left: 8px; width: auto; max-width: none; }
+  /* !important: the dock's drag/resize writes INLINE left/width (a remembered
+     desktop placement), which lands controls off a phone's viewport. The phone
+     placement is full-width by policy, so it must beat the inline geometry. */
+  .audio-dock.neuro-managed { right: 8px !important; left: 8px !important; width: auto !important; max-width: none; }
   .audio-dock.neuro-managed[data-collapse="mini"] { display: none; }
 }`;
 
@@ -121,6 +124,7 @@ class ComposedHost implements DockHost {
   get atmosphere(): DockAtmosphere | undefined { return this.musicSrc?.atmosphere; }
   get viz(): DockViz | undefined { return this.musicSrc?.viz; }
   get repeat(): DockRepeat | undefined { return this.musicSrc?.repeat; }
+  get volume(): DockVolume | undefined { return this.musicSrc?.volume; }
   get volumes(): DockVolume[] | undefined { return this.musicSrc?.volumes; }
   get narrationBlock(): DockNarrationPlayer | undefined { return this.narrSrc ?? undefined; }
 

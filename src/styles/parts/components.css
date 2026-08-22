@@ -346,19 +346,51 @@
    tool list scrolls (mobile already does this below; this covers desktop too). */
  
 
-/* Placeholder dot - shown only when the user has no headshot yet. */
-.profile-link::before {
-  content: "";
+/* Default avatar - shown when the user has no headshot yet (every profile): the Lolly
+   swirl mark, still at rest and spinning on hover/focus, the same treatment the design
+   canvas's menu button and the Ask send button use (parts/ask.css .ask-send-mark). */
+.profile-link-mark {
   position: absolute;
   left: 7px;
   top: 50%;
   transform: translateY(-50%);
   width: 2.2em;
- height: 2.2em;
-  background-color: hsl(var(--primary));
+  height: 2.2em;
   border-radius: 50%;
+  overflow: hidden;
+  pointer-events: none;
 }
-.profile-link.has-avatar::before { display: none; }
+.profile-link-mark svg { width: 100%; height: 100%; display: block; }
+/* A real headshot replaces it. */
+.profile-link.has-avatar .profile-link-mark { display: none; }
+/* Still until hovered: the three swirl layers counter-spin about their own centres. */
+.profile-link-mark .lolly-mark__spin-1,
+.profile-link-mark .lolly-mark__spin-2,
+.profile-link-mark .lolly-mark__spin-3 { transform-origin: 50% 50%; transform-box: fill-box; }
+.profile-link:hover .profile-link-mark .lolly-mark__spin-1,
+.profile-link:focus-visible .profile-link-mark .lolly-mark__spin-1 { animation: profile-mark-spin 2.4s linear infinite; }
+.profile-link:hover .profile-link-mark .lolly-mark__spin-2,
+.profile-link:focus-visible .profile-link-mark .lolly-mark__spin-2 { animation: profile-mark-spin 4.6s linear infinite reverse; }
+.profile-link:hover .profile-link-mark .lolly-mark__spin-3,
+.profile-link:focus-visible .profile-link-mark .lolly-mark__spin-3 { animation: profile-mark-spin 7s linear infinite; }
+@keyframes profile-mark-spin { to { transform: rotate(360deg); } }
+/* No hover surface (touch), OS reduced-motion, and the app a11y pref: never spin. */
+@media (hover: none) {
+  .profile-link:hover .profile-link-mark .lolly-mark__spin-1,
+  .profile-link:hover .profile-link-mark .lolly-mark__spin-2,
+  .profile-link:hover .profile-link-mark .lolly-mark__spin-3 { animation: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .profile-link:hover .profile-link-mark .lolly-mark__spin-1,
+  .profile-link:hover .profile-link-mark .lolly-mark__spin-2,
+  .profile-link:hover .profile-link-mark .lolly-mark__spin-3,
+  .profile-link:focus-visible .profile-link-mark .lolly-mark__spin-1,
+  .profile-link:focus-visible .profile-link-mark .lolly-mark__spin-2,
+  .profile-link:focus-visible .profile-link-mark .lolly-mark__spin-3 { animation: none; }
+}
+html[data-a11y-motion="reduce"] .profile-link .profile-link-mark .lolly-mark__spin-1,
+html[data-a11y-motion="reduce"] .profile-link .profile-link-mark .lolly-mark__spin-2,
+html[data-a11y-motion="reduce"] .profile-link .profile-link-mark .lolly-mark__spin-3 { animation: none; }
 
 /* Real user headshot, clipped to a circle in place of the dot. */
 .profile-link-avatar {

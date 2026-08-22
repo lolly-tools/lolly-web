@@ -84,6 +84,12 @@ body > svg:not([style]) {
    (mirrors `.gallery-topright .profile-link` and `.lab-back .tools-home`). */
 .chrome-topleft .tools-home.home-full { position: static; left: auto; top: auto; }
 
+/* A pill that already goes Home (data-back-home) makes a Home FAB beside it pure
+   noise - two adjacent controls, one destination (the docs landing hit this:
+   "← Home" plus a Home FAB). Applies to backHomeHtml's own pair; addHomeEscape's
+   added FAB never coexists with data-back-home by construction. */
+.chrome-topleft .tools-home[data-back-home] ~ .home-fab { display: none; }
+
 /* The same Home FAB beside the tool sidebar's back pill (mountBackPill →
    addHomeEscape). That row holds the pill at one end and undo/redo at the other
    (`justify-content: space-between`, tool.css `.sidebar-back-row`), so the free
