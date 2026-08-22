@@ -245,10 +245,14 @@ export interface ExportDefaults {
  * zero-arg `() => runtime.export(...)` stays assignable, so the fast paths that
  * have nothing to report need no change. Optional because a test stub standing in
  * for this wrapper won't supply one - always call it as `report?.(…)`.
+ *
+ * `onCancel` turns the status block's escape hatch into a real Cancel: the caller
+ * owns the AbortController whose signal it passed into the export opts, and this
+ * only hands the abort to the button. Omit it and the button stays Hide.
  */
 export type ExportUnscaled = <T>(
   fn: (report?: (done: number, total: number) => void) => Promise<T>,
-  opts?: { shutter?: boolean; detail?: string },
+  opts?: { shutter?: boolean; detail?: string; onCancel?: () => void },
 ) => Promise<T>;
 
 /** What renderActions hands back for programmatic triggering (`?copy`, Save & leave…). */
@@ -348,6 +352,10 @@ export interface RunExportOpts {
   /** Progress callback for slow exports (CMYK TIFF pass, SVG/PDF vector walk).
    *  The engine/bridge emit it; the export UI uses it to update the button label. */
   onProgress?: (done: number, total: number) => void;
+  /** Cancellation (engine 1.141 ExportOpts.signal): the frame loops, the CMYK row
+   *  pass, the vector walks and the sequence compositor poll it and reject with an
+   *  AbortError. Set by the shuttered export paths, whose Cancel button aborts it. */
+  signal?: AbortSignal;
 }
 
 function marksFromCsv(csv: string | null | undefined): PrintMarks | null {
@@ -1452,15 +1460,17 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   const reportShutterProgress = (done: number, total: number): void => shutter.progress(done, total);
   // A long export (video, a sequence, a big multi-page fan-out) seals the screen
   // for minutes - fullscreen on a phone - so it closes WITH a status block: the
-  // tool name, the format, live progress and elapsed time, plus a way out. Hide
-  // opens the shutter and lets the export run on: nothing between runtime.export
-  // and the encoders takes an abort signal, so the button never claims to cancel.
+  // tool name, the format, live progress and elapsed time, plus a way out. An
+  // export that passed an abort signal gets Cancel (the encode loops poll it and
+  // stop); the rest keep Hide, which opens the shutter and lets the export finish
+  // underneath rather than claiming to stop it.
   // The block only appears once the export outlasts STATUS_DELAY (lib/shutter.ts),
   // which is what keeps a sub-second still export looking exactly as it did.
-  const closeShutter = (detail?: string): Promise<void> => shutter.close({
+  const closeShutter = (detail?: string, onCancel?: () => void): Promise<void> => shutter.close({
     label: tool.manifest.name,
     ...(detail ? { detail } : {}),
     onHide: () => { openShutter(); announce(t('Exporting…')); },
+    ...(onCancel ? { onCancel } : {}),
   });
   // Standalone visual (no export gating) - used by Copy, whose clipboard write
   // must stay in the user-gesture context, so we can't await the shutter first.
@@ -2090,12 +2100,12 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // prevTransform and the later one restore a stale '', leaving the canvas unscaled.
   let exportChain: Promise<unknown> = Promise.resolve();
   type ExportReport = (done: number, total: number) => void;
-  function exportUnscaled<T>(fn: (report?: ExportReport) => Promise<T>, opts: { shutter?: boolean; detail?: string } = {}): Promise<T> {
+  function exportUnscaled<T>(fn: (report?: ExportReport) => Promise<T>, opts: { shutter?: boolean; detail?: string; onCancel?: () => void } = {}): Promise<T> {
     const run = exportChain.catch(() => {}).then(() => exportUnscaledRaw(fn, opts));
     exportChain = run.catch(() => {});
     return run;
   }
-  async function exportUnscaledRaw<T>(fn: (report?: ExportReport) => Promise<T>, { shutter = false, detail }: { shutter?: boolean; detail?: string } = {}): Promise<T> {
+  async function exportUnscaledRaw<T>(fn: (report?: ExportReport) => Promise<T>, { shutter = false, detail, onCancel }: { shutter?: boolean; detail?: string; onCancel?: () => void } = {}): Promise<T> {
     // Drives the shutter's status block; inert when this export runs without one.
     const report: ExportReport = (done, total) => { if (shutter) reportShutterProgress(done, total); };
     // Renders are coalesced behind rAF (see the subscriber below); an export reads
@@ -2122,7 +2132,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // transform to un-scale. Run the export directly (still behind the shutter). This is the
     // path the preview generator's __lollyCaptureThumb hook takes to vector-capture them.
     if (!canvasEl || !outerEl) {
-      if (shutter) await closeShutter(detail);
+      if (shutter) await closeShutter(detail, onCancel);
       try { return await fn(report); }
       finally { if (shutter) openShutter(); }
     }
@@ -2131,7 +2141,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     annotated.forEach(el => el.removeAttribute('data-canvas-input'));
 
     // Close the shutter BEFORE the resize so the shake happens fully hidden.
-    if (shutter) await closeShutter(detail);
+    if (shutter) await closeShutter(detail, onCancel);
 
     const prevTransform = canvasEl!.style.transform;
     const prevZoom = canvasEl!.style.zoom;                 // paged docs fit-to-width via zoom

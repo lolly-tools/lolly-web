@@ -57,12 +57,20 @@ import { addSwatch } from '../lib/brand-doc.ts';
 import { resolveStartRoute, isStartArea, START_ROOMS } from '../lib/design-system/start-route.ts';
 import type { StartArea, StartRoom, StartSource } from '../lib/design-system/start-route.ts';
 import { createStudioState } from '../lib/design-system/studio-state.ts';
-import { mountOverviewRoom } from '../lib/design-system/rooms/overview.ts';
+// readOverview is imported for its `furnished` answer alone (plans/137 B1): the
+// foot's export actions and the first-publish entry appear on the same signal the
+// Overview room decides its empty state with, so the two can never disagree about
+// whether anything is here.
+import { mountOverviewRoom, readOverview } from '../lib/design-system/rooms/overview.ts';
 import type { OverviewRoom } from '../lib/design-system/rooms/overview.ts';
 // Versions (plan 97 section 6a, M7): a foot-pinned panel, not a room - it acts on the
-// whole design system, and it stays hidden until there is something to publish.
-import { mountVersionsRoom, hasPublishableSystem } from '../lib/design-system/rooms/versions.ts';
+// whole design system, and it stays hidden until something has been published.
+import { mountVersionsRoom } from '../lib/design-system/rooms/versions.ts';
 import type { VersionsRoom } from '../lib/design-system/rooms/versions.ts';
+// The published-version index, read once for the rail entry's latch. readIndex,
+// not hasPublishableSystem: the latter also answers true for a system that merely
+// EXISTS, which put versioning on the face of a studio one colour old.
+import { readIndex } from '../lib/design-system/versions-io.ts';
 // The M2 source framework: one census type, one persistent tray, one file router.
 // This view owns the copy, the markup and the install; those modules own the
 // sniffing, the shapes and the model (plan 97 section 8).
@@ -312,12 +320,21 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   const backPill = backPillHtml({ class: 'start-back' });
   const wireBackPill = (): void => { mountBackPill(viewEl); };
 
-  // The history-INDEPENDENT escape, twinned with the language FAB in the fixed
-  // top-right cluster (shared chrome - components/home-fab.ts). The back pill
-  // answers "where did I come from"; this answers "just get me out", always to
-  // the front door. The studio paints no global nav of its own, so it is the
-  // one exit that never depends on the back stack.
-  const homeFab = homeFabHtml();
+  // The history-INDEPENDENT escape, beside the back pill in the same in-flow row
+  // (shared chrome - components/home-fab.ts). The back pill answers "where did I
+  // come from"; this answers "just get me out", always to the front door. The
+  // studio paints no global nav of its own, so it is the one exit that never
+  // depends on the back stack.
+  //
+  // One Home per view (plans/137 B4). A pill that IS the way home already - a
+  // direct arrival, or a back target that happens to BE Home - renders with
+  // `data-back-home`, which is the same attribute back-pill.ts reads before it
+  // adds a FAB of its own (addHomeEscape). Read off the rendered markup rather
+  // than re-derived from backTarget, so this can never disagree with the pill:
+  // the ` data-back-home>` form cannot come out of escaped label text, because
+  // escape() turns a '>' into an entity.
+  const pillIsHome = backPill.includes(' data-back-home>');
+  const homeFab = pillIsHome ? '' : homeFabHtml();
   const wireHomeFab = (): void => {
     mountHomeFab(viewEl);
     // Light/dark/brand beside the escape - the studio is where you're shaping the
@@ -409,20 +426,33 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
               <span class="ds-tray-toggle-ic" aria-hidden="true">${icon('dock')}</span>
               <span>${t('Tray')}</span>
               <span class="ds-tray-toggle-n" data-start-tray-n></span></button>
-            <button type="button" class="be-btn start-export-btn" data-start-export data-sfx="whoosh">
+            <!-- Both exports wait for the system to hold something (plans/137 B1).
+                 An empty studio has nothing to send anywhere, and offering to
+                 export it is a button that can only disappoint; data-start-furnished
+                 is what refreshFurnished() reveals, on the same reading the
+                 Overview room decides its empty state with. -->
+            <button type="button" class="be-btn start-export-btn" data-start-export data-start-furnished data-sfx="whoosh" hidden>
               <span aria-hidden="true">↑</span> <span>${t('Export')}</span></button>
             <!-- The pack zip carries fonts, logos and a theme preference; this is
                  the plain document, for a repo or another tool that reads DTCG. -->
-            <button type="button" class="be-btn start-export-tokens" data-start-export-tokens>
+            <button type="button" class="be-btn start-export-tokens" data-start-export-tokens data-start-furnished hidden>
               <span aria-hidden="true">↑</span> <span>${t('Tokens (.json)')}</span></button>
-            <!-- Versions (plan 97 section 6a). Hidden until the studio has something of
-                 its own to publish, or until a link asks for the panel by name:
-                 a system that never publishes must never be shown the machinery.
-                 It carries data-ds-room, so the rail's existing click delegate
-                 routes it with no second listener. -->
+            <!-- Versions (plan 97 section 6a). Hidden until something has actually been
+                 published, or until a link asks for the panel by name (plans/137
+                 B2): the entry used to appear the moment a system EXISTED, which
+                 put publishing on the face of a studio one colour old. It carries
+                 data-ds-room, so the rail's existing click delegate routes it with
+                 no second listener. -->
             <button type="button" class="be-btn ds-versions-toggle" id="ds-room-versions" data-ds-room="versions" hidden>
               <span class="ds-versions-toggle-ic" aria-hidden="true">${icon(ROOM_ICONS.versions)}</span>
               <span>${escape(ROOM_LABELS.versions)}</span></button>
+            <!-- The way to a FIRST publish, for a furnished system that has never
+                 published one: a quiet line under the export actions rather than a
+                 fifth peer button, and it stands down the moment the entry above
+                 latches on. Its own listener, not data-ds-room: two elements with
+                 that attribute would both take aria-current, and the versionsBtn
+                 lookup reads the first one in the document. -->
+            <button type="button" class="ds-versions-link" data-ds-versions-link hidden>${t('Versions & publishing')}</button>
             <span class="ds-rail-note" data-start-note aria-live="polite"></span>
           </div>
         </nav>
@@ -506,8 +536,11 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   const overviewPanel = viewEl.querySelector<HTMLElement>('[data-ds-panel="overview"]')!;
   const versionsPanel = viewEl.querySelector<HTMLElement>('[data-ds-panel="versions"]')!;
   const versionsBtn = viewEl.querySelector<HTMLButtonElement>('[data-ds-room="versions"]');
+  const versionsLink = viewEl.querySelector<HTMLButtonElement>('[data-ds-versions-link]');
   const railEl = viewEl.querySelector<HTMLElement>('.ds-rail')!;
   const roomBtns = [...viewEl.querySelectorAll<HTMLButtonElement>('[data-ds-room]')];
+  /** The foot actions that only exist once the design system holds something. */
+  const furnishedOnly = [...viewEl.querySelectorAll<HTMLElement>('[data-start-furnished]')];
 
   // The save discipline's substrate (plan 97 section 6): used here for the checkpoint a
   // source install takes before it lands, so "revert to before the import" is a
@@ -558,6 +591,11 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
       tray,
       onChange: () => {
         if (!shell.isConnected) return;
+        // The first colour, face or mark furnishes the system, so the foot's
+        // export actions appear on the edit that did it - before the early return
+        // below, because that edit is usually made in a room with the Overview
+        // panel hidden. One keyed read while unfurnished, then nothing.
+        refreshFurnished();
         // Only a VISIBLE Overview re-reads - the same rule the room applies to
         // its own palette subscription (lib/design-system/rooms/overview.ts).
         // An edit lands here on every commit, and one refresh walks the whole
@@ -610,10 +648,21 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   // and the panel it opens is a region named after it. `overview` on the editor's
   // data-active-tab matches none of its five panels, which is how the editor
   // hides itself while the Overview room shows.
-  // Whether the foot's Versions entry is offered at all. Two ways in: the studio
-  // has something of its own to publish (resolved once, below), or the panel was
+  // Does the design system hold anything at all? The Overview room's own answer
+  // (readOverview → `furnished`), reused rather than re-derived, so the foot's
+  // export actions can never contradict the room's "Nothing here yet" (plans/137
+  // B1). Latched on: an install is what flips it, and nothing in a session takes
+  // a design system away again.
+  //
+  // Cheap while it matters. readOverview returns its empty model straight after
+  // the tokens-asset lookup, so an unfurnished studio pays one keyed read per
+  // call; the moment it answers true this stops calling at all.
+  let furnished = false;
+  // Whether the foot's Versions entry is offered at all. Two ways in: something
+  // has actually been published (the version index, read once below), or the panel was
   // asked for by name - a `?area=versions` link must never land on a control that
-  // is not there.
+  // is not there. A system that merely EXISTS is deliberately not enough: that
+  // rule put publishing on the face of a studio one colour old (plans/137 B2).
   //
   // Once shown it STAYS shown for the session. Hiding it again the moment the
   // user opens another room made the deep link one-way: the panel's own empty
@@ -625,6 +674,25 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   const syncVersionsEntry = (): void => {
     if (activeArea === 'versions') versionsOffered = true;
     if (versionsBtn) versionsBtn.hidden = !versionsOffered;
+    // The first publish has to stay one press away, so a furnished system that
+    // has never published gets the quiet entry instead of the rail one - and
+    // drops it again as soon as the rail entry latches on.
+    if (versionsLink) versionsLink.hidden = versionsOffered || !furnished;
+  };
+  /** Re-read the furnished signal and reveal the actions that wait on it. Called
+   *  from the two paths the studio already refreshes on - every room change and
+   *  every committed edit - so a system furnished mid-session reveals them
+   *  without a reload, whichever room the edit was made in. */
+  const refreshFurnished = (): void => {
+    if (furnished) return;
+    void readOverview(host as unknown as Parameters<typeof readOverview>[0])
+      .then(model => {
+        if (!shell.isConnected || !model.furnished) return;
+        furnished = true;
+        for (const el of furnishedOnly) el.hidden = false;
+        syncVersionsEntry();
+      })
+      .catch(() => { /* undiscoverable storage - the actions stay out of the way */ });
   };
   /** Mount-on-first-open, then refresh. Reassigned once the panel's context
    *  exists further down; until then opening the area is simply a no-op panel,
@@ -636,6 +704,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   const selectRoom = (area: StartArea, opts: { focus?: boolean; sfx?: boolean } = {}): void => {
     activeArea = area;
     editor?.closeOverlays(); // a popover anchored in the outgoing room must not linger
+    refreshFurnished();      // the install path runs through here too (selectRoom('color'))
     syncVersionsEntry();     // before the focus loop: a hidden button cannot take it
     for (const btn of roomBtns) {
       const on = btn.dataset.dsRoom === area;
@@ -658,6 +727,10 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     const area = (e.target as HTMLElement).closest<HTMLElement>('[data-ds-room]')?.dataset.dsRoom ?? '';
     if (isStartArea(area)) selectRoom(area, { sfx: true });
   });
+  // The quiet first-publish entry opens the same panel. Focus goes with it: the
+  // press hides the control that was made (syncVersionsEntry latches the rail
+  // entry on), so a keyboard user needs somewhere to land.
+  versionsLink?.addEventListener('click', () => selectRoom('versions', { focus: true, sfx: true }));
 
   // The room is selected BEFORE the Overview room mounts, so the panel's hidden
   // state is already true/false when the room takes its first reading (and the
@@ -786,14 +859,18 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     else versions = mountVersionsRoom(versionsPanel, versionsCtx);
   };
   if (activeArea === 'versions') openVersions();   // arrived by deep link
-  // Whether to OFFER the entry, resolved once. The head document is already
-  // memoised by the tokens bridge, so this is a single keyed blob read, and it
-  // never touches a render or an export path.
-  void hasPublishableSystem(versionsCtx).then(offered => {
+  // Whether to OFFER the rail entry, resolved once: has anything been PUBLISHED?
+  // The version index the head document carries, not "does a design system
+  // exist" - the second answer is true one colour into a blank brand, which is how
+  // the entry ended up on the first-run face (plans/137 B2). Until the first publish, the
+  // quiet "Versions & publishing" line under the export actions is the way in.
+  // The head is already memoised by the tokens bridge, so this reads no more than
+  // hasPublishableSystem did, and never on a render or an export path.
+  void readIndex(versionsCtx).then(index => {
     if (!shell.isConnected) return;
     // ||=, not =: a `?area=versions` arrival has already latched the entry on,
-    // and a late "nothing to publish yet" must not take it away underneath.
-    versionsOffered ||= offered;
+    // and a late "nothing published yet" must not take it away underneath.
+    versionsOffered ||= index.versions.length > 0;
     syncVersionsEntry();
   }).catch(() => { /* undiscoverable storage - the entry stays hidden */ });
 
@@ -1652,7 +1729,10 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     url: () => t('Website'),
   };
   const SOURCE_NOTE: Record<PickerSource, () => string> = {
-    file: () => t('DTCG or Tokens Studio JSON, a Penpot project, a zip of token sets, a design system pack or an SVG.'),
+    // User-first, not format-first (plans/137 B3): the exact formats are one tap
+    // away on the file stage's own chips, which is where somebody checking
+    // whether THEIR export is accepted is already looking.
+    file: () => t('A tokens JSON, a Penpot project, an SVG or a Lolly pack.'),
     pdf: () => t('A deck or guidelines file. Colours, marks and typefaces are read on this device.'),
     image: () => t('A screenshot or a photo. Colours are read on this device and nothing is uploaded.'),
     font: () => t('TTF, OTF or WOFF. Opens Type, where the face installs.'),
@@ -1724,7 +1804,14 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     if (source === 'font') { chooseSource('font'); return; }
     if (importModal) { showStage(source); return; }
     importModal = mountModal<void>(`
-      <h2 class="modal-title">${t('Add from…')}</h2>
+      <!-- A VISIBLE way out (plans/137 B3). Escape and a backdrop tap both
+           dismiss already (components/modal.ts owns each), but on a phone the
+           card fills the screen and neither is something you can see. -->
+      <div class="start-import-head">
+        <h2 class="modal-title">${t('Add from…')}</h2>
+        <button type="button" class="start-import-close" data-ds-src-close
+          aria-label="${escape(t('Close'))}">&#x2715;</button>
+      </div>
       <p class="modal-msg" data-ds-src-intro>${t('Bring across what you already have. Everything is read on this device.')}</p>
       <ul class="ds-src-tiles" role="list" data-ds-src-tiles>
         ${sourceTiles().map(tile => `
@@ -1803,6 +1890,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
       const el = e.target as HTMLElement;
       const src = el.closest<HTMLElement>('[data-ds-source]')?.dataset.dsSource;
       if (src) { chooseSource(src as StartSource); playSfx('click'); return; }
+      if (el.closest('[data-ds-src-close]')) { closeImport(); playSfx('click'); return; }
       if (el.closest('[data-ds-src-back]')) { showStage(null); playSfx('click'); return; }
       // The PDF result card's two presses. Delegated for the same reason the
       // design-file card's are: the card is rebuilt by every scan.

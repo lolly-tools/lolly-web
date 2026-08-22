@@ -244,9 +244,10 @@ export function mountAddColor(el: HTMLElement, opts: AddColorOpts): () => void {
    *
    * The field is re-focused ONLY when focus is still inside the row - Escape, or
    * a press of Add / Add all / Add selected that left it here. `onAdd` is
-   * entitled to take focus somewhere better (adding one colour opens the swatch
-   * popover on it and focuses the name field, which is the point of the flow),
-   * and clearing the row afterwards must not drag focus back out of it.
+   * entitled to take focus somewhere better (adding one colour puts a
+   * confirmation chip in the hero and focuses its first action, which is the
+   * point of the flow), and clearing the row afterwards must not drag focus back
+   * out of it.
    */
   const reset = (): void => {
     const keep = el.contains(el.ownerDocument.activeElement);

@@ -61,6 +61,8 @@
  */
 
 import '../styles/parts/brand-studio.css'; // every .be-* rule - rides this module's lazy chunk
+import '../styles/parts/tool.css';         // .help-tip-btn/-pop/-host - the shared chunk the tool
+                                           // view and /profile already pull for the same primitive
 import './oklch-slice.css';                // the gamut chart's .okls-* rules (see oklch-slice.ts)
 import { deriveBrandTokens, createTokenSet, colorToHex, parseColor as parseCssColor, convertColor, colorToHexString, aliasPath, contrastRatio, apcaContrast, rampOklab, extractSvgColors, hexToOklch, formatOklch, parseOklch, deserializeCurve, RAMP_STEPS_MIN, RAMP_STEPS_MAX, SCHEME_KINDS, generateSchemeAccents, generateAnalogous,
   // `formatColor` is ALIASED: this module already imports a different one from
@@ -145,6 +147,8 @@ import { prefersReducedMotion } from './a11y-prefs.ts';
 import { playSfx } from './sfx.ts';
 import { mountAddColor } from './design-system/add-color.ts';
 import type { ColorEntry } from './design-system/add-color.ts';
+import { readStarterDoc } from './design-system/rooms/overview.ts';
+import { helpTip, wireHelpTips } from '../components/help-tip.ts';
 import {
   ROLE_IDS, roleLabel, readRoles, assignRole, clearRole, mountRolesStrip,
 } from './design-system/roles.ts';
@@ -802,7 +806,22 @@ function tileHtml(s: BrandSwatch, idx: number): string {
   return swatchTile({ label: s.name, hex: s.hex, locked: !!s.lock }, { idx });
 }
 
-function paletteHtml(swatches: BrandSwatch[]): string {
+/** Identity of one starter swatch: its key AND its stored value, joined by a
+ *  separator neither can contain. Both halves are needed - a Replace-palette
+ *  writes the user's own ramps over the very same keys, and only the value tells
+ *  them apart - and a SET of pairs also lets the light and dark spelling of a
+ *  role live side by side without either shadowing the other. */
+const starterId = (key: string, raw: string): string => `${key}␟${raw}`;
+
+/**
+ * The palette grid.
+ *
+ * `starter` holds one {@link starterId} per colour of the SHIPPED starter
+ * document (see readStarterDoc): a group every one of whose swatches is still in
+ * there is a hand-me-down, not a decision, and says so on its heading. Empty for
+ * every brand that ships no starter, which renders the grid exactly as before.
+ */
+function paletteHtml(swatches: BrandSwatch[], starter: Set<string>): string {
   // Group in a stable, meaningful order: ramps first (Primary, Neutral, then the
   // rest alphabetically), Spectrum, Custom, then the theme roles.
   const groups = new Map<string, BrandSwatch[]>();
@@ -830,8 +849,14 @@ function paletteHtml(swatches: BrandSwatch[]): string {
   // swatch, and a derived section (Primary/Neutral/Roles…) adds a custom swatch
   // TAGGED to render under that heading (addSwatch's displayGroup). Tiles stay
   // in the DOM either way, so the delegated click/scroll wiring keeps working.
+  // The note is said once, on the first starter group: three sections all
+  // repeating the same sentence is nagging, and the chip alone carries the fact.
+  let noted = false;
   const body = order.map(g => {
     const items = groups.get(g)!;
+    const isStarter = starter.size > 0 && items.every(s => starter.has(starterId(s.key, s.raw)));
+    const note = isStarter && !noted;
+    if (note) noted = true;
     // The displayGroup tag PERSISTS on the token, so store the theme-less base
     // name ("Roles", not the "Roles · Light" heading) - walkSwatches files a
     // "Roles" tag under whichever theme's Roles section is currently showing,
@@ -843,12 +868,42 @@ function paletteHtml(swatches: BrandSwatch[]): string {
       <details class="be-pal-group" data-be-group="${escape(g)}" open>
         <summary class="be-pal-group-head">
           <span class="be-pal-group-label">${escape(g)}<span class="be-pal-group-n">${items.length}</span></span>
+          ${isStarter ? `<span class="be-pal-starter">${t('Starter')}</span>` : ''}
           <button type="button" class="be-add be-add--sm" ${addAttrs}>${t('+ Add')}</button>
         </summary>
+        ${note ? `<p class="be-pal-group-note">${t('Replaced when you build yours')}</p>` : ''}
         <div class="be-pal-grid">${items.map(s => tileHtml(s, idxOf.get(s)!)).join('')}</div>
       </details>`;
   }).join('');
   return top + body;
+}
+
+/**
+ * One group of logo slots.
+ *
+ * A group with nothing in it folds behind its own heading (plan 137 C4): eight
+ * empty slots per identity is a form to fill in, and the room's actual entry
+ * point is the drop zone above them, which never folds. A group that holds a
+ * mark renders exactly as it always did - open, in flow, no disclosure.
+ *
+ * `name`, `hint` and `body` are trusted markup: callers pass a t() string or an
+ * already-escape()d label, the same contract panelHead keeps.
+ */
+function logoGroupHtml(
+  g: { name: string; hint: string; body: string; filled: boolean; cls?: string },
+): string {
+  const head = `<span class="be-logo-group-name">${g.name}</span>
+      <span class="be-logo-group-hint">${g.hint}</span>`;
+  const cls = `be-logo-group${g.cls ?? ''}`;
+  return g.filled
+    ? `<div class="${cls}">
+        <div class="be-logo-group-head">${head}</div>
+        <div class="be-logo-row">${g.body}</div>
+      </div>`
+    : `<details class="${cls} be-logo-group--fold">
+        <summary class="be-logo-group-head">${head}</summary>
+        <div class="be-logo-row">${g.body}</div>
+      </details>`;
 }
 
 // ── Mount ─────────────────────────────────────────────────────────────────────
@@ -1090,11 +1145,17 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // Reflect any stored curves in the very first paint (a no-op when curve-less).
   if (initialDraft) overlayRampCurves(initialDraft, curves, steps);
 
+  // The Logos room's lead was six lines of taxonomy before anyone had added a
+  // single mark (plan 137 C4). The whole of it is still here, one tap away in
+  // the shared help tip, and the room opens on the one sentence that says what
+  // to do. Plain text, no markup: helpTip escapes what it is given.
+  const logoTaxonomyTip = helpTip(t('Each orientation (horizontal, vertical) can carry each treatment: primary and mono, each with a reverse form for dark backgrounds. Marks your brand names its own way - an icon, a crest - go under Custom marks. A brand with more than one logo can carry each as its own set. Every slot is optional. PNG, SVG, JPEG or WebP; they stay on this device and travel in your brand file.'));
+
   root.innerHTML = `
     <div class="be" data-brand-editor>
       <div class="be-tab" data-be-tab-panel="logos">
         <div class="be-panel be-logos">
-          ${panelHead(t('Logos'), t('Add whichever marks you have - each <strong>orientation</strong> (horizontal, vertical) in each <strong>treatment</strong> (primary and mono, each with a reverse form for dark backgrounds), plus any marks your brand names its own way - an <strong>icon</strong>, a <strong>crest</strong>. A brand with more than one logo can carry each as its own set. Every slot is optional. PNG, SVG, JPEG or WebP; they stay on this device and travel in your brand file.'))}
+          ${panelHead(t('Logos'), `<span class="help-tip-host be-logos-lead">${t('Add your marks - Lolly reads each file and offers it the right slot.')} ${logoTaxonomyTip.button}${logoTaxonomyTip.pop}</span>`)}
           ${/* Level 0 (plan 97 section 7.3): one multi-file drop zone. Each file is
                 read for shape and ink, proposes a slot, and waits for a tap - 
                 the matrix below stays exactly as it was, per-slot drops and
@@ -1121,6 +1182,21 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       <div class="be-panel be-addcolor">
         ${panelHead(t('Add a colour'), t('Paste or pick any colour, in any notation. One colour adds one token, nothing else. Paste a list and every colour in it becomes a chip you can add.'))}
         <div data-be-addcolor></div>
+        ${/* The answer to one add (plan 137 C1): the colour, its name, and the two
+              things worth doing next. Static markup filled in place (textContent
+              and one custom property) so a swatch name never reaches a markup
+              sink. Borrows the logo suggestion's box - it is the same kind of
+              row in the same panel. */''}
+        <div class="be-suggest be-added" data-be-added hidden>
+          <span class="be-suggest-note">
+            <span class="be-suggest-sw" data-be-added-sw aria-hidden="true"></span>
+            <span data-be-added-name></span>
+          </span>
+          <button type="button" class="be-btn" data-be-added-primary>${t('Use as primary?')}</button>
+          <button type="button" class="be-btn" data-be-added-tune>${t('Fine-tune')}</button>
+          <a class="be-added-gen" data-be-added-gen href="#/start?area=color&amp;focus=generate" hidden>${t('Generate your palette from this colour')}</a>
+          <button type="button" class="be-suggest-dismiss" data-be-added-dismiss aria-label="${escape(t('Dismiss'))}">&#x2715;</button>
+        </div>
         <div class="be-suggest" data-be-suggest hidden></div>
       </div>
 
@@ -1515,6 +1591,16 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const editorCard = editorEl?.querySelector<HTMLElement>('.be-editor-card') ?? null;
   const cleanups: Array<() => void> = [];
 
+  // The shared help-tip wiring (tap toggle, Escape, outside-click) for the
+  // Logos lead's tip. Delegated on the studio root, and its document-level
+  // dismiss listener comes off with the studio - a detached tree held alive by
+  // one listener is the leak this primitive documents.
+  wireHelpTips(root as HTMLElement & { _helpTipsWired?: boolean; _helpTipDismiss?: (e: MouseEvent) => void });
+  cleanups.push(() => {
+    const scope = root as HTMLElement & { _helpTipDismiss?: (e: MouseEvent) => void };
+    if (scope._helpTipDismiss) document.removeEventListener('click', scope._helpTipDismiss, true);
+  });
+
   // ── Palette state + persistence ─────────────────────────────────────────────
   let swatches: BrandSwatch[] = [];
   let selected = -1;
@@ -1559,6 +1645,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const notifyPaletteObservers = (): void => {
     for (const fn of paletteObservers) { try { fn(); } catch { /* observer's problem */ } }
   };
+  // Every colour the SHIPPED starter document holds, as key+value pairs. Read
+  // once after the first paint (the read is async and must not hold it up), and
+  // empty on any brand that ships no starter - so the palette and the Overview
+  // count agree about which colours nobody chose. See readStarterDoc.
+  let starterSwatches = new Set<string>();
   const repaintPalette = (): void => {
     // Roles store `{alias}` refs, so hand the walker a resolver built from the
     // SAME doc + theme the tiles are describing - otherwise every role renders
@@ -1581,7 +1672,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         [...palMount.querySelectorAll<HTMLDetailsElement>('.be-pal-group:not([open])')]
           .map(d => d.dataset.beGroup ?? '').filter(Boolean),
       );
-      palMount.innerHTML = paletteHtml(swatches);
+      palMount.innerHTML = paletteHtml(swatches, starterSwatches);
       if (closed.size) {
         palMount.querySelectorAll<HTMLDetailsElement>('.be-pal-group').forEach(d => {
           if (closed.has(d.dataset.beGroup ?? '')) d.open = false;
@@ -3395,6 +3486,70 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     }
   });
 
+  // ── The post-add chip (plan 137 C1) ─────────────────────────────────────────
+  // Adding one colour used to open the full swatch editor on the new tile: the
+  // deepest surface in the room as the answer to its shallowest action, and the
+  // first thing a first-run visitor met. The chip confirms the colour instead
+  // and offers the two things worth doing next - give it the primary role, or
+  // open that same editor deliberately. Nothing about the multi-paste chips
+  // changes; several colours at once are still announced and nothing else.
+  const addedEl = $('[data-be-added]') as HTMLElement | null;
+  const addedSw = addedEl?.querySelector<HTMLElement>('[data-be-added-sw]') ?? null;
+  const addedNameEl = addedEl?.querySelector<HTMLElement>('[data-be-added-name]') ?? null;
+  const addedGen = addedEl?.querySelector<HTMLElement>('[data-be-added-gen]') ?? null;
+  const addedPrimaryBtn = addedEl?.querySelector<HTMLButtonElement>('[data-be-added-primary]') ?? null;
+  /** The swatch the visible chip describes, or null when no chip is showing. */
+  let addedSwatch: { path: string[]; name: string } | null = null;
+  /** Put the chip away. Called by the next add, by Dismiss, by either action
+   *  once it has run, and by the host on a room change (closeOverlays). */
+  const clearAddedChip = (): void => {
+    addedSwatch = null;
+    if (addedEl) addedEl.hidden = true;
+  };
+  /** Hand focus back to the field the add came from. Both actions retire the
+   *  chip that holds the pressed button, so without this a keyboard user
+   *  restarts from the top of the page (the same hand-off handBackPalFocus
+   *  makes for the bulk bar). */
+  const focusAddField = (): void => {
+    root.querySelector<HTMLElement>('[data-ds-addc-input]')?.focus();
+  };
+  const showAddedChip = (one: { path: string[]; name: string; hex: string }): void => {
+    if (!addedEl || !addedNameEl) return;
+    addedSwatch = { path: one.path, name: one.name };
+    addedNameEl.textContent = one.name;
+    addedSw?.style.setProperty('--sw', one.hex || 'transparent');
+    // The handover to the Generate wing is offered on the FIRST colour of a
+    // person's own, and only over a starter palette: it is the answer to "you
+    // now have one colour and 25 you did not pick". Every later add is just an
+    // add, and a brand with no starter never sees it at all.
+    const own = swatches.filter(s => !starterSwatches.has(starterId(s.key, s.raw))).length;
+    if (addedGen) addedGen.hidden = !(starterSwatches.size > 0 && own <= 1);
+    addedEl.hidden = false;
+    addedPrimaryBtn?.focus();
+  };
+  addedEl?.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-be-added-dismiss]')) { clearAddedChip(); focusAddField(); return; }
+    if (target.closest('[data-be-added-tune]')) {
+      const path = addedSwatch?.path ?? null;
+      clearAddedChip();       // before the popover opens - it takes focus itself
+      openSwatchAt(path);
+      return;
+    }
+    if (!target.closest('[data-be-added-primary]') || !addedSwatch) return;
+    // Deliberately UNSCOPED (no theme), for the reason takePrimaryFromLogo
+    // states: a colour someone names as their primary is the brand's primary in
+    // both themes, unlike surface and text, which each theme inverts.
+    const path = addedSwatch.path;
+    const name = addedSwatch.name;
+    const key = swatches.find(s => s.path.length === path.length && s.path.every((seg, i) => seg === path[i]))?.key;
+    if (!key || !assignRole(doc, 'primary', key)) { clearAddedChip(); focusAddField(); return; }
+    repaintPalette(); persist(true); playSfx('click');
+    clearAddedChip();
+    focusAddField();
+    announce(tRaw('{role} is now {name}', { role: roleLabel('primary'), name }));
+  });
+
   // ── Level 0: Add a colour ───────────────────────────────────────────────────
   // The module parses; this callback is the only thing that writes. One colour
   // in, one addSwatch out - nothing derived, nothing suggested-into (plan 97 section 3
@@ -3410,23 +3565,24 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
    * - silently reverting every edit made in the room since it was taken. There
    * is one live document; this is the way in.
    *
-   * `reveal` is the room's own affordance (open the new swatch, announce it) and
-   * belongs to a press made IN the room. A tray add announces for itself from
-   * the panel the press happened in, and must not drag the Colours room's
-   * popover open underneath it.
+   * `reveal` is the room's own affordance (confirm the new swatch, announce it)
+   * and belongs to a press made IN the room. A tray add announces for itself
+   * from the panel the press happened in, and must not put a chip in the Add
+   * hero for a colour that was added somewhere else.
    */
   const addColorEntries = (entries: ColorEntry[], reveal = false): number => {
-    const added: Array<{ path: string[]; name: string }> = [];
+    const added: Array<{ path: string[]; name: string; hex: string }> = [];
     for (const e of entries) {
       const name = nameColor(e.hex);
       const path = addSwatch(doc, 'custom', name, serializeColor(e.hex, storageFormatOf(e.value)));
-      if (path) added.push({ path, name });
+      if (path) added.push({ path, name, hex: e.hex });
     }
     if (!added.length) return 0;
     repaintPalette(); persist(true); playSfx('click');
     if (reveal) {
+      clearAddedChip();   // one chip at a time: the previous add has had its answer
       if (added.length === 1) {
-        openSwatchAt(added[0]!.path);
+        showAddedChip(added[0]!);
         announce(tRaw('{name} added', { name: added[0]!.name }));
       } else {
         announce(tRaw('{n} colours added', { n: added.length }));
@@ -3530,6 +3686,24 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   });
 
   repaintPalette();
+
+  // Which of these colours came with the blank brand rather than from a person
+  // (plan 137 C3). Off the first paint's critical path: the read is an IDB hit
+  // plus a JSON parse, and a palette that has not answered yet just says nothing
+  // about ownership. BOTH themes are walked because a role's stored value differs
+  // between them and either spelling is equally a starter one.
+  void readStarterDoc(host)
+    .then((starterDoc) => {
+      if (!starterDoc || !root.isConnected) return;
+      const pairs = new Set<string>();
+      for (const theme of ['light', 'dark']) {
+        for (const s of walkSwatches(starterDoc, theme)) pairs.add(starterId(s.key, s.raw));
+      }
+      if (!pairs.size) return;
+      starterSwatches = pairs;
+      repaintPalette();
+    })
+    .catch(() => { /* no starter reachable - the palette claims nothing */ });
 
   // ── Type (the Type room, plan 97 section 7.2) ───────────────────────────────────────
   // Three layers, top to bottom: the four ROLE CARDS (level 0 - what serves each
@@ -3966,29 +4140,27 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       const byVariant = new Map(mine.map(s => [s.variant, s]));
       const groups = LOGO_ORIENTATIONS.map(o => {
         const om = ORIENTATION_META[o];
-        const tiles = LOGO_TREATMENTS.map(t => {
-          const v = `${o}-${t}` as LogoVariant;
-          return logoTile(v, identity, byVariant.get(v));
-        }).join('');
-        return `<div class="be-logo-group">
-            <div class="be-logo-group-head"><span class="be-logo-group-name">${escape(om.label)}</span>
-              <span class="be-logo-group-hint">${escape(om.hint)}</span></div>
-            <div class="be-logo-row">${tiles}</div>
-          </div>`;
+        const variants = LOGO_TREATMENTS.map(tr => `${o}-${tr}` as LogoVariant);
+        const tiles = variants.map(v => logoTile(v, identity, byVariant.get(v))).join('');
+        return logoGroupHtml({
+          name: escape(om.label), hint: escape(om.hint), body: tiles,
+          filled: variants.some(v => byVariant.has(v)),
+        });
       }).join('');
       const customs = mine.filter(s => s.custom);
       const customTiles = customs.map(s => logoTile(s.variant, identity, s)).join('');
-      const customGroup = `<div class="be-logo-group be-logo-group--custom">
-          <div class="be-logo-group-head"><span class="be-logo-group-name">${t('Custom marks')}</span>
-            <span class="be-logo-group-hint">${t('Marks your brand names its own way - an icon, a crest, a favicon.')}</span></div>
-          <div class="be-logo-row">${customTiles}
+      const customGroup = logoGroupHtml({
+        name: t('Custom marks'),
+        hint: t('Marks your brand names its own way - an icon, a crest, a favicon.'),
+        cls: ' be-logo-group--custom',
+        filled: customs.length > 0,
+        body: `${customTiles}
             <form class="be-logo-addmark" data-logo-addmark data-identity="${escape(identity)}">
               <input type="text" class="be-logo-addmark-name" data-addmark-name placeholder="${escape(t('Name it - Icon, Crest…'))}" autocomplete="off" spellcheck="false" aria-label="${escape(t('Custom mark name'))}">
               <label class="be-btn be-logo-addmark-pick">${t('Choose file…')}
                 <input type="file" class="visually-hidden" data-addmark-file accept="image/png,image/jpeg,image/svg+xml,image/webp" aria-label="${escape(t('Choose a file for this mark'))}"></label>
-            </form>
-          </div>
-        </div>`;
+            </form>`,
+      });
       return `<section class="be-logo-identity" data-identity="${escape(identity)}">
           ${identities.length > 1 || identity !== 'default' ? `<div class="be-logo-identity-head"><h4 class="be-logo-identity-name">${escape(identityLabel(identity))}</h4></div>` : ''}
           ${groups}${customGroup}
@@ -4908,7 +5080,9 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     exportPack,
     importPack,
     reload,
-    closeOverlays: closeEditor,
+    // The host calls this on every room change, which is also when a post-add
+    // chip stops being about anything the person can see.
+    closeOverlays: () => { closeEditor(); clearAddedChip(); },
     onPalette: (cb) => { paletteObservers.add(cb); return () => { paletteObservers.delete(cb); }; },
     openColorChart: () => {
       if (!chartDetails) return false;

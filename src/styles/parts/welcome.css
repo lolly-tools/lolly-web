@@ -57,6 +57,38 @@
 }
 .welcome-lang:hover { color: hsl(var(--foreground)); }
 .welcome-lang.is-active { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
+/* The A3 expander: the row ships collapsed to the detected language, and this pill
+   opens it to the full wrapping set in place. Unfilled, so it reads as the way in
+   rather than as one more language. */
+.welcome-lang-more { background: none; text-decoration: underline; text-underline-offset: 2px; }
+
+/* "Skip for now" - the visible twin of Escape, under the cards. Quiet on purpose:
+   a text link, never a fourth card competing with the three real paths. The global
+   keyboard focus ring (parts/base.css) covers it. */
+.welcome-skip {
+  display: inline-block;
+  margin: 14px 0 0;
+  padding: 2px 0;
+  font: inherit;
+  font-size: calc(12.5px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  background: none;
+  border: 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.welcome-skip:hover { color: hsl(var(--foreground)); }
+
+/* The privacy one-liner rides the welcome (plans/137 A2), so a first-run visit
+   reads it here instead of meeting the standalone strip as a second banner. */
+.welcome-privacy {
+  margin: 14px 0 0;
+  font-size: calc(12px * var(--a11y-fs));
+  line-height: 1.5;
+  color: hsl(var(--muted-foreground));
+}
+.welcome-privacy-link { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 
 .welcome-eyebrow {
   margin: 0 0 6px;

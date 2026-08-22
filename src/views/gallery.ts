@@ -683,6 +683,17 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     .filter(cat => !hidden.has(cat))
     .sort((a, b) => categoryRank(a) - categoryRank(b));
 
+  // At most ONE non-modal first-run surface per visit (plans/137 A1). The
+  // candidates keep their own flags and copy; the ladder only decides which one
+  // gets the slot: privacy notice, else the personalise nudge, else the offline
+  // nudge. It renders HIDDEN and is revealed by revealFirstRunBanner() below,
+  // once the welcome modal has been ruled out - on a visit where the welcome
+  // shows, nothing else does, and the answer to that is async (token discovery).
+  // The tips strip is the ladder's last rung and mounts from the same place.
+  // Placed ahead of the content so the phone-width nudge reads as an in-flow
+  // card at the top of the gallery (A4); the privacy strip is fixed either way.
+  const firstRunBanner = privacyNoticeMarkup() || personalizeNudgeMarkup(profile) || offlineNudgeMarkup(profile);
+
   // Render shell. The pill bar + masonry are filled by render(); the footer
   // (Pro link, search, info link) is left exactly as before.
   viewEl.classList.add('has-masonry');
@@ -717,6 +728,8 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       })}
       ${visibleCats.length ? `<div class="filter-backdrop" hidden></div>` : ''}
 
+      ${firstRunBanner}
+
       ${visibleCats.length === 0 ? (index.tools.length === 0 ? `
         <div class="gallery-empty" role="status">
           <p class="gallery-empty-title">${t("Couldn't load the tools.")}</p>
@@ -732,18 +745,25 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
         <p class="gallery-search-status visually-hidden" role="status" aria-live="polite"></p>
         <div class="tool-masonry${opts.only === 'utility' ? ' tool-masonry--utility' : ''}"></div>
       `}
-
-      ${privacyNoticeMarkup()}
-      ${personalizeNudgeMarkup(profile) || offlineNudgeMarkup(profile)}
     </div>
   `;
 
-  mountPrivacyNotice(viewEl);
-  mountPersonalizeNudge(viewEl, host);
-  // One toast at a time: the offline nudge renders only when the personalise
-  // nudge didn't (the || above) - it gets its turn on a later gallery mount.
-  // Both mounts are no-ops when their markup isn't present.
-  mountOfflineNudge(viewEl, host);
+  // Hidden until the ladder reveals it (see revealFirstRunBanner) - and hidden
+  // from the accessibility tree with it, so a screen reader isn't told about a
+  // banner this visit may never show.
+  const firstRunEl = viewEl.querySelector<HTMLElement>('.privacy-notice, .personalize-nudge');
+  if (firstRunEl) firstRunEl.hidden = true;
+
+  /** Show the one banner this visit is allowed, if there is one. Each mount is a
+   *  no-op when its own markup isn't the one that won the slot. */
+  const revealFirstRunBanner = (): boolean => {
+    if (!firstRunEl) return false;
+    firstRunEl.hidden = false;
+    mountPrivacyNotice(viewEl);
+    mountPersonalizeNudge(viewEl, host);
+    mountOfflineNudge(viewEl, host);
+    return true;
+  };
 
   // Wires the language menu + the profile pill's mobile menu, and (via `headshotId`)
   // resolves the profile-pill avatar OFF the first-paint path - the headshot is a blob
@@ -1958,7 +1978,12 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     else showInfoDialog(deepLinkTool, host, darkTheme);
   }
 
-  // ── First-run welcome + tips strip (unbranded installs only) ────────────────
+  // ── First-run ladder: welcome dialog, else ONE banner ───────────────────────
+  // The welcome + tips strip are for unbranded installs only, and whether the
+  // welcome shows is what decides the banner slot (plans/137 A1), so the whole
+  // ladder runs from here - after the unbranded answer, and after the search bar
+  // has been claimed (the privacy strip measures that bar to pin itself).
+  //
   // Unbranded = token discovery still resolves the lolly-start placeholder
   // (`lolly/tokens/brand`); once the user installs a brand, discovery returns
   // `user/tokens/brand` and this never fires again. The check rides on the
@@ -1981,28 +2006,38 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // post-sync re-mount keeps it open without a flash.
   const galleryRoot = viewEl.querySelector<HTMLElement>('.gallery');
   void (async () => {
+    let locked = false;
     let tokensId: string | undefined;
     try {
       // A LOCKED brand (brandLock - e.g. the SUSE build) is branded by decree:
       // there's no brand question to settle, so never greet it with the welcome
       // or the tips strip, whatever the placeholder check below resolves to.
-      if (await host.tokens?.isLocked?.()) return;
-      tokensId = (await host.assets._findMetaByType('tokens'))?.id;
-      if (tokensId === undefined && galleryRoot?.isConnected) {
-        const resp = await instanceFetch(instancePath('/catalog/assets/index.json'));
-        if (resp.ok) {
-          const idx = await resp.json() as { assets?: Array<{ id?: string; type?: string }> };
-          tokensId = idx.assets?.find(a => a.type === 'tokens')?.id;
+      locked = !!(await host.tokens?.isLocked?.());
+      if (!locked) {
+        tokensId = (await host.assets._findMetaByType('tokens'))?.id;
+        if (tokensId === undefined && galleryRoot?.isConnected) {
+          const resp = await instanceFetch(instancePath('/catalog/assets/index.json'));
+          if (resp.ok) {
+            const idx = await resp.json() as { assets?: Array<{ id?: string; type?: string }> };
+            tokensId = idx.assets?.find(a => a.type === 'tokens')?.id;
+          }
         }
       }
     } catch { /* IDB unavailable / offline - treat as branded; never block or nag here */ }
-    const unbranded = tokensId === 'lolly/tokens/brand';
-    if (!unbranded || !galleryRoot?.isConnected) return;
+    if (!galleryRoot?.isConnected) return;
+    // Branded (or locked): no welcome to wait for, so the banner slot is free.
+    if (locked || tokensId !== 'lolly/tokens/brand') { revealFirstRunBanner(); return; }
     const welcome = await import('../components/welcome-dialog.ts');
     if (!galleryRoot.isConnected) return; // navigated away while the chunk loaded
-    welcome.mountBrandTips(viewEl.querySelector<HTMLElement>('.tool-masonry'));
     // 'brand' navigates itself; the upload host enables the "Bring your design" card.
-    if (!welcome.isWelcomeDismissed()) void welcome.showWelcomeDialog(host.profile, host as unknown as PickerHost);
+    // A welcome visit is the whole ask - the banner stays hidden and the tips
+    // strip waits for a later visit.
+    if (!welcome.isWelcomeDismissed()) {
+      void welcome.showWelcomeDialog(host.profile, host as unknown as PickerHost);
+      return;
+    }
+    if (revealFirstRunBanner()) return;
+    welcome.mountBrandTips(viewEl.querySelector<HTMLElement>('.tool-masonry'));
   })();
 
   // Profile-personalized previews: once the user has opted in to "use my details",

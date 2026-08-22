@@ -224,6 +224,32 @@
   border-radius: var(--radius);
   white-space: nowrap;
 }
+/* `hidden` on a foot action has to actually hide it: the display above
+   out-specifies base.css's own [hidden] rule. Four of the five start out hidden
+   now - the tray, both exports and the Versions entry (plans/137 B1) - so one
+   rule for the group beats another per-class exception each time. */
+.ds-rail-actions .be-btn[hidden] { display: none; }
+/* The quiet way to a FIRST publish (plans/137 B2) - text under the export
+   actions rather than a fifth peer button, because until a version exists there
+   is nothing to go and look at. Full 44px tap target all the same. */
+.ds-versions-link {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding-inline: 4px;
+  border: 0;
+  background: none;
+  color: hsl(var(--muted-foreground));
+  font: inherit;
+  font-size: calc(12px * var(--a11y-fs));
+  text-align: start;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.ds-versions-link:hover { color: hsl(var(--foreground)); }
+.ds-versions-link[hidden] { display: none; }
 .ds-rail-note {
   /* width, not a flex-basis: the foot is a ROW on phones (where 100% width puts
      the note on its own line) and a COLUMN on desktop (where a 100% basis would
@@ -337,6 +363,31 @@
   max-height: calc(100dvh - 3rem);
   overflow-y: auto;
 }
+/* Title plus a visible way out (plans/137 B3). Escape and a backdrop tap dismiss
+   the dialog on their own, but on a phone the card is the whole screen and
+   neither of those is something you can see. */
+.start-import-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.start-import-head .modal-title { flex: 1 1 auto; }
+.start-import-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-top: -10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: hsl(var(--muted-foreground));
+  font-size: calc(15px * var(--a11y-fs));
+  line-height: 1;
+  cursor: pointer;
+}
+.start-import-close:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
 .start-import-panel {
   display: flex;
   flex-direction: column;

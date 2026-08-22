@@ -263,6 +263,62 @@ test('the active shutter takes pointer events, and only the status block opts in
 
 // ── 7. the clock ───────────────────────────────────────────────────────────
 
+// ── 8. Cancel - the same button, when the export can actually be stopped ────
+// The block was born with Hide because no export path took an abort signal.
+// ExportOpts.signal (engine 1.141) changed that, so an export that passes an
+// onCancel gets a button that stops it; everything else keeps Hide.
+
+test('an export with onCancel gets a Cancel button that runs it once', async () => {
+  const stage = mount();
+  let cancelled = 0, hidden = 0;
+  const sh = createShutter(stage);
+  await sh.close({
+    label: 'Sequence Studio', detail: 'MP4',
+    onHide: () => { hidden++; },
+    onCancel: () => { cancelled++; },
+  });
+  await tick(DELAY * 3);
+  const btn = statusOf(stage)!.querySelector<HTMLElement>('button')!;
+  assert.equal(btn.textContent, 'Cancel', 'the label must promise what the button does');
+
+  btn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  assert.equal(cancelled, 1);
+  assert.equal(hidden, 0, 'Cancel and Hide are never both wired to the one click');
+  // Cancel does NOT open the shutter: the export rejects and its own finally does,
+  // so the block is still up at this point.
+  assert.equal(visible(stage), true);
+  sh.destroy();
+});
+
+test('Esc cancels too when a cancel is offered', async () => {
+  const stage = mount();
+  let cancelled = 0;
+  const sh = createShutter(stage);
+  await sh.close({ label: 'Sequence Studio', onHide: () => {}, onCancel: () => { cancelled++; } });
+  await tick(DELAY * 3);
+  dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal(cancelled, 1, 'Esc mirrors the button, whichever button it is');
+  sh.destroy();
+});
+
+test('without onCancel the button is still Hide, and a later export re-labels it', async () => {
+  const stage = mount();
+  let hidden = 0;
+  const sh = createShutter(stage);
+  await sh.close({ label: 'QR Code', detail: 'PDF', onHide: () => { hidden++; sh.open(); } });
+  await tick(DELAY * 3);
+  const btn = statusOf(stage)!.querySelector<HTMLElement>('button')!;
+  assert.equal(btn.textContent, 'Hide', 'an export nothing can stop must not claim otherwise');
+  btn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  assert.equal(hidden, 1);
+
+  // The block is built once and reused, so the label belongs to the export, not the box.
+  await sh.close({ label: 'Sequence Studio', detail: 'MP4', onHide: () => {}, onCancel: () => {} });
+  await tick(DELAY * 3);
+  assert.equal(statusOf(stage)!.querySelector<HTMLElement>('button')!.textContent, 'Cancel');
+  sh.destroy();
+});
+
 test('clockText counts minutes and pads seconds', () => {
   assert.equal(clockText(0), '0:00');
   assert.equal(clockText(9_400), '0:09');

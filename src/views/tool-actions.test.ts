@@ -103,11 +103,17 @@ interface Harness {
   framesInput: () => HTMLInputElement | null;
   setFormat: (f: string) => void;
   download: () => void;
+  /** The post-export "add your details" line, or null when it wasn't offered. */
+  ask: () => HTMLElement | null;
+  /** Every profile the panel wrote back, in order. */
+  profileWrites: () => Array<Record<string, unknown>>;
 }
 
-/** Mount the export bar over a canvas that is (or isn't) a timed composition. */
-function mount({ seqMs, videoDuration = 12, formats = ['webm', 'mp4', 'png'] }:
-  { seqMs: number | null; videoDuration?: number; formats?: string[] }): Harness {
+/** Mount the export bar over a canvas that is (or isn't) a timed composition.
+ *  `profile` installs a profile store on the host (absent by default, the way a
+ *  host without one behaves). */
+function mount({ seqMs, videoDuration = 12, formats = ['webm', 'mp4', 'png'], profile }:
+  { seqMs: number | null; videoDuration?: number; formats?: string[]; profile?: Record<string, unknown> }): Harness {
   const doc = dom.window.document;
   doc.body.innerHTML = '';
   const panel = doc.createElement('div');
@@ -140,10 +146,17 @@ function mount({ seqMs, videoDuration = 12, formats = ['webm', 'mp4', 'png'] }:
       return new dom.window.Blob(['x'], { type: 'video/webm' });
     },
   };
+  const profileWrites: Array<Record<string, unknown>> = [];
   const host = {
     assets: { query: async () => [] },
     state: { save: async () => {} },
     export: { download: async () => {} },
+    ...(profile ? {
+      profile: {
+        get: async () => ({ ...profile }),
+        set: async (p: Record<string, unknown>) => { profileWrites.push(p); },
+      },
+    } : {}),
   };
 
   const unscaledCalls: Array<{ shutter?: boolean; formats: string[] }> = [];
@@ -174,6 +187,8 @@ function mount({ seqMs, videoDuration = 12, formats = ['webm', 'mp4', 'png'] }:
     },
     download: () => (panel.querySelector('[data-action="download"]') as HTMLElement)
       .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
+    ask: () => panel.querySelector('.export-details-ask') as HTMLElement | null,
+    profileWrites: () => profileWrites,
   };
 }
 
@@ -975,4 +990,66 @@ test('?s= on an unstamped paged tool still works positionally', async () => {
   h.download();
   await settle();
   assert.equal(h.pageExports().length, 1, 'the third page, and only it');
+});
+
+// ── 6. Cancel - the abort signal the shutter's button trips ──────────────────
+// Audit finding T1: the status block could only ever offer Hide because no export
+// carried a way to stop. Every shuttered export now creates one controller, passes
+// its signal in the export opts, and hands the abort to the shutter as onCancel -
+// so the two are the SAME controller, which is the half that could silently break.
+
+test('a shuttered export passes an abort signal, and its onCancel aborts THAT signal', async () => {
+  const h = mount({ seqMs: 6000 });
+  h.download();
+  await settle();
+  const exp = h.downloads()[0]!;
+  const signal = exp.opts.signal as AbortSignal;
+  assert.ok(signal instanceof AbortSignal, 'the export must be cancellable at all');
+  assert.equal(signal.aborted, false);
+
+  const call = h.unscaled().find(c => c.shutter) as { onCancel?: () => void } | undefined;
+  assert.equal(typeof call?.onCancel, 'function', 'the shutter needs the abort to label its button Cancel');
+  call!.onCancel!();
+  assert.equal(signal.aborted, true, 'the button and the export must share one controller');
+  assert.equal((signal.reason as { name?: string })?.name, 'AbortError',
+    'the one shape every cancelled export path arrives in');
+});
+
+// ── 7. The provenance ask after a real export (plans/137 WP-E) ───────────────
+// "Add your details to what you make?" belongs to the moment a file has actually
+// been made, not to a cold gallery visit. The panel asks once per profile and
+// writes the same flag the gallery toast reads, so the two can never both ask.
+
+test('a finished export offers the details ask once, and spends the flag', async () => {
+  const h = mount({ seqMs: null, formats: ['png'], profile: { firstname: 'Ada' } });
+  h.download();
+  await settle();
+  const ask = h.ask();
+  assert.ok(ask, 'the line must appear after the file has gone');
+  assert.equal(ask!.querySelector('a')?.getAttribute('href'), '#/profile?focus=use-details');
+  assert.deepEqual(h.profileWrites(), [{ firstname: 'Ada', personalizeNudgeDismissed: true }],
+    'showing it retires the gallery toast for this profile - and keeps the rest of the profile');
+
+  h.download();
+  await settle();
+  assert.equal(h.panel.querySelectorAll('.export-details-ask').length, 1, 'never a second line');
+  assert.equal(h.profileWrites().length, 1, 'and never a second write');
+});
+
+test('no ask for someone already opted in, or who already answered it', async () => {
+  for (const profile of [{ useDetails: true }, { personalizeNudgeDismissed: true }]) {
+    const h = mount({ seqMs: null, formats: ['png'], profile });
+    h.download();
+    await settle();
+    assert.equal(h.ask(), null, JSON.stringify(profile));
+    assert.deepEqual(h.profileWrites(), [], 'nothing to ask means nothing to write');
+  }
+});
+
+test('a host with no profile store exports exactly as before', async () => {
+  const h = mount({ seqMs: null, formats: ['png'] });
+  h.download();
+  await settle();
+  assert.equal(h.ask(), null);
+  assert.equal(h.downloads().length, 1, 'the export itself is untouched');
 });

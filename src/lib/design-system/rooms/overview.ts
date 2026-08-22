@@ -19,7 +19,7 @@
  * Reads only. Nothing in this room writes tokens; the rooms it opens do.
  */
 
-import { summarizeTokensDoc } from '@lolly/engine';
+import { summarizeTokensDoc, createTokenSet } from '@lolly/engine';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 import { listLogos } from '../../brand-logos.ts';
 import { primaryFontFamily, displayFontFamily, monoFontFamily, italicFontFamily } from '../../../user-fonts.ts';
@@ -62,6 +62,10 @@ export interface OverviewModel {
   fonts: string[];
   logoCount: number;
   tokenCount: number;
+  /** How many of `colorCount` are still the shipped starter ramp, unchanged.
+   *  Optional so a caller that has nothing to say about ownership can leave it
+   *  out; 0 and absent mean the same thing. */
+  starterCount?: number;
 }
 
 const STRIP_MAX = 12;
@@ -69,12 +73,46 @@ const STRIP_MAX = 12;
 /** The starter catalog's placeholder tokens asset (brands/lolly-start). Matching
  *  it is the shell's existing "unbranded" test - views/gallery.ts gates the
  *  first-run welcome on the same id - and it is the one tokens asset that means
- *  nothing has been furnished yet. */
-const STARTER_TOKENS_ID = 'lolly/tokens/brand';
+ *  nothing has been furnished yet. Exported because the Colours room needs the
+ *  same asset for the same reason (a starter swatch it did not write), and two
+ *  copies of a well-known id is how they drift apart. */
+export const STARTER_TOKENS_ID = 'lolly/tokens/brand';
 
 const EMPTY_MODEL: OverviewModel = {
-  furnished: false, colors: [], colorCount: 0, fonts: [], logoCount: 0, tokenCount: 0,
+  furnished: false, colors: [], colorCount: 0, fonts: [], logoCount: 0, tokenCount: 0, starterCount: 0,
 };
+
+/**
+ * The shipped starter document (brands/lolly-start's tokens asset), or null.
+ *
+ * A first write copies that whole ramp into the user's own document, so from
+ * then on the user owns 25 colours nobody chose. Reading the SHIPPED bytes back
+ * is what lets a caller tell those apart from the ones a person added, by
+ * comparing path and value - no schema change, no flag on the token, and
+ * nothing to migrate on a document that predates the idea.
+ *
+ * Null on any brand whose catalog ships no such asset (SUSE's, an ingested
+ * pack), and null before boot sync has cached it - both mean "nothing to
+ * attribute", which is exactly the behaviour every caller had before.
+ */
+export async function readStarterDoc(host: OverviewHost): Promise<unknown> {
+  const assets = host.assets as unknown as { _getBlob?(id: string): Promise<Blob | null> };
+  try {
+    const blob = await assets._getBlob?.(STARTER_TOKENS_ID);
+    return blob ? JSON.parse(await blob.text()) : null;
+  } catch { return null; }
+}
+
+/** Every starter COLOUR as `token path -> resolved value`. Both halves matter:
+ *  a Replace-palette writes the user's own ramps over the very same paths, so
+ *  path alone would keep calling them starter colours forever. */
+async function starterColors(host: OverviewHost): Promise<Map<string, string>> {
+  const doc = await readStarterDoc(host);
+  if (!doc) return new Map();
+  try {
+    return new Map(createTokenSet(doc).colors().map(c => [c.path, c.value]));
+  } catch { return new Map(); }
+}
 
 /**
  * Collect what the design system currently holds.
@@ -86,7 +124,7 @@ const EMPTY_MODEL: OverviewModel = {
 export async function readOverview(host: OverviewHost): Promise<OverviewModel> {
   const assets = host.assets as unknown as { _findMetaByType?(type: string): Promise<{ id: string } | null> };
   const tokens = host.tokens as unknown as {
-    colors?(opts?: { theme?: string }): Promise<Array<{ value: string }>>;
+    colors?(opts?: { theme?: string }): Promise<Array<{ value: string; path?: string }>>;
     raw?(): Promise<unknown>;
   } | undefined;
 
@@ -121,6 +159,7 @@ export async function readOverview(host: OverviewHost): Promise<OverviewModel> {
     try { URL.revokeObjectURL(logo.url); } catch { /* no blob-URL support - nothing to release */ }
   }
 
+  const starter = await starterColors(host);
   return {
     furnished: true,
     colors: swatches.slice(0, STRIP_MAX).map(s => s.value),
@@ -128,6 +167,9 @@ export async function readOverview(host: OverviewHost): Promise<OverviewModel> {
     fonts: [...new Set(families.filter(Boolean))],
     logoCount: logos.length,
     tokenCount,
+    starterCount: starter.size
+      ? swatches.filter(s => !!s.path && starter.get(s.path) === s.value).length
+      : 0,
   };
 }
 
@@ -138,6 +180,22 @@ const countLabels = {
   logos: (n: number): string => t(n === 1 ? '{n} logo' : '{n} logos', { n }),
   tokens: (n: number): string => t(n === 1 ? '{n} token' : '{n} tokens', { n }),
 };
+
+/**
+ * The Colours card's value: a plain count, or the ownership split while the
+ * shipped starter ramp is still most of the palette.
+ *
+ * A blank brand hands over 25 colours on the first write, so "26 colours" after
+ * one add reads as a system somebody built. Splitting the number is the whole
+ * point - it says which part is theirs - and it stops as soon as their own
+ * colours are the majority, because by then the count is true again.
+ */
+function colorsValue(model: OverviewModel): string {
+  const starter = model.starterCount ?? 0;
+  const yours = model.colorCount - starter;
+  if (starter <= 0 || starter <= yours) return countLabels.colors(model.colorCount);
+  return t('{n} yours - {m} starter', { n: Math.max(0, yours), m: starter });
+}
 
 function doorHtml(door: string, glyph: string, name: string, note: string): string {
   return `
@@ -187,7 +245,7 @@ export function overviewHtml(model: OverviewModel | null): string {
       <h2 class="ds-ov-title">${t('The design system')}</h2>
       <p class="ds-ov-sub">${t('This is live. Every tool, page and export follows it. Open a room to change anything.')}</p>
       <div class="ds-ov-cards">
-        ${cardHtml('color', t('Colours'), countLabels.colors(model.colorCount), strip)}
+        ${cardHtml('color', t('Colours'), colorsValue(model), strip)}
         ${cardHtml('type', t('Type'), fonts)}
         ${cardHtml('logos', t('Logos'), countLabels.logos(model.logoCount))}
         ${cardHtml('tokens', t('Tokens'), countLabels.tokens(model.tokenCount))}

@@ -502,14 +502,15 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
       }
       if (curtain.cancelled()) return;
       const filename = (runtime.manifest?.name || 'Record').trim() || 'Record';
-      // The curtain's Cancel resolves first and we stop waiting on the compositor.
-      // ponytail: abandon, not abort - renderRecord composites in real time with no
-      // signal to trip, so the run finishes unseen and its blob is dropped; a true
-      // abort needs an AbortSignal on ExportOpts (bridge/export.ts).
-      // The export's own rejection is captured rather than raced, so an abandoned
-      // render can never land as an unhandled rejection after we stop waiting.
+      // The curtain's Cancel stops the composite for real (ExportOpts.signal, engine
+      // 1.141): renderRecord polls the signal on its rAF tick, so the encode ends and
+      // the recorder is torn down instead of the run finishing unseen. We still stop
+      // waiting on the same promise race, and the rejection is CAPTURED rather than
+      // raced, so an aborted render can never surface as an unhandled rejection.
+      const abort = new AbortController();
+      void curtain.whenCancelled.then(() => abort.abort());
       let renderErr: unknown = null;
-      const rendering = runtime.export(recStage, ext === 'webm' ? 'webm' : 'mp4', {})
+      const rendering = runtime.export(recStage, ext === 'webm' ? 'webm' : 'mp4', { signal: abort.signal })
         .catch((err: unknown) => { renderErr = err; return null; });
       const blob = await Promise.race([rendering, curtain.whenCancelled.then(() => null)]);
       if (curtain.cancelled()) {
@@ -536,8 +537,8 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
   //
   // The compositor reports no progress (renderRecord runs a real-time canvas
   // composite), so the sub line carries ELAPSED time - honest about "still working"
-  // without inventing a percentage - and a Cancel that stops the wait and hands the
-  // stage back with the recorded take on it.
+  // without inventing a percentage - and a Cancel that aborts the composite (via the
+  // export's abort signal) and hands the stage back with the recorded take on it.
   let liveCurtain: { close: () => void } | null = null;   // so teardown stops its clock
   function showProcessing(): { close: () => void; succeed: (sub: string) => void; cancelled: () => boolean; whenCancelled: Promise<void> } {
     const ov = document.createElement('div');

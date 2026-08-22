@@ -15,6 +15,7 @@ import type {
   Fact, PreflightInput, PreflightJob, PreflightManifest, PreflightSwatch, StageFacts, Count, CostWorking,
 } from '@lolly/engine';
 import type { MoneyContext } from '@lolly-tools/core';
+import type { Profile } from '@lolly-tools/core/host-v1';
 import { escape } from '../utils.js';
 import { t, tRaw } from '../i18n.ts';
 import { confirmDialog } from '../components/confirm-dialog.ts';
@@ -210,6 +211,12 @@ function extFor(fmt: string, blob: Blob | null | undefined): string {
   if (t.includes('zip'))  return 'zip';
   return FMT_EXT[fmt] ?? fmt;
 }
+
+/** The profile slice offerDetailsAsk reads and writes. `set` is the web shell's
+ *  own setter, not part of the tool-facing ProfileAPI - same shape and the same
+ *  read-then-merge write views/personalize-nudge.ts uses for the flag. Optional
+ *  because a host assembled without a profile store must simply not ask. */
+type ProfileStore = { get(): Promise<Profile>; set?(profile: Profile): Promise<void> };
 
 // fitCanvas and exportUnscaled are passed in so refreshCanvasPreview and the
 // export actions can coordinate with the responsive-scaling logic in mountTool.
@@ -1035,6 +1042,33 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       slot.appendChild(line);
     }
     slot.hidden = false;
+  }
+
+  // The provenance ask, at the moment it means something (plans/137 WP-E). A file
+  // has just been downloaded, so "should your details go into it?" is now a real
+  // question about a real file rather than a cold prompt at boot - which is why
+  // the gallery's personalize toast hands the ask over to here. One quiet line
+  // under the buttons of the sheet the user is already looking at: never a dialog,
+  // never over the shutter (that has reopened by now), never before the export.
+  // It shows at most once per profile because it writes the SAME
+  // personalizeNudgeDismissed flag the gallery toast reads, so whichever surface
+  // asks first retires the other. Best-effort throughout - a profile store that
+  // cannot be read or written costs nothing, the file has already reached the user.
+  async function offerDetailsAsk(): Promise<void> {
+    if (!el || el.querySelector('.export-details-ask')) return;
+    const store = host.profile as ProfileStore | undefined;
+    if (!store?.get) return;
+    const current = await store.get();
+    if (current.useDetails || current.personalizeNudgeDismissed) return;
+    const line = document.createElement('p');
+    line.className = 'export-details-ask';
+    line.textContent = t('Add your details to this file? They stay on this device.');
+    const link = document.createElement('a');
+    link.href = '#/profile?focus=use-details';
+    link.textContent = t('Set up my details');
+    line.append(' ', link);
+    el.appendChild(line);
+    await store.set?.({ ...current, personalizeNudgeDismissed: true });
   }
 
   el.innerHTML = `
@@ -2674,6 +2708,14 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       // opts object is built before the wrap) and stays null for an export that
       // runs without a shutter, e.g. a live take.
       let reportToShutter: ((done: number, total: number) => void) | null = null;
+      // Cancellation for this export (engine 1.141 ExportOpts.signal). Handed to the
+      // shutter's status block as onCancel, which makes its one button a real Cancel:
+      // the frame loops, the CMYK row pass, the vector walks and the sequence
+      // compositor poll the signal and reject with an AbortError, which the catch below
+      // reads as "cancelled", not "failed". A format with no yield point ignores it and
+      // we discard its result.
+      const exportAbort = new AbortController();
+      const cancelExport = (): void => exportAbort.abort();
       // The live brand palette (host.tokens, cached) - not the tokenless PALETTE
       // fallback - so CMYK ink substitution always matches the active profile's
       // real brand (SUSE's measured inks, or whichever catalog is mounted).
@@ -2690,6 +2732,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       // rather than pushed into the shared interface.
       const opts: RunExportOpts & { durationUserSet?: boolean; cuts?: number } & typeof audioOpt = {
         ...exportDims(),
+        signal: exportAbort.signal,
         onProgress: (done, total) => {
           // Live take: (done, total) is a seconds countdown from the recorder. The
           // button is the one status surface guaranteed OUTSIDE the capture - the
@@ -2861,13 +2904,16 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
             for (let i = 0; i < framePages.length; i++) {
               const el = framePages[i]!;
               // Pages are the honest unit of progress here - each one is a whole
-              // render, and only the last of them reports any sub-progress.
+              // render, and only the last of them reports any sub-progress. It is
+              // also the cancel point: a still page render has no yield point of its
+              // own, so this is what stops a 40-page fan-out part way.
               report?.(i, framePages.length);
+              exportAbort.signal.throwIfAborted();
               const pb = await runtime.export(el, fmt, { ...pageOpts, width: el.offsetWidth, height: el.offsetHeight });
               out.push({ name: `${filename}-${i + 1}.${extFor(fmt, pb)}`, blob: pb });
             }
             return out;
-          }, { shutter: true, detail: fmtLabel(fmt) });
+          }, { shutter: true, detail: fmtLabel(fmt), onCancel: cancelExport });
         } finally {
           seqOff.forEach((o) => o.classList.add('seq-off'));
         }
@@ -2933,7 +2979,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
               : await exportUnscaled((report) => {
                   reportToShutter = report ?? null;   // read by opts.onProgress above
                   return runtime.export(drvNode, fmt, opts);
-                }, { shutter: true, detail: fmtLabel(fmt) });
+                }, { shutter: true, detail: fmtLabel(fmt), onCancel: cancelExport });
           } finally {
             if (liveDrive) {
               delete (drvNode as unknown as { __lollyFrameDrive?: unknown }).__lollyFrameDrive;
@@ -2982,6 +3028,17 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       })();
     } catch (err) {
       revokeTrackUrls();
+      // Cancelled, not broken: nothing was downloaded or saved, so say so quietly and
+      // put the button back. The shutter was already restored by exportUnscaled's own
+      // finally. 'AbortError' is the one shape every path arrives in - the sequence
+      // compositor maps its SEQ_ABORTED onto it.
+      if ((err as { name?: string })?.name === 'AbortError') {
+        btn.removeAttribute('aria-busy');
+        btn.textContent = prev;
+        btn.toggleAttribute('disabled', false);
+        announce(t('Export cancelled'));
+        return;
+      }
       console.error('Export failed:', err);
       btn.removeAttribute('aria-busy');
       // Surface WHY so users don't just retry the same doomed export.
@@ -3000,6 +3057,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     btn.textContent = prev;
     btn.toggleAttribute('disabled', false);
     announce('Export complete');
+    void offerDetailsAsk().catch(() => { /* the ask is an extra, never a failure path */ });
   });
 
   el.querySelector<HTMLButtonElement>('[data-action="save"]')?.addEventListener('click', async function (this: HTMLButtonElement) {

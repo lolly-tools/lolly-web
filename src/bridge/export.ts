@@ -227,6 +227,13 @@ export interface ExportOpts {
    *  sequence-cuts.ts and plans/51-fable-timeline-editing.md section 4.6. */
   cuts?: number;
   onProgress?: (done: number, total: number) => void;
+  /** Cancellation (engine 1.141, ExportOpts.signal). Polled wherever this file
+   *  already yields - the frame loops, the CMYK row pass, the SVG/PDF vector walks
+   *  and their page boundary, the two real-time compositors' rAF ticks - and the
+   *  export then rejects with the signal's AbortError. A format with no yield point
+   *  ignores it, so the caller's only guarantee there is that it discards the
+   *  result. */
+  signal?: AbortSignal;
   fps?: number;
   repeat?: number;
   dither?: boolean;
@@ -1367,7 +1374,7 @@ async function renderCmykTiff(node: Element, opts: ExportOpts): Promise<Blob> {
   const W = canvas.width, H = canvas.height;
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   const rgba = ctx.getImageData(0, 0, W, H).data;   // sRGB, straight (un-premultiplied)
-  const cmyk = await rgbaToDeviceCmyk(rgba, W, H, paletteMap, opts.onProgress);
+  const cmyk = await rgbaToDeviceCmyk(rgba, W, H, paletteMap, opts.onProgress, opts.signal);
 
   // Marks drawn AFTER conversion → registration/crop/bleed land on every plate;
   // provenance credit text is composited as K-only ink (see drawPrintMarksCmyk).
@@ -1392,6 +1399,7 @@ async function rgbaToDeviceCmyk(
   rgba: Uint8ClampedArray, W: number, H: number,
   paletteMap: Map<string, PaletteHit>,
   onProgress?: (done: number, total: number) => void,
+  signal?: AbortSignal,
 ): Promise<Uint8Array> {
   const out = new Uint8Array(W * H * 4);
   const hasPalette = paletteMap.size > 0;
@@ -1414,6 +1422,7 @@ async function rgbaToDeviceCmyk(
     }
     if ((row + 1) % YIELD_ROWS === 0 && row + 1 < H) {
       onProgress?.(row + 1, H);
+      signal?.throwIfAborted();      // the yield point is also the cancel point
       await new Promise<void>((r) => setTimeout(r));         // unblock the UI thread
     }
   }
@@ -2843,6 +2852,7 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     if (el.nodeType !== 1) return;
     if (++nodesWalked % YIELD_NODES === 0) {
       opts.onProgress?.(Math.min(nodesWalked, totalNodes), totalNodes);
+      opts.signal?.throwIfAborted();      // the yield is what lets a cancel be seen at all
       await new Promise<void>((r) => setTimeout(r));         // unblock the UI thread
     }
     const tag = el.tagName.toLowerCase();
@@ -5174,7 +5184,7 @@ async function renderArtworkPdf(node: Element, opts: ExportOpts, geo: PrintGeome
   if (svgRoot) {
     await drawSvgVectorsInRegion(pdf, svgRoot, art.x, art.y, art.w, art.h, new Set(), opts._imprintSink);
   } else {
-    await drawHtmlVectors(pdf, node, art.x, art.y, art.w, art.h, opts.convertPaths !== false, opts.onProgress, opts.rasterFallback !== false, opts._imprintSink);
+    await drawHtmlVectors(pdf, node, art.x, art.y, art.w, art.h, opts.convertPaths !== false, opts.onProgress, opts.rasterFallback !== false, opts._imprintSink, opts.signal);
   }
 
   return pdf.output('blob');
@@ -5765,6 +5775,7 @@ async function renderMultiPagePdf(pageEls: Element[], opts: ExportOpts, prepare?
   applyPdfMeta(pdf, opts.meta);
 
   for (let i = 0; i < pageEls.length; i++) {
+    opts.signal?.throwIfAborted();      // a long deck stops at the page boundary
     const el = pageEls[i]!;
     if (i > 0) prepare?.(i);
     const size = i === 0 ? first : sizeOf(el);
@@ -5781,7 +5792,7 @@ async function renderMultiPagePdf(pageEls: Element[], opts: ExportOpts, prepare?
     const svgRoot = el.tagName?.toLowerCase() === 'svg' ? el
       : isSvgRooted(el) ? el.querySelector('svg') : null;
     if (svgRoot) await drawSvgVectorsInRegion(pdf, svgRoot, art.x, art.y, art.w, art.h, new Set(), opts._imprintSink);
-    else await drawHtmlVectors(pdf, el, art.x, art.y, art.w, art.h, convert, opts.onProgress, opts.rasterFallback !== false, opts._imprintSink);
+    else await drawHtmlVectors(pdf, el, art.x, art.y, art.w, art.h, convert, opts.onProgress, opts.rasterFallback !== false, opts._imprintSink, opts.signal);
   }
   const blob = pdf.output('blob');
   if (opts.password && !hasGeo) {
@@ -6842,7 +6853,7 @@ function transformOriginPx(style: CSSStyleDeclaration, cssW: number, cssH: numbe
 // here, because it emits drawing operators straight into a content stream rather
 // than building a re-parentable node tree, so the same fix is a different (and
 // larger) piece of work. Nothing regresses - PDF keeps the order it always had.
-async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, regionW: number, regionH: number, convertPaths = true, onProgress?: (done: number, total: number) => void, rasterFallback = true, imprint?: ImprintState): Promise<void> {
+async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, regionW: number, regionH: number, convertPaths = true, onProgress?: (done: number, total: number) => void, rasterFallback = true, imprint?: ImprintState, signal?: AbortSignal): Promise<void> {
   const rect0 = node.getBoundingClientRect();
   const scaleX = regionW / rect0.width;
   const scaleY = regionH / rect0.height;
@@ -6877,6 +6888,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
     if (el.nodeType !== 1) return;
     if (++nodesWalked % YIELD_NODES === 0) {
       onProgress?.(Math.min(nodesWalked, totalNodes), totalNodes);
+      signal?.throwIfAborted();      // the yield is what lets a cancel be seen at all
       await new Promise<void>((r) => setTimeout(r));         // unblock the UI thread
     }
     const tag = el.tagName.toLowerCase();
@@ -9479,6 +9491,9 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
       frames.push(await createImageBitmap(await source.frame(i / frameCount, plan.clipSec)));
       // Progress for a slow N-frame render (no-op when no listener is wired).
       opts.onProgress?.(i + 1, frameCount);
+      // Cancel leaves by the same door a capture failure does: the catch stops the
+      // audio track, the finally disposes the frame source.
+      opts.signal?.throwIfAborted();
     }
   } catch (err) {
     audio?.stop();
@@ -9867,6 +9882,15 @@ async function renderTopTail(node: Element, opts: ExportOpts, preferred: string)
     const frame = (now: number): void => {
       if (!startT) startT = now;
       const el = now - startT;
+      // Cancel: the rAF tick is this compositor's yield point, so a cancelled clip
+      // stops being encoded instead of running to its full length unwatched. Reject
+      // before stopping the recorder, so onstop's resolve finds a settled promise.
+      if (opts.signal?.aborted) {
+        cleanup();
+        reject(opts.signal.reason);
+        try { recorder.stop(); } catch { /* already stopping */ }
+        return;
+      }
       if (el >= totalMs) { try { recorder.stop(); } catch { /* already stopping */ } return; }
 
       // Composite + hand off one frame per fps tick (wall-clock paced): the live
@@ -10142,6 +10166,13 @@ async function renderRecord(node: Element, opts: ExportOpts, preferred: string):
     const frame = (now: number): void => {
       if (!startT) startT = now;
       const el = now - startT;
+      // Cancel: the rAF tick is this compositor's yield point (see renderTopTail).
+      if (opts.signal?.aborted) {
+        cleanup();
+        reject(opts.signal.reason);
+        try { recorder.stop(); } catch { /* already stopping */ }
+        return;
+      }
       if (el >= totalMs) { try { recorder.stop(); } catch { /* already stopping */ } return; }
 
       // Composite + hand off one frame per fps tick (wall-clock paced): live footage
@@ -10273,6 +10304,7 @@ async function renderGif(node: Element, opts: ExportOpts): Promise<Blob> {
       }
       // Progress for a slow N-frame render (no-op when no listener is wired).
       opts.onProgress?.(i + 1, frameCount);
+      opts.signal?.throwIfAborted();      // the finally still disposes the frame source
     }
 
     gif.finish();
@@ -10337,6 +10369,7 @@ async function renderApng(node: Element, opts: ExportOpts): Promise<Blob> {
       frames.push(new Uint8Array(await blob.arrayBuffer()));
       // Progress for a slow N-frame render (no-op when no listener is wired).
       opts.onProgress?.(i + 1, frameCount);
+      opts.signal?.throwIfAborted();      // the finally still disposes the frame source
     }
   } finally {
     source.dispose();
@@ -10407,6 +10440,7 @@ async function renderWebpAnim(node: Element, opts: ExportOpts): Promise<Blob> {
       if (!/webp/.test(blob.type)) throw new Error('This browser cannot encode WebP; export as GIF or APNG instead.');
       frames.push(new Uint8Array(await blob.arrayBuffer()));
       opts.onProgress?.(i + 1, frameCount);
+      opts.signal?.throwIfAborted();      // the finally still disposes the frame source
     }
   } finally {
     source.dispose();
@@ -10475,6 +10509,7 @@ async function renderSvgAnim(node: Element, opts: ExportOpts): Promise<Blob> {
     for (const child of Array.from(svg.childNodes)) inner += ser.serializeToString(child);
     frames.push(inner);
     opts.onProgress?.(i + 1, frameCount);
+    opts.signal?.throwIfAborted();      // no encoder or frame source to unwind here
   }
 
   const svg = assembleAnimatedSvg({

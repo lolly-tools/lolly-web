@@ -298,6 +298,23 @@ const infoDot = (text: string): string => {
   return `<span class="help-tip-host" style="display:inline-flex;vertical-align:middle">${tip.button}${pop}</span>`;
 };
 
+// Briefly rings a #/profile?focus=<id> deep-link target (see the handler in
+// mountProfile) so the link visibly delivers, not just scrolls. Full motion: two
+// pulses of a soft ring (`.is-focus-pulse`, profile.css). Reduced motion: the ring
+// holds static, then fades out via a plain box-shadow transition - a colour
+// change only, never movement.
+function pulseHighlight(el: HTMLElement): void {
+  el.classList.add('is-focus-pulse');
+  if (prefersReducedMotion()) {
+    setTimeout(() => {
+      el.classList.add('is-focus-pulse-out');
+      setTimeout(() => el.classList.remove('is-focus-pulse', 'is-focus-pulse-out'), 650);
+    }, 900);
+  } else {
+    setTimeout(() => el.classList.remove('is-focus-pulse'), 2400);
+  }
+}
+
 export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, params: string = ''): Promise<void> {
   document.title = 'Profile - Lolly';
   // Only the first-paint-critical reads run upfront. The Storage section's heavy
@@ -916,44 +933,35 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // second, view-local forwarder here would run on the same click and toggle the
   // switch straight back - reading as a dead toggle.)
 
-  // Deep-link target: the gallery's empty state links here (#/profile?focus=feature-flags)
-  // to nudge re-enabling categories. The section is opened above; scroll it into view.
-  if (focusFlags) {
-    requestAnimationFrame(() =>
-      viewEl.querySelector('#feature-flags-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
-    );
-  }
-
-  // Deep-link target: the gallery's first-visit personalisation nudge links here
-  // (#/profile?focus=use-details). Scroll the "Use my details" opt-in into view and
-  // pulse it briefly so the control the nudge promised is easy to find.
-  if (focusUseDetails) {
-    const optIn = viewEl.querySelector<HTMLElement>('.profile-check');
+  // Deep-link target: #/profile?focus=<id> scrolls a section or control into view
+  // and briefly highlights it, so a link that promises "go set this up" visibly
+  // delivers it instead of landing on the page top with no clue where to look.
+  // Three recognised forms, one shared path (pulseHighlight below) so a target
+  // never falls back to a silent scroll: the feature-flags alias (gallery's
+  // empty-state nudge), the use-details alias (gallery's personalisation nudge),
+  // and any NAV_SECTIONS id (the rail's own jump(), search hits, share links,
+  // screenshot recipes). A collapsible target is opened first (fires the toggle
+  // that lazy-loads storage/images - the initial-open check at the bottom catches
+  // it too).
+  const sec: HTMLElement | null = focusFlags
+    ? viewEl.querySelector<HTMLElement>('#feature-flags-section')
+    : focusUseDetails
+    ? viewEl.querySelector<HTMLElement>('.profile-check')
+    : focusParam && NAV_SECTIONS.some(s => s.id === focusParam)
+    ? viewEl.querySelector<HTMLElement>('#' + CSS.escape(focusParam))
+    : null;
+  if (sec) {
+    if (sec instanceof HTMLDetailsElement) sec.open = true;
     requestAnimationFrame(() => {
-      optIn?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      optIn?.classList.add('is-focus-pulse');
-      setTimeout(() => optIn?.classList.remove('is-focus-pulse'), 2400);
-    });
-  }
-
-  // ANY settings section is deep-linkable: #/profile?focus=<section-id> scrolls
-  // it into view, expanding a collapsible first (setting `open` fires the toggle
-  // that lazy-loads storage/images - and the initial-open check at the bottom
-  // catches it too). Same open+scroll the rail's jump() does. Was collapsibles
-  // only; widened for the spotlight settings provider (plans/99 section 2b), which
-  // links every NAV_SECTIONS id here - so a share link, a screenshot recipe or
-  // a search hit can land on Appearance or Accessibility too.
-  if (focusParam && NAV_SECTIONS.some(s => s.id === focusParam)) {
-    const sec = viewEl.querySelector<HTMLElement>('#' + CSS.escape(focusParam));
-    if (sec) {
-      if (sec instanceof HTMLDetailsElement) sec.open = true;
-      requestAnimationFrame(() => {
-        sec.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' });
-        // Focus the heading for screen-reader/keyboard continuity - the same
-        // move the rail's nav buttons make (a no-op where it isn't focusable).
-        sec.querySelector<HTMLElement>('h2')?.focus?.();
+      sec.scrollIntoView({
+        behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+        block: focusUseDetails ? 'center' : 'start',
       });
-    }
+      // Focus the heading for screen-reader/keyboard continuity - the same move
+      // the rail's nav buttons make (a no-op for .profile-check, which has none).
+      sec.querySelector<HTMLElement>('h2')?.focus?.();
+      pulseHighlight(sec);
+    });
   }
 
   // Appearance - theme preview cards (moved here from the dashboard). Each preview

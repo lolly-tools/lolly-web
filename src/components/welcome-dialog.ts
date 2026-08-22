@@ -19,9 +19,20 @@
  *                              routes into Design or the library. Like
  *                              the wizard path, it does NOT persist the flag.
  *   "Explore the tools"      → dismiss, persist the flag, stay on the gallery.
+ *   "Skip for now"           → the quiet text link under the cards; identical to
+ *                              Escape (dismiss + persist), just visible.
  *
  * Dismissing by any other means (Escape, backdrop) persists the flag too - a
  * welcome that keeps re-appearing after being waved away is a nag, not a hello.
+ * Any of those explicit dismissals also acknowledges the privacy notice: the
+ * one-liner it carries is in this dialog's footer, so the standalone strip has
+ * nothing left to say (plans/137 A2). A route change (close(null)) is not a
+ * dismissal and acknowledges nothing.
+ *
+ * The language row starts collapsed to the detected language plus a "More
+ * languages…" expander - 26 chips is a wall of choice nobody asked for at boot
+ * (plans/137 A3). Expanding re-renders the dialog in place with today's full
+ * wrapping row.
  *
  * Singleton: the gallery force re-mounts itself after a catalog sync, and a
  * second show call while open must hand back the SAME promise instead of
@@ -30,13 +41,14 @@
  * over another view.
  */
 import '../styles/parts/welcome.css';
-import { currentLang, langOptions, setActiveLang, t, LANG_ICON_SVG, flagEmoji } from '../i18n.ts';
+import { currentLang, docsAppHref, langOptions, setActiveLang, t, LANG_ICON_SVG, flagEmoji } from '../i18n.ts';
 import type { Lang } from '../i18n.ts';
 import { escape, NAV_EVENTS } from '../utils.ts';
 import { icon } from '../lib/icons.ts';
 import type { WebProfileAPI } from '../bridge/profile.ts';
 import type { PickerHost } from '../views/picker.ts';
 import { openDropFilePicker } from '../lib/drop-router.ts';
+import { ackPrivacyNotice } from '../views/privacy-notice.ts';
 import { mountModal } from './modal.ts';
 
 /** Persisted (localStorage, same tier as the theme) once the welcome is settled. */
@@ -67,7 +79,11 @@ let settleOpen: ((choice: WelcomeChoice | null) => void) | null = null;
 // from the resolved boot-time language - see i18n.ts's initI18n).
 // `withImport` gates the "Bring your design" card on the caller having handed
 // over an upload-capable host (the drop router needs it for the library route).
-function renderWelcomeContent(withImport: boolean): string {
+// `langsOpen` is the A3 expander's state: false shows the detected language plus
+// "More languages…", true shows every chip. Both new controls are plain
+// <button>s, so they take the global keyboard focus ring (parts/base.css).
+function renderWelcomeContent(withImport: boolean, langsOpen: boolean): string {
+  const langs = langsOpen ? langOptions() : langOptions().filter(o => o.code === currentLang());
   return `
     <p class="welcome-eyebrow">${t('Welcome to Lolly')}</p>
     <h2 class="welcome-title">${t('Your tools, your rules')}</h2>
@@ -93,13 +109,19 @@ function renderWelcomeContent(withImport: boolean): string {
         <span class="welcome-card-cta" aria-hidden="true">${t('Browse the gallery →')}</span>
       </button>
     </div>
+    <button type="button" class="welcome-skip" data-choice="dismiss">${t('Skip for now')}</button>
     <div class="welcome-langs" role="group" aria-label="Language">
       ${LANG_ICON_SVG}
-      ${langOptions().map(o => {
+      ${langs.map(o => {
         const flags = o.flags.length ? `<span class="welcome-lang-flags" aria-hidden="true">${o.flags.map(flagEmoji).join('')}</span>` : '';
         return `<button type="button" class="welcome-lang${o.code === currentLang() ? ' is-active' : ''}" data-lang="${o.code}" aria-pressed="${o.code === currentLang()}">${flags}${escape(o.nativeName)}</button>`;
       }).join('')}
-    </div>`;
+      ${langsOpen ? '' : `<button type="button" class="welcome-lang welcome-lang-more" data-lang-more aria-expanded="false">${t('More languages…')}</button>`}
+    </div>
+    <p class="welcome-privacy">
+      ${t('Your designs and files stay on this device - no tracking, no analytics.')}
+      <a href="${docsAppHref('privacy')}" class="welcome-privacy-link">${t('What we store')}</a>
+    </p>`;
 }
 
 /**
@@ -116,7 +138,9 @@ function renderWelcomeContent(withImport: boolean): string {
 export function showWelcomeDialog(profileApi?: WebProfileAPI, uploadHost?: PickerHost): Promise<WelcomeChoice> {
   if (openPromise) return openPromise;
   openPromise = new Promise((resolve) => {
-    const modal = mountModal<WelcomeChoice | null>(renderWelcomeContent(!!uploadHost), {
+    // Per-dialog, not persisted: a fresh welcome opens collapsed again.
+    let langsOpen = false;
+    const modal = mountModal<WelcomeChoice | null>(renderWelcomeContent(!!uploadHost, langsOpen), {
       className: 'welcome-dialog',
       ariaLabel: 'Welcome to Lolly',
       cancelValue: 'dismiss', // Escape / backdrop click
@@ -124,7 +148,7 @@ export function showWelcomeDialog(profileApi?: WebProfileAPI, uploadHost?: Picke
       // `result` null = programmatic teardown (a navigation) - resolve without
       // persisting; every USER dismissal except the wizard path sets the flag.
       onClose: (result) => {
-        if (result === 'explore' || result === 'dismiss') markWelcomeDismissed();
+        if (result === 'explore' || result === 'dismiss') { markWelcomeDismissed(); ackPrivacyNotice(); }
         NAV_EVENTS.forEach(ev => window.removeEventListener(ev, onNav));
         settleOpen = null;
         openPromise = null;
@@ -133,6 +157,12 @@ export function showWelcomeDialog(profileApi?: WebProfileAPI, uploadHost?: Picke
     });
     settleOpen = (choice) => modal.close(choice);
     const onNav = (): void => modal.close(null);
+    // The one in-place repaint path, shared by the language switch and the
+    // expander - `focus` is the selector to put focus back on afterwards.
+    const repaint = (focus: string): void => {
+      modal.el.innerHTML = renderWelcomeContent(!!uploadHost, langsOpen);
+      modal.el.querySelector<HTMLElement>(focus)?.focus();
+    };
 
     modal.el.addEventListener('click', (e) => {
       const target = e.target instanceof Element ? e.target : null;
@@ -153,11 +183,16 @@ export function showWelcomeDialog(profileApi?: WebProfileAPI, uploadHost?: Picke
               await profileApi.set(lang === 'en' ? rest : { ...rest, lang });
             } catch { /* preference save is best-effort */ }
           }
-          if (modal.el.isConnected) {
-            modal.el.innerHTML = renderWelcomeContent(!!uploadHost);
-            modal.el.querySelector<HTMLButtonElement>(`[data-lang="${lang}"]`)?.focus();
-          }
+          if (modal.el.isConnected) repaint(`[data-lang="${lang}"]`);
         })();
+        return;
+      }
+
+      // "More languages…" - one-way, in place: re-render with the full row and
+      // move focus into it, so the keyboard goes straight to the chips.
+      if (target?.closest('[data-lang-more]')) {
+        langsOpen = true;
+        repaint('.welcome-lang');
         return;
       }
 

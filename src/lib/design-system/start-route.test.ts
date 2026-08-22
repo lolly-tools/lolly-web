@@ -212,6 +212,82 @@ test('the Versions entry is a LATCH, so ?area=versions is not a one-way door', a
     'arriving at the panel has to latch the entry on');
   assert.match(fn, /versionsBtn\.hidden = !versionsOffered/,
     'and visibility reads the latch alone, not the current area');
-  assert.match(src, /versionsOffered \|\|= offered/,
-    'the late hasPublishableSystem answer must not take the entry away again');
+  // The late answer used to be hasPublishableSystem's, which is also true for a
+  // system that merely EXISTS - one colour into a blank brand was enough, which
+  // is what plans/137 B2 took off the first-run face. It is the published-version
+  // index now; the ||= is the part that matters here either way.
+  assert.match(src, /versionsOffered \|\|= index\.versions\.length > 0/,
+    'the late index answer must not take a deep-linked entry away again');
+});
+
+test('B2: only a PUBLISHED version puts Versions in the rail, and the first publish stays reachable', async () => {
+  // Same source-guard trade as the latch test above, for the same reason.
+  const { readFile } = await import('node:fs/promises');
+  const src = await readFile(new URL('../../views/start.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /hasPublishableSystem\(/,
+    'a system that merely exists is not a published version - the rail entry must not read that');
+  assert.match(src, /readIndex\(versionsCtx\)/,
+    'the rail entry reads the published-version ledger');
+  // Removing the rail entry would strand a furnished system with no way to make
+  // its FIRST version, so the quiet export-group entry is the other half of B2
+  // and is gated on exactly those two facts.
+  assert.match(src, /versionsLink\.hidden = versionsOffered \|\| !furnished/,
+    'the quiet entry shows for a furnished system that has never published, and only then');
+  assert.match(src, /data-ds-versions-link/, 'and it is rendered in the rail foot');
+});
+
+test('B1: the export actions wait for the system to hold something', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const src = await readFile(new URL('../../views/start.ts', import.meta.url), 'utf8');
+  // The Overview room's own predicate, not a second copy of it: readOverview
+  // answers false for a missing tokens asset and for the starter placeholder,
+  // and the string 'lolly/tokens/brand' must never be spelled out here.
+  assert.match(src, /readOverview\(/, 'furnished is the Overview room’s answer');
+  assert.ok(!src.includes('lolly/tokens/brand'),
+    'the starter id stays in rooms/overview.ts - two copies would drift');
+  // Both exports start hidden and are revealed by the one query.
+  assert.match(src, /data-start-export data-start-furnished[^>]*hidden>/,
+    'the pack export waits for furnish');
+  assert.match(src, /data-start-export-tokens data-start-furnished hidden>/,
+    'and so does the plain tokens document');
+  assert.match(src, /querySelectorAll<HTMLElement>\('\[data-start-furnished\]'\)/,
+    'one query reveals them, so a third action needs no new wiring');
+  // Called from the two paths the studio already refreshes on, so furnishing
+  // mid-session does not need a reload: every room change, and every committed
+  // edit (before onChange's hidden-Overview early return).
+  const selectRoom = src.slice(src.indexOf('const selectRoom ='), src.indexOf('railEl.addEventListener'));
+  assert.match(selectRoom, /refreshFurnished\(\);/,
+    'selectRoom re-reads, which is also the install path (install() ends in selectRoom)');
+  const onChange = src.slice(src.indexOf('onChange: () => {'), src.indexOf('overview?.refresh();'));
+  assert.match(onChange, /refreshFurnished\(\);[\s\S]*if \(overviewPanel\.hidden\) return;/,
+    'a commit made in another room still reveals the actions');
+});
+
+test('B3: the source picker has a visible way out, and its file tile says it in plain words', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const src = await readFile(new URL('../../views/start.ts', import.meta.url), 'utf8');
+  assert.match(src, /class="start-import-close" data-ds-src-close/,
+    'the dialog carries a close control, not just Escape and a backdrop tap');
+  assert.match(src, /\[data-ds-src-close\]'\)\) \{ closeImport\(\)/,
+    'and the delegate the picker already has routes it');
+  assert.match(src, /t\('A tokens JSON, a Penpot project, an SVG or a Lolly pack\.'\)/,
+    'the file tile names things people recognise; the formats live on its own chips');
+  assert.ok(!src.includes('DTCG or Tokens Studio JSON, a Penpot project'),
+    'the format-jargon note is gone from the tile');
+});
+
+test('B4: one Home in the studio - the FAB stands down when the pill already is one', async () => {
+  // The pill's own attribute is the signal, in the exact form back-pill.ts writes
+  // it, so the studio never re-derives (and never disagrees with) the rule. If
+  // that emission changes shape, this fails here rather than quietly leaving two
+  // house glyphs in the back row.
+  const { readFile } = await import('node:fs/promises');
+  const pill = await readFile(new URL('../../components/back-pill.ts', import.meta.url), 'utf8');
+  const src = await readFile(new URL('../../views/start.ts', import.meta.url), 'utf8');
+  assert.match(pill, /' data-back-home'/, 'the attribute is emitted with a leading space');
+  assert.match(pill, /data-back-pill="\$\{mode\}"\$\{atHome\}>/, 'and immediately before the tag close');
+  assert.match(src, /backPill\.includes\(' data-back-home>'\)/,
+    'which is the form the studio asks for');
+  assert.match(src, /const homeFab = pillIsHome \? '' : homeFabHtml\(\)/,
+    'and both render sites take the same one value');
 });

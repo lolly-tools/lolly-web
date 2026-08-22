@@ -80,6 +80,12 @@
 /* Extra bottom clearance so the last card row isn't hidden behind both bars. */
 .app-view.gallery-view.has-privacy-notice { padding-bottom: calc(8.5rem + var(--safe-bottom)); }
 
+/* The gallery renders at most ONE first-run banner per visit and holds it hidden
+   until the welcome modal is ruled out (views/gallery.ts, plans/137 A1). An author
+   display beats the UA's [hidden] rule, so both banners need this - the same
+   reason .gallery-footer[hidden] exists above. */
+.privacy-notice[hidden], .personalize-nudge[hidden] { display: none; }
+
 /* First-visit personalisation nudge (personalize-nudge.js) - a compact card in
    the top-right, tucked just under the top-bar cluster so it reads as pointing at
    the profile pill it links to. Dismiss with × or "Not now", or follow the CTA to
@@ -164,13 +170,26 @@
 
 .personalize-nudge :focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 
+/* Phones: in flow, not pinned (plans/137 A4). A fixed card held a quarter of a
+   390px viewport for as long as the user browsed; in flow it is a full-width card
+   at the top of the gallery content and scrolls away with it. Same markup, same
+   flags, same CTA - position only. `relative` (not `static`) keeps the × in its
+   corner. The card leads the page, so it carries the topbar clearance itself (the
+   top row floats over the content rather than occupying a bar) and hands it back:
+   the masonry drops its own top padding while the card is above it, the way
+   .brand-tips does, so the two can't stack their gaps. With a featured strip up
+   the strip pads its own track, which leaves the card sitting a little loose above
+   the covers - the fixed-position toast never met that case, and a rare loose gap
+   beats reaching into another sheet's hero. */
 @media (max-width: 640px) {
   .personalize-nudge {
-    top: calc(4em + var(--safe-top) + var(--vv-top, 0px));
-    left: calc(.75em + var(--vv-left, 0px));
-    right: calc(.75em + var(--vv-right, 0px));
+    position: relative;
+    top: auto; right: auto;
     width: auto;
+    margin: calc(4.4rem + var(--safe-top)) .6rem 12px;
+    box-shadow: none;
   }
+  .gallery:not(.has-featured) .personalize-nudge:not([hidden]) ~ .tool-masonry { padding-top: 0; }
 }
 
 /* Subtle translucent-black wash so the cards read as raised on every theme. */

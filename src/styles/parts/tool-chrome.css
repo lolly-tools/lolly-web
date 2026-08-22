@@ -743,6 +743,22 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
    the three pills closer together. */
 .export-action-buttons:has(jelly-button) { gap: 4px; }
 
+/* The provenance ask (plans/137 WP-E) - appended under the buttons once, after a
+   file has actually been exported. Deliberately NOT one of the four guidance
+   voices (parts/guide.css): it is an invitation about the next file, not a fact,
+   warning or signal about this one, so it stays muted and borrows none of their
+   alarm colours. */
+.export-details-ask {
+  margin: 8px 0 0;
+  font-size: calc(0.78rem * var(--a11y-fs));
+  line-height: 1.45;
+  color: hsl(var(--muted-foreground));
+  text-align: center;
+}
+/* Same link treatment as the privacy notice's (parts/gallery.css) - inherits the
+   quiet colour, underlined so it is still obviously the actionable half. */
+.export-details-ask a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+
 /* Tier 1 - filename · format. The filename fills the row; when a format
    selector exists the two fuse into a single "name.format" segmented control. */
 .filename-extension {

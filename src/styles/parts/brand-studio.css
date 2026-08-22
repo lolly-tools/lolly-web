@@ -278,6 +278,16 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 .be-pal-group-head .be-add { margin-inline-start: auto; }
 .be-pal-group-label { font-size: calc(.72rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
 .be-pal-group-n { margin-inline-start: .4rem; font-weight: 500; opacity: .7; }
+/* A section still holding the colours the blank brand shipped with (plan 137 C3).
+   The chip is a statement of fact, not a state to act on, so it is quiet: the
+   same pill the rest of the studio uses, in the muted pair, and the sentence
+   under the heading says what happens to it. */
+.be-pal-starter {
+  padding: .05rem .4rem; border: 1px solid hsl(var(--border)); border-radius: 999px;
+  font-size: calc(.62rem * var(--a11y-fs)); font-weight: 600; letter-spacing: .02em;
+  text-transform: none; color: hsl(var(--muted-foreground));
+}
+.be-pal-group-note { margin: 0 0 .5rem; font-size: calc(.72rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 /* Dense grid of pure swatches; corner rounding rides the brand radius token -
    a full-radius brand rounds these into circles, and that's the intent. */
 .be-pal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: .45rem; }
@@ -477,6 +487,33 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 .be-logo-group-head { display: flex; align-items: baseline; gap: .55rem; flex-wrap: wrap; }
 .be-logo-group-name { font-size: calc(.8rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .01em; color: hsl(var(--foreground)); }
 .be-logo-group-hint { font-size: calc(.74rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+/* An all-empty group is a <details> instead (plan 137 C4) - same heading row,
+   folded, with the palette sections' own disclosure marker so it reads as one of
+   them. Closed is the resting state and it is not persisted: the group unfolds
+   for good the moment it holds a mark, because it renders as a plain div then.
+   `display: block` overrides the grid above ON PURPOSE: a <details> with a
+   non-block display has a history of not hiding its own closed content, and a
+   "folded" group that still shows four empty slots is the whole feature lost.
+   The gap the grid would have given is a margin on the row instead. */
+.be-logo-group--fold { display: block; }
+.be-logo-group--fold > .be-logo-row { margin-top: .6rem; }
+.be-logo-group--fold > .be-logo-group-head { cursor: pointer; list-style: none; }
+.be-logo-group--fold > .be-logo-group-head::-webkit-details-marker { display: none; }
+.be-logo-group--fold > .be-logo-group-head::after {
+  content: '▸'; font-size: calc(.7rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); transition: rotate .12s;
+}
+.be-logo-group--fold[open] > .be-logo-group-head::after { rotate: 90deg; }
+@media (prefers-reduced-motion: reduce) {
+  .be-logo-group--fold > .be-logo-group-head::after { transition: none; }
+}
+/* Touch: the heading IS the control that opens the group. */
+@media (pointer: coarse) {
+  .be-logo-group--fold > .be-logo-group-head { min-height: 44px; align-items: center; }
+}
+/* The room's lead sentence plus its help tip. A BLOCK host on purpose: the tip's
+   pop is absolutely positioned against it (parts/tool.css .help-tip-host), and
+   an inline host would anchor the pop to one line fragment of the sentence. */
+.be-logos-lead { display: block; }
 .be-logo-row { display: grid; gap: .8rem; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
 .be-logo-slot { display: grid; gap: .4rem;}
 .be-logo-slot-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-height: 1.2rem; }
@@ -715,7 +752,15 @@ background-image:
 /* ── Roles as an assignment layer (lib/design-system/roles.ts). An unset slot is
       a solid border at reduced opacity - never a dashed one, and never a
       one-sided accent edge. */
-.be-roles-strip { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+/* The 250px floor is the width one role card needs before its own parts start
+   fighting: swatch (26) + gaps (2 x .6rem) + padding (2 x .55rem) + borders take
+   ~62px, and the picker is capped at 8.5rem (136px), which leaves the name/value
+   column about 50px at the floor. At the old 210px floor a 507px column still
+   fitted TWO tracks of ~215px, and the picker - a native select whose auto
+   min-width is its longest option - pushed the name and the value underneath
+   itself. 250 makes that width one full-width track instead, and 390px and the
+   desktop widths keep resolving to the same track counts they always did. */
+.be-roles-strip { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
 .be-role { display: flex; align-items: center; gap: .6rem; min-width: 0; padding: .45rem .55rem; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .6); background: hsl(var(--background)); }
 .be-role.is-unset { border-style: solid; opacity: .75; }
 .be-role-sw { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 7px; background: var(--sw, transparent); box-shadow: inset 0 0 0 1px hsl(var(--foreground) / .12); }
@@ -725,8 +770,11 @@ background-image:
 .be-role-apca { font-family: var(--font-mono); font-size: calc(.68rem * var(--a11y-fs)); font-variant-numeric: tabular-nums; color: hsl(var(--muted-foreground)); }
 .be-role-apca.is-weak { color: hsl(var(--destructive)); }
 /* The picker is the assignment control: native, so it is keyboard- and
-   phone-native. .field-select supplies the base look; this only bounds it. */
-.be-role-pick { flex: 0 0 auto; max-width: 8.5rem; font-size: calc(.72rem * var(--a11y-fs)); }
+   phone-native. .field-select supplies the base look; this only bounds it.
+   `min-width: 0` is what makes the cap real: a flex item's automatic minimum is
+   its content size, and for a select that is its longest option name, which
+   out-ranks max-width and grew the picker over the card's own labels. */
+.be-role-pick { flex: 0 0 auto; min-width: 0; max-width: 8.5rem; font-size: calc(.72rem * var(--a11y-fs)); }
 
 /* The swatch popover's "Use as" row - roles reached from the colour itself. */
 .be-useas-row { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem; padding-top: .5rem; border-top: 1px solid hsl(var(--border) / .6); }
@@ -879,6 +927,20 @@ background-image:
   font-size: calc(.8rem * var(--a11y-fs)); cursor: pointer; padding: .15rem .3rem;
 }
 .be-suggest-dismiss:hover { color: hsl(var(--foreground)); }
+
+/* ── The post-add chip (plan 137 C1). Same box as the suggestion row above - it
+      is the same kind of row in the same panel - so only its own two additions
+      live here: the handover link, and a touch floor. The floor is not shared
+      with .be-suggest because these are the first controls a first-run tap
+      meets, and .be-btn is sized for a mouse. */
+.be-added-gen { font-size: calc(.76rem * var(--a11y-fs)); font-weight: 600; color: hsl(var(--primary)); text-decoration: none; }
+.be-added-gen:hover, .be-added-gen:focus-visible { text-decoration: underline; }
+.be-added-gen[hidden] { display: none; }
+@media (pointer: coarse) {
+  .be-added .be-btn { min-height: 44px; }
+  .be-added .be-added-gen { display: inline-flex; align-items: center; min-height: 44px; }
+  .be-added .be-suggest-dismiss { min-width: 44px; min-height: 44px; }
+}
 
 /* ── Type room level 0 (plan 97 section 7.2): the four role cards.
       brand-editor.ts updates these IN PLACE (textContent + one class), never by

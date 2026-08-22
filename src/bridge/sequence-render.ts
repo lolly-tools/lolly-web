@@ -1545,7 +1545,13 @@ async function renderSequenceAuthored(
       try {
         const blob = await renderSequenceInWorker(job, pick, bitrate, audioPick, mix.buffer, {
           log,
-          progress: (d, t) => opts.onProgress?.(d, t),
+          // Every progress message is a frame boundary, which is where a cancel can be
+          // acted on: the abort posts to the worker so it unwinds its own loop, then
+          // rejects this run with SEQ_ABORTED (mapped to the AbortError below).
+          progress: (d, t) => {
+            if (opts.signal?.aborted) abortSequenceWorkerRenders('the export was cancelled');
+            opts.onProgress?.(d, t);
+          },
           live: liveRaster,
         });
         return await withVideoMeta(blob, blob.type, opts.meta, host);
@@ -1564,6 +1570,12 @@ async function renderSequenceAuthored(
   } catch (err) {
     const coded = toCodedError(err);
     log('error', `sequence export failed (${coded.code}): ${coded.message}`);
+    // ONE cancellation shape for callers: whichever path was executing - the
+    // in-thread executor's per-frame poll, the worker rejection, a loop below -
+    // a cancelled run leaves as the signal's AbortError. Gated on the signal
+    // having actually fired, because the frame watchdog's stall is SEQ_ABORTED
+    // too and a stall is a failure, not a cancel.
+    if (coded.code === 'SEQ_ABORTED') opts.signal?.throwIfAborted();
     throw err;
   } finally {
     resumeThumbRasters();
@@ -1603,6 +1615,9 @@ async function renderSequenceAuthored(
         log,
         lottieAt: liveRaster,
         progress: (done, total) => opts.onProgress?.(done, total),
+        // The executor already polls this once per frame and tears the render down
+        // with SEQ_ABORTED - the same seam the worker's abort message trips.
+        aborted: () => opts.signal?.aborted === true,
         frame: async (c, cx, _i, tsUs) => {
           if (mux) await mux.addFrame(c as CanvasImageSource, tsUs);
           else if (streaming) bitmaps.push(await createImageBitmap(c as ImageBitmapSource));
@@ -1688,6 +1703,9 @@ async function renderSequenceAuthored(
       }
 
       for (let i = 0; i < job.frameCount; i++) {
+        // Cancel at the frame boundary; the finally aborts the mux and disposes the
+        // compositor exactly as it does for a failed frame.
+        opts.signal?.throwIfAborted();
         const t = usedGrid[i] as number;
         comp.beginFrame();
 
@@ -1886,6 +1904,9 @@ async function renderSequenceAuthored(
         }
         log('info', `sequence: tilt capture - ${frameCount} frames of ${outW}×${targetH}, one dom-to-image shot each.`);
         for (let i = 0; i < frameCount; i++) {
+          // Cancel at the frame boundary; the finally restores the artboard (the pose,
+          // the background, the blob URLs) the same way a failed shot does.
+          opts.signal?.throwIfAborted();
           const t = usedGrid[i] as number;
           session.apply(t);
           let shot: HTMLCanvasElement | null = null;

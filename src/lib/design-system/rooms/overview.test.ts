@@ -39,7 +39,12 @@ interface StubOpts {
    *  catalog pack's own asset can be distinguished from the starter placeholder. */
   tokensId?: string;
   colors?: string[];
+  /** Resolved swatches WITH their token paths - what the real bridge answers
+   *  with, and what the starter split compares against. Overrides `colors`. */
+  swatches?: Array<{ path: string; value: string }>;
   doc?: unknown;
+  /** The document the starter tokens asset ships, for the ownership split. */
+  starter?: unknown;
   fonts?: Record<string, string>;
   assets?: Array<{ id: string; type?: string; blob?: unknown; meta?: Record<string, unknown> }>;
 }
@@ -52,9 +57,15 @@ function stubHost(opts: StubOpts = {}): OverviewHost {
           ? { id: opts.tokensId ?? (opts.installed ? 'user/tokens/brand' : 'lolly/tokens/brand') }
           : null),
       _exportUserAssets: async () => opts.assets ?? [],
+      // Only the starter asset is readable here; anything else answers null,
+      // which is what a catalog that ships no starter does.
+      _getBlob: async (id: string) =>
+        (id === 'lolly/tokens/brand' && opts.starter !== undefined
+          ? { text: async () => JSON.stringify(opts.starter) } as unknown as Blob
+          : null),
     },
     tokens: {
-      colors: async () => (opts.colors ?? []).map(value => ({ value })),
+      colors: async () => opts.swatches ?? (opts.colors ?? []).map(value => ({ value })),
       raw: async () => opts.doc ?? null,
       resolve: async (key: string) => opts.fonts?.[key] ?? '',
     },
@@ -134,6 +145,68 @@ test('every object URL listLogos minted for its previews is handed back', async 
   await readOverview(stubHost({ installed: true, assets: [logoAsset('horizontal-primary'), logoAsset('icon')] }));
   assert.equal(minted.length, 2);
   assert.deepEqual(revoked, minted);
+});
+
+// ── The starter split (plan 137 C3) ──────────────────────────────────────────
+// A blank brand's 25 starter colours are copied into the user's own document by
+// the first write, so from then on the palette counts colours nobody chose. The
+// shipped bytes are read back and matched on path AND value.
+
+/** Two starter colours, in the shape the starter asset ships. */
+const STARTER = {
+  color: {
+    ramp: {
+      primary: {
+        1: { $type: 'color', $value: '#111111' },
+        2: { $type: 'color', $value: '#222222' },
+      },
+    },
+  },
+};
+
+test('starter colours are counted apart from the ones a person added', async () => {
+  const model = await readOverview(stubHost({
+    installed: true,
+    starter: STARTER,
+    swatches: [
+      { path: 'color.ramp.primary.1', value: '#111111' },
+      { path: 'color.ramp.primary.2', value: '#222222' },
+      { path: 'color.custom.mine', value: '#ff6600' },
+    ],
+  }));
+  assert.equal(model.colorCount, 3);
+  assert.equal(model.starterCount, 2);
+  assert.match(overviewHtml(model), /1 yours - 2 starter/);
+});
+
+test('a starter path the user has recoloured is theirs, not the starter\'s', async () => {
+  const model = await readOverview(stubHost({
+    installed: true,
+    starter: STARTER,
+    swatches: [
+      { path: 'color.ramp.primary.1', value: '#00ff00' },  // same path, their colour
+      { path: 'color.ramp.primary.2', value: '#222222' },
+    ],
+  }));
+  assert.equal(model.starterCount, 1);
+});
+
+test('a catalog that ships no starter attributes nothing', async () => {
+  const model = await readOverview(stubHost({
+    installed: true,
+    swatches: [{ path: 'color.ramp.primary.1', value: '#111111' }],
+  }));
+  assert.equal(model.starterCount, 0);
+  assert.match(overviewHtml(model), /1 colour(?!s)/);
+});
+
+test('the plain count returns once the palette is mostly the user\'s own', () => {
+  const html = overviewHtml({
+    furnished: true, colors: [], colorCount: 5, starterCount: 2,
+    fonts: [], logoCount: 0, tokenCount: 0,
+  });
+  assert.match(html, /5 colours/);
+  assert.equal(/yours/.test(html), false);
 });
 
 test('an unreadable tokens doc still yields the palette rather than throwing', async () => {

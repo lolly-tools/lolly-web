@@ -40,8 +40,9 @@
    at <=640px it goes fullscreen, so a multi-minute video encode left a phone with
    an opaque plate, no progress and no way back. Any export that outlasts
    STATUS_DELAY now grows a status block over the plate - what is exporting, how
-   far in, how long it has been running, and a Hide button. The delay is the whole
-   reason a sub-second still export still looks exactly as it always did. */
+   far in, how long it has been running, and one button out: Cancel when the caller
+   passed an onCancel (its export takes an abort signal), Hide otherwise. The delay
+   is the whole reason a sub-second still export still looks exactly as it did. */
 
 import { playSfx } from './sfx.ts';
 import { t } from '../i18n.ts';
@@ -57,12 +58,18 @@ export interface ShutterStatus {
   /** Second line prefix, e.g. the format. Percent and elapsed time follow it. */
   detail?: string;
   /**
-   * The escape hatch. No export path can be aborted mid-render today (nothing
-   * between runtime.export and the encoders takes a signal or polls a flag), so
-   * the button is labelled Hide and this is expected to OPEN the shutter and let
-   * the export finish underneath - not to stop it.
+   * The escape hatch when the export cannot be stopped: the button is labelled
+   * Hide and this is expected to OPEN the shutter and let the export finish
+   * underneath. Used whenever `onCancel` is absent.
    */
   onHide: () => void;
+  /**
+   * Real cancellation, when the caller has an abort signal in the export opts
+   * (engine 1.141): the button reads Cancel and this aborts. It does NOT open the
+   * shutter - the export rejects and its own `finally` restores the view - so the
+   * two are never both wired to the same click.
+   */
+  onCancel?: () => void;
 }
 
 export interface Shutter {
@@ -479,6 +486,7 @@ export function createShutter(stage: HTMLElement | null): Shutter {
   let metaEl: HTMLElement | null = null;
   let barEl: HTMLElement | null = null;
   let fillEl: HTMLElement | null = null;
+  let btnEl: HTMLButtonElement | null = null;
   let status: ShutterStatus | null = null;
   let statusTimer: ReturnType<typeof setTimeout> | undefined;
   let clockTimer: ReturnType<typeof setInterval> | undefined;
@@ -504,10 +512,10 @@ export function createShutter(stage: HTMLElement | null): Shutter {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'export-shutter__status-hide';
-    btn.textContent = t('Hide');
-    // Not a cancel: read onHide's contract. Whoever opened the shutter decides
-    // what happens to the export that is still running underneath.
-    btn.addEventListener('click', () => { status?.onHide(); });
+    // The label is written per export in showStatus() - the block is built once and
+    // reused, and Cancel/Hide is a property of the export, not of the block.
+    btnEl = btn;
+    btn.addEventListener('click', () => { dismiss(); });
     box.append(labelEl, metaEl, barEl, btn);
     root.appendChild(box);
     statusEl = box;
@@ -518,10 +526,18 @@ export function createShutter(stage: HTMLElement | null): Shutter {
     return box;
   }
 
+  /** The one way out, whichever it is - the button and Esc both come through here. */
+  function dismiss(): void {
+    const s = status;
+    if (!s) return;
+    if (s.onCancel) s.onCancel();
+    else s.onHide();
+  }
+
   function onKey(e: KeyboardEvent): void {
     if (e.key !== 'Escape' || !status || !statusEl?.classList.contains('is-visible')) return;
     e.preventDefault();
-    status.onHide();
+    dismiss();
   }
 
   function paintStatus(): void {
@@ -539,6 +555,7 @@ export function createShutter(stage: HTMLElement | null): Shutter {
     if (destroyed || !status) return;
     const box = statusEl ?? buildStatus();
     labelEl!.textContent = status.label;
+    btnEl!.textContent = status.onCancel ? t('Cancel') : t('Hide');
     box.classList.add('is-visible');
     paintStatus();
     clearInterval(clockTimer);

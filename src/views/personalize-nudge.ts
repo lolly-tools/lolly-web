@@ -13,7 +13,14 @@
  *     Dismissed), not device storage, so it's per-user and travels in the backup,
  *     the same way useDetails / favourites / theme do;
  *   - suppressed entirely once the user has already opted in (nothing to nudge);
- *   - pinned top-right so it never meets the bottom-pinned privacy strip.
+ *   - one banner per visit: the gallery's first-run ladder gives the slot to the
+ *     privacy notice first and to the offline nudge only when this one passed
+ *     (plans/137 A1), so it never shares a paint with either.
+ *
+ * Placement is the stylesheet's (parts/gallery.css): a fixed top-right toast on
+ * a desktop, an in-flow full-width card at the top of the gallery content at
+ * <=640px, where a quarter of the viewport is too much to hold for a nudge
+ * (plans/137 A4). Same markup and the same flags in both.
  */
 
 import type { Profile } from '@lolly-tools/core/host-v1';
