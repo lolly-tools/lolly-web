@@ -485,6 +485,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
         recStage = stageEl.querySelector('[data-record-stage]') as HTMLElement | null;
         clipVid = (recStage?.querySelector('[data-record-clip]') as HTMLVideoElement | null) ?? null;
       }
+      if (curtain.cancelled()) return;
       if (!recStage) { curtain.close(); announce('Clip captured - export to save your video.'); return; }
       // Hand the compositor the measured take length: a fresh MediaRecorder blob often
       // reports duration=Infinity/0, and without this renderRecord falls back to a blind
@@ -499,8 +500,23 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
           clipVid!.addEventListener('error', done, { once: true });
         });
       }
+      if (curtain.cancelled()) return;
       const filename = (runtime.manifest?.name || 'Record').trim() || 'Record';
-      const blob = await runtime.export(recStage, ext === 'webm' ? 'webm' : 'mp4', {});
+      // The curtain's Cancel resolves first and we stop waiting on the compositor.
+      // ponytail: abandon, not abort - renderRecord composites in real time with no
+      // signal to trip, so the run finishes unseen and its blob is dropped; a true
+      // abort needs an AbortSignal on ExportOpts (bridge/export.ts).
+      // The export's own rejection is captured rather than raced, so an abandoned
+      // render can never land as an unhandled rejection after we stop waiting.
+      let renderErr: unknown = null;
+      const rendering = runtime.export(recStage, ext === 'webm' ? 'webm' : 'mp4', {})
+        .catch((err: unknown) => { renderErr = err; return null; });
+      const blob = await Promise.race([rendering, curtain.whenCancelled.then(() => null)]);
+      if (curtain.cancelled()) {
+        announce('Kept your recording - use the Export button when you are ready.');
+        return;
+      }
+      if (renderErr) throw renderErr;
       // Never hand back an empty render - a 0-byte download reads as "broken" with no
       // clue. Surface it instead so the user can retry / use the manual Export button.
       if (!blob || blob.size < 1024) throw new Error(`empty render (${blob?.size ?? 0} bytes)`);
@@ -517,7 +533,13 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
 
   // "Processing your video" curtain - darkens the stage with a spinner while the
   // compositor runs. data-export-hide keeps it out of any concurrent capture.
-  function showProcessing(): { close: () => void; succeed: (sub: string) => void } {
+  //
+  // The compositor reports no progress (renderRecord runs a real-time canvas
+  // composite), so the sub line carries ELAPSED time - honest about "still working"
+  // without inventing a percentage - and a Cancel that stops the wait and hands the
+  // stage back with the recorded take on it.
+  let liveCurtain: { close: () => void } | null = null;   // so teardown stops its clock
+  function showProcessing(): { close: () => void; succeed: (sub: string) => void; cancelled: () => boolean; whenCancelled: Promise<void> } {
     const ov = document.createElement('div');
     ov.className = 'canvas-processing';
     ov.setAttribute('data-export-hide', '');
@@ -529,11 +551,36 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
       '<div class="canvas-processing-text">Processing your video…</div>' +
       '<div class="canvas-processing-sub">Wrapping your clip with the intro &amp; outro</div>' +
       '</div>';
+    const card = ov.querySelector('.canvas-processing-card')!;
+    const cancelBtn = Object.assign(document.createElement('button'), { type: 'button', className: 'btn', textContent: 'Cancel' });
+    card.appendChild(cancelBtn);
     stageEl.appendChild(ov);
-    const close = (): void => ov.remove();
+
+    // Elapsed clock on the sub line - the only progress this render can honestly give.
+    const subEl0 = ov.querySelector('.canvas-processing-sub');
+    const startedAt = Date.now();
+    const tick = (): void => {
+      if (!subEl0) return;
+      const s = Math.round((Date.now() - startedAt) / 1000);
+      subEl0.textContent = `Wrapping your clip with the intro & outro · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    };
+    const timer = setInterval(tick, 1000);
+
+    let didCancel = false;
+    let resolveCancel!: () => void;
+    const whenCancelled = new Promise<void>((res) => { resolveCancel = res; });
+    const close = (): void => { clearInterval(timer); liveCurtain = null; ov.remove(); };
+    cancelBtn.addEventListener('click', () => {
+      if (didCancel) return;
+      didCancel = true;
+      close();
+      resolveCancel();
+    });
     // Swap to a "ready + size" confirmation, then dismiss - so the user sees what was
     // produced (and how big) rather than the curtain just vanishing.
     const succeed = (sub: string): void => {
+      clearInterval(timer);            // the elapsed clock must not overwrite the result line
+      cancelBtn.remove();
       const spin = ov.querySelector<HTMLElement>('.canvas-processing-spinner');
       if (spin) spin.style.display = 'none';
       const text = ov.querySelector('.canvas-processing-text');
@@ -542,7 +589,8 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
       if (subEl) subEl.textContent = sub;
       setTimeout(close, 1600);
     };
-    return { close, succeed };
+    liveCurtain = { close };
+    return { close, succeed, cancelled: () => didCancel, whenCancelled };
   }
 
   // Post-record download bar for audio: MP3 (primary) + the native container.
@@ -616,6 +664,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
     stopViewfinder();
     previewUnsub(); previewVideo?.remove(); previewVideo = null;
     stopCoach();
+    liveCurtain?.close();
     dlBar?.remove();
     if (dlUrl) { URL.revokeObjectURL(dlUrl); dlUrl = null; }
     // Free the last captured clip's object URL only if it's OUR in-memory fallback (id

@@ -38,4 +38,14 @@
   background: linear-gradient(135deg, transparent 45%, currentColor 45%, currentColor 55%, transparent 55%);
 }
 
+/* Coarse pointer: a fingertip misses a 10/16px strip more often than a mouse tip
+   does. 24px is the WCAG 2.5.8 floor, not the usual 44px HIG target - a corner
+   that big would eat into the panel's own content, and an edge grip already runs
+   the whole side of the panel so a floor is enough there too. */
+@media (pointer: coarse) {
+  .panel-grip--n, .panel-grip--s { height: 24px; }
+  .panel-grip--e, .panel-grip--w { width: 24px; }
+  .panel-grip--ne, .panel-grip--nw, .panel-grip--se, .panel-grip--sw { width: 28px; height: 28px; }
+}
+
 }

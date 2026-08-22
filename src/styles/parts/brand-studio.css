@@ -1152,8 +1152,12 @@ background-image:
   /* Peek = the measured strip row + the home-indicator inset (the sheet hugs
      the viewport bottom, so the strip itself must clear it). */
   .start[data-stu-sheet="peek"] { --stu-sheet-h: calc(var(--stu-peek-h, 64px) + var(--safe-bottom)); }
-  .start[data-stu-sheet="half"] { --stu-sheet-h: 50dvh; }
-  .start[data-stu-sheet="full"] { --stu-sheet-h: 88dvh; }
+  /* Clamped against the visible area: the soft keyboard eats the bottom of the
+     viewport without shrinking dvh, so an unclamped 50/88dvh sheet would run
+     its own free edge under the keyboard. min() is a no-op while --vv-bottom
+     is 0px, same idiom as .tool-layout[data-sheet] in tool-chrome.css. */
+  .start[data-stu-sheet="half"] { --stu-sheet-h: min(50dvh, calc(100dvh - var(--vv-bottom, 0px) - 12px)); }
+  .start[data-stu-sheet="full"] { --stu-sheet-h: min(88dvh, calc(100dvh - var(--vv-bottom, 0px) - 12px)); }
 
   /* Page bottom clearance - the last panel must scroll clear of the peek strip. */
   .start:has(> .stu-sheet) { padding-bottom: calc(96px + var(--stu-peek-h, 64px) + var(--safe-bottom)); }
@@ -1170,7 +1174,7 @@ background-image:
      grip, so the three settle as one movement rather than three; :has() scopes
      it to a mounted sheet, since --stu-sheet-h keeps a value either way. */
   .start:has(> .stu-sheet) .be-bulkbar {
-    bottom: calc(var(--stu-sheet-h) + 12px);
+    bottom: calc(var(--stu-sheet-h) + var(--vv-bottom, 0px) + 12px);
     transition: bottom .34s cubic-bezier(.32, .72, 0, 1);
   }
   .start.is-stu-sheet-dragging .be-bulkbar { transition: none; }
@@ -1736,7 +1740,7 @@ html[data-a11y-motion="reduce"] .be-ramp-curve { transition: none; }
   pointer-events: none;
 }
 .be-bulkbar {
-  position: fixed; left: 50%; bottom: calc(4.2rem + var(--safe-bottom));
+  position: fixed; left: 50%; bottom: calc(4.2rem + var(--safe-bottom) + var(--vv-bottom, 0px));
   transform: translateX(-50%); z-index: 40;
   display: flex; align-items: center; gap: 12px;
   padding: 8px 8px 8px 16px; border-radius: 999px;

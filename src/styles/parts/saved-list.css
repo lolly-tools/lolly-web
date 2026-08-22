@@ -88,6 +88,11 @@
    scoped to .saved-row so it doesn't touch the profile Storage manager's rows. */
 .saved-row:hover .saved-label, .saved-row:hover .session-size, .saved-row:hover .saved-delete { opacity: 1; }
 .saved-row:not(:hover) .saved-label, .saved-row:not(:hover) .session-size, .saved-row:not(:hover) .saved-delete { opacity: .5; }
+/* No hover on touch, so the delete icon needs to be reachable without it - the
+   label/size stay dimmed, they're not the tap target. */
+@media (hover: none) {
+  .saved-row:not(:hover) .saved-delete { opacity: 1; }
+}
 
 .session-size {
   font-size: calc(11px * var(--a11y-fs));

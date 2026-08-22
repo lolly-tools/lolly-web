@@ -29,7 +29,10 @@
  * Call-sites render `backPillHtml()` and then wire `mountBackPill()`. Views
  * with unsaved work (the tool view, /pro) pass an `intercept` that takes over
  * the click and calls the supplied `go()` once the user has decided - that way
- * the confirm dialog and the pill never both navigate.
+ * the confirm dialog and the pill never both navigate. `mountBackPill()` also
+ * puts the always-Home FAB beside a tool-chrome pill that names anything other
+ * than Home (addHomeEscape) - naming where you came from is the right pattern
+ * until two tools name each other and the front door leaves the chrome.
  */
 
 import { t, tRaw } from '../i18n.ts';
@@ -37,7 +40,11 @@ import { escape } from '../utils.ts';
 import { icon } from '../lib/icons.ts';
 import { canGoBack, getPrevView } from '../lib/back-nav.ts';
 import { navigateTo } from '../nav.ts';
-import { homeFabHtml } from './home-fab.ts';
+import { homeFabEl, homeFabHtml } from './home-fab.ts';
+
+/** The front door. Root-absolute: a bare '#/' resolves against the current path,
+ *  and a tool's canonical URL is the PATH form /t/<id> (see home() below). */
+const HOME_HREF = '/#/';
 
 export interface BackTarget {
   /** Where the pill points. Always a real href so middle-click/copy-link work. */
@@ -104,7 +111,7 @@ export function resolveBackTarget(opts: BackPillOpts = {}): BackTarget {
   // became /t/<id>#/, which parseRoute (main.ts) reads as … the same tool: hash
   // '/' is skipped, the /t/<id> path branch wins. That left anyone who opened a
   // tool link directly with no way out of the editor at all.
-  const home = (): BackTarget => ({ href: '/#/', label: opts.label ?? t('Home'), useHistory: false, isHome: true });
+  const home = (): BackTarget => ({ href: HOME_HREF, label: opts.label ?? t('Home'), useHistory: false, isHome: true });
 
   if (opts.href) {
     // A forced target that IS the current view would loop → Home instead.
@@ -148,8 +155,13 @@ export function backPillHtml(opts: BackPillOpts = {}): string {
     // nosemgrep: lolly-href-escape-is-not-scheme-validation - resolveBackTarget() returns only an origin-relative in-app route (back-nav toRelative(), the '/#/p…' returnTo marker, or the '/#/' literal)
     return `<a href="${escape(target.href)}" class="${cls}" data-back-pill="${mode}" aria-label="${escape(aria)}">${arrow}</a>`;
   }
+  // A pill that is ALREADY the way out: the front-door escape (isHome), or a back
+  // target that happens to BE Home - arriving from the gallery names the pill with
+  // the same t('Home') label (lib/back-nav.ts labelFor). mountBackPill() reads this
+  // rather than re-resolving, so the render can't disagree with the mount.
+  const atHome = target.isHome || target.label === t('Home') ? ' data-back-home' : '';
   // nosemgrep: lolly-href-escape-is-not-scheme-validation - same resolveBackTarget() origin-relative route as above
-  return `<a href="${escape(target.href)}" class="tools-home${cls ? ` ${cls}` : ''}" data-back-pill="${mode}">${arrow}<span class="back-pill-label">${escape(target.label)}</span></a>`;
+  return `<a href="${escape(target.href)}" class="tools-home${cls ? ` ${cls}` : ''}" data-back-pill="${mode}"${atHome}>${arrow}<span class="back-pill-label">${escape(target.label)}</span></a>`;
 }
 
 /** The top-LEFT chrome island: the back pill with the always-Home FAB immediately
@@ -179,7 +191,39 @@ function leave(el: HTMLElement): void {
     window.history.back();
     return;
   }
-  navigateTo(el.getAttribute('href') || '/#/');
+  navigateTo(el.getAttribute('href') || HOME_HREF);
+}
+
+/**
+ * Put the always-Home FAB beside a back pill that names somewhere other than
+ * Home. Tool → tool is the case that needs it: both tools' pills name the OTHER
+ * tool, and the tool view paints no global nav, so after one hop nothing in the
+ * chrome points at the front door. The FAB never consults history, so a chain of
+ * any length keeps one exit.
+ *
+ * One Home per view: skipped when the pill already IS the way home
+ * (data-back-home) and when the view renders its own FAB (backHomeHtml, #/start,
+ * the Colour Lab). Only the two TOOL-CHROME pill variants take one - the fixed
+ * corner pill and the sidebar back row; the in-flow pills ('start-back',
+ * 'me-back', the #/components specimen) sit in headers that own their own layout.
+ *
+ * At mount rather than in backPillHtml() because "does this view already have a
+ * Home?" is a question about the rendered DOM, not about the pill.
+ */
+function addHomeEscape(root: HTMLElement, pill: HTMLElement): void {
+  if (pill.hasAttribute('data-back-home') || root.querySelector('[data-home-fab]')) return;
+  const corner = pill.classList.contains('home-full');
+  if (!corner && !pill.classList.contains('sidebar-back')) return;
+  const fab = homeFabEl();
+  if (!corner) { pill.after(fab); return; }
+  // The corner pill pins ITSELF (position: fixed, tool.css .tools-home.home-full),
+  // so a sibling would land in flow. Hand the pinning to the .chrome-topleft island
+  // instead - the same row backHomeHtml() renders, and the one place that resets the
+  // pill's own fixed positioning (overrides.css).
+  const cluster = document.createElement('div');
+  cluster.className = 'chrome-topleft';
+  pill.replaceWith(cluster);
+  cluster.append(pill, fab);
 }
 
 /** Wire every back pill inside `root`. Idempotent per element - safe to call
@@ -196,5 +240,6 @@ export function mountBackPill(root: HTMLElement, opts: MountBackPillOpts = {}): 
       if (opts.intercept?.(go)) return;
       go();
     });
+    addHomeEscape(root, el);
   });
 }

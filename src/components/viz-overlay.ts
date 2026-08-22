@@ -335,6 +335,11 @@ html[data-a11y-motion="reduce"] .viz-inline { transition: none; }
 .viz-expand:focus-visible { opacity: 1; outline: 2px solid #fff; outline-offset: 2px; }
 /* Nothing to enlarge when there's nothing playing - the surface is transparent then. */
 .viz-surface.is-idle-blank .viz-expand { opacity: 0; pointer-events: none; }
+/* No hover on touch - keep the handle visible at the same full opacity a fine-pointer
+   hover gives it (the idle-blank rule above still wins - higher specificity). */
+@media (hover: none) { .viz-expand { opacity: 1; } }
+/* A generous fingertip target - the artwork carries no other affordance here. */
+@media (pointer: coarse) { .viz-expand { width: 36px; height: 36px; } }
 @media (prefers-reduced-motion: reduce) { .viz-expand { transition: none; } }
 @media (prefers-reduced-motion: reduce) {
   .viz-bar, .viz-player { transition: none; }

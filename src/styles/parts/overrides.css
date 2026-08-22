@@ -84,6 +84,31 @@ body > svg:not([style]) {
    (mirrors `.gallery-topright .profile-link` and `.lab-back .tools-home`). */
 .chrome-topleft .tools-home.home-full { position: static; left: auto; top: auto; }
 
+/* The same Home FAB beside the tool sidebar's back pill (mountBackPill →
+   addHomeEscape). That row holds the pill at one end and undo/redo at the other
+   (`justify-content: space-between`, tool.css `.sidebar-back-row`), so the free
+   space has to be pushed past the FAB or it strands mid-row. Logical margin, so
+   RTL flips with the row. At 390px the three together measure 325px of the 374px
+   the mobile sheet leaves, with the longest tool name in the pill. */
+.sidebar-back-row .home-fab { margin-inline-end: auto; }
+
+/* On a phone the island shares the row with the editor's zoom HUD, which stacks
+   into a narrow capsule at the opposite corner (editor.css .stage-nav) - and a
+   pill can name a project folder, whose title has no length limit (measured: a
+   36-character name put the island at 351px of a 390px screen, before the FAB).
+   Cap the island and let the LABEL give way: the FAB is a fixed square and the
+   only history-free exit, the name is the part that can ellipsize (in full to a
+   screen reader either way). min-width, or the pill won't shrink as a flex item. */
+@media (max-width: 640px) {
+  .chrome-topleft { max-width: 60vw; }
+  .chrome-topleft .tools-home { min-width: 0; }
+  .chrome-topleft .back-pill-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
 /* While a drag-scrub is live (lib/scrub.ts) every surface shows the ew-resize cursor
    and nothing selects - otherwise dragging a number field paints a text selection
    across whatever the pointer crosses. In the overrides layer because an `!important`

@@ -708,7 +708,11 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     const onOutside = (e: PointerEvent) => { if (!pop.contains(e.target as Node) && !td.contains(e.target as Node)) closeTemplatePicker(); };
     pop._onOutside = onOutside;
     setTimeout(() => document.addEventListener('pointerdown', onOutside, true), 0);
-    search.focus();
+    // Fine pointers only - on touch the popover still opens (the list is right
+    // there to tap), but focusing the field would pop the keyboard uninvited,
+    // including on the auto-open at /batch's first empty cell (mirrors the
+    // gate in components/search-bar.ts's claimSearchBar).
+    if (!window.matchMedia('(pointer: coarse)').matches) search.focus();
   }
 
   // ── Event delegation on the grid ────────────────────────────────────────────

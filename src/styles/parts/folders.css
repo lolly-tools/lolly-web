@@ -36,9 +36,21 @@
 }
 .projects-exports-head .folder-exports-title { margin: 0; }
 .projects-exports-count { font-size: calc(.72rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
-/* The thin recents dialog (components/recents-dialog.ts) - rail + hand-off. */
-.recents-dialog { display: flex; flex-direction: column; gap: 14px; min-width: min(480px, 82vw); }
-.recents-dialog-title { margin: 0; font-size: calc(1.05rem * var(--a11y-fs)); }
+/* The thin recents dialog (components/recents-dialog.ts) - rail + hand-off.
+   Padding lives here: the host .tool-meta-dialog chrome is padding: 0 and expects
+   the content block to bring its own (cf. .meta-dialog-body), otherwise the title
+   clips at the rounded corner on phones. */
+.recents-dialog { display: flex; flex-direction: column; gap: 14px; min-width: min(480px, 82vw); padding: 16px 20px 20px; }
+.recents-dialog-head { display: flex; align-items: center; gap: 10px; }
+.recents-dialog-title { margin: 0; flex: 1 1 auto; font-size: calc(1.05rem * var(--a11y-fs)); }
+.recents-dialog-close {
+  flex: none; width: 30px; height: 30px; border: 0; border-radius: var(--radius);
+  background: none; color: hsl(var(--muted-foreground)); font-size: 22px; line-height: 1; cursor: pointer;
+}
+.recents-dialog-close:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+@media (pointer: coarse) {
+  .recents-dialog-close { min-width: 44px; min-height: 44px; }
+}
 .recents-dialog-empty { margin: 0; color: hsl(var(--muted-foreground)); font-size: calc(.85rem * var(--a11y-fs)); }
 .recents-dialog-go { align-self: flex-start; }
 .folder-exports-title {
@@ -145,7 +157,13 @@
 .tile-check[aria-pressed="true"] svg { opacity: 1; }
 .folder-tile.is-selected { border-color: hsl(var(--primary)); box-shadow: 0 0 0 2px hsl(var(--primary) / 0.35); }
 /* Touch devices have no hover - keep the toggle visible so selection is discoverable. */
-@media (pointer: coarse) { .tile-check { opacity: 1; } }
+@media (pointer: coarse) {
+  .tile-check { opacity: 1; }
+  /* Hit area only, via ::after - the visible circle stays 22px everywhere this
+     shared class renders (gallery included); Projects grows the real box further
+     still (projects.css), and the two floors simply compose. */
+  .tile-check::after { content: ''; position: absolute; inset: calc((28px - 100%) / -2); }
+}
 
 /* Per-tile action popover (move / rename / delete) - mountBodyPopover-mounted (see
    components/body-popover.ts). Appended to <body> (projects.ts) and z-indexed ABOVE

@@ -17,6 +17,7 @@ import { saveFavouriteAssets } from './lib/asset-favourites.ts';
 import { mountGallery } from './views/gallery.ts';
 import { initTheme, applyTheme } from './theme.ts';
 import { hydrateA11yPrefs, currentA11yPrefs, setA11yPref } from './lib/a11y-prefs.ts';
+import { computeViewportInsets } from './lib/viewport-insets.ts';
 import { initI18n } from './i18n.ts';
 import { applyChromeBrandVars } from './brand-vars.ts';
 import { hydrateSfxMuted, hydrateSfxVolume, installGlobalSfx, playSfx } from './lib/sfx.ts';
@@ -654,7 +655,10 @@ function patchDashboardToolCount(): void {
 // sits from the layout viewport) as CSS vars. position:fixed pins to the LAYOUT
 // viewport, so without this the mobile controls sheet drifts off-screen while
 // the page is pinch-zoomed; the mobile sheet rules add --vv-top/--vv-left back.
-// Fixed-cost, polite (rAF-throttled), and a no-op when not zoomed (offsets = 0).
+// The other case that moves the visible area without moving the layout viewport
+// is the soft keyboard, which --vv-bottom lifts bottom-pinned chrome clear of.
+// Fixed-cost, polite (rAF-throttled), and a no-op when neither applies (0).
+// The branch itself lives in lib/viewport-insets.ts, where it is testable.
 function trackVisualViewport(): void {
   const vv = window.visualViewport;
   if (!vv) return;
@@ -668,18 +672,16 @@ function trackVisualViewport(): void {
   let lastTop: number | undefined, lastLeft: number | undefined, lastRight: number | undefined, lastBottom: number | undefined;
   const apply = () => {
     raf = 0;
-    // Only re-pin while genuinely pinch-zoomed (scale > 1). At scale 1 the visual
-    // and layout viewports can still differ - a mobile browser's retractable
-    // toolbar (URL bar) shrinks the visual viewport as it shows/hides on scroll - 
-    // but there position:fixed already tracks the layout-viewport edges, so a
-    // computed inset would wrongly float a bottom-pinned bar up above where the
-    // (often hidden) controls sit, and have it drift as you scroll. Zeroing the
-    // offsets at scale 1 hands the un-zoomed case back to native bottom:0.
-    const zoomed = vv.scale > 1.01;
-    const top = zoomed ? Math.max(0, vv.offsetTop) : 0;
-    const left = zoomed ? Math.max(0, vv.offsetLeft) : 0;
-    const right = zoomed ? Math.max(0, root.clientWidth - left - vv.width) : 0;
-    const bottom = zoomed ? Math.max(0, root.clientHeight - top - vv.height) : 0;
+    const { top, left, right, bottom } = computeViewportInsets({
+      scale: vv.scale,
+      innerHeight: window.innerHeight,
+      clientWidth: root.clientWidth,
+      clientHeight: root.clientHeight,
+      vvWidth: vv.width,
+      vvHeight: vv.height,
+      offsetTop: vv.offsetTop,
+      offsetLeft: vv.offsetLeft,
+    });
     if (top === lastTop && left === lastLeft && right === lastRight && bottom === lastBottom) return;
     lastTop = top; lastLeft = left; lastRight = right; lastBottom = bottom;
     root.style.setProperty('--vv-top', `${top}px`);

@@ -131,6 +131,9 @@ import { BLEND_STYLES, HUE_ROUTES, isPolarSpace } from '../lib/blend-style.ts';
 import { t, tRaw } from '../i18n.ts';
 import type { ColorFieldValue } from '../components/color-field.ts';
 import { colorFieldHtml, wireColorField } from '../components/color-field.ts';
+// The app-wide "black or white, whichever reads on this" rule (see its own doc comment) -
+// deliberately the same one the chrome accent and every colour surface flip with.
+import { contrastText } from '../brand-vars.ts';
 import {
   charsFromDom, htmlFromChars, markdownFromChars,
   rangeHasFlag, setFlag, setColor, rangeColor, wordRangeAt, allBulleted, toggleBullets,
@@ -1244,6 +1247,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   let nodeToolActive = false;
   let armedKind: AddKind | null = null;        // the create gesture's seed; set iff mode === 'create'
   let gesture: Gesture | null = null;          // active pointer gesture
+  // The pointerType of the last press ON THE CANVAS. A touch laptop reports `pointer:
+  // coarse` for the whole document while the user is on the trackpad (see
+  // timeline-panel.ts's EDGE_PX_COARSE), so anything that MOVES the canvas asks the event
+  // rather than the media query - a trackpad user must never have the stage zoom under them.
+  let lastPointerKind = '';
   let editing: EditingState | null = null;     // { id, el, prev } while editing a box's text inline
   let disposed = false;
   let bindHover: string | null = null;          // the box an end node would attach to on drop
@@ -1409,6 +1417,67 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const fid = resolveFrame(b, frameBoxes);
       return String(b[ff] ?? '') === fid ? b : { ...b, [ff]: fid };
     });
+  }
+
+  // ── legible ink on a new text box ────────────────────────────────────────────
+  // A text add-kind seeds ONE authored ink (Design: `fg: '#11141f'`), so the first text
+  // placed on a dark artboard was near-black on near-black - at fit zoom on a phone that
+  // is not "hard to read", it is nothing on screen at all, and typing changes nothing.
+  //
+  // The flip is `contrastText`, the shell's ONE inversion rule (brand-vars.ts), used
+  // twice: once on the ground and once on the seeded ink. When both want the SAME overlay
+  // ink they sit on the same side of the flip point, which is exactly the dark-on-dark /
+  // light-on-light case - and it is the only case that gets rewritten. A seed that already
+  // reads on its ground is left byte-identical, so a light artboard (every shipped default)
+  // keeps the authored colour.
+
+  /** Any authored colour value as `#rrggbb`, or null when it is absent, unparseable
+   *  (an alias, a gradient) or too translucent to be the ground. */
+  function inkHex(v: unknown): string | null {
+    const c = parseColor(typeof v === 'string' ? v : null);
+    return c && c.alpha > 0.5 ? colorToHexString(c) : null;
+  }
+
+  /** The painted ground behind the artboard: the first ancestor from the canvas up that
+   *  actually paints something opaque. Read off the DOM rather than the `background`
+   *  input because that input can hold an alias, a gradient or nothing at all, and what
+   *  matters is what the user is looking at - the current theme's backdrop included. */
+  function paintedGround(): string | null {
+    for (let el: HTMLElement | null = canvasEl; el; el = el.parentElement) {
+      const hex = inkHex(getComputedStyle(el).backgroundColor);
+      if (hex) return hex;
+    }
+    return null;
+  }
+
+  /** The ground under `box`: its OWN fill first (a card's text sits on the card, not on
+   *  whatever is behind it - Design's card seeds a near-black `#14181d`), then the fill of
+   *  the frame containing it when the document has frames (a light artboard over a dark
+   *  pasteboard is the case that makes the difference), then the painted backdrop. */
+  function groundUnder(box: Box, boxes: Box[]): string | null {
+    const own = cfg.fillField ? inkHex(box[cfg.fillField]) : null;
+    if (own) return own;
+    if (frameCfg && cfg.fillField) {
+      const fk = frameCfg.frameKind;
+      const fid = resolveFrame(box, boxes.filter((b) => String(b?.[cfg.kindField]) === fk));
+      const frame = fid ? boxes.find((b) => b && String(b[cfg.idField]) === fid) : undefined;
+      const hex = frame ? inkHex(frame[cfg.fillField]) : null;
+      if (hex) return hex;
+    }
+    return paintedGround();
+  }
+
+  /** `box` with its text ink flipped to whichever of black/white reads on the ground it
+   *  sits on - and only when the seeded ink does not already read there. */
+  function withLegibleInk(box: Box, boxes: Box[]): Box {
+    const f = cfg.textColorField;
+    if (!f) return box;
+    const ground = groundUnder(box, boxes);
+    if (!ground) return box;
+    const ink = inkHex(box[f]);
+    const wanted = contrastText(ground);
+    if (ink && contrastText(ink) !== wanted) return box;   // the seed already reads
+    return { ...box, [f]: wanted };
   }
 
   // F1b-2 frame-move cascade: when a gesture directly moves a frame-kind box, its members
@@ -2072,6 +2141,47 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (flashTimer) clearTimeout(flashTimer);
     flashTimer = setTimeout(() => { flashEl.hidden = true; flashEl.textContent = ''; flashTimer = 0; }, 5200);
     announce(message, { assertive: true });
+  }
+
+  /** No cursor to carry a mode, and no hover to reveal one. Read live, because a hybrid
+   *  device answers differently depending on what the user last touched. */
+  const coarsePointer = (): boolean => matchMedia('(pointer: coarse)').matches;
+
+  // A create arm shows itself as a crosshair cursor plus a lit rail button. On touch there
+  // is no cursor, so choosing Text or Image from the Add menu closed the menu and then
+  // looked like nothing at all - the button read as broken and the tap that would have
+  // placed the box never came. Words are the only channel left, so on a coarse pointer the
+  // arm says what it is waiting for. Pointer-transparent apart from its dismiss button, so
+  // it can never eat the very tap it is asking for; absolutely positioned inside the stage
+  // overlay, so the stage's own insets keep it clear of the safe area.
+  // Built node-by-node with a WORDED dismiss, the same recipe the off-playhead and
+  // frames-in-order chips use: a static-text chip is not worth a raw-HTML sink (R10 in
+  // primitive-guards ratchets those), and a bare cross glyph is a small target on the one
+  // pointer type this chip exists for.
+  const armHintEl = document.createElement('div');
+  armHintEl.className = 'fc-armhint';
+  armHintEl.hidden = true;
+  const armHintTxt = document.createElement('span');
+  armHintTxt.className = 'fc-armhint-txt';
+  const armHintX = document.createElement('button');
+  armHintX.type = 'button';
+  armHintX.className = 'btn btn--sm fc-armhint-x';
+  armHintX.textContent = t('Got it');
+  armHintEl.append(armHintTxt, armHintX);
+  overlay.appendChild(armHintEl);
+  // Dismissed for the REST OF THE MOUNT, not just this arm: someone who has read the
+  // sentence once does not need it on every subsequent add.
+  let armHintOff = false;
+  armHintX.addEventListener('click', () => { armHintOff = true; hideArmHint(); });
+
+  function showArmHint(kind: AddKind | null | undefined): void {
+    if (armHintOff || !kind || !coarsePointer()) { hideArmHint(); return; }
+    const isText = kind.id === 'text' || (kind.seed != null && kind.seed[cfg.kindField] === 'text');
+    armHintTxt.textContent = isText ? t('Tap the canvas to place text') : t('Tap the canvas to place it');
+    armHintEl.hidden = false;
+  }
+  function hideArmHint(): void {
+    if (!armHintEl.hidden) armHintEl.hidden = true;
   }
 
   // The one rule's reconciliation surface. An off-playhead selection is the single
@@ -7138,11 +7248,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     pendingAddAtMs = null;
     deselectEdge();
     stageEl.classList.add('fc-arming');
+    showArmHint(armedKind);
   }
   function exitCreate(): void {
     armedKind = null;
     pendingAddAtMs = null;   // an abandoned arm must not time the NEXT box drawn by hand
     stageEl.classList.remove('fc-arming');
+    hideArmHint();   // placed, or abandoned - either way the arm is over
   }
   // `enterConnect` / `exitConnect` (plan 90) lived here. Plan 96 P4 deleted Connect mode
   // outright: clicking a card and then another card was a third way to make the one
@@ -7365,6 +7477,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const id = freshId(boxes);
     let box = seedBox(cfg, {}, seed, { x: c.x - w / 2, y: c.y - h / 2, w, h } as MathRect, id);
     box = clampBoxToCanvas(box, cfg, cw);
+    box = withLegibleInk(box, boxes);   // same reason as the create gesture: a dark seed on a dark ground is nothing
     selection = new Set([id]);
     commit([...boxes, box]);
     renderChrome();
@@ -7552,6 +7665,52 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     showFmtBar();
     positionFmtBar();
     refreshFmtStates();
+    zoomForTouchEdit(el, boxEl);
+  }
+
+  /** The smallest on-screen type an edit can start at. Fit zoom on a phone is ~19%, which
+   *  renders a 64px text box at ~12px - typing into that shows the user nothing. */
+  const TOUCH_EDIT_MIN_PX = 16;
+
+  /**
+   * Bring a too-small text box up to readable type before the user starts typing.
+   *
+   * Touch only, decided by the EVENT that reached the canvas and not by a media query: a
+   * mouse user has a cursor, a wheel and the zoom HUD within reach, moving the canvas under
+   * a deliberate double-click would be rude, and a touch laptop calls itself coarse for the
+   * whole document while its owner is on the trackpad. Never mid-gesture either - the stage
+   * must not slide out from under a finger that is still down.
+   *
+   * What gets measured is the on-screen TYPE, not the box: a tapped-out text box is ~320×200
+   * native, which clears any box-height threshold at fit zoom while its 64px type is still a
+   * dozen pixels tall. The canvas is scaled by a CSS transform, so a client rect is
+   * post-transform and `offsetHeight` is not - their ratio IS the live composed scale,
+   * without the overlay having to read a StageNav it deliberately cannot see. A ROTATED box
+   * inflates that ratio (a client rect is the AABB), which only ever under-reports the need
+   * to zoom, so it can produce no surprise movement.
+   *
+   * The zoom goes through `fc-focus-rect`, the overlay's ONLY channel to the pan/zoom
+   * transform (tool.ts holds the StageNav). focusRect frames a CLIENT rect at 85% of the
+   * stage, so asking it for the modest factor we actually want means handing it a rect that
+   * is STAGE-SHAPED and `0.85 / want` of the stage's size, centred on the box - at any other
+   * aspect its letterboxing `min()` would pick the other axis and over-zoom.
+   */
+  function zoomForTouchEdit(el: HTMLElement, boxEl: HTMLElement | null): void {
+    if (gesture || (lastPointerKind !== 'touch' && lastPointerKind !== 'pen')) return;
+    const shown = el.getBoundingClientRect().height;
+    const laid = el.offsetHeight;
+    const fs = parseFloat(getComputedStyle(el).fontSize);
+    if (!(shown > 0) || !(laid > 0) || !(fs > 0)) return;
+    const onScreen = fs * (shown / laid);
+    if (onScreen >= TOUCH_EDIT_MIN_PX) return;
+    const sr = stageEl.getBoundingClientRect();
+    if (!(sr.width > 0) || !(sr.height > 0)) return;
+    const br = (boxEl || el).getBoundingClientRect();
+    const h = (0.85 * sr.height) / (TOUCH_EDIT_MIN_PX / onScreen);
+    const w = h * (sr.width / sr.height);
+    stageEl.dispatchEvent(new CustomEvent('fc-focus-rect', { bubbles: true, detail: {
+      x: br.left + br.width / 2 - w / 2, y: br.top + br.height / 2 - h / 2, w, h,
+    } }));
   }
   function onEditKey(e: KeyboardEvent): void {
     if (e.key === 'Escape') { e.preventDefault(); cancelTextEdit(); }
@@ -8188,6 +8347,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   function onCanvasPointerDown(e: PointerEvent): void {
     if (e.button > 0) return;                 // primary button / touch only
+    lastPointerKind = e.pointerType || '';
     // A second finger belongs to a stage gesture (pan / pinch / two-finger tap), never to
     // a box drag - and the first finger's gesture is abandoned so no drag commits.
     if (e.pointerType !== 'mouse' && touchPts.size > 1) {
@@ -8797,6 +8957,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const addAtMs = pendingAddAtMs;
       toPointer();                  // the gesture consumed the armed kind - back to the pointer
       endGesture();
+      // A card is authored like text, so it takes the same legibility pass.
+      if (wasText) box = withLegibleInk(box, boxes);
       // Containment-on-create: the new box lands in whatever frame its centre falls in
       // (dead unless frameCfg). It is the last element of the array, so index boxes.length.
       commit(assignFrames([...boxes, box], new Set([boxes.length])));
@@ -10072,8 +10234,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function ctxBarBlockers(sr: DOMRect): StageBox[] {
     if (ctxBlockers && gesture) return ctxBlockers;
     const out: StageBox[] = [];
+    // .chrome-topleft, not just its .tools-home pill: the island can also carry the
+    // Home fab beside the pill, and the ctx bar must dodge the whole cluster.
     for (const el of [stageEl.querySelector<HTMLElement>('.stage-nav'),
-                      ...Array.from(document.querySelectorAll<HTMLElement>('.tools-home'))]) {
+                      ...Array.from(document.querySelectorAll<HTMLElement>('.chrome-topleft, .tools-home'))]) {
       if (!el || el.hidden || !el.getClientRects().length) continue;
       const r = el.getBoundingClientRect();
       if (r.width <= 0 || r.height <= 0) continue;

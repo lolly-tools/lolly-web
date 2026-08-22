@@ -81,7 +81,9 @@ export interface BodyPopoverOptions {
   container?: HTMLElement;
   /** Reposition the popover relative to the anchor; called on open and again on
    *  every window resize unless `onResize` is given. Default: right-aligned,
-   *  dropped 8px below the anchor's bottom edge (matches the old profile-menu). */
+   *  dropped 8px below the anchor's bottom edge (matches the old profile-menu),
+   *  flipping above the anchor and then clamping in rather than overflowing the
+   *  viewport bottom - see `defaultPosition`. */
   position?(el: HTMLDivElement, anchor: PopoverAnchor): void;
   /** Called on window resize INSTEAD OF re-running `position()` - e.g. to close
    *  the popover outright when a responsive breakpoint no longer applies. */
@@ -115,10 +117,34 @@ export interface BodyPopoverOptions {
   isInside?(node: Node | null): boolean;
 }
 
+/** Right-aligned and dropped below the anchor, FLIPPED above it when the drop would
+ *  run off the bottom of the viewport (a kebab menu on a tile in the lower half of a
+ *  phone screen), and clamped in when neither side fits (a panel taller than the
+ *  viewport). `open()` appends before calling this, so `offsetWidth/Height` are the
+ *  real laid-out box; the panel is position:fixed and `container` is body-level (or a
+ *  native `<dialog>`, itself untransformed), so its containing block IS the viewport
+ *  and viewport coordinates need no correction - same reasoning as
+ *  lib/context-menu.ts's clampedPosition.
+ *  window.innerWidth/Height rather than visualViewport: the shell's pinch-zoom
+ *  re-pin is CSS-only (the --vv-* vars main.ts publishes), and every other clamp in
+ *  the shell reads the layout viewport. A zero measurement means the panel isn't laid
+ *  out yet, so there is nothing to reason from and the plain drop stands. */
 function defaultPosition(el: HTMLDivElement, anchor: PopoverAnchor): void {
   const r = anchor.getBoundingClientRect();
-  el.style.top = `${Math.round(r.bottom + 8)}px`;
-  el.style.right = `${Math.max(8, Math.round(window.innerWidth - r.right))}px`;
+  const M = 8;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const pw = el.offsetWidth, ph = el.offsetHeight;
+  let top = r.bottom + M;
+  if (ph > 0 && top + ph > vh - M) {
+    const above = r.top - ph - M;
+    top = above >= M ? above : Math.max(M, vh - ph - M);
+  }
+  // Horizontal clamp rides the `right` inset (the alignment 13 callers rely on):
+  // hold the panel's own left edge at >= M, and pin flush right when it is wider
+  // than the viewport can hold.
+  const right = Math.max(M, Math.min(vw - r.right, vw - pw - M));
+  el.style.top = `${Math.round(top)}px`;
+  el.style.right = `${Math.round(right)}px`;
 }
 
 /** Options for `wireDisclosure` - the in-place sibling of mountBodyPopover below. */

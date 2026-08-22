@@ -122,7 +122,9 @@
 .pr-hud {
   position: absolute;
   left: 50%;
-  bottom: max(18px, var(--safe-bottom));
+  /* Lifts clear of the soft keyboard (e.g. a notes/search field elsewhere in
+     the deck leaves it focused); a no-op while --vv-bottom is 0px. */
+  bottom: calc(max(18px, var(--safe-bottom)) + var(--vv-bottom, 0px));
   transform: translateX(-50%);
   z-index: 3;
   display: flex;

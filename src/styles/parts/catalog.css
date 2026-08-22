@@ -295,6 +295,8 @@
      blur here; a more-opaque solid background reads just as clearly. Desktop keeps the
      frosted look (only the hovered tile's chip is visible at a time). */
   .cat-star, .cat-check { -webkit-backdrop-filter: none; backdrop-filter: none; background: #0009; }
+  /* Hit area only, via ::after - the 26px chip itself stays put. */
+  .cat-check::after { content: ''; position: absolute; inset: calc((28px - 100%) / -2); }
 }
 
 /* The uploads drop area lives in styles/parts/dropzone.css now (.updz*, shared with the
@@ -332,7 +334,7 @@
 /* ── Bulk-action bar (a multi-selection of uploads) ── Fixed, bottom-centre, above the
    footer search; mirrors the projects view's .projects-bulkbar. */
 .cat-bulkbar {
-  position: fixed; left: 50%; bottom: calc(4.8rem + var(--safe-bottom));
+  position: fixed; left: 50%; bottom: calc(4.8rem + var(--safe-bottom) + var(--vv-bottom, 0px));
   transform: translateX(-50%); z-index: 9000;
   display: flex; align-items: center; gap: 14px;
   /* max-content: at left:50% shrink-to-fit sizes against only the right half of
@@ -1417,7 +1419,7 @@ button.cat-download { font: inherit; cursor: pointer; }
   .cat-star { opacity: 1; }
   /* Match the mobile .catalog padding-top so the featured hero still bleeds to the top. */
   .cat-fav-strip { margin: calc(-4.2rem - var(--safe-top)) -12px 1.2rem; }
-  .cat-viewopts { position: fixed; top: auto; bottom: 12px; left: 12px; right: 12px; }
+  .cat-viewopts { position: fixed; top: auto; bottom: calc(12px + var(--safe-bottom, 0px) + var(--vv-bottom, 0px)); left: 12px; right: 12px; }
 }
 
 /* Confidence-graded highlights on OCR'd text (plans/125): amber for a stylistic

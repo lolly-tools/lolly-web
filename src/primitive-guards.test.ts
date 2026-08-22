@@ -1064,7 +1064,9 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // components/sound-toggle.ts's soundSegmentHtml() (t() literals + static
   // markup). Both write module-built, reviewed markup only - no view-side
   // interpolation reaches either sink.
-  'views/gallery.ts': 8,
+  // 8 → 7, 2026-08-22: the sound segment left the filter popover (Sound/Neurospicy are
+  // app-level prefs, and the /profile sound card is their home), taking its sink with it.
+  'views/gallery.ts': 7,
   'views/multi-edit.ts': 3,
   // 6, unchanged 2026-08-09 (plan 97 M5 - the design-system hand-offs). The three
   // new controls are markup inside the existing report template, not new sinks:

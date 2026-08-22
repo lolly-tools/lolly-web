@@ -284,7 +284,13 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
       resolve(values);
     };
 
-    trap = trapFocus(root, { initialFocus: searchInput });
+    // On touch, seeding focus into the search input pops the soft keyboard over the
+    // template grid before any intent to type (mirrors search-bar.ts's gate); the
+    // close button keeps the trap anchored without summoning a keyboard.
+    const coarse = window.matchMedia?.('(pointer: coarse)').matches ?? false;
+    trap = trapFocus(root, {
+      initialFocus: coarse ? root.querySelector<HTMLElement>('.tmpl-chooser-close') ?? searchInput : searchInput,
+    });
     // Hand the caller a close handle now - the modal is fully built (root is in the
     // document, `finish` closes over it) - so a navigate-away arriving any time from
     // here on has something to call. `finish` is itself idempotent (the `settled`

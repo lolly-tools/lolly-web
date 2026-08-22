@@ -670,10 +670,10 @@ export async function mountProjects(
     ? createTile('template', TEMPLATE_ICON, t('New from template'), t('Start from a saved project template'))
     : '';
 
-  /** List mode swaps the create TILES for compact buttons UP TOP (Andy,
-   *  2026-08-22): at the root an actions row above the table, in a folder view
-   *  in the header before "Render folder". Grid mode keeps the tiles - a card
-   *  affordance belongs in a card grid, not at the foot of a table. */
+  /** The compact create buttons UP TOP (Andy, 2026-08-22): at the root, list
+   *  mode shows them as an actions row above the table (the root grid keeps its
+   *  create tiles); in a folder view they sit in the header before "Render
+   *  folder" in BOTH view modes, and the folder grid carries no create tiles. */
   function listCreateBtns(isUncat = false): string {
     const btn = (kind: string, glyph: string, label: string): string =>
       `<button type="button" class="btn projects-create-btn" data-create-btn="${kind}">${glyph}<span>${escape(label)}</span></button>`;
@@ -682,6 +682,23 @@ export async function mountProjects(
       btn('tool', FILE_PLUS_ICON, t('New asset')),
       !isUncat && templates.length ? btn('template', TEMPLATE_ICON, t('New from template')) : '',
     ].join('');
+  }
+
+  /** The empty-folder blank state (Andy, 2026-08-22): no grid, an invitation to
+   *  the two create actions instead. The buttons reuse the header's
+   *  [data-create-btn] wiring; Uncategorised (not a real folder) offers only
+   *  New asset under its own explanation. */
+  function emptyFolderHtml(isUncat: boolean): string {
+    return `
+      <div class="projects-blank">
+        <span class="projects-blank-icon" aria-hidden="true">${isUncat ? FILE_PLUS_ICON : FOLDER_ICON}</span>
+        <p class="projects-blank-title">${isUncat ? t('Nothing is uncategorised') : t('This folder is empty')}</p>
+        <p class="projects-blank-sub">${isUncat ? t('Sessions you save without filing them will land here.') : t('Add your first creation, or group work in a sub-folder.')}</p>
+        <div class="projects-blank-actions">
+          <button type="button" class="btn projects-render projects-create-btn" data-create-btn="tool">${FILE_PLUS_ICON}<span>${t('New asset')}</span></button>
+          ${isUncat ? '' : `<button type="button" class="btn projects-create-btn" data-create-btn="folder">${FOLDER_PLUS_ICON}<span>${t('New folder')}</span></button>`}
+        </div>
+      </div>`;
   }
 
   function folderHtml(id: string): string {
@@ -739,10 +756,10 @@ export async function mountProjects(
         </div>`
       : '';
 
-    // Content first (sub-folders, then sessions); create tiles LAST. No "+ New folder"
-    // inside the synthetic Uncategorised bucket (it isn't a real folder to nest under).
-    const createFolder = isUncat ? '' : createTile('folder', FOLDER_PLUS_ICON, t('New folder'), tRaw('Group inside {title}', { title }));
-    const createTool = createTile('tool', FILE_PLUS_ICON, t('New asset'), isUncat ? t('New saved session') : tRaw('Add to {title}', { title }));
+    // No create tiles inside a folder (Andy, 2026-08-22): the New folder / New
+    // asset buttons live in the HEADER in both view modes (listCreateBtns below),
+    // and an empty folder shows the blank state instead. The tiles remain a
+    // root-grid affordance only.
     // Image items in this folder (never in Uncategorised - an image needs a folder to
     // live in), resolved to AssetRefs so their tiles render. Kept in store order after
     // the sessions.
@@ -770,7 +787,7 @@ export async function mountProjects(
         <h2 class="projects-title"${isUncat || searching ? '' : ` data-rename-folder="${escape(id)}" title="${escape(t('Rename folder'))}"`}>${escape(title)}</h2>
         ${searching ? '' : `<span class="projects-count">${count === 1 ? t('1 item') : t('{n} items', { n: count })}</span>`}
         <span class="projects-head-spacer"></span>
-        ${!searching && viewMode === 'list' ? listCreateBtns(isUncat) : ''}
+        ${searching ? '' : listCreateBtns(isUncat)}
         ${!searching && count ? `<button type="button" class="projects-render btn" data-render-folder="${escape(id)}">${RENDER_ICON}<span>${t('Render folder')}</span></button>` : ''}
         ${isUncat || searching ? '' : `<button type="button" class="tile-menu-btn projects-head-menu" data-menu="${escape(id)}" data-menu-kind="folder" aria-label="${escape(t('Folder actions (rename, render, delete)'))}">${MENU_ICON}</button>`}
       </div>`;
@@ -785,11 +802,10 @@ export async function mountProjects(
     // contributes 0 to `count` (tileItemCount ignores folders), so keying off `count`
     // would hide a freshly-created empty sub-folder.
     const hasTiles = subfolders.length > 0 || sessions.length > 0 || images.length > 0;
-    // List mode: the create actions live in the header (listCreateBtns above), not as table rows.
-    const creates = viewMode === 'list' ? '' : `${createFolder}${createTool}${isUncat ? '' : templateTile()}`;
+    // Empty folder → a blank state inviting the two create actions (no grid at all).
     const body = hasTiles
-      ? `<div class="${gridClass}">${viewMode === 'list' ? listHeadHtml() : ''}${tiles}${creates}</div>`
-      : `<div class="${gridClass}">${viewMode === 'list' ? listHeadHtml() : ''}${creates}</div><p class="projects-empty">${isUncat ? t('No saved sessions are uncategorised yet.') : t('This folder is empty - add a tool or a sub-folder.')}</p>`;
+      ? `<div class="${gridClass}">${viewMode === 'list' ? listHeadHtml() : ''}${tiles}</div>`
+      : emptyFolderHtml(isUncat);
 
     return shell(title, 'projects', `${ribbon}${stripSwitch}${rail}${header}${body}`, { inFolder: true });
   }

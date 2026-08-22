@@ -27,7 +27,7 @@ globalThis.sessionStorage = dom.window.sessionStorage;
 globalThis.MouseEvent = dom.window.MouseEvent;
 
 const backNav = await import('../lib/back-nav.ts');
-const { resolveBackTarget, backPillHtml, mountBackPill } = await import('./back-pill.ts');
+const { resolveBackTarget, backPillHtml, backHomeHtml, mountBackPill } = await import('./back-pill.ts');
 
 /** Reset the module's persisted memory between cases. The in-memory
  *  "did this document navigate?" flag can't be un-set, so ordering matters:
@@ -215,4 +215,58 @@ test('an intercepting view owns the click until it calls go()', () => {
   assert.equal(typeof release, 'function');
   release!();
   assert.equal(backCalls, 1, 'the dialog’s "leave" runs the pill’s own navigation');
+});
+
+/* The Home escape beside the pill (mountBackPill → addHomeEscape). Naming the
+ * previous view is right until two tools name each other: enter QR Code from
+ * Design and the pill reads "← Design", enter Design from QR Code and it reads
+ * "← QR Code Generator", and the tool view paints no other nav - so before this,
+ * the front door was gone from the chrome for the rest of the session. */
+test('a back target that is another tool keeps a Home escape in the chrome', () => {
+  clearStored();
+  withHistoryEntry();
+  walkFrom('tool', 'Design - Lolly', '/design');     // arrive at the QR tool
+  const root = document.getElementById('view')!;
+
+  // The full-screen (no-sidebar) tool: the corner pill pins itself, so the pair
+  // has to move into the .chrome-topleft island that resets that.
+  root.innerHTML = backPillHtml();
+  mountBackPill(root);
+  const pill = root.querySelector<HTMLElement>('[data-back-pill]')!;
+  const fab = root.querySelector<HTMLElement>('[data-home-fab]')!;
+  assert.match(pill.textContent!, /Design/, 'the pill still names where you came from');
+  assert.ok(fab, 'and Home is reachable without walking the chain back');
+  assert.equal(fab.getAttribute('href'), '/#/');
+  assert.equal(pill.parentElement!.className, 'chrome-topleft');
+  assert.equal(pill.nextElementSibling, fab, 'one row, pill then FAB');
+
+  // The sidebar variant (a tool with inputs) is already in flow - it stays in the
+  // back row next to undo/redo rather than being pinned to the corner.
+  root.innerHTML = backPillHtml({ class: 'sidebar-back' });
+  mountBackPill(root);
+  const rowPill = root.querySelector<HTMLElement>('[data-back-pill]')!;
+  assert.equal(rowPill.parentElement, root, 'no corner island around a row pill');
+  assert.equal(rowPill.nextElementSibling, root.querySelector('[data-home-fab]'));
+});
+
+test('a back target that IS Home gets no second Home', () => {
+  clearStored();
+  withHistoryEntry();
+  walkFrom('gallery', 'Lolly', '/');
+  const root = document.getElementById('view')!;
+  root.innerHTML = backPillHtml();
+  mountBackPill(root);
+  assert.match(root.innerHTML, /data-back-home/, 'the pill is itself the way home');
+  assert.equal(root.querySelectorAll('[data-home-fab]').length, 0, 'so a FAB would be a duplicate');
+});
+
+test('a view that renders its own Home FAB keeps exactly one', () => {
+  clearStored();
+  withHistoryEntry();
+  walkFrom('projects', 'Campaign assets - Lolly', '/#/p/abc');
+  const root = document.getElementById('view')!;
+  root.innerHTML = backHomeHtml();     // the cluster 12 views already render
+  mountBackPill(root);
+  assert.equal(root.querySelectorAll('[data-home-fab]').length, 1);
+  assert.equal(root.querySelectorAll('.chrome-topleft').length, 1, 'no island inside the island');
 });

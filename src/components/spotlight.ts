@@ -10,9 +10,9 @@
  *  - BODY-MOUNTED, never a child of the footer: `.gallery-footer` has a
  *    backdrop-filter, which makes it the containing block for fixed
  *    descendants (the repo's fixed-popover trap - same reason body-popover.ts
- *    exists). Positioned above the footer from its live rect, recomputed on
- *    open and on window/visualViewport changes (the footer itself rides the
- *    --vv-* vars, so its rect already reflects pinch-zoom offsets).
+ *    exists). Positioned above the footer from its live height plus the same
+ *    --vv-bottom inset the footer itself rides (pinch-zoom pan, soft
+ *    keyboard), recomputed on open and on window/visualViewport changes.
  *  - Focus STAYS in the bar's field the whole time - the panel is never
  *    focused. ARIA combobox pattern (lifted from pro/index.ts's template
  *    picker): the field carries role=combobox/aria-expanded and points its
@@ -47,6 +47,7 @@ import {
   type SpotlightHook,
 } from './search-bar.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
+import { computeViewportInsets } from '../lib/viewport-insets.ts';
 
 const LISTBOX_ID = 'spotlight-listbox';
 
@@ -126,11 +127,30 @@ function position(): void {
   const panel = ensurePanel();
   const footer = document.querySelector<HTMLElement>('footer.gallery-footer');
   const rect = footer && !footer.hidden ? footer.getBoundingClientRect() : null;
-  const bottom = rect ? Math.max(0, window.innerHeight - rect.top) + 8 : 16;
+  const vv = window.visualViewport;
+  // The panel is fixed, so its `bottom` resolves against the LAYOUT viewport -
+  // which a soft keyboard (or a pinch-zoom pan) does not move. Lift it by the
+  // same inset the footer rides on --vv-bottom, so the two stay one unit
+  // whether the visible area's bottom edge is the layout edge or a keyboard.
+  // Computed rather than read off the footer's live rect: the visualViewport
+  // resize that brings us here can run before main.ts's rAF has moved the
+  // footer, and then its rect is a frame stale while this number is not.
+  const lift = vv ? computeViewportInsets({
+    scale: vv.scale,
+    innerHeight: window.innerHeight,
+    clientWidth: document.documentElement.clientWidth,
+    clientHeight: document.documentElement.clientHeight,
+    vvWidth: vv.width,
+    vvHeight: vv.height,
+    offsetTop: vv.offsetTop,
+    offsetLeft: vv.offsetLeft,
+  }).bottom : 0;
+  const bottom = rect ? lift + Math.round(rect.height) + 8 : lift + 16;
   panel.style.bottom = `${bottom}px`;
   // Never taller than the space above the footer (the CSS max-height caps the
-  // comfortable size; this caps the physical fit on short viewports).
-  const headroom = (rect ? rect.top : window.innerHeight) - 24;
+  // comfortable size; this caps the physical fit on short viewports - and the
+  // visible height, not the layout one, is what a keyboard leaves).
+  const headroom = (vv ? vv.height : window.innerHeight) - (rect ? rect.height : 0) - 32;
   panel.style.maxHeight = `${Math.max(160, Math.round(headroom))}px`;
 }
 

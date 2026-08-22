@@ -20,7 +20,11 @@
      and the bar reads as pinned to the visible viewport bottom. The side insets
      matter in LANDSCAPE, where the notch/Dynamic Island sits in the bar's ends
      (plans/132 wave 1). */
-  padding-bottom: calc(.6rem + var(--safe-bottom));
+  /* Collapse the safe-area pad once --vv-bottom lifts the whole bar clear of the
+     keyboard - otherwise it's dead space stacked on top of the lift on a notched
+     phone. max() keeps this byte-identical to the plain sum while --vv-bottom is
+     0px (the safe-area pad alone always exceeds the floor there). */
+  padding-bottom: max(.6rem, calc(.6rem + var(--safe-bottom) - var(--vv-bottom, 0px)));
   padding-left: calc(1rem + var(--safe-left));
   padding-right: calc(1rem + var(--safe-right));
   background: hsl(var(--background) / .82);
@@ -1240,6 +1244,13 @@ html[data-a11y-previews="hidden"] .gallery .ftile-iconfill svg { max-width: 52px
   transition: background .15s, transform .15s;
 }
 .gcar-dot.is-active { background: #fff; transform: scale(1.25); }
+/* Touch: a 6px dot is too small to reliably tap. Grow the TAP AREA only, via a
+   ::after - the dot itself never changes size (padding here would also drag its
+   box-shadow out to the bigger box and read as a bigger dot). */
+@media (pointer: coarse) {
+  .gcar-dot { position: relative; }
+  .gcar-dot::after { content: ''; position: absolute; inset: calc((24px - 100%) / -2); }
+}
 /* Hide the whole strip in "hide previews" mode, like the demo-preview hero. */
 html[data-a11y-previews="hidden"] .tool-masonry .gcar { display: none; }
 .gtile-hero::after {

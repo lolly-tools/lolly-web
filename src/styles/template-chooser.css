@@ -161,6 +161,10 @@
   width: 100%;
   aspect-ratio: 4 / 3;
   object-fit: cover;
+  /* Left-anchored crop: a wide multi-frame template (carousel) center-crops into
+     mid-letter cuts on frame 1's headline; anchoring left keeps the reading edge
+     whole and lets the next frame peek at the right as the swipe cue. */
+  object-position: left center;
   border-radius: var(--radius);
   background: hsl(var(--muted));
 }

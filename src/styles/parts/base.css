@@ -245,5 +245,9 @@ em, i, cite { font-family: var(--font-italic, var(--font-brand)); }
   
   .pro-col-head:hover .pro-fill-btn{opacity:1}
 .pro-col-head:not(:hover) .pro-fill-btn{opacity:0}
+/* No hover on touch, so the fill button has no other way to appear. */
+@media (hover: none) {
+  .pro-col-head:not(:hover) .pro-fill-btn{opacity:.6}
+}
 .pro-addrow .pro-btn{border-radius: 0em 0 1em 1em; padding: 1em 2em; }
 footer{text-align:right;}

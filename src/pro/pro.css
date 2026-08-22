@@ -751,7 +751,9 @@ body.pro-row-dragging, body.pro-row-dragging * { cursor: grabbing !important; us
   animation: pro-blk-slide .18s ease;
 }
 @keyframes pro-blk-slide { from { transform: translateX(100%); } to { transform: translateX(0); } }
-@media (max-width: 560px) { .pro-blocks-panel { width: 100%; } }
+/* 561-640px windows fall between this and the clamp() floor above, otherwise left
+   with a 320px slab pinned over the grid instead of the full width. */
+@media (max-width: 640px) { .pro-blocks-panel { width: 100%; } }
 @media (prefers-reduced-motion: reduce) { .pro-blocks-panel { animation: none; } }
 
 /* Drag the left edge to resize; the chosen width sticks for the session. */

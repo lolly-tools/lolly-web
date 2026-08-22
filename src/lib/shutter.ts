@@ -34,21 +34,47 @@
 
    PERFORMANCE. This runs during export on phones. The shader is one full-screen
    triangle pair per frame; DPR is capped (1.5 phone / 2 desktop). No CSS filter
-   on the iris canvas - the shader's own lighting is the depth cue. */
+   on the iris canvas - the shader's own lighting is the depth cue.
+
+   THE STATUS BLOCK. A sealed shutter used to be the whole story of a long export:
+   at <=640px it goes fullscreen, so a multi-minute video encode left a phone with
+   an opaque plate, no progress and no way back. Any export that outlasts
+   STATUS_DELAY now grows a status block over the plate - what is exporting, how
+   far in, how long it has been running, and a Hide button. The delay is the whole
+   reason a sub-second still export still looks exactly as it always did. */
 
 import { playSfx } from './sfx.ts';
+import { t } from '../i18n.ts';
 import { prefersReducedMotion } from './a11y-prefs.ts';
 import { liveAccentHint } from './viz-palette.ts';
 import { currentTheme } from '../theme.ts';
 import { SHUTTER_MARK_LAYERS } from './shutter-mark.ts';
 
+/** What the status block says, and what its one button does. */
+export interface ShutterStatus {
+  /** Headline - what is being exported (the tool name). */
+  label: string;
+  /** Second line prefix, e.g. the format. Percent and elapsed time follow it. */
+  detail?: string;
+  /**
+   * The escape hatch. No export path can be aborted mid-render today (nothing
+   * between runtime.export and the encoders takes a signal or polls a flag), so
+   * the button is labelled Hide and this is expected to OPEN the shutter and let
+   * the export finish underneath - not to stop it.
+   */
+  onHide: () => void;
+}
+
 export interface Shutter {
-  /** Close the iris. Resolves once it is fully sealed. */
-  close(): Promise<void>;
+  /** Close the iris. Resolves once it is fully sealed. Pass a status to give a
+   *  slow export a visible progress block + escape hatch over the seal plate. */
+  close(status?: ShutterStatus | null): Promise<void>;
   /** Open it again. Fire-and-forget. */
   open(): void;
   /** Close then open - for callers that can't await (clipboard writes). */
   play(): void;
+  /** Feed the status block real progress. `total <= 0` keeps it elapsed-only. */
+  progress(done: number, total: number): void;
   destroy(): void;
 }
 
@@ -61,6 +87,17 @@ const POP_LO    = 0.6;     // close-progress where the mark starts to appear …
 const POP_HI    = 0.8;     // … and where it has fully popped
 const SEAL_LO   = 0.82;    // WebGL path: plate insurance only over the last sliver
 const LOLLY_GREEN = '#11734b';   // identity green for near-neutral brands
+/** How long an export must run before the status block appears. Exported so the
+ *  test can pin it rather than sleeping for it (the HOOK_BUDGET_MS pattern). */
+export const STATUS_DELAY = { ms: 600 };
+/** Separator between the status block's meta parts (format / percent / clock). */
+const META_SEP = ' · ';
+
+/** Elapsed milliseconds as `m:ss` (an hour-long export just keeps counting minutes). */
+export function clockText(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
 
 /* ── the swirl shader ────────────────────────────────────────────────────── */
 const VERT = `
@@ -251,16 +288,20 @@ const bez = (p: number, a: number, b: number, cc: number, d: number): number => 
 
 export function createShutter(stage: HTMLElement | null): Shutter {
   if (!stage) {
-    return { close: () => Promise.resolve(), open: () => {}, play: () => {}, destroy: () => {} };
+    return { close: () => Promise.resolve(), open: () => {}, play: () => {}, progress: () => {}, destroy: () => {} };
   }
 
   const root = document.createElement('div');
   root.className = 'export-shutter';
-  root.setAttribute('aria-hidden', 'true');
+  // NOT aria-hidden on the root: the status block below carries a real focusable
+  // button, and an aria-hidden focusable control is a trap. Each decorative
+  // surface hides itself instead, and the root is display:none when inactive.
   const seal = document.createElement('div');
   seal.className = 'export-shutter__seal';
+  seal.setAttribute('aria-hidden', 'true');
   const cv = document.createElement('canvas');
   cv.className = 'export-shutter__iris';
+  cv.setAttribute('aria-hidden', 'true');
   const mark = document.createElement('div');
   mark.className = 'export-shutter__mark';
   mark.setAttribute('aria-hidden', 'true');
@@ -273,6 +314,7 @@ export function createShutter(stage: HTMLElement | null): Shutter {
     `<div class="export-shutter__layer${l.spin ? ` export-shutter__layer--spin${l.spin}` : ''}${l.blend === 'multiply' ? ' export-shutter__layer--multiply' : ''}">${l.svg}</div>`).join('');
   const flash = document.createElement('div');
   flash.className = 'export-shutter__flash';
+  flash.setAttribute('aria-hidden', 'true');
   root.append(seal, cv, mark, flash);
   stage.appendChild(root);
 
@@ -427,8 +469,96 @@ export function createShutter(stage: HTMLElement | null): Shutter {
     flash.classList.add('is-on');
   }
 
-  async function close(): Promise<void> {
+  /* ── the status block ──────────────────────────────────────────────────────
+     Built on FIRST use, so a tool that only ever does fast exports never pays
+     for the nodes. Shown only once an export outlasts STATUS_DELAY. Every write
+     is textContent/setAttribute - the module's ONE innerHTML sink is the brand
+     mark's generated constant (primitive-guards.test.ts pins the count at 1). */
+  let statusEl: HTMLElement | null = null;
+  let labelEl: HTMLElement | null = null;
+  let metaEl: HTMLElement | null = null;
+  let barEl: HTMLElement | null = null;
+  let fillEl: HTMLElement | null = null;
+  let status: ShutterStatus | null = null;
+  let statusTimer: ReturnType<typeof setTimeout> | undefined;
+  let clockTimer: ReturnType<typeof setInterval> | undefined;
+  let closedAt = 0;
+  /** Last painted integer percent; -1 while the total is unknown. */
+  let lastPct = -1;
+
+  function buildStatus(): HTMLElement {
+    const box = document.createElement('div');
+    box.className = 'export-shutter__status';
+    labelEl = document.createElement('p');
+    labelEl.className = 'export-shutter__status-label';
+    metaEl = document.createElement('p');
+    metaEl.className = 'export-shutter__status-meta';
+    barEl = document.createElement('div');
+    barEl.className = 'export-shutter__status-bar';
+    barEl.setAttribute('role', 'progressbar');
+    barEl.setAttribute('aria-valuemin', '0');
+    barEl.setAttribute('aria-valuemax', '100');
+    barEl.hidden = true;                  // only a known total earns a bar
+    fillEl = document.createElement('i');
+    barEl.appendChild(fillEl);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'export-shutter__status-hide';
+    btn.textContent = t('Hide');
+    // Not a cancel: read onHide's contract. Whoever opened the shutter decides
+    // what happens to the export that is still running underneath.
+    btn.addEventListener('click', () => { status?.onHide(); });
+    box.append(labelEl, metaEl, barEl, btn);
+    root.appendChild(box);
+    statusEl = box;
+    // Esc dismisses an overlay everywhere else in the app, and this one covers the
+    // whole screen. Registered once, with the block, and dropped in destroy() so a
+    // tool view teardown can't leave it behind.
+    document.addEventListener('keydown', onKey);
+    return box;
+  }
+
+  function onKey(e: KeyboardEvent): void {
+    if (e.key !== 'Escape' || !status || !statusEl?.classList.contains('is-visible')) return;
+    e.preventDefault();
+    status.onHide();
+  }
+
+  function paintStatus(): void {
+    if (!statusEl || !status) return;
+    const parts = [status.detail ?? '', lastPct >= 0 ? `${lastPct}%` : '', clockText(performance.now() - closedAt)];
+    metaEl!.textContent = parts.filter(Boolean).join(META_SEP);
+    barEl!.hidden = lastPct < 0;
+    if (lastPct >= 0) {
+      fillEl!.style.width = `${lastPct}%`;
+      barEl!.setAttribute('aria-valuenow', String(lastPct));
+    }
+  }
+
+  function showStatus(): void {
+    if (destroyed || !status) return;
+    const box = statusEl ?? buildStatus();
+    labelEl!.textContent = status.label;
+    box.classList.add('is-visible');
+    paintStatus();
+    clearInterval(clockTimer);
+    clockTimer = setInterval(paintStatus, 1000);
+  }
+
+  function clearStatus(): void {
+    clearTimeout(statusTimer); statusTimer = undefined;
+    clearInterval(clockTimer); clockTimer = undefined;
+    status = null;
+    lastPct = -1;
+    statusEl?.classList.remove('is-visible');
+  }
+
+  async function close(next: ShutterStatus | null = null): Promise<void> {
     if (destroyed) return;
+    clearStatus();
+    status = next;
+    closedAt = performance.now();
+    if (next) statusTimer = setTimeout(showStatus, STATUS_DELAY.ms);
     tone = toneForTheme();
     // Paint the swirl mark the same brand tone the iris stripe uses (host-profile accent
     // mixed into Lolly green) - the layers' spin + hue drift ride on top of it (tool.css).
@@ -452,6 +582,10 @@ export function createShutter(stage: HTMLElement | null): Shutter {
 
   function open(): void {
     if (destroyed) return;
+    // The status block goes with the opening, not 375ms after it - it belongs to
+    // a sealed screen. Idempotent, so the Hide button and the export's own
+    // finally can both call open().
+    clearStatus();
     void animate(0).then(() => {
       if (destroyed) return;
       root.classList.remove('is-active');
@@ -467,8 +601,18 @@ export function createShutter(stage: HTMLElement | null): Shutter {
     close,
     open,
     play(): void { void close().then(open); },
+    progress(done: number, total: number): void {
+      if (destroyed || !status) return;
+      const p = total > 0 ? Math.max(0, Math.min(100, Math.floor((done / total) * 100))) : -1;
+      // Integer percent only, so a per-frame export callback can't thrash the DOM.
+      if (p === lastPct) return;
+      lastPct = p;
+      if (statusEl?.classList.contains('is-visible')) paintStatus();
+    },
     destroy(): void {
       destroyed = true;
+      clearStatus();
+      if (statusEl) document.removeEventListener('keydown', onKey);
       cancelAnimationFrame(raf);
       if (gl) { try { gl.getExtension('WEBGL_lose_context')?.loseContext(); } catch { /* best effort */ } }
       root.remove();

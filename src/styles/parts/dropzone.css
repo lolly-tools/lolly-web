@@ -34,6 +34,29 @@
 .updz.is-busy { opacity: .6; pointer-events: none; }
 .updz-browse { color: hsl(var(--primary)); font-weight: 600; text-decoration: underline; }
 
+/* Touch flips the hierarchy: "browse" was a small inline link inside a sentence about
+   a gesture a phone does not have, in a zone spending a screenful on it. A coarse
+   pointer gets the picker as a full-width primary CTA (fill from .btn--primary,
+   buttons.css) and a row-height zone; the drag listeners are untouched, so an iPad
+   drag-in still lands. The type list goes with the lead - the OS picker filters by
+   `accept` anyway. Both leads sit INSIDE .updz-text so the "Adding…" swap and its
+   restore still cover whichever one is showing. */
+.updz-cta { display: none; }
+@media (pointer: coarse) {
+  /* 68px = the CTA's 44px floor plus the padding, so the "Adding…" swap (which
+     replaces the CTA with a line of text) does not shrink the zone under itself. */
+  .updz { min-height: 68px; height: auto; padding: 12px 14px; }
+  /* The roomier column layout is a desktop luxury; on touch both variants are the
+     same [icon][CTA] band, so the CTA has a row to be full-width in. */
+  .updz--empty { flex-direction: row; padding: 12px 14px; }
+  .updz-copy { flex: 1; min-width: 0; }
+  .updz-hint, .updz-lead { display: none; }
+  .updz-cta {
+    display: block; width: 100%; min-height: 44px;
+    padding: 0.7rem 1rem; font-size: calc(0.95rem * var(--a11y-fs));
+  }
+}
+
 /* ── Trim-to-content offer (lib/design-system/trim-offer.ts) ── plan 97 section 7.3. Lives in
    this sheet because it belongs to the same moment as the zone above: a user file is
    becoming an asset, and every surface that ingests one (the dropzone, the Logos room,

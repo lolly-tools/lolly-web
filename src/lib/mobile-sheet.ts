@@ -97,7 +97,16 @@ export function setupMobileSheet(layoutEl: HTMLElement, sidebarEl: HTMLElement, 
   let dragging = false, moved = false, tapMode = false, tapDir = 1, startY = 0, startH = 0;
   const cleanups: Array<() => void> = [];
 
-  const vh = () => window.innerHeight;
+  // The VISIBLE height, not the layout one: these sheets are full of text
+  // inputs, and a soft keyboard shrinks the visual viewport without moving the
+  // layout viewport. Measuring the layout height would cap a drag (and place
+  // the snap thirds) against space the keyboard covers. Read live, never cached
+  // - the keyboard opens and closes under an already-mounted sheet. The thirds
+  // below compare it against a getBoundingClientRect Y, so this holds while the
+  // visible area starts at the layout top (true whenever a keyboard is up; a
+  // pinch-zoom pan is the un-handled case, and drags are already gated to
+  // small viewports).
+  const vh = () => window.visualViewport?.height ?? window.innerHeight;
   // Peek = the sheet's minimized height, which must equal the real header height
   // so the whole header shows, not just its first row. Measured from headerEl
   // below (it varies - e.g. 44px tap targets on touch); 56 is only the

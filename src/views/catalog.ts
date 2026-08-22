@@ -83,6 +83,7 @@ import { icon } from '../lib/icons.ts';
 import { wireTileSelect } from '../lib/tile-select.ts';
 import { wireTileContextMenu, menuItemHtml } from '../lib/context-menu.ts';
 import { bulkBarHtml as buildBulkBar, syncBulkBar as syncSharedBulkBar, wireEscapeClearsSelection } from '../lib/bulk-bar.ts';
+import { startJob } from '../lib/jobs.ts';
 import type { BulkBarConfig } from '../lib/bulk-bar.ts';
 import type { PickerHost } from './picker.ts';
 import type { UpscaleHost } from './upscale-dialog.ts';
@@ -5244,12 +5245,25 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
    * acts on THEM, while the originals stay put and untouched. Copies mint with a
    * fresh, now-stamped id, so they sort to the top of "Your uploads" and land in
    * view (we scroll the first into sight), already highlighted and ready to grab.
+   *
+   * The copy loop is a background JOB (progress + cancel in the global job toast),
+   * so an N-image run neither hides its progress nor dies with the view. heavy:
+   * false - byte copies through the asset store, no inference. Cancel is
+   * cooperative (_duplicateUserAsset has no abort): the copies already made are
+   * kept and announced, since they exist in the library either way.
    */
   async function duplicateSelection(): Promise<void> {
     const ids = [...selected];
     if (!ids.length) return;
+    const job = startJob({
+      title: t('Duplicating images'),
+      heavy: false,
+      cancel: () => { /* cooperative - the loop polls job.cancelled between copies */ },
+    });
     const newIds: string[] = [];
     for (const id of ids) {
+      if (job.cancelled) break;
+      job.progress(newIds.length, ids.length);
       try {
         const newId = await host.assets._duplicateUserAsset(id);
         if (newId) newIds.push(newId);
@@ -5257,6 +5271,12 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         host.log?.('warn', 'Catalog bulk duplicate: member skipped', { id, error: String(err) });
       }
     }
+    job.progress(newIds.length, ids.length);
+    job.finish();
+    if (!newIds.length) return;
+    // Announce first: the copies are made whether or not this view is still up, and
+    // the live region is body-level, so the count is announced after a navigation too.
+    announce(newIds.length === 1 ? t('1 copy made · selected') : t('{n} copies made · selected', { n: newIds.length }));
     if (!mounted) return;
     await reload();                     // pull the new copies into allAssets / assetById
     if (!mounted) return;
@@ -5270,7 +5290,6 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // Bring the first new copy into view so "the copies appeared" is visible, not
     // just a count in the bar - nearest, so it doesn't jump when already on screen.
     viewEl.querySelector<HTMLElement>('.cat-tile.is-selected')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    announce(newIds.length === 1 ? t('1 copy made · selected') : t('{n} copies made · selected', { n: newIds.length }));
   }
 
   /**
@@ -5304,16 +5323,30 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // Bulk "Download": the whole selection in ONE zip (optionally password-locked,
   // same prompt as every batch export), each member's Content Credentials checked
   // with the engine verifier so the announcement is honest about what it carries.
+  //
+  // The fetch/verify loop and the zip are a background JOB, so a big selection shows
+  // progress and cancels from the global job toast. heavy: false - network reads plus
+  // a deflate, no inference. Cancel stops between members; a cancel BEFORE the zip
+  // delivers nothing (a partial archive the user stopped is not what they asked for).
+  // Delivery deliberately ignores `mounted`: saveBlob is a browser download and the
+  // live region is body-level, so leaving the catalog mid-run no longer loses the zip.
   async function downloadSelection(): Promise<void> {
     const refs = [...selected].map(id => assetById.get(id)).filter((r): r is AssetRef => !!r);
     if (!refs.length) return;
     const { askExportLock } = await import('../lib/export-lock.ts');
     const { ok, strongPassword, zipLock } = await askExportLock(refs.length === 1 ? t('1 selected image') : t('{n} selected images', { n: refs.length }), true);
     if (!ok || !mounted) return;
+    const job = startJob({
+      title: t('Zipping images'),
+      heavy: false,
+      cancel: () => { /* cooperative - the loop polls job.cancelled between members */ },
+    });
     const files: { name: string; blob: Blob }[] = [];
     const names = new Set<string>();
     let credentialed = 0;
     for (const ref of refs) {
+      if (job.cancelled) return;
+      job.progress(files.length, refs.length);
       try {
         const blob = await credentialedBytes(ref);
         try {
@@ -5331,10 +5364,18 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         host.log?.('warn', 'Catalog bulk download: member skipped', { id: ref.id, error: String(err) });
       }
     }
-    if (!files.length || !mounted) return;
+    if (!files.length) { job.finish(); return; }
+    job.progress(files.length, refs.length);
     const { buildZip, saveBlob } = await import('../pro/zip.ts');
-    const zip = await buildZip(files, { zipName: 'lolly-images', zipLock, password: strongPassword });
+    let zip: Blob;
+    try {
+      zip = await buildZip(files, { zipName: 'lolly-images', zipLock, password: strongPassword });
+    } catch (err) {
+      job.fail(err);
+      throw err;
+    }
     saveBlob(zip, 'lolly-images.zip');
+    job.finish();
     announce(files.length === 1
       ? t('1 image zipped · {c} with Content Credentials', { c: credentialed })
       : t('{n} images zipped · {c} with Content Credentials', { n: files.length, c: credentialed }));

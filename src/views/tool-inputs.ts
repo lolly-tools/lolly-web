@@ -163,6 +163,10 @@ async function fileToRef(file: File): Promise<InputFile> {
 function scrollToControl(control: Element | null | undefined, { pulse = true }: { pulse?: boolean } = {}): void {
   if (!control) return;
   const row = control.closest('.input-row, .block-item') || control;
+  // A folded section hides its rows, so scrolling to one inside a closed fold would
+  // land on nothing. Reveal it here rather than in each caller, so every path that
+  // brings a control into view (canvas click, block expand, deep link) reveals it.
+  row.closest('details.input-section')?.setAttribute('open', '');
   row.scrollIntoView({ block: 'start', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
   if (!pulse) return;
   row.classList.remove('is-target');
@@ -388,6 +392,29 @@ function makeBlocksDropper({ runtime, host, input, onDirty }: {
   return { accept, plural, addFiles };
 }
 
+// The controls panel is a drag-to-size snap sheet at phone widths, not a sidebar
+// (lib/mobile-sheet.ts, whose default mq this literal matches - the same breakpoint
+// views/tool.ts reads for its own mobile branches). Read live, never cached: a
+// rotate or a resize crosses it without remounting the tool.
+const inSheetMode = (): boolean =>
+  typeof matchMedia !== 'undefined' && matchMedia('(max-width: 640px)').matches;
+
+/**
+ * Whether an input section renders unfolded. A section the user has already opened
+ * stays open (`wasOpen`, captured from the live panel before the rebuild), so this
+ * only ever decides the DEFAULT for a section nobody has touched: the desktop
+ * sidebar folds them all, and the phone sheet - half a viewport tall, with a soft
+ * keyboard about to take the bottom of it - leaves only the FIRST one open, so the
+ * sheet opens on the tool's primary controls instead of every input at once.
+ * Pure - exported for tests.
+ */
+export function shouldOpenSection(
+  { index, wasOpen, firstRender, sheetMode }:
+  { index: number; wasOpen: boolean; firstRender: boolean; sheetMode: boolean },
+): boolean {
+  return wasOpen || (firstRender && sheetMode && index === 0);
+}
+
 function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, host: WebToolHost, onDirty?: (id: string) => void, toolId?: string): void {
   // Generic input-policy overlay for the mounted tool (empty/no-op by default).
   const policyFor = (id: string): InputPolicy | undefined => getInputPolicy(toolId, id);
@@ -555,8 +582,16 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     [...el.querySelectorAll<HTMLElement>('.block-item.is-collapsed')].map(foldKey)
   );
 
+  // First render of a freshly-mounted tool, as opposed to a re-render of the same
+  // panel. The fold DEFAULTS - input sections here, typed blocks further down - only
+  // apply then; every later render restores what the user had open.
+  const firstRender = !el.dataset.blocksDefaulted;
+  el.dataset.blocksDefaulted = '1';
+  const sheetMode = inSheetMode();
+
   const parts: string[] = [];
   let openSection: string | null = null;
+  let sectionIndex = -1;
   let prevInput: InputModelItem | null = null;
   // Tool-scoped density hint (chrome-only): sections named here render their short
   // controls in a 2-column grid. Never touches the model, URL, or determinism.
@@ -577,9 +612,10 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       closePillbar();   // a chip bar never spans a section boundary
       if (openSection !== null) parts.push('</div></details>');
       if (sec !== null) {
-        const wasOpen = openSections.has(sec);
+        sectionIndex++;
+        const open = shouldOpenSection({ index: sectionIndex, wasOpen: openSections.has(sec), firstRender, sheetMode });
         const dense = denseSections.has(sec) ? ' input-section--dense' : '';
-        parts.push(`<details class="input-section${dense}"${wasOpen ? ' open' : ''}><summary class="input-section-summary">${escape(sec)}</summary><div class="input-section-body">`);
+        parts.push(`<details class="input-section${dense}"${open ? ' open' : ''}><summary class="input-section-summary">${escape(sec)}</summary><div class="input-section-body">`);
       }
       openSection = sec;
       prevInput = null;   // a section break ends any pairing
@@ -612,9 +648,8 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // On the first render of a freshly-mounted tool, fold every typed block so the
   // sidebar opens as a clean, scannable list - the user expands the ones they
   // want to edit. On later re-renders, preserve whatever the user had folded
-  // (captured above); newly-added blocks stay open.
-  const firstRender = !el.dataset.blocksDefaulted;
-  el.dataset.blocksDefaulted = '1';
+  // (captured above); newly-added blocks stay open. `firstRender` is read once, up
+  // where the section folds take their default from it too.
   if (firstRender) {
     el.querySelectorAll('.block-item.is-typed').forEach(collapseBlock);
   } else if (collapsedBlocks.size) {

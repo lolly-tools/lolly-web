@@ -22,7 +22,8 @@
   z-index: 100000;
   left: 1.25rem;
   right: 1.25rem;
-  bottom: 1.25rem;
+  /* Clears a phone's home-indicator/gesture strip. */
+  bottom: calc(1.25rem + var(--safe-bottom, 0px));
   width: auto;
   max-height: 70vh;
   overflow: auto;

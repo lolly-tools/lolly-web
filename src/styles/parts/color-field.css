@@ -874,8 +874,19 @@
    outside that. Padding and gap only: the type stays 10.5px, because a pill row
    that grows its text stops fitting the popover it lives in. */
 @media (pointer: coarse) {
-  .color-mode-tab { padding: 9px 10px; }
-  .color-mode-tab--wide { padding: 9px 10px; }
+  .color-mode-tab { padding: 12px 10px; }
+  .color-mode-tab--wide { padding: 12px 10px; }
   .color-mode-fam { gap: 6px; }
   .color-eyedropper { width: 36px; height: 36px; }
+  /* The 18px/12px thumbs are a fingertip miss - grow them to the same ~22px floor
+     parts/fields.css's native `.field-range` recipe uses, so a JS slider and a plain
+     range input match. No margin-top correction needed here (unlike that recipe):
+     these thumbs auto-centre in their own 2em-tall box, they don't sit over a
+     separately-declared runnable-track. */
+  .color-lch-slider::-webkit-slider-thumb,
+  .color-mode-slider::-webkit-slider-thumb,
+  .color-alpha-slider::-webkit-slider-thumb { width: 22px; height: 22px; }
+  .color-lch-slider::-moz-range-thumb,
+  .color-mode-slider::-moz-range-thumb,
+  .color-alpha-slider::-moz-range-thumb { width: 22px; height: 22px; }
 }

@@ -218,6 +218,18 @@
 .projects-create-btn { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
 .projects-create-btn svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
 
+/* Empty-folder blank state (Andy, 2026-08-22): no grid - an invitation to the
+   two create actions the header also carries. */
+.projects-blank {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 4rem 1rem 2.5rem; text-align: center;
+}
+.projects-blank-icon svg { width: calc(44px * var(--a11y-fs)); height: calc(44px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); opacity: 0.45; }
+.projects-blank-title { margin: 8px 0 0; font-size: calc(15px * var(--a11y-fs)); font-weight: 650; }
+.projects-blank-sub { margin: 0; font-size: calc(12.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.projects-blank-actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; justify-content: center; }
+.projects-blank-actions .btn { padding: 9px 16px; }
+
 /* Search / tools results wrap each hit as [tile][location crumb]: in list mode the
    row separator belongs under the crumb, not between the two. */
 .projects-list .projects-result { border-bottom: 1px solid hsl(var(--border) / 0.7); padding-bottom: 4px; }
@@ -425,7 +437,7 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
 .projects-bulkbar {
   /* Sits ABOVE the fixed footer bar (search + nav links), and spans the full viewport width
      (inset a little) so every action fits on one row instead of wrapping into a pill. */
-  position: fixed; left: 12px; right: 12px; bottom: calc(4.5rem + var(--safe-bottom)); z-index: 9000;
+  position: fixed; left: 12px; right: 12px; bottom: calc(4.5rem + var(--safe-bottom) + var(--vv-bottom, 0px)); z-index: 9000;
   display: flex; align-items: center; gap: 12px;
   padding: 8px 10px 8px 16px; border: 1px solid hsl(var(--border));
   border-radius: 999px; background: hsl(var(--card)); box-shadow: 0 12px 32px hsl(0 0% 0% / 0.28);
@@ -451,7 +463,7 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
 @media (max-width: 560px) {
   /* Phones: a full-width ICON-ONLY row above the two-row footer (lifted to clear it). Labels
      are clipped (kept for assistive tech), so all the actions fit without wrapping. */
-  .projects-bulkbar { flex-direction: row; align-items: center; border-radius: 999px; bottom: calc(7rem + var(--safe-bottom)); padding: 8px 10px; gap: 8px; }
+  .projects-bulkbar { flex-direction: row; align-items: center; border-radius: 999px; bottom: calc(7rem + var(--safe-bottom) + var(--vv-bottom, 0px)); padding: 8px 10px; gap: 8px; }
   .projects-bulkbar-clear { position: static; }
   .projects-bulkbar-count { font-size: calc(11.5px * var(--a11y-fs)); }
   .projects-bulkbar-actions { flex: 1 1 auto; justify-content: space-around; gap: 2px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }

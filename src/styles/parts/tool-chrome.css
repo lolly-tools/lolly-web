@@ -13,7 +13,7 @@
 .toast {
   position: fixed;
   left: 50%;
-  bottom: calc(16px + var(--safe-bottom));
+  bottom: calc(16px + var(--safe-bottom) + var(--vv-bottom, 0px));
   z-index: 900;
   display: flex;
   align-items: center;
@@ -71,7 +71,7 @@
    HUD. A long label ellipsises rather than spanning edge-to-edge. */
 @media (max-width: 640px) {
   .toast {
-    bottom: calc(72px + var(--safe-bottom));
+    bottom: calc(72px + var(--safe-bottom) + var(--vv-bottom, 0px));
     max-width: calc(100vw - 6rem);
   }
 }
@@ -94,19 +94,28 @@
        follows a larger header, but a flat 56px is what applies whenever the measure
        hasn't landed (first paint, or setupMobileSheet not yet run) and at 1.2× that
        is shorter than the header it is meant to clear - the peek sheet would crop
-       its own title row and the preview would start underneath it. */
-    --preview-top: calc(var(--peek-h, calc(56px * var(--a11y-fs))) + 0dvh);
+       its own title row and the preview would start underneath it. Leads with
+       --safe-top (0px on an unnotched device) since the sheet itself now starts
+       that far down (see .sidebar's `top` below) - without it the preview would
+       start under the peek bar's true bottom edge instead of clear of it. */
+    --preview-top: calc(var(--safe-top, 0px) + var(--peek-h, calc(56px * var(--a11y-fs))) + 0dvh);
   }
   .tool-layout[data-sheet="peek"] { --sheet-h: var(--peek-h, calc(56px * var(--a11y-fs))); }
-  .tool-layout[data-sheet="half"] { --sheet-h: 50dvh; }
-  .tool-layout[data-sheet="full"] { --sheet-h: 90dvh; }
+  /* Clamped against the visible area, not just 100dvh: the soft keyboard eats
+     the bottom of the viewport without shrinking dvh, so an unclamped 50/90dvh
+     sheet would run its own bottom edge (and whatever control sits there)
+     under the keyboard. min() is a no-op while --vv-bottom is 0px. */
+  .tool-layout[data-sheet="half"] { --sheet-h: min(50dvh, calc(100dvh - var(--vv-bottom, 0px) - 12px)); }
+  .tool-layout[data-sheet="full"] { --sheet-h: min(90dvh, calc(100dvh - var(--vv-bottom, 0px) - 12px)); }
 
   /* Controls panel - anchored at the top, grip on its bottom edge. The --vv-*
      offsets (set by the VisualViewport shim in main.js) keep it pinned to the
-     VISIBLE area while the page is pinch-zoomed; they're 0px when not zoomed. */
+     VISIBLE area while the page is pinch-zoomed; they're 0px when not zoomed.
+     --safe-top clears the notch/status-bar inset on top of that (0px on a
+     device with no inset, so this is a no-op there). */
   .sidebar {
     position: fixed;
-    top: var(--vv-top, 0px); left: var(--vv-left, 0px); right: auto;
+    top: calc(var(--vv-top, 0px) + var(--safe-top, 0px)); left: var(--vv-left, 0px); right: auto;
     width: 100% !important;           /* override the desktop inline width */
     height: var(--sheet-h);
     max-height: 92dvh;
@@ -141,13 +150,25 @@
     display: flex;
     position: fixed;
     left: var(--vv-left, 0px); right: auto; width: 100%;
-    top: calc(var(--sheet-h) + var(--vv-top, 0px));   /* tracks the sheet + the visible-area offset */
+    top: calc(var(--sheet-h) + var(--vv-top, 0px) + var(--safe-top, 0px));   /* tracks the sheet + the visible-area + notch offset */
     transform: translateY(-50%);
     height: 30px;                 /* generous hit area straddling the divider */
     z-index: 60;                  /* above the panel (50) and the preview */
     transition: top 0.34s cubic-bezier(0.32, 0.72, 0, 1); /* match the sheet's settle */
   }
   .tool-layout.is-sheet-dragging .sheet-grip { transition: none; }
+  /* Neutral grey pill, matching the export sheet's grabber (.export-popup::before
+     below) instead of tool.css's default fill, which rides --primary - the same
+     hue as a slider thumb, so a real range control sitting near the sheet edge
+     could be mistaken for a second grip. Hit area, dims of the button itself and
+     its aria-label are untouched; only the drawn pill changes. */
+  .sheet-grip::before {
+    width: 40px;
+    height: 4px;
+    background: hsl(var(--muted-foreground) / 0.4);
+    border: none;
+    box-shadow: none;
+  }
 
   /* Preview - a static backdrop offset below the top bar. The controls sheet
      slides over it (it doesn't rescale on half/full), and Fit fits to this region
@@ -182,6 +203,23 @@
   /* The sheet is full-width; don't pin the body to the desktop open width. */
   .sidebar-body { min-width: 0; }
 
+  /* At peek/half the sheet crops its last control mid-control (a slider thumb can
+     end up sliced by the sheet's own bottom edge). This reads as broken rather
+     than "scroll for more", so paint a fade over the cut edge - a generated
+     rectangle, not a child of .sidebar-body, so it can't be scrolled away and
+     never takes a tap. Colour rides --card (the sheet's own background token)
+     so it fades to the same surface in both themes; the sheet's overflow:hidden
+     clip already rounds its bottom two corners for free. The grip lives outside
+     .sidebar entirely (see above) so this can't touch it. */
+  .sidebar::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 28px;
+    background: linear-gradient(to bottom, hsl(var(--card) / 0), hsl(var(--card) / 0.85));
+    pointer-events: none;
+  }
+
   /* Get|Save pill - the primary export/save CTA, floating bottom-centre over the
      preview, always reachable regardless of the controls-sheet position. */
   .render-pill {
@@ -189,7 +227,7 @@
     align-items: stretch;
     position: fixed;
     left: 50%;
-    bottom: calc(8px + var(--safe-bottom));
+    bottom: calc(8px + var(--safe-bottom) + var(--vv-bottom, 0px));
     transform: translateX(-50%);
     z-index: 55;
     box-shadow: 0 6px 22px rgba(0, 0, 0, 0.3), inset 0 .1px #fff6;
@@ -205,10 +243,10 @@
      stack ABOVE the pill instead. Only needed in this mobile FAB layout: on desktop the
      pill lives inside the sidebar and never shares the stage lane. */
   .tool-stage.has-record .canvas-record-btn {
-    bottom: calc(66px + var(--safe-bottom));
+    bottom: calc(66px + var(--safe-bottom) + var(--vv-bottom, 0px));
   }
   .tool-stage.has-record .canvas-record-timer {
-    bottom: calc(112px + var(--safe-bottom));
+    bottom: calc(112px + var(--safe-bottom) + var(--vv-bottom, 0px));
   }
 
   /* Export popup - a bottom sheet holding the (moved) actions panel. Hidden until

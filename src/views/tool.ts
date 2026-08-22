@@ -237,8 +237,19 @@ export interface ExportDefaults {
   slide?: string;
 }
 
-/** mountTool's strip-scale → export → reapply wrapper (injected into renderActions). */
-export type ExportUnscaled = <T>(fn: () => Promise<T>, opts?: { shutter?: boolean }) => Promise<T>;
+/**
+ * mountTool's strip-scale → export → reapply wrapper (injected into renderActions).
+ *
+ * `fn` is handed a `report` sink: pass it through as the export's own onProgress
+ * and the shutter's status block shows real percent instead of a bare clock. A
+ * zero-arg `() => runtime.export(...)` stays assignable, so the fast paths that
+ * have nothing to report need no change. Optional because a test stub standing in
+ * for this wrapper won't supply one - always call it as `report?.(…)`.
+ */
+export type ExportUnscaled = <T>(
+  fn: (report?: (done: number, total: number) => void) => Promise<T>,
+  opts?: { shutter?: boolean; detail?: string },
+) => Promise<T>;
 
 /** What renderActions hands back for programmatic triggering (`?copy`, Save & leave…). */
 export interface ActionsApi {
@@ -1435,8 +1446,22 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // brief full-res resize during export (the "shake") is never seen, then opens.
   // The mechanism, tuning and frame budget live in lib/shutter.ts.
   const shutter = createShutter(stageEl);
-  const closeShutter = (): Promise<void> => shutter.close();
   const openShutter = (): void => shutter.open();
+  // Named apart from the object because `shutter` is shadowed by the boolean opt
+  // inside exportUnscaledRaw, which is where the progress actually arrives.
+  const reportShutterProgress = (done: number, total: number): void => shutter.progress(done, total);
+  // A long export (video, a sequence, a big multi-page fan-out) seals the screen
+  // for minutes - fullscreen on a phone - so it closes WITH a status block: the
+  // tool name, the format, live progress and elapsed time, plus a way out. Hide
+  // opens the shutter and lets the export run on: nothing between runtime.export
+  // and the encoders takes an abort signal, so the button never claims to cancel.
+  // The block only appears once the export outlasts STATUS_DELAY (lib/shutter.ts),
+  // which is what keeps a sub-second still export looking exactly as it did.
+  const closeShutter = (detail?: string): Promise<void> => shutter.close({
+    label: tool.manifest.name,
+    ...(detail ? { detail } : {}),
+    onHide: () => { openShutter(); announce(t('Exporting…')); },
+  });
   // Standalone visual (no export gating) - used by Copy, whose clipboard write
   // must stay in the user-gesture context, so we can't await the shutter first.
   function playShutter(): void { shutter.play(); }
@@ -2064,12 +2089,15 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // the fire-and-forget history thumbnail captures) would otherwise both read
   // prevTransform and the later one restore a stale '', leaving the canvas unscaled.
   let exportChain: Promise<unknown> = Promise.resolve();
-  function exportUnscaled<T>(fn: () => Promise<T>, opts: { shutter?: boolean } = {}): Promise<T> {
+  type ExportReport = (done: number, total: number) => void;
+  function exportUnscaled<T>(fn: (report?: ExportReport) => Promise<T>, opts: { shutter?: boolean; detail?: string } = {}): Promise<T> {
     const run = exportChain.catch(() => {}).then(() => exportUnscaledRaw(fn, opts));
     exportChain = run.catch(() => {});
     return run;
   }
-  async function exportUnscaledRaw<T>(fn: () => Promise<T>, { shutter = false }: { shutter?: boolean } = {}): Promise<T> {
+  async function exportUnscaledRaw<T>(fn: (report?: ExportReport) => Promise<T>, { shutter = false, detail }: { shutter?: boolean; detail?: string } = {}): Promise<T> {
+    // Drives the shutter's status block; inert when this export runs without one.
+    const report: ExportReport = (done, total) => { if (shutter) reportShutterProgress(done, total); };
     // Renders are coalesced behind rAF (see the subscriber below); an export reads
     // the canvas DOM directly, so force any pending paint to land first - otherwise
     // we'd capture the frame before the latest keystroke.
@@ -2094,8 +2122,8 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // transform to un-scale. Run the export directly (still behind the shutter). This is the
     // path the preview generator's __lollyCaptureThumb hook takes to vector-capture them.
     if (!canvasEl || !outerEl) {
-      if (shutter) await closeShutter();
-      try { return await fn(); }
+      if (shutter) await closeShutter(detail);
+      try { return await fn(report); }
       finally { if (shutter) openShutter(); }
     }
     const annotated = [...canvasEl.querySelectorAll<HTMLElement>('[data-canvas-input]')];
@@ -2103,7 +2131,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     annotated.forEach(el => el.removeAttribute('data-canvas-input'));
 
     // Close the shutter BEFORE the resize so the shake happens fully hidden.
-    if (shutter) await closeShutter();
+    if (shutter) await closeShutter(detail);
 
     const prevTransform = canvasEl!.style.transform;
     const prevZoom = canvasEl!.style.zoom;                 // paged docs fit-to-width via zoom
@@ -2114,7 +2142,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     outerEl!.style.width  = canvasEl!.style.width;
     outerEl!.style.height = canvasEl!.style.height;
     try {
-      return await fn();
+      return await fn(report);
     } finally {
       canvasEl!.style.transform = prevTransform;
       canvasEl!.style.zoom = prevZoom;

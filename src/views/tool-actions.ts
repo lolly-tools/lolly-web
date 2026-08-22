@@ -2669,6 +2669,11 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       // percent so a per-row callback can't thrash the DOM. Animated formats keep
       // their own time-based label (guarded by isAnimated).
       let lastExportPct = -1;
+      // The shutter's status block wants the same numbers. exportUnscaled hands
+      // its `report` sink to the function it wraps, so this is latched there (the
+      // opts object is built before the wrap) and stays null for an export that
+      // runs without a shutter, e.g. a live take.
+      let reportToShutter: ((done: number, total: number) => void) | null = null;
       // The live brand palette (host.tokens, cached) - not the tokenless PALETTE
       // fallback - so CMYK ink substitution always matches the active profile's
       // real brand (SUSE's measured inks, or whichever catalog is mounted).
@@ -2693,6 +2698,11 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
             if (total > 0) btn.textContent = `Recording live… ${done}s`;
             return;
           }
+          // The status block over the sealed shutter gets EVERY format's progress,
+          // animated included: the button label below deliberately skips those, and
+          // a multi-minute video encode is exactly the export the sealed screen had
+          // nothing to say about.
+          reportToShutter?.(done, total);
           if (isAnimated || total <= 0) return;
           const pct = Math.floor((done / total) * 100);
           if (pct === lastExportPct) return;
@@ -2846,15 +2856,18 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         seqOff.forEach((o) => o.classList.remove('seq-off'));
         let files: Array<{ name: string; blob: Blob }>;
         try {
-          files = await exportUnscaled(async () => {
+          files = await exportUnscaled(async (report) => {
             const out: Array<{ name: string; blob: Blob }> = [];
             for (let i = 0; i < framePages.length; i++) {
               const el = framePages[i]!;
+              // Pages are the honest unit of progress here - each one is a whole
+              // render, and only the last of them reports any sub-progress.
+              report?.(i, framePages.length);
               const pb = await runtime.export(el, fmt, { ...pageOpts, width: el.offsetWidth, height: el.offsetHeight });
               out.push({ name: `${filename}-${i + 1}.${extFor(fmt, pb)}`, blob: pb });
             }
             return out;
-          }, { shutter: true });
+          }, { shutter: true, detail: fmtLabel(fmt) });
         } finally {
           seqOff.forEach((o) => o.classList.add('seq-off'));
         }
@@ -2917,7 +2930,10 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           try {
             return liveTake
               ? await runtime.export(drvNode, fmt, opts)
-              : await exportUnscaled(() => runtime.export(drvNode, fmt, opts), { shutter: true });
+              : await exportUnscaled((report) => {
+                  reportToShutter = report ?? null;   // read by opts.onProgress above
+                  return runtime.export(drvNode, fmt, opts);
+                }, { shutter: true, detail: fmtLabel(fmt) });
           } finally {
             if (liveDrive) {
               delete (drvNode as unknown as { __lollyFrameDrive?: unknown }).__lollyFrameDrive;

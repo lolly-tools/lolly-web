@@ -36,7 +36,11 @@ export async function openRecentsDialog(opts: { savedCount?: number } = {}): Pro
   const saved = opts.savedCount ?? 0;
   const modal = mountModal(`
     <div class="recents-dialog">
-      <h2 class="recents-dialog-title">${t('Your recent work')}</h2>
+      <div class="recents-dialog-head">
+        <h2 class="recents-dialog-title">${t('Your recent work')}</h2>
+        <button type="button" class="recents-dialog-close" data-recents-close
+          aria-label="${escape(t('Close'))}">&#x2715;</button>
+      </div>
       ${rail || `<p class="recents-dialog-empty">${t('Exports you download will show here for quick reopening.')}</p>`}
       <a class="btn recents-dialog-go" href="#/p">${saved
         ? tRaw('Manage {n} saved sessions in Projects', { n: saved })
@@ -48,4 +52,5 @@ export async function openRecentsDialog(opts: { savedCount?: number } = {}): Pro
   modal.el.addEventListener('click', (e) => {
     if ((e.target as HTMLElement).closest('a[href]')) modal.close();
   });
+  modal.el.querySelector('[data-recents-close]')?.addEventListener('click', () => modal.close());
 }

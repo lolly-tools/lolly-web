@@ -23,7 +23,9 @@
 .job-toast {
   position: fixed;
   right: 1rem;
-  bottom: 1rem;
+  /* Same --vv-bottom/--safe-bottom idiom as .perf-hud below, so the toast clears
+     the iOS home-indicator gesture zone instead of sitting flush in it. */
+  bottom: calc(var(--vv-bottom, 0px) + var(--safe-bottom) + 1rem);
   z-index: 9500;                 /* above content + the bottom snackbars (9000), below topbar dropdowns (99999+) and modals (top layer) */
   width: min(360px, calc(100vw - 2rem));
   color: hsl(var(--foreground));
@@ -34,6 +36,19 @@
   --candy-b: var(--brand-secondary, hsl(var(--accent)));
 }
 .job-toast[hidden] { display: none; }
+
+/* Below 641px the toast widens to near-full-viewport (100vw - 2rem) and would
+   otherwise paint over the render pill's fixed FAB (tool-chrome.css, bottom:
+   8px + safe-bottom) and sit level with .undo-toasts (below, bottom: 4.5rem +
+   safe-bottom - already clear of the pill). Stack the job toast a further
+   3rem above the undo-toast anchor: enough to clear one undo-toast row (its
+   own height is content-driven, no fixed row height to reuse) so the two
+   floating lanes never overlap in the common case of one undo toast. */
+@media (max-width: 640px) {
+  .job-toast {
+    bottom: calc(var(--vv-bottom, 0px) + var(--safe-bottom) + 7.5rem);
+  }
+}
 
 /* ── Collapsed pill ─────────────────────────────────────────────────────────
    A container (visual pill) holding the expand button + optional count + ✕.
@@ -137,6 +152,17 @@ html[data-a11y-motion="reduce"] .job-bar-fill { animation: none; transition: non
   line-height: 1;
 }
 .job-x:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+
+/* Touch hit-area (same 44pt HIG floor as topbar.css's coarse-pointer block).
+   min-width/min-height win over the explicit width/height above, so the glyph
+   stays put and only the tappable box grows. The only cancel for every
+   background job, so it can't be a coarse-pointer thumb-miss. */
+@media (pointer: coarse) {
+  .job-x {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
 
 /* ── Expanded panel ─────────────────────────────────────────────────────────*/
 .job-panel {
@@ -280,7 +306,7 @@ html[data-a11y-motion="reduce"] .job-bar-fill { animation: none; transition: non
 .undo-toasts {
   position: fixed;
   left: 50%; transform: translateX(-50%);
-  bottom: calc(4.5rem + var(--safe-bottom));
+  bottom: calc(4.5rem + var(--safe-bottom) + var(--vv-bottom, 0px));
   z-index: 9400;
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   max-width: min(520px, calc(100vw - 2rem));
@@ -304,6 +330,18 @@ html[data-a11y-motion="reduce"] .job-bar-fill { animation: none; transition: non
   padding: 2px 8px; border-radius: var(--radius);
 }
 .undo-toast-btn:hover { background: hsl(var(--muted)); }
+
+/* Touch hit-area: the only undo for a soft-delete, timed out at 10s, so a
+   coarse-pointer thumb-miss loses the item for good. min-height wins over the
+   button's own content-driven height; the row grows to fit, which is fine. */
+@media (pointer: coarse) {
+  .undo-toast-btn {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 2px 12px;
+  }
+}
 .undo-toast-bar {
   position: absolute; left: 0; bottom: 0; height: 2px; width: 100%;
   background: var(--brand-primary, hsl(var(--primary)));

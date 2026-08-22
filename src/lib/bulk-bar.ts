@@ -91,7 +91,15 @@ export function syncBulkBar(host: HTMLElement, cfg: BulkBarConfig): void {
 /** Put the bar into (or out of) a busy state for a long-running bulk action: the
  *  count line becomes the progress label ("Pinning 3 of 7…"), every control
  *  disables, and sync() leaves the bar alone until the run ends. Pass null to
- *  restore - the caller should sync() right after. */
+ *  restore - the caller should sync() right after.
+ *
+ *  NO PRODUCTION CALLERS as of the 2026-08 mobile pass: every long bulk run (the
+ *  gallery's offline pin, the catalog's duplicate + zip) now rides a background job
+ *  and reports in the global job toast (lib/job-toast.ts), which is cancellable and
+ *  survives navigation. That is the pattern to reach for. If a genuinely view-scoped
+ *  busy state ever needs this again, EXEMPT the `{prefix}-clear` button from the
+ *  disable loop below: locking ✕ Clear for the length of the run left the user with
+ *  no way out of a selection, which is exactly why the pin flow moved off it. */
 export function setBulkBarBusy(host: HTMLElement, cfg: BulkBarConfig, label: string | null): void {
   const bar = host.querySelector<HTMLElement>(`.${cfg.prefix}`);
   if (!bar) return;

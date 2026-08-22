@@ -4,7 +4,9 @@
  * into a mountable component so the #/start Catalogue tab can offer the same ingest
  * surface. Drag files in or click to browse: a <label> over a visually-hidden file
  * input, so click-to-open is native and the input stays keyboard-focusable
- * (Enter/Space opens the OS picker; .updz:focus-within draws the ring).
+ * (Enter/Space opens the OS picker; .updz:focus-within draws the ring). The zone carries
+ * BOTH leads and dropzone.css shows one per pointer type: drag copy for a mouse, a
+ * full-width CTA on touch, where dragging a file in is not a gesture that exists.
  *
  * Files ingest through the SAME storeUserUpload path as the asset picker (downscale/
  * sanitise/credential-preserve/animated-sniff); a PDF/.ai converts page(s) to SVG
@@ -25,8 +27,8 @@ import type { PickerHost } from '../views/picker.ts';
 import { announce } from '../a11y.ts';
 import { playSfx } from './sfx.ts';
 import { escape } from '../utils.ts';
-// Only the trim card's strings go through t() - the zone's own copy predates it and
-// its translation is a separate i18n pass, not something to half-do here.
+// Only the trim card's strings and the touch CTA go through t() - the zone's own copy
+// predates it and its translation is a separate i18n pass, not something to half-do here.
 import { t } from '../i18n.ts';
 import '../styles/parts/dropzone.css';
 
@@ -59,7 +61,7 @@ export function mountUploadDropzone(container: HTMLElement, host: PickerHost, op
       <input type="file" class="updz-input visually-hidden" multiple accept="${escape(`${UPLOAD_ACCEPT},.zip,.tar,.tgz,.gz`)}" aria-label="Upload files to your library">
       <span class="updz-icon" aria-hidden="true">${UPLOAD_ICON}</span>
       <span class="updz-copy">
-        <span class="updz-text">Drag &amp; drop files here, or <span class="updz-browse">browse</span></span>
+        <span class="updz-text"><span class="updz-lead">Drag &amp; drop files here, or <span class="updz-browse">browse</span></span><span class="updz-cta btn btn--primary">${t('Choose files')}</span></span>
         <span class="updz-hint">${escape(opts.hint ?? DEFAULT_HINT)}</span>
       </span>
     </label>`;

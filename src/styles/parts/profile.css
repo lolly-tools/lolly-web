@@ -627,13 +627,19 @@
   transition: opacity .12s, color .12s, border-color .12s;
 }
 .profile-view .store-sess:hover .store-sess-del, .profile-view .store-sess-del:focus-visible { opacity: 1; }
+/* No hover on touch, so the delete icon needs to be reachable without it. */
+@media (hover: none) {
+  .profile-view .store-sess-del { opacity: 1; }
+}
 .profile-view .store-sess-del:hover,
 .profile-view .headshot-remove:hover{ color: hsl(var(--destructive)); border-color: hsl(var(--destructive)); }
 .profile-view .store-sess-del:disabled { opacity: .4; cursor: default; }
 
 /* Floating multi-select action bar (sessions only). */
 .store-selbar {
-  position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+  /* Matches the other floating bulk bars (.projects-bulkbar, projects.css) - clears
+     a phone's home-indicator/gesture strip instead of sitting under it. */
+  position: fixed; left: 50%; bottom: calc(4.5rem + var(--safe-bottom) + var(--vv-bottom, 0px)); transform: translateX(-50%);
   display: flex; align-items: center; gap: .8rem; padding: .5rem .5rem .5rem .95rem;
   border-radius: 999px; background: hsl(var(--popover)); color: hsl(var(--popover-foreground));
   border: 1px solid hsl(var(--border)); box-shadow: 0 10px 30px hsl(0 0% 0% / .25); z-index: 60;

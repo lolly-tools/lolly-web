@@ -40,13 +40,13 @@ import { previewMedia } from '../lib/preview-media.ts';
 import { renderFeaturedVariant, renderFeaturedPages, displayFormatOf } from '../lib/featured-render.ts';
 import { currentTheme } from '../theme.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
-import { themeSegmentHtml, wireThemeSegment } from '../components/theme-toggle.ts';
 import { segHtml } from '../lib/seg.ts';
 import { wireDisclosure } from '../components/body-popover.ts';
 import type { FeaturedEntry, FeaturedManifest, FeaturedVariant, FeaturedRowHandle, FeaturedViewMode } from '../components/featured-row.ts';
 import { loadFavourites, saveFavourites } from '../lib/favourites.ts';
 import { loadHiddenTools, saveHiddenTools } from '../lib/hidden-tools.ts';
 import { wireTileSelect } from '../lib/tile-select.ts';
+import { startJob } from '../lib/jobs.ts';
 import type { BulkBarConfig } from '../lib/bulk-bar.ts';
 import { mountModal } from '../components/modal.ts';
 import type { PickerHost } from './picker.ts';
@@ -696,8 +696,6 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
           ${sortedSaved.length && !opts.only ? `<button type="button" class="history-fab" title="${escape(t('Saved sessions'))}" aria-label="${escape(t('Saved sessions ({n})', { n: sortedSaved.length }))}">${HISTORY_ICON}<span class="history-fab-count" aria-hidden="true">${sortedSaved.length}</span></button>` : ''}`,
         popover: visibleCats.length ? `
           <div class="filter-popover" id="filter-popover" role="group" aria-label="${escape(t('Sort and filter tools'))}" hidden>
-            <div class="filter-pop-sort">${themeSegmentHtml()}</div>
-            <div class="filter-pop-sort" data-sound-slot></div>
             ${featuredEntries.length ? `
             <div class="filter-pop-sort">
               <p class="filter-pop-head">${t('Featured view')}</p>
@@ -787,6 +785,10 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => {
     for (const fn of cleanups.splice(0)) { try { fn(); } catch { /* best-effort teardown */ } }
   };
+  // False once this gallery is no longer the mounted view - a background job that
+  // outlives it (pinSelection) checks this before touching the bar.
+  let mounted = true;
+  cleanups.push(() => { mounted = false; });
 
   // A single punchy, bassy, breathy "ahhh" on arrival at the gallery - one-shot (no loop),
   // gesture-gated, silent when sound is off. Cancel on leave so a pending one can't fire elsewhere.
@@ -905,17 +907,14 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   if (featuredMount) mountFeatured(featuredEntries);
   // Featured view-mode segmented control (Gallery | Cover Flow) in the filter popover - 
   // drives BOTH strips.
-  // Scoped to the Featured-view seg specifically - the popover now also holds a Theme
-  // .view-seg (added above), so a bare `.view-seg` query could grab the wrong one. The
-  // hook is segHtml()'s own `data-be-seg` name, not the (translated) aria-label.
+  // Scoped to the Featured-view seg specifically - the hook is segHtml()'s own
+  // `data-be-seg` name, not the (translated) aria-label, so another .view-seg landing in
+  // this popover later can't be grabbed by mistake.
+  // The popover is view options only: Theme lives in the profile menu + /profile
+  // Appearance, Sound/Neurospicy on the /profile sound card, so neither is duplicated here.
   const viewSeg = viewEl.querySelector<HTMLElement>('.view-seg[data-be-seg="featured-view"]');
   const paintViewSeg = (): void => viewSeg?.querySelectorAll<HTMLElement>('[data-view]').forEach(b =>
     b.setAttribute('aria-pressed', String(b.dataset.view === featuredView)));
-  wireThemeSegment(viewEl, host);   // Theme picker in the same popover
-  // The Sound on/off segment (components/sound-toggle.ts, which statically pulls the
-  // ambient-audio modules) is injected into its [data-sound-slot] and wired lazily when
-  // the filter popover is first opened - see ensureSoundSegment near the filter wiring
-  // below. Keeps sound-toggle + atmosphere + neurospicy off the gallery's boot chunk.
   paintViewSeg();
   viewSeg?.addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-view]');
@@ -1586,22 +1585,10 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // returnFocus=false makes this a no-op when already closed.
   cleanups.push(() => filterDisclosure.close());
 
-  // Lazily inject + wire the Sound on/off segment the first time the filter popover is
-  // opened (a user gesture) - this is what keeps components/sound-toggle.ts and the
-  // ambient-audio modules it statically imports (atmosphere/neurospicy) off the boot
-  // chunk. pointerdown gives the ~KB import a head start before the popover paints;
-  // 'click' also covers keyboard activation of the fab. Idempotent via the guard.
-  let soundReady = false;
-  const ensureSoundSegment = (): void => {
-    if (soundReady) return;
-    soundReady = true;
-    void import('../components/sound-toggle.ts').then((m) => {
-      const slot = viewEl.querySelector<HTMLElement>('[data-sound-slot]');
-      if (slot && !slot.firstChild) { slot.innerHTML = m.soundSegmentHtml(); m.wireSoundSegment(viewEl, host); }
-    });
-  };
-  filterFab?.addEventListener('pointerdown', ensureSoundSegment);
-  filterFab?.addEventListener('click', ensureSoundSegment);
+  // Sound + Neurospicy are no longer in this popover either: the app-level prefs live on
+  // the /profile sound card (components/sound-toggle.ts's soundSwitchHtml), so the gallery
+  // no longer imports sound-toggle at all - the ambient-audio modules it statically pulls
+  // (atmosphere/neurospicy) stay off this route entirely, not just off the boot chunk.
 
   // "Hide previews" is no longer a per-gallery toggle: it moved to the profile's
   // Accessibility card as the "Hide colourful previews" pref (lib/a11y-prefs.ts),
@@ -1760,36 +1747,54 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     }
   }
 
-  /** Pin (or unpin) every pinnable tool in the selection, sequentially, with
-   *  progress in the bar. Failures are logged and the run continues. */
-  async function pinSelection(): Promise<void> {
+  /**
+   * Pin (or unpin) every pinnable tool in the selection as a BACKGROUND JOB, so the
+   * run survives leaving the gallery and cancels from the global job toast. The bulk
+   * bar is free again the moment the job is handed off - the toast owns the progress
+   * line now, which is what stops a long run from disabling its own ✕ Clear.
+   *
+   * heavy: false - fetch + IndexedDB writes, no wasm inference, so this must neither
+   * queue behind nor block a model job (the same rule lib/offline-run.ts states).
+   * Cancel is cooperative: pinTool has no abort, so the loop polls between tools and
+   * whatever was already pinned stays pinned. Failures are logged, the run continues.
+   */
+  function pinSelection(): void {
     const unpin = allSelectedPinned();
     const ids = pinnableIds().filter(id => (unpin ? pinnedTools.has(id) : !pinnedTools.has(id)));
     if (!ids.length) return;
-    let failed = 0, done = 0;
-    for (const id of ids) {
-      bulkMod?.setBulkBarBusy(viewEl, bulkBarCfg, unpin
-        ? t('Removing {a} of {b} from offline…', { a: done + 1, b: ids.length })
-        : t('Saving {a} of {b} for offline…', { a: done + 1, b: ids.length }));
-      try {
-        if (unpin) { await unpinTool(id); pinnedTools.delete(id); }
-        else {
-          const manifest = await pinTool(id, arr => prefetchAssetsById(host as unknown as Parameters<typeof prefetchAssetsById>[0], arr));
-          pinnedTools.add(id);
-          warmEditorChunk(manifest.render?.layout);
+    const job = startJob({
+      title: unpin ? t('Remove from offline') : t('Downloading for offline'),
+      heavy: false,
+      cancel: () => { /* cooperative - the loop polls job.cancelled between tools */ },
+    });
+    void (async () => {
+      let failed = 0, done = 0;
+      for (const id of ids) {
+        if (job.cancelled) break;
+        job.progress(done, ids.length, toolById.get(id)?.name ?? id);
+        try {
+          if (unpin) { await unpinTool(id); pinnedTools.delete(id); }
+          else {
+            const manifest = await pinTool(id, arr => prefetchAssetsById(host as unknown as Parameters<typeof prefetchAssetsById>[0], arr));
+            pinnedTools.add(id);
+            warmEditorChunk(manifest.render?.layout);
+          }
+        } catch (err) {
+          failed++;
+          host.log('warn', 'Offline pin failed', { toolId: id, error: String(err) });
         }
-      } catch (err) {
-        failed++;
-        host.log('warn', 'Offline pin failed', { toolId: id, error: String(err) });
+        done++;
       }
-      done++;
-    }
-    bulkMod?.setBulkBarBusy(viewEl, bulkBarCfg, null);
-    syncBulkBar();
-    const ok = ids.length - failed;
-    if (!unpin && ok > 0) playSfx('victory');
-    if (failed) announce(t('{n} saved for offline, {m} failed - check your connection', { n: ok, m: failed }), { assertive: true });
-    else announce(unpin ? t('{n} removed from offline', { n: ok }) : t('{n} available offline', { n: ok }));
+      job.progress(done, ids.length);
+      job.finish();
+      // The bar's pin label reads off pinnedTools - refresh it only while this
+      // gallery is still the mounted view.
+      if (mounted) syncBulkBar();
+      const ok = done - failed;
+      if (!unpin && ok > 0 && !job.cancelled) playSfx('victory');
+      if (failed) announce(t('{n} saved for offline, {m} failed - check your connection', { n: ok, m: failed }), { assertive: true });
+      else announce(unpin ? t('{n} removed from offline', { n: ok }) : t('{n} available offline', { n: ok }));
+    })();
   }
 
   /** Land in Projects filtered to the selected tools' saved sessions. */
@@ -1828,7 +1833,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     if (action === 'clear') { dropSelection(); return; }
     if (action === 'fav') { favouriteSelection(); return; }
     if (action === 'hide') { await hideSelection(); return; }
-    if (action === 'pin') { await pinSelection(); return; }
+    if (action === 'pin') { pinSelection(); return; }
     if (action === 'sessions') { viewSessionsForSelection(); return; }
     if (action === 'info') {
       const ref = [...selected][0];

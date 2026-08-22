@@ -2035,7 +2035,12 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       <div class="valid-drop" data-drop tabindex="0" role="button" aria-label="${escape(t('Choose or drop files to verify'))}">
         <input type="file" multiple accept=".pdf,.pptx,.png,.apng,.jpg,.jpeg,.gif,.svg,.tif,.tiff,.webp,.avif,.mp4,.m4v,.mov,.m4a,.webm,.mkv,.mp3,.wav,.opus,.html,.htm,.js,.css,.md,.txt,application/pdf,${PPTX_MIME},image/png,image/jpeg,image/gif,image/svg+xml,image/tiff,image/webp,image/avif,video/mp4,video/webm,video/x-matroska,audio/mp4,audio/mpeg,audio/wav,audio/x-wav,.ogg,audio/ogg,audio/opus,text/*" hidden>
         <span class="valid-drop-icon" aria-hidden="true">${ICON_SHIELD}</span>
-        <strong>${t('Drop files here')}</strong>
+        <!-- Two leads, both rendered, one shown per pointer type (valid.css): a coarse
+             pointer gets the tap affordance, a mouse keeps the drop sentence. The zone
+             is ITSELF the button (role=button above), so this is its visible label, not
+             a nested control - no second tab stop, no double picker on click. -->
+        <span class="btn btn--primary valid-drop-cta">${t('Choose files')}</span>
+        <strong class="valid-drop-lead">${t('Drop files here')}</strong>
         <span>${t('pdf · png · jpg · gif · svg · tiff · webp · mp4 · webm · mp3 · wav · html · txt - check one or several at once')}</span>
         <span>${t('or paste source text - a C2PA credential can travel inside an HTML document or plain text')}</span>
       </div>

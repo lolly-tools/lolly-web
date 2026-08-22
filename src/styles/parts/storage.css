@@ -232,7 +232,8 @@
 }
 .userimg-lightbox-close {
   position: fixed;
-  top: 16px;
+  /* Clears a phone's notch/status-bar cutout. */
+  top: calc(16px + var(--safe-top, 0px));
   right: 16px;
   /* Icon-only control: the box rides the chrome icon scale (tokens.css) with
      the glyph it holds, so the mark never shrinks inside a growing button. */

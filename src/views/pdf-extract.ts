@@ -581,6 +581,8 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
   let current: Extracted | null = null;
   /** The open document - kept for the lazy per-page SVG renders. */
   let curHandle: UnpackHandle | null = null;
+  /** Set by the busy line's Cancel - the in-flight read drops its result. */
+  let readCancelled = false;
   /** Memoised page → object-URL renders, so page art and its thumb share one. */
   let artPromises = new Map<number, Promise<string | null>>();
   let observers: Array<{ disconnect(): void }> = [];
@@ -766,8 +768,23 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
       fail(t('That file is too large to take apart here (over {n} MB).', { n: Math.round(MAX_BYTES / 1024 / 1024) }));
       return;
     }
+    // A 400-page / 120 MB read is minutes of work, so the busy line carries a page
+    // count and a way out. The flag is checked after every await and at each 8-page
+    // yield; the reads themselves have no abort, so a cancelled parse finishes in the
+    // background and its result is dropped. Deliberately view-scoped (not a job): the
+    // report only exists on this view, so there is nothing to hand back after a leave.
+    readCancelled = false;
     out.hidden = false;
-    out.innerHTML = `<p class="pdfx-busy">${t('Reading {name}…', { name: file.name })}</p>`;
+    out.innerHTML = `<p class="pdfx-busy">`
+      + `<span>${t('Reading {name}…', { name: file.name })}</span> `
+      + `<span data-busy-count role="status" aria-live="polite"></span> `
+      + `<button type="button" class="btn btn--ghost" data-busy-cancel>${t('Cancel')}</button></p>`;
+    const busyCount = out.querySelector<HTMLElement>('[data-busy-count]');
+    out.querySelector<HTMLElement>('[data-busy-cancel]')?.addEventListener('click', () => {
+      readCancelled = true;
+      reset();
+      announce(t('Import cancelled'));
+    });
 
     // The module import and the document parse fail for unrelated reasons and
     // must not share a catch: a stale chunk after a deploy (or a wiped dev dep
@@ -776,6 +793,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
     let openDesignFile: (typeof import('./unpack-open.ts'))['openDesignFile'];
     try {
       ({ openDesignFile } = await import('./unpack-open.ts'));
+      if (readCancelled) return;
     } catch (err) {
       host.log('warn', 'pdf-extract: reader module failed to load', { error: (err as Error)?.message });
       fail(t('The reader failed to load. Your file is fine; reload the page and try again.'));
@@ -789,6 +807,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
     let handle: UnpackHandle;
     try {
       handle = await openDesignFile(file);
+      if (readCancelled) return;
     } catch (err) {
       host.log('warn', 'pdf-extract: open failed', { error: (err as Error)?.message, cause: ((err as Error)?.cause as Error)?.message });
       fail((err as Error)?.message || t('That file could not be opened.'));
@@ -812,8 +831,12 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
         pages.push({ blocks: [], text: '', markdown: '', columns: 1, scanned: false, rotated: 0, order: 'geometric' });
       }
       // Yield between pages so a long document keeps the view responsive and the
-      // busy line stays painted.
-      if (i % 8 === 7) await new Promise((r) => setTimeout(r, 0));
+      // busy line stays painted - and repaint the count while we are there.
+      if (i % 8 === 7) {
+        if (busyCount) busyCount.textContent = t('{done} of {total}', { done: i + 1, total: count });
+        await new Promise((r) => setTimeout(r, 0));
+        if (readCancelled) return;
+      }
     }
 
     // The redaction check reuses the interpreted nodes the text pass just built,
@@ -853,6 +876,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
     try { palette = handle.listPalette?.() ?? []; }
     catch (err) { host.log('warn', 'pdf-extract: palette scan failed', { error: (err as Error)?.message }); }
 
+    if (readCancelled) return;
     releasePreviews();
     unwire();
     current = {
