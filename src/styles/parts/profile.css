@@ -146,7 +146,7 @@
     grid-template-columns: 1fr;
     gap: 1rem;
     /* Clear the raised floating bar so the last card can scroll fully into view above it. */
-    padding-bottom: calc(env(safe-area-inset-bottom) + 10rem);
+    padding-bottom: calc(var(--safe-bottom) + 10rem);
   }
   /* Last-resort guard so no child can push the page sideways in the tablet band. */
   .profile-view { overflow-x: clip; }
@@ -158,7 +158,7 @@
   .profile-view .profile-nav {
     position: fixed; top: auto; z-index: 40;
     left: var(--vv-left, 0px); right: var(--vv-right, 0px);
-    bottom: calc(var(--vv-bottom, 0px) + env(safe-area-inset-bottom) + 7rem);
+    bottom: calc(var(--vv-bottom, 0px) + var(--safe-bottom) + 7rem);
     max-height: none; overflow: visible;
     padding: 0 .6rem; background: none;
     pointer-events: none;

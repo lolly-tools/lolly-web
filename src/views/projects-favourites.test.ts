@@ -50,7 +50,8 @@ test('toggle + bulk persist to the profile and repaint', () => {
 });
 
 test('the favourites strip mounts at the root only, from the starred refs', () => {
-  assert.match(CODE, /favourites\.size \?/, 'the strip mount is gated on having favourites');
+  // List mode skips the hero (plans/133 Part C, C2h) - the gate is favourites AND not the table.
+  assert.match(CODE, /favourites\.size && !list \?/, 'the strip mount is gated on having favourites (and grid mode)');
   assert.match(CODE, /data-fav-strip/, 'root markup has the strip mount element');
   assert.match(CODE, /function mountFavStrip\(root: HTMLElement\)/, 'a dedicated mount fn');
   assert.match(CODE, /root\.querySelector<HTMLElement>\('\[data-fav-strip\]'\)/, 'finds ITS mount only (exists in rootHtml)');

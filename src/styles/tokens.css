@@ -51,10 +51,29 @@
  * an undefined var makes a calc() invalid at computed-value time, which for a
  * font-size means inheriting a near-enough size, but for this token would leave
  * every control in the row with no height at all. */
+/* ─── Safe-area tokens ──────────────────────────────────────────────────────
+ * EVERY safe-area read in the app goes through these four, never through a raw
+ * env() - because env() is not always the truth: the iOS 27 beta's WKWebView
+ * resolves env(safe-area-inset-*) to 0 while still drawing full-bleed
+ * (device-verified 2026-08-22 - the back pill overprinted the status clock).
+ * main.ts's initMobilePlatformFit probes env() at boot and, when it reads 0 on
+ * a notched iPhone under Tauri, sets the --safe-*-fb fallbacks from the
+ * device's screen class. max() takes whichever side knows the truth; on every
+ * healthy platform the fallbacks stay 0 and this is byte-identical to env(). */
+:root {
+  --safe-top: max(env(safe-area-inset-top, 0px), var(--safe-top-fb, 0px));
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--safe-bottom-fb, 0px));
+  --safe-left: max(env(safe-area-inset-left, 0px), var(--safe-left-fb, 0px));
+  --safe-right: max(env(safe-area-inset-right, 0px), var(--safe-right-fb, 0px));
+}
+
 :root {
   /* calc(… * 1) computes byte-identically to the bare 2.6rem it replaces. */
   --chrome-h: calc(2.6rem * var(--a11y-fs, 1));   /* shared height of every top-row control */
-  --chrome-top: 0.5rem;    /* distance from the top of the viewport */
+  /* + --safe-top so WIDE viewports clear a notch too (iPad portrait, phone
+     landscape) - the max-width:640px override below only covered phones.
+     Desktop --safe-top is 0, so this computes byte-identically there. */
+  --chrome-top: calc(0.5rem + var(--safe-top));    /* distance from the top of the viewport */
   --chrome-inset: 2rem;    /* distance from the left/right edge */
 
   /* How much TALLER the top row is than at rest - 0 unless largeText is on.
@@ -95,7 +114,7 @@
    same line at every width. */
 @media (max-width: 640px) {
   :root {
-    --chrome-top: calc(1.25rem + env(safe-area-inset-top, 0px));
+    --chrome-top: calc(1.25rem + var(--safe-top));
   }
 }
 

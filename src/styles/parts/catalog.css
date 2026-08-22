@@ -72,7 +72,7 @@
    / drop the count rather than overflow a narrow viewport. */
 @media (max-width: 640px) {
   .cat-toolbar {
-    top: calc(52px + env(safe-area-inset-top, 0px));
+    top: calc(52px + var(--safe-top));
     gap: 7px; padding: 6px 8px;
     /* Bounded by the .catalog content box (max-width:100% relative to it), never 100vw:
        the base rule already caps at 100%, and pinning to the container is what keeps the
@@ -332,7 +332,7 @@
 /* ── Bulk-action bar (a multi-selection of uploads) ── Fixed, bottom-centre, above the
    footer search; mirrors the projects view's .projects-bulkbar. */
 .cat-bulkbar {
-  position: fixed; left: 50%; bottom: calc(4.8rem + env(safe-area-inset-bottom));
+  position: fixed; left: 50%; bottom: calc(4.8rem + var(--safe-bottom));
   transform: translateX(-50%); z-index: 9000;
   display: flex; align-items: center; gap: 14px;
   /* max-content: at left:50% shrink-to-fit sizes against only the right half of
@@ -357,7 +357,7 @@
 }
 .cat-bulkbar-clear:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
 /* Reserve room so the bar never sits over the last row (mobile stacks the footer + bar). */
-.catalog.has-selection { padding-bottom: calc(8rem + env(safe-area-inset-bottom)); }
+.catalog.has-selection { padding-bottom: calc(8rem + var(--safe-bottom)); }
 @media (max-width: 640px) {
   .cat-bulkbar { flex-wrap: wrap; justify-content: center; gap: 10px; width: min(92vw, 420px); max-width: calc(100vw - 16px); border-radius: var(--radius); }
   /* Icon-only actions on a phone: up to seven verbs (Favourite, Hide, Replace, Rename,
@@ -1402,7 +1402,7 @@ button.cat-download { font: inherit; cursor: pointer; }
 @media (max-width: 640px) {
   /* Bottom stays 0 like the base rule - #view's shared .has-search-footer padding
      is the footer clearance; repeating it here doubled the dead space above the bar. */
-  .catalog { padding: calc(4.2rem + env(safe-area-inset-top, 0px)) 12px 0; }
+  .catalog { padding: calc(4.2rem + var(--safe-top)) 12px 0; }
   .catalog .cat-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
   /* Narrow tiles: the caption sub-line ("Catalog · SVG") is tight, so collapse the
      GEN AI pill to just the sparkle in a circle. The details-modal pill is untouched
@@ -1416,7 +1416,7 @@ button.cat-download { font: inherit; cursor: pointer; }
   /* Touch: no hover, so keep the star always visible. */
   .cat-star { opacity: 1; }
   /* Match the mobile .catalog padding-top so the featured hero still bleeds to the top. */
-  .cat-fav-strip { margin: calc(-4.2rem - env(safe-area-inset-top, 0px)) -12px 1.2rem; }
+  .cat-fav-strip { margin: calc(-4.2rem - var(--safe-top)) -12px 1.2rem; }
   .cat-viewopts { position: fixed; top: auto; bottom: 12px; left: 12px; right: 12px; }
 }
 

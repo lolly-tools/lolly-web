@@ -1477,3 +1477,26 @@ mark.valid-hl--t5 { background: hsl(0 82% 55% / 0.48); }
 /* A model-fingerprint identification reads firmer than a hedged style guess. */
 .valid-tsig-guess--high { font-weight: 600; color: hsl(0 70% 45%); }
 :root[data-theme="dark"] .valid-tsig-guess--high, :root:not([data-theme="light"]) .valid-tsig-guess--high { color: hsl(0 75% 68%); }
+
+/* Loading: the message prominent and centred ABOVE the spinning Lolly mark
+   (the inlined icon.svg from lib/lolly-mark.ts). Three layers spin about their
+   own centres at the ask-send cadences; both motion prefs still them. */
+.valid-loading { display: flex; flex-direction: column; align-items: center; gap: 1rem; padding: 2.2rem 1rem; text-align: center; }
+.valid-loading-text { margin: 0; font-size: calc(1.15rem * var(--a11y-fs)); font-weight: 700; }
+.valid-loading-mark { display: block; width: calc(64px * var(--a11y-fs)); height: calc(64px * var(--a11y-fs)); }
+.valid-loading-mark svg { width: 100%; height: 100%; display: block; }
+.valid-loading-mark .lolly-mark__spin-1,
+.valid-loading-mark .lolly-mark__spin-2,
+.valid-loading-mark .lolly-mark__spin-3 { transform-origin: 50% 50%; transform-box: fill-box; }
+.valid-loading-mark .lolly-mark__spin-1 { animation: valid-mark-spin 2.4s linear infinite; }
+.valid-loading-mark .lolly-mark__spin-2 { animation: valid-mark-spin 4.6s linear infinite reverse; }
+.valid-loading-mark .lolly-mark__spin-3 { animation: valid-mark-spin 7s linear infinite; }
+@keyframes valid-mark-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .valid-loading-mark .lolly-mark__spin-1,
+  .valid-loading-mark .lolly-mark__spin-2,
+  .valid-loading-mark .lolly-mark__spin-3 { animation: none; }
+}
+html[data-a11y-motion="reduce"] .valid-loading-mark .lolly-mark__spin-1,
+html[data-a11y-motion="reduce"] .valid-loading-mark .lolly-mark__spin-2,
+html[data-a11y-motion="reduce"] .valid-loading-mark .lolly-mark__spin-3 { animation: none; }

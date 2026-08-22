@@ -1151,16 +1151,16 @@ background-image:
   .start { --stu-sheet-h: 45dvh; } /* pre-first-snap default; per-state below */
   /* Peek = the measured strip row + the home-indicator inset (the sheet hugs
      the viewport bottom, so the strip itself must clear it). */
-  .start[data-stu-sheet="peek"] { --stu-sheet-h: calc(var(--stu-peek-h, 64px) + env(safe-area-inset-bottom, 0px)); }
+  .start[data-stu-sheet="peek"] { --stu-sheet-h: calc(var(--stu-peek-h, 64px) + var(--safe-bottom)); }
   .start[data-stu-sheet="half"] { --stu-sheet-h: 50dvh; }
   .start[data-stu-sheet="full"] { --stu-sheet-h: 88dvh; }
 
   /* Page bottom clearance - the last panel must scroll clear of the peek strip. */
-  .start:has(> .stu-sheet) { padding-bottom: calc(96px + var(--stu-peek-h, 64px) + env(safe-area-inset-bottom, 0px)); }
+  .start:has(> .stu-sheet) { padding-bottom: calc(96px + var(--stu-peek-h, 64px) + var(--safe-bottom)); }
 
   /* The download pill sticks to the viewport bottom here (no pane scroller
      below 1100px) - lifted clear of the palette sheet's peek strip. */
-  .be-pal-dock { bottom: calc(var(--stu-peek-h, 64px) + env(safe-area-inset-bottom, 0px) + 12px); }
+  .be-pal-dock { bottom: calc(var(--stu-peek-h, 64px) + var(--safe-bottom) + 12px); }
 
   /* The bulk bar rides the sheet's FREE EDGE, exactly as the grip does. It
      cannot be lifted over the sheet with z-index (see the ladder note at
@@ -1186,7 +1186,7 @@ background-image:
     background: hsl(var(--card));
     border-radius: 18px 18px 0 0;
     box-shadow: 0 -10px 34px hsl(var(--foreground) / .18);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: var(--safe-bottom);
     /* Clip the body to the rounded edge; the grip is a SIBLING, never cropped. */
     overflow: hidden;
     transition: height .34s cubic-bezier(.32, .72, 0, 1); /* the tool sheet's settle */
@@ -1736,7 +1736,7 @@ html[data-a11y-motion="reduce"] .be-ramp-curve { transition: none; }
   pointer-events: none;
 }
 .be-bulkbar {
-  position: fixed; left: 50%; bottom: calc(4.2rem + env(safe-area-inset-bottom, 0px));
+  position: fixed; left: 50%; bottom: calc(4.2rem + var(--safe-bottom));
   transform: translateX(-50%); z-index: 40;
   display: flex; align-items: center; gap: 12px;
   padding: 8px 8px 8px 16px; border-radius: 999px;

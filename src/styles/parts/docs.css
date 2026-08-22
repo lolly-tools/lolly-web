@@ -77,8 +77,8 @@
  * sits in the same button family as its peer utility views. */
 .docs-topright {
   position: fixed;
-  top: max(0.75rem, env(safe-area-inset-top, 0));
-  right: max(0.9rem, env(safe-area-inset-right, 0));
+  top: max(0.75rem, var(--safe-top));
+  right: max(0.9rem, var(--safe-right));
   z-index: 30;
   display: flex;
   align-items: center;
@@ -387,6 +387,33 @@
 .docs-pathway { font: 600 .95rem/1.4 var(--font-brand, system-ui, sans-serif); color: hsl(var(--muted-foreground)); text-decoration: none; padding: .2rem 0; border-bottom: 2px solid transparent; white-space: nowrap; }
 .docs-pathway:hover { color: hsl(var(--foreground)); }
 .docs-pathway.active { color: hsl(var(--primary)); border-bottom-color: hsl(var(--primary)); }
+
+/* AI-scan donut at the strip's right end: the page's text-signal score (the same
+   read #/verify runs on this served page), pressing through to the full report.
+   Colour follows the band (valid.css's gauge hues); the number inside carries the
+   value, so colour is never the only carrier. */
+.docs-tsig-donut { margin-inline-start: auto; align-self: center; display: inline-flex; padding: .2rem 0; }
+/* The donut hugs the strip's right edge, so the shared tooltip's centred bubble
+   (parts/tooltip.css) would hang past the viewport - anchor bubble and arrow to
+   the host's right edge instead, statically (no slide, the fade still runs). */
+.docs-pathways .docs-tsig-donut[data-tip]::after { left: auto; right: 0; transform: none; }
+.docs-pathways .docs-tsig-donut[data-tip]::before { left: auto; right: 8px; transform: none; }
+.docs-pathways .docs-tsig-donut svg { width: calc(26px * var(--a11y-fs)); height: calc(26px * var(--a11y-fs)); max-width: none; max-height: none; }
+.docs-tsig-donut circle { fill: none; stroke-width: 7; }
+.docs-tsig-track { stroke: hsl(var(--muted-foreground) / 0.25); }
+.docs-tsig-fill { stroke-linecap: round; transform: rotate(-90deg); transform-origin: 50% 50%; }
+.docs-tsig-num { font-size: 22px; font-weight: 700; text-anchor: middle; fill: hsl(var(--muted-foreground)); }
+.docs-tsig-donut:hover .docs-tsig-num { fill: hsl(var(--foreground)); }
+.docs-tsig-donut svg[data-band="none"] .docs-tsig-fill { stroke: hsl(var(--muted-foreground) / 0.6); }
+.docs-tsig-donut svg[data-band="weak"] .docs-tsig-fill { stroke: hsl(45 90% 42%); }
+.docs-tsig-donut svg[data-band="notable"] .docs-tsig-fill { stroke: hsl(30 90% 45%); }
+.docs-tsig-donut svg[data-band="strong"] .docs-tsig-fill { stroke: hsl(0 82% 50%); }
+:root[data-theme="dark"] .docs-tsig-donut svg[data-band="weak"] .docs-tsig-fill,
+:root:not([data-theme="light"]) .docs-tsig-donut svg[data-band="weak"] .docs-tsig-fill { stroke: hsl(45 90% 55%); }
+:root[data-theme="dark"] .docs-tsig-donut svg[data-band="notable"] .docs-tsig-fill,
+:root:not([data-theme="light"]) .docs-tsig-donut svg[data-band="notable"] .docs-tsig-fill { stroke: hsl(30 90% 55%); }
+:root[data-theme="dark"] .docs-tsig-donut svg[data-band="strong"] .docs-tsig-fill,
+:root:not([data-theme="light"]) .docs-tsig-donut svg[data-band="strong"] .docs-tsig-fill { stroke: hsl(0 82% 60%); }
 
 /* three-column grid: sidebar | content | on-page TOC */
 .docs-reader-grid { display: grid; grid-template-columns: 14rem minmax(0, 1fr) 13rem; gap: 2.75rem; align-items: start; }

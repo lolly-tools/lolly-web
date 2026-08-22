@@ -693,9 +693,77 @@ function trackVisualViewport(): void {
   apply();
 }
 
+/**
+ * Mobile-app platform fit (plans/132, device-verified fixes 2026-08-22).
+ * Tauri MOBILE webviews only - the browser PWA and the desktop shells are
+ * untouched. Three corrections, each earned on a real phone:
+ *
+ * 1) Page pinch-zoom is disabled (Andy: it breaks the fixed chrome; zooming
+ *    belongs to the surfaces that own it - the catalog preview and the canvas
+ *    gestures). WKWebView honours user-scalable=no; Safari-the-browser ignores
+ *    it for accessibility, but this is an app, whose text-size story is (3).
+ * 2) env(safe-area-inset-*) fallback: the iOS 27 beta's WKWebView resolves the
+ *    envs to 0 while drawing full-bleed, which put the back pill on top of the
+ *    status clock. Probe env() through a live element; when it reads 0 on a
+ *    notched iPhone, feed tokens.css's --safe-*-fb from the screen class
+ *    (erring a few px generous - chrome sits a hair lower, never under glass).
+ * 3) OS text size: iOS Dynamic Type does not reach web content, so probe the
+ *    `-apple-system-body` font (which DOES track it) and feed the ratio into
+ *    the EXISTING --a11y-fs chrome multiplier - the export-safe scale
+ *    (a11y-prefs: chrome-only, never the canvas). Capped at 1.5 - beyond that
+ *    the chrome needs real reflow work, not scaling. When the in-app largeText
+ *    pref is also on, the larger of the two wins.
+ */
+function initMobilePlatformFit(): void {
+  if (!('__TAURI_INTERNALS__' in window) || !matchMedia('(pointer: coarse)').matches) return;
+  const root = document.documentElement;
+
+  document.querySelector('meta[name="viewport"]')?.setAttribute(
+    'content',
+    'width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no',
+  );
+
+  const ios = /iP(hone|ad|od)/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (!ios) return;
+
+  const probe = document.createElement('div');
+  probe.style.cssText =
+    'position:fixed;visibility:hidden;pointer-events:none;'
+    + 'padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);'
+    + 'font:-apple-system-body';
+  probe.textContent = 'x';
+  root.appendChild(probe);
+  const cs = getComputedStyle(probe);
+  const envTop = parseFloat(cs.paddingTop) || 0;
+  const bodyPx = parseFloat(cs.fontSize) || 17;
+  probe.remove();
+
+  if (envTop === 0) {
+    // Logical long-edge → top inset class: Dynamic Island (~59-62pt), notch
+    // (~47-50pt), home-button classics (20pt status bar). Bottom: the home
+    // indicator (34pt) on everything without a home button.
+    const long = Math.max(screen.height, screen.width);
+    const top = long >= 874 ? 62 : long >= 812 ? 50 : 20;
+    const bottom = long >= 812 ? 34 : 0;
+    root.style.setProperty('--safe-top-fb', `${top}px`);
+    root.style.setProperty('--safe-bottom-fb', `${bottom}px`);
+  }
+
+  // 17px is -apple-system-body at the default (Large) setting. The ratio goes
+  // to its OWN variable, composed into --a11y-fs by parts/a11y.css - writing
+  // --a11y-fs inline would outrank the html[data-a11y-text] rule on the same
+  // element and freeze the in-app Large text pref at whatever this boot saw.
+  const ratio = bodyPx / 17;
+  if (ratio > 1.02) {
+    root.style.setProperty('--a11y-os-fs', String(Math.min(1.5, ratio).toFixed(3)));
+  }
+}
+
 async function boot(): Promise<void> {
   const host = await createBridge();
   trackVisualViewport();
+  initMobilePlatformFit();
 
   // The global async-job progress toast (plans/124 WP-F). Mounted once here, on
   // document.body OUTSIDE main#view, so it survives every router view teardown -

@@ -605,10 +605,17 @@ async function provisionLollyTool(bytes: Uint8Array, lp: typeof import('./lolly-
   }
 }
 
+/** Hooks a view can hang on the chooser (plans/133 WP-6): `onStored` receives the
+ *  ids of every asset the library routes stored, so the Projects view can file a
+ *  drop into the folder the user is looking at. */
+export interface DropChooserHooks {
+  onStored?: (ids: string[]) => void;
+}
+
 export async function openDropChooser(
   files: File[],
   host: PickerHost,
-  opts: { superseded?: () => boolean } = {},
+  opts: { superseded?: () => boolean } & DropChooserHooks = {},
 ): Promise<void> {
   if (!files.length) return;
   const picker = await import('../views/picker.ts');
@@ -704,7 +711,7 @@ export async function openDropChooser(
       routeToConsumer('#/verify', /^#\/(verify|valid|v)([?/]|$)/.test(window.location.hash));
       break;
     case 'library':
-      await ingestToLibrary(files, host, picker);
+      await ingestToLibrary(files, host, picker, opts.onStored);
       break;
     case 'unpack': {
       // Explode the archive to its members, then feed them through the SAME library
@@ -717,7 +724,7 @@ export async function openDropChooser(
         const memberFiles = members.map(
           (m) => new File([m.bytes as BlobPart], m.name.split('/').pop() || m.name),
         );
-        await ingestToLibrary(memberFiles, host, picker);
+        await ingestToLibrary(memberFiles, host, picker, opts.onStored);
       } catch (err) {
         announce(tRaw('Upload failed: {message}', { message: (err as Error).message }), { assertive: true });
       }
@@ -755,31 +762,30 @@ function routeToConsumer(hash: string, alreadyThere: boolean): void {
  * everything else stores through storeUserUpload (downscale/sanitise/credential-
  * preserve). Sequential on purpose: parallel decodes of a big drop spike memory.
  */
-async function ingestToLibrary(files: File[], host: PickerHost, picker: PickerModule): Promise<void> {
+async function ingestToLibrary(files: File[], host: PickerHost, picker: PickerModule, onStored?: (ids: string[]) => void): Promise<void> {
   // Drop a folder extracted from a macOS zip and its `._` AppleDouble stubs / .DS_Store
   // arrive as ordinary File drops; skip them so they never become blank "BIN" assets.
   // (The 'unpack' path's members are already filtered in readArchiveMembers; this also
   // covers the direct 'library' multi-file drop.)
   const { isIgnoredUploadName } = await import('./archive-ingest.ts');
   files = files.filter((f) => !isIgnoredUploadName(f.name));
-  let stored = 0;
+  const ids: string[] = [];
   for (const file of files) {
     try {
       if (picker.isPdfUpload(file)) {
         const { ingestPdfAsSvgAssets } = await import('../views/pdf-import.ts');
-        stored += (await ingestPdfAsSvgAssets(host, file, {
+        ids.push(...(await ingestPdfAsSvgAssets(host, file, {
           mode: 'multi',
           warn: (m: string) => announce(m, { assertive: true }),
-        })).length;
+        })).map(r => r.id));
       } else if (picker.isPptxUpload(file)) {
         const { ingestPptxAsSvgAssets } = await import('../views/pptx-import.ts');
-        stored += (await ingestPptxAsSvgAssets(host, file, {
+        ids.push(...(await ingestPptxAsSvgAssets(host, file, {
           mode: 'multi',
           warn: (m: string) => announce(m, { assertive: true }),
-        })).length;
+        })).map(r => r.id));
       } else {
-        await picker.storeUserUpload(host, file);
-        stored += 1;
+        ids.push((await picker.storeUserUpload(host, file)).id);
       }
     } catch (err) {
       // Cap/quota errors carry a user-ready message; prefix only the rest.
@@ -791,11 +797,13 @@ async function ingestToLibrary(files: File[], host: PickerHost, picker: PickerMo
       );
     }
   }
+  const stored = ids.length;
   if (!stored) return;
   playSfx('drop');
   announce(stored === 1
     ? t('Added 1 file to your library.')
     : t('Added {n} files to your library.', { n: stored }));
+  onStored?.(ids);
 }
 
 // The exports route - every shape marked for export in Penpot becomes stored
@@ -838,7 +846,7 @@ const ATTACHED = new WeakMap<HTMLElement, () => void>();
  * itself down on any navigation - a tool view can never inherit it. Returns the
  * teardown for callers that want it earlier.
  */
-export function attachDropRouter(rootEl: HTMLElement, host: PickerHost): () => void {
+export function attachDropRouter(rootEl: HTMLElement, host: PickerHost, hooks: DropChooserHooks = {}): () => void {
   ATTACHED.get(rootEl)?.();
   const ac = new AbortController();
   const { signal } = ac;
@@ -884,7 +892,7 @@ export function attachDropRouter(rootEl: HTMLElement, host: PickerHost): () => v
     e.preventDefault();
     showHint(false);
     const files = [...(e.dataTransfer?.files ?? [])];
-    if (files.length) void openDropChooser(files, host);
+    if (files.length) void openDropChooser(files, host, hooks);
   }, { signal });
 
   const teardown = (): void => {

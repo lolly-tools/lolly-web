@@ -81,8 +81,16 @@ export interface TileContextMenuOptions {
   singleHtml(target: ContextMenuTarget): string;
   /** Bulk menu body: a `.folder-menu-head` count + an inner role="menu" list. */
   bulkHtml?(): string;
-  /** Dispatch a picked row. `target` is null for the bulk menu. Runs after close(). */
-  onAction(act: string, target: ContextMenuTarget | null): void;
+  /**
+   * Background menu (plans/133 WP-13 - the file-manager "right-click on empty
+   * canvas" menu: New folder / Paste / Select all…). Opens for a right-click inside
+   * the host that hits no tile and no control (links, buttons, fields, dialogs
+   * keep the native menu). Return '' to decline for this click.
+   */
+  backgroundHtml?(): string;
+  /** Dispatch a picked row. `target` is null for the bulk AND background menus -
+   *  `kind` tells them apart. Runs after close(). */
+  onAction(act: string, target: ContextMenuTarget | null, kind: 'single' | 'bulk' | 'background'): void;
   /** Popover class. The default pairs the shared skin with fixed positioning. */
   className?: string;
 }
@@ -92,6 +100,7 @@ export interface TileContextMenuHandle {
    *  focus restore + aria-expanded upkeep; pointer opens leave it null. */
   openAt(x: number, y: number, target: ContextMenuTarget, anchor?: HTMLElement | null): void;
   openBulkAt(x: number, y: number): void;
+  openBackgroundAt(x: number, y: number): void;
   close(): void;
   isOpen(): boolean;
   destroy(): void;
@@ -110,13 +119,15 @@ function clampedPosition(el: HTMLDivElement, anchor: PopoverAnchor): void {
 
 export function wireTileContextMenu(opts: TileContextMenuOptions): TileContextMenuHandle {
   const point = pointAnchor();
-  type Pending = { kind: 'single'; target: ContextMenuTarget } | { kind: 'bulk' };
+  type Pending = { kind: 'single'; target: ContextMenuTarget } | { kind: 'bulk' } | { kind: 'background' };
   let pending: Pending | null = null;
 
   const popover = mountBodyPopover(point, (el) => {
     if (!pending) return null;
     el.setAttribute('role', pending.kind === 'bulk' ? 'group' : 'menu');
-    el.innerHTML = pending.kind === 'bulk' ? (opts.bulkHtml?.() ?? '') : opts.singleHtml(pending.target);
+    el.innerHTML = pending.kind === 'bulk' ? (opts.bulkHtml?.() ?? '')
+      : pending.kind === 'background' ? (opts.backgroundHtml?.() ?? '')
+      : opts.singleHtml(pending.target);
     el.addEventListener('click', onMenuClick);
     return el.querySelector<HTMLElement>('[data-act]');
   }, { className: opts.className ?? 'folder-menu ctx-menu', position: clampedPosition });
@@ -127,7 +138,14 @@ export function wireTileContextMenu(opts: TileContextMenuOptions): TileContextMe
     if (!item || !p) return;
     const act = item.dataset.act!;
     popover.close();
-    opts.onAction(act, p.kind === 'single' ? p.target : null);
+    opts.onAction(act, p.kind === 'single' ? p.target : null, p.kind);
+  }
+
+  function openBackgroundAt(x: number, y: number): void {
+    popover.close();
+    pending = { kind: 'background' };
+    point.x = x; point.y = y; point.delegate = null;
+    popover.open();
   }
 
   function openAt(x: number, y: number, target: ContextMenuTarget, anchor: HTMLElement | null = null): void {
@@ -153,7 +171,17 @@ export function wireTileContextMenu(opts: TileContextMenuOptions): TileContextMe
   // ── right-click ───────────────────────────────────────────────────────────
   const onContextMenu = (e: MouseEvent): void => {
     const tile = (e.target as HTMLElement).closest<HTMLElement>(opts.tileSelector);
-    if (!tile || !opts.host.contains(tile)) return;
+    if (!tile || !opts.host.contains(tile)) {
+      // Empty canvas: the background menu, unless the click is on something with
+      // its own native menu (a link, a control, a field) or the view declines.
+      if (!opts.backgroundHtml || !opts.host.contains(e.target as Node)) return;
+      if ((e.target as HTMLElement).closest('a, button, input, textarea, select, [contenteditable], dialog, [role="menu"]')) return;
+      const html = opts.backgroundHtml();
+      if (!html) return;
+      e.preventDefault();
+      openBackgroundAt(e.clientX, e.clientY);
+      return;
+    }
     // An Android long-press already opened the menu via the hold below and the OS
     // follows up with a contextmenu - swallow it instead of flickering a re-open.
     if (holdFired) { e.preventDefault(); return; }
@@ -218,6 +246,7 @@ export function wireTileContextMenu(opts: TileContextMenuOptions): TileContextMe
   return {
     openAt,
     openBulkAt,
+    openBackgroundAt,
     close: () => popover.close(),
     isOpen: () => popover.isOpen(),
     destroy: () => {

@@ -1395,7 +1395,7 @@ button.fc-readout:empty { display: none; }
 /* Mobile: stack the zoom HUD into a vertical capsule so it fits the narrow stage,
    reading + / NN% / − / Fit top-to-bottom like a map zoom control. It hangs DOWN from
    the top-right corner, so nothing here needs a bottom offset any more (the base rule
-   is top-anchored, and --chrome-top already carries env(safe-area-inset-top) on phones
+   is top-anchored, and --chrome-top already carries var(--safe-top) on phones
    - see tokens.css - so the capsule clears the notch the same way the back pill does).
    The stacked capsule is taller than --chrome-h, which is why the base rule pins the
    row height with min-height rather than height. */
@@ -1476,3 +1476,16 @@ button.fc-readout:empty { display: none; }
 .fc-grad-dir::after { content: ""; position: absolute; inset: -9px; }
 .fc-grad-panel .fc-grad-row-btns { display: flex; gap: 6px; flex-wrap: wrap; }
 .fc-grad-panel .fc-grad-row-btns .fc-pop-item { flex: 1 1 auto; justify-content: center; }
+
+/* ── Touch on the canvas (plans/132 wave 2) ──────────────────────────────────
+   The stage's ACTIVE interaction modes (draw-arming, connecting, pen, node
+   editing, space-pan) run on pointer events; without touch-action the browser
+   claims the finger for scrolling and the gesture never reaches them. Claim
+   touches only IN those modes - the idle stage keeps native scroll/pinch, so a
+   tall tool preview still pans normally on a phone. Full touch pan/pinch for
+   the dense editors is the plans/132 wave-2 triage follow-up, not this rule. */
+@media (pointer: coarse) {
+  .tool-stage:is(.fc-arming, .fc-connecting, .fc-lining, .fc-penning, .fc-node-editing, .is-grabbable) {
+    touch-action: none;
+  }
+}

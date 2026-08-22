@@ -212,7 +212,7 @@ html[data-a11y-motion="reduce"] .job-bar-fill { animation: none; transition: non
   left: calc(var(--vv-left, 0px) + 1rem);
   /* Above the fixed footer bar (~3.4rem) + its safe-area pad, so it never overlaps
      the search bar. Drag replaces both with inline top/left. */
-  bottom: calc(var(--vv-bottom, 0px) + env(safe-area-inset-bottom) + 4.5rem);
+  bottom: calc(var(--vv-bottom, 0px) + var(--safe-bottom) + 4.5rem);
   z-index: 9490;                 /* above content + the footer (50); just under the job toast (9500) */
   width: max-content;
   min-width: 150px;
@@ -280,7 +280,7 @@ html[data-a11y-motion="reduce"] .job-bar-fill { animation: none; transition: non
 .undo-toasts {
   position: fixed;
   left: 50%; transform: translateX(-50%);
-  bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+  bottom: calc(4.5rem + var(--safe-bottom));
   z-index: 9400;
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   max-width: min(520px, calc(100vw - 2rem));

@@ -17,7 +17,7 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
 import { wireTileSelect } from './tile-select.ts';
-import type { TileSelect } from './tile-select.ts';
+import type { TileSelect, TileKeyboardAdapter } from './tile-select.ts';
 
 // Four tiles in a row, 100×100, with 10px gaps - the "gaps between cards" the user drags in.
 const RECTS: Record<string, { left: number; top: number; right: number; bottom: number }> = {
@@ -33,13 +33,19 @@ interface Harness {
   host: HTMLElement;
   gap: HTMLElement;
   dot(ref: string): HTMLElement;
+  /** A tile's `.tile-primary` open control (only present when `harness()` was given a `keyboard` adapter). */
+  primary(ref: string): HTMLElement;
+  /** A tile's `.tile-menu-btn` (only present with a `keyboard` adapter). */
+  menuBtn(ref: string): HTMLElement;
+  /** The `.tile` element itself. */
+  tileEl(ref: string): HTMLElement;
   /** Click a tile's selection dot, exactly as the views' click handlers do. */
   clickDot(ref: string, shiftKey?: boolean): void;
   drag(from: [number, number], to: [number, number], opts?: { shiftKey?: boolean; on?: HTMLElement }): void;
   cleared: number;
 }
 
-function harness(): Harness {
+function harness(opts?: { keyboard?: TileKeyboardAdapter }): Harness {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', { pretendToBeVisual: true });
   const w = dom.window;
   // The module reads these off the globals (it's written for a browser, not injected).
@@ -60,6 +66,19 @@ function harness(): Harness {
     const tile = doc.createElement('div');
     tile.className = 'tile';
     tile.dataset.ref = ref;
+    if (opts?.keyboard) {
+      // The keyboard grid model's focus target - a <button> on every tile except one,
+      // which wears an <a href> cover the way Projects tiles do (WP-13): focusOf()/roving
+      // must treat the two identically.
+      const primary = ref === 'd' ? doc.createElement('a') : doc.createElement('button');
+      primary.className = 'tile-primary';
+      if (ref === 'd') primary.setAttribute('href', '#x'); else primary.setAttribute('type', 'button');
+      tile.appendChild(primary);
+      const menuBtn = doc.createElement('button');
+      menuBtn.className = 'tile-menu-btn';
+      menuBtn.setAttribute('type', 'button');
+      tile.appendChild(menuBtn);
+    }
     const dot = doc.createElement('button');
     dot.dataset.select = ref;                       // the shared `[data-select]` dot convention
     tile.appendChild(dot);
@@ -83,9 +102,13 @@ function harness(): Harness {
     setRefs: (refs) => { sel.clear(); for (const r of refs) sel.add(r); },
     clear: () => { sel.clear(); h.cleared++; },
     noStart: '.tile, button',
+    keyboard: opts?.keyboard,
   });
 
   h.dot = (ref) => host.querySelector(`[data-select="${ref}"]`) as unknown as HTMLElement;
+  h.primary = (ref) => host.querySelector(`.tile[data-ref="${ref}"] .tile-primary`) as unknown as HTMLElement;
+  h.menuBtn = (ref) => host.querySelector(`.tile[data-ref="${ref}"] .tile-menu-btn`) as unknown as HTMLElement;
+  h.tileEl = (ref) => host.querySelector(`.tile[data-ref="${ref}"]`) as unknown as HTMLElement;
 
   // Mirrors what both views' delegated click handlers do with a dot click.
   h.clickDot = (ref, shiftKey = false) =>
@@ -315,4 +338,197 @@ test('destroy() mid-drag bins the box and releases the document listeners', () =
   const after = got(h);
   move(500, 90);                            // a stray mousemove must no longer be handled
   assert.deepEqual(got(h), after);
+});
+
+// ── keyboard: roving tabindex (syncRoving, plans/133 WP-13) ────────────────────
+
+test('syncRoving() puts the roving tabIndex on the first tile, neutralises the OTHER tiles\' dots and menu buttons, and follows focus to another tile', () => {
+  const h = harness({ keyboard: {} });
+  const doc = h.host.ownerDocument;
+  const w = doc.defaultView!;
+
+  h.gestures.syncRoving();
+  assert.equal(h.primary('a').tabIndex, 0);
+  for (const ref of ['b', 'c', 'd']) assert.equal(h.primary(ref).tabIndex, -1, ref);
+  // The FOCUSED tile keeps its dot + kebab reachable by Tab (Apple keyboards have
+  // no Menu key, so the kebab must stay a keyboard route to the tile menu); every
+  // other tile's are skipped.
+  assert.equal(h.dot('a').tabIndex, 0);
+  assert.equal(h.menuBtn('a').tabIndex, 0);
+  for (const ref of ['b', 'c', 'd']) {
+    assert.equal(h.dot(ref).tabIndex, -1, ref);
+    assert.equal(h.menuBtn(ref).tabIndex, -1, ref);
+  }
+
+  h.primary('c').dispatchEvent(new w.FocusEvent('focusin', { bubbles: true }));
+  assert.equal(h.primary('c').tabIndex, 0);
+  assert.equal(h.menuBtn('c').tabIndex, 0);
+  assert.equal(h.menuBtn('a').tabIndex, -1);
+  for (const ref of ['a', 'b', 'd']) assert.equal(h.primary(ref).tabIndex, -1, ref);
+});
+
+test('syncRoving() re-called after a focus move keeps the last-focused tile as the Tab stop', () => {
+  const h = harness({ keyboard: {} });
+  const doc = h.host.ownerDocument;
+  const w = doc.defaultView!;
+
+  h.gestures.syncRoving();
+  h.primary('c').dispatchEvent(new w.FocusEvent('focusin', { bubbles: true }));
+  h.gestures.syncRoving();                  // simulates the resync a render() calls after rebuilding tiles
+
+  assert.equal(h.primary('c').tabIndex, 0);
+  for (const ref of ['a', 'b', 'd']) assert.equal(h.primary(ref).tabIndex, -1, ref);
+});
+
+test('syncRoving() without a keyboard adapter is a no-op', () => {
+  const h = harness();                      // no `keyboard` - gestures only
+  h.gestures.syncRoving();
+  assert.equal(h.dot('a').hasAttribute('tabindex'), false);
+});
+
+test('arrow-key navigation and roving treat an anchor tile-primary the same as a button one', () => {
+  const h = harness({ keyboard: {} });
+  const doc = h.host.ownerDocument;
+  const w = doc.defaultView!;
+
+  h.gestures.syncRoving();
+  h.primary('c').focus();                   // a <button class="tile-primary">
+  doc.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+
+  // d's primary is an <a class="tile-primary" href="#x"> - ArrowRight moves focus to it exactly
+  // as it would a button, and the roving tabIndex follows the real focus() the same way.
+  assert.equal(doc.activeElement, h.primary('d'));
+  assert.equal(h.primary('d').tabIndex, 0);
+  assert.equal(h.primary('c').tabIndex, -1);
+});
+
+// ── keyboard: menu key / Shift+F10 ──────────────────────────────────────────────
+
+test('the Menu key opens the focused tile context menu via keyboard.menu()', () => {
+  const calls: Array<[string, HTMLElement]> = [];
+  const h = harness({ keyboard: { menu: (ref, tile) => calls.push([ref, tile]) } });
+  const doc = h.host.ownerDocument;
+  const w = doc.defaultView!;
+
+  h.primary('b').focus();
+  doc.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'ContextMenu', bubbles: true, cancelable: true }));
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]![0], 'b');
+  assert.equal(calls[0]![1], h.tileEl('b'));
+});
+
+test('Shift+F10 on a focused tile also opens its context menu via keyboard.menu()', () => {
+  const calls: string[] = [];
+  const h = harness({ keyboard: { menu: (ref) => calls.push(ref) } });
+  const doc = h.host.ownerDocument;
+  const w = doc.defaultView!;
+
+  h.primary('c').focus();
+  doc.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true }));
+
+  assert.deepEqual(calls, ['c']);
+});
+
+// ── keyboard: Cmd/Ctrl+I (get info) ─────────────────────────────────────────────
+
+test('Cmd/Ctrl+I calls keyboard.info() for the focused tile when nothing is selected', () => {
+  const calls: string[] = [];
+  const h = harness({ keyboard: { info: (ref) => calls.push(ref) } });
+  const doc = h.host.ownerDocument;
+  const w = doc.defaultView!;
+
+  h.primary('a').focus();
+  doc.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'i', metaKey: true, bubbles: true, cancelable: true }));
+
+  assert.deepEqual(calls, ['a']);
+});
+
+test('Cmd/Ctrl+I calls keyboard.info() for a single selected tile', () => {
+  const calls: string[] = [];
+  const h = harness({ keyboard: { info: (ref) => calls.push(ref) } });
+  const doc = h.host.ownerDocument;
+  const w = doc.defaultView!;
+
+  h.sel.add('b');
+  doc.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'i', ctrlKey: true, bubbles: true, cancelable: true }));
+
+  assert.deepEqual(calls, ['b']);
+});
+
+test('Cmd/Ctrl+I is not called with more than one tile selected', () => {
+  const calls: string[] = [];
+  const h = harness({ keyboard: { info: (ref) => calls.push(ref) } });
+  const doc = h.host.ownerDocument;
+  const w = doc.defaultView!;
+
+  h.sel.add('b'); h.sel.add('c');
+  doc.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'i', metaKey: true, bubbles: true, cancelable: true }));
+
+  assert.deepEqual(calls, []);
+});
+
+// ── keyboard: clipboard (Cmd/Ctrl+X/C/V, plans/133 WP-7) ────────────────────────
+
+test('Cmd/Ctrl+X cuts the selection when one exists', () => {
+  const cut: string[][] = [];
+  const h = harness({ keyboard: { cut: (refs) => cut.push(refs) } });
+  const doc = h.host.ownerDocument;
+  const w = doc.defaultView!;
+
+  h.sel.add('b'); h.sel.add('c');
+  doc.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'x', metaKey: true, bubbles: true, cancelable: true }));
+
+  assert.deepEqual(cut, [['b', 'c']]);
+});
+
+test('Cmd/Ctrl+C copies the focused tile when nothing is selected', () => {
+  const copy: string[][] = [];
+  const h = harness({ keyboard: { copy: (refs) => copy.push(refs) } });
+  const doc = h.host.ownerDocument;
+  const w = doc.defaultView!;
+
+  h.primary('d').focus();
+  doc.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'c', ctrlKey: true, bubbles: true, cancelable: true }));
+
+  assert.deepEqual(copy, [['d']]);
+});
+
+test('Cmd/Ctrl+V pastes regardless of what has focus', () => {
+  let pastes = 0;
+  const h = harness({ keyboard: { paste: () => { pastes++; } } });
+  const doc = h.host.ownerDocument;
+  const w = doc.defaultView!;
+
+  // Nothing inside the grid is focused at all - paste must not require it.
+  doc.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'v', metaKey: true, bubbles: true, cancelable: true }));
+
+  assert.equal(pastes, 1);
+});
+
+test('Cmd/Ctrl+V yields to a focused text input - it must not fire', () => {
+  let pastes = 0;
+  const h = harness({ keyboard: { paste: () => { pastes++; } } });
+  const doc = h.host.ownerDocument;
+  const w = doc.defaultView!;
+
+  const input = doc.createElement('input');
+  doc.body.appendChild(input);
+  input.focus();
+  doc.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'v', metaKey: true, bubbles: true, cancelable: true }));
+
+  assert.equal(pastes, 0);
+});
+
+// ── Shift+mousedown text-selection guard ────────────────────────────────────────
+
+test('Shift+mousedown on a tile itself, not just its dot, is prevented so the browser cannot drag a text selection across cards', () => {
+  const h = harness();
+  const w = h.host.ownerDocument.defaultView!;
+
+  const ev = new w.MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, shiftKey: true });
+  const notPrevented = h.tileEl('a').dispatchEvent(ev);
+
+  assert.equal(notPrevented, false);
+  assert.equal(ev.defaultPrevented, true);
 });

@@ -159,7 +159,9 @@ test('the CSS floats the HUD clear of the bottom search bar', () => {
   const block = CSS.slice(CSS.indexOf('.perf-hud {'));
   assert.ok(block, 'the sheet carries a .perf-hud rule');
   assert.match(block, /position: fixed/, 'body-level fixed, like the toast');
-  assert.match(block, /bottom: calc\(var\(--vv-bottom, 0px\)[\s\S]*safe-area-inset-bottom[\s\S]*rem\)/,
+  // The safe-area inset may be spelled as the raw env() or the shared --safe-bottom
+  // token (the 2026-08 sweep) - either way it must ride --vv-bottom + a rem lift.
+  assert.match(block, /bottom: calc\(var\(--vv-bottom, 0px\)[\s\S]*(safe-area-inset-bottom|var\(--safe-bottom\))[\s\S]*rem\)/,
     'sits above the footer using the same --vv-*/safe-area idiom as gallery.css');
   assert.match(block, /z-index: 9490/, 'above content + the footer (50), just under the job toast (9500)');
 });

@@ -51,14 +51,14 @@
    topbar.css hides the label and the toggle shrinks to the icons alone.
    Inactive tabs mute their glyph so the active one reads at a glance (the
    a11y ask, same date) - opacity, not colour, so it works over any brand. */
-.view-toggle-ic { display: inline-flex; align-items: center; margin-inline-end: 7px; opacity: .1; }
+.view-toggle-ic { display: inline-flex; align-items: center; margin-inline-end: 7px; opacity: .42; }
 .view-toggle-opt.is-active .view-toggle-ic,
 .view-toggle-opt:hover .view-toggle-ic { opacity: 1; }
 /* Second cue riding the same states: a lighter stroke on inactive glyphs, the
    authored weight on the active one (stroke-width in viewBox units - these are
    24-unit Lucide strokes, so 1 here is half the authored 2). Both cues ease
    (durations hand-tuned) so a tab switch reads as one soft emphasis shift. */
-.view-toggle-ic { transition: opacity 0.23s; }
+.view-toggle-ic { transition: opacity 0.43s; }
 .view-toggle-ic svg { transition: stroke-width 0.13s, transform 0.3s;  }
 
 .view-toggle-opt {font-weight:500; }
@@ -144,6 +144,7 @@
 /* The Trash system tile: muted, no preview noise. */
 .folder-tile--trash .tile-cover { height: 74px; margin-top: 9px; aspect-ratio: auto; }
 .folder-tile--trash .tile-cover svg { opacity: 0.45; }
+.projects-list .folder-tile--trash .tile-cover { height: calc(40px * var(--a11y-fs)); margin-top: 0; }
 
 /* Mobile: the fixed 180px columns drop to a SINGLE column below ~376px (a 360px
    phone can't fit two 180px tiles + gap). Force two equal fractional columns on
@@ -156,21 +157,82 @@
   }
 }
 
-/* List view mode - reflow the same tiles into compact full-width rows. */
-.projects-grid.projects-list { display: flex; flex-direction: column; gap: 6px; max-width: 760px; }
-.projects-list .folder-tile { width: 100%; }
-.projects-list .folder-tile .tile-primary { flex-direction: row; align-items: center; gap: 14px; padding: 8px 12px; }
-.projects-list .tile-cover, .projects-list .folder-mosaic, .projects-list .tile-cover--create, .projects-list .tile-cover--batch {
-  width: calc(52px * var(--a11y-fs)); height: calc(40px * var(--a11y-fs)); aspect-ratio: auto; flex: none; overflow: hidden;
+/* ── List view = one table (plans/133 WP-12) ──────────────────────────────
+   Header and rows share ONE column template (--list-cols) so they can only ever
+   line up: every row's .tile-primary is a grid of [chip][name][Kind][Size][Modified]
+   with the pre-rendered .tile-cols spread into it via display:contents. Flat,
+   full-width, hairline-separated rows with a whole-row hover (the GNOME Files
+   read), not the grid's cards reflowed. align-items:stretch overrides the grid's
+   `start`, which was shrinking the header to its content width. */
+.projects-grid.projects-list {
+  --list-chip: calc(52px * var(--a11y-fs));
+  --list-cols: minmax(7rem, 9rem) 6rem 7rem;
+  --list-gutter: 84px;   /* room for the ⋯ menu + selection dot in the right gutter */
+  display: flex; flex-direction: column; gap: 0; max-width: none; align-items: stretch;
+}
+.projects-list .folder-tile {
+  width: 100%; border: 0; border-radius: 0; background: transparent; box-shadow: none;
+  border-bottom: 1px solid hsl(var(--border) / 0.7);
+}
+.projects-list .folder-tile:hover { background: hsl(var(--muted) / 0.55); border-color: hsl(var(--border) / 0.7); box-shadow: none; }
+.projects-list .folder-tile.is-selected { background: hsl(var(--primary) / 0.1); box-shadow: none; }
+.projects-list .folder-tile.is-selected:hover { background: hsl(var(--primary) / 0.14); }
+.projects-list .folder-tile.is-drop { background: hsl(var(--primary) / 0.08); box-shadow: inset 0 0 0 2px hsl(var(--primary) / 0.5); }
+.projects-list .folder-tile .tile-primary {
+  display: grid; grid-template-columns: var(--list-chip) minmax(0, 1fr) var(--list-cols);
+  align-items: center; column-gap: 14px; padding: 5px var(--list-gutter) 5px 12px; box-sizing: border-box;
+}
+.projects-list .tile-cols { display: contents; }
+.projects-list .tile-col { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(11.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+/* The 52×40 cover chip - sessions, images, create/batch/trash glyph boxes. */
+.projects-list .tile-cover, .projects-list .tile-cover--create, .projects-list .tile-cover--batch {
+  width: var(--list-chip); height: calc(40px * var(--a11y-fs)); aspect-ratio: auto; margin: 0; overflow: hidden;
   border-radius: calc(var(--radius) / 1.6); border: 1px solid hsl(var(--border));
 }
 .projects-list .tile-cover--create svg, .projects-list .tile-cover--batch svg { width: calc(20px * var(--a11y-fs)); height: calc(20px * var(--a11y-fs)); }
-.projects-list .tile-meta { padding: 0; flex: 1; min-width: 0; }
-.projects-list .tile-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The folder silhouette scaled to the chip: a 5px tab over a 35px body, mosaic
+   and emoji inside it - so a folder row is the same height as a session row. */
+.projects-list .folder-cover { width: var(--list-chip); height: calc(35px * var(--a11y-fs)); margin-top: 5px; border-radius: 0 6px 6px 6px; }
+.projects-list .folder-cover::before { top: -5px; height: 6px; border-radius: 4px 6px 0 0; }
+.projects-list .folder-cover .folder-mosaic { inset: 3px; gap: 1px; }
+.projects-list .folder-cover .folder-mosaic .folder-cell { border-radius: 2px; }
+.projects-list .folder-cover-glyph svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
+.projects-list .folder-emoji { font-size: calc(14px * var(--a11y-fs)); bottom: -3px; right: -3px; }
+.projects-list .folder-star { font-size: calc(9px * var(--a11y-fs)); top: 1px; right: 3px; }
+.projects-list .folder-cell--batch svg { width: calc(10px * var(--a11y-fs)); height: calc(10px * var(--a11y-fs)); }
+.projects-list .tile-meta { padding: 0; min-width: 0; }
+.projects-list .tile-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.projects-list .folder-count { display: none; }   /* the Size column carries the count */
 .projects-list .tile-menu-btn { top: 50%; right: 10px; transform: translateY(-50%); }
 /* In a compact row the top-left grid position would sit over the 52px cover thumbnail -
    move the selection toggle into the right gutter, just inside the ⋯ menu button. */
 .projects-list .tile-check { top: 50%; left: auto; right: 42px; transform: translateY(-50%); }
+/* Cut items (WP-7) read as "on the clipboard, leaving" until pasted - both views. */
+.folder-tile.is-cut { opacity: 0.5; }
+/* List mode's create actions: compact buttons up top (Andy, 2026-08-22) - at the
+   root an actions row above the table (holding the grid's old 3.6rem clearance so
+   the table tucks up beneath it), in a folder view inline in the header. The
+   create TILES render only in grid mode. */
+.projects-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 3.4rem 0 0; }
+.projects-actions + .projects-grid.projects-list { padding-top: 0.8rem; }
+.projects-create-btn { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.projects-create-btn svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
+
+/* Search / tools results wrap each hit as [tile][location crumb]: in list mode the
+   row separator belongs under the crumb, not between the two. */
+.projects-list .projects-result { border-bottom: 1px solid hsl(var(--border) / 0.7); padding-bottom: 4px; }
+.projects-list .projects-result .folder-tile { border-bottom: 0; }
+/* Narrow screens drop the Kind/Size columns (Name + Modified stay legible), and
+   the Name track keeps the width: the fixed parts shrink with the screen. */
+@media (max-width: 640px) {
+  .projects-grid.projects-list { --list-cols: 5rem; }
+  .projects-list .tile-cols .tile-col:nth-child(1), .projects-list .tile-cols .tile-col:nth-child(2),
+  .projects-listhead > .listhead-col:nth-of-type(1), .projects-listhead > .listhead-col:nth-of-type(2) { display: none; }
+}
+@media (max-width: 400px) {
+  .projects-grid.projects-list { --list-cols: 0px; }
+  .projects-list .tile-cols .tile-col:nth-child(3), .projects-listhead > .listhead-col:nth-of-type(3) { display: none; }
+}
 
 /* ── Search results mode (a query reaches INTO sub-folders) ────────
    The field itself is the shell's persistent bar (components/search-bar.ts,
@@ -217,11 +279,12 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
    (Distinct from .pro-toast--top, profile's compact corner variant.) */
 .pro-toast.pro-toast--bar { top: calc(56px + var(--chrome-grow)); left: 2em; right: 2em; bottom: auto; }
 
-/* "Create new" tiles (dashed, + icon) - kept deliberately muted so they read as
+/* "Create new" tiles (+ icon) - kept deliberately muted so they read as
    affordances, not content. Unlike a real tile, the icon area has NO preview fill and
    NO divider border: it's one continuous transparent panel flowing straight into the
-   label, so the whole tile is just a quiet dashed outline. */
-.folder-tile--create { border-style: dashed; background: transparent; }
+   label, so the whole tile is just a quiet outline. Solid, not dashed: a dashed
+   border is the app's DROP-AREA signal and these accept nothing. */
+.folder-tile--create { border-color: hsl(var(--border) / 0.7); background: transparent; }
 .folder-tile--create:hover { border-color: hsl(var(--primary) / 0.7); background: hsl(var(--primary) / 0.04); }
 .tile-cover--create {
   display: flex; align-items: center; justify-content: center; height: 90px;   /* compact, matches folder tiles */
@@ -362,7 +425,7 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
 .projects-bulkbar {
   /* Sits ABOVE the fixed footer bar (search + nav links), and spans the full viewport width
      (inset a little) so every action fits on one row instead of wrapping into a pill. */
-  position: fixed; left: 12px; right: 12px; bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px)); z-index: 9000;
+  position: fixed; left: 12px; right: 12px; bottom: calc(4.5rem + var(--safe-bottom)); z-index: 9000;
   display: flex; align-items: center; gap: 12px;
   padding: 8px 10px 8px 16px; border: 1px solid hsl(var(--border));
   border-radius: 999px; background: hsl(var(--card)); box-shadow: 0 12px 32px hsl(0 0% 0% / 0.28);
@@ -384,11 +447,11 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
 }
 .projects-bulkbar-clear:hover { background: hsl(var(--border)); }
 /* Phones: let the bar wrap its buttons and hug the safe area (clear the home
-   indicator with env(safe-area-inset-bottom), matching the app's other bottom bars). */
+   indicator with var(--safe-bottom), matching the app's other bottom bars). */
 @media (max-width: 560px) {
   /* Phones: a full-width ICON-ONLY row above the two-row footer (lifted to clear it). Labels
      are clipped (kept for assistive tech), so all the actions fit without wrapping. */
-  .projects-bulkbar { flex-direction: row; align-items: center; border-radius: 999px; bottom: calc(7rem + env(safe-area-inset-bottom, 0px)); padding: 8px 10px; gap: 8px; }
+  .projects-bulkbar { flex-direction: row; align-items: center; border-radius: 999px; bottom: calc(7rem + var(--safe-bottom)); padding: 8px 10px; gap: 8px; }
   .projects-bulkbar-clear { position: static; }
   .projects-bulkbar-count { font-size: calc(11.5px * var(--a11y-fs)); }
   .projects-bulkbar-actions { flex: 1 1 auto; justify-content: space-around; gap: 2px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
@@ -407,7 +470,7 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
    Placed after the base rules so these win without needing extra specificity. */
 @media (max-width: 640px) {
   /* Clear the fixed top bar (offset by the safe-area inset on notched PWAs). */
-  .projects { padding-top: calc(52px + var(--chrome-grow) + env(safe-area-inset-top, 0px)); }
+  .projects { padding-top: calc(52px + var(--chrome-grow) + var(--safe-top)); }
 
   .projects-head { flex-wrap: wrap; column-gap: 8px; row-gap: 10px; margin-bottom: 14px; }
   /* flex-basis 0 so a long title never forces the count/menu to wrap - it just
@@ -424,7 +487,7 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
 
   /* When a selection is active the floating bulk bar covers the bottom of the grid;
      reserve room so the last row can scroll clear of it. Toggled by syncBulkBar(). */
-  .projects.has-selection { padding-bottom: calc(190px + env(safe-area-inset-bottom, 0px)); }
+  .projects.has-selection { padding-bottom: calc(190px + var(--safe-bottom)); }
 }
 
 /* Touch: no hover, so reveal the per-tile ⋯ menu (its only trigger otherwise is
@@ -479,44 +542,37 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
 .movepicker-row-chev { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); flex: none; color: hsl(var(--muted-foreground)); }
 .movepicker-row.is-blocked { opacity: 0.4; cursor: not-allowed; }
 .movepicker-empty { padding: 18px 10px; text-align: center; color: hsl(var(--muted-foreground)); font-size: calc(12.5px * var(--a11y-fs)); }
-.movepicker-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; }
+.movepicker-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 16px; }
+.movepicker-newfolder { display: inline-flex; align-items: center; gap: 6px; }
+.movepicker-newfolder svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
 
 
-/* ── List-view columns (plans/133 WP-2) ──────────────────────────────────────
+/* ── List-view columns (plans/133 WP-2 → WP-12) ─────────────────────────────
    The tiles carry pre-formatted .tile-cols (Kind · Items/Size · Modified);
-   grid mode hides them, list mode grid-aligns them against the clickable
-   header row. Fixed column widths so every row lines up. */
+   grid mode hides them, list mode spreads them into the row's own grid (see the
+   .projects-list block above). The header is the SAME grid: an empty chip cell,
+   the Name cell, then one clickable column per .tile-col. */
 .tile-cols { display: none; }
-.projects-list .tile-cols {
-  display: grid;
-  grid-template-columns: 88px 76px 96px;
-  gap: 8px;
-  flex: none;
-  align-items: center;
-  margin-inline-end: 64px;   /* clear the ⋯ menu + selection dot gutter */
-  font-size: calc(11.5px * var(--a11y-fs));
-  color: hsl(var(--muted-foreground));
-}
-.projects-list .tile-col { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Row badges duplicate the columns in list mode - the columns win. */
 .projects-list .tile-badges, .projects-list .tile-sub { display: none; }
 .projects-listhead {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 2px 12px 2px 78px;   /* clears the 52px cover chip + row padding (fixed: the a11y multiplier may not scale insets) */
+  display: grid; grid-template-columns: var(--list-chip) minmax(0, 1fr) var(--list-cols);
+  align-items: center; column-gap: 14px;
+  padding: 2px var(--list-gutter) 2px 12px; box-sizing: border-box;
   font-size: calc(11.5px * var(--a11y-fs));
+  border-top: 1px solid hsl(var(--border)); border-bottom: 1px solid hsl(var(--border));
 }
-.listhead-name { flex: 1 1 auto; min-width: 0; }
+.projects-listhead::before { content: ''; }   /* the chip column - nothing to label */
+.listhead-name { min-width: 0; display: flex; align-items: center; gap: 8px; }
 .listhead-col {
-  border: 0; background: none; padding: 4px 6px; cursor: pointer;
-  font: inherit; font-size: inherit; font-weight: 600;
+  border: 0; background: none; padding: 4px 6px; margin: 0 -6px; cursor: pointer;
+  font: inherit; font-size: inherit; font-weight: 600; text-align: left;
   color: hsl(var(--muted-foreground));
-  border-radius: var(--radius);
+  border-radius: var(--radius); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   display: inline-flex; align-items: center; gap: 3px;
 }
 .listhead-col:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
 .listhead-col.is-on { color: hsl(var(--foreground)); }
-.projects-listhead > .listhead-col:nth-of-type(1) { width: 96px; }
-.projects-listhead > .listhead-col:nth-of-type(2) { width: 84px; }
-.projects-listhead > .listhead-col:nth-of-type(3) { width: 104px; margin-inline-end: 56px; }
+/* A sort with no column of its own (Date added) is still named in the header,
+   so the list never reads as unsorted. */
+.listhead-sortnote { font-size: calc(11px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); font-weight: 500; white-space: nowrap; }

@@ -111,6 +111,23 @@ export function extractSvgText(src: string): string {
   }
 }
 
+/** The visible prose of an HTML document. Raw page markup detects as docKind
+ *  'code' (an inline-CSS head), which gates every prose tell off - and a built
+ *  page's head alone can outgrow verify's 64 KB raw-text cap before any prose
+ *  appears, so a page's writing never reached the analyser at all. Parsing only
+ *  (DOMParser on a detached document executes nothing, fetches nothing);
+ *  script/style text dropped; capped to the same 64 KB the raw read uses.
+ *  Empty string when nothing parses - the caller's cue to analyse the raw head. */
+export function extractHtmlText(html: string): string {
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    for (const el of doc.querySelectorAll('script, style')) el.remove();
+    return (doc.documentElement?.textContent || '').replace(/\n{3,}/g, '\n\n').trim().slice(0, 64 * 1024);
+  } catch {
+    return '';
+  }
+}
+
 /**
  * Read a PDF: text layer first, per-page OCR for its scanned pages where a
  * model is present. `text` is null when nothing was readable - the notes say why.

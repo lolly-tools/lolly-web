@@ -132,6 +132,10 @@ export interface SessionTileOpts {
   selected?: boolean;
   /** List-view column strings (plans/133 WP-2). */
   cols?: TileCols;
+  /** When set, the primary cover is a real `<a href>` (plans/133 WP-13) so
+   *  middle/Cmd-click can open it in a new tab; the view still intercepts the
+   *  plain click. Omit (folder overlay, picker) and it stays a button. */
+  href?: string;
 }
 
 /**
@@ -144,7 +148,7 @@ export interface SessionTileOpts {
  *                 same "what you'll get" spec as the gallery card. Explicit `meta`
  *                 values win over it.
  */
-export function sessionTile(entry: SessionEntry, { toolName = '', sizeBytes = 0, meta = {}, tool = null, selectable = false, selected = false, cols }: SessionTileOpts = {}): string {
+export function sessionTile(entry: SessionEntry, { toolName = '', sizeBytes = 0, meta = {}, tool = null, selectable = false, selected = false, cols, href }: SessionTileOpts = {}): string {
   const batch = isBatchSlot(entry.slot);
   const title = batch
     ? (entry.label || 'Batch session')
@@ -184,7 +188,7 @@ export function sessionTile(entry: SessionEntry, { toolName = '', sizeBytes = 0,
     badges,
     openAttr: 'data-open-session',
     openLabel: batch ? `Open batch ${title}` : `Resume ${title}`,
-    selectable, selected,
+    selectable, selected, href,
     cols: cols ?? {
       kind: batch ? 'Batch' : (toolName || 'Session'),
       count: sizeBytes ? fmtBytes(sizeBytes) : '',
@@ -233,6 +237,8 @@ export interface FolderTileOpts {
   /** Favourited folder - shows the corner star (the Projects view also sorts
    *  starred folders first). */
   starred?: boolean;
+  /** Real `<a href>` cover (see SessionTileOpts.href). */
+  href?: string;
 }
 
 /**
@@ -243,7 +249,7 @@ export interface FolderTileOpts {
  *                       the Projects view passes items + sub-folders so a nested folder
  *                       reads "N items" inclusive of its sub-folders.
  */
-export function folderTile(folder: { id: string; name: string; items?: readonly unknown[]; color?: string; emoji?: string; updatedAt?: string }, { memberPreviews = [], count, selectable = false, selected = false, starred = false }: FolderTileOpts = {}): string {
+export function folderTile(folder: { id: string; name: string; items?: readonly unknown[]; color?: string; emoji?: string; updatedAt?: string }, { memberPreviews = [], count, selectable = false, selected = false, starred = false, href }: FolderTileOpts = {}): string {
   count = count ?? folder.items?.length ?? 0;
   const cells = memberPreviews.slice(0, 4).map(p => {
     if (p.batch) return `<span class="folder-cell folder-cell--batch" aria-hidden="true">${PACKAGE_ICON}</span>`;
@@ -266,19 +272,29 @@ export function folderTile(folder: { id: string; name: string; items?: readonly 
       ${starred ? `<span class="folder-star">★</span>` : ''}
     </span>`;
 
+  const [open, close] = primaryTag(href, `data-open-folder="${escape(folder.id)}" aria-label="Open folder ${escape(folder.name)}"`);
   return `
     <div class="folder-tile folder-tile--folder${selected ? ' is-selected' : ''}" data-ref="${escape(folder.id)}" data-kind="folder">
       ${selectable ? selectToggle(folder.id, 'folder', selected, folder.name) : ''}
-      <button type="button" class="tile-primary" data-open-folder="${escape(folder.id)}" aria-label="Open folder ${escape(folder.name)}">
+      ${open}
         ${cover}
         <span class="tile-meta">
           <span class="tile-title" title="${escape(folder.name)}">${escape(folder.name)}</span>
           <span class="folder-count" title="${count} item${count === 1 ? '' : 's'}" aria-label="${count} item${count === 1 ? '' : 's'}">${escape(compactCount(count))}</span>
         </span>
         <span class="tile-cols" aria-hidden="true"><span class="tile-col">Folder</span><span class="tile-col">${count} item${count === 1 ? '' : 's'}</span><span class="tile-col">${folder.updatedAt ? relativeTime(folder.updatedAt) : ''}</span></span>
-      </button>
+      ${close}
       <button type="button" class="tile-menu-btn" data-menu="${escape(folder.id)}" data-menu-kind="folder" aria-label="Folder actions">${MENU_ICON}</button>
     </div>`;
+}
+
+/** The primary cover's open/close tags: an `<a href>` when the caller gave one
+ *  (draggable="false" so the TILE's own HTML5 drag, not a link drag, starts),
+ *  else the plain button every tile had before. */
+function primaryTag(href: string | undefined, attrs: string): [string, string] {
+  return href
+    ? [`<a class="tile-primary" href="${escape(href)}" draggable="false" ${attrs}>`, '</a>']
+    : [`<button type="button" class="tile-primary" ${attrs}>`, '</button>'];
 }
 
 // ── Rows ──────────────────────────────────────────────────────────────────
@@ -408,27 +424,29 @@ interface TileShellOpts {
   selectable?: boolean;
   selected?: boolean;
   cols?: TileCols;
+  href?: string;
 }
 
-function tileShell({ ref, kind, batch, cover, title, sub, badges, openAttr, openLabel, selectable = false, selected = false, cols }: TileShellOpts): string {
-  // .tile-cols renders the list view's aligned columns (Kind · Items/Size ·
-  // Modified, plans/133 WP-2); grid mode hides it in CSS, so every caller can
-  // pass it unconditionally.
-  const colsHtml = cols
-    ? `<span class="tile-cols" aria-hidden="true"><span class="tile-col">${escape(cols.kind)}</span><span class="tile-col">${escape(cols.count)}</span><span class="tile-col">${escape(cols.when)}</span></span>`
-    : '';
+/** The list view's aligned columns (Kind · Items/Size · Modified, plans/133
+ *  WP-2); grid mode hides them in CSS, so every tile can carry them. */
+export function tileColsHtml(cols: TileCols): string {
+  return `<span class="tile-cols" aria-hidden="true"><span class="tile-col">${escape(cols.kind)}</span><span class="tile-col">${escape(cols.count)}</span><span class="tile-col">${escape(cols.when)}</span></span>`;
+}
+
+function tileShell({ ref, kind, batch, cover, title, sub, badges, openAttr, openLabel, selectable = false, selected = false, cols, href }: TileShellOpts): string {
+  const [open, close] = primaryTag(href, `${openAttr}="${escape(ref)}" aria-label="${escape(openLabel)}"`);
   return `
     <div class="folder-tile${selected ? ' is-selected' : ''}" data-ref="${escape(ref)}" data-kind="${kind}"${batch ? ' data-batch="1"' : ''}>
       ${selectable ? selectToggle(ref, kind, selected, title) : ''}
-      <button type="button" class="tile-primary" ${openAttr}="${escape(ref)}" aria-label="${escape(openLabel)}">
+      ${open}
         ${cover}
         <span class="tile-meta">
           <span class="tile-title" title="${escape(title)}">${escape(title)}</span>
           ${sub ? `<span class="tile-sub">${escape(sub)}</span>` : ''}
           ${badges ? `<span class="tile-badges">${badges}</span>` : ''}
         </span>
-        ${colsHtml}
-      </button>
+        ${cols ? tileColsHtml(cols) : ''}
+      ${close}
       <button type="button" class="tile-menu-btn" data-menu="${escape(ref)}" data-menu-kind="${kind}" aria-label="Item actions">${MENU_ICON}</button>
     </div>`;
 }

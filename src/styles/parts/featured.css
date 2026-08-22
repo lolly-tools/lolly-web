@@ -128,7 +128,7 @@
    Safe against clipping too - the fixed height is on .ftile-link, so the track and
    its auto-height viewport just grow.
    Derived from the same tokens the row itself is built from rather than a flat 100px,
-   because --chrome-top carries env(safe-area-inset-top) and --chrome-h jumps to 44px
+   because --chrome-top carries var(--safe-top) and --chrome-h jumps to 44px
    on coarse pointers: a hard-coded value would slide back under the nav on a notched
    phone. Lands on 100px at these defaults. */
 @media (max-width: 640px) {

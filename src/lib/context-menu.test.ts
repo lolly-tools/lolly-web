@@ -166,3 +166,125 @@ test('destroy() unbinds the host listeners', () => {
   assert.ok(!e.defaultPrevented, 'no handler left after destroy');
   assert.equal(h.openMenuEl(), null);
 });
+
+// ── background menu (plans/133 WP-13: right-click on empty canvas) ──────────
+
+const BG_HTML = menuItemHtml('new-folder', '', 'New folder');
+
+interface BgHarness {
+  host: HTMLElement;
+  doc: Document;
+  menu: TileContextMenuHandle;
+  actions: Array<{ act: string; ref: string | null; kind: string }>;
+  selected: Set<string>;
+  tile(ref: string): HTMLElement;
+  openMenuEl(): HTMLElement | null;
+}
+
+/** Same shape as harness(), plus bulkHtml/isBulkTarget and a caller-supplied
+ *  backgroundHtml; onAction records the dispatch `kind` too, which harness()'s
+ *  callback ignores. */
+function harnessWithBackground(backgroundHtml: () => string): BgHarness {
+  const d = new JSDOM('<!doctype html><html><body></body></html>', { pretendToBeVisual: true });
+  const w = d.window;
+  (globalThis as Record<string, unknown>).window = w;
+  (globalThis as Record<string, unknown>).document = w.document;
+  (globalThis as Record<string, unknown>).HTMLElement = w.HTMLElement;
+  (globalThis as Record<string, unknown>).Node = w.Node;
+
+  const doc = w.document;
+  const host = doc.createElement('div');
+  doc.body.appendChild(host);
+  for (const ref of ['a', 'b']) {
+    const tile = doc.createElement('article');
+    tile.className = 'tile';
+    tile.dataset.ref = ref;
+    host.appendChild(tile);
+  }
+
+  const actions: Array<{ act: string; ref: string | null; kind: string }> = [];
+  const selected = new Set<string>();
+  const menu = wireTileContextMenu({
+    host: host as unknown as HTMLElement,
+    tileSelector: '.tile',
+    refOf: (tile) => tile.dataset.ref ?? null,
+    isBulkTarget: (ref) => selected.size > 1 && selected.has(ref),
+    singleHtml: (tgt) => menuItemHtml('one', '', `Act on ${tgt.ref}`),
+    bulkHtml: () => `<p class="folder-menu-head">${selected.size} selected</p><div class="folder-menu-list" role="menu">${menuItemHtml('bulk-act', '', 'Bulk')}</div>`,
+    backgroundHtml,
+    onAction: (act, tgt, kind) => { actions.push({ act, ref: tgt?.ref ?? null, kind }); },
+  });
+
+  return {
+    host: host as unknown as HTMLElement,
+    doc: doc as unknown as Document,
+    menu,
+    actions,
+    selected,
+    tile: (ref) => host.querySelector(`[data-ref="${ref}"]`) as HTMLElement,
+    openMenuEl: () => doc.querySelector('.folder-menu') as HTMLElement | null,
+  };
+}
+
+test('right-click on the host background (no tile) opens the background menu; picking a row calls onAction(act, null, "background")', () => {
+  const h = harnessWithBackground(() => BG_HTML);
+  const e = fire(h.host, 'contextmenu');
+  assert.ok(e.defaultPrevented, 'native menu suppressed for a background click');
+  const menu = h.openMenuEl();
+  assert.ok(menu, 'popover mounted');
+  assert.equal(menu!.getAttribute('role'), 'menu');
+  assert.match(menu!.innerHTML, /New folder/);
+  assert.ok(menu!.querySelector('[data-act="new-folder"]'), 'background rows are the caller\'s html verbatim');
+
+  const row = menu!.querySelector<HTMLElement>('[data-act="new-folder"]')!;
+  row.click();
+  assert.equal(h.openMenuEl(), null, 'closed before dispatch');
+  assert.deepEqual(h.actions, [{ act: 'new-folder', ref: null, kind: 'background' }]);
+  h.menu.destroy();
+});
+
+test('right-click on a button/link/input inside the host (not in a tile) leaves the native menu alone', () => {
+  const h = harnessWithBackground(() => BG_HTML);
+  for (const tag of ['button', 'a', 'input']) {
+    const el = h.doc.createElement(tag);
+    h.host.appendChild(el);
+    const e = fire(el, 'contextmenu');
+    assert.ok(!e.defaultPrevented, `${tag}: native menu wins`);
+    assert.equal(h.openMenuEl(), null, `${tag}: no popover opened`);
+  }
+  h.menu.destroy();
+});
+
+test("backgroundHtml returning '' declines the background menu (native menu, not preventDefault-ed)", () => {
+  const h = harnessWithBackground(() => '');
+  const e = fire(h.host, 'contextmenu');
+  assert.ok(!e.defaultPrevented, 'an empty string declines the same way refOf → null does');
+  assert.equal(h.openMenuEl(), null);
+  h.menu.destroy();
+});
+
+test('without backgroundHtml, a right-click on the host background keeps the old behaviour (native menu, no popover)', () => {
+  const h = harness();
+  const e = fire(h.host, 'contextmenu');
+  assert.ok(!e.defaultPrevented, 'no backgroundHtml means the background branch bails immediately');
+  assert.equal(h.openMenuEl(), null);
+  h.menu.destroy();
+});
+
+test('onAction receives the dispatch kind: "single" for a tile menu, "bulk" for a multi-selection menu', () => {
+  const h = harnessWithBackground(() => BG_HTML);
+
+  fire(h.tile('a'), 'contextmenu');
+  h.openMenuEl()!.querySelector<HTMLElement>('[data-act="one"]')!.click();
+  assert.deepEqual(h.actions, [{ act: 'one', ref: 'a', kind: 'single' }]);
+
+  h.selected.add('a').add('b');
+  fire(h.tile('a'), 'contextmenu');
+  h.openMenuEl()!.querySelector<HTMLElement>('[data-act="bulk-act"]')!.click();
+  assert.deepEqual(h.actions, [
+    { act: 'one', ref: 'a', kind: 'single' },
+    { act: 'bulk-act', ref: null, kind: 'bulk' },
+  ]);
+
+  h.menu.destroy();
+});

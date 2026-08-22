@@ -30,7 +30,7 @@
  */
 
 import '../styles/picker.css';   // async CSS chunk (lazy view - not on the landing)
-import { isTrashedSlot } from '../lib/batch-slots.ts';
+import { isHiddenSlot } from '../lib/batch-slots.ts';
 import DOMPurify from 'dompurify';
 import { serializeUrlState, buildEmbedUrl, parseThemedAssetId, buildThemedAssetId, restyleIconTheme, sniffAnimatedRaster, sniffVideoContainer, parseTreatedAssetId, buildTreatedAssetId, treatmentFilterSvg, stripAssetModifiers, extractC2paStore, prepareC2paIngredientFromStore, stripMetadata, midiToZzfxm, bakeAssetRef, decodeBmp, isBmp, decodeIco, isIco, gunzip, packPng, analyzeTextSignals, LEXICON_VERSION, extractFileMetadata } from '@lolly/engine';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
@@ -2267,7 +2267,7 @@ async function render(
     host.state.list()
       .then(list => {
         sessions = (list ?? [])
-          .filter(e => e.slot && !e.slot.startsWith('__batch__:') && !isTrashedSlot(e.slot)) // single-tool, not trashed
+          .filter(e => e.slot && !e.slot.startsWith('__batch__:') && !isHiddenSlot(e.slot)) // single-tool, not trashed
           // Collect mode files the SESSION itself (kept editable), so any single-tool
           // session whose tool still ships qualifies - it needn't render to an image.
           .filter(e => e.toolId && (collect ? toolById.has(e.toolId) : isEmbeddable(toolById.get(e.toolId), needsSvg)))

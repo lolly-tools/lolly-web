@@ -18,7 +18,7 @@
  */
 
 import { escape } from '../utils.ts';
-import { isTrashedSlot } from '../lib/batch-slots.ts';
+import { isHiddenSlot } from '../lib/batch-slots.ts';
 import { t, tRaw } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
 import { claimSearchBar, clearSearchBar, setSearchBarValue } from '../components/search-bar.ts';
@@ -428,7 +428,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     pinnedToolIds().catch(() => new Set<string>()),
   ]);
   // Trashed sessions (projects Trash, `__trash__:` slots) never list here.
-  const savedEntries = savedEntriesRaw.filter(e => !isTrashedSlot(e.slot));
+  const savedEntries = savedEntriesRaw.filter(e => !isHiddenSlot(e.slot));
 
   // Profile-personalized previews (see ../personalize-previews.js). `sig` is empty
   // unless the user opted in ("use my details"); only cache entries matching the

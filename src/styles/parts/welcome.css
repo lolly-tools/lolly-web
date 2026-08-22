@@ -137,7 +137,7 @@
 .gallery:not(.has-featured) .brand-tips { margin-top: 6.4rem; }
 .gallery:not(.has-featured) .brand-tips + .tool-masonry { padding-top: 0; }
 @media (max-width: 640px) {
-  .gallery:not(.has-featured) .brand-tips { margin-top: calc(4.4rem + env(safe-area-inset-top, 0px)); }
+  .gallery:not(.has-featured) .brand-tips { margin-top: calc(4.4rem + var(--safe-top)); }
 }
 .brand-tips-text { margin: 0; line-height: 1.4; }
 .brand-tips-dot { opacity: 0.55; }

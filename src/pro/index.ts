@@ -13,7 +13,7 @@
  * To remove the feature: delete this folder and that one route case.
  */
 import './pro.css';
-import { isTrashedSlot } from '../lib/batch-slots.ts';
+import { isHiddenSlot } from '../lib/batch-slots.ts';
 import { serializeUrlState, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION } from '@lolly/engine';
 import { marksToCsv, csvToMarks } from '../lib/print-marks-csv.ts';
 
@@ -1333,7 +1333,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
       host.state.list(),
       host.state.sizes().catch(() => ({})),
     ]);
-    const entries = entriesRaw.filter(e => !isTrashedSlot(e.slot));
+    const entries = entriesRaw.filter(e => !isHiddenSlot(e.slot));
     const nameById = new Map(((window as WindowWithIndex).__toolIndex?.tools ?? []).map(t => [t.id, t.name]));
     opts.openFolderOverlay(host, {
       context: 'pro',

@@ -20,9 +20,9 @@
      and the bar reads as pinned to the visible viewport bottom. The side insets
      matter in LANDSCAPE, where the notch/Dynamic Island sits in the bar's ends
      (plans/132 wave 1). */
-  padding-bottom: calc(.6rem + env(safe-area-inset-bottom));
-  padding-left: calc(1rem + env(safe-area-inset-left, 0px));
-  padding-right: calc(1rem + env(safe-area-inset-right, 0px));
+  padding-bottom: calc(.6rem + var(--safe-bottom));
+  padding-left: calc(1rem + var(--safe-left));
+  padding-right: calc(1rem + var(--safe-right));
   background: hsl(var(--background) / .82);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
@@ -37,13 +37,13 @@
    only the iOS home-indicator inset) and tighten the gap. */
 .gallery-footer--jelly {
   padding-top: 0;
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: var(--safe-bottom);
   gap: .5rem;
 }
 /* Clear the fixed footer bar on every route that shows it - the class is toggled
    by the search-bar singleton's applyRoute (plans/99 M1), so dashboard/profile get
    the clearance without a per-view rule. */
-.app-view.has-search-footer { padding-bottom: calc(5.5rem + env(safe-area-inset-bottom)); }
+.app-view.has-search-footer { padding-bottom: calc(5.5rem + var(--safe-bottom)); }
 
 /* First-visit privacy notice - a slim transparency strip pinned just above the
    footer (--footer-h is measured live in privacy-notice.js so it tracks the
@@ -74,7 +74,7 @@
 .privacy-notice-link { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .privacy-notice-dismiss { padding: 3px 12px; font-size: calc(12px * var(--a11y-fs)); }
 /* Extra bottom clearance so the last card row isn't hidden behind both bars. */
-.app-view.gallery-view.has-privacy-notice { padding-bottom: calc(8.5rem + env(safe-area-inset-bottom)); }
+.app-view.gallery-view.has-privacy-notice { padding-bottom: calc(8.5rem + var(--safe-bottom)); }
 
 /* First-visit personalisation nudge (personalize-nudge.js) - a compact card in
    the top-right, tucked just under the top-bar cluster so it reads as pointing at
@@ -84,7 +84,7 @@
 .personalize-nudge {
   position: fixed;
   z-index: 99990; /* under the top-bar cluster (99999) so the bar always wins a touch */
-  top: calc(3.4em + env(safe-area-inset-top, 0px) + var(--vv-top, 0px));
+  top: calc(3.4em + var(--safe-top) + var(--vv-top, 0px));
   right: calc(2em + var(--vv-right, 0px));
   width: min(340px, calc(100vw - 2rem));
   padding: 15px 16px 14px;
@@ -162,7 +162,7 @@
 
 @media (max-width: 640px) {
   .personalize-nudge {
-    top: calc(4em + env(safe-area-inset-top, 0px) + var(--vv-top, 0px));
+    top: calc(4em + var(--safe-top) + var(--vv-top, 0px));
     left: calc(.75em + var(--vv-left, 0px));
     right: calc(.75em + var(--vv-right, 0px));
     width: auto;
@@ -693,7 +693,7 @@ stroke-width:.81;
     width: auto;
     z-index: 100000;
     border-radius: 18px 18px 0 0;
-    padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+    padding: 16px 16px calc(16px + var(--safe-bottom));
     box-shadow: 0 -10px 32px hsl(0 0% 0% / 0.32);
     animation: filter-sheet-up 0.18s ease both;
   }
@@ -755,8 +755,8 @@ stroke-width:.81;
 @media (max-width: 520px)  { .tool-masonry { --cols: 1; } }
 /* Tighter side gutters + a little more top room for the cluster on phones. The
    top pad tracks the safe-area inset so content clears the fixed bar (which is now
-   offset by env(safe-area-inset-top)) on notched standalone PWAs. */
-@media (max-width: 640px)  { .tool-masonry { padding: calc(4.2rem + env(safe-area-inset-top, 0px)) .6rem 1rem; } }
+   offset by var(--safe-top)) on notched standalone PWAs. */
+@media (max-width: 640px)  { .tool-masonry { padding: calc(4.2rem + var(--safe-top)) .6rem 1rem; } }
 
 /* Mobile (single-column) scroll-snap: flicking down the gallery settles each card
    with its TITLE anchored at the base of the screen - the preview fills the view
@@ -774,10 +774,10 @@ stroke-width:.81;
 @media (max-width: 520px) {
   html:has(#view.gallery-view) {
     scroll-snap-type: y proximity;
-    scroll-padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+    scroll-padding-bottom: calc(6rem + var(--safe-bottom));
   }
   html:has(#view.gallery-view.has-privacy-notice) {
-    scroll-padding-bottom: calc(9rem + env(safe-area-inset-bottom));
+    scroll-padding-bottom: calc(9rem + var(--safe-bottom));
   }
   #view.gallery-view .gtile-name {
     scroll-snap-align: end;
@@ -1284,6 +1284,11 @@ html[data-a11y-previews="hidden"] .tool-masonry .gcar { display: none; }
 .gtile-hero:hover .gtile-continue,
 .gtile-hero:focus-visible .gtile-continue,
 .gcar:hover .gtile-continue { opacity: 1; }
+/* Touch has no hover (plans/132 wave 2): keep the continue affordance visible,
+   slightly calmer than the hover state. */
+@media (hover: none) {
+  .gcar .gtile-continue { opacity: .85; }
+}
 /* When a persistent status badge already holds the bottom-right slot, lift the
    Continue/Open chip to stack just above it so the two don't overlap on hover.
    Only badged cards (experimental/community) are affected; official tiles keep
@@ -1811,7 +1816,7 @@ html[data-a11y-previews="hidden"] .tool-meta-dialog .meta-look-thumb { display: 
    pill above the persistent footer, mirroring .cat-bulkbar/.projects-bulkbar
    (each view keeps its own surface + offsets by design). */
 .gallery-bulkbar {
-  position: fixed; left: 50%; bottom: calc(4.8rem + env(safe-area-inset-bottom, 0px));
+  position: fixed; left: 50%; bottom: calc(4.8rem + var(--safe-bottom));
   transform: translateX(-50%); z-index: 9000;
   display: flex; align-items: center; gap: 14px;
   /* max-content, not shrink-to-fit: a fixed element at left:50% sizes against only
@@ -1836,8 +1841,18 @@ html[data-a11y-previews="hidden"] .tool-meta-dialog .meta-look-thumb { display: 
 }
 .gallery-bulkbar-clear:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
 /* Reserve room so the fixed bar never buries the last tile row. */
-.gallery.has-selection { padding-bottom: calc(8rem + env(safe-area-inset-bottom, 0px)); }
+.gallery.has-selection { padding-bottom: calc(8rem + var(--safe-bottom)); }
 @media (max-width: 640px) {
   /* Phones: the footer wraps to two rows, so lift the bar higher and let it wrap. */
-  .gallery-bulkbar { flex-wrap: wrap; justify-content: center; width: min(92vw, 420px); border-radius: var(--radius); bottom: calc(7rem + env(safe-area-inset-bottom, 0px)); }
+  .gallery-bulkbar { flex-wrap: wrap; justify-content: center; width: min(92vw, 420px); border-radius: var(--radius); bottom: calc(7rem + var(--safe-bottom)); }
+}
+
+/* ── Touch hit-areas (plans/132 wave 2) ──────────────────────────────────────
+   The fixed footer bar's controls get the 44pt HIG floor on coarse pointers;
+   glyphs stay their size, only the tap box grows. */
+@media (pointer: coarse) {
+  .gallery-footer :is(button, a, [role="button"]) {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }

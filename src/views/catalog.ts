@@ -25,6 +25,7 @@
  */
 
 import { escape } from '../utils.ts';
+import { isHiddenSlot } from '../lib/batch-slots.ts';
 import {
   matchesType as matchesTypeRule,
   visibleAssets as visibleAssetsRule,
@@ -5116,7 +5117,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         const rows = (await h.state?.list?.().catch(() => [])) ?? [];
         const out: Array<{ slot: string; label: string; text: string }> = [];
         for (const row of rows) {
-          if (typeof row.slot !== 'string' || row.slot.startsWith('__trash__:')) continue;
+          if (typeof row.slot !== 'string' || isHiddenSlot(row.slot)) continue;
           const data = await h.state?.load?.(row.slot).catch(() => null);
           if (!data) continue;
           try { out.push({ slot: row.slot, label: String(row.label ?? row.toolId ?? row.slot), text: JSON.stringify(data) }); }

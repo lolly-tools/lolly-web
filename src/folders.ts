@@ -82,12 +82,29 @@ export type TrashEntry = TrashedSession | TrashedFolder;
 /** How long a trash entry survives before the purge sweep removes it for real. */
 export const TRASH_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
+// ── Project templates (plans/133 WP-11a) ────────────────────────────────────
+// A folder saved as a reusable starting point. Same split as the trash: the
+// folder records travel in the profile entry, the member sessions' state
+// records are COPIED to `__ptpl__:`-prefixed slots (lib/batch-slots.ts) by the
+// Projects view, which owns state writes. Image items are references with
+// single membership, so a template carries sessions only.
+
+export interface ProjectTemplate {
+  id: string;
+  name: string;
+  createdAt: string;
+  /** The captured subtree, root first, with its ORIGINAL folder ids (instantiation
+   *  mints fresh ones). Session item refs point at the template's `__ptpl__:` slots. */
+  tree: Folder[];
+}
+
 /** The profile record as this module sees it: folders + whatever else rides
  * along (spread untouched via `{ ...profile }` - no index signature needed, so
  * the host's own Profile type satisfies this slice structurally). */
 interface FolderProfile {
   folders?: Folder[];
   trash?: TrashEntry[];
+  projectTemplates?: ProjectTemplate[];
   /** Shared with the host's Profile type so it satisfies this weak slice. */
   custom?: Record<string, string>;
 }
@@ -386,6 +403,59 @@ export function createFolderStore(host: FolderHost) {
         const live = new Set(folders.map(f => f.id));
         for (const f of tree) if (!live.has(f.id)) folders.push({ ...f, items: [...f.items], updatedAt: now() });
       });
+    },
+
+    /** A COPY of a folder's subtree records (root first, items cloned) without
+     *  touching the live tree - the capture half of a project template. */
+    async snapshotSubtree(folderId: string): Promise<Folder[] | null> {
+      const folders = await this.list();
+      const root = folders.find(f => f.id === folderId);
+      if (!root) return null;
+      const ids = new Set(descendantFolderIds(folders, folderId));
+      return [root, ...folders.filter(f => ids.has(f.id))].map(f => ({ ...f, items: [...f.items] }));
+    },
+
+    /**
+     * Insert a template's tree under `parentId` with FRESH ids (so the same
+     * template can be used many times), remapping each folder's parentId and
+     * its session item refs through `slotMap` (template slot → new live slot).
+     * Items whose slot isn't in the map are dropped (a template session that
+     * failed to copy must not leave a dangling ref). Returns the new root.
+     */
+    async instantiateSubtree(tree: readonly Folder[], parentId: string | null, slotMap: ReadonlyMap<string, string>): Promise<Folder | null> {
+      if (!tree.length) return null;
+      const idMap = new Map(tree.map(f => [f.id, uuid()]));
+      const rootId = tree[0]!.id;
+      const created = tree.map(f => ({
+        ...f,
+        id: idMap.get(f.id)!,
+        parentId: f.id === rootId ? (parentId ?? null) : (idMap.get(f.parentId ?? '') ?? idMap.get(rootId)!),
+        items: f.items.filter(it => it.type === 'session' && slotMap.has(it.ref)).map(it => ({ type: it.type, ref: slotMap.get(it.ref)! })),
+        createdAt: now(), updatedAt: now(),
+      }));
+      await mutate(folders => { for (const f of created) folders.push(f); });
+      return created[0]!;
+    },
+
+    // ── Project templates (plans/133 WP-11a) ─────────────────────────────────
+
+    async templateList(): Promise<ProjectTemplate[]> {
+      const profile = await host.profile.get();
+      return profile.projectTemplates ?? [];
+    },
+
+    async templateAdd(input: { name: string; tree: Folder[] }): Promise<ProjectTemplate> {
+      const name = String(input.name ?? '').trim();
+      if (!name) throw new Error('A template name is required.');
+      const tpl: ProjectTemplate = { id: uuid(), name, createdAt: now(), tree: input.tree.map(f => ({ ...f, items: [...f.items] })) };
+      const profile = await host.profile.get();
+      await host.profile.set({ ...profile, projectTemplates: [tpl, ...(profile.projectTemplates ?? [])] });
+      return tpl;
+    },
+
+    async templateDrop(id: string): Promise<void> {
+      const profile = await host.profile.get();
+      await host.profile.set({ ...profile, projectTemplates: (profile.projectTemplates ?? []).filter(t => t.id !== id) });
     },
 
     /**

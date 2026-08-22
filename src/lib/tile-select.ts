@@ -77,6 +77,14 @@ export interface TileKeyboardAdapter {
   rename?(ref: string, tile: HTMLElement): void;
   /** Type-ahead label; defaults to the tile's `.tile-title`/full text. */
   labelOf?(tile: HTMLElement): string;
+  /** Menu key / Shift+F10 on a tile - open its context menu (plans/133 WP-13). */
+  menu?(ref: string, tile: HTMLElement): void;
+  /** Cmd/Ctrl+I - "Get info" for the focused tile (or the single selected ref). */
+  info?(ref: string): void;
+  /** Cmd/Ctrl+X / +C over the selection (or the focused tile); Cmd/Ctrl+V pastes. */
+  cut?(refs: string[]): void;
+  copy?(refs: string[]): void;
+  paste?(): void;
 }
 
 /** The handle a view holds onto - it feeds dot clicks in, the gestures do the rest. */
@@ -89,6 +97,12 @@ export interface TileSelect {
   onDotClick(ref: string, shiftKey: boolean, toggle: () => void): void;
   /** Forget the anchor - for a view that clears its selection by some other route. */
   resetAnchor(): void;
+  /**
+   * Roving tabindex (plans/133 WP-13): ONE Tab stop for the whole grid - the last
+   * tile focused (else the first), arrows walk the rest. Call after every
+   * render() that rebuilds the tiles; a no-op without the keyboard adapter.
+   */
+  syncRoving(): void;
   /**
    * Unbind everything. MANDATORY on view teardown (`viewEl._cleanup`): the host is the
    * router's single, PERSISTENT `#view` element - it is never recreated, only emptied
@@ -248,10 +262,11 @@ export function wireTileSelect(a: TileSelectAdapter): TileSelect {
     const onDown = (e: MouseEvent): void => {
       if (e.button !== 0) return;
       const el = e.target as HTMLElement;
-      // A Shift-click on a dot extends the range (see onDotClick) - stop the browser ALSO
-      // dragging a text selection across the cards on its way there. Shift-extend-selection
-      // is a MOUSEDOWN behaviour, so suppressing it on the click would already be too late.
-      if (e.shiftKey && el.closest(DOT)) { e.preventDefault(); return; }
+      // A Shift-click on a dot (or on the tile itself, WP-13) extends the range - stop
+      // the browser ALSO dragging a text selection across the cards on its way there.
+      // Shift-extend-selection is a MOUSEDOWN behaviour, so suppressing it on the click
+      // would already be too late.
+      if (e.shiftKey && (el.closest(DOT) || a.tiles().some(t => t.contains(el)))) { e.preventDefault(); return; }
       if (active) return;
       // Only ever start a box in a genuine gap - never on a card, control, bar, or drop zone.
       if (el.closest(a.noStart)) return;
@@ -271,6 +286,7 @@ export function wireTileSelect(a: TileSelectAdapter): TileSelect {
 
   // ── keyboard grid (opt-in; plans/132 WP-L + 133 WP-3) ───────────────────────
   let releaseKeys: (() => void) | null = null;
+  let syncRoving: (() => void) | null = null;
   if (a.keyboard) {
     const kb = a.keyboard;
     let typeahead = '';
@@ -287,9 +303,42 @@ export function wireTileSelect(a: TileSelectAdapter): TileSelect {
       if (!el || !a.host.contains(el)) return null;
       return a.tiles().find(t2 => t2.contains(el)) ?? null;
     };
-    /** Where focus lands on a tile: its primary open button (Enter then opens natively). */
+    /** Where focus lands on a tile: its primary open control - a button, or the
+     *  `<a href>` cover projects tiles wear (WP-13) - so Enter opens natively. */
     const focusOf = (tile: HTMLElement): HTMLElement =>
-      tile.querySelector<HTMLElement>('button.tile-primary, .cat-tile-open') ?? tile.querySelector<HTMLElement>('button') ?? tile;
+      tile.querySelector<HTMLElement>('.tile-primary, .cat-tile-open') ?? tile.querySelector<HTMLElement>('button, a[href]') ?? tile;
+
+    // Roving tabindex: the one tile that is the grid's Tab stop. Remembered by
+    // ref (tiles are rebuilt each render) and refreshed by syncRoving(). The
+    // focusin listener is installed by the FIRST syncRoving() call, so a view
+    // that never opts in (the Catalogue) keeps its natural Tab order intact.
+    let rovingRef: string | null = null;
+    let rovingBound = false;
+    const applyRoving = (tiles: HTMLElement[]): void => {
+      for (const t2 of tiles) {
+        const on = a.refOf(t2) === rovingRef;
+        focusOf(t2).tabIndex = on ? 0 : -1;
+        // The dot + kebab of the ONE focused tile stay reachable by Tab (there is no
+        // Menu key on Apple keyboards); every other tile's are skipped.
+        for (const ctl of t2.querySelectorAll<HTMLElement>('[data-select], .tile-menu-btn')) ctl.tabIndex = on ? 0 : -1;
+      }
+    };
+    const onFocusIn = (e: FocusEvent): void => {
+      const tiles = a.tiles();
+      const tile = tiles.find(t2 => t2.contains(e.target as Node));
+      if (!tile) return;
+      const ref = a.refOf(tile);
+      if (ref === rovingRef) return;
+      rovingRef = ref;
+      applyRoving(tiles);
+    };
+    syncRoving = (): void => {
+      if (!rovingBound) { a.host.addEventListener('focusin', onFocusIn); rovingBound = true; }
+      const tiles = a.tiles();
+      if (!tiles.length) return;
+      if (rovingRef === null || !tiles.some(t2 => a.refOf(t2) === rovingRef)) rovingRef = a.refOf(tiles[0]!);
+      applyRoving(tiles);
+    };
 
     const labelOf = (tile: HTMLElement): string =>
       (kb.labelOf?.(tile) ?? tile.querySelector('.tile-title, .cat-tile-name')?.textContent ?? tile.textContent ?? '').trim().toLowerCase();
@@ -332,18 +381,47 @@ export function wireTileSelect(a: TileSelectAdapter): TileSelect {
         anchor = all[all.length - 1]!;
         return;
       }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && kb.remove) {
+      /** The selection, else the focused tile - what Delete / Cut / Copy act on. */
+      const actRefs = (): string[] => {
         const sel = [...a.current()];
         const focused = focusedTile();
-        const refs = sel.length ? sel : (focused ? [a.refOf(focused)] : []);
+        return sel.length ? sel : (focused ? [a.refOf(focused)] : []);
+      };
+      if ((e.key === 'Delete' || e.key === 'Backspace') && kb.remove) {
+        const refs = actRefs();
         if (!refs.length) return;
         e.preventDefault();
         kb.remove(refs);
         return;
       }
+      // Clipboard + info (plans/133 WP-7 / WP-13). Cmd/Ctrl+V is offered whenever
+      // the view has a paste hook - it decides whether its clipboard holds anything.
+      if (e.metaKey || e.ctrlKey) {
+        const k = e.key.toLowerCase();
+        if (k === 'v' && kb.paste) { e.preventDefault(); kb.paste(); return; }
+        if ((k === 'x' && kb.cut) || (k === 'c' && kb.copy)) {
+          const refs = actRefs();
+          if (!refs.length) return;
+          e.preventDefault();
+          (k === 'x' ? kb.cut! : kb.copy!)(refs);
+          return;
+        }
+        if (k === 'i' && kb.info) {
+          const refs = actRefs();
+          if (refs.length !== 1) return;
+          e.preventDefault();
+          kb.info(refs[0]!);
+          return;
+        }
+      }
       const tile = focusedTile();
       if (!tile) return;
       const ref = a.refOf(tile);
+      if ((e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) && kb.menu) {
+        e.preventDefault();
+        kb.menu(ref, tile);
+        return;
+      }
       if (e.key.startsWith('Arrow')) {
         const target = arrowTarget(tile.getBoundingClientRect(), e.key, liveTiles().filter(t2 => t2.tile !== tile));
         if (!target) return;
@@ -375,7 +453,7 @@ export function wireTileSelect(a: TileSelectAdapter): TileSelect {
     };
 
     document.addEventListener('keydown', onKeydown);
-    releaseKeys = () => { document.removeEventListener('keydown', onKeydown); clearTimeout(typeaheadTimer); };
+    releaseKeys = () => { document.removeEventListener('keydown', onKeydown); a.host.removeEventListener('focusin', onFocusIn); clearTimeout(typeaheadTimer); };
   }
 
   return {
@@ -385,6 +463,7 @@ export function wireTileSelect(a: TileSelectAdapter): TileSelect {
       anchor = ref;
     },
     resetAnchor(): void { anchor = null; },
+    syncRoving(): void { syncRoving?.(); },
     destroy(): void {
       endDrag?.();
       releaseHost?.();

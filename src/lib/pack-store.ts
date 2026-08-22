@@ -60,9 +60,20 @@ interface PackDb {
 let dbOverride: PackDb | null = null;
 const getDb = async (): Promise<PackDb> => dbOverride ?? (openDB() as unknown as Promise<PackDb>);
 
-/** TEST-ONLY: swap the IDB connection for a fake. */
-export function _setDbForTests(db: PackDb | null): void {
+/** Install a platform storage backend. The Tauri shells call this from their
+ *  bridge-overrides/state.ts with the fs-backed PackDb
+ *  (shells/tauri-shared/bridge-overrides/pack-store-fs.ts) - iOS purges
+ *  WKWebView site data under pressure, and a purged IndexedDB silently lost
+ *  the loaded brand (plans/132 wave 3). initPackStore migrates a legacy
+ *  IndexedDB copy into the backend once, so already-loaded packs survive the
+ *  switch. */
+export function setPackStoreBackend(db: PackDb | null): void {
   dbOverride = db;
+}
+
+/** TEST-ONLY alias for the backend seam. */
+export function _setDbForTests(db: PackDb | null): void {
+  setPackStoreBackend(db);
 }
 
 /** Kept in sync with catalog/integrity.ts's PINNED_KEY - one deployment key
@@ -139,12 +150,39 @@ const MIME: Record<string, string> = {
 const mimeOf = (path: string): string =>
   MIME[path.slice(path.lastIndexOf('.') + 1).toLowerCase()] ?? 'application/octet-stream';
 
+/** One-shot legacy migration: a pack loaded into IndexedDB before the shells
+ *  installed the fs backend is copied over, then removed from IDB - so a
+ *  desktop/mobile update never silently drops an already-loaded brand. Silent
+ *  on any failure (no IDB in node, nothing to migrate, storage errors): the
+ *  worst outcome is the pre-migration status quo. */
+async function migrateLegacyIdb(backend: PackDb): Promise<boolean> {
+  try {
+    if (typeof indexedDB === 'undefined') return false;
+    const legacy = (await openDB()) as unknown as PackDb;
+    const stored = await legacy.get('profile', META_KEY);
+    if (!stored || (stored as InstancePackMeta).kind !== 'instance-pack') return false;
+    for (const key of (await legacy.getAllKeys(STORE)) as string[]) {
+      const bytes = await legacy.get(STORE, key);
+      if (bytes) await backend.put(STORE, bytes, key);
+    }
+    await backend.put('profile', stored, META_KEY);
+    await legacy.clear(STORE);
+    await legacy.delete('profile', META_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Load meta + the path set. Memoised, never throws - failure reads as "no pack". */
 export function initPackStore(): Promise<void> {
   initPromise ??= (async () => {
     try {
       const db = await getDb();
-      const stored = await db.get('profile', META_KEY);
+      let stored = await db.get('profile', META_KEY);
+      if (!stored && dbOverride && await migrateLegacyIdb(db)) {
+        stored = await db.get('profile', META_KEY);
+      }
       if (!stored || (stored as InstancePackMeta).kind !== 'instance-pack') return;
       meta = stored as InstancePackMeta;
       paths = new Set((await db.getAllKeys(STORE)) as string[]);

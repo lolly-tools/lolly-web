@@ -91,6 +91,7 @@ import { rewordAvailable } from '../lib/reworder.ts';
 // there to prevent. `sniffFormat` names a PASTED payload's file (pasted.html /
 // pasted.txt); the verification itself always re-sniffs the bytes.
 import { sniffFormat } from '../../../../engine/src/c2pa-extract.ts';
+import { LOLLY_MARK_SVG } from '../lib/lolly-mark.ts';
 
 // Trust anchors: the pinned Lolly CA root (identity for Lolly-signed assets)
 // plus the vendored C2PA trust list (Google/Gemini, the camera makers, Bria,
@@ -657,6 +658,18 @@ const TSIG_KIND_TITLE: Record<string, string> = {
   'family-tell': 'Model-associated phrasing',
   'spelling-variant-mix': 'Mixed US/British spelling',
 };
+
+/** The verifier's loading state: the message prominent and centred ABOVE the
+ *  spinning Lolly mark. The mark is the inlined icon.svg (lib/lolly-mark.ts, a
+ *  trusted generated constant) - inline because SVG-as-<img> never runs CSS
+ *  keyframes in Chromium; valid.css spins its three layers and stills them
+ *  under both motion prefs. Message is t() copy, escape()d anyway. */
+function checkingHtml(message: string): string {
+  return `<div class="valid-loading" role="status">`
+    + `<p class="valid-loading-text">${escape(message)}</p>`
+    + `<span class="valid-loading-mark" aria-hidden="true">${LOLLY_MARK_SVG}</span>`
+    + '</div>';
+}
 
 /** The hero donut gauge for the 0-100 signal score - the "how full is the dial"
  *  read, centred in the panel with the rating INSIDE the ring. Colour follows
@@ -2127,7 +2140,18 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
         // Read the (same, already-decoded) text for AI-generation signals. The bytes
         // ARE the text, so the byte-level artifact tier applies - source 'digital'.
         // An image would need OCR (host.ocr, not yet wired) and pass source 'ocr'.
-        textSignals = analyzeVerifyText(decoded, 'digital');
+        // HTML is the exception: its PROSE is analysed, not its markup - raw page
+        // bytes detect as docKind 'code' (the inline-CSS head), which gates every
+        // prose tell off, and a built page's head alone can outgrow the 64 KB cap
+        // before any prose appears. Same extraction the docs reader's donut runs,
+        // so the two numbers agree. Decode bounded at 4 MB (extractHtmlText caps
+        // its output at 64 KB); an empty extract falls back to the raw head.
+        const ext = (report.format || file.name.split('.').pop() || '').toLowerCase();
+        const prose = ext === 'html' || ext === 'htm'
+          ? (await import('./doc-read.ts')).extractHtmlText(
+              new TextDecoder('utf-8', { fatal: false }).decode(bytes.subarray(0, 4 * 1024 * 1024)))
+          : '';
+        textSignals = analyzeVerifyText(prose || decoded, 'digital');
       }
       return { report, meta, watermark, mine, seal, snippet, textSignals };
     } catch (err) {
@@ -2890,7 +2914,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     // One file reads exactly as before - the full report inline, no collapse chrome.
     if (list.length === 1) {
       const file = list[0]!;
-      reportEl.innerHTML = `<div class="valid-reports-list"><p class="valid-busy">${t('Checking {name}…', { name: file.name })}</p></div>`;
+      reportEl.innerHTML = `<div class="valid-reports-list">${checkingHtml(t('Checking {name}…', { name: file.name }))}</div>`;
       const { report, error, meta, watermark, mine, seal, snippet, textSignals } = await verifyFile(file);
       activeDigests[0] = report?.environment?.inputs;
       reportEl.querySelector('.valid-reports-list')!.innerHTML = report
@@ -2944,7 +2968,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
           <span class="valid-item-name">${escape(file.name)}</span>
           <span class="valid-item-chev" aria-hidden="true">${ICON_CHEVRON}</span>
         </summary>
-        <div class="valid-item-body"><p class="valid-busy">${t('Checking {name}…', { name: file.name })}</p></div>`;
+        <div class="valid-item-body">${checkingHtml(t('Checking {name}…', { name: file.name }))}</div>`;
       listEl.appendChild(card);
       return card;
     });
@@ -3769,7 +3793,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   async function verifyFromUrl(url: string, onFail: (host: string) => string): Promise<void> {
     const name = decodeURIComponent(new URL(url, location.origin).pathname.split('/').pop() || 'image');
     reportEl.hidden = false;
-    reportEl.innerHTML = `<div class="valid-reports-list"><p class="valid-busy">${t('Checking {name}…', { name })}</p></div>`;
+    reportEl.innerHTML = `<div class="valid-reports-list">${checkingHtml(t('Checking {name}…', { name }))}</div>`;
     try {
       const res = await fetch(url);
       if (!res.ok) throw new Error(String(res.status));
@@ -3820,6 +3844,16 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   if (src) {
     if (/^\/[^/]/.test(src)) {
       await verifyFromUrl(src, () => tRaw('Could not read {src} from this site.', { src }));
+      // `&check=1` (the docs reader's AI-scan donut): the arriving press was
+      // already "check this page", so the same-origin credential reference the
+      // page names is resolved without a second "Fetch and check" click. Still
+      // the one gate - fetchExternalManifest re-classifies the address and
+      // refuses anything cross-origin. Plain ?src= links keep the ask-first
+      // button (the docs shots capture that state).
+      if (new URLSearchParams(params).get('check')) {
+        const fetchBtn = reportEl.querySelector<HTMLButtonElement>('[data-fetch-manifest]');
+        if (fetchBtn) void fetchExternalManifest(fetchBtn);
+      }
     } else {
       sayVerifyProblem(t('Only files served by this site can be checked from a link. Drop the file here instead.'));
     }

@@ -25,13 +25,13 @@ import { escape } from '../utils.ts';
 import { t, tRaw } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
 import { createFolderStore, childFolders, folderPath, descendantFolderIds, TRASH_RETENTION_MS, FOLDER_COLORS } from '../folders.ts';
-import type { Folder, TrashEntry } from '../folders.ts';
-import { TRASH_SLOT_PREFIX, isTrashedSlot } from '../lib/batch-slots.ts';
+import type { Folder, FolderItem, TrashEntry, ProjectTemplate } from '../folders.ts';
+import { TRASH_SLOT_PREFIX, PTPL_SLOT_PREFIX, isHiddenSlot } from '../lib/batch-slots.ts';
 import { showUndoToast, flushUndoToasts } from '../lib/undo-toast.ts';
 import { livePalette } from '../lib/live-palette.ts';
 import { svgDataUrl } from '../lib/format.ts';
 import {
-  folderTile, sessionTile, imageTile, FOLDER_ICON, MENU_ICON,
+  folderTile, sessionTile, imageTile, tileColsHtml, FOLDER_ICON, MENU_ICON,
   isBatchSlot, BATCH_SLOT_PREFIX, fmtBytes,
   type MemberPreview,
 } from '../folder-tiles.ts';
@@ -60,7 +60,7 @@ import { announce } from '../a11y.ts';
 import { soundSegmentHtml, wireSoundSegment } from '../components/sound-toggle.ts';
 import { openShareDialog } from '../components/share-dialog.ts';
 import { themeSegmentHtml, wireThemeSegment } from '../components/theme-toggle.ts';
-import { serializeUrlState } from '@lolly/engine';
+import { serializeUrlState, ENGINE_VERSION } from '@lolly/engine';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
 import { getTool } from '../bridge/tool-loader.ts';
 import type { UserTemplate } from '../lib/user-templates.ts';   // type-only (erased) - the store is lazy-imported
@@ -139,6 +139,12 @@ interface MountProjectsOpts {
 
 // Sentinel folderId for the synthetic "Uncategorised" folder (sessions in no folder).
 const UNCAT = '__uncat__';
+// The Cut/Copy clipboard (plans/133 WP-7). MODULE scope on purpose: it must outlive
+// a mount, so you can cut in one folder, open another, and paste there. Refs are
+// re-validated at paste time (a cut session deleted meanwhile just drops out).
+let clipboard: { mode: 'cut' | 'copy'; items: Array<{ ref: string; kind: 'folder' | 'session' | 'image' }> } | null = null;
+// Ctrl-click is the context-menu gesture on Apple platforms, never a selection modifier there.
+const IS_APPLE = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform || '');
 // Set by the "+ New tool" tile so the next saved session files into this folder; read
 // + cleared by the tool view after its first save. sessionStorage so it survives the
 // navigation to the tool and dies with the tab.
@@ -179,6 +185,12 @@ const INFO_ICON = icon('info', { strokeWidth: 1.9 });
 const CHEVRON_ICON = icon('chevronRight');
 // lucide "link" - the shareable-link glyph (matches the tool view's Share button).
 const SHARE_ICON = icon('share', { strokeWidth: 1.9 });
+// Clipboard verbs (plans/133 WP-7), download-originals (WP-6), project templates (WP-11a).
+const CUT_ICON = icon('scissors', { strokeWidth: 1.9 });
+const PASTE_ICON = icon('checklist', { strokeWidth: 1.9 });
+const DOWNLOAD_ICON = icon('download', { strokeWidth: 1.9 });
+const TEMPLATE_ICON = icon('layersStack', { strokeWidth: 1.8 });
+const SELECT_ALL_ICON = icon('circleCheck', { strokeWidth: 1.9 });
 // lucide "users" - the team-projects create tile (shown only when a control plane
 // registers a session source; see lib/session-source.ts).
 const TEAM_ICON = icon('users', { strokeWidth: 1.9 });
@@ -207,6 +219,7 @@ export async function mountProjects(
   let folders: Folder[] = [];
   let entries: Entry[] = [];          // host.state.list() rows
   let trashEntries: TrashEntry[] = []; // profile.trash (plans/133 WP-4)
+  let templates: ProjectTemplate[] = []; // profile.projectTemplates (plans/133 WP-11a)
   let sizes: Record<string, number> = {};            // slot -> bytes
   // Derived indices, rebuilt once per reload() (see reindex()). `folders`/`entries` only
   // change in reload(), so these stay valid between renders and turn the per-tile lookups
@@ -306,10 +319,11 @@ export async function mountProjects(
       (host as ProjectsHost).state.sizes().catch(() => ({}) as Record<string, number>),
       host.profile.get().catch(() => null),
     ]);
-    // Trashed sessions keep their state records under `__trash__:` slots - they
-    // exist only for the Trash surface, never as browsable tiles.
-    entries = entries.filter(e => !isTrashedSlot(e.slot));
+    // Trashed sessions keep their state records under `__trash__:` slots, project
+    // templates theirs under `__ptpl__:` - neither is a browsable tile.
+    entries = entries.filter(e => !isHiddenSlot(e.slot));
     trashEntries = await store.trashList().catch(() => []);
+    templates = await store.templateList().catch(() => []);
     favourites = loadProjectFavourites(profile);
     headshotUrl = profile?.headshot?.id
       ? (await host.assets.get(profile.headshot.id).catch(() => null))?.url || ''
@@ -433,15 +447,29 @@ export async function mountProjects(
     } catch { /* storage off */ }
   }
 
-  /** The list view's clickable column header (plans/133 WP-2). Click sorts by
-   *  that column; a second click reverses. Rendered only in list mode. */
+  /** The list view's clickable column header (plans/133 WP-2 → WP-12). Click
+   *  sorts by that column; a second click reverses. The header is the SAME grid
+   *  as every row (projects.css --list-cols), so it cannot drift from them. A
+   *  sort with no column (Date added) is named beside Name, so the active
+   *  order is never invisible. Rendered only in list mode. */
   function listHeadHtml(): string {
+    // The arrow shows the REAL direction: name/kind run A→Z unreversed, while the
+    // date and size sorts run newest/biggest first unreversed - i.e. descending.
+    const descending = (key: SortBy): boolean => (key === 'name' || key === 'tool') ? sortRev : !sortRev;
+    const glyph = (key: SortBy): string => descending(key) ? '▾' : '▴';
+    // The sort state rides the accessible NAME: aria-sort is only exposed on real
+    // table header roles, and these are buttons in a div, so a screen reader would
+    // otherwise hear nothing of it.
     const col = (key: SortBy, label: string): string => {
       const on = sortBy === key;
-      return `<button type="button" class="listhead-col${on ? ' is-on' : ''}" data-listsort="${key}" aria-sort="${on ? (sortRev ? 'descending' : 'ascending') : 'none'}">${escape(label)}${on ? `<span class="listhead-dir" aria-hidden="true">${sortRev ? '▾' : '▴'}</span>` : ''}</button>`;
+      const state = on ? (descending(key) ? t('sorted descending') : t('sorted ascending')) : t('not sorted');
+      return `<button type="button" class="listhead-col${on ? ' is-on' : ''}" data-listsort="${key}" aria-label="${escape(`${label}, ${state}`)}">${escape(label)}${on ? `<span class="listhead-dir" aria-hidden="true">${glyph(key)}</span>` : ''}</button>`;
     };
+    const note = sortBy === 'added'
+      ? `<span class="listhead-sortnote">${t('Sorted by date added')} <span aria-hidden="true">${glyph('added')}</span></span>`
+      : '';
     return `<div class="projects-listhead" role="row">
-      <span class="listhead-name">${col('name', t('Name'))}</span>
+      <span class="listhead-name">${col('name', t('Name'))}${note}</span>
       ${col('tool', t('Kind'))}${col('size', t('Size'))}${col('modified', t('Modified'))}
     </div>`;
   }
@@ -537,20 +565,13 @@ export async function mountProjects(
     const createTool = createTile('tool', FILE_PLUS_ICON, t('New asset'), t('Start a fresh creation'));
     // Only TOP-LEVEL folders at the root; nested folders show inside their parent.
     const topFolders = sortFolders(childFolders(folders, null));
-    const folderTiles = topFolders.map(f => folderTile(f, {
-      memberPreviews: f.items.map(i => previewForRef(i.ref)).filter(Boolean) as MemberPreview[],
-      count: tileItemCount(f),
-      selectable: true, selected: isSelected(f.id), starred: favourites.has(f.id),
-    })).join('');
-    // Loose (uncategorised) saved sessions render as tiles directly on the root grid - 
+    const folderTiles = topFolders.map(f => folderTile(f, folderTileOpts(f))).join('');
+    // Loose (uncategorised) saved sessions render as tiles directly on the root grid -
     // a just-added creation shows here at once instead of vanishing into an
     // "Uncategorised" bucket. They're the SAME sessionTile a folder uses, so
     // drag-into-folder, select, rename, render, and open all work by delegation
     // (see wire()/wireDrag()). Newest first (the default sort) so a fresh add lands top-left.
-    const looseTiles = loose.map(e => sessionTile(e, {
-      toolName: toolName(e.toolId), sizeBytes: sizes[e.slot] || 0, tool: toolById.get(e.toolId),
-      selectable: true, selected: isSelected(e.slot),
-    })).join('');
+    const looseTiles = loose.map(e => sessionTile(e, sessionTileOpts(e))).join('');
     // First run: no folders AND no loose sessions → lead with a one-line invite explaining
     // what Projects hold, instead of a grid that's only the two "new" tiles.
     const invite = (!topFolders.length && !loose.length)
@@ -566,18 +587,26 @@ export async function mountProjects(
       ? createTile('team', TEAM_ICON, t('Team projects'), t('Shared with you on this instance'))
       : '';
     // Trash (plans/133 WP-4): a muted system tile, only while it holds anything.
+    const trashCount = trashEntries.length === 1 ? t('1 item') : tRaw('{n} items', { n: trashEntries.length });
     const trashTile = trashEntries.length
       ? `<div class="folder-tile folder-tile--trash"><button type="button" class="tile-primary" data-open-trash aria-label="${escape(t('Open Trash'))}">
            <span class="tile-cover tile-cover--batch" aria-hidden="true">${TRASH_ICON}</span>
-           <span class="tile-meta"><span class="tile-title">${t('Trash')}</span><span class="tile-sub">${trashEntries.length === 1 ? t('1 item') : tRaw('{n} items', { n: trashEntries.length })}</span></span>
+           <span class="tile-meta"><span class="tile-title">${t('Trash')}</span><span class="tile-sub">${trashCount}</span></span>
+           ${tileColsHtml({ kind: t('Trash'), count: trashCount, when: '' })}
          </button></div>`
       : '';
+    // The favourites hero is a grid-mode thing: above a table it would push the
+    // rows below the fold for a carousel of two covers (Part C, C2h). Starred
+    // folders still pin first in the sort either way. List mode also swaps the
+    // create tiles for the compact actions row above the table.
+    const list = viewMode === 'list';
     return shell(t('Projects'), 'projects', `
-      ${favourites.size ? `<div class="projects-featured" data-fav-strip></div>` : ''}
+      ${favourites.size && !list ? `<div class="projects-featured" data-fav-strip></div>` : ''}
       ${invite}
-      <div class="folder-grid projects-grid${viewMode === 'list' ? ' projects-list' : ''}">
-        ${viewMode === 'list' ? listHeadHtml() : ''}
-        ${folderTiles}${looseTiles}${createFolder}${createTool}${teamTile}${trashTile}
+      ${list ? `<div class="projects-actions">${listCreateBtns()}</div>` : ''}
+      <div class="folder-grid projects-grid${list ? ' projects-list' : ''}">
+        ${list ? listHeadHtml() : ''}
+        ${folderTiles}${looseTiles}${list ? '' : `${createFolder}${createTool}${templateTile()}`}${teamTile}${trashTile}
       </div>
       ${recentExports.length ? `
         <section class="projects-exports folder-exports">
@@ -614,11 +643,45 @@ export async function mountProjects(
     const countText = ms.length === 1 ? t('1 saved session') : t('{n} saved sessions', { n: ms.length });
     const status = `<p class="projects-search-status" role="status" aria-live="polite">${tRaw('{count} for {names}', { count: countText, names: escape(label) })} · ${clearBtn}</p>`;
     const gridClass = `folder-grid projects-grid projects-search-grid${viewMode === 'list' ? ' projects-list' : ''}`;
-    const tiles = ms.map(e => sessionTile(e, {
+    const tiles = ms.map(e => sessionTile(e, sessionTileOpts(e))).join('');
+    return `${status}<div class="${gridClass}">${viewMode === 'list' ? listHeadHtml() : ''}${tiles}</div>`;
+  }
+
+  // The per-tile options every surface (root, folder, results) passes, so a tile
+  // is identical wherever it appears. `href` makes the cover a real link (WP-13):
+  // middle/Cmd-click opens a new tab, the plain click is intercepted in wire().
+  function folderTileOpts(f: Folder): Parameters<typeof folderTile>[1] {
+    return {
+      memberPreviews: f.items.map(i => previewForRef(i.ref)).filter(Boolean) as MemberPreview[],
+      count: tileItemCount(f),
+      selectable: true, selected: isSelected(f.id), starred: favourites.has(f.id),
+      href: `#/p/${f.id}`,
+    };
+  }
+  function sessionTileOpts(e: Entry): Parameters<typeof sessionTile>[1] {
+    return {
       toolName: toolName(e.toolId), sizeBytes: sizes[e.slot] || 0, tool: toolById.get(e.toolId),
       selectable: true, selected: isSelected(e.slot),
-    })).join('');
-    return `${status}<div class="${gridClass}">${tiles}</div>`;
+      href: resumeHref(e),
+    };
+  }
+  /** "New from template" create tile - only once a project template exists (WP-11a). */
+  const templateTile = (): string => templates.length
+    ? createTile('template', TEMPLATE_ICON, t('New from template'), t('Start from a saved project template'))
+    : '';
+
+  /** List mode swaps the create TILES for compact buttons UP TOP (Andy,
+   *  2026-08-22): at the root an actions row above the table, in a folder view
+   *  in the header before "Render folder". Grid mode keeps the tiles - a card
+   *  affordance belongs in a card grid, not at the foot of a table. */
+  function listCreateBtns(isUncat = false): string {
+    const btn = (kind: string, glyph: string, label: string): string =>
+      `<button type="button" class="btn projects-create-btn" data-create-btn="${kind}">${glyph}<span>${escape(label)}</span></button>`;
+    return [
+      isUncat ? '' : btn('folder', FOLDER_PLUS_ICON, t('New folder')),
+      btn('tool', FILE_PLUS_ICON, t('New asset')),
+      !isUncat && templates.length ? btn('template', TEMPLATE_ICON, t('New from template')) : '',
+    ].join('');
   }
 
   function folderHtml(id: string): string {
@@ -688,15 +751,8 @@ export async function mountProjects(
       .map(i => imageRefs.get(i.ref))
       .filter(Boolean) as AssetRef[]);
     const tiles = [
-      ...subfolders.map(f => folderTile(f, {
-        memberPreviews: f.items.map(i => previewForRef(i.ref)).filter(Boolean) as MemberPreview[],
-        count: tileItemCount(f),
-        selectable: true, selected: isSelected(f.id), starred: favourites.has(f.id),
-      })),
-      ...sessions.map(e => sessionTile(e, {
-        toolName: toolName(e.toolId), sizeBytes: sizes[e.slot] || 0, tool: toolById.get(e.toolId),
-        selectable: true, selected: isSelected(e.slot),
-      })),
+      ...subfolders.map(f => folderTile(f, folderTileOpts(f))),
+      ...sessions.map(e => sessionTile(e, sessionTileOpts(e))),
       ...images.map(a => imageTile(a, {
         selectable: true, selected: isSelected(a.id),
         sub: a.id.startsWith('user/') ? t('Image') : t('Catalog image'),
@@ -714,6 +770,7 @@ export async function mountProjects(
         <h2 class="projects-title"${isUncat || searching ? '' : ` data-rename-folder="${escape(id)}" title="${escape(t('Rename folder'))}"`}>${escape(title)}</h2>
         ${searching ? '' : `<span class="projects-count">${count === 1 ? t('1 item') : t('{n} items', { n: count })}</span>`}
         <span class="projects-head-spacer"></span>
+        ${!searching && viewMode === 'list' ? listCreateBtns(isUncat) : ''}
         ${!searching && count ? `<button type="button" class="projects-render btn" data-render-folder="${escape(id)}">${RENDER_ICON}<span>${t('Render folder')}</span></button>` : ''}
         ${isUncat || searching ? '' : `<button type="button" class="tile-menu-btn projects-head-menu" data-menu="${escape(id)}" data-menu-kind="folder" aria-label="${escape(t('Folder actions (rename, render, delete)'))}">${MENU_ICON}</button>`}
       </div>`;
@@ -728,9 +785,11 @@ export async function mountProjects(
     // contributes 0 to `count` (tileItemCount ignores folders), so keying off `count`
     // would hide a freshly-created empty sub-folder.
     const hasTiles = subfolders.length > 0 || sessions.length > 0 || images.length > 0;
+    // List mode: the create actions live in the header (listCreateBtns above), not as table rows.
+    const creates = viewMode === 'list' ? '' : `${createFolder}${createTool}${isUncat ? '' : templateTile()}`;
     const body = hasTiles
-      ? `<div class="${gridClass}">${viewMode === 'list' ? listHeadHtml() : ''}${tiles}${createFolder}${createTool}</div>`
-      : `<div class="${gridClass}">${createFolder}${createTool}</div><p class="projects-empty">${isUncat ? t('No saved sessions are uncategorised yet.') : t('This folder is empty - add a tool or a sub-folder.')}</p>`;
+      ? `<div class="${gridClass}">${viewMode === 'list' ? listHeadHtml() : ''}${tiles}${creates}</div>`
+      : `<div class="${gridClass}">${viewMode === 'list' ? listHeadHtml() : ''}${creates}</div><p class="projects-empty">${isUncat ? t('No saved sessions are uncategorised yet.') : t('This folder is empty - add a tool or a sub-folder.')}</p>`;
 
     return shell(title, 'projects', `${ribbon}${stripSwitch}${rail}${header}${body}`, { inFolder: true });
   }
@@ -762,25 +821,19 @@ export async function mountProjects(
     const status = `<p class="projects-search-status" role="status" aria-live="polite">${tRaw('{count} for “{query}” in {scope}', { count: countText, query: escape(query), scope: escape(scope) })} · ${clearBtn}</p>`;
     const gridClass = `folder-grid projects-grid projects-search-grid${viewMode === 'list' ? ' projects-list' : ''}`;
     const tiles = [...mf.map(folderResultTile), ...ms.map(sessionResultTile)].join('');
-    return `${status}<div class="${gridClass}">${tiles}</div>`;
+    return `${status}<div class="${gridClass}">${viewMode === 'list' ? listHeadHtml() : ''}${tiles}</div>`;
   }
 
   // A search hit = the normal tile + a location breadcrumb beneath it. Reusing the shared
   // folderTile/sessionTile keeps open / select / drag / menu working with no extra wiring.
   function folderResultTile(f: Folder): string {
-    const tile = folderTile(f, {
-      memberPreviews: f.items.map(i => previewForRef(i.ref)).filter(Boolean) as MemberPreview[],
-      count: tileItemCount(f), selectable: true, selected: isSelected(f.id), starred: favourites.has(f.id),
-    });
+    const tile = folderTile(f, folderTileOpts(f));
     const anc = folderPath(folders, f.id).slice(0, -1);   // this folder's ancestors
     const parent = anc.length ? anc[anc.length - 1]!.id : null;
     return `<div class="projects-result">${tile}${locationChip(parent, anc.length ? anc.map(a => a.name).join(' / ') : t('Top level'))}</div>`;
   }
   function sessionResultTile(e: Entry): string {
-    const tile = sessionTile(e, {
-      toolName: toolName(e.toolId), sizeBytes: sizes[e.slot] || 0, tool: toolById.get(e.toolId),
-      selectable: true, selected: isSelected(e.slot),
-    });
+    const tile = sessionTile(e, sessionTileOpts(e));
     const owner = ownerByRef.get(e.slot);   // O(1) - prebuilt in reindex()
     const chip = owner
       ? locationChip(owner.id, folderPath(folders, owner.id).map(a => a.name).join(' / '))
@@ -887,6 +940,9 @@ export async function mountProjects(
       { id: 'duplicate', icon: DUPLICATE_ICON, label: () => t('Duplicate'), title: () => t('Copy each selected creation beside the original'), hidden: () => ![...selected.values()].includes('session') },
       { id: 'favourite', icon: STAR_ICON, label: () => [...selected.keys()].every(r => favourites.has(r)) ? t('Unfavourite') : t('Favourite') },
       { id: 'move', icon: MOVE_ICON, label: () => t('Move to…') },
+      { id: 'cut', icon: CUT_ICON, label: () => t('Cut') },
+      { id: 'copy', icon: DUPLICATE_ICON, label: () => t('Copy') },
+      { id: 'download', icon: DOWNLOAD_ICON, label: () => t('Download originals'), title: () => t('A zip of the selected files as they are stored - .lolly sessions and image bytes, nothing rendered') },
       { id: 'newfolder', icon: FOLDER_PLUS_ICON, label: () => t('New folder') },
       { id: 'delete', icon: TRASH_ICON, label: () => t('Delete'), extraClass: 'projects-bulk-danger' },
     ],
@@ -958,7 +1014,10 @@ export async function mountProjects(
     isBulkTarget: (ref) => selected.size > 1 && selected.has(ref),
     singleHtml: (tgt) => tileMenuHtml(tgt.data ?? tgt.tile?.dataset.kind ?? 'session', tgt.ref),
     bulkHtml: () => bulkMenuHtml(),
-    onAction: (act, tgt) => { void onMenuAction(act, tgt); },
+    // Right-click on empty canvas (WP-13): the file-manager background menu. Not
+    // in results mode - "New folder" there would have no clear home.
+    backgroundHtml: () => query ? '' : backgroundMenuHtml(),
+    onAction: (act, tgt, kind) => { void (kind === 'background' ? onBackgroundAction(act) : onMenuAction(act, tgt)); },
     className: 'folder-menu projects-menu',
   });
 
@@ -1025,6 +1084,19 @@ export async function mountProjects(
         tileSelect.onDotClick(selBtn.dataset.select!, e.shiftKey, () => toggleSelect(selBtn));
         return;
       }
+      // Modifier-click on the TILE itself (plans/133 WP-13 - the file-manager
+      // selection model): Cmd (Ctrl elsewhere) toggles, Shift extends the range.
+      // On Apple platforms Ctrl-click IS the right-click gesture (it has already
+      // opened the menu), so it must not also flip the selection. Middle-click
+      // never reaches here (auxclick), so the cover's href opens a new tab as-is.
+      const toggleKey = e.metaKey || (e.ctrlKey && !IS_APPLE);
+      const modTile = (toggleKey || e.shiftKey) ? t.closest<HTMLElement>('.folder-tile[data-ref][data-kind]') : null;
+      if (modTile && !modTile.classList.contains('folder-tile--create')) {
+        e.preventDefault(); e.stopPropagation();
+        const ref = modTile.dataset.ref!, kind = modTile.dataset.kind as SelectKind;
+        tileSelect.onDotClick(ref, e.shiftKey && !toggleKey, () => toggleSelectRef(ref, kind));
+        return;
+      }
 
       // Bulk-action bar
       const bulk = t.closest<HTMLElement>('[data-bulk]');
@@ -1045,14 +1117,28 @@ export async function mountProjects(
         return;
       }
 
-      // Open a folder (folder tile primary). Hash navigation (folders are hash-routed).
+      // Open a folder (folder tile primary). Hash navigation (folders are hash-routed);
+      // the cover is an <a href> to the same route, so a plain click is intercepted
+      // here (one navigation, not two) and middle-click keeps the link's new tab.
       const open = t.closest<HTMLElement>('[data-open-folder]');
-      if (open) { window.location.hash = '#/p/' + open.dataset.openFolder; return; }
+      if (open) { e.preventDefault(); window.location.hash = '#/p/' + open.dataset.openFolder; return; }
       // Rail chip navigates (drops are handled separately)
       const navChip = t.closest<HTMLElement>('[data-open-folder-nav]');
       if (navChip) {
         const dest = navChip.dataset.openFolderNav;
         window.location.hash = (!dest || dest === '__root__') ? '#/p' : '#/p/' + dest;
+        return;
+      }
+
+      // List mode's compact create buttons (the tiles are grid mode's).
+      const cbtn = t.closest<HTMLElement>('[data-create-btn]');
+      if (cbtn) {
+        const kind = cbtn.dataset.createBtn;
+        if (kind === 'folder') {
+          const name = await promptFolderName();
+          if (name && mounted) { await store.create(name, currentFolderTarget()); await reload(); render(); }
+        } else if (kind === 'template') void openTemplateChooser();
+        else startCreateTool();
         return;
       }
 
@@ -1062,6 +1148,7 @@ export async function mountProjects(
         const kind = create.dataset.create;
         if (kind === 'folder') startCreateFolder(create);
         else if (kind === 'team') void openTeamProjects();
+        else if (kind === 'template') void openTemplateChooser();
         else startCreateTool();
         return;
       }
@@ -1074,9 +1161,11 @@ export async function mountProjects(
       const rf = t.closest<HTMLElement>('[data-render-folder]');
       if (rf) { renderFolder(rf.dataset.renderFolder!); return; }
 
-      // Open a saved session (resume the tool / open batch)
+      // Open a saved session (resume the tool / open batch). The cover's href is the
+      // same destination for middle-click; the plain click goes through resumeSession
+      // so Save returns here.
       const os = t.closest<HTMLElement>('[data-open-session]');
-      if (os) { resumeSession(os.dataset.openSession!); return; }
+      if (os) { e.preventDefault(); resumeSession(os.dataset.openSession!); return; }
 
       // Open a folder image (catalog reference or your upload) in a lightbox preview.
       const oi = t.closest<HTMLElement>('[data-open-image]');
@@ -1122,6 +1211,33 @@ export async function mountProjects(
     mountFavStrip(root);
     syncBulkBar();   // reflect a selection that survived this re-render
     applyCollabBadges(root);
+    tileSelect.syncRoving();   // one Tab stop for the grid (WP-13)
+    // Cut items read as "leaving" until pasted (WP-7).
+    for (const tile of root.querySelectorAll<HTMLElement>('.folder-tile[data-ref]')) {
+      tile.classList.toggle('is-cut', clipboard?.mode === 'cut' && clipboard.items.some(i => i.ref === tile.dataset.ref));
+    }
+    attachDrops();
+  }
+
+  // OS drops land here too (plans/133 WP-6): the shared chooser ingests them, and
+  // whatever the library routes stored is filed into the folder on screen. Bound to
+  // the persistent viewEl; the router tears itself down on every hashchange, which
+  // the in-place ?tools= / ?q= exits also fire WITHOUT a remount - so this is
+  // (re)attached from wire(), and attachDropRouter replaces any live attachment.
+  const dropRouter = import('../lib/drop-router.ts');
+  function attachDrops(): void {
+    void dropRouter.then((m) => {
+      if (!mounted) return;
+      m.attachDropRouter(viewEl, host as unknown as PickerHost, {
+        onStored: (ids) => {
+          const target = currentFolderTarget();
+          void (async () => {
+            if (target) for (const id of ids) await store.addItem(target, { type: 'image', ref: id }).catch(() => {});
+            if (mounted) { await reload(); render(); }
+          })();
+        },
+      });
+    });
   }
 
   // Live-collab badge (plan 100 section 4.6; lib/collab-tile-state.ts) - every session
@@ -1161,41 +1277,55 @@ export async function mountProjects(
     tiles: selectableTiles,
     refOf: (t) => t.dataset.ref!,
     current: () => new Set(selected.keys()),
-    // Reconcile the Map to exactly `refs` (the kind is read back off each tile), then
-    // repaint every tile in place - a full render() would drop scroll/focus mid-drag.
-    setRefs: (refs) => {
-      selected.clear();
-      for (const t of selectableTiles()) {
-        const ref = t.dataset.ref!;
-        if (refs.has(ref)) selected.set(ref, t.dataset.kind as SelectKind);
-      }
-      for (const t of viewEl.querySelectorAll<HTMLElement>('.folder-tile[data-ref]')) {
-        const on = selected.has(t.dataset.ref!);
-        t.classList.toggle('is-selected', on);
-        t.querySelector('.tile-check')?.setAttribute('aria-pressed', on ? 'true' : 'false');
-      }
-      syncBulkBar();
-    },
+    setRefs: applySelectionRefs,
     clear: () => { dropSelection(); render(); },
     // Never start a box on a tile, control, chip, bar, breadcrumb, etc. - only in a gap.
     noStart: '.folder-tile, button, a, input, label, dialog, .projects-bulkbar, .projects-rail, .projects-crumbs, .projects-head, .gallery-topbar',
-    // Keyboard grid (plans/133 WP-3): arrows/Space/Cmd-A come from the shared
-    // model; Delete routes through the Trash path, F2 into the inline renames.
+    // Keyboard grid (plans/133 WP-3 + WP-13): arrows/Space/Cmd-A come from the shared
+    // model; Delete routes through the Trash path, F2 into the inline renames, the
+    // Menu key opens the tile's menu, Cmd-I its info sheet, Cmd-X/C/V the clipboard.
     keyboard: {
       remove: (refs) => {
         selected.clear();
-        for (const ref of refs) {
-          const kind: SelectKind = folders.some(f => f.id === ref) ? 'folder' : entryMap.has(ref) ? 'session' : 'image';
-          selected.set(ref, kind);
-        }
+        for (const ref of refs) selected.set(ref, kindOfRef(ref));
         void deleteSelection();
       },
       rename: (ref, tile) => {
         if (folders.some(f => f.id === ref)) startRename(tile, ref);
         else if (entryMap.has(ref)) startRenameSession(tile, ref);
       },
+      menu: (ref, tile) => {
+        const r = tile.getBoundingClientRect();
+        if (selected.size > 1 && selected.has(ref)) tileMenu.openBulkAt(r.left + 24, r.top + 24);
+        else openMenu({ ref, kind: kindOfRef(ref), tileEl: tile, anchorEl: tile.querySelector<HTMLElement>('.tile-menu-btn'), x: r.left + 24, y: r.top + 24 });
+      },
+      info: (ref) => openInfoSheet(ref),
+      cut: (refs) => setClipboard('cut', refs),
+      copy: (refs) => setClipboard('copy', refs),
+      paste: () => { void pasteClipboard(currentFolderTarget()); },
     },
   });
+
+  /** A ref's kind, from the live data (folder record → folder, state row → session, else image). */
+  const kindOfRef = (ref: string): SelectKind =>
+    folders.some(f => f.id === ref) ? 'folder' : entryMap.has(ref) ? 'session' : 'image';
+
+  // Reconcile the Map to exactly `refs` (the kind is read back off each tile), then
+  // repaint every tile in place - a full render() would drop scroll/focus mid-drag.
+  // Shared by the marquee/keyboard model and the background menu's Select all.
+  function applySelectionRefs(refs: ReadonlySet<string>): void {
+    selected.clear();
+    for (const t of selectableTiles()) {
+      const ref = t.dataset.ref!;
+      if (refs.has(ref)) selected.set(ref, t.dataset.kind as SelectKind);
+    }
+    for (const t of viewEl.querySelectorAll<HTMLElement>('.folder-tile[data-ref]')) {
+      const on = selected.has(t.dataset.ref!);
+      t.classList.toggle('is-selected', on);
+      t.querySelector('.tile-check')?.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+    syncBulkBar();
+  }
 
   // Empty the selection AND forget the Shift-anchor together. They have to move as one:
   // an anchor left behind by a cleared selection would silently become the far end of the
@@ -1215,12 +1345,15 @@ export async function mountProjects(
   // Toggle one tile's membership in `selected` and update just that tile + the bulk bar
   // in place (a full render() would drop scroll position / focus and interrupt a drag).
   function toggleSelect(btn: HTMLElement): void {
-    const ref = btn.dataset.select!;
-    const kind = btn.dataset.kind as SelectKind;
+    toggleSelectRef(btn.dataset.select!, btn.dataset.kind as SelectKind);
+  }
+  function toggleSelectRef(ref: string, kind: SelectKind): void {
     if (selected.has(ref)) selected.delete(ref); else selected.set(ref, kind);
     const on = selected.has(ref);
-    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-    btn.closest('.folder-tile')?.classList.toggle('is-selected', on);
+    for (const tile of viewEl.querySelectorAll<HTMLElement>(`.folder-tile[data-ref="${CSS.escape(ref)}"]`)) {
+      tile.classList.toggle('is-selected', on);
+      tile.querySelector('.tile-check')?.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
     syncBulkBar();
   }
 
@@ -1229,6 +1362,8 @@ export async function mountProjects(
   function handleBulk(action: string): void {
     if (action === 'clear') { dropSelection(); render(); return; }
     if (action === 'render') { renderSelection(); return; }
+    if (action === 'cut' || action === 'copy') { setClipboard(action, [...selected.keys()]); return; }
+    if (action === 'download') { void downloadOriginals(t('Selection'), selectedByKind('session'), selectedByKind('image'), topLevelSelectedFolders()); return; }
     if (action === 'edit') { editSelection(); return; }
     if (action === 'sheet') { editAsSheet(); return; }
     if (action === 'duplicate') { duplicateSelection(); return; }
@@ -1348,13 +1483,21 @@ export async function mountProjects(
     // Favourite / unfavourite row - a folder, session or image can be starred to the strip up top.
     const fav = (): string => menuItem('fav', favourites.has(ref) ? STAR_FILLED_ICON : STAR_ICON,
       favourites.has(ref) ? t('Remove from favourites') : t('Add to favourites'));
+    // Cut / Copy on every kind; Paste (into this folder) only on a folder, and only
+    // while the clipboard holds something other than this very folder.
+    const clip = (): string => menuItem('cut', CUT_ICON, t('Cut')) + menuItem('copy', DUPLICATE_ICON, t('Copy'));
     if (kind === 'folder') {
+      const canPaste = !!clipboard?.items.length && !clipboard.items.some(i => i.ref === ref);
       return [
         menuItem('open-folder', OPEN_ICON, t('Open')),
         menuItem('rename', EDIT_ICON, t('Rename folder')),
         fav(),
         menuItem('move-folder', MOVE_ICON, t('Move to…')),
+        clip(),
+        canPaste ? menuItem('paste-into', PASTE_ICON, t('Paste here')) : '',
         menuItem('render', RENDER_ICON, t('Render folder'), { render: true }),
+        menuItem('download-folder', DOWNLOAD_ICON, t('Download originals')),
+        menuItem('save-template', TEMPLATE_ICON, t('Save as project template…')),
         menuItem('style-folder', PALETTE_ICON, t('Colour and icon…')),
         menuItem('info', INFO_ICON, t('Get info')),
         menuItem('delete', TRASH_ICON, t('Move to Trash'), { danger: true }),
@@ -1367,6 +1510,7 @@ export async function mountProjects(
         menuItem('open-image', OPEN_ICON, t('Preview')),
         fav(),
         menuItem('move-image', MOVE_ICON, t('Move to…')),
+        clip(),
         menuItem('delete-image', TRASH_ICON, t('Remove from project'), { danger: true }),
       ].join('');
     }
@@ -1379,11 +1523,40 @@ export async function mountProjects(
       menuItem('duplicate-session', DUPLICATE_ICON, t('Duplicate')),
       fav(),
       menuItem('move', MOVE_ICON, t('Move to…')),
+      clip(),
       canShare ? menuItem('share', SHARE_ICON, t('Share link')) : '',
       menuItem('info', INFO_ICON, t('Get info')),
       menuItem('render-session', RENDER_ICON, t('Render'), { render: true }),
       menuItem('delete-session', TRASH_ICON, t('Move to Trash'), { danger: true }),
     ].join('');
+  }
+
+  /** The background menu (WP-13): what a right-click on empty canvas offers. */
+  function backgroundMenuHtml(): string {
+    const canPaste = !!clipboard?.items.length;
+    return [
+      menuItem('new-folder', FOLDER_PLUS_ICON, t('New folder')),
+      menuItem('new-asset', FILE_PLUS_ICON, t('New asset')),
+      templates.length ? menuItem('new-from-template', TEMPLATE_ICON, t('New from template…')) : '',
+      canPaste ? menuItem('paste', PASTE_ICON, t('Paste')) : '',
+      menuItem('select-all', SELECT_ALL_ICON, t('Select all')),
+    ].join('');
+  }
+  async function onBackgroundAction(act: string): Promise<void> {
+    if (act === 'new-folder') {
+      // The create tile's inline editor where there is one; Uncategorised and the
+      // ?tools= grid render no create tiles, so they get the name prompt instead.
+      const tile = viewEl.querySelector<HTMLElement>('[data-create="folder"]');
+      if (tile) { startCreateFolder(tile); return; }
+      const name = await promptFolderName();
+      if (!name || !mounted) return;
+      await store.create(name, currentFolderTarget());
+      await reload(); render();
+    }
+    else if (act === 'new-asset') startCreateTool();
+    else if (act === 'new-from-template') await openTemplateChooser();
+    else if (act === 'paste') await pasteClipboard(currentFolderTarget());
+    else if (act === 'select-all') applySelectionRefs(new Set(selectableTiles().map(t2 => t2.dataset.ref!)));
   }
 
   // The context menu for a MULTI-selection (right-clicking a tile that's part of the
@@ -1400,6 +1573,9 @@ export async function mountProjects(
         ...([...selected.values()].includes('session') ? [menuItem('duplicate', DUPLICATE_ICON, t('Duplicate'))] : []),
         menuItem('favourite', STAR_ICON, [...selected.keys()].every(r => favourites.has(r)) ? t('Unfavourite') : t('Favourite')),
         menuItem('move', MOVE_ICON, t('Move to…')),
+        menuItem('cut', CUT_ICON, t('Cut')),
+        menuItem('copy', DUPLICATE_ICON, t('Copy')),
+        menuItem('download', DOWNLOAD_ICON, t('Download originals')),
         menuItem('newfolder', FOLDER_PLUS_ICON, t('New folder from selection')),
         menuItem('delete', TRASH_ICON, t('Delete'), { danger: true }),
       ].join('')}</div>`;
@@ -1421,6 +1597,10 @@ export async function mountProjects(
     else if (act === 'delete') deleteFolderCascade(ref);
     else if (act === 'style-folder') void openFolderStyleDialog(ref);
     else if (act === 'info') openInfoSheet(ref);
+    else if (act === 'cut' || act === 'copy') setClipboard(act, selected.has(ref) ? [...selected.keys()] : [ref]);
+    else if (act === 'paste-into') await pasteClipboard(ref);
+    else if (act === 'download-folder') await downloadOriginals(folders.find(f => f.id === ref)?.name || t('Folder'), [], [], [ref]);
+    else if (act === 'save-template') await saveAsTemplate(ref);
     else if (act === 'open-folder') { window.location.hash = '#/p/' + ref; }
     else if (act === 'move-folder') {
       // A folder can't move into itself or its own subtree - block those targets.
@@ -1731,6 +1911,8 @@ export async function mountProjects(
           }).join('') : `<p class="movepicker-empty">${t('No sub-folders here.')}</p>`}
         </div>
         <div class="movepicker-foot">
+          <button type="button" class="btn movepicker-newfolder"${canDropHere ? '' : ' disabled'}>${FOLDER_PLUS_ICON}<span>${t('New folder')}</span></button>
+          <span class="projects-head-spacer"></span>
           <button type="button" class="btn movepicker-cancel">${t('Cancel')}</button>
           <button type="button" class="btn projects-render movepicker-confirm"${canDropHere ? '' : ' disabled'}>${t('Move to {name}', { name: curName })}</button>
         </div>`;
@@ -1757,26 +1939,40 @@ export async function mountProjects(
       if (modal.el.open) focusFirst(modal.el).focus({ preventScroll: true });
     };
 
-    modal.el.addEventListener('click', (e) => {
+    modal.el.addEventListener('click', async (e) => {
       const crumb = (e.target as HTMLElement).closest<HTMLElement>('[data-cursor]');
       if (crumb) { cursor = crumb.dataset.cursor || null; redraw(); return; }
       const into = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-into]');
       if (into && !into.disabled) { cursor = into.dataset.into!; redraw(); return; }
       if ((e.target as HTMLElement).closest('.movepicker-close, .movepicker-cancel')) { modal.close(); return; }
       if ((e.target as HTMLElement).closest('.movepicker-confirm:not([disabled])')) { const dest = cursor; modal.close(); onPick(dest); return; }
+      // "New folder" at the current level (WP-7): create it, drill into it, so the
+      // move can land there in one trip. The prompt is its own modal; this one
+      // stays open underneath and redraws with the fresh tree.
+      if ((e.target as HTMLElement).closest('.movepicker-newfolder:not([disabled])')) {
+        const name = await promptFolderName();
+        overlayModal = modal;
+        if (!name || !modal.el.isConnected) return;
+        const created = await store.create(name, cursor);
+        folders = await store.list();
+        reindex();
+        cursor = created.id;
+        redraw();
+      }
     });
   }
 
-  // A tiny name prompt (New folder from selection). Resolves the trimmed name, or null.
-  function promptFolderName(): Promise<string | null> {
+  // A tiny name prompt (New folder from selection, New folder in the Move-to picker,
+  // Save as project template). Resolves the trimmed name, or null.
+  function promptFolderName({ title = t('New folder'), placeholder = t('Folder name'), ok = t('Create'), value = '' }: { title?: string; placeholder?: string; ok?: string; value?: string } = {}): Promise<string | null> {
     return new Promise((resolve) => {
       closeMenu();
       const content = `
-        <h2 class="modal-title">${t('New folder')}</h2>
-        <input class="projects-name-input projects-prompt-input" type="text" placeholder="${escape(t('Folder name'))}" maxlength="60" aria-label="${escape(t('Folder name'))}">
+        <h2 class="modal-title">${escape(title)}</h2>
+        <input class="projects-name-input projects-prompt-input" type="text" placeholder="${escape(placeholder)}" value="${escape(value)}" maxlength="60" aria-label="${escape(placeholder)}">
         <div class="modal-actions">
           <button type="button" class="btn" data-act="cancel">${t('Cancel')}</button>
-          <button type="button" class="btn projects-render" data-act="ok">${t('Create')}</button>
+          <button type="button" class="btn projects-render" data-act="ok">${escape(ok)}</button>
         </div>`;
       // Resolves null however the dialog closes (Cancel, Escape, backdrop, or _cleanup
       // calling modal.close() on navigate-away) so the awaiting newFolderFromSelection()
@@ -1789,6 +1985,7 @@ export async function mountProjects(
       });
       overlayModal = modal;
       const input = modal.el.querySelector('input')!;
+      input.select?.();
       modal.el.addEventListener('click', (e) => {
         const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
         if (act === 'ok') return modal.close(input.value.trim());
@@ -2699,6 +2896,282 @@ export async function mountProjects(
     if (sessionRefs.length) await trashSessions(sessionRefs);
     if (!mounted) return;
     await reload(); render();
+  }
+
+  // ── clipboard (plans/133 WP-7) ──────────────────────────────────────────────
+  /** The destination for a paste, an OS drop, or New-from-template: the open folder, or loose (null). */
+  const currentFolderTarget = (): string | null => (folderId && folderId !== UNCAT) ? folderId : null;
+
+  /** Put refs on the module clipboard. Images are single-home REFERENCES, so they
+   *  can be cut (moved) but never copied - a copy drops them and says so. */
+  function setClipboard(mode: 'cut' | 'copy', refs: readonly string[]): void {
+    closeMenu();
+    let items = refs.map(ref => ({ ref, kind: kindOfRef(ref) }));
+    const droppedImages = mode === 'copy' ? items.filter(i => i.kind === 'image').length : 0;
+    if (droppedImages) items = items.filter(i => i.kind !== 'image');
+    clipboard = items.length ? { mode, items } : null;
+    dropSelection();
+    render();
+    const n = items.length;
+    const counted = mode === 'cut' ? (n === 1 ? t('1 item cut') : t('{n} items cut', { n })) : (n === 1 ? t('1 item copied') : t('{n} items copied', { n }));
+    announce(
+      droppedImages && !n ? t('Images are references - use Cut to move them')
+      : droppedImages ? `${counted}. ${t('Images are references - use Cut to move them')}`
+      : counted,
+    );
+  }
+
+  /** Paste the clipboard into `dest` (null = loose). A cut moves and empties the
+   *  clipboard; a copy duplicates and keeps it, so it can be pasted again. */
+  async function pasteClipboard(dest: string | null): Promise<void> {
+    closeMenu();
+    const clip = clipboard;
+    if (!clip?.items.length) return;
+    // A folder can't land inside itself or its own subtree.
+    const blocked = new Set(clip.items.filter(i => i.kind === 'folder').flatMap(i => [i.ref, ...descendantFolderIds(folders, i.ref)]));
+    if (dest && blocked.has(dest)) { announce(t('A folder cannot be pasted into itself')); return; }
+    // An image needs a folder to live in: refuse up front (clipboard kept) rather
+    // than silently dropping it at the top level.
+    if (!dest && clip.items.some(i => i.kind === 'image')) { announce(t('Open a folder to paste images into it')); return; }
+    let n = 0;
+    let stayed = 0;   // image references a COPY leaves with the original
+    if (clip.mode === 'cut') {
+      const left: typeof clip.items = [];
+      for (const it of clip.items) {
+        if (it.kind === 'folder' && folders.some(f => f.id === it.ref)) { await store.moveFolder(it.ref, dest); n++; }
+        else if (it.kind === 'session' && entryMap.has(it.ref)) { await store.moveItem(it.ref, dest, 'session'); n++; }
+        else if (it.kind === 'image' && dest && ownerByRef.has(it.ref)) { await store.moveItem(it.ref, dest, 'image'); n++; }
+        else left.push(it);   // gone since it was cut (deleted elsewhere) - nothing to move
+      }
+      clipboard = null;
+      if (left.length) host.log?.('info', 'projects: cut items no longer exist', { refs: left.map(i => i.ref) });
+    } else {
+      const made = new Set<string>();
+      for (const it of clip.items) {
+        if (it.kind === 'session') {
+          const slot = await duplicateSessionCore(it.ref, made);
+          if (slot) { await store.moveItem(slot, dest, 'session'); n++; }
+        } else if (it.kind === 'folder') {
+          const r = await deepCopyFolder(it.ref, dest, made);
+          if (r) { n++; stayed += r.imagesStayed; }
+        }
+      }
+    }
+    if (!mounted) return;
+    await reload(); render();
+    const pasted = n === 1 ? t('1 item pasted') : t('{n} items pasted', { n });
+    announce(stayed
+      ? `${pasted}. ${stayed === 1 ? t('1 image stayed with the original - images have one home; use Cut to move them') : t('{n} images stayed with the original - images have one home; use Cut to move them', { n: stayed })}`
+      : pasted);
+  }
+
+  /** Copy a folder and its whole subtree under `dest`: fresh records, every session
+   *  duplicated. Image references stay with the original (one home each) - the
+   *  count comes back so the paste can say so. */
+  async function deepCopyFolder(id: string, dest: string | null, made: Set<string>): Promise<{ imagesStayed: number } | null> {
+    const src = folders.find(f => f.id === id);
+    if (!src) return null;
+    let imagesStayed = 0;
+    const copy = async (f: Folder, parent: string | null, name: string): Promise<void> => {
+      const created = await store.create(name, parent);
+      if (f.color || f.emoji || f.tags) await store.setStyle(created.id, { color: f.color ?? null, emoji: f.emoji ?? null, tags: f.tags ?? null });
+      for (const it of f.items) {
+        if (it.type !== 'session') { imagesStayed++; continue; }
+        const slot = await duplicateSessionCore(it.ref, made);
+        if (slot) await store.moveItem(slot, created.id, 'session');
+      }
+      for (const child of childFolders(folders, f.id)) await copy(child, created.id, child.name);
+    };
+    await copy(src, dest, t('{name} copy', { name: src.name }));
+    return { imagesStayed };
+  }
+
+  // ── Download originals (plans/133 WP-6) ─────────────────────────────────────
+  // The stored files as they are, zipped: every single-tool session as a `.lolly`
+  // (the same file Share builds - inputs, carried user assets, thumb), a batch
+  // session as its stored JSON, every folder image as its bytes. Nothing is
+  // rendered - that is what Render is for. Folders recurse into zip paths.
+  // Leading dots are stripped too, so a folder named ".." can never mint a `../`
+  // zip path (zip-slip) - it falls back to the 'folder' default like an empty name.
+  const slug = (s: string): string => s.trim().replace(/[^\w.-]+/g, '-').replace(/^[-.]+|-+$/g, '');
+  async function downloadOriginals(label: string, sessionSlots: readonly string[], imageIds: readonly string[], folderIds: readonly string[]): Promise<void> {
+    closeMenu();
+    const items: Array<{ dir: string; kind: 'session' | 'image'; ref: string }> = [];
+    const seen = new Set<string>();
+    const add = (dir: string, kind: 'session' | 'image', ref: string): void => { if (!seen.has(ref)) { seen.add(ref); items.push({ dir, kind, ref }); } };
+    const walk = (fid: string, dir: string): void => {
+      const f = folders.find(x => x.id === fid);
+      if (!f) return;
+      const d = `${dir}${slug(f.name) || 'folder'}/`;
+      for (const it of f.items) add(d, it.type, it.ref);
+      for (const c of childFolders(folders, fid)) walk(c.id, d);
+    };
+    for (const s of sessionSlots) add('', 'session', s);
+    for (const i of imageIds) add('', 'image', i);
+    for (const fid of folderIds) walk(fid, '');
+    if (!items.length) return;
+    const zipName = `${slug(label) || 'lolly'}-originals.zip`;
+    startRenderJob(tRaw('Packing {name}', { name: label }), async (job) => {
+      const [{ zipAsync }, { buildLollyFile, creatorFromProfile }] = await Promise.all([import('../lib/zip.ts'), import('../lib/lolly-pack.ts')]);
+      const h = host as ProjectsHost & { assets: { _exportUserAssets(): Promise<Parameters<typeof buildLollyFile>[0]['userAssets']>; _getBlob(id: string): Promise<Blob | null> } };
+      const userAssets = await h.assets._exportUserAssets();
+      const appVersion = `Lolly ${ENGINE_VERSION}`;
+      const creator = creatorFromProfile(profile, { appVersion });
+      const entries: Record<string, Uint8Array> = {};
+      const taken = new Set<string>();
+      // Two same-named members never collide: name-2.ext, name-3.ext…
+      const unique = (p: string): string => {
+        const dot = p.lastIndexOf('.');
+        let q = p;
+        for (let n = 2; taken.has(q.toLowerCase()); n++) q = dot > p.lastIndexOf('/') ? `${p.slice(0, dot)}-${n}${p.slice(dot)}` : `${p}-${n}`;
+        taken.add(q.toLowerCase());
+        return q;
+      };
+      let done = 0, skipped = 0;
+      for (const it of items) {
+        if (job.cancelled) return;
+        try {
+          if (it.kind === 'session') {
+            const e = entryMap.get(it.ref);
+            const data = await h.state.load(it.ref);
+            if (!e || !data) { skipped++; continue; }
+            const name = e.label || e.filename || toolName(e.toolId) || it.ref;
+            if (isBatchSlot(it.ref)) {
+              entries[unique(`${it.dir}${slug(name) || 'batch'}.json`)] = new TextEncoder().encode(JSON.stringify(data, null, 2));
+            } else {
+              const { blob } = await buildLollyFile({ session: data, toolId: e.toolId, name, thumb: e.thumb, userAssets, creator, appVersion, engineVersion: ENGINE_VERSION });
+              entries[unique(`${it.dir}${slug(name) || 'session'}.lolly`)] = new Uint8Array(await blob.arrayBuffer());
+            }
+          } else {
+            // A catalog ref may carry a ?theme= / ?treatment= modifier; the byte
+            // store is keyed by the plain base id (folders.ts's catalogBaseId rule).
+            const baseId = it.ref.startsWith('user/') ? it.ref : it.ref.split('?')[0]!.split('#')[0]!;
+            const blob = await h.assets._getBlob(baseId);
+            if (!blob) { skipped++; host.log?.('warn', 'projects: originals member has no bytes', { ref: it.ref }); continue; }
+            const ref = imageRefs.get(it.ref);
+            const base = String(ref?.meta?.name ?? it.ref.split('/').pop() ?? 'image');
+            const file = /\.[a-z0-9]{1,5}$/i.test(base) || !ref?.format ? base : `${base}.${ref.format}`;
+            entries[unique(`${it.dir}${slug(file) || 'image'}`)] = new Uint8Array(await blob.arrayBuffer());
+          }
+        } catch (err) { skipped++; host.log?.('warn', 'projects: originals member skipped', { ref: it.ref, error: String(err) }); }
+        job.progress(++done, items.length);
+      }
+      if (!Object.keys(entries).length) throw new Error(t('Nothing could be packed.'));
+      const bytes = await zipAsync(entries);
+      await host.export.file(new Blob([bytes as BlobPart], { type: 'application/zip' }), { filename: zipName });
+      if (skipped) announce(skipped === 1 ? t('1 file could not be packed and was left out') : t('{n} files could not be packed and were left out', { n: skipped }));
+      return { zipName };
+    });
+  }
+
+  // ── Project templates (plans/133 WP-11a) ────────────────────────────────────
+  // "Save as project template" copies a folder's subtree + each member session's
+  // record into the `__ptpl__:` namespace (the trash's split: records in the
+  // profile, slots in state); "New from template" copies them back out under
+  // fresh ids and slots, so one template seeds any number of projects.
+  async function saveAsTemplate(id: string): Promise<void> {
+    closeMenu();
+    const folder = folders.find(f => f.id === id);
+    if (!folder) return;
+    const name = await promptFolderName({ title: t('Save as project template'), placeholder: t('Template name'), ok: t('Save'), value: folder.name });
+    if (!name || !mounted) return;
+    const tree = await store.snapshotSubtree(id);
+    if (!tree) return;
+    const h = host as ProjectsHost;
+    const token = (globalThis.crypto as { randomUUID?: () => string } | undefined)?.randomUUID?.() ?? Date.now().toString(36);
+    let copied = 0;
+    for (const f of tree) {
+      const kept: FolderItem[] = [];
+      for (const it of f.items) {
+        if (it.type !== 'session') continue;   // image items are single-home references: a template carries sessions only
+        const e = entryMap.get(it.ref);
+        const data = await h.state.load(it.ref).catch(() => null);
+        if (!e || !data) continue;
+        const tslot = `${PTPL_SLOT_PREFIX}${token}:${it.ref}`;
+        await h.state.save(tslot, data, e.thumb || '');
+        kept.push({ type: 'session', ref: tslot });
+        copied++;
+      }
+      f.items = kept;
+    }
+    await store.templateAdd({ name, tree });
+    if (!mounted) return;
+    await reload(); render();
+    announce(copied === 1 ? tRaw('Saved "{name}" as a project template (1 session)', { name }) : tRaw('Saved "{name}" as a project template ({n} sessions)', { name, n: copied }));
+  }
+
+  /** Pick a template to instantiate here, or delete one. */
+  async function openTemplateChooser(): Promise<void> {
+    closeMenu();
+    if (!templates.length) return;
+    const fmtWhen = (iso: string): string => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const rows = templates.map((tp, i) => {
+      const sessions = tp.tree.reduce((n, f) => n + f.items.length, 0);
+      const sub = `${sessions === 1 ? t('1 session') : t('{n} sessions', { n: sessions })} · ${tp.tree.length === 1 ? t('1 folder') : t('{n} folders', { n: tp.tree.length })} · ${escape(fmtWhen(tp.createdAt))}`;
+      return `<li class="trash-row">
+        <span class="trash-row-icon" aria-hidden="true">${FOLDER_ICON}</span>
+        <span class="trash-row-meta"><span class="trash-row-name">${escape(tp.name)}</span><span class="trash-row-sub">${sub}</span></span>
+        <button type="button" class="btn btn--sm modal-primary" data-tpl-use="${i}">${t('Use')}</button>
+        <button type="button" class="btn btn--sm cat-act-danger" data-tpl-drop="${i}" aria-label="${escape(tRaw('Delete template {name}', { name: tp.name }))}">${t('Delete')}</button>
+      </li>`;
+    }).join('');
+    const where = currentFolderTarget() ? (folders.find(f => f.id === currentFolderTarget())?.name ?? t('this folder')) : t('Projects');
+    const modal = mountModal<void>(`
+      <div class="trash-dialog-body">
+        <h2>${t('New from template')}</h2>
+        <p class="trash-note">${t('A copy of the template lands in {where} with fresh sessions.', { where })}</p>
+        <ul class="trash-list">${rows}</ul>
+        <div class="trash-actions"><button type="button" class="btn" data-tpl-close>${t('Close')}</button></div>
+      </div>`, { className: 'trash-dialog', ariaLabel: t('Project templates'), onClose: () => { if (overlayModal === modal) overlayModal = null; } });
+    overlayModal = modal;
+    modal.el.addEventListener('click', async (e) => {
+      const el = e.target as HTMLElement;
+      if (el.closest('[data-tpl-close]')) { modal.close(); return; }
+      const use = el.closest<HTMLElement>('[data-tpl-use]');
+      const drop = el.closest<HTMLElement>('[data-tpl-drop]');
+      if (use) { const tp = templates[Number(use.dataset.tplUse)]; modal.close(); if (tp) await instantiateTemplate(tp, currentFolderTarget()); return; }
+      if (drop) {
+        const tp = templates[Number(drop.dataset.tplDrop)];
+        modal.close();
+        if (!tp) return;
+        for (const f of tp.tree) for (const it of f.items) await host.state.delete(it.ref).catch(() => {});
+        await store.templateDrop(tp.id);
+        if (mounted) { await reload(); render(); }
+        announce(tRaw('Deleted template "{name}"', { name: tp.name }));
+      }
+    });
+  }
+
+  async function instantiateTemplate(tp: ProjectTemplate, parent: string | null): Promise<void> {
+    const h = host as ProjectsHost;
+    const rows = await h.state.list().catch(() => [] as Entry[]);
+    const thumbOf = new Map(rows.map(r => [r.slot, r.thumb]));
+    const live = new Set(rows.map(r => r.slot));
+    const slotMap = new Map<string, string>();
+    let i = 0;
+    for (const f of tp.tree) for (const it of f.items) {
+      if (it.type !== 'session' || slotMap.has(it.ref)) continue;
+      const data = await h.state.load(it.ref).catch(() => null);
+      if (!data) continue;
+      // The original slot sits after the template token: __ptpl__:<token>:<toolId:ts | __batch__:label>.
+      const original = it.ref.slice(PTPL_SLOT_PREFIX.length).split(':').slice(1).join(':');
+      let slot: string;
+      if (isBatchSlot(original)) {
+        const base = original.slice(BATCH_SLOT_PREFIX.length);
+        slot = BATCH_SLOT_PREFIX + base;
+        for (let n = 2; live.has(slot); n++) slot = `${BATCH_SLOT_PREFIX}${base} ${n}`;
+      } else {
+        const toolId = String((data as { __toolId?: unknown }).__toolId || original.split(':')[0] || 'session');
+        slot = `${toolId}:${Date.now()}-${++i}`;
+      }
+      await h.state.save(slot, data, thumbOf.get(it.ref) ?? undefined);
+      live.add(slot);
+      slotMap.set(it.ref, slot);
+    }
+    const root = await store.instantiateSubtree(tp.tree, parent, slotMap);
+    if (!mounted) return;
+    await reload(); render();
+    if (root) announce(tRaw('Created "{name}" from the template', { name: root.name }));
   }
 
   // ── boot ─────────────────────────────────────────────────────────────────

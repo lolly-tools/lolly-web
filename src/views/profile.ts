@@ -33,7 +33,7 @@ import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { staggerReveal } from '../lib/reveal.ts';
 import { soundSwitchHtml, wireSoundSwitch } from '../components/sound-toggle.ts';
-import { BATCH_SLOT_PREFIX } from '../lib/batch-slots.ts';
+import { BATCH_SLOT_PREFIX, isHiddenSlot } from '../lib/batch-slots.ts';
 import { mountModal } from '../components/modal.ts';
 import type { ModalHandle } from '../components/modal.ts';
 import { startBatchExport } from '../lib/batch-job.ts';
@@ -2029,7 +2029,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         const folders = await store.list();
         const entries = await (host.state as unknown as { list(): Promise<Array<{ slot: string }>> }).list().catch(() => []);
         const claimed = new Set(folders.flatMap(f => f.items.filter(i => i.type === 'session').map(i => i.ref)));
-        const looseSlots = entries.filter(e => !claimed.has(e.slot)).map(e => e.slot);
+        // Trashed and project-template copies sit in no folder by construction; a backup renders neither.
+        const looseSlots = entries.filter(e => !isHiddenSlot(e.slot) && !claimed.has(e.slot)).map(e => e.slot);
         const topLevelIds = childFolders(folders, null).map(f => f.id);
         if (!looseSlots.length && !topLevelIds.length) {
           announce(t('Backup saved. You have no saved sessions to render yet.'));

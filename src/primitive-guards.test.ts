@@ -677,7 +677,10 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // TRUSTED lib/icons string; its label is an aria attribute, never HTML). The rehosted
   // /info page fragment is injected as a PARSED node (DOMParser), not via a sink, and
   // has its <script>/<style>/.listen-bar stripped.
-  'views/docs.ts': 4,
+  // +1 2026-08-21: the AI-scan donut (donut.innerHTML) - fixed SVG markup whose only
+  // interpolations are a clamped integer score, toFixed() arc lengths and the
+  // analyser's closed band union (escape()d anyway); its label is an aria attribute.
+  'views/docs.ts': 5,
   // The in-app docs "Try it" hydration (M3). One insertAdjacentHTML sink: a TRUSTED
   // static icon (lib/icons.ts glyph string) appended to the pill; the label beside it is
   // set via textContent, never interpolated as HTML. No user/manifest string reaches a sink.

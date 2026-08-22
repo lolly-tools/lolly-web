@@ -56,6 +56,8 @@ import {
   extractPathways,
   buildToc,
 } from '../lib/docs-nav.ts';
+import { analyzeTextSignals } from '../../../../engine/src/text-signals.ts';
+import { extractHtmlText } from './doc-read.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 
 /** The reader drives the theme toggle + home fab; HostV1 covers both. */
@@ -284,6 +286,36 @@ export async function mountDocs(
   // The strip's prepended "Welcome" tab is the landing itself - active only there
   // (the per-page .active marks ride across from the fetched nav for the rest).
   if (isLanding) viewEl.querySelector('.docs-pathway-home')?.classList.add('active');
+  // AI-scan donut (Andy, 2026-08-21): the page's own text-signal score at the right
+  // end of the strip, pressing through to the full verify report for this served
+  // page (its C2PA seal + the text-signal panel). extractHtmlText is the SAME
+  // extraction verify runs on an HTML file (raw markup detects as docKind 'code'
+  // and gates every prose tell off), fed the same fetched bytes - so this number
+  // and the report's hero gauge agree.
+  const strip = viewEl.querySelector<HTMLElement>('.docs-pathways');
+  if (strip) {
+    const scan = analyzeTextSignals(extractHtmlText(html), { source: 'digital' });
+    const n = Math.max(0, Math.min(100, Math.round(scan.score)));
+    const circ = 2 * Math.PI * 26;
+    const donut = document.createElement('a');
+    donut.className = 'docs-tsig-donut';
+    // `check=1`: the press IS the ask, so verify resolves the page's same-origin
+    // credential reference without a second "Fetch and check" click.
+    donut.setAttribute('href', `#/verify?src=${encodeURIComponent(url)}&check=1`);
+    // The shared [data-tip] tooltip (parts/tooltip.css), same text on aria-label
+    // per its contract - the bubble is presentation only, never read.
+    const label = `${tRaw('Signal score {n} of 100', { n })} · ${t('Open the verify report for this page')}`;
+    donut.setAttribute('aria-label', label);
+    donut.setAttribute('data-tip', label);
+    // Numeric-only interpolation (score + the analyser's closed band union) - no free text.
+    donut.innerHTML =
+      `<svg viewBox="0 0 64 64" data-band="${escape(scan.band)}" aria-hidden="true">`
+      + '<circle class="docs-tsig-track" cx="32" cy="32" r="26"/>'
+      + `<circle class="docs-tsig-fill" cx="32" cy="32" r="26" stroke-dasharray="${((n / 100) * circ).toFixed(2)} ${circ.toFixed(2)}"/>`
+      + `<text class="docs-tsig-num" x="32" y="40">${n}</text>`
+      + '</svg>';
+    strip.appendChild(donut);
+  }
   fillSlot('[data-sidebar]', extractSidebar(doc));
   fillSlot('[data-sitemap]', extractSitemap(doc));
   // The founded-by-SUSE badge + "Questions? Contact fitzy@suse.com" line from the built

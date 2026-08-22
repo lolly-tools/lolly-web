@@ -22,3 +22,17 @@ export const TRASH_SLOT_PREFIX = '__trash__:';
 
 export const isTrashedSlot = (slot: unknown): boolean =>
   typeof slot === 'string' && slot.startsWith(TRASH_SLOT_PREFIX);
+
+/**
+ * Project-template namespace (plans/133 WP-11a): a saved folder template keeps a
+ * COPY of each member session's record at `__ptpl__:<template id>:<original slot>`.
+ * Hidden from every session-listing surface exactly like the trash; instantiating
+ * a template copies these back out under fresh slots.
+ */
+export const PTPL_SLOT_PREFIX = '__ptpl__:';
+
+export const isTemplateSlot = (slot: unknown): boolean =>
+  typeof slot === 'string' && slot.startsWith(PTPL_SLOT_PREFIX);
+
+/** A slot no user-facing session list should show: trashed or template-held. */
+export const isHiddenSlot = (slot: unknown): boolean => isTrashedSlot(slot) || isTemplateSlot(slot);

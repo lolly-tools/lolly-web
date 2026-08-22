@@ -14,11 +14,11 @@
     align-items: center;
     gap: 8px;
     position: fixed;
-    top: calc(.5em + env(safe-area-inset-top, 0px) + var(--vv-top, 0px));
+    top: calc(.5em + var(--safe-top) + var(--vv-top, 0px));
     /* Side insets: in landscape the notch/Dynamic Island sits at the bar's
        ends under viewport-fit=cover (plans/132 wave 1). */
-    left: calc(.75em + env(safe-area-inset-left, 0px) + var(--vv-left, 0px));
-    right: calc(.75em + env(safe-area-inset-right, 0px) + var(--vv-right, 0px));
+    left: calc(.75em + var(--safe-left) + var(--vv-left, 0px));
+    right: calc(.75em + var(--safe-right) + var(--vv-right, 0px));
     z-index: 99999;
     pointer-events: none; /* empty middle lets taps fall through to the masonry */
   }
@@ -328,3 +328,16 @@
 
 .lang-sort-tab:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
 
+
+/* ── Touch hit-areas (plans/132 wave 2) ──────────────────────────────────────
+   Apple's HIG floor is a 44pt tap box. The bar's controls hover around it on
+   desktop but dip under once the sub-640 layout reduces them to glyphs; on a
+   coarse pointer give every control in the bar a hard minimum. The GLYPH sizes
+   are untouched (lib/icons.ts markup is measured and cloned elsewhere) - only
+   the tappable box grows. */
+@media (pointer: coarse) {
+  .gallery-topbar :is(button, a, [role="button"]) {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

@@ -389,8 +389,13 @@ test('largeText is a --a11y-fs multiplier: one gated override, one unconditional
     'up scaling by different amounts in different views');
   assert.ok(gated[0]!.where.startsWith(PREFS[2].sheet), `the ${gate} override moved to ${gated[0]!.where}; ` +
     `lib/a11y-prefs.ts documents ${PREFS[2].sheet} as the home of largeText`);
-  assert.match(gated[0]!.value, /^[0-9]*\.?[0-9]+$/,
-    `${FS_VAR} must be a bare number so calc(<len> * var(${FS_VAR})) stays a valid length, got "${gated[0]!.value}"`);
+  // The iOS Dynamic Type ratio (main.ts initMobilePlatformFit, written INLINE as
+  // --a11y-os-fs) composes into the multiplier here: with the pref on, the larger
+  // of the ratio and the pref factor wins. The probe must NOT write --a11y-fs
+  // itself - an inline value on <html> outranks this attribute rule and freezes
+  // the toggle - so the exact composed form is pinned, factor and all.
+  assert.match(gated[0]!.value, /^max\(var\(--a11y-os-fs, 1\), [0-9]*\.?[0-9]+\)$/,
+    `${FS_VAR} under ${gate} must be max(var(--a11y-os-fs, 1), <factor>) so the OS ratio and the pref compose, got "${gated[0]!.value}"`);
 
   // The default is asserted; the ON factor is not. The factor is a design choice
   // (tunable in one edit), but a default other than 1 changes type for every
@@ -400,10 +405,21 @@ test('largeText is a --a11y-fs multiplier: one gated override, one unconditional
     `(${defaults.map((s) => s.where).join(', ')}) - ~950 font-size calc()s resolve against it, so a second ` +
     'declaration decides the whole chrome type scale by cascade accident');
   const def = defaults[0]!;
-  assert.equal(def.value, '1',
-    `the unconditional ${FS_VAR} default is "${def.value}" (${def.where}) - it MUST be 1, or every ` +
-    'calc(<len> * var(--a11y-fs)) computes a different size than it did before this feature existed, for users ' +
-    'who set no preference at all');
+  assert.equal(def.value, 'var(--a11y-os-fs, 1)',
+    `the unconditional ${FS_VAR} default is "${def.value}" (${def.where}) - it must be var(--a11y-os-fs, 1), ` +
+    'which resolves to 1 for every user who set no preference on a device with no Dynamic Type probe (the ' +
+    'additivity guarantee), while letting the probed OS ratio scale the chrome on its own');
+  // The additivity guarantee needs --a11y-os-fs itself to default to 1,
+  // unconditionally, in the same declaration block.
+  const osDefaults = ALL_RULES.flatMap((r) => decls(r.body)
+    .filter(([prop]) => prop === '--a11y-os-fs')
+    .map(([, value]) => ({ value, selector: r.selector, at: r.at, where: `${r.rel}:${r.line}` })));
+  assert.equal(osDefaults.length, 1,
+    `expected exactly ONE --a11y-os-fs declaration in CSS (main.ts writes the probed value inline), found ` +
+    `${osDefaults.length} (${osDefaults.map((s) => s.where).join(', ')})`);
+  assert.equal(osDefaults[0]!.value, '1', `the --a11y-os-fs CSS default must be 1, got "${osDefaults[0]!.value}"`);
+  assert.match(osDefaults[0]!.selector, /^(:root|html)$/, `--a11y-os-fs default must be unconditional, declared on "${osDefaults[0]!.selector}"`);
+  assert.deepEqual(osDefaults[0]!.at, [], `--a11y-os-fs default sits inside ${osDefaults[0]!.at.join(' / ')} - it must be unconditional`);
   assert.notEqual(gated[0]!.value, def.value,
     `the ${gate} override restates the default (${def.value}) - largeText would be a no-op`);
   // Ownership moved between parts/a11y.css and styles/tokens.css during this

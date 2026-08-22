@@ -156,3 +156,39 @@ test('mutations preserve sibling profile fields', async () => {
   assert.deepEqual(p.featureFlags, { 'pro-batch': true });
   assert.equal(p.folders.length, 1);
 });
+
+test('project templates: snapshot → add → instantiate with fresh ids + remapped slots', async () => {
+  const host = makeHost({ slots: ['qr:1', 'qr:2'] });
+  const store = createFolderStore(host);
+  const root = await store.create('Campaign');
+  const child = await store.create('Print', root.id);
+  await store.addItem(root.id, { type: 'session', ref: 'qr:1' });
+  await store.addItem(child.id, { type: 'session', ref: 'qr:2' });
+  await store.addItem(child.id, { type: 'image', ref: 'user/hero' });
+
+  const tree = (await store.snapshotSubtree(root.id))!;
+  assert.deepEqual(tree.map(f => f.name), ['Campaign', 'Print']);
+  // The view copies each session to a __ptpl__: slot and rewrites the refs before saving.
+  const captured = tree.map(f => ({ ...f, items: f.items.filter(i => i.type === 'session').map(i => ({ type: i.type, ref: `__ptpl__:t1:${i.ref}` })) }));
+  const tpl = await store.templateAdd({ name: 'Campaign kit', tree: captured });
+  assert.equal((await store.templateList())[0]!.id, tpl.id);
+
+  // Instantiate twice: distinct folder ids each time, slots remapped, unknown slots dropped.
+  const slotMap = new Map([['__ptpl__:t1:qr:1', 'qr:10'], ['__ptpl__:t1:qr:2', 'qr:11']]);
+  const a = (await store.instantiateSubtree(tpl.tree, null, slotMap))!;
+  const b = (await store.instantiateSubtree(tpl.tree, root.id, new Map([['__ptpl__:t1:qr:1', 'qr:20']])))!;
+  const all = await store.list();
+  assert.equal(all.length, 6);
+  assert.notEqual(a.id, root.id);
+  assert.notEqual(a.id, b.id);
+  assert.equal(b.parentId, root.id);
+  const aChild = all.find(f => f.parentId === a.id)!;
+  assert.equal(aChild.name, 'Print');
+  assert.deepEqual(aChild.items, [{ type: 'session', ref: 'qr:11' }]);   // image ref dropped, slot remapped
+  const bChild = all.find(f => f.parentId === b.id)!;
+  assert.deepEqual(bChild.items, []);                                     // unmapped slot dropped
+
+  await store.templateDrop(tpl.id);
+  assert.deepEqual(await store.templateList(), []);
+  assert.equal(host._profile().folders.length, 6);   // sibling field untouched by the drop
+});

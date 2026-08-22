@@ -25,8 +25,8 @@
 /* ─── top-right cluster: theme switcher + profile link ─────────────────────────── */
 .ask-topright {
   position: fixed;
-  top: max(0.75rem, env(safe-area-inset-top, 0));
-  right: max(0.9rem, env(safe-area-inset-right, 0));
+  top: max(0.75rem, var(--safe-top));
+  right: max(0.9rem, var(--safe-right));
   z-index: 30;
   display: flex;
   align-items: center;
@@ -207,7 +207,7 @@
   display: flex;
   align-items: center;
   gap: 0.65rem;
-  padding: 0.9rem 0 calc(1.1rem + env(safe-area-inset-bottom, 0));
+  padding: 0.9rem 0 calc(1.1rem + var(--safe-bottom));
   background: linear-gradient(hsl(var(--background) / 0), hsl(var(--background)) 30%);
   position: sticky;
   bottom: 0;

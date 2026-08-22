@@ -266,6 +266,35 @@ test('fills the pathways, sidebar, sitemap and TOC nav slots', async () => {
   view.remove();
 });
 
+test('the pathway strip carries the AI-scan donut linking to verify for this page', async () => {
+  stubOkFetch();
+  const view = freshView();
+
+  await mountDocs(view, host, 'quickstart', 'de', '');
+
+  // Queried by class, href read via getAttribute: nwsapi cannot match an attribute
+  // selector whose quoted value carries the '%' of an encoded path.
+  const donut = view.querySelector<HTMLAnchorElement>('.docs-pathways a.docs-tsig-donut');
+  assert.ok(donut, 'the donut sits inside the pathway strip');
+  assert.equal(
+    donut!.getAttribute('href'),
+    `#/verify?src=${encodeURIComponent('/info/de/quickstart.html')}&check=1`,
+    'pressing it opens the verify report for the exact served page, credential auto-checked',
+  );
+  const svg = donut!.querySelector('svg[data-band]');
+  assert.ok(svg, 'the ring carries the analyser band for the CSS colour');
+  const score = Number(donut!.querySelector('.docs-tsig-num')?.textContent);
+  assert.ok(Number.isInteger(score) && score >= 0 && score <= 100, 'the score inside the ring is a 0-100 integer');
+  assert.ok(/Signal score/.test(donut!.getAttribute('aria-label') || ''), 'the link names the score for readers');
+  assert.equal(
+    donut!.getAttribute('data-tip'),
+    donut!.getAttribute('aria-label'),
+    'the styled tooltip carries the same text as the aria-label (tooltip.css contract)',
+  );
+
+  view.remove();
+});
+
 test('a ?h=<id> deep link mounts cleanly when the heading exists', async () => {
   stubOkFetch();
   const view = freshView();
