@@ -68,6 +68,7 @@ export const ROUTE_DOMAIN: Record<string, { group: SearchGroupId; tier: 'live' |
   projects: { group: 'projects', tier: 'live' },  // plans/133 WP-9: typing live-filters the grid behind the overlay, like catalog
   profile: { group: 'settings', tier: 'overlay' },
   dashboard: { group: 'settings', tier: 'overlay' },
+  docs: { group: 'docs', tier: 'overlay' },  // the in-app reader: docs hits lead, page never reshapes
 };
 
 /** "See all in <view> →" targets - the explicit ?q= handoff (plans/99 section 2a).

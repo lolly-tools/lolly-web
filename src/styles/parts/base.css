@@ -137,6 +137,38 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ─── App-shell selection policy: chrome never selects, real text opts in ─────
+   Dragging to move / resize / reorder - by touch OR a trackpad pointer (iPad
+   Magic Keyboard) - must never paint a text selection across whatever lies
+   along the gesture path, and on touch it must not fire the long-press callout
+   + magnifier or pop the keyboard by dropping a stray selection into text.
+   This rule used to ENUMERATE manipulation surfaces (tool canvas, sidebar,
+   drag handles, [draggable]) and lost every time a new gesture surface
+   shipped - 2026-08-23: iPad trackpad drags swept blue selection across
+   gallery/catalog tiles and headings between the enumerated surfaces. So the
+   shell now defaults the whole page to none - it is an app, not a document -
+   and REAL text opts back in below: form fields, editable regions, the docs +
+   Ask readers, and the explicit `.selectable` hook for anything a tool renders
+   that a person should copy. Interaction-only: it changes no exported pixel,
+   since selection has no bearing on the canvas geometry the CLI export shares. */
+body {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+/* Real text still selects: form fields, editable regions, the two reader
+   surfaces whose content is meant to be copied, and the `.selectable` hook
+   (e.g. a URL/code a tool renders to the canvas). Opting in with `text`
+   overrides the inherited `none` for the element and its descendants. */
+input, textarea, select, [contenteditable]:not([contenteditable="false"]),
+.selectable, .selectable *,
+.docs-reader, .docs-reader *,
+.ask-answer-body, .ask-answer-body * {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
 /* Brand type roles beyond the primary/mono pair. A brand may set an optional
    DISPLAY face (top-level headings only) and an ITALIC face; both fall back to
    the primary when the brand leaves them unset (the var's own fallback) or when

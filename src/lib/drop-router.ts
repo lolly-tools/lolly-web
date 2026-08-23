@@ -11,7 +11,8 @@
  *   PDF / .ai   → edit as a design · pages → SVG library assets · compress ·
  *                 the Design System studio (a guidelines PDF's colours, marks
  *                 and embedded faces - plan 97 section 8)
- *   PowerPoint  → slides → SVG library assets
+ *   PowerPoint  → slides → SVG library assets · content → Markdown
+ *   Word (.docx) → content → Markdown
  *   image/video/audio → the asset library · /verify (Content Credentials)
  *   unknown / C2PA-looking bytes → /verify
  *
@@ -56,7 +57,7 @@ type PickerModule = typeof import('../views/picker.ts');
 /** Everything the file-picker fallback should let through - a superset of the
  *  picker's UPLOAD_ACCEPT (that list deliberately excludes design formats). */
 const UNIVERSAL_ACCEPT =
-  '.fig,.penpot,.zip,.tar,.tgz,.gz,.svg,.idml,.indd,.pdf,.ai,.pptx,.psd,.psb,.xcf,image/*,video/*,audio/*,' +
+  '.fig,.penpot,.zip,.tar,.tgz,.gz,.svg,.idml,.indd,.pdf,.ai,.pptx,.docx,.psd,.psb,.xcf,image/*,video/*,audio/*,' +
   '.mov,.json,.lottie,.mp3,.wav,.ogg,.m4a,.flac,.bmp,.ico,.cur,.svgz,.lolly';
 
 // Extension fallbacks for files whose MIME type the OS didn't fill in.
@@ -75,6 +76,9 @@ const ARCHIVE_EXT_RE = /\.(zip|tar|tar\.gz|tgz)$/i;
 // TEXT_EXT_RE. These ingest to the library as type:'text' assets; without this a page-wide
 // drop offered no "Add to your library" route (only media did), so a .txt looked unsupported.
 const TEXT_DROP_RE = /\.(txt|md|markdown|text|js|jsx|mjs|cjs|ts|tsx|py|rb|go|rs|java|c|h|hpp|cc|cpp|cs|swift|kt|kts|php|pl|lua|sql|r|scala|sh|bash|zsh|fish|yaml|yml|toml|ini|cfg|conf|css|scss|less|html|htm|xml|vue|svelte|astro)$/i;
+// The OOXML wordprocessing MIME (office-text.ts's DOCX_MIME), inlined so a plain
+// image drop never pulls that module's fflate + engine chunk in just to sniff.
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const PURE_DESIGN_EXT_RE = /\.(fig|penpot|idml|indd)$/i;
 const CONTAINER_DOC_EXT_RE = /\.(xlsx|docx|pptx|epub|odt)$/i;
 // Design-system shapes (plan 97 section 8). A Penpot project always carries a token
@@ -173,6 +177,9 @@ export interface Sniff {
    *  It IS a zip, so it must be recognised before the generic design/archive routes
    *  claim it; it opens directly (no chooser), never "unpacks". */
   lolly: boolean;
+  /** A Word (.docx) document (plans/139): its route is content extraction. Optional,
+   *  and an absent flag reads as false. */
+  docx?: boolean;
 }
 
 const isMediaFile = (f: File): boolean =>
@@ -256,6 +263,9 @@ async function looksLikeTokensFile(file: File, head: string): Promise<boolean> {
  */
 async function sniffFile(file: File, deep: boolean, picker: PickerModule): Promise<Sniff> {
   const pptx = picker.isPptxUpload(file);
+  // Name/MIME only, the same gate office-text's looksLikeDocxFile applies - a .docx is
+  // a zip, so without this the generic design route claims it (and errors in Design).
+  const docx = /\.docx$/i.test(file.name) || file.type === DOCX_MIME;
   let head: Uint8Array | null = null;
   if (deep) {
     try {
@@ -285,7 +295,7 @@ async function sniffFile(file: File, deep: boolean, picker: PickerModule): Promi
     ? ((head[0] === 0x38 && head[1] === 0x42 && head[2] === 0x50 && head[3] === 0x53)
       || text.startsWith('gimp xcf '))
     : /\.(psd|psb|xcf)$/i.test(file.name);
-  const design = !lolly && !pdf && !pptx && !layers && (DESIGN_EXT_RE.test(file.name) || zipMagic || svgText);
+  const design = !lolly && !pdf && !pptx && !docx && !layers && (DESIGN_EXT_RE.test(file.name) || zipMagic || svgText);
   // A plain archive: a zip/tar by name, or PK-magic bytes that aren't a design
   // bundle. Design bundles and office/OCF packages (zips too) are excluded so the
   // "unpack" route never competes for a .penpot or shreds a .xlsx.
@@ -295,7 +305,7 @@ async function sniffFile(file: File, deep: boolean, picker: PickerModule): Promi
   // (single-file) path - the route is a single-file journey, and every flag
   // above is computed exactly as it was before this one existed. A .penpot is
   // one by extension; a zip needs its parts named; a .json has to parse.
-  const designSystem = !lolly && deep && !pdf && !pptx && !layers
+  const designSystem = !lolly && deep && !pdf && !pptx && !docx && !layers
     && (PENPOT_EXT_RE.test(file.name)
       ? true
       : zipMagic || /\.zip$/i.test(file.name)
@@ -308,7 +318,7 @@ async function sniffFile(file: File, deep: boolean, picker: PickerModule): Promi
     && (TEXT_DROP_RE.test(file.name) || /^text\//i.test(file.type));
   // A PSD/XCF often carries an image/* MIME - the layered routes own it, not
   // the plain media ones (the library route still exists, as a flatten).
-  return { design, pdf, pptx, media: isMediaFile(file) && !layers, c2pa, layers, archive, designSystem, lolly, textDoc };
+  return { design, pdf, pptx, docx, media: isMediaFile(file) && !layers, c2pa, layers, archive, designSystem, lolly, textDoc };
 }
 
 const toolExists = (id: string): boolean =>
@@ -404,8 +414,16 @@ export function dropChooserChoices(s: Sniff, ctx: ChooserContext): DialogChoice[
     }
     if (has('compress-pdf')) choices.push({ id: 'compress', label: t('Compress this PDF') });
   }
+  // An office file gives up its pictures OR its content. Both routes are offered here, in
+  // ONE sheet: the deck ingest's own chooser is skipped when this one already asked
+  // (ingestPptxAsSvgAssets's `chooser: false`), so no route shows two dialogs.
   if (single && s.pptx) {
     choices.push({ id: 'library', label: t('Add slides to your library'), primary: true });
+    choices.push({ id: 'extract', label: t('Extract content (Markdown)') });
+  }
+  // A Word document has no picture route - its content IS the file.
+  if (single && s.docx) {
+    choices.push({ id: 'extract', label: t('Extract content (Markdown)'), primary: true });
   }
   if ((single && (s.media || s.textDoc) && !s.pdf && !s.pptx) || (!single && allIngestable)) {
     choices.push({ id: 'library', label: t('Add to your library'), primary: choices.length === 0 });
@@ -431,6 +449,7 @@ export function dropChooserMessage(s: Sniff, name: string, ctx: ChooserContext):
   if (s.layers) return tRaw('“{name}” is a layered image (Photoshop/GIMP).', { name });
   if (s.pdf) return tRaw('“{name}” is a PDF or Illustrator document.', { name });
   if (s.pptx) return tRaw('“{name}” is a PowerPoint deck.', { name });
+  if (s.docx) return tRaw('“{name}” is a Word document.', { name });
   // Two doors, so the sentence names both destinations rather than leaving
   // "design file" to stand for either of them (plan 97 section 14.9).
   if (s.designSystem && s.design && ctx.has('design')) {
@@ -713,6 +732,9 @@ export async function openDropChooser(
     case 'library':
       await ingestToLibrary(files, host, picker, opts.onStored);
       break;
+    case 'extract':
+      await extractOfficeMarkdown(first, host);
+      break;
     case 'unpack': {
       // Explode the archive to its members, then feed them through the SAME library
       // ingest as any multi-file drop. readArchiveMembers refuses an office/OCF
@@ -782,6 +804,9 @@ async function ingestToLibrary(files: File[], host: PickerHost, picker: PickerMo
         const { ingestPptxAsSvgAssets } = await import('../views/pptx-import.ts');
         ids.push(...(await ingestPptxAsSvgAssets(host, file, {
           mode: 'multi',
+          // The chooser above already asked slides-vs-content, so the deck ingest
+          // must not ask again (one dialog per drop).
+          chooser: false,
           warn: (m: string) => announce(m, { assertive: true }),
         })).map(r => r.id));
       } else {
@@ -804,6 +829,28 @@ async function ingestToLibrary(files: File[], host: PickerHost, picker: PickerMo
     ? t('Added 1 file to your library.')
     : t('Added {n} files to your library.', { n: stored }));
   onStored?.(ids);
+}
+
+/**
+ * The extract route - a .pptx or .docx hands over its CONTENT: a `.md`, or a zip of
+ * the markdown plus its `media/` files when the document carried images. Identical
+ * bytes to what #/convert and the deck ingest produce for the same file (all three
+ * call office-text's extractor), which loads lazily here - it pulls fflate and the
+ * engine readers.
+ */
+async function extractOfficeMarkdown(file: File, host: PickerHost): Promise<void> {
+  try {
+    const { officeToMarkdown, markdownDownload } = await import('./office-text.ts');
+    const content = await officeToMarkdown(new Uint8Array(await file.arrayBuffer()), file.name);
+    const base = file.name.replace(/\.(pptx|docx)$/i, '').trim() || 'document';
+    await host.export.download(
+      markdownDownload(content, `${base}.md`),
+      `${base}.${content.media.length ? 'zip' : 'md'}`,
+    );
+    playSfx('drop');
+  } catch (err) {
+    announce(tRaw('Upload failed: {message}', { message: (err as Error).message }), { assertive: true });
+  }
 }
 
 // The exports route - every shape marked for export in Penpot becomes stored

@@ -44,8 +44,9 @@ import { announce } from '../a11y.ts';
 import { getMetrics } from '../metrics.ts';
 import { renderActivity } from '../lib/activity-summary.ts';
 import { openHeadshotCropper } from '../components/headshot-cropper.ts';
+import { sanitizeSvgToString } from '../bridge/svg-sanitize.ts';
 import { storeUserUpload } from './picker.ts';
-import { CATEGORY_FLAGS, NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG, PRIVATE_COLLAB_FLAG, PERFORMANCE_UI_FLAG, PERF_HUD_FLAG, isFlagOn, flagHidden, setFlagMirror, applyPerfUi } from '../feature-flags.ts';
+import { CATEGORY_FLAGS, CONNECTOR_FLAGS, NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG, PRIVATE_COLLAB_FLAG, PERFORMANCE_UI_FLAG, PERF_HUD_FLAG, isFlagOn, flagHidden, setFlagMirror, applyPerfUi } from '../feature-flags.ts';
 import { mountPerfHud, unmountPerfHud } from '../lib/perf-hud.ts';
 import { ensureJelly } from '../lib/jelly.ts';
 import { stopNeurospicy } from '../lib/neurospicy.ts';
@@ -211,6 +212,11 @@ const fieldAttrs = (f: string): string => {
 // of the "My images" library list.
 const HEADSHOT_ID = 'user/headshot';
 
+// The default headshot when the user hasn't set one: the app mark (a vector), so
+// a blank profile still reads as a real avatar. Shown as a placeholder only - the
+// slot stays "empty" (Upload prompt, no Remove) until a real headshot is saved.
+const DEFAULT_HEADSHOT = '/icon.svg';
+
 // The Storage manager's own ad-hoc mountModal dialogs (clear/hoard/keep-active/import
 // gates + the user-image lightbox) - tracked here, mirroring confirm-dialog.ts's
 // openDialogs, so mountProfile's _cleanup can close them on a view swap. A real
@@ -276,8 +282,9 @@ export const NAV_SECTIONS: ReadonlyArray<ProfileNavSection> = [
   { id: 'activity-section', icon: 'history', label: 'Your activity', keywords: 'activity usage metrics stats history recent' },
   { id: 'storage-section', icon: 'package', label: 'Storage', keywords: 'storage data space sessions images clear export delete' },
   { id: 'offline-section', icon: 'download', label: 'Available offline', keywords: 'offline download pwa install cache' },
-  { id: 'connections-section', icon: 'upload', label: 'Connected services', keywords: 'connect send drive dropbox onedrive s3 bucket nextcloud webdav providers oauth' },
-  { id: 'sync-section', icon: 'globe', label: 'Sync across devices', keywords: 'sync devices continuity snapshot backup cloud icloud s3 across phone desktop passphrase encrypt' },
+  // Sync across devices lives INSIDE this card (its own titled sub-block), so its
+  // search keywords ride here - a query for "passphrase" or "icloud" must still land.
+  { id: 'connections-section', icon: 'upload', label: 'Connected services', keywords: 'connect send drive dropbox onedrive s3 bucket nextcloud webdav providers oauth sync devices continuity snapshot backup cloud icloud across phone desktop passphrase encrypt' },
   { id: 'feature-flags-section', icon: 'flask', label: 'Feature flags', keywords: 'features experimental beta jelly neurospicy flags toggles' },
   { id: 'identity-section', icon: 'credentialShield', label: 'Content Credentials', keywords: 'c2pa credentials provenance verify signing identity certificate' },
 ];
@@ -358,15 +365,29 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // across reloads).
   const headshotRef = profile.headshot?.id ? await host.assets.get(profile.headshot!.id).catch(() => null) : null;
   let headshotUrl = headshotRef?.url || '';
-  const focusParam = new URLSearchParams(params).get('focus');
+  const rawFocus = new URLSearchParams(params).get('focus');
+  // 'sync-section' is kept as an alias: Sync across devices moved inside Connected
+  // services, and links written before that (share links, docs, the sync-service
+  // passphrase nudge, screenshot recipes) still name it.
+  const focusParam = rawFocus === 'sync-section' ? 'connections-section' : rawFocus;
   const focusFlags = focusParam === 'feature-flags';
   const focusUseDetails = focusParam === 'use-details';
+  // Which SECTION a ?focus= param must leave expanded. Every card is a collapsible
+  // now and they all start closed, so a deep link that arrives at a folded card
+  // delivers nothing - the two legacy aliases name the section they live in (the
+  // use-details checkbox sits inside the details card), anything else is already a
+  // section id.
+  const focusSectionId = focusFlags ? 'feature-flags-section'
+    : focusUseDetails ? 'details-section'
+    : focusParam;
   // Remember which sections were left open, across visits (a UI preference, so it
-  // lives in localStorage like the theme - read synchronously before render).
+  // lives in localStorage like the theme - read synchronously before render). No
+  // entry ⇒ CLOSED: every card starts folded, and the nav rail (or a stored open
+  // state, or a ?focus= target) is what opens one.
   const OPEN_KEY = 'lolly-profile-open';
   let openState: Record<string, boolean> = {};
   try { openState = JSON.parse(localStorage.getItem(OPEN_KEY) || '{}') || {}; } catch { /* storage blocked */ }
-  const startOpen = (id: string) => (openState[id] ? ' open' : '');
+  const startOpen = (id: string) => (openState[id] || focusSectionId === id ? ' open' : '');
 
   // One toggle row for a feature flag (closes over `profile` for its checked state). Honours
   // a flag's `default` (opt-in flags start off) and shows an (i) explainer when it has `info`.
@@ -453,7 +474,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
             ${flagRow(PERF_HUD_FLAG)}
             ${flagRow(STRIP_UPLOAD_META_FLAG)}
             ${flagRow(PREFLIGHT_FLAG)}
-            ${flagRow(PRIVATE_COLLAB_FLAG)}`;
+            ${flagRow(PRIVATE_COLLAB_FLAG)}
+            <li class="feature-flag-divider" aria-hidden="true"></li>
+            <li class="feature-flag-group">${t('Connectors')}<span class="feature-flag-group-note">${t('Where this device may send finished exports. Turning one off withdraws it from every send and share surface, and hides its row in Connected services.')}</span></li>
+            ${CONNECTOR_FLAGS.map(flagRow).join('')}`;
 
   // ── Accessibility prefs (lib/a11y-prefs.ts) ──────────────────────────────────
   // Three opt-in comfort switches. Deliberately NOT feature flags and NOT in the
@@ -559,6 +583,12 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   let renderSaveState = profile.saveRenders !== false;
   const renderSaveListHtml = () => renderSaveRow(renderSaveState);
 
+  // Every card folds now, including Your details - so the identity moves into that
+  // card's summary line, or a fully collapsed page would be a wall of anonymous
+  // headings. Name if there is one, email as the fallback, nothing at all on a fresh
+  // profile (the heading alone is honest when there is no-one to name yet).
+  const displayName = [profile.firstname, profile.lastname].filter(Boolean).join(' ').trim() || (profile.email ?? '').trim();
+
   viewEl.innerHTML = `
     ${backHomeHtml()}
     <div class="gallery-topbar" style="justify-content:flex-end">
@@ -582,10 +612,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
       <div class="profile-panes">
 
-      <section class="profile-card" id="details-section">
-        <div class="profile-card-header">
-          <h2>${t('Your details')}</h2>
-        </div>
+      <details class="profile-card profile-collapse" id="details-section"${startOpen('details-section')}>
+        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Your details')}</h2>${displayName ? `<span class="profile-summary-name">${escape(displayName)}</span>` : ''}${COLLAPSE_CHEV}</summary>
+        <div class="profile-collapse-body section-card-body">
         <form class="profile-form" id="profile-form">
           <div class="profile-details-grid">
             <div class="profile-details-main">
@@ -628,13 +657,13 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
               <div class="profile-field">
                 <span class="profile-field-label headshot-heading">${t('Headshot')}</span>
                 <div class="headshot">
-                  <div class="headshot-preview${headshotUrl ? '' : ' is-empty'}" id="headshot-preview"${headshotUrl ? ` style="background-image:url('${escape(headshotUrl)}')"` : ''}>
+                  <div class="headshot-preview${headshotUrl ? '' : ' is-empty'}" id="headshot-preview" style="background-image:url('${escape(headshotUrl || DEFAULT_HEADSHOT)}')">
                     ${jellyOn
                       ? `<jelly-button variant="platinum" class="headshot-edit-jelly" id="headshot-upload">${t(headshotUrl ? 'Edit' : 'Upload')}</jelly-button>`
                       : `<button type="button" class="headshot-edit" id="headshot-upload">${t(headshotUrl ? 'Edit' : 'Upload')}</button>`}
                   </div>
                   <button type="button" class="headshot-remove" id="headshot-remove" aria-label="${escape(t('Remove headshot'))}" title="${escape(t('Remove'))}"${headshotUrl ? '' : ' hidden'}>&times;</button>
-                  <input type="file" id="headshot-file" accept="image/png,image/jpeg,image/webp,image/avif,image/heic,image/heif" hidden>
+                  <input type="file" id="headshot-file" accept="image/png,image/jpeg,image/webp,image/avif,image/heic,image/heif,image/svg+xml" hidden>
                 </div>
                 <p class="profile-inline-error" id="headshot-error" style="color:hsl(var(--destructive));font-size:13px;margin:.4rem 0 0" hidden></p>
               </div>
@@ -644,10 +673,12 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
             </aside>
           </div>
         </form>
-      </section>
+        </div>
+      </details>
 
-      <section class="profile-card profile-card--appearance" id="appearance-section">
-        <h2>${t('Appearance')}</h2>
+      <details class="profile-card profile-collapse profile-card--appearance" id="appearance-section"${startOpen('appearance-section')}>
+        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Appearance')}</h2>${COLLAPSE_CHEV}</summary>
+        <div class="profile-collapse-body section-card-body">
         <p class="profile-appearance-sub">${t('How the app dresses for you - your preference, separate from your brand. Applied instantly and remembered on this device.')}</p>
         <div class="profile-theme-grid" data-theme-pick>
           ${THEMES.map(theme => `
@@ -663,24 +694,30 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
               <div class="profile-theme-sample">Aa</div>
             </button>`).join('')}
         </div>
-      </section>
+        </div>
+      </details>
 
-      <section class="profile-card profile-card--a11y" id="a11y-section">
-        <h2>${t('Accessibility')}</h2>
+      <details class="profile-card profile-collapse profile-card--a11y" id="a11y-section"${startOpen('a11y-section')}>
+        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Accessibility')}</h2>${COLLAPSE_CHEV}</summary>
+        <div class="profile-collapse-body section-card-body">
         <p class="profile-appearance-sub">${t('Comfort settings for the app around your work. Each one is off until you turn it on, and none of them touch your designs or your exports.')}</p>
         <ul class="feature-flags profile-a11y-prefs" id="a11y-prefs">${a11yListHtml()}
         </ul>
-      </section>
+        </div>
+      </details>
 
-      <section class="profile-card" id="renders-section">
-        <h2>${t('Your renders')}</h2>
+      <details class="profile-card profile-collapse" id="renders-section"${startOpen('renders-section')}>
+        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Your renders')}</h2>${COLLAPSE_CHEV}</summary>
+        <div class="profile-collapse-body section-card-body">
         <p class="profile-appearance-sub">${t('Keep a copy of everything you download, ready to reopen or reuse.')}</p>
         <ul class="feature-flags profile-a11y-prefs" id="render-save-prefs">${renderSaveListHtml()}
         </ul>
-      </section>
+        </div>
+      </details>
 
-      <section class="profile-card" id="instance-section">
-        <h2>${t('Lolly instance')}</h2>
+      <details class="profile-card profile-collapse" id="instance-section"${startOpen('instance-section')}>
+        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Lolly instance')}</h2>${COLLAPSE_CHEV}</summary>
+        <div class="profile-collapse-body section-card-body">
         <p class="profile-appearance-sub">${t('Where this install gets its tools and catalogue from.')}</p>
         <div class="store-manage--row">
           <span class="store-manage-name">${escape(instanceBase || t('Bundled with this app'))}</span>
@@ -692,7 +729,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           </span>
         </div>
         ${canChangeInstance ? '' : `<p class="profile-appearance-sub">${t('Pointing at another Lolly instance needs the desktop app - a browser blocks a page from loading tools and assets across origins.')}</p>`}
-      </section>
+        </div>
+      </details>
 
       <details class="profile-card profile-collapse profile-activity" id="activity-section"${startOpen('activity-section')}>
         <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Your activity')}</h2>${COLLAPSE_CHEV}</summary>
@@ -709,17 +747,21 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         <div class="profile-collapse-body section-card-body" id="offline-body"><p class="storage-hint-text">${t('Loading…')}</p></div>
       </details>
 
+      ${/* Sync across devices is a sub-block of this card, not a card of its own: it
+           syncs THROUGH the providers connected right above it, so the two were
+           always one subject. Both bodies mount lazily when the card opens. */''}
       <details class="profile-card profile-collapse" id="connections-section"${startOpen('connections-section')}>
         <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Connected services')}</h2>${COLLAPSE_CHEV}</summary>
-        <div class="profile-collapse-body section-card-body" id="connections-body"><p class="storage-hint-text">${t('Loading…')}</p></div>
+        <div class="profile-collapse-body section-card-body">
+          <div id="connections-body"><p class="storage-hint-text">${t('Loading…')}</p></div>
+          <div class="storage-subsection">
+            <div class="storage-subsection-header"><h3>${t('Sync across devices')}</h3></div>
+            <div id="sync-body"><p class="storage-hint-text">${t('Loading…')}</p></div>
+          </div>
+        </div>
       </details>
 
-      <details class="profile-card profile-collapse" id="sync-section"${startOpen('sync-section')}>
-        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Sync across devices')}</h2>${COLLAPSE_CHEV}</summary>
-        <div class="profile-collapse-body section-card-body" id="sync-body"><p class="storage-hint-text">${t('Loading…')}</p></div>
-      </details>
-
-      <details class="profile-card profile-collapse" id="feature-flags-section"${(openState['feature-flags-section'] || focusFlags) ? ' open' : ''}>
+      <details class="profile-card profile-collapse" id="feature-flags-section"${startOpen('feature-flags-section')}>
         <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Feature flags')}</h2>${COLLAPSE_CHEV}</summary>
         <div class="profile-collapse-body section-card-body">
           <p class="storage-hint-text feature-hint-text">${t('Self-governance, autonomy, choice. Enable or disable parts of the app here')}</p>
@@ -869,6 +911,15 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     // mountPerfHud's own perfHudOn() gate passes when turning on). Off removes the element
     // and stops its rAF loop, leaving no residue.
     if (flagId === PERF_HUD_FLAG.id) { if (input.checked) mountPerfHud(); else unmountPerfHud(); }
+    // A connector kill switch changes what Connected services may offer, so re-mount
+    // that card's two bodies in place (only if they are already mounted - a closed
+    // card will read the flag when it first opens). Every SEND surface reads
+    // connectorEnabled() at call time, so nothing else needs telling.
+    if (flagId.startsWith('conn-') && connectionsLoaded) {
+      connectionsLoaded = false;
+      syncLoaded = false;
+      loadConnectionsCard();
+    }
     // Toggling the Neurospicy feature: silence any loop when turning it off (the UI is
     // gone, so leave no invisible audio), and show/hide the bottom-right dock to match.
     if (flagId === NEUROSPICY_FLAG.id) {
@@ -1053,7 +1104,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       // Set the image as a background so the overlaid Edit button (and its click
       // listener) is never re-created.
       preview.classList.toggle('is-empty', !headshotUrl);
-      preview.style.backgroundImage = headshotUrl ? `url('${headshotUrl}')` : '';
+      // Fall back to the default mark so the circle is never a blank swatch.
+      preview.style.backgroundImage = `url('${headshotUrl || DEFAULT_HEADSHOT}')`;
     }
     const uploadBtn = viewEl.querySelector('#headshot-upload');
     if (uploadBtn) uploadBtn.textContent = headshotUrl ? t('Edit') : t('Upload');
@@ -1075,6 +1127,16 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const errEl = viewEl.querySelector<HTMLElement>('#headshot-error');
     if (errEl) errEl.hidden = true;
     try {
+      const isSvg = file.type === 'image/svg+xml' || /\.svg$/i.test(file.name);
+      if (isSvg) {
+        // Vector headshot: keep it vector (tools clip to a circle at render time),
+        // so no raster cropper. Sanitise first - an uploaded SVG is untrusted markup.
+        const clean = await sanitizeSvgToString(await file.text());
+        const ref = await saveHeadshot(host, new Blob([clean], { type: 'image/svg+xml' }), { vector: true });
+        paintHeadshot(ref.url);
+        await refreshCounter();
+        return;
+      }
       const cropped = await openHeadshotCropper(file); // throws on undecodable
       if (!cropped) return; // user cancelled
       const ref = await saveHeadshot(host, cropped.blob);
@@ -1132,8 +1194,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     }
   });
 
-  // Persist each section's open/closed state across visits.
-  for (const id of ['activity-section', 'storage-section', 'offline-section', 'feature-flags-section', 'identity-section']) {
+  // Persist each section's open/closed state across visits. Every card in
+  // NAV_SECTIONS is a <details> now, so the registry is the list (it was a
+  // hand-kept copy of the five collapsibles).
+  for (const { id } of NAV_SECTIONS) {
     const d = viewEl.querySelector<HTMLDetailsElement>('#' + id);
     d?.addEventListener('toggle', () => {
       openState[id] = d!.open;
@@ -2838,12 +2902,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const { mountConnectionsBody } = await import('./profile-connections.ts');
     await mountConnectionsBody(body, host as Parameters<typeof mountConnectionsBody>[1]);
   };
-  connectionsDetails?.addEventListener('toggle', () => { if (connectionsDetails!.open) void loadConnections(); });
-  if (connectionsDetails?.open) void loadConnections();
-
-  // Sync across devices (plans/138 B1) - same lazy-mount idiom; the module owns
-  // its own re-rendering after each change.
-  const syncDetails = viewEl.querySelector<HTMLDetailsElement>('#sync-section');
+  // Sync across devices (plans/138 B1) - the sub-block inside the same card, so it
+  // rides the same open: one toggle, two bodies. The module owns its own
+  // re-rendering after each change.
   let syncLoaded = false;
   const loadSync = async (): Promise<void> => {
     if (syncLoaded) return;
@@ -2853,8 +2914,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const { mountSyncBody } = await import('./profile-sync.ts');
     await mountSyncBody(body, host as unknown as Parameters<typeof mountSyncBody>[1]);
   };
-  syncDetails?.addEventListener('toggle', () => { if (syncDetails!.open) void loadSync(); });
-  if (syncDetails?.open) void loadSync();
+  const loadConnectionsCard = (): void => { void loadConnections(); void loadSync(); };
+  connectionsDetails?.addEventListener('toggle', () => { if (connectionsDetails!.open) loadConnectionsCard(); });
+  if (connectionsDetails?.open) loadConnectionsCard();
 
   // ── Content Credentials: lazy, like Storage. The identity bridge (host.identity)
   // holds the device keypair + CA-issued cert; this section only ever shows either
@@ -3164,12 +3226,17 @@ function showImportDialog(onConfirm: () => Promise<void>) {
 // overwrites) and record the resulting AssetRef on the profile (sans the volatile
 // object URL - consumers re-resolve by id). A fresh version each time avoids the
 // bridge's id:format:version object-URL cache masking the new image.
-async function saveHeadshot(host: ProfileHost, blob: Blob): Promise<AssetRef> {
-  const record = {
-    id: HEADSHOT_ID, type: 'raster', format: 'webp', blob,
-    width: 512, height: 512, version: String(Date.now()),
-    meta: { name: 'headshot.webp', tags: ['headshot'] },
-  };
+async function saveHeadshot(host: ProfileHost, blob: Blob, opts: { vector?: boolean } = {}): Promise<AssetRef> {
+  const record = opts.vector
+    ? {
+        id: HEADSHOT_ID, type: 'vector', format: 'svg', blob,
+        version: String(Date.now()), meta: { name: 'headshot.svg', tags: ['headshot'] },
+      }
+    : {
+        id: HEADSHOT_ID, type: 'raster', format: 'webp', blob,
+        width: 512, height: 512, version: String(Date.now()),
+        meta: { name: 'headshot.webp', tags: ['headshot'] },
+      };
   await host.assets._uploadUserAsset!(record);
   const ref = await host.assets.get(HEADSHOT_ID);
   const { source, id, type, format, version, width, height, meta } = ref;

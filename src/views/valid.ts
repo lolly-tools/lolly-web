@@ -26,6 +26,9 @@ import '../styles/parts/valid.css';   // async CSS chunk (lazy view - not on the
 import { verifyC2pa, verifySeal, pemToDer, c2paTrustAnchors, extractFileMetadata, appendedIsExpected, META_GROUP_ORDER, META_GROUP_LABEL, stripMetadata, isStrippableFormat, detectWatermark, detectWatermarkSearch, analyzeLsb, isPptx, pptxMediaImages } from '@lolly/engine';
 import type { FileMetadata, MetaField, MetaGroup, StripFormat, SealVerifyResult } from '@lolly/engine';
 import { looksLikePptxFile, inflatePptx, PPTX_MIME } from '../bridge/pptx.ts';
+// The docx sniff only (a name/type test plus its MIME). The reader itself is loaded
+// lazily where it is used, so a drop that is not a Word file never pays for it.
+import { looksLikeDocxFile, DOCX_MIME } from '../lib/office-text.ts';
 import { WORLD_VIEWBOX, WORLD_LAND_PATH, projectLatLon } from './world-map.ts';
 import { CA_ROOT_PEM } from '../ca-root.ts';
 import { escape } from '../utils.ts';
@@ -2033,7 +2036,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       </header>
 
       <div class="valid-drop" data-drop tabindex="0" role="button" aria-label="${escape(t('Choose or drop files to verify'))}">
-        <input type="file" multiple accept=".pdf,.pptx,.png,.apng,.jpg,.jpeg,.gif,.svg,.tif,.tiff,.webp,.avif,.mp4,.m4v,.mov,.m4a,.webm,.mkv,.mp3,.wav,.opus,.html,.htm,.js,.css,.md,.txt,application/pdf,${PPTX_MIME},image/png,image/jpeg,image/gif,image/svg+xml,image/tiff,image/webp,image/avif,video/mp4,video/webm,video/x-matroska,audio/mp4,audio/mpeg,audio/wav,audio/x-wav,.ogg,audio/ogg,audio/opus,text/*" hidden>
+        <input type="file" multiple accept=".pdf,.pptx,.docx,.png,.apng,.jpg,.jpeg,.gif,.svg,.tif,.tiff,.webp,.avif,.mp4,.m4v,.mov,.m4a,.webm,.mkv,.mp3,.wav,.opus,.html,.htm,.js,.css,.md,.txt,application/pdf,${PPTX_MIME},${DOCX_MIME},image/png,image/jpeg,image/gif,image/svg+xml,image/tiff,image/webp,image/avif,video/mp4,video/webm,video/x-matroska,audio/mp4,audio/mpeg,audio/wav,audio/x-wav,.ogg,audio/ogg,audio/opus,text/*" hidden>
         <span class="valid-drop-icon" aria-hidden="true">${ICON_SHIELD}</span>
         <!-- Two leads, both rendered, one shown per pointer type (valid.css): a coarse
              pointer gets the tap affordance, a mouse keeps the drop sentence. The zone
@@ -2133,15 +2136,30 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       // decides this, and a binary file is never decoded as if it were text.
       let snippet: { body: string; more: boolean } | undefined;
       let textSignals: TextSignalPanel | undefined;
-      if (previewKind(report.format, file.name) === 'text') {
+      // A .docx is a zip, so the format sniff never calls it text - yet its PROSE is
+      // exactly what an AI-writing check wants. Routed off the declared name/type
+      // first and the part map second (isDocx, inside the reader), the way the pptx
+      // container scan routes. The extracted markdown then takes the SAME path a .md
+      // file takes below: escaped text in the <pre> preview, nothing parsed as
+      // markup, no URL minted, no network. Unreadable → the ordinary binary report.
+      let docxText: string | undefined;
+      if (looksLikeDocxFile(file)) {
+        try {
+          const { docxToMarkdown } = await import('../lib/office-text.ts');
+          docxText = (await docxToMarkdown(bytes)).markdown;
+        } catch { /* not a readable Word document - leave it as a plain binary drop */ }
+      }
+      if (docxText !== undefined || previewKind(report.format, file.name) === 'text') {
         // Two caps, and the panel must not confuse them: only the first 64 KB is
         // decoded at all (a 200 MB text file must not become a 200 MB string for
         // a preview), and only the first ~2 KB of THAT is shown. So the caption
         // counts what is on screen rather than claiming a total it cannot know.
         const head = bytes.subarray(0, 64 * 1024);
-        const decoded = new TextDecoder('utf-8', { fatal: false }).decode(head);
+        // The docx's text is already extracted and whole - only the raw-bytes path
+        // has a 64 KB decode window to report on.
+        const decoded = docxText ?? new TextDecoder('utf-8', { fatal: false }).decode(head);
         const cut = textSnippet(decoded);
-        snippet = { body: cut.body, more: cut.omitted > 0 || bytes.length > head.length };
+        snippet = { body: cut.body, more: cut.omitted > 0 || (docxText === undefined && bytes.length > head.length) };
         // Read the (same, already-decoded) text for AI-generation signals. The bytes
         // ARE the text, so the byte-level artifact tier applies - source 'digital'.
         // An image would need OCR (host.ocr, not yet wired) and pass source 'ocr'.
@@ -2862,7 +2880,10 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   // the next check so a fresh drop never leaks the previous batch's blobs.
   let previewUrls: string[] = [];
   function makePreview(file: File, report?: VerifyReport, snippet?: { body: string; more: boolean }): Preview {
-    const kind = previewKind(report?.format ?? null, file.name);
+    // A snippet only ever exists for a payload verifyFile READ as text - the sniffed
+    // text carriers, a plain-text extension, or a .docx it extracted - so its presence
+    // is what makes this a text preview, not the container the bytes arrived in.
+    const kind = snippet ? 'text' : previewKind(report?.format ?? null, file.name);
     const format = report?.format || (file.name.split('.').pop() || '');
     // A text preview is the decoded snippet, never a blob URL: nothing loads the
     // file, so there is nothing to revoke and no way for a pasted document to be

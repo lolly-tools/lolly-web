@@ -17,6 +17,7 @@
  */
 
 import { openCollabCeremony, type CollabCeremonyOptions, type CollabCeremonyHandle } from '../components/collab-ceremony.ts';
+import { appLinkBase } from '../collab/join-route.ts';
 import type { CeremonyRole } from '../collab/ceremony.ts';
 import {
   pathStoreFor, rendezvousPublish, rendezvousAwait, type PathStore, type RendezvousOpts,
@@ -52,5 +53,11 @@ export function launchRendezvousCollab(o: RendezvousLaunchOptions): CollabCeremo
   const store = pathStoreFor(o.kind);
   if (!store) throw new Error(`No shared-cloud provider for sync of kind "${o.kind}".`);
   const { kind: _kind, code, rendezvous, ...dialog } = o;
-  return openCollabCeremony({ ...dialog, ...rendezvousBindings(dialog.role, store, code, rendezvous) });
+  // linkBase must be explicit: the default falls back to location.pathname,
+  // which is the crawler-stub path under /t/<id> (see link-base.test.ts).
+  return openCollabCeremony({
+    ...dialog,
+    linkBase: dialog.linkBase ?? appLinkBase(),
+    ...rendezvousBindings(dialog.role, store, code, rendezvous),
+  });
 }

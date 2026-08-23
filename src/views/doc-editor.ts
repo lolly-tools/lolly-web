@@ -32,6 +32,9 @@ import DOMPurify from 'dompurify';
 import { PageBreak, mountPageGuides } from './doc-pages.ts';
 import { looksLikeMarkdown, mdToHtml } from '../lib/markdown.ts';
 import { mountColorField } from '../components/color-field.ts';
+import { icon } from '../lib/icons.ts';
+import { announce } from '../a11y.ts';
+import { t } from '../i18n.ts';
 
 // Border / padding presets (shared by the DocTable decoration and the table-bar cycle).
 const TABLE_BORDERS = ['grid', 'rows', 'none'];
@@ -422,9 +425,18 @@ export function initDocEditor(opts: DocEditorOpts): { destroy(): void } {
   const bImage = btn('fc-cbtn', IC.image, 'Insert image / Lolly');
   const bPageBreak = btn('fc-cbtn', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l3 3v4"/><path d="M6 21h12v-6"/><line x1="3" y1="12" x2="21" y2="12" stroke-dasharray="2.5 2.5"/></svg>', 'Insert page break');
 
+  // The shared registry glyph, not another inline SVG (primitive-guards R3).
+  const bImportDocx = btn('fc-cbtn', icon('document'), t('Import Word doc'));
+  // Hidden input lives inside the ribbon, so destroy()'s ribbonDock.remove() takes it.
+  const docxInput = doc.createElement('input');
+  docxInput.type = 'file';
+  docxInput.accept = '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  docxInput.hidden = true;
+
   const sep = (): HTMLElement => el('span', 'fc-sep-v');
   ribbon.append(styleSel, fontSel, sep(), bBold, bItal, bUnder, bStrike, colorWrap, bClear, sep(),
-    bUl, bOl, bQuote, bAlignL, bAlignC, bAlignR, sep(), lhSel, lsSel, sep(), bTable, bImage, bPageBreak);
+    bUl, bOl, bQuote, bAlignL, bAlignC, bAlignR, sep(), lhSel, lsSel, sep(), bTable, bImage, bPageBreak,
+    sep(), bImportDocx, docxInput);
 
   // A second row of TABLE controls, shown only when the caret is inside a table.
   const tbar = el('div', 'doc-ribbon doc-tablebar');
@@ -528,6 +540,27 @@ export function initDocEditor(opts: DocEditorOpts): { destroy(): void } {
 
   // Insert an explicit page break (the export hook starts a fresh page on it).
   on(bPageBreak, 'click', () => chain().insertContent({ type: 'pageBreak' }).run());
+
+  // Import a Word document (plans/139): docx-read → the engine's HTML projection →
+  // the editor, in ONE chained transaction so a single undo takes the import back.
+  // Images arrive as data URLs, memoised per part and budgeted inside docxToHtml.
+  // The sanitise is the same belt-and-braces pass the Markdown paste path runs.
+  on(bImportDocx, 'click', () => docxInput.click());
+  on(docxInput, 'change', () => {
+    const file = (docxInput.files ?? [])[0];
+    docxInput.value = '';   // re-picking the same file must fire `change` again
+    if (!file) return;
+    void (async () => {
+      try {
+        const { docxToHtml } = await import('../lib/office-text.ts');
+        const { html, dropped } = await docxToHtml(new Uint8Array(await file.arrayBuffer()));
+        editor.chain().focus().setContent(DOMPurify.sanitize(html)).run();
+        if (dropped) announce(t('Some images in that document could not be imported.'));
+      } catch (e) {
+        announce((e as Error)?.message || t('Could not read that Word document.'), { assertive: true });
+      }
+    })();
+  });
 
   // ── left rail (Undo/Redo · Export · Save · Page setup) ────────────────────────
   const dock = el('div', 'fc-toolbar-dock');

@@ -29,6 +29,7 @@ import { canStartCollab, startCollab } from '../lib/collab-availability.ts';
 import { syncCatalog, prefetchAssetsById, defaultHiddenToolIds } from '../catalog/sync.ts';
 import { pinTool, unpinTool, pinnedToolIds, pinnedRenderLayouts } from '../lib/offline-pins.ts';
 import { getInjectedTools } from '../lib/injected-tools.ts';
+import { LEAD_TOOL_ORDER } from '../lib/lead-tools.ts';
 import { instanceFetch, instancePath } from '../lib/instance.ts';
 import { privacyNoticeMarkup, mountPrivacyNotice } from './privacy-notice.ts';
 import { personalizeNudgeMarkup, mountPersonalizeNudge } from './personalize-nudge.ts';
@@ -129,6 +130,11 @@ const SORT_DIR_STORAGE = 'lolly-gallery-sort-dir';
 // catalog preserves authoring order and appends new tools, so the tail is genuinely
 // the newest - this stays honest and self-expiring as more tools ship.
 const NEW_COUNT = 5;
+// Fixed leads for the default browse order ('recent' sort, which every fresh
+// install starts on) - lib/lead-tools.ts, shared with the native app menus.
+// Only the default sort pins them - picking any sort in the filter popover, or
+// reversing direction, behaves exactly as labelled.
+const leadRank = new Map(LEAD_TOOL_ORDER.map((id, i) => [id, i]));
 // Most example looks a gallery tile's preview strip will show (after the lead slide).
 // Keeps the carousel DOM + the number of live renders per tile bounded.
 const EXAMPLE_MAX = 6;
@@ -1343,7 +1349,12 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
       switch (sortKey) {
         case 'az': return byName(a, b);
         case 'za': return byName(b, a);
-        case 'recent': return (orderById.get(b.id)! - orderById.get(a.id)!) || byName(a, b); // newest-appended first
+        case 'recent': {
+          // Pinned leads first (LEAD_TOOL_ORDER), then newest-appended first.
+          const la = leadRank.get(a.id) ?? -1, lb = leadRank.get(b.id) ?? -1;
+          if (la !== lb) return la < 0 ? 1 : lb < 0 ? -1 : la - lb;
+          return (orderById.get(b.id)! - orderById.get(a.id)!) || byName(a, b);
+        }
         case 'category': return (categoryRank(a.category ?? 'other') - categoryRank(b.category ?? 'other')) || byName(a, b);
         case 'format': {
           const fa = primaryFmt(a), fb = primaryFmt(b);

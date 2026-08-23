@@ -65,8 +65,10 @@
 
   <link rel="manifest" href="/manifest.webmanifest" />
   <!-- The signed source mark first (crisp at any size, provenance intact); .ico + png are
-       the fallbacks for browsers that don't take an SVG favicon. -->
-  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+       the fallbacks for browsers that don't take an SVG favicon. theme.ts flips this href
+       to /icon-reverse.svg on dark/brand themes live - following the IN-APP toggle, which a
+       `media` query can't see (it only tracks the OS scheme, and needed a reload). -->
+  <link rel="icon" id="favicon-svg" href="/icon.svg" type="image/svg+xml" />
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" href="/icons/icon-192.png" type="image/png" />
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
@@ -86,7 +88,10 @@
       var t = localStorage.getItem('theme');
       if (t === 'suse') t = 'brand'; // retired name - theme.ts migrates the store on apply
       if (!t && matchMedia('(prefers-color-scheme: dark)').matches) t = 'dark';
-      if (t === 'dark' || t === 'brand') document.documentElement.dataset.theme = t;
+      if (t === 'dark' || t === 'brand') {
+        document.documentElement.dataset.theme = t;
+        var fi = document.getElementById('favicon-svg'); if (fi) fi.href = '/icon-reverse.svg';
+      }
       // Restore the brand font stacks the same way (written by applyChromeBrandVars
       // in brand-vars.ts) so a branded profile doesn't flash the platform default
       // every load. setProperty is CSSOM - the cached value can't inject markup.

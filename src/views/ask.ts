@@ -21,6 +21,7 @@ import { t, tRaw, docsAppHref } from '../i18n.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { backHomeHtml, mountBackPill } from '../components/back-pill.ts';
 import { createThemeToggle } from '../components/theme-toggle.ts';
+import { attachProfileMenu } from '../components/profile-menu.ts';
 import { mountHomeFab } from '../components/home-fab.ts';
 import { LOLLY_MARK_SVG } from '../lib/lolly-mark.ts';
 import { GROUP_LABELS, type SearchGroupId } from '../lib/search/registry.ts';
@@ -153,6 +154,10 @@ export async function mountAsk(viewEl: HTMLElement, host: AskHost, params: strin
   // The theme switcher (icon-only cycle: light → dark → brand), styled locally as
   // .ask-top-btn - the profile link sits beside it (both top-right).
   viewEl.querySelector('[data-topright]')?.prepend(createThemeToggle(host, { className: 'ask-top-btn ask-theme-btn' }));
+  // On mobile the profile pill becomes the consolidated menu (theme / Home /
+  // Language / settings) and the standalone home FAB hides (overrides.css) -
+  // one stable anchor instead of the wandering top-left fab. Desktop unchanged.
+  const detachProfileMenu = attachProfileMenu(viewEl.querySelector<HTMLElement>('.ask-profile-link'), host);
 
   const transcriptEl = viewEl.querySelector<HTMLElement>('[data-transcript]')!;
   const inputEl = viewEl.querySelector<HTMLInputElement>('[data-input]')!;
@@ -309,6 +314,7 @@ export async function mountAsk(viewEl: HTMLElement, host: AskHost, params: strin
 
   (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => {
     busy = false;
+    detachProfileMenu();
     // Detach the chip's mirror only. The download job carries on - that is the
     // whole point of moving it out of this view - and the toast still shows it.
     detachDownload?.();

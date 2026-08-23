@@ -23,11 +23,15 @@ import { choiceDialog } from '../components/confirm-dialog.ts';
 // both convert a spreadsheet identically); re-exported here for callers/tests.
 export { rowsToCsv };
 
+/** The office packages that decode to Markdown rather than to their raw bytes. */
+const OFFICE_DOC_RE = /\.(pptx|docx)$/i;
+
 /**
  * Decode a picked data file to the text a text/longtext field receives. An `.xlsx` is
  * unzipped and serialised to CSV - reading `sheet` (a 0-based index or exact name;
- * default the first sheet); every other file is decoded as UTF-8 text. Throws the
- * engine's message on an unreadable spreadsheet so the caller can surface it.
+ * default the first sheet); a `.pptx`/`.docx` is extracted to Markdown (its images
+ * are dropped - a text field holds text); every other file is decoded as UTF-8 text.
+ * Throws the engine's message on an unreadable file so the caller can surface it.
  */
 export async function fileBytesToFieldText(
   bytes: Uint8Array,
@@ -37,6 +41,12 @@ export async function fileBytesToFieldText(
   if (/\.xlsx$/i.test(filename)) {
     const { rows } = readXlsx(bytes, sheet !== undefined ? { sheet } : {});
     return rowsToCsv(rows);
+  }
+  if (OFFICE_DOC_RE.test(filename)) {
+    // Lazy: the extractor pulls fflate plus the engine deck/document readers, and a
+    // csv/txt pick must not pay for them.
+    const { officeToMarkdown } = await import('./office-text.ts');
+    return (await officeToMarkdown(bytes, filename)).markdown;
   }
   return new TextDecoder().decode(bytes);
 }
@@ -49,7 +59,16 @@ export async function fileBytesToFieldText(
 async function bytesToFieldTextInteractive(
   bytes: Uint8Array,
   filename: string,
+  announce: (m: string, o?: { assertive?: boolean }) => void = () => {},
 ): Promise<string | null> {
+  // A deck/document reaches the field as Markdown. Its images cannot ride into a
+  // text input, so a document that had some says what was left behind.
+  if (OFFICE_DOC_RE.test(filename)) {
+    const { officeToMarkdown } = await import('./office-text.ts');
+    const { markdown, media } = await officeToMarkdown(bytes, filename);
+    if (media.length) announce('Only the text came across - the images were left out.');
+    return markdown;
+  }
   if (/\.xlsx$/i.test(filename)) {
     let sheet: number | undefined;
     try {
@@ -73,8 +92,10 @@ async function bytesToFieldTextInteractive(
 
 /** The default accept string for a text-target data source. */
 export const DATA_SOURCE_ACCEPT =
-  '.csv,.json,.txt,.md,.markdown,.xlsx,text/plain,text/markdown,text/csv,application/json,'
-  + 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  '.csv,.json,.txt,.md,.markdown,.xlsx,.pptx,.docx,text/plain,text/markdown,text/csv,application/json,'
+  + 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,'
+  + 'application/vnd.openxmlformats-officedocument.presentationml.presentation,'
+  + 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 // ── the component ────────────────────────────────────────────────────────────
 
@@ -137,7 +158,7 @@ export async function openDataSource(host: DataSourceHost, opts: DataSourceOpts)
     if (asset.type === 'data') {
       // A spreadsheet/CSV asset - read its bytes, xlsx through the sheet-picker.
       const bytes = new Uint8Array(await (await fetch(asset.url)).arrayBuffer());
-      const text = await bytesToFieldTextInteractive(bytes, `data.${asset.format || 'csv'}`);
+      const text = await bytesToFieldTextInteractive(bytes, `data.${asset.format || 'csv'}`, announce);
       if (text != null) opts.onText(text);
       return;
     }
@@ -166,7 +187,7 @@ function pickFileText(
       native.remove();
       if (!file) return resolve(null);
       try {
-        resolve(await bytesToFieldTextInteractive(new Uint8Array(await file.arrayBuffer()), file.name));
+        resolve(await bytesToFieldTextInteractive(new Uint8Array(await file.arrayBuffer()), file.name, announce));
       } catch (e) {
         announce((e as { message?: string })?.message || 'Could not read that file.', { assertive: true });
         resolve(null);

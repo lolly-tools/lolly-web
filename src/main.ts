@@ -208,9 +208,12 @@ const ROUTES: Record<RouteName, RouteSpec> = {
   ask: { label: 'Ask Lolly', viewClasses: ['ask-view'], sigKey: 'params', footer: 'none' },
   // In-app documentation reader (#/docs/<slug>) - the /info docs rehosted into #view so
   // they inherit the ACTIVE brand (plan "this-is-a-very-sparkling-eich" M2). A utility
-  // view like Ask/Lab: no tab, the back pill, its own scroll (footer: 'none'). Keys on the
-  // SLUG (routeSignature's 'slug' case), so moving between doc pages re-mounts the reader.
-  docs: { label: 'Documentation', viewClasses: ['docs-view'], sigKey: 'slug', footer: 'none' },
+  // view like Ask/Lab (no tab, the back pill, its own scroll) but it KEEPS the search bar:
+  // a reader mid-page needs the spotlight (docs group hoisted via ROUTE_DOMAIN) without
+  // backing out to a browse route first. Unclaimed - queries go to the overlay only, never
+  // reshape the page behind. Keys on the SLUG (routeSignature's 'slug' case), so moving
+  // between doc pages re-mounts the reader.
+  docs: { label: 'Documentation', viewClasses: ['docs-view'], sigKey: 'slug', footer: 'search' },
   // The two private-collab ceremony links (plan 100 section 6.1 skin 1, section 11.25). Both are
   // arrival points from someone ELSE's device, so they get no tab and no footer bar - 
   // and both key on `params`, because the whole meaning of the route is the invite (or
@@ -743,7 +746,14 @@ function initMobilePlatformFit(): void {
   const bodyPx = parseFloat(cs.fontSize) || 17;
   probe.remove();
 
-  if (envTop === 0) {
+  // The fallback classes are IPHONE-ONLY. An iPad has no notch: fullscreen
+  // reports its real inset via env(), and a windowed app (Stage Manager)
+  // truthfully has NO top inset - but its long edge (1366pt on the 13") falls
+  // in the Dynamic-Island bucket below, which shoved the whole top chrome 62px
+  // down over view controls like the catalog filters (Andy, 2026-08-23). So
+  // when env() says 0 on an iPad, believe it.
+  const iphone = /iP(hone|od)/.test(navigator.userAgent);
+  if (envTop === 0 && iphone) {
     // Logical long-edge → top inset class: Dynamic Island (~59-62pt), notch
     // (~47-50pt), home-button classics (20pt status bar). Bottom: the home
     // indicator (34pt) on everything without a home button.
@@ -752,6 +762,15 @@ function initMobilePlatformFit(): void {
     const bottom = long >= 812 ? 34 : 0;
     root.style.setProperty('--safe-top-fb', `${top}px`);
     root.style.setProperty('--safe-bottom-fb', `${bottom}px`);
+  } else if (envTop === 0) {
+    // Windowed iPad (Stage Manager / Split View report no inset): the window's
+    // traffic-light cluster and grab region overlay the top ~28pt of content,
+    // and the scroll-edge blur forms in the same band - tool chrome (the Home
+    // pill, sidebar header buttons) sat under them at 0. A modest constant
+    // clears that band without the 62px iPhone-class shove that buried view
+    // controls like the catalog filters (both found on-device 2026-08-23).
+    // Fullscreen iPad never reaches this branch: env() reports its real status bar.
+    root.style.setProperty('--safe-top-fb', '28px');
   }
 
   // 17px is -apple-system-body at the default (Large) setting. The ratio goes
@@ -768,6 +787,13 @@ async function boot(): Promise<void> {
   const host = await createBridge();
   trackVisualViewport();
   initMobilePlatformFit();
+  // Native app menus (Tauri shells): the iPadOS menu bar / macOS menu drive
+  // the tiny window.__lollyMenu surface this registers. The web build never
+  // loads the module, and boot never waits on it.
+  if ('__TAURI_INTERNALS__' in window) {
+    void import('./lib/app-menu.ts').then(m =>
+      m.initAppMenu(host as unknown as Parameters<typeof m.initAppMenu>[0]));
+  }
 
   // The global async-job progress toast (plans/124 WP-F). Mounted once here, on
   // document.body OUTSIDE main#view, so it survives every router view teardown -

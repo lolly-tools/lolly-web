@@ -41,6 +41,7 @@ import { armViewEnter } from '../view-enter.ts';
 import { backHomeHtml, mountBackPill } from '../components/back-pill.ts';
 import { createThemeToggle } from '../components/theme-toggle.ts';
 import { attachLangMenu } from '../components/lang-menu.ts';
+import { attachProfileMenu } from '../components/profile-menu.ts';
 import { mountHomeFab } from '../components/home-fab.ts';
 import { registerNarrationSource, unregisterNarrationSource } from '../lib/audio-dock-singleton.ts';
 import { createDocsNarrationHost, type DocsNarrationHandle } from '../lib/docs-narration-host.ts';
@@ -117,13 +118,19 @@ export async function mountDocs(
   viewEl.innerHTML = shellHtml(`<p class="docs-status">${t('Loading…')}</p>`);
   mountBackPill(viewEl);
   mountHomeFab(viewEl);
+  // On mobile the profile pill becomes the consolidated menu (theme / Home /
+  // Language / settings) - the same stable anchor the gallery topbar has - and
+  // the standalone language button + home FAB hide (docs.css / overrides.css).
+  // Desktop is untouched: the pill stays a plain link to #/profile.
+  const detachProfileMenu = attachProfileMenu(viewEl.querySelector<HTMLElement>('.docs-profile-link'), host);
   viewEl.querySelector('[data-topright]')?.prepend(createThemeToggle(host, { className: 'docs-top-btn' }));
   // Language switcher, styled as a docs top pill (not the bare .lang-fab icon) so it
   // matches the theme/home/wide cluster it sits in. attachLangMenu takes the element
   // directly, so the trigger needs no .lang-fab class - just the popover ARIA hooks.
+  // --lang: hidden at phone widths (docs.css) - Language lives in the profile menu there.
   const langBtn = document.createElement('button');
   langBtn.type = 'button';
-  langBtn.className = 'docs-top-btn';
+  langBtn.className = 'docs-top-btn docs-top-btn--lang';
   langBtn.setAttribute('aria-label', t('Language'));
   langBtn.title = t('Language');
   langBtn.setAttribute('aria-haspopup', 'menu');
@@ -173,8 +180,16 @@ export async function mountDocs(
 
   let html: string;
   try {
-    const res = await fetch(url, { credentials: 'same-origin' });
+    let res = await fetch(url, { credentials: 'same-origin' });
     if (!viewEl.isConnected) return;
+    if (!res.ok && url !== docsInfoHref(slug, 'en')) {
+      // A build may ship English-only docs - the mobile app prunes the locale
+      // page trees from its embed for size (shells/tauri-mobile build:frontend).
+      // Fall back to the English page rather than a dead end; the reader chrome
+      // stays localized, matching the shots pipeline's English-fallback rule.
+      res = await fetch(docsInfoHref(slug, 'en'), { credentials: 'same-origin' });
+      if (!viewEl.isConnected) return;
+    }
     if (!res.ok) {
       // 404 etc. - a real message, plus the static page as an escape hatch.
       showStatus(
@@ -443,6 +458,7 @@ export async function mountDocs(
   (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => {
     node.removeEventListener('click', onAnchorClick as EventListener);
     detachLangMenu();
+    detachProfileMenu();
     stopSpy?.();
     // Order: detach the narration block from the shared window (the window stays if music
     // is still registered) before dropping the host (stops audio, removes the <audio> tap).

@@ -20,7 +20,9 @@
  *   - system Back (Android's key, iOS's edge swipe, the browser button) closes the
  *     topmost dialog INSTEAD of navigating the view out from under it: opening
  *     pushes one same-URL history entry per dialog for Back to consume, and any
- *     other close path consumes its own entry again. See openStack below.
+ *     other close path consumes its own entry again. Both live in
+ *     lib/overlay-back.ts, the ONE Back stack dialogs share with the anchored
+ *     popovers, so a menu opened over a dialog closes before the dialog does.
  *
  * Focus containment is native: `showModal()` traps Tab inside the dialog and
  * `close()` restores focus to whatever was focused beforehand (the HTML
@@ -54,46 +56,7 @@ export interface ModalOptions<T> {
 }
 
 import { adoptFloatCluster, releaseFloatCluster } from '../lib/float-cluster.ts';
-import { NAV_EVENTS } from '../utils.ts';
-
-/** One record per open dialog, innermost last. */
-interface OpenModal {
-  /** The route changed under us: tear down (no user choice was made). */
-  nav(): void;
-  /** Back popped this dialog's own history entry: dismiss it. */
-  pop(): void;
-}
-const openStack: OpenModal[] = [];
-
-/**
- * Count of history entries mountModal has pushed and not yet popped. `history.back()`
- * can only consume the NEWEST entry, so a dialog only consumes its own when nothing
- * has pushed on top of it (`seq < depth`); otherwise the entry is left stranded,
- * which costs one Back press that does nothing but can never navigate wrongly.
- * Only the comparison against the newest matters, so a stranded entry inflating
- * this is harmless.
- */
-let depth = 0;
-/** Entry-consuming `history.back()` calls whose popstate hasn't arrived yet. Those
- *  pops are bookkeeping, not Back presses, so no dialog closes on them - and it's a
- *  count, not a flag: two stacked dialogs closed in one tick pop two entries, and
- *  the second popstate can land after a NEW dialog has opened. */
-let selfPops = 0;
-
-const onNavEvent = (e: Event): void => {
-  if (e.type === 'popstate') {
-    if (selfPops) { selfPops -= 1; return; }
-    // One Back, the innermost dialog - the rule everywhere else in the shell. The
-    // entry it popped was that dialog's own, so the URL is unchanged and main.ts's
-    // navigate() resolves the same route signature and returns without re-mounting.
-    openStack[openStack.length - 1]?.pop();
-    return;
-  }
-  // hashchange / lolly:navigate: the view underneath is being replaced, so every
-  // body-mounted dialog goes with it. Snapshot the stack - each close splices
-  // itself out of it, and a caller's onClose may open a dialog of its own.
-  [...openStack].forEach(m => m.nav());
-};
+import { registerOverlay, type OverlayEntry, type OverlayRecord } from '../lib/overlay-back.ts';
 
 export function mountModal<T = void>(content: string, opts: ModalOptions<T>): ModalHandle<T> {
   const dlg = document.createElement('dialog');
@@ -103,61 +66,36 @@ export function mountModal<T = void>(content: string, opts: ModalOptions<T>): Mo
   document.body.appendChild(dlg);
 
   let settled = false;
-  // This dialog's history entry: `seq` is its position in `depth`, `owed` says it's
-  // still on the stack, `pushedHref` the URL it was pushed at.
-  let owed = false;
-  let seq = 0;
-  let pushedHref = '';
+  /** This dialog's place on the shared Back stack (lib/overlay-back.ts), set once
+   *  the dialog is wired and about to open. */
+  let back: OverlayEntry | null = null;
   const cancelResult = (): T | undefined =>
     typeof opts.cancelValue === 'function' ? (opts.cancelValue as (el: HTMLDialogElement) => T)(dlg) : opts.cancelValue;
-
-  /** Give up the entry without popping it: Back already did (`pop`), or a
-   *  navigation pushed its own entry on top of ours (`nav`), and popping then
-   *  would undo the navigation the user just made. */
-  const disown = (): void => { if (owed) { owed = false; depth -= 1; } };
-
-  /** Pop the entry this dialog pushed, so the next Back leaves the view rather
-   *  than doing nothing. Deferred one microtask because a caller routinely
-   *  navigates right after close() (welcome-dialog sets '#/start', pickers call
-   *  navigateTo): by then the URL has moved, and the href check leaves our entry
-   *  alone instead of racing a traversal against that navigation. */
-  const consume = (): void => {
-    owed = false;
-    queueMicrotask(() => {
-      if (seq < depth || location.href !== pushedHref) return;
-      depth -= 1;
-      selfPops += 1;
-      try { history.back(); } catch { selfPops -= 1; }
-    });
-  };
 
   const close = (result?: T): void => {
     if (settled) return;
     settled = true;
-    const i = openStack.indexOf(record);
-    if (i >= 0) openStack.splice(i, 1);
-    if (!openStack.length) NAV_EVENTS.forEach(ev => window.removeEventListener(ev, onNavEvent));
-    if (owed) consume();
+    back?.release(); // pops the entry this dialog pushed, unless a nav/Back disowned it
     releaseFloatCluster(dlg); // rescue the adopted floating cluster BEFORE the node goes away
     if (dlg.open) dlg.close(); // runs the native dialog-closing steps (incl. focus restore)
     dlg.remove();
     opts.onClose?.(result);
   };
 
-  const record: OpenModal = {
+  const record: OverlayRecord = {
     // Teardown, not a dismissal: resolve with `undefined` rather than cancelValue so
     // a caller can tell a route change from an Escape (welcome-dialog persists the
     // "seen" flag on one and not the other).
-    nav: () => { disown(); close(); },
-    pop: () => { disown(); close(cancelResult()); },
+    nav: () => { back?.disown(); close(); },
+    pop: () => { back?.disown(); close(cancelResult()); },
   };
 
   dlg.addEventListener('cancel', (e) => { e.preventDefault(); close(cancelResult()); }); // Escape
   // Safety net for outside callers that close the <dialog> natively instead of via
   // the handle (confirm-dialog's closeConfirmDialogs teardown does) - without this
   // the stack record and its owed history entry outlive the dialog, and the next
-  // Back press gets eaten by the phantom. close() is idempotent, so the event this
-  // handle's own close() fires at line ~142 is a no-op re-entry.
+  // Back press gets eaten by the phantom. close() is idempotent, so the event its
+  // own `dlg.close()` above fires is a no-op re-entry.
   dlg.addEventListener('close', () => close());
   dlg.addEventListener('click', (e) => {
     // Click outside the content box (on the ::backdrop) dismisses. A <dialog>'s own
@@ -175,19 +113,9 @@ export function mountModal<T = void>(content: string, opts: ModalOptions<T>): Mo
     if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) close(cancelResult());
   });
 
-  // Same URL, so this fires neither hashchange nor popstate and no route work runs;
-  // it exists purely as something for Back to consume. Blocked (a sandboxed iframe,
-  // a rate limit) is survivable: Back then reaches the route, and onNavEvent's
-  // popstate branch still closes the dialog rather than stranding it.
-  try {
-    history.pushState(history.state, '', location.href);
-    depth += 1;
-    seq = depth;
-    owed = true;
-    pushedHref = location.href;
-  } catch { /* history unavailable */ }
-  openStack.push(record);
-  if (openStack.length === 1) NAV_EVENTS.forEach(ev => window.addEventListener(ev, onNavEvent));
+  // On the stack before showModal(), so open order stays the Back order even if a
+  // caller's initialFocus or an adopted float opens something of its own.
+  back = registerOverlay(record);
 
   dlg.showModal();
   // Everything outside a modal dialog is inert and below the top layer, so the

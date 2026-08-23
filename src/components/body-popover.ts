@@ -27,8 +27,14 @@
  * lets a popover opened from WITHIN a native `<dialog open>` mount inside that
  * dialog instead - required for it to paint above the dialog's own `::backdrop`
  * (only the top-layer dialog's own subtree renders above its backdrop).
+ *
+ * On a touch device an open popover also takes system Back, via the shared overlay
+ * stack (lib/overlay-back.ts) that mountModal registers on too: one press closes the
+ * innermost overlay, so a menu opened over a dialog closes and the dialog stays. See
+ * the pointer gate in `open()` for why a fine-pointer desktop pushes no entry.
  */
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
+import { registerOverlay, type OverlayEntry } from '../lib/overlay-back.ts';
 import { NAV_EVENTS } from '../utils.ts';
 
 export interface BodyPopoverHandle {
@@ -257,6 +263,9 @@ export function mountBodyPopover(
   let menu: HTMLDivElement | null = null;
   let outside: ((e: PointerEvent) => void) | null = null;
   let trap: FocusTrap | null = null;
+  /** This popover's place on the shared Back stack while it is open, or null when it
+   *  pushed no history entry (see the pointer gate in `open()`). */
+  let back: OverlayEntry | null = null;
 
   const reposition = (): void => { if (menu) position(menu, anchor); };
   const onResizeEvt = (): void => { opts.onResize ? opts.onResize(handle) : reposition(); };
@@ -274,10 +283,17 @@ export function mountBodyPopover(
     e.stopPropagation();
     close(true);
   };
-  const onNavAway = (): void => close();
+  // System Back and a route change are the same dismissal here: a popover has no
+  // cancelValue, so either way it just closes. Disown first, because the pushed entry
+  // must not be popped in either case - Back already consumed it, and a navigation
+  // pushed its own entry on top of it. Reached twice on one event (the shared stack
+  // and the NAV_EVENTS listener below both call it); close() is idempotent.
+  const onNavAway = (): void => { back?.disown(); close(); };
 
   function close(returnFocus = false): void {
     if (!menu) return;
+    back?.release();
+    back = null;
     if (outside) document.removeEventListener('pointerdown', outside);
     document.removeEventListener('keydown', onKey);
     window.removeEventListener('resize', onResizeEvt);
@@ -316,6 +332,26 @@ export function mountBodyPopover(
     document.addEventListener('keydown', onKey);
     window.addEventListener('resize', onResizeEvt);
     NAV_EVENTS.forEach(ev => window.addEventListener(ev, onNavAway));
+    // Taking system Back costs one history entry per open. On a touch device that is
+    // the trade to make: Back is how a user dismisses a menu, and without an entry the
+    // press navigates the view out from under it. On a fine-pointer desktop these
+    // menus open and close often enough (a kebab, a hover-ish dropdown) that an entry
+    // each would fill the Back button with dismissals, so there the popover keeps
+    // nav-away dismissal alone and pushes nothing. Read per open, not once per module:
+    // a hybrid device switches pointer between opens.
+    back = window.matchMedia?.('(pointer: coarse)').matches ? registerOverlay({ nav: onNavAway, pop: onNavAway }) : null;
+    // A link inside the popover navigates as its DEFAULT action, after this click
+    // event finishes - but item handlers close() during it, and close's release()
+    // queues an async pop that then settles on the entry the navigation is about to
+    // push, bouncing the user straight back out of the destination (found via the
+    // profile menu's Settings row on iPhone, 2026-08-23). Disown first, exactly
+    // like the nav-away path: this click IS a navigation the history just hasn't
+    // seen yet. Capture phase, so it precedes the item handlers' close(). A link
+    // whose handler preventDefaults costs at worst one stray Back entry - benign
+    // next to popping the user out of a view they just opened.
+    el.addEventListener('click', (e) => {
+      if ((e.target as Element).closest?.('a[href]')) back?.disown();
+    }, true);
     trap = trapFocus(el, { initialFocus: initialFocus ?? null, inertBackground: false });
   }
 

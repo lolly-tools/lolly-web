@@ -256,7 +256,9 @@ export async function mountToolViz(container: Element, opts: MountToolVizOpts = 
   // mutable cell rather than capturing the track parsed on this pass. `setTrack` swaps it.
   let live = track;
   const palette = paletteFor(cfg);
-  const handle = await mountViz(canvas, undefined, ownPresetId(cfg), undefined, palette, {
+  // onError matters: without it a per-frame throw or a failed reset() stands the
+  // renderer down SILENTLY and the canvas freezes on its last frame forever.
+  const handle = await mountViz(canvas, undefined, ownPresetId(cfg), (err) => console.warn('[lolly:viz] tool mount:', err), palette, {
     driven: true,
     capture: true,
     deterministic: true,

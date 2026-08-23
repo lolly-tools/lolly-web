@@ -101,7 +101,11 @@
 .docs-top-btn:hover { background: hsl(var(--muted)); border-color: hsl(var(--foreground) / 0.25); }
 /* The full-width toggle is meaningless on a phone (the reader is already full-bleed)
    and its slot collides with the back-pill island at large Dynamic Type sizes. */
-@media (max-width: 640px) { .docs-top-btn--wide { display: none; } }
+@media (max-width: 640px) {
+  .docs-top-btn--wide { display: none; }
+  /* Language lives in the profile pill's mobile menu (profile-menu.ts). */
+  .docs-top-btn--lang { display: none; }
+}
 .docs-top-btn:active { transform: scale(0.94); }
 .docs-top-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px hsl(var(--primary) / 0.4); }
 .docs-top-btn svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }

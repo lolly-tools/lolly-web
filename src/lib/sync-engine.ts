@@ -135,7 +135,7 @@ export function makeSyncScheduler(
       onError?.(err);
     } finally {
       running = false;
-      if (pending) { pending = false; void run(); }  // a change landed mid-push - push once more
+      if (pending) { pending = false; void run(); }  // a change arrived mid-push - push once more
     }
   };
 

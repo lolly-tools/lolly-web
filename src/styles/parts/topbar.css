@@ -43,6 +43,10 @@
   /* Fold the standalone history button + "Profile" wordmark into the avatar menu. */
   .gallery-topbar .history-fab { display: none; }
   .gallery-topbar .profile-link-name { display: none; }
+  /* Language folds into the avatar menu too (profile-menu.ts Language row) -
+     scoped to .gallery-topbar so utility views' standalone lang FABs, which
+     have no such menu, keep theirs. */
+  .gallery-topbar .lang-fab { display: none; }
   .gallery-topbar .profile-link {
     position: static; top: auto; right: auto;
     width: 2.9em; height: 2.9em; padding: 0; border-radius: 50%;

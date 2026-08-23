@@ -10,7 +10,7 @@
  *   - INVITER: `openPrivateCollab` (collab/private-opener.ts) already builds the
  *     transport effects, the seed, and the onConnected → live-session handoff; we
  *     pass it an `openCeremony` that layers the rendezvous bindings on. Nothing of
- *     its machinery is duplicated, and the QR path it normally drives is untouched.
+ *     its logic is duplicated, and the QR path it normally drives is untouched.
  *   - ACCEPTOR: the same small onConnected block #/join uses, from the same
  *     exported pieces (`createCollabEffects`, `rtcCollabConnection`,
  *     `handOffConnection`, `releaseParked`) - but with the invite pulled from, and

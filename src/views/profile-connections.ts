@@ -18,6 +18,10 @@
  * OAuth rows appear only when their client id is configured on this deploy
  * (the dormant rule); the credential rows always exist - they need nobody's
  * app registration.
+ *
+ * A provider the user switched off in Feature flags (CONNECTOR_FLAGS) loses its
+ * row here as well as its send button, with a one-line note naming what is
+ * hidden - a missing Drive row with no explanation reads as a bug.
  */
 
 import { t } from '../i18n.ts';
@@ -35,6 +39,7 @@ import { connectBluesky, disconnectBluesky, testBluesky, type BlueskyConfig } fr
 import { connectDiscord, disconnectDiscord, testDiscord } from '../lib/discord-send.ts';
 import { listConnections, type ProviderConnection } from '../lib/provider-connections.ts';
 import { isExportHomeKind } from '../lib/export-home.ts';
+import { CONNECTOR_FLAGS, connectorEnabled } from '../feature-flags.ts';
 import type { HostV1, Profile } from '@lolly-tools/core/host-v1';
 
 type ConnHost = HostV1 & { profile: { get(): Promise<Profile>; set(p: Profile): Promise<void> } };
@@ -114,13 +119,17 @@ function oauthRowHtml(kind: string, label: string, scopesNote: string, conn: Pro
     </div>`;
 }
 
+/** Drop a provider's whole block when its connector kill switch is off (the note
+ *  in mountConnectionsBody says where it went). */
+const gate = (kind: string, html: string): string => (connectorEnabled(kind) ? html : '');
+
 function credentialRowsHtml(conns: Map<string, ProviderConnection>, home: string | undefined): string {
   const s3 = conns.get('s3');
   const s3cfg = (s3?.config ?? {}) as Partial<S3Config>;
   const dav = conns.get('webdav');
   const davCfg = (dav?.config ?? {}) as Partial<WebdavConfig>;
   return `
-    <details class="pconn-cred" data-pconn="s3"${s3 ? '' : ''}>
+    ${gate('s3', `<details class="pconn-cred" data-pconn="s3">
       <summary><span class="store-manage-name">${t('S3 bucket')}
         ${s3 ? `<span class="pconn-account">${escape(s3.account)}</span>` : `<span class="pconn-note">${t('Your own AWS S3, MinIO, R2 or any S3-compatible store')}</span>`}
       </span></summary>
@@ -140,8 +149,8 @@ function credentialRowsHtml(conns: Map<string, ProviderConnection>, home: string
           ${s3 ? homeToggleHtml('s3', home, s3.persist) : ''}
         </div>
       </div>
-    </details>
-    <details class="pconn-cred" data-pconn="webdav">
+    </details>`)}
+    ${gate('webdav', `<details class="pconn-cred" data-pconn="webdav">
       <summary><span class="store-manage-name">${t('Nextcloud / WebDAV')}
         ${dav ? `<span class="pconn-account">${escape(dav.account)}</span>` : `<span class="pconn-note">${t('Your own server, signed in with an app password')}</span>`}
       </span></summary>
@@ -158,7 +167,7 @@ function credentialRowsHtml(conns: Map<string, ProviderConnection>, home: string
           ${dav ? homeToggleHtml('webdav', home, dav.persist) : ''}
         </div>
       </div>
-    </details>
+    </details>`)}
     ${publishRowsHtml(conns)}`;
 }
 
@@ -171,7 +180,7 @@ function publishRowsHtml(conns: Map<string, ProviderConnection>): string {
   const bskyCfg = (bsky?.config ?? {}) as Partial<BlueskyConfig>;
   const discord = conns.get('discord');
   return `
-    <details class="pconn-cred" data-pconn="mastodon">
+    ${gate('mastodon', `<details class="pconn-cred" data-pconn="mastodon">
       <summary><span class="store-manage-name">${t('Mastodon')}
         ${masto ? `<span class="pconn-account">${escape(masto.account)}</span>` : `<span class="pconn-note">${t('Post to any Mastodon server - no central app, your server issues the sign-in')}</span>`}
       </span></summary>
@@ -186,8 +195,8 @@ function publishRowsHtml(conns: Map<string, ProviderConnection>): string {
           <span class="pconn-status" data-pconn-status="mastodon" role="status"></span>
         </div>
       </div>
-    </details>
-    <details class="pconn-cred" data-pconn="bluesky">
+    </details>`)}
+    ${gate('bluesky', `<details class="pconn-cred" data-pconn="bluesky">
       <summary><span class="store-manage-name">${t('Bluesky')}
         ${bsky ? `<span class="pconn-account">${escape(bsky.account)}</span>` : `<span class="pconn-note">${t('Image posts with an app password - no OAuth, revocable any time')}</span>`}
       </span></summary>
@@ -202,8 +211,8 @@ function publishRowsHtml(conns: Map<string, ProviderConnection>): string {
           <span class="pconn-status" data-pconn-status="bluesky" role="status"></span>
         </div>
       </div>
-    </details>
-    <details class="pconn-cred" data-pconn="discord">
+    </details>`)}
+    ${gate('discord', `<details class="pconn-cred" data-pconn="discord">
       <summary><span class="store-manage-name">${t('Discord')}
         ${discord ? `<span class="pconn-account">${escape(discord.account)}</span>` : `<span class="pconn-note">${t('Post files into a channel through its webhook - no sign-in needed')}</span>`}
       </span></summary>
@@ -216,16 +225,22 @@ function publishRowsHtml(conns: Map<string, ProviderConnection>): string {
           <span class="pconn-status" data-pconn-status="discord" role="status"></span>
         </div>
       </div>
-    </details>`;
+    </details>`)}`;
 }
 
 /** Fill the section body and wire it. Re-renders itself after every change. */
 export async function mountConnectionsBody(body: HTMLElement, host: ConnHost): Promise<void> {
   const conns = new Map((await listConnections()).map((c) => [c.kind, c]));
   const home = (await host.profile.get().catch(() => ({}) as Profile)).exportHome;
-  const oauthRows = OAUTH_ROWS.filter((r) => r.available())
+  const oauthRows = OAUTH_ROWS.filter((r) => connectorEnabled(r.kind) && r.available())
     .map((r) => oauthRowHtml(r.kind, r.label(), r.scopesNote(), conns.get(r.kind) ?? null, home)).join('');
-  const gdriveRow = driveAvailable() && !isTauriShell()
+  // Names what a kill switch is hiding, so a vanished Drive row reads as a choice
+  // the user made rather than a missing feature.
+  const switchedOff = CONNECTOR_FLAGS.filter((f) => !connectorEnabled(f.connector!));
+  const offNote = switchedOff.length
+    ? `<p class="pconn-note">${t('Turned off in Feature flags: {names}', { names: switchedOff.map((f) => t(f.label)).join(', ') })}</p>`
+    : '';
+  const gdriveRow = connectorEnabled('gdrive') && driveAvailable() && !isTauriShell()
     ? `<div class="store-manage--row pconn-row" data-pconn="gdrive">
         <span class="store-manage-name">${t('Google Drive')}
           <span class="pconn-note">${t('Signs in when you send; nothing is remembered between sessions.')}</span>
@@ -234,6 +249,7 @@ export async function mountConnectionsBody(body: HTMLElement, host: ConnHost): P
     : '';
   body.innerHTML = `
     <p class="storage-hint-text">${t('Send finished exports straight to your own places. Every send goes from this device to the provider directly - no Lolly server ever holds your files or your sign-ins - and what is remembered on this device is your choice, wiped by Disconnect and never included in backups.')}</p>
+    ${offNote}
     ${gdriveRow}
     ${oauthRows}
     ${credentialRowsHtml(conns, home)}`;

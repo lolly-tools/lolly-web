@@ -13,7 +13,7 @@
  * transcoding (svg→eps/dxf), archives, catalog "Download as", provenance on the output.
  */
 import type { HostV1 } from '@lolly-tools/core/host-v1';
-import { sfntKind, sfntToWoff, woffToSfnt, gzip, gunzip, sniffContainer, encodeBmp, packTiff, readXlsx, writeXlsx, rowsToCsv, parseTableText } from '@lolly/engine';
+import { sfntKind, sfntToWoff, woffToSfnt, gzip, gunzip, sniffContainer, encodeBmp, packTiff, readXlsx, writeXlsx, rowsToCsv, parseTableText, joinPageText } from '@lolly/engine';
 import { t } from '../i18n.ts';
 import { escape } from '../utils.ts';   // the single shared HTML escaper (R11) - never re-fork it
 import { backHomeHtml, mountBackPill } from '../components/back-pill.ts';
@@ -69,9 +69,23 @@ function targetsFor(kind: string): Target[] {
     // caller drops the source format. An .xlsx converts from its FIRST sheet.
     case 'xlsx': case 'csv': case 'tsv': case 'json':
       return DATA_OUT;
+    // Documents give up their CONTENT as Markdown (plans/139): a deck through the
+    // engine's read-model → deck-studio dialect, a Word file through docx-read, a
+    // PDF through its text layer. Lossy by design - this is the re-flow path, not
+    // the keep-the-design one (host.pptx.rebrand owns that).
+    case 'pptx': case 'docx': case 'pdf':
+      return [MD_OUT];
     default: return [];
   }
 }
+
+/** Markdown out. A deck/document carrying images downloads as a zip instead (the
+ *  markdown at the root plus its `media/` files) - see markdownDownload. */
+const MD_OUT: Target = { id: 'md', label: 'Markdown (.md)', ext: 'md', mime: 'text/markdown' };
+
+/** Pages read for a pdf → markdown conversion (a 500-page manual must not queue
+ *  500 page interpretations from one drop). */
+const MAX_PDF_PAGES = 200;
 
 /** The data-conversion targets (grid round-trip). */
 const DATA_OUT: Target[] = [
@@ -88,13 +102,33 @@ function detectKind(bytes: Uint8Array, file: File): string {
   // before svgz/raster: an .xlsx's PK-zip and a .json's braces must not fall through.
   if (/\.xlsx$/i.test(file.name)
     || (sniffContainer(bytes) === 'zip' && /application\/vnd\.openxmlformats-officedocument\.spreadsheetml/.test(file.type))) return 'xlsx';
+  // The other two OOXML packages, by the same declared-name-first rule. A file whose
+  // name says nothing is sniffed from its part map instead - see sniffOfficeZip.
+  if (/\.pptx$/i.test(file.name) || /officedocument\.presentationml/.test(file.type)) return 'pptx';
+  if (/\.docx$/i.test(file.name) || /officedocument\.wordprocessingml/.test(file.type)) return 'docx';
   if (/\.tsv$/i.test(file.name)) return 'tsv';
   if (sniffContainer(bytes) === 'gzip' || /\.svgz$/i.test(file.name)) return 'svgz';
   const head = new TextDecoder('latin1').decode(bytes.subarray(0, 256));
+  if (head.startsWith('%PDF-') || /\.pdf$/i.test(file.name) || file.type === 'application/pdf') return 'pdf';
   if (/<svg[\s>]/i.test(head) || /^\s*<\?xml/.test(head) || /\.svg$/i.test(file.name)) return 'svg';
   if (/\.csv$/i.test(file.name) || /^text\/csv/.test(file.type)) return 'csv';
   if (/\.json$/i.test(file.name) || (/^application\/json/.test(file.type) && /^\s*[[{]/.test(head))) return 'json';
   if (/^image\//.test(file.type) || /\.(png|jpe?g|webp|gif|avif|bmp)$/i.test(file.name)) return 'raster';
+  return 'unknown';
+}
+
+/** An unnamed zip: the PART MAP says which office package it is, so ask the engine's
+ *  own sniffers over a capped unzip. 'unknown' for any other archive. */
+async function sniffOfficeZip(bytes: Uint8Array): Promise<string> {
+  try {
+    const [{ inflatePptx }, { isPptx, isDocx }] = await Promise.all([
+      import('../bridge/pptx.ts'),
+      import('@lolly/engine'),
+    ]);
+    const parts = await inflatePptx(bytes);
+    if (isPptx(parts)) return 'pptx';
+    if (isDocx(parts)) return 'docx';
+  } catch { /* unreadable or over the caps - not a package we convert */ }
   return 'unknown';
 }
 
@@ -113,6 +147,26 @@ async function convert(bytes: Uint8Array, kind: string, target: Target, file: Fi
   if (kind === 'xlsx' || kind === 'csv' || kind === 'tsv' || kind === 'json') {
     const grid = sourceToGrid(kind, bytes);
     return new Blob([gridToTarget(grid, target.id) as BlobPart], { type: target.mime });
+  }
+  // Documents → Markdown. The office packages go through the shared extractor (lazy:
+  // it pulls fflate + the engine readers); a document that carried images comes back
+  // as a zip of the markdown plus its media/ files, which the caller names .zip.
+  if (kind === 'pptx' || kind === 'docx') {
+    const { officeToMarkdown, markdownDownload } = await import('../lib/office-text.ts');
+    const content = await officeToMarkdown(bytes, file.name);
+    return markdownDownload(content, kind === 'pptx' ? 'deck.md' : 'doc.md');
+  }
+  // A PDF's text layer, page by page, through the SAME engine emitter the Unpack
+  // view's "Markdown" download uses. pdf-import pulls pdf-lib in at module scope, so
+  // it is imported here and nowhere else in this view.
+  if (kind === 'pdf') {
+    const { openPdfFile } = await import('./pdf-import.ts');
+    const handle = await openPdfFile(file);
+    const toText = handle.pageToText;
+    if (!toText) throw new Error('That PDF has no readable text layer.');
+    const count = Math.min(handle.pageCount, MAX_PDF_PAGES);
+    const pages = Array.from({ length: count }, (_, i) => toText.call(handle, i));
+    return new Blob([joinPageText(pages, { markdown: true })], { type: target.mime });
   }
   // Everything else: rasterise the source to a canvas, then encode that canvas straight
   // to the target with the engine's own codecs. We hold the pixels already, so there is
@@ -284,9 +338,9 @@ export async function mountConvert(viewEl: HTMLElement, host: HostV1, _params = 
         <p class="plat-sub">${t('Change a file from one format to another, on your device. Nothing is uploaded.')}</p>
       </header>
       <div class="convert-drop" data-drop tabindex="0" role="button" aria-label="${t('Drop a file to convert')}">
-        <p>${t('Drop a font, image, SVG or SVGZ here, or choose one.')}</p>
+        <p>${t('Drop a font, image, SVG, document or deck here, or choose one.')}</p>
         <button type="button" class="btn" data-pick>${t('Choose a file…')}</button>
-        <input type="file" hidden data-file accept=".ttf,.otf,.woff,.svg,.svgz,image/*">
+        <input type="file" hidden data-file accept=".ttf,.otf,.woff,.svg,.svgz,image/*,.pdf,.pptx,.docx">
       </div>
       <div class="convert-result" data-result hidden></div>
     </div>`;
@@ -313,7 +367,9 @@ export async function mountConvert(viewEl: HTMLElement, host: HostV1, _params = 
 
   async function onFile(file: File): Promise<void> {
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const kind = detectKind(bytes, file);
+    let kind = detectKind(bytes, file);
+    // A zip whose name/type said nothing: its part map still names it.
+    if (kind === 'unknown' && sniffContainer(bytes) === 'zip') kind = await sniffOfficeZip(bytes);
     const targets = targetsFor(kind).filter((tt) => tt.id !== kind);   // never offer the source format
     result.hidden = false;
     if (!targets.length) {
@@ -331,8 +387,11 @@ export async function mountConvert(viewEl: HTMLElement, host: HostV1, _params = 
         btn.disabled = true; status.textContent = t('Converting…');
         try {
           const out = await convert(bytes, kind, target, file);
-          await host.export.download(out, `${base}.${target.ext}`);
-          status.textContent = `${t('Downloaded')} ${base}.${target.ext} (${fmtBytes(out.size)}).`;
+          // A document whose images came with it packs into a zip, so the name
+          // follows the produced blob rather than the target's own extension.
+          const ext = out.type === 'application/zip' ? 'zip' : target.ext;
+          await host.export.download(out, `${base}.${ext}`);
+          status.textContent = `${t('Downloaded')} ${base}.${ext} (${fmtBytes(out.size)}).`;
         } catch (e) {
           status.textContent = (e as Error).message || t('Conversion failed.');
         } finally { btn.disabled = false; }

@@ -5,7 +5,8 @@
  * Stored on the profile (`profile.featureFlags`, keyed by flag id) so they ride
  * the normal profile persistence and sync. Every flag defaults to ON when unset.
  *
- * CATEGORY_FLAGS hide a tool-category section from the gallery (nothing else); the rest are
+ * CATEGORY_FLAGS hide a tool-category section from the gallery (nothing else);
+ * CONNECTOR_FLAGS withdraw one outbound provider everywhere it is offered; the rest are
  * standalone feature toggles. (Batch/Pro is available to everyone now, so it is no longer a flag.)
  */
 
@@ -17,6 +18,8 @@ export interface FeatureFlag {
   label: string;
   /** The gallery `category` this flag shows/hides (category flags only). */
   category?: string;
+  /** The send-target provider `kind` this flag allows/forbids (connector flags only). */
+  connector?: string;
   /** Small badge shown beside the label in the profile view. */
   pill?: string;
   /** Default state when the user hasn't set it. Omitted ⇒ ON (the historic default for
@@ -35,8 +38,43 @@ export const CATEGORY_FLAGS: readonly FeatureFlag[] = [
   { id: 'cat-developer', label: 'Offline Utilities',  category: 'utility'  },
 ];
 
+// Outbound connectors - one kill switch per send-target provider kind. Every one
+// DEFAULTS ON (`default` omitted, the historic opt-out shape), so a build behaves
+// exactly as before until someone switches a provider off; each target is already
+// dormant without its own config, so an on flag never adds a button by itself.
+//
+// The flag id carries the provider `kind` from the send-target vocabulary
+// ('gdrive', 'dropbox', 'o365', …), which is what connectorEnabled() below looks
+// up - and the id is a persisted key, so it never moves once shipped.
+//
+// Deliberately NOT in GOVERNED_FLAG_IDS: the control plane's GOVERNABLE_FLAGS
+// (lolly-work policy/feature-flags.ts) carries no connector ids, and a governed
+// flag whose server counterpart does not exist would report "inherit" over
+// nothing. These stay purely local, like the category flags.
+export const CONNECTOR_FLAGS: readonly FeatureFlag[] = [
+  { id: 'conn-gdrive',   label: 'Google Drive',        connector: 'gdrive'   },
+  { id: 'conn-dropbox',  label: 'Dropbox',             connector: 'dropbox'  },
+  { id: 'conn-o365',     label: 'OneDrive',            connector: 'o365'     },
+  { id: 'conn-s3',       label: 'S3 bucket',           connector: 's3'       },
+  { id: 'conn-webdav',   label: 'Nextcloud / WebDAV',  connector: 'webdav'   },
+  { id: 'conn-mastodon', label: 'Mastodon',            connector: 'mastodon' },
+  { id: 'conn-bluesky',  label: 'Bluesky',             connector: 'bluesky'  },
+  { id: 'conn-discord',  label: 'Discord',             connector: 'discord'  },
+];
 
-// Standalone feature toggles (not a gallery category, not Pro). Neurospicy Mode - 
+const CONNECTOR_BY_KIND = new Map(CONNECTOR_FLAGS.map(f => [f.connector!, f]));
+
+/** May this provider kind be offered at all? The choke-point read behind every
+ *  outbound surface: the send-target registry (lib/send-target.ts), the /profile
+ *  connection rows, and the sync provider list. Synchronous and read at CALL time,
+ *  so flipping a switch applies on the next render with no reload. A kind with no
+ *  flag (an instance-registered target) is never gated. */
+export function connectorEnabled(kind: string): boolean {
+  const f = CONNECTOR_BY_KIND.get(kind);
+  return !f || isFlagOnSync(f);
+}
+
+// Standalone feature toggles (not a gallery category, not Pro). Neurospicy Mode -
 // the background focus-music player - is opt-out here (ON by default like every flag).
 export const NEUROSPICY_FLAG: FeatureFlag = { id: 'neurospicy', label: 'Neurospicy Mode', pill: 'focus music' };
 

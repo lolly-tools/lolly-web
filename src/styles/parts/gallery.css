@@ -770,8 +770,12 @@ stroke-width:.81;
   gap: var(--grid-gap);   /* tokens.css - collapses to --grid-gap-tight ≤640px */
   align-items: stretch;   /* every tile fills its row height → equal-size cards */
   /* Top padding clears the fixed top-right cluster (filter / saved / profile) now
-     that the sticky pill bar - which used to hold this space - is gone. */
-  padding: 6rem 1rem 1rem;
+     that the sticky pill bar - which used to hold this space - is gone. --safe-top
+     matches the phone breakpoint below: on iPadOS the system draws a scroll-edge
+     blur across the top inset and the grid must start below it - the fixed topbar
+     cluster (already offset by --safe-top) stays over the blur, the cards do not.
+     Zero everywhere without an inset, so browsers render byte-identically. */
+  padding: calc(6rem + var(--safe-top)) 1rem 1rem;
 }
 @media (max-width: 1180px) { .tool-masonry { --cols: 3; } }
 @media (max-width: 820px)  { .tool-masonry { --cols: 2; } }

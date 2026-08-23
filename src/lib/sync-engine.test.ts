@@ -159,7 +159,7 @@ test('scheduler: a change during an in-flight push triggers exactly one more', a
   const sched = makeSyncScheduler(async () => { pushes++; if (pushes === 1) await gate; }, 1000, { timers: ft.timers });
 
   const first = sched.flush();            // starts push #1, which blocks on the gate
-  sched.notifyChange(); ft.fire();        // change lands mid-push → should defer, not race
+  sched.notifyChange(); ft.fire();        // change arrives mid-push → should defer, not race
   await Promise.resolve();
   assert.equal(pushes, 1, 'no second concurrent push while one is in flight');
   release();

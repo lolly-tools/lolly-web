@@ -224,7 +224,7 @@ const INLINE_GLYPH_ALLOWED: Record<string, number> = {
   'components/color-field.ts': 2,
   'components/help-tip.ts': 1,
   'components/music-player.ts': 6,   // play/pause now come from lib/icons.ts (2026-07-29)
-  'components/profile-menu.ts': 2,
+  'components/profile-menu.ts': 1,  // 2 → 1, 2026-08-23: the per-row chevron copies collapsed into one CHEVRON const
   'components/view-toggle.ts': 2,   // 3 → 2, 2026-08-20: the Tools tab's inline wrench went - it's icon('hammer') from lib/icons.ts now
   'lib/audio-coaching.ts': 1,
   // 5 → 0, plan 97 M1 (2026-08-09): the five BRAND_TABS glyphs went with the tab
@@ -1092,6 +1092,11 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // dynamic value (labels, provider kind, account names, scopes notes, field values)
   // goes through escape() in oauthRowHtml/credentialRowsHtml, the rest is t() output.
   'views/profile-connections.ts': 1,
+  // Device sync (plans/138 B1): two sinks, the no-provider state and the form.
+  // Reviewed - every dynamic value is escape()d (provider kind + label, the stored
+  // passphrase) or t() output; the rest is static markup. The section is a sub-block
+  // of Connected services since 2026-08-23, but it kept its own module and sinks.
+  'views/profile-sync.ts': 2,
   'views/profile.ts': 18,  // +1 2026-07-31: the Offline-tools download manager list (loadOffline) - ids/names escape()d, sizes via fmtBytes, glyphs via icon(); +1 2026-08-17: the "Save my renders" auto-save toggle (jelly-switch) - label + id escape()d; 23 → 18 2026-08-19: "Export everything" became a background job (lib/batch-job.ts), so its five progress-toast writes are gone - the global job toast reports it now
                            // +1 2026-08-01: the offline persistence line (syncPersistLine) - both t() strings escape()d, the button markup is static
   'views/projects.ts': 9,   // 10 → 9: the context-menu popover sink moved to lib/context-menu.ts (2026-08-09)

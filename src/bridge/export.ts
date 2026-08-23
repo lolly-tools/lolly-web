@@ -73,7 +73,7 @@ import type { Dimension } from '../../../../engine/src/units.ts';
 import type { CornerRadii, CornerPair } from '../../../../engine/src/css-box.ts';
 import { n2, parseCssColor, parseCssColorFull, rgbaCss, parseCssLen, resolveRadii, objectPositionFractions } from "./export-css.ts";
 import { renderPptx } from "./export-pptx.ts";
-import { domToDocBlocks } from "./doc-blocks.ts";
+import { domToDocBlocks, domToRichDoc } from "./doc-blocks.ts";
 // Stage-1 split: DOM-free byte-stampers and vector-PDF helpers extracted
 // verbatim to sibling modules, imported back so no call site changes.
 import {
@@ -825,11 +825,12 @@ async function renderFormatDispatch(node: Element, format: string, opts: ExportO
     case 'pptx':
       return await renderPptx(node, opts);
     case 'docx': {
-      // Editable Word document - headings + paragraphs read off the rendered node,
-      // NOT a rasterised page. The office MIME (not application/zip) keeps the .docx
-      // extension in extFor. Lossy vs PDF by design (see doc-blocks.ts).
-      const { blocks, title } = domToDocBlocks(node);
-      return new Blob([writeDocx({ title, blocks }) as BlobPart], {
+      // Editable Word document - headings, styled runs, links, lists, tables and
+      // pictures read off the rendered node, NOT a rasterised page. The office MIME
+      // (not application/zip) keeps the .docx extension in extFor. Still lossy vs PDF
+      // by design (see doc-blocks.ts for what the model cannot carry).
+      const { blocks, title, media } = await domToRichDoc(node);
+      return new Blob([writeDocx({ title, blocks, media }) as BlobPart], {
         type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       });
     }

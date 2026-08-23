@@ -13,6 +13,7 @@
  */
 
 import { t } from '../i18n.ts';
+import { connectorEnabled } from '../feature-flags.ts';
 import { hasConnection } from './provider-connections.ts';
 import { s3SyncRemote } from './s3-send.ts';
 import { webdavSyncRemote } from './nextcloud-send.ts';
@@ -44,15 +45,20 @@ export function syncProviderLabel(kind: string): string {
   return kind;
 }
 
-/** The sync providers usable right now: a SyncRemote exists AND its credentials
- *  are connected on this device. Drives the /profile provider picker. */
+/** The sync providers usable right now: a SyncRemote exists, its credentials are
+ *  connected on this device, AND its connector kill switch is on. Drives the
+ *  /profile provider picker. */
 export function availableSyncProviders(): Array<{ kind: string; label: string }> {
   return Object.keys(REMOTES)
-    .filter((kind) => hasConnection(kind))
+    .filter((kind) => connectorEnabled(kind) && hasConnection(kind))
     .map((kind) => ({ kind, label: syncProviderLabel(kind) }));
 }
 
+/** The single resolution point for every sync path (manual and automatic), so the
+ *  connector kill switch also stops a provider a previous session had configured:
+ *  no remote, no push, no check. */
 function remoteFor(kind: string): SyncRemote | null {
+  if (!connectorEnabled(kind)) return null;
   return REMOTES[kind]?.() ?? null;
 }
 
@@ -165,7 +171,8 @@ export async function maybeApplyNewerAtBoot(deps: BackupDeps): Promise<void> {
   } catch {
     // Most likely an encrypted snapshot needing its passphrase - send them to set it.
     const { navigateTo } = await import('../nav.ts');
-    navigateTo('#/profile?focus=sync-section');
+    // Sync lives inside Connected services now; the old alias still resolves there.
+    navigateTo('#/profile?focus=connections-section');
   }
 }
 

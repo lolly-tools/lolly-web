@@ -85,6 +85,12 @@ export function applyTheme(theme: string, animate = true): void {
     else if (fallback) meta.content = fallback;
   }
 
+  // Keep the browser-tab favicon in step with the app theme (dark/brand wear the
+  // reverse mark). Setting the href in JS follows the in-app toggle live - the
+  // <link media> pair this replaced only tracked the OS scheme and needed a reload.
+  const favicon = document.getElementById('favicon-svg') as HTMLLinkElement | null;
+  if (favicon) favicon.href = theme === 'light' ? '/icon.svg' : '/icon-reverse.svg';
+
   // Keep the Jelly effects controls (lib/jelly.ts) in step: pin their light/dark
   // token defaults to the app theme rather than the OS scheme, and wake settled
   // canvases - an idle jelly control only repaints on this event, so a theme swap

@@ -284,7 +284,7 @@ const MAIN_SRC = readFileSync(fileURLToPath(new URL('../main.ts', import.meta.ur
 
 const EXPECTED_FOOTER: Record<string, 'search' | 'none'> = {
   gallery: 'search', utilities: 'search', projects: 'search', catalog: 'search',
-  dashboard: 'search', profile: 'search',
+  dashboard: 'search', profile: 'search', docs: 'search',
   tool: 'none', pro: 'none', start: 'none', multi: 'none', data: 'none', script: 'none',
   verify: 'none', convert: 'none', lab: 'none', pdf: 'none', components: 'none',
 };

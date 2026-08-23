@@ -251,6 +251,16 @@
 .profile-view .profile-collapse-chev { flex: none; width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); transition: transform .15s ease; }
 .profile-view .profile-collapse[open] > summary .profile-collapse-chev { transform: rotate(90deg); }
 .profile-view .profile-collapse-body { padding: 0 1.4rem 1.25rem; }
+/* Identity in the "Your details" summary: every card starts folded now, so the
+   person's name rides beside that heading - a page of closed cards still reads as
+   someone's profile. Quiet (it is a value, not a heading) and it truncates rather
+   than pushing the chevron off the row. */
+.profile-view .profile-summary-name {
+  flex: 0 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: calc(.9rem * var(--a11y-fs)); font-weight: 600;
+  color: hsl(var(--foreground));
+}
 @media (prefers-reduced-motion: reduce) { .profile-view .profile-collapse-chev { transition: none; } }
 
 /* Details card: fields (two columns of three) on the left, theme + headshot
@@ -400,6 +410,20 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, .25);
   transition: transform .15s;
 }
+/* A named cluster heading inside the flag list (Connectors) - a label row, not a
+   toggle, so it carries the card-heading treatment plus one line of scope text. */
+.profile-view .feature-flag-group {
+  list-style: none;
+  display: flex; flex-direction: column; gap: .2rem;
+  margin: .1rem .25rem;
+  font-size: calc(.72rem * var(--a11y-fs)); font-weight: 700;
+  text-transform: uppercase; letter-spacing: .07em;
+  color: hsl(var(--muted-foreground));
+}
+.profile-view .feature-flag-group-note {
+  font-size: calc(.82rem * var(--a11y-fs)); font-weight: 400;
+  text-transform: none; letter-spacing: 0; line-height: 1.45; max-width: 74ch;
+}
 /* Separates the category flags from the Pro (batch) mode flag. */
 .profile-view .feature-flag-divider {
   list-style: none;
@@ -520,6 +544,10 @@
 
 /* Storage */
 .profile-view .storage-subsection:first-of-type { margin-top: 1.1rem; }
+/* A titled sub-block inside any card body - Sync across devices, inside Connected
+   services - reuses .storage-subsection's neutral rule + spacing (parts/storage.css).
+   Only the heading needs taming: that block always used a plain <span>. */
+.profile-view .storage-subsection-header h3 { margin: 0; font: inherit; }
 /* Clear cache + Clear all my data sit together on their own row, right-aligned. */
 .profile-view .storage-actions { display: flex; align-items: center; justify-content: flex-end; gap: .6rem; margin-top: 1.25em; }
 

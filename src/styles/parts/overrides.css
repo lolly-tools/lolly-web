@@ -90,6 +90,17 @@ body > svg:not([style]) {
    added FAB never coexists with data-back-home by construction. */
 .chrome-topleft .tools-home[data-back-home] ~ .home-fab { display: none; }
 
+/* ≤640px: views whose profile pill carries the consolidated mobile menu (docs,
+   ask - profile-menu.ts has a Home row) drop the standalone Home FAB entirely.
+   Its presence there depended on where you came FROM (data-back-home above), so
+   it read as a control that wanders view to view; the back pill stays, and Home
+   now has one fixed place in the avatar menu. Extend the list only alongside an
+   attachProfileMenu() call in that view. */
+@media (max-width: 640px) {
+  .docs-view .chrome-topleft .home-fab,
+  .ask-view .chrome-topleft .home-fab { display: none; }
+}
+
 /* The same Home FAB beside the tool sidebar's back pill (mountBackPill →
    addHomeEscape). That row holds the pill at one end and undo/redo at the other
    (`justify-content: space-between`, tool.css `.sidebar-back-row`), so the free

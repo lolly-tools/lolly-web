@@ -403,6 +403,20 @@ export function deckFonts(deck: { slides: PptxReadSlide[]; theme: PptxReadTheme 
   return [...byFamily.values()];
 }
 
+// ── content extraction (the #/convert output, from an upload surface) ──────────
+
+/**
+ * Download the deck's CONTENT as Markdown - a plain `.md`, or a zip of the markdown
+ * plus its `media/` files when the deck carried images. Byte-identical to what
+ * #/convert produces for the same file: both call the shared extractor.
+ */
+async function downloadDeckMarkdown(host: HostV1, file: File | Blob, name: string): Promise<void> {
+  const { pptxToMarkdown, markdownDownload } = await import('../lib/office-text.ts');
+  const content = await pptxToMarkdown(new Uint8Array(await file.arrayBuffer()));
+  const base = name.replace(/\.pptx$/i, '').trim() || 'deck';
+  await host.export.download(markdownDownload(content, 'deck.md'), `${base}.${content.media.length ? 'zip' : 'md'}`);
+}
+
 // ── upload-path entry (mirrors ingestPdfAsSvgAssets) ───────────────────────────
 
 /**
@@ -417,9 +431,35 @@ export function deckFonts(deck: { slides: PptxReadSlide[]; theme: PptxReadTheme 
 export async function ingestPptxAsSvgAssets(
   host: HostV1,
   file: File | Blob,
-  { mode = 'multi', warn = () => {} }: { mode?: 'single' | 'multi'; warn?: (msg: string) => void } = {},
+  { mode = 'multi', warn = () => {}, chooser = true }: {
+    mode?: 'single' | 'multi';
+    warn?: (msg: string) => void;
+    /** False when the CALLER already asked what to take from the deck (the drop
+     *  router offers both routes in its own sheet), so no second dialog opens. */
+    chooser?: boolean;
+  } = {},
 ): Promise<AssetRef[]> {
   const name = (file as File).name || 'deck.pptx';
+  // A dropped deck can become two different things: its slides as pictures, or its
+  // CONTENT as Markdown to re-flow into a branded tool (plans/139). Only the library
+  // route asks - filling a single image slot has no use for a markdown download.
+  // Dialog + i18n load lazily so this module's own scope stays node-importable.
+  if (mode === 'multi' && chooser) {
+    const [{ choiceDialog }, { t }] = await Promise.all([
+      import('../components/confirm-dialog.ts'),
+      import('../i18n.ts'),
+    ]);
+    const pick = await choiceDialog({
+      title: t('Import a deck'),
+      message: t('What should Lolly take from this deck?'),
+      choices: [
+        { id: 'slides', label: t('Add its slides to your library'), primary: true },
+        { id: 'markdown', label: t('Extract content (Markdown)') },
+      ],
+    });
+    if (!pick) return [];
+    if (pick === 'markdown') { await downloadDeckMarkdown(host, file, name); return []; }
+  }
   const handle = await openPptxFile(file);
   if (!handle.pageCount) throw new Error('This deck has no slides.');
 

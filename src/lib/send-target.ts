@@ -27,7 +27,15 @@
  * Dropbox), so unlike session-source this registry holds a set - last
  * registration per kind wins, so a re-registering control plane replaces
  * rather than duplicates.
+ *
+ * One user-facing gate sits over the whole set: a CONNECTOR_FLAGS kill switch
+ * per provider kind (feature-flags.ts, all ON by default). sendTargetsFor()
+ * reads it at call time, so switching Google Drive off in /profile withdraws it
+ * from every "send to" surface - the export panel, the share sheet, and the
+ * export-home auto-send, which all resolve through here - with no reload.
  */
+
+import { connectorEnabled } from '../feature-flags.ts';
 
 /** One finished export, as handed to a target. */
 export interface SendPayload {
@@ -80,8 +88,11 @@ export function unregisterSendTarget(kind: string): void {
 }
 
 /** The destinations currently offered for one export format, in registration
- *  order. Empty (the default) = the export panel shows nothing. */
+ *  order. Empty (the default) = the export panel shows nothing. A provider the
+ *  user switched off in Feature flags is excluded here, so no caller needs its
+ *  own check. */
 export function sendTargetsFor(format: string): SendTarget[] {
   const f = format.toLowerCase();
-  return [...targets.values()].filter(t => t.available() && (!t.formats || t.formats.includes(f)));
+  return [...targets.values()].filter(t =>
+    connectorEnabled(t.kind) && t.available() && (!t.formats || t.formats.includes(f)));
 }
