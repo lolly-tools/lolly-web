@@ -60,6 +60,8 @@ import { maybeShowFirstRunInstanceSheet } from './lib/instance-choice.ts';
 import { maybeShowModelsWelcome } from './components/models-welcome.ts';
 import { initOrg } from './org/index.ts';
 import { registerBuiltinSendTargets } from './lib/send-targets-builtin.ts';
+import { initSyncAutoPush, maybeApplyNewerAtBoot } from './lib/sync-service.ts';
+import type { BackupDeps } from './lib/sync-engine.ts';
 import { initSelectPreview } from './select-preview.ts';
 import { mountJobToast } from './lib/job-toast.ts';
 import { recordTool, recordBatch, bumpMetric, recordFormat } from './metrics.ts';
@@ -1108,6 +1110,13 @@ async function boot(): Promise<void> {
     await catalogReady;
     await navigate(host, { force: true });
   }
+
+  // Device sync (plans/138 B1), both best-effort and after the first paint: arm the
+  // debounced auto-push (silent no-op while sync is off), then offer to apply a
+  // snapshot a sibling device left newer. Never blocks boot.
+  const syncDeps = (): BackupDeps => ({ host: host as unknown as BackupDeps['host'], storage: localStorage });
+  initSyncAutoPush(syncDeps);
+  void maybeApplyNewerAtBoot(syncDeps());
 
   // Android share-target (ACTION_SEND → Lolly): poll the native stash and route
   // shared files through the universal drop chooser. Placed after the first

@@ -830,6 +830,10 @@
 .profile-view .pconn-account { display: block; font-weight: 600; margin-top: 2px; }
 .profile-view .pconn-note { display: block; opacity: .75; font-size: calc(12px * var(--a11y-fs)); margin-top: 2px; }
 .profile-view .pconn-persist { display: flex; align-items: center; gap: .4rem; margin-top: .45rem; font-size: calc(12.5px * var(--a11y-fs)); opacity: .9; }
+/* "Make this my export home" (plans/138 A1): the same inline-check idiom as
+   the persist toggle, tinted with the brand accent when it is the live choice. */
+.profile-view .pconn-home { display: flex; align-items: center; gap: .4rem; margin-top: .45rem; font-size: calc(12.5px * var(--a11y-fs)); opacity: .9; }
+.profile-view .pconn-home:has(input:checked) { opacity: 1; font-weight: 600; color: hsl(var(--brand-c1, var(--ring))); }
 .profile-view .pconn-cred { border: 1px solid hsl(var(--border) / .6); border-radius: 10px; padding: .55rem .8rem; margin-top: .6rem; }
 .profile-view .pconn-cred summary { cursor: pointer; list-style: none; }
 .profile-view .pconn-cred summary::-webkit-details-marker { display: none; }

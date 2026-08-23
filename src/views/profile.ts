@@ -277,6 +277,7 @@ export const NAV_SECTIONS: ReadonlyArray<ProfileNavSection> = [
   { id: 'storage-section', icon: 'package', label: 'Storage', keywords: 'storage data space sessions images clear export delete' },
   { id: 'offline-section', icon: 'download', label: 'Available offline', keywords: 'offline download pwa install cache' },
   { id: 'connections-section', icon: 'upload', label: 'Connected services', keywords: 'connect send drive dropbox onedrive s3 bucket nextcloud webdav providers oauth' },
+  { id: 'sync-section', icon: 'globe', label: 'Sync across devices', keywords: 'sync devices continuity snapshot backup cloud icloud s3 across phone desktop passphrase encrypt' },
   { id: 'feature-flags-section', icon: 'flask', label: 'Feature flags', keywords: 'features experimental beta jelly neurospicy flags toggles' },
   { id: 'identity-section', icon: 'credentialShield', label: 'Content Credentials', keywords: 'c2pa credentials provenance verify signing identity certificate' },
 ];
@@ -711,6 +712,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       <details class="profile-card profile-collapse" id="connections-section"${startOpen('connections-section')}>
         <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Connected services')}</h2>${COLLAPSE_CHEV}</summary>
         <div class="profile-collapse-body section-card-body" id="connections-body"><p class="storage-hint-text">${t('Loading…')}</p></div>
+      </details>
+
+      <details class="profile-card profile-collapse" id="sync-section"${startOpen('sync-section')}>
+        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Sync across devices')}</h2>${COLLAPSE_CHEV}</summary>
+        <div class="profile-collapse-body section-card-body" id="sync-body"><p class="storage-hint-text">${t('Loading…')}</p></div>
       </details>
 
       <details class="profile-card profile-collapse" id="feature-flags-section"${(openState['feature-flags-section'] || focusFlags) ? ' open' : ''}>
@@ -2830,10 +2836,25 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const body = viewEl.querySelector<HTMLElement>('#connections-body');
     if (!body) return;
     const { mountConnectionsBody } = await import('./profile-connections.ts');
-    await mountConnectionsBody(body);
+    await mountConnectionsBody(body, host as Parameters<typeof mountConnectionsBody>[1]);
   };
   connectionsDetails?.addEventListener('toggle', () => { if (connectionsDetails!.open) void loadConnections(); });
   if (connectionsDetails?.open) void loadConnections();
+
+  // Sync across devices (plans/138 B1) - same lazy-mount idiom; the module owns
+  // its own re-rendering after each change.
+  const syncDetails = viewEl.querySelector<HTMLDetailsElement>('#sync-section');
+  let syncLoaded = false;
+  const loadSync = async (): Promise<void> => {
+    if (syncLoaded) return;
+    syncLoaded = true;
+    const body = viewEl.querySelector<HTMLElement>('#sync-body');
+    if (!body) return;
+    const { mountSyncBody } = await import('./profile-sync.ts');
+    await mountSyncBody(body, host as unknown as Parameters<typeof mountSyncBody>[1]);
+  };
+  syncDetails?.addEventListener('toggle', () => { if (syncDetails!.open) void loadSync(); });
+  if (syncDetails?.open) void loadSync();
 
   // ── Content Credentials: lazy, like Storage. The identity bridge (host.identity)
   // holds the device keypair + CA-issued cert; this section only ever shows either

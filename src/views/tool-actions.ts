@@ -32,6 +32,7 @@ import { showScrubReadout, hideScrubReadout } from '../components/scrub-readout.
 import { runTemplateScripts } from '../lib/render-lifecycle.ts';
 import { playScrubTick } from '../lib/sfx.ts';
 import { sendTargetsFor } from '../lib/send-target.ts';
+import { markSyncDirty } from '../lib/sync-service.ts';
 import { loopRank } from '../lib/neurospicy.ts';
 import { songUrlToWavBlobUrl, renderSong } from '../lib/zzfxm-render.ts';
 import { pcmToWavBlob } from '../lib/pcm-wav.ts';
@@ -320,6 +321,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         new Promise<null>(resolve => setTimeout(() => resolve(null), THUMB_CAPTURE_TIMEOUT_MS)),
       ]);
       await host.state.save(slot, data, thumb);
+      markSyncDirty();   // device sync (plans/138): a saved session is a change to push (no-op if sync is off)
       // Remember the slot so the next save updates THIS session rather than creating a
       // duplicate (see activeSlot above). Set before filing so a fresh first-save is
       // both filed into its folder AND pinned as the active slot for later edits.
@@ -3025,6 +3027,21 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
             height: dimNum(opts.height),
           });
         } catch { /* saving to the library is best-effort */ }
+      })();
+      // Export home (plans/138 A1): if the user pinned a cloud as their export
+      // home, this same file ALSO auto-sends there over the send-target driver.
+      // Best-effort + non-blocking; the send runs as a light job so the global
+      // toast carries its progress and the resulting link.
+      void (async () => {
+        try {
+          if (!downloadedBlob) return;
+          const { autoSendToExportHome } = await import('../lib/export-home.ts');
+          await autoSendToExportHome(host as unknown as Parameters<typeof autoSendToExportHome>[0], {
+            blob: downloadedBlob,
+            format: downloadedIsZip ? 'zip' : fmt,
+            name: filename,
+          });
+        } catch { /* the export home is best-effort - the download already succeeded */ }
       })();
     } catch (err) {
       revokeTrackUrls();

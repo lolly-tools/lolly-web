@@ -25,6 +25,8 @@ import {
   getConnection, saveConnection, removeConnection, hasConnection,
 } from './provider-connections.ts';
 import type { SendTarget } from './send-target.ts';
+import type { SyncRemote, SnapshotMeta } from './sync-remote.ts';
+import { metaFromHeaders } from './sync-remote.ts';
 
 const KIND = 's3';
 
@@ -198,4 +200,70 @@ export function s3SendTarget(): SendTarget {
       };
     },
   };
+}
+
+// ── The SyncRemote (plans/138 B1) ─────────────────────────────────────────────
+// Device sync's two-way access over the SAME SigV4 signer the send target uses.
+// The sender is PUT-only; sync also needs HEAD (detect a newer snapshot cheaply,
+// no download) and GET (fetch it to apply). ONE fixed key holds the whole-person
+// snapshot, overwritten each push - last-write-wins at snapshot granularity.
+//
+// `rev` is the object's ETag (its Last-Modified as a fallback): stable while the
+// content is, changes when it changes - exactly what the engine compares. REALITY
+// the spike surfaces (documented for the bucket owner): the bucket's CORS config
+// must ExposeHeaders ETag (and ideally Last-Modified) or JS can't read the rev and
+// newer-detection can't work; the same CORS that already has to allow PUT.
+
+const SYNC_KEY = 'lolly-sync/snapshot.lolly';
+
+const s3Meta = (res: Response, fallbackSize: number): SnapshotMeta => metaFromHeaders(res.headers, fallbackSize);
+
+/** An S3-backed SyncRemote over the user's connected bucket. `objectKey` (under the
+ *  bucket prefix) defaults to the device-sync snapshot; the collab rendezvous
+ *  (plans/138 Tier C) points it at other keys to read/write signalling blobs.
+ *  `fetchFn` is injectable for tests; production uses the global fetch. */
+export function s3SyncRemote(fetchFn: typeof fetch = fetch, objectKey: string = SYNC_KEY): SyncRemote {
+  const requireCfg = async (): Promise<{ cfg: S3Config; url: URL }> => {
+    const cfg = await s3Config();
+    if (!cfg) throw new Error(t('Set up your bucket in Profile first'));
+    return { cfg, url: objectUrl(cfg, `${cfg.prefix ?? ''}${objectKey}`) };
+  };
+  const emptyHash = (): Promise<string> => sha256Hex(new Uint8Array(0));
+
+  const head = async (): Promise<SnapshotMeta | null> => {
+    const { cfg, url } = await requireCfg();
+    const headers = await sigV4Headers(cfg, 'HEAD', url, await emptyHash(), null);
+    const res = await fetchFn(url.toString(), { method: 'HEAD', headers });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(t('The bucket answered {status}', { status: res.status }));
+    return s3Meta(res, 0);
+  };
+
+  const get = async (): Promise<{ bytes: Uint8Array; meta: SnapshotMeta } | null> => {
+    const { cfg, url } = await requireCfg();
+    const headers = await sigV4Headers(cfg, 'GET', url, await emptyHash(), null);
+    const res = await fetchFn(url.toString(), { method: 'GET', headers });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(t('The bucket answered {status}', { status: res.status }));
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    return { bytes, meta: s3Meta(res, bytes.length) };
+  };
+
+  const put = async (bytes: Uint8Array): Promise<SnapshotMeta> => {
+    const { cfg, url } = await requireCfg();
+    const headers = await sigV4Headers(cfg, 'PUT', url, await sha256Hex(bytes), 'application/octet-stream');
+    let res: Response;
+    try {
+      res = await fetchFn(url.toString(), { method: 'PUT', headers, body: bytes as unknown as BodyInit });
+    } catch {
+      throw new Error(t('Could not reach the bucket - its CORS config (and this deploy\'s security policy) must allow this origin'));
+    }
+    if (!res.ok) throw new Error(t('Bucket upload failed ({status})', { status: res.status }));
+    // Some buckets don't CORS-expose ETag on the PUT response; a follow-up HEAD
+    // recovers the rev so another device's newer-detection stays correct.
+    if (!s3Meta(res, 0).rev) { const h = await head(); if (h?.rev) return h; }
+    return s3Meta(res, bytes.length);
+  };
+
+  return { kind: KIND, head, get, put };
 }

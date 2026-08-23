@@ -605,6 +605,11 @@ export interface CollabCeremonyOptions {
    *  pairing can hand the reply back over its own channel rather than showing a QR to scan.
    *  Acceptor only; never fired for the inviter (plans/110 section 3). */
   readonly onAnswer?: (signal: string) => void;
+  /** Fires once with the inviter's minted INVITE signal, the moment it exists - the symmetric
+   *  twin of {@link onAnswer}, so an out-of-band channel (plans/138 Tier C: a shared-cloud
+   *  rendezvous) can PUBLISH the invite instead of showing a QR to scan. Inviter only; never
+   *  fired for the acceptor. Additive: absent = the QR/link path is byte-identical. */
+  readonly onInvite?: (signal: string) => void;
   /** Base for the invite/reply links. Defaults to this page's origin + path. */
   readonly linkBase?: string;
   /** Clipboard write. Defaults to `navigator.clipboard`. */
@@ -743,6 +748,8 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
   let nearbyNote = '';
   // One-shot: the acceptor hands its minted reply back over the nearby channel via onAnswer.
   let answerFired = false;
+  // One-shot twin: the inviter hands its minted invite out over an out-of-band channel (onInvite).
+  let inviteFired = false;
   let lastStepKey = '';
   let lastPhase: CeremonyState['phase'] | '' = '';
 
@@ -906,6 +913,7 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
     pasted.clear();
     connectedFired = false;
     answerFired = false;
+    inviteFired = false;
     nearbyNote = '';
     qrTab = 'link';
     // A new ceremony's ten minutes are its own, even if the replacement invite happens
@@ -1910,6 +1918,13 @@ export function openCollabCeremony(opts: CollabCeremonyOptions): CollabCeremonyH
     if (role === 'acceptor' && state?.answer && !answerFired) {
       answerFired = true;
       opts.onAnswer?.(state.answer.signal);
+    }
+
+    // The inviter's invite is minted once; hand it out over an out-of-band channel
+    // (plans/138 Tier C rendezvous) the same one-shot way onAnswer hands back a reply.
+    if (role === 'inviter' && state?.invite && !inviteFired) {
+      inviteFired = true;
+      opts.onInvite?.(state.invite.signal);
     }
   }
 

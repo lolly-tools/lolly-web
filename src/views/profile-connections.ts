@@ -34,6 +34,10 @@ import { connectMastodon, disconnectMastodon } from '../lib/mastodon-send.ts';
 import { connectBluesky, disconnectBluesky, testBluesky, type BlueskyConfig } from '../lib/bluesky-send.ts';
 import { connectDiscord, disconnectDiscord, testDiscord } from '../lib/discord-send.ts';
 import { listConnections, type ProviderConnection } from '../lib/provider-connections.ts';
+import { isExportHomeKind } from '../lib/export-home.ts';
+import type { HostV1, Profile } from '@lolly-tools/core/host-v1';
+
+type ConnHost = HostV1 & { profile: { get(): Promise<Profile>; set(p: Profile): Promise<void> } };
 
 const OAUTH_ROWS: Array<{
   kind: string;
@@ -77,13 +81,25 @@ const field = (name: string, label: string, value = '', type: 'text' | 'password
     <input class="field-input" type="${type}" data-field="${escape(name)}" value="${escape(value)}"${placeholder ? ` placeholder="${escape(placeholder)}"` : ''} autocomplete="off" spellcheck="false">
   </label>`;
 
-function oauthRowHtml(kind: string, label: string, scopesNote: string, conn: ProviderConnection | null): string {
+/** "Make this my export home" (plans/138 A1): shown on a CONNECTED storage
+ *  provider only, and only when the connection is REMEMBERED on this device
+ *  (`persist`). A session-only connection vanishes on reload, so a home pinned to
+ *  it would silently stop auto-sending - the toggle stays hidden rather than
+ *  offering a home that evaporates. A single choice across providers: checking one
+ *  is the home, and the re-render unchecks the rest. Absent for the publish tier. */
+function homeToggleHtml(kind: string, home: string | undefined, persisted: boolean): string {
+  if (!isExportHomeKind(kind) || !persisted) return '';
+  return `<label class="pconn-home"><input type="checkbox" data-pconn-home="${escape(kind)}"${home === kind ? ' checked' : ''}> ${t('Make this my export home')}</label>`;
+}
+
+function oauthRowHtml(kind: string, label: string, scopesNote: string, conn: ProviderConnection | null, home: string | undefined): string {
   if (conn) {
     return `
     <div class="store-manage--row pconn-row" data-pconn="${escape(kind)}">
       <span class="store-manage-name">${escape(label)}
         <span class="pconn-account">${escape(conn.account)}</span>
         <span class="pconn-note">${escape(conn.persist ? t('Stays connected on this device') : t('Connected for this session only'))}</span>
+        ${homeToggleHtml(kind, home, conn.persist)}
       </span>
       <button type="button" class="btn-link-danger" data-pconn-disconnect="${escape(kind)}">${t('Disconnect')}</button>
     </div>`;
@@ -98,7 +114,7 @@ function oauthRowHtml(kind: string, label: string, scopesNote: string, conn: Pro
     </div>`;
 }
 
-function credentialRowsHtml(conns: Map<string, ProviderConnection>): string {
+function credentialRowsHtml(conns: Map<string, ProviderConnection>, home: string | undefined): string {
   const s3 = conns.get('s3');
   const s3cfg = (s3?.config ?? {}) as Partial<S3Config>;
   const dav = conns.get('webdav');
@@ -121,6 +137,7 @@ function credentialRowsHtml(conns: Map<string, ProviderConnection>): string {
           <button type="button" class="btn" data-pconn-save="s3">${t('Save & test')}</button>
           ${s3 ? `<button type="button" class="btn-link-danger" data-pconn-disconnect="s3">${t('Disconnect')}</button>` : ''}
           <span class="pconn-status" data-pconn-status="s3" role="status"></span>
+          ${s3 ? homeToggleHtml('s3', home, s3.persist) : ''}
         </div>
       </div>
     </details>
@@ -138,6 +155,7 @@ function credentialRowsHtml(conns: Map<string, ProviderConnection>): string {
           <button type="button" class="btn" data-pconn-save="webdav">${t('Save & test')}</button>
           ${dav ? `<button type="button" class="btn-link-danger" data-pconn-disconnect="webdav">${t('Disconnect')}</button>` : ''}
           <span class="pconn-status" data-pconn-status="webdav" role="status"></span>
+          ${dav ? homeToggleHtml('webdav', home, dav.persist) : ''}
         </div>
       </div>
     </details>
@@ -202,10 +220,11 @@ function publishRowsHtml(conns: Map<string, ProviderConnection>): string {
 }
 
 /** Fill the section body and wire it. Re-renders itself after every change. */
-export async function mountConnectionsBody(body: HTMLElement): Promise<void> {
+export async function mountConnectionsBody(body: HTMLElement, host: ConnHost): Promise<void> {
   const conns = new Map((await listConnections()).map((c) => [c.kind, c]));
+  const home = (await host.profile.get().catch(() => ({}) as Profile)).exportHome;
   const oauthRows = OAUTH_ROWS.filter((r) => r.available())
-    .map((r) => oauthRowHtml(r.kind, r.label(), r.scopesNote(), conns.get(r.kind) ?? null)).join('');
+    .map((r) => oauthRowHtml(r.kind, r.label(), r.scopesNote(), conns.get(r.kind) ?? null, home)).join('');
   const gdriveRow = driveAvailable() && !isTauriShell()
     ? `<div class="store-manage--row pconn-row" data-pconn="gdrive">
         <span class="store-manage-name">${t('Google Drive')}
@@ -217,7 +236,7 @@ export async function mountConnectionsBody(body: HTMLElement): Promise<void> {
     <p class="storage-hint-text">${t('Send finished exports straight to your own places. Every send goes from this device to the provider directly - no Lolly server ever holds your files or your sign-ins - and what is remembered on this device is your choice, wiped by Disconnect and never included in backups.')}</p>
     ${gdriveRow}
     ${oauthRows}
-    ${credentialRowsHtml(conns)}`;
+    ${credentialRowsHtml(conns, home)}`;
 
   const readForm = (kind: string): Record<string, string> => {
     const out: Record<string, string> = {};
@@ -313,12 +332,28 @@ export async function mountConnectionsBody(body: HTMLElement): Promise<void> {
         if (!res.ok) return;
         await connectWebdav(cfg);
       }
-      await mountConnectionsBody(body); // re-render with the new state
+      await mountConnectionsBody(body, host); // re-render with the new state
     } catch (err) {
       const kind = connectKind ?? disconnectKind ?? saveKind ?? '';
       const msg = String((err as Error)?.message || t('That did not work - try again'));
       status(kind, msg.length <= 140 ? msg : t('That did not work - try again'));
       if (btn) btn.disabled = false;
     }
+  };
+
+  // "Make this my export home" (plans/138 A1). Single choice: checking one sets
+  // profile.exportHome to that kind; the re-render unchecks every other. Its own
+  // change handler - the click handler above ignores it (no connect/disconnect/save
+  // attribute), so a toggle never triggers a connect flow.
+  body.onchange = async (ev) => {
+    const cb = (ev.target as HTMLElement).closest<HTMLInputElement>('[data-pconn-home]');
+    if (!cb) return;
+    const kind = cb.dataset.pconnHome!;
+    const current = await host.profile.get().catch(() => ({}) as Profile);
+    const next = { ...current };
+    if (cb.checked) next.exportHome = kind;
+    else if (current.exportHome === kind) delete next.exportHome;
+    try { await host.profile.set(next); } catch { /* storage off - non-fatal */ }
+    await mountConnectionsBody(body, host);   // re-render so the choice stays single
   };
 }

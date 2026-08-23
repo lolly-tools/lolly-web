@@ -27,6 +27,7 @@ import {
   cachedToken, cacheToken, dropToken,
 } from './provider-connections.ts';
 import type { SendTarget } from './send-target.ts';
+import type { SyncRemote, SnapshotMeta } from './sync-remote.ts';
 
 const KIND = 'dropbox';
 const AUTHORIZE_URL = 'https://www.dropbox.com/oauth2/authorize';
@@ -190,4 +191,76 @@ export function dropboxSendTarget(): SendTarget {
       return { url, label: t('Saved to Dropbox ({path})', { path: file.path_display ?? `/${filename}` }) };
     },
   };
+}
+
+// ── The SyncRemote (plans/138 B1) ─────────────────────────────────────────────
+// Device sync's two-way access over the SAME app-folder OAuth the send target
+// uses. The sender is upload-only; sync adds get_metadata (HEAD-equivalent, cheap)
+// and download (GET). ONE fixed path in the app folder holds the snapshot,
+// uploaded with mode:overwrite (Dropbox auto-creates the parent dir). `rev` is
+// Dropbox's own file `rev` (changes on every content write). A not-found metadata
+// / download returns 409, mapped to null.
+
+const SYNC_PATH = '/lolly-sync/snapshot.lolly';
+
+interface DropboxMeta { rev?: string; size?: number; server_modified?: string }
+const dbxMeta = (m: DropboxMeta, fallbackSize: number): SnapshotMeta => ({
+  rev: m.rev ?? '',
+  updatedAt: m.server_modified ?? new Date().toISOString(),
+  size: Number(m.size) || fallbackSize,
+});
+
+/** A Dropbox-backed SyncRemote over the user's app folder. `path` defaults to the
+ *  device-sync snapshot; the collab rendezvous (plans/138 Tier C) points it at
+ *  signalling paths. `fetchFn` is injectable for tests; production uses global fetch. */
+export function dropboxSyncRemote(fetchFn: typeof fetch = fetch, path: string = SYNC_PATH): SyncRemote {
+  // One 401 retry through a fresh token, like rpc()/dropboxUpload().
+  const withToken = async (call: (tok: string) => Promise<Response>): Promise<Response> => {
+    let res = await call(await token(fetchFn));
+    if (res.status === 401) { dropToken(KIND); res = await call(await token(fetchFn)); }
+    return res;
+  };
+
+  const head = async (): Promise<SnapshotMeta | null> => {
+    const res = await withToken((tok) => fetchFn(`${API}/files/get_metadata`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    }));
+    if (res.status === 409) return null;   // path/not_found
+    if (!res.ok) throw new Error(t('Dropbox request failed ({status})', { status: res.status }));
+    return dbxMeta(await res.json() as DropboxMeta, 0);
+  };
+
+  const get = async (): Promise<{ bytes: Uint8Array; meta: SnapshotMeta } | null> => {
+    const res = await withToken((tok) => fetchFn(`${CONTENT}/files/download`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${tok}`, 'Dropbox-API-Arg': dropboxApiArg({ path }) },
+    }));
+    if (res.status === 409) return null;
+    if (!res.ok) throw new Error(t('Dropbox request failed ({status})', { status: res.status }));
+    const metaJson = res.headers.get('dropbox-api-result');
+    const meta = metaJson ? (JSON.parse(metaJson) as DropboxMeta) : {};
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    return { bytes, meta: dbxMeta(meta, bytes.length) };
+  };
+
+  const put = async (bytes: Uint8Array): Promise<SnapshotMeta> => {
+    const res = await withToken((tok) => fetchFn(`${CONTENT}/files/upload`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${tok}`,
+        'Dropbox-API-Arg': dropboxApiArg({ path, mode: 'overwrite', mute: true }),
+        'Content-Type': 'application/octet-stream',
+      },
+      body: bytes as unknown as BodyInit,
+    }));
+    if (!res.ok) throw new Error(t('Dropbox upload failed ({status})', { status: res.status }));
+    return dbxMeta(await res.json() as DropboxMeta, bytes.length);
+  };
+
+  const canSyncSilently = async (): Promise<boolean> =>
+    !!cachedToken(KIND) || !!(await getConnection(KIND))?.refreshToken;
+
+  return { kind: KIND, head, get, put, canSyncSilently };
 }

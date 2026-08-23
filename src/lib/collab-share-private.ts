@@ -42,8 +42,15 @@ import { registerShareSection } from './share-sections.ts';
 import type { ShareSectionContext } from './share-sections.ts';
 import { canStartCollab, startCollab } from './collab-availability.ts';
 import type { CollabTarget } from './collab-availability.ts';
+import { hasConnection } from './provider-connections.ts';
 import { t } from '../i18n.ts';
 import { announce } from '../a11y.ts';
+
+// The rendezvous providers (plans/138 Tier C), hardcoded here so the gate stays a
+// LIGHT check on the boot path - importing lib/collab-rendezvous.ts (which pulls the
+// four adapters) just to enumerate kinds would drag that chunk into boot. Kept in
+// step with `rendezvousKinds()` in lib/collab-rendezvous.ts by hand (4 entries).
+const RENDEZVOUS_KINDS = ['s3', 'webdav', 'gdrive', 'dropbox'] as const;
 
 /** The dialog's live mount, as the availability seam names it: a session of a tool,
  *  seeded from the state the dialog serialised. No control-plane `sessionId` - that is
@@ -99,6 +106,28 @@ export function buildPrivateCollabShareSection(ctx: ShareSectionContext): HTMLEl
   join.textContent = t('Join with a code');
 
   section.append(heading, row, btn, join);
+
+  // Third door (plans/138 Tier C): pair over a cloud you both already have connected -
+  // signalling rides a shared-store rendezvous instead of a QR/link. Only shown when
+  // at least one rendezvous provider is connected on this device; the picker (and the
+  // whole collab/WebRTC chunk) is lazy-imported so it never touches the boot path.
+  let cloud: HTMLButtonElement | null = null;
+  if (RENDEZVOUS_KINDS.some(hasConnection)) {
+    cloud = document.createElement('button');
+    cloud.type = 'button';
+    cloud.className = 'btn btn--sm';
+    cloud.dataset.act = 'cloud-private-collab';
+    cloud.style.cssText = 'margin-top:.5rem;margin-left:.4rem';
+    cloud.textContent = t('Over shared cloud');
+    section.append(cloud);
+    cloud.addEventListener('click', () => {
+      ctx.close?.();   // the picker is body-mounted and survives the share dialog closing
+      void import('./collab-rendezvous-entry.ts').then((m) => {
+        m.openRendezvousPicker({ toolId: ctx.toolId, baseParts: ctx.baseParts, currentFormat: ctx.currentFormat });
+      }).catch(() => { /* the QR path stays as the fallback */ });
+      announce(t('Opening shared-cloud collab'));
+    });
+  }
 
   btn.addEventListener('click', () => {
     const opened = startCollab(targetOf(ctx), 'private');

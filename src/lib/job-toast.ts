@@ -267,11 +267,27 @@ function rowHtml(j: Job): string {
     </li>`;
   }
   const word = STATUS_WORD[j.status as Exclude<JobStatus, 'running'>] ?? 'Done';
-  const detail = j.status === 'failed' && j.error ? `<span class="job-row-note">${ESC(j.error)}</span>` : '';
+  const detail = j.status === 'failed' && j.error ? `<span class="job-row-note">${ESC(j.error)}</span>`
+    : j.status === 'done' ? resultLinkHtml(j)
+    : '';
   return `<li class="job-row">
     <span class="job-row-title">${ESC(j.title)}</span>
     <span class="job-row-meta"><span class="job-row-status job-row-status--${j.status}">${ESC(t(word))}</span>${detail}</span>
   </li>`;
+}
+
+/** A finished job whose result is a send outcome ({ url?, label }) - e.g. the
+ *  export-home auto-send (plans/138) - renders its label, linked when a viewable
+ *  URL came back. Any other result shape (a derived asset from a matte/upscale
+ *  job) has no label and renders nothing extra. */
+function resultLinkHtml(j: Job): string {
+  const r = j.result as { url?: unknown; label?: unknown } | null | undefined;
+  const label = r && typeof r === 'object' && typeof r.label === 'string' ? r.label : '';
+  if (!label) return '';
+  const url = r && typeof (r as { url?: unknown }).url === 'string' ? (r as { url: string }).url : '';
+  return url
+    ? `<a class="job-row-note" href="${ESC(url)}" target="_blank" rel="noopener">${ESC(label)}</a>`
+    : `<span class="job-row-note">${ESC(label)}</span>`;
 }
 
 function renderPanel(jobs: readonly Job[]): string {

@@ -44,6 +44,7 @@
  */
 
 import type { SendTarget } from './send-target.ts';
+import type { SyncRemote, SnapshotMeta } from './sync-remote.ts';
 import { codeGrant, loopbackVia, popupOAuth, refreshGrant, type TokenSet } from './provider-auth.ts';
 import {
   cachedToken, cacheToken, dropToken, getConnection, removeConnection, saveConnection,
@@ -355,4 +356,92 @@ export function googleDriveSendTarget(): SendTarget {
       };
     },
   };
+}
+
+// ── The SyncRemote (plans/138 B1) ─────────────────────────────────────────────
+// Device sync's two-way access reusing the SAME drive.file OAuth the send target
+// uses - no extra scope. drive.file can only see files THIS app created, so the
+// snapshot is a single well-known-named file the app finds again with files.list
+// (which, under drive.file, returns only the app's own files). `rev` is the file's
+// headRevisionId (changes on every content update). No fixed path exists under
+// drive.file, hence find-by-name then create-or-update.
+//
+// WEB REALITY: the web Drive token is session-only (implicit grant, in memory), so
+// canSyncSilently() is true only once the user has signed in this session - the
+// AUTO paths skip Drive until then, and never pop a sign-in outside a gesture. The
+// desktop shell holds a refresh token, so it syncs silently like the others.
+
+const DRIVE_SYNC_NAME = 'lolly-sync.lolly';
+const DRIVE_FILES = 'https://www.googleapis.com/drive/v3/files';
+const DRIVE_UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
+const SYNC_FIELDS = 'id,headRevisionId,modifiedTime,size';
+
+interface DriveSyncFile { id: string; headRevisionId?: string; modifiedTime?: string; size?: string }
+
+const driveMeta = (f: DriveSyncFile, fallbackSize: number): SnapshotMeta => ({
+  rev: f.headRevisionId ?? '',
+  updatedAt: f.modifiedTime ?? new Date().toISOString(),
+  size: Number(f.size) || fallbackSize,
+});
+
+/** A Google-Drive-backed SyncRemote over the app's own drive.file files. `fileName`
+ *  defaults to the device-sync file; the collab rendezvous (plans/138 Tier C) points
+ *  it at signalling files. `fetchFn` is injectable for tests; production rides driveFetch. */
+export function driveSyncRemote(fetchFn: typeof fetch = driveFetch, fileName: string = DRIVE_SYNC_NAME): SyncRemote {
+  const auth = async (): Promise<Record<string, string>> => ({ Authorization: `Bearer ${await driveToken()}` });
+
+  const findFile = async (): Promise<DriveSyncFile | null> => {
+    const q = encodeURIComponent(`name='${fileName}' and trashed=false`);
+    const url = `${DRIVE_FILES}?q=${q}&spaces=drive&fields=${encodeURIComponent(`files(${SYNC_FIELDS})`)}`;
+    const res = await fetchFn(url, { headers: await auth() });
+    if (!res.ok) throw new Error(t('Drive answered {status}', { status: res.status }));
+    const body = await res.json() as { files?: DriveSyncFile[] };
+    return body.files?.[0] ?? null;
+  };
+
+  const head = async (): Promise<SnapshotMeta | null> => {
+    const f = await findFile();
+    return f ? driveMeta(f, 0) : null;
+  };
+
+  const get = async (): Promise<{ bytes: Uint8Array; meta: SnapshotMeta } | null> => {
+    const f = await findFile();
+    if (!f) return null;
+    const res = await fetchFn(`${DRIVE_FILES}/${encodeURIComponent(f.id)}?alt=media`, { headers: await auth() });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(t('Drive answered {status}', { status: res.status }));
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    return { bytes, meta: driveMeta(f, bytes.length) };
+  };
+
+  const put = async (bytes: Uint8Array): Promise<SnapshotMeta> => {
+    const existing = await findFile();
+    const fields = encodeURIComponent(SYNC_FIELDS);
+    let res: Response;
+    if (existing) {
+      // Update the existing file's content (uploadType=media, PATCH).
+      res = await fetchFn(`${DRIVE_UPLOAD}/${encodeURIComponent(existing.id)}?uploadType=media&fields=${fields}`, {
+        method: 'PATCH',
+        headers: { ...(await auth()), 'Content-Type': 'application/octet-stream' },
+        body: bytes as unknown as BodyInit,
+      });
+    } else {
+      // Create it (multipart: the name metadata + the bytes).
+      const boundary = `lolly-sync-${crypto.getRandomValues(new Uint32Array(2)).join('')}`;
+      res = await fetchFn(`${DRIVE_UPLOAD}?uploadType=multipart&fields=${fields}`, {
+        method: 'POST',
+        headers: { ...(await auth()), 'Content-Type': `multipart/related; boundary=${boundary}` },
+        body: buildMultipart({ name: fileName, mimeType: 'application/octet-stream' }, 'application/octet-stream', bytes, boundary) as unknown as BodyInit,
+      });
+    }
+    if (!res.ok) throw new Error(t('Drive upload failed ({status})', { status: res.status }));
+    return driveMeta(await res.json() as DriveSyncFile, bytes.length);
+  };
+
+  const canSyncSilently = async (): Promise<boolean> => {
+    if (isTauriShell()) return !!cachedToken(KIND) || !!(await getConnection(KIND))?.refreshToken;
+    return !!(cached && cached.expiresAt > Date.now());   // web: only after a session sign-in
+  };
+
+  return { kind: KIND, head, get, put, canSyncSilently };
 }
