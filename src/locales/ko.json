@@ -3664,5 +3664,10 @@
   "← All team projects": "← 모든 팀 프로젝트",
   "✓ Added": "✓ 추가됨",
   "✓ Found {n} tools at {base}.": "✓ {base}에서 도구 {n}개를 찾았어요.",
-  "＋ New project…": "＋ 새 프로젝트…"
+  "＋ New project…": "＋ 새 프로젝트…",
+  "Imported from": "가져온 원본",
+  "Imported": "가져온 날짜",
+  "Copyright": "저작권",
+  "Captured": "촬영 날짜",
+  "Keywords": "키워드"
 }

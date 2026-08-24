@@ -1121,10 +1121,18 @@ async function renderSequenceAuthored(
   // at the origin. Object-clip Video / Sequence Studio docs carry no frameScene layer,
   // so they keep the stageEl.offsetWidth path byte-for-byte.
   const frameScene0 = stage.layers.find((l) => l.frameScene && l.rect.w > 0 && l.rect.h > 0);
-  const nativeW = frameScene0 ? frameScene0.rect.w : Math.max(1, stageEl.offsetWidth || 1920);
-  const nativeH = frameScene0 ? frameScene0.rect.h : Math.max(1, stageEl.offsetHeight || 1080);
   const wantW = Number(opts.width);
   const wantH = Number(opts.height);
+  // Frames mode: the output frame is the CALLER'S requested size when given - the
+  // export bar mirrors the artboard under the playhead (plans/141 WP-B/C) - falling
+  // back to the first timed frame's own box. Every slide then contain-fits into it
+  // via normalizeFrameScene: a different-sized artboard letterboxes, never stretches.
+  const nativeW = frameScene0
+    ? (Number.isFinite(wantW) && wantW > 0 ? Math.round(wantW) : frameScene0.rect.w)
+    : Math.max(1, stageEl.offsetWidth || 1920);
+  const nativeH = frameScene0
+    ? (Number.isFinite(wantH) && wantH > 0 ? Math.round(wantH) : frameScene0.rect.h)
+    : Math.max(1, stageEl.offsetHeight || 1080);
   // Even dimensions: H.264 chroma subsampling refuses an odd width or height. The
   // rounding happens BEFORE the scale is derived, so an odd requested width is
   // resampled to fit rather than losing its last pixel column of content.

@@ -44,6 +44,7 @@ import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { backHomeHtml, mountBackPill } from '../components/back-pill.ts';
 import { mountHomeFab } from '../components/home-fab.ts';
 import { mountThemeFab } from '../components/theme-toggle.ts';
+import { mountProfileFab } from '../components/profile-menu.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 import type { UserFontsHost } from '../user-fonts.ts';
 import type { EmbeddedFont, EmbeddedImage, EmbeddedAttachment, ExtractedVector } from './pdf-import.ts';
@@ -572,6 +573,7 @@ export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promis
   mountBackPill(viewEl);
   mountHomeFab(viewEl);
   mountThemeFab(viewEl.querySelector('.gallery-topright'), host);
+  mountProfileFab(viewEl.querySelector('.gallery-topright'), host);
   attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
 
   const drop = viewEl.querySelector<HTMLElement>('[data-drop]')!;

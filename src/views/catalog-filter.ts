@@ -73,9 +73,13 @@ export function buildSearchHaystack(
   const index = new Map<string, string>();
   for (const a of assets) {
     const tags = ((a.meta?.tags as string[] | undefined) ?? []).join(' ');
+    // A photo's own embedded keywords, captured at ingest (plans/144 Wave 5:
+    // find your photos by what THEY say they are, not just what you named them).
+    const prov = a.meta?.provenance as { metaDigest?: { keywords?: string } } | undefined;
+    const keywords = prov?.metaDigest?.keywords ?? '';
     index.set(
       a.id,
-      fold(`${String(a.meta?.name ?? '')} ${a.id} ${tags} ${categoryOf(a)} ${a.format ?? a.type}`),
+      fold(`${String(a.meta?.name ?? '')} ${a.id} ${tags} ${keywords} ${categoryOf(a)} ${a.format ?? a.type}`),
     );
   }
   return index;

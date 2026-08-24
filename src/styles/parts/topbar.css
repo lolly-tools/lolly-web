@@ -221,7 +221,8 @@
    they appear across views. Views with their OWN top-right idiom (Ask, Colour
    Lab) skin these locally instead and never hit these rules. */
 .home-fab,
-.theme-fab {
+.theme-fab,
+.profile-fab {   /* the profile quick link + mobile menu trigger (profile-menu.ts mountProfileFab) */
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -236,7 +237,8 @@
   cursor: pointer;
 }
 .home-fab svg,
-.theme-fab svg { width: calc(20px * var(--a11y-fs)); height: calc(20px * var(--a11y-fs)); }
+.theme-fab svg,
+.profile-fab svg { width: calc(20px * var(--a11y-fs)); height: calc(20px * var(--a11y-fs)); }
 
 .lang-menu {
   position: fixed;

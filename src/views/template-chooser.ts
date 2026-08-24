@@ -26,11 +26,14 @@
  *
  * House UI rules honoured: Escape closes; focus is trapped and lands in the
  * search field; tiles are rounded with a neutral border (no accent-coloured
- * border, no dashed border - dashed is reserved for drop areas); strings are
- * English-only (this is a pre-i18n on-ramp).
+ * border, no dashed border - dashed is reserved for drop areas). Chrome strings
+ * go through t() (they became mid-session UI with plans/142 WP-1); template
+ * names/descriptions/categories are authored metadata and stay as written until
+ * the template i18n sidecar ships.
  */
 
 import '../styles/template-chooser.css'; // async CSS chunk (lazy view - not on the landing)
+import { t, tRaw } from '../i18n.ts';
 import { escapeHtml } from '../lib/html.ts';
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
 import { icon } from '../lib/icons.ts';
@@ -44,6 +47,17 @@ import type { HostV1 } from '@lolly-tools/core/host-v1';
  * <tid>.json) and is FETCHED ON DEMAND (preview render + select). For a metadata-only
  * entry `values` is `{}` - fetchTemplateValues() supplies the real seed lazily.
  */
+/** A template's curated variant (plans/142): a values OVERLAY merged over the
+ *  template's base `values` (shallow, preset wins). `values` is `{}` for a
+ *  metadata-only entry off the synced index - the overlay rides the template's
+ *  external file and is read with it. */
+export interface TemplatePreset {
+  id: string;
+  name: string;
+  description?: string;
+  values: Record<string, InputValue>;
+}
+
 export interface TemplateVariant {
   id: string;
   name: string;
@@ -51,6 +65,31 @@ export interface TemplateVariant {
   category?: string;
   thumb?: string;
   values: Record<string, InputValue>;
+  presets?: TemplatePreset[];
+}
+
+/** Narrow an unknown `presets` array (template file, index metadata, or inline
+ *  manifest) to the shape above - malformed entries drop, first id wins. */
+function parsePresets(raw: unknown): TemplatePreset[] {
+  if (!Array.isArray(raw)) return [];
+  const out: TemplatePreset[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const p = item as Record<string, unknown>;
+    if (typeof p.id !== 'string' || !p.id || seen.has(p.id)) continue;
+    if (typeof p.name !== 'string' || !p.name) continue;
+    seen.add(p.id);
+    out.push({
+      id: p.id,
+      name: p.name,
+      description: typeof p.description === 'string' ? p.description : undefined,
+      values: p.values && typeof p.values === 'object' && !Array.isArray(p.values)
+        ? (p.values as Record<string, InputValue>)
+        : {},
+    });
+  }
+  return out;
 }
 
 /**
@@ -63,16 +102,38 @@ export interface TemplateVariant {
  * and the reserved `?template=<id>` launcher.
  */
 export async function fetchTemplateValues(toolId: string, tid: string): Promise<Record<string, InputValue> | null> {
+  const f = await fetchTemplateFile(toolId, tid);
+  return f?.values ?? null;
+}
+
+/**
+ * Fetch one template's external file whole: the base `values` plus its `presets`
+ * overlays (plans/142). Same failure contract as fetchTemplateValues - null, never
+ * a throw. The chooser's select path and the `?template=&preset=` launcher both
+ * need the presets, so the file is read once and shared.
+ */
+export async function fetchTemplateFile(toolId: string, tid: string): Promise<{ values: Record<string, InputValue>; presets: TemplatePreset[] } | null> {
   try {
     const { instanceFetch, instancePath } = await import('../lib/instance.ts');
     const resp = await instanceFetch(instancePath(`/tools/${encodeURIComponent(toolId)}/templates/${encodeURIComponent(tid)}.json`));
     if (!resp.ok) return null;
-    const data = await resp.json() as { values?: unknown };
+    const data = await resp.json() as { values?: unknown; presets?: unknown };
     const v = data?.values;
-    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, InputValue>) : null;
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+    return { values: v as Record<string, InputValue>, presets: parsePresets(data?.presets) };
   } catch {
     return null;
   }
+}
+
+/** The seed for `?template=<tid>[&preset=<pid>]`: the template base merged with the
+ *  named preset's overlay (shallow, preset wins). An unknown preset id applies the
+ *  base alone - a stale link still opens something sensible. */
+export async function fetchTemplateSeed(toolId: string, tid: string, presetId?: string | null): Promise<Record<string, InputValue> | null> {
+  const f = await fetchTemplateFile(toolId, tid);
+  if (!f) return null;
+  const overlay = presetId ? f.presets.find(p => p.id === presetId)?.values : undefined;
+  return overlay && Object.keys(overlay).length ? { ...f.values, ...overlay } : f.values;
 }
 
 /**
@@ -95,6 +156,7 @@ export function parseTemplates(raw: unknown): TemplateVariant[] {
       ? (t.values as Record<string, InputValue>)
       : {};
     seen.add(t.id);
+    const presets = parsePresets(t.presets);
     out.push({
       id: t.id,
       name: t.name,
@@ -102,15 +164,20 @@ export function parseTemplates(raw: unknown): TemplateVariant[] {
       category: typeof t.category === 'string' && t.category ? t.category : undefined,
       thumb: typeof t.thumb === 'string' && t.thumb ? t.thumb : undefined,
       values,
+      ...(presets.length ? { presets } : {}),
     });
   }
   return out;
 }
 
-/** Look up one template's seed by id (for the reserved `?template=<id>` path). */
-export function templateValuesById(raw: unknown, id: string): Record<string, InputValue> | null {
-  const found = parseTemplates(raw).find(t => t.id === id);
-  return found ? found.values : null;
+/** Look up one template's seed by id (the inline-manifest fallback for the reserved
+ *  `?template=<id>` path). With `presetId`, the named preset's overlay is merged over
+ *  the base (shallow, preset wins); an unknown preset id applies the base alone. */
+export function templateValuesById(raw: unknown, id: string, presetId?: string | null): Record<string, InputValue> | null {
+  const found = parseTemplates(raw).find(v => v.id === id);
+  if (!found) return null;
+  const overlay = presetId ? found.presets?.find(p => p.id === presetId)?.values : undefined;
+  return overlay && Object.keys(overlay).length ? { ...found.values, ...overlay } : found.values;
 }
 
 // A neutral glyph per template, chosen from the category keyword so a poster reads
@@ -152,6 +219,9 @@ function whenIdle(timeout = 1000): Promise<void> {
 
 interface ChooserOpts {
   toolName: string;
+  /** Header override - the fresh-open default is "Start <toolName>"; the mid-session
+   *  re-entry (plans/142 WP-1) passes its own, e.g. "New from template". */
+  title?: string;
   /** The tool id - needed to fetch each template's external values file. */
   toolId: string;
   templates: TemplateVariant[];
@@ -198,56 +268,73 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
     };
     try {
 
-    const byId = new Map<string, TemplateVariant>(opts.templates.map(t => [t.id, t]));
+    const byId = new Map<string, TemplateVariant>(opts.templates.map(v => [v.id, v]));
 
-    // Memoised values seed per template. An inline entry that already carries a non-empty
-    // `values` (the optional inline-fallback shape) is used verbatim; otherwise the seed is
-    // fetched once from the external file and cached, so the preview render and a later
-    // select share a single fetch. Resolves null on failure → the caller falls back to a
-    // blank/default open.
-    const valuesById = new Map<string, Promise<Record<string, InputValue> | null>>();
-    const getValues = (id: string): Promise<Record<string, InputValue> | null> => {
-      const cached = valuesById.get(id);
+    // Memoised whole-file per template: the base `values` seed PLUS its preset
+    // overlays (plans/142). An inline entry that already carries a non-empty
+    // `values` (the inline-fallback shape, incl. user templates) is used verbatim;
+    // otherwise the external file is fetched once, and the preview render, a tile
+    // select and a preset chip all share that single fetch. Resolves null on
+    // failure → the caller falls back to a blank/default open.
+    type TplFile = { values: Record<string, InputValue>; presets: TemplatePreset[] };
+    const fileById = new Map<string, Promise<TplFile | null>>();
+    const getFile = (id: string): Promise<TplFile | null> => {
+      const cached = fileById.get(id);
       if (cached) return cached;
-      const inline = byId.get(id)?.values;
+      const entry = byId.get(id);
+      const inline = entry?.values;
       const p = inline && Object.keys(inline).length
-        ? Promise.resolve(inline)
-        : fetchTemplateValues(opts.toolId, id);
-      valuesById.set(id, p);
+        ? Promise.resolve({ values: inline, presets: entry?.presets ?? [] })
+        : fetchTemplateFile(opts.toolId, id);
+      fileById.set(id, p);
       return p;
     };
+    const getValues = (id: string): Promise<Record<string, InputValue> | null> =>
+      getFile(id).then(f => f?.values ?? null);
 
     // Distinct categories (tags), first-seen order - these become the filter chips. Every
     // template lives in ONE grid; a chip narrows it, so there are no per-category sections.
     const cats: string[] = [];
-    for (const t of opts.templates) { const c = t.category; if (c && !cats.includes(c)) cats.push(c); }
+    for (const v of opts.templates) { const c = v.category; if (c && !cats.includes(c)) cats.push(c); }
 
-    const tileHtml = (t: TemplateVariant): string => {
+    const tileHtml = (v: TemplateVariant): string => {
       // The media slot starts as the authored thumb (if any) or a category glyph; when a
       // host + formats are supplied, renderPreviews() swaps in a live-rendered <img>.
-      const media = t.thumb
-        ? `<img class="tmpl-chooser-tile-thumb" src="${escapeHtml(t.thumb)}" alt="" loading="lazy">`
-        : `<span class="tmpl-chooser-tile-icon" aria-hidden="true">${icon(glyphFor(t), { size: 22 })}</span>`;
-      const search = `${t.name} ${t.description ?? ''} ${t.category ?? ''}`.toLowerCase();
-      return `<button type="button" class="tmpl-chooser-tile" data-template-id="${escapeHtml(t.id)}" data-category="${escapeHtml(t.category ?? '')}" data-search="${escapeHtml(search)}">
+      const media = v.thumb
+        ? `<img class="tmpl-chooser-tile-thumb" src="${escapeHtml(v.thumb)}" alt="" loading="lazy">`
+        : `<span class="tmpl-chooser-tile-icon" aria-hidden="true">${icon(glyphFor(v), { size: 22 })}</span>`;
+      const search = `${v.name} ${v.description ?? ''} ${v.category ?? ''} ${(v.presets ?? []).map(p => p.name).join(' ')}`.toLowerCase();
+      // Preset chips (plans/142 WP-3): the tile itself picks the template BASE; a chip
+      // picks base + that preset's overlay. Chips are buttons INSIDE the tile button -
+      // invalid nesting is avoided by making the tile a div with role=button below.
+      const chips = v.presets?.length
+        ? `<span class="tmpl-chooser-presets" role="group" aria-label="${escapeHtml(t('Variants'))}">${v.presets.map(p =>
+            `<button type="button" class="tmpl-chooser-preset" data-preset-id="${escapeHtml(p.id)}"${p.description ? ` title="${escapeHtml(p.description)}"` : ''}>${escapeHtml(p.name)}</button>`).join('')}</span>`
+        : '';
+      // A tile WITH chips renders as a div[role=button] (a <button> cannot contain
+      // buttons); a chipless tile stays a real <button> for free keyboard semantics.
+      const tag = chips ? 'div' : 'button';
+      const btnAttrs = chips ? ' role="button" tabindex="0"' : ' type="button"';
+      return `<${tag} class="tmpl-chooser-tile" data-template-id="${escapeHtml(v.id)}" data-category="${escapeHtml(v.category ?? '')}" data-search="${escapeHtml(search)}"${btnAttrs}>
         <span class="tmpl-chooser-tile-media">${media}</span>
-        <span class="tmpl-chooser-tile-name">${escapeHtml(t.name)}</span>
-        ${t.description ? `<span class="tmpl-chooser-tile-desc">${escapeHtml(t.description)}</span>` : ''}
-      </button>`;
+        <span class="tmpl-chooser-tile-name">${escapeHtml(v.name)}</span>
+        ${v.description ? `<span class="tmpl-chooser-tile-desc">${escapeHtml(v.description)}</span>` : ''}
+        ${chips}
+      </${tag}>`;
     };
 
     // The always-first "Blank canvas" tile sits in its own leading group.
     const blankTile = `<button type="button" class="tmpl-chooser-tile" data-template-id="${BLANK_ID}" data-search="blank canvas empty scratch">
       <span class="tmpl-chooser-tile-icon" aria-hidden="true">${icon('filePlus', { size: 22 })}</span>
-      <span class="tmpl-chooser-tile-name">Blank canvas</span>
-      <span class="tmpl-chooser-tile-desc">Start from scratch.</span>
+      <span class="tmpl-chooser-tile-name">${escapeHtml(t('Blank canvas'))}</span>
+      <span class="tmpl-chooser-tile-desc">${escapeHtml(t('Start from scratch.'))}</span>
     </button>`;
 
     // Tag filters - "All" plus one chip per category. Only shown when there's more than one
     // category to choose between; a single-category set has nothing to filter.
     const filtersHtml = cats.length > 1 ? `
-      <div class="tmpl-chooser-filters" role="group" aria-label="Filter templates by type">
-        <button type="button" class="tmpl-chooser-filter is-active" data-filter="" aria-pressed="true">All</button>
+      <div class="tmpl-chooser-filters" role="group" aria-label="${escapeHtml(t('Filter templates by type'))}">
+        <button type="button" class="tmpl-chooser-filter is-active" data-filter="" aria-pressed="true">${escapeHtml(t('All'))}</button>
         ${cats.map(c => `<button type="button" class="tmpl-chooser-filter" data-filter="${escapeHtml(c)}" aria-pressed="false">${escapeHtml(c)}</button>`).join('')}
       </div>` : '';
 
@@ -255,14 +342,14 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
       <div class="tmpl-chooser-backdrop" aria-hidden="true"></div>
       <div class="tmpl-chooser-panel" role="dialog" aria-modal="true" aria-labelledby="tmpl-chooser-title">
         <header class="tmpl-chooser-header">
-          <h2 id="tmpl-chooser-title">Start ${escapeHtml(opts.toolName)}</h2>
-          <input type="search" class="tmpl-chooser-search" placeholder="Search templates…" autocomplete="off" spellcheck="false" aria-label="Search templates">
-          <button type="button" class="tmpl-chooser-close" aria-label="Close">×</button>
+          <h2 id="tmpl-chooser-title">${escapeHtml(opts.title ?? tRaw('Start {tool}', { tool: opts.toolName }))}</h2>
+          <input type="search" class="tmpl-chooser-search" placeholder="${escapeHtml(t('Search templates…'))}" autocomplete="off" spellcheck="false" aria-label="${escapeHtml(t('Search templates'))}">
+          <button type="button" class="tmpl-chooser-close" aria-label="${escapeHtml(t('Close'))}">×</button>
         </header>
         <div class="tmpl-chooser-body">
           ${filtersHtml}
           <div class="tmpl-chooser-grid">${blankTile}${opts.templates.map(tileHtml).join('')}</div>
-          <p class="tmpl-chooser-empty" hidden>No templates match “<span data-empty-term></span>”.</p>
+          <p class="tmpl-chooser-empty" hidden>${tRaw('No templates match “{term}”.', { term: '<span data-empty-term></span>' })}</p>
         </div>
       </div>
     `;
@@ -304,16 +391,36 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
       if (e.key === 'Escape') { e.preventDefault(); finish({}); }
     });
 
-    root.querySelector('.tmpl-chooser-body')?.addEventListener('click', e => {
-      const tile = (e.target as HTMLElement).closest<HTMLElement>('[data-template-id]');
-      if (!tile) return;
+    const pickTile = (tile: HTMLElement, presetId?: string): void => {
       const id = tile.dataset.templateId!;
       if (id === BLANK_ID) { finish({}); return; }
       // Reflect the fetch in the tile so a slow network doesn't read as a dead click.
       tile.setAttribute('aria-busy', 'true');
-      // Fetch (or reuse) the template's external values seed, THEN resolve. A null result
+      // Fetch (or reuse) the template's external file, THEN resolve: the base seed,
+      // or base + the picked preset's overlay (shallow, preset wins). A null file
       // (unknown id / network failure) falls back to a blank open, exactly like Escape.
-      void getValues(id).then(values => finish(values ?? {}));
+      void getFile(id).then(f => {
+        if (!f) { finish({}); return; }
+        const overlay = presetId ? f.presets.find(p => p.id === presetId)?.values : undefined;
+        finish(overlay && Object.keys(overlay).length ? { ...f.values, ...overlay } : f.values);
+      });
+    };
+    root.querySelector('.tmpl-chooser-body')?.addEventListener('click', e => {
+      const tile = (e.target as HTMLElement).closest<HTMLElement>('[data-template-id]');
+      if (!tile) return;
+      const chip = (e.target as HTMLElement).closest<HTMLElement>('[data-preset-id]');
+      pickTile(tile, chip?.dataset.presetId);
+    });
+    // div[role=button] tiles (the ones carrying preset chips) need their keyboard
+    // activation wired by hand; real <button> tiles fire click natively.
+    root.querySelector('.tmpl-chooser-body')?.addEventListener('keydown', ev => {
+      const e = ev as KeyboardEvent;
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const el = e.target as HTMLElement;
+      if (el.matches('[data-preset-id]')) return;               // a chip is a real button
+      if (!el.matches('.tmpl-chooser-tile[role="button"]')) return;
+      e.preventDefault();
+      pickTile(el);
     });
 
     // Live filter: the search term AND the active tag chip, over the one grid. Blank always
@@ -413,8 +520,8 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
       // callback was the ONLY producer for the queue). There are only a handful of templates,
       // and the serial drain renders one at a time, so this cannot stampede the engine.
       // enqueue() dedups via `queued` and skips authored-thumb tiles, so it can't double-render.
-      for (const t of opts.templates) {
-        if (t.id !== BLANK_ID) enqueue(t.id);
+      for (const v of opts.templates) {
+        if (v.id !== BLANK_ID) enqueue(v.id);
       }
 
       // IntersectionObserver stays as an off-screen prioritisation nicety - with the eager

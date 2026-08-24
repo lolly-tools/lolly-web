@@ -210,7 +210,7 @@ export function mountUploadDropzone(container: HTMLElement, host: PickerHost, op
         // file, never the one the loop started with (offerTrim's doc comment says why).
         const answered = await offerTrim(file);
         if (!answered) continue;   // backed out of the card: this file is skipped
-        await storeUserUpload(host, answered);
+        await storeUserUpload(host, answered, { sourceHint: 'drop' });
         stored++;
       } catch (err) {
         host.log('error', 'Upload failed', { file: file.name, error: String(err) });

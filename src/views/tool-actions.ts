@@ -10,7 +10,7 @@
  * This module never value-imports from ./tool.ts (that would create a runtime
  * cycle) - it only `import type`s the shell-side aliases it needs from there.
  */
-import { serializeUrlState, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS, composeSong, generatedSongSpec, HDR_DEFAULTS, preflight, PRINT_MARK_FORMATS, SEPARATING_FORMATS, computeCost, parseRateCard, isRateCardError, validateRateCard, isNonAffineTransform, selectFramePage, frameFilterApplies, LEXICON_VERSION } from '@lolly/engine';
+import { serializeUrlState, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS, composeSong, generatedSongSpec, HDR_DEFAULTS, preflight, PRINT_MARK_FORMATS, SEPARATING_FORMATS, computeCost, parseRateCard, isRateCardError, validateRateCard, isNonAffineTransform, selectFramePage, frameFilterApplies, LEXICON_VERSION, deriveExportFilename } from '@lolly/engine';
 import type {
   Fact, PreflightInput, PreflightJob, PreflightManifest, PreflightSwatch, StageFacts, Count, CostWorking,
 } from '@lolly/engine';
@@ -18,7 +18,6 @@ import type { MoneyContext } from '@lolly-tools/core';
 import type { Profile } from '@lolly-tools/core/host-v1';
 import { escape } from '../utils.js';
 import { t, tRaw } from '../i18n.ts';
-import { confirmDialog } from '../components/confirm-dialog.ts';
 import { icon } from '../lib/icons.ts';
 import { navigateTo } from '../nav.js';
 import { announce } from '../a11y.js';
@@ -79,6 +78,20 @@ import { jellyActive } from '../lib/jelly.ts';
 // for every other tool: no marker → querySelector null → the canvas itself is used.
 export const exportTargetNode = (c: HTMLElement | null): HTMLElement | null =>
   c?.querySelector<HTMLElement>('[data-export-root]') ?? c;
+
+// Flat single-image paths (copy, send-to, thumbnails): with artboards in the doc,
+// capture the ACTIVE artboard's page rather than the whole canvas - the canvas rect
+// is just the pasteboard there, and would leak scratch boxes and sibling boards into
+// the shot (plans/142 WP-C). free-canvas stamps the active artboard's id on the
+// canvas (`data-fc-active-frame`). Multi-page paths (PDF / PPTX / the still
+// fan-out) keep exportTargetNode: their walkers need every [data-pdf-page].
+export const flatExportNode = (c: HTMLElement | null): HTMLElement | null => {
+  const root = c?.querySelector<HTMLElement>('[data-export-root]');
+  if (root) return root;
+  const fid = c?.dataset.fcActiveFrame;
+  const esc = (s: string): string => (typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(s) : s);
+  return (fid ? c!.querySelector<HTMLElement>(`[data-pdf-page][data-frame-id="${esc(fid)}"]`) : null) ?? c;
+};
 
 /** Structural mirror of the engine MediaFrame (not re-exported from the engine index) - the
  *  RGBA frame host.media.renderFrameAt hands the tool's onFrame during a deterministic export. */
@@ -352,6 +365,42 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     }
   }
 
+  // S2 (plans/140): Save no longer exits the tool. performSave leaves its button
+  // disabled reading "Saved" for the old navigate-away flow, so hold that as the
+  // confirmation, restore the button, and offer the library as a toast action
+  // instead of a forced navigation.
+  function settleSaveButton(btn: HTMLButtonElement): void {
+    const label = btn.querySelector<HTMLElement>('[data-save-label]') ?? btn;
+    setTimeout(() => {
+      label.textContent = 'Save';
+      btn.toggleAttribute('disabled', false);
+      delete btn.dataset.saving;
+    }, 1500);
+    void import('../lib/undo-toast.ts').then(({ showUndoToast }) =>
+      showUndoToast({ message: t('Saved'), actionLabel: t('Open Projects'), undo: () => navigateTo('#/p'), duration: 6000 }));
+  }
+
+  // plans/142 W2 (Andy's call): the quick Save follows the Save dialog's lead -
+  // an UNFILED session files into the last project a dialog save picked, so a
+  // sitting's outputs stop scattering to the library root. A session already
+  // filed somewhere keeps its folder (an explicit folderId on re-save MOVES it,
+  // which no quick save may ever do), and a deliberate "No project" pick in the
+  // dialog clears the memory, so that choice is followed too. Best-effort: any
+  // failure saves exactly as before.
+  async function quickSaveFolder(): Promise<string | null> {
+    try {
+      const { lastPickedFolder } = await import('../lib/save-dialog.ts');
+      const remembered = lastPickedFolder();
+      if (!remembered) return null;
+      if (activeSlot) {
+        const { createFolderStore } = await import('../folders.js');
+        const store = createFolderStore(host as unknown as Parameters<typeof createFolderStore>[0]);
+        if (store.folderOfRef(await store.list(), activeSlot)) return null;
+      }
+      return remembered;
+    } catch { return null; }
+  }
+
   if (manifest.render.export === false) {
     if (!el) return;
     const hasInputs = (manifest.inputs?.length ?? 0) > 0;
@@ -363,9 +412,10 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     if (!hasInputs || optedOut) { el.innerHTML = ''; return {}; }
     el.innerHTML = `<div class="export-action-buttons">${saveBtnHtml()}${copyUrlBtn}</div>`;
     el.querySelector<HTMLButtonElement>('[data-action="save"]')!.addEventListener('click', async function (this: HTMLButtonElement) {
-      if (await performSave(this)) setTimeout(() => { navigateTo(returnTo); }, 800);
+      const qsFolder = await quickSaveFolder();
+      if (await performSave(this, qsFolder ? { folderId: qsFolder } : undefined)) settleSaveButton(this);
     });
-    return { save: performSave };
+    return { save: performSave, getSlot: () => activeSlot };
   }
 
   const actions    = manifest.render.actions ?? ['copy', 'download', 'save'];
@@ -469,6 +519,13 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const ICON_W = `<svg class="dim-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="7 8 3 12 7 16"/><polyline points="17 8 21 12 17 16"/><line x1="4" y1="12" x2="20" y2="12"/></svg>`;
   const ICON_H = `<svg class="dim-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="8 7 12 3 16 7"/><polyline points="8 17 12 21 16 17"/><line x1="12" y1="4" x2="12" y2="20"/></svg>`;
 
+  // Content-derived auto filename (plans/140 S1): render.filenameFrom names the
+  // input ids whose live values name the file ("ana-kovac", "suse-com-events").
+  // Read fresh at download time so the name follows the inputs; falls back to
+  // the tool name. An explicit value typed into the filename field always wins.
+  const autoFilename = (): string =>
+    deriveExportFilename(manifest, Object.fromEntries(runtime.getModel().map(i => [i.id, i.value]))) || manifest.name;
+
   // Tier 1 - filename · format. The format selector is the highest-priority
   // control; the filename rides alongside it as the natural "name.format" pair.
   //
@@ -483,7 +540,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const filenameRow = `
       <div class="filename-extension">
         <input type="text" class="export-filename" data-action="filename"
-              value="${escape(exportDefaults.filename ?? manifest.name)}" placeholder="filename" spellcheck="false">
+              value="${escape(exportDefaults.filename ?? '')}" placeholder="${escape(autoFilename())}" spellcheck="false">
         ${formats.length > 1 ? `
           <select data-action="format" aria-label="Export format">
             ${formatOptions}
@@ -2258,6 +2315,48 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     };
   }
 
+  // ── Artboards are the size truth; the bar mirrors the ACTIVE artboard ────────
+  // (plans/142 WP-B). free-canvas fires `fc-artboard` (bubbling from the canvas)
+  // whenever the answer changes, carrying the selected artboard (falling back to
+  // the primary one) and the artboard under the sequence playhead. The bar shows
+  // the one the chosen format will export - still formats follow the selection,
+  // animated formats follow the playhead (the video's output frame) - and editing
+  // the bar resizes that artboard alone: a w/h edit never moves an origin, so
+  // members stay put. A no-frames doc keeps the single-artboard behaviour (the
+  // canvas follows the dims).
+  const canvasCfg = (canvasBlocksInput as { canvas?: Record<string, unknown> } | undefined)?.canvas;
+  const canvasInputId = (canvasBlocksInput as { id?: string } | undefined)?.id;
+  const artFrameField = typeof canvasCfg?.frameField === 'string' ? canvasCfg.frameField : '';
+  interface ArtInfo { id: string; w: number; h: number }
+  let artActive: { sel: ArtInfo | null; timed: ArtInfo | null } | null = null;
+  const hasArtboards = (): boolean => !!(artActive && (artActive.sel || artActive.timed));
+  const artTarget = (): ArtInfo | null => {
+    if (!artActive) return null;
+    const fmt = formatEl?.value ?? formats[0] ?? '';
+    return (isAnimatedFmt(fmt) && artActive.timed) ? artActive.timed : artActive.sel;
+  };
+  // Mirror-write: show the target artboard's size in the bar's current unit WITHOUT
+  // declaring a user size - no sizeUserSet, no URL churn, no canvas resize.
+  function reflectArtboardDims(): void {
+    const tgt = artTarget();
+    if (!tgt) return;
+    const wEl = el!.querySelector<HTMLInputElement>('[data-action="export-width"]');
+    const hEl = el!.querySelector<HTMLInputElement>('[data-action="export-height"]');
+    if (!wEl || !hEl) return;
+    const unit = dimUnit();
+    const disp = (px: number): string => unit === 'px'
+      ? String(Math.round(px))
+      : String(Math.round(px / toCssPx({ value: 1, unit: unit as Unit }) * 100) / 100);
+    wEl.value = disp(tgt.w);
+    hEl.value = disp(tgt.h);
+    refreshPreflight();
+  }
+  canvasEl?.addEventListener('fc-artboard', (e) => {
+    artActive = ((e as CustomEvent).detail as typeof artActive) ?? null;
+    reflectArtboardDims();
+  });
+  formatEl?.addEventListener('change', () => { if (hasArtboards()) reflectArtboardDims(); });
+
   // Preview the export aspect ratio on the canvas, then re-fit to the stage.
   function refreshCanvasPreview(): void {
     updateAspectWarning(); // first, so it reflects current fields even when dims are incomplete
@@ -2274,12 +2373,16 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     // fit already caps the on-screen size, so the clamp bought those editors nothing but
     // breakage. A fixed-canvas / carousel editor is NOT in this set: its canvas is owned
     // elsewhere (native-locked connector geometry, or the page strip) and keeps the clamp.
-    const previewScale = artboardFollowsDims
-      ? 1
-      : Math.min(1, manifest.render.width / w!, manifest.render.height / h!);
-    canvasEl!.style.width  = Math.round(w! * previewScale) + 'px';
-    canvasEl!.style.height = Math.round(h! * previewScale) + 'px';
-    fitCanvas();
+    // Framed docs: the artboards own their geometry (plans/142) - the canvas rect
+    // is just the pasteboard, so a bar edit must not resize it.
+    if (!hasArtboards()) {
+      const previewScale = artboardFollowsDims
+        ? 1
+        : Math.min(1, manifest.render.width / w!, manifest.render.height / h!);
+      canvasEl!.style.width  = Math.round(w! * previewScale) + 'px';
+      canvasEl!.style.height = Math.round(h! * previewScale) + 'px';
+      fitCanvas();
+    }
     // If the tool declares width/height inputs, sync dims so hooks can recompute layout.
     const model = runtime.getModel();
     const hasW = model.some(i => i.id === 'width');
@@ -2339,26 +2442,19 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     addScrubBehavior(inp, onDimChange, { format: v => `${v} ${dimUnit()}` });
   });
 
-  // ── Artboards are the size truth (plans/93 frame primitive) ──────────────────
-  // In a framed editor (Design with a `frame` field), the export dimensions are
-  // NOT an independent output size - editing them RESIZES ALL ARTBOARDS. On a committed
-  // change we WARN, then set every frame box to the new size and re-flow the artboards in a
-  // row (members move with their frame). A no-frames doc keeps the existing behaviour (the
-  // single artboard follows the dims). Cancel restores the fields to the artboards' size.
-  const canvasCfg = (canvasBlocksInput as { canvas?: Record<string, unknown> } | undefined)?.canvas;
-  const canvasInputId = (canvasBlocksInput as { id?: string } | undefined)?.id;
-  const artFrameField = typeof canvasCfg?.frameField === 'string' ? canvasCfg.frameField : '';
-  const artNum = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+  // A committed bar edit resizes the ACTIVE artboard only (plans/142 WP-B replaced
+  // the old resize-ALL-artboards confirm flow). Members stay put: a w/h edit never
+  // moves the frame origin. No artboards → return, the single-artboard path applies.
   let artResizing = false;
-  async function resizeArtboardsFromDims(): Promise<void> {
+  function resizeArtboardFromDims(): void {
     if (artResizing || !artFrameField || !canvasInputId || manifest.render.layout !== 'editor') return;
+    const tgt = artTarget();
+    if (!tgt) return; // no artboards → the single-artboard path applies
     const kindField = typeof canvasCfg?.kindField === 'string' ? canvasCfg.kindField : 'kind';
     const frameKind = typeof canvasCfg?.frameKind === 'string' ? canvasCfg.frameKind : 'frame';
     const idField = typeof canvasCfg?.idField === 'string' ? canvasCfg.idField : 'id';
-    const orderField = typeof canvasCfg?.orderField === 'string' ? canvasCfg.orderField : '';
-    const boxes = (runtime.getModel().find(i => i.id === canvasInputId)?.value as Array<Record<string, InputValue>> | undefined) ?? [];
-    const frames = boxes.filter(b => b && String(b[kindField]) === frameKind);
-    if (!frames.length) return; // no artboards → the single-artboard path applies
+    const wField = typeof canvasCfg?.wField === 'string' ? canvasCfg.wField : 'w';
+    const hField = typeof canvasCfg?.hField === 'string' ? canvasCfg.hField : 'h';
     const unit = dimUnit();
     const w = parseFloat(el!.querySelector<HTMLInputElement>('[data-action="export-width"]')?.value ?? '');
     const h = parseFloat(el!.querySelector<HTMLInputElement>('[data-action="export-height"]')?.value ?? '');
@@ -2366,43 +2462,20 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     const pxW = Math.round(unit === 'px' ? w : toCssPx({ value: w, unit: unit as Unit }));
     const pxH = Math.round(unit === 'px' ? h : toCssPx({ value: h, unit: unit as Unit }));
     if (pxW < 1 || pxH < 1) return;
-    if (frames.every(f => Math.round(artNum(f.w)) === pxW && Math.round(artNum(f.h)) === pxH)) return; // already this size
-
+    if (Math.round(tgt.w) === pxW && Math.round(tgt.h) === pxH) return; // already this size
+    const boxes = (runtime.getModel().find(i => i.id === canvasInputId)?.value as Array<Record<string, InputValue>> | undefined) ?? [];
     artResizing = true;
     try {
-      const ok = await confirmDialog({
-        title: t('Resize all artboards?'),
-        message: tRaw('This changes all {n} artboards to {w}×{h} px and lays them out in a row.', { n: String(frames.length), w: String(pxW), h: String(pxH) }),
-        confirmLabel: t('Resize all'),
-      });
-      if (!ok) { // artboards stay the truth - restore the fields to the current artboard size
-        setDims({ width: Math.round(artNum(frames[0]!.w)), height: Math.round(artNum(frames[0]!.h)), unit: 'px' });
-        return;
-      }
-      const GAP = 40;
-      const ordered = [...frames].sort((a, b) => (artNum(a[orderField]) - artNum(b[orderField])) || (artNum(a.x) - artNum(b.x)));
-      const patch = new Map<string, { x: number; y: number; w: number; h: number }>();
-      const delta = new Map<string, { dx: number; dy: number }>();
-      let runX = 0;
-      for (const f of ordered) {
-        patch.set(String(f[idField]), { x: runX, y: 0, w: pxW, h: pxH });
-        delta.set(String(f[idField]), { dx: runX - artNum(f.x), dy: 0 - artNum(f.y) });
-        runX += pxW + GAP;
-      }
-      const next = boxes.map(b => {
-        if (!b) return b;
-        const p = patch.get(String(b[idField]));
-        if (p) return { ...b, ...p };                                   // a frame → new size + row position
-        const d = delta.get(String(b[artFrameField] ?? ''));           // a member → move with its frame
-        return d ? { ...b, x: artNum(b.x) + d.dx, y: artNum(b.y) + d.dy } : b;
-      });
+      const next = boxes.map(b => (b && String(b[kindField]) === frameKind && String(b[idField]) === tgt.id)
+        ? { ...b, [wField]: pxW, [hField]: pxH }
+        : b);
       runtime.setInput(canvasInputId, next as unknown as InputValue);
     } finally { artResizing = false; }
   }
   ([
     el.querySelector<HTMLInputElement>('[data-action="export-width"]'),
     el.querySelector<HTMLInputElement>('[data-action="export-height"]'),
-  ]).forEach(inp => inp?.addEventListener('change', () => { void resizeArtboardsFromDims(); }));
+  ]).forEach(inp => inp?.addEventListener('change', () => { resizeArtboardFromDims(); }));
 
   // Apply a {width,height,unit} from a size-select option to the export-bar fields,
   // so choosing a size sets the actual exported page size. Refreshes the preview +
@@ -2496,7 +2569,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     const TEXT_FORMATS = new Set(['txt', 'md', 'markdown']);
     if (TEXT_FORMATS.has(fmt)) {
       playShutter();   // parallel capture feedback - writeText must stay in-gesture
-      const blob = await exportUnscaled(() => runtime.export(exportTargetNode(canvasEl), fmt, exportDims()));
+      const blob = await exportUnscaled(() => runtime.export(flatExportNode(canvasEl), fmt, exportDims()));
       await host.clipboard.writeText(await blob.text());
       return;
     }
@@ -2570,7 +2643,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     // it first (awaiting before write() loses the gesture and the browser silently
     // denies the write; deferring the blob inside the promise is the cross-browser
     // pattern that survives the ~shutter delay). One export feeds both paths.
-    const blobPromise = exportUnscaled(() => runtime.export(exportTargetNode(canvasEl), 'png', exportDims()), { shutter: true });
+    const blobPromise = exportUnscaled(() => runtime.export(flatExportNode(canvasEl), 'png', exportDims()), { shutter: true });
     if (navigator.clipboard?.write && window.ClipboardItem) {
       try {
         await navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise })]);
@@ -2814,7 +2887,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           ...printOpts(),   // bundled pdf / pdf-cmyk get marks & bleed; rasters ignore them
           palette: brandPalette,
           colorProfile: el!.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.value || DEFAULT_CMYK_CONDITION,
-          filename: el!.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() || manifest.name,
+          filename: el!.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() || autoFilename(),
           bundleFormats: formats.filter(f => ZIP_BUNDLE.has(f)),
           // Members re-enter renderFormat with these opts, so each stampable
           // bundled file gets its own credential; the zip container never does.
@@ -2831,7 +2904,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           })(),
         } : {}),
       };
-      const filename = el!.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() || manifest.name;
+      const filename = el!.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() || autoFilename();
       // The exact bytes handed to host.export.download - hashed into the export-
       // history record below so /verify can later match a file back to this device.
       let downloadedBlob: Blob | null = null;
@@ -3078,7 +3151,8 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   });
 
   el.querySelector<HTMLButtonElement>('[data-action="save"]')?.addEventListener('click', async function (this: HTMLButtonElement) {
-    if (await performSave(this)) setTimeout(() => { navigateTo(returnTo); }, 800);
+    const qsFolder = await quickSaveFolder();
+    if (await performSave(this, qsFolder ? { folderId: qsFolder } : undefined)) settleSaveButton(this);
   });
 
   // Cloud send destinations (the send-target seam). The card list is rebuilt
@@ -3115,9 +3189,13 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         ...exportDims(),
         ...(fmt === 'emf' && el!.querySelector<HTMLInputElement>('[data-action="emf-outline"]')?.checked ? { text: 'outline' as const } : {}),
       };
-      const blob = await exportUnscaled(() => runtime.export(exportTargetNode(canvasEl), fmt, opts), { shutter: true });
+      // Multi-page/animated sends keep the whole canvas (their walkers need every
+      // [data-pdf-page]); flat single-image sends target the active artboard.
+      const multiPage = fmt === 'pdf' || fmt === 'pdf-cmyk' || fmt === 'pptx' || fmt === 'docx' || fmt === 'odt' || isAnimatedFmt(fmt);
+      const sendNode = multiPage ? exportTargetNode(canvasEl) : flatExportNode(canvasEl);
+      const blob = await exportUnscaled(() => runtime.export(sendNode, fmt, opts), { shutter: true });
       btn.textContent = t('Sending…');
-      const name = el!.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() || manifest.name;
+      const name = el!.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() || autoFilename();
       const out = await target.send({ bytes: new Uint8Array(await blob.arrayBuffer()), name, format: fmt, mime: blob.type });
       if (status) {
         status.innerHTML = out.url
@@ -3227,7 +3305,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // popup-close + tool-teardown paths silence an in-progress audio audition.
   // `sessionState` is the SAME snapshot a save writes, read (never written) by the beam
   // for its `__export_*` markers - the one place they exist outside this panel's DOM.
-  return { copy: performCopy, preview, save: performSave, setDims, setFormats, stopAudioPreview, sessionState: sessionSnapshot, dispose: disposeCostSlot };
+  return { copy: performCopy, preview, save: performSave, setDims, setFormats, stopAudioPreview, sessionState: sessionSnapshot, getSlot: () => activeSlot, dispose: disposeCostSlot };
 }
 
 // Adds scroll-to-change and click-drag-to-scrub to a number input.
@@ -3373,6 +3451,13 @@ async function captureThumbnail(manifest: ToolManifest, canvasEl: HTMLElement | 
   const firstPage = manifest.render.paged === true
     ? canvasEl?.querySelector<HTMLElement>('[data-pdf-page]') ?? null : null;
   if (firstPage) canvasEl = firstPage;
+  else {
+    // A framed doc's thumbnail is its ACTIVE artboard for the same reason - the whole
+    // canvas is pasteboard + scattered boards, squashed and half-empty as a tile
+    // (plans/142 WP-C). No frames, no export-root → flatExportNode returns canvasEl.
+    const flat = flatExportNode(canvasEl);
+    if (flat && flat !== canvasEl) canvasEl = flat;
+  }
 
   const nw = canvasEl?.offsetWidth  || manifest.render.width  || 600;
   const nh = canvasEl?.offsetHeight || manifest.render.height || 600;

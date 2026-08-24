@@ -120,6 +120,7 @@ import { playSfx } from '../lib/sfx.ts';
 import { backPillHtml, mountBackPill, resolveBackTarget } from '../components/back-pill.ts';
 import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
 import { mountThemeFab } from '../components/theme-toggle.ts';
+import { mountProfileFab } from '../components/profile-menu.ts';
 import { navigateTo } from '../nav.ts';
 
 /** The view container, which main.ts reads a teardown fn off (see navigate()). */
@@ -340,6 +341,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     // Light/dark/brand beside the escape - the studio is where you're shaping the
     // brand, so flipping the theme to check it in place belongs right here.
     mountThemeFab(viewEl.querySelector('.gallery-topright'), host);
+    mountProfileFab(viewEl.querySelector('.gallery-topright'), host);
   };
 
   // A locked catalog is authoritative - its brand (colours, fonts, radius) can't

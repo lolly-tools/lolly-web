@@ -3664,5 +3664,10 @@
   "← All team projects": "← Lahat ng team project",
   "✓ Added": "✓ Naidagdag",
   "✓ Found {n} tools at {base}.": "✓ Nakahanap ng {n} tool sa {base}.",
-  "＋ New project…": "＋ Bagong project…"
+  "＋ New project…": "＋ Bagong project…",
+  "Imported from": "In-import mula sa",
+  "Imported": "Na-import",
+  "Copyright": "Copyright",
+  "Captured": "Kinuha",
+  "Keywords": "Mga keyword"
 }

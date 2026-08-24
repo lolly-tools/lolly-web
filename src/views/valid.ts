@@ -49,6 +49,7 @@ import type { HostV1 } from '@lolly-tools/core/host-v1';
 import { backHomeHtml, mountBackPill } from '../components/back-pill.ts';
 import { mountHomeFab } from '../components/home-fab.ts';
 import { mountThemeFab } from '../components/theme-toggle.ts';
+import { mountProfileFab } from '../components/profile-menu.ts';
 // The pure verdict/scorecard model - no DOM, no CSS import, so it's importable (and
 // tested) standalone. See valid-verdict.ts's header for why this lives apart from the
 // rendering below.
@@ -179,6 +180,11 @@ function fact(label: string, value: unknown, icon: IconName): string {
 export function inputsDigestHtml(
   inputs: Record<string, string> | undefined,
   recreate?: { toolId: string; toolName: string; fileIndex: number },
+  /** The recorded tool NAME when it did not resolve against this build's index
+   *  (plans/143 V1): a verified Lolly file opened on another instance still gets
+   *  a door - an honest line plus the gallery - instead of a silent dead end at
+   *  the exact moment the file has made someone curious. */
+  missingTool?: string,
 ): string {
   const entries = inputs ? Object.entries(inputs).filter(([, v]) => v != null && v !== '') : [];
   if (!entries.length) return '';
@@ -189,7 +195,9 @@ export function inputsDigestHtml(
   }).join('');
   const cta = recreate ? `
       <a class="btn valid-recreate" style="margin-top:.65rem" href="#/tool/${escape(recreate.toolId)}"
-         data-recreate="${recreate.fileIndex}" data-recreate-tool="${escape(recreate.toolId)}">${t('Recreate with these settings in {tool}', { tool: recreate.toolName })}</a>` : '';
+         data-recreate="${recreate.fileIndex}" data-recreate-tool="${escape(recreate.toolId)}">${t('Recreate with these settings in {tool}', { tool: recreate.toolName })}</a>` : missingTool ? `
+      <p class="valid-recreate-absent" style="margin:.65rem 0 0;font-size:.9em;color:hsl(var(--muted-foreground))">${t('Made with the {tool} tool, which is not in this catalogue.', { tool: missingTool })}</p>
+      <a class="btn valid-recreate" style="margin-top:.5rem" href="/">${t('Explore the tools here')}</a>` : '';
   return `
     <div class="valid-inputs valid-panel">
       <h3>${svgIcon('sparkle')}<span>${t('Made from')}</span></h3>
@@ -1643,7 +1651,12 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
   // trustworthy (made / likely-made with Lolly - the digest IS a Lolly assertion)
   // AND the recorded tool name resolves against this build's tool index.
   const recreate = (report.madeWithLolly || report.likelyMadeWithLolly) ? resolveRecreateTool(env.tool) : undefined;
-  const madeFromBlock = report.found && report.claim ? inputsDigestHtml(env.inputs, recreate ? { ...recreate, fileIndex } : undefined) : '';
+  // The recorded tool name when it exists but is not in this catalogue - e.g. a
+  // brand-pack file verified on the public instance (plans/143 V1). The digest
+  // then offers the gallery instead of nothing.
+  const missingTool = !recreate && (report.madeWithLolly || report.likelyMadeWithLolly) && typeof env.tool === 'string' && env.tool.trim()
+    ? env.tool.trim() : undefined;
+  const madeFromBlock = report.found && report.claim ? inputsDigestHtml(env.inputs, recreate ? { ...recreate, fileIndex } : undefined, missingTool) : '';
   const stepsBlock = report.found && report.claim ? stepsHtml(report) : '';
   // A synthetic-voice step's recorded script (its own panel, between "made
   // from" and "what happened" - it is source material, not an event).
@@ -2068,6 +2081,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   mountBackPill(viewEl);
   mountHomeFab(viewEl);
   mountThemeFab(viewEl.querySelector('.gallery-topright'), host);
+  mountProfileFab(viewEl.querySelector('.gallery-topright'), host);
   attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
 
   const drop = viewEl.querySelector<HTMLElement>('[data-drop]')!;

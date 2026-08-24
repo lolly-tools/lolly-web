@@ -3664,5 +3664,10 @@
   "← All team projects": "← جميع مشاريع الفريق",
   "✓ Added": "✓ تمت الإضافة",
   "✓ Found {n} tools at {base}.": "✓ تم العثور على {n} أداة في {base}.",
-  "＋ New project…": "＋ مشروع جديد…"
+  "＋ New project…": "＋ مشروع جديد…",
+  "Imported from": "مستورد من",
+  "Imported": "تاريخ الاستيراد",
+  "Copyright": "حقوق النشر",
+  "Captured": "تاريخ الالتقاط",
+  "Keywords": "كلمات مفتاحية"
 }

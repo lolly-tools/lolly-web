@@ -718,7 +718,10 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // neuro-dock.ts lost its one sink in the @lolly-tools/audio-dock migration (Phase 2b,
   // 2026-08-15): the dock DOM is now built by createAudioDock (in the package, outside
   // this scan); this module only toggles classes + wires the shell's option callbacks.
-  'components/profile-menu.ts': 1,
+  // 1 → 2, 2026-08-24: mountProfileFab's icon-injection sink - the argument is
+  // the constant lib/icons 'user' glyph, never user input (same shape as
+  // home-fab.ts / theme-toggle.ts above).
+  'components/profile-menu.ts': 2,
   'components/profiles-manager.ts': 3,
   // The persistent bar singleton's one render (plans/99 M1): a template.innerHTML of
   // footerNav()+gallerySearchBox() markup, whose only dynamic interpolations - 
@@ -749,7 +752,7 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'components/tool-guide.ts': 1,
   'components/view-toggle.ts': 2,  // +1 2026-08-20: injectJellyIcons' ic.innerHTML - ICONS registry glyphs only (trusted, never user text), prepended into the jelly pill's open shadow buttons
   'components/viz-overlay.ts': 5,
-  'components/welcome-dialog.ts': 2,
+  'components/welcome-dialog.ts': 3,  // +1 2026-08-23: mountBrandedIntro's strip.innerHTML (plans/140 S4) - literal copy; the one interpolation is docsAppHref('quickstart'), a constant route string
   'components/zoom-hud.ts': 1,
   'folder-overlay.ts': 3,
   'lib/audio-coaching.ts': 1,
@@ -942,7 +945,13 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // before an anchor is built at all; and the only unescaped interpolation is
   // `accent`, a two-literal ternary with no user input in it.
   'org/chrome.ts': 1,
-  'org/index.ts': 1,
+  // Reviewed 2026-08-24 (1 → 4, the gate's device-code option, plans/145): the
+  // gate card itself (unchanged review - t() escapes its params, the action is
+  // safeHref-gated); the device slot's idle button and note() are static markup
+  // plus t() strings with no interpolated params; the code display interpolates
+  // the server's verificationUri through a t() param (escaped by t()) and the
+  // user code through escape().
+  'org/index.ts': 4,
   'org/share-links.ts': 4,
   'pro/blocks-editor.ts': 4,
   'pro/folder-export.ts': 2,

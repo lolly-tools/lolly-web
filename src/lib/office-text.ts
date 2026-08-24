@@ -60,12 +60,13 @@ export async function pptxToMarkdown(bytes: Uint8Array): Promise<OfficeContent> 
 }
 
 /** A .docx → document blocks plus its images: the shape both the markdown and the
- *  editor projections start from. */
-async function readDocxFile(bytes: Uint8Array): Promise<{ blocks: DocBlock[]; media: OfficeMedia[] }> {
+ *  editor projections start from. `sourceAuthor` is the file's own dc:creator
+ *  (docProps/core.xml), so an import can credit the original author. */
+async function readDocxFile(bytes: Uint8Array): Promise<{ blocks: DocBlock[]; media: OfficeMedia[]; sourceAuthor?: string }> {
   const parts = await inflatePptx(bytes);
   if (!isDocx(parts)) throw new Error('That file is not a Word (.docx) document.');
-  const { blocks, media } = readDocx(parts, parseXml);
-  return { blocks, media: mediaBytes(parts, media) };
+  const { blocks, media, coreProps } = readDocx(parts, parseXml);
+  return { blocks, media: mediaBytes(parts, media), ...(coreProps?.creator ? { sourceAuthor: coreProps.creator } : {}) };
 }
 
 /** A .docx → GFM markdown plus its images. */
@@ -121,8 +122,8 @@ function dataUrl(m: OfficeMedia): string | null {
  * exhausted the heap (the discipline deck-editor's makeMediaResolver documents).
  * An unresolvable image drops to an empty ref, which htmlFromBlocks omits.
  */
-export async function docxToHtml(bytes: Uint8Array): Promise<{ html: string; dropped: number }> {
-  const { blocks, media } = await readDocxFile(bytes);
+export async function docxToHtml(bytes: Uint8Array): Promise<{ html: string; dropped: number; sourceAuthor?: string }> {
+  const { blocks, media, sourceAuthor } = await readDocxFile(bytes);
   const urls = new Map<string, string>();
   let chars = 0;
   let dropped = 0;
@@ -133,5 +134,5 @@ export async function docxToHtml(bytes: Uint8Array): Promise<{ html: string; dro
     urls.set(m.name, url);
   }
   const inlined = blocks.map((b) => (b.type === 'image' ? { ...b, ref: urls.get(b.ref) ?? '' } : b));
-  return { html: htmlFromBlocks(inlined), dropped };
+  return { html: htmlFromBlocks(inlined), dropped, ...(sourceAuthor ? { sourceAuthor } : {}) };
 }

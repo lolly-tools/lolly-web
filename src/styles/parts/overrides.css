@@ -45,6 +45,7 @@ body > svg:not([style]) {
 .lang-fab:not(.lang-fab-sm),
 .home-fab,
 .theme-fab,
+.profile-fab,
 .profile-link {
   border-color: transparent;
   box-shadow: inset 0 -.1em 1em 1px hsl(var(--primary) / 0.22), 0 .1em .3em #0002;
@@ -58,6 +59,8 @@ body > svg:not([style]) {
 .home-fab:focus-visible,
 .theme-fab:hover,
 .theme-fab:focus-visible,
+.profile-fab:hover,
+.profile-fab:focus-visible,
 .profile-link:hover {
   background: hsl(var(--primary) / 0.16);
   box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.34);
@@ -90,15 +93,30 @@ body > svg:not([style]) {
    added FAB never coexists with data-back-home by construction. */
 .chrome-topleft .tools-home[data-back-home] ~ .home-fab { display: none; }
 
-/* ≤640px: views whose profile pill carries the consolidated mobile menu (docs,
-   ask - profile-menu.ts has a Home row) drop the standalone Home FAB entirely.
-   Its presence there depended on where you came FROM (data-back-home above), so
-   it read as a control that wanders view to view; the back pill stays, and Home
-   now has one fixed place in the avatar menu. Extend the list only alongside an
-   attachProfileMenu() call in that view. */
+/* ≤640px: views whose profile control carries the consolidated mobile menu
+   (attachProfileMenu / mountProfileFab - the menu has a Home row) drop the
+   standalone Home FAB entirely. Its presence there depended on where you came
+   FROM (data-back-home above), so it read as a control that wanders view to
+   view; the back pill stays, and Home now has one fixed place in the avatar
+   menu. Extend the list only alongside an attachProfileMenu()/mountProfileFab()
+   call in that view. /start + the Lab carry theirs in their own rows, not
+   .chrome-topleft. */
 @media (max-width: 640px) {
   .docs-view .chrome-topleft .home-fab,
-  .ask-view .chrome-topleft .home-fab { display: none; }
+  .ask-view .chrome-topleft .home-fab,
+  .data-view .chrome-topleft .home-fab,
+  .convert-view .chrome-topleft .home-fab,
+  .pdfx-view .chrome-topleft .home-fab,
+  .scriptst-view .chrome-topleft .home-fab,
+  .verify-view .chrome-topleft .home-fab,
+  .dashboard-view .chrome-topleft .home-fab,
+  .start-view .start-back-row .home-fab,
+  .lab-back [data-home-fab] { display: none; }
+  /* The cluster's own language FAB folds into the same menu wherever the
+     profile FAB sits beside it - self-scoping, so a view gaining
+     mountProfileFab() needs no entry here (the topbar views' copy of this
+     rule is in topbar.css's collapse block; docs' is in docs.css). */
+  .gallery-topright:has(.profile-fab) .lang-fab { display: none; }
 }
 
 /* The same Home FAB beside the tool sidebar's back pill (mountBackPill →

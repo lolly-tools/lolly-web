@@ -179,6 +179,31 @@
   line-height: 1.35;
 }
 
+/* Preset chips (plans/142 WP-3): the tile picks the template base, a chip picks
+   base + that preset's overlay. Neutral rounded chips, same vocabulary as the
+   category filter chips above - no accent border, no dashed border. */
+.tmpl-chooser-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tmpl-chooser-preset {
+  padding: 3px 9px;
+  font: inherit;
+  font-size: calc(11.5px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--background));
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+.tmpl-chooser-preset:hover {
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+.tmpl-chooser-preset:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+
 .tmpl-chooser-empty {
   padding: 40px 12px;
   text-align: center;

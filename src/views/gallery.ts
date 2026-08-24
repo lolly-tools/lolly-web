@@ -100,8 +100,13 @@ interface GalleryTool {
   openQuery?: string;
   /** "New from template" starting points - METADATA ONLY (the index never carries
    *  the heavy values seed; see scripts/build-catalog-index.ts). Listed in the
-   *  info dialog; each deep-links to #/tool/<id>?template=<tid>. */
-  templates?: Array<{ id: string; name: string; category?: string; description?: string; thumb?: string }>;
+   *  info dialog; each deep-links to #/tool/<id>?template=<tid>. A template's
+   *  `presets` (plans/142) are its curated variants - id/name(/description) only;
+   *  a preset deep-links as ?template=<tid>&preset=<pid>. */
+  templates?: Array<{
+    id: string; name: string; category?: string; description?: string; thumb?: string;
+    presets?: Array<{ id: string; name: string; description?: string }>;
+  }>;
 }
 
 // Sort options for the gallery masonry. 'category' groups tools by
@@ -761,9 +766,27 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   if (firstRunEl) firstRunEl.hidden = true;
 
   /** Show the one banner this visit is allowed, if there is one. Each mount is a
-   *  no-op when its own markup isn't the one that won the slot. */
+   *  no-op when its own markup isn't the one that won the slot.
+   *
+   *  "Visit" means the FIRST gallery mount of this browser session (plans/142
+   *  W3): an operator bouncing home between tools all afternoon used to be
+   *  dealt the next ladder rung on every return - covering the top-right
+   *  controls they were reaching for, mid-flow. A sessionStorage flag keeps the
+   *  later mounts of the same session quiet; a new browser session (tomorrow)
+   *  deals the next rung as before, so the ladder still empties - just one rung
+   *  per sitting, not one per bounce. */
+  const BANNER_DEALT_KEY = 'lolly-banner-dealt';
+  // Grace window: the boot fast-path can re-mount this gallery seconds later
+  // when the post-sync tool index arrives (main.ts), and that re-mount must
+  // re-reveal the SAME banner - only a genuinely later return stays quiet.
+  const BANNER_REDEAL_GRACE_MS = 15_000;
   const revealFirstRunBanner = (): boolean => {
     if (!firstRunEl) return false;
+    try {
+      const stamp = Number(sessionStorage.getItem(BANNER_DEALT_KEY));
+      if (stamp && Date.now() - stamp > BANNER_REDEAL_GRACE_MS) return false;
+      if (!stamp) sessionStorage.setItem(BANNER_DEALT_KEY, String(Date.now()));
+    } catch { /* storage off - fall through and show, matching the old cadence */ }
     firstRunEl.hidden = false;
     mountPrivacyNotice(viewEl);
     mountPersonalizeNudge(viewEl, host);
@@ -1383,7 +1406,13 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // are all 1 - this view only gates on match/no-match, it never ranks.
   const searchFields = new Map<string, SearchField[]>(allTools.map(t => [
     t.id,
-    [t.name, t.en?.name, t.description, t.en?.description, ...(t.tags ?? [])]
+    [t.name, t.en?.name, t.description, t.en?.description, ...(t.tags ?? []),
+      // Template + preset names/categories (plans/142): the curated starting points
+      // are the discovery layer - "poster" must find Design via its Poster template
+      // even though no tool is called poster. Search-only, like tags.
+      ...(t.templates ?? []).flatMap(tp => [tp.name, tp.category, tp.description,
+        ...(tp.presets ?? []).map(p => p.name)]),
+    ]
       .filter((s): s is string => !!s)
       .map(text => ({ text: fold(text), weight: 1 })),
   ]));
@@ -1685,7 +1714,18 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     // hand-off. The full folder manager lives in /p now - one folder UI to
     // maintain; per-tool resume stays on the gallery cards' saved badges.
     const { openRecentsDialog } = await import('../components/recents-dialog.ts');
-    await openRecentsDialog({ savedCount: sortedSaved.length });
+    await openRecentsDialog({
+      savedCount: sortedSaved.length,
+      // One-click resume (plans/142 W4): the freshest sessions, captioned by
+      // filename first, else their tool's display name.
+      // The web state bridge's list() carries filename + thumb beyond the HostV1
+      // StateEntry (bridge/state.ts); the gallery's own type is the narrow one.
+      sessions: (sortedSaved as Array<typeof sortedSaved[number] & { filename?: string | null; thumb?: string | null }>).slice(0, 8).map(e => ({
+        slot: e.slot, toolId: e.toolId,
+        name: e.filename || nameById.get(e.toolId) || e.toolId,
+        thumb: e.thumb, updatedAt: e.updatedAt,
+      })),
+    });
   }
   historyFab?.addEventListener('click', openHistoryOverlay);
 
@@ -2037,7 +2077,17 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     } catch { /* IDB unavailable / offline - treat as branded; never block or nag here */ }
     if (!galleryRoot?.isConnected) return;
     // Branded (or locked): no welcome to wait for, so the banner slot is free.
-    if (locked || tokensId !== 'lolly/tokens/brand') { revealFirstRunBanner(); return; }
+    // When no banner claims it, a first-run install gets the branded intro strip
+    // (plans/140 S4) - same slot discipline, still one surface per visit. The
+    // strip module gates itself out for installs with saved work and settles
+    // when any tool opens.
+    if (locked || tokensId !== 'lolly/tokens/brand') {
+      if (!revealFirstRunBanner()) {
+        const welcome = await import('../components/welcome-dialog.ts');
+        if (galleryRoot.isConnected) void welcome.mountBrandedIntro(viewEl.querySelector<HTMLElement>('.tool-masonry'), host.state);
+      }
+      return;
+    }
     const welcome = await import('../components/welcome-dialog.ts');
     if (!galleryRoot.isConnected) return; // navigated away while the chunk loaded
     // 'brand' navigates itself; the upload host enables the "Bring your design" card.
@@ -2443,6 +2493,11 @@ function cardMarkup(
             ${name}
             ${sub ? `<span class="gtile-sub">${sub}</span>` : ''}
             <p class="gtile-desc">${escape(tool.description ?? '')}</p>
+            ${tool.templates?.length && !unavailable
+              // Curated starting points (plans/142): say they exist right on the card.
+              // Opening the tool fresh presents the chooser, so the count IS the path.
+              ? `<span class="gtile-tpl">${tool.templates.length === 1 ? t('1 template') : tRaw('{n} templates', { n: tool.templates.length })}</span>`
+              : ''}
           </span>
           ${hasSession ? `<span class="gtile-new" aria-hidden="true">${t('+ New')}</span>` : ''}
           ${hasImageHero
@@ -2513,11 +2568,18 @@ function showInfoDialog(tool: GalleryTool | undefined, host: GalleryHost, darkTh
       <section class="meta-sec" aria-label="${escape(t('Templates'))}">
         <h3 class="meta-sec-title">${t('Templates')}</h3>
         <ul class="meta-look-list">
-          ${templates.map(tp => `<li><a class="meta-look" href="#/tool/${escape(tool.id)}?template=${escape(encodeURIComponent(tp.id))}">
-            <span class="meta-look-thumb">${tp.thumb ? `<img class="meta-look-img" src="${escape(tp.thumb)}" alt="" loading="lazy" decoding="async">` : `<span class="meta-look-glyph" aria-hidden="true">${tplGlyph(tp)}</span>`}</span>
+          ${templates.map(tp => `<li><a class="meta-look" data-tpl="${escape(tp.id)}" href="#/tool/${escape(tool.id)}?template=${escape(encodeURIComponent(tp.id))}">
+            <span class="meta-look-thumb">${tp.thumb
+              ? `<img class="meta-look-img" src="${escape(tp.thumb)}" alt="" loading="lazy" decoding="async">`
+              // Glyph placeholder + an empty img the live render fills in
+              // (hydrateInfoTemplates - same [src]-reveal CSS the examples use).
+              : `<span class="meta-look-glyph" aria-hidden="true">${tplGlyph(tp)}</span><img class="meta-look-img" alt="" decoding="async">`}</span>
             <span class="meta-look-name">${escape(tp.name)}</span>
             ${tp.description ? `<span class="meta-look-desc">${escape(tp.description)}</span>` : ''}
-          </a></li>`).join('')}
+          </a>
+          ${(tp.presets ?? []).length ? `<span class="meta-look-presets" role="group" aria-label="${escape(tRaw('{name} variants', { name: tp.name }))}">${(tp.presets ?? []).map(p =>
+            `<a class="meta-look-preset" href="#/tool/${escape(tool.id)}?template=${escape(encodeURIComponent(tp.id))}&preset=${escape(encodeURIComponent(p.id))}"${p.description ? ` title="${escape(p.description)}"` : ''}>${escape(p.name)}</a>`).join('')}</span>` : ''}
+          </li>`).join('')}
         </ul>
       </section>` : '';
 
@@ -2526,13 +2588,15 @@ function showInfoDialog(tool: GalleryTool | undefined, host: GalleryHost, darkTh
   // featured:<id>:<i> cache (hydrateInfoPresets), so anything the grid already
   // rendered resolves instantly; a click opens the tool seeded with that look.
   const looks = galleryExampleLooks(tool, darkTheme, Infinity);
+  // "Examples", not "Presets" (plans/142): a preset now means a template's curated
+  // variant; these are the manifest example looks the card strip shows.
   const exHtml = looks.length ? `
-      <section class="meta-sec" aria-label="${escape(t('Presets'))}">
-        <h3 class="meta-sec-title">${t('Presets')}</h3>
+      <section class="meta-sec" aria-label="${escape(t('Examples'))}">
+        <h3 class="meta-sec-title">${t('Examples')}</h3>
         <ul class="meta-look-list">
           ${looks.map(({ v, i }, k) => `<li><a class="meta-look" href="#/tool/${escape(tool.id)}" data-ex="${i}">
             <span class="meta-look-thumb"><img class="meta-look-img" alt="" decoding="async"></span>
-            <span class="meta-look-name">${escape(v.label || tRaw('Preset {n}', { n: k + 1 }))}</span>
+            <span class="meta-look-name">${escape(v.label || tRaw('Example {n}', { n: k + 1 }))}</span>
           </a></li>`).join('')}
         </ul>
       </section>` : '';
@@ -2580,8 +2644,9 @@ function showInfoDialog(tool: GalleryTool | undefined, host: GalleryHost, darkTh
   modal.el.setAttribute('aria-labelledby', 'tool-info-title');
   modal.el.querySelectorAll('.meta-dialog-close').forEach(b => b.addEventListener('click', () => modal.close()));
   modal.el.querySelector('.meta-dialog-open')?.addEventListener('click', () => modal.close());
-  // A template link navigates via its href; just take the dialog down with it.
-  modal.el.querySelectorAll('.meta-look:not([data-ex])').forEach(a => a.addEventListener('click', () => modal.close()));
+  // A template (or preset-variant) link navigates via its href; just take the
+  // dialog down with it.
+  modal.el.querySelectorAll('.meta-look:not([data-ex]), .meta-look-preset').forEach(a => a.addEventListener('click', () => modal.close()));
   // A preset opens the tool seeded with that exact look (same path as clicking the
   // card's example slide). Modified / middle clicks keep the plain href fallback.
   modal.el.querySelectorAll<HTMLElement>('.meta-look[data-ex]').forEach(a => {
@@ -2594,6 +2659,30 @@ function showInfoDialog(tool: GalleryTool | undefined, host: GalleryHost, darkTh
   });
   void fillDefaultsList(modal.el, tool.id);
   void hydrateInfoPresets(modal.el, host, tool, looks);
+  void hydrateInfoTemplates(modal.el, host, tool);
+}
+
+/** Live-render the template tiles (plans/142 WP-2), serially, through the SAME
+ *  template:<toolId>:<tid> cache the in-tool Start chooser uses - a template the
+ *  chooser already rendered resolves instantly, and vice versa. Values are fetched
+ *  per template (the index is metadata-only); a failure leaves the glyph. */
+async function hydrateInfoTemplates(dialog: HTMLElement, host: GalleryHost, tool: GalleryTool): Promise<void> {
+  const metas = (tool.templates ?? []).filter(tp => !tp.thumb);
+  if (!metas.length) return;
+  const esc = (s: string): string => (typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(s) : s);
+  const { fetchTemplateValues } = await import('./template-chooser.ts');
+  for (const tp of metas) {
+    if (!dialog.isConnected) return;
+    const img = dialog.querySelector<HTMLImageElement>(`.meta-look[data-tpl="${esc(tp.id)}"] .meta-look-img`);
+    if (!img || img.getAttribute('src')) continue;
+    try {
+      const values = await fetchTemplateValues(tool.id, tp.id);
+      if (!values || !dialog.isConnected) continue;
+      const thumb = await renderFeaturedVariant(host, tool.id, tool.formats, tp.id, values as Record<string, unknown>, 'template');
+      if (!dialog.isConnected || !thumb) continue;
+      img.src = thumb;   // the [src] CSS reveals it; the glyph sits behind
+    } catch { /* leave the glyph */ }
+  }
 }
 
 /** Live-render the preset thumbs, serially, through the same featured:<id>:<i>

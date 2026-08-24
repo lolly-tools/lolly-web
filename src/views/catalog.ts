@@ -92,6 +92,7 @@ import type { ExtractAudioHost } from '../lib/extract-audio.ts';
 import type { VideoJobHost } from '../lib/video-jobs.ts';
 import { mountAudioThumbs, replaceUserUpload, storeUserUpload, UPLOAD_ACCEPT } from './picker.ts';
 import { mountTextThumbs } from '../lib/text-thumbs.ts';
+import { mountPdfThumbs } from '../lib/pdf-thumbs.ts';
 import DOMPurify from 'dompurify';
 import { looksLikeMarkdown, mdToHtml } from '../lib/markdown.ts';
 import { audioThumbPlaceholder } from '../lib/audio-thumb.ts';
@@ -832,6 +833,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   let lottieThumbs: { destroy(): void } | null = null;   // on-screen-gated lottie grid autoplayer
   let audioThumbs: { destroy(): void } | null = null;    // on-screen-gated waveform upgrader
   let textThumbs: { destroy(): void } | null = null;     // on-screen-gated text-excerpt upgrader
+  let pdfThumbs: { destroy(): void } | null = null;      // on-screen-gated PDF first-page upgrader
   let viewOptsOpen = false;
   let closeViewOpts: () => void = () => {};              // set in wire(); called on teardown
   // Section sort (plans/132 WP-A) - applied per section, persisted per device.
@@ -1155,6 +1157,14 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       // for text. Data assets keep the ▦ stub (their bytes are not prose).
       if (ref.type === 'text') {
         return `<${tag} class="cat-thumb cat-thumb-stub cat-thumb-ttxt" data-text-thumb="${escape(ref.id)}" aria-hidden="true">¶</${tag}>`;
+      }
+      // A stored PDF (an auto-saved render keeps its credentialed bytes verbatim,
+      // so it is typed 'data') starts as the ▦ stub and is upgraded
+      // post-mount to a first-page vector preview by lib/pdf-thumbs.ts
+      // (mountPdfThumbGrid) - the audio/text-thumb treatment, for documents.
+      const fmt = String(ref.meta?.format ?? '').toLowerCase();
+      if (fmt.startsWith('pdf') || /\.pdf$/i.test(String(ref.meta?.name ?? ''))) {
+        return `<${tag} class="cat-thumb cat-thumb-stub" data-pdf-thumb="${escape(ref.id)}" aria-hidden="true">▦</${tag}>`;
       }
       return `<${tag} class="cat-thumb cat-thumb-stub" aria-hidden="true">▦</${tag}>`;
     }
@@ -1954,6 +1964,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     mountLottieThumbs();
     mountAudioThumbGrid();
     mountTextThumbGrid();
+    mountPdfThumbGrid();
     mountDropzone();
     if (firstPaint) { armViewEnter(viewEl, '.cat-assets, .cat-group--ref'); firstPaint = false; }
   }
@@ -1992,6 +2003,17 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       : null;
   }
 
+  // The document sibling (plans/140 S6): upgrade a stored PDF's ▦ stub to a
+  // first-page vector preview (lib/pdf-thumbs.ts). Same lifecycle again; the
+  // PDF interpreter chunk loads only when a PDF tile scrolls on screen.
+  function mountPdfThumbGrid(): void {
+    pdfThumbs?.destroy();
+    const body = viewEl.querySelector<HTMLElement>('.catalog-body');
+    pdfThumbs = body
+      ? mountPdfThumbs(body, (id) => assetById.get(id), () => mounted)
+      : null;
+  }
+
   // The mounted upload dropzone's teardown, if any (lib/upload-dropzone.ts).
   let dropzoneDispose: (() => void) | null = null;
   // (Re)mount the shared upload dropzone into the uploads section's placeholder. Called
@@ -2024,6 +2046,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     mountLottieThumbs();
     mountAudioThumbGrid();
     mountTextThumbGrid();
+    mountPdfThumbGrid();
     mountDropzone();
     fillStorageChip();
   }

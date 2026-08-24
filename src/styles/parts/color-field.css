@@ -86,9 +86,12 @@
    last letter. Reserve the label's side of the row so both stay clear of it.
    45% measured with headroom - the English labels here end at 34-38% of the trigger,
    and the reserve has to survive translation (German runs longer).
-   Scoped away from the empty-name case, which centres a lone swatch in the whole
-   trigger on purpose; padding would re-centre it in the remainder and strand it. */
-.input-row .color-trigger:not(:has(.color-trigger-name:empty)) { padding-inline-start: 45%; }
+   The empty-name case needs the reserve too: its lone swatch centres via auto
+   margins, and centring across the WHOLE trigger put the circle on top of any
+   label longer than ~45% ("Role colour override" ends at 58%). With the reserve
+   the auto margins centre it in the remainder - clear of the label, and still
+   not stranded flush right where it reads as a toggle. */
+.input-row .color-trigger { padding-inline-start: 45%; }
 
 /* When the field is squeezed in next to other controls, drop the name and collapse to
    just the swatch circle - centred in whatever box the trigger keeps (auto margins beat

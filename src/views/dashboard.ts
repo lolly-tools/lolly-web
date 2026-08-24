@@ -72,6 +72,7 @@ import type { HostV1 } from '@lolly-tools/core/host-v1';
 import { backHomeHtml, mountBackPill } from '../components/back-pill.ts';
 import { mountHomeFab } from '../components/home-fab.ts';
 import { mountThemeFab } from '../components/theme-toggle.ts';
+import { mountProfileFab } from '../components/profile-menu.ts';
 // The deep-link destination registry (plans/99 M2): every section's data-flag
 // keyword set lives THERE, interpolated here via dashFlag(), never as a string
 // literal in this file, so the spotlight settings provider and applyDeepLink
@@ -865,6 +866,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise
   // The dashboard renders your brand read-only; a theme flip here checks it in
   // light, dark and brand without a trip to the profile.
   mountThemeFab(viewEl.querySelector('.gallery-topright'), host);
+  mountProfileFab(viewEl.querySelector('.gallery-topright'), host);
   attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
 
   // Universal drop front door: the same scoped router as the gallery (design

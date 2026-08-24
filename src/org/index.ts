@@ -28,7 +28,10 @@
  * this shell only ever speaks its documented contract.
  */
 
-import { instanceFetch, instancePath, getInstanceBase } from '../lib/instance.ts';
+import {
+  instanceFetch, instancePath, getInstanceBase,
+  ensureInstallId, setInstallTag, setInstanceSession,
+} from '../lib/instance.ts';
 import { setFieldPolicies } from '../lib/field-policy.ts';
 import type { FieldPolicy } from '../lib/field-policy.ts';
 import { setToolInputPolicies, clearInputPolicies, setInputPolicyFailClosed } from '../lib/input-policy.ts';
@@ -46,6 +49,7 @@ import { setInjectedTools } from '../lib/injected-tools.ts';
 // tiny embed.ts leaf. (Same direct-import pattern the bridge/* modules use.)
 import { parseToolUrl } from '../../../../engine/src/tool-url.ts';
 import { createInstanceSessionSource } from './session-source.ts';
+import { isTauriShell } from '../lib/instance-choice.ts';
 import { t, tRaw } from '../i18n.ts';
 import { escape, safeHref } from '../utils.ts';
 
@@ -541,9 +545,96 @@ function renderGate(auth: AuthConfig, instanceName?: string): boolean {
         <h1 style="margin:0 0 .5rem;font-size:1.4rem;font-weight:750;letter-spacing:-.01em">${heading}</h1>
         <p style="margin:0 0 1.5rem;color:hsl(var(--muted-foreground));font-size:.95rem;line-height:1.55">${t('This Lolly instance asks you to sign in before you continue.')}</p>
         ${action}
+        ${isTauriShell() ? '<div id="org-gate-device" style="margin-top:1.25rem"></div>' : ''}
       </div>
     </section>`;
+  // Native shells get the device-code alternative: leaving the app shell to
+  // ride a browser OIDC redirect is exactly what a webview cannot do well, so
+  // the deployment's device flow (POST /api/v1/auth/device + /activate) signs
+  // this shell in via any browser where the person already has a session.
+  const slot = view.querySelector<HTMLElement>('#org-gate-device');
+  if (slot) wireDeviceCodeSignIn(slot);
   return true;
+}
+
+// ── Device-code sign-in (native shells; the deployment's /activate flow) ─────
+
+interface DeviceStart {
+  deviceCode: string;
+  userCode: string;
+  verificationUri: string;
+  interval?: number;
+  expiresIn?: number;
+}
+
+/** Render + drive the device-code option inside the gate card. Additive and
+ *  tolerant like everything in this seam: a deployment without the flow (404 /
+ *  501 / no JSON) collapses the affordance to nothing after the first press. */
+function wireDeviceCodeSignIn(slot: HTMLElement): void {
+  const idle = (): void => {
+    slot.innerHTML = `<button type="button" class="btn" id="org-gate-device-btn" style="min-width:9rem">${t('Sign in with a code on another device')}</button>`;
+    slot.querySelector('#org-gate-device-btn')?.addEventListener('click', () => { void start(); });
+  };
+
+  const note = (msg: string, withRetry = false): void => {
+    slot.innerHTML = `<p style="margin:0;color:hsl(var(--muted-foreground));font-size:.9rem">${msg}</p>`;
+    if (withRetry) idleRetry();
+  };
+  const idleRetry = (): void => {
+    const p = slot.querySelector('p');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn';
+    btn.style.marginTop = '.75rem';
+    btn.textContent = t('Try again');
+    btn.addEventListener('click', () => { void start(); });
+    p?.insertAdjacentElement('afterend', btn);
+  };
+
+  async function start(): Promise<void> {
+    note(t('Asking this instance for a code…'));
+    const res = await safeFetch('/api/v1/auth/device', { method: 'POST' }, PROBE_TIMEOUT_MS * 4);
+    const started = await jsonBody<DeviceStart>(res);
+    if (!started?.deviceCode || !started.userCode || !started.verificationUri) {
+      note(t('This instance does not offer code sign-in. Use the sign-in button instead.'));
+      return;
+    }
+    // t() escapes interpolated params (same innerHTML-sink rule as the gate
+    // heading above), so the server-supplied code + URL are safe here.
+    slot.innerHTML = `
+      <p style="margin:0 0 .35rem;font-size:.9rem;color:hsl(var(--muted-foreground))">${t('On any signed-in device, open {url} and enter:', { url: started.verificationUri })}</p>
+      <p style="margin:0 0 .5rem;font-family:ui-monospace,monospace;font-size:1.6rem;letter-spacing:.12em">${escape(started.userCode)}</p>
+      <p id="org-gate-device-status" style="margin:0;font-size:.85rem;color:hsl(var(--muted-foreground))">${t('Waiting for approval - the code lives about ten minutes.')}</p>`;
+    const status = slot.querySelector<HTMLElement>('#org-gate-device-status');
+    const intervalMs = Math.max(2, started.interval ?? 5) * 1000;
+    const deadline = Date.now() + (started.expiresIn ?? 600) * 1000;
+
+    const poll = async (): Promise<void> => {
+      if (!slot.isConnected) return; // gate replaced (navigation) - stop quietly
+      if (Date.now() > deadline) { note(t('That code expired.'), true); return; }
+      const claim = await jsonBody<{ status: string; cookie?: string }>(
+        await safeFetch('/api/v1/auth/device/token', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ deviceCode: started.deviceCode }),
+        }),
+      );
+      if (claim?.status === 'approved' && claim.cookie) {
+        // Park the session pair for the Rust transport (instance.ts scopes it
+        // to the instance origin), then reboot into the signed-in app.
+        await setInstanceSession(claim.cookie);
+        if (status) status.textContent = t('Signed in - loading…');
+        location.reload();
+        return;
+      }
+      if (claim?.status === 'denied') { note(t('That sign-in was denied from the other device.'), true); return; }
+      if (claim?.status === 'expired') { note(t('That code expired.'), true); return; }
+      setTimeout(() => { void poll(); }, intervalMs);
+    };
+    setTimeout(() => { void poll(); }, intervalMs);
+  }
+
+  idle();
 }
 
 // ── Orchestration ─────────────────────────────────────────────────────────────
@@ -569,6 +660,16 @@ export async function initOrg(): Promise<OrgState | null> {
 
     session = await fetchSession();
     const isMember = session?.kind === 'member';
+
+    // Install identity (the covenant's device half): the per-device id joins
+    // x-lolly-client exactly while a member session exists - so the org-config
+    // fetch below is already a registering request - and never otherwise. An
+    // anonymous or guest shell stays untagged; leaveInstance() forgets the id.
+    if (isMember) {
+      try { setInstallTag(await ensureInstallId()); } catch { /* untagged is always safe */ }
+    } else {
+      setInstallTag(null);
+    }
 
     // Gated instance, not a member → sign-in gate instead of the app.
     if (auth.mode === 'gated' && !isMember) {
@@ -794,6 +895,7 @@ function readCachedOrgConfig(): OrgConfig | null {
 
 /** TEST-ONLY: reset module state between cases. */
 export function _resetOrgForTests(): void {
+  setInstallTag(null);
   session = null;
   orgConfigState = null;
   orgConfigEtag = null;

@@ -3664,5 +3664,10 @@
   "← All team projects": "← Alla teamprojekt",
   "✓ Added": "✓ Tillagt",
   "✓ Found {n} tools at {base}.": "✓ Hittade {n} verktyg på {base}.",
-  "＋ New project…": "＋ Nytt projekt…"
+  "＋ New project…": "＋ Nytt projekt…",
+  "Imported from": "Importerad från",
+  "Imported": "Importerad",
+  "Copyright": "Upphovsrätt",
+  "Captured": "Tagen",
+  "Keywords": "Nyckelord"
 }

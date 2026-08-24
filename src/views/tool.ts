@@ -121,6 +121,7 @@ import {
 } from './tool-inputs.ts';
 import { createLiveControls, registerLiveControls, mountSidebarLiveControls } from './live-controls.ts';
 import { mountCaptureSignin } from './capture-signin.ts';
+import { armViewEnter } from '../view-enter.ts';
 import {
   renderActions, captureThumbnail, extFor, isCmykFmt, isPrintFmt,
   printEnabled, marksToCsv, c2paDefaultOn, readBleed, readMarks, exportTargetNode,
@@ -271,6 +272,10 @@ export interface ActionsApi {
    *  and takes only the `__export_*` half: those markers live in this panel's DOM and
    *  nowhere else, so a session sent without them reopens at tool defaults. */
   sessionState?: () => Record<string, unknown>;
+  /** The saved-session slot this panel writes to: the resumed session's slot, or
+   *  the one the first save minted, or null before any save. Read by the Save
+   *  dialog to preselect the project the session is ALREADY filed in (plans/142 W1). */
+  getSlot?: () => string | null;
   /** Tear down the cost-authoring slot: unsubscribe the registry-change listener
    *  and run the hydrated extension's disposer. Called from mountTool's cleanup. */
   dispose?: () => void;
@@ -618,6 +623,9 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // <id>.json), never packed into the URL. An unknown id is a null fetch → falls through
   // to the normal fresh-open flow (chooser or blank).
   const templateParam = urlFlags.get('template');
+  // `?preset=<pid>` (plans/142): a curated values overlay INSIDE the named template
+  // (`?template=poster&preset=story`). Only meaningful alongside `template`.
+  const presetParam = urlFlags.get('preset');
   // Reached via a link when the boot URL carried ANY tool configuration - a share,
   // a bookmark, an `?options`/`?full` deep link. The cost panel keys its degrade on
   // this (money-policy `selectionFromUrl`): a link always opens on counts, and money
@@ -724,9 +732,9 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // scene and export renders re-parse the URL in a context with no index and no
   // inline manifest fallback) would silently drop the seed and render empty.
   if (templateParam && !slot && !seededDirect && Object.keys(values).length === 0) {
-    const { fetchTemplateValues, templateValuesById } = await import('./template-chooser.ts');
-    let seed = await fetchTemplateValues(toolId, templateParam);
-    if (!seed && Array.isArray(templateMeta)) seed = templateValuesById(templateMeta, templateParam);
+    const { fetchTemplateSeed, templateValuesById } = await import('./template-chooser.ts');
+    let seed = await fetchTemplateSeed(toolId, templateParam, presetParam);
+    if (!seed && Array.isArray(templateMeta)) seed = templateValuesById(templateMeta, templateParam, presetParam);
     if (seed) initialValues = { ...seed, ...initialValues };
   } else if (!slot && !seededDirect && Object.keys(values).length === 0 && !reachedViaLink) {
     // The chooser opens on a blank fresh open (no resume, no seed, no link) when the tool
@@ -1311,6 +1319,16 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
       ` : ''}
     </div>
   `;
+
+  // Entrance settle (plans/142): a tool mounts as one brief fade instead of an
+  // instant cut. The worst measured transition was a full-bleed dark canvas
+  // (countdown) arriving over a near-white page - ΔL 0.90 with no easing. Armed
+  // synchronously with the innerHTML above (view-enter.ts contract) so the first
+  // paint already carries the hidden `from` state; reduced motion (OS or app
+  // pref) skips arming entirely and renders instantly. The animated nodes are
+  // the sidebar and the STAGE WRAPPER - never #tool-canvas itself, whose paint
+  // is the user's artwork and is shared with the export path.
+  armViewEnter(viewEl, '#tool-sidebar, .tool-stage');
 
   const canvasScope = hideSidebar ? '#tool-content' : '#tool-canvas';
 
@@ -2639,10 +2657,21 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       } catch { /* bases are best-effort - the variation card just offers fewer options */ }
       const plainValues = (): Record<string, unknown> =>
         Object.fromEntries(runtime.getModel().map(i => [i.id, i.value]));
+      // The project this session is already filed in, so the dialog's picker can
+      // tell the truth on a re-save (plans/142 W1). Best-effort: an unfiled or
+      // never-saved session resolves null and the picker falls back to the
+      // last-picked project. (No async-IIFE shape here - the template-chooser
+      // guard bans `await (async` across this file.)
+      let currentFolderId: string | null = null;
+      try {
+        const slot = actionsApi?.getSlot?.();
+        if (slot) currentFolderId = folderStore.folderOfRef(await folderStore.list(), slot);
+      } catch { currentFolderId = null; }
       openSaveDialog({
         toolName: tool.manifest.name,
         hasTemplates,
         bases,
+        currentFolderId,
         listFolders: () => folderStore.list().then(fs => fs.map(f => ({ id: f.id, name: f.name }))),
         createFolder: (name) => folderStore.create(name).then(f => ({ id: f.id, name: f.name })),
         saveToLibrary: async (folderId) => {
@@ -2844,6 +2873,51 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       });
     };
 
+    // New from template (plans/142 WP-1): re-open the Start chooser from the editor's
+    // Lolly menu. Unlike the fresh-open seed (applyPatch, deliberately outside the
+    // history), a mid-session pick REPLACES live content, so it applies through the
+    // history-wrapped setInput - one ⌘Z restores the doc, exactly like the import
+    // panel's commit. Blank/Escape/close resolve `{}` and apply nothing.
+    let templateChooserBusy = false;
+    const openTemplatesMidSession = async (): Promise<void> => {
+      if (templateChooserBusy) return;
+      templateChooserBusy = true;
+      try {
+        const { openTemplateChooser, parseTemplates } = await import('./template-chooser.ts');
+        const templates = parseTemplates(templateMeta);
+        try {
+          const { createUserTemplateStore } = await import('../lib/user-templates.ts');
+          const mine = await createUserTemplateStore(host as unknown as Parameters<typeof createUserTemplateStore>[0]).list(toolId);
+          for (const ut of mine) templates.push({
+            id: ut.id, name: ut.name, category: t('Your templates'),
+            values: ut.values as Record<string, InputValue>,
+          });
+        } catch { /* user templates are best-effort */ }
+        if (!templates.length) return;
+        // Held in a local first: the mount-gate contract test (tool-template-mount.
+        // test.ts) forbids the literal `await openTemplateChooser(` file-wide, so the
+        // fresh-open path can never regress into gating createRuntime on a click.
+        // This callback runs long after mount, where waiting on the pick is the point.
+        const pick = openTemplateChooser({
+          toolName: tool.manifest.name,
+          title: t('New from template'),
+          toolId,
+          templates,
+          host,
+          formats: tool.manifest.render?.formats,
+          // Same navigate-away teardown as the fresh-open chooser: _cleanup calls
+          // templatePickClose so the modal never outlives the view.
+          onOpen: close => { if (templatePickTornDown) close(); else templatePickClose = close; },
+        });
+        const chosen = await pick;
+        if (templatePickTornDown || !viewEl.isConnected) return;
+        for (const [k, v] of Object.entries(chosen ?? {})) await runtime.setInput(k, v);
+        if (Object.keys(chosen ?? {}).length) await migrateBlockRowIds(runtime);
+      } catch (e) {
+        host.log?.('warn', 'template chooser failed: ' + String(e));
+      } finally { templateChooserBusy = false; }
+    };
+
     import('./free-canvas.ts').then(({ initFreeCanvas }) => {
       if (!viewEl.isConnected) return;   // navigated away before the chunk loaded
       // The host-UI profile setter is a web-shell extension (WebProfileAPI), not on
@@ -2935,6 +3009,10 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           // Present the frames as a fullscreen deck (plan 112). Fire-and-forget: the
           // presenter module is lazily imported on first use.
           present: () => { void openPresenter(); },
+          // Only offered when the tool ships templates (index metadata / inline
+          // manifest); a tool with only user-saved templates reaches them via a
+          // fresh open, which the chooser gate already covers.
+          newFromTemplate: hasTemplates ? () => { void openTemplatesMidSession(); } : undefined,
           canSave: canSaveSession,
           dirtyRef: renderSaveBtn,
         },
@@ -3488,7 +3566,12 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       });
       const esc = (id: string): string => (typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id);
       if (plan && plan.every((pt) => {
-        const el = contentEl.querySelector('.lolly-box[data-box-id="' + esc(pt.id) + '"]') as HTMLElement | null;
+        // A frame patch targets the artboard PAGE element - its inline left/top are
+        // global, exactly what the live drag wrote (plans/141 WP-A item 6). Members
+        // that rode the frame have no patch: their frame-local style is unchanged.
+        const el = contentEl.querySelector(pt.frame
+          ? '.lolly-frame-page[data-frame-id="' + esc(pt.id) + '"]'
+          : '.lolly-box[data-box-id="' + esc(pt.id) + '"]') as HTMLElement | null;
         return !!el && parseFloat(el.style.left) === pt.x && parseFloat(el.style.top) === pt.y;
       })) {
         lastPainted = hydrated;

@@ -452,10 +452,28 @@ async function pptxSlideFromPage(pageEl: Element, opts: ExportOpts): Promise<Ppt
   return { shapes, media };
 }
 
-function pptxMeta(opts: ExportOpts): PptxBuildOptsMeta {
-  return opts.meta ? { title: opts.meta.tool, description: opts.meta.description, source: opts.meta.source, contact: opts.meta.contact } : null;
+/**
+ * The imported source document's author, when the stage declares one via the
+ * `data-source-author` attribute (the deck/doc studios emit it from their
+ * `sourceAuthor` input, set at import from the source file's own core props).
+ * The shared core-props writer then carries BOTH authors when they differ
+ * (plans/144 G6 follow-up).
+ */
+export function sourceAuthorOf(node: Element): string | undefined {
+  const el = node.matches?.('[data-source-author]') ? node : node.querySelector?.('[data-source-author]');
+  const v = el?.getAttribute?.('data-source-author')?.trim();
+  return v || undefined;
 }
-type PptxBuildOptsMeta = { title?: string; description?: string; source?: string; contact?: string } | null;
+
+function pptxMeta(opts: ExportOpts, sourceAuthor?: string): PptxBuildOptsMeta {
+  if (!opts.meta && !sourceAuthor) return null;
+  const m = opts.meta;
+  return {
+    title: m?.tool, description: m?.description, source: m?.source, contact: m?.contact,
+    author: m?.author, sourceAuthor,
+  };
+}
+type PptxBuildOptsMeta = { title?: string; description?: string; source?: string; contact?: string; author?: string; sourceAuthor?: string } | null;
 
 async function zipPptxParts(parts: Record<string, string | Uint8Array>): Promise<Blob> {
   // Dynamic import keeps fflate out of this chunk (as the direct fflate import
@@ -540,7 +558,7 @@ async function deckLayoutsFrom(raw: unknown): Promise<PptxLayout[] | undefined> 
   return layouts;
 }
 
-async function renderPptxFromDeck(deck: Record<string, unknown>, opts: ExportOpts): Promise<Blob> {
+async function renderPptxFromDeck(deck: Record<string, unknown>, opts: ExportOpts, sourceAuthor?: string): Promise<Blob> {
   const size = deck.size as { w?: unknown; h?: unknown } | undefined;
   const emuW = Math.max(1, emuOf(size?.w, 1280));
   const emuH = Math.max(1, emuOf(size?.h, 720));
@@ -569,15 +587,16 @@ async function renderPptxFromDeck(deck: Record<string, unknown>, opts: ExportOpt
     slides.push(slide);
     opts.onProgress?.(slides.length, slidesIn.length);
   }
-  const parts = buildPptxParts(slides, { emuW, emuH, theme: deckTheme(deck.theme), layouts, meta: pptxMeta(opts), now: new Date().toISOString() });
+  const parts = buildPptxParts(slides, { emuW, emuH, theme: deckTheme(deck.theme), layouts, meta: pptxMeta(opts, sourceAuthor), now: new Date().toISOString() });
   return zipPptxParts(parts);
 }
 
 export async function renderPptx(node: Element, opts: ExportOpts): Promise<Blob> {
+  const srcAuthor = sourceAuthorOf(node);
   // Fast path: a tool that authored its own native deck model (tables, precise text,
   // brand theme) drives the OOXML directly; the DOM walk below is the general fallback.
   const deck = readDeckModel(node);
-  if (deck) return renderPptxFromDeck(deck, opts);
+  if (deck) return renderPptxFromDeck(deck, opts, srcAuthor);
 
   const pages = node.querySelectorAll ? [...node.querySelectorAll('[data-pdf-page]')] : [];
   const pageEls: Element[] = pages.length ? pages : [node];
@@ -626,7 +645,7 @@ export async function renderPptx(node: Element, opts: ExportOpts): Promise<Blob>
     opts.onProgress?.(slides.length, pageEls.length);
   }
 
-  const parts = buildPptxParts(slides, { emuW, emuH, layouts, theme: walkTheme, meta: pptxMeta(opts), now: new Date().toISOString() });
+  const parts = buildPptxParts(slides, { emuW, emuH, layouts, theme: walkTheme, meta: pptxMeta(opts, srcAuthor), now: new Date().toISOString() });
   return zipPptxParts(parts);
 }
 

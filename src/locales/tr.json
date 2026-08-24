@@ -3664,5 +3664,10 @@
   "← All team projects": "← Tüm ekip projeleri",
   "✓ Added": "✓ Eklendi",
   "✓ Found {n} tools at {base}.": "✓ {base} adresinde {n} araç bulundu.",
-  "＋ New project…": "＋ Yeni proje…"
+  "＋ New project…": "＋ Yeni proje…",
+  "Imported from": "Şuradan içe aktarıldı",
+  "Imported": "İçe aktarıldı",
+  "Copyright": "Telif hakkı",
+  "Captured": "Çekildi",
+  "Keywords": "Anahtar kelimeler"
 }

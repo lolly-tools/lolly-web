@@ -32,6 +32,34 @@ export type ProbeOutcome =
   | { ok: false; reason: 'parse' }
   | { ok: false; reason: 'shape' };
 
+/** What a deployment's OPTIONAL instance manifest (`GET /api/v1/instance`)
+ *  tells a shell before anyone signs in. `found: false` is NOT an error - a
+ *  plain Lolly deployment has no manifest, and the connect flow proceeds on
+ *  the catalog probe alone. */
+export type ManifestOutcome =
+  | { found: true; name: string; accessMode?: string; providerName?: string; engineVersion?: string; packUrl?: string }
+  | { found: false };
+
+/** Shape a fetched /api/v1/instance response. Tolerant by construction: any
+ *  non-200, non-JSON, or nameless body reads as "no manifest" - never as a
+ *  failure - so the optional control plane can never block a connect. */
+export function shapeInstanceManifest(status: number, ok: boolean, body: unknown): ManifestOutcome {
+  if (!ok || status !== 200 || !body || typeof body !== 'object') return { found: false };
+  const m = body as {
+    name?: unknown; accessMode?: unknown; providerName?: unknown;
+    engineVersion?: unknown; connect?: { packUrl?: unknown };
+  };
+  if (typeof m.name !== 'string' || !m.name) return { found: false };
+  return {
+    found: true,
+    name: m.name,
+    ...(typeof m.accessMode === 'string' ? { accessMode: m.accessMode } : {}),
+    ...(typeof m.providerName === 'string' && m.providerName ? { providerName: m.providerName } : {}),
+    ...(typeof m.engineVersion === 'string' ? { engineVersion: m.engineVersion } : {}),
+    ...(typeof m.connect?.packUrl === 'string' ? { packUrl: m.connect.packUrl } : {}),
+  };
+}
+
 /** Shape a fetched /catalog/tools/index.json response into a probe outcome.
  *  `body` is the already-parsed JSON (or undefined if parsing failed). Kept
  *  pure - no fetch, no i18n - so this classification and the render layer's

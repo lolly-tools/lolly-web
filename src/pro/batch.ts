@@ -11,6 +11,7 @@
  * Failures are isolated - one bad row is recorded and the batch continues.
  */
 import { renderRowToBlob, getTool, isExportable } from './render-export.ts';
+import { deriveExportFilename } from '@lolly/engine';
 import { playSfx } from '../lib/sfx.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 
@@ -306,6 +307,17 @@ export async function runBatch<F = unknown>(
   // row 99 (a fixed 2-digit pad would order "100" before "99" lexically).
   const seqWidth = Math.max(2, String(total).length);
 
+  // Content-derived auto stem (plans/140 S1): a row without an explicit filename
+  // names itself from its own values via render.filenameFrom, so "03-ana-kovac.png"
+  // both sorts and reads at the event desk. Best-effort - any lookup failure keeps
+  // the tool-id fallback exactly as before.
+  const autoStem = async (row: BatchRow): Promise<string | null> => {
+    try {
+      const { manifest } = await getTool(row.toolId);
+      return deriveExportFilename(manifest as Parameters<typeof deriveExportFilename>[0], row.values);
+    } catch { return null; }
+  };
+
   for (let i = 0; i < total; i++) {
     if (isCancelled?.()) {
       onProgress?.({ index: i, total, status: 'cancelled' });
@@ -337,7 +349,7 @@ export async function runBatch<F = unknown>(
       // so files always sort the way the rows appeared in the table.
       const stem = row.filename?.trim()
         ? row.filename.trim().replace(/\.[a-z0-9]{1,5}$/i, '')
-        : row.toolId;
+        : (await autoStem(row)) ?? row.toolId;
       // The seq prefix goes on the basename only so files sort within their
       // folder when the stem carries a nested path (e.g. "event/badges/badge").
       const seq = String(i + 1).padStart(seqWidth, '0');

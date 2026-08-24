@@ -68,9 +68,26 @@ import { initPackStore, packActive, packAssetEntries, packFetch } from './pack-s
 
 /** Key of the persisted base inside the 'profile' KV store. */
 const INSTANCE_KEY = 'instance-base';
+/** Key of the per-device install id (org/index.ts mints it for a MEMBER
+ *  session only - see setInstallTag below). Cleared by leaveInstance(), so a
+ *  device that re-enrolls returns as a NEW install: no identity carries across
+ *  enrollments, which is the covenant's privacy default. */
+const INSTALL_ID_KEY = 'install-id';
+/** Key of the stored instance session cookie pair (`lw_session=…`) - the
+ *  NATIVE shells' session store. A browser keeps the deployment's cookie in
+ *  its own jar; the Tauri Rust client has no jar, so the device-code sign-in
+ *  (org/index.ts) parks the pair here and tauriHttpFetch attaches it - to the
+ *  instance base origin ONLY, never to any other URL this transport fetches. */
+const INSTANCE_SESSION_KEY = 'instance-session';
 
 let base = '';
 let initPromise: Promise<void> | null = null;
+/** The install token riding x-lolly-client, or null (untagged - the default).
+ *  Set ONLY by org/index.ts when a member session is confirmed: an anonymous
+ *  or signed-out shell never speaks an install id. */
+let installTag: string | null = null;
+/** The stored session cookie pair for native shells, or null. */
+let instanceSession: string | null = null;
 
 /** The active instance base URL ('' = bundled same-origin content). */
 export function getInstanceBase(): string {
@@ -128,8 +145,13 @@ export async function setInstanceBase(url: string | null): Promise<void> {
 export function initInstanceBase(): Promise<void> {
   initPromise ??= (async () => {
     try {
-      const stored = await (await openDB()).get('profile', INSTANCE_KEY);
+      const db = await openDB();
+      const stored = await db.get('profile', INSTANCE_KEY);
       if (typeof stored === 'string' && stored) base = normalizeInstanceBase(stored);
+      // The native-shell session pair, if the device-code sign-in parked one -
+      // loaded here so the org probe's very first request already carries it.
+      const sess = await db.get('profile', INSTANCE_SESSION_KEY);
+      if (typeof sess === 'string' && /^lw_session=[^;\s]+$/.test(sess)) instanceSession = sess;
     } catch {
       base = ''; // unreadable/invalid - fall back to bundled content
     }
@@ -142,6 +164,58 @@ export function initInstanceBase(): Promise<void> {
  *  IndexedDB). Same pattern as the engine's exported-mutable HOOK_BUDGET_MS. */
 export function _setBaseForTests(value: string): void {
   base = value;
+}
+
+// ── Install identity (the org covenant's device half) ────────────────────────
+
+/**
+ * Turn the install token on (org/index.ts, member session confirmed) or off.
+ * While set, x-lolly-client grows an `install/<id>` token on tagged requests,
+ * so the deployment's fleet registry can tell installs apart - and because the
+ * tag rides only requests the person's own use already makes, there is no
+ * heartbeat and nothing to phone home. The value is sanitised to the header
+ * grammar's charset; anything else is refused (tag stays off).
+ */
+export function setInstallTag(id: string | null): void {
+  installTag = id && /^[A-Za-z0-9._-]{1,64}$/.test(id) ? id : null;
+}
+
+/** The persisted per-device install id, minted on first use. Callers gate WHEN
+ *  to call this (member session only); this module only stores the value. */
+export async function ensureInstallId(): Promise<string> {
+  const db = await openDB();
+  const stored = await db.get('profile', INSTALL_ID_KEY);
+  if (typeof stored === 'string' && /^[A-Za-z0-9._-]{1,64}$/.test(stored)) return stored;
+  const minted = crypto.randomUUID();
+  await db.put('profile', minted, INSTALL_ID_KEY);
+  return minted;
+}
+
+/** Forget the install id (leaveInstance): the device returns as a NEW install
+ *  if it ever re-enrolls - no identity carries across enrollments. */
+export async function clearInstallId(): Promise<void> {
+  installTag = null;
+  try { await (await openDB()).delete('profile', INSTALL_ID_KEY); } catch { /* best-effort */ }
+}
+
+// ── Stored instance session (native shells; browsers keep their own cookie) ──
+
+/** Persist (or with null clear) the session cookie pair the device-code
+ *  sign-in collected. Loaded by initInstanceBase; attached by tauriHttpFetch
+ *  to instance-base-origin requests only. */
+export async function setInstanceSession(cookiePair: string | null): Promise<void> {
+  instanceSession = cookiePair && /^lw_session=[^;\s]+$/.test(cookiePair) ? cookiePair : null;
+  try {
+    const db = await openDB();
+    if (instanceSession) await db.put('profile', instanceSession, INSTANCE_SESSION_KEY);
+    else await db.delete('profile', INSTANCE_SESSION_KEY);
+  } catch { /* best-effort - the in-memory copy still serves this run */ }
+}
+
+/** Whether a stored native-shell session exists (the gate uses this only to
+ *  decide copy; the server remains the authority on whether it still works). */
+export function hasInstanceSession(): boolean {
+  return instanceSession !== null;
 }
 
 /**
@@ -236,10 +310,17 @@ async function packMergedAssetIndex(url: string, init: RequestInit | undefined):
  */
 function withClientHeader(init?: RequestInit): RequestInit {
   const headers = new Headers(init?.headers);
-  if (!headers.has('x-lolly-client')) {
-    headers.set('x-lolly-client', `${hasTauriInternals() ? 'tauri' : 'web'} engine/${ENGINE_VERSION}`);
-  }
+  if (!headers.has('x-lolly-client')) headers.set('x-lolly-client', clientHeaderValue());
   return { ...init, headers };
+}
+
+/** The x-lolly-client value, built in one place so the install token can never
+ *  ride an untagged path: shell kind + engine version, plus `install/<id>`
+ *  exactly while org/index.ts has turned the tag on (member session only).
+ *  Exported for tests - the header site itself stays private. */
+export function clientHeaderValue(): string {
+  const core = `${hasTauriInternals() ? 'tauri' : 'web'} engine/${ENGINE_VERSION}`;
+  return installTag ? `${core} install/${installTag}` : core;
 }
 
 // ── Tauri plugin-http guest binding (minimal) ────────────────────────────────
@@ -277,9 +358,29 @@ interface TauriFetchSendResponse {
  * guest binding: fetch → fetch_send → fetch_read_body chunks, each chunk's LAST
  * byte a close flag (1 = done, payload discarded; 0 = data, payload = rest).
  */
+/** Whether `url` sits on the configured instance base's origin - the ONLY
+ *  place the stored session pair may travel. instanceFetch also carries
+ *  arbitrary user-supplied URLs (a backup-import link, say), and a session
+ *  cookie leaking onto one of those would hand the session to whoever runs
+ *  that host. */
+function isInstanceOrigin(url: string): boolean {
+  if (!base) return false;
+  try {
+    return new URL(url).origin === new URL(base).origin;
+  } catch {
+    return false;
+  }
+}
+
 async function tauriHttpFetch(url: string, init?: RequestInit): Promise<Response> {
   const { invoke } = (window as unknown as { __TAURI_INTERNALS__: TauriInternals }).__TAURI_INTERNALS__;
   const req = new Request(url, init);
+  // The Rust client has no cookie jar: attach the parked session pair to
+  // instance-origin requests so a device-code sign-in survives - and to no
+  // other host, ever (see isInstanceOrigin).
+  if (instanceSession && isInstanceOrigin(url) && !req.headers.has('cookie')) {
+    req.headers.set('cookie', instanceSession);
+  }
   const bodyBuf = await req.arrayBuffer();
   const rid = await invoke<number>('plugin:http|fetch', {
     clientConfig: {

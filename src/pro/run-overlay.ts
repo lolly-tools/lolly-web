@@ -130,6 +130,11 @@ interface RunBatchProgressOpts<F = unknown> {
   strongPassword?: string;
   /** Whole-zip encryption tier (uses `strongPassword` as the zip password too). */
   zipLock?: ZipTier;
+  /** Deliver ONE merged PDF (each row's pages in batch order) instead of a zip
+   *  (plans/140 S5). Requires every row to render to pdf/pdf-cmyk - a mixed run
+   *  falls back to the zip, logged. With `strongPassword`, the MERGED document
+   *  is R6-locked (rows render unlocked so their pages can be copied). */
+  combinePdf?: boolean;
 }
 
 /** Outcome of a run: produced files, per-row results, and whether it was cancelled. */
@@ -231,7 +236,7 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
     profile, bleed, marks, srcIndex, notes, retryOf, skippedFindings, runFindings,
     noteText = defaultNoteText as (note: F) => string,
     noteTone = defaultNoteTone as (note: F) => 'info' | 'warn',
-    onRendered, onBatchRendered, announce, strongPassword, zipLock,
+    onRendered, onBatchRendered, announce, strongPassword, zipLock, combinePdf = false,
   } = opts;
   // The batch slot. A caller whose job already covers row assembly and preflight hands
   // its handle in and keeps ownership of the terminal state; a bare call (the Retry
@@ -441,7 +446,9 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
     if (isCancelled()) { onRendered?.(); return settle({ files: [], results: [], cancelled: true }); }
 
     const { files, results } = await runBatch<F>(rows, host, {
-      format, unit, dpi, pathAware, strongPassword,
+      // Combine-as-one renders rows UNLOCKED: an R6-locked member can't be
+      // page-copied. The merged document (or a fallback's members) is locked below.
+      format, unit, dpi, pathAware, strongPassword: combinePdf ? undefined : strongPassword,
       profile, bleed, marks, notes,
       isCancelled,
       onProgress: (p) => {
@@ -601,7 +608,45 @@ export async function runBatchWithProgress<F = unknown>(host: HostV1, rows: Batc
     let delivered = false;
     let zipName: string | undefined;
     job.progress(done, total, t('Packaging the download…'));
-    try {
+
+    // Single-PDF delivery (plans/140 S5): merge the finished PDFs into one
+    // document, pages in batch order. Any failure or a non-PDF member falls back
+    // to the zip below - after restoring the per-file R6 lock the combine path
+    // deliberately skipped at render time.
+    if (combinePdf) {
+      const relockPdfs = async (): Promise<void> => {
+        if (!strongPassword) return;
+        const { encryptPdfStrong } = await import('../bridge/export.ts');
+        for (const f of files) {
+          if (f.fmt === 'pdf' || f.fmt === 'pdf-cmyk') f.blob = await encryptPdfStrong(f.blob, strongPassword);
+        }
+      };
+      if (!files.every(f => f.fmt === 'pdf' || f.fmt === 'pdf-cmyk')) {
+        appendLog(`<li class="pro-log-skip">Not every row rendered to PDF - delivering the zip instead of one document.</li>`);
+        await relockPdfs();
+      } else {
+        try {
+          const { combinePdfs } = await import('./zip.ts');
+          let pdf = await combinePdfs(files);
+          if (strongPassword) {
+            const { encryptPdfStrong } = await import('../bridge/export.ts');
+            pdf = await encryptPdfStrong(pdf, strongPassword);
+          }
+          saveBlob(pdf, `${zipBaseName}.pdf`);
+          delivered = true;
+          zipName = `${zipBaseName}.pdf`;
+          appendLog(`<li class="pro-log-skip">Combined document: per-file Content Credentials ride the zip delivery, not a merged PDF.</li>`);
+          draw(`<strong>Done - ${files.length} row${files.length === 1 ? '' : 's'} in one PDF${tail}.</strong>`);
+          announce?.(`Batch complete - ${files.length} row${files.length === 1 ? '' : 's'} in one PDF${tail}.`);
+          if (!isCancelled()) playSfx(total > 1 ? 'fanfare' : 'victory');
+        } catch (mergeErr) {
+          appendLog(`<li class="pro-log-skip">Couldn't combine into one PDF (${esc(String((mergeErr as { message?: unknown }).message ?? mergeErr))}) - delivering the zip instead.</li>`);
+          await relockPdfs();
+        }
+      }
+    }
+
+    if (!delivered) try {
       const zip = await buildZip(files, { zipName: `${zipBaseName}.zip`, author, csv, zipLock, password: strongPassword, unmade, noted, runNotes, retryOf, preflight });
       saveBlob(zip, `${zipBaseName}.zip`);
       delivered = true;

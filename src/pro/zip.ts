@@ -309,6 +309,24 @@ export async function buildZip(files: ZipFile[], meta: ZipMeta = {}): Promise<Bl
   return new Blob([zipped], { type: 'application/zip' });
 }
 
+/**
+ * Merge finished PDF files into ONE document, each file's pages in batch order
+ * (plans/140 S5 - the "print shop" delivery). Pages keep their own sizes;
+ * pdf-lib copies them verbatim. The per-file C2PA manifests do NOT survive a
+ * page copy - the caller says so in the UI, and the zip stays the
+ * credential-preserving delivery.
+ */
+export async function combinePdfs(files: { blob: Blob }[]): Promise<Blob> {
+  const { PDFDocument } = await import('pdf-lib');
+  const out = await PDFDocument.create();
+  for (const f of files) {
+    const src = await PDFDocument.load(new Uint8Array(await f.blob.arrayBuffer()), { updateMetadata: false });
+    const pages = await out.copyPages(src, src.getPageIndices());
+    for (const p of pages) out.addPage(p);
+  }
+  return new Blob([await out.save() as BlobPart], { type: 'application/pdf' });
+}
+
 /** Save a single Blob via a transient object-URL anchor. */
 export function saveBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);

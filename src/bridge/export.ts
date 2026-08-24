@@ -26,7 +26,7 @@ import {
   buildEncryptDictValues, encryptObjectBytes, preparePassword,
   buildEncryptedZip, crc32,
   buildPptxParts, EMU_PER_PX,
-  writeDocx, writeOdt,
+  writeDocx, writeOdt, embedWavInfo,
   hdrBoostToPQ, pqBt2020IccProfile, HDR_PQ_CICP,
 } from '@lolly/engine';
 import type { HdrBoostOptions } from '@lolly/engine';
@@ -72,12 +72,13 @@ import type { PrintGeometry, LabelSlot } from '../../../../engine/src/print-mark
 import type { Dimension } from '../../../../engine/src/units.ts';
 import type { CornerRadii, CornerPair } from '../../../../engine/src/css-box.ts';
 import { n2, parseCssColor, parseCssColorFull, rgbaCss, parseCssLen, resolveRadii, objectPositionFractions } from "./export-css.ts";
-import { renderPptx } from "./export-pptx.ts";
+import { renderPptx, sourceAuthorOf } from "./export-pptx.ts";
 import { domToDocBlocks, domToRichDoc } from "./doc-blocks.ts";
 // Stage-1 split: DOM-free byte-stampers and vector-PDF helpers extracted
 // verbatim to sibling modules, imported back so no call site changes.
 import {
-  patchJpegDpi, insertPngPhys, insertPngMeta, insertJpegExif, iccWanted,
+  patchJpegDpi, insertPngPhys, insertPngMeta, insertPngXmp, insertJpegExif, insertJpegXmp,
+  insertWebpMeta, insertAvifExif, iccWanted,
   insertPngIcc, insertJpegIcc, insertPngCicp, setAvifCicp, injectSvgMeta, withGifComment,
   inflateBytes, deflateBytes,
 } from './export-image-meta.ts';
@@ -716,12 +717,27 @@ async function renderAudioOnly(node: Element, format: AudioFormat, opts: ExportO
     const { sequenceAudioPcm } = await import('./sequence-render.ts');
     pcm = await sequenceAudioPcm(node, opts, _host ?? null);
   }
-  return await renderAudioExport(format, {
+  const blob = await renderAudioExport(format, {
     pcm,
     audio: opts.audio ?? null,
     ...(opts.duration != null ? { duration: opts.duration } : {}),
     log: (l, m) => { _host?.log?.(l, m); },
   });
+  // WAV LIST/INFO parity (plans/144 Wave 2 G4): the same ExportMeta fields the
+  // raster stampers embed, in RIFF's native slot. The other audio containers
+  // get theirs elsewhere (mp4 udta via withVideoMeta on the video paths).
+  if (format === 'wav' && opts.meta) {
+    const m = opts.meta;
+    const tagged = embedWavInfo(new Uint8Array(await blob.arrayBuffer()), {
+      title: m.tool,
+      artist: m.author,
+      comment: [m.description, m.contact].filter(Boolean).join(' · '),
+      copyright: [m.copyright, m.license].filter(Boolean).join(' · '),
+      software: m.software,
+    });
+    return new Blob([tagged as BlobPart], { type: blob.type });
+  }
+  return blob;
 }
 
 // The STILL sibling of the compositor: `cuts=N` (N > 1) on a still format over a
@@ -760,16 +776,29 @@ async function renderFormatDispatch(node: Element, format: string, opts: ExportO
     case 'jpg':
     case 'jpeg':
       return await renderRaster(node, 'jpeg', opts);
-    case 'webp':
-      return await renderBitmap(node, 'image/webp', opts);
-    case 'avif':
+    case 'webp': {
+      const blob = await renderBitmap(node, 'image/webp', opts);
+      // WebP metadata parity (plans/144 Wave 2 G2): the same ExportMeta fields
+      // PNG/JPEG carry, as a RIFF EXIF chunk + the VP8X flag. The stamper
+      // no-ops when the encoder fell back to PNG (blob type says so).
+      if (!opts.meta || !blob.type.includes('webp')) return blob;
+      const stamped = insertWebpMeta(new Uint8Array(await blob.arrayBuffer()), opts.meta);
+      return new Blob([stamped as BlobPart], { type: blob.type });
+    }
+    case 'avif': {
       // Same imprint-then-encode path as webp (renderBitmap perturbs the canvas
-      // pixels before the browser's AV1 encode). Survival is UNVERIFIED here - 
+      // pixels before the browser's AV1 encode). Survival is UNVERIFIED here -
       // the watermark was calibrated against 8×8-block JPEG DCT quantization
       // (see engine/pixel-watermark.ts); AV1's block-transform + loop-filter
       // pipeline is different enough that it needs its own round-trip
       // calibration (like the sharp JPEG suite) before this can be trusted.
-      return await renderBitmap(node, 'image/avif', opts);
+      const blob = await renderBitmap(node, 'image/avif', opts);
+      // AVIF metadata parity (plans/144, closes the Wave 2 follow-up): the same
+      // ExportMeta fields, as a HEIF EXIF item. No-ops on a PNG-fallback blob.
+      if (!opts.meta || !blob.type.includes('avif')) return blob;
+      const stamped = insertAvifExif(new Uint8Array(await blob.arrayBuffer()), opts.meta);
+      return new Blob([stamped as BlobPart], { type: blob.type });
+    }
     case 'cmyk-tiff':
       return await renderCmykTiff(node, opts);
     case 'tiff':
@@ -830,7 +859,19 @@ async function renderFormatDispatch(node: Element, format: string, opts: ExportO
       // (not application/zip) keeps the .docx extension in extFor. Still lossy vs PDF
       // by design (see doc-blocks.ts for what the model cannot carry).
       const { blocks, title, media } = await domToRichDoc(node);
-      return new Blob([writeDocx({ title, blocks, media }) as BlobPart], {
+      // Core props (plans/144 Wave 2 G3): same fields the pptx path passes; the
+      // document's own derived title wins over the tool name. An imported
+      // source's author (data-source-author on the stage) rides along so the
+      // core-props writer can carry both authors when they differ.
+      const m = opts.meta;
+      const srcAuthor = sourceAuthorOf(node);
+      return new Blob([writeDocx({
+        title, blocks, media,
+        meta: m || srcAuthor
+          ? { description: m?.description, source: m?.source, contact: m?.contact, author: m?.author, sourceAuthor: srcAuthor }
+          : null,
+        now: new Date().toISOString(),
+      }) as BlobPart], {
         type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       });
     }
@@ -1145,6 +1186,7 @@ async function renderRaster(node: Element, format: string, opts: ExportOpts): Pr
       let bytes = new Uint8Array(await blob.arrayBuffer());
       if (d.dpi > 0) bytes = (insertPngPhys(bytes, d.dpi) || bytes) as Uint8Array<ArrayBuffer>;
       bytes = insertPngMeta(bytes, opts.meta) as Uint8Array<ArrayBuffer>;
+      bytes = insertPngXmp(bytes, opts.meta) as Uint8Array<ArrayBuffer>;
       if (hdrOn) bytes = insertPngCicp(bytes, HDR_PQ_CICP) as Uint8Array<ArrayBuffer>;
       if (icc) bytes = await insertPngIcc(bytes, icc, hdrOn ? 'Rec2100 PQ' : 'sRGB') as Uint8Array<ArrayBuffer>;
       blob = new Blob([bytes], { type: 'image/png' });
@@ -1152,6 +1194,7 @@ async function renderRaster(node: Element, format: string, opts: ExportOpts): Pr
       let bytes = new Uint8Array(await blob.arrayBuffer());
       bytes = patchJpegDpi(bytes, d.dpi) as Uint8Array<ArrayBuffer>;
       bytes = insertJpegExif(bytes, opts.meta) as Uint8Array<ArrayBuffer>;
+      bytes = insertJpegXmp(bytes, opts.meta) as Uint8Array<ArrayBuffer>;
       if (icc) bytes = insertJpegIcc(bytes, icc) as Uint8Array<ArrayBuffer>;
       blob = new Blob([bytes], { type: 'image/jpeg' });
     }
@@ -5212,7 +5255,7 @@ function applyPdfMeta(pdf: any, m: ExportMeta | null | undefined): void {
 // (buildEncryptDictValues / encryptObjectBytes - DOM-free, byte-vector-tested);
 // this function owns the pdf-lib object walk + /Encrypt dict assembly. R6 uses one
 // file key for every object (no per-object derivation) and a fresh IV per object.
-async function encryptPdfStrong(blob: Blob, password: string): Promise<Blob> {
+export async function encryptPdfStrong(blob: Blob, password: string): Promise<Blob> {
   const { PDFDocument, PDFString, PDFHexString, PDFRawStream, PDFStream, PDFDict, PDFArray } =
     await import('pdf-lib') as any;
   // updateMetadata:false - the finished bytes already carry Lolly's /Producer +

@@ -10,7 +10,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeInstanceBase, instancePath, getInstanceBase, _setBaseForTests } from './instance.ts';
+import { normalizeInstanceBase, instancePath, getInstanceBase, _setBaseForTests, setInstallTag, clientHeaderValue } from './instance.ts';
 
 // ── normalizeInstanceBase ────────────────────────────────────────────────────
 
@@ -86,4 +86,26 @@ test('instancePath: sub-path base composes correctly', () => {
   _setBaseForTests('https://example.com/lolly');
   assert.equal(instancePath('/catalog/assets/index.json'), 'https://example.com/lolly/catalog/assets/index.json');
   _setBaseForTests('');
+});
+
+// ── install tag on the client header ─────────────────────────────────────────
+// clientHeaderValue is the ONE place the x-lolly-client value is built, so
+// these pin the whole install-identity surface the header can ever carry.
+
+test('clientHeaderValue: untagged by default, and the tag joins only while set', () => {
+  setInstallTag(null);
+  const untagged = clientHeaderValue();
+  assert.match(untagged, /^web engine\/\d+\.\d+\.\d+$/, 'no install token unless org/ turned it on');
+  setInstallTag('9f2c1a44-7b1e-4e02-8f45-0a1b2c3d4e5f');
+  assert.equal(clientHeaderValue(), `${untagged} install/9f2c1a44-7b1e-4e02-8f45-0a1b2c3d4e5f`);
+  setInstallTag(null);
+  assert.equal(clientHeaderValue(), untagged, 'clearing the tag restores the untagged header');
+});
+
+test('setInstallTag: anything outside the header grammar is refused, not escaped', () => {
+  const untagged = clientHeaderValue();
+  for (const bad of ['has space', 'semi;colon', 'newline\nx', 'x'.repeat(65), '']) {
+    setInstallTag(bad);
+    assert.equal(clientHeaderValue(), untagged, `refused: ${JSON.stringify(bad)}`);
+  }
 });

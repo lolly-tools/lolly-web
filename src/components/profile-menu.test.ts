@@ -31,7 +31,7 @@ globalThis.Element = dom.window.Element;
 (globalThis.window as { matchMedia?: (q: string) => { matches: boolean } }).matchMedia =
   (q: string) => ({ matches: q.includes('max-width') });
 
-const { attachProfileMenu } = await import('./profile-menu.ts');
+const { attachProfileMenu, mountProfileFab } = await import('./profile-menu.ts');
 
 /** A host slice good enough for setTheme/switchLang signatures - never invoked
  *  here (no theme click, no language pick reaches switchLang). */
@@ -92,6 +92,26 @@ test('Language spawns the child lang-menu; taps inside it never dismiss the pare
   detach();
   assert.equal(menu(), null, 'parent closed');
   assert.equal(langPop(), null, 'child closed with it (onClose cascade)');
+});
+
+test('mountProfileFab appends the right-most quick link and wires the same menu', async () => {
+  const cluster = document.createElement('div');
+  cluster.className = 'gallery-topright';
+  cluster.innerHTML = '<button class="lang-fab"></button>';
+  document.body.appendChild(cluster);
+  mountProfileFab(cluster, host);
+  const fab = cluster.querySelector<HTMLAnchorElement>('a.profile-fab');
+  assert.ok(fab, 'fab appended');
+  assert.equal(fab!.getAttribute('href'), '#/profile', 'desktop: a plain quick link to the profile');
+  assert.equal(cluster.lastElementChild, fab, 'appended last, so it sits right-most in the cluster');
+  assert.ok(fab!.getAttribute('aria-label'), 'accessible name present');
+  // Mobile (matchMedia stub says max-width matches): the click opens the menu.
+  fab!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  assert.ok(menu(), 'mobile click opens the consolidated menu');
+  await tick();
+  pointerDownOn(document.body);
+  assert.equal(menu(), null);
+  cluster.remove();
 });
 
 test('a pointerdown outside both popovers closes the parent', async () => {

@@ -1463,6 +1463,13 @@ a.gtile-name:focus-visible::after {
   text-overflow: ellipsis;
 }
 .gtile-cap .badge { position: static; }   /* badge sits inline here, not pinned */
+/* Curated starting-point count (plans/142) - a quiet line under the description;
+   the fresh open presents the chooser, so the count itself is the affordance. */
+.gtile-tpl {
+  margin-top: 3px;
+  font-size: calc(11px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground) / 0.85);
+}
 /* Description lives in the meta column, directly under the title - no horizontal
    padding of its own (the column already starts past the icon). */
 .gtile-desc {
@@ -1676,11 +1683,13 @@ a.gtile-name:focus-visible::after {
   color: hsl(var(--muted-foreground));
 }
 
-/* Info dialog: templates + presets share ONE tile shape (.meta-look - media slot
+/* Info dialog: templates + examples share ONE tile shape (.meta-look - media slot
    over name, optional description), echoing the in-tool Start chooser's tile, so
-   the two starting-point kinds read as the same idea. Templates lead with an
-   authored thumb or a category glyph; presets live-render through the shared
-   featured:<id>:<i> cache and reveal once [src] lands. */
+   the two starting-point kinds read as the same idea. Both live-render: examples
+   through the featured:<id>:<i> cache, templates through the chooser's shared
+   template:<toolId>:<tid> cache (glyph placeholder until the render arrives). A
+   template's PRESETS (plans/142: curated variant overlays) are the chip links
+   under its tile. */
 .meta-sec { border-top: 1px solid hsl(var(--border) / 0.6); padding-top: 10px; }
 .meta-look-list {
   list-style: none;
@@ -1713,6 +1722,23 @@ a.gtile-name:focus-visible::after {
 .meta-look-img { width: 100%; height: 100%; object-fit: contain; display: block; opacity: 0; }
 .meta-look-img[src] { opacity: 1; transition: opacity .25s ease; }
 .meta-look-glyph { display: flex; color: hsl(var(--muted-foreground) / 0.6); }
+/* A template tile carries BOTH the glyph placeholder and the live-render img
+   (hydrateInfoTemplates): overlay them in the one grid cell so the render covers
+   the glyph when it arrives. Harmless for single-child thumbs. */
+.meta-look-thumb > * { grid-area: 1 / 1; }
+.meta-look-thumb:has(.meta-look-img[src]) .meta-look-glyph { visibility: hidden; }
+/* Preset variant chips under a template tile (plans/142) - neutral rounded pills,
+   never accent/dashed borders. */
+.meta-look-presets { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.meta-look-preset {
+  padding: 2px 8px;
+  font-size: calc(11px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  border: 1px solid hsl(var(--border) / 0.7);
+  border-radius: 999px;
+  text-decoration: none;
+}
+.meta-look-preset:hover { color: hsl(var(--foreground)); background: hsl(var(--muted)); }
 .meta-look-name { font-size: calc(12px * var(--a11y-fs)); font-weight: 600; line-height: 1.25; }
 .meta-look-desc {
   font-size: calc(11px * var(--a11y-fs));

@@ -12,7 +12,12 @@ import { escape } from '../utils.ts';
 import { t, tRaw } from '../i18n.ts';
 import { mountModal } from './modal.ts';
 
-export async function openRecentsDialog(opts: { savedCount?: number } = {}): Promise<void> {
+/** A saved session offered for one-click resume (plans/142 W4): the slot's
+ *  entry as the gallery already holds it. `name` is the display caption (the
+ *  session's filename or its tool's name). */
+export interface RecentsSession { slot: string; toolId: string; name: string; thumb?: string | null; updatedAt?: string }
+
+export async function openRecentsDialog(opts: { savedCount?: number; sessions?: RecentsSession[] } = {}): Promise<void> {
   let rail = '';
   try {
     const { listExports, exportReopenHref } = await import('../lib/export-history.ts');
@@ -33,6 +38,32 @@ export async function openRecentsDialog(opts: { savedCount?: number } = {}): Pro
       </div>` : '';
   } catch { /* history is best-effort - the hand-off below still stands */ }
 
+  // Saved sessions, resumable in ONE click (plans/142 W4): the operator coming
+  // back for a half-done session should not be handed off to Projects first.
+  // Same tile shape as the exports rail; sessions without a thumb still list
+  // (caption-only tile), and the Projects hand-off below stays the manager.
+  let sessionsRail = '';
+  try {
+    const sessions = (opts.sessions ?? []).slice(0, 8);
+    if (sessions.length) {
+      const { sessionOpenHref } = await import('../lib/search/projects-source.ts');
+      const { isBatchSlot } = await import('../lib/batch-slots.ts');
+      sessionsRail = `
+      <div class="folder-exports recents-sessions">
+        <h3 class="folder-exports-title">${t('Saved sessions')}</h3>
+        <div class="folder-exports-rail">
+          ${sessions.map(s => `
+            ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - sessionOpenHref() builds a fixed in-app route */ ''}
+            <a class="folder-export-tile" href="${escape(sessionOpenHref(s, isBatchSlot(s.slot)))}" data-open-session-tile
+               title="${escape(s.name)}${s.updatedAt ? ` · ${escape(new Date(s.updatedAt).toLocaleDateString())}` : ''}">
+              ${s.thumb ? `<img src="${escape(s.thumb)}" alt="${escape(s.name)}" loading="lazy">`
+                        : `<span class="folder-export-tile-caption">${escape(s.name)}</span>`}
+            </a>`).join('')}
+        </div>
+      </div>`;
+    }
+  } catch { /* sessions rail is best-effort - the hand-off below still stands */ }
+
   const saved = opts.savedCount ?? 0;
   const modal = mountModal(`
     <div class="recents-dialog">
@@ -41,7 +72,8 @@ export async function openRecentsDialog(opts: { savedCount?: number } = {}): Pro
         <button type="button" class="recents-dialog-close" data-recents-close
           aria-label="${escape(t('Close'))}">&#x2715;</button>
       </div>
-      ${rail || `<p class="recents-dialog-empty">${t('Exports you download will show here for quick reopening.')}</p>`}
+      ${sessionsRail}
+      ${rail || (sessionsRail ? '' : `<p class="recents-dialog-empty">${t('Exports you download will show here for quick reopening.')}</p>`)}
       <a class="btn recents-dialog-go" href="#/p">${saved
         ? tRaw('Manage {n} saved sessions in Projects', { n: saved })
         : t('Open Projects')}</a>

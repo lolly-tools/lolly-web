@@ -3664,5 +3664,10 @@
   "← All team projects": "← सभी टीम प्रोजेक्ट्स",
   "✓ Added": "✓ जोड़ा गया",
   "✓ Found {n} tools at {base}.": "✓ {base} पर {n} टूल मिले।",
-  "＋ New project…": "＋ नया प्रोजेक्ट…"
+  "＋ New project…": "＋ नया प्रोजेक्ट…",
+  "Imported from": "से आयातित",
+  "Imported": "आयात किया गया",
+  "Copyright": "कॉपीराइट",
+  "Captured": "खींची गई",
+  "Keywords": "कीवर्ड"
 }

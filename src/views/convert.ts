@@ -20,6 +20,7 @@ import { backHomeHtml, mountBackPill } from '../components/back-pill.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { mountHomeFab } from '../components/home-fab.ts';
 import { mountThemeFab } from '../components/theme-toggle.ts';
+import { mountProfileFab } from '../components/profile-menu.ts';
 import '../styles/parts/platform.css';   // .platform-layout / .plat-header / .plat-title / .plat-sub
 import '../styles/parts/convert.css';    // async CSS chunk (lazy view - not on the landing)
 
@@ -350,6 +351,7 @@ export async function mountConvert(viewEl: HTMLElement, host: HostV1, _params = 
   mountBackPill(viewEl);
   mountHomeFab(viewEl);
   mountThemeFab(viewEl.querySelector('.gallery-topright'), host);
+  mountProfileFab(viewEl.querySelector('.gallery-topright'), host);
   attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
   const drop = viewEl.querySelector<HTMLElement>('[data-drop]')!;
   const fileInput = viewEl.querySelector<HTMLInputElement>('[data-file]')!;

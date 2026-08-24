@@ -3664,5 +3664,10 @@
   "← All team projects": "← Усі командні проєкти",
   "✓ Added": "✓ Додано",
   "✓ Found {n} tools at {base}.": "✓ Знайдено {n} інструментів на {base}.",
-  "＋ New project…": "＋ Новий проєкт…"
+  "＋ New project…": "＋ Новий проєкт…",
+  "Imported from": "Імпортовано з",
+  "Imported": "Імпортовано",
+  "Copyright": "Авторські права",
+  "Captured": "Знято",
+  "Keywords": "Ключові слова"
 }

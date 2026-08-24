@@ -3664,5 +3664,10 @@
   "← All team projects": "← すべてのチームプロジェクト",
   "✓ Added": "✓ 追加しました",
   "✓ Found {n} tools at {base}.": "✓ {base}で{n}個のツールが見つかりました。",
-  "＋ New project…": "＋ 新規プロジェクト…"
+  "＋ New project…": "＋ 新規プロジェクト…",
+  "Imported from": "インポート元",
+  "Imported": "インポート日",
+  "Copyright": "著作権",
+  "Captured": "撮影日",
+  "Keywords": "キーワード"
 }

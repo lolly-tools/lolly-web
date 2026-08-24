@@ -3664,5 +3664,10 @@
   "← All team projects": "← Alle teamprosjekter",
   "✓ Added": "✓ Lagt til",
   "✓ Found {n} tools at {base}.": "✓ Fant {n} verktøy på {base}.",
-  "＋ New project…": "＋ Nytt prosjekt…"
+  "＋ New project…": "＋ Nytt prosjekt…",
+  "Imported from": "Importert fra",
+  "Imported": "Importert",
+  "Copyright": "Opphavsrett",
+  "Captured": "Tatt",
+  "Keywords": "Nøkkelord"
 }

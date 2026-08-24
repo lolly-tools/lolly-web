@@ -634,7 +634,7 @@ export interface DropChooserHooks {
 export async function openDropChooser(
   files: File[],
   host: PickerHost,
-  opts: { superseded?: () => boolean } & DropChooserHooks = {},
+  opts: { superseded?: () => boolean; source?: 'drop' | 'share-target' } & DropChooserHooks = {},
 ): Promise<void> {
   if (!files.length) return;
   const picker = await import('../views/picker.ts');
@@ -730,7 +730,7 @@ export async function openDropChooser(
       routeToConsumer('#/verify', /^#\/(verify|valid|v)([?/]|$)/.test(window.location.hash));
       break;
     case 'library':
-      await ingestToLibrary(files, host, picker, opts.onStored);
+      await ingestToLibrary(files, host, picker, opts.onStored, opts.source);
       break;
     case 'extract':
       await extractOfficeMarkdown(first, host);
@@ -746,7 +746,7 @@ export async function openDropChooser(
         const memberFiles = members.map(
           (m) => new File([m.bytes as BlobPart], m.name.split('/').pop() || m.name),
         );
-        await ingestToLibrary(memberFiles, host, picker, opts.onStored);
+        await ingestToLibrary(memberFiles, host, picker, opts.onStored, opts.source);
       } catch (err) {
         announce(tRaw('Upload failed: {message}', { message: (err as Error).message }), { assertive: true });
       }
@@ -784,7 +784,7 @@ function routeToConsumer(hash: string, alreadyThere: boolean): void {
  * everything else stores through storeUserUpload (downscale/sanitise/credential-
  * preserve). Sequential on purpose: parallel decodes of a big drop spike memory.
  */
-async function ingestToLibrary(files: File[], host: PickerHost, picker: PickerModule, onStored?: (ids: string[]) => void): Promise<void> {
+async function ingestToLibrary(files: File[], host: PickerHost, picker: PickerModule, onStored?: (ids: string[]) => void, source?: string): Promise<void> {
   // Drop a folder extracted from a macOS zip and its `._` AppleDouble stubs / .DS_Store
   // arrive as ordinary File drops; skip them so they never become blank "BIN" assets.
   // (The 'unpack' path's members are already filtered in readArchiveMembers; this also
@@ -810,7 +810,7 @@ async function ingestToLibrary(files: File[], host: PickerHost, picker: PickerMo
           warn: (m: string) => announce(m, { assertive: true }),
         })).map(r => r.id));
       } else {
-        ids.push((await picker.storeUserUpload(host, file)).id);
+        ids.push((await picker.storeUserUpload(host, file, { sourceHint: source ?? 'drop' })).id);
       }
     } catch (err) {
       // Cap/quota errors carry a user-ready message; prefix only the rest.
@@ -1049,7 +1049,7 @@ export function initShareTargetIngest(host: PickerHost): void {
     if (!file) return;
     const mine = ++seq;
     closeConfirmDialogs('drop-chooser');
-    void openDropChooser([file], host, { superseded: () => mine !== seq });
+    void openDropChooser([file], host, { superseded: () => mine !== seq, source: 'share-target' });
   };
   window.addEventListener('lolly-share-target', poll);
   poll(); // cold start: the launching intent was stashed before this JS booted

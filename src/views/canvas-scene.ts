@@ -165,6 +165,19 @@ export function isGeometryOnlyDamage(d: Damage): boolean {
     && d.zChanged.length === 0 && d.frames.length === 0;
 }
 
+/**
+ * The planner's relaxed gate (plans/141 WP-A item 6): like isGeometryOnlyDamage,
+ * but moved FRAMES are admitted - the planner itself then proves each one is a pure
+ * translation whose members rode exactly with it (their rendered position is
+ * frame-LOCAL, so the page element carries them and no member patch exists). Any
+ * frame damage the planner cannot prove safe still returns null → full repaint.
+ */
+function isMovedOnlyDamage(d: Damage): boolean {
+  return d.moved.length > 0
+    && d.restyled.length === 0 && d.added.length === 0 && d.removed.length === 0
+    && d.zChanged.length === 0;
+}
+
 /** Field names + cross-box context the geometry fast-path planner needs (plans/98 section 9). */
 export interface FastPathCfg {
   /** id/x/y/w/h/rot - the geometry lane. */
@@ -180,8 +193,10 @@ export interface FastPathCfg {
   connectorEndpointIds?: ReadonlySet<string>;
 }
 
-/** One node to move: its id and the new rounded left/top (matches hooks.js boxCss). */
-export interface FastPatch { id: string; x: number; y: number; }
+/** One node to move: its id and the new rounded left/top (matches hooks.js boxCss).
+ *  `frame: true` targets the artboard page element (`.lolly-frame-page[data-frame-id]`,
+ *  whose inline left/top are GLOBAL) instead of a `.lolly-box[data-box-id]`. */
+export interface FastPatch { id: string; x: number; y: number; frame?: boolean; }
 
 /**
  * The set of box ids that are connector endpoints (plans/98 section 9): every non-empty
@@ -258,7 +273,7 @@ export function geometryFastPathPlan(
   const d = diffBoxes(prev, next, f, {
     frameField: cfg.frameField, groupField: cfg.groupField, kindField: cfg.kindField,
   });
-  if (!isGeometryOnlyDamage(d)) return null;
+  if (!isMovedOnlyDamage(d)) return null;
 
   const prevById = new Map<string, Box>();
   for (const b of prev) prevById.set(String(b?.[f.idField] ?? ''), b);
@@ -269,10 +284,37 @@ export function geometryFastPathPlan(
     for (const b of next) { const m = String(b?.[cfg.clipField] ?? ''); if (m) maskIds.add(m); }
   }
 
+  // Matches diffBoxes' own frame classification (the literal 'frame' kind).
+  const isFrame = (b: Box): boolean => !!cfg.kindField && String(b[cfg.kindField]) === 'frame';
+
   const plan: FastPatch[] = [];
+
+  // Pass 1 - the moved ARTBOARDS (plans/141 WP-A item 6): pure translation only, and
+  // each becomes one patch against its page element. Record the delta so pass 2 can
+  // prove every member rode along.
+  const frameDelta = new Map<string, { dx: number; dy: number }>();
+  for (const i of d.frames) {
+    const box = next[i];
+    if (!box) return null;
+    const id = String(box[f.idField] ?? '');
+    if (!id) return null; // need a stable [data-frame-id] key
+    const p = prevById.get(id);
+    if (!p) return null;
+    if (Math.round(num(p[f.wField], 1)) !== Math.round(num(box[f.wField], 1))) return null;
+    if (Math.round(num(p[f.hField], 1)) !== Math.round(num(box[f.hField], 1))) return null;
+    if (num(p[f.rotationField], 0) !== num(box[f.rotationField], 0)) return null;
+    if (cfg.connectorEndpointIds?.has(id)) return null;
+    frameDelta.set(id, {
+      dx: num(box[f.xField], 0) - num(p[f.xField], 0),
+      dy: num(box[f.yField], 0) - num(p[f.yField], 0),
+    });
+    plan.push({ id, x: Math.round(num(box[f.xField], 0)), y: Math.round(num(box[f.yField], 0)), frame: true });
+  }
+
   for (const i of d.moved) {
     const box = next[i];
     if (!box) return null;
+    if (isFrame(box)) continue;                     // handled in pass 1
     const id = String(box[f.idField] ?? '');
     if (!id) return null; // need a stable [data-box-id] key
     const p = prevById.get(id);
@@ -281,11 +323,25 @@ export function geometryFastPathPlan(
     if (Math.round(num(p[f.wField], 1)) !== Math.round(num(box[f.wField], 1))) return null;
     if (Math.round(num(p[f.hField], 1)) !== Math.round(num(box[f.hField], 1))) return null;
     if (num(p[f.rotationField], 0) !== num(box[f.rotationField], 0)) return null;
-    // structural / cross-box exclusions
-    if (cfg.frameField && String(box[cfg.frameField] ?? '') !== '') return null; // frame member
+    // cross-box exclusions shared by both member kinds
     if (cfg.clipField && String(box[cfg.clipField] ?? '') !== '') return null;   // clip source
     if (maskIds.has(id)) return null;                                            // clip mask
     if (cfg.connectorEndpointIds?.has(id)) return null;                          // connector endpoint
+    const owner = cfg.frameField ? String(box[cfg.frameField] ?? '') : '';
+    if (owner) {
+      // A frame MEMBER renders at a frame-LOCAL position (with the frame's border
+      // inset folded in by the hook), so its DOM cannot be verified against global
+      // coords - and does not need to be: when it moved EXACTLY with its (also
+      // moved) frame, the page element carried it and its local style is unchanged
+      // by construction. Prove the ride model-side, emit nothing. Any other member
+      // move (a drag inside the frame, a desynced cascade) → full repaint.
+      const fd = frameDelta.get(owner);
+      if (!fd) return null;
+      const dx = num(box[f.xField], 0) - num(p[f.xField], 0);
+      const dy = num(box[f.yField], 0) - num(p[f.yField], 0);
+      if (Math.abs(dx - fd.dx) > 1e-6 || Math.abs(dy - fd.dy) > 1e-6) return null;
+      continue;
+    }
     plan.push({ id, x: Math.round(num(box[f.xField], 0)), y: Math.round(num(box[f.yField], 0)) });
   }
   return plan.length ? plan : null;

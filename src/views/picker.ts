@@ -3304,7 +3304,7 @@ async function findIdenticalUpload(host: PickerHost, file: File): Promise<AssetR
   return null;
 }
 
-export async function storeUserUpload(host: PickerHost, file: File, o: { skipDupCheck?: boolean } = {}): Promise<AssetRef> {
+export async function storeUserUpload(host: PickerHost, file: File, o: { skipDupCheck?: boolean; sourceHint?: string } = {}): Promise<AssetRef> {
   // Read the file as a blob, stash it in the user-assets IDB store, return
   // a `user/...` AssetRef. The bridge's assets.get() resolves these via the
   // same lookup path as library assets - uniform from the tool's POV.
@@ -3827,6 +3827,45 @@ export async function storeUserUpload(host: PickerHost, file: File, o: { skipDup
     } catch { /* nothing to preserve */ }
   }
 
+  // The ingest provenance snapshot (plans/144 Wave 5 O4): the import moment,
+  // captured once with the SOURCE file's own facts - the root of the asset's
+  // chain even after later derivations re-encode the pixels. Read from the
+  // ORIGINAL bytes, not the stored blob, because the downscale strips what
+  // this exists to remember. IDB-only, never exported, deleted with the asset.
+  let provenance: Record<string, unknown> | undefined;
+  if (!isLottie && !isAudio && !isMidi && file.size <= MAX_CREDENTIAL_SCAN_BYTES) {
+    try {
+      const sm = extractFileMetadata(new Uint8Array(await file.arrayBuffer()));
+      const pick = (...labels: string[]): string | undefined => {
+        for (const l of labels) {
+          const f = sm.fields.find((x) => x.label === l);
+          if (f?.value) return f.value;
+        }
+        return undefined;
+      };
+      const digest: Record<string, string> = {};
+      const author = pick('Artist', 'Author', 'Creator', 'By-line');
+      if (author) digest.author = author;
+      const copyright = pick('Copyright', 'Rights');
+      if (copyright) digest.copyright = copyright;
+      const captureDate = pick('Taken', 'Creation Time');
+      if (captureDate) digest.captureDate = captureDate;
+      const software = pick('Software', 'Created with');
+      if (software) digest.software = software;
+      const camera = pick('Camera');
+      if (camera) digest.camera = camera;
+      const keywords = pick('Keywords');
+      if (keywords) digest.keywords = keywords;
+      provenance = {
+        originalFilename: file.name,
+        importedAt: new Date().toISOString(),
+        sourceHint: o.sourceHint ?? 'picker',
+        ...(Object.keys(digest).length ? { metaDigest: digest } : {}),
+        credentialPresent: !!credential,
+      };
+    } catch { /* the upload proceeds without a snapshot */ }
+  }
+
   const record: UserAssetRecordInput = {
     id,
     type: isLottie ? 'lottie' : isVector ? 'vector' : isVideo ? 'video' : (isAudio || isMidi || isModule) ? 'audio' : isData ? 'data' : isText ? 'text' : 'raster',
@@ -3863,6 +3902,8 @@ export async function storeUserUpload(host: PickerHost, file: File, o: { skipDup
       // file is packaged the way a known AI product packages downloads. A
       // signal the chips render hedged, never a verdict.
       ...(makerLikely ? { makerLikely } : {}),
+      // The import-moment snapshot (plans/144 Wave 5 O4) - see above.
+      ...(provenance ? { provenance } : {}),
     },
     ...(bareAi ? { aiGenerated: bareAi } : {}),
   };

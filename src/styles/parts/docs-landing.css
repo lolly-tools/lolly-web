@@ -454,6 +454,11 @@ html[data-theme="dark"] .fmt-dialog{background:hsl(var(--popover));color:hsl(var
 .fmt-dialog-feats:empty{margin:0}
 .fmt-dialog-feats li{font-size:.72rem;font-weight:700;color:inherit;background:var(--pale);border:1px solid var(--border);padding:.32em .68em;border-radius:1em;display:inline-flex;align-items:center;gap:.4em}
 .fmt-dialog-feats li::before{content:'';width:.5em;height:.5em;border-radius:50%;background:var(--green);flex:none}
+/* The format's metadata claims (plans/144 O1): what Lolly reads and writes in
+   its own metadata containers, and what survives a round trip. Empty when a row
+   carries no block, so the margin collapses with it. */
+.fmt-dialog-meta{margin:1.1rem 0 0;font-size:.78rem;line-height:1.55;color:inherit;opacity:.8}
+.fmt-dialog-meta:empty{margin:0}
 .fmt-dialog-unsup{margin:1.2rem 0 0;padding:.85rem 1rem;border-radius:12px;background:rgba(254,124,63,.1)}
 .fmt-dialog-unsup[hidden]{display:none}
 .fmt-dialog-unsup-label{display:block;font-size:.62rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--orange);margin-bottom:.5rem}

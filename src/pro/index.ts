@@ -872,6 +872,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     const grid = parseClipboardGrid(text);
     if (grid.length <= 1 && (grid[0]?.length ?? 0) <= 1) return;
     e.preventDefault();
+    if (routeMappedPaste(td as HTMLElement, grid)) return; // header / fixed-column mapping (plans/140 S3)
     pasteFill((td as HTMLElement).dataset.row, (td as HTMLElement).dataset.col, grid);
   });
 
@@ -1556,12 +1557,157 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   // Fill values from a pasted spreadsheet range, anchored at the focused cell.
   // Only writes into rows that already have a template (use Upload CSV to set
   // templates too); cells the tool doesn't have are skipped.
+  // A pasted attendee list is usually taller than the grid: grow to fit, cloning
+  // the anchor row's template + settings into the new rows (the same copy
+  // fillEmptyFromLast makes) - a row with no manifest would silently drop its
+  // slice of the paste. Shared by the anchor fill and the mapped fill.
+  function growRowsForPaste(startRowIdx: number, rowCount: number): void {
+    const anchor = state.rows[startRowIdx];
+    const shortfall = startRowIdx + rowCount - state.rows.length;
+    if (shortfall <= 0 || !anchor?.toolId) return;
+    for (const row of addRows(shortfall)) {
+      row.toolId = anchor.toolId;
+      row.manifest = anchor.manifest;
+      row.values = structuredClone(anchor.values ?? {});
+      row.format = anchor.format;
+      row.outWidth = anchor.outWidth;
+      row.outHeight = anchor.outHeight;
+      row.unit = anchor.unit;
+      row.dpi = anchor.dpi;
+    }
+  }
+
+  // plans/140 S3: routes a grid paste by COLUMN IDS instead of contiguous
+  // position - the header route and the fixed-column route both land here.
+  // Unhides every target column, grows the grid, coerces per input, re-renders.
+  function applyMappedPaste(startUid: string | undefined, dataRows: string[][], colIds: (string | null)[]): void {
+    const startRowIdx = state.rows.findIndex(r => r.uid === startUid);
+    if (startRowIdx < 0) return;
+    for (const id of colIds) if (id) state.collapsed.delete(id);
+    growRowsForPaste(startRowIdx, dataRows.length);
+    let filled = 0;
+    for (let r = 0; r < dataRows.length; r++) {
+      const row = state.rows[startRowIdx + r];
+      if (!row || !row.manifest) continue;
+      const byId = new Map((row.manifest.inputs ?? []).map((i: any) => [i.id, i]));
+      for (let c = 0; c < dataRows[r]!.length; c++) {
+        const id = colIds[c];
+        const input = id ? byId.get(id) : undefined;
+        if (!input) continue;
+        const v = coerceCell(input as Parameters<typeof coerceCell>[0], dataRows[r]![c]!);
+        if (v !== undefined) { row.values[id!] = v; filled++; }
+      }
+    }
+    columns = renderGrid();
+    if (filled) showProgress(`<p class="pro-progress-msg">Pasted ${filled} value${filled === 1 ? '' : 's'} from the clipboard.</p>`);
+  }
+
+  // plans/140 S3: an attendee list must never misfile into Save-as/size cells.
+  // Two routes run ahead of the anchor-strict fill:
+  //   1. HEADER: row 0's cells name this tool's inputs (by label or id,
+  //      case-insensitive, no duplicates) - map by name, drop the header row,
+  //      show any hidden target columns. No confirmation: the names were the
+  //      user's own.
+  //   2. FIXED-COLUMN ANCHOR: a multi-column paste aimed at Template/Save
+  //      as/size maps positionally onto the tool's input columns after ONE
+  //      confirmation naming the mapping - instead of writing names into
+  //      Save-as and Width.
+  // A headerless paste anchored in a real input column keeps the spreadsheet
+  // convention untouched (fill right/down from the anchor).
+  const PASTE_FIXED_COLS = ['__template', '__filename', '__width', '__height', '__unit', '__dpi'];
+  function routeMappedPaste(td: HTMLElement, grid: string[][]): boolean {
+    const row = rowByUid(td.dataset.row);
+    if (!row || !row.manifest) return false;
+    const inputs = (row.manifest.inputs ?? []) as { id: string; label?: string }[];
+    const norm = (s: unknown) => String(s ?? '').trim().toLowerCase();
+    const byName = new Map<string, string>();
+    for (const i of inputs) { byName.set(norm(i.id), i.id); if (i.label) byName.set(norm(i.label), i.id); }
+
+    const head = grid[0] ?? [];
+    const matched = head.map(h => byName.get(norm(h)) ?? null);
+    const hits = matched.filter(Boolean);
+    if (grid.length > 1 && hits.length >= Math.max(1, Math.ceil(head.length / 2)) && hits.length === new Set(hits).size) {
+      applyMappedPaste(td.dataset.row, grid.slice(1), matched);
+      srAnnounce(`Mapped ${hits.length} column${hits.length === 1 ? '' : 's'} by header`);
+      return true;
+    }
+
+    if (!PASTE_FIXED_COLS.includes(td.dataset.col ?? '') || (grid[0]?.length ?? 0) < 2) return false;
+    const cols = deriveColumns([row as Parameters<typeof deriveColumns>[0][number]]);
+    if (!cols.length) return false;
+    void (async () => {
+      const ids = await askColumnMapping(cols, grid, inputs);
+      if (ids) applyMappedPaste(td.dataset.row, grid, ids);
+    })();
+    return true;
+  }
+
+  // The S3 mapping dialog: one select per pasted column, prefilled with the
+  // grid's VISIBLE input columns in order, then the tool's text-family inputs
+  // (an attendee list is names, not the Badge-size select that happens to be
+  // declared first). The first data row rides each select's label as a sample,
+  // so "Ana" sits beside the control choosing its column.
+  async function askColumnMapping(
+    cols: { key: string; label: string }[],
+    grid: string[][],
+    inputs: { id: string; label?: string; type?: string }[],
+  ): Promise<(string | null)[] | null> {
+    const n = grid[0]!.length;
+    // Free-text inputs only: a pasted list is names and labels, not the number
+    // and date controls a tool declares between them.
+    const textish = new Set(['text', 'longtext', 'url']);
+    const typeOf = new Map(inputs.map(i => [i.id, i.type ?? '']));
+    const preferred = [
+      ...cols.filter(c => !state.collapsed.has(c.key)),
+      ...cols.filter(c => state.collapsed.has(c.key) && textish.has(typeOf.get(c.key) ?? '')),
+      ...cols.filter(c => state.collapsed.has(c.key) && !textish.has(typeOf.get(c.key) ?? '')),
+    ];
+    const rowsWord = `${grid.length} row${grid.length === 1 ? '' : 's'}`;
+    const selects = Array.from({ length: n }, (_, i) => {
+      const pre = preferred[i]?.key ?? '';
+      const sample = String(grid[0]![i] ?? '').slice(0, 24);
+      return `<label class="pro-map-row" style="display:flex;align-items:center;gap:10px;justify-content:space-between">
+        <span class="pro-map-sample" style="font-family:var(--font-mono);font-size:.8rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:12ch">${escape(sample || `column ${i + 1}`)}</span>
+        <select class="field-select" data-map-col="${i}" aria-label="${escape(t('Input for pasted column'))} ${i + 1}" style="max-width:60%">
+          <option value="">${escape(t('Skip'))}</option>
+          ${cols.map(c => `<option value="${escape(c.key)}"${c.key === pre ? ' selected' : ''}>${escape(c.label)}</option>`).join('')}
+        </select>
+      </label>`;
+    }).join('');
+    return new Promise((resolve) => {
+      const content = `
+        <h2 class="modal-title">${escape(t('Map pasted columns?'))}</h2>
+        <p class="modal-msg">${escape(t('The cell you pasted into holds export settings, so choose which input each pasted column fills.'))} (${escape(rowsWord)})</p>
+        <div class="pro-map-rows" style="display:flex;flex-direction:column;gap:8px;margin:12px 0">${selects}</div>
+        <div class="modal-actions">
+          <button type="button" class="btn modal-cancel" data-act="cancel">${escape(t('Cancel'))}</button>
+          <button type="button" class="btn modal-primary" data-act="ok">${escape(t('Paste'))}</button>
+        </div>`;
+      const modal = mountModal<(string | null)[] | null>(content, {
+        className: 'modal',
+        cancelValue: null,
+        initialFocus: (el) => el.querySelector<HTMLElement>('select[data-map-col]'),
+        onClose: (result) => resolve(result ?? null),
+      });
+      modal.el.addEventListener('click', (e) => {
+        const act = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-act]')?.dataset.act : undefined;
+        if (act === 'ok') {
+          const picks = Array.from({ length: n }, (_, i) =>
+            modal.el.querySelector<HTMLSelectElement>(`select[data-map-col="${i}"]`)?.value || null);
+          modal.close(picks);
+        } else if (act === 'cancel') modal.close(null);
+      });
+    });
+  }
+
   function pasteFill(startUid: string | undefined, startColKey: string | undefined, grid: any) {
     // Column order must match the rendered grid so paste anchors correctly.
     const flatCols = ['__template', '__filename', '__width', '__height', '__unit', '__dpi', ...columns.map((c: any) => c.key)];
     const startRowIdx = state.rows.findIndex(r => r.uid === startUid);
     const startColIdx = Math.max(0, flatCols.indexOf(startColKey));
     if (startRowIdx < 0) return;
+
+    growRowsForPaste(startRowIdx, grid.length);
 
     let filled = 0;
     for (let r = 0; r < grid.length; r++) {
@@ -1625,7 +1771,11 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     // Ask before committing to the render (a batch can be large) and always offer the
     // whole-download lock + optional AES-256 password - it protects EVERY member (incl.
     // image-only batches) and R6-locks any PDFs inside. Blank password = no lock; cancel aborts.
-    const { ok, strongPassword, zipLock } = await askExportLock(`${renderable.length} file${renderable.length === 1 ? '' : 's'}`, true);
+    // When every row resolves to PDF, also offer the single-document delivery
+    // (plans/140 S5) - one merged PDF, one row's pages after another.
+    const allPdf = renderable.length > 1 &&
+      renderable.every(r => { const f = (r as { format?: string }).format || state.format; return f === 'pdf' || f === 'pdf-cmyk'; });
+    const { ok, strongPassword, zipLock, combinePdf } = await askExportLock(`${renderable.length} file${renderable.length === 1 ? '' : 's'}`, true, { offerCombine: allPdf });
     if (!ok) return;                          // cancelled
 
     // Author details ride into the zip manifest only when the user has opted in
@@ -1682,7 +1832,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
           onRendered: () => { state.running = false; renderGrid(); },
           onBatchRendered: opts.onBatchRendered,
           announce: srAnnounce,
-          strongPassword, zipLock,
+          strongPassword, zipLock, combinePdf,
         });
       } catch (err) {
         // The grid's own recovery still runs (clear `running`, say what happened in the

@@ -2492,6 +2492,11 @@ export function initDeckEditor(opts: InitDeckEditorOpts): DeckEditorHandle {
       if (!isPptx(parts)) throw new Error('That file is not a PowerPoint presentation (.pptx).');
       const deck = readPptx(parts, (xml) => new DOMParser().parseFromString(xml, 'application/xml'));
       const total = deck.slides.length;
+      // The source deck's own author (docProps/core.xml) → the tool's
+      // sourceAuthor input, so the re-export credits both authors when they
+      // differ (plans/144 G6). Visible in the sidebar; the user can clear it.
+      const creator = deck.coreProps?.creator?.trim();
+      if (creator) { try { void runtime.setInput('sourceAuthor', creator); } catch { /* older manifest without the input */ } }
       // Memoised + budgeted resolver; slides past MAX_SLIDES are sliced off inside
       // pptxDeckToSlides BEFORE lowering, so their media is never encoded at all.
       let slides = pptxDeckToSlides(deck, makeMediaResolver((path) => pptxMediaDataUrl(parts, path)));

@@ -31,14 +31,14 @@ import { icon } from '../../icons.ts';
 import { NAV_SECTIONS } from '../../../views/profile.ts';
 import { DASH_SECTIONS, dashHref } from '../../../views/dashboard-registry.ts';
 import {
-  CATEGORY_FLAGS, NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG,
+  CATEGORY_FLAGS, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG,
   flagHidden,
 } from '../../../feature-flags.ts';
 import type { FeatureFlag } from '../../../feature-flags.ts';
 
 // The standalone toggles the profile's Feature flags drawer lists (its flagListHtml
 // order), joined with the gallery category flags below.
-const STANDALONE_FLAGS: readonly FeatureFlag[] = [NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG];
+const STANDALONE_FLAGS: readonly FeatureFlag[] = [JELLY_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG];
 
 // The Accessibility card's four prefs (views/profile.ts A11Y_ROWS - the labels
 // are a copy, pinned against that source by settings.test.ts so a reword there
@@ -49,6 +49,11 @@ const A11Y_PREFS: ReadonlyArray<{ label: string; keywords: string }> = [
   { label: 'Hide colourful previews', keywords: 'previews thumbnails colourful colorful calm quiet noise hide a11y accessibility' },
   { label: 'High contrast', keywords: 'contrast borders outlines focus ring visibility legibility a11y accessibility' },
   { label: 'Large text', keywords: 'text size type font bigger larger zoom magnify large a11y accessibility' },
+  // Sound + focus music live in the same card (plans/142 A11y-1/2): first-class
+  // accommodations, so searching for them routes to Accessibility - never to
+  // the experimental flags drawer.
+  { label: 'Sound', keywords: 'sound mute audio effects sfx quiet silence volume a11y accessibility' },
+  { label: 'Neurospicy Mode', keywords: 'neurospicy focus music beat atmosphere stimulation background a11y accessibility' },
 ];
 
 /** An item ready to score: a prebuilt (folded) haystack plus its hit fields. */

@@ -223,6 +223,60 @@ test('geometryFastPathPlan refuses empty-id boxes and any non-geometry change', 
   assert.equal(geometryFastPathPlan(styled, [pbox({ id: 'a', x: 9, bg: '#fff' })], fastCfg), null);
 });
 
+// ── Artboard (frame) moves - plans/141 WP-A item 6 ───────────────────────────
+
+test('geometryFastPathPlan: a frame translated with its riding members patches the PAGE only', () => {
+  // The members' rendered positions are frame-LOCAL, so the page element carries
+  // them - the plan proves the ride model-side and emits no member entries.
+  const prev: Box[] = [
+    pbox({ id: 'f1', kind: 'frame', x: 100, y: 100, w: 400, h: 300 }),
+    pbox({ id: 'a', x: 150, y: 150, frame: 'f1' }),
+    pbox({ id: 'b', x: 220, y: 180, frame: 'f1' }),
+  ];
+  const next: Box[] = [
+    pbox({ id: 'f1', kind: 'frame', x: 150.4, y: 130.6, w: 400, h: 300 }),
+    pbox({ id: 'a', x: 200.4, y: 180.6, frame: 'f1' }),
+    pbox({ id: 'b', x: 270.4, y: 210.6, frame: 'f1' }),
+  ];
+  assert.deepEqual(geometryFastPathPlan(prev, next, fastCfg),
+    [{ id: 'f1', x: 150, y: 131, frame: true }]);
+});
+
+test('geometryFastPathPlan: a member desynced from its frame delta refuses the whole plan', () => {
+  const prev: Box[] = [
+    pbox({ id: 'f1', kind: 'frame', x: 100, y: 100, w: 400, h: 300 }),
+    pbox({ id: 'a', x: 150, y: 150, frame: 'f1' }),
+  ];
+  const next: Box[] = [
+    pbox({ id: 'f1', kind: 'frame', x: 150, y: 130, w: 400, h: 300 }),
+    pbox({ id: 'a', x: 205, y: 180, frame: 'f1' }),   // dx 55 ≠ frame's 50
+  ];
+  assert.equal(geometryFastPathPlan(prev, next, fastCfg), null);
+});
+
+test('geometryFastPathPlan: a frame RESIZE refuses (page bounds + clip change)', () => {
+  const prev: Box[] = [pbox({ id: 'f1', kind: 'frame', x: 100, y: 100, w: 400, h: 300 })];
+  const next: Box[] = [pbox({ id: 'f1', kind: 'frame', x: 60, y: 60, w: 440, h: 340 })];
+  assert.equal(geometryFastPathPlan(prev, next, fastCfg), null);
+});
+
+test('geometryFastPathPlan: a frame move composes with an independent scratch-box move', () => {
+  const prev: Box[] = [
+    pbox({ id: 'f1', kind: 'frame', x: 100, y: 100, w: 400, h: 300 }),
+    pbox({ id: 'a', x: 150, y: 150, frame: 'f1' }),
+    pbox({ id: 's', x: 900, y: 40 }),                 // pasteboard scratch box
+  ];
+  const next: Box[] = [
+    pbox({ id: 'f1', kind: 'frame', x: 150, y: 100, w: 400, h: 300 }),
+    pbox({ id: 'a', x: 200, y: 150, frame: 'f1' }),
+    pbox({ id: 's', x: 940, y: 60 }),
+  ];
+  assert.deepEqual(geometryFastPathPlan(prev, next, fastCfg), [
+    { id: 'f1', x: 150, y: 100, frame: true },
+    { id: 's', x: 940, y: 60 },
+  ]);
+});
+
 test('boundEndpointIds = bind targets ∪ path-box ids (connector-endpoint exclusion set)', () => {
   const boxes: Box[] = [
     pbox({ id: 'a' }),

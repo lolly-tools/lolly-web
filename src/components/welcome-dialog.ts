@@ -243,3 +243,54 @@ export function mountBrandTips(anchorEl: HTMLElement | null): void {
   });
   anchorEl.before(strip);
 }
+
+const BRANDED_INTRO_KEY = 'lolly-branded-intro-dismissed';
+
+/**
+ * The BRANDED install's first-run strip (plans/140 S4). The welcome dialog and
+ * the tips strip above are unbranded-only, so a branded first visit used to get
+ * the gallery with no orientation at all beyond the What? button. Same slim
+ * shape as the tips strip, shown only when the banner ladder left the slot free
+ * (the gallery decides that; this module owns the surface), and settled by:
+ * its ✕, or opening ANY tool (making something IS the orientation) - watched
+ * via NAV_EVENTS while mounted. An install that already holds saved work needs
+ * no introduction: the flag settles silently and the strip never appears
+ * mid-tenure.
+ */
+export async function mountBrandedIntro(
+  anchorEl: HTMLElement | null,
+  state?: { list?: () => Promise<unknown[]> },
+): Promise<void> {
+  if (!anchorEl || !anchorEl.isConnected) return;
+  try { if (localStorage.getItem(BRANDED_INTRO_KEY) === '1') return; }
+  catch { return; } // storage off - a dismissal couldn't persist, so don't nag every visit
+  const settle = (): void => { try { localStorage.setItem(BRANDED_INTRO_KEY, '1'); } catch { /* storage off */ } };
+  try {
+    const slots = await state?.list?.();
+    if (slots && slots.length > 0) { settle(); return; }
+  } catch { /* state unavailable - fall through and show the strip */ }
+  if (!anchorEl.isConnected) return; // navigated away while the state check ran
+  if (anchorEl.parentElement?.querySelector('.brand-tips')) return; // one strip only
+  const strip = document.createElement('aside');
+  strip.className = 'brand-tips brand-tips--intro';
+  strip.setAttribute('role', 'note');
+  strip.setAttribute('aria-label', 'Getting started');
+  strip.innerHTML = `
+    <p class="brand-tips-text">Your brand is loaded <span class="brand-tips-dot" aria-hidden="true">&middot;</span> pick a template, make it yours, export on brand <span class="brand-tips-dot" aria-hidden="true">&middot;</span> <a href="${docsAppHref('quickstart')}">Quickstart</a></p>
+    <button type="button" class="brand-tips-dismiss" aria-label="Dismiss">&#x2715;</button>`;
+  const onNav = (): void => {
+    // Opening a tool is the strip's own advice taken - settle without requiring the ✕.
+    if (location.pathname.startsWith('/t/') || location.hash.startsWith('#/tool')) {
+      settle();
+      teardown();
+    }
+    if (!strip.isConnected) teardown(); // the gallery unmounted - stop listening either way
+  };
+  const teardown = (): void => {
+    NAV_EVENTS.forEach(ev => window.removeEventListener(ev, onNav));
+    strip.remove();
+  };
+  NAV_EVENTS.forEach(ev => window.addEventListener(ev, onNav));
+  strip.querySelector<HTMLButtonElement>('.brand-tips-dismiss')?.addEventListener('click', () => { settle(); teardown(); });
+  anchorEl.before(strip);
+}

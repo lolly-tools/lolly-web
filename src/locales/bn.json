@@ -3664,5 +3664,10 @@
   "← All team projects": "← সব টিম প্রজেক্ট",
   "✓ Added": "✓ যোগ হয়েছে",
   "✓ Found {n} tools at {base}.": "✓ {base}-এ {n}টি টুল পাওয়া গেছে।",
-  "＋ New project…": "＋ নতুন প্রজেক্ট…"
+  "＋ New project…": "＋ নতুন প্রজেক্ট…",
+  "Imported from": "থেকে আমদানি",
+  "Imported": "আমদানি হয়েছে",
+  "Copyright": "কপিরাইট",
+  "Captured": "তোলা হয়েছে",
+  "Keywords": "কীওয়ার্ড"
 }

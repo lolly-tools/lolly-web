@@ -3261,6 +3261,14 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
    only applies while the free-canvas overlay is mounted. */
 .tool-canvas-outer:has(> .tool-canvas.fc-open-canvas) { overflow: visible; }
 
+/* With artboards in the doc (frames mode) the canvas rect is only the PASTEBOARD:
+   each artboard page paints its own surface + editor shadow, so the outer ring +
+   drop shadow here would outline a phantom page behind them (and it lingered
+   after drawing the first artboard). free-canvas stamps `fc-has-frames` from the
+   model on every chrome sync; no-frames docs keep the page chrome - there the
+   canvas IS the artboard. (plans/141) */
+.tool-canvas-outer:has(> .tool-canvas.fc-has-frames) { box-shadow: none; }
+
 @media (prefers-reduced-motion: reduce) {
   .tool-canvas-outer,
   .tool-canvas-outer.is-resizing { transition: none; }
@@ -3659,5 +3667,21 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   border-color: hsl(var(--ring));
   outline: none;
   box-shadow: 0 0 0 3px hsl(var(--ring) / 0.15);
+}
+
+/* ── Entrance settle (plans/142) - the tool view mounts as one brief fade
+   (sidebar + stage wrapper) instead of an instant cut; the worst measured
+   transition was the countdown tool's full-bleed dark canvas over a white
+   page (ΔL 0.90). Same card-in ladder as the dashboards/gallery; armed by
+   views/tool.ts via armViewEnter, which skips arming under the OS OR app
+   reduced-motion pref, so this block never needs an attribute guard. The
+   animated node is .tool-stage (the wrapper), never #tool-canvas - the
+   artwork's own paint stays untouched. */
+@media (prefers-reduced-motion: no-preference) {
+  .tool-view.is-entering .sidebar,
+  .tool-view.is-entering .tool-stage {
+    animation: card-in var(--enter-dur) var(--enter-ease) backwards;
+    animation-delay: calc(var(--enter-i, 0) * 0.05s);
+  }
 }
 }

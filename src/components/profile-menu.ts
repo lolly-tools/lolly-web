@@ -22,6 +22,7 @@
 import { THEMES, THEME_LABELS, currentTheme } from '../theme.ts';
 import { setTheme, type SetThemeHost } from '../lib/set-theme.ts';
 import { escape } from '../utils.ts';
+import { icon } from '../lib/icons.ts';
 import { mountBodyPopover } from './body-popover.ts';
 import { t, LANG_META, currentLang, type LangSwitchHost } from '../i18n.ts';
 
@@ -174,4 +175,30 @@ export function attachProfileMenu(
   trigger.addEventListener('click', onClick);
 
   return () => { popover.close(); trigger.removeEventListener('click', onClick); };
+}
+
+/**
+ * Append the profile FAB (icon-only `#/profile` link, skinned `.profile-fab` -
+ * topbar.css, same box as `.theme-fab`) to a view's fixed top-right cluster and
+ * attach the mobile menu to it - the mirror of theme-toggle.ts's mountThemeFab,
+ * for the nav-less utility views (Dashboard, Verify, Convert, Spreadsheet,
+ * Unpack, Script, /start, the Lab). Desktop: a plain quick link to the profile;
+ * ≤640px: the consolidated menu, and the cluster's own language FAB hides
+ * against it (overrides.css `.gallery-topright:has(.profile-fab) .lang-fab`).
+ * A no-op when the cluster isn't present, like mountThemeFab.
+ */
+export function mountProfileFab(
+  cluster: Element | null,
+  host: ProfileMenuHost,
+  opts: { className?: string } = {},
+): void {
+  if (!cluster) return;
+  const link = document.createElement('a');
+  link.href = '#/profile';
+  link.className = opts.className ?? 'profile-fab';
+  link.setAttribute('aria-label', t('Open your profile'));
+  link.title = t('Profile');
+  link.innerHTML = icon('user');
+  cluster.appendChild(link);
+  attachProfileMenu(link, host);
 }

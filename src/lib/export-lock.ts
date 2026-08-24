@@ -24,6 +24,9 @@ export interface ExportLockResult {
   strongPassword?: string;
   /** Whole-zip encryption tier (only when a password was set). */
   zipLock?: ZipTier;
+  /** Deliver as ONE merged PDF (one row's pages after another) instead of a zip
+   *  (plans/140 S5). Only offered when every row renders to PDF. */
+  combinePdf?: boolean;
 }
 
 /**
@@ -31,7 +34,7 @@ export interface ExportLockResult {
  * @param offerPassword  whether the run can produce lockable content (offer the
  *                       password + tier) or not (a plain confirm).
  */
-export async function askExportLock(what: string, offerPassword: boolean): Promise<ExportLockResult> {
+export async function askExportLock(what: string, offerPassword: boolean, opts?: { offerCombine?: boolean }): Promise<ExportLockResult> {
   if (!offerPassword) {
     const ok = await confirmDialog({ title: `Render ${what}?`, message: 'Renders into a zip.', confirmLabel: 'Render', danger: false });
     return { ok };
@@ -53,6 +56,11 @@ export async function askExportLock(what: string, offerPassword: boolean): Promi
         <option value="strong">Strong · AES-256 - needs 7-Zip / WinZip / macOS (not Windows Explorer) ⓘ</option>
         <option value="standard">Standard · opens anywhere incl. Windows Explorer - weaker</option>
       </select>
+      ${opts?.offerCombine ? `
+      <label class="export-lock-combine-row" style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;text-align:left">
+        <input type="checkbox" class="field-check export-lock-combine" style="margin-top:2px">
+        <span>Single PDF - one row per page, ready for a print shop. The zip keeps each file's own Content Credentials; the combined PDF does not.</span>
+      </label>` : ''}
       <div class="modal-actions">
         <button type="button" class="btn modal-cancel" data-act="cancel">Cancel</button>
         <button type="button" class="btn modal-primary" data-act="ok">Render</button>
@@ -69,7 +77,8 @@ export async function askExportLock(what: string, offerPassword: boolean): Promi
       const act = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-act]')?.dataset.act : undefined;
       if (act === 'ok') {
         const pw = pwEl.value;
-        modal.close({ ok: true, strongPassword: pw || undefined, zipLock: pw ? (tierEl.value as ZipTier) : undefined });
+        const combinePdf = modal.el.querySelector<HTMLInputElement>('.export-lock-combine')?.checked || undefined;
+        modal.close({ ok: true, strongPassword: pw || undefined, zipLock: pw ? (tierEl.value as ZipTier) : undefined, combinePdf });
         return;
       }
       if (act === 'cancel') modal.close({ ok: false });

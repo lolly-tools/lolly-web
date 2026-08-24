@@ -402,6 +402,7 @@ interface ToolbarActions {
   copy(): void;
   share(): void;
   present?(): void;                  // open the frames as a fullscreen deck (plan 112); absent = not a frame tool
+  newFromTemplate?(): void;          // re-open the Start template chooser mid-session (plans/142 WP-1); absent = tool has no templates
   canSave?: boolean;                 // omit the Save icon for tools that don't persist a session
   dirtyRef?: HTMLElement | null;     // element whose `is-unsaved` class the Save icon mirrors
 }
@@ -534,6 +535,8 @@ const SVG = {
   present: '<path d="M8 5v14l11-7z"/>',
   // Code - angle brackets (open the Custom CSS editor, plan 112 M4).
   code: '<polyline points="8 6 3 11 8 16"/><polyline points="16 6 21 11 16 16"/>',
+  // Templates - a 2×2 tile grid, echoing the Start chooser's tile layout (plans/142).
+  templates: '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/>',
   // Notes - a lined note card (open the speaker-notes panel, plan 112 M5).
   notes: '<rect x="4" y="4" width="16" height="16" rx="2"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/>',
   // Undo/redo - same glyphs as the sidebar header's history buttons (tool.js).
@@ -1994,7 +1997,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // frame's own position and the frame-local drag math below works unchanged.
     if (!pages && !frameCfg) return { x: 0, y: 0 };
     const f = el.closest?.('[data-pdf-page]') as HTMLElement | null;
-    if (!f) return { x: 0, y: 0 };
+    // closest() matches the element ITSELF: a frame's own page element positions in
+    // GLOBAL canvas space, so its offset is zero - subtracting its own offsetLeft/Top
+    // here would teleport a dragged artboard to the canvas origin on the first move.
+    if (!f || f === el) return { x: 0, y: 0 };
     if (frameOffCache) {
       let c = frameOffCache.get(f);
       if (!c) { c = { x: f.offsetLeft, y: f.offsetTop }; frameOffCache.set(f, c); }
@@ -2002,6 +2008,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
     return { x: f.offsetLeft, y: f.offsetTop };
   };
+
+  // The live DOM element for box `id`. A frame-kind box has no `.lolly-box` - its
+  // element IS the page (`.lolly-frame-page[data-frame-id]`), so fall back to it;
+  // gestures then move the page directly and its frame-local children ride along.
+  const liveBoxEl = (id: string): HTMLElement | null =>
+    canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(id)}"]`)
+    ?? canvasEl.querySelector<HTMLElement>(`.lolly-frame-page[data-frame-id="${cssEscape(id)}"]`);
 
   // ── DOM: overlay + toolbar ──────────────────────────────────────────────────
   const overlay = document.createElement('div');
@@ -2683,11 +2696,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (pages || setCanvasSize) {
         if (items.length) items.push({ sep: true });
         if (pages) items.push({ label: t('Pages & page size'), icon: icon(SVG.pages), key: 'pages', run: () => openPagesMenu(lollyBtn!) });
-        else items.push({ label: t('Canvas size'), icon: icon(SVG.size), key: 'size', run: () => openSizeMenu(lollyBtn!) });
+        else items.push({ label: activeFrameIndex(getBoxes()) >= 0 ? t('Artboard size') : t('Canvas size'), icon: icon(SVG.size), key: 'size', run: () => openSizeMenu(lollyBtn!) });
       }
-      if (info || importCfg) {
+      if (info || importCfg || actions?.newFromTemplate) {
         if (items.length) items.push({ sep: true });
         if (info) items.push({ label: t('Document info'), icon: icon(SVG.info), key: 'info', run: () => openInfoPanel(lollyBtn!) });
+        // Back to the Start chooser (plans/142 WP-1) - sits in the same "bring a
+        // document in" group as Import. The pick applies through the tool's own
+        // undoable path, so it is one ⌘Z away, never a destructive reset.
+        if (actions?.newFromTemplate) items.push({ label: t('New from template'), icon: icon(SVG.templates), key: 'templates', run: () => actions.newFromTemplate!() });
         // keepOpen, because openImportPanel closes this menu and then assigns its own
         // panel to `popover`: without it fillPopover's trailing closePopover() would
         // tear the freshly-mounted import panel down in the same click. (The pages /
@@ -4103,8 +4120,54 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // px per 1 of a unit (96-DPI CSS convention - matches the artboard mapping).
   const pxPerUnit = (u: string): number => (u === 'px' ? 1 : toCssPx({ value: 1, unit: u as any }));
   const toUnitVal = (n: number, from: string, to: string): number => (n > 0 ? Math.round(n * pxPerUnit(from) / pxPerUnit(to) * 100) / 100 : n);
+  // The artboard the size UI targets: the selected frame-kind box, else the primary
+  // (lowest order, then leftmost) one. −1 when the doc has no artboards.
+  function activeFrameIndex(boxes: Box[]): number {
+    if (!frameCfg) return -1;
+    const fk = frameCfg.frameKind;
+    const of = frameCfg.orderField;
+    for (const i of selIndices(boxes)) {
+      const b = boxes[i];
+      if (b && String(b[cfg.kindField]) === fk) return i;
+    }
+    let best = -1;
+    for (let i = 0; i < boxes.length; i++) {
+      const b = boxes[i];
+      if (!b || String(b[cfg.kindField]) !== fk) continue;
+      if (best < 0) { best = i; continue; }
+      const a = boxes[best]!;
+      const cmp = (num(of ? b[of] : 0) - num(of ? a[of] : 0)) || (num(b[cfg.xField]) - num(a[cfg.xField]));
+      if (cmp < 0) best = i;
+    }
+    return best;
+  }
+
+  // With artboards in the doc the pasteboard is the world - a canvas-rect clamp
+  // would yank a new box away from an artboard outside that rect (plans/141
+  // follow-up). Every placement is already intent-anchored (pointer, visible
+  // centre, or source + 24), so nothing can be "fully lost"; the clamp applies
+  // only to no-frames docs, where the canvas IS the artboard.
+  const clampToWorkArea = (box: Box): Box =>
+    frameCfg && getBoxes().some((b) => b && String(b[cfg.kindField]) === frameCfg.frameKind)
+      ? box
+      : clampBoxToCanvas(box, cfg, canvasWH());
+
   function applyDocSize(w: number, h: number, unit = sizeUnit): void {
-    if (!setCanvasSize || !(w > 0) || !(h > 0)) return;
+    if (!(w > 0) || !(h > 0)) return;
+    // Framed docs: the size menu edits the ACTIVE artboard (plans/141 WP-B) - the
+    // canvas rect is just the pasteboard there, so presets/custom sizes land on the
+    // artboard the user is working with, one undoable commit.
+    const boxes = getBoxes();
+    const fi = activeFrameIndex(boxes);
+    if (fi >= 0) {
+      const pxW = Math.round(toUnitVal(w, unit, 'px'));
+      const pxH = Math.round(toUnitVal(h, unit, 'px'));
+      if (pxW < 1 || pxH < 1) return;
+      commit(boxes.map((b, i) => (i === fi ? withRect(b, { w: pxW, h: pxH }, cfg) : b)));
+      scheduleSync();
+      return;
+    }
+    if (!setCanvasSize) return;
     setCanvasSize(w, h, unit);
     scheduleSync();
   }
@@ -4171,13 +4234,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
   function openSizeMenu(anchor: HTMLElement): void {
     closeMorePanel();
-    const d = canvasWH();   // always px
+    // Framed docs: the panel reads/edits the ACTIVE artboard (plans/141 WP-B).
+    const boxes0 = getBoxes();
+    const fi = activeFrameIndex(boxes0);
+    const d = fi >= 0
+      ? { w: num(boxes0[fi]![cfg.wField]), h: num(boxes0[fi]![cfg.hField]) }
+      : canvasWH();   // always px
     // Show the current px size expressed in the remembered unit.
     const dispW = toUnitVal(d.w, 'px', sizeUnit), dispH = toUnitVal(d.h, 'px', sizeUnit);
     const p = document.createElement('div');
     p.className = 'fc-panel fc-size-panel';
     p.innerHTML =
-      `<div class="fc-panel-head">${t('Canvas size')}</div>` +
+      `<div class="fc-panel-head">${fi >= 0 ? t('Artboard size') : t('Canvas size')}</div>` +
       '<div class="fc-size-presets">' +
       SIZE_PRESETS.map(([label, w, h]) => `<button type="button" class="fc-size-preset${sizeUnit === 'px' && w === d.w && h === d.h ? ' is-current' : ''}" data-w="${w}" data-h="${h}"><b>${escape(t(label))}</b><span>${w}×${h}</span></button>`).join('') +
       '</div>' +
@@ -7423,7 +7491,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const id = freshId(boxes.concat(clones));
       const r = boxRect(src, cfg);
       let clone = { ...src, [cfg.idField]: id, [cfg.xField]: Math.round(r.x + 24), [cfg.yField]: Math.round(r.y + 24) };
-      clone = clampBoxToCanvas(clone, cfg, cw);
+      clone = clampToWorkArea(clone);
       clones.push(clone);
       nextSel.add(id);
     }
@@ -7476,7 +7544,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const h = Math.round(Math.max(120, lines * fontSize * lh + pad * 2 + fontSize * 0.5));
     const id = freshId(boxes);
     let box = seedBox(cfg, {}, seed, { x: c.x - w / 2, y: c.y - h / 2, w, h } as MathRect, id);
-    box = clampBoxToCanvas(box, cfg, cw);
+    box = clampToWorkArea(box);
     box = withLegibleInk(box, boxes);   // same reason as the create gesture: a dark seed on a dark ground is nothing
     selection = new Set([id]);
     commit([...boxes, box]);
@@ -7530,15 +7598,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // resetting to '' there would delete the only clip source, so restore verbatim.
         f.dataset.fcOverflow = f.style.overflow;
         f.style.overflow = 'visible';
-      } else {
-        f.style.overflow = f.dataset.fcOverflow ?? '';
+      } else if (f.dataset.fcOverflow !== undefined) {
+        // Restore ONLY elements that carry the stash: a mid-gesture repaint mints fresh
+        // page nodes without it, and writing '' at those would delete the hook-baked
+        // inline `overflow:hidden` that is a clipChildren frame's only clip source.
+        f.style.overflow = f.dataset.fcOverflow;
         delete f.dataset.fcOverflow;
       }
     });
     // When restoring the clip at gesture end, also drop the drag-time z-index hoist
     // (applyLiveRect set it) so box paint order returns to array order. A committed edit
     // repaints the elements clean anyway; this covers a gesture that ends without a commit.
-    if (clipped) canvasEl.querySelectorAll<HTMLElement>('.lolly-box').forEach((el) => { el.style.zIndex = ''; });
+    if (clipped) canvasEl.querySelectorAll<HTMLElement>('.lolly-box, .lolly-frame-page[data-frame-id]').forEach((el) => { el.style.zIndex = ''; });
   }
 
   // ── pointer gestures on the canvas ───────────────────────────────────────────
@@ -8928,7 +8999,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       }
       const id = freshId(boxes);
       let box = seedBox(cfg, {}, g.seed, rect as MathRect, id);
-      box = clampBoxToCanvas(box, cfg, canvasWH());
+      box = clampToWorkArea(box);
       if (gridOn && !e.altKey) box = { ...box, [cfg.xField]: gridRound(num(box[cfg.xField], 0)), [cfg.yField]: gridRound(num(box[cfg.yField], 0)) };
       selection = new Set([id]);
       // The Animation and Video add-kinds both seed kind:'image' (they render through
@@ -9123,8 +9194,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         return;
       }
       // Containment-on-resize: a resize/rotate can move the box's centre across a frame
-      // edge, so re-bucket the single edited box.
-      commit(assignFrames(boxes.map((b, i) => (i === idx ? withRect(b, live, cfg) : b)), new Set([idx])));
+      // edge, so re-bucket the single edited box. An nw/n/w handle on a FRAME moves its
+      // origin too - cascade members with it (Figma semantics: children keep their
+      // frame-local position), exactly like the move and group-transform commits.
+      const resized = boxes.map((b, i) => (i === idx ? withRect(b, live, cfg) : b));
+      commit(assignFrames(cascadeFrameChildren(boxes, resized, [idx]), new Set([idx])));
       return;
     }
     if (g.type === 'gscale' || g.type === 'grotate') {
@@ -9143,7 +9217,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function applyLiveRect(index: number, r: Rect): void {
     const boxes = getBoxes();
     const id = idOf(boxes[index], index);
-    const el = canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(id)}"]`);
+    const el = liveBoxEl(id);
     if (!el) return;
     // r is in GLOBAL native coords; the element positions relative to its page frame.
     const fo = frameOffsetOfEl(el);
@@ -9784,7 +9858,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const rects = new Map<number, Rect>();
     for (const i of selIndices(boxes)) {
       const id = idOf(boxes[i], i);
-      const el = canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(id)}"]`);
+      const el = liveBoxEl(id);
       // el.style.left/top are FRAME-LOCAL in multi-page mode; add the frame offset back
       // so the selection chrome (which paints in global native → stage coords) lines up.
       if (el) { const fo = frameOffsetOfEl(el); rects.set(i, {
@@ -9802,12 +9876,66 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // Keep the selected connector's highlight + inspector tracking any box move,
     // pan/zoom, or edit (drops the selection if its edge/box has gone).
     if (selectedEdges.size) refreshEdgeChrome();
+    emitActiveArtboard();
+  }
+
+  // ── active artboard → export bar (plans/141 WP-B) ─────────────────────────────
+  // The export bar mirrors the artboard the user is working with. Emit (deduped)
+  // from renderChrome - which already runs on every selection change, commit, and
+  // `tl-time` - carrying BOTH candidates: the selected artboard (falling back to
+  // the primary one) and the artboard under the sequence playhead (the page the
+  // clock left visible). tool-actions picks per export format: still formats
+  // follow the selection, animated formats follow the playhead. No frames → no
+  // event, and the bar keeps its no-frames behaviour.
+  let activeArtboardKey = '';
+  function emitActiveArtboard(): void {
+    if (!frameCfg) return;
+    const boxes = getBoxes();
+    const fk = frameCfg.frameKind;
+    const of = frameCfg.orderField;
+    const frames = boxes.filter((b) => b && String(b[cfg.kindField]) === fk);
+    // With artboards in the doc the canvas rect is only the pasteboard - this class
+    // drops the shell's page chrome (the outer shadow ring) so the artboards are the
+    // only page-looking surfaces (plans/141; see parts/tool.css).
+    canvasEl.classList.toggle('fc-has-frames', frames.length > 0);
+    const info = (b: Box | null): { id: string; w: number; h: number } | null =>
+      b ? { id: idOf(b, boxes.indexOf(b)), w: num(b[cfg.wField]), h: num(b[cfg.hField]) } : null;
+    let sel: Box | null = null;
+    for (const i of selIndices(boxes)) {
+      const b = boxes[i];
+      if (b && String(b[cfg.kindField]) === fk) { sel = b; break; }
+    }
+    const primary = frames.length
+      ? [...frames].sort((a, b) =>
+          (num(of ? a[of] : 0) - num(of ? b[of] : 0)) || (num(a[cfg.xField]) - num(b[cfg.xField])))[0]!
+      : null;
+    const timedEl = canvasEl.querySelector<HTMLElement>('[data-pdf-page][data-t-start]:not(.seq-off)');
+    const timedId = timedEl?.getAttribute('data-frame-id') ?? '';
+    const timed = timedId ? frames.find((b) => String(b[cfg.idField] ?? '') === timedId) ?? null : null;
+    const detail = { sel: info(sel ?? primary), timed: info(timed) };
+    const key = JSON.stringify(detail);
+    if (key === activeArtboardKey) return;
+    activeArtboardKey = key;
+    if (detail.sel) canvasEl.dataset.fcActiveFrame = detail.sel.id;
+    else delete canvasEl.dataset.fcActiveFrame;
+    // Fires at mount too (renderChrome), so construct from the element's own realm -
+    // a bare CustomEvent here can resolve to Node's own in a jsdom harness.
+    const Ev = (canvasEl.ownerDocument?.defaultView?.CustomEvent ?? CustomEvent) as typeof CustomEvent;
+    canvasEl.dispatchEvent(new Ev('fc-artboard', { bubbles: true, detail }));
   }
 
   // Align the frame dimmer to the export frame. Runs on every sync (pan / zoom /
   // resize) regardless of selection or text-edit state, so the "faded outside the
   // frame" cue tracks the artboard wherever it moves.
   function positionFrameScrim(): void {
+    // With artboards in the doc the canvas rect is just the pasteboard - dimming
+    // outside it would mark a false "export frame" (each artboard's own page
+    // surface + shadow is the cue, and exports are per-artboard; plans/141 WP-B).
+    if (frameCfg && getBoxes().some((b) => b && String(b[cfg.kindField]) === frameCfg.frameKind)) {
+      frameScrim.hidden = true;
+      return;
+    }
+    frameScrim.hidden = false;
     const m = metrics();
     const wh = canvasWH();
     const tl = nativeToStage(0, 0, m);
@@ -9974,7 +10102,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (idx.length) positionCtxBar(boxes, idx, liveRects, m);
     updateToolbarState(idx.length);
     syncBoxA11y();
-    emptyHint.hidden = boxes.length > 0 || !toolbar.querySelector('.fc-btn-add');
+    // A doc holding only empty ARTBOARDS is still content-empty - keep inviting the
+    // first card until a non-frame box exists (a blank Design now seeds Artboard 1).
+    const hasContentBox = frameCfg
+      ? boxes.some((b) => b && String(b[cfg.kindField]) !== frameCfg.frameKind)
+      : boxes.length > 0;
+    emptyHint.hidden = hasContentBox || !toolbar.querySelector('.fc-btn-add');
   }
   // Make each rendered card keyboard-focusable + labelled, and reflect selection state, so
   // keyboard users can Tab to a card (which selects it → every onKey action applies) and

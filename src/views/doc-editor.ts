@@ -553,8 +553,11 @@ export function initDocEditor(opts: DocEditorOpts): { destroy(): void } {
     void (async () => {
       try {
         const { docxToHtml } = await import('../lib/office-text.ts');
-        const { html, dropped } = await docxToHtml(new Uint8Array(await file.arrayBuffer()));
+        const { html, dropped, sourceAuthor } = await docxToHtml(new Uint8Array(await file.arrayBuffer()));
         editor.chain().focus().setContent(DOMPurify.sanitize(html)).run();
+        // The source document's own author → the tool's sourceAuthor input, so
+        // the re-export credits both authors when they differ (plans/144 G6).
+        if (sourceAuthor) { try { void runtime.setInput('sourceAuthor', sourceAuthor); } catch { /* older manifest without the input */ } }
         if (dropped) announce(t('Some images in that document could not be imported.'));
       } catch (e) {
         announce((e as Error)?.message || t('Could not read that Word document.'), { assertive: true });

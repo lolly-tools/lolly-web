@@ -85,6 +85,33 @@ export async function extractAssetMetadata(ref: AssetRef): Promise<MetaField[]> 
     /* never throw - a partial (or empty) panel is fine */
   }
 
+  // The import-moment snapshot (plans/144 Wave 5 O4), captured at ingest with
+  // the source file's own facts. Read straight off the record - no byte work.
+  try {
+    const prov = (ref.meta as Record<string, unknown> | undefined)?.provenance as {
+      originalFilename?: string;
+      importedAt?: string;
+      metaDigest?: Record<string, string>;
+      credentialPresent?: boolean;
+    } | undefined;
+    if (prov) {
+      push(t('Imported from'), prov.originalFilename);
+      if (prov.importedAt) {
+        const d = new Date(prov.importedAt);
+        if (!Number.isNaN(d.getTime())) {
+          push(t('Imported'), d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }));
+        }
+      }
+      const md = prov.metaDigest ?? {};
+      push(t('Artist / author'), md.author);
+      push(t('Copyright'), md.copyright);
+      push(t('Captured'), md.captureDate);
+      push(t('Camera'), md.camera);
+      push(t('Software'), md.software);
+      push(t('Keywords'), md.keywords);
+    }
+  } catch { /* a malformed snapshot never breaks the panel */ }
+
   // Always, last: File size then Format.
   if (size != null && size > 0) push(t('File size'), formatBytes(size));
   push(t('Format'), fmt);

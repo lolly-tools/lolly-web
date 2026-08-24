@@ -9,7 +9,7 @@
 // same split as lib/instance.test.ts and lib/drop-router.test.ts.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateInstanceUrl, shapeProbeResult } from './instance-probe.ts';
+import { validateInstanceUrl, shapeProbeResult, shapeInstanceManifest } from './instance-probe.ts';
 
 // ── validateInstanceUrl ──────────────────────────────────────────────────────
 
@@ -63,4 +63,34 @@ test('shapeProbeResult: ok status + valid JSON but no tools array → shape reas
   assert.deepEqual(shapeProbeResult(200, true, { tools: 'nope' }), { ok: false, reason: 'shape' });
   assert.deepEqual(shapeProbeResult(200, true, null), { ok: false, reason: 'parse' });
   assert.deepEqual(shapeProbeResult(200, true, 42), { ok: false, reason: 'shape' });
+});
+
+// ── shapeInstanceManifest ────────────────────────────────────────────────────
+
+test('shapeInstanceManifest: a full manifest shapes into the card fields', () => {
+  assert.deepEqual(
+    shapeInstanceManifest(200, true, {
+      name: 'Acme Hub', accessMode: 'gated', providerName: 'Acme SSO',
+      engineVersion: '1.146.0', capabilities: { catalog: true },
+      connect: { packUrl: 'https://hub.acme.example/connect/pack.lolly' },
+    }),
+    {
+      found: true, name: 'Acme Hub', accessMode: 'gated', providerName: 'Acme SSO',
+      engineVersion: '1.146.0', packUrl: 'https://hub.acme.example/connect/pack.lolly',
+    },
+  );
+});
+
+test('shapeInstanceManifest: optional fields are simply absent, never invented', () => {
+  assert.deepEqual(shapeInstanceManifest(200, true, { name: 'Plain Hub' }), { found: true, name: 'Plain Hub' });
+  // providerName null (the dev provider) must not become a field.
+  assert.deepEqual(shapeInstanceManifest(200, true, { name: 'H', providerName: null }), { found: true, name: 'H' });
+});
+
+test('shapeInstanceManifest: absence is not an error - a plain deployment has no manifest', () => {
+  assert.deepEqual(shapeInstanceManifest(404, false, undefined), { found: false });
+  assert.deepEqual(shapeInstanceManifest(200, true, undefined), { found: false });
+  assert.deepEqual(shapeInstanceManifest(200, true, '<html>SPA fallback</html>'), { found: false });
+  assert.deepEqual(shapeInstanceManifest(200, true, { name: '' }), { found: false });
+  assert.deepEqual(shapeInstanceManifest(200, true, { name: 42 }), { found: false });
 });

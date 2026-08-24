@@ -317,3 +317,14 @@ test('matchContext names the matched tag or category, and stays null on a name m
   assert.equal(matchContext(a, 'brand', () => 'Brand photos'), 'Brand photos');
   assert.equal(matchContext(a, '', () => 'brand'), null);
 });
+
+test('embedded keywords from the ingest snapshot are searchable (plans/144 Wave 5)', () => {
+  const a = tagged('user/upload/5-e.webp', {
+    name: 'IMG_2041',
+    provenance: { metaDigest: { keywords: 'harbour, dusk, boats' } },
+  });
+  const hay = buildSearchHaystack([a], () => 'photos');
+  assert.equal(matchesQuery(a, 'dusk', hay), true);
+  assert.equal(matchesQuery(a, 'harbour boats', hay), true);
+  assert.equal(matchesQuery(a, 'mountain', hay), false);
+});

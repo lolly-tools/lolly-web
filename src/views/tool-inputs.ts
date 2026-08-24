@@ -114,6 +114,22 @@ function toggleSlotPreview(btn: HTMLElement): void {
  *  to the target input's own field ids, so it never injects stray keys across tools. */
 let blockRowClipboard: Record<string, InputValue> | null = null;
 
+/** The current table input's paste handler. A table tool's canvas empty state says
+ *  "Paste a table to start", but the wrap-scoped listener only hears a paste when focus
+ *  already sits inside the sidebar widget - so one document-level router forwards
+ *  table-shaped pastes to the CURRENT table input wherever focus is, unless the user is
+ *  pasting into an editable field (their paste, their target). Module-scoped closure swap
+ *  so sidebar re-renders replace it instead of stacking listeners; installed at import
+ *  time, which puts it AHEAD of free-canvas's mount-time global paste - that one checks
+ *  defaultPrevented and backs off when this route consumes a table. */
+let tablePasteRoute: ((e: ClipboardEvent) => void) | null = null;
+document.addEventListener('paste', (e) => {
+  if (e.defaultPrevented || !tablePasteRoute) return;
+  const t = e.target instanceof Element ? e.target : null;
+  if (t?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
+  tablePasteRoute(e);
+});
+
 /** The two-step block-remove button arms itself with these expandos. */
 interface ConfirmButton extends HTMLElement { _armed?: boolean; _disarm?: (() => void) | null; }
 /** A block drag handle flags the click that trails a drag. */
@@ -1211,7 +1227,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // data". A spreadsheet's text/html <table> flavour is preferred (explicit
     // grid, no delimiter guessing); a single plain value falls through to the
     // focused cell like any text input.
-    wrap.addEventListener('paste', e => {
+    const onTablePaste = (e: ClipboardEvent): void => {
       const tsvFromHtml = htmlTableToTsv(e.clipboardData?.getData('text/html') ?? '');
       const text = tsvFromHtml || e.clipboardData?.getData('text/plain') || '';
       if (!tsvFromHtml && !looksLikeTable(text)) return;
@@ -1220,7 +1236,15 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       e.preventDefault();
       commit(parsed);
       announce(`Table replaced: ${parsed.rows.length} rows, ${parsed.columns.length} columns`);
-    });
+    };
+    wrap.addEventListener('paste', onTablePaste);
+    // Register with the document-level router (module scope above) so a paste with
+    // focus on the canvas/body still reaches this input. Last table input wired wins;
+    // a stale closure disconnects itself via the isConnected check.
+    tablePasteRoute = (e) => {
+      if (!wrap.isConnected || (e.target instanceof Node && wrap.contains(e.target))) return;
+      onTablePaste(e);
+    };
     wrap.querySelector('[data-table-paste]')?.addEventListener('click', async () => {
       try {
         const text = await navigator.clipboard.readText();

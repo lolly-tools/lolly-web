@@ -3664,5 +3664,10 @@
   "← All team projects": "← Всички екипни проекти",
   "✓ Added": "✓ Добавено",
   "✓ Found {n} tools at {base}.": "✓ Намерени {n} инструмента на {base}.",
-  "＋ New project…": "＋ Нов проект…"
+  "＋ New project…": "＋ Нов проект…",
+  "Imported from": "Импортирано от",
+  "Imported": "Импортирано",
+  "Copyright": "Авторски права",
+  "Captured": "Заснето",
+  "Keywords": "Ключови думи"
 }

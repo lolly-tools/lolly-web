@@ -3664,5 +3664,10 @@
   "← All team projects": "← Alle teamprojecten",
   "✓ Added": "✓ Toegevoegd",
   "✓ Found {n} tools at {base}.": "✓ {n} tools gevonden op {base}.",
-  "＋ New project…": "＋ Nieuw project…"
+  "＋ New project…": "＋ Nieuw project…",
+  "Imported from": "Geïmporteerd uit",
+  "Imported": "Geïmporteerd",
+  "Copyright": "Copyright",
+  "Captured": "Gemaakt op",
+  "Keywords": "Trefwoorden"
 }

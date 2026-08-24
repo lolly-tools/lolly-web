@@ -123,9 +123,10 @@ test('the pick is seeded with applyPatch - no undo step, no collab echo, one ren
 test('the deterministic `?template=` seed stays awaited - export remounts depend on it', () => {
   // No human in the loop there: an off-screen scene/export remount re-parses the URL and
   // must have the values in the model before the first hydrate, or it renders blank.
-  assert.match(CODE, /await\s+fetchTemplateValues\(/,
+  // (fetchTemplateSeed = fetchTemplateValues + the ?preset= overlay merge, plans/142.)
+  assert.match(CODE, /await\s+fetchTemplateSeed\(/,
     '?template= must remain a pre-createRuntime seed, unlike the chooser');
-  const named = CODE.indexOf('await fetchTemplateValues(');
+  const named = CODE.indexOf('await fetchTemplateSeed(');
   assert.ok(named < CODE.indexOf('await createRuntime('), '…and it must resolve before the mount');
 });
 

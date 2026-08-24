@@ -46,11 +46,26 @@ export interface SaveDialogDeps {
   createTool?: (meta: { title: string; description: string; icon: string; formats: string[] }) => Promise<void>;
   /** Open the Share modal (its `.lolly` File panel) - the "share for anyone to import" path. */
   shareLolly?: () => void;
+  /** The project this session is ALREADY filed in (null/absent = root or unknown).
+   *  Preselected in the picker so a re-save of a filed session tells the truth
+   *  instead of showing "No project" (plans/142 W1). */
+  currentFolderId?: string | null;
   announce?: (msg: string) => void;
   t?: (s: string) => string;
 }
 
 const NEW_PROJECT = '__new_project__';
+
+/** The last project a save filed into, remembered for the app session (module
+ *  scope) - an operator filing ten outputs into one project should not re-pick
+ *  it ten times, and a missed pick silently scatters work into the root
+ *  (plans/142 W1). A session's own current folder still wins over this. */
+let lastPickedFolderId: string | null = null;
+
+/** The project the last dialog save filed into, for surfaces that follow its
+ *  lead (plans/142 W2, Andy's call: the export sheet's quick Save files an
+ *  UNFILED session here instead of scattering to the root). */
+export function lastPickedFolder(): string | null { return lastPickedFolderId; }
 
 export function openSaveDialog(deps: SaveDialogDeps): void {
   const t = deps.t ?? ((s: string) => s);
@@ -181,6 +196,11 @@ export function openSaveDialog(deps: SaveDialogDeps): void {
       ...folders.map(f => opt(f.id, f.name)),
       opt(NEW_PROJECT, t('＋ New project…')),
     );
+    // Preselect where this save will actually count: the session's own current
+    // project first (a filed session must not claim "No project"), else the
+    // project the last save picked, when it still exists.
+    const pre = [deps.currentFolderId, lastPickedFolderId].find(id => id && folders.some(f => f.id === id));
+    if (pre && projectSel) projectSel.value = pre;
   }).catch(() => { projectSel?.replaceChildren(noProject()); });
 
   projectSel?.addEventListener('change', () => {
@@ -225,6 +245,7 @@ export function openSaveDialog(deps: SaveDialogDeps): void {
         }
         const ok = await deps.saveToLibrary(folderId);
         if (!ok) throw new Error(t('Save failed - please try again.'));
+        lastPickedFolderId = folderId;
         announce(t('Saved'));
         modal.close();
       });

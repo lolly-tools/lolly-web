@@ -342,3 +342,66 @@ test('openTemplateChooser: "Your templates" shows as a filter chip beside built-
   assert.ok(chips.includes('Your templates'), 'a Your templates filter chip is present alongside the built-in one');
   document.querySelector('.tmpl-chooser-modal')?.remove();
 });
+
+// ── Presets (plans/142): a template's curated variants ───────────────────────
+
+test('parseTemplates: carries well-formed presets and drops malformed ones', () => {
+  const parsed = parseTemplates([
+    {
+      id: 'poster', name: 'Poster', values: { w: 1080 },
+      presets: [
+        { id: 'story', name: 'Story', values: { w: 1080, h: 1920 } },
+        { id: 'story', name: 'Dup id', values: {} },          // duplicate id - first wins
+        { name: 'no-id', values: {} },                        // dropped
+        { id: 'no-name', values: {} },                        // dropped
+        { id: 'meta-only', name: 'Meta only' },               // metadata-only → values {}
+      ],
+    },
+    { id: 'plain', name: 'Plain', values: {} },               // no presets → key absent
+  ]);
+  const poster = parsed.find(v => v.id === 'poster')!;
+  assert.deepEqual(poster.presets!.map(p => p.id), ['story', 'meta-only']);
+  assert.equal(poster.presets![0]!.name, 'Story', 'first id wins on a duplicate');
+  assert.deepEqual(poster.presets![1]!.values, {}, 'a metadata-only preset parses with an empty overlay');
+  assert.equal(parsed.find(v => v.id === 'plain')!.presets, undefined);
+});
+
+test('templateValuesById: merges the named preset overlay over the base (shallow, preset wins)', () => {
+  const raw = [{
+    id: 'poster', name: 'Poster', values: { w: 1080, h: 1080, bg: '#fff' },
+    presets: [{ id: 'story', name: 'Story', values: { h: 1920 } }],
+  }];
+  assert.deepEqual(templateValuesById(raw, 'poster'), { w: 1080, h: 1080, bg: '#fff' }, 'no preset → base alone');
+  assert.deepEqual(templateValuesById(raw, 'poster', 'story'), { w: 1080, h: 1920, bg: '#fff' },
+    'the overlay replaces per input id and the rest of the base survives');
+  assert.deepEqual(templateValuesById(raw, 'poster', 'nope'), { w: 1080, h: 1080, bg: '#fff' },
+    'an unknown preset id applies the base alone - a stale link still opens something sensible');
+  assert.equal(templateValuesById(raw, 'missing', 'story'), null, 'an unknown template id stays null');
+});
+
+test('openTemplateChooser: preset chips render inside the tile and pick base + overlay', async () => {
+  const templates = parseTemplates([{
+    id: 'poster', name: 'Poster', values: { w: 1080, h: 1080 },
+    presets: [{ id: 'story', name: 'Story', values: { h: 1920 } }],
+  }]);
+  const pick = openTemplateChooser({ toolName: 'Design', toolId: 'design', templates });
+  await new Promise(r => setTimeout(r, 0));
+  const tile = document.querySelector<HTMLElement>('.tmpl-chooser-tile[data-template-id="poster"]');
+  assert.ok(tile, 'the template tile renders');
+  assert.equal(tile!.getAttribute('role'), 'button', 'a tile with chips is a div[role=button], never nested buttons');
+  const chip = tile!.querySelector<HTMLButtonElement>('.tmpl-chooser-preset[data-preset-id="story"]');
+  assert.ok(chip, 'the preset chip renders inside the tile');
+  chip!.click();
+  assert.deepEqual(await pick, { w: 1080, h: 1920 }, 'chip pick = base merged with the preset overlay');
+});
+
+test('openTemplateChooser: the tile itself still picks the template BASE when chips are present', async () => {
+  const templates = parseTemplates([{
+    id: 'poster', name: 'Poster', values: { w: 1080, h: 1080 },
+    presets: [{ id: 'story', name: 'Story', values: { h: 1920 } }],
+  }]);
+  const pick = openTemplateChooser({ toolName: 'Design', toolId: 'design', templates });
+  await new Promise(r => setTimeout(r, 0));
+  document.querySelector<HTMLElement>('.tmpl-chooser-tile[data-template-id="poster"] .tmpl-chooser-tile-name')!.click();
+  assert.deepEqual(await pick, { w: 1080, h: 1080 }, 'a click outside the chips is the base pick');
+});

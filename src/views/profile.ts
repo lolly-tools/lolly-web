@@ -69,7 +69,7 @@ import type { OfflineRunHandle, OfflineRunLine } from '../lib/offline-run.ts';
 import { upscaleCacheBytes, matteCacheBytes, ocrCacheBytes } from '../lib/model-prefetch.ts';
 import { toolSupport } from '../capabilities.ts';
 import { derivedMediaSize, resetScrubCache } from '../lib/clip-proxy.ts';
-import { getInstanceBase, setInstanceBase } from '../lib/instance.ts';
+import { getInstanceBase } from '../lib/instance.ts';
 import { isTauriShell } from '../lib/instance-choice.ts';
 import { openInstanceSheet } from '../components/instance-sheet.ts';
 // Generic per-field display policy (empty/no-op unless a deployment's control
@@ -276,7 +276,7 @@ export interface ProfileNavSection {
 export const NAV_SECTIONS: ReadonlyArray<ProfileNavSection> = [
   { id: 'details-section', icon: 'user', label: 'Your details', keywords: 'name email headshot photo avatar personal' },
   { id: 'appearance-section', icon: 'palette', label: 'Appearance', keywords: 'theme dark light mode colour color sound look' },
-  { id: 'a11y-section', icon: 'eye', label: 'Accessibility', keywords: 'motion contrast large text previews comfort a11y reduce' },
+  { id: 'a11y-section', icon: 'eye', label: 'Accessibility', keywords: 'motion contrast large text previews comfort a11y reduce sound mute focus music neurospicy atmosphere' },
   { id: 'renders-section', icon: 'image', label: 'Your renders', keywords: 'renders downloads library save copy export tag auto-save' },
   { id: 'instance-section', icon: 'globe', label: 'Lolly instance', keywords: 'instance server source tools catalogue connect disconnect' },
   { id: 'activity-section', icon: 'history', label: 'Your activity', keywords: 'activity usage metrics stats history recent' },
@@ -468,7 +468,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
               (f.category === 'utility' ? '<li class="feature-flag-divider" aria-hidden="true"></li>' : '') + flagRow(f)
             ).join('')}
             <li class="feature-flag-divider" aria-hidden="true"></li>
-            ${flagRow(NEUROSPICY_FLAG)}
+            ${/* Neurospicy is NOT listed here any more: it is a first-class
+                accommodation (Andy, plans/142 A11y-2) controlled from the
+                Accessibility card's Sound row. The flag object survives for
+                instance governance only. */''}
             ${flagRow(JELLY_FLAG)}
             ${flagRow(PERFORMANCE_UI_FLAG)}
             ${flagRow(PERF_HUD_FLAG)}
@@ -667,9 +670,6 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
                 </div>
                 <p class="profile-inline-error" id="headshot-error" style="color:hsl(var(--destructive));font-size:13px;margin:.4rem 0 0" hidden></p>
               </div>
-              <div class="profile-field profile-field--sound">
-                ${soundSwitchHtml()}
-              </div>
             </aside>
           </div>
         </form>
@@ -703,6 +703,14 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         <p class="profile-appearance-sub">${t('Comfort settings for the app around your work. Each one is off until you turn it on, and none of them touch your designs or your exports.')}</p>
         <ul class="feature-flags profile-a11y-prefs" id="a11y-prefs">${a11yListHtml()}
         </ul>
+        ${/* Sound + focus music live IN the comfort card (plans/142 A11y-1/2,
+            Andy's call): the same switches that used to sit beside the headshot.
+            One home for every stimulation control - visual prefs above, audio
+            here. The Neurospicy row inside soundSwitchHtml stays governed by
+            its (default-ON) flag, so managed instances keep their say. */''}
+        <div class="profile-field profile-field--sound" style="margin-top:.9rem">
+          ${soundSwitchHtml()}
+        </div>
         </div>
       </details>
 
@@ -725,7 +733,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
             ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - orgAdminHref() returns the '/admin' literal or null; no control-plane value reaches it */ ''}
             ${adminHref ? `<a class="btn" id="instance-console-link" href="${escape(adminHref)}">${t('Instance console')}</a>` : ''}
             ${canChangeInstance ? `<button type="button" class="btn" id="instance-change-btn">${t('Change')}</button>` : ''}
-            ${canChangeInstance ? `<button type="button" class="btn-link-danger" id="instance-disconnect-btn"${instanceBase ? '' : ' hidden'}>${t('Disconnect')}</button>` : ''}
+            ${canChangeInstance ? `<button type="button" class="btn-link-danger" id="instance-disconnect-btn"${instanceBase ? '' : ' hidden'}>${t('Leave')}</button>` : ''}
           </span>
         </div>
         ${canChangeInstance ? '' : `<p class="profile-appearance-sub">${t('Pointing at another Lolly instance needs the desktop app - a browser blocks a page from loading tools and assets across origins.')}</p>`}
@@ -1041,23 +1049,26 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   });
 
   // Lolly instance - "Change" re-opens the sheet (views/profile.ts is one of
-  // its two callers; see components/instance-sheet.ts's header). "Disconnect"
-  // skips the sheet (there's nothing to choose) but takes the same
-  // setInstanceBase → resync → remount path as a successful connect, so the
-  // catalogue swap happens identically either way.
+  // its two callers; see components/instance-sheet.ts's header). "Leave" takes
+  // the covenant's whole exit (lib/instance-leave.ts): org caches, the install
+  // identity, the pack and its tools, THEN the base - not just the base, which
+  // left the organisation's ingredients behind - and then the same resync →
+  // remount path as a successful connect, so the catalogue swap happens
+  // identically either way.
   viewEl.querySelector('#instance-change-btn')?.addEventListener('click', async () => {
     await openInstanceSheet(host);
     await mountProfile(viewEl, host); // re-read getInstanceBase() into the row
   });
   viewEl.querySelector('#instance-disconnect-btn')?.addEventListener('click', async () => {
     const ok = await confirmDialog({
-      title: t('Disconnect from this instance?'),
-      message: t('Lolly switches back to what is bundled with this app. Nothing saved on this device is affected.'),
-      confirmLabel: t('Disconnect'),
+      title: t('Leave this instance?'),
+      message: t('Your work stays on this device - sessions, images, profile, and anything you installed yourself. What the organisation supplied leaves with it: its brand, its tools, its catalogue, and this device’s standing with it. Anything you saved to the instance stays there. You can reconnect any time.'),
+      confirmLabel: t('Leave'),
       danger: false,
     });
     if (!ok) return;
-    await setInstanceBase(null);
+    const { leaveInstance } = await import('../lib/instance-leave.ts');
+    await leaveInstance();
     await syncCatalog(host as unknown as Parameters<typeof syncCatalog>[0]).catch(() => { /* offline - falls back to cache */ });
     window.dispatchEvent(new Event('lolly:remount')); // re-navigates the current route with the fresh (bundled) catalogue
   });
@@ -1074,6 +1085,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // each flip to profile.sfxMuted + localStorage and chirps when re-enabled (via applySfxMuted,
   // inside wireSoundSwitch), a preference like the theme picker.
   wireSoundSwitch(viewEl, host as unknown as Parameters<typeof wireSoundSwitch>[1]);
+
 
   // Every info-dot + feature-flag explainer on the page is a shared help-tip now
   // (component audit rec 13) - one delegated wiring on the view root handles all

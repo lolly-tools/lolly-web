@@ -112,6 +112,7 @@ import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 import { collectDevice, renderDeviceCards, wireDeviceLive } from '../lib/device-info.ts';
 import type { ClientGroup, ClientGroupKey } from '../lib/device-info.ts';
 import { createThemeToggle } from '../components/theme-toggle.ts';
+import { mountProfileFab } from '../components/profile-menu.ts';
 import { homeFabHtml, mountHomeFab } from '../components/home-fab.ts';
 import { escape } from '../utils.ts';
 import { announce } from '../a11y.ts';
@@ -515,11 +516,13 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   const chrome = $('[data-lab-chrome]');
   if (chrome) {
     // The home escape is baked into shellHtml()'s chrome (no new raw-HTML sink);
-    // the theme cycle is appended after it, both in the Lab's .lab-chrome-btn skin.
-    chrome.appendChild(createThemeToggle(
-      host.profile ? (host as { profile: NonNullable<ColorLabHost['profile']> }) : { profile: { get: async () => ({}) } },
-      { className: 'lab-chrome-btn' },
-    ));
+    // the theme cycle and the profile quick link are appended after it, all in
+    // the Lab's .lab-chrome-btn skin.
+    const chromeHost = host.profile
+      ? (host as { profile: NonNullable<ColorLabHost['profile']> })
+      : { profile: { get: async () => ({}) } };
+    chrome.appendChild(createThemeToggle(chromeHost, { className: 'lab-chrome-btn' }));
+    mountProfileFab(chrome, chromeHost, { className: 'lab-chrome-btn' });
   }
 
   // ── The subject block ────────────────────────────────────────────────────

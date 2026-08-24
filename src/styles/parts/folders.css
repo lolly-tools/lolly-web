@@ -65,6 +65,13 @@
 }
 .folder-export-tile:hover { border-color: hsl(var(--primary) / 0.6); box-shadow: 0 3px 14px hsl(0 0% 0% / 0.08); }
 .folder-export-tile img { height: 56px; width: auto; max-width: 120px; object-fit: cover; display: block; }
+/* A thumbless saved session in the recents dialog's rail (plans/142 W4): the
+   caption IS the tile, sized to match its image siblings. */
+.folder-export-tile-caption {
+  display: flex; align-items: center; height: 56px; max-width: 120px;
+  padding: 0 10px; font-size: 0.72rem; line-height: 1.25;
+  color: hsl(var(--muted-foreground)); overflow: hidden;
+}
 
 .folder-tile {
   position: relative; border: 1px solid hsl(var(--border));

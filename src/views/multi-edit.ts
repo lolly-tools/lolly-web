@@ -117,7 +117,11 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
       </div>`;
   };
   if (slots.length < MIN_SEL || slots.length > MAX_SEL) {
-    fail(`Multi-edit works on ${MIN_SEL}–${MAX_SEL} saved sessions - got ${slots.length}.`);
+    // Say HOW to get here, not just the constraint (plans/142 W5): this view is
+    // reached from a Projects selection, and a bare/bookmarked #/multi was a
+    // dead end that named a rule with no door.
+    fail(`Multi-edit works on ${MIN_SEL}–${MAX_SEL} saved sessions - got ${slots.length}. `
+      + `In Projects, select the sessions (Cmd/Ctrl-click), then choose "Edit together".`);
     return;
   }
 

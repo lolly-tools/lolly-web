@@ -3664,5 +3664,10 @@
   "← All team projects": "← 所有團隊專案",
   "✓ Added": "✓ 已新增",
   "✓ Found {n} tools at {base}.": "✓ 在 {base} 找到 {n} 個工具。",
-  "＋ New project…": "＋ 新增專案…"
+  "＋ New project…": "＋ 新增專案…",
+  "Imported from": "匯入來源",
+  "Imported": "匯入日期",
+  "Copyright": "版權",
+  "Captured": "拍攝日期",
+  "Keywords": "關鍵字"
 }

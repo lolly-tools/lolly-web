@@ -211,8 +211,21 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
           // there's no second box behind the capsule. Accent = the row's action.
           ? `<jelly-button class="share-copy-btn" label="Copy">Copy</jelly-button>`
           : `<button type="button" class="share-copy-btn">Copy</button>`}
+        ${/* The poster loop (plans/143 M3): one click from a share link to a
+            printable QR of it, made with Lolly's own QR tool. Rendered only
+            when this catalogue actually has qr-code. */
+          (window.__toolIndex?.tools ?? []).some(t => t.id === 'qr-code')
+            ? `<button type="button" class="btn share-qr-btn" title="${escape('Open the QR Code tool with this link - for posters, slides and print')}">QR</button>` : ''}
       </div>
       <p class="share-warning" data-share-warning role="status" hidden></p>
+      ${/* V2 (plans/143, Andy: "lolly is part of the composite art of any
+          work"): the OPT-IN visible half of attribution. The credential layer
+          always records Lolly; this row lets a sharer carry the credit into a
+          caption with one click - never embedded into the artwork itself. */''}
+      <p class="share-credit-row" style="display:flex;align-items:center;gap:8px;margin:.4rem 0 0;font-size:.85em;color:hsl(var(--muted-foreground))">
+        <span>Made with Lolly · lolly.tools</span>
+        <button type="button" class="btn btn--sm share-credit-btn" title="${escape('Copy a caption crediting Lolly, with this link')}">Copy credit</button>
+      </p>
       ${showImageNote ? `<p class="share-note">
         <span class="share-note-ico" aria-hidden="true">🛫</span>
         <span>Only the <b>inputs</b>, <b>settings</b>, <b>tool</b> selection, and <b>catalog assets</b> travel in this link. <br><b>images</b> or <b>files</b> you added from <b>this device stay here</b> <i>- you'll need to share those separately</i>.</span>
@@ -443,6 +456,23 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
     await copyToClipboard(field.value);
     bumpMetric('linksCopied');
     announce('Shareable link copied');
+    const prev = this.textContent;
+    this.textContent = 'Copied!';
+    setTimeout(() => { this.textContent = prev; }, 1500);
+  });
+
+  // "QR" beside Copy (plans/143 M3): hand the CURRENT link (options included) to
+  // the QR Code tool. Navigation closes this dialog via the modal's nav teardown.
+  dialog.querySelector<HTMLButtonElement>('.share-qr-btn')?.addEventListener('click', () => {
+    void import('../nav.ts').then(({ navigateTo }) =>
+      navigateTo(`#/tool/qr-code?url=${encodeURIComponent(field.value)}`));
+  });
+
+  // "Copy credit" (plans/143 V2): a ready caption for wherever the work is
+  // posted - the credit travels BESIDE the artwork, opt-in, one click.
+  dialog.querySelector<HTMLButtonElement>('.share-credit-btn')?.addEventListener('click', async function (this: HTMLButtonElement) {
+    await copyToClipboard(`Made with Lolly · lolly.tools\n${field.value}`);
+    announce('Credit caption copied');
     const prev = this.textContent;
     this.textContent = 'Copied!';
     setTimeout(() => { this.textContent = prev; }, 1500);

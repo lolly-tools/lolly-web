@@ -264,6 +264,9 @@ window.__lollyChipField=function(canvas,opt){
     ((data.specifics&&data.specifics[tok])||[]).forEach(function(s){var li=document.createElement('li');li.textContent=s;us.appendChild(li);});
     var ul=q('#fmt-dlg-feats');ul.textContent='';
     (f.features||[]).forEach(function(k){var li=document.createElement('li');li.textContent=(data.features&&data.features[k])||k;ul.appendChild(li);});
+    var md=f.metadata||null,mEl=q('#fmt-dlg-meta');
+    var names=function(v){return (v&&v.length?v:[]).map(function(k){return (data.metaLabels&&data.metaLabels[k])||k;}).join(', ')||'nothing';};
+    mEl.textContent=md?('Metadata: reads '+names(md.reads)+' · writes '+names(md.writes)+' · round trip '+md.preserves+'.'+(md.note?' '+md.note:'')):'';
     var un=q('#fmt-dlg-unsup'),unWrap=q('#fmt-dlg-unsup-wrap');un.textContent='';
     var gaps=(data.unsupported&&data.unsupported[tok])||[];
     gaps.forEach(function(s){var li=document.createElement('li');li.textContent=s;un.appendChild(li);});

@@ -39,7 +39,7 @@ import { announce } from '../a11y.ts';
 import { mountModal } from './modal.ts';
 import { markInstanceChoiceMade } from '../lib/instance-choice.ts';
 import { getInstanceBase, setInstanceBase, instanceFetch } from '../lib/instance.ts';
-import { validateInstanceUrl, shapeProbeResult, type ProbeOutcome } from '../lib/instance-probe.ts';
+import { validateInstanceUrl, shapeProbeResult, shapeInstanceManifest, type ProbeOutcome, type ManifestOutcome } from '../lib/instance-probe.ts';
 import { syncCatalog } from '../catalog/sync.ts';
 import { importBackup, MAX_RESTORE_TOTAL_BYTES } from '../data-transfer.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
@@ -95,7 +95,7 @@ function probeErrorMessage(outcome: Extract<ProbeOutcome, { ok: false }>): strin
 
 type Step =
   | { kind: 'choose' }
-  | { kind: 'connect'; url: string; error?: string; probing: boolean; probed?: { base: string; toolCount: number } }
+  | { kind: 'connect'; url: string; error?: string; probing: boolean; probed?: { base: string; toolCount: number; manifest?: ManifestOutcome } }
   | { kind: 'import'; url: string; busy: boolean; error?: string; summary?: string };
 
 /**
@@ -169,8 +169,24 @@ export function openInstanceSheet(host: HostV1, opts: { firstRun?: boolean } = {
     }
 
     function renderConnect(s: Extract<Step, { kind: 'connect' }>): string {
+      // The instance card (plans/34 wave 1a server-side): what the deployment
+      // says about itself before anyone signs in. Absent for a plain Lolly
+      // deployment - the tool count line is then the whole story, as before.
+      const m = s.probed?.manifest;
+      const card = m?.found
+        ? `<div class="instance-probe instance-probe--ok" style="text-align:left">
+            <strong>${escape(m.name)}</strong>
+            ${m.accessMode === 'gated' || m.accessMode === 'per-tool'
+              ? `<div>${m.providerName
+                  ? t('Sign-in required (via {provider}).', { provider: m.providerName })
+                  : t('Sign-in required.')}</div>`
+              : ''}
+            ${m.engineVersion ? `<div>${t('Serves engine {version}.', { version: m.engineVersion })}</div>` : ''}
+            ${m.packUrl ? `<div>${t('Offers a setup pack - your organisation may have sent you its .lolly file directly.')}</div>` : ''}
+          </div>`
+        : '';
       const probe = s.probed
-        ? `<p class="instance-probe instance-probe--ok">${t('✓ Found {n} tools at {base}.', { n: s.probed.toolCount, base: s.probed.base })}</p>`
+        ? `${card}<p class="instance-probe instance-probe--ok">${t('✓ Found {n} tools at {base}.', { n: s.probed.toolCount, base: s.probed.base })}</p>`
         : '';
       const err = s.error ? `<p class="instance-probe instance-probe--err">${escape(s.error)}</p>` : '';
       return `
@@ -256,13 +272,27 @@ export function openInstanceSheet(host: HostV1, opts: { firstRun?: boolean } = {
         repaint();
         void (async () => {
           try {
-            const resp = await instanceFetch(`${valid.base}/catalog/tools/index.json`);
+            // The catalog probe decides; the optional instance manifest only
+            // enriches the card (a plain deployment has none - not an error).
+            const [resp, manifest] = await Promise.all([
+              instanceFetch(`${valid.base}/catalog/tools/index.json`),
+              (async (): Promise<ManifestOutcome> => {
+                try {
+                  const r = await instanceFetch(`${valid.base}/api/v1/instance`);
+                  let mBody: unknown;
+                  try { mBody = await r.json(); } catch { mBody = undefined; }
+                  return shapeInstanceManifest(r.status, r.ok, mBody);
+                } catch {
+                  return { found: false };
+                }
+              })(),
+            ]);
             let body: unknown;
             try { body = await resp.json(); } catch { body = undefined; }
             const outcome = shapeProbeResult(resp.status, resp.ok, body);
             if (step.kind !== 'connect') return;
             step = outcome.ok
-              ? { ...step, probing: false, probed: { base: valid.base, toolCount: outcome.toolCount } }
+              ? { ...step, probing: false, probed: { base: valid.base, toolCount: outcome.toolCount, manifest } }
               : { ...step, probing: false, error: probeErrorMessage(outcome) };
           } catch (e) {
             if (step.kind !== 'connect') return;

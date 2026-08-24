@@ -382,7 +382,16 @@ export function normalizeFrameScene(layer: SeqLayer, nativeW: number, nativeH: n
   if (!layer.frameScene) return layer;
   const w = Number.isFinite(nativeW) && nativeW > 0 ? nativeW : layer.rect.w;
   const h = Number.isFinite(nativeH) && nativeH > 0 ? nativeH : layer.rect.h;
-  return { ...layer, rect: { x: 0, y: 0, w, h, rot: 0 } };
+  // Contain-fit (plans/141 WP-C): artboards stay freely mixed-size in the doc, and the
+  // FORMAT resolves them at export time - a slide whose aspect differs from the output
+  // frame letterboxes (centred, aspect kept) rather than stretching. A slide matching
+  // the output aspect fills it exactly, so a uniform slideshow is byte-identical.
+  const lw = layer.rect.w > 0 ? layer.rect.w : w;
+  const lh = layer.rect.h > 0 ? layer.rect.h : h;
+  const s = Math.min(w / lw, h / lh);
+  const dw = lw * s;
+  const dh = lh * s;
+  return { ...layer, rect: { x: (w - dw) / 2, y: (h - dh) / 2, w: dw, h: dh, rot: 0 } };
 }
 
 /**

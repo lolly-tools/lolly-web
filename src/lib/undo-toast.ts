@@ -25,6 +25,10 @@ export interface UndoToastOpts {
   commit?: () => void | Promise<void>;
   /** ms until auto-commit. Default 10s. */
   duration?: number;
+  /** Button text. Default t('Undo') - override for the action-toast shape
+   *  ("Saved" · "Open Projects"), where `undo` is the action and there is no
+   *  deferred commit. */
+  actionLabel?: string;
 }
 
 export interface UndoToastHandle {
@@ -54,7 +58,7 @@ export function showUndoToast(opts: UndoToastOpts): UndoToastHandle {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'undo-toast-btn';
-  btn.textContent = t('Undo');
+  btn.textContent = opts.actionLabel ?? t('Undo');
   const bar = document.createElement('span');
   bar.className = 'undo-toast-bar';
   bar.setAttribute('aria-hidden', 'true');

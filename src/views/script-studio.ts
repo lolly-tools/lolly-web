@@ -40,6 +40,7 @@ import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { backHomeHtml, mountBackPill } from '../components/back-pill.ts';
 import { mountHomeFab } from '../components/home-fab.ts';
 import { mountThemeFab } from '../components/theme-toggle.ts';
+import { mountProfileFab } from '../components/profile-menu.ts';
 import type { SpeechResult } from '@lolly-tools/core/host-v1';
 
 /**
@@ -102,6 +103,7 @@ export async function mountScriptStudio(viewEl: HTMLElement, host: ScriptAudioHo
     // the back pill needs somewhere to have come from; Home always answers.
     mountHomeFab(viewEl);
     mountThemeFab(viewEl.querySelector('.gallery-topright'), host);
+    mountProfileFab(viewEl.querySelector('.gallery-topright'), host);
     return;
   }
 
@@ -155,6 +157,7 @@ export async function mountScriptStudio(viewEl: HTMLElement, host: ScriptAudioHo
   mountBackPill(viewEl);
   mountHomeFab(viewEl);
   mountThemeFab(viewEl.querySelector('.gallery-topright'), host);
+  mountProfileFab(viewEl.querySelector('.gallery-topright'), host);
   attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host);
 
   const textarea    = viewEl.querySelector<HTMLTextAreaElement>('.scriptst-text')!;

@@ -21,7 +21,7 @@ import type {
   ImagesAPI, ImageInfo, ImageResizeOpts, ImageEncodeOpts, ImageResult, ImageEncodeFormat,
 } from '@lolly-tools/core/host-v1';
 import { decodeImageBitmap, MAX_SOURCE_PIXELS } from './image-resize.ts';
-import { sniffAnimatedRaster } from '@lolly/engine';
+import { sniffAnimatedRaster, carryImageMetadata } from '@lolly/engine';
 
 const MIME_OF: Record<ImageEncodeFormat, string> = {
   webp: 'image/webp',
@@ -193,13 +193,24 @@ async function transform(
   size: (w: number, h: number) => { width: number; height: number },
   format: (mime: string | null) => ImageEncodeFormat,
   quality: number | undefined,
+  carry?: boolean | { gps?: boolean },
 ): Promise<ImageResult> {
-  const { blob, mime } = await normalise(input);
+  const { blob, bytes: srcBytes, mime } = await normalise(input);
   const bitmap = await decodeImageBitmap(blob);
   try {
     guardPixels(bitmap.width, bitmap.height);
     const { width, height } = size(bitmap.width, bitmap.height);
-    return await drawAndEncode(bitmap, width, height, format(mime), quality);
+    const res = await drawAndEncode(bitmap, width, height, format(mime), quality);
+    if (!carry) return res;
+    // Metadata carry (v1.149): rebuild the source's descriptive metadata into
+    // the fresh container; the report says what carried / what dropped.
+    const gps = typeof carry === 'object' && carry.gps === true;
+    const { bytes, carried } = carryImageMetadata(
+      { bytes: srcBytes, mime: mime ?? undefined },
+      { bytes: res.bytes, mime: res.mime },
+      { gps },
+    );
+    return { ...res, bytes, carried };
   } finally {
     bitmap.close?.();
   }
@@ -234,12 +245,12 @@ export function createImagesAPI(): ImagesAPI {
 
     resize(input: Uint8Array | Blob, opts: ImageResizeOpts): Promise<ImageResult> {
       const fmt = opts.format === undefined ? defaultFormatFor : () => normaliseFormat(opts.format!);
-      return transform(input, (w, h) => fitWithin(w, h, opts), fmt, opts.quality);
+      return transform(input, (w, h) => fitWithin(w, h, opts), fmt, opts.quality, opts.carryMetadata);
     },
 
     encode(input: Uint8Array | Blob, opts: ImageEncodeOpts): Promise<ImageResult> {
       const format = normaliseFormat(opts.format);
-      return transform(input, (w, h) => ({ width: w, height: h }), () => format, opts.quality);
+      return transform(input, (w, h) => ({ width: w, height: h }), () => format, opts.quality, opts.carryMetadata);
     },
   };
 }
