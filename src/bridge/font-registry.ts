@@ -383,7 +383,7 @@ export async function resolveVectorFont(style: FontStyleSlice, text: string): Pr
   try { faces = await registry; }
   catch { registryPromise = null; faces = new Map(); }
 
-  for (const family of families) {
+  const tryFamily = async (family: string): Promise<VectorFont | null> => {
     const key = family.toLowerCase();
     if (key === 'suse' || key === 'suse mono') {
       // The catalog statics only exist under a brand that ships them; elsewhere
@@ -394,9 +394,9 @@ export async function resolveVectorFont(style: FontStyleSlice, text: string): Pr
       if (url && await fontUrlUsable(url)) return { url };
     }
     const list = faces.get(key);
-    if (!list?.length) continue;
+    if (!list?.length) return null;
     const chain = pickFaces(list, style, text);
-    if (!chain.length) continue;
+    if (!chain.length) return null;
     try {
       // Decode every face in the chain up front; a failure anywhere means this
       // family can't be trusted to draw the run, so try the next one.
@@ -408,8 +408,63 @@ export async function resolveVectorFont(style: FontStyleSlice, text: string): Pr
         ...(rest.length ? { fallbacks: rest } : {}),
       };
     } catch {
-      continue; // this family's bytes are unreadable - try the next family
+      return null; // this family's bytes are unreadable - try the next family
+    }
+  };
+
+  for (const family of families) {
+    const resolved = await tryFamily(family);
+    if (resolved) return resolved;
+  }
+  // Owner rule (Andy, 2026-08-24): tool text renders in the ACTIVE BRAND's
+  // faces, never anything else. A stack that reaches its generic tail with
+  // nothing resolved (e.g. "ui-monospace, Menlo, Consolas, monospace") used to
+  // keep the <text> fallback, so a PDF viewer substituted whatever it liked.
+  // Map each generic onto the brand's own stack for that role (the chrome vars
+  // brand-vars.ts derives from the brand's font tokens) and try those faces.
+  // Serif has no brand role, so a serif-only stack still falls back to <text>.
+  for (const family of families) {
+    const role = genericFontRole(family);
+    if (!role) continue;
+    for (const fam of brandRoleStack(role)) {
+      if (genericFontRole(fam)) continue; // the brand stack ends in generics too
+      const resolved = await tryFamily(fam);
+      if (resolved) return resolved;
     }
   }
   return null;
+}
+
+/**
+ * Which brand type role a CSS generic (or generic-like ui- family) stands in
+ * for. Pure, so the mapping is testable; the resolution itself stays in
+ * resolveVectorFont. Named platform faces (Menlo, Consolas, ...) are NOT
+ * mapped: naming a face is a choice, reaching a generic is a shrug.
+ */
+export function genericFontRole(family: string): 'sans' | 'mono' | null {
+  switch (family.toLowerCase()) {
+    case 'monospace':
+    case 'ui-monospace':
+      return 'mono';
+    case 'sans-serif':
+    case 'system-ui':
+    case 'ui-sans-serif':
+      return 'sans';
+    default:
+      return null;
+  }
+}
+
+/** The active brand's family stack for a type role, read from the chrome vars
+ *  (tokens.css defaults; brand-vars.ts overrides them per brand). */
+function brandRoleStack(role: 'sans' | 'mono'): string[] {
+  let raw = '';
+  try {
+    if (typeof document !== 'undefined' && document.documentElement) {
+      raw = getComputedStyle(document.documentElement)
+        .getPropertyValue(role === 'mono' ? '--font-mono' : '--font-brand');
+    }
+  } catch { /* a headless DOM without getComputedStyle: use the platform default */ }
+  const fams = parseFontFamilies(raw.trim());
+  return fams.length ? fams : (role === 'mono' ? ['SUSE Mono'] : ['SUSE']);
 }

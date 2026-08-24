@@ -9,7 +9,25 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseFontFamilies, parseUnicodeRange, rangesCover, coverageCount, pickFaces , isFontContentType } from './font-registry.ts';
+import { parseFontFamilies, parseUnicodeRange, rangesCover, coverageCount, pickFaces , isFontContentType, genericFontRole } from './font-registry.ts';
+
+// ── genericFontRole ──────────────────────────────────────────────────────────
+// Owner rule (2026-08-24): tool text renders in the active brand's faces. When
+// a stack's named families all fail to resolve, its CSS generics stand in for
+// the brand's own stack for that role (read from --font-brand / --font-mono)
+// instead of keeping the <text> fallback a PDF viewer would substitute.
+
+test('generics map to a brand type role; named families and serif decline', () => {
+  assert.equal(genericFontRole('monospace'), 'mono');
+  assert.equal(genericFontRole('ui-monospace'), 'mono');
+  assert.equal(genericFontRole('UI-Monospace'), 'mono');
+  assert.equal(genericFontRole('sans-serif'), 'sans');
+  assert.equal(genericFontRole('system-ui'), 'sans');
+  assert.equal(genericFontRole('ui-sans-serif'), 'sans');
+  assert.equal(genericFontRole('serif'), null, 'no brand serif role exists, so serif keeps the <text> fallback');
+  assert.equal(genericFontRole('Menlo'), null, 'a named platform face is not a generic');
+  assert.equal(genericFontRole('Inter'), null);
+});
 
 // ── parseFontFamilies ────────────────────────────────────────────────────────
 

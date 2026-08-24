@@ -640,6 +640,34 @@ button.cat-download { font: inherit; cursor: pointer; }
    it paints, so the artwork shows through until playback starts and replaces it. */
 .cat-details-preview .cat-thumb-audio { position: relative; }
 
+/* ── Palette asset ──────────────────────────────────────────────────────────
+   A brand palette is a first-class catalog asset: a swatch mosaic on its grid
+   tile, and "Colour Lab in a card" in the details modal - every hard-coded
+   preset with its OKLCH and a freshly extrapolated OKLab tint→shade ramp. */
+.cat-thumb-swatches { display: grid; grid-template-columns: repeat(4, 1fr); width: 100%; height: 100%; }
+.cat-thumb-swatches > span { display: block; }
+/* Stretch + scroll like the audio stage: `place-items:center` would clip a tall
+   preset list against the pane's max-height instead of scrolling it. */
+.cat-details-preview:has(.cat-swatch-lab) { place-items: stretch; padding: 0; background: hsl(var(--card)); }
+.cat-details-preview .cat-swatch-lab {
+  width: 100%; height: 100%; max-width: none; max-height: none; object-fit: unset;
+  overflow-y: auto; box-sizing: border-box; padding: 14px;
+  display: flex; flex-direction: column; gap: 12px; text-align: start;
+}
+.cat-lab-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.cat-lab-swatch {
+  width: 22px; height: 22px; flex: none; border-radius: calc(var(--radius) * .6);
+  box-shadow: inset 0 0 0 1px hsl(var(--border));
+}
+.cat-lab-name { font-weight: 600; font-size: calc(.9rem * var(--a11y-fs)); color: hsl(var(--foreground)); }
+.cat-lab-hex { font-size: calc(.78rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.cat-lab-oklch { margin-inline-start: auto; font-size: calc(.72rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.cat-lab-ramp {
+  flex-basis: 100%; display: grid; grid-template-columns: repeat(9, 1fr);
+  height: 24px; border-radius: calc(var(--radius) * .6); overflow: hidden;
+}
+.cat-lab-step { display: block; }
+
 /* A text asset (.txt/.md) reads as text, not a picture: a scrollable monospace panel
    fills the preview instead of a broken image, and the checkerboard would only imply a
    transparency it does not have. */

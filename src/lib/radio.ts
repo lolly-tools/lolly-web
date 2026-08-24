@@ -58,9 +58,12 @@ export function radioAvailable(): boolean {
   return typeof navigator === 'undefined' || navigator.onLine !== false;
 }
 
-/** Resolve a .pls to its first stream URL (CORS-open). Throws on network/parse failure. */
+/** Resolve a .pls to its first stream URL (CORS-open). Throws on network/parse failure.
+ *  no-referrer: the icecast side 403s localhost-ish referers (the gotcha above), and the
+ *  Tauri shells' origin IS one (http://tauri.localhost) - main.ts also sets the document
+ *  policy there, since Android WebView ignores per-request policies on MEDIA loads. */
 export async function resolveStreamUrl(pls: string): Promise<string> {
-  const res = await fetch(pls);
+  const res = await fetch(pls, { referrerPolicy: 'no-referrer' });
   if (!res.ok) throw new Error(`playlist ${res.status}`);
   const text = await res.text();
   const m = text.match(/^\s*File\d+\s*=\s*(\S+)/im);

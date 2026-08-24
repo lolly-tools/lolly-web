@@ -1575,3 +1575,43 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   border-color: hsl(var(--primary) / 0.88);
 }
 }
+
+/* ── Visitor page (`?nostage` on a no-export tool - views/tool.ts) ───────────
+   The link IS the product for these utilities (Jump Page, countdown): a shared
+   link opens as a plain webpage - normal document flow, full viewport width, no
+   stage backdrop, no zoom, no chrome. The canvas keeps its id and render path
+   unchanged; only the presentation differs. Specificity (0,2,0) so these beat
+   the base rules and the ≤640px fixed-stage rules in the same layer. */
+
+.tool-layout.is-visitor { display: block; height: auto; }
+
+.tool-layout.is-visitor .tool-stage {
+  position: static;
+  display: block;
+  height: auto;
+  min-height: 100dvh;
+  overflow: visible;
+  padding: 0;
+  background: none;
+}
+
+.tool-layout.is-visitor .tool-canvas-outer {
+  width: 100% !important;   /* fitCanvas never runs here, but stale inline sizes must not win */
+  height: auto !important;
+  overflow: visible;
+  box-shadow: none;
+}
+
+.tool-layout.is-visitor .tool-canvas {
+  width: 100%;
+  height: auto;
+  min-height: 100dvh;
+  transform: none !important;
+}
+
+/* A tool template's root usually paints 100% x 100% of the fixed canvas; with
+   the canvas at natural height that would collapse to content height, so
+   stretch it to at least the viewport and let the page own the window. */
+.tool-layout.is-visitor .tool-canvas > * {
+  min-height: 100dvh;
+}

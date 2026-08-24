@@ -861,3 +861,53 @@ test('a token-backed swatch emits a token value; editing afterwards de-links it'
   assert.equal(typeof seen.at(-1)!.value, 'string');
   assert.equal(seen.at(-1)!.detail.ref, null);
 });
+
+// ── The stranded swatch tip ──────────────────────────────────────────────────
+// Picking a colour closes the swatch grid, and a removed node fires no
+// mouseout - so the floating name chip used to stay on the page, and the
+// 240ms show delay could even pop it AFTER the grid was gone (screen
+// recording, 2026-08-24). Three ways out, all pinned here: any press, Escape,
+// and the swatch leaving the DOM inside the delay.
+
+test('the swatch name tip never survives a pick, an Escape, or the swatch leaving the DOM', async () => {
+  mount('#30ba78', {});                       // arms the delegated tip listeners
+  const mkSwatch = (): HTMLElement => {
+    const sw = document.createElement('button');
+    sw.className = 'color-swatch';
+    sw.dataset.name = 'Jungle 3';
+    document.body.appendChild(sw);
+    return sw;
+  };
+  const over = (el: HTMLElement): void => {
+    el.dispatchEvent(new dom.window.MouseEvent('mouseover', { bubbles: true }));
+  };
+  const tipShown = (): boolean =>
+    document.querySelector('.swatch-name-tip')?.classList.contains('is-shown') ?? false;
+
+  // Hovered and left alone: the chip appears after its delay.
+  const sw1 = mkSwatch();
+  over(sw1);
+  await wait(300);
+  assert.equal(tipShown(), true, 'a hovered swatch shows its name chip');
+
+  // A press anywhere drops it (capture, so it wins even when the click unmounts the grid).
+  document.body.dispatchEvent(new dom.window.Event('pointerdown', { bubbles: true }));
+  assert.equal(tipShown(), false, 'pointerdown hides the chip');
+  sw1.remove();
+
+  // The strand case: hover, then the grid closes inside the show delay.
+  const sw2 = mkSwatch();
+  over(sw2);
+  sw2.remove();
+  await wait(300);
+  assert.equal(tipShown(), false, 'a removed swatch must never pop its chip late');
+
+  // Esc closes the picker; the chip goes with it.
+  const sw3 = mkSwatch();
+  over(sw3);
+  await wait(300);
+  assert.equal(tipShown(), true);
+  document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  assert.equal(tipShown(), false, 'Escape hides the chip');
+  sw3.remove();
+});

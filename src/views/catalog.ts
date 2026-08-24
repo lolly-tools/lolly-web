@@ -109,7 +109,8 @@ import { attachAudioMeter } from '../lib/audio-meter.ts';
 import { exportSwatches, paletteEntriesToSwatches, type SwatchExportFormat } from '../lib/swatch-export.ts';
 import { groupPalette, isTransparent, swatch } from '../lib/swatches.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
-import { parseHex, hexToOklch } from '../../../../engine/src/brand-derive.ts';
+import { parseHex, hexToOklch, oklchToHex } from '../../../../engine/src/brand-derive.ts';
+import { rampOklab } from '../../../../engine/src/color-tools.ts';
 import { rgbToCmyk } from '../../../../engine/src/color.ts';
 import { categoryGlyph } from '../lib/category-icons.ts';
 import { staggerReveal } from '../lib/reveal.ts';
@@ -955,7 +956,18 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         // LIBRARY text/data entries stay out - those are engine data (tokens,
         // palettes) covered by their own surfaces, and without this split every
         // brand-pack data file would flood the grid.
-        || ((a.type === 'text' || a.type === 'data') && a.source === 'user'));
+        || ((a.type === 'text' || a.type === 'data') && a.source === 'user')
+        // A brand PALETTE asset is first-class: a swatch-mosaic tile that opens a
+        // "Colour Lab in a card" - every preset with its OKLCH and a freshly
+        // extrapolated OKLab tint→shade ramp (thumbHtml's `palette` branch). The
+        // raw `tokens` DTCG doc stays out (redundant with this, and brand-locked),
+        // and so do the functional `palette` assets that are engine config, not
+        // swatch lists - the icon-theme pairs and photo treatments consumed by
+        // _iconThemes()/_photoTreatments() (tagged as such; they'd otherwise each
+        // mirror the one live brand palette the modal paints from).
+        || (a.type === 'palette'
+          && !(Array.isArray(a.meta?.tags)
+            && (a.meta.tags as string[]).some(tg => tg === 'icon-themes' || tg === 'photo-treatments'))));
     if (pendingDeletes.size) allAssets = allAssets.filter(a => !pendingDeletes.has(a.id));
     assetById = new Map(allAssets.map(a => [a.id, a]));
     searchHaystack = null; // asset set changed - drop the stale search index
@@ -1042,6 +1054,41 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   function thumbHtml(ref: AssetRef, asSpan = false, full = false): string {
     const tag = asSpan ? 'span' : 'div';
     if (ref.meta?._placeholder) return `<${tag} class="cat-thumb cat-thumb-stub">${escape(ref.type)}</${tag}>`;
+    // A brand PALETTE asset. Its swatches are the live brand palette (the same
+    // source the Swatches panel paints from), so it needs no fetch. A grid tile is
+    // a compact mosaic of the presets; the details modal (full) is Colour Lab in a
+    // card - every preset with its hex + OKLCH and a freshly EXTRAPOLATED OKLab
+    // tint→shade ramp (the exact derivation the #/lab view uses), so the "hard-coded
+    // presets and their extrapolated values" all read at a glance.
+    if (ref.type === 'palette') {
+      const g = groupPalette(palette);
+      const presets = [...g.brand, ...g.spectrum];
+      const solid = (presets.length ? presets : palette).filter(c => !isTransparent(c.hex));
+      if (full) {
+        const rows = solid.map(c => {
+          const o = hexToOklch(c.hex);
+          if (!o) return '';
+          // Same tint→shade curve as the Colour Lab view: chroma pulled in at the
+          // pale end and pushed out at the dark end so the ramp reads clean top and
+          // bottom; the perceptual spacing is rampOklab's correctLightness.
+          const ramp = rampOklab(
+            [oklchToHex({ l: 0.97, c: o.c * 0.22, h: o.h }), c.hex, oklchToHex({ l: 0.13, c: o.c * 0.5, h: o.h })],
+            9, { correctLightness: true },
+          );
+          const cells = ramp.map(hx => `<span class="cat-lab-step" style="background:${escape(hx)}" title="${escape(hx)}"></span>`).join('');
+          const oklch = `oklch(${(o.l * 100).toFixed(1)}% ${o.c.toFixed(3)} ${Math.round(o.h)})`;
+          return `<div class="cat-lab-row">`
+            + `<span class="cat-lab-swatch" style="background:${escape(c.hex)}"></span>`
+            + `<span class="cat-lab-name">${escape(c.label)}</span>`
+            + `<code class="cat-lab-hex">${escape(c.hex)}</code>`
+            + `<code class="cat-lab-oklch">${escape(oklch)}</code>`
+            + `<span class="cat-lab-ramp">${cells}</span></div>`;
+        }).join('');
+        return `<${tag} class="cat-thumb cat-swatch-lab">${rows}</${tag}>`;
+      }
+      const cells = solid.slice(0, 12).map(c => `<span style="background:${escape(c.hex)}"></span>`).join('');
+      return `<${tag} class="cat-thumb cat-thumb-swatches" aria-hidden="true">${cells}</${tag}>`;
+    }
     // Lottie: a looping player mounted over the still poster - autoplayLottieThumbs mounts it
     // while the tile is on screen; the poster background (or a ▶ for a posterless user upload)
     // is the resting frame. The json is the play source: a library lottie exposes it on
@@ -2372,6 +2419,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     const zoomable = !ref.meta?._placeholder
       && ref.type !== 'audio'
       && ref.type !== 'text' && ref.type !== 'data'
+      && ref.type !== 'palette'   // a scrollable swatch card, not a zoom stage
       && !(ref.type === 'lottie' && !isMotionLottie);
     // Crop only makes sense on a static raster/vector - never a live motion preview or a video.
     const croppable = zoomable && !isMotionLottie && ref.type !== 'video';
@@ -4190,6 +4238,32 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       if (e.key === 'ArrowLeft' && nav.prev) { e.preventDefault(); openDetails(nav.prev, dTheme, dTreatment); }
       else if (e.key === 'ArrowRight' && nav.next) { e.preventDefault(); openDetails(nav.next, dTheme, dTreatment); }
     });
+    // Touch parity with ←/→: a single-finger horizontal swipe on the preview pages
+    // prev/next, so phone/tablet users skip through a large set as fast as keyboard
+    // users. Skipped while an inline edit mode owns the surface, and when the zoom
+    // stage is zoomed IN (there a drag pans - attachZoom marks it .is-zoomed).
+    // Passive: it never preventDefaults, so vertical scroll (e.g. the swatch card)
+    // and pinch-zoom still work; the horizontal-dominance test keeps the two apart.
+    const swipeEl = dlg.querySelector<HTMLElement>('.cat-details-preview');
+    if (swipeEl && (nav.prev || nav.next)) {
+      let sx = 0, sy = 0, armed = false;
+      swipeEl.addEventListener('touchstart', (e) => {
+        const p = e.touches[0];
+        armed = e.touches.length === 1 && !!p && !inlineCrop && !inlineRetouch && !inlineVideoEdit && !inlineTrim;
+        if (p) { sx = p.clientX; sy = p.clientY; }
+      }, { passive: true });
+      swipeEl.addEventListener('touchend', (e) => {
+        const p = e.changedTouches[0];
+        if (!armed || e.changedTouches.length !== 1 || !p) return;
+        armed = false;
+        if (dlg.querySelector('.cat-zoom-stage.is-zoomed')) return;   // zoomed ⇒ the drag panned
+        const dx = p.clientX - sx;
+        const dy = p.clientY - sy;
+        if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;   // not a clean horizontal swipe
+        const r = dx < 0 ? nav.next : nav.prev;   // swipe left → next, right → prev
+        if (r) openDetails(r, dTheme, dTreatment);
+      }, { passive: true });
+    }
     if (zoomable) attachZoom(dlg);
     // Mount the looping Lottie player over the poster (autoplays). Guarded so a mount that resolves
     // after the modal was paged/closed doesn't attach to a stale node; closeDetails reaps it.

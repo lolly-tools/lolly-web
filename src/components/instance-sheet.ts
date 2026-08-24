@@ -230,7 +230,10 @@ export function openInstanceSheet(host: HostV1, opts: { firstRun?: boolean } = {
 
     function goImportStep(): void {
       step = { kind: 'import', url: '', busy: false };
-      repaint('#instance-import-url');
+      // Seeding focus into the URL field pops the soft keyboard over the sheet
+      // before any intent to type (seen on the Android first run); touch users
+      // tap the field themselves. Mirrors search-bar.ts's fine-pointer gate.
+      repaint(window.matchMedia?.('(pointer: fine)').matches ? '#instance-import-url' : undefined);
     }
 
     async function runImport(bytes: ArrayBuffer): Promise<void> {

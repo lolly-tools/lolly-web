@@ -80,6 +80,10 @@ interface ProHost extends HostV1 {
 // Options the shell injects when mounting /pro (lazy route in main.js).
 interface ProMountOpts {
   sessionSlot?: string;
+  /** A tool id to start the batch on (`#/batch?tool=<id>`, the tool view's "Bulk from
+   *  rows" action). Applied to the first empty row AFTER any session or sheet
+   *  selection, so a deep link that carries both keeps the opened work. */
+  seedToolId?: string;
   /** Session refs to open verbatim as grid rows - the Projects "Edit as sheet"
    *  selection (`#/pro?s=slot,slot…`). Each becomes a row (tool-less if it has no
    *  inputs); see {@link rowsFromRefs}. Takes precedence over `sessionSlot`. */
@@ -1876,6 +1880,8 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   //    tool-less rows);
   //  · a saved batch session (#/pro?session=…), e.g. resuming from the gallery's
   //    Saved-sessions list;
+  //  · a "Bulk from rows" tool (#/batch?tool=<id>), which ADDS to either of the
+  //    above rather than replacing it (see below);
   //  · otherwise drop straight into the first (blank) row's template search, ready
   //    to type - now that the grid's click + focusin handlers are wired.
   if (opts.seedRefs?.length) {
@@ -1890,13 +1896,27 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     const data = await sessions.load(opts.sessionSlot);
     if (data) await applySnapshot(data);
     else showProgress(`<p class="pro-progress-msg pro-log-err">That batch session could not be found.</p>`);
-  } else {
-    openFirstTemplateSearch();
   }
+  // …and last, a "Bulk from rows" deep link (#/batch?tool=<id>). It fills the first
+  // EMPTY row - appending one when the grid above already used them all - so it adds
+  // a template to whatever the two branches opened rather than replacing it. An
+  // unknown id (a hand-typed link, or a tool this shell can't run) seeds nothing and
+  // falls back to the template search.
+  const seededTool = opts.seedToolId ? await seedTool(opts.seedToolId) : false;
+  if (!seededTool && !opts.seedRefs?.length && !opts.sessionSlot) openFirstTemplateSearch();
 
   // Capture the initial grid as the clean baseline for the unsaved-changes guard
   // (covers blank start, a found deep-linked session, and the not-found case).
   markClean();
+
+  async function seedTool(id: string): Promise<boolean> {
+    const tool = ctx.toolById.get(id);
+    if (!tool) return false;
+    let row = state.rows.find(r => !r.toolId);
+    if (!row) { row = newRow(); state.rows.push(row); columns = renderGrid(); }
+    await selectTemplate(row.uid, tool.name);
+    return !!row.toolId;
+  }
 
   function openFirstTemplateSearch() {
     const td = gridHost.querySelector<HTMLElement>('td[data-col="__template"]');

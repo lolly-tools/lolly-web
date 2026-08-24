@@ -60,7 +60,7 @@ import { createHistory, cloneValue } from './tool-history.ts';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 import { hasGuide, guideButtonHtml, showToolGuide, autoOpenToolGuide } from '../components/tool-guide.ts';
 import { jellyActive } from '../lib/jelly.ts';
-import { toolSupport, capabilityLabel } from '../capabilities.ts';
+import { toolSupport, capabilityLabel, canBatchTool } from '../capabilities.ts';
 import { docsAppHref, currentLang, t, tRaw } from '../i18n.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { announce } from '../a11y.ts';
@@ -101,13 +101,14 @@ import '../styles/vendor-flatpickr.css'; // flatpickr base CSS in the `vendor` c
 // internals - resolved by the bundler through the `.js` specifier convention.
 import type { HostV1, AssetRef, ComposeAPI, ClipboardAPI, StateAPI, Profile } from '@lolly-tools/core/host-v1';
 import type { InputModelItem, InputValue, InputSpec, BlockFieldSpec } from '../../../../engine/src/inputs.js';
-import type { LoadedTool, ToolManifest } from '../../../../engine/src/loader.js';
+import type { LoadedTool, ToolManifest, ToolRenderSpec } from '../../../../engine/src/loader.js';
 import type { Runtime } from '../../../../engine/src/runtime.js';
 import type { Unit } from '../../../../engine/src/units.js';
 
 // The input + actions subsystems live in sibling modules (verbatim split of this
 // file). They only `import type` back from here, so these value imports don't cycle.
 import { icon } from '../lib/icons.ts';
+import { navigateTo } from '../nav.ts';
 import { asRow } from './tool-types.ts';
 import { resolveCanvasFastCfg, geometryFastPathPlan, boundEndpointIds, type FastPathCfg } from './canvas-scene.ts';
 import type { Box } from './free-canvas-math.ts';
@@ -131,6 +132,27 @@ import {
 
 /** The view root; the router reads back a `_cleanup` teardown hook off it. */
 type ViewEl = HTMLElement & { _cleanup?: () => void };
+
+/** `render.transcribe` - the manifest's speech-to-text declaration (v1.150). */
+type TranscribeSpec = NonNullable<ToolRenderSpec['transcribe']>;
+
+/**
+ * The declaration a mounted tool's Transcribe affordance acts on, or null when
+ * it must not mount: no declaration, a shell without on-device speech (the
+ * CLI), or a spec naming inputs the manifest does not declare (a typo - the
+ * button would write nowhere). A module-scope helper rather than an IIFE in
+ * mountTool: the team-origin contract test forbids bare returns between the
+ * origin consume and the teardown hook (tool-team-origin.test.ts).
+ */
+function resolveTranscribeSpec(tool: { manifest: ToolManifest }, host: WebToolHost): TranscribeSpec | null {
+  const spec = (tool.manifest.render as { transcribe?: TranscribeSpec } | undefined)?.transcribe;
+  if (!spec?.source || !spec.target) return null;
+  let available = false;
+  try { available = host.speech?.transcribeAvailable?.() === true; } catch { /* stays false */ }
+  if (!available) return null;
+  const ids = new Set((tool.manifest.inputs ?? []).map((i) => i.id));
+  return ids.has(spec.source) && ids.has(spec.target) ? spec : null;
+}
 
 /** Content Credentials device-identity status (a web-only host helper). */
 export interface IdentityStatus {
@@ -1056,6 +1078,18 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   const nativeH     = tool.manifest.render.height;
   const hasInputs   = (tool.manifest.inputs?.length ?? 0) > 0;
   const noExport    = tool.manifest.render.export === false;
+  // Whether /batch can run this template - the batch's own admission test, kept in
+  // capabilities.ts so both halves of it live next to `toolSupport` rather than being
+  // restated here (views/* must not pull in the pro/ folder, which owns its stylesheet).
+  const canBulk = canBatchTool(tool.manifest, host.capabilities);
+  // Transcribe (engine 1.150, render.transcribe): the tool names an audio/video
+  // input and a text input, and the shell owns everything between them - consent
+  // for the one-time model download, the background job, and one undoable write.
+  // Feature-detected, never capability-gated: audio never leaves the device, and a
+  // shell without on-device speech (the CLI) simply mounts nothing. Both named
+  // inputs must exist, or the declaration is a typo and the button would write
+  // nowhere.
+  const transcribeSpec = resolveTranscribeSpec(tool, host);
   // Whether this tool persists a saved session - drives the Save half of the
   // render pill. Mirrors renderActions: the default action set includes 'save',
   // and an explicit empty actions list (opted-out file utilities) excludes it.
@@ -1067,6 +1101,13 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   const exportUiEmpty = noExport
     && ((Array.isArray(tool.manifest.render.actions) && tool.manifest.render.actions.length === 0)
       || !hasInputs);
+  // Visitor page: `?nostage` on a NO-EXPORT tool. For these utilities the link
+  // is the product (a jump page, a countdown), so a shared link opens as a plain
+  // full-width webpage - normal document flow, no stage frame, no zoom HUD, no
+  // sidebar, no pills - while the bare tool URL stays the editing preview. For
+  // exportable tools `nostage` keeps its export-panel meaning (the html "Full
+  // page" pre-check above) and none of this engages.
+  const visitorPage = urlNostage && noExport;
   const canvasLayout = tool.manifest.render.layout === 'canvas';
   // The WYSIWYG "editor" layout: a chromeless full-canvas surface (no input
   // sidebar) that KEEPS the fixed render canvas + the full render/export
@@ -1164,7 +1205,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // the default rather than producing a rail nothing styles.
   const filmstripSide: FilmstripSide = tool.manifest.render.filmstrip === 'bottom' ? 'bottom' : 'left';
   // Whether the input aside is present. Chromeless modes drop it but aren't hideSidebar.
-  const showAside = !hideSidebar && !chromeless;
+  const showAside = !hideSidebar && !chromeless && !visitorPage;
   const noAside   = !showAside;   // no visible input aside (hidden-canvas OR editor)
   // The one declared file input presented as a full-canvas drop zone. Canvas-layout
   // utilities have always worked this way; a sidebar tool with a `file` input (e.g.
@@ -1243,8 +1284,8 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
     </div>` : '';
 
   viewEl.innerHTML = `
-    ${noAside ? backPillHtml(backPillOpts) : ''}
-    <div class="tool-layout${chromeless ? ' is-editor' : ''}${documentLayout ? ' is-document' : ''}${pagedDoc ? ' is-paged' : ''}" id="tool-layout"${documentLayout ? ' data-theme="light"' : ''} data-sidebar="${noAside ? 'hidden' : (sidebarOpen ? 'open' : 'closed')}">
+    ${noAside && !visitorPage ? backPillHtml(backPillOpts) : ''}
+    <div class="tool-layout${chromeless ? ' is-editor' : ''}${documentLayout ? ' is-document' : ''}${pagedDoc ? ' is-paged' : ''}${visitorPage ? ' is-visitor' : ''}" id="tool-layout"${documentLayout ? ' data-theme="light"' : ''} data-sidebar="${noAside ? 'hidden' : (sidebarOpen ? 'open' : 'closed')}">
       ${showAside ? `
         <aside class="sidebar" id="tool-sidebar">
           <div class="sidebar-header">
@@ -1256,6 +1297,9 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
                 <span class="sidebar-title">${escape(tool.manifest.name)}</span>
                 ${hasGuide(tool.manifest) ? guideButtonHtml() : ''}
                 ${canSaveSession ? `<button type="button" class="multi-edit-btn" id="multi-edit-btn" data-tip="${escape(t('Make variants'))}" aria-label="${escape(t('Make variants'))}" aria-haspopup="menu" aria-expanded="false">${icon('grid', { className: 'multi-edit-icon' })}</button>` : ''}
+                ${/* "Bulk from rows" - the same icon-only header control as Make variants
+                      next to it, so it needs no styling of its own. */ ''}
+                ${canBulk ? `<button type="button" class="multi-edit-btn" id="bulk-rows-btn" data-tip="${escape(t('Bulk from rows'))}" aria-label="${escape(t('Bulk from rows'))}">${icon('table', { className: 'multi-edit-icon' })}</button>` : ''}
               </span>
               <button class="fullscreen-toggle" id="fullscreen-toggle" ${sidebarOpen ? 'open' : ''} aria-label="${escape(sidebarOpen ? t('Collapse sidebar') : t('Expand sidebar'))}"></button>
             </div>
@@ -1268,6 +1312,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
             ${hasInputs ? `
               <div class="sidebar-utils" id="sidebar-utils">
                 ${toolId === 'darkroom' && typeof (window as { VideoDecoder?: unknown }).VideoDecoder !== 'undefined' && typeof (window as { VideoEncoder?: unknown }).VideoEncoder !== 'undefined' ? `<button type="button" id="grade-video-btn" class="clear-inputs-btn" title="${escape(t('Apply this look to a video from your library - runs on-device as a background job'))}">${t('Grade a video…')}</button>` : ''}
+                ${transcribeSpec ? `<button type="button" id="transcribe-btn" class="clear-inputs-btn" disabled title="${escape(t('Add a clip first'))}">${t('Transcribe')}</button>` : ''}
                 <button type="button" id="clear-inputs-btn" class="clear-inputs-btn" title="${escape(t('Reset all inputs to defaults'))}">${t('Clear changes')}</button>
               </div>
             ` : ''}
@@ -1281,7 +1326,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
         <button type="button" class="sheet-grip" id="sheet-grip" aria-label="${escape(t('Drag to resize controls, tap to expand'))}"></button>
       ` : (chromeless || bareExport ? `<div class="tool-actions" id="tool-actions"></div>` : '')}
       <div class="tool-stage" id="tool-stage">
-        ${!exportUiEmpty ? `<div class="url-budget" id="url-budget-gauge" role="button" tabindex="0" aria-label="${escape(t('URL budget'))}" title="${escape(t('URL budget'))}" hidden><span class="url-budget-fill" data-gauge-fill></span></div><div class="url-budget-toast" data-gauge-toast role="status" aria-live="polite" hidden></div>` : ''}
+        ${!exportUiEmpty && !visitorPage ? `<div class="url-budget" id="url-budget-gauge" role="button" tabindex="0" aria-label="${escape(t('URL budget'))}" title="${escape(t('URL budget'))}" hidden><span class="url-budget-fill" data-gauge-fill></span></div><div class="url-budget-toast" data-gauge-toast role="status" aria-live="polite" hidden></div>` : ''}
         ${showAside ? `<button class="fullscreen-toggle-float" id="fullscreen-toggle-float" aria-label="${escape(t('Expand sidebar'))}"></button>` : ''}
         ${hideSidebar && onDevice ? `<div class="on-device-badge on-device-badge--float" title="${escape(t('This tool runs entirely in your browser. Your file is never uploaded.'))}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
@@ -1289,11 +1334,14 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
         </div>` : ''}
         ${hideSidebar ? `<div id="tool-content" role="img" aria-label="${escape(canvasLabel())}"></div>` : `
         <div class="tool-canvas-outer" id="tool-canvas-outer">
-          <div class="tool-canvas" id="tool-canvas" role="img" aria-label="${escape(canvasLabel())}"
-               style="width: ${nativeW}px; height: ${nativeH}px;"></div>
+          ${/* Visitor page: a real document, not a picture of one - no role="img"
+                (its links must stay in the accessibility tree) and no fixed px
+                frame (the page flows at viewport width, CSS owns the height). */ ''}
+          <div class="tool-canvas" id="tool-canvas"${visitorPage ? ' style="width: 100%;"' : ` role="img" aria-label="${escape(canvasLabel())}"
+               style="width: ${nativeW}px; height: ${nativeH}px;"`}></div>
         </div>`}
       </div>
-      ${(!hideSidebar || bareExport) && !exportUiEmpty ? `
+      ${(!hideSidebar || bareExport) && !exportUiEmpty && !visitorPage ? `
         <div class="render-pill" id="render-pill" role="group" aria-label="${escape(t('Export and save'))}">
           <button type="button" class="render-pill-btn render-pill-get" id="render-fab" data-sfx="hydraulicOpen" aria-label="${escape(t('Export options'))}">
             <svg class="render-pill-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
@@ -1635,6 +1683,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // the visual (scaled) dimensions so the layout doesn't leave a gap.
 
   function fitCanvas(): void {
+    if (visitorPage) return; // a visitor page flows as a document - never scaled to fit
     if (!canvasEl || !outerEl) return;
     if (stageZoom?.isZoomed()) return; // preserve pan/zoom across window/sidebar resize
     if (pagesMode) { fitPages(); return; } // carousel: fit the page strip, not one page
@@ -1769,7 +1818,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // Canvas navigation - one module for both pointer types. Touch gets pinch-zoom +
   // drag-pan; desktop gets trackpad-native zoom/pan (Cmd/Ctrl-wheel & pinch zoom
   // about the cursor, Space/middle-drag pan, 0/1/+/- keys) plus a Fit/% HUD.
-  if (stageEl && !hideSidebar && outerEl && canvasEl && !pagedDoc) {
+  if (stageEl && !hideSidebar && !visitorPage && outerEl && canvasEl && !pagedDoc) {
     // Pass fitCanvas as the "fit" action so the HUD's Fit button re-fits to the
     // CURRENT layout (e.g. the area left by the mobile sheet), not just the
     // stale fit that reset() restores. themeToggle docks into the HUD (its icon
@@ -2518,6 +2567,20 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
 
   const actionsApi = renderActions(actionsEl, tool.manifest, runtime, exportSourceNode, host, resetView, exportUnscaled, exportDefaults, syncUrl, playShutter, fileIntoFolder, returnTo, slot, reachedViaLink);
 
+  // "Bulk from rows" - hand this template to /batch, where a sheet of rows renders the
+  // whole set in one run. Deliberately NOT an export option (like Make variants, it is a
+  // step BEFORE export). The batch starts from rows, so the current design does not
+  // travel with it, which is why an edited-but-unsaved session gets the same offer to
+  // save that the back pill makes before it leaves. Two homes, one action: this header
+  // button for the sidebar layouts, the Lolly menu item for the chromeless editors.
+  const openBulk = (): void => {
+    const go = (): void => navigateTo(`#/batch?tool=${encodeURIComponent(toolId)}`);
+    if (!hasInputs || !userHasMadeChanges) { go(); return; }
+    const canSave = !!actionsEl?.querySelector('[data-action="save"]') && !!actionsApi?.save;
+    showUnsavedDialog(canSave ? async () => { if (await actionsApi!.save!()) go(); } : null, go);
+  };
+  viewEl.querySelector<HTMLButtonElement>('#bulk-rows-btn')?.addEventListener('click', openBulk);
+
   // Now that actionsApi exists, wire the gauge - a click (not a drag) opens the Share
   // dialog with the current state (same path as the Share button). syncUrl already drives
   // its live value via the holder above.
@@ -2776,6 +2839,24 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     });
   }
 
+  // Transcribe (engine 1.150, render.transcribe). The whole affordance from one
+  // declaration: listen to the named audio/video input, write cues into the named
+  // text input. The heavy part is a background job (lib/stt-job.ts) whose toast
+  // owns progress and cancel, exactly like the timeline panel's Generate
+  // subtitles - the same consent sheet, the same stash/persist rungs, so a clip
+  // transcribed once is never paid for twice.
+  const transcribeBtn = viewEl.querySelector<HTMLButtonElement>('#transcribe-btn');
+  if (transcribeSpec && transcribeBtn) {
+    const { setupTranscribeControl } = await import('./transcribe-control.ts');
+    setupTranscribeControl({
+      btn: transcribeBtn,
+      runtime: runtime as unknown as Parameters<typeof setupTranscribeControl>[0]['runtime'],
+      host: host as unknown as Parameters<typeof setupTranscribeControl>[0]['host'],
+      spec: transcribeSpec,
+      markSessionDirty,
+    });
+  }
+
   // Wire up the remaining sidebar utility buttons (Shrink URL, Clear changes).
   const sidebarUtilsEl = viewEl.querySelector<HTMLElement>('#sidebar-utils');
   if (sidebarUtilsEl) {
@@ -3013,6 +3094,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           // manifest); a tool with only user-saved templates reaches them via a
           // fresh open, which the chooser gate already covers.
           newFromTemplate: hasTemplates ? () => { void openTemplatesMidSession(); } : undefined,
+          // The chromeless editor's home for "Bulk from rows" - the sidebar header
+          // button that carries it everywhere else does not exist in this layout.
+          bulk: canBulk ? () => { openBulk(); } : undefined,
           canSave: canSaveSession,
           dirtyRef: renderSaveBtn,
         },
@@ -3686,7 +3770,12 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       if (v !== lastDimsSizeVal) {
         lastDimsSizeVal = v;
         const d = sizeDriver.dims[String(v)];
+        // An option with no dims returns the export size to the tool's own
+        // render box - otherwise "month then back to the card" kept exporting
+        // the card at A4 landscape (calendar-ics, the one partially
+        // dimensioned size select; E13 review).
         if (d) actionsApi?.setDims?.(d);
+        else actionsApi?.setDims?.({ width: tool.manifest.render.width, height: tool.manifest.render.height, unit: 'px' });
       }
     }
 

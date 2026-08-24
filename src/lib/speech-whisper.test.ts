@@ -13,8 +13,8 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  CHUNK_MAX_S, CHUNK_TARGET_S, WHISPER_MODEL_BYTES,
-  planChunks, cleanWordTimings, stitchChunks, joinChunkTexts, whisperLang,
+  CHUNK_MAX_S, CHUNK_TARGET_S, SILENCE_PEAK, SILENCE_RMS, WHISPER_MODEL_BYTES,
+  planChunks, cleanWordTimings, stitchChunks, joinChunkTexts, isSilentPcm, whisperLang,
 } from './speech-whisper.ts';
 import type { RawWord } from './speech-whisper.ts';
 
@@ -196,4 +196,56 @@ describe('joinChunkTexts / whisperLang', () => {
 test('WHISPER_MODEL_BYTES mirrors the fetch-script pins (sanity: ~77 MB)', () => {
   assert.ok(WHISPER_MODEL_BYTES > 75_000_000 && WHISPER_MODEL_BYTES < 85_000_000,
     `WHISPER_MODEL_BYTES = ${WHISPER_MODEL_BYTES}`);
+});
+
+// ── The silence gate (plans/147 T1a) ──────────────────────────────────────────
+// Whisper is a generative decoder: over silence it emits whatever its training
+// data put there ("Thank you.", a subtitling credit), timestamped as if someone
+// had spoken. The gate answers "nothing" before the model is ever asked, so this
+// is the test that keeps fabricated captions out of a caption path.
+describe('isSilentPcm', () => {
+  const flat = (n: number, v: number): Float32Array => {
+    const pcm = new Float32Array(n);
+    // Alternate the sign so the clip has the peak amplitude `v`, not a DC offset.
+    for (let i = 0; i < n; i++) pcm[i] = i % 2 ? v : -v;
+    return pcm;
+  };
+
+  test('digital silence is silent', () => {
+    assert.equal(isSilentPcm(new Float32Array(16_000)), true);
+  });
+
+  test('an empty buffer is silent (nothing to hear, nothing to invent)', () => {
+    assert.equal(isSilentPcm(new Float32Array(0)), true);
+  });
+
+  test('a mic floor well under both floors is silent', () => {
+    assert.equal(isSilentPcm(flat(16_000, SILENCE_RMS / 4)), true);
+  });
+
+  test('ordinary speech is not silent', () => {
+    assert.equal(isSilentPcm(flat(16_000, 0.15)), false);
+  });
+
+  test('one spoken word inside a ten-minute quiet clip is not silent', () => {
+    // The case a mean-only gate would throw away: 300 ms of speech in 600 s of
+    // room tone. Either floor keeps it, which is the point of testing both.
+    const pcm = new Float32Array(16_000 * 600);
+    for (let i = 0; i < pcm.length; i++) pcm[i] = i % 2 ? 0.0002 : -0.0002;   // room tone
+    for (let i = 0; i < 4_800; i++) pcm[i] = i % 2 ? 0.2 : -0.2;              // the word
+    assert.equal(isSilentPcm(pcm), false);
+  });
+
+  test('both floors must be under-run', () => {
+    // Loud enough to peak past the peak floor, quiet enough on average: kept.
+    const pcm = flat(16_000, SILENCE_RMS / 4);
+    pcm[10] = SILENCE_PEAK * 2;
+    assert.equal(isSilentPcm(pcm), false);
+  });
+
+  test('the floors are callable, for a caller with a noisier source', () => {
+    const pcm = flat(16_000, 0.02);
+    assert.equal(isSilentPcm(pcm), false);
+    assert.equal(isSilentPcm(pcm, 0.05, 0.5), true);
+  });
 });

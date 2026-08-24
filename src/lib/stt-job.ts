@@ -79,6 +79,11 @@ export interface TranscribeJobCtx {
   isCancelled?: () => boolean;
   /** `total <= 0` means indeterminate, exactly as lib/jobs.ts defines it. */
   onProgress?: (done: number, total: number, note?: string) => void;
+  /** What one entry of the finished `words` spans, as the model reported it -
+   *  the fact a caption grouper must not guess at (regrouping segments either
+   *  splits one the model kept whole or glues two together). Fired once, before
+   *  the words are returned. */
+  onGranularity?: (g: 'word' | 'segment') => void;
 }
 
 /** What the job carries in its terminal `result` - the transcript plus what
@@ -97,8 +102,12 @@ export interface TranscribeJobHooks {
    * `true` when the surface CONSUMED them (the caption boxes landed, or it told
    * the user there was no speech) - anything else means nobody was there, and
    * the completion announces where the transcript went instead.
+   *
+   * `info.granularity` is what the model said one entry spans, for a consumer
+   * whose grouping depends on it; a consumer that groups the same way either
+   * way can ignore the second argument.
    */
-  onComplete?: (words: SpeechWordTiming[]) => boolean | void;
+  onComplete?: (words: SpeechWordTiming[], info: { granularity: 'word' | 'segment' }) => boolean | void;
   onError?: (err: unknown) => void;
   /** Fired exactly once when the job reaches ANY terminal state, cancel
    *  included - where a caller drops its own "a run is in flight" guard. */
@@ -222,6 +231,7 @@ export async function runTranscribeJob(
     onProgress: (p: SpeechProgress) => reportProgress(ctx, p),
   });
   if (ctx.isCancelled?.()) return null;
+  if (transcript?.granularity) ctx.onGranularity?.(transcript.granularity);
   return wordTimingsOf(transcript?.words) ?? [];
 }
 
@@ -250,10 +260,12 @@ export function startTranscribeJob(
     try {
       await job.started;
       if (job.cancelled) return;
+      let granularity: 'word' | 'segment' = 'word';
       const words = await runTranscribeJob(host, req, {
         signal: controller.signal,
         isCancelled: () => job.cancelled,
         onProgress: (done, total, note) => job.progress(done, total, note),
+        onGranularity: (g) => { granularity = g; },
       });
       // Cancelled: cancelJob() has already put the job in its terminal state, and
       // a half-finished transcript is not something to file anywhere.
@@ -261,7 +273,7 @@ export function startTranscribeJob(
       if (!words.length) {
         // A real answer, told honestly: there was nothing to caption. Nothing to
         // stash, nothing to persist.
-        const handled = hooks.onComplete?.([]) === true;
+        const handled = hooks.onComplete?.([], { granularity }) === true;
         job.finish({ words: [], applied: handled, persisted: false } satisfies TranscribeJobResult);
         if (!handled) announce(t('No speech was found to caption.'));
         return;
@@ -270,7 +282,7 @@ export function startTranscribeJob(
       // minutes of inference outlive whatever asked for them.
       stashTranscript(words, req.assetId ?? '', transcriptKey(req.src));
       const persisted = await persistTranscript(host, req.assetId ?? '', words);
-      const applied = hooks.onComplete?.(words) === true;
+      const applied = hooks.onComplete?.(words, { granularity }) === true;
       job.finish({ words, applied, persisted } satisfies TranscribeJobResult);
       if (applied) return;
       // Nobody was left to place the captions. Say where the transcript went and
@@ -290,4 +302,80 @@ export function startTranscribeJob(
     }
   })();
   return job;
+}
+
+// ── The consent sheet in front of it ─────────────────────────────────────────
+
+/**
+ * What the run does, what it downloads once, and one Go - then ENQUEUE and
+ * close. Lifted here from the timeline panel so a second surface (every tool
+ * declaring `render.transcribe`, engine 1.150) asks the same question in the
+ * same words.
+ *
+ * The timeline panel still runs its OWN copy (`openTranscribeSheet` in
+ * views/timeline-panel.ts) - identical markup and copy, sync rather than
+ * lazily imported. Two copies of one question will drift; folding the panel
+ * onto this one is a follow-up, and until then any wording change here has to
+ * be made there too.
+ *
+ * Closing the sheet aborts NOTHING. Before Go there is nothing to abort; after
+ * Go the run belongs to the job, whose cancel in the global toast is the one
+ * honest one - so a stray Escape can never throw away a model download and the
+ * minutes of inference behind it.
+ *
+ * `onDismiss` fires only when the sheet closed WITHOUT enqueuing, which is
+ * where a caller drops its own "a run is in flight" guard (once the job exists,
+ * `onSettled` owns that).
+ */
+export async function openTranscribeConsent(
+  host: SttJobHost,
+  req: TranscribeJobRequest,
+  hooks: TranscribeJobHooks & { onDismiss?: () => void } = {},
+): Promise<void> {
+  const sp = host.speech;
+  if (!sp?.transcribe) { hooks.onDismiss?.(); return; }
+  // Lazily imported so this module stays loadable outside a document (its own
+  // test suite, and any headless caller of the job driver above).
+  const [{ mountModal }, { fmtBytes }] = await Promise.all([
+    import('../components/modal.ts'),
+    import('./device-info.ts'),
+  ]);
+  let bytes = 0;
+  try { bytes = sp.transcribeModelBytes(); } catch { /* the consent line just omits the size */ }
+  const title = req.title || t('Generating subtitles');
+  let enqueued = false;
+  const html = `<form method="dialog" class="tl-junction tl-stt">
+    <h2 class="tl-junction-title">${t('Generate subtitles')}</h2>
+    <p class="tl-stt-note">${t('Listens to this clip on this device and writes timed captions. Nothing is uploaded.')}</p>
+    <p class="tl-stt-note tl-stt-note-dl" data-stt-dl hidden></p>
+    <p class="tl-stt-note">${t('It runs in the background, so you can close this and keep working.')}</p>
+    <div class="tl-junction-actions">
+      <button type="button" class="btn" data-act="cancel">${t('Cancel')}</button>
+      <button type="button" class="btn btn--primary" data-act="go">${t('Generate')}</button>
+    </div>
+  </form>`;
+  const modal = mountModal<void>(html, {
+    className: 'modal tl-junction-modal',
+    ariaLabel: t('Generate subtitles'),
+    initialFocus: (el) => el.querySelector<HTMLElement>('[data-act="go"]'),
+    onClose: () => { if (!enqueued) hooks.onDismiss?.(); },
+  });
+  const dlNote = modal.el.querySelector<HTMLElement>('[data-stt-dl]');
+  // The one-time download is the consent-worthy part, so say so up front - but
+  // only when it is actually owed (the probe is async, the line arrives).
+  void sp.transcribeCached?.().then((cached) => {
+    if (cached || !dlNote) return;
+    dlNote.textContent = bytes > 0
+      ? t('The first run downloads the speech model once ({size}). It stays on this device.', { size: fmtBytes(bytes) })
+      : t('The first run downloads the speech model once. It stays on this device.');
+    dlNote.hidden = false;
+  }).catch(() => { /* the probe failing just means no size line */ });
+  modal.el.querySelector<HTMLElement>('[data-act="go"]')?.addEventListener('click', () => {
+    if (enqueued) return;
+    enqueued = true;
+    startTranscribeJob(host, { ...req, title }, hooks);
+    modal.close();
+    announce(t('Generating subtitles in the background. You can keep working.'));
+  });
+  modal.el.querySelector<HTMLElement>('[data-act="cancel"]')?.addEventListener('click', () => modal.close());
 }

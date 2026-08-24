@@ -31,6 +31,39 @@ export const WHISPER_MODEL_ID = 'whisper';
  */
 export const WHISPER_MODEL_BYTES = 23_159_167 + 53_712_708 + 2_480_466 + 282_682 + 2_243 + 3_832 + 339;
 
+/**
+ * Silence floors for the pre-inference gate (plans/147 T1a). Whisper is a
+ * generative decoder: handed a clip with nothing in it, it does not answer
+ * "nothing" - it emits whatever its training data put after silence ("Thank
+ * you.", a subtitling credit). That is fabricated text with real timestamps on
+ * it, which is the one thing a caption path must never produce, so a clip this
+ * quiet is answered as an empty transcript without the model ever seeing it.
+ *
+ * Both floors must be under-run before a clip counts as silent. RMS alone would
+ * mis-gate the pathological case (a few spoken seconds inside a very long
+ * recording averages down), and peak alone would be tripped by a single click.
+ * Deliberately conservative - roughly -60 dBFS mean and -40 dBFS peak - because
+ * a false "silent" throws away real speech, while a false "not silent" only
+ * costs the inference we would have run anyway.
+ */
+export const SILENCE_RMS = 0.001;
+export const SILENCE_PEAK = 0.01;
+
+/** Whether a decoded clip holds nothing worth transcribing. One pass, no
+ *  allocation - it runs on every clip before the model is even spawned. */
+export function isSilentPcm(pcm: Float32Array, rmsFloor = SILENCE_RMS, peakFloor = SILENCE_PEAK): boolean {
+  if (!pcm.length) return true;
+  let sum = 0;
+  let peak = 0;
+  for (let i = 0; i < pcm.length; i++) {
+    const v = pcm[i]!;
+    sum += v * v;
+    const a = v < 0 ? -v : v;
+    if (a > peak) peak = a;
+  }
+  return Math.sqrt(sum / pcm.length) < rmsFloor && peak < peakFloor;
+}
+
 /** Aim to split here - comfortably inside the 30 s window. Seconds. */
 export const CHUNK_TARGET_S = 25;
 /** Whisper's hard window. A chunk must never exceed this. Seconds. */

@@ -34,7 +34,7 @@ import type {
 } from '@lolly-tools/core/host-v1';
 import { KOKORO_MODEL_BYTES, KOKORO_MODEL_ID, KOKORO_VOICES, MAX_INPUT_CHARS } from '../lib/speech-kokoro.ts';
 import type { SpeechWorkerReply, SpeechWorkerRequest } from '../lib/speech-kokoro-worker.ts';
-import { WHISPER_MODEL_BYTES, WHISPER_MODEL_ID, WHISPER_SAMPLE_RATE } from '../lib/speech-whisper.ts';
+import { isSilentPcm, WHISPER_MODEL_BYTES, WHISPER_MODEL_ID, WHISPER_SAMPLE_RATE } from '../lib/speech-whisper.ts';
 import type { TranscribeWorkerReply, TranscribeWorkerRequest } from '../lib/speech-whisper-worker.ts';
 import { MODELS_BASE } from '../lib/models-base.ts';
 
@@ -251,6 +251,11 @@ export function createSpeechAPI(): SpeechAPI {
       // decode is caught by the re-check before the worker is even spawned.
       const pcm = await decodePcm16k(src);
       if (signal?.aborted) throw abortError('speech transcription aborted');
+      // Nothing in the clip: answer "nothing" HERE rather than letting a
+      // generative decoder invent a line over silence (see isSilentPcm). The
+      // empty transcript is a real answer, the same one an all-silence
+      // inference should have given, and it costs no model download.
+      if (isSilentPcm(pcm)) return { text: '', words: [], lang: opts.lang ?? '', granularity: 'word' };
       const w = ensureWhisperWorker();
       const id = ++whisperSeq;
       return new Promise<SpeechTranscript>((resolve, reject) => {

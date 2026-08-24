@@ -456,7 +456,12 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
       // The folder overlay is pro-free; inject it (like onBatchRendered) so /pro
       // keeps its "imports only engine/host/siblings" isolation intact.
       const { openFolderOverlay } = await import('./folder-overlay.ts');
-      const sessionSlot = new URLSearchParams(route.params || '').get('session');
+      const q = new URLSearchParams(route.params || '');
+      const sessionSlot = q.get('session');
+      // "Bulk from rows" from a tool view: #/batch?tool=<id> starts the batch on that
+      // template instead of the empty template search (views/tool.ts). A plain tool id,
+      // so URLSearchParams decoding is all it needs.
+      const seedToolId = q.get('tool') || '';
       // Projects "Edit as sheet": #/pro?s=slot,slot… seeds one grid row per
       // selected session (mirrors #/multi?s=…). Read the refs from the RAW query,
       // NOT via URLSearchParams: a ref is `__batch__:<label>` and a label may hold
@@ -476,7 +481,7 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
         bumpMetric('filesRendered', files.length);
         for (const f of files) recordFormat(String(f.name).split('.').pop());
       };
-      await mountPro(view, host as unknown as Parameters<typeof mountPro>[1], { sessionSlot, seedRefs, onBatchRendered, openFolderOverlay } as unknown as Parameters<typeof mountPro>[2]);
+      await mountPro(view, host as unknown as Parameters<typeof mountPro>[1], { sessionSlot, seedToolId, seedRefs, onBatchRendered, openFolderOverlay } as unknown as Parameters<typeof mountPro>[2]);
       break;
     }
     // --- Projects: a gallery-style view of folders of saved sessions. Shares the
@@ -793,6 +798,17 @@ async function boot(): Promise<void> {
   if ('__TAURI_INTERNALS__' in window) {
     void import('./lib/app-menu.ts').then(m =>
       m.initAppMenu(host as unknown as Parameters<typeof m.initAppMenu>[0]));
+    // Tauri shells never send a Referer: the app origin (http://tauri.localhost)
+    // is worthless to any external host and trips anti-localhost hotlink rules -
+    // SomaFM's icecast 403s media requests carrying it, which silently killed
+    // radio on Android (device-verified 2026-08-24). The DOCUMENT policy is the
+    // only lever that works there: Android WebView ignores the per-element
+    // referrerPolicy attribute for media loads but honours this meta. Web/PWA
+    // deploys keep their normal referer behaviour.
+    const meta = document.createElement('meta');
+    meta.name = 'referrer';
+    meta.content = 'no-referrer';
+    document.head.appendChild(meta);
   }
 
   // The global async-job progress toast (plans/124 WP-F). Mounted once here, on

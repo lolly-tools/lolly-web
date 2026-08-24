@@ -447,6 +447,18 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       Array.isArray(v) ? v.includes(modelValues[k] as InputValue) : modelValues[k] === v);
   });
 
+  // The block-row handlers below build the value they commit from the input's
+  // CURRENT rows, and they must read those rows from the RUNTIME, not this
+  // render's snapshot: block typing defers panel rebuilds (canSkipInputsRebuild),
+  // and updateInput replaces model items, so by the next interaction the
+  // snapshot can sit several edits behind - a commit built from it silently
+  // reverts everything typed since the last repaint (a row's typed address
+  // snapping back to its default). The dropToAdd committer, applyData and the
+  // table wiring already re-read live for exactly this reason. Falls back to
+  // the snapshot only if an id is somehow absent from the runtime model.
+  const liveInput = (id: string | undefined): InputModelItem | undefined =>
+    runtime.getModel().find(i => i.id === id) ?? panelModel.find(i => i.id === id);
+
   // `attachTo` (schema): an input whose control rides INSIDE a sibling's row
   // rather than taking its own labelled row - a compact modifier that belongs to
   // another control (e.g. a fit toggle on an asset slot). Resolved against
@@ -1083,7 +1095,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       if (!inputId.includes(':')) { runtime.setInput(inputId, value); onDirty?.(inputId); return; }
       const parts = inputId.split(':');
       const blockId = parts[0]!, idx = parseInt(parts[1]!, 10), fieldId = parts[2]!;
-      const inp = panelModel.find(i => i.id === blockId);
+      const inp = liveInput(blockId);
       if (!inp) return;
       const arr = (Array.isArray(inp.value) ? inp.value : []).map(x => ({ ...asRow(x) }));
       const row = arr[idx] ?? (arr[idx] = {});
@@ -1121,7 +1133,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       if (!isJellySwitch && field.validity?.badInput) return;
       const parts = field.dataset.fieldId!.split(':');
       const blockId = parts[0]!, idx = parseInt(parts[1]!, 10), fieldId = parts[2]!;
-      const inp = panelModel.find(i => i.id === blockId);
+      const inp = liveInput(blockId);
       if (!inp) return;
       let arr = (Array.isArray(inp.value) ? inp.value : []).map(x => ({ ...asRow(x) }));
       const row = arr[idx] ?? (arr[idx] = {});
@@ -1328,7 +1340,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     btn.addEventListener('click', () => {
       if (btn.disabled) return;
       const blockId = btn.dataset.blockAdd!;
-      const inp = panelModel.find(i => i.id === blockId);
+      const inp = liveInput(blockId);
       if (!inp) return;
       const arr = Array.isArray(inp.value) ? [...inp.value] : [];
       const block = newBlockRow(inp);
@@ -1610,7 +1622,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     btn.addEventListener('click', async () => {
       const [blockId = '', idxStr = '', fId = ''] = (btn.dataset.blockAsset ?? '').split(':');
       const idx = parseInt(idxStr, 10);
-      const inp = panelModel.find(i => i.id === blockId);
+      const inp = liveInput(blockId);
       if (!inp) return;
       const f: Partial<BlockFieldSpec> = (inp.fields ?? []).find(x => x.id === fId) ?? {};
       const cur = Array.isArray(inp.value) ? asRow(inp.value[idx])[fId] : null;
@@ -1657,7 +1669,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     btn.addEventListener('click', () => {
       const [blockId = '', idxStr = '', fId = ''] = (btn.dataset.blockAssetClear ?? '').split(':');
       const idx = parseInt(idxStr, 10);
-      const inp = panelModel.find(i => i.id === blockId);
+      const inp = liveInput(blockId);
       if (!inp) return;
       const arr = (Array.isArray(inp.value) ? inp.value : []).map(x => ({ ...asRow(x) }));
       const row = arr[idx];
@@ -1673,7 +1685,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     btn.addEventListener('click', async () => {
       const [blockId = '', idxStr = '', fId = ''] = (btn.dataset.blockAssetEdit ?? '').split(':');
       const idx = parseInt(idxStr, 10);
-      const inp = panelModel.find(i => i.id === blockId);
+      const inp = liveInput(blockId);
       if (!inp) return;
       const cur     = Array.isArray(inp.value) ? asRow(inp.value[idx])[fId] : null;
       const toolUrl = asStr(asRow(asRow(cur).meta).toolUrl);
@@ -1697,7 +1709,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     btn.addEventListener('click', async () => {
       const [blockId = '', idxStr = '', fId = ''] = (btn.dataset.blockBakedEdit ?? '').split(':');
       const idx = parseInt(idxStr, 10);
-      const inp = panelModel.find(i => i.id === blockId);
+      const inp = liveInput(blockId);
       if (!inp) return;
       const cur       = Array.isArray(inp.value) ? asRow(inp.value[idx])[fId] : null;
       const bakedFrom = asStr(asRow(asRow(cur).meta).bakedFrom);
@@ -1716,7 +1728,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     btn.addEventListener('click', async () => {
       const [blockId = '', idxStr = '', fId = ''] = (btn.dataset.blockRebake ?? '').split(':');
       const idx = parseInt(idxStr, 10);
-      const inp = panelModel.find(i => i.id === blockId);
+      const inp = liveInput(blockId);
       if (!inp) return;
       const cur       = Array.isArray(inp.value) ? asRow(inp.value[idx])[fId] : null;
       const bakedFrom = asStr(asRow(asRow(cur).meta).bakedFrom);
@@ -1761,7 +1773,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     const commit = () => {
       const blockId = btn.dataset.blockInput!;
       const idx = parseInt(btn.dataset.blockIndex ?? '', 10);
-      const inp = panelModel.find(i => i.id === blockId);
+      const inp = liveInput(blockId);
       if (!inp) return;
       const arr = (Array.isArray(inp.value) ? [...inp.value] : []).filter((_, i) => i !== idx);
       runtime.setInput(blockId, arr);
@@ -1795,7 +1807,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   const rowOf = (btn: HTMLElement): { blockId: string; idx: number; inp: InputModelItem | undefined } => {
     const blockId = btn.dataset.blockInput!;
     const idx = parseInt(btn.dataset.blockIndex ?? '', 10);
-    return { blockId, idx, inp: panelModel.find(i => i.id === blockId) };
+    return { blockId, idx, inp: liveInput(blockId) };
   };
   el.querySelectorAll<HTMLButtonElement>('[data-block-copy]').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -1854,7 +1866,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     if (!head) return;
     const blockId = head.dataset.blockInput!;
     const idx = parseInt(head.dataset.blockIndex ?? '', 10);
-    const treeInp = panelModel.find(i => i.id === blockId);
+    const treeInp = liveInput(blockId);
     const treeMode = nestingActive(treeInp, modelValues);
 
     // Which of the three zones the pointer is over, by vertical position in the row.
@@ -1899,7 +1911,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       const from = _blockDrag.from, to = idx, intent = _blockDrag.intent || zoneIntent(e);
       clearDropMarks();
       _blockDrag = null;
-      const inp = panelModel.find(i => i.id === blockId);
+      const inp = liveInput(blockId);
       if (!inp || from == null) return;
       const arr = Array.isArray(inp.value) ? inp.value : [];
       if (from < 0 || from >= arr.length) return;
@@ -2966,7 +2978,11 @@ function setupVectorControl(container: HTMLElement, runtime: Runtime, id: string
       const el = nums.get(f.id);
       if (!el) continue;
       const n = Number(el.value);
-      obj[f.id] = Number.isNaN(n) ? (asRow(input.value)[f.id] ?? f.default ?? 0) : n;
+      // The unparseable-field fallback reads the LIVE model, not this render's
+      // `input` snapshot - the same staleness rule as the block-row handlers.
+      obj[f.id] = Number.isNaN(n)
+        ? (asRow(runtime.getModel().find(i => i.id === id)?.value)[f.id] ?? f.default ?? 0)
+        : n;
     }
     runtime.setInput(id, obj);
     onDirty?.(id);

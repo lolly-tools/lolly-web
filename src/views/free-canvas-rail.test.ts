@@ -96,7 +96,7 @@ interface Fixture {
 const plainBox = (id: string, x: number, y: number): Box =>
   ({ kind: 'box', shape: 'rect', id, x, y, w: 120, h: 120, bg: '#ccc' } as Box);
 
-function mount(initial: Box[] = [], o: { withActions?: boolean; withHistory?: boolean; withSize?: boolean } = {}): Fixture {
+function mount(initial: Box[] = [], o: { withActions?: boolean; withHistory?: boolean; withSize?: boolean; withBulk?: boolean } = {}): Fixture {
   const doc = dom.window.document;
   const viewEl = doc.createElement('div');
   const stageEl = doc.createElement('div');
@@ -128,6 +128,7 @@ function mount(initial: Box[] = [], o: { withActions?: boolean; withHistory?: bo
         save: () => calls.push('save'),
         copy: () => calls.push('copy'),
         share: () => calls.push('share'),
+        ...(o.withBulk ? { bulk: () => calls.push('bulk') } : {}),
       },
     }),
     ...(o.withHistory === false ? {} : {
@@ -301,6 +302,32 @@ test('Save is absent when the tool cannot save, and the menu still opens', () =>
   assert.ok(stageEl.querySelector('.fc-popover [data-pop="export"]'), 'export is still there');
   assert.equal(stageEl.querySelector('.fc-popover [data-pop="save"]'), null, 'save is not');
   handle.destroy(); viewEl.remove(); doc.body.innerHTML = '';
+});
+
+// ══ Bulk from rows (plans/147 M1) ═════════════════════════════════════════════
+
+test('Bulk from rows is the chromeless editor\'s only home for the batch hand-off', () => {
+  // This layout has no sidebar header, so the menu row is the whole affordance: if it
+  // is missing, a design/document tool cannot reach /batch at all.
+  const f = mount([plainBox('a', 300, 300)], { withBulk: true });
+  openLollyMenu(f);
+  const row = menuRow(f, 'bulk');
+  assert.ok(row, 'the menu offers Bulk from rows');
+  assert.match(row!.textContent ?? '', /Bulk from rows/);
+  click(row!);
+  frames();
+  assert.deepEqual(f.calls, ['bulk'], 'the row runs the action the view handed in, nothing local');
+  f.destroy();
+});
+
+test('no Bulk row for a tool the batch cannot run', () => {
+  // The view withholds `bulk` (canBatchTool false), and the group it sits in must not
+  // appear on its own account - the menu still opens with everything else.
+  const f = mount([plainBox('a', 300, 300)]);
+  openLollyMenu(f);
+  assert.equal(menuRow(f, 'bulk'), null, 'absent action, absent row');
+  assert.ok(menuRow(f, 'export'), 'the rest of the menu is untouched');
+  f.destroy();
 });
 
 // ══ undo / redo inside the menu ═══════════════════════════════════════════════

@@ -403,6 +403,7 @@ interface ToolbarActions {
   share(): void;
   present?(): void;                  // open the frames as a fullscreen deck (plan 112); absent = not a frame tool
   newFromTemplate?(): void;          // re-open the Start template chooser mid-session (plans/142 WP-1); absent = tool has no templates
+  bulk?(): void;                     // hand this template to /batch (plans/147 M1); absent = the batch can't run this tool
   canSave?: boolean;                 // omit the Save icon for tools that don't persist a session
   dirtyRef?: HTMLElement | null;     // element whose `is-unsaved` class the Save icon mirrors
 }
@@ -537,6 +538,9 @@ const SVG = {
   code: '<polyline points="8 6 3 11 8 16"/><polyline points="16 6 21 11 16 16"/>',
   // Templates - a 2×2 tile grid, echoing the Start chooser's tile layout (plans/142).
   templates: '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/>',
+  // Rows - a ruled sheet (hand this template to /batch, plans/147 M1). The same
+  // glyph lib/icons.ts registers as `table`, since it is the same idea in both homes.
+  rows: '<path d="M12 3v18"/><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/>',
   // Notes - a lined note card (open the speaker-notes panel, plan 112 M5).
   notes: '<rect x="4" y="4" width="16" height="16" rx="2"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/>',
   // Undo/redo - same glyphs as the sidebar header's history buttons (tool.js).
@@ -2698,13 +2702,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         if (pages) items.push({ label: t('Pages & page size'), icon: icon(SVG.pages), key: 'pages', run: () => openPagesMenu(lollyBtn!) });
         else items.push({ label: activeFrameIndex(getBoxes()) >= 0 ? t('Artboard size') : t('Canvas size'), icon: icon(SVG.size), key: 'size', run: () => openSizeMenu(lollyBtn!) });
       }
-      if (info || importCfg || actions?.newFromTemplate) {
+      if (info || importCfg || actions?.newFromTemplate || actions?.bulk) {
         if (items.length) items.push({ sep: true });
         if (info) items.push({ label: t('Document info'), icon: icon(SVG.info), key: 'info', run: () => openInfoPanel(lollyBtn!) });
         // Back to the Start chooser (plans/142 WP-1) - sits in the same "bring a
         // document in" group as Import. The pick applies through the tool's own
         // undoable path, so it is one ⌘Z away, never a destructive reset.
         if (actions?.newFromTemplate) items.push({ label: t('New from template'), icon: icon(SVG.templates), key: 'templates', run: () => actions.newFromTemplate!() });
+        // "Bulk from rows" - the same group, because it is the other way a document
+        // arrives: one sheet of rows in, one render per row out (plans/147 M1).
+        if (actions?.bulk) items.push({ label: t('Bulk from rows'), icon: icon(SVG.rows), key: 'bulk', run: () => actions.bulk!() });
         // keepOpen, because openImportPanel closes this menu and then assigns its own
         // panel to `popover`: without it fillPopover's trailing closePopover() would
         // tear the freshly-mounted import panel down in the same click. (The pages /

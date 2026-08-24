@@ -126,3 +126,33 @@ export function toolSupport(
   }
   return { status: 'unavailable', unmet };
 }
+
+/**
+ * Whether /batch can run this tool as a row (plans/147 M1, the "Bulk from rows"
+ * gate). Three conditions, and all three are the batch's OWN admission test
+ * restated: the grid only lists tools the index marks `exportable`
+ * (scripts/build-catalog-index.ts: `render.export !== false` AND at least one
+ * format) and only those the shell can fulfil every capability of
+ * (`shellCanRun` in pro/index.ts), and a row can only fill fields the tool
+ * declares.
+ *
+ * A gate that skipped the capability half would offer "Bulk from rows" on a
+ * `capture` tool in a plain browser and land the user on an empty grid: the
+ * batch hides that tool, so the deep link seeds nothing. Live case: url-shot on
+ * Chromium without the extension, which the tool view mounts anyway
+ * (toolSupport 'install').
+ */
+export function canBatchTool(
+  manifest: {
+    inputs?: readonly unknown[];
+    render?: { export?: boolean; formats?: readonly string[] };
+    capabilities?: readonly string[];
+  } | null | undefined,
+  shellCapabilities: readonly string[] | undefined,
+): boolean {
+  if (!manifest) return false;
+  return (manifest.inputs?.length ?? 0) > 0
+    && manifest.render?.export !== false
+    && (manifest.render?.formats?.length ?? 0) > 0
+    && toolSupport(manifest, shellCapabilities).status === 'ok';
+}

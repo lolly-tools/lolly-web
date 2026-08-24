@@ -955,7 +955,10 @@ function showSwatchTip(swatch: HTMLElement): void {
   tip.style.left = `${Math.round(r.left + r.width / 2)}px`;
   tip.style.top = `${Math.round(r.top - 6)}px`;
   clearTimeout(swatchTipTimer);
-  swatchTipTimer = setTimeout(() => tip.classList.add('is-shown'), 240); // the tiny delay
+  // The swatch can leave the DOM inside the delay (picking a colour closes the
+  // grid), and a removed node fires no mouseout - so a tip must never appear
+  // for a swatch that is no longer on the page.
+  swatchTipTimer = setTimeout(() => { if (swatch.isConnected) tip.classList.add('is-shown'); }, 240);
 }
 
 function hideSwatchTip(): void {
@@ -974,6 +977,12 @@ function armSwatchTip(): void {
   document.addEventListener('mouseout', (e) => {
     if ((e.target as Element | null)?.closest('.color-swatch')) hideSwatchTip();
   });
+  // Picking a colour removes the swatch grid, and a removed node fires no
+  // mouseout - the tip would strand over whatever the page shows next. Any
+  // press drops it (capture, so it wins even when the click unmounts the
+  // grid), and so does Esc closing the picker.
+  document.addEventListener('pointerdown', hideSwatchTip, true);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideSwatchTip(); });
   // A fixed chip doesn't follow a scrolling swatch grid - drop it rather than strand it.
   window.addEventListener('scroll', hideSwatchTip, true);
 }

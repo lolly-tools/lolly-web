@@ -281,6 +281,11 @@ function ensureRadioEl(tap: boolean): HTMLAudioElement {
   dropRadioEl();
   const el = new Audio();
   el.preload = 'none';
+  // Belt-and-braces beside main.ts's Tauri-wide document policy: icecast 403s
+  // localhost-ish referers. Honoured by desktop browsers; Android WebView skips
+  // the attribute for media and relies on the document meta instead. Attribute
+  // form: this tsconfig's lib.dom predates the referrerPolicy property.
+  el.setAttribute('referrerpolicy', 'no-referrer');
   if (tap) {
     el.crossOrigin = 'anonymous';
     const a = audio();

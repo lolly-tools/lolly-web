@@ -13,7 +13,7 @@
 import { escape } from '../utils.ts';
 import { bumpMetric } from '../metrics.ts';
 import { announce } from '../a11y.ts';
-import { packQuery, isPackAvailable, PACK_PARAM, packEncrypted, isEncryptAvailable, ENC_PARAM } from '@lolly/engine';
+import { packQuery, unpackToken, isPackAvailable, PACK_PARAM, packEncrypted, isEncryptAvailable, ENC_PARAM } from '@lolly/engine';
 import { mountModal } from './modal.ts';
 import { shareSectionBuilders } from '../lib/share-sections.ts';
 import { jellyActive } from '../lib/jelly.ts';
@@ -281,7 +281,12 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
         <summary>Link behaviour</summary>
         <fieldset class="share-toggles">
           <legend>When the recipient opens the link…</legend>
-          <label class="field-toggle"><input type="checkbox" class="field-check" data-flag="full"> Open in fullscreen (hide controls)</label>
+          ${canExport
+            ? '<label class="field-toggle"><input type="checkbox" class="field-check" data-flag="full"> Open in fullscreen (hide controls)</label>'
+            /* A no-export tool's link IS the product (a jump page, a countdown), so
+               it defaults to opening as a plain webpage - the visitor-page mode
+               `?nostage` (views/tool.ts). Untick to send an editing link instead. */
+            : '<label class="field-toggle"><input type="checkbox" class="field-check" data-flag="nostage" checked> Open as a web page (no controls)</label>'}
           <label class="field-toggle" data-options-row><input type="checkbox" class="field-check" data-flag="options"> Open with the export panel expanded</label>
           ${canExport ? `<label class="field-toggle"><input type="checkbox" class="field-check" data-flag="export"> Download automatically when opened</label>` : ''}
           ${showCopy ? `<label class="field-toggle"><input type="checkbox" class="field-check" data-flag="copy"> ${escape(copyLabel)}</label>` : ''}
@@ -463,9 +468,25 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
 
   // "QR" beside Copy (plans/143 M3): hand the CURRENT link (options included) to
   // the QR Code tool. Navigation closes this dialog via the modal's nav teardown.
-  dialog.querySelector<HTMLButtonElement>('.share-qr-btn')?.addEventListener('click', () => {
-    void import('../nav.ts').then(({ navigateTo }) =>
-      navigateTo(`#/tool/qr-code?url=${encodeURIComponent(field.value)}`));
+  // For QR use the link is first made alphanumeric-friendly: a packed `z` token
+  // is re-minted in its tag-2 base32 form and the case-insensitive scheme+host
+  // upper-cased, so both land in the QR encoder's 5.5-bits/char alphanumeric
+  // segments and the printed code drops a version or two. The scanned link
+  // decodes identically (unpackToken reads both tags); any failure just falls
+  // back to the link as-is.
+  dialog.querySelector<HTMLButtonElement>('.share-qr-btn')?.addEventListener('click', async () => {
+    let link = field.value;
+    try {
+      const [whole, sep, rawToken] = link.match(new RegExp(`([?&])${PACK_PARAM}=([^&]+)`)) ?? [];
+      if (whole && sep && rawToken) {
+        const readable = await unpackToken(rawToken);
+        const qrToken = readable == null ? null : await packQuery(readable, { qr: true });
+        if (qrToken) link = link.replace(whole, `${sep}${PACK_PARAM}=${qrToken}`);
+      }
+      link = link.replace(/^https?:\/\/[^/#?]*/, (origin) => origin.toUpperCase());
+    } catch { link = field.value; }
+    const { navigateTo } = await import('../nav.ts');
+    navigateTo(`#/tool/qr-code?url=${encodeURIComponent(link)}`);
   });
 
   // "Copy credit" (plans/143 V2): a ready caption for wherever the work is

@@ -839,6 +839,8 @@ async function renderFormatDispatch(node: Element, format: string, opts: ExportO
     case 'csv':
     case 'ics':
     case 'vcf':
+    case 'srt':
+    case 'vtt':
     case 'css':
     case 'scss':
     case 'gpl':
@@ -5226,7 +5228,7 @@ async function renderArtworkPdf(node: Element, opts: ExportOpts, geo: PrintGeome
   const svgRoot = node.tagName?.toLowerCase() === 'svg' ? node
     : isSvgRooted(node) ? node.querySelector('svg') : null;
   if (svgRoot) {
-    await drawSvgVectorsInRegion(pdf, svgRoot, art.x, art.y, art.w, art.h, new Set(), opts._imprintSink);
+    await drawSvgVectorsInRegion(pdf, svgRoot, art.x, art.y, art.w, art.h, new Set(), opts._imprintSink, opts.convertPaths !== false);
   } else {
     await drawHtmlVectors(pdf, node, art.x, art.y, art.w, art.h, opts.convertPaths !== false, opts.onProgress, opts.rasterFallback !== false, opts._imprintSink, opts.signal);
   }
@@ -5835,7 +5837,7 @@ async function renderMultiPagePdf(pageEls: Element[], opts: ExportOpts, prepare?
     // HTML page walks via drawHtmlVectors. Common case here is HTML page boxes.
     const svgRoot = el.tagName?.toLowerCase() === 'svg' ? el
       : isSvgRooted(el) ? el.querySelector('svg') : null;
-    if (svgRoot) await drawSvgVectorsInRegion(pdf, svgRoot, art.x, art.y, art.w, art.h, new Set(), opts._imprintSink);
+    if (svgRoot) await drawSvgVectorsInRegion(pdf, svgRoot, art.x, art.y, art.w, art.h, new Set(), opts._imprintSink, opts.convertPaths !== false);
     else await drawHtmlVectors(pdf, el, art.x, art.y, art.w, art.h, convert, opts.onProgress, opts.rasterFallback !== false, opts._imprintSink, opts.signal);
   }
   const blob = pdf.output('blob');
@@ -5996,7 +5998,7 @@ async function drawPrintMarks(page: any, geo: PrintGeometry, { space = 'rgb', la
 // ox/oy are the PDF-space top-left offsets (pt); regionW/regionH are the
 // target dimensions (pt). Used both by the full-page SVG canvas path and by
 // drawHtmlVectors when it encounters an inline <svg> element.
-async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: number, regionW: number, regionH: number, registeredFonts: Set<unknown> | null = null, imprint?: ImprintState): Promise<void> {
+async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: number, regionW: number, regionH: number, registeredFonts: Set<unknown> | null = null, imprint?: ImprintState, convertPaths = true): Promise<void> {
   const vb = (svgEl as SVGSVGElement).viewBox?.baseVal;
   const vbW = (vb && vb.width  > 0) ? vb.width  : svgEl.getBoundingClientRect().width;
   const vbH = (vb && vb.height > 0) ? vb.height : svgEl.getBoundingClientRect().height;
@@ -6234,11 +6236,49 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
         if (!fillStr || fillStr === 'currentColor') fillStr = computedPaint(styleEl, 'fill') || '#000000';
         let rgb = parseSvgColor(fillStr) ?? parseSvgColor(computedPaint(styleEl, 'fill'));
         const op = parseFloat(styleEl.getAttribute('opacity') ?? styleEl.getAttribute('fill-opacity') ?? '1');
-        const fs = parseFloat(styleEl.getAttribute('font-size') ?? cs?.fontSize ?? '16') * gAvg * rAvg;
+        const fsUser = parseFloat(styleEl.getAttribute('font-size') ?? cs?.fontSize ?? '16');
+        const fs = fsUser * gAvg * rAvg;
         const fw = parseInt(styleEl.getAttribute('font-weight') ?? cs?.fontWeight ?? '400') || 400;
         const fst = styleEl.getAttribute('font-style') ?? cs?.fontStyle ?? '';
         const italic = fst === 'italic' || fst === 'oblique';
-        const family = (styleEl.getAttribute('font-family') ?? cs?.fontFamily ?? '').toLowerCase();
+        // COMPUTED family first: it is what actually painted the glyphs on screen,
+        // including a tool stylesheet's var(--font-brand)/var(--font-mono) rule
+        // (the brand-faces contract). The attribute is the detached-node fallback -
+        // and for a connected node with no CSS rule the computed value IS the
+        // attribute's cascade result, so nothing regresses.
+        const familyRaw = (cs?.fontFamily || styleEl.getAttribute('font-family') || '');
+        const family = familyRaw.toLowerCase();
+
+        // 'Convert paths' outlines SVG text like every other run: resolve the run's
+        // face (brand statics, user fonts, the generic-to-brand mapping), shape via
+        // host.text, and draw filled glyph contours through the SAME PX/PY mapping
+        // as the x/y attributes. Before this branch existed the toggle was inert
+        // here - SVG-rooted tools' PDFs embedded what substring-matched 'suse' and
+        // silently fell back to base-14 fonts for everything else.
+        if (convertPaths && _host?.text) {
+          try {
+            const vf = await resolveVectorFont(
+              { fontFamily: familyRaw, fontWeight: String(fw), fontStyle: italic ? 'italic' : 'normal' },
+              t);
+            if (vf) {
+              const shaped = await _host.text.toPath({ text: t, fontUrl: vf.url, fontSize: fsUser, variations: vf.variations, fallbackFonts: vf.fallbacks });
+              if (shaped?.d && !shaped.notdef) {
+                const advUser = shaped.advanceWidth || 0;
+                const xAdj = anchor === 'middle' ? userX - advUser / 2 : anchor === 'end' ? userX - advUser : userX;
+                if (rgb && op >= 0.01) {
+                  let fillRgb = rgb;
+                  if (op < 0.999) fillRgb = blendSvgWithWhite(fillRgb, op);
+                  pdf.setFillColor(fillRgb[0], fillRgb[1], fillRgb[2]);
+                  drawSvgPathToPdf(pdf, shaped.d, (gx: number) => PX(xAdj + gx), (gy: number) => PY(userY + gy));
+                  pdf.fill();
+                }
+                return advUser;
+              }
+            }
+          } catch (e) {
+            _host?.log?.('warn', `pdf: svg text outline failed for "${t.slice(0, 24)}" - ${(e as Error).message}`);
+          }
+        }
         pdf.setFontSize(Math.max(1, fs));
         let fontSet = false;
         if (family.includes('suse') && registeredFonts) {
@@ -6352,7 +6392,7 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
             // A nested <image href> is a REFERENCED asset (a user logo/photo), not
             // Lolly-rendered content - never imprint it (KEY PRINCIPLE). Its own
             // gradient/filter rasterisation fallback stays unmarked (imprint omitted).
-            await drawSvgVectorsInRegion(pdf, inner, fx, fy, fw, fh, registeredFonts);
+            await drawSvgVectorsInRegion(pdf, inner, fx, fy, fw, fh, registeredFonts, undefined, convertPaths);
           }
         } catch { /* fall through to raster */ }
         finally { inner?.remove(); }
@@ -7398,7 +7438,7 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
           return;
         } catch { /* fall through to the vector walk */ }
       }
-      await drawSvgVectorsInRegion(pdf, el, x, y, w, h, registeredFonts, imprint);
+      await drawSvgVectorsInRegion(pdf, el, x, y, w, h, registeredFonts, imprint, convertPaths);
       return;
     }
 
@@ -7433,9 +7473,9 @@ async function drawHtmlVectors(pdf: any, node: Element, ox: number, oy: number, 
             // Lolly's own render - never imprint it (KEY PRINCIPLE). imprint omitted,
             // so its gradient-rasterisation fallback keeps the user's pixels intact.
             if (cover) {
-              await withPdfClipRect(pdf, x, y, w, h, () => drawSvgVectorsInRegion(pdf, svgEl, dx, dy, fw, fh, registeredFonts));
+              await withPdfClipRect(pdf, x, y, w, h, () => drawSvgVectorsInRegion(pdf, svgEl, dx, dy, fw, fh, registeredFonts, undefined, convertPaths));
             } else {
-              await drawSvgVectorsInRegion(pdf, svgEl, dx, dy, fw, fh, registeredFonts);
+              await drawSvgVectorsInRegion(pdf, svgEl, dx, dy, fw, fh, registeredFonts, undefined, convertPaths);
             }
           }
         } catch { /* fall through to the raster path */ }
@@ -8881,11 +8921,13 @@ function endFrameClock(c: FrameClockCanvas | null): void {
 // No-op (returns false) for tools with no CSS animations, and for JS/rAF-driven
 // motion that never produces a Web Animations API Animation object - those
 // still need the explicit clock hook.
-function scrubAnimations(node: Element, ms: number): boolean {
+function scrubAnimations(node: Element, ms: number, pausedByUs?: Set<Animation>): boolean {
   const anims = node.getAnimations?.({ subtree: true }) ?? [];
   if (anims.length === 0) return false;
   for (const a of anims) {
-    if (a.playState !== 'paused') a.pause();
+    // Record only the animations THIS scrub paused, so dispose can resume
+    // exactly those - never one the page had paused before the export began.
+    if (a.playState !== 'paused') { a.pause(); pausedByUs?.add(a); }
     a.currentTime = ms;
   }
   return true;
@@ -8985,6 +9027,9 @@ function hideLiveCanvases(live: HTMLCanvasElement[]): () => void {
 export async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<{ width: number; height: number; frame(t?: number, clipSec?: number): Promise<HTMLCanvasElement>; dispose(): void }> {
   const lib = await getDomToImage();
   const { width: nodeW, height: nodeH } = node.getBoundingClientRect();
+  // CSS animations the per-frame scrub pauses, resumed in dispose() - without
+  // this the live canvas stayed frozen after every motion export (E12 review).
+  const scrubbedAnims = new Set<Animation>();
   // Round to EVEN: H.264 (yuv420p) rejects odd dimensions, so an odd export size (e.g. a
   // 555px stage) makes the MP4 encoder fail and the shell silently falls back to WebM.
   // Even dims are safe for every frame-source consumer (mp4/webm/gif/apng/ico); the ≤1px
@@ -9127,7 +9172,7 @@ export async function createFrameSource(node: Element, opts: ExportOpts = {}): P
       // Scrub any CSS animation/transition to the exact frame time regardless of
       // frameClock - a clocked canvas can still share the DOM with CSS-animated
       // chrome around it. No-op when the node has none.
-      scrubAnimations(node, t * durationMs);
+      scrubAnimations(node, t * durationMs, scrubbedAnims);
       if (window.__lollyCaptureScreenshot)
         return captureViaExternalScreenshot(targetW, targetH, window.__lollyCaptureScreenshot);
       // ── Direct-canvas capture (opt-in, per-node) ──────────────────────────────
@@ -9202,6 +9247,10 @@ export async function createFrameSource(node: Element, opts: ExportOpts = {}): P
       endFrameClock(frameClock);
       watcher?.disconnect();
       if (fast) { releaseFast(fast); fast = null; }
+      // Resume exactly the animations the scrub paused - an element that left
+      // the DOM mid-export throws on play(), which changes nothing.
+      for (const a of scrubbedAnims) { try { a.play(); } catch { /* gone */ } }
+      scrubbedAnims.clear();
       restore();
     },
   };
