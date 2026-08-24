@@ -94,7 +94,7 @@ const CHROME_STYLE_ID = 'brand-chrome-vars';
  *  var(--font-brand))`, so an UNSET slot falls through to the primary too. */
 const FONT_SLOTS = [
   ['brand', '--font-brand', "'SUSE', ui-sans-serif, system-ui, sans-serif"],
-  ['mono', '--font-mono', "'SUSE Mono', ui-monospace, monospace"],
+  ['mono', '--font-mono', "'SUSE Mono', 'Roboto Mono', ui-monospace, monospace"],
   ['display', '--font-display', 'var(--font-brand)'],
   ['italic', '--font-italic', 'var(--font-brand)'],
 ] as const;
