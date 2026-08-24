@@ -465,6 +465,50 @@ class NeurospicyDockHost implements DockHost {
     }
     // Prime the cache so the now-playing title is right on first paint.
     void this.reloadTracks();
+    // Lock-screen / control-centre transport + now-playing (plans/146) - what makes the
+    // backgrounded radio feel like a podcast app. No-op where Media Session is absent.
+    this.wireMediaSession();
+  }
+
+  // ── Media Session - OS lock-screen transport + now-playing (plans/146) ─────────
+  // Mirrors docs/player/narration-host.ts's wireMediaSession, over this player's
+  // transport. Metadata + playbackState are pushed on every change via syncMediaSession
+  // (called from emitChange); this only sets the action handlers, once.
+
+  private wireMediaSession(): void {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+    const ms = navigator.mediaSession;
+    try {
+      ms.setActionHandler('play', () => { if (!isNeurospicyPlaying()) void this.togglePlay(); });
+      ms.setActionHandler('pause', () => { if (isNeurospicyPlaying()) void this.togglePlay(); });
+      ms.setActionHandler('nexttrack', () => void this.next());
+      ms.setActionHandler('previoustrack', () => void this.prev());
+    } catch { /* partial Media Session support: the in-app transport still works */ }
+  }
+
+  private syncMediaSession(): void {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+    const ms = navigator.mediaSession;
+    try {
+      ms.playbackState = isNeurospicyPlaying() ? 'playing' : 'paused';
+      const np = this.nowPlaying();
+      if (np.title && np.title !== 'Select a track' && typeof MediaMetadata !== 'undefined') {
+        ms.metadata = new MediaMetadata({
+          title: np.title,
+          artist: np.kind === 'radio' ? 'Internet radio · SomaFM' : (np.subtitle || 'Neurospicy'),
+          album: 'Lolly',
+        });
+      }
+    } catch { /* MediaMetadata unsupported: playback is unaffected */ }
+  }
+
+  private clearMediaSession(): void {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+    try {
+      const ms = navigator.mediaSession;
+      ms.metadata = null;
+      for (const a of ['play', 'pause', 'nexttrack', 'previoustrack'] as const) ms.setActionHandler(a, null);
+    } catch { /* fine */ }
   }
 
   // ── DockHost: transport ──────────────────────────────────────────────────────
@@ -556,6 +600,7 @@ class NeurospicyDockHost implements DockHost {
 
   private emitChange(): void {
     if (this.destroyed) return;
+    this.syncMediaSession();   // keep the lock screen in step with every transport change
     for (const l of this.changeListeners) { try { l(); } catch { /* one bad listener never blocks the rest */ } }
   }
 
@@ -574,5 +619,6 @@ class NeurospicyDockHost implements DockHost {
     this.docListeners.length = 0;
     this.changeListeners.clear();
     this.listListeners.clear();
+    this.clearMediaSession();
   }
 }

@@ -237,9 +237,33 @@ function streamHost(url: string): string {
   try { return new URL(url, location.href).host; } catch { return url; }
 }
 
+/** iOS / iPadOS (incl. iPadOS 13+ reporting a Mac UA behind a touch screen). On these,
+ *  a radio <audio> element tapped through the AudioContext goes SILENT the moment the app
+ *  is backgrounded - iOS suspends Web Audio. Played BARE (untapped) straight to the
+ *  hardware, the same element keeps sounding in the background / on the lock screen, given
+ *  the Tauri iOS shell's .playback audio session + UIBackgroundModes:audio. The trade is
+ *  no radio VISUALISER on iOS (local-loop viz, a buffer source through the analyser, is
+ *  unaffected in the foreground). See plans/146. */
+function isAppleMobile(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  return /iP(hone|od|ad)/.test(ua) || (/Macintosh/.test(ua) && (navigator.maxTouchPoints ?? 0) > 1);
+}
+
+/** Whether to route a radio stream INTO the Web Audio graph (for the meter + visualiser),
+ *  or play it bare. Pure, so the one rule that matters - never tap on Apple mobile, so
+ *  background playback survives - is unit-tested (neurospicy-radio-tap.test.ts). */
+export function tapDecision(o: { untappedHost: boolean; graphUnavailable: boolean; appleMobile: boolean }): boolean {
+  return !o.graphUnavailable && !o.untappedHost && !o.appleMobile;
+}
+
 /** Is this stream one we should try to tap? */
 function shouldTap(url: string): boolean {
-  return !graphTapUnavailable && !untappedHosts.has(streamHost(url));
+  return tapDecision({
+    untappedHost: untappedHosts.has(streamHost(url)),
+    graphUnavailable: graphTapUnavailable,
+    appleMobile: isAppleMobile(),
+  });
 }
 
 /**
