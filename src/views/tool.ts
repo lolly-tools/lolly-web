@@ -60,7 +60,8 @@ import { createHistory, cloneValue } from './tool-history.ts';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
 import { hasGuide, guideButtonHtml, showToolGuide, autoOpenToolGuide } from '../components/tool-guide.ts';
 import { jellyActive } from '../lib/jelly.ts';
-import { toolSupport, capabilityLabel, canBatchTool } from '../capabilities.ts';
+import { toolSupport, capabilityLabel, canBatchTool, singleFileInputId } from '../capabilities.ts';
+import { collectBulkFiles } from '../lib/bulk-files.ts';
 import { docsAppHref, currentLang, t, tRaw } from '../i18n.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { announce } from '../a11y.ts';
@@ -75,6 +76,7 @@ import { createSoundToggle } from '../components/sound-toggle.ts';
 import { scopeCss, scopeTemplateStyles } from '../lib/scope-css.ts';
 import { setupMobileSheet, flickDirection } from '../lib/mobile-sheet.ts';
 import { wireExportPanelFloat } from '../lib/export-panel-float.ts';
+import { isDocked, releaseDock } from '../lib/edge-dock.ts';
 import { runTemplateScripts, waitForQuiescence } from '../lib/render-lifecycle.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { createShutter } from '../lib/shutter.ts';
@@ -1082,6 +1084,10 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // capabilities.ts so both halves of it live next to `toolSupport` rather than being
   // restated here (views/* must not pull in the pro/ folder, which owns its stylesheet).
   const canBulk = canBatchTool(tool.manifest, host.capabilities);
+  // plans/147 M2 "Bulk from files": a transform tool (exportFile) with one single
+  // file input can loop that path over N picked files into one zip. runtime exists
+  // by here (created above), so hasExportFile is a real answer, not a guess.
+  const bulkFilesId = runtime.hasExportFile ? singleFileInputId(tool.manifest) : null;
   // Transcribe (engine 1.150, render.transcribe): the tool names an audio/video
   // input and a text input, and the shell owns everything between them - consent
   // for the one-time model download, the background job, and one undoable write.
@@ -1300,6 +1306,8 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
                 ${/* "Bulk from rows" - the same icon-only header control as Make variants
                       next to it, so it needs no styling of its own. */ ''}
                 ${canBulk ? `<button type="button" class="multi-edit-btn" id="bulk-rows-btn" data-tip="${escape(t('Bulk from rows'))}" aria-label="${escape(t('Bulk from rows'))}">${icon('table', { className: 'multi-edit-icon' })}</button>` : ''}
+                ${/* "Bulk from files" (plans/147 M2) - loop this transform tool over N picked files into one zip. */ ''}
+                ${bulkFilesId ? `<button type="button" class="multi-edit-btn" id="bulk-files-btn" data-tip="${escape(t('Bulk from files'))}" aria-label="${escape(t('Bulk from files'))}">${icon('layersStack', { className: 'multi-edit-icon' })}</button>` : ''}
               </span>
               <button class="fullscreen-toggle" id="fullscreen-toggle" ${sidebarOpen ? 'open' : ''} aria-label="${escape(sidebarOpen ? t('Collapse sidebar') : t('Expand sidebar'))}"></button>
             </div>
@@ -1939,6 +1947,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // survive the move). Mobile presents it as a full-screen sheet; desktop as a
   // non-modal panel anchored to the sidebar bottom - pure CSS difference (app.css).
   let exportTeardown: (() => void) | null = null;
+  // The image-framing overlay's unsubscribe (plans/148). Null unless the tool
+  // declares a framing control; torn down with the view like the export chrome.
+  let framingTeardown: (() => void) | null = null;
   // The "Save" half of the render pill - assigned just below, but declared out here
   // so the dirty-state helpers (markSessionDirty / markSessionSaved, defined later)
   // can flash and clear it from the input-change chokepoint.
@@ -1974,6 +1985,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     };
     const closeExport = (): void => {
       const wasOpen = layout.classList.contains('export-open');
+      // If edge-docked, undock first so the popup returns to its overlay and the
+      // export-open removal actually hides it (docked, it lives outside the overlay).
+      if (isDocked('export')) releaseDock('export');
       layout.classList.remove('export-open');
       renderFab.setAttribute('aria-expanded', 'false');
       actionsApi?.stopAudioPreview?.(); // silence any audio audition when the popup closes
@@ -2135,6 +2149,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     vizModule?.destroyToolViz();          // else a WebGL2 context stays pinned per visited tool
     if (onFocusRect && stageEl) stageEl.removeEventListener('fc-focus-rect', onFocusRect);
     styleEl.remove(); shutter.destroy(); ro.disconnect(); stageZoom?.destroy(); exportTeardown?.();
+    framingTeardown?.(); framingTeardown = null;   // framing overlay: listeners + its layer
     filmstrip?.destroy();
     window.removeEventListener('keydown', onHistoryKey);
     // Presence chrome first, transport last: the pill/rings/cursors come down, then
@@ -2580,6 +2595,58 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     showUnsavedDialog(canSave ? async () => { if (await actionsApi!.save!()) go(); } : null, go);
   };
   viewEl.querySelector<HTMLButtonElement>('#bulk-rows-btn')?.addEventListener('click', openBulk);
+
+  // "Bulk from files" (plans/147 M2): pick N files and run this transform tool over
+  // each through its exportFile hook on the LIVE runtime, delivering one zip. It is
+  // foreground by design (it drives the mounted runtime), so progress rides the icon
+  // button - a background/navigate-away job would need a fresh runtime per file.
+  if (bulkFilesId) {
+    const fileSpec = tool.manifest.inputs.find((i) => i.id === bulkFilesId) as { accept?: string[] } | undefined;
+    const picker = document.createElement('input');
+    picker.type = 'file';
+    picker.multiple = true;
+    if (fileSpec?.accept?.length) picker.accept = fileSpec.accept.join(',');
+    picker.style.display = 'none';
+    viewEl.appendChild(picker);
+    const bulkBtn = viewEl.querySelector<HTMLButtonElement>('#bulk-files-btn');
+    const idleTip = bulkBtn?.getAttribute('data-tip') ?? '';
+    const tip = (s: string): void => { if (bulkBtn) bulkBtn.dataset.tip = s; };
+    bulkBtn?.addEventListener('click', () => { picker.value = ''; picker.click(); });
+    picker.addEventListener('change', async () => {
+      const picked = Array.from(picker.files ?? []);
+      if (!picked.length || !bulkBtn || bulkBtn.dataset.busy) return;
+      bulkBtn.dataset.busy = '1';
+      bulkBtn.disabled = true;
+      // The loop drives the live input; snapshot what the user had so the view
+      // returns to it rather than sitting on the last file of the batch.
+      const prevFile = runtime.getModel().find((i) => i.id === bulkFilesId)?.value ?? null;
+      try {
+        const { entries, failed } = await collectBulkFiles(
+          picked.map((f) => ({ name: f.name })),
+          async (i) => {
+            await runtime.setInput(bulkFilesId, await fileToRef(picked[i]!));
+            const res = await runtime.exportFile();
+            return Array.isArray(res) ? res : [res];
+          },
+          (done, total) => tip(`${t('Converting')} ${done}/${total}…`),
+        );
+        if (!entries.length) throw new Error(t('Every file failed to convert - try different files.'));
+        const { storeZip } = await import('@lolly/engine');
+        const zip = storeZip(entries);
+        await host.export.file(new Blob([zip as BlobPart], { type: 'application/zip' }), { filename: `${toolId}-bulk.zip` });
+        tip(failed.length ? `${failed.length} ${t('skipped')}` : idleTip);
+      } catch (err) {
+        console.error('bulk-from-files failed:', err);
+        bulkBtn.classList.add('is-error');
+        tip((err as { message?: string })?.message || t('Bulk convert failed - try again'));
+      } finally {
+        await runtime.setInput(bulkFilesId, prevFile).catch(() => {});
+        bulkBtn.disabled = false;
+        delete bulkBtn.dataset.busy;
+        window.setTimeout(() => { bulkBtn.classList.remove('is-error'); tip(idleTip); }, 4000);
+      }
+    });
+  }
 
   // Now that actionsApi exists, wire the gauge - a click (not a drag) opens the Share
   // dialog with the current state (same path as the Share button). syncUrl already drives
@@ -3250,6 +3317,114 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // yet and keeps the sidebar-focus behaviour below.
   const INLINE_EDIT_CONTROLS = new Set(['color-picker', 'select', 'asset-picker']);
 
+  /**
+   * "Use as a new image" (plans/148 WP-E): bake a framing into new bytes, save
+   * them to the user's library as a child of the source, then point the input at
+   * the child and reset the framing.
+   *
+   * Every piece here already existed and is reused rather than reproduced: the
+   * placement maths is the engine's (so the baked pixels match the preview), the
+   * signing is lib/derived-asset.ts's - the catalog crop's own path, source as a
+   * C2PA ingredient with the genAI backfill intact - and the two setInput calls
+   * ride the tool view's undo coalescing, so the whole thing is ONE undo step.
+   *
+   * `key` is the overlay's marker: a top-level framing input id, or
+   * "<blocksId>:<index>:<base>" for a row.
+   */
+  async function bakeFraming(key: string): Promise<void> {
+    const blockRef = /^(.+):(\d+):(.+)$/.exec(key);
+    const el = canvasEl?.querySelector<HTMLElement>(`[data-framing="${CSS.escape(key)}"]`);
+    if (!el) return;
+    const frameW = el.offsetWidth, frameH = el.offsetHeight;
+
+    // Read the framing values, the fit, and the asset slot to replace - the same
+    // two shapes the overlay resolves, kept here rather than exported from it
+    // because this side also needs to WRITE the asset back.
+    const model = runtime.getModel();
+    const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+    let framing: Record<string, number> = {};
+    let fit: 'cover' | 'contain' = 'cover';
+    let ref: AssetRef | null = null;
+    let apply: (next: AssetRef) => Promise<void>;
+
+    if (!blockRef) {
+      const input = model.find(i => i.id === key);
+      const assetId = (input as { framingFor?: string } | undefined)?.framingFor;
+      const assetInput = assetId ? model.find(i => i.id === assetId) : undefined;
+      ref = (assetInput?.value ?? null) as AssetRef | null;
+      if (!input || !ref?.url) return;
+      framing = { ...(input.value as Record<string, number>) };
+      fit = String(model.find(i => i.id === key.replace(/Framing$/, '') + 'Fit')?.value) === 'contain' ? 'contain' : 'cover';
+      const defaults: Record<string, number> = {};
+      for (const f of input.fields ?? []) defaults[f.id] = f.default ?? 0;
+      apply = async (next) => {
+        await runtime.setInput(assetId!, next as unknown as InputValue);
+        await runtime.setInput(key, defaults as unknown as InputValue);
+      };
+    } else {
+      const [, blocksId, idxStr, base] = blockRef as unknown as [string, string, string, string];
+      const input = model.find(i => i.id === blocksId);
+      const index = Number(idxStr);
+      const rows = Array.isArray(input?.value) ? (input!.value as Array<Record<string, unknown>>) : [];
+      const row = rows[index];
+      if (!input || !row) return;
+      const assetField = ((input.fields ?? []) as Array<{ id: string; type?: string; framingFor?: string }>)
+        .find(f => f.framingFor === base || (f.type === 'asset' && f.id === base));
+      ref = (assetField ? row[assetField.id] : null) as AssetRef | null;
+      if (!ref?.url) return;
+      for (const f of ['zoom', 'x', 'y', 'rotate', 'pitch', 'yaw']) {
+        const v = Number(row[`${base}${cap(f)}`]);
+        if (Number.isFinite(v)) framing[f] = v;
+      }
+      fit = String(row[`${base}Fit`]) === 'contain' ? 'contain' : 'cover';
+      apply = async (next) => {
+        const live = runtime.getModel().find(i => i.id === blocksId);
+        const out = Array.isArray(live?.value) ? [...(live!.value as unknown[])] : [];
+        const cur = out[index];
+        if (!cur || typeof cur !== 'object') return;
+        const merged: Record<string, unknown> = { ...(cur as Record<string, unknown>) };
+        if (assetField) merged[assetField.id] = next;
+        for (const f of ['zoom', 'x', 'y', 'rotate', 'pitch', 'yaw']) {
+          const spec = ((input.fields ?? []) as Array<{ id: string; default?: number }>).find(s => s.id === `${base}${cap(f)}`);
+          if (spec) merged[spec.id] = spec.default ?? (f === 'zoom' ? 100 : f === 'x' || f === 'y' ? 50 : 0);
+        }
+        out[index] = merged;
+        await runtime.setInput(blocksId, out as unknown as InputValue);
+      };
+    }
+
+    try {
+      const { bakeFraming: bake } = await import('../lib/framing-bake.ts');
+      const baked = await bake(host as never, ref.url, framing, fit, frameW, frameH, ref.format);
+      if (!baked) { announce(t('This image can’t be baked here.'), { assertive: true }); return; }
+      const { saveDerivedAsset, derivedName } = await import('../lib/derived-asset.ts');
+      // The honest edit history for THIS derivation: a crop (the framing's own
+      // window) plus an orientation change whenever it rolled or tilted.
+      const tilted = Number(framing.rotate) || Number(framing.pitch) || Number(framing.yaw);
+      const saved = await saveDerivedAsset(
+        host as never, ref, baked.blob, baked.format, 'frame',
+        {
+          edits: [
+            { action: 'c2pa.cropped' },
+            ...(tilted ? [{ action: 'c2pa.orientation' }] : []),
+            { action: 'c2pa.resized' },
+          ],
+          detail: Object.fromEntries(Object.entries(framing).map(([k, v]) => [`framing.${k}`, String(v)])),
+          dims: `${baked.width}x${baked.height}`,
+        },
+        derivedName(ref, t('framed')),
+      );
+      if (!saved) { announce(t('This image can’t be saved to your library here.'), { assertive: true }); return; }
+      await apply(saved);
+      markUserDirty(key);
+      markSessionDirty();
+      announce(tRaw('Saved as "{name}" in your uploads.', { name: String(saved.meta?.name ?? saved.id) }));
+    } catch (e) {
+      host.log?.('warn', 'framing bake failed', { key, error: String(e) });
+      announce(t('That image couldn’t be saved. The framing is unchanged.'), { assertive: true });
+    }
+  }
+
   // Colour: a temporary, otherwise-invisible instance of the shared colour-field
   // component, positioned over the clicked swatch and opened programmatically - 
   // so the popover it opens (float mode) is byte-for-byte the sidebar's own
@@ -3371,7 +3546,15 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     if (!target) return;
     const id = target.dataset.canvasInput!;
 
-    // A plain top-level input (never a "<blocksId>:<index>" block reference - 
+    // A FRAMED image belongs to the framing overlay (plans/148): a tap there arms
+    // pan/zoom/tilt. It usually also carries data-canvas-input for its asset slot
+    // (annotateTemplate tags the tag's first referenced input, which is the src),
+    // and that would open the asset picker on top of the arm - two editors from
+    // one tap. The overlay wins on its own element; the sidebar row is still one
+    // more tap away, and the picker stays reachable from there.
+    if ((e.target as HTMLElement).closest('[data-framing]')) return;
+
+    // A plain top-level input (never a "<blocksId>:<index>" block reference -
     // that never matches a top-level model item's id) whose control has an
     // in-place editor opens it right here instead of falling through to the
     // sidebar-focus path below.
@@ -3973,6 +4156,23 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     }
   } else if (stageEl && captureMode && captureMode !== 'screen' && host.recorder?.isAvailable?.(captureMode === 'audio' ? 'audio' : 'video')) {
     setupRecordControl({ stageEl, runtime, host, mode: captureMode, markSessionDirty });
+  }
+
+  // Image framing (plans/148): wherever a tool declares a framing control
+  // (`framingFor` on a vector input, or on a blocks asset sub-field), the shell
+  // mounts ONE generic on-canvas overlay - pan, zoom, roll, and the perspective
+  // pair - plus "Use as a new image", which bakes the framing into a new library
+  // asset through the same signed path the catalog crop uses. Declaration-driven:
+  // no tool is named here, and a tool with no framing input mounts nothing.
+  if (stageEl && canvasEl && !visitorPage) {
+    const { hasFramingInputs, setupFramingOverlay } = await import('./framing-overlay.ts');
+    if (hasFramingInputs(runtime.getModel())) {
+      framingTeardown = setupFramingOverlay({
+        stageEl, canvasEl, runtime,
+        onDirty: markUserDirty,
+        onBake: (key) => bakeFraming(key),
+      });
+    }
   }
 
   // Animation transport (play/pause/scrub): any tool declaring render.video gets a

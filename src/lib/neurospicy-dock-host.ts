@@ -52,6 +52,7 @@ import type { VizPalette, VizPaletteHost } from './viz-palette.ts';
 import type {
   DockHost, DockNowPlaying, DockSource, DockSources, DockAtmosphere, DockViz,
   DockRepeat, DockVolume, DockAttribution, DockVizPreset, DockVizTheme, DockVizTransition,
+  DockBrandMark,
 } from '@lolly-tools/audio-dock';
 
 /** The web shell's full host satisfies both what the transport needs (NeurospicyHost)
@@ -152,6 +153,40 @@ class NeuroDockViz implements DockViz {
   // ── support probe + live analyser (also feeds the shell's 2D backdrop fallback) ──
   supported(): boolean { return vizSupported(); }
   getAnalyser(): AnalyserNode | null { return getNeurospicyAnalyser(); }
+
+  // The brand silhouette for the immersive/fullscreen viz (plans/147): the brand's
+  // MONO-REVERSE logo (a one-colour, dark-background mark), resolved across BOTH logo
+  // systems - user-uploaded variants (`user/logo/horizontal-mono-reverse`) AND pack/catalog
+  // logos, whose naming differs per brand (SUSE's is `suse/logo/hor-neg-white`: neg =
+  // reverse, white = mono). So match on reverse + mono rather than one rigid id. Null when
+  // the brand carries no such mark. Cached - resolved once per dock.
+  private brandMarkCache: DockBrandMark | null | undefined;
+  async brandMark(): Promise<DockBrandMark | null> {
+    if (this.brandMarkCache !== undefined) return this.brandMarkCache;
+    const cands: Array<{ id: string; url: string }> = [];
+    try {
+      const users = this.host.assets._listUserAssets ? await this.host.assets._listUserAssets() : [];
+      for (const a of users) if (a.url && /logo/i.test(a.id)) cands.push({ id: a.id, url: a.url });
+    } catch { /* no user assets on this host */ }
+    try {
+      // Pack/catalog logos are vectors (SVG).
+      const vecs = await this.host.assets.query({ type: 'vector' });
+      for (const r of vecs) if (r.url && /logo/i.test(r.id)) cands.push({ id: r.id, url: r.url });
+    } catch { /* no catalog query on this host */ }
+    // A mono-reverse mark is BOTH reverse (dark-bg: neg/reverse/knockout) AND mono
+    // (one-colour: mono/white). Keep BOTH orientations so the shell can match the viz
+    // shape. A brand with only positive/full-colour logos yields nothing - a coloured
+    // logo under difference isn't a silhouette.
+    const reverse = (id: string): boolean => /neg|reverse|knockout/i.test(id);
+    const mono = (id: string): boolean => /mono|white/i.test(id);
+    const isH = (id: string): boolean => /(^|[^a-z])(hor|horizontal)([^a-z]|$)/i.test(id);
+    const isV = (id: string): boolean => /(^|[^a-z])(vert|vertical)([^a-z]|$)/i.test(id);
+    const monoRev = cands.filter((c) => reverse(c.id) && mono(c.id));
+    const horizontal = monoRev.find((c) => isH(c.id))?.url ?? null;
+    const vertical = monoRev.find((c) => isV(c.id))?.url ?? null;
+    this.brandMarkCache = (horizontal || vertical) ? { horizontal, vertical } : null;
+    return this.brandMarkCache;
+  }
 
   // ── on/off ──────────────────────────────────────────────────────────────────
   enabled(): boolean { return this.vizEnabled; }

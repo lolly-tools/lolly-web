@@ -184,13 +184,25 @@ let cached: Promise<VizScheme[]> | null = null;
 /** The session's schemes, derived from the brand's tokens once and cached. */
 export function vizSchemes(host?: VizPaletteHost): Promise<VizScheme[]> {
   cached ??= Promise.resolve(host?.tokens?.colors?.())
-    .then((cs) => deriveVizSchemes(
-      (cs ?? []).map((c) => c.value),
-      (cs ?? []).map((c) => nameOf(c)),
-      liveAccentHint(),
-    ))
+    .then((cs) => {
+      // Keep the CHARTS/DATA-VIZ-ONLY spectrum out of the visualiser's colour moods (Andy,
+      // plans/147): SUSE's `color.spectrum.*` (Lilac, Teal, …) are for infographics, and
+      // their token names carry that whole note - which would otherwise show as a scheme
+      // label. The visualiser rides the brand's CORE colours (jungle/waterhole/persimmon/…).
+      const usable = (cs ?? []).filter((c) => !isDataVizOnly(c));
+      return deriveVizSchemes(usable.map((c) => c.value), usable.map((c) => nameOf(c)), liveAccentHint());
+    })
     .catch(() => deriveVizSchemes([]));
   return cached;
+}
+
+/** True for a swatch the brand designates charts/infographics-only, by its token path/group
+ *  (`color.spectrum.*`) or a "data viz only / infographics" note in its description. */
+function isDataVizOnly(c: { value: string } & { path?: unknown; group?: unknown; description?: unknown }): boolean {
+  const path = typeof c.path === 'string' ? c.path.toLowerCase() : '';
+  const group = typeof c.group === 'string' ? c.group.toLowerCase() : '';
+  const desc = typeof c.description === 'string' ? c.description.toLowerCase() : '';
+  return path.startsWith('color.spectrum.') || group === 'spectrum' || /data\s?viz|infographic/.test(desc);
 }
 
 /** Swatches carry a display `name` in the full host contract; the narrow slice this

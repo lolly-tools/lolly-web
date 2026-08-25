@@ -19,12 +19,13 @@
  */
 import { createNeurospicyDockHost, type NeurospicyDockHandle } from '../lib/neurospicy-dock-host.ts';
 import {
-  registerMusicSource, unregisterMusicSource, audioDockController, audioDockElement, isAudioDockVisible,
+  registerMusicSource, unregisterMusicSource, audioDockController, audioDockElement, audioDockWobble, isAudioDockVisible,
 } from '../lib/audio-dock-singleton.ts';
 import { getNeurospicy, setNeurospicyEnabled, stopNeurospicy, type NeurospicyHost } from '../lib/neurospicy.ts';
 import { flagEnabledSync } from '../feature-flags.ts';
 import { setNeuroDockCollapsed } from '../lib/neuro-dock-pref.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
+import { wobblyActive } from '../lib/wobble.ts';
 
 let dockHandle: NeurospicyDockHandle | null = null;
 
@@ -74,10 +75,16 @@ export function showNeuroDock(host: NeurospicyHost, opts: boolean | NeuroDockSho
   // Expand in place for a window that already existed collapsed.
   if (forceExpanded && ctrl.getCollapse() === 'mini') ctrl.setCollapse('full');
   if (animateIn && !wasVisible && !prefersReducedMotion()) {
-    el.classList.remove('is-entering');
-    void el.offsetWidth; // reflow so the animation restarts on a repeat enable
-    el.classList.add('is-entering');
-    el.addEventListener('animationend', () => el.classList.remove('is-entering'), { once: true });
+    // The ONE spot we read the flag: a wobbly entrance REPLACES the CSS spring-in, so the
+    // panel never plays two entrance animations at once. Flag off ⇒ today's CSS entrance.
+    if (wobblyActive()) {
+      audioDockWobble()?.wobbleIn();
+    } else {
+      el.classList.remove('is-entering');
+      void el.offsetWidth; // reflow so the animation restarts on a repeat enable
+      el.classList.add('is-entering');
+      el.addEventListener('animationend', () => el.classList.remove('is-entering'), { once: true });
+    }
     const r = el.getBoundingClientRect();
     void import('../lib/particles.ts').then((m) =>
       m.celebrateBurst(r.left + r.width / 2, r.top + r.height / 2,

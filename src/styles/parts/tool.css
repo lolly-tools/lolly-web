@@ -3219,6 +3219,88 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   pointer-events: none;
 }
 
+/* ── Image framing overlay (plans/148) ────────────────────────────────────────
+   ONE overlay for every framed image in every tool, mounted by
+   views/framing-overlay.ts wherever the rendered canvas carries a
+   [data-framing] element. Arm-then-manipulate: an un-armed image scrolls the
+   page like any other, and only the armed one takes the drag. Chrome-only -
+   data-export-hide keeps the layer out of every capture, and nothing here
+   reaches inside the canvas element itself. */
+.framing-layer {
+  position: absolute;
+  z-index: 5;                /* over the canvas, under a capture bar (z 6) */
+  cursor: grab;
+  touch-action: none;        /* only while armed - the layer only exists then */
+  outline: 2px solid hsl(var(--ring) / 0.75);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+.framing-layer:active { cursor: grabbing; }
+/* The armed image itself: a faint tint so it is obvious WHICH slot is live when a
+   tool frames several. Chrome, not content - it never reaches an export. */
+.tool-canvas [data-framing].is-framing-armed,
+#tool-content [data-framing].is-framing-armed {
+  outline: 2px solid hsl(var(--ring) / 0.75);
+  outline-offset: 1px;
+}
+.framing-rotate {
+  position: absolute;
+  left: 50%;
+  top: -26px;
+  width: 20px;
+  height: 20px;
+  margin-left: -10px;
+  padding: 0;
+  border: 1px solid hsl(var(--border));
+  border-radius: 50%;
+  background: hsl(var(--background));
+  cursor: grab;
+  touch-action: none;
+}
+.framing-rotate::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 1px;
+  height: 6px;
+  background: hsl(var(--ring) / 0.75);
+}
+.framing-rotate::after {
+  content: "\21BB";          /* clockwise open circle arrow */
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  line-height: 1;
+}
+.framing-rotate:active { cursor: grabbing; }
+.framing-bar {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translate(-50%, 6px);
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 8px;
+  background: hsl(var(--background) / 0.92);
+  box-shadow: 0 1px 6px #0003;
+  white-space: nowrap;
+}
+.framing-btn {
+  font: inherit;
+  font-size: calc(11px * var(--a11y-fs));
+  padding: 3px 8px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  background: hsl(var(--background));
+  color: inherit;
+  cursor: pointer;
+}
+.framing-btn:hover { background: hsl(var(--muted)); }
+
 /* The screen clip is offered in the same post-capture bar as a voice take, but the
    player is a <video>, not <audio> - give it the same full-width, letterboxed frame. */
 .canvas-audio-dl video {

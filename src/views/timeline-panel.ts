@@ -42,6 +42,7 @@ import { t, tRaw } from '../i18n.ts';
 import { icon, type IconName } from '../lib/icons.ts';
 import { announce } from '../a11y.ts';
 import { playSfx } from '../lib/sfx.ts';
+import { edgeDockWidth } from '../lib/edge-dock.ts';
 import { mountModal, type ModalHandle } from '../components/modal.ts';
 import { mountBodyPopover, pointAnchor, type PopoverAnchor } from '../components/body-popover.ts';
 import {
@@ -2109,7 +2110,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // opens the menu away from the button that spawned it.
     const rtl = document.documentElement.dir === 'rtl';
     const near = rtl ? r.right - pw : r.left;
-    const left = Math.max(8, Math.min(near, vw - pw - 12));
+    // Clamp to the CONTENT area, not the viewport: a docked column reserves inline-end
+    // space (right in ltr, left in rtl), so keep the popover clear of it.
+    const dockW = edgeDockWidth();
+    const left = Math.max(8 + (rtl ? dockW : 0), Math.min(near, vw - pw - 12 - (rtl ? 0 : dockW)));
     const top = r.bottom + 6 + ph > vh - 8 ? Math.max(8, r.top - ph - 6) : r.bottom + 6;
     el.style.left = `${Math.round(left)}px`;
     el.style.top = `${Math.round(top)}px`;
@@ -3717,7 +3721,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const panelTop = root.getBoundingClientRect().top || (window.innerHeight || 768);
     const rtl = document.documentElement.dir === 'rtl';
     const near = rtl ? r.right - pw : r.left;
-    const left = Math.max(8, Math.min(near, vw - pw - 12));
+    // Clamp to the CONTENT area, not the viewport: a docked column reserves inline-end
+    // space (right in ltr, left in rtl), so keep the popover clear of it.
+    const dockW = edgeDockWidth();
+    const left = Math.max(8 + (rtl ? dockW : 0), Math.min(near, vw - pw - 12 - (rtl ? 0 : dockW)));
     el.style.left = `${Math.round(left)}px`;
     el.style.top = `${Math.round(Math.max(8, panelTop - ph - 8))}px`;
   }

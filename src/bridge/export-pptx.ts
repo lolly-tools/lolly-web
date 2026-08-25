@@ -11,7 +11,7 @@
  */
 import { buildPptxParts, EMU_PER_PX, parseGradientAngle, parseGradientStop, splitCssArgs, svgToNativePptx } from "@lolly/engine";
 import type { PptxSlide, PptxShape, PptxFill, PptxMedia, PptxLayout } from "../../../../engine/src/pptx.ts";
-import { parseCssColorFull } from "./export-css.ts";
+import { parseCssColorFull, objectPositionFractions } from "./export-css.ts";
 import { asStr, deckBox, deckFill, deckPlaceholder, deckSrcRect, deckSyncShape, deckTheme, emuOf, parseDeckModel, type DeckBox } from "./pptx-deck.ts";
 import { pureRotationDeg, detectUnsupportedCss, inlineBlobUrlsInEl, rasterizeNodeToDataUrl, imprintEmbedCanvas, stripCommentNodes, _host, type ExportOpts, type ImprintState } from "./export.ts";
 
@@ -150,12 +150,12 @@ function pptxSvgAspect(bytes: Uint8Array): [number, number] | null {
   const w = /\bwidth\s*=\s*["']?([\d.]+)/.exec(head), h = /\bheight\s*=\s*["']?([\d.]+)/.exec(head);
   return w && h ? [parseFloat(w[1]!), parseFloat(h[1]!)] : null;
 }
-// object-position → offset of a fitted picture within the leftover box space.
+// object-position → the 0..1 fraction of the leftover space to put before the image.
+const pptxObjFractions = (posStr: string | undefined): [number, number] => objectPositionFractions(posStr);
+// The same, resolved to whole EMU for a shape offset.
 function pptxObjOffset(posStr: string | undefined, freeX: number, freeY: number): { ox: number; oy: number } {
-  const toks = (posStr || '50% 50%').trim().toLowerCase().split(/\s+/);
-  const fx = (k: string): number => k === 'left' ? 0 : k === 'right' ? 1 : k === 'center' ? 0.5 : k.endsWith('%') ? parseFloat(k) / 100 : 0.5;
-  const fy = (k: string): number => k === 'top' ? 0 : k === 'bottom' ? 1 : k === 'center' ? 0.5 : k.endsWith('%') ? parseFloat(k) / 100 : 0.5;
-  return { ox: Math.round(freeX * fx(toks[0] ?? '50%')), oy: Math.round(freeY * fy(toks[1] ?? '50%')) };
+  const [fx, fy] = pptxObjFractions(posStr);
+  return { ox: Math.round(freeX * fx), oy: Math.round(freeY * fy) };
 }
 // Fit an intrinsic aspect into a box per object-fit:contain (+ object-position); other
 // fit modes keep the full box (stretch), which is what a plain blipFill does.
@@ -174,14 +174,17 @@ function pptxCoverSrcRect(boxCx: number, boxCy: number, aw: number, ah: number, 
   if ((style.objectFit || 'fill') !== 'cover' || !(aw > 0 && ah > 0 && boxCx > 0 && boxCy > 0)) return null;
   const imgA = aw / ah, boxA = boxCx / boxCy;
   if (Math.abs(imgA - boxA) < 1e-3) return null;
+  // FRACTIONS, not the EMU-rounded offsets: pptxObjOffset rounds, and rounding a
+  // 0..1 fraction collapses every position to an edge - a plain centred cover image
+  // (0.5 → 1) used to crop entirely from the left, and a framing pan (plans/148)
+  // never survived at all.
+  const [fx, fy] = pptxObjFractions(style.objectPosition);
   if (imgA > boxA) {                                   // image wider → crop left/right
     const crop = 1 - boxA / imgA;
-    const ox = pptxObjOffset(style.objectPosition, 1, 0).ox;
-    return { l: crop * ox, t: 0, r: crop * (1 - ox), b: 0 };
+    return { l: crop * fx, t: 0, r: crop * (1 - fx), b: 0 };
   }
   const crop = 1 - imgA / boxA;                        // image taller → crop top/bottom
-  const oy = pptxObjOffset(style.objectPosition, 0, 1).oy;
-  return { l: 0, t: crop * oy, r: 0, b: crop * (1 - oy) };
+  return { l: 0, t: crop * fy, r: 0, b: crop * (1 - fy) };
 }
 
 // Per-side CSS borders → thin rect shapes. A uniform 4-side border returns one outline

@@ -23,6 +23,8 @@
 .job-toast {
   position: fixed;
   right: 1rem;
+  /* Inset past the edge dock logically (RTL-correct); 0px when nothing is docked. */
+  margin-inline-end: var(--dock-w, 0px);
   /* Same --vv-bottom/--safe-bottom idiom as .perf-hud below, so the toast clears
      the iOS home-indicator gesture zone instead of sitting flush in it. */
   bottom: calc(var(--vv-bottom, 0px) + var(--safe-bottom) + 1rem);

@@ -916,6 +916,9 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // side. type-compare.test.ts now drives the module with the SHARED escape in
   // its `t` double, so a re-fork of either discipline fails there.
   'lib/design-system/type-compare.ts': 2,
+  // One provably-safe sink: the collapsed rail's per-panel icon button (constant icon()
+  // markup, no interpolation), same as the export panel's head glyphs below.
+  'lib/edge-dock.ts': 1,
   // Two provably-safe sinks: the two head buttons' glyphs (constant icon() strings,
   // no interpolation) and the resize grips (constant panelGripsHtml(), like float-panel).
   'lib/export-panel-float.ts': 2,

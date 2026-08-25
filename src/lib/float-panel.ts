@@ -26,6 +26,7 @@
 
 import './float-panel.css';
 import { panelGripsHtml, wirePanelGrips } from './panel-grips.ts';
+import { attachWobble } from './wobble.ts';
 
 const MIN_W = 240;
 const MIN_H = 160;
@@ -174,7 +175,7 @@ export function popOut(el: HTMLElement, opts: FloatPanelOpts): FloatPanel | null
   }, { capture: true });
   on(doc, 'fullscreenchange', () => notify());
 
-  wireDrag(root, doc, notify, on);
+  cleanups.push(wireDrag(root, doc, notify, on));
   cleanups.push(wirePanelGrips(root, {
     read: () => read(root),
     apply: b => apply(root, b),
@@ -231,31 +232,42 @@ type On = <K extends keyof HTMLElementEventMap>(
   t: EventTarget, ev: K | string, fn: (e: never) => void, o?: AddEventListenerOptions,
 ) => void;
 
-function wireDrag(root: HTMLElement, doc: Document, notify: () => void, on: On): void {
+function wireDrag(root: HTMLElement, doc: Document, notify: () => void, on: On): () => void {
   const bar = root.querySelector<HTMLElement>('[data-floatp-drag]');
-  if (!bar) return;
-  let from: { px: number; py: number; b: Box } | null = null;
+  // Wobbly-windows: the bar-drag deforms root, the fit() clamp snaps it into geometry.
+  // Self-gating (no-op unless the flag is on and motion is allowed); wobble owns
+  // `transform` only while live and clears it on settle - never root's left/top.
+  const wobble = attachWobble(root);
+  if (!bar) return () => wobble.dispose();
+  // px/py anchor the box move; lx/ly are the PREVIOUS pointer position, so the wobble
+  // gets per-move deltas without changing how the box is placed.
+  let from: { px: number; py: number; lx: number; ly: number; b: Box } | null = null;
   on(bar, 'pointerdown', (e: PointerEvent) => {
     if ((e.target as HTMLElement).closest('button')) return;   // the bar's own controls
     if (doc.fullscreenElement === root) return;                // nowhere to move
-    from = { px: e.clientX, py: e.clientY, b: read(root) };
+    from = { px: e.clientX, py: e.clientY, lx: e.clientX, ly: e.clientY, b: read(root) };
     bar.setPointerCapture(e.pointerId);
     root.classList.add('is-dragging');
+    wobble.grab(e.clientX, e.clientY);
     e.preventDefault();
   });
   on(bar, 'pointermove', (e: PointerEvent) => {
     if (!from) return;
     apply(root, fit({ ...from.b, x: from.b.x + (e.clientX - from.px), y: from.b.y + (e.clientY - from.py) }, doc));
+    wobble.drag(e.clientX - from.lx, e.clientY - from.ly);
+    from.lx = e.clientX; from.ly = e.clientY;
   });
   const end = (e: PointerEvent): void => {
     if (!from) return;
     from = null;
     root.classList.remove('is-dragging');
     if (bar.hasPointerCapture(e.pointerId)) bar.releasePointerCapture(e.pointerId);
+    wobble.release();
     notify();
   };
   on(bar, 'pointerup', end);
   on(bar, 'pointercancel', end);
+  return () => wobble.dispose();
 }
 
 /** Text into markup. Local rather than imported so this primitive has no deps. */

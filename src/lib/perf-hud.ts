@@ -23,11 +23,13 @@
 import { perfHudOn } from '../feature-flags.ts';
 import { tRaw } from '../i18n.ts';
 import { icon } from './icons.ts';
+import { attachWobble } from './wobble.ts';
 
 const DASH = '-';
 
 let root: HTMLElement | null = null;
 let fpsEl: HTMLElement | null = null;
+let wobble: ReturnType<typeof attachWobble> | null = null;
 let rafId = 0;
 // FPS sampling: count frames over a short window, then divide by the elapsed ms.
 let frames = 0;
@@ -80,14 +82,20 @@ function clamp(el: HTMLElement, left: number, top: number): { left: number; top:
 function wireDrag(el: HTMLElement): void {
   const handle = el.querySelector<HTMLElement>('[data-hud-drag]');
   if (!handle) return;
+  wobble = attachWobble(el);
   let dragging = false;
   let dx = 0;
   let dy = 0;
+  // Previous pointer pos, so pointermove can feed wobble.drag() per-move DELTAS.
+  let prevX = 0;
+  let prevY = 0;
   handle.addEventListener('pointerdown', (e: PointerEvent) => {
     dragging = true;
     const r = el.getBoundingClientRect();
     dx = e.clientX - r.left;
     dy = e.clientY - r.top;
+    prevX = e.clientX;
+    prevY = e.clientY;
     // Pin the CURRENT position as top/left BEFORE releasing the corner, so a bare click (no
     // pointermove) can't leave the box with both top+bottom auto and drop it to static.
     el.style.left = `${r.left}px`;
@@ -96,6 +104,7 @@ function wireDrag(el: HTMLElement): void {
     el.style.bottom = 'auto';
     el.classList.add('is-dragging');
     try { handle.setPointerCapture(e.pointerId); } catch { /* capture is best-effort */ }
+    wobble?.grab(e.clientX, e.clientY);
     e.preventDefault();
   });
   handle.addEventListener('pointermove', (e: PointerEvent) => {
@@ -103,12 +112,16 @@ function wireDrag(el: HTMLElement): void {
     const { left, top } = clamp(el, e.clientX - dx, e.clientY - dy);
     el.style.left = `${left}px`;
     el.style.top = `${top}px`;
+    wobble?.drag(e.clientX - prevX, e.clientY - prevY);
+    prevX = e.clientX;
+    prevY = e.clientY;
   });
   const end = (e: PointerEvent): void => {
     if (!dragging) return;
     dragging = false;
     el.classList.remove('is-dragging');
     try { handle.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+    wobble?.release();
   };
   handle.addEventListener('pointerup', end);
   handle.addEventListener('pointercancel', end);
@@ -157,6 +170,7 @@ export function mountPerfHud(): void {
 /** Tear the HUD down and stop its loop. Safe to call when nothing is mounted. */
 export function unmountPerfHud(): void {
   if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+  if (wobble) { wobble.dispose(); wobble = null; }
   if (root) { root.remove(); root = null; }
   fpsEl = null;
 }

@@ -66,6 +66,7 @@ import { randomVizSchemeId, vizSchemeById, vizSchemes, type VizScheme } from '..
 import type { VizPaletteHost } from '../lib/viz-palette.ts';
 import { icon } from '../lib/icons.ts';
 import { panelGripsHtml, wirePanelGrips } from '../lib/panel-grips.ts';
+import { attachWobble } from '../lib/wobble.ts';
 import { escape } from '../utils.ts';
 
 const STYLE_ID = 'lolly-viz-overlay-styles';
@@ -1148,14 +1149,21 @@ function toggleFullscreen(s: Surface): void {
 function wireDrag(s: Surface): void {
   const bar = s.root.querySelector<HTMLElement>('[data-viz-drag]');
   if (!bar) return;
+  const wobble = attachWobble(s.root);
+  s.cleanup.push(() => wobble.dispose());
   let from: { px: number; py: number; x: number; y: number } | null = null;
+  let prevX = 0;
+  let prevY = 0;
   bar.addEventListener('pointerdown', (e) => {
     // Let the controls in the bar work; only bare bar area starts a drag.
     if ((e.target as HTMLElement).closest('button, input, .viz-vol')) return;
     if (document.fullscreenElement || isFullpage(s)) return;
     from = { px: e.clientX, py: e.clientY, x: s.root.offsetLeft, y: s.root.offsetTop };
+    prevX = e.clientX;
+    prevY = e.clientY;
     bar.setPointerCapture(e.pointerId);
     s.root.classList.add('is-dragging');
+    wobble.grab(e.clientX, e.clientY);
   });
   bar.addEventListener('pointermove', (e) => {
     if (!from) return;
@@ -1167,12 +1175,16 @@ function wireDrag(s: Surface): void {
     });
     s.root.style.left = `${box.x}px`;
     s.root.style.top = `${box.y}px`;
+    wobble.drag(e.clientX - prevX, e.clientY - prevY);
+    prevX = e.clientX;
+    prevY = e.clientY;
   });
   const end = (e: PointerEvent): void => {
     if (!from) return;
     from = null;
     s.root.classList.remove('is-dragging');
     if (bar.hasPointerCapture(e.pointerId)) bar.releasePointerCapture(e.pointerId);
+    wobble.release();
     persistPanel(s);
   };
   bar.addEventListener('pointerup', end);

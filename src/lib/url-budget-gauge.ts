@@ -17,6 +17,7 @@
  * #tool-content / the export stage. The gauge writes nothing that reaches a render.
  */
 import type { UrlCostModel } from './url-budget.ts';
+import { attachWobble } from './wobble.ts';
 
 export type GaugeBand = 'ok' | 'warn' | 'over';
 
@@ -159,9 +160,15 @@ export function createUrlGauge(
   let startY = 0;
   let baseLeft = 0;
   let baseTop = 0;
+  let prevX = 0;
+  let prevY = 0;
+  const wobble = attachWobble(el);
 
   const onMove = (e: PointerEvent): void => {
     if (!dragging) return;
+    wobble.drag(e.clientX - prevX, e.clientY - prevY);
+    prevX = e.clientX;
+    prevY = e.clientY;
     const dx = e.clientX - startX;
     const dy = e.clientY - startY;
     if (!moved && Math.hypot(dx, dy) > DRAG_THRESHOLD) moved = true;
@@ -173,6 +180,7 @@ export function createUrlGauge(
   const onUp = (): void => {
     if (!dragging) return;
     dragging = false;
+    wobble.release();
     window.removeEventListener('pointermove', onMove);
     window.removeEventListener('pointerup', onUp);
     if (moved) {
@@ -190,6 +198,9 @@ export function createUrlGauge(
     startY = e.clientY;
     baseLeft = el.offsetLeft; // stage-relative, matches the position:absolute coords we set
     baseTop = el.offsetTop;
+    prevX = e.clientX;
+    prevY = e.clientY;
+    wobble.grab(e.clientX, e.clientY);
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
   };
@@ -230,6 +241,7 @@ export function createUrlGauge(
 
   const dispose = (): void => {
     hideToast();
+    wobble.dispose();
     el.removeEventListener('pointerdown', onDown);
     el.removeEventListener('keydown', onKey);
     window.removeEventListener('pointermove', onMove);

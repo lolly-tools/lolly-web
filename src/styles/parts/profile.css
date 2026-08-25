@@ -782,7 +782,6 @@
      field. Row-scale it down to a compact control so First name reaches the
      first screen. Once a photo exists the circle stays full-size - a real
      photo earns the space, a blank upload prompt doesn't. */
-  .profile-view .headshot:has(.headshot-preview.is-empty) { width: 56px; height: 56px; }
   .profile-view .headshot-preview.is-empty .headshot-edit {
     font-size: calc(.5rem * var(--a11y-fs)); letter-spacing: 0;
   }

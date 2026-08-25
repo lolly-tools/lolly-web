@@ -34,6 +34,9 @@ import {
 } from '@lolly-tools/audio-dock';
 import { isNeuroDockCollapsed, setNeuroDockCollapsed } from './neuro-dock-pref.ts';
 import { neuroDemoActive } from './neuro-demo.ts';
+import { attachWobble, type WobbleHandle } from './wobble.ts';
+import { requestDock, releaseDock, isDocked, edgeDockHitTest, edgeDockPreview } from './edge-dock.ts';
+import { icon } from './icons.ts';
 
 const DOCK_ID = 'neuro-dock';
 const STYLE_ID = 'lolly-audio-dock-app-styles';
@@ -44,9 +47,17 @@ const PLACEMENT_KEY = 'lolly:neuro-dock-placement';
  *  AFTER the package's DOCK_CSS so these win specificity ties. */
 const APP_CSS = `
 /* Sits ABOVE the fixed bottom cluster (search bar + footer nav, ~5.5rem) so it never
-   covers the footer's "Valid" / info-site links - overrides the package's 1rem. */
-.audio-dock.neuro-managed { bottom: calc(6rem + var(--safe-bottom)); z-index: 9002; }
+   covers the footer's "Valid" / info-site links - overrides the package's 1rem.
+   z-index (plans/147, Andy): the player must sit above ALL app chrome - job toasts
+   (9500), modals/dropdowns (~100001), present/capture (2147483000). One below int-max,
+   so only the transient confetti + sync toast (both max-int) stay above, by design. */
+.audio-dock.neuro-managed { bottom: calc(6rem + var(--safe-bottom)); z-index: 2147483646; }
 .audio-dock.neuro-managed.is-hidden { display: none; }
+/* Play/pause keeps the package's committed jungle green (--dock-accent) + dark triangle
+   (--dock-accent-fg), a contrast-safe pair on the dock's always-dark surface. The earlier
+   plans/147 brand-primary fill is deliberately dropped here: a brand's APP-THEME primary
+   can be a dark colour (SUSE's light primary #0c322c) that vanishes on the dark dock and
+   drags the triangle to near-invisible. On SUSE this is the jungle green from before. */
 @keyframes neuro-dock-in { from { transform: translateY(28px) scale(.9); opacity: 0; } to { transform: none; opacity: 1; } }
 .audio-dock.neuro-managed.is-entering { animation: neuro-dock-in .36s cubic-bezier(.6,.2,.1,1.2); transform-origin: bottom right; }
 @media (prefers-reduced-motion: reduce) { .audio-dock.neuro-managed.is-entering { animation: none; } }
@@ -137,6 +148,26 @@ let composed: ComposedHost | null = null;
 let controller: DockController | null = null;
 let el: HTMLElement | null = null;
 let musicOnClose: (() => void) | null = null;
+// The wobbly-windows handle for the shared dock. Attached once to the root; its methods
+// self-gate (no-op unless the flag is on and motion is allowed), so wiring is unconditional.
+let wobble: WobbleHandle | null = null;
+// Running pointer position through a drag, reconstructed from the grab point + the
+// per-move deltas the package hands us (it never sends absolute coords on move). Used
+// to hit-test the inline-end edge for docking.
+let dragX = 0, dragY = 0;
+
+/** Kick magnitude toward the docked edge (away on undock). RTL-aware. */
+const edgeKick = (): number => (document.documentElement.dir === 'rtl' ? -1 : 1) * 16;
+
+/** Drop the dock into the inline-end column (no-op below the desktop breakpoint). */
+function dockNeuroToEdge(): void {
+  if (!el) return;
+  // onRelease fires when it later undocks (drag-out, or the breakpoint guard); its inline
+  // left/top persist, so it re-floats where it was. The kick is the "pop out" wobble.
+  if (requestDock('neuro', el, { onRelease: () => wobble?.impulse(-edgeKick(), 0), icon: icon('music'), label: 'Player' })) {
+    wobble?.impulse(edgeKick(), 0);
+  }
+}
 
 function musicCaps(): DockCapabilities {
   return composed?.hasMusic() ? { music: true, radio: true, atmosphere: true, viz: true } : {};
@@ -156,6 +187,26 @@ function ensureDock(): { composed: ComposedHost; controller: DockController; el:
     collapseSizes: ['full', 'mini'],
     openSections: { music: false, atmosphere: false },
     placement,
+    // Wobble the panel on head/title drag (resize grips excluded by the package), plus
+    // edge docking: hit-test the inline-end drop zone through the drag and dock on release.
+    // The handle is attached just below; delegate through it so these fire only once it exists.
+    dragEffects: {
+      grab: (x, y) => {
+        if (isDocked('neuro')) releaseDock('neuro');   // grabbing a docked panel drags it out
+        dragX = x; dragY = y;
+        wobble?.grab(x, y);
+      },
+      drag: (dx, dy) => {
+        dragX += dx; dragY += dy;
+        wobble?.drag(dx, dy);
+        edgeDockPreview(edgeDockHitTest(dragX));
+      },
+      release: () => {
+        wobble?.release();
+        edgeDockPreview(false);
+        if (edgeDockHitTest(dragX)) dockNeuroToEdge();
+      },
+    },
     onClose: () => onCloseDock(),
     onCollapse: (size) => {
       if (!neuroDemoActive() && !suppressCollapsePersist) setNeuroDockCollapsed(size === 'mini');
@@ -166,6 +217,7 @@ function ensureDock(): { composed: ComposedHost; controller: DockController; el:
   el.id = DOCK_ID;
   el.classList.add('neuro-managed', 'is-hidden');
   el.setAttribute('aria-label', 'Audio player');
+  wobble = attachWobble(el);
   document.body.appendChild(el);
   return { composed, controller, el };
 }
@@ -182,6 +234,8 @@ function onCloseDock(): void {
 export function audioDockController(): DockController | null { return controller; }
 /** The dock element (once built), for the entrance confetti / measurement. */
 export function audioDockElement(): HTMLElement | null { return el; }
+/** The dock's wobble handle (once built), for the wobbly entrance in neuro-dock.ts. */
+export function audioDockWobble(): WobbleHandle | null { return wobble; }
 
 export interface MusicRegistration {
   /** The music `DockHost` (transport + sources/atmosphere/viz/volumes/repeat). */
@@ -250,6 +304,9 @@ export function showAudioDock(): void {
 
 /** Hide the shared window without destroying it (audio + state survive). */
 export function hideAudioDock(): void {
+  // Undock first if edge-docked, or hiding it (× / Sound off, all routed here) would
+  // strand an empty full-height column still reserving --dock-w and nudging #view.
+  if (isDocked('neuro')) releaseDock('neuro');
   el?.classList.add('is-hidden');
 }
 

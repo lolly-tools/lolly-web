@@ -156,3 +156,28 @@ export function canBatchTool(
     && (manifest.render?.formats?.length ?? 0) > 0
     && toolSupport(manifest, shellCapabilities).status === 'ok';
 }
+
+/**
+ * plans/147 M2 - "Bulk from files". A file-transform tool (file in → file out) can
+ * be looped over N picked files, each set on the live runtime, exported through the
+ * exportFile hook, and packed into one zip. Returns the id of the sole single-file
+ * input, or null when the shape does not fit: no file input, more than one, or a
+ * `multiple` file input (which already takes N files in ONE render, so it is not a
+ * per-file loop). The exportFile half is a runtime fact, checked at the call site
+ * via `runtime.hasExportFile` - a manifest cannot state which hooks it defines.
+ */
+export function singleFileInputId(
+  manifest: {
+    inputs?: readonly { id?: string; type?: string; multiple?: boolean }[];
+    render?: { export?: boolean };
+  } | null | undefined,
+): string | null {
+  // Only a pure file-in → file-out transform qualifies: its sole export IS the
+  // exportFile hook, so it declares `render.export: false` (no canvas export). That
+  // excludes a render tool that merely takes a secondary file - darkroom's optional
+  // LUT upload, 3d's model - where the file is not the thing that would be looped.
+  if (manifest?.render?.export !== false) return null;
+  const files = (manifest?.inputs ?? []).filter((i) => i.type === 'file');
+  if (files.length !== 1 || files[0]!.multiple) return null;
+  return typeof files[0]!.id === 'string' ? files[0]!.id : null;
+}

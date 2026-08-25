@@ -41,8 +41,11 @@ import { getFloatCluster } from './float-cluster.ts';
 import { t, tRaw } from '../i18n.ts';
 import { isTauriShell } from './instance-choice.ts';
 import { mountPerfHud } from './perf-hud.ts';
+import { attachWobble } from './wobble.ts';
 
 let root: HTMLElement | null = null;
+/** Wobbly-windows deform for the drag; self-gating, owns `transform` only. */
+let wobble: ReturnType<typeof attachWobble> | null = null;
 let expanded = false;
 /** Last rendered structural signature - a pure progress tick patches in place. */
 let lastSig = '';
@@ -73,6 +76,8 @@ export function mountJobToast(): void {
   root.addEventListener('pointermove', onPointerMove);
   root.addEventListener('pointerup', onPointerEnd);
   root.addEventListener('pointercancel', onPointerEnd);
+  wobble?.dispose();
+  wobble = attachWobble(root);
   getFloatCluster().appendChild(root);
   // Esc collapses the expanded panel (no browser-default hijack - only acts when
   // the panel is open and no modal is up, which owns Esc via its own <dialog>).
@@ -96,6 +101,8 @@ let dragPointer = -1;
 let dragging = false;
 let dragged = false;
 let dragDx = 0; let dragDy = 0; let dragSx = 0; let dragSy = 0;
+// Previous pointer pos, so the wobble gets per-move DELTAS (not absolute positions).
+let dragLx = 0; let dragLy = 0;
 
 /** Keep the toast fully inside the viewport, given a proposed top-left. */
 function clampPos(left: number, top: number): { left: number; top: number } {
@@ -123,6 +130,8 @@ function onPointerMove(e: PointerEvent): void {
     dragging = true;
     root.classList.add('is-dragging');
     try { root.setPointerCapture(e.pointerId); } catch { /* capture is best-effort */ }
+    wobble?.grab(e.clientX, e.clientY);
+    dragLx = e.clientX; dragLy = e.clientY;
   }
   // Pin to explicit top/left (releasing the CSS bottom/right corner) so the
   // clamp math has one coordinate space - the perf HUD idiom.
@@ -131,6 +140,8 @@ function onPointerMove(e: PointerEvent): void {
   root.style.top = `${top}px`;
   root.style.right = 'auto';
   root.style.bottom = 'auto';
+  wobble?.drag(e.clientX - dragLx, e.clientY - dragLy);
+  dragLx = e.clientX; dragLy = e.clientY;
   e.preventDefault();
 }
 
@@ -141,6 +152,7 @@ function onPointerEnd(e: PointerEvent): void {
   dragging = false;
   dragged = true;
   root?.classList.remove('is-dragging');
+  wobble?.release();
   try { root?.releasePointerCapture(e.pointerId); } catch { /* already released */ }
 }
 

@@ -226,6 +226,10 @@ em, i, cite { font-family: var(--font-italic, var(--font-brand)); }
   .app-view {
 
     min-height: 100vh;
+    /* Reserve inline-end space for the edge dock (lib/edge-dock.ts). Unset ⇒ 0px, so
+       byte-identical when nothing is docked; the tool stage re-fits via its own
+       ResizeObserver when this shrinks #view. */
+    margin-inline-end: var(--dock-w, 0px);
   }
 
   /* Cross-view fade overlay (view-fade.ts). A pinned snapshot of the OUTGOING view

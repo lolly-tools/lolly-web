@@ -2422,6 +2422,38 @@ function num2(style: CSSStyleDeclaration, key: string): number {
 }
 
 /**
+ * Place an object-fit image EXACTLY, where `preserveAspectRatio` cannot.
+ *
+ * SVG's preserveAspectRatio names only nine alignments - min/mid/max per axis -
+ * so it can express object-position 0%, 50% and 100% and nothing in between. That
+ * was invisible while every tool centred its photos; it became a real defect the
+ * moment framing gave users a continuous pan (plans/148), because an image panned
+ * to 32% exported at 50% and the preview and the file disagreed.
+ *
+ * Returns the fitted rectangle to write as explicit x/y/width/height (with
+ * preserveAspectRatio="none" - the aspect is already baked into the numbers), or
+ * null when the alignment IS exactly expressible, in which case the caller keeps
+ * the preserveAspectRatio form and its output is byte-identical to before.
+ * The PDF walker has always placed images this way (see its object-fit branch);
+ * this brings the SVG walker onto the same footing.
+ */
+function exactFittedRect(
+  style: CSSStyleDeclaration,
+  natW: number, natH: number,
+  x: number, y: number, w: number, h: number,
+): { x: number; y: number; w: number; h: number } | null {
+  const fit = style.objectFit;
+  if (fit !== 'cover' && fit !== 'contain') return null;
+  if (!(natW > 0) || !(natH > 0)) return null;
+  const [px, py] = objectPositionFractions(style.objectPosition);
+  const expressible = (f: number): boolean => f === 0 || f === 0.5 || f === 1;
+  if (expressible(px) && expressible(py)) return null;
+  const s = fit === 'cover' ? Math.max(w / natW, h / natH) : Math.min(w / natW, h / natH);
+  const fw = natW * s, fh = natH * s;
+  return { x: x + (w - fw) * px, y: y + (h - fh) * py, w: fw, h: fh };
+}
+
+/**
  * An image's natural size, for resolving `background-size: auto`.
  *
  * Memoised by href because the same chevron data-URI is the background of every
@@ -3948,8 +3980,32 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
           if (!inlineSvg.getAttribute('preserveAspectRatio')) {
             // object-fit → meet (contain) / slice (cover); object-position → alignment.
             // Default (contain, centred) resolves to the prior 'xMidYMid meet'.
-            const meetSlice = style.objectFit === 'cover' ? 'slice' : 'meet';
-            inlineSvg.setAttribute('preserveAspectRatio', `${preserveAspectRatioAlign(style.objectPosition)} ${meetSlice}`);
+            // A framing pan falls between the nine alignments preserveAspectRatio can
+            // name, so those get explicit geometry off the viewBox aspect instead.
+            const vb = (inlineSvg.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+            const exact = vb.length === 4 && vb[2]! > 0 && vb[3]! > 0
+              ? exactFittedRect(style, vb[2]!, vb[3]!, x, y, w, h) : null;
+            if (exact) {
+              inlineSvg.setAttribute('x',      String(exact.x));
+              inlineSvg.setAttribute('y',      String(exact.y));
+              inlineSvg.setAttribute('width',  String(exact.w));
+              inlineSvg.setAttribute('height', String(exact.h));
+              inlineSvg.setAttribute('preserveAspectRatio', 'none');
+              if (style.objectFit === 'cover') {
+                const clipId = `svgfit-${++uid}`;
+                const cp = document.createElementNS(NS, 'clipPath');
+                cp.setAttribute('id', clipId);
+                const r = document.createElementNS(NS, 'rect');
+                r.setAttribute('x', String(x)); r.setAttribute('y', String(y));
+                r.setAttribute('width', String(w)); r.setAttribute('height', String(h));
+                cp.appendChild(r);
+                defs.appendChild(cp);
+                inlineSvg.setAttribute('clip-path', `url(#${clipId})`);
+              }
+            } else {
+              const meetSlice = style.objectFit === 'cover' ? 'slice' : 'meet';
+              inlineSvg.setAttribute('preserveAspectRatio', `${preserveAspectRatioAlign(style.objectPosition)} ${meetSlice}`);
+            }
           }
           g.appendChild(inlineSvg);
           return;
@@ -4020,15 +4076,39 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
             defs.appendChild(cp);
             img.setAttribute('clip-path',           `url(#${clipId})`);
             img.setAttribute('preserveAspectRatio', 'xMidYMid slice');
-          } else if (style.objectFit === 'cover') {
-            // Fill the box, cropping the overflow - `slice` clips to the image's own
-            // x/y/width/height viewport, so no extra clipPath is needed (matches the
-            // on-screen hero/masthead). object-position picks WHICH edge is cropped.
-            img.setAttribute('preserveAspectRatio', `${preserveAspectRatioAlign(style.objectPosition)} slice`);
-          } else if (style.objectFit === 'contain') {
-            // meet-fit the whole image; object-position anchors it within the box.
-            // Centre resolves to 'xMidYMid meet' = the SVG default (unchanged).
-            img.setAttribute('preserveAspectRatio', `${preserveAspectRatioAlign(style.objectPosition)} meet`);
+          } else if (style.objectFit === 'cover' || style.objectFit === 'contain') {
+            // A framing pan (plans/148) produces an object-position percentage that
+            // preserveAspectRatio cannot name; place those explicitly instead.
+            const exact = exactFittedRect(style, el.naturalWidth || 0, el.naturalHeight || 0, x, y, w, h);
+            if (exact) {
+              img.setAttribute('x',      String(exact.x));
+              img.setAttribute('y',      String(exact.y));
+              img.setAttribute('width',  String(exact.w));
+              img.setAttribute('height', String(exact.h));
+              img.setAttribute('preserveAspectRatio', 'none');   // aspect is in the numbers
+              if (style.objectFit === 'cover') {
+                // `slice` used to do the cropping; explicit geometry overflows the box,
+                // so the crop has to be a real clip.
+                const clipId = `imgfit-${++uid}`;
+                const cp = document.createElementNS(NS, 'clipPath');
+                cp.setAttribute('id', clipId);
+                const r = document.createElementNS(NS, 'rect');
+                r.setAttribute('x', String(x)); r.setAttribute('y', String(y));
+                r.setAttribute('width', String(w)); r.setAttribute('height', String(h));
+                cp.appendChild(r);
+                defs.appendChild(cp);
+                img.setAttribute('clip-path', `url(#${clipId})`);
+              }
+            } else if (style.objectFit === 'cover') {
+              // Fill the box, cropping the overflow - `slice` clips to the image's own
+              // x/y/width/height viewport, so no extra clipPath is needed (matches the
+              // on-screen hero/masthead). object-position picks WHICH edge is cropped.
+              img.setAttribute('preserveAspectRatio', `${preserveAspectRatioAlign(style.objectPosition)} slice`);
+            } else {
+              // meet-fit the whole image; object-position anchors it within the box.
+              // Centre resolves to 'xMidYMid meet' = the SVG default (unchanged).
+              img.setAttribute('preserveAspectRatio', `${preserveAspectRatioAlign(style.objectPosition)} meet`);
+            }
           }
           g.appendChild(img);
         } catch { /* skip unloadable images */ }

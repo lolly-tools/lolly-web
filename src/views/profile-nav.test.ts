@@ -98,14 +98,19 @@ test('the .is-focus-pulse CSS: an animated ring normally, a transitioned static 
   assert.match(reducedRule, /transition:\s*box-shadow/, 'the static ring fades via a plain transition, not a keyframe');
 });
 
-test('empty-state headshot row-scales at <=640px; a set photo keeps the full circle (plans/137 D1)', () => {
+test('empty-state headshot row-scales its edit button at <=640px; a set photo keeps the full control (plans/137 D1)', () => {
   const phoneBlock = CSS_SRC.slice(CSS_SRC.indexOf('@media (max-width: 640px)'));
+  // Empty-state only: the upload prompt's edit button is font-scaled to a compact control.
+  // (The earlier 56px circle-shrink was retired for this - 2026-08-25.) Scoped to .is-empty,
+  // so a headshot that's actually set (no .is-empty class) never matches and keeps the full
+  // control from the base rule.
   assert.match(
     phoneBlock,
-    /\.headshot:has\(\.headshot-preview\.is-empty\)\s*\{\s*width:\s*56px;\s*height:\s*56px;/,
-    'the circle shrinks only when the :has(.is-empty) match fires',
+    /\.headshot-preview\.is-empty\s+\.headshot-edit\s*\{[^}]*font-size:/,
+    'the empty-state edit button is font-scaled when the .is-empty match fires',
   );
-  // Scoped to .is-empty, so a headshot that's actually set (no .is-empty class)
-  // never matches this rule and keeps the full 200px circle from the base rule.
-  assert.ok(!/\.headshot\s*\{[^}]*width:\s*56px/.test(CSS_SRC), 'the unscoped .headshot rule is untouched');
+  assert.ok(
+    !/\.headshot:has\(\.headshot-preview\.is-empty\)\s*\{\s*width:\s*56px/.test(CSS_SRC),
+    'the retired 56px circle-shrink rule is gone',
+  );
 });

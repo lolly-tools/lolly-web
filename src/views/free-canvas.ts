@@ -128,6 +128,7 @@ import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import { escape } from '../utils.ts';
 import { isTypingTarget } from '../lib/typing-target.ts';
 import { BLEND_STYLES, HUE_ROUTES, isPolarSpace } from '../lib/blend-style.ts';
+import { attachWobble } from '../lib/wobble.ts';
 import { t, tRaw } from '../i18n.ts';
 import type { ColorFieldValue } from '../components/color-field.ts';
 import { colorFieldHtml, wireColorField } from '../components/color-field.ts';
@@ -2488,9 +2489,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // transformed ancestor becomes the containing block for every position:fixed
   // descendant, which throws the rail's colour popover off-screen. That bug has
   // already been fixed once here - do not reintroduce it for a drag.
-  let railDrag: { pointerId: number; dx: number; dy: number } | null = null;
+  let railDrag: { pointerId: number; dx: number; dy: number; lx: number; ly: number } | null = null;
   let railWant: { left: number; top: number } | null = null;
   let railRaf = 0;
+  // Self-gating (no-op unless the flag is on and motion is allowed); wobble owns the
+  // transform on the dock (only ever set mid-drag, while the popover is closed).
+  const wobble = attachWobble(toolbarDock);
   /**
    * The stage band the rail must never be dragged into. Three things can live in the
    * foot of the stage, and a rail parked under any of them is invisible (the rail is
@@ -2535,11 +2539,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // belt to that pair of braces, and it keeps the colour trigger draggable-proof.
     if ((e.target as HTMLElement).closest?.('button, input, select, .fc-color-btn')) return;
     const rr = toolbar.getBoundingClientRect();
-    railDrag = { pointerId: e.pointerId, dx: e.clientX - rr.left, dy: e.clientY - rr.top };
+    railDrag = { pointerId: e.pointerId, dx: e.clientX - rr.left, dy: e.clientY - rr.top, lx: e.clientX, ly: e.clientY };
     closePopover();
     closeMorePanel();
     toolbarDock.classList.add('is-dragging');
     try { toolbar.setPointerCapture(e.pointerId); } catch { /* no pointer capture (jsdom) */ }
+    wobble.grab(e.clientX, e.clientY);
     e.preventDefault();
     e.stopPropagation();
   };
@@ -2549,6 +2554,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // shutter's `pointer-events: none`, a devtools break). Finish the drag instead of
     // letting a bare hover keep sliding the rail around the stage.
     if (e.type === 'pointermove' && e.buttons === 0) { onRailUp(e); return; }
+    // Per-move deltas for the wobble (not throttled) - the dock's left/top is unchanged.
+    wobble.drag(e.clientX - railDrag.lx, e.clientY - railDrag.ly);
+    railDrag.lx = e.clientX; railDrag.ly = e.clientY;
     const sr = stageEl.getBoundingClientRect();
     railWant = { left: e.clientX - sr.left - railDrag.dx, top: e.clientY - sr.top - railDrag.dy };
     // One style write per frame (the timeline resize grip's shape). Live-mutating
@@ -2564,6 +2572,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     try { toolbar.releasePointerCapture(railDrag.pointerId); } catch { /* never captured */ }
     railDrag = null;
     toolbarDock.classList.remove('is-dragging');
+    wobble.release();
   };
   toolbar.addEventListener('pointerdown', onRailDown);
   toolbar.addEventListener('pointermove', onRailMove);
@@ -10896,6 +10905,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       toolbar.removeEventListener('pointerup', onRailUp);
       toolbar.removeEventListener('pointercancel', onRailUp);
       toolbar.removeEventListener('lostpointercapture', onRailUp);
+      wobble.dispose();
       if (railRaf) { cancelAnimationFrame(railRaf); railRaf = 0; }
       document.removeEventListener('paste', onGlobalPaste);
       document.removeEventListener('copy', onCopy);

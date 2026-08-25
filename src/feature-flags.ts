@@ -97,6 +97,35 @@ export function setJellyDefault(on: boolean): void {
   JELLY_FLAG.default = on;
 }
 
+// Wobbly windows - the opt-in compiz-style wobble on the shell's draggable floating
+// panels (lib/wobble.ts). Heritage: Compiz shipped the effect, much of it built at
+// SUSE for the Novell Linux Desktop. Opt-IN (default OFF): unlike Jelly there is no
+// brand-aware default, it starts off for everyone and a user opts in. Purely visual
+// chrome that reads isFlagOnSync (default-aware) rather than flagEnabledSync; with the
+// flag off no transform is ever written and the panels' own drag code is untouched.
+export const WOBBLY_FLAG: FeatureFlag = {
+  id: 'wobbly-windows',
+  label: 'Wobbly windows',
+  pill: 'wobbly',
+  default: false,
+  // Plain hyphen, no em-dash: house copy rule (see PRIVATE_COLLAB_FLAG). English
+  // source is the key, so this moves with the 26 catalogs on the next corpus pass.
+  info: 'Gives draggable panels like the export settings and the Neurospicy player a soft, springy wobble when you drag them, a nod to the classic Compiz effect SUSE helped build. Respects reduced-motion and never changes anything you make or export.',
+};
+
+// The MESH tier for wobbly windows (lib/wobble-mesh.ts) - the real spring-mesh curve on
+// the GPU (a snapshot of the panel warped as a textured WebGL mesh, the true Compiz
+// billow) instead of the affine skew. Opt-IN on top of WOBBLY_FLAG and capability-gated:
+// active only when both flags are on AND the browser/GPU can do it (WebGL + Blink), else
+// it silently falls back to the affine wobble. Purely visual chrome; never touches output.
+export const WOBBLY_MESH_FLAG: FeatureFlag = {
+  id: 'wobbly-mesh',
+  label: 'Wobbly windows: mesh curve',
+  pill: 'gpu',
+  default: false,
+  info: 'Curves draggable panels with a real spring mesh on the GPU, the full Compiz billow, for capable machines. Needs Wobbly windows on and a WebGL-capable Chromium browser; it falls back to the standard wobble anywhere else. Respects reduced-motion and never changes anything you make or export.',
+};
+
 // Opt-IN (default OFF): strip EXIF/XMP/GPS from images uploaded to the catalog. C2PA
 // content credentials are ALWAYS preserved regardless - this only governs other metadata.
 // Read by the upload pipeline (views/picker.ts storeUserUpload).
@@ -245,7 +274,7 @@ export const NEARBY_DISCOVERY_FLAG: FeatureFlag = {
 // toggle with it (plan 100 section 6.3/section 11.24). The `builtinDefault` recorded server-side must
 // keep matching each flag's `default` here, or an instance that chose "inherit" would be
 // told the wrong thing; the two moved together on 2026-08-10 for `private-collab`.
-export const GOVERNED_FLAG_IDS: readonly string[] = [NEUROSPICY_FLAG.id, JELLY_FLAG.id, STRIP_UPLOAD_META_FLAG.id, PREFLIGHT_FLAG.id, PRIVATE_COLLAB_FLAG.id, NEARBY_DISCOVERY_FLAG.id];
+export const GOVERNED_FLAG_IDS: readonly string[] = [NEUROSPICY_FLAG.id, JELLY_FLAG.id, WOBBLY_FLAG.id, WOBBLY_MESH_FLAG.id, STRIP_UPLOAD_META_FLAG.id, PREFLIGHT_FLAG.id, PRIVATE_COLLAB_FLAG.id, NEARBY_DISCOVERY_FLAG.id];
 
 /** Whether the control plane has hidden a flag's user-facing toggle (a staged
  *  surprise, or a policy the deployment owns). Dormant ⇒ false. The resolved
@@ -315,7 +344,7 @@ export function hydrateFeatureFlags(profile: Profile | null | undefined): void {
   // entry - which is what makes a fresh device read it as on (PRIVATE_COLLAB_FLAG
   // since 2026-08-10; it stays in this list because the list is "every standalone
   // flag", not "every opt-in one").
-  for (const f of [NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG, PRIVATE_COLLAB_FLAG, NEARBY_DISCOVERY_FLAG, PERFORMANCE_UI_FLAG, PERF_HUD_FLAG]) {
+  for (const f of [NEUROSPICY_FLAG, JELLY_FLAG, WOBBLY_FLAG, WOBBLY_MESH_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG, PRIVATE_COLLAB_FLAG, NEARBY_DISCOVERY_FLAG, PERFORMANCE_UI_FLAG, PERF_HUD_FLAG]) {
     if (eff[f.id] === undefined && f.default === false) eff[f.id] = false;
   }
   try { localStorage.setItem(FLAG_MIRROR_KEY, JSON.stringify(eff)); } catch { /* best-effort */ }

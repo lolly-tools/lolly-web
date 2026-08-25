@@ -9,6 +9,9 @@
   /* --vv-* (set by the VisualViewport shim) keep the fixed bar on the visible
      edge while the page is pinch-zoomed; all 0px when not zoomed. */
   left: var(--vv-left, 0px); right: var(--vv-right, 0px); bottom: var(--vv-bottom, 0px);
+  /* Reserve the edge-dock width on the logical inline-end (RTL-correct); 0px at rest. A
+     physical `right` bump would overlap the column in RTL, where the dock is on the left. */
+  margin-inline-end: var(--dock-w, 0px);
   z-index: 50;
   display: flex;
   align-items: center;
@@ -1823,6 +1826,9 @@ html[data-a11y-previews="hidden"] .tool-meta-dialog .meta-look-thumb { display: 
   z-index: 99999;
   right: calc(var(--chrome-inset) + var(--vv-right, 0px));
   top: calc(var(--chrome-top) + var(--vv-top, 0px));
+  /* Inset past the edge dock (lib/edge-dock.ts) logically, so it flips with RTL; 0px when
+     nothing is docked. margin-inline-end offsets a right-anchored fixed element inward. */
+  margin-inline-end: var(--dock-w, 0px);
   display: flex;
   align-items: center;
   gap: 10px;

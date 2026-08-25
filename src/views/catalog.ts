@@ -123,7 +123,7 @@ import { listUserFonts, familyFromTokenValue } from '../user-fonts.ts';
 import {
   restyleIconTheme, buildThemedAssetId, parseThemedAssetId, treatmentFilterSvg,
   buildTreatedAssetId, parseTreatedAssetId, wrapRasterWithTreatment,
-  prepareC2paIngredient, prepareC2paIngredientFromStore, DIGITAL_SOURCE_TYPE, GENERATED_SOURCE_TYPE, COMPOSITE_SOURCE_TYPE, C2PA_FORMATS,
+  GENERATED_SOURCE_TYPE, C2PA_FORMATS,
   extractC2paStore, attachC2paStore, verifyC2pa, humanizeText, LEXICON_VERSION,
   analyzeTextSignals, suggestRewrites, applySuggestion, rewordableSpans, rewordCandidates,
 } from '@lolly/engine';
@@ -141,6 +141,12 @@ import { aiModelSlot } from './tsig-model-note.ts';
 import { setPendingVerify } from '../lib/verify-handoff.ts';
 import { lollyBadge } from '../lib/lolly-badge.ts';
 import type { C2paActionInput } from '../../../../engine/src/c2pa.ts';
+// The shared derived-asset provenance path (plans/148 WP-E) - lifted out of this
+// view so the tool-side framing bake signs identically.
+import {
+  signDerived as sharedSignDerived, sourceIngredients as sharedSourceIngredients,
+  STAMPABLE_FORMATS as STAMPABLE, type DerivedSignInputs,
+} from '../lib/derived-asset.ts';
 import type { AssetRef, HostV1, IngredientCredential, Profile } from '@lolly-tools/core/host-v1';
 import type { PhotoTreatment } from '../../../../engine/src/photo-treatment.ts';
 import type { IconTheme } from '../../../../engine/src/icon-theme.ts';
@@ -5509,102 +5515,20 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // a previous round of Lolly edits, stays in the chain. Re-uploading such a
   // download captures its store at ingest, so every edit round adds a manifest.
 
-  // Formats embedC2pa can stamp (png/jpg/webp/gif/svg/tiff/pdf/…).
-  const STAMPABLE = new Set<string>(C2PA_FORMATS as readonly string[]);
+  // Both the ingredient lookup and the derived stamp moved to
+  // lib/derived-asset.ts (plans/148 WP-E), so the framing bake's "Use as a new
+  // image" runs the SAME provenance path this crop does instead of a second copy
+  // that drifts. These two thin wrappers keep every call site here unchanged.
+  const sourceIngredients = (ref: AssetRef, sourceBytes?: Uint8Array): Promise<IngredientCredential[] | undefined> =>
+    sharedSourceIngredients(host as never, ref, sourceBytes);
 
-  // The source asset's preserved credential, as an embeddable ingredient. User
-  // uploads read the store captured at ingest (their stored pixels were
-  // re-encoded, so the bytes no longer carry it); library assets read their own
-  // bytes. `sourceBytes` skips a refetch when the caller already holds the
-  // original (e.g. the download dialog's fetched SVG text).
-  async function sourceIngredients(ref: AssetRef, sourceBytes?: Uint8Array): Promise<IngredientCredential[] | undefined> {
-    try {
-      let ing: IngredientCredential | null = null;
-      if (ref.id.startsWith('user/')) {
-        const cred = await host.assets.credential?.(ref.id);
-        ing = cred ? prepareC2paIngredientFromStore(cred.store, cred.format) : null;
-      } else {
-        const bytes = sourceBytes ?? new Uint8Array(await (await fetch(ref.url)).arrayBuffer());
-        ing = prepareC2paIngredient(bytes);
-      }
-      if (!ing) return undefined;
-      // The ingredient's own claim title wins (it names the actual work); fall
-      // back to the library's display name so "Opened …" never reads blank.
-      return [{ ...ing, title: ing.title || String(ref.meta?.name ?? ref.id) }];
-    } catch { return undefined; }
-  }
-
-  // Sign a modified download, then save it. `edits` is the honest transform
-  // history for THIS download; when the source carries a credential the engine
-  // prepends a c2pa.opened step per ingredient, and when it doesn't we open
-  // with the same c2pa.created claim a tool render makes. `detail` (plus the
-  // source asset id) is recorded under the tools.lolly.export assertion so an
-  // inspected file shows the exact transform parameters. Signing is
-  // best-effort - any failure ships the un-stamped bytes; a credential failure
-  // must never fail a download.
   /** What downloadCrop hands its delivery: the (unsigned) bytes + the credential
    *  inputs. The default delivery signs-and-downloads; the crop mode's
    *  "Save to catalog" delivery signs-and-uploads instead. */
-  interface DerivedSignInputs {
-    edits: C2paActionInput[];
-    detail?: Record<string, string>;
-    dims?: string;
-    sourceBytes?: Uint8Array;
-  }
   type CropDeliver = (blob: Blob, format: string, o: DerivedSignInputs) => Promise<void>;
 
-  /** Stamp a derived blob's Content Credential (the download/save shared half of
-   *  downloadSigned): edits + the source as ingredient, with the genAI source
-   *  type backfilled so a flagged asset never reads as human-made afterwards.
-   *  Best-effort - a failed stamp returns the unsigned bytes, logged. */
-  async function signDerived(ref: AssetRef, blob: Blob, format: string, o: DerivedSignInputs): Promise<Blob> {
-    let out = blob;
-    if (STAMPABLE.has(format)) {
-      try {
-        // Lazily reach the 90 KB export bridge - downloads are always a user
-        // gesture, so this never lands on the gallery/boot path.
-        const { stampDerivedC2pa } = await import('../bridge/export.ts');
-        const ingredients = await sourceIngredients(ref, o.sourceBytes);
-        // A genAI-flagged source must NOT read as human-made after a crop / recolour /
-        // treatment / resize. When it carries a full credential the AI origin rides in as
-        // an ingredient (collectActionChain walks ingredient manifests, so the flag
-        // survives); but when the AI-ness was authored/detected onto meta with no
-        // embeddable manifest there is no ingredient to carry it, and a plain
-        // c2pa.created would silently drop the flag. So the created claim asserts the
-        // right source type: 'full' → trainedAlgorithmicMedia, 'partial' → composite.
-        const aiKind = assetAiKind(ref);
-        const aiSourceType = aiKind === 'full' ? GENERATED_SOURCE_TYPE
-          : aiKind === 'partial' ? COMPOSITE_SOURCE_TYPE
-          : DIGITAL_SOURCE_TYPE;
-        // A genAI-flagged source can hand back an ingredient whose OWN chain records no AI
-        // *action* - the flag was authored onto catalog meta (assetAiKind is truthy) or
-        // lives in a non-action assertion collectActionChain can't read - so its
-        // digitalSourceType is undefined. The engine's c2pa.opened step then carries
-        // nothing and the cropped/edited output loses the flag (this is the real catalog
-        // crop drop). Backfill the source type from the asset's authored kind so it rides
-        // out on that opened step. Only an EMPTY source type is filled, and only for a
-        // genAI asset (aiKind '' → untouched), so it can never double-flag a non-AI asset.
-        if (ingredients && (aiKind === 'full' || aiKind === 'partial')) {
-          for (const ing of ingredients) {
-            if (!ing.digitalSourceType) ing.digitalSourceType = aiSourceType;
-          }
-        }
-        const actions: C2paActionInput[] = ingredients
-          ? o.edits
-          : [{ action: 'c2pa.created', digitalSourceType: aiSourceType }, ...o.edits];
-        out = await stampDerivedC2pa(host, blob, format, {
-          title: String(ref.meta?.name ?? ref.id),
-          actions,
-          ingredients,
-          inputs: { asset: ref.id, ...(o.detail ?? {}) },
-          dimensions: o.dims,
-        });
-      } catch (err) {
-        host.log?.('warn', 'Catalog download: Content Credentials not attached', { id: ref.id, error: String(err) });
-      }
-    }
-    return out;
-  }
+  const signDerived = (ref: AssetRef, blob: Blob, format: string, o: DerivedSignInputs): Promise<Blob> =>
+    sharedSignDerived(host as never, ref, blob, format, o);
 
   async function downloadSigned(ref: AssetRef, blob: Blob, format: string, filename: string, o: DerivedSignInputs): Promise<void> {
     await host.export.download(await signDerived(ref, blob, format, o), filename);

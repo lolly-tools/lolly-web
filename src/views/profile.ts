@@ -46,7 +46,7 @@ import { renderActivity } from '../lib/activity-summary.ts';
 import { openHeadshotCropper } from '../components/headshot-cropper.ts';
 import { sanitizeSvgToString } from '../bridge/svg-sanitize.ts';
 import { storeUserUpload } from './picker.ts';
-import { CATEGORY_FLAGS, CONNECTOR_FLAGS, NEUROSPICY_FLAG, JELLY_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG, PRIVATE_COLLAB_FLAG, PERFORMANCE_UI_FLAG, PERF_HUD_FLAG, isFlagOn, flagHidden, setFlagMirror, applyPerfUi } from '../feature-flags.ts';
+import { CATEGORY_FLAGS, CONNECTOR_FLAGS, NEUROSPICY_FLAG, JELLY_FLAG, WOBBLY_FLAG, WOBBLY_MESH_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG, PRIVATE_COLLAB_FLAG, PERFORMANCE_UI_FLAG, PERF_HUD_FLAG, isFlagOn, flagHidden, setFlagMirror, applyPerfUi } from '../feature-flags.ts';
 import { mountPerfHud, unmountPerfHud } from '../lib/perf-hud.ts';
 import { ensureJelly } from '../lib/jelly.ts';
 import { stopNeurospicy } from '../lib/neurospicy.ts';
@@ -473,6 +473,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
                 Accessibility card's Sound row. The flag object survives for
                 instance governance only. */''}
             ${flagRow(JELLY_FLAG)}
+            ${flagRow(WOBBLY_FLAG)}
+            ${flagRow(WOBBLY_MESH_FLAG)}
             ${flagRow(PERFORMANCE_UI_FLAG)}
             ${flagRow(PERF_HUD_FLAG)}
             ${flagRow(STRIP_UPLOAD_META_FLAG)}
