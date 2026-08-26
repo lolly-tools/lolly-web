@@ -237,7 +237,7 @@ function createMeter(): MeterAPI {
     if (stream) { stream.getTracks().forEach(t => { try { t.stop(); } catch { /* ignore */ } }); stream = null; }
   }
 
-  async function start(): Promise<void> {
+  async function start(opts?: { deviceId?: string }): Promise<void> {
     refcount++;
     if (stream) return;
     if (starting) {
@@ -252,10 +252,11 @@ function createMeter(): MeterAPI {
       // so raw is safe, and it's the only way to honestly measure the room's true
       // level + background noise (a recording session keeps suppression ON for a
       // clean file - see openSession). autoGainControl:false already kept levels true.
-      const s = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-        video: false,
-      });
+      // A chosen mic (device picker) opens that exact device - it MUST be the same
+      // one the take records, or these numbers describe a different mic (v1.154).
+      const audio: MediaTrackConstraints = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+      if (opts?.deviceId) audio.deviceId = { exact: opts.deviceId };
+      const s = await navigator.mediaDevices.getUserMedia({ audio, video: false });
       stream = s;
       stopAnalyse = analyseStream(s, emit);
     })();
@@ -346,10 +347,9 @@ async function openDisplaySource(opts: RecordOpts): Promise<OpenSource> {
   let mic: MediaStream | null = null;
   if (wantMic) {
     try {
-      mic = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-        video: false,
-      });
+      const micAudio: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+      if (opts.audioDeviceId) micAudio.deviceId = { exact: opts.audioDeviceId };
+      mic = await navigator.mediaDevices.getUserMedia({ audio: micAudio, video: false });
     } catch {
       // Mic denied/missing: record the screen anyway rather than losing the whole take.
       // The control surfaces this; a silent recording beats no recording.
@@ -385,10 +385,12 @@ async function openDeviceSource(opts: RecordOpts): Promise<OpenSource> {
   const wantAudio = opts.audio !== false;
   const wantVideo = opts.video === true;
   const edge = opts.maxEdge && opts.maxEdge > 0 ? Math.round(opts.maxEdge) : 1280;
+  // A chosen mic (device picker, v1.154) records from that exact device - the same
+  // one the sound-check meter opened (MeterAPI.start({deviceId})).
+  const audio: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+  if (opts.audioDeviceId) audio.deviceId = { exact: opts.audioDeviceId };
   const constraints: MediaStreamConstraints = {
-    audio: wantAudio
-      ? { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-      : false,
+    audio: wantAudio ? audio : false,
     video: wantVideo
       ? { facingMode: opts.facingMode ?? 'user', width: { ideal: edge }, height: { ideal: edge } }
       : false,

@@ -41,6 +41,9 @@ import { MAX_TIME_S } from './timeline-math.ts';
 import { bumpMetric, recordFormat } from '../metrics.js';
 import { videoSupport, audioSupport, cmykTiffSupport, tiffSupport, liveCaptureSupport, durableSupport, proFormatSupport } from '../bridge/format-support.js';
 import { isAudioFormat as isAudioFmt } from '../lib/audio-encode.js';
+import { formatCaptions } from '../lib/caption-format.ts';
+import { stashedTranscript } from '../lib/stt-job.ts';
+import { transcriptWordsOf, ttsWordsOf } from './timeline-captions.ts';
 import { isProFormat, formatOptionsHtml, depthFact, applyDepthFact } from './export-depth.ts';
 import { preflightRowHtml, preflightView, applyPreflight, wirePreflight } from './export-preflight.ts';
 import { costPanelHtml, costView, applyCostPanel } from './cost-panel.ts';
@@ -1456,6 +1459,29 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // (The old `__tool__` pseudo-entry is gone: a tool with its own audio slot now
   // always contributes that audio as the primary track of the two-row card, so
   // the select only ever names the optional mix-in bed.)
+
+  // WP-F soft captions (plan 153). A cached transcript of the tool's own audio -
+  // a TTS clip's own alignment, an earlier "Generate subtitles" run persisted on
+  // the asset record, or this session's stash - becomes a WebVTT string the video
+  // export embeds as a soft, player-toggleable subtitle track (default-on, no
+  // toggle). Cached words ONLY: this never triggers transcription, so an export
+  // never blocks on inference; no cached transcript ⇒ undefined ⇒ the export is
+  // byte-identical. Mirrors the timing ladder in views/transcribe-control.ts and
+  // its 'word'-granularity reasoning (the engine grouper only joins, never splits).
+  // ponytail: cue times are source-relative; caller only feeds this when the clip
+  // exports from its head (stageAudioStart 0), since a nonzero in-point would
+  // desync the soft cues - map through cueSpansOnTimeline if a tool needs both.
+  async function toolTranscriptVtt(): Promise<string | undefined> {
+    const ref = toolAudioRef();
+    if (!ref) return undefined;
+    const assetId = ref.id ?? '';
+    let words = assetId && host.assets?.get
+      ? await host.assets.get(assetId).then(r => ttsWordsOf(r?.meta) ?? transcriptWordsOf(r?.meta), () => null)
+      : null;
+    if (!words) words = stashedTranscript(assetId, ref.url ?? '');
+    if (!words?.length) return undefined;
+    return formatCaptions({ words, granularity: 'word' }, 'vtt') || undefined;
+  }
 
   // "Generate music": a transient ZzFXM bed, seeded so the SAME tune deterministically
   // re-renders at any length (export re-renders at the clip's duration). Regenerate
@@ -2911,11 +2937,20 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         const v = Number(el!.querySelector<HTMLInputElement>(`[data-action="${action}"]`)?.value);
         return Number.isFinite(v) ? v : def;
       };
+      // WP-F soft captions: feed the tool audio's cached transcript as a soft
+      // subtitle track on video exports (default-on). Only when the clip exports
+      // from its head - a nonzero in-point (stageAudioStart) would offset the
+      // source-relative cue times, so skip rather than ship them out of sync; the
+      // burned-in captions the tool draws are unaffected either way.
+      const softCaptionsVtt = isVideoFmt(fmt) && stageAudioStart() === 0
+        ? await toolTranscriptVtt()
+        : undefined;
       // RunExportOpts plus the durationUserSet contract flag: it belongs to the
       // sequence path (the tool hook reads ctx.opts.durationUserSet), not to the
       // generic shell-wide export options, so it's carried as a local widening
-      // rather than pushed into the shared interface.
-      const opts: RunExportOpts & { durationUserSet?: boolean; cuts?: number } & typeof audioOpt = {
+      // rather than pushed into the shared interface. subtitlesVtt (WP-F) rides the
+      // same local widening - the bridge ExportOpts declares it; RunExportOpts need not.
+      const opts: RunExportOpts & { durationUserSet?: boolean; cuts?: number; subtitlesVtt?: string } & typeof audioOpt = {
         ...exportDims(),
         signal: exportAbort.signal,
         onProgress: (done, total) => {
@@ -2944,6 +2979,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         // it entirely, so the single-playhead-frame default path is untouched.
         ...(isStillFmt(fmt) && el!.querySelector('[data-seq-still-only]') ? { cuts: cutsValue() } : {}),
         ...audioOpt,
+        ...(softCaptionsVtt ? { subtitlesVtt: softCaptionsVtt } : {}),   // WP-F soft caption track (video only)
         ...(isGif ? { dither: el!.querySelector<HTMLInputElement>('[data-action="gif-dither"]')?.checked ?? false } : {}),
         ...(fmt === 'html' ? { fullPage: el!.querySelector<HTMLInputElement>('[data-action="full-page"]')?.checked ?? false } : {}),
         // EMF text mode: live GDI text records by default; the "Outline fonts"

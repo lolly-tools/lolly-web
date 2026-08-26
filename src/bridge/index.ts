@@ -312,7 +312,7 @@ export async function createBridge(): Promise<WebHost> {
   host.recorder = {
     isAvailable: (kind) => recorderAvailable(kind),
     meter: {
-      start: async () => (await loadRecorder()).meter.start(),
+      start: async (opts) => (await loadRecorder()).meter.start(opts),
       stop: () => { recorderImpl?.meter.stop(); },
       subscribe: (cb) => lazySubscribe(loadRecorder, (r) => r.meter.subscribe(cb)),
     },

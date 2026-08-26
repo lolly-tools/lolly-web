@@ -2329,6 +2329,11 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 
 /* Opt-in per-slot media affordances: Fit canvas / Match length / Preview sound. */
 .slot-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+/* A standalone camera row (a reader like scan-code has no asset slot to ride):
+   pinned at the top of the inputs so "Use camera" is always in the inputs bar,
+   reachable on mobile. plans/162. */
+.live-actions-standalone { margin: 0 0 12px; }
+.live-actions-standalone .slot-act.slot-live { flex: 1 1 auto; justify-content: center; }
 .slot-act {
   font-size: calc(11px * var(--a11y-fs));
   font-weight: 600;
@@ -2354,6 +2359,8 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .slot-act.slot-live[hidden] { display: none; }
 .slot-act.slot-live:disabled { opacity: 0.6; cursor: progress; }
 .slot-act.slot-live .canvas-live-dot { width: 7px; height: 7px; }
+.slot-live-flip .canvas-live-dot, .slot-live-device .canvas-live-dot,
+.canvas-flip-toggle .canvas-live-dot, .canvas-device-toggle .canvas-live-dot { display: none; }
 .slot-act.slot-live.is-live {
   border-color: hsl(var(--destructive));
   color: hsl(var(--destructive));

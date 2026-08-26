@@ -628,3 +628,29 @@
   color: hsl(var(--muted-foreground));
 }
 .tool-guide-actions { display: flex; justify-content: flex-end; }
+
+/* Device picker (plans/162) - a mountModal adapter: camera / mic radio lists. */
+.devpick-body { display: flex; flex-direction: column; gap: 14px; margin: 8px 0 4px; }
+.devpick-section { display: flex; flex-direction: column; gap: 6px; }
+.devpick-heading {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: hsl(var(--muted-foreground));
+}
+.devpick-list { display: flex; flex-direction: column; gap: 4px; }
+.devpick-item {
+  appearance: none;
+  border: 0;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: hsl(var(--muted) / 0.5);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.devpick-item:hover { background: hsl(var(--muted)); }
+.devpick-item.is-current { background: hsl(var(--primary) / 0.16); font-weight: 600; }

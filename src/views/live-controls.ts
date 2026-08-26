@@ -41,7 +41,7 @@ import type { AnimSourceSpec } from '../bridge/media.ts';
 export interface LiveRuntimeLike {
   hasFrameHook: boolean;
   isLive(): boolean;
-  startLive(opts?: { source?: 'camera' | 'asset' }): Promise<boolean>;
+  startLive(opts?: { source?: 'camera' | 'asset'; facingMode?: 'user' | 'environment' }): Promise<boolean>;
   stopLive(): void;
   getModel(): Array<{ id: string; type?: string; value: unknown }>;
   manifest: { id: string; render?: unknown };
@@ -93,7 +93,7 @@ export interface LiveControls {
 }
 
 type Mode = 'camera' | 'asset' | null;
-type Role = 'play' | 'camera';
+type Role = 'play' | 'camera' | 'flip' | 'device';
 
 export function createLiveControls(opts: LiveControlsOpts): LiveControls {
   const { runtime, host, t, announce } = opts;
@@ -119,6 +119,11 @@ export function createLiveControls(opts: LiveControlsOpts): LiveControls {
 
   let mode: Mode = null;
   let disposed = false;
+  // Which camera to open. Default from the tool's manifest (render.liveFacing -
+  // a code reader wants 'environment', the rear camera); the flip control toggles
+  // it. On a device with one camera the OS just ignores the preference.
+  const facingDefault = (runtime.manifest.render as { liveFacing?: 'user' | 'environment' } | undefined)?.liveFacing;
+  let facing: 'user' | 'environment' = facingDefault === 'environment' ? 'environment' : 'user';
 
   // ── Source classification ──────────────────────────────────────────────────
   // `playSource` is the resolved thing Play would start right now: the picked
@@ -224,7 +229,7 @@ export function createLiveControls(opts: LiveControlsOpts): LiveControls {
     // source so start() opens the camera rather than replaying the animation.
     arm(null);
     try {
-      const ok = await runtime.startLive();
+      const ok = await runtime.startLive({ facingMode: facing });
       if (!ok) return false;
     } catch (e) {
       announce((e as { name?: string })?.name === 'NotAllowedError'
@@ -265,21 +270,52 @@ export function createLiveControls(opts: LiveControlsOpts): LiveControls {
     await startCamera();
   }
 
+  // Flip front <-> rear. media.start is refcounted, so a flip is stop() then
+  // start() (the contract), which is what stop/startCamera do here.
+  async function flipCamera(): Promise<void> {
+    facing = facing === 'environment' ? 'user' : 'environment';
+    if (mode === 'camera') { stopCamera(); await startCamera(); }
+    updateUi();
+    announce(facing === 'environment' ? t('Rear camera') : t('Front camera'));
+  }
+
+  // Choose a SPECIFIC camera (device picker) - the desktop multi-webcam axis,
+  // orthogonal to the mobile front/rear flip. Arms the id (shell-private) then
+  // restarts. Feature-detected: no-op where the shell lacks armPreferredCamera.
+  let chosenCameraId: string | null = null;
+  async function chooseCamera(): Promise<void> {
+    const media = host.media as { armPreferredCamera?: (id: string | null) => void } | undefined;
+    if (!media?.armPreferredCamera) return;
+    const { openDevicePicker } = await import('../components/device-picker.ts');
+    const pick = await openDevicePicker({ kind: 'videoinput', currentCameraId: chosenCameraId ?? undefined, t, title: t('Choose a camera') });
+    if (!pick) return;
+    chosenCameraId = pick.deviceId;
+    media.armPreferredCamera(pick.deviceId);
+    if (mode === 'camera') { stopCamera(); await startCamera(); }
+    updateUi();
+  }
+
   // ── Buttons (both placements are views of the same state) ──────────────────
   const buttons = new Set<{ el: HTMLButtonElement; role: Role; labelEl: HTMLElement }>();
 
   function makeButton(role: Role, variant: 'stage' | 'sidebar'): HTMLButtonElement {
     const btn = document.createElement('button');
     btn.type = 'button';
+    const dataAttr = role === 'camera' ? 'data-live-camera' : role === 'flip' ? 'data-live-flip'
+      : role === 'device' ? 'data-live-device' : 'data-live-play';
     if (variant === 'stage') {
-      btn.className = role === 'camera' ? 'canvas-live-toggle' : 'canvas-live-toggle canvas-anim-toggle';
+      btn.className = role === 'play' ? 'canvas-live-toggle canvas-anim-toggle'
+        : role === 'flip' ? 'canvas-live-toggle canvas-flip-toggle'
+        : role === 'device' ? 'canvas-live-toggle canvas-device-toggle' : 'canvas-live-toggle';
     } else {
-      btn.className = role === 'camera' ? 'slot-act slot-live slot-live-camera' : 'slot-act slot-live slot-live-play';
-      btn.setAttribute(role === 'camera' ? 'data-live-camera' : 'data-live-play', sourceInputId ?? '');
+      btn.className = 'slot-act slot-live ' + (role === 'camera' ? 'slot-live-camera'
+        : role === 'flip' ? 'slot-live-flip' : role === 'device' ? 'slot-live-device' : 'slot-live-play');
+      btn.setAttribute(dataAttr, sourceInputId ?? '');
     }
     btn.setAttribute('aria-pressed', 'false');
-    btn.title = role === 'camera'
-      ? t('React to your camera in real time')
+    btn.title = role === 'camera' ? t('Use the live camera')
+      : role === 'flip' ? t('Switch between the front and rear camera')
+      : role === 'device' ? t('Choose which camera to use')
       : t('Play the animation through this effect');
     const label = document.createElement('span');
     label.className = 'canvas-live-label';
@@ -290,7 +326,9 @@ export function createLiveControls(opts: LiveControlsOpts): LiveControls {
     btn.addEventListener('click', () => {
       if (btn.disabled) return;
       btn.disabled = true;
-      void (role === 'camera' ? toggleCamera() : togglePlay()).finally(() => { btn.disabled = false; });
+      const action = role === 'camera' ? toggleCamera() : role === 'flip' ? flipCamera()
+        : role === 'device' ? chooseCamera() : togglePlay();
+      void action.finally(() => { btn.disabled = false; });
     });
     buttons.add({ el: btn, role, labelEl: label });
     return btn;
@@ -305,7 +343,17 @@ export function createLiveControls(opts: LiveControlsOpts): LiveControls {
         b.el.hidden = !cameraAvailable();
         b.el.classList.toggle('is-live', on);
         b.el.setAttribute('aria-pressed', String(on));
-        b.labelEl.textContent = on ? t('Live') : t('Go live');
+        b.labelEl.textContent = on ? t('Stop camera') : t('Use camera');
+      } else if (b.role === 'flip') {
+        // Only useful while the camera runs; shows the camera it will switch TO.
+        b.el.hidden = !(live && mode === 'camera');
+        b.labelEl.textContent = facing === 'environment' ? t('Front') : t('Rear');
+      } else if (b.role === 'device') {
+        // "Choose camera" - shown while the camera runs and only where the shell
+        // supports arming a specific device (feature-detected, not a stub).
+        const hasArm = !!(host.media as { armPreferredCamera?: unknown } | undefined)?.armPreferredCamera;
+        b.el.hidden = !(live && mode === 'camera' && hasArm);
+        b.labelEl.textContent = t('Camera');
       } else {
         const on = live && mode === 'asset';
         b.el.hidden = !playSource && !on;
@@ -324,7 +372,11 @@ export function createLiveControls(opts: LiveControlsOpts): LiveControls {
     mountStage(stageEl: HTMLElement): void {
       if (!enabled) return;
       stagePlaced = true;
-      if (cameraAvailable()) stageEl.appendChild(makeButton('camera', 'stage'));
+      if (cameraAvailable()) {
+        stageEl.appendChild(makeButton('camera', 'stage'));
+        stageEl.appendChild(makeButton('flip', 'stage'));
+        stageEl.appendChild(makeButton('device', 'stage'));
+      }
       stageEl.appendChild(makeButton('play', 'stage'));
       updateUi();
     },
@@ -332,7 +384,11 @@ export function createLiveControls(opts: LiveControlsOpts): LiveControls {
     mountSidebarCluster(cluster: HTMLElement): void {
       if (!enabled) return;
       cluster.appendChild(makeButton('play', 'sidebar'));
-      if (cameraAvailable()) cluster.appendChild(makeButton('camera', 'sidebar'));
+      if (cameraAvailable()) {
+        cluster.appendChild(makeButton('camera', 'sidebar'));
+        cluster.appendChild(makeButton('flip', 'sidebar'));
+        cluster.appendChild(makeButton('device', 'sidebar'));
+      }
       updateUi();
     },
     syncFromModel(model): void {
@@ -387,21 +443,36 @@ export function registerLiveControls(runtime: object, lc: LiveControls): void {
 export function mountSidebarLiveControls(panel: HTMLElement, runtime: unknown): void {
   if (!runtime || typeof runtime !== 'object') return;
   const lc = registry.get(runtime);
-  if (!lc?.enabled || !lc.sourceInputId || lc.stageHosted()) return;
-  const trigger = panel.querySelector(`.asset-picker-trigger[data-input-id="${CSS.escape(lc.sourceInputId)}"]`);
-  const row = trigger?.closest('.asset-picker-row');
-  const parent = row?.parentElement;
-  if (!row || !parent) return;
-  if (parent.querySelector('[data-live-cluster]')) return; // already mounted this rebuild
-  let actions = parent.querySelector(':scope > .slot-actions') as HTMLElement | null;
-  if (!actions) {
+  if (!lc?.enabled || lc.stageHosted()) return;
+
+  let actions: HTMLElement | null = null;
+  const key = lc.sourceInputId ?? '__standalone__';
+  if (lc.sourceInputId) {
+    // Ride the asset picker's slot-actions row (a tool WITH an image source).
+    const trigger = panel.querySelector(`.asset-picker-trigger[data-input-id="${CSS.escape(lc.sourceInputId)}"]`);
+    const row = trigger?.closest('.asset-picker-row');
+    const parent = row?.parentElement;
+    if (!row || !parent) return;
+    if (parent.querySelector('[data-live-cluster]')) return; // already mounted this rebuild
+    actions = parent.querySelector(':scope > .slot-actions');
+    if (!actions) {
+      actions = panel.ownerDocument.createElement('div');
+      actions.className = 'slot-actions';
+      row.after(actions);
+    }
+  } else {
+    // No asset input (a reader like scan-code): a STANDALONE camera row pinned at
+    // the top of the inputs, so the control is always in the inputs bar - reachable
+    // on mobile, where the floating canvas toggle is not (Andy, 2026-08-26).
+    if (panel.querySelector('[data-live-cluster="__standalone__"]')) return;
     actions = panel.ownerDocument.createElement('div');
-    actions.className = 'slot-actions';
-    row.after(actions);
+    actions.className = 'slot-actions live-actions-standalone';
+    panel.prepend(actions);
   }
+  if (!actions) return;
   const cluster = panel.ownerDocument.createElement('span');
   cluster.className = 'slot-live-cluster';
-  cluster.setAttribute('data-live-cluster', lc.sourceInputId);
+  cluster.setAttribute('data-live-cluster', key);
   actions.prepend(cluster);
   lc.mountSidebarCluster(cluster);
 }

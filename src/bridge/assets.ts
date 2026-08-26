@@ -1175,14 +1175,18 @@ function detectAiGenerated(
 
 // An `image` slot accepts any still image - raster OR vector (SVG). It's the
 // superset an image input wants (not `any`, which would also surface video/lottie).
-function typeMatches(assetType: string, want: string | undefined): boolean {
+// `motion` widens an `image` slot to also admit video: a frame-hook tool (its
+// input carries motion:true) consumes catalog VIDEO the same way it consumes the
+// user's own video uploads - without this the catalog rail hid every catalog
+// video while the uploads rail showed them (plans/162).
+export function typeMatches(assetType: string, want: string | undefined, motion = false): boolean {
   if (!want) return true;
-  if (want === 'image') return assetType === 'raster' || assetType === 'vector';
+  if (want === 'image') return assetType === 'raster' || assetType === 'vector' || (motion && assetType === 'video');
   return assetType === want;
 }
 
 function matchesFilter(meta: AssetMetaRecord, filter: AssetQuery): boolean {
-  if (filter.type && !typeMatches(meta.type, filter.type)) return false;
+  if (filter.type && !typeMatches(meta.type, filter.type, filter.motion)) return false;
   if (filter.namespace && !meta.id.startsWith(filter.namespace + '/') && meta.id !== filter.namespace) return false;
   if (filter.tags?.length) {
     const tags = new Set(meta.tags ?? []);

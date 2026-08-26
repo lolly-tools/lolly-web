@@ -1075,6 +1075,20 @@ html[data-a11y-previews="hidden"] .gallery .ftile-iconfill svg { max-width: 52px
 .gtile-hero--preview.is-ready .gtile-iconfill-trace,
 .gtile-hero--icononly .gtile-iconfill-trace { display: none; }
 @media (prefers-reduced-motion: reduce) { .gtile-iconfill-trace { display: none; } }
+/* Once a REAL preview is showing, drop the WHOLE icon backdrop (base + trace), not just the
+   animated trace above. The muted base was only ever a loading stand-in, but it sits BEHIND
+   the preview (z-index:-1), so it bleeds through a preview that carries transparency and shows
+   in the letterbox margins of one that doesn't fill the fixed box (a short/long asset), reading
+   as a ghost icon behind the art - the stamp behind a logo lockup, the envelope behind an
+   email-signature banner. "Real preview" = a decoded example/committed-preview slide
+   (.gcar-slide.is-loaded), a lead session-or-authored-card slide that ships real art
+   (.gcar-slide--lead), a rendered page deck (.gcar--deck), or a loaded single hero
+   (.gtile-hero--preview.is-ready). The permanent icon-only fallback (.gtile-hero--icononly,
+   preview 404'd) is excepted - there the icon IS the tile art; and the perf-ui path sets
+   .has-art with no rendered art but none of these markers, so its static icon stays. */
+.gcar:has(.gcar-slide.is-loaded, .gcar-slide--lead) .gtile-iconfill,
+.gcar--deck .gtile-iconfill,
+.gtile-hero--preview.is-ready:not(.gtile-hero--icononly) .gtile-iconfill { display: none; }
 /* Preview failed for good: pin the icon-only hero visible (it never got the load-driven
    .is-ready reveal) and lift the muted ghost a touch so the fallback still reads. */
 .gtile-hero--icononly .gtile-iconfill-base { color: hsl(var(--muted-foreground) / .32); }

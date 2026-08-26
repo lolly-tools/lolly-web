@@ -146,6 +146,74 @@ test('sidebar: a slot with no actions row gets one created for the buttons', () 
   lc.dispose();
 });
 
+test('camera: manifest render.liveFacing opens the rear camera, and flip toggles front/rear', async () => {
+  const facings: Array<string | undefined> = [];
+  const live = { v: false };
+  const rt = {
+    hasFrameHook: true,
+    isLive: () => live.v,
+    startLive: async (o?: { facingMode?: string }) => { facings.push(o?.facingMode); live.v = true; return true; },
+    stopLive: () => { live.v = false; },
+    getModel: () => [{ id: 'mode', type: 'select', value: 'camera' }],
+    manifest: { id: 'scan-code', render: { liveFacing: 'environment' } },
+  };
+  const h = makeHost();
+  const lc = createLiveControls({ runtime: rt, host: h.host, t, announce: () => {}, fetchSvgMarkup: h.fetchSvgMarkup });
+  registerLiveControls(rt as object, lc);
+  const panel = document.createElement('div');
+  document.body.appendChild(panel);
+  mountSidebarLiveControls(panel, rt);
+
+  // Start: the rear camera by manifest default.
+  (panel.querySelector('[data-live-camera]') as HTMLButtonElement).click();
+  await tick();
+  assert.equal(facings[0], 'environment', 'opens the rear camera by manifest default');
+
+  // Flip: stop + restart with the front camera; the flip button is now visible.
+  const flip = panel.querySelector('[data-live-flip]') as HTMLButtonElement;
+  assert.ok(flip && !flip.hidden, 'flip control is visible while live');
+  flip.click();
+  await tick();
+  assert.equal(facings[1], 'user', 'flip restarts on the front camera');
+
+  panel.remove();
+  lc.dispose();
+});
+
+test('sidebar: a tool with NO asset input pins a standalone camera row at the top of the inputs bar', () => {
+  // A reader like scan-code has no asset slot to ride; the control must still be in
+  // the inputs bar (reachable on mobile), not only a floating canvas toggle.
+  const live = { v: false };
+  const rt = {
+    hasFrameHook: true,
+    isLive: () => live.v,
+    startLive: async () => { live.v = true; return true; },
+    stopLive: () => { live.v = false; },
+    getModel: () => [{ id: 'mode', type: 'select', value: 'camera' }], // no type:'asset'
+    manifest: { id: 'scan-code', render: {} },
+  };
+  const h = makeHost();
+  const lc = createLiveControls({ runtime: rt, host: h.host, t, announce: () => {}, fetchSvgMarkup: h.fetchSvgMarkup });
+  assert.equal(lc.sourceInputId, null, 'no asset input → no source slot');
+  registerLiveControls(rt as object, lc);
+
+  const panel = document.createElement('div');
+  panel.innerHTML = '<label class="input-row">Mode</label>';
+  document.body.appendChild(panel);
+  mountSidebarLiveControls(panel, rt);
+
+  const first = panel.firstElementChild as HTMLElement;
+  assert.ok(first?.classList.contains('slot-actions'), 'a standalone actions row is pinned at the top');
+  const cluster = panel.querySelector('[data-live-cluster="__standalone__"]');
+  assert.ok(cluster, 'a standalone live cluster is mounted');
+  assert.ok(cluster!.querySelector('[data-live-camera]'), 'the camera (Use camera) button is present in the inputs bar');
+  // Idempotent across input rebuilds.
+  mountSidebarLiveControls(panel, rt);
+  assert.equal(panel.querySelectorAll('[data-live-cluster="__standalone__"]').length, 1, 'not doubled on re-mount');
+  panel.remove();
+  lc.dispose();
+});
+
 test('sidebar: an unregistered runtime (e.g. /multi fanRuntime) is a no-op', () => {
   const panel = panelWithAssetRow(false);
   mountSidebarLiveControls(panel, { not: 'registered' });

@@ -86,7 +86,7 @@ import {
 // The element-seek fallback must behave exactly like the phase-2 preview seeker,
 // or a clip would export frames the editor never showed. Instead of restating
 // the rules (serialise per element, confirm with requestVideoFrameCallback's
-// mediaTime, one quarter-frame nudge when the decoder lands short, hard
+// mediaTime, one quarter-frame nudge when the decoder falls short, hard
 // timeout), this imports the shipped implementation and its tuning constants
 // from the clock. Nothing there is modified: this is a read-only reuse.
 // The tracker-module recogniser comes from the same place for the same reason:
@@ -373,7 +373,7 @@ export interface MediabunnyModule {
  *
  * Cost, measured with esbuild --bundle --minify | gzip -9, not estimated: the
  * video four are 60.5 kB gzip; adding OGG/MP3/WAVE takes it to 72.7 kB, and
- * ADTS/FLAC to 75.3 kB. All of it lands in the lazily-imported chunk that only
+ * ADTS/FLAC to 75.3 kB. All of it sits in the lazily-imported chunk that only
  * a motion export pulls, so first paint stays untouched, which is the rule
  * that actually matters. ALL_FORMATS would still be wrong: it adds TS/HLS on
  * top for containers nothing in Lolly can produce or accept.

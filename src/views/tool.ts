@@ -4132,11 +4132,12 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // Classify the initial source (shows Play for a restored animated pick or the
     // sample; never auto-plays on open).
     liveControls.syncFromModel(runtime.getModel());
-    // Canvas-stage fallback only where the sidebar can't host the buttons (canvas
-    // layout hides the panel; no asset input → no row to ride). If the panel was
-    // already rendered before registration, inject the sidebar pair now - every
-    // later rebuild re-injects from renderInputs itself.
-    if (inputsEl && !canvasLayout && liveControls.sourceInputId) mountSidebarLiveControls(inputsEl, runtime);
+    // Put the camera control in the INPUTS BAR wherever there is one (with an
+    // asset input it rides that slot's row; without one - a reader like scan-code -
+    // it pins a standalone row at the top). This keeps "Use camera" reachable on
+    // mobile, where the floating canvas toggle is not. The canvas-stage fallback is
+    // only for a genuine canvas layout that hides the inputs panel entirely.
+    if (inputsEl && !canvasLayout) mountSidebarLiveControls(inputsEl, runtime);
     else if (stageEl) liveControls.mountStage(stageEl);
   }
 

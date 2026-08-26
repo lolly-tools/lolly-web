@@ -51,6 +51,9 @@ export type AnimSourceSpec =
   | { kind: 'video'; url: string };
 
 export interface WebMediaAPI extends MediaAPI {
+  /** Arm a specific camera (deviceId) for the next camera start(); null clears it
+   *  back to the facing preference (plans/162, device picker). Shell-private. */
+  armPreferredCamera(deviceId: string | null): void;
   /** Arm the non-camera animated source for the next start(). A bare string is
    *  the legacy spelling of { kind: 'svg', markup }. Pass null to disarm. */
   armAnimSource(src: AnimSourceSpec | string | null): void;
@@ -159,6 +162,9 @@ export function createMediaAPI(): WebMediaAPI {
   // style and disable animation in the snapshot - the img then renders exactly the
   // frame we seeked. Far lighter than a per-frame dom-to-image.
   let animSpec: AnimSourceSpec | null = null;
+  // A specific camera chosen via the device picker (plans/162). Shell-private (the
+  // portable MediaAPI keeps only facingMode); the next camera start() opens this id.
+  let preferredCameraId: string | null = null;
   let animHost: HTMLElement | null = null; // SVG kind: off-screen host holding the live inline <svg>
   let animImg: HTMLImageElement | null = null; // reused <img> that decodes each baked frame
   let animStart = 0;                       // wall-clock of the first anim frame (drives playback time)
@@ -426,15 +432,32 @@ export function createMediaAPI(): WebMediaAPI {
     }
     if (starting) return starting; // a concurrent start is bringing the camera up
     const facingMode = opts?.facingMode ?? 'user';
+    // A specific camera (device-picker) wins over the facing preference: deviceId +
+    // facingMode over-constrain, so an armed id drops facingMode. plans/162.
+    const wantId = preferredCameraId;
+    const dims = { width: { ideal: 1920 }, height: { ideal: 1080 } } as const;
     starting = (async () => {
-      const s = await navigator.mediaDevices.getUserMedia({
-        // Capture at 1080p so a high-resolution subscriber (a raster filter, or a
-        // user-driven resolution slider - see runtime `render.liveMaxEdgeInput`) has
-        // real pixels to downscale from; the grab loop never upscales past native
-        // (grab() clamps scale ≤ 1), so a low working edge still stays cheap.
-        video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
-        audio: false,
-      });
+      // Capture at 1080p so a high-resolution subscriber (a raster filter, or a
+      // user-driven resolution slider - see runtime `render.liveMaxEdgeInput`) has
+      // real pixels to downscale from; the grab loop never upscales past native
+      // (grab() clamps scale ≤ 1), so a low working edge still stays cheap.
+      let s: MediaStream;
+      try {
+        s = await navigator.mediaDevices.getUserMedia({
+          video: wantId ? { deviceId: { exact: wantId }, ...dims } : { facingMode, ...dims },
+          audio: false,
+        });
+      } catch (e) {
+        // A saved camera that's gone (unplugged, or a stale id) throws
+        // OverconstrainedError - fall back to the facing preference so the camera
+        // still opens rather than failing outright.
+        if (wantId && (e as { name?: string })?.name === 'OverconstrainedError') {
+          preferredCameraId = null;
+          s = await navigator.mediaDevices.getUserMedia({ video: { facingMode, ...dims }, audio: false });
+        } else {
+          throw e;
+        }
+      }
       stream = s;
       videoEl = document.createElement('video');
       videoEl.autoplay = true;
@@ -480,6 +503,13 @@ export function createMediaAPI(): WebMediaAPI {
   function armAnimSource(src: AnimSourceSpec | string | null): void {
     animSpec = typeof src === 'string' ? { kind: 'svg', markup: src } : src;
     if (!animSpec && (animHost || animVideo || rasterOn) && refcount === 0) teardown();
+  }
+
+  // Arm a specific camera for the next camera start() (device picker). Takes effect
+  // on the next start() - a caller switches cameras with stop() then start() (the
+  // media singleton is refcounted). null clears back to the facing preference.
+  function armPreferredCamera(deviceId: string | null): void {
+    preferredCameraId = deviceId || null;
   }
 
   // Sample a decoded source (img/video) into an RGBA MediaFrame at the working size.
@@ -534,5 +564,5 @@ export function createMediaAPI(): WebMediaAPI {
     return null;
   }
 
-  return { isAvailable, start, stop, subscribe, armAnimSource, renderFrameAt };
+  return { isAvailable, start, stop, subscribe, armAnimSource, armPreferredCamera, renderFrameAt };
 }

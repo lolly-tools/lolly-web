@@ -76,6 +76,7 @@ const PICKER_TYPE_FILTERS: ReadonlyArray<{ key: PickerTypeFilter; label: string 
   { key: 'text', label: 'Text' },
 ];
 import { VISUAL_TYPES, isPlaceableAsset } from '../lib/asset-kinds.ts';
+import { typeMatches } from '../bridge/assets.ts';
 import { autoplayLottieThumbs } from './lottie-mount.ts';
 import { previewMedia, motionVideoThumb, armMotionPreviews } from '../lib/preview-media.ts';
 import { escapeHtml } from '../lib/html.ts';
@@ -465,6 +466,18 @@ async function render(
       ? toolIndex.filter(t => isEmbeddable(t, needsSvg)).sort((a, b) => a.name.localeCompare(b.name))
       : [];
 
+  // ── Acceptance (plans/162, fade-not-hide) ──────────────────────────────────
+  // Whether a slot with THIS opts.type would accept an asset of a given type -
+  // the SAME predicate the catalog query uses (typeMatches, incl. image→+video for
+  // a motion slot). Andy's rule: instead of HIDING what a slot can't take, a
+  // still-image family slot shows the whole visual catalog with the non-acceptable
+  // tiles FADED + aria-disabled (and rejected on click), so the grid never looks
+  // mysteriously empty. Only "family" (visual) slots broaden; audio/text/data and
+  // untyped `any` keep their existing set (nothing comparable to fade).
+  const VISUAL_SLOT_TYPES = new Set(['vector', 'raster', 'image', 'video', 'lottie']);
+  const visualSlot = opts.type != null && VISUAL_SLOT_TYPES.has(opts.type);
+  const isAcceptable = (assetType: string): boolean => typeMatches(assetType, opts.type, opts.motion === true);
+
   // The slot's current image may itself be a Lolly render (meta.toolUrl on the
   // AssetRef). Offer an edit path back into that tool's own inputs - pre-filled
   // with the values already in use - without giving up the normal pick-another-
@@ -787,9 +800,11 @@ async function render(
   const visiblePane = (): HTMLElement | null => root.querySelector<HTMLElement>('.asset-picker-pane:not([hidden])');
   const navCards = (): HTMLElement[] => {
     const pane = visiblePane();
-    // Skip cards inside a collapsed section (offsetParent is null when display:none).
+    // Skip cards inside a collapsed section (offsetParent is null when display:none)
+    // and fade-not-hide tiles this slot can't accept (aria-disabled) - keyboard
+    // roving passes over them; a mouse click still hits them and is rejected.
     return pane ? [...pane.querySelectorAll<HTMLElement>('[data-asset-id],[data-tool-id],[data-session-slot]')]
-      .filter(el => el.offsetParent !== null) : [];
+      .filter(el => el.offsetParent !== null && el.getAttribute('aria-disabled') !== 'true') : [];
   };
   function focusCard(el: HTMLElement | null | undefined): void { if (el) { el.focus({ preventScroll: true }); el.scrollIntoView({ block: 'nearest' }); } }
   function moveSelection(cur: HTMLElement, key: string): void {
@@ -1118,6 +1133,22 @@ async function render(
       // survives URL-mode round-trips (an asset value persists as its id alone).
       let pickId = pick.dataset.assetId!;
       const pickRef = candidateById.get(pickId);
+      // Fade-not-hide (plans/162): a dimmed tile IS clickable, but this slot can't
+      // take it - reject on select with a note beside the tile, rather than
+      // committing an asset the tool would refuse. (aria-disabled already signals it.)
+      const pickRefAny = pickRef ?? userAssets.find(a => a.id === pickId);
+      if (opts.type && pickRefAny && !isAcceptable(pickRefAny.type)) {
+        announce(t('This slot can’t use that kind of file.'), { assertive: true });
+        const cardEl = pick.closest<HTMLElement>('.asset-picker-card') ?? pick;
+        cardEl.querySelector('.asset-picker-card-error')?.remove();
+        const note = document.createElement('p');
+        note.className = 'asset-picker-card-error';
+        note.setAttribute('role', 'alert');
+        note.style.cssText = 'margin:4px 0 0;font-size:11px;color:hsl(var(--destructive));text-align:center';
+        note.textContent = t('This slot can’t use that kind of file.');
+        cardEl.appendChild(note);
+        return;
+      }
       if (activeTheme && isThemableRef(pickRef)) {
         pickId = buildThemedAssetId(pickId, activeTheme);
       } else if (activeTreatment && isTreatableRef(pickRef)) {
@@ -1239,6 +1270,7 @@ async function render(
     refreshAudioThumbs();
     refreshTextThumbs();
     refreshMotionThumbs();
+    markIncompatibleTiles(); // fade-not-hide: dim tiles this slot can't accept
   }
 
   /**
@@ -1598,6 +1630,25 @@ async function render(
     refreshAudioThumbs();
     refreshTextThumbs();
     refreshMotionThumbs();
+    markIncompatibleTiles(); // fade-not-hide: dim tiles this slot can't accept
+  }
+
+  // Fade-not-hide (plans/162): a still-image family slot shows the whole visual
+  // catalog; tiles it can't accept are dimmed + aria-disabled here (rejected on
+  // click, skipped by keyboard nav) rather than hidden. A full-card opacity wash,
+  // not a one-sided rail (house rule). No-op for an untyped `any` pick.
+  function markIncompatibleTiles(): void {
+    if (!opts.type) return;
+    for (const el of root.querySelectorAll<HTMLElement>('[data-asset-id]')) {
+      const id = el.dataset.assetId;
+      const ref = id ? (candidateById.get(id) ?? userAssets.find(a => a.id === id)) : undefined;
+      if (!ref) continue;
+      const ok = isAcceptable(ref.type);
+      const cardEl = el.closest<HTMLElement>('.asset-picker-card') ?? el;
+      cardEl.classList.toggle('is-incompatible', !ok);
+      if (!ok) { el.setAttribute('aria-disabled', 'true'); cardEl.setAttribute('aria-disabled', 'true'); }
+      else { el.removeAttribute('aria-disabled'); cardEl.removeAttribute('aria-disabled'); }
+    }
   }
 
   // ── Icon theme strip ────────────────────────────────────────────────────────
@@ -1782,6 +1833,7 @@ async function render(
     refreshAudioThumbs();
     refreshTextThumbs();
     refreshMotionThumbs();
+    markIncompatibleTiles(); // fade-not-hide: dim tiles this slot can't accept
   }
 
   function renderFavourites(): void {
@@ -1811,6 +1863,7 @@ async function render(
     refreshAudioThumbs();
     refreshTextThumbs();
     refreshMotionThumbs();
+    markIncompatibleTiles(); // fade-not-hide: dim tiles this slot can't accept
   }
 
   // ── Saved creations (previous single-tool sessions) ────────────────────────
@@ -2263,15 +2316,18 @@ async function render(
         // behind the Colour Lab's back, leaving a registered gamut and picker tab
         // for a file that was gone. A caller that names a data type still gets it;
         // it is only "everything" that means "everything with a picture".
-        const typeOk = (t: string): boolean => (opts.type
-          ? t === opts.type
-            || (opts.type === 'image' && (t === 'raster' || t === 'vector'))
-            || (opts.type === 'image' && opts.motion === true && t === 'video')
-          : isPlaceableAsset({ type: t }));
-        userAssets = list.filter(a => typeOk(a.type)).filter(a => !hiddenSet.has(assetBaseId(a.id)));
+        // Fade-not-hide: a VISUAL-family slot keeps every visual upload (the
+        // non-acceptable ones are dimmed by markIncompatibleTiles, not filtered
+        // out), so "Your images" agrees with the broadened library. A non-visual
+        // typed slot keeps its exact-type filter; untyped keeps isPlaceableAsset.
+        const keepUpload = (t: string): boolean => visualSlot
+          ? VISUAL_TYPES.has(t)
+          : (opts.type ? isAcceptable(t) : isPlaceableAsset({ type: t }));
+        userAssets = list.filter(a => keepUpload(a.type)).filter(a => !hiddenSet.has(assetBaseId(a.id)));
         renderUserAssets();
+        markIncompatibleTiles();
         renderFavourites();
-        // Images just landed - refresh Projects so folder item tiles + counts fill in.
+        // Images just arrived - refresh Projects so folder item tiles + counts fill in.
         if (activeTab === 'projects') renderProjects(searchInput.value.trim().toLowerCase());
       })
       .catch(e => host.log('warn', 'Failed to list user images', { error: String(e) }));
@@ -2328,10 +2384,22 @@ async function render(
     // is unchanged, so audio never leaks into a slot that didn't ask for it. (The
     // user-uploads path filters too - see its own typeOk, which for an untyped
     // pick asks the same lib/asset-kinds.ts question.)
-    const pickableTypes = opts.type === 'audio' ? new Set([...VISUAL_TYPES, 'audio']) : VISUAL_TYPES;
     // opts widens AssetPickerOpts with a web-only `type: 'image'` value; query only
     // reads the catalog-facing AssetQuery fields, so narrow at the boundary.
-    const queried = (await host.assets.query(opts as AssetPickerOpts)).filter(a => pickableTypes.has(a.type));
+    // For a TYPED slot, TRUST query() - its typeMatches already narrowed to exactly
+    // the acceptable types (incl. image→+video when opts.motion, and audio/text/data
+    // for those slots). Re-filtering through VISUAL_TYPES here is what used to drop
+    // catalog video from motion slots and empty out text/data picks (plans/162). The
+    // VISUAL_TYPES guard stays only for an UNTYPED / `any` pick, to keep engine-data
+    // (fonts/ICC/tokens) and audio out of a "pick anything with a picture" slot -
+    // a documented behaviour (unchanged).
+    // Fade-not-hide (plans/162): a VISUAL-family slot fetches the WHOLE visual
+    // catalog (drop the type narrowing) so incompatible items are present to dim;
+    // a non-visual TYPED slot (audio/text/data) still trusts query()'s narrowing;
+    // an untyped `any` pick keeps the VISUAL_TYPES guard as before.
+    const queryOpts = visualSlot ? ({ ...opts, type: undefined } as AssetPickerOpts) : (opts as AssetPickerOpts);
+    const raw = await host.assets.query(queryOpts);
+    const queried = (visualSlot || !opts.type) ? raw.filter(a => VISUAL_TYPES.has(a.type)) : raw;
     // Drop the user's hidden assets before anything renders (profileReady populates
     // hiddenSet; it's fast and usually already resolved by the time the query lands).
     await profileReady;

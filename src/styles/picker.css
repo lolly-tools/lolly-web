@@ -1317,3 +1317,19 @@
   background: hsl(var(--muted)); color: hsl(var(--muted-foreground));
   font-size: calc(10.5px * var(--a11y-fs)); font-weight: 700;
 }
+
+/* Fade-not-hide (plans/162): a slot shows the whole visual catalog with the tiles
+   it can't accept dimmed rather than hidden, so the grid never looks empty. A full
+   opacity wash (not a one-sided rail, per the house rule); a mouse click still
+   lands and is rejected with a note, keyboard roving skips them. */
+.asset-picker-card.is-incompatible {
+  opacity: 0.32;
+  filter: grayscale(0.6);
+}
+.asset-picker-card.is-incompatible:hover {
+  opacity: 0.5;
+}
+.asset-picker-card.is-incompatible .asset-picker-name {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}

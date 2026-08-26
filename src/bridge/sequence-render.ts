@@ -614,7 +614,7 @@ interface RasterOpts {
    * `pad·S` device px and the pad is expressed in the same units as the box. The plate
    * therefore has its origin at `(-pad, -pad)` in box space, which is what a consumer
    * has to subtract when it draws: content that spills outside the box rect (a soft
-   * silhouette, a shadow) lands INSIDE the canvas instead of being clipped away at the
+   * silhouette, a shadow) falls INSIDE the canvas instead of being clipped away at the
    * exact moment the executor wants to blur it.
    *
    * 0 - the default, and what every P0 call site passes - is byte-for-byte today's
@@ -664,7 +664,7 @@ interface RasterOpts {
  * and the transform string are what they have always been.
  *
  * The translate sits INSIDE the scale so the pad stays in ELEMENT px: `scale(S)
- * translate(p,p)` maps a point x to S·(x + p), i.e. the box lands `p·S` device px in
+ * translate(p,p)` maps a point x to S·(x + p), i.e. the box sits `p·S` device px in
  * from the top-left corner and the plate's origin is `(-p, -p)` in box space.
  */
 export function plateShotFrame(
