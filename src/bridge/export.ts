@@ -339,6 +339,13 @@ export interface ExportOpts {
    *  via the export panel's "Record live" toggle; webm/mp4 only. Popup-local like
    *  wait/duration - never serialized into URLs or share links. */
   live?: boolean;
+  /** WP-F soft subtitles (plan 153 accessibility, default-on). A WebVTT transcript to
+   *  embed as a SOFT, player-toggleable caption track in an mp4/webm export, IN ADDITION
+   *  to any burned-in captions. Carried ONLY by the WebCodecs mux path (renderVideo);
+   *  the MediaRecorder record/live/top-tail paths and the WebCodecs→MediaRecorder
+   *  fallback cannot embed a soft track and drop it with a warning. Absent/empty ⇒ no
+   *  subtitle track and the container is byte-for-byte identical to today. */
+  subtitlesVtt?: string;
 }
 
 interface ExportDims {
@@ -9004,6 +9011,19 @@ async function withVideoMeta(blob: Blob, container: string, meta: ExportMeta | n
 
 const NO_VIDEO_MSG = 'Video recording is not supported in this browser. Use GIF instead, or try Chrome or Firefox for WebM.';
 
+// WP-F soft subtitles. A soft (player-toggleable) webvtt track can ONLY ride the
+// WebCodecs mux path (mediabunny writes the container, so it can declare the extra
+// track). MediaRecorder writes the container itself and cannot add one, so the
+// record/live/top-tail tools AND the WebCodecs→MediaRecorder fallback drop the
+// caption track - never silently: this warning fires wherever that happens.
+const SOFT_SUBTITLES_DROPPED_MSG = 'Soft caption track not embedded: this export used the MediaRecorder path, which cannot carry a subtitle track. Captions burned into the frames are unaffected.';
+/** Can this browser embed a SOFT subtitle track into a video export? Only the WebCodecs
+ *  mux path can; the MediaRecorder paths cannot. renderVideo is already the non-live,
+ *  non-record offline path, so here this reduces to "WebCodecs is available". */
+function canCarrySoftSubtitles(): boolean {
+  return typeof VideoEncoder !== 'undefined';
+}
+
 // A FrameSource turns a live DOM node into a sequence of rendered frames that
 // share ONE capture timeline. Motion encoders (webm/mp4 via renderVideo, gif via
 // renderGif - and future apng / image-sequence / spritesheet / favicon) consume it
@@ -9620,13 +9640,13 @@ function audioTrackToPlanar(a: WebCodecsAudioTrack): EncodeAudio {
 async function encodeVideoWithWebCodecs(
   frames: Array<ImageBitmap | { data: BufferSource }>,
   pick: EncodePick,
-  o: { width: number; height: number; fps: number; bitrate: number; meta?: ExportMeta | null; audio?: WebCodecsAudioTrack | null; bitrateMode?: 'variable' | 'constant'; hardwareAcceleration?: 'no-preference' | 'prefer-hardware' | 'prefer-software'; colorSpace?: VideoColorSpaceInit; frameFormat?: 'RGBA' | 'I420P10' },
+  o: { width: number; height: number; fps: number; bitrate: number; meta?: ExportMeta | null; audio?: WebCodecsAudioTrack | null; bitrateMode?: 'variable' | 'constant'; hardwareAcceleration?: 'no-preference' | 'prefer-hardware' | 'prefer-software'; colorSpace?: VideoColorSpaceInit; frameFormat?: 'RGBA' | 'I420P10'; subtitlesVtt?: string },
 ): Promise<Blob> {
   const { buffer, type } = await encodeMuxWebCodecs(frames, pick, {
     width: o.width, height: o.height, fps: o.fps, bitrate: o.bitrate,
     audio: o.audio ? audioTrackToPlanar(o.audio) : null,
     bitrateMode: o.bitrateMode, hardwareAcceleration: o.hardwareAcceleration,
-    colorSpace: o.colorSpace, frameFormat: o.frameFormat,
+    colorSpace: o.colorSpace, frameFormat: o.frameFormat, subtitlesVtt: o.subtitlesVtt,
   });
   return withVideoMeta(new Blob([buffer], { type }), type, o.meta ?? null);
 }
@@ -9640,6 +9660,12 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
   // Without this, Phase 1 would capture (and bitmap) every frame only for the
   // Phase 2 guard below to throw the same error minutes of work later.
   if (!mimeType && typeof VideoEncoder === 'undefined') { audio?.stop(); throw new Error(NO_VIDEO_MSG); }
+  // WP-F: a soft webvtt track to embed (default-on when a transcript exists). Only the
+  // WebCodecs mux path below can carry it; every MediaRecorder route warns (keyed off
+  // `wantSoftSubs`) and drops it. `softSubs` is the value actually threaded into the
+  // WebCodecs encode - null unless this browser can carry it.
+  const wantSoftSubs = typeof opts.subtitlesVtt === 'string' && opts.subtitlesVtt.length > 0;
+  const softSubs = wantSoftSubs && canCarrySoftSubtitles() ? opts.subtitlesVtt! : null;
   // A missing recorder mime is NOT fatal here: the WebCodecs encode below needs no
   // MediaRecorder at all (e.g. a browser with VideoEncoder AVC but no MediaRecorder
   // mp4). It only rules out the MediaRecorder paths - the opt-in stream capture and
@@ -9659,6 +9685,7 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
   // Stream capture is inherently MediaRecorder; without a mime it falls through to
   // the frame-by-frame path (losing the gapless loop, keeping the export).
   if (captureEl && mimeType) {
+    if (wantSoftSubs) _host?.log?.('warn', SOFT_SUBTITLES_DROPPED_MSG);   // MediaRecorder stream capture can't carry it
     const waitMs     = (opts.wait     ?? 1) * 1000;
     const durationMs = (opts.duration ?? 5) * 1000;
     const canvasFps  = opts.fps ?? 30;
@@ -9795,7 +9822,10 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
       // encode failure unlikely; a failure surfaces as a clear error and the user re-exports).
       // Worker path is OFF for HDR: it transfers ImageBitmaps and does not thread a
       // colorSpace, so HDR always takes the in-thread core below (frames are RGBA buffers).
-      if (bedOk && !hdrActive && supportsWorkerVideoEncode()) {
+      // WP-F: also OFF when there's a soft subtitle track to embed - the worker's opts
+      // don't thread subtitlesVtt yet, so captions take the in-thread core (which does).
+      // Threading it across the worker postMessage boundary is a followup.
+      if (bedOk && !hdrActive && !softSubs && supportsWorkerVideoEncode()) {
         try {
           const workerAudio: EncodeAudio | null = track ? {
             channels: Array.from({ length: track.buffer.numberOfChannels }, (_, i) => new Float32Array(track!.buffer.getChannelData(i))),
@@ -9820,6 +9850,7 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
             width: targetW, height: targetH, fps, bitrate, meta: opts.meta, audio: track,
             bitrateMode: opts.bitrateMode, hardwareAcceleration: opts.hardwareAcceleration,
             ...(hdrActive ? { colorSpace: HDR_VF_COLORSPACE, frameFormat: 'RGBA' as const } : {}),
+            ...(softSubs ? { subtitlesVtt: softSubs } : {}),   // WP-F soft caption track
           });
           frames.forEach(b => { if (b instanceof ImageBitmap) b.close(); });
           audio?.stop();                            // discard the now-unused live MediaRecorder audio track
@@ -9846,6 +9877,10 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
     audio?.stop();
     throw new Error(NO_VIDEO_MSG);
   }
+  // WP-F: reaching Phase 2 with a transcript in hand means the WebCodecs mux path did
+  // not carry it (no pick, unencodable audio container, or a mid-encode fallback). The
+  // MediaRecorder replay below cannot embed a soft track - say so, never silently.
+  if (wantSoftSubs) _host?.log?.('warn', SOFT_SUBTITLES_DROPPED_MSG);
 
   // Phase 2: replay pre-rendered frames at target fps into captureStream.
   // drawImage(bitmap) is near-instant so the replay timing is stable. The

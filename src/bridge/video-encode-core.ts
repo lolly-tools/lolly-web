@@ -62,6 +62,14 @@ export interface EncodeOpts {
   /** Pixel layout of the buffer frames when colorSpace is set. Phase 1 ships 'RGBA'
    *  (8-bit-sourced PQ); the 'I420P10' seam is reserved for the Phase 2 float source. */
   frameFormat?: 'RGBA' | 'I420P10';
+  /** WP-F soft subtitles. WebVTT to embed as a player-toggleable subtitle track, IN
+   *  ADDITION to any burned-in captions (default-on when a transcript exists). Passed
+   *  straight to the muxer, which adds the track only when this is a non-empty string
+   *  AND the container supports webvtt. Absent/empty ⇒ no subtitle track, container
+   *  bytes byte-for-byte unchanged (the determinism guard for the goldens). Only the
+   *  WebCodecs mux path can carry it; the MediaRecorder fallback cannot (see export.ts
+   *  renderVideo, which drops it there with a warning). */
+  subtitlesVtt?: string;
 }
 
 // ── Muxer wiring (shared seam) ────────────────────────────────────────────────
@@ -102,6 +110,7 @@ export const defaultMuxerFactory: MuxerFactory = async (pick, o) => {
     frameRate: o.fps,
     target: o.target ?? 'buffer',
     seekableSink: o.seekableSink,
+    subtitlesVtt: o.subtitlesVtt,
   });
   return { muxer, target, type: isMp4 ? 'video/mp4' : 'video/webm' };
 };

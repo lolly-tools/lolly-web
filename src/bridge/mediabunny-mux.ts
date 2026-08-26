@@ -175,6 +175,15 @@ export interface MuxSpec {
    * grid; WebM leans on floored per-frame timecodes instead.
    */
   frameRate?: number;
+  /**
+   * WP-F soft subtitles. A WebVTT document to embed as a player-toggleable subtitle
+   * track (mp4 `wvtt`, WebM `S_TEXT/WEBVTT`), IN ADDITION to any burned-in captions.
+   * Added ONLY when this is a NON-EMPTY string AND the container's OutputFormat lists
+   * 'webvtt' in getSupportedSubtitleCodecs() (both mp4 and WebM do). Absent/empty ⇒ no
+   * subtitle track and the container bytes are byte-for-byte identical to today - the
+   * determinism guard for the transcript-less sequence-render goldens.
+   */
+  subtitlesVtt?: string;
 }
 
 /** Build a mediabunny-backed muxer for `spec`. mediabunny is imported lazily. */
@@ -236,6 +245,18 @@ export async function buildMediabunnyMux(spec: MuxSpec): Promise<BuiltMediabunny
   const aSrc = audioCodec ? new MB.EncodedAudioPacketSource(audioCodec) : null;
   if (vSrc) output.addVideoTrack(vSrc, isMp4 && spec.frameRate ? { frameRate: spec.frameRate } : undefined);
   if (aSrc) output.addAudioTrack(aSrc);
+
+  // ── WP-F soft subtitle track (default-on when a transcript exists) ──────────
+  // Declared at CONSTRUCTION like the video/audio tracks above (addSubtitleTrack must
+  // precede output.start()); its VTT text is fed once in finalize() below, after
+  // start(). RED-TEAM TRAP 1: gate on the LOCAL `format`'s getSupportedSubtitleCodecs()
+  // - `output.format` is NOT a public accessor. Added ONLY when subtitlesVtt is a
+  // non-empty string, so a transcript-less render's bytes are byte-for-byte unchanged.
+  const subtitlesVtt = typeof spec.subtitlesVtt === 'string' && spec.subtitlesVtt.length > 0 ? spec.subtitlesVtt : null;
+  const subSrc = subtitlesVtt && format.getSupportedSubtitleCodecs().includes('webvtt')
+    ? new MB.TextSubtitleSource('webvtt')
+    : null;
+  if (subSrc) output.addSubtitleTrack(subSrc);
 
   // output.start() must run once, before any packet reaches a source; the first
   // pump awaits it and every later pump sees the memoised promise.
@@ -331,6 +352,9 @@ export async function buildMediabunnyMux(spec: MuxSpec): Promise<BuiltMediabunny
       kick();
       await chain;
       if (pumpErr) throw pumpErr instanceof Error ? pumpErr : new Error(String(pumpErr));
+      // WP-F: feed the whole WebVTT document once, AFTER start() (ensured by the pumps,
+      // or forced here for a packet-less track) and after every A/V packet is muxed.
+      if (subSrc) { await ensureStarted(); await subSrc.add(subtitlesVtt!); }
       await output.finalize();
     },
   };
