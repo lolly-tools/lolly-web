@@ -117,7 +117,7 @@ export const opfsSeekableSink: SeekableSinkFactory = async (container) => {
 };
 
 /** mux-codec ids the encode paths emit (mp4-muxer/webm-muxer spelling) → mediabunny codec ids. */
-const VIDEO_CODEC: Record<string, VideoCodec> = { avc: 'avc', V_VP9: 'vp9', V_VP8: 'vp8' };
+const VIDEO_CODEC: Record<string, VideoCodec> = { avc: 'avc', V_VP9: 'vp9', V_VP8: 'vp8', av1: 'av1', V_AV1: 'av1', hevc: 'hevc' };
 const AUDIO_CODEC: Record<string, AudioCodec> = { aac: 'aac', A_OPUS: 'opus' };
 
 function mapVideoCodec(muxCodec: string): VideoCodec {

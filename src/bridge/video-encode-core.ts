@@ -82,7 +82,7 @@ export const defaultMuxerFactory: MuxerFactory = async (pick, o) => {
   const isMp4 = pick.container === 'mp4';
   const { muxer, target } = await buildMediabunnyMux({
     container: pick.container,
-    video: isMp4 ? 'avc' : pick.muxCodec,
+    video: pick.muxCodec,
     audio: o.audio ? o.audio.muxCodec : null,
     frameRate: o.fps,
     target: o.target ?? 'buffer',
@@ -119,7 +119,7 @@ export async function encodeMuxWebCodecs(
     error: (e) => { encErr = e; },
   });
   const config: any = { codec: pick.codec, width, height, bitrate, framerate: fps };
-  if (isMp4) config.avc = { format: 'avc' };   // length-prefixed avcC, which the mp4 container needs
+  if (isMp4 && pick.codec.startsWith('avc')) config.avc = { format: 'avc' };   // length-prefixed avcC, which the mp4 container needs (H.264 only)
   encoder.configure(config);
 
   for (const t of videoFrameSchedule(frames.length, fps)) {
@@ -337,7 +337,7 @@ export async function createStreamingMux(
     error: (e: unknown) => { fail(e); },
   });
   const config: any = { codec: pick.codec, width, height, bitrate, framerate: fps };
-  if (isMp4) config.avc = { format: 'avc' };   // length-prefixed avcC, which the mp4 container needs
+  if (isMp4 && pick.codec.startsWith('avc')) config.avc = { format: 'avc' };   // length-prefixed avcC, which the mp4 container needs (H.264 only)
   encoder.configure(config);
 
   let aEnc: any = null;

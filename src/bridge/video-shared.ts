@@ -14,12 +14,19 @@
  */
 import type { EncodePick } from './video-encode-core.ts';
 
-/** The video ladder: mp4 (H.264 High→Main) and webm (VP9→VP8). */
+/** The video ladder: mp4 (AV1→H.264 High→Main) and webm (AV1→VP9→VP8). AV1 leads
+ *  both where the browser encodes it (WP-B) - same visual quality at ~40% of the
+ *  bytes, verified deterministic + luma-faithful on the browser tier - falling back
+ *  to the universally-decodable H.264 / VP9 where AV1 encode is absent. HEVC is
+ *  deliberately NOT in the default ladder (browsers frequently cannot DECODE hvc1),
+ *  it is an explicit codec choice only. */
 const MP4_LADDER: readonly EncodePick[] = [
+  { container: 'mp4', codec: 'av01.0.08M.08', muxCodec: 'av1' },   // AV1 Main profile 0, 8-bit
   { container: 'mp4', codec: 'avc1.640033', muxCodec: 'avc' },   // H.264 High L5.1
   { container: 'mp4', codec: 'avc1.4d0033', muxCodec: 'avc' },   // H.264 Main L5.1
 ];
 const WEBM_LADDER: readonly EncodePick[] = [
+  { container: 'webm', codec: 'av01.0.08M.08', muxCodec: 'V_AV1' },   // AV1 Main profile 0, 8-bit
   { container: 'webm', codec: 'vp09.00.10.08', muxCodec: 'V_VP9' },   // VP9 profile 0, 8-bit
   { container: 'webm', codec: 'vp8', muxCodec: 'V_VP8' },
 ];
