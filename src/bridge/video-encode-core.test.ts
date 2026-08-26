@@ -15,6 +15,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createStreamingMux, encodeMuxWebCodecs, HIGH_WATER, type EncodeAudio, type EncodePick, type EncodeOpts } from './video-encode-core.ts';
+import type { SeekableSink, SeekableSinkFactory } from './mediabunny-mux.ts';
 import { videoFrameSchedule } from './video-mime.ts';
 
 // ── Stubs ─────────────────────────────────────────────────────────────────────
@@ -80,7 +81,7 @@ class StubMuxer {
   constructor(order: string[]) { this.order = order; }
   addVideoChunk(c: unknown): void { this.video.push(c); this.fed.push(`v:${(c as { timestamp?: number } | null)?.timestamp ?? '?'}`); }
   addAudioChunk(c: unknown): void { this.audio.push(c); this.fed.push(`a:${(c as { timestamp?: number } | null)?.timestamp ?? '?'}`); }
-  finalize(): void { this.finalized++; this.order.push('mux:finalize'); }
+  async finalize(): Promise<void> { this.finalized++; this.order.push('mux:finalize'); }
 }
 
 function stubAudioBuffer(length: number, channels = 2, sampleRate = 48_000): any {
@@ -328,13 +329,14 @@ test('createStreamingMux: addAudio without a declared audio track rejects; empty
 
 // ── Buffered path (encodeMuxWebCodecs) ────────────────────────────────────────
 // No injection seam here: the function reads the WebCodecs GLOBALS and builds the
-// REAL muxer (mp4-muxer / webm-muxer - pure JS, importable in node). So the stub
-// encoders are installed on globalThis for the duration of a run, and they emit
-// chunks shaped like EncodedVideo/AudioChunk THROUGH real muxing - the returned
-// bytes are a genuine container, assertable by structural marker.
+// REAL muxer (mediabunny - pure JS, importable in node). So the stub encoders are
+// installed on globalThis for the duration of a run, and they emit chunks shaped
+// like EncodedVideo/AudioChunk THROUGH real muxing - the returned bytes are a
+// genuine container, assertable by structural marker.
 
-/** Both muxers gate on `chunk instanceof EncodedVideoChunk` - a free global they
- *  resolve at call time, so installing this class satisfies them. */
+/** mediabunny's EncodedPacket.fromEncodedChunk gates on `chunk instanceof
+ *  EncodedVideoChunk || chunk instanceof EncodedAudioChunk` - free globals it
+ *  resolves at call time, so installing these classes satisfies it. */
 class FakeVideoChunk {
   type: string; timestamp: number; duration: number; bytes: Uint8Array;
   constructor(init: { type: string; timestamp: number; duration: number; bytes: Uint8Array }) {
@@ -359,7 +361,14 @@ class EmittingVideoEncoder extends StubEncoder {
         timestamp: frame.rec.timestamp, duration: frame.rec.duration,
         bytes: new Uint8Array([id, videoPayload, 0xc3, 0xd4, 0xe5]),
       }),
-      { decoderConfig: { description: new Uint8Array(24) } },
+      // A real WebCodecs decoderConfig: mediabunny validates the codec string and,
+      // for AVC, needs an avcC in the description (a placeholder is embedded as-is).
+      {
+        decoderConfig: {
+          codec: this.config.codec, codedWidth: this.config.width, codedHeight: this.config.height,
+          ...(this.config.avc ? { description: new Uint8Array(24) } : {}),
+        },
+      },
     );
   }
 }
@@ -374,7 +383,13 @@ class EmittingAudioEncoder extends StubEncoder {
         duration: Math.round((data.rec.numberOfFrames / 48_000) * 1e6),
         bytes: new Uint8Array([0xa0, data.rec.numberOfFrames & 0xff, 0x01, 0x02]),
       }),
-      { decoderConfig: { description: new Uint8Array([0x11, 0x90]) } },
+      // Opus needs no codec-private data; AAC carries an AudioSpecificConfig.
+      {
+        decoderConfig: {
+          codec: this.config.codec, sampleRate: this.config.sampleRate, numberOfChannels: this.config.numberOfChannels,
+          ...(this.config.codec === 'opus' ? {} : { description: new Uint8Array([0x11, 0x90]) }),
+        },
+      },
     );
   }
 }
@@ -391,6 +406,7 @@ const fakeFrames = (n: number): ImageBitmap[] =>
 
 async function runBuffered(opts: {
   pick?: EncodePick; n?: number; fps?: number; audio?: EncodeAudio | null; VideoEncoder?: unknown;
+  target?: 'buffer' | 'opfs'; seekableSink?: SeekableSinkFactory;
 } = {}): Promise<{ buffer: ArrayBuffer; type: string }> {
   frameLog = []; audioLog = []; StubEncoder.instances = [];
   const restore = installGlobals({
@@ -404,8 +420,34 @@ async function runBuffered(opts: {
   try {
     return await encodeMuxWebCodecs(fakeFrames(opts.n ?? 3), opts.pick ?? PICK_WEBM, {
       width: 640, height: 360, fps: opts.fps ?? 24, bitrate: 1_000_000, audio: opts.audio ?? null,
+      target: opts.target, seekableSink: opts.seekableSink,
     });
   } finally { restore(); }
+}
+
+/**
+ * An in-memory stand-in for the OPFS seekable writable (step A3). It honours the
+ * POSITIONED writes mediabunny's `fastStart:false` MP4 uses to backpatch the trailing
+ * `moov`, so the bytes read back are exactly what a real OPFS file would hold - the
+ * StreamTarget path is exercised end to end without a browser.
+ */
+function memSeekableSink(): { factory: SeekableSinkFactory; bytes(): Uint8Array; closed(): boolean } {
+  let buf = new Uint8Array(0);
+  let max = 0;
+  let didClose = false;
+  const factory: SeekableSinkFactory = async () => {
+    const writable = new WritableStream<{ type: 'write'; data: Uint8Array; position: number }>({
+      write(chunk) {
+        const end = chunk.position + chunk.data.length;
+        if (end > buf.length) { const grown = new Uint8Array(end); grown.set(buf); buf = grown; }
+        buf.set(chunk.data, chunk.position);
+        if (end > max) max = end;
+      },
+      close() { didClose = true; },
+    });
+    return { writable, result: async (): Promise<Blob> => new Blob([buf.subarray(0, max)]) } as unknown as SeekableSink;
+  };
+  return { factory, bytes: () => buf.subarray(0, max), closed: () => didClose };
 }
 
 function bufferedAudio(length: number, mp4 = false): EncodeAudio {
@@ -516,4 +558,75 @@ test('encodeMuxWebCodecs: a muxer rejection inside the output callback propagate
     }
   }
   await assert.rejects(() => runBuffered({ VideoEncoder: BadChunkEncoder }), /EncodedVideoChunk/);
+});
+
+// ── Step A3: StreamTarget → seekable sink (OPFS in the browser) ────────────────
+// The default path is BufferTarget and is covered by every case above; here the
+// SAME real mediabunny muxer is pointed at a StreamTarget over an injected in-memory
+// SEEKABLE sink, so `fastStart:false` (MP4) and the streaming WebM writer are driven
+// end to end and the finalized artifact is read back and checked for completeness -
+// exactly the browser smoke test the plan asks for, but deterministic and in node.
+
+test('encodeMuxWebCodecs: mp4 over a StreamTarget/OPFS sink reads back a complete, seekable container', async () => {
+  const sink = memSeekableSink();
+  const r = await runBuffered({ pick: PICK_MP4, n: 6, target: 'opfs', seekableSink: sink.factory });
+  assert.equal(r.type, 'video/mp4');
+  assert.ok(sink.closed(), 'the writable must be closed (committing the file) at finalize');
+  const bytes = new Uint8Array(r.buffer);
+  // Read back from the sink == what finalize returned: a real, complete container.
+  assert.deepEqual([...bytes], [...sink.bytes()], 'the returned bytes are exactly the file on the sink');
+  assert.ok(bytes.length > 200, `opfs mp4 too small (${bytes.length} bytes) - likely truncated`);
+  assert.deepEqual([...bytes.subarray(4, 8)], [0x66, 0x74, 0x79, 0x70], 'leading ftyp box');
+  // fastStart:false streams the mdat and BACKPATCHES the moov at the end via seek -
+  // so a positioned write landed the moov, and it is present (not lost to truncation).
+  assert.ok(indexOfBytes(bytes, [0x6d, 0x6f, 0x6f, 0x76]) >= 0, 'moov box present (backpatched at the end)');
+  assert.ok(indexOfBytes(bytes, [0x00, videoPayload, 0xc3, 0xd4, 0xe5]) >= 0, 'frame 0 payload reached the mdat');
+});
+
+test('encodeMuxWebCodecs: webm over a StreamTarget/OPFS sink reads back a complete container', async () => {
+  const sink = memSeekableSink();
+  const r = await runBuffered({ pick: PICK_WEBM, n: 6, target: 'opfs', seekableSink: sink.factory });
+  assert.equal(r.type, 'video/webm');
+  assert.ok(sink.closed(), 'the writable must be closed at finalize');
+  const bytes = new Uint8Array(r.buffer);
+  assert.deepEqual([...bytes], [...sink.bytes()], 'the returned bytes are exactly the file on the sink');
+  assert.ok(bytes.length > 100, `opfs webm too small (${bytes.length} bytes)`);
+  assert.deepEqual([...bytes.subarray(0, 4)], [0x1a, 0x45, 0xdf, 0xa3], 'EBML header magic');
+  assert.ok(indexOfBytes(bytes, [0x00, videoPayload, 0xc3, 0xd4, 0xe5]) >= 0, 'frame 0 payload reached the cluster');
+});
+
+test('encodeMuxWebCodecs: the OPFS sink carries the audio track too', async () => {
+  const sink = memSeekableSink();
+  const r = await runBuffered({ pick: PICK_WEBM, n: 6, audio: bufferedAudio(11_000), target: 'opfs', seekableSink: sink.factory });
+  const bytes = new Uint8Array(r.buffer);
+  assert.deepEqual([...bytes.subarray(0, 4)], [0x1a, 0x45, 0xdf, 0xa3], 'EBML header magic');
+  // The audio encoder's payload marker (see EmittingAudioEncoder) must reach the file.
+  assert.ok(indexOfBytes(bytes, [0xa0]) >= 0 && bytes.length > 200, 'audio + video muxed into the streamed file');
+});
+
+// ── Step A4 / STOP GATE 4: provenance over the moov-at-end (fastStart:false) MP4 ──
+// The plan's A4 stamps the streamed OPFS container through the shell's existing
+// provenance chain; A3's return contract already routes the OPFS bytes into it (the
+// File IS a Blob, and renderSequence/renderFormat stamp whatever finalize returns).
+// The load-bearing risk is STOP GATE 4: the MP4 written by fastStart:false has its
+// `moov` at the END, and the container-metadata embedder must accept that layout
+// rather than reject it. `embedMp4Meta` (engine/src/video-meta.ts) explicitly does -
+// it finds `moov` wherever it sits and only patches chunk offsets when `mdat` follows
+// it - so this proves the streamed layout is stampable, not just muxable.
+test('gate 4: engine provenance embeds into the OPFS fastStart:false MP4 (moov-at-end, ftyp leading)', async () => {
+  const { embedMp4Meta } = await import('@lolly/engine');
+  const sink = memSeekableSink();
+  const r = await runBuffered({ pick: PICK_MP4, n: 6, target: 'opfs', seekableSink: sink.factory });
+  const bytes = new Uint8Array(r.buffer);
+  const MOOV = [0x6d, 0x6f, 0x6f, 0x76], MDAT = [0x6d, 0x64, 0x61, 0x74], UDTA = [0x75, 0x64, 0x74, 0x61];
+  assert.deepEqual([...bytes.subarray(4, 8)], [0x66, 0x74, 0x79, 0x70], 'leading ftyp (the stamp placer requires it)');
+  const moovAt = indexOfBytes(bytes, MOOV);
+  const mdatAt = indexOfBytes(bytes, MDAT);
+  assert.ok(mdatAt >= 0 && moovAt >= 0 && mdatAt < moovAt, 'fastStart:false put mdat FIRST and moov at the END');
+  assert.equal(indexOfBytes(bytes, UDTA), -1, 'no provenance udta before stamping');
+  const tags = { title: 'Seq', artist: 'Lolly', date: new Date(0).toISOString(), comment: 'c', encoder: 'Lolly', encodedBy: 'Lolly', publisher: 'Lolly' };
+  const out = new Uint8Array(embedMp4Meta(bytes, tags));
+  assert.notEqual(out.length, bytes.length, 'provenance was embedded - the moov-at-end layout was ACCEPTED, not rejected');
+  assert.ok(indexOfBytes(out, UDTA) >= 0, 'the udta box landed inside the trailing moov');
+  assert.ok(indexOfBytes(out, [0x00, videoPayload, 0xc3, 0xd4, 0xe5]) >= 0, 'frame payload survived the stamp');
 });

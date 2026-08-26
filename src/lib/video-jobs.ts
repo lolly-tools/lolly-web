@@ -786,8 +786,16 @@ export async function mediabunnyFrameReader(blob: Blob, fps: number, range?: Vid
   if (!(await track.canDecode())) { input.dispose?.(); throw new Error(t("This browser can't decode this video.")); }
   const width = track.displayWidth;
   const height = track.displayHeight;
-  const duration = await input.computeDuration();
   const f = fps > 0 ? Math.max(1, fps) : await sourceTrackFps(track);
+  // computeDuration() reports the last frame's START for a container that records no
+  // final-frame duration. Our own floored WebM exports are exactly that: WebM stores
+  // 1ms timecodes and, to keep exact-frame seeking, they carry no DefaultDuration
+  // (bridge/mediabunny-mux.ts). Taken literally that would drop the last frame from a
+  // whole-clip read, so extend the end to the last packet's presentation end. For a
+  // normally-authored file this already equals computeDuration, so nothing changes.
+  const lastPacket = await new m.EncodedPacketSink(track).getPacket(Number.POSITIVE_INFINITY, { metadataOnly: true });
+  const lastEnd = lastPacket ? lastPacket.timestamp + (lastPacket.duration || 1 / f) : 0;
+  const duration = Math.max(await input.computeDuration(), lastEnd);
   // The window, clamped into the clip: a range that runs past the end simply stops
   // at the end, and an absent range is the whole clip (start 0, end = duration).
   const startSec = range ? Math.max(0, Math.min(range.startSec, duration)) : 0;
@@ -956,51 +964,20 @@ export function alphaAnimWriter(format: 'webp' | 'png' | 'gif', fps: number): Vi
   };
 }
 
-interface CodecPick { container: 'mp4' | 'webm'; codec: string; muxCodec: string; }
-
-/** Pick an encodable WebCodecs video codec (mirrors export.ts's candidate list). */
-async function pickVideoCodec(width: number, height: number, fps: number, bitrate: number): Promise<CodecPick | null> {
-  const VE = (globalThis as { VideoEncoder?: { isConfigSupported?: (c: unknown) => Promise<{ supported?: boolean }> } }).VideoEncoder;
-  if (!VE?.isConfigSupported) return null;
-  const cands: CodecPick[] = [
-    { container: 'mp4', codec: 'avc1.640033', muxCodec: 'avc' },
-    { container: 'mp4', codec: 'avc1.4d0033', muxCodec: 'avc' },
-    { container: 'webm', codec: 'vp09.00.10.08', muxCodec: 'V_VP9' },
-    { container: 'webm', codec: 'vp8', muxCodec: 'V_VP8' },
-  ];
-  for (const pick of cands) {
-    try {
-      const s = await VE.isConfigSupported({ codec: pick.codec, width, height, bitrate, framerate: fps });
-      if (s?.supported) return pick;
-    } catch { /* next */ }
-  }
-  return null;
-}
-
-async function pickAudioCodec(container: 'mp4' | 'webm', sampleRate: number, numberOfChannels: number, bitrate: number): Promise<{ codec: string; muxCodec: string } | null> {
-  const AE = (globalThis as { AudioEncoder?: { isConfigSupported?: (c: unknown) => Promise<{ supported?: boolean }> } }).AudioEncoder;
-  if (!AE?.isConfigSupported) return null;
-  const cand = container === 'mp4' ? { codec: 'mp4a.40.2', muxCodec: 'aac' } : { codec: 'opus', muxCodec: 'A_OPUS' };
-  try {
-    const s = await AE.isConfigSupported({ codec: cand.codec, sampleRate, numberOfChannels, bitrate });
-    if (s?.supported) return cand;
-  } catch { /* unsupported */ }
-  return null;
-}
-
 /** A normal-video writer over the streaming WebCodecs mux (crop/upscale). Keeps
  *  `audio` (a decoded AudioBuffer) when the encoder can carry it. */
 export async function videoEncodeWriter(
   plan: { width: number; height: number; fps: number; bitrate: number; audio?: AudioBufferLike | null },
 ): Promise<VideoFrameWriter> {
   const { createStreamingMux } = await import('../bridge/video-encode-core.ts');
-  const pick = await pickVideoCodec(plan.width, plan.height, plan.fps, plan.bitrate);
+  const { pickWebCodecsVideo, pickWebCodecsAudio } = await import('../bridge/video-shared.ts');
+  const pick = await pickWebCodecsVideo('mp4', plan.width, plan.height, plan.fps, plan.bitrate);
   if (!pick) throw new Error(t("This browser can't encode video."));
 
   let audioDecl: import('../bridge/video-encode-core.ts').EncodeAudio | null = null;
   if (plan.audio && plan.audio.length > 0) {
     const chans = Math.min(2, Math.max(1, plan.audio.numberOfChannels));
-    const ac = await pickAudioCodec(pick.container, plan.audio.sampleRate, chans, 128_000);
+    const ac = await pickWebCodecsAudio(pick.container, plan.audio.sampleRate, chans, 128_000);
     if (ac) {
       audioDecl = { channels: [], sampleRate: plan.audio.sampleRate, numberOfChannels: chans, codec: ac.codec, muxCodec: ac.muxCodec, bitrate: 128_000 };
     }

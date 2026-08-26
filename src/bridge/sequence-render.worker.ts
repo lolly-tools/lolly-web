@@ -86,6 +86,31 @@ export type AnyCtx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2
 
 const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
 
+// ── streaming-mux target gate (plans/156 WP-A part 3) ────────────────────────
+//
+// A SEQUENCE streaming export (mp4/webm on the WebCodecs path) streams its container
+// to OPFS once it is long enough that holding the whole encoded stream in memory is the
+// real cost; a shorter one keeps the lean in-memory BufferTarget (already minimal after
+// Phase B, and byte-for-byte its historical layout). The gate is on FRAME COUNT alone,
+// and it lives HERE - the DOM-free file both threads import - precisely so the in-thread
+// path (sequence-render.ts, `frameCount`) and the worker path (`handleStart`,
+// `job.frameCount`) call the SAME function on the SAME number and therefore pick the
+// SAME target. That is what keeps the two byte-identical (the worker==in-thread SHA
+// golden), which requires the same `fastStart:false` OPFS layout on both once the gate
+// is crossed. Requesting 'opfs' is always safe: buildMediabunnyMux falls back to a
+// BufferTarget when OPFS is absent (part 1).
+
+/** Frames at/above which a streaming sequence export uses the OPFS StreamTarget. 900 =
+ *  30 s @30fps, comfortably below the 45 s / 1350-frame browser golden, so that golden
+ *  exercises (and thereby validates) the OPFS path while short exports stay on buffer. */
+export const OPFS_STREAM_MIN_FRAMES = 900;
+
+/** The streaming-mux target for an export of `frameCount` frames - the ONE gate both
+ *  the in-thread and worker sequence paths call, so they never diverge. */
+export function streamMuxTargetFor(frameCount: number): 'buffer' | 'opfs' {
+  return frameCount >= OPFS_STREAM_MIN_FRAMES ? 'opfs' : 'buffer';
+}
+
 // ── geometry: clip shapes and object-fit (pure, so they can be reasoned about) ──
 
 /**
@@ -1274,7 +1299,7 @@ export async function handleStart(
   ctl: { aborted(): boolean; awaitLive(token: number): Promise<ImageBitmap | null> },
   deps: {
     makeCanvas?: (w: number, h: number) => AnyCanvas;
-    makeMux?: (pick: EncodePick, o: { width: number; height: number; fps: number; bitrate: number; audio: EncodeAudio | null }) => Promise<StreamingMux>;
+    makeMux?: (pick: EncodePick, o: { width: number; height: number; fps: number; bitrate: number; audio: EncodeAudio | null; target?: 'buffer' | 'opfs' }) => Promise<StreamingMux>;
   } = {},
 ): Promise<void> {
   const { id, job, pick } = msg;
@@ -1299,6 +1324,9 @@ export async function handleStart(
   const mux = await (deps.makeMux ?? createStreamingMux)(pick, {
     width: job.outW, height: job.outH, fps: job.fps, bitrate: msg.bitrate,
     audio: audio ? { ...audio, channels: [] } : null,
+    // plans/156 WP-A part 3: long exports stream to OPFS - keyed on job.frameCount, the
+    // SAME number sequence-render.ts gates its in-thread mux on, so worker == in-thread.
+    target: streamMuxTargetFor(job.frameCount),
   });
 
   let token = 0;

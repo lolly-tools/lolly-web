@@ -4,10 +4,11 @@
  *
  * DOM-free, like bridge/export-hdr-png.test.ts: every encoder here takes planar
  * PCM and returns bytes, so node can drive all four. The two WebCodecs formats
- * use the REAL muxers (mp4-muxer / webm-muxer are pure JS) with a stub
- * AudioEncoder, so the container magic asserted below is the muxer's own output
- * and not a fixture. mp4-muxer type-checks chunks with `instanceof
- * EncodedAudioChunk`, so the stub chunk class is installed as that global.
+ * use the REAL muxer (mediabunny is pure JS) with a stub AudioEncoder, so the
+ * container magic asserted below is the muxer's own output and not a fixture.
+ * mediabunny's EncodedPacket.fromEncodedChunk type-checks chunks with `instanceof
+ * EncodedVideoChunk || instanceof EncodedAudioChunk`, so the stub chunk class is
+ * installed as both globals.
  *
  * Run directly:  node --test shells/web/src/lib/audio-encode.test.ts
  */
@@ -107,13 +108,21 @@ function stubEncoder(supported: boolean, log: StubLog, description = new Uint8Ar
     static async isConfigSupported(c: any) { return { supported, config: c }; }
     encodeQueueSize = 0;
     private out: (chunk: unknown, metadata: unknown) => void;
+    private cfg: any = null;
     constructor(init: { output: (chunk: unknown, metadata: unknown) => void; error: (e: unknown) => void }) {
       this.out = init.output;
     }
-    configure(c: any): void { log.configs.push(c); }
+    configure(c: any): void { this.cfg = c; log.configs.push(c); }
     encode(data: any): void {
       log.chunks++;
-      this.out(new StubChunk(data.timestamp, 20_000, new Uint8Array([1, 2, 3, 4])), { decoderConfig: { description } });
+      // A real WebCodecs decoderConfig: mediabunny validates the codec string.
+      // Opus needs no codec-private data; AAC carries an AudioSpecificConfig.
+      this.out(new StubChunk(data.timestamp, 20_000, new Uint8Array([1, 2, 3, 4])), {
+        decoderConfig: {
+          codec: this.cfg.codec, sampleRate: this.cfg.sampleRate, numberOfChannels: this.cfg.numberOfChannels,
+          ...(this.cfg.codec === 'opus' ? {} : { description }),
+        },
+      });
     }
     async flush(): Promise<void> {}
     close(): void {}
@@ -130,25 +139,28 @@ class StubAudioData {
 
 test('encodeM4a: ftyp box at offset 4, and the encoder is configured at the PCM rate', async () => {
   const g = globalThis as any;
-  const saved = g.EncodedAudioChunk;
-  g.EncodedAudioChunk = StubChunk;                 // mp4-muxer instanceof-checks this
+  const saved = { v: g.EncodedVideoChunk, a: g.EncodedAudioChunk };
+  g.EncodedVideoChunk = StubChunk;                 // mediabunny's fromEncodedChunk
+  g.EncodedAudioChunk = StubChunk;                 // instanceof-checks both
   try {
     const log: StubLog = { configs: [], chunks: 0 };
     const pcm = tone(48_000, 44_100);              // deliberately not 48 kHz
     const u8 = await bytesOf(await encodeM4a(pcm, {}, { AudioEncoder: stubEncoder(true, log), AudioData: StubAudioData }));
-    assert.equal(tag(u8, 4, 4), 'ftyp');           // mp4-muxer writes the isom brand
+    assert.equal(tag(u8, 4, 4), 'ftyp');           // the mp4 isom brand
     assert.equal(log.configs[0].codec, 'mp4a.40.2');
     assert.equal(log.configs[0].sampleRate, 44_100);
     assert.equal(log.configs[0].numberOfChannels, 2);
     assert.equal(log.chunks, Math.ceil(48_000 / 4800));
   } finally {
-    g.EncodedAudioChunk = saved;
+    g.EncodedVideoChunk = saved.v;
+    g.EncodedAudioChunk = saved.a;
   }
 });
 
 test('encodeOpus: EBML magic, and mono PCM is declared mono', async () => {
   const g = globalThis as any;
-  const saved = g.EncodedAudioChunk;
+  const saved = { v: g.EncodedVideoChunk, a: g.EncodedAudioChunk };
+  g.EncodedVideoChunk = StubChunk;
   g.EncodedAudioChunk = StubChunk;
   try {
     const log: StubLog = { configs: [], chunks: 0 };
@@ -158,7 +170,8 @@ test('encodeOpus: EBML magic, and mono PCM is declared mono', async () => {
     assert.equal(log.configs[0].codec, 'opus');
     assert.equal(log.configs[0].numberOfChannels, 1);
   } finally {
-    g.EncodedAudioChunk = saved;
+    g.EncodedVideoChunk = saved.v;
+    g.EncodedAudioChunk = saved.a;
   }
 });
 

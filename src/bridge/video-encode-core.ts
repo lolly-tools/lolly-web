@@ -7,8 +7,9 @@
  *     so the encode/mux runs off the main thread.
  *
  * Everything here is DOM-free: VideoEncoder / VideoFrame / AudioEncoder / AudioData are
- * globals in both window and worker scope, and the muxers (mp4-muxer / webm-muxer) are
- * pure-JS + lazily imported. Audio arrives as PLANAR channel Float32Arrays (not an
+ * globals in both window and worker scope, and the muxer (mediabunny, via
+ * bridge/mediabunny-mux.ts) is pure-JS + lazily imported. Audio arrives as PLANAR
+ * channel Float32Arrays (not an
  * AudioBuffer, which isn't transferable) so the worker path can transfer it. Returns the
  * muxed bytes + container type; the CALLER wraps them in a Blob and embeds provenance
  * (withVideoMeta) - kept on the main thread where the metadata writers already live.
@@ -17,6 +18,7 @@
  * schedules in video-mime.ts, so the ordering is unit-tested and identical to before.
  */
 import { videoFrameSchedule, audioChunkSchedule } from './video-mime.ts';
+import { buildMediabunnyMux, type SeekableSinkFactory } from './mediabunny-mux.ts';
 
 export interface EncodePick { container: 'mp4' | 'webm'; codec: string; muxCodec: string }
 
@@ -36,6 +38,15 @@ export interface EncodeOpts {
   fps: number;
   bitrate: number;
   audio?: EncodeAudio | null;
+  /**
+   * WP-A step A3. `'opfs'` streams the container to an OPFS-backed seekable writable
+   * (MP4 `fastStart:false`) instead of accumulating it in memory; `'buffer'` (the
+   * default) keeps the in-memory path and its exact bytes, so the goldens are
+   * unchanged. finalize() returns a Blob either way (the OPFS `File` IS a Blob).
+   */
+  target?: 'buffer' | 'opfs';
+  /** Test seam for `target:'opfs'` - the seekable sink factory (defaults to OPFS). */
+  seekableSink?: SeekableSinkFactory;
 }
 
 // ── Muxer wiring (shared seam) ────────────────────────────────────────────────
@@ -44,32 +55,53 @@ export interface EncodeOpts {
 // instead of duplicating (and drifting from) the container config. The
 // buffered and streaming paths differ only in how frames are supplied.
 
-/** The slice of mp4-muxer / webm-muxer's Muxer this module actually uses. */
+/** The slice of the muxer this module actually drives. finalize is async because
+ *  mediabunny's Output is (see bridge/mediabunny-mux.ts); chunks are still added
+ *  synchronously. */
 export interface MuxerLike {
   addVideoChunk(chunk: unknown, metadata?: unknown): void;
   addAudioChunk(chunk: unknown, metadata?: unknown): void;
-  finalize(): void;
+  finalize(): Promise<void>;
 }
 
-/** A built muxer + the ArrayBufferTarget it writes into + the container MIME. */
-export interface BuiltMuxer { muxer: MuxerLike; target: { buffer: ArrayBuffer }; type: string }
+/** Where the finished container lands: a BufferTarget exposes `.buffer` (in-memory);
+ *  an OPFS StreamTarget a lazily-read `.blob()` (step A3). Both yield the bytes only
+ *  after finalize. */
+export type MuxTarget = { buffer: ArrayBuffer | null } | { blob(): Promise<Blob> };
+
+/** A built muxer + the target it writes into + the container MIME. */
+export interface BuiltMuxer { muxer: MuxerLike; target: MuxTarget; type: string }
 
 /** Factory for the muxer - swappable so the encode paths are testable without a real muxer. */
 export type MuxerFactory = (pick: EncodePick, o: EncodeOpts) => Promise<BuiltMuxer>;
 
-/** Lazily import the right muxer and construct it for `pick`/`o`. */
+/** Build the mediabunny-backed muxer for `pick`/`o`. Track dimensions / rate /
+ *  decoder config come from each chunk's metadata, so only the codecs are needed
+ *  here. */
 export const defaultMuxerFactory: MuxerFactory = async (pick, o) => {
-  const { width, height, fps } = o;
-  const a = o.audio ?? null;
   const isMp4 = pick.container === 'mp4';
-  const mux: any = isMp4 ? await import('mp4-muxer') : await import('webm-muxer');
-  const target = new mux.ArrayBufferTarget();
-  const audioTrack = a ? { codec: a.muxCodec, numberOfChannels: a.numberOfChannels, sampleRate: a.sampleRate } : null;
-  const muxer = new mux.Muxer(isMp4
-    ? { target, fastStart: 'in-memory', video: { codec: 'avc', width, height }, ...(audioTrack ? { audio: audioTrack } : {}) }
-    : { target, firstTimestampBehavior: 'offset', video: { codec: pick.muxCodec, width, height, frameRate: fps }, ...(audioTrack ? { audio: audioTrack } : {}) });
+  const { muxer, target } = await buildMediabunnyMux({
+    container: pick.container,
+    video: isMp4 ? 'avc' : pick.muxCodec,
+    audio: o.audio ? o.audio.muxCodec : null,
+    frameRate: o.fps,
+    target: o.target ?? 'buffer',
+    seekableSink: o.seekableSink,
+  });
   return { muxer, target, type: isMp4 ? 'video/mp4' : 'video/webm' };
 };
+
+/** The finished container as a Blob, from either target kind (step A3). A
+ *  BufferTarget wraps its in-memory buffer; an OPFS StreamTarget returns the file it
+ *  streamed to, stamped with the container MIME (via a zero-copy slice, since an OPFS
+ *  File's own `type` is empty). */
+async function containerBlob(target: MuxTarget, type: string): Promise<Blob> {
+  if ('blob' in target) {
+    const b = await target.blob();
+    return b.type === type ? b : b.slice(0, b.size, type);
+  }
+  return new Blob([target.buffer as ArrayBuffer], { type });
+}
 
 /** Encode frames (+ optional audio) and mux → { muxed bytes, container MIME }. Throws on
  *  any encoder error. Identical logic to the former inline loop in export.ts. */
@@ -87,7 +119,7 @@ export async function encodeMuxWebCodecs(
     error: (e) => { encErr = e; },
   });
   const config: any = { codec: pick.codec, width, height, bitrate, framerate: fps };
-  if (isMp4) config.avc = { format: 'avc' };   // length-prefixed avcC, as mp4-muxer expects
+  if (isMp4) config.avc = { format: 'avc' };   // length-prefixed avcC, which the mp4 container needs
   encoder.configure(config);
 
   for (const t of videoFrameSchedule(frames.length, fps)) {
@@ -132,8 +164,12 @@ export async function encodeMuxWebCodecs(
   }
 
   if (encErr) throw encErr instanceof Error ? encErr : new Error('VideoEncoder error');
-  muxer.finalize();
-  return { buffer: target.buffer as ArrayBuffer, type: isMp4 ? 'video/mp4' : 'video/webm' };
+  await muxer.finalize();
+  const type = isMp4 ? 'video/mp4' : 'video/webm';
+  // The buffered path is BufferTarget by default (whole clip in memory already), so
+  // read its buffer directly; honour an OPFS target too for completeness.
+  if ('blob' in target) return { buffer: await (await target.blob()).arrayBuffer(), type };
+  return { buffer: target.buffer as ArrayBuffer, type };
 }
 
 // ── Streaming encode + mux ────────────────────────────────────────────────────
@@ -243,27 +279,71 @@ export async function createStreamingMux(
   // third 30fps video frame TIES exactly - so feeding the muxer in arrival
   // order made the interleave (and therefore the file's bytes) depend on
   // scheduler load: same render, same pixels, same size, different sha. The
-  // callbacks queue per stream instead, and finalize() drains both queues in
-  // one canonical order (ascending timestamp, video first on a tie - the same
-  // rule webm-muxer's own video-queue drain applies). Memory is unchanged:
-  // both muxers already accumulate the whole encoded stream (see the MEMORY
-  // note in sequence-render.ts).
+  // callbacks queue per stream instead; a BOUNDED merge (drainBounded, below)
+  // hands the muxer both streams in one canonical order (ascending timestamp,
+  // video first on a tie) AS THE RENDER PROCEEDS, so the interleave never
+  // depends on callback timing and the queues stop accumulating the whole
+  // encoded stream. The muxer adapter applies the same rule again downstream.
   const vQ: Array<{ chunk: unknown; metadata: unknown }> = [];
   const aQ: Array<{ chunk: unknown; metadata: unknown }> = [];
   const tsOf = (c: unknown): number => Number((c as { timestamp?: number } | null)?.timestamp ?? 0);
 
+  // ── Bounded interleave (WP-A step A2) ──────────────────────────────────────
+  // The whole-clip drain that used to run once at finalize now runs
+  // INCREMENTALLY: whenever a frame or an audio window advances a stream's
+  // timestamp, every packet whose canonical position is now settled is flushed to
+  // the muxer, and the rest waits. A packet is settled once no not-yet-emitted
+  // packet from the OTHER stream could sort before it. Both encoders emit in
+  // monotonic ascending order (none of these codecs produces B-frames), so a
+  // stream's highest emitted timestamp is a watermark below which nothing new can
+  // appear:
+  //   • a VIDEO packet is safe once its ts <= the audio watermark - a future audio
+  //     packet is strictly later, and one at the same ts loses the tie to video;
+  //   • an AUDIO packet is safe once its ts <= the video watermark - a future video
+  //     packet at the same ts WINS the tie, so the audio must wait for the video
+  //     watermark to pass its ts.
+  // A finished (flushed) or absent stream has an infinite watermark. finalize
+  // drains with BOTH infinite, so it emits exactly what the old whole-clip merge
+  // did: vi/ai only advance and only ever release the true next element of the
+  // canonical merge, so the full sequence of muxer.add* calls is byte-for-byte the
+  // ascending/video-first-on-tie merge, no matter when each release fires.
+  let vi = 0;
+  let ai = 0;
+  let vHigh = Number.NEGATIVE_INFINITY;
+  let aHigh = Number.NEGATIVE_INFINITY;
+  let videoDone = false;
+  let audioDone = a === null;                        // no audio track ⇒ nothing will ever arrive
+  const drainBounded = (final: boolean): void => {
+    const aCeil = (final || audioDone) ? Number.POSITIVE_INFINITY : aHigh;
+    const vCeil = (final || videoDone) ? Number.POSITIVE_INFINITY : vHigh;
+    while (vi < vQ.length || ai < aQ.length) {
+      const haveV = vi < vQ.length;
+      const haveA = ai < aQ.length;
+      const takeVideo = haveV && (!haveA || tsOf(vQ[vi]!.chunk) <= tsOf(aQ[ai]!.chunk));
+      if (takeVideo) {
+        if (tsOf(vQ[vi]!.chunk) > aCeil) break;      // a later audio window could still undercut it
+        muxer.addVideoChunk(vQ[vi]!.chunk, vQ[vi]!.metadata);
+        vi++;
+      } else {
+        if (tsOf(aQ[ai]!.chunk) > vCeil) break;      // a later video frame could still tie/precede it
+        muxer.addAudioChunk(aQ[ai]!.chunk, aQ[ai]!.metadata);
+        ai++;
+      }
+    }
+  };
+
   const encoder = new VEnc({
-    output: (chunk: unknown, metadata: unknown) => { vQ.push({ chunk, metadata }); },
+    output: (chunk: unknown, metadata: unknown) => { vQ.push({ chunk, metadata }); const t = tsOf(chunk); if (t > vHigh) vHigh = t; },
     error: (e: unknown) => { fail(e); },
   });
   const config: any = { codec: pick.codec, width, height, bitrate, framerate: fps };
-  if (isMp4) config.avc = { format: 'avc' };   // length-prefixed avcC, as mp4-muxer expects
+  if (isMp4) config.avc = { format: 'avc' };   // length-prefixed avcC, which the mp4 container needs
   encoder.configure(config);
 
   let aEnc: any = null;
   if (a) {
     aEnc = new AEnc({
-      output: (chunk: unknown, metadata: unknown) => { aQ.push({ chunk, metadata }); },
+      output: (chunk: unknown, metadata: unknown) => { aQ.push({ chunk, metadata }); const t = tsOf(chunk); if (t > aHigh) aHigh = t; },
       error: (e: unknown) => { fail(e); },
     });
     aEnc.configure({ codec: a.codec, sampleRate: a.sampleRate, numberOfChannels: a.numberOfChannels, bitrate: a.bitrate });
@@ -296,6 +376,7 @@ export async function createStreamingMux(
       }
       await drain(encoder);
       if (encErr) throw asError(encErr);
+      drainBounded(false);                            // flush any video the audio watermark now settles
     },
 
     async addAudio(buffer: PcmSource): Promise<void> {
@@ -329,6 +410,7 @@ export async function createStreamingMux(
       }
       audioFrames += total;
       if (encErr) throw asError(encErr);
+      drainBounded(false);                            // flush any audio the video watermark now settles
     },
 
     async finalize(): Promise<Blob> {
@@ -336,31 +418,30 @@ export async function createStreamingMux(
       state = 'closed';
       try {
         await encoder.flush();
+        videoDone = true;
         shut(encoder);
         if (aEnc) { await aEnc.flush(); shut(aEnc); }
+        audioDone = true;
       } catch (e) {
         shut(encoder); shut(aEnc);
         throw asError(e);
       }
       if (encErr) throw asError(encErr);
-      // Canonical drain - the only place chunks meet the muxer. Per-stream
-      // order is each encoder's emit order (monotonic; neither codec path
-      // produces B-frames); only the interleave between streams is decided
-      // here, so it is decided the same way every run.
+      // Final drain - the tail the bounded merge could not settle mid-render.
+      // With both streams flushed the watermarks are infinite, so this releases
+      // whatever remains in one canonical order (ascending timestamp, video first
+      // on a tie); the incremental releases plus this tail are byte-for-byte the
+      // old whole-clip drain. Per-stream order is each encoder's emit order
+      // (monotonic; neither codec path produces B-frames).
       try {
-        let vi = 0;
-        let ai = 0;
-        while (vi < vQ.length || ai < aQ.length) {
-          const takeVideo = ai >= aQ.length
-            || (vi < vQ.length && tsOf(vQ[vi]!.chunk) <= tsOf(aQ[ai]!.chunk));
-          if (takeVideo) { muxer.addVideoChunk(vQ[vi]!.chunk, vQ[vi]!.metadata); vi++; }
-          else { muxer.addAudioChunk(aQ[ai]!.chunk, aQ[ai]!.metadata); ai++; }
-        }
+        drainBounded(true);
       } catch (e) {
         throw asError(e);
       }
-      muxer.finalize();
-      return new Blob([target.buffer as ArrayBuffer], { type });
+      await muxer.finalize();
+      // BufferTarget → Blob([buffer]) (byte-identical to before); OPFS StreamTarget
+      // → the streamed file, read back as a Blob. finalize returns a Blob either way.
+      return await containerBlob(target, type);
     },
 
     async abort(reason?: unknown): Promise<void> {

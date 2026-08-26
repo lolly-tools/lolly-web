@@ -23,20 +23,21 @@
  *            here, so an mp3-in/mp3-out request is generation loss: the caller
  *            (renderAudioExport) avoids it by passing the original bytes through
  *            when nothing was trimmed or mixed.
- *  - m4a - WebCodecs AudioEncoder (AAC-LC, mp4a.40.2) muxed by mp4-muxer in
- *            audio-only mode. LOSSY. Needs a platform encoder (see audioSupport).
- *  - opus - WebCodecs AudioEncoder (opus) muxed by webm-muxer in audio-only
- *            mode. LOSSY. Needs a platform encoder.
+ *  - m4a - WebCodecs AudioEncoder (AAC-LC, mp4a.40.2) muxed by mediabunny into an
+ *            audio-only MP4. LOSSY. Needs a platform encoder (see audioSupport).
+ *  - opus - WebCodecs AudioEncoder (opus) muxed by mediabunny into an audio-only
+ *            WebM. LOSSY. Needs a platform encoder.
  *
  * Every LOSSY path is a genuine re-encode of the samples given, so a lossy source
  * that is neither trimmed nor mixed must NOT be routed through one when the
  * requested format already matches it - renderAudioExport enforces that.
  *
- * The muxers (mp4-muxer / webm-muxer) and lamejs are lazy-imported so none of
- * them enters the preload bundle; they load only when someone exports audio.
+ * The muxer (mediabunny) and lamejs are lazy-imported so neither enters the
+ * preload bundle; they load only when someone exports audio.
  */
 import { packWav, type WavAudio, type WavSampleFormat } from '../../../../engine/src/wav.ts';
 import { audioChunkSchedule } from '../bridge/video-mime.ts';
+import { buildMediabunnyMux } from '../bridge/mediabunny-mux.ts';
 
 /** Planar PCM: one Float32Array per channel, samples in -1..1, plus its rate.
  *  Structurally the engine's WavAudio, so packWav takes it directly. */
@@ -137,10 +138,11 @@ function floatToInt16(f32: Float32Array): Int16Array {
 
 // ── m4a / opus (WebCodecs + a muxer in audio-only mode) ───────────────────────
 
-/** The slice of mp4-muxer / webm-muxer this module drives. */
+/** The slice of the muxer this module drives. finalize is async (mediabunny's
+ *  Output is - see bridge/mediabunny-mux.ts); chunks are still added synchronously. */
 interface AudioMuxerLike {
   addAudioChunk(chunk: unknown, metadata?: unknown): void;
-  finalize(): void;
+  finalize(): Promise<void>;
 }
 interface BuiltAudioMuxer { muxer: AudioMuxerLike; target: { buffer: ArrayBuffer } }
 
@@ -151,15 +153,14 @@ export type AudioMuxerFactory = (
   track: { codec: string; numberOfChannels: number; sampleRate: number },
 ) => Promise<BuiltAudioMuxer>;
 
-/** Both muxers support an audio-only file: declare the audio track and no video. */
+/** An audio-only file: declare the audio track and no video. The channel count /
+ *  sample rate arrive with the encoded chunks' metadata, so only the codec is
+ *  needed here. */
 export const defaultAudioMuxerFactory: AudioMuxerFactory = async (container, track) => {
-  const isMp4 = container === 'mp4';
-  const mux: any = isMp4 ? await import('mp4-muxer') : await import('webm-muxer');
-  const target = new mux.ArrayBufferTarget();
-  const muxer = new mux.Muxer(isMp4
-    ? { target, fastStart: 'in-memory', audio: track }
-    : { target, firstTimestampBehavior: 'offset', audio: track });
-  return { muxer, target };
+  // Audio-only export always uses the in-memory BufferTarget (no step-A3 OPFS
+  // streaming here), so the target is the `.buffer` kind.
+  const { muxer, target } = await buildMediabunnyMux({ container, audio: track.codec });
+  return { muxer, target: target as { buffer: ArrayBuffer } };
 };
 
 /** Injection seam for the WebCodecs globals + the muxer (node has neither). */
@@ -236,7 +237,7 @@ async function encodeWebCodecsAudio(
   enc.close?.();
   if (encErr) throw encErr instanceof Error ? encErr : new Error('AudioEncoder error');
 
-  muxer.finalize();
+  await muxer.finalize();
   return new Blob([target.buffer as BlobPart], { type: isMp4 ? AUDIO_MIME.m4a : AUDIO_MIME.opus });
 }
 

@@ -118,7 +118,9 @@ import {
   createStreamingMux,
   type EncodePick,
   type StreamingMux,
+  type PcmSource,
 } from './video-encode-core.ts';
+import { pickWebCodecsVideo, pickWebCodecsAudio, type AudioPick } from './video-shared.ts';
 // The DOM-free executor. Imported as an ordinary module for the in-thread path
 // AND spawned as a Worker below - one compositor, two hosts (see the header).
 import {
@@ -127,6 +129,7 @@ import {
   toJobLayer,
   jobTransferables,
   closeJobBitmaps,
+  streamMuxTargetFor,
   radiiOf,
   fitRect,
   type SeqJob,
@@ -144,6 +147,11 @@ import {
 export { radiiOf, fitRect };
 import { videoBitrate, videoMimeCandidates } from './video-mime.ts';
 import { bedDuckEnvelope, scheduleGainEvents, MIX_RAMP_SEC, type DuckSpan } from './audio-envelope.ts';
+// plans/156 Phase B: the analytic mix-window evaluator. B2/B3 route BOTH the whole
+// buffer (sequenceAudioPcm, the worker handover) AND the on-demand streaming windows
+// through this one PURE function, so "whole" and "windowed" are literally the same
+// code - the OAC render is gone, and with it the O(duration) mix.buffer hold.
+import { mixWindow, type MixSpec, type MixClip, type MixBed } from './mix-window.ts';
 import { insertPngPhys, insertPngMeta, insertPngIcc, iccWanted } from './export-image-meta.ts';
 import {
   packApng,
@@ -194,6 +202,15 @@ import { assetIdForUrl, MAX_CREDENTIAL_SCAN_BYTES } from './assets.ts';
  */
 export interface SeqHost {
   log?(level: string, msg: string): void;
+  /** Surface a user-visible EXPORT QUALITY notice (not an error) - e.g. a sped-up
+   *  clip whose audio had to be dropped. host.log() is console-only, so a
+   *  degradation reported only through `log` never reaches the person exporting;
+   *  the shell's export bridge wires this to the export card. Optional: a host
+   *  that does not set it (the CLI, tests) just doesn't show the extra line, and
+   *  the parallel `log('warn', …)` still records it. The audio mix runs on the
+   *  MAIN thread only (see the module header + sequence-render.worker.ts), so this
+   *  reaches the card directly, without a worker `postMessage` hop. */
+  notice?(msg: string): void;
   assets?: {
     credential?(id: string): Promise<{ store: Uint8Array; format: string } | null>;
   };
@@ -213,9 +230,37 @@ export interface SeqHost {
  */
 export const MAX_LIVE_PROVIDERS = 3;
 
-/** Sanity ceiling on a sequence, ms. Not a memory bound (the streaming path has
- *  none) - it is the "somebody hand-edited seq-ms in the URL" guard. */
+/** Sanity ceiling on a sequence, ms - the DEFAULT (BufferTarget / OPFS-unavailable)
+ *  bound. Not a memory bound for the streaming path per se, but the in-memory
+ *  BufferTarget DOES accumulate the whole encoded stream, so 10 min is where that hold
+ *  stops being negligible. The "somebody hand-edited seq-ms in the URL" guard for every
+ *  path that is NOT streaming to OPFS. */
 export const MAX_SEQUENCE_MS = 600_000;
+
+/**
+ * The ceiling lifted to 30 min, selectable ONLY for a streaming export that actually
+ * gets the OPFS StreamTarget (plans/156 WP-A part 4). It is guarded, never a bare bump:
+ * `ceilingMsFor(useOpfs)` returns this iff the OPFS sink is the active target - long
+ * enough to cross the frame gate AND real OPFS present - and `MAX_SEQUENCE_MS` otherwise.
+ * OPFS streams the container to disk as it is written, so its peak no longer grows with
+ * the encoded stream; the one remaining O(filesize) hold is the bounded C2PA read-back at
+ * finalize (a ~135 MB transient tail at 30 min - acceptable; see plans/156 §2 A3 Step 5).
+ */
+export const MAX_SEQUENCE_STREAM_MS = 1_800_000;
+
+/** True when this environment can back a real OPFS StreamTarget - the same feature-detect
+ *  `buildMediabunnyMux` falls back on (plans/156 WP-A part 1). Used ONLY to decide the
+ *  guarded 30-min ceiling: the lift needs the OPFS sink to actually engage, not merely be
+ *  requested, so an OPFS-unavailable export keeps the 10-min `MAX_SEQUENCE_MS` bound. */
+function opfsStreamingAvailable(): boolean {
+  return typeof navigator !== 'undefined' && !!navigator.storage?.getDirectory;
+}
+
+/** The length ceiling in ms for this export: the lifted 30-min bound iff the OPFS
+ *  StreamTarget is the active sink, the default 10 min otherwise. */
+function ceilingMsFor(useOpfs: boolean): number {
+  return useOpfs ? MAX_SEQUENCE_STREAM_MS : MAX_SEQUENCE_MS;
+}
 
 /** No frame completed for this long ⇒ the export is stuck; fail, never hang. */
 export const WATCHDOG_MS = 10_000;
@@ -238,6 +283,67 @@ export function _setFxCacheBytes(bytes: number | null): void {
 /** Everything mixes at 48 kHz stereo - the rate both AAC and Opus want. */
 export const MIX_RATE = 48_000;
 export const MIX_CHANNELS = 2;
+
+/** The audio window fed to the streaming mux per call - 0.1s @ 48k, the mux's own
+ *  internal chunk grid, integer-sample aligned and independent of fps. */
+export const AUDIO_WINDOW = 4800;
+
+/** A stateful windowed-audio feeder: hand it the current frame timestamp inside the
+ *  frame loop and it feeds every audio window whose START time has been reached,
+ *  INTERLEAVED with the frames (WP-A step A2), so the mux advances its bounded
+ *  merge - and can write to OPFS - as the render proceeds instead of holding the
+ *  whole encoded stream to the end. */
+interface WindowedAudioFeeder {
+  /** Feed every remaining window whose start time is <= `tsUs` (µs). */
+  upTo(tsUs: number): Promise<void>;
+  /** Feed whatever remains - audio that outlasts the video (e.g. a bed longer than the clip). */
+  flush(): Promise<void>;
+}
+
+/**
+ * Build a feeder that produces each audio window ANALYTICALLY, ON DEMAND, from the
+ * mix spec (plans/156 Phase B Step B3) - there is no pre-rendered buffer to slice.
+ *
+ * BIT-IDENTICAL to one terminal `addAudio(wholeMix)`: `mixWindow(spec, w0, w1)`
+ * concatenated over the AUDIO_WINDOW grid equals a single whole-range call
+ * sample-for-sample (mix-window.test.ts, plans/156 §5 STOP-5), because every output
+ * sample is an independent accumulator and the envelope/loop-phase are evaluated at
+ * the ABSOLUTE sample index - the window seam carries no state. The mux continues its
+ * position-based session clock across calls (video-encode-core.ts's addAudio), so the
+ * window starting at sample `off` still lands at absolute time round(off / MIX_RATE ·
+ * 1e6) µs - the same grid the mux stamps its chunks on - and only the MOMENT each
+ * window is produced changes, which the mux's clock does not observe. The win is that
+ * the O(duration) finished PCM is never materialised: only one 0.1 s window exists at
+ * a time (plans/156 Phase B - the dominant memory hold is gone).
+ */
+function windowedAudioFeeder(
+  mux: StreamingMux, spec: MixSpec, total: number, numberOfChannels: number,
+): WindowedAudioFeeder {
+  let off = 0;
+  const feedOne = async (): Promise<void> => {
+    const from = off;
+    const end = Math.min(off + AUDIO_WINDOW, total);
+    off = end;
+    // The window is evaluated here and nowhere retained: mixWindow returns a fresh
+    // stereo pair of length `end - from`, addAudio copies it into the encoder, and it
+    // is collected before the next frame.
+    const planes = mixWindow(spec, from, end);
+    await mux.addAudio({
+      length: end - from,
+      numberOfChannels,
+      getChannelData: (ch: number) => planes[Math.min(ch, planes.length - 1)]!,
+    });
+  };
+  const startUsOf = (sample: number): number => Math.round((sample / MIX_RATE) * 1e6);
+  return {
+    async upTo(tsUs: number): Promise<void> {
+      while (off < total && startUsOf(off) <= tsUs) await feedOne();
+    },
+    async flush(): Promise<void> {
+      while (off < total) await feedOne();
+    },
+  };
+}
 
 /** Fixed GIF frame rate (the gif encoder's own; it ignores opts.fps). */
 const GIF_FPS = 15;
@@ -303,41 +409,10 @@ function maxVideoFrames(): number {
   return Math.max(200, Math.round((Math.min(8, gb) / 8) * 600));
 }
 
-// from export.ts:pickWebCodecsVideo
-async function pickWebCodecsVideo(preferred: string, width: number, height: number, fps: number, bitrate: number): Promise<EncodePick | null> {
-  if (typeof VideoEncoder === 'undefined') return null;
-  const mp4: EncodePick[] = [
-    { container: 'mp4', codec: 'avc1.640033', muxCodec: 'avc' },
-    { container: 'mp4', codec: 'avc1.4d0033', muxCodec: 'avc' },
-  ];
-  const webm: EncodePick[] = [
-    { container: 'webm', codec: 'vp09.00.10.08', muxCodec: 'V_VP9' },
-    { container: 'webm', codec: 'vp8', muxCodec: 'V_VP8' },
-  ];
-  for (const pick of preferred === 'mp4' ? [...mp4, ...webm] : [...webm, ...mp4]) {
-    try {
-      const support = await VideoEncoder.isConfigSupported({ codec: pick.codec, width, height, bitrate, framerate: fps });
-      if (support?.supported) return pick;
-    } catch { /* try the next candidate */ }
-  }
-  return null;
-}
-
-interface SeqAudioPick { codec: string; muxCodec: string; sampleRate: number; numberOfChannels: number; bitrate: number }
-
-// from export.ts:pickWebCodecsAudio
-async function pickWebCodecsAudio(container: 'mp4' | 'webm'): Promise<SeqAudioPick | null> {
-  if (typeof AudioEncoder === 'undefined') return null;
-  const sampleRate = MIX_RATE, numberOfChannels = MIX_CHANNELS, bitrate = AUDIO_BITRATE;
-  const cand = container === 'mp4'
-    ? { codec: 'mp4a.40.2', muxCodec: 'aac' }
-    : { codec: 'opus', muxCodec: 'A_OPUS' };
-  try {
-    const s = await AudioEncoder.isConfigSupported({ codec: cand.codec, sampleRate, numberOfChannels, bitrate });
-    if (s?.supported) return { ...cand, sampleRate, numberOfChannels, bitrate };
-  } catch { /* unsupported */ }
-  return null;
-}
+// `pickWebCodecsVideo` / `pickWebCodecsAudio` now live in bridge/video-shared.ts
+// (imported above) - the shared ladder that retired the copy this file used to
+// carry. Sequence audio is 48 kHz stereo, so the shared defaults apply and the
+// call sites pass only the container.
 
 // from export.ts:withVideoMeta - provenance tags into the container, before the
 // C2PA stamp renderFormat applies to whatever this function returns.
@@ -393,33 +468,30 @@ interface BedFade {
 }
 
 /**
- * Connect a looping music bed through a gain envelope, scheduled at t=0.
+ * Describe a looping music bed as a `MixBed` for the analytic mixer (plans/156 B2).
  *
- * The automation itself is bedDuckEnvelope (audio-envelope.ts) - the same math
- * export.ts's mix graphs consume, so a bed ducks identically in a tool export
- * and a sequence render: fade in, glide down to volume·level over each span of
- * sequence audio (~0.8 s ramps, never steps), back to full between spans, fade
- * out. Started immediately because an OfflineAudioContext's currentTime is 0 and
- * never advances until rendering.
+ * This is the exact translation of the OAC bed graph `connectBed` used to build,
+ * into the closed form mixWindow evaluates - the automation itself is still
+ * bedDuckEnvelope (audio-envelope.ts), the same math export.ts's mix graphs consume,
+ * so a bed ducks identically in a tool export and a sequence render: fade in, glide
+ * down to volume·level over each span of sequence audio (~0.8 s ramps, never steps),
+ * back to full between spans, fade out. The bed still begins at output sample 0 reading
+ * from its in-point and loops within [in-point, duration) - `src.start(0, offset)` with
+ * `loop=true` - which is exactly what `startSample`/`offsetSample` and mixWindow's
+ * default loop region (the whole buffer) reproduce.
  */
-function connectBed(ctx: BaseAudioContext, buffer: AudioBuffer, dest: AudioNode, fade: BedFade, log: (l: string, m: string) => void): void {
-  const src = ctx.createBufferSource();
-  src.buffer = buffer;
-  src.loop = true;
+function buildBed(buffer: AudioBuffer, fade: BedFade, log: (l: string, m: string) => void): MixBed {
   // In-point, reproduced from export.ts:bedStartOffset (importing it would drag that
   // module's whole graph into this lazy chunk - the same reason rasterBox is copied).
-  // loopStart/loopEnd move with it: loopStart defaults to 0, so a wrap would otherwise
-  // replay the head of the track the visuals deliberately skipped, and loopEnd only
-  // means "end of buffer" while untouched.
+  // The bed loops within [offset, duration): the OAC graph set loopStart = offset,
+  // loopEnd = buffer.duration, so mixWindow's default `loopEndSample` (the buffer
+  // length) is left implicit and only the in-point is carried.
   let offset = fade.start ?? 0;
   if (!Number.isFinite(offset) || offset <= 0) offset = 0;
   else if (offset >= buffer.duration) {
     log('warn', `Audio starts at ${offset}s but the track is only ${buffer.duration.toFixed(2)}s long; playing it from 0:00.`);
     offset = 0;
   }
-  if (offset > 0) { src.loopStart = offset; src.loopEnd = buffer.duration; }
-  const gain = ctx.createGain();
-  src.connect(gain).connect(dest);
   const events = bedDuckEnvelope({
     clipSec: fade.clipSec ?? 0,
     volume: fade.volume,
@@ -433,8 +505,13 @@ function connectBed(ctx: BaseAudioContext, buffer: AudioBuffer, dest: AudioNode,
     // passes the slower musical MIX_RAMP_SEC explicitly.
     rampSec: fade.rampSec ?? 0.25,
   });
-  scheduleGainEvents(gain.gain, events, ctx.currentTime);
-  src.start(0, offset);
+  // COPY the decoded planes off the transient AudioBuffer: they travel into the spec
+  // (and, on the worker path, get transferred). Small - a few seconds of bed, never
+  // O(duration).
+  const nc = Math.max(1, buffer.numberOfChannels);
+  const pcm: Float32Array[] = [];
+  for (let ch = 0; ch < nc; ch++) pcm.push(new Float32Array(buffer.getChannelData(ch)));
+  return { pcm, events, offsetSample: Math.round(offset * MIX_RATE), startSample: 0 };
 }
 
 // ── rasterisation (the renderRecord technique) ──────────────────────────────
@@ -770,7 +847,15 @@ async function rasterBox(
 // ── the audio mix ───────────────────────────────────────────────────────────
 
 interface MixResult {
-  buffer: AudioBuffer | null;
+  /** The analytic mix description (plans/156): the placed clips + looping beds
+   *  mixWindow evaluates, or null when there is genuinely nothing to mix. BOTH the
+   *  whole buffer (sequenceAudioPcm, the worker handover) and the streaming windows
+   *  are produced from this one spec, so they are the same code by construction. */
+  spec: MixSpec | null;
+  /** The whole-mix length in sample frames - ceil(totalSec · MIX_RATE), the exact
+   *  count the OAC destination buffer used to have. Drives the whole-buffer length
+   *  and the streaming window grid alike. */
+  totalSamples: number;
   hasClipAudio: boolean;
   /** Whether a music bed actually CONNECTED - false when none was picked and false
    *  when the pick could not be fetched or decoded. Not the same as `opts.audio.url`
@@ -779,6 +864,29 @@ interface MixResult {
    *  export does, because with no clip audio either the whole file would be that
    *  silence. */
   hasBed: boolean;
+}
+
+/** The "nothing to mix" result - the non-streaming tiers and the empty guard. */
+const EMPTY_MIX: MixResult = { spec: null, totalSamples: 0, hasClipAudio: false, hasBed: false };
+
+/**
+ * The whole mix as ONE PcmSource, evaluated by mixWindow over the full length.
+ *
+ * Used only for the WORKER handover, which transfers planar PCM (an AudioBuffer is
+ * not transferable and the worker cannot open an OfflineAudioContext to decode the
+ * bed itself). This is the one O(duration) audio allocation left on the streaming
+ * side, and it exists ONLY on the worker path; the in-thread / GL / tilt tiers stream
+ * 0.1 s windows through `windowedAudioFeeder` and never materialise the whole mix. The
+ * worker then feeds this via `addAudio`, chunked on the SAME 4800 grid the in-thread
+ * feeder uses, so both threads stay byte-identical (the worker-SHA golden).
+ */
+function wholeMixPcm(spec: MixSpec, total: number): PcmSource {
+  const planes = mixWindow(spec, 0, total);
+  return {
+    length: total,
+    numberOfChannels: MIX_CHANNELS,
+    getChannelData: (ch: number): Float32Array => planes[Math.min(ch, planes.length - 1)]!,
+  };
 }
 
 /**
@@ -793,10 +901,19 @@ async function mixSequenceAudio(
   layers: SeqLayer[], totalSec: number, opts: ExportOpts, host: SeqHost | null,
 ): Promise<MixResult> {
   const OAC = (globalThis as any).OfflineAudioContext ?? (globalThis as any).webkitOfflineAudioContext;
-  if (!OAC || !(totalSec > 0)) return { buffer: null, hasClipAudio: false, hasBed: false };
+  const empty: MixResult = { spec: null, totalSamples: 0, hasClipAudio: false, hasBed: false };
+  if (!OAC || !(totalSec > 0)) return empty;
   const log = (l: string, m: string): void => host?.log?.(l, m);
 
+  // The mix still opens an OfflineAudioContext, but ONLY as the platform's audio
+  // DECODER: decodeAudioData is the sole route from compressed bed bytes (mp3/ogg) to
+  // PCM on this bridge. NO graph is rendered and startRendering is never called - every
+  // clip is read as PCM by its provider and every bed is looped + enveloped
+  // analytically by mixWindow - so nothing here allocates the O(duration) destination
+  // buffer the OAC render used to hold (plans/156 Phase B: the dominant memory hold).
   const octx: OfflineAudioContext = new OAC(MIX_CHANNELS, Math.max(1, Math.ceil(totalSec * MIX_RATE)), MIX_RATE);
+  const totalSamples = Math.max(1, Math.ceil(totalSec * MIX_RATE));
+  const clips: MixClip[] = [];
   const spans: { from: number; to: number }[] = [];
 
   for (const L of layers) {
@@ -805,6 +922,8 @@ async function mixSequenceAudio(
     if (L.durMs <= 0) continue;
     if (L.speed !== 1) {
       log('warn', `sequence audio: a clip at ${Math.round(L.startMs)}ms plays at ${L.speed}× - muted (v1 does not time-stretch audio).`);
+      // The warn above is console-only; also surface it where the user can see it.
+      host?.notice?.(`A sped-up clip's audio was dropped (audio can't change speed here).`);
       continue;
     }
     const url = mediaSrc(L);
@@ -852,16 +971,11 @@ async function mixSequenceAudio(
       const { channels } = await clip.pcm(from, to, MIX_RATE);
       const frames = channels[0]?.length ?? 0;
       if (!frames) continue;
-      const buf = octx.createBuffer(Math.max(1, Math.min(MIX_CHANNELS, channels.length)), frames, MIX_RATE);
-      for (let ch = 0; ch < buf.numberOfChannels; ch++) {
-        // The provider's planes may be views on a shared buffer; copyToChannel's
-        // lib.dom signature insists on a plain ArrayBuffer-backed view.
-        buf.copyToChannel(channels[Math.min(ch, channels.length - 1)] as unknown as Float32Array<ArrayBuffer>, ch);
-      }
-      const node = octx.createBufferSource();
-      node.buffer = buf;
-      node.connect(octx.destination);
-      node.start(Math.max(0, L.startMs / 1000));
+      // A unity-gain buffer read placed at an absolute start. The OAC graph played it
+      // with node.start(max(0, startMs/1000)); mixWindow places it at
+      // round(startMs · rate / 1000) - the same sample (plans/156 §1). A mono source
+      // fans out into both output channels exactly as copyToChannel's clamp did.
+      clips.push({ pcm: channels, startMs: Math.max(0, L.startMs) });
       spans.push({ from: L.startMs / 1000, to: L.startMs / 1000 + frames / MIX_RATE });
     } catch (err) {
       log('warn', `sequence audio: ${toCodedError(err).message} - clip will be silent`);
@@ -870,6 +984,7 @@ async function mixSequenceAudio(
     }
   }
 
+  const beds: MixBed[] = [];
   let hasBed = false;
   if (opts.audio?.url) {
     try {
@@ -880,10 +995,10 @@ async function mixSequenceAudio(
       // whose gap is too short for the bed to meaningfully come back up).
       const duckLevel = clamp01(opts.audio.duck ?? 1);
       const duck = spans.length && duckLevel < 1 ? { level: duckLevel, spans } : undefined;
-      connectBed(octx, bed, octx.destination, {
+      beds.push(buildBed(bed, {
         fadeIn: opts.audio.fadeIn, fadeOut: opts.audio.fadeOut,
         clipSec: totalSec, volume: opts.audio.volume, duck, start: opts.audio.start,
-      }, log);
+      }, log));
       hasBed = true;
       // A mix-in track (a tool with its own audio, section 6.1). The primary bed above
       // loops the whole clip here, so the mix-in ducks to its centre level for
@@ -892,12 +1007,12 @@ async function mixSequenceAudio(
         try {
           const bed2 = await octx.decodeAudioData(await (await fetch(opts.audio.mix.url)).arrayBuffer());
           const centre = clamp01(opts.audio.mix.centre ?? 1);
-          connectBed(octx, bed2, octx.destination, {
+          beds.push(buildBed(bed2, {
             fadeIn: opts.audio.mix.fadeIn, fadeOut: opts.audio.mix.fadeOut,
             clipSec: totalSec, volume: opts.audio.mix.volume,
             duck: centre < 1 ? { level: centre, spans: [{ from: 0, to: totalSec }] } : undefined,
             rampSec: MIX_RAMP_SEC,
-          }, log);
+          }, log));
         } catch (err) {
           log('warn', `Mix-in track unavailable (${(err as { message?: string })?.message ?? err}); exporting without it.`);
         }
@@ -907,13 +1022,11 @@ async function mixSequenceAudio(
     }
   }
 
-  if (!spans.length && !hasBed) return { buffer: null, hasClipAudio: false, hasBed: false };
-  try {
-    return { buffer: await octx.startRendering(), hasClipAudio: spans.length > 0, hasBed };
-  } catch (err) {
-    log('warn', `Audio mix failed (${(err as { message?: string })?.message ?? err}); exporting silent.`);
-    return { buffer: null, hasClipAudio: false, hasBed: false };
-  }
+  // Nothing to mix: exactly the OAC path's null result. Otherwise the spec that BOTH
+  // the whole buffer and the streaming windows are evaluated from - one mixer, one
+  // description (plans/156 B2). No startRendering, so no O(duration) buffer is born.
+  if (!clips.length && !hasBed) return empty;
+  return { spec: { clips, beds, rate: MIX_RATE }, totalSamples, hasClipAudio: clips.length > 0, hasBed };
 }
 
 /** The URL a media layer decodes from - the <video>'s src, or the audio marker's. */
@@ -1050,11 +1163,13 @@ export async function sequenceAudioPcm(
   if (!grid.length) throw sequenceError('SEQ_DECODE_FAILED', 'sequence has no frames');
 
   const mix = await mixSequenceAudio(stage.layers, grid.length / fps, opts, host);
-  if (!mix.buffer || (!mix.hasClipAudio && !mix.hasBed)) return null;
-  const buffer = mix.buffer;
-  const channels: Float32Array[] = [];
-  for (let ch = 0; ch < buffer.numberOfChannels; ch++) channels.push(buffer.getChannelData(ch));
-  return { channels, sampleRate: buffer.sampleRate };
+  if (!mix.spec || (!mix.hasClipAudio && !mix.hasBed)) return null;
+  // The WHOLE buffer, produced by the SAME mixWindow the streaming path feeds in 0.1 s
+  // windows (plans/156 B2) - one range call over the full length. So the audio-only
+  // export (wav/mp3/m4a/opus) is, sample-for-sample, the soundtrack the mp4/webm path
+  // muxes: not a second mixer that could drift, but the identical closed form.
+  const [left, right] = mixWindow(mix.spec, 0, mix.totalSamples);
+  return { channels: [left, right], sampleRate: MIX_RATE };
 }
 
 // ── the orchestrator ────────────────────────────────────────────────────────
@@ -1103,8 +1218,16 @@ async function renderSequenceAuthored(
   const parsed = parseSequenceStage(node as HTMLElement);
   const stage = parsed ? applyDurationOverride(parsed, opts) : null;
   if (!stage || !stage.totalMs) throw sequenceError('SEQ_DECODE_FAILED', 'not a timed sequence stage');
-  if (stage.totalMs > MAX_SEQUENCE_MS) {
-    throw sequenceError('SEQ_TOO_HEAVY', `sequence is ${Math.round(stage.totalMs / 1000)}s; the export ceiling is ${MAX_SEQUENCE_MS / 1000}s`);
+  // First, cheap, upper-bound guard (plans/156 WP-A part 4). 10 min (MAX_SEQUENCE_MS)
+  // normally; lifted to 30 min for the streaming formats (mp4/webm) - the only ones that
+  // can stream the container to OPFS instead of holding it in memory. Whether THIS export
+  // actually gets the OPFS sink (long enough, WebCodecs present, OPFS present) is settled
+  // precisely below once pick + frameCount are known, and a streaming export that stays on
+  // BufferTarget or falls back is re-bounded at 10 min there. Here we only refuse a
+  // hand-edited seq-ms no target could ever hold.
+  const earlyCeilingMs = (format === 'mp4' || format === 'webm') ? MAX_SEQUENCE_STREAM_MS : MAX_SEQUENCE_MS;
+  if (stage.totalMs > earlyCeilingMs) {
+    throw sequenceError('SEQ_TOO_HEAVY', `sequence is ${Math.round(stage.totalMs / 1000)}s; the export ceiling is ${earlyCeilingMs / 1000}s`);
   }
 
   // FIRST, before a single plate is photographed or a thread is chosen: the film's
@@ -1159,14 +1282,28 @@ async function renderSequenceAuthored(
   }
 
   let frameCount = grid.length;
+  // plans/156 WP-A part 4 - the GUARDED ceiling. The 30-min lift is selectable ONLY when
+  // the OPFS StreamTarget is the ACTIVE sink: a streaming (mp4/webm) export, on the
+  // WebCodecs path (pick), long enough to cross the frame gate (streamMuxTargetFor), with
+  // real OPFS present. Anything else - a short buffered export, a gif/apng, a MediaRecorder
+  // fallback, or an OPFS-unavailable browser - keeps the 10-min MAX_SEQUENCE_MS bound.
+  const useOpfs = streaming && !!pick
+    && streamMuxTargetFor(frameCount) === 'opfs'
+    && opfsStreamingAvailable();
+  const ceilingMs = ceilingMsFor(useOpfs);
   if (streaming && pick) {
-    if (frameCount > fps * (MAX_SEQUENCE_MS / 1000)) {
-      throw sequenceError('SEQ_TOO_HEAVY', `sequence needs ${frameCount} frames`);
+    if (frameCount > fps * (ceilingMs / 1000)) {
+      throw sequenceError('SEQ_TOO_HEAVY', `sequence needs ${frameCount} frames (over the ${ceilingMs / 1000}s ceiling)`);
     }
   } else {
     // Every non-streaming path buffers each frame - gif/apng as pixels or encoded
     // PNGs, the MediaRecorder fallback as ImageBitmaps - so the historical memory
-    // cap applies to all of them (see the header).
+    // cap applies to all of them (see the header). These never touch the OPFS sink, so
+    // they keep the 10-min MAX_SEQUENCE_MS bound: refuse a hand-edited over-ceiling length
+    // rather than silently capping a half-hour request down to a few hundred frames.
+    if (stage.totalMs > MAX_SEQUENCE_MS) {
+      throw sequenceError('SEQ_TOO_HEAVY', `sequence is ${Math.round(stage.totalMs / 1000)}s; the export ceiling is ${MAX_SEQUENCE_MS / 1000}s`);
+    }
     const cap = maxVideoFrames();
     if (frameCount > cap) {
       log('warn', `${format.toUpperCase()} capped at ${cap} frames (requested ${frameCount}); shorten the sequence, or export mp4/webm, to fit it all in.`);
@@ -1494,8 +1631,8 @@ async function renderSequenceAuthored(
     // Length is the ACTUAL clip length (frameCount/fps), not the authored one, so a
     // capped gif/apng and a full-length mp4 both get a bed that ends where they do.
     // OfflineAudioContext is main-thread only; the worker receives the rendered PCM.
-    const mix = streaming ? await mixSequenceAudio(stage.layers, (frameCount / fps), opts, host) : { buffer: null, hasClipAudio: false, hasBed: false };
-    const audioPick = pick && mix.buffer ? await pickWebCodecsAudio(pick.container) : null;
+    const mix = streaming ? await mixSequenceAudio(stage.layers, (frameCount / fps), opts, host) : EMPTY_MIX;
+    const audioPick = pick && mix.spec ? await pickWebCodecsAudio(pick.container) : null;
 
     const job: SeqJob = {
       layers: wire, grid: usedGrid, frameCount, fps, totalMs: stage.totalMs,
@@ -1551,7 +1688,8 @@ async function renderSequenceAuthored(
         ? `HYBRID (${liveBoxes.size} lottie layer(s) rastered on the main thread, one request in flight)`
         : 'fully worker-side (decode, composite, encode and mux all off the main thread)'}`);
       try {
-        const blob = await renderSequenceInWorker(job, pick, bitrate, audioPick, mix.buffer, {
+        const blob = await renderSequenceInWorker(job, pick, bitrate, audioPick,
+          mix.spec && audioPick ? wholeMixPcm(mix.spec, mix.totalSamples) : null, {
           log,
           // Every progress message is a frame boundary, which is where a cancel can be
           // acted on: the abort posts to the worker so it unwinds its own loop, then
@@ -1598,7 +1736,7 @@ async function renderSequenceAuthored(
    * in the executor the worker runs too, which is what makes the two identical.
    */
   async function renderInThread(
-    job: SeqJob, mix: MixResult, audioPick: SeqAudioPick | null, liveRaster: SeqJobIO['lottieAt'],
+    job: SeqJob, mix: MixResult, audioPick: AudioPick | null, liveRaster: SeqJobIO['lottieAt'],
   ): Promise<Blob> {
     const canvas: AnyCanvas = streaming && typeof OffscreenCanvas !== 'undefined'
       ? new OffscreenCanvas(outW, targetH)
@@ -1615,9 +1753,16 @@ async function renderSequenceAuthored(
         mux = await createStreamingMux(pick, {
           width: outW, height: targetH, fps, bitrate,
           audio: audioPick ? { ...audioPick, channels: [] } : null,
+          // plans/156 WP-A part 3: a long export streams its container to OPFS instead
+          // of accumulating it in memory. Gated on frameCount, the SAME number the worker
+          // path gates on (job.frameCount), so the two paths stay byte-identical.
+          target: streamMuxTargetFor(frameCount),
         });
         log('info', `sequence: WebCodecs ${pick.container}/${pick.codec}${audioPick ? `+${audioPick.codec}` : ''} ${outW}×${targetH}@${fps} ${frameCount}f (in-thread)`);
       }
+      // The audio mix is ready before the loop; feed its windows INTERLEAVED with
+      // the frames (A2) so the mux's bounded merge advances as the render proceeds.
+      const feeder = mux && mix.spec && audioPick ? windowedAudioFeeder(mux, mix.spec, mix.totalSamples, MIX_CHANNELS) : null;
 
       await runSequenceJob(job, canvas, ctx, {
         log,
@@ -1627,6 +1772,7 @@ async function renderSequenceAuthored(
         // with SEQ_ABORTED - the same seam the worker's abort message trips.
         aborted: () => opts.signal?.aborted === true,
         frame: async (c, cx, _i, tsUs) => {
+          if (feeder) await feeder.upTo(tsUs);        // audio windows due by this frame
           if (mux) await mux.addFrame(c as CanvasImageSource, tsUs);
           else if (streaming) bitmaps.push(await createImageBitmap(c as ImageBitmapSource));
           else if (format === 'apng') apngFrames.push(new Uint8Array(await (await canvasBlob(c, 'image/png')).arrayBuffer()));
@@ -1635,7 +1781,7 @@ async function renderSequenceAuthored(
       });
 
       if (mux) {
-        if (mix.buffer && audioPick) await mux.addAudio(mix.buffer);
+        if (feeder) await feeder.flush();             // any audio past the last frame
         const blob = await mux.finalize();
         mux = null;
         return await withVideoMeta(blob, blob.type, opts.meta, host);
@@ -1666,7 +1812,7 @@ async function renderSequenceAuthored(
    * front at the gate, so no `<video>` reaches here in this cut.
    */
   async function renderGlComposite(
-    job: SeqJob, mix: MixResult, audioPick: SeqAudioPick | null, liveRaster: SeqJobIO['lottieAt'],
+    job: SeqJob, mix: MixResult, audioPick: AudioPick | null, liveRaster: SeqJobIO['lottieAt'],
   ): Promise<Blob> {
     // Re-bound because a closure does not inherit the outer narrowing of `stage`, which
     // the guard at the top of the render has already made non-null (same as P2a).
@@ -1704,11 +1850,15 @@ async function renderSequenceAuthored(
         mux = await createStreamingMux(pick, {
           width: outW, height: targetH, fps, bitrate,
           audio: audioPick ? { ...audioPick, channels: [] } : null,
+          // plans/156 WP-A part 3: long exports stream to OPFS (same frameCount gate).
+          target: streamMuxTargetFor(frameCount),
         });
         log('info', `sequence: TILT export via the GPU compositor (plans/104 P2b) - WebCodecs ${pick.container}/${pick.codec}${audioPick ? `+${audioPick.codec}` : ''} ${outW}×${targetH}@${fps} ${job.frameCount}f, one clean plate texture per layer.`);
       } else {
         log('info', `sequence: TILT export via the GPU compositor (plans/104 P2b) - ${job.frameCount} frames of ${outW}×${targetH}, one clean plate texture per layer resampled on the GPU.`);
       }
+      // Audio windows fed INTERLEAVED with the frames (A2), same as the in-thread path.
+      const feeder = mux && mix.spec && audioPick ? windowedAudioFeeder(mux, mix.spec, mix.totalSamples, MIX_CHANNELS) : null;
 
       for (let i = 0; i < job.frameCount; i++) {
         // Cancel at the frame boundary; the finally aborts the mux and disposes the
@@ -1797,6 +1947,7 @@ async function renderSequenceAuthored(
         // in-thread path uses. `tsUs = round(t·1000)`, matching P2a exactly.
         comp.readInto(destCtx as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D);
         const tsUs = Math.round(t * 1000);
+        if (feeder) await feeder.upTo(tsUs);          // audio windows due by this frame
         if (mux) await mux.addFrame(destCanvas as CanvasImageSource, tsUs);
         else if (streaming) bitmaps.push(await createImageBitmap(destCanvas as ImageBitmapSource));
         else if (format === 'apng') apngFrames.push(new Uint8Array(await (await canvasBlob(destCanvas, 'image/png')).arrayBuffer()));
@@ -1805,7 +1956,7 @@ async function renderSequenceAuthored(
       }
 
       if (mux) {
-        if (mix.buffer && audioPick) await mux.addAudio(mix.buffer);
+        if (feeder) await feeder.flush();             // any audio past the last frame
         const blob = await mux.finalize();
         mux = null;
         return await withVideoMeta(blob, blob.type, opts.meta, host);
@@ -1902,15 +2053,19 @@ async function renderSequenceAuthored(
       try {
         const mix = streaming
           ? await mixSequenceAudio(layers, frameCount / fps, opts, host)
-          : { buffer: null, hasClipAudio: false, hasBed: false };
-        const audioPick = pick && mix.buffer ? await pickWebCodecsAudio(pick.container) : null;
+          : EMPTY_MIX;
+        const audioPick = pick && mix.spec ? await pickWebCodecsAudio(pick.container) : null;
         if (pick) {
           mux = await createStreamingMux(pick, {
             width: outW, height: targetH, fps, bitrate,
             audio: audioPick ? { ...audioPick, channels: [] } : null,
+            // plans/156 WP-A part 3: long exports stream to OPFS (same frameCount gate).
+            target: streamMuxTargetFor(frameCount),
           });
         }
         log('info', `sequence: tilt capture - ${frameCount} frames of ${outW}×${targetH}, one dom-to-image shot each.`);
+        // Audio windows fed INTERLEAVED with the frames (A2), same as the other tiers.
+        const feeder = mux && mix.spec && audioPick ? windowedAudioFeeder(mux, mix.spec, mix.totalSamples, MIX_CHANNELS) : null;
         for (let i = 0; i < frameCount; i++) {
           // Cancel at the frame boundary; the finally restores the artboard (the pose,
           // the background, the blob URLs) the same way a failed shot does.
@@ -1936,6 +2091,7 @@ async function renderSequenceAuthored(
           ctx.clearRect(0, 0, outW, targetH);
           if (shot) ctx.drawImage(shot as unknown as CanvasImageSource, 0, 0);
           const tsUs = Math.round(t * 1000);
+          if (feeder) await feeder.upTo(tsUs);        // audio windows due by this frame
           if (mux) await mux.addFrame(canvas as CanvasImageSource, tsUs);
           else if (streaming) bitmaps.push(await createImageBitmap(canvas as ImageBitmapSource));
           else if (format === 'apng') apngFrames.push(new Uint8Array(await (await canvasBlob(canvas, 'image/png')).arrayBuffer()));
@@ -1943,7 +2099,7 @@ async function renderSequenceAuthored(
           opts.onProgress?.(i + 1, frameCount);
         }
         if (mux) {
-          if (mix.buffer && audioPick) await mux.addAudio(mix.buffer);
+          if (feeder) await feeder.flush();           // any audio past the last frame
           const blob = await mux.finalize();
           mux = null;
           return await withVideoMeta(blob, blob.type, opts.meta, host);
@@ -2268,8 +2424,8 @@ export const SEQ_ABORT_GRACE_MS = 250;
  * provable in node against a stub port, not only in a browser.
  */
 export async function renderSequenceInWorker(
-  job: SeqJob, pick: EncodePick, bitrate: number, audioPick: SeqAudioPick | null,
-  mixBuffer: AudioBuffer | null,
+  job: SeqJob, pick: EncodePick, bitrate: number, audioPick: AudioPick | null,
+  mixPcm: PcmSource | null,
   io: { log(l: string, m: string): void; progress(d: number, t: number): void; live?: SeqJobIO['lottieAt'] },
 ): Promise<Blob> {
   // The plates are canvases (the in-thread fallback still needs them), so the
@@ -2294,15 +2450,17 @@ export async function renderSequenceInWorker(
     }))),
   };
 
-  const audio: SeqWorkerAudio | null = audioPick && mixBuffer
+  const audio: SeqWorkerAudio | null = audioPick && mixPcm
     ? {
         ...audioPick,
-        length: mixBuffer.length,
-        // COPIES, not the AudioBuffer's own views: these are transferred, and
-        // detaching the buffer the in-thread fallback would re-use is not a
-        // trade worth making for one memcpy of a few MB.
+        length: mixPcm.length,
+        // COPIES of the analytic planes: these are transferred, and detaching the
+        // planes the in-thread fallback would re-derive from the same spec is not a
+        // trade worth making for one memcpy of a few MB. The worker feeds this whole
+        // mix through addAudio, re-chunked on the SAME 4800 grid the in-thread feeder
+        // uses, so the two paths stay byte-identical (the worker-SHA golden).
         channels: Array.from({ length: audioPick.numberOfChannels }, (_, ch) =>
-          new Float32Array(mixBuffer.getChannelData(Math.min(ch, mixBuffer.numberOfChannels - 1)))),
+          new Float32Array(mixPcm.getChannelData(Math.min(ch, mixPcm.numberOfChannels - 1)))),
       }
     : null;
 
