@@ -959,7 +959,9 @@ async function renderFormatDispatch(node: Element, format: string, opts: ExportO
     case 'wav':
     case 'mp3':
     case 'm4a':
+    case 'aac':
     case 'opus':
+    case 'ogg':
       return await renderAudioOnly(node, format, opts);
     default:
       throw new Error(`Unsupported export format: ${format}`);

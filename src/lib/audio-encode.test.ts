@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Unit tests for the audio-only export encoders (wav / mp3 / m4a / opus).
+ * Unit tests for the audio-only export encoders (wav / mp3 / m4a / aac / opus / ogg).
  *
  * DOM-free, like bridge/export-hdr-png.test.ts: every encoder here takes planar
  * PCM and returns bytes, so node can drive all four. The two WebCodecs formats
@@ -14,10 +14,12 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { parseWav } from '../../../../engine/src/wav.ts';
 import {
   encodeWav, encodeMp3, encodeM4a, encodeAac, encodeOpus, encodeOgg, encodeAudio, renderAudioExport,
   sliceWithEnvelope, sniffAudioFormat, pcmFromAudioBuffer, NO_AUDIO_MSG,
+  AUDIO_FORMATS,
   type AudioPcm,
 } from './audio-encode.ts';
 
@@ -400,5 +402,20 @@ test('encodeAudio: routes ogg to Ogg and aac to ADTS through the one entry point
   } finally {
     g.EncodedVideoChunk = saved.v;
     g.EncodedAudioChunk = saved.a;
+  }
+});
+
+// Drift guard (schema-two-copies): every AUDIO_FORMATS member MUST have a dispatch
+// case in bridge/export.ts's renderFormat switch. aac/ogg were supported here but
+// missing there, so render(node,'ogg') threw "Unsupported export format" - a gap no
+// unit test above catches, because they call encodeAudio directly, not the export
+// dispatch. This asserts the two lists can never drift again.
+test('every AUDIO_FORMATS format is reachable through the export.ts dispatch', () => {
+  const src = readFileSync(new URL('../bridge/export.ts', import.meta.url), 'utf8');
+  for (const fmt of AUDIO_FORMATS) {
+    assert.ok(
+      src.includes(`case '${fmt}':`),
+      `bridge/export.ts renderFormat has no "case '${fmt}':" - render(node,'${fmt}') would throw Unsupported`,
+    );
   }
 });
