@@ -152,20 +152,21 @@ export function groupPrecacheFiles(all) {
   // The app group is the offline boot payload: everything EXCEPT the opt-in
   // runtime/model binaries - /ort/, /ort-hf/ (the speech worker's runtime,
   // which the SW can only serve from lolly-ort, never lolly-app) and /models/
-  // - and except the ORT wasm the BUNDLER re-emits into /assets/.
+  // - and except any ORT wasm the BUNDLER re-emits into /assets/.
   //
-  // That last exclusion is worth 46.2 MB of 82.7 (measured 2026-08-25). ORT's
-  // package entrypoints are imported as real modules, so rolldown follows
-  // `new URL('ort-wasm-simd-threaded.jsep.wasm', import.meta.url)` and emits a
-  // hash-named COPY under /assets/ - byte-identical (sha256-verified) to the
-  // ones already staged at /ort/ and /ort-hf/, which the ort/ortHf groups
-  // below already own. Precaching them in `app` made the mandatory offline
-  // download carry the two biggest binaries on the site so it could serve the
-  // opt-in runtime a second time, from a second bucket. Excluded by name
-  // (`/assets/ort-wasm-*`), NOT by extension: /assets/harfbuzz-*.wasm (390 KB,
-  // the text-to-path shaper behind SVG/PDF outline export) has no copy
-  // anywhere else, so an extension-wide filter would take offline vector
-  // export out with the duplicates.
+  // That last exclusion used to be worth 46.2 MB of the app group's 82.7
+  // (measured 2026-08-25), back when rolldown followed ORT's
+  // `new URL('ort-wasm-simd-threaded.jsep.wasm', import.meta.url)` and emitted a
+  // hash-named COPY under /assets/ of a binary already staged at /ort/ and
+  // /ort-hf/ - so the mandatory offline download carried the two biggest files on
+  // the site in order to serve the opt-in runtime a second time, from a second
+  // bucket. ortWasmFromPublic() now stops that emission at source, so on a current
+  // build this filter matches nothing; it stays as the backstop for the day an ORT
+  // or transformers.js upgrade introduces a wasm URL shaped differently enough to
+  // slip past that rewrite. Matched by name (`/assets/ort-wasm-*`), NOT by
+  // extension: /assets/harfbuzz-*.wasm (390 KB, the text-to-path shaper behind
+  // SVG/PDF outline export) has no copy anywhere else, so an extension-wide filter
+  // would take offline vector export out with the duplicates.
   const app = all.filter(f =>
     !f.url.startsWith('/ort/') && !f.url.startsWith('/ort-hf/') && !f.url.startsWith('/models/')
     && !/^\/assets\/ort-wasm-/.test(f.url));
@@ -178,10 +179,12 @@ export function groupPrecacheFiles(all) {
   // speech part be truly offline-complete. Neither group takes the ort.*.mjs
   // files sitting beside them: those are the package dist entrypoints, and the
   // build bundles its own copies, so nothing ever fetches them from /ort/ or
-  // /ort-hf/. That bundling is also what emits the /assets/ort-wasm-*.wasm
-  // copies the app filter above drops - so what leaks out of a plain
-  // "everything under /assets/" app group is not the ~200 KB of stray .mjs this
-  // comment used to imply, it is 46.2 MB of duplicated runtime.
+  // /ort-hf/. That bundling used to drag the wasm in with it and emit the
+  // /assets/ort-wasm-*.wasm copies the app filter above drops - so what leaked out
+  // of a plain "everything under /assets/" app group was never the ~200 KB of
+  // stray .mjs this comment once implied, it was 46.2 MB of duplicated runtime.
+  // These two groups are the only shipped copy again now that ortWasmFromPublic()
+  // keeps the wasm out of the bundle.
   const ort = all.filter(f => /^\/ort\/ort-wasm-/.test(f.url));
   const ortHf = all.filter(f => /^\/ort-hf\/[^/]+\/ort-wasm-/.test(f.url));
   // The verify part's models are the TrustMark decoders ONLY - downloaded via
@@ -406,6 +409,118 @@ function stripModelCandidates() {
   };
 }
 
+// The `new URL('<name>.wasm', import.meta.url)` sites inside onnxruntime-web's
+// emscripten glue. Anchored on the `ort-wasm-` prefix, NOT on `.wasm`: the same
+// pattern in harfbuzzjs is what emits /assets/harfbuzz-*.wasm (390 KB, the shaper
+// behind offline SVG/PDF outline export), and that one has no copy anywhere else
+// on the origin - it must keep being bundled.
+const ORT_WASM_URL_RE = /\bnew\s+URL\(\s*(['"`])(ort-wasm[\w.-]*\.wasm)\1\s*,\s*import\.meta\.url\s*,?\s*\)/;
+
+// Stop the bundler shipping a SECOND copy of every ONNX runtime binary.
+//
+// onnxruntime-web and @huggingface/transformers (which nests its own pinned
+// onnxruntime-web) are imported as real modules, so the `new URL('<name>.wasm',
+// import.meta.url)` in their glue is exactly what vite:asset-import-meta-url
+// resolves and emits as a build asset. That was 46.2 MB of dist/assets' 80 MB
+// (measured 2026-08-25): two /assets/ort-wasm-simd-threaded.jsep-<hash>.wasm
+// files, 25.6 MB and 20.6 MB, sha256-identical to the copies already sitting at
+// /ort/ort-wasm-simd-threaded.jsep.wasm and
+// /ort-hf/<version>/ort-wasm-simd-threaded.jsep.wasm - re-uploaded every deploy.
+//
+// Both originals are staged into public/ by `npm run build:ort` (scripts/copy-
+// ort.ts + copy-transformers-ort.ts) and both are what actually loads: lib/ort.ts
+// owns the shell's ONLY `import('onnxruntime-web')` and sets
+// `ort.env.wasm.wasmPaths = '/ort/'` in the same then() that resolves the module,
+// and every transformers.js worker sets `env.backends.onnx.wasm.wasmPaths =
+// ORT_HF_BASE` before its first pipeline call. With wasmPaths set ORT resolves
+// through `locateFile`, so these `new URL` sites are the unreachable else-branch.
+//
+// Deleting the branch would be worse than leaving it - a fallback that 404s is a
+// trap. So rewrite its literal to the same-origin staged path instead: the
+// fallback stops being a duplicate and starts being correct.
+//
+// The rewrite must also stop vite RE-emitting the new path, and an absolute
+// '/ort/...' would not do that on its own - vite:asset-import-meta-url resolves a
+// leading-slash url against publicDir, where the staged file is sitting. The
+// `/* @vite-ignore */` between `new URL(` and the string is what prevents it,
+// twice over: vite's assetImportMetaUrlRE wants a string literal immediately
+// after the paren, so the comment takes the expression out of the match entirely,
+// and if that regex ever grows comment tolerance the handler's own hasViteIgnoreRE
+// check skips it (both in vite/dist/node/chunks/node.js).
+//
+// Applies in dev as well as build: the branch is dead in both, and a dev-only
+// difference inside a fallback is how a prod-only bug gets written. Exported so
+// src/sw.test.ts can run the rewrite over the REAL installed onnxruntime-web and
+// assert nothing emittable survives - an ORT upgrade that reshapes the pattern
+// has to fail a test rather than quietly put the 46.2 MB back.
+export function ortWasmFromPublic() {
+  // Read the pinned transformers.js runtime dir from the generated constant its
+  // workers import, so a build:ort version bump can never leave the rewritten
+  // fallback pointing at a release that is no longer staged.
+  const hfBase = readFileSync(resolve(webDir, 'src', 'lib', 'ort-hf-base.ts'), 'utf8')
+    .match(/ORT_HF_BASE\s*=\s*'([^']+)'/)?.[1];
+  if (!hfBase) throw new Error('vite.config: no ORT_HF_BASE in src/lib/ort-hf-base.ts - run npm run build:ort');
+  let isBuild = false;
+  return {
+    name: 'lolly-ort-wasm-from-public',
+    // PARTIALLY WORKING - check dist/assets before assuming it removed anything. Measured
+    // 2026-08-26: the rewrite lands (dist carries the rewritten `/ort/ort-wasm-simd-threaded
+    // .jsep.wasm` literal), but BOTH binaries are still emitted, 46.2 MB.
+    //
+    // What is established, so nobody re-derives it:
+    //   - the hook runs and MATCHES: a probe on the return value printed hit=true for
+    //     node_modules/onnxruntime-web/dist/ort.bundle.min.mjs, and the rewritten literal
+    //     is present in the built output;
+    //   - vite:asset-import-meta-url DOES honour `/* @vite-ignore */` (vite 8's plugin tests
+    //     hasViteIgnoreRE over the span between the call start and the url literal, which is
+    //     exactly where the rewrite puts it), so the marker is not the problem;
+    //   - it is NOT a hook-ordering race: moving the rewrite to `load`, which precedes every
+    //     transform, changed nothing;
+    //   - rolldown 1.1 has no native new-URL-to-asset path (no such option in its bindings),
+    //     so vite's plugin is the only emitter.
+    // The actual gap: only ONE ORT module ever reaches this transform. The two surviving
+    // emissions are referenced from chunks built out of modules it never sees - the
+    // emscripten glue (onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.mjs, which carries
+    // its own `new URL` site) and the nested @huggingface/transformers copy, which supplies
+    // the second binary. Next step is to find why those siblings bypass the hook rather than
+    // to change the rewrite, which is correct.
+    //
+    // Left in place with its tests because the rewrite is right and the trail above is worth
+    // more than a deleted file, but it is NOT yet a working optimisation. Nothing
+    // user-facing depends on it: the emitted copies are never fetched (ORT resolves /ort/
+    // through wasmPaths, transformers.js its pinned /ort-hf/<version>/), so what is at stake
+    // is deploy upload weight, not first load.
+    enforce: 'pre',
+    configResolved(config) { isBuild = config.command === 'build'; },
+    transform(code, id) {
+      const modId = id.split('\\').join('/');
+      if (!modId.includes('/onnxruntime-web/dist/')) return null;
+      // The nested copy under @huggingface/transformers is a DIFFERENT ORT release
+      // from the top-level dependency (1.22.0-dev vs 1.27) - they are staged to
+      // separate prefixes for that reason, and crossing them would hand a runtime
+      // the wrong build's binary.
+      const base = modId.includes('/@huggingface/transformers/') ? hfBase : '/ort/';
+      let hit = false;
+      const out = code.replace(new RegExp(ORT_WASM_URL_RE.source, 'g'), (_match, quote, file) => {
+        const url = base + file;
+        // A rewrite that points at a file nobody staged turns a working fallback
+        // into a 404, so fail the build rather than ship it. build:web runs
+        // build:ort first so it is always present by now; the dev server has no
+        // such guarantee, hence build-only.
+        if (isBuild && !existsSync(resolve(webDir, 'public', url.slice(1)))) {
+          throw new Error(`vite.config: ${id} loads ${file}, but public${url} is missing - run npm run build:ort`);
+        }
+        hit = true;
+        return `new URL(/* @vite-ignore */ ${quote}${url}${quote}, import.meta.url)`;
+      });
+      // Sourcemap deliberately dropped: build.sourcemap is never set here, so it
+      // is vite's default off, and these are minified vendor bundles with nothing
+      // useful to remap anyway.
+      return hit ? { code: out, map: null } : null;
+    },
+  };
+}
+
 export default defineConfig({
   publicDir: 'public',
   // stripModelCandidates before precacheManifest: remove the /models/*/.candidates
@@ -413,8 +528,9 @@ export default defineConfig({
   // closeBundle scans dist/ after serveRepoStatic's closeBundle has copied
   // catalog/tools/schemas in (it skips those, but the ordering keeps the scan
   // deterministic either way). fontPreloadUrls' position here is cosmetic - it
-  // declares order:'post', so it runs after brandChrome() wherever it sits.
-  plugins: [serveRepoStatic(), brandChrome(), fontPreloadUrls(), stripModelCandidates(), precacheManifest()],
+  // declares order:'post', so it runs after brandChrome() wherever it sits, and
+  // ortWasmFromPublic's is too - it declares enforce:'pre'.
+  plugins: [serveRepoStatic(), brandChrome(), fontPreloadUrls(), ortWasmFromPublic(), stripModelCandidates(), precacheManifest()],
   // The Neurospicy player + video music-bed exporter render ZzFXM songs in a
   // module worker (src/lib/zzfxm-worker.ts, which ESM-imports the engine). Emit
   // it as an ES module so the import graph survives the build unchanged.
@@ -439,6 +555,16 @@ export default defineConfig({
     },
   },
   server: {
+    // Bind to 0.0.0.0 so the dev server is reachable from other devices on the LAN
+    // (Vite prints a `Network:` URL alongside `Local:`). This is what lets a real HDR
+    // Chromium / WebKit device open the Colour Lab and check the headroom/nits axis on
+    // actual hardware. The HDR RENDER path (Tier B cICP <img>, Tier A WebGL canvas) needs
+    // no secure context, so it works over plain http://<lan-ip>. What does NOT work over
+    // http on the LAN: WebCodecs (video export + the CanvasSink filmstrip decode) and
+    // crossOriginIsolated (threaded ONNX for depth/upscale), both of which require a
+    // secure context - test those over localhost, or front this with mkcert/a tunnel for
+    // an HTTPS LAN origin (no TLS is wired here, to avoid a cert dependency).
+    host: true,
     fs: { allow: [repoRoot] },
     // Cross-origin isolation, matching vercel.json's production headers
     // (plans/127): COOP+COEP make crossOriginIsolated true, which is what lets
@@ -487,6 +613,15 @@ export default defineConfig({
             // static graph so it modulepreloads at first paint. Isolating them lets the
             // entry import from this light chunk while the lazy views still get the
             // helpers on demand. MUST precede engine-render so these files land here.
+            // TOKEN_EXT - one string, but design-version.ts (reached from bridge/assets.ts at
+            // first paint) needs it, and taking it from tokens.ts parked the whole colour
+            // cluster (tokens + css-color + brand-derive + color-faces = the 12.9 KB gz
+            // engine-util chunk below) on the preload set for that one edge. token-ext.ts is
+            // the leaf those boot importers now read. WITHOUT this group rolldown co-locates
+            // the leaf straight back into engine-util and the split buys nothing - the same
+            // mechanism the engine-bytes/engine-version notes describe. MUST precede
+            // engine-util. Measured 2026-08-26: -13.8 KB gz off boot (plans/155 WP-3).
+            { name: 'engine-token-ext', test: /engine\/src\/token-ext\.ts$/, minSize: 0, minShareCount: 1 },
             { name: 'engine-util', test: /engine\/src\/tokens\.ts$/, minSize: 0, minShareCount: 1 },
             // tool-url.ts + embed.ts used to share the engine-util group above. They
             // belong OFF that group: nothing on the boot path imports either (a grep
