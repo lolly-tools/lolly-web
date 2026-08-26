@@ -120,12 +120,12 @@ export const opfsSeekableSink: SeekableSinkFactory = async (container) => {
 const VIDEO_CODEC: Record<string, VideoCodec> = { avc: 'avc', V_VP9: 'vp9', V_VP8: 'vp8', av1: 'av1', V_AV1: 'av1', hevc: 'hevc' };
 const AUDIO_CODEC: Record<string, AudioCodec> = { aac: 'aac', A_OPUS: 'opus' };
 
-function mapVideoCodec(muxCodec: string): VideoCodec {
+export function mapVideoCodec(muxCodec: string): VideoCodec {
   const c = VIDEO_CODEC[muxCodec];
   if (!c) throw new Error(`mediabunny-mux: unknown video mux codec '${muxCodec}'`);
   return c;
 }
-function mapAudioCodec(muxCodec: string): AudioCodec {
+export function mapAudioCodec(muxCodec: string): AudioCodec {
   const c = AUDIO_CODEC[muxCodec];
   if (!c) throw new Error(`mediabunny-mux: unknown audio mux codec '${muxCodec}'`);
   return c;

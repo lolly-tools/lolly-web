@@ -19,6 +19,7 @@
  */
 import { videoFrameSchedule, audioChunkSchedule } from './video-mime.ts';
 import { buildMediabunnyMux, type SeekableSinkFactory } from './mediabunny-mux.ts';
+import { HDR_VF_COLORSPACE } from './video-shared.ts';
 
 export interface EncodePick { container: 'mp4' | 'webm'; codec: string; muxCodec: string }
 
@@ -53,6 +54,14 @@ export interface EncodeOpts {
    *  export that names neither is byte-for-byte what it was. */
   bitrateMode?: 'variable' | 'constant';
   hardwareAcceleration?: 'no-preference' | 'prefer-hardware' | 'prefer-software';
+  /** Plan 154 WP-2 HDR. When set, each frame is built via the BUFFER VideoFrame ctor
+   *  carrying this colorSpace (image-source VideoFrameInit has no colorSpace field), and
+   *  the muxed track's decoderConfig.colorSpace is force-set to HDR_VF_COLORSPACE so the
+   *  container gets a colr/nclx box. Absent ⇒ today's image-source path, byte-for-byte. */
+  colorSpace?: VideoColorSpaceInit;
+  /** Pixel layout of the buffer frames when colorSpace is set. Phase 1 ships 'RGBA'
+   *  (8-bit-sourced PQ); the 'I420P10' seam is reserved for the Phase 2 float source. */
+  frameFormat?: 'RGBA' | 'I420P10';
 }
 
 // ── Muxer wiring (shared seam) ────────────────────────────────────────────────
@@ -112,7 +121,7 @@ async function containerBlob(target: MuxTarget, type: string): Promise<Blob> {
 /** Encode frames (+ optional audio) and mux → { muxed bytes, container MIME }. Throws on
  *  any encoder error. Identical logic to the former inline loop in export.ts. */
 export async function encodeMuxWebCodecs(
-  frames: ImageBitmap[], pick: EncodePick, o: EncodeOpts,
+  frames: Array<ImageBitmap | { data: BufferSource }>, pick: EncodePick, o: EncodeOpts,
 ): Promise<{ buffer: ArrayBuffer; type: string }> {
   const { width, height, fps, bitrate } = o;
   const a = o.audio ?? null;
@@ -121,7 +130,17 @@ export async function encodeMuxWebCodecs(
 
   let encErr: unknown = null;
   const encoder = new VideoEncoder({
-    output: (chunk, metadata) => { try { muxer.addVideoChunk(chunk, metadata); } catch (e) { encErr = e; } },
+    output: (chunk, metadata) => {
+      try {
+        // HDR: force-set (not ??=) the full colorSpace struct so mediabunny's
+        // colorSpaceIsComplete always fires and writes a colr/nclx box. Chromium omits
+        // decoderConfig on non-keyframe chunks, so guard on it existing rather than
+        // partial-filling a struct that isn't there.
+        const m = metadata as { decoderConfig?: { colorSpace?: VideoColorSpaceInit } } | undefined;
+        if (o.colorSpace && m?.decoderConfig) m.decoderConfig.colorSpace = { ...HDR_VF_COLORSPACE };
+        muxer.addVideoChunk(chunk, metadata);
+      } catch (e) { encErr = e; }
+    },
     error: (e) => { encErr = e; },
   });
   const config: any = { codec: pick.codec, width, height, bitrate, framerate: fps };
@@ -132,7 +151,17 @@ export async function encodeMuxWebCodecs(
 
   for (const t of videoFrameSchedule(frames.length, fps)) {
     if (encErr) break;
-    const frame = new VideoFrame(frames[t.index]!, { timestamp: t.timestampUs, duration: t.durationUs });
+    const src = frames[t.index]!;
+    // HDR frames arrive as raw RGBA buffers: the buffer VideoFrame ctor is the only one
+    // that takes a colorSpace (image-source VideoFrameInit has no such field). SDR frames
+    // stay on the exact image-source ctor as before.
+    const frame = o.colorSpace
+      ? new VideoFrame((src as { data: BufferSource }).data, {
+          // I420P10 (Phase 2) is a real WebCodecs pixel format the lib's VideoPixelFormat lacks.
+          format: (o.frameFormat ?? 'RGBA') as VideoPixelFormat, codedWidth: width, codedHeight: height,
+          timestamp: t.timestampUs, duration: t.durationUs, colorSpace: o.colorSpace,
+        })
+      : new VideoFrame(src as ImageBitmap, { timestamp: t.timestampUs, duration: t.durationUs });
     encoder.encode(frame, { keyFrame: t.keyFrame });
     frame.close();
     if (encoder.encodeQueueSize > 20) await new Promise<void>((r) => setTimeout(r, 0));

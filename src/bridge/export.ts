@@ -56,7 +56,7 @@ import { videoMimeCandidates, videoBitrate, bppForQuality, codecAdjustedBitrate,
 import { bedDuckEnvelope, scheduleGainEvents } from './audio-envelope.ts';
 import type { ExportAudio, ExportAudioMixIn } from './audio-envelope.ts';
 import { encodeMuxWebCodecs, type EncodeAudio, type EncodePick } from './video-encode-core.ts';
-import { pickWebCodecsVideo, pickWebCodecsAudio, type AudioPick } from './video-shared.ts';
+import { pickWebCodecsVideo, pickWebCodecsAudio, is10bitHdrCodec, HDR_VF_COLORSPACE, type AudioPick } from './video-shared.ts';
 import { supportsWorkerVideoEncode, encodeVideoInWorker } from './video-encode.ts';
 // Capability probes live in format-support.ts so the tool view can import them
 // without pulling this rasteriser onto the tool-open path. Re-exported here for
@@ -9618,14 +9618,15 @@ function audioTrackToPlanar(a: WebCodecsAudioTrack): EncodeAudio {
 // bytes in a Blob and embed provenance. The Worker path (renderVideo) calls the same core
 // off-thread and wraps identically.
 async function encodeVideoWithWebCodecs(
-  frames: ImageBitmap[],
+  frames: Array<ImageBitmap | { data: BufferSource }>,
   pick: EncodePick,
-  o: { width: number; height: number; fps: number; bitrate: number; meta?: ExportMeta | null; audio?: WebCodecsAudioTrack | null; bitrateMode?: 'variable' | 'constant'; hardwareAcceleration?: 'no-preference' | 'prefer-hardware' | 'prefer-software' },
+  o: { width: number; height: number; fps: number; bitrate: number; meta?: ExportMeta | null; audio?: WebCodecsAudioTrack | null; bitrateMode?: 'variable' | 'constant'; hardwareAcceleration?: 'no-preference' | 'prefer-hardware' | 'prefer-software'; colorSpace?: VideoColorSpaceInit; frameFormat?: 'RGBA' | 'I420P10' },
 ): Promise<Blob> {
   const { buffer, type } = await encodeMuxWebCodecs(frames, pick, {
     width: o.width, height: o.height, fps: o.fps, bitrate: o.bitrate,
     audio: o.audio ? audioTrackToPlanar(o.audio) : null,
     bitrateMode: o.bitrateMode, hardwareAcceleration: o.hardwareAcceleration,
+    colorSpace: o.colorSpace, frameFormat: o.frameFormat,
   });
   return withVideoMeta(new Blob([buffer], { type }), type, o.meta ?? null);
 }
@@ -9699,13 +9700,35 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
     catch (err) { audio?.stop(); throw err; }
   })();
   const targetW = source.width, targetH = source.height;
-  const frames: ImageBitmap[]  = [];
+
+  // Codec pick BEFORE Phase 1 (plan 154 WP-2): HDR captures frames as PQ RGBA buffers,
+  // so hdrActive must be known before the loop runs. DEVICE-INDEPENDENT - hdrDesired is
+  // the explicit opts.hdr toggle ONLY, never displaySupportsHdr(): the display governs
+  // preview, never the encoded bytes, so a credentialed HDR clip is byte-reproducible
+  // across machines (exactly like the stills HDR path). hdrActive additionally requires
+  // the codec ladder to have landed a real 10-bit HDR codec, so a browser that cannot
+  // encode one silently gets today's SDR bytes.
+  const baseBitrate = videoBitrate(targetW, targetH, fps, bppForQuality(opts.videoQuality ?? 'balanced'));
+  const hdrDesired = opts.hdr === true;
+  const pick = await pickWebCodecsVideo(preferred, targetW, targetH, fps, baseBitrate, opts.videoCodec, hdrDesired);
+  const hdrActive = hdrDesired && !!pick && is10bitHdrCodec(pick.codec);
+
+  const frames: Array<ImageBitmap | { data: BufferSource }> = [];
   try {
     for (let i = 0; i < frameCount; i++) {
       // `plan.clipSec` travels with the normalised t so a clocked tool can resolve
       // absolute seconds instead of guessing the span from its own metadata - the
       // guess is what let the caption clock disagree with the muxed audio.
-      frames.push(await createImageBitmap(await source.frame(i / frameCount, plan.clipSec)));
+      const cv = await source.frame(i / frameCount, plan.clipSec);
+      if (hdrActive) {
+        // PQ-transform the frame in place (engine hdrBoostToPQ via the shared stills
+        // helper - same targets/tune), then hand its RGBA buffer to the 10-bit path.
+        hdrCanvas(cv, opts);
+        const c = cv.getContext('2d', { willReadFrequently: true });
+        frames.push({ data: c!.getImageData(0, 0, cv.width, cv.height).data });
+      } else {
+        frames.push(await createImageBitmap(cv));
+      }
       // Progress for a slow N-frame render (no-op when no listener is wired).
       opts.onProgress?.(i + 1, frameCount);
       // Cancel leaves by the same door a capture failure does: the catch stops the
@@ -9728,12 +9751,9 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
   // frames + the live `audio` track stay valid for Phase 2).
   {
     const clipSec = frames.length / fps;         // bed length == the ACTUAL (maybe capped) video length
-    // Codec-agnostic base bitrate (H.264-equivalent at the chosen quality stop) probes
-    // the ladder; once a codec is picked, trim to its efficiency (AV1/HEVC reach the
-    // same quality at fewer bytes). An explicit codec (pro-settings) is honoured where
-    // it probes supported, else the auto ladder wins.
-    const baseBitrate = videoBitrate(targetW, targetH, fps, bppForQuality(opts.videoQuality ?? 'balanced'));
-    const pick = await pickWebCodecsVideo(preferred, targetW, targetH, fps, baseBitrate, opts.videoCodec);
+    // `pick`/`baseBitrate`/`hdrActive` were resolved before Phase 1 (HDR capture format
+    // depends on the pick). Trim the base bitrate to the chosen codec's efficiency
+    // (AV1/HEVC reach the same quality at fewer bytes).
     const bitrate = pick ? codecAdjustedBitrate(baseBitrate, pick.codec) : baseBitrate;
     const wantAudio = !!opts.audio?.url;
     const audioPick = pick && wantAudio ? await pickWebCodecsAudio(pick.container) : null;
@@ -9745,7 +9765,10 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
     if (wantAudio && !audioPick && !audio && typeof AudioEncoder !== 'undefined') {
       _host?.log?.('warn', 'This browser cannot encode an audio track into the chosen container; exporting silent video.');
     }
-    if (pick && (!wantAudio || audioPick || !mimeType)) {
+    // hdrActive frames are RGBA buffers only the WebCodecs core can consume (Phase 2's
+    // drawImage cannot), so an HDR export MUST enter this block even when audio can't be
+    // encoded - it then ships silent HDR rather than crashing on the RGBA frames below.
+    if (pick && (!wantAudio || audioPick || !mimeType || hdrActive)) {
       // Resolve the offline music bed once; a failure here (bedOk=false) falls through to
       // the MediaRecorder Phase 2, which muxes the live audio track instead.
       let track: WebCodecsAudioTrack | null = null;
@@ -9758,8 +9781,10 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
           if (bed) track = { ...audioPick, buffer: bed };
         }
       } catch { bedOk = false; }
-      if (!bedOk && !mimeType) {
-        // No Phase 2 to fall back to; encode silent rather than fail the export.
+      if (!bedOk && (!mimeType || hdrActive)) {
+        // No usable Phase 2 fallback here - either there's no MediaRecorder mime, or this
+        // is HDR (whose frames are RGBA buffers Phase 2 cannot drawImage). Encode silent
+        // in-thread rather than fail the export or crash on the RGBA frames.
         bedOk = true; track = null;
         _host?.log?.('warn', 'Audio bed unavailable; exporting silent video.');
       }
@@ -9768,14 +9793,16 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
       // bed PCM to a Worker so the encode/mux runs off the main thread. Transfer is one-way,
       // so this is COMMITTED - no Phase 2 fallback (the up-front support probe makes a mid-
       // encode failure unlikely; a failure surfaces as a clear error and the user re-exports).
-      if (bedOk && supportsWorkerVideoEncode()) {
+      // Worker path is OFF for HDR: it transfers ImageBitmaps and does not thread a
+      // colorSpace, so HDR always takes the in-thread core below (frames are RGBA buffers).
+      if (bedOk && !hdrActive && supportsWorkerVideoEncode()) {
         try {
           const workerAudio: EncodeAudio | null = track ? {
             channels: Array.from({ length: track.buffer.numberOfChannels }, (_, i) => new Float32Array(track!.buffer.getChannelData(i))),
             sampleRate: track.sampleRate, numberOfChannels: track.numberOfChannels, codec: track.codec, muxCodec: track.muxCodec, bitrate: track.bitrate,
           } : null;
           _host?.log?.('info', `video: WebCodecs (worker) ${pick.container}/${pick.codec}${track ? '+' + audioPick!.codec : ''} ${targetW}×${targetH}@${fps}`);
-          const enc = await encodeVideoInWorker(frames, pick, { width: targetW, height: targetH, fps, bitrate, audio: workerAudio });
+          const enc = await encodeVideoInWorker(frames as ImageBitmap[], pick, { width: targetW, height: targetH, fps, bitrate, audio: workerAudio });
           const blob = await withVideoMeta(new Blob([enc.buffer], { type: enc.type }), enc.type, opts.meta ?? null);
           audio?.stop();                            // the worker consumed + closed the frames
           return blob;
@@ -9788,12 +9815,23 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
       // In-thread encode: on failure the frames + live `audio` track stay valid for Phase 2.
       if (bedOk) {
         try {
-          _host?.log?.('info', `video: WebCodecs ${pick.container}/${pick.codec}${track ? '+' + audioPick!.codec : ''} ${targetW}×${targetH}@${fps} ${Math.round(bitrate / 1000)}kbps`);
-          const blob = await encodeVideoWithWebCodecs(frames, pick, { width: targetW, height: targetH, fps, bitrate, meta: opts.meta, audio: track, bitrateMode: opts.bitrateMode, hardwareAcceleration: opts.hardwareAcceleration });
-          frames.forEach(b => b.close());
+          _host?.log?.('info', `video: WebCodecs ${pick.container}/${pick.codec}${hdrActive ? ' HDR' : ''}${track ? '+' + audioPick!.codec : ''} ${targetW}×${targetH}@${fps} ${Math.round(bitrate / 1000)}kbps`);
+          const blob = await encodeVideoWithWebCodecs(frames, pick, {
+            width: targetW, height: targetH, fps, bitrate, meta: opts.meta, audio: track,
+            bitrateMode: opts.bitrateMode, hardwareAcceleration: opts.hardwareAcceleration,
+            ...(hdrActive ? { colorSpace: HDR_VF_COLORSPACE, frameFormat: 'RGBA' as const } : {}),
+          });
+          frames.forEach(b => { if (b instanceof ImageBitmap) b.close(); });
           audio?.stop();                            // discard the now-unused live MediaRecorder audio track
           return blob;
         } catch (err) {
+          // HDR has no SDR fallback: the frames are RGBA buffers Phase 2 cannot draw, and
+          // MediaRecorder cannot encode HDR anyway. Surface the failure instead.
+          if (hdrActive) {
+            frames.forEach(b => { if (b instanceof ImageBitmap) b.close(); });
+            audio?.stop();
+            throw err instanceof Error ? err : new Error('HDR video encode failed');
+          }
           _host?.log?.('warn', `WebCodecs encode failed (${(err as { message?: string })?.message ?? err}); falling back to MediaRecorder.`);
           // frames stay open; the live `audio` track stays live for Phase 2 below.
         }
@@ -9804,7 +9842,7 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
   // Phase 2 needs a MediaRecorder mime. Reaching here without one means the
   // WebCodecs attempt above also came up empty - nothing can encode.
   if (!mimeType) {
-    frames.forEach(b => b.close());
+    frames.forEach(b => { if (b instanceof ImageBitmap) b.close(); });
     audio?.stop();
     throw new Error(NO_VIDEO_MSG);
   }
@@ -9833,7 +9871,7 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
     recorder.onstop  = () => {
       audio?.stop();
       stream.getTracks().forEach(t => t.stop());
-      frames.forEach(b => b.close());
+      frames.forEach(b => { if (b instanceof ImageBitmap) b.close(); });
       const container = videoContainer(mimeType);
       resolve(withVideoMeta(new Blob(chunks, { type: container }), container, opts.meta));
     };
@@ -9851,7 +9889,7 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
     let fi = 0;
     function pump() {
       if (fi >= frames.length) { setTimeout(() => { try { recorder.stop(); } catch { /* already stopping */ } }, Math.max(frameMs, 40)); return; }
-      ctx.drawImage(frames[fi++]!, 0, 0);
+      ctx.drawImage(frames[fi++] as ImageBitmap, 0, 0);   // Phase 2 only runs for SDR - every frame is an ImageBitmap
       deliver();
       setTimeout(pump, frameMs);
     }

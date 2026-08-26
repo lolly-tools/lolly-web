@@ -32,6 +32,7 @@ const {
   lutCreditText, lutCreditParameters,
   extrapolateEstimate, scaledEvenDims, MATTE_MAX_OUTPUT_FRAMES,
   resizeFrameRGBA, makeChromaKeyOp, CHROMA_DEFAULT_KEY, clampMatteLongEdge, MATTE_MAX_INPUT_LONG_EDGE,
+  alphaVideoWriter, pickAlphaVideoCodec, MATTE_WEBM_BITRATE,
 } = await import('./video-jobs.ts');
 const { COMPOSITE_SOURCE_TYPE } = await import('@lolly/engine');
 
@@ -793,4 +794,236 @@ test('runVideoJob: a declined window decode on a long source drops the sound, vi
   const warn = logs.find((l) => l.level === 'warn');
   assert.ok(warn, 'and a dropped track is never silent about being dropped');
   assert.match(warn!.msg, /no sound/i);
+});
+
+// ── WP-G: transparent WebM that keeps its sound (plan 153) ─────────────────────
+//
+// The matte's one output that carries alpha AND audio AND a container credential in
+// one file: alpha VP9/AV1 in WebM via mediabunny (CanvasSource alpha:'keep' +
+// AudioBufferSource). No real codec exists under node, so the writer's WIRING is
+// pinned through an injected fake mediabunny (the alpha config, the first-frame
+// handling, the audio guard); the capability gate is pinned through a stubbed
+// VideoEncoder; the driver is pinned through the openAlphaVideoWriter dep seam.
+
+/** Replace jsdom's unimplemented getContext('2d') with a minimal stub - the writer
+ *  only round-trips RGBA through createImageData/putImageData, none of which jsdom has.
+ *  Returns a restore fn. */
+function stubCanvas2d(): () => void {
+  const proto = (globalThis.window as unknown as { HTMLCanvasElement: { prototype: { getContext: unknown } } }).HTMLCanvasElement.prototype;
+  const orig = proto.getContext;
+  proto.getContext = function getContext(): unknown {
+    return {
+      createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }),
+      putImageData: (): void => { /* no-op: the pixels reach the encoder in a real browser */ },
+    };
+  };
+  return () => { proto.getContext = orig; };
+}
+
+/** A fake of the mediabunny surface alphaVideoWriter drives, recording every wiring
+ *  decision (the alpha config, track declarations, adds, lifecycle). */
+function fakeAlphaMb(): { mb: unknown; calls: {
+  canvasCfg: { codec?: string; bitrate?: number; alpha?: string } | null;
+  audioCfg: { codec?: string; bitrate?: number } | null;
+  videoTracks: number; audioTracks: number;
+  videoAdds: Array<{ ts: number; dur?: number }>; audioAdds: unknown[];
+  started: boolean; finalized: boolean; canceled: boolean; isMkv: boolean;
+} } {
+  const calls = {
+    canvasCfg: null as { codec?: string; bitrate?: number; alpha?: string } | null,
+    audioCfg: null as { codec?: string; bitrate?: number } | null,
+    videoTracks: 0, audioTracks: 0,
+    videoAdds: [] as Array<{ ts: number; dur?: number }>, audioAdds: [] as unknown[],
+    started: false, finalized: false, canceled: false, isMkv: false,
+  };
+  const mb = {
+    BufferTarget: class { buffer = new ArrayBuffer(8); },
+    WebMOutputFormat: class {},
+    MkvOutputFormat: class { constructor() { calls.isMkv = true; } },
+    CanvasSource: class {
+      constructor(_canvas: unknown, cfg: { codec: string; bitrate: number; alpha: string }) { calls.canvasCfg = cfg; }
+      async add(ts: number, dur?: number): Promise<void> { calls.videoAdds.push({ ts, dur }); }
+    },
+    AudioBufferSource: class {
+      constructor(cfg: { codec: string; bitrate: number }) { calls.audioCfg = cfg; }
+      async add(buf: unknown): Promise<void> { calls.audioAdds.push(buf); }
+    },
+    Output: class {
+      constructor(_o: unknown) {}
+      addVideoTrack(): void { calls.videoTracks++; }
+      addAudioTrack(): void { calls.audioTracks++; }
+      async start(): Promise<void> { calls.started = true; }
+      async finalize(): Promise<void> { calls.finalized = true; }
+      async cancel(): Promise<void> { calls.canceled = true; }
+    },
+  };
+  return { mb, calls };
+}
+
+/** One frame's worth of RGBA at a given alpha - the writer's `write` input. */
+function alphaFrame(alpha: number, w = 4, h = 4, ts = 0): Frame {
+  const data = new Uint8ClampedArray(w * h * 4).fill(200);
+  for (let i = 3; i < data.length; i += 4) data[i] = alpha;
+  return { data, width: w, height: h, timestampUs: ts, durationUs: Math.round(1e6 / 12) };
+}
+
+/** Swap in a VideoEncoder whose isConfigSupported answers per `fn`; returns a restore. */
+function stubVideoEncoder(fn: ((c: { codec: string; alpha?: string }) => { supported?: boolean; config?: { alpha?: string } }) | null): () => void {
+  const g = globalThis as { VideoEncoder?: unknown };
+  const saved = g.VideoEncoder;
+  const had = 'VideoEncoder' in g;
+  if (fn === null) delete g.VideoEncoder;
+  else g.VideoEncoder = { isConfigSupported: async (c: { codec: string; alpha?: string }) => fn(c) };
+  return () => { if (had) g.VideoEncoder = saved; else delete g.VideoEncoder; };
+}
+
+test('pickAlphaVideoCodec: refuses without an encoder, on supported:false, and on silently-discarded alpha; offers VP9 where confirmed', async () => {
+  // Older Firefox: no VideoEncoder global at all.
+  let restore = stubVideoEncoder(null);
+  assert.equal(await pickAlphaVideoCodec(640, 360, 12, MATTE_WEBM_BITRATE), null, 'no encoder → no alpha');
+  restore();
+  // Safari-shaped: the codec is not supported for alpha.
+  restore = stubVideoEncoder(() => ({ supported: false }));
+  assert.equal(await pickAlphaVideoCodec(640, 360, 12, MATTE_WEBM_BITRATE), null, 'unsupported → refused');
+  restore();
+  // Supports the codec but normalises alpha away → would encode an OPAQUE video, refuse.
+  restore = stubVideoEncoder(() => ({ supported: true, config: { alpha: 'discard' } }));
+  assert.equal(await pickAlphaVideoCodec(640, 360, 12, MATTE_WEBM_BITRATE), null, 'alpha dropped → refused');
+  restore();
+  // Chromium: VP9 alpha confirmed (echoes the requested alpha back).
+  restore = stubVideoEncoder((c) => ({ supported: c.codec.startsWith('vp09'), config: { alpha: c.alpha } }));
+  assert.deepEqual(await pickAlphaVideoCodec(640, 360, 12, MATTE_WEBM_BITRATE), { codec: 'vp09.00.10.08', muxCodec: 'vp9' });
+  restore();
+});
+
+test('alphaVideoWriter: marks the track transparent (alpha:keep) even when frame 0 is fully opaque', async () => {
+  const restoreCanvas = stubCanvas2d();
+  try {
+    const { mb, calls } = fakeAlphaMb();
+    const writer = await alphaVideoWriter({ fps: 12, bitrate: MATTE_WEBM_BITRATE, codec: 'vp9', audio: null }, async () => mb as never);
+    // A fully-opaque frame 0 (every alpha = 255). The track must STILL be transparent:
+    // WebM marks it from frame 0's alpha side data, which alpha:'keep' guarantees.
+    await writer.write(alphaFrame(255));
+    const res = await writer.finalize();
+    assert.equal(calls.canvasCfg!.alpha, 'keep', 'the encoder keeps alpha, so an opaque frame 0 still carries alpha side data');
+    assert.equal(calls.canvasCfg!.codec, 'vp9', 'the chosen mediabunny codec is used');
+    assert.equal(calls.videoTracks, 1);
+    assert.equal(calls.videoAdds.length, 1, 'the opaque frame 0 went through the encoder, not skipped');
+    assert.equal(calls.started, true);
+    assert.equal(calls.finalized, true);
+    assert.equal(res.format, 'webm');
+    assert.equal(res.width, 4);
+    assert.equal(res.height, 4);
+  } finally { restoreCanvas(); }
+});
+
+test('alphaVideoWriter: audio present adds an Opus track; audio absent produces a valid file with none (no null crash)', async () => {
+  const restoreCanvas = stubCanvas2d();
+  try {
+    // Present: a whole-file AudioBuffer becomes one Opus track.
+    const withA = fakeAlphaMb();
+    const w1 = await alphaVideoWriter({ fps: 12, bitrate: MATTE_WEBM_BITRATE, codec: 'vp9', audio: fakeAudioBuffer(2) }, async () => withA.mb as never);
+    await w1.write(alphaFrame(128));
+    await w1.finalize();
+    assert.equal(withA.calls.audioTracks, 1, 'sound → one audio track');
+    assert.equal(withA.calls.audioCfg!.codec, 'opus', 'WebM/Matroska carry Opus');
+    assert.equal(withA.calls.audioAdds.length, 1, 'the whole buffer is added once');
+
+    // Absent (null): no audio track, and finalize must NOT crash on a missing track.
+    const noA = fakeAlphaMb();
+    const w2 = await alphaVideoWriter({ fps: 12, bitrate: MATTE_WEBM_BITRATE, codec: 'vp9', audio: null }, async () => noA.mb as never);
+    await w2.write(alphaFrame(255));
+    const r2 = await w2.finalize();
+    assert.equal(noA.calls.audioTracks, 0, 'no sound → no audio track');
+    assert.equal(noA.calls.audioAdds.length, 0);
+    assert.ok(r2.blob, 'a matte with no audio still produces a valid file');
+
+    // Zero-length audio is the same as absent (the ~:994 videoEncodeWriter guard).
+    const zeroA = fakeAlphaMb();
+    const w3 = await alphaVideoWriter({ fps: 12, bitrate: MATTE_WEBM_BITRATE, codec: 'vp9', audio: fakeAudioBuffer(0) }, async () => zeroA.mb as never);
+    await w3.write(alphaFrame(255));
+    await w3.finalize();
+    assert.equal(zeroA.calls.audioTracks, 0, 'an empty track is never declared');
+  } finally { restoreCanvas(); }
+});
+
+test('runVideoJob matte webm: a VIDEO record, source audio kept, container C2PA, gated on alpha encode', async () => {
+  const restore = stubVideoEncoder((c) => ({ supported: c.codec.startsWith('vp09'), config: { alpha: c.alpha } }));
+  try {
+    const { host, uploaded } = fakeHost();
+    const cap = { calls: [] as Array<{ format: string; o: Record<string, unknown> }> };
+    const writer = fakeWriter('webm');
+    const plans: Array<{ codec: string; bitrate: number; audio?: unknown }> = [];
+    const audio = fakeAudioBuffer(3);
+    const deps = {
+      ...baseDeps(cap, { marker: 'ingredient' }, writer),
+      decodeAudio: async () => audio,
+      openAlphaVideoWriter: async (plan: { codec: string; bitrate: number; audio?: unknown }) => { plans.push(plan); return writer; },
+    };
+    const ref = await runVideoJob(host as never, {
+      op: 'matte', source: { id: 'user/video/clip', type: 'video', url: 'blob:clip', format: 'mp4' } as never, sourceName: 'clip.mp4',
+      matte: { model: 'u2netp', format: 'webm', fps: 12, longEdge: 720 },
+    }, {}, deps as never);
+
+    assert.ok(ref);
+    assert.equal(plans[0]!.codec, 'vp9', 'the driver probes pickAlphaVideoCodec at the encode resolution and passes the pick');
+    assert.equal(plans[0]!.bitrate, MATTE_WEBM_BITRATE);
+    assert.equal(plans[0]!.audio, audio, 'the whole-file source audio rides into the transparent video');
+    const rec = uploaded[0]!;
+    assert.equal(rec.type, 'video', 'a transparent WebM is a VIDEO, not an animated raster');
+    assert.equal(rec.format, 'webm');
+    assert.equal((rec.meta as Record<string, unknown>).animated, undefined, 'not an animated-image record');
+    assert.equal(rec.aiGenerated, undefined, 'background removal invents nothing');
+    const stamp = cap.calls[0]!;
+    assert.equal(stamp.format, 'webm', 'container C2PA is placed for the webm container (placeWebm)');
+    assert.equal((stamp.o.actions as Array<{ action: string }>)[0]!.action, 'c2pa.edited');
+    assert.deepEqual(stamp.o.ingredients, [{ marker: 'ingredient' }], 'the source credential is carried as an ingredient');
+  } finally { restore(); }
+});
+
+test('runVideoJob matte webm with no source audio: still a valid transparent video, audio null, no crash', async () => {
+  const restore = stubVideoEncoder((c) => ({ supported: c.codec.startsWith('vp09'), config: { alpha: c.alpha } }));
+  try {
+    const { host, uploaded } = fakeHost();
+    const cap = { calls: [] as Array<{ format: string; o: Record<string, unknown> }> };
+    const writer = fakeWriter('webm');
+    const plans: Array<{ audio?: unknown }> = [];
+    const deps = {
+      ...baseDeps(cap, null, writer),
+      decodeAudio: async () => null, // the source has no audio track
+      openAlphaVideoWriter: async (plan: { audio?: unknown }) => { plans.push(plan); return writer; },
+    };
+    const ref = await runVideoJob(host as never, {
+      op: 'matte', source: { id: 'mute', type: 'video', url: 'blob:mute', format: 'mp4' } as never, sourceName: 'mute.mp4',
+      matte: { model: 'u2netp', format: 'webm', fps: 12, longEdge: 720 },
+    }, {}, deps as never);
+
+    assert.ok(ref);
+    assert.equal(plans[0]!.audio, null, 'no sound to carry');
+    assert.equal(uploaded[0]!.type, 'video');
+    assert.equal(uploaded[0]!.format, 'webm');
+  } finally { restore(); }
+});
+
+test('runVideoJob matte webm: refuses (throws) where this browser cannot encode alpha', async () => {
+  const restore = stubVideoEncoder(null); // no VideoEncoder → alpha never encodes
+  try {
+    const { host, uploaded } = fakeHost();
+    const cap = { calls: [] as Array<{ format: string; o: Record<string, unknown> }> };
+    const writer = fakeWriter('webm');
+    let openedAlpha = false;
+    const deps = {
+      ...baseDeps(cap, null, writer),
+      openAlphaVideoWriter: async () => { openedAlpha = true; return writer; },
+    };
+    await assert.rejects(
+      runVideoJob(host as never, {
+        op: 'matte', source: { id: 'x', type: 'video', url: 'blob:x', format: 'mp4' } as never, sourceName: 'x.mp4',
+        matte: { model: 'u2netp', format: 'webm', fps: 12, longEdge: 720 },
+      }, {}, deps as never),
+      /transparent video/i,
+    );
+    assert.equal(openedAlpha, false, 'the writer is never built when alpha will not encode');
+    assert.equal(uploaded.length, 0, 'and nothing is saved');
+  } finally { restore(); }
 });

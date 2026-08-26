@@ -8,8 +8,11 @@
  *      model-computed, then temporally smoothed (EMA + scene-cut reset) to kill
  *      per-frame flicker. Alpha survives end-to-end: canvas.toBlob keeps the
  *      alpha channel, and engine/apng.ts / engine/webp-anim.ts splice the frames'
- *      bitstreams VERBATIM (no premultiply/flatten). Transparent formats can't
- *      carry audio, so matte-to-transparent DROPS it (the dialog says so).
+ *      bitstreams VERBATIM (no premultiply/flatten). The animated-image formats
+ *      (WebP/PNG/GIF) can't carry audio, so those DROP it (the dialog says so); the
+ *      transparent-WebM output (alpha VP9/AV1 via mediabunny, browser-gated on
+ *      pickAlphaVideoCodec) keeps alpha AND the source sound AND a container C2PA in one
+ *      file - see alphaVideoWriter.
  *   2. CROP - rect crop (even-dimension rounded for the encoders) to a normal
  *      video, KEEPING the source audio track.
  *   3. UPSCALE - per-frame Real-ESRGAN to a normal video, keeping audio. Desktop-
@@ -90,8 +93,11 @@ export interface MatteVideoParams {
    *  wins. Read only for the 'model' method; the colour key ignores it. */
   model: MatteModelId;
   /** Transparent output container. WebP/PNG carry the matte's SOFT alpha verbatim;
-   *  GIF thins it to 1-bit (hard-edged) - the dialog says so. */
-  format: 'webp' | 'png' | 'gif';
+   *  GIF thins it to 1-bit (hard-edged) - the dialog says so. 'webm' is the one
+   *  transparent output that ALSO carries sound: alpha VP9/AV1 in a WebM/Matroska
+   *  container (browser-gated - only where alpha actually encodes; the dialog probes
+   *  pickAlphaVideoCodec before offering it). */
+  format: 'webp' | 'png' | 'gif' | 'webm';
   /** Output frame rate. Whole frames are stored, so this is a real size lever. */
   fps: number;
   /** Longest output edge in px - bounds both memory and file size, and (WP-resolution)
@@ -242,6 +248,11 @@ export const MATTE_VIDEO_DEFAULT_MODEL: MatteModelId = 'u2netp';
 /** Destination-resolution choices the dialog offers (longest output edge, px). The
  *  dialog clamps the list to the source's own long edge so it never offers to upscale. */
 export const MATTE_LONG_EDGE_PRESETS = [360, 480, 720, 1080] as const;
+
+/** Bitrate (bits/s) for the transparent-WebM matte output. Alpha VP9/AV1 at the small
+ *  matte long edges is cheap, and a soft feathered edge wants headroom - ~4 Mbit/s keeps
+ *  the alpha clean without the frame-by-frame bloat of the WebP/PNG path. */
+export const MATTE_WEBM_BITRATE = 4_000_000;
 
 /** Colour-key defaults: a standard chroma green (#00b140), a moderate OKLab tolerance,
  *  a soft edge, and half-strength spill suppression (tolerance/softness in ΔEOK units). */
@@ -976,6 +987,160 @@ export function alphaAnimWriter(format: 'webp' | 'png' | 'gif', fps: number): Vi
   };
 }
 
+/** A chosen alpha video codec: the full WebCodecs string it was probed with, plus the
+ *  short mediabunny codec id the CanvasSource is built on. */
+export interface AlphaVideoPick { codec: string; muxCodec: 'vp9' | 'av1'; }
+
+/** The alpha-capable WebM ladder, VP9 first (Chromium's well-supported transparent
+ *  encoder) then AV1 where the browser has it. Full WebCodecs strings for the probe;
+ *  short mediabunny ids for the CanvasSource config. */
+const ALPHA_WEBM_LADDER: readonly AlphaVideoPick[] = [
+  { codec: 'vp09.00.10.08', muxCodec: 'vp9' },
+  { codec: 'av01.0.08M.08', muxCodec: 'av1' },
+];
+
+/**
+ * The FIRST alpha video codec this browser will actually encode at `width×height@fps`,
+ * or null. Alpha encode is a per-browser matrix (Chromium yes, Safari/Firefox usually
+ * no), so this is the capability gate the dialog checks before offering "WebM
+ * (transparent)" and the driver re-checks at the true ENCODE resolution before building
+ * the writer. Probes the WebCodecs `VideoEncoder` global with `alpha:'keep'` - NOT
+ * mediabunny, so calling it adds no dynamic import to the dialog-open path. A browser
+ * with no VideoEncoder (older Firefox) returns null; a browser that can encode the codec
+ * but drops alpha is rejected via the echoed config.
+ */
+export async function pickAlphaVideoCodec(
+  width: number, height: number, fps: number, bitrate: number,
+): Promise<AlphaVideoPick | null> {
+  const VE = (globalThis as {
+    VideoEncoder?: { isConfigSupported?: (c: unknown) => Promise<{ supported?: boolean; config?: { alpha?: string } }> };
+  }).VideoEncoder;
+  if (!VE?.isConfigSupported) return null;
+  for (const pick of ALPHA_WEBM_LADDER) {
+    try {
+      const s = await VE.isConfigSupported({ codec: pick.codec, width, height, bitrate, framerate: fps, alpha: 'keep' });
+      // `supported` alone is not enough: a browser may support the codec while silently
+      // normalising alpha away, which would encode an opaque video. Require the echoed
+      // config to still carry alpha when it reports one.
+      if (s?.supported && s.config?.alpha !== 'discard') return pick;
+    } catch { /* try the next candidate */ }
+  }
+  return null;
+}
+
+/** The plan a transparent-video (alpha WebM/Matroska) writer is built from. `codec` is
+ *  the short mediabunny id from pickAlphaVideoCodec; `audio` (whole-file only) rides as
+ *  an Opus track. */
+export interface AlphaWriterPlan {
+  fps: number;
+  bitrate: number;
+  codec: 'vp9' | 'av1';
+  container?: 'webm' | 'mkv';
+  audio?: AudioBufferLike | null;
+}
+
+/** The minimal mediabunny surface alphaVideoWriter drives. The real module satisfies it
+ *  structurally; a test supplies a fake so the alpha/audio wiring is checkable with no
+ *  real codec (there are none under node). */
+interface AlphaMbModule {
+  Output: new (o: { format: unknown; target: AlphaMbTarget }) => AlphaMbOutput;
+  BufferTarget: new () => AlphaMbTarget;
+  WebMOutputFormat: new () => unknown;
+  MkvOutputFormat: new () => unknown;
+  CanvasSource: new (canvas: HTMLCanvasElement, cfg: { codec: string; bitrate: number; alpha: 'keep' | 'discard' }) => AlphaMbVideoSource;
+  AudioBufferSource: new (cfg: { codec: string; bitrate: number }) => AlphaMbAudioSource;
+}
+interface AlphaMbTarget { buffer: ArrayBuffer; }
+interface AlphaMbOutput {
+  addVideoTrack(s: AlphaMbVideoSource): void;
+  addAudioTrack(s: AlphaMbAudioSource): void;
+  start(): Promise<void>;
+  finalize(): Promise<void>;
+  cancel(): Promise<void>;
+}
+interface AlphaMbVideoSource { add(timestamp: number, duration?: number): Promise<void>; }
+interface AlphaMbAudioSource { add(buffer: AudioBuffer): Promise<void>; }
+
+/** Opus bitrate for the WebM/Matroska audio track (matches the WebCodecs export path). */
+const ALPHA_AUDIO_BITRATE = 128_000;
+
+/**
+ * A transparent-VIDEO writer: alpha VP9/AV1 in a WebM (or Matroska) container, via
+ * mediabunny's CanvasSource (`alpha:'keep'`) + AudioBufferSource. Unlike the WebP/PNG/GIF
+ * matte writers this carries SOUND, and unlike the WebCodecs mux path (videoEncodeWriter)
+ * it keeps the alpha channel end to end.
+ *
+ * Two things this writer is careful about:
+ *  - FIRST-PACKET ALPHA: WebM/Matroska mark a track transparent from the alpha side data
+ *    on the FIRST packet. The 2d context is left alpha-capable (never `{alpha:false}`) and
+ *    every frame is written with putImageData, so frame 0 carries an alpha plane and the
+ *    track is marked transparent even when that frame is fully opaque.
+ *  - NULL AUDIO: the audio track + source exist only when `plan.audio` has samples, so a
+ *    matte with no sound produces a valid video rather than crashing on an empty track.
+ *
+ * The whole thing lazy-inits on the first frame, when the matte's output dimensions are
+ * known. `loadMb` defaults to the real lazy mediabunny import (so it never enters the
+ * preload bundle); the seam exists so the wiring is unit-testable without a codec.
+ */
+export async function alphaVideoWriter(
+  plan: AlphaWriterPlan,
+  loadMb: () => Promise<AlphaMbModule> = async () => (await import('mediabunny')) as unknown as AlphaMbModule,
+): Promise<VideoFrameWriter> {
+  const mb = await loadMb();
+  const isMkv = plan.container === 'mkv';
+  const target = new mb.BufferTarget();
+  const output = new mb.Output({ format: isMkv ? new mb.MkvOutputFormat() : new mb.WebMOutputFormat(), target });
+  const canvas = document.createElement('canvas');
+
+  let vSrc: AlphaMbVideoSource | null = null;
+  let aSrc: AlphaMbAudioSource | null = null;
+  let ctx: CanvasRenderingContext2D | null = null;
+  let w = 0;
+  let h = 0;
+  let started = false;
+
+  return {
+    async write(frame: DecodedFrame): Promise<void> {
+      if (!vSrc) {
+        // First frame fixes the encode size. Build the alpha video source (+ audio, only
+        // when there is sound), declare the tracks, and start - all before any add().
+        w = frame.width; h = frame.height;
+        canvas.width = w; canvas.height = h;
+        ctx = canvas.getContext('2d') as CanvasRenderingContext2D; // alpha-capable (no {alpha:false})
+        vSrc = new mb.CanvasSource(canvas, { codec: plan.codec, bitrate: plan.bitrate, alpha: 'keep' });
+        output.addVideoTrack(vSrc);
+        if (plan.audio && plan.audio.length > 0) {
+          aSrc = new mb.AudioBufferSource({ codec: 'opus', bitrate: ALPHA_AUDIO_BITRATE });
+          output.addAudioTrack(aSrc);
+        }
+        await output.start();
+        started = true;
+      }
+      const c = ctx as CanvasRenderingContext2D;
+      const img = c.createImageData(w, h);
+      img.data.set(frame.data);       // straight-alpha RGBA, alpha plane preserved
+      c.putImageData(img, 0, 0);
+      await vSrc.add(frame.timestampUs / 1e6, frame.durationUs / 1e6);
+    },
+    async finalize(): Promise<WriterResult> {
+      if (!vSrc) throw new Error('no frames');
+      // Audio is one whole-file AudioBuffer (matte-webm keeps sound only on the no-range
+      // path, where jobAudio returns a real AudioBuffer). Guarded on aSrc AND plan.audio;
+      // a failed audio encode drops the sound rather than failing the whole video.
+      if (aSrc && plan.audio && plan.audio.length > 0) {
+        try { await aSrc.add(plan.audio as unknown as AudioBuffer); } catch { /* ship the video muted */ }
+      }
+      await output.finalize();
+      const blob = new Blob([target.buffer], { type: isMkv ? 'video/x-matroska' : 'video/webm' });
+      return { blob, format: isMkv ? 'mkv' : 'webm', width: w, height: h };
+    },
+    async abort(): Promise<void> {
+      if (!started) return;
+      try { await output.cancel(); } catch { /* already down */ }
+    },
+  };
+}
+
 /** A normal-video writer over the streaming WebCodecs mux (crop/upscale). Keeps
  *  `audio` (a decoded AudioBuffer) when the encoder can carry it. */
 export async function videoEncodeWriter(
@@ -1168,6 +1333,8 @@ export interface VideoStampOpts {
 export interface VideoJobDeps {
   openReader?: (blob: Blob, fps: number, range?: VideoRange) => Promise<VideoFrameReader>;
   openMatteWriter?: (format: 'webp' | 'png' | 'gif', fps: number) => VideoFrameWriter;
+  /** The transparent-VIDEO writer (matte → alpha WebM/Matroska with sound). */
+  openAlphaVideoWriter?: (plan: AlphaWriterPlan) => Promise<VideoFrameWriter>;
   openVideoWriter?: (plan: { width: number; height: number; fps: number; bitrate: number; audio?: AudioBufferLike | null }) => Promise<VideoFrameWriter>;
   decodeAudio?: (bytes: ArrayBuffer) => Promise<AudioBufferLike | null>;
   /** Decode only a WINDOW of the source's audio (the bounded path a range takes). */
@@ -1409,10 +1576,30 @@ export async function runVideoJob(
       op = makeMatteOp(host, params, new MatteAlphaSmoother(), ctx.signal);
       prov = videoProvenanceFor('matte', { model: info?.name ?? params.model, version: info?.version });
     }
-    writer = (deps.openMatteWriter ?? alphaAnimWriter)(params.format, params.fps);
-    outFormat = params.format;
-    assetType = 'raster';
-    animated = true;
+    if (params.format === 'webm') {
+      // Transparent VIDEO: alpha VP9/AV1 in WebM/Matroska, carrying the source audio +
+      // container C2PA in ONE file (the WebP/PNG/GIF paths drop sound). Alpha encode is
+      // browser-gated, so probe pickAlphaVideoCodec at the true ENCODE resolution -
+      // scaledEvenDims of the reader's size, NOT the source's - and refuse where alpha
+      // will not encode (the dialog already gated the offer; this is the belt-and-braces
+      // for a request that reaches here anyway).
+      const dims = scaledEvenDims(reader.width, reader.height, params.longEdge);
+      const pick = await pickAlphaVideoCodec(dims.width, dims.height, params.fps, MATTE_WEBM_BITRATE);
+      if (!pick) { await reader.close(); throw new Error(t("This browser can't make a transparent video.")); }
+      // Sound is kept on the WHOLE-FILE (no-range) path only: AudioBufferSource needs a
+      // real AudioBuffer, which jobAudio yields for a no-range job; a windowed decode
+      // returns a synthetic view AudioBufferSource can't take. The matte dialog never
+      // ranges a matte, so a ranged matte simply ships muted.
+      const audio = req.range ? null : await jobAudio(host, req, { blob: sourceBlob, bytes: sourceBytes }, reader, deps);
+      writer = await (deps.openAlphaVideoWriter ?? alphaVideoWriter)({ fps: params.fps, bitrate: MATTE_WEBM_BITRATE, codec: pick.muxCodec, audio });
+      outFormat = 'webm';
+      assetType = 'video';
+    } else {
+      writer = (deps.openMatteWriter ?? alphaAnimWriter)(params.format, params.fps);
+      outFormat = params.format;
+      assetType = 'raster';
+      animated = true;
+    }
   } else if (req.op === 'crop') {
     const params = req.crop ?? { rect: { x: 0, y: 0, w: reader.width, h: reader.height }, fps: 30, bitrate: 8_000_000 };
     const rect = roundCropRect(params.rect, reader.width, reader.height);

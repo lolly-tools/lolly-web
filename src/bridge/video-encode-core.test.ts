@@ -15,21 +15,23 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createStreamingMux, encodeMuxWebCodecs, HIGH_WATER, type EncodeAudio, type EncodePick, type EncodeOpts } from './video-encode-core.ts';
+import { HDR_VF_COLORSPACE } from './video-shared.ts';
 import type { SeekableSink, SeekableSinkFactory } from './mediabunny-mux.ts';
 import { videoFrameSchedule } from './video-mime.ts';
 
 // ── Stubs ─────────────────────────────────────────────────────────────────────
 
-interface FrameLog { src: unknown; timestamp: number; duration: number; closes: number }
+interface FrameLog { src: unknown; timestamp: number; duration: number; closes: number; init: any }
 
 /** Every VideoFrame the session constructs, in order - so a leak or a double
- *  close is directly assertable. */
+ *  close is directly assertable. `init` is the whole VideoFrameInit so the HDR tests
+ *  can assert the buffer ctor's format/codedWidth/codedHeight/colorSpace. */
 let frameLog: FrameLog[] = [];
 
 class StubVideoFrame {
   rec: FrameLog;
   constructor(src: unknown, init: { timestamp: number; duration: number }) {
-    this.rec = { src, timestamp: init.timestamp, duration: init.duration, closes: 0 };
+    this.rec = { src, timestamp: init.timestamp, duration: init.duration, closes: 0, init };
     frameLog.push(this.rec);
   }
   close(): void { this.rec.closes++; }
@@ -407,6 +409,8 @@ const fakeFrames = (n: number): ImageBitmap[] =>
 async function runBuffered(opts: {
   pick?: EncodePick; n?: number; fps?: number; audio?: EncodeAudio | null; VideoEncoder?: unknown;
   target?: 'buffer' | 'opfs'; seekableSink?: SeekableSinkFactory;
+  colorSpace?: VideoColorSpaceInit; frameFormat?: 'RGBA' | 'I420P10';
+  frames?: Array<ImageBitmap | { data: BufferSource }>;
 } = {}): Promise<{ buffer: ArrayBuffer; type: string }> {
   frameLog = []; audioLog = []; StubEncoder.instances = [];
   const restore = installGlobals({
@@ -418,12 +422,17 @@ async function runBuffered(opts: {
     EncodedAudioChunk: FakeAudioChunk,
   });
   try {
-    return await encodeMuxWebCodecs(fakeFrames(opts.n ?? 3), opts.pick ?? PICK_WEBM, {
+    return await encodeMuxWebCodecs(opts.frames ?? fakeFrames(opts.n ?? 3), opts.pick ?? PICK_WEBM, {
       width: 640, height: 360, fps: opts.fps ?? 24, bitrate: 1_000_000, audio: opts.audio ?? null,
       target: opts.target, seekableSink: opts.seekableSink,
+      colorSpace: opts.colorSpace, frameFormat: opts.frameFormat,
     });
   } finally { restore(); }
 }
+
+/** Raw-RGBA-buffer frames, the shape the HDR capture path pushes. */
+const bufferFrames = (n: number): Array<{ data: BufferSource }> =>
+  Array.from({ length: n }, () => ({ data: new Uint8ClampedArray(16) }));
 
 /**
  * An in-memory stand-in for the OPFS seekable writable (step A3). It honours the
@@ -629,4 +638,62 @@ test('gate 4: engine provenance embeds into the OPFS fastStart:false MP4 (moov-a
   assert.notEqual(out.length, bytes.length, 'provenance was embedded - the moov-at-end layout was ACCEPTED, not rejected');
   assert.ok(indexOfBytes(out, UDTA) >= 0, 'the udta box landed inside the trailing moov');
   assert.ok(indexOfBytes(out, [0x00, videoPayload, 0xc3, 0xd4, 0xe5]) >= 0, 'frame payload survived the stamp');
+});
+
+// ── Plan 154 WP-2: HDR 10-bit output ──────────────────────────────────────────
+// The buffered encode grows one seam: when o.colorSpace is set, frames arrive as raw
+// RGBA buffers and are built via the BUFFER VideoFrame ctor (image-source VideoFrameInit
+// has no colorSpace field), and the muxed track's decoderConfig.colorSpace is FORCE-SET
+// so mediabunny writes a colr/nclx box. colorSpace UNSET is the exact SDR path.
+
+test('encodeMuxWebCodecs: colorSpace set builds each frame via the buffer ctor carrying colorSpace + format', async () => {
+  const frames = bufferFrames(3);
+  await runBuffered({ pick: PICK_MP4, frames, colorSpace: HDR_VF_COLORSPACE, frameFormat: 'RGBA' });
+  assert.equal(frameLog.length, 3);
+  for (let i = 0; i < 3; i++) {
+    const init = frameLog[i]!.init;
+    assert.equal(init.format, 'RGBA', 'buffer ctor gets the pixel format');
+    assert.equal(init.codedWidth, 640);
+    assert.equal(init.codedHeight, 360);
+    assert.deepEqual(init.colorSpace, HDR_VF_COLORSPACE, 'the PQ colorSpace rides the frame');
+    assert.equal(frameLog[i]!.src, frames[i]!.data, 'the FIRST ctor arg is the RGBA buffer, not an image source');
+  }
+  // frameFormat defaults to RGBA when omitted (export.ts always passes it, the core defaults it).
+  await runBuffered({ pick: PICK_MP4, frames: bufferFrames(1), colorSpace: HDR_VF_COLORSPACE });
+  assert.equal(frameLog[0]!.init.format, 'RGBA', 'frameFormat defaults to RGBA');
+});
+
+test('encodeMuxWebCodecs: the video output callback force-sets decoderConfig.colorSpace, and mediabunny writes a colr/nclx box', async () => {
+  // Captures the metadata object each chunk is emitted with; the core's output callback
+  // mutates it IN PLACE (force-set), so after the run every captured meta shows the tag.
+  const emitted: Array<{ decoderConfig?: { colorSpace?: VideoColorSpaceInit } }> = [];
+  class CapturingEncoder extends StubEncoder {
+    override encode(frame: any, opts?: any): void {
+      super.encode(frame, opts);
+      const meta = { decoderConfig: { codec: this.config.codec, codedWidth: this.config.width, codedHeight: this.config.height, description: new Uint8Array(24) } };
+      emitted.push(meta);
+      this.cb.output(new FakeVideoChunk({
+        type: opts?.keyFrame ? 'key' : 'delta',
+        timestamp: frame.rec.timestamp, duration: frame.rec.duration,
+        bytes: new Uint8Array([0, videoPayload, 0xc3, 0xd4, 0xe5]),
+      }), meta);
+    }
+  }
+  const r = await runBuffered({ pick: PICK_MP4, n: 3, frames: bufferFrames(3), VideoEncoder: CapturingEncoder, colorSpace: HDR_VF_COLORSPACE, frameFormat: 'RGBA' });
+  assert.ok(emitted.length >= 1, 'at least one chunk was emitted');
+  for (const m of emitted) assert.deepEqual(m.decoderConfig!.colorSpace, HDR_VF_COLORSPACE, 'colorSpace was force-set on the muxed metadata');
+  const bytes = new Uint8Array(r.buffer);
+  assert.equal(r.type, 'video/mp4');
+  assert.ok(indexOfBytes(bytes, [0x63, 0x6f, 0x6c, 0x72]) >= 0, 'colr box present in the mp4 (colorSpaceIsComplete fired)');
+  assert.ok(indexOfBytes(bytes, [0x6e, 0x63, 0x6c, 0x78]) >= 0, 'nclx colour type inside the colr box');
+});
+
+test('encodeMuxWebCodecs: colorSpace UNSET keeps the image-source ctor and writes no colr box (SDR path unchanged)', async () => {
+  const r = await runBuffered({ pick: PICK_MP4, n: 3 });     // no colorSpace/frameFormat
+  for (const f of frameLog) {
+    assert.equal(f.init.colorSpace, undefined, 'no colorSpace on the frame init');
+    assert.equal(f.init.format, undefined, 'image-source ctor - no explicit pixel format');
+  }
+  const bytes = new Uint8Array(r.buffer);
+  assert.equal(indexOfBytes(bytes, [0x6e, 0x63, 0x6c, 0x78]), -1, 'no nclx colr box on the SDR path');
 });

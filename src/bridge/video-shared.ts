@@ -31,6 +31,39 @@ const WEBM_LADDER: readonly EncodePick[] = [
   { container: 'webm', codec: 'vp8', muxCodec: 'V_VP8' },
 ];
 
+/** The 10-bit HDR ladders (plan 154 WP-2), probed FIRST only when the caller asks for
+ *  HDR. AV1 Main10 leads both containers (widely encodable, small); HEVC Main10 is the
+ *  MP4 fallback (last - browsers rarely ENCODE it), VP9 profile-2 10-bit the WebM one.
+ *  All carry a `.10` / profile-2 depth so is10bitHdrCodec below recognises the pick. */
+const HDR_MP4_LADDER: readonly EncodePick[] = [
+  { container: 'mp4', codec: 'av01.0.08M.10', muxCodec: 'av1' },        // AV1 Main10
+  { container: 'mp4', codec: 'hev1.2.4.L153.B0', muxCodec: 'hevc' },    // HEVC Main10 (rarely encodable - last)
+];
+const HDR_WEBM_LADDER: readonly EncodePick[] = [
+  { container: 'webm', codec: 'av01.0.08M.10', muxCodec: 'V_AV1' },     // AV1 Main10
+  { container: 'webm', codec: 'vp09.02.10.10', muxCodec: 'V_VP9' },     // VP9 profile 2, 10-bit
+];
+
+/** The Rec.2100-PQ tag stamped on every HDR VideoFrame and forced onto the muxed
+ *  track's decoderConfig, so the container carries a colr/nclx (mp4) or Colour (webm)
+ *  box. Matches the stills HDR path (BT.2020 primaries, PQ transfer, narrow range). */
+export const HDR_VF_COLORSPACE = {
+  // The lib.dom VideoColorPrimaries union predates BT.2020 (stops at bt709/smpte170m),
+  // so the runtime-valid PQ values are widened - same cast lossless-trim/transmux use.
+  primaries: 'bt2020', transfer: 'pq', matrix: 'bt2020-ncl', fullRange: false,
+} as unknown as VideoColorSpaceInit;
+
+/** True when `codec` is one of the 10-bit HDR ladder picks - the gate export.ts uses to
+ *  decide hdrActive. Reads the codec string's depth/profile field so an explicit
+ *  pro-picker HDR codec (long-form AV1, etc.) is recognised too. */
+export function is10bitHdrCodec(codec: string): boolean {
+  const c = codec.toLowerCase();
+  if (c.startsWith('av01')) return c.split('.')[3] === '10';                 // AV1 bit-depth field
+  if (c.startsWith('hev1') || c.startsWith('hvc1')) return c.split('.')[1] === '2';  // HEVC Main10 profile
+  if (c.startsWith('vp09')) { const p = c.split('.'); return p[1] === '02' && p[2] === '10'; }  // VP9 profile 2, 10-bit
+  return false;
+}
+
 /** Reads the VideoEncoder global (present in both window and worker scope). */
 function videoEncoder(): { isConfigSupported?: (c: unknown) => Promise<{ supported?: boolean }> } | undefined {
   return (globalThis as { VideoEncoder?: { isConfigSupported?: (c: unknown) => Promise<{ supported?: boolean }> } }).VideoEncoder;
@@ -63,11 +96,22 @@ function explicitPick(codec: string, container: 'mp4' | 'webm'): EncodePick | nu
  */
 export async function pickWebCodecsVideo(
   preferred: 'mp4' | 'webm' | string, width: number, height: number, fps: number, bitrate: number,
-  forceCodec?: string,
+  forceCodec?: string, hdr?: boolean,
 ): Promise<EncodePick | null> {
   const VE = videoEncoder();
   if (!VE?.isConfigSupported) return null;
   const container: 'mp4' | 'webm' = preferred === 'webm' ? 'webm' : 'mp4';
+  // HDR requested: probe the 10-bit ladder for the preferred container FIRST. Falls
+  // through SILENTLY to the SDR path below when no HDR codec encodes here (Firefox,
+  // older Chrome, headless CI), so hdr omitted/false is byte-identical to before.
+  if (hdr === true) {
+    for (const pick of (container === 'webm' ? HDR_WEBM_LADDER : HDR_MP4_LADDER)) {
+      try {
+        const s = await VE.isConfigSupported({ codec: pick.codec, width, height, bitrate, framerate: fps });
+        if (s?.supported) return pick;
+      } catch { /* HDR codec unavailable - try the next, then fall through to SDR */ }
+    }
+  }
   if (forceCodec) {
     const ep = explicitPick(forceCodec, container);
     if (ep) {

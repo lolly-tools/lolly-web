@@ -13,9 +13,10 @@
  * (a PLAIN asset - the 'renders' tag is WP-B's download path only) and
  * `onComplete` refreshes a still-open catalog view.
  *
- * AUDIO copy is per-op and honest: matte-to-transparent (WebP/APNG) can't carry
- * audio, so it is dropped; an upscale keeps the source track. Esc/backdrop close
- * (mountModal owns that). Lazy-loaded, like matte-dialog / extract-audio.
+ * AUDIO copy is per-op and honest: matte-to-transparent WebP/PNG/GIF can't carry
+ * audio, so it is dropped; the transparent-WebM output (offered only where alpha
+ * encodes) keeps the source track, as does an upscale. Esc/backdrop close (mountModal
+ * owns that). Lazy-loaded, like matte-dialog / extract-audio.
  */
 import { mountModal } from '../components/modal.ts';
 import { escapeHtml } from '../lib/html.ts';
@@ -24,6 +25,7 @@ import { t, tRaw } from '../i18n.ts';
 import {
   runVideoJobAsJob, probeVideoJob, extrapolateEstimate, videoJobRefusal, matteOutputFrames,
   MATTE_VIDEO_DEFAULT_MODEL, MATTE_DEFAULT_FPS, MATTE_DEFAULT_LONG_EDGE, MATTE_LONG_EDGE_PRESETS, clampMatteLongEdge,
+  MATTE_WEBM_BITRATE, pickAlphaVideoCodec, scaledEvenDims,
   CHROMA_DEFAULT_KEY, CHROMA_DEFAULT_TOLERANCE, CHROMA_DEFAULT_SOFTNESS, CHROMA_DEFAULT_SPILL,
   type VideoOp, type VideoJobHost, type VideoJobRequest, type MatteVideoParams, type ChromaKeyParams,
 } from '../lib/video-jobs.ts';
@@ -147,6 +149,7 @@ export function openVideoJobDialog(host: VideoJobHost, opts: VideoJobDialogOpts)
         </select>
       </label>
       <p class="modal-msg vjob-format-note" data-format-note hidden>${escapeHtml(t('GIF transparency is hard-edged (1-bit): a pixel is fully on or off. WebP and PNG keep the soft, feathered edge.'))}</p>
+      <p class="modal-msg vjob-format-note" data-webm-note hidden>${escapeHtml(t('Plays in Chrome and Firefox; Safari can’t show a transparent WebM. Its Content Credential validates in Lolly only.'))}</p>
       <div class="vjob-chroma" data-chroma hidden>
         <p class="modal-msg vjob-chroma-hint">${escapeHtml(t('Best for footage shot against an evenly lit, flat-coloured wall or screen. Pick the background colour, then widen the tolerance until it drops out cleanly.'))}</p>
         <label class="vjob-field"><span>${escapeHtml(t('Background colour'))}</span><input type="color" class="field-input" data-key value="${rgbToHex(CHROMA_DEFAULT_KEY)}"></label>
@@ -168,7 +171,7 @@ export function openVideoJobDialog(host: VideoJobHost, opts: VideoJobDialogOpts)
       <div class="vjob-controls">
         ${matteControls}${upscaleControls}
       </div>
-      <p class="modal-msg vjob-audio">${escapeHtml(audioNote)}</p>
+      <p class="modal-msg vjob-audio" data-audio-note>${escapeHtml(audioNote)}</p>
       ${modelNote}
       <p class="modal-msg vjob-estimate" data-estimate aria-live="polite"></p>
       <p class="modal-msg vjob-status" data-status role="status" aria-live="polite" hidden></p>
@@ -191,15 +194,26 @@ export function openVideoJobDialog(host: VideoJobHost, opts: VideoJobDialogOpts)
     const estimateEl = el.querySelector<HTMLElement>('[data-estimate]')!;
     const statusEl = el.querySelector<HTMLElement>('[data-status]')!;
 
-    // GIF is the only 1-bit-alpha format; reveal the hard-edge note only when it is
-    // chosen so WebP/PNG (soft alpha) stay noise-free.
+    // The format-dependent notes: GIF's hard-edge caveat and WebM's transparent-video
+    // caveat (playback + Lolly-only credential), plus whether the sound is kept. Each is
+    // revealed only for its own format so the common WebP/PNG path stays noise-free.
     const formatSel = el.querySelector<HTMLSelectElement>('[data-format]');
     const formatNote = el.querySelector<HTMLElement>('[data-format-note]');
-    if (formatSel && formatNote) {
-      const syncFormatNote = (): void => { formatNote.hidden = formatSel.value !== 'gif'; };
-      formatSel.addEventListener('change', syncFormatNote);
-      syncFormatNote();
-    }
+    const webmNote = el.querySelector<HTMLElement>('[data-webm-note]');
+    const audioNoteEl = el.querySelector<HTMLElement>('[data-audio-note]');
+    const syncFormatNote = (): void => {
+      const fmt = formatSel?.value;
+      if (formatNote) formatNote.hidden = fmt !== 'gif';
+      if (webmNote) webmNote.hidden = fmt !== 'webm';
+      // WebM is the one transparent output that carries sound; the rest drop it.
+      if (audioNoteEl && isMatte) {
+        audioNoteEl.textContent = fmt === 'webm'
+          ? t('The original audio is kept.')
+          : t('A transparent video can’t carry sound, so the audio is dropped.');
+      }
+      updateMatteEstimate();
+    };
+    formatSel?.addEventListener('change', syncFormatNote);
 
     // The matte method picker (WP-resolution/chroma): 'model' runs the on-device net,
     // 'chroma' the deterministic colour key. Switching swaps which controls (Model vs
@@ -231,11 +245,18 @@ export function openVideoJobDialog(host: VideoJobHost, opts: VideoJobDialogOpts)
       const srcLong = srcDims ? Math.max(srcDims.width, srcDims.height) : 0;
       return clampMatteLongEdge(res, srcLong);
     }
-    /** Redraw the matte estimate from the current method + resolution (both live). */
+    /** Redraw the matte estimate from the current method + resolution + format (all live). */
     function updateMatteEstimate(): void {
       if (!isMatte || !srcDims || !(srcDims.durationSec > 0)) return;
-      const frames = matteOutputFrames(srcDims.durationSec, MATTE_DEFAULT_FPS);
       const px = selectedLongEdge();
+      // WebM is a real video codec, not stored frame by frame, so it is compact AND keeps
+      // the sound - the opposite of the animated-image formats' warning.
+      if ((el.querySelector('[data-format]') as HTMLSelectElement | null)?.value === 'webm') {
+        const n = Math.max(1, Math.round(srcDims.durationSec * MATTE_DEFAULT_FPS));
+        estimateEl.textContent = tRaw('About {n} frames at {fps} fps, {px}px on the long edge - a compact transparent video that keeps the sound.', { n, fps: MATTE_DEFAULT_FPS, px });
+        return;
+      }
+      const frames = matteOutputFrames(srcDims.durationSec, MATTE_DEFAULT_FPS);
       estimateEl.textContent = currentMethod() === 'chroma'
         ? tRaw('About {n} frames at {fps} fps, {px}px on the long edge. The colour key runs without a model, so it is quicker. Big files are stored frame by frame, so expect a large result.', { n: frames, fps: MATTE_DEFAULT_FPS, px })
         : tRaw('About {n} frames at {fps} fps, {px}px on the long edge. Big files are stored frame by frame, so expect a large result.', { n: frames, fps: MATTE_DEFAULT_FPS, px });
@@ -281,6 +302,23 @@ export function openVideoJobDialog(host: VideoJobHost, opts: VideoJobDialogOpts)
           resSel.innerHTML = values.map((px, i) => resOptionHtml(px, px === def, i === 0)).join('');
         }
         updateMatteEstimate();
+        // Offer "WebM (transparent)" ONLY where alpha actually encodes (Chromium yes;
+        // Safari/Firefox fall back). Probe pickAlphaVideoCodec at the ENCODE resolution
+        // and keep it non-blocking: the dialog is already usable, the option appears when
+        // the probe resolves. This touches the WebCodecs VideoEncoder global, not
+        // mediabunny, so it adds no dynamic import to the dialog-open path.
+        void (async (): Promise<void> => {
+          const enc = scaledEvenDims(meta.width, meta.height, selectedLongEdge());
+          const pick = await pickAlphaVideoCodec(enc.width, enc.height, MATTE_DEFAULT_FPS, MATTE_WEBM_BITRATE);
+          if (!el.isConnected || !pick) return;
+          const sel = el.querySelector<HTMLSelectElement>('[data-format]');
+          if (sel && !sel.querySelector('option[value="webm"]')) {
+            const opt = document.createElement('option');
+            opt.value = 'webm';
+            opt.textContent = t('WebM (transparent, keeps sound)');
+            sel.appendChild(opt);
+          }
+        })();
       } else if (isUpscale) {
         estimateEl.textContent = t('Runs the model on every frame, which can take several minutes on this device. Measuring…');
         // 3-frame probe → honest time estimate (WP-G).
@@ -300,7 +338,7 @@ export function openVideoJobDialog(host: VideoJobHost, opts: VideoJobDialogOpts)
       if (opts.aiGeneratedSource) req.aiGeneratedSource = opts.aiGeneratedSource;
       if (isMatte) {
         const model = (el.querySelector('[data-model]') as HTMLSelectElement).value as MatteModelId;
-        const format = (el.querySelector('[data-format]') as HTMLSelectElement).value as 'webp' | 'png' | 'gif';
+        const format = (el.querySelector('[data-format]') as HTMLSelectElement).value as 'webp' | 'png' | 'gif' | 'webm';
         const method = currentMethod();
         const matteReq: MatteVideoParams = {
           model: model || MATTE_VIDEO_DEFAULT_MODEL, format, fps: MATTE_DEFAULT_FPS, longEdge: selectedLongEdge(), method,

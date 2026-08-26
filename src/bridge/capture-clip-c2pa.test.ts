@@ -26,6 +26,7 @@ import assert from 'node:assert/strict';
 
 import { stampCaptureClip, captureContainer, CAPTURE_FORMATS, type CaptureFormat } from './export.ts';
 import { audioMimeCandidates, AUDIO_WEBM_CODECS, AUDIO_MP4_CODECS } from './video-mime.ts';
+import { webCodecsContainerMime } from './recorder-webcodecs.ts';
 import { C2PA_FORMATS, CAPTURE_SOURCE_TYPE, SCREEN_SOURCE_TYPE } from '../../../../engine/src/c2pa.ts';
 import { verifyC2pa, extractC2paStore, prepareC2paIngredientFromStore } from '../../../../engine/src/c2pa-verify.ts';
 
@@ -178,6 +179,26 @@ test('every mime the recorder bridge ASKS for is one a take can be signed in', (
     assert.ok(container, `${mime} is a container the recorder may produce, so it needs a placer`);
     assert.ok((CAPTURE_FORMATS as readonly string[]).includes(container!), `${mime} → ${container} must be a CaptureFormat`);
   }
+});
+
+test('every container the WebCodecs recorder path can hand back is one a take can be signed in', () => {
+  // The controlled path (bridge/recorder-webcodecs.ts) decides the container UP FRONT - that
+  // is the whole point of it for provenance: no MediaRecorder mime to guess. The same guard
+  // still applies, so it fails HERE if a container the new path can produce has no engine
+  // placer behind it. AV1-in-mp4 is the new default video landing (video/mp4); the mic-only
+  // audio landings (audio/mp4 → m4a, audio/webm) are the red-team #1 case.
+  for (const kind of ['video', 'audio'] as const) {
+    for (const container of ['mp4', 'webm'] as const) {
+      const mime = webCodecsContainerMime(kind, container);
+      const fmt = captureContainer(mime);
+      assert.ok(fmt, `${mime} is a container the WebCodecs recorder may produce, so it needs a placer`);
+      assert.ok((CAPTURE_FORMATS as readonly string[]).includes(fmt!), `${mime} → ${fmt} must be a CaptureFormat`);
+    }
+  }
+  assert.equal(captureContainer(webCodecsContainerMime('video', 'mp4')), 'mp4');
+  assert.equal(captureContainer(webCodecsContainerMime('video', 'webm')), 'webm');
+  assert.equal(captureContainer(webCodecsContainerMime('audio', 'mp4')), 'm4a', 'a mic-only mp4 take is an M4A');
+  assert.equal(captureContainer(webCodecsContainerMime('audio', 'webm')), 'webm');
 });
 
 test('captureContainer maps every MIME the recorder bridge can hand back', () => {

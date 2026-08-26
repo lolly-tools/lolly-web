@@ -402,18 +402,39 @@ async function openDeviceSource(opts: RecordOpts): Promise<OpenSource> {
   };
 }
 
-async function openSession(opts: RecordOpts): Promise<RecordSession> {
-  const isScreen = opts.source === 'screen' && opts.video === true;
-  const wantAudio = opts.audio !== false;
-  // A screen take always has a video track; a device take only when asked.
-  const wantVideo = isScreen || opts.video === true;
-  const source = isScreen ? await openDisplaySource(opts) : await openDeviceSource(opts);
-  const { stream } = source;
-  // A screen recording's audio is opportunistic - the picker's system-audio checkbox
-  // and the mic prompt can both come back empty. Record what actually arrived, so the
-  // mime hint never claims a track the stream doesn't have.
-  const haveAudio = isScreen ? stream.getAudioTracks().length > 0 : wantAudio;
+/**
+ * OWNER SIGN-OFF SWITCH (plans/153 WP-I, provenance-gated). Turning this on makes the
+ * controlled WebCodecs path (bridge/recorder-webcodecs.ts) the PREFERRED recorder wherever
+ * its Chromium-first gate passes, which makes AV1-in-mp4 (av01.0.08M.08) the DEFAULT capture
+ * codec for the first time. The bytes are the same container the EXPORT path already stamps
+ * AV1-in-mp4 through - a confirmation, not new placer work - but it is a provenance-relevant
+ * default change, so it stays OFF until the owner signs off. MediaRecorder is untouched while
+ * this is false. */
+const WEBCODECS_RECORDER = false;
 
+/**
+ * The encode+mux engine behind one take. Hides from openSession whether it is MediaRecorder
+ * (stop is EVENT-driven: ondataavailable buffers, onstop settles) or WebCodecs+mediabunny
+ * (PROMISE-driven: output.finalize() resolves the bytes). openSession drives both through the
+ * same produceBlob()/abort()/type seam. `type` is the container mime the finished Blob carries -
+ * read off the recorder for MediaRecorder, known up front for WebCodecs.
+ */
+interface RecordEngine {
+  readonly type: string;
+  /** Stop capture and resolve the finished container. Called at most once. */
+  produceBlob(): Promise<Blob>;
+  /** Discard the take, releasing the encoder. No usable Blob. */
+  abort(): void;
+}
+
+/**
+ * The universal MediaRecorder engine - the browser picks codec/bitrate/GOP within our mime +
+ * bitrate hints, writes an Infinity-duration WebM or an mp4, Opus/AAC audio only. Throws if
+ * even the browser-default recorder can't encode the stream, OR if start() throws (a codec
+ * surfacing only at start, a track ending between construct and start); the caller releases
+ * the source and rethrows.
+ */
+function mediaRecorderEngine(stream: MediaStream, wantVideo: boolean, haveAudio: boolean, opts: RecordOpts): RecordEngine {
   const mimeType = wantVideo
     ? (videoMimeType(opts.format ?? 'mp4', { audio: haveAudio }) ?? videoMimeType(opts.format ?? 'mp4') ?? '')
     : audioMimeType(opts.format);
@@ -430,36 +451,56 @@ async function openSession(opts: RecordOpts): Promise<RecordSession> {
   }
   let recorder: MediaRecorder;
   try {
-    try {
-      recorder = new MediaRecorder(stream, mimeType ? { ...encOpts, mimeType } : encOpts);
-    } catch {
-      recorder = new MediaRecorder(stream, encOpts); // drop the rejected mime hint, keep the bitrate
-    }
-  } catch (e) {
-    // Even the browser-default MediaRecorder can't encode this stream (no supported format):
-    // release the camera/mic/display we just acquired so the hardware indicator (or the
-    // "sharing your screen" bar) never stays lit with no recording running, then surface
-    // the failure to the caller.
-    source.release();
-    throw e;
+    recorder = new MediaRecorder(stream, mimeType ? { ...encOpts, mimeType } : encOpts);
+  } catch {
+    recorder = new MediaRecorder(stream, encOpts); // drop the rejected mime hint, keep the bitrate
   }
   const chunks: Blob[] = [];
   recorder.ondataavailable = e => { if (e.data && e.data.size > 0) chunks.push(e.data); };
-  // Video take: expose the live capture stream to the shell so the tool view can show a
-  // self-view during the take (the framing viewfinder is torn down once we open this
-  // stream). The DOM-free engine stays out of it - this is a shell-internal side channel.
-  if (wantVideo) publishRecordPreview(stream);
+  let settle: ((b: Blob) => void) | null = null;
+  const finished = new Promise<Blob>((resolve) => { settle = resolve; });
+  // Normalise the container label (drop the codecs= tail) for the Blob type so downstream
+  // extension/derivation sees a clean 'audio/webm' / 'video/mp4'.
+  const cleanType = (): string => {
+    const type = recorder.mimeType || mimeType || (wantVideo ? 'video/webm' : 'audio/webm');
+    return type.split(';')[0] || type;
+  };
+  recorder.onstop = () => { settle?.(new Blob(chunks, { type: cleanType() })); };
+  recorder.start();   // may throw synchronously - caller releases the source and rethrows
+  return {
+    type: cleanType(),
+    produceBlob(): Promise<Blob> {
+      try { recorder.stop(); } catch { settle?.(new Blob(chunks, { type: cleanType() })); }
+      return finished;
+    },
+    abort(): void { try { recorder.stop(); } catch { /* already stopped */ } },
+  };
+}
 
-  // Live levels during the take (only meaningful with an audio track).
+async function openSession(opts: RecordOpts): Promise<RecordSession> {
+  const isScreen = opts.source === 'screen' && opts.video === true;
+  const wantAudio = opts.audio !== false;
+  // A screen take always has a video track; a device take only when asked.
+  const wantVideo = isScreen || opts.video === true;
+  const source = isScreen ? await openDisplaySource(opts) : await openDeviceSource(opts);
+  const { stream } = source;
+  // A screen recording's audio is opportunistic - the picker's system-audio checkbox
+  // and the mic prompt can both come back empty. Record what actually arrived, so the
+  // mime hint never claims a track the stream doesn't have.
+  const haveAudio = isScreen ? stream.getAudioTracks().length > 0 : wantAudio;
+
+  // Preview + live levels are engine-agnostic, and set up BEFORE the encoder so a failed
+  // construction tears them down too (releaseDevices covers all three). Video take: expose
+  // the live capture stream to the shell for a self-view during the take (the framing
+  // viewfinder is torn down once we open this). Shell-internal side channel; the DOM-free
+  // engine stays out of it.
+  if (wantVideo) publishRecordPreview(stream);
   const subscribers = new Set<LevelCallback>();
   const stopAnalyse = haveAudio
     ? analyseStream(stream, (l) => { for (const cb of [...subscribers]) { try { cb(l); } catch { /* ignore */ } } })
     : () => {};
 
   let maxTimer = 0;
-  let settle: ((b: Blob) => void) | null = null;
-  const finished = new Promise<Blob>((resolve) => { settle = resolve; });
-
   const releaseDevices = (): void => {
     if (maxTimer) { clearTimeout(maxTimer); maxTimer = 0; }
     stopAnalyse();
@@ -467,54 +508,71 @@ async function openSession(opts: RecordOpts): Promise<RecordSession> {
     source.release();
   };
 
-  recorder.onstop = () => {
-    releaseDevices();
-    const type = recorder.mimeType || mimeType || (wantVideo ? 'video/webm' : 'audio/webm');
-    // Normalise the container label (drop the codecs= tail) for the Blob type so
-    // downstream extension/derivation sees a clean 'audio/webm' / 'video/mp4'.
-    const container = type.split(';')[0] || type;
-    settle?.(new Blob(chunks, { type: container }));
+  // The controlled WebCodecs path (chosen bitrate/GOP/contentHint, container known up front)
+  // when its Chromium-first gate passes AND the owner sign-off switch is on; MediaRecorder is
+  // the universal fallback. LAZY-imported so recorder-webcodecs (→ video-shared, mediabunny-mux)
+  // never enters the boot bundle recorder.ts rides. A WebCodecs failure (unavailable, no codec,
+  // start() reject) falls through to MediaRecorder on the still-live stream.
+  let engine: RecordEngine | null = null;
+  if (WEBCODECS_RECORDER) {
+    try {
+      const wc = await import('./recorder-webcodecs.ts');
+      if (wc.webCodecsRecorderAvailable({ wantVideo, wantAudio: haveAudio })) {
+        engine = await wc.createWebCodecsRecorder(stream, { wantVideo, haveAudio, format: opts.format, screen: isScreen });
+      }
+    } catch { engine = null; /* fall through to MediaRecorder */ }
+  }
+  if (!engine) {
+    try {
+      engine = mediaRecorderEngine(stream, wantVideo, haveAudio, opts);
+    } catch (e) {
+      // No encodable format at all, or start() threw: release the camera/mic/display we
+      // acquired so the hardware indicator (or the "sharing your screen" bar) never stays
+      // lit with no recording running, then surface the failure.
+      releaseDevices();
+      throw e;
+    }
+  }
+  const activeEngine = engine;   // non-null past here; captured so the closures don't re-widen
+
+  let settle: ((b: Blob) => void) | null = null;
+  const finished = new Promise<Blob>((resolve) => { settle = resolve; });
+  let finishing = false;
+  // One finish path for stop(), maxMs and the "Stop sharing" bar: produce the blob, THEN
+  // release devices (the WebCodecs sources must stay live until finalize() reads them). A
+  // rejected produceBlob still releases and settles - empty, so a pending stop() never hangs.
+  const finish = (): void => {
+    if (finishing) return;
+    finishing = true;
+    activeEngine.produceBlob().then(
+      (blob) => { releaseDevices(); settle?.(blob); },
+      () => { releaseDevices(); settle?.(new Blob([], { type: activeEngine.type })); },
+    );
   };
 
-  // recorder.start() can throw synchronously (a codec surfacing only at start, a track
-  // ending between construct and start). The construction catch above is the only place
-  // source.release() runs on failure, so a throw here would orphan the LIVE display + mic
-  // (and leave the preview published) with no in-app way to stop them - the runtime never
-  // assigns recordSession, so the Stop button is a no-op. Tear the source down before
-  // rethrowing, exactly as construction does.
-  try {
-    recorder.start();
-  } catch (e) {
-    releaseDevices();
-    throw e;
-  }
   if (opts.maxMs && opts.maxMs > 0) {
-    maxTimer = window.setTimeout(() => { try { recorder.stop(); } catch { /* already stopped */ } }, opts.maxMs);
+    maxTimer = window.setTimeout(finish, opts.maxMs);
   }
   // Ending the share from the browser's own "Stop sharing" bar must finish the take, not
-  // strand it: the track dies either way, so the only question is whether the user gets
-  // the footage they already recorded. onstop runs the normal path, so they do.
-  source.onSourceEnded?.(() => { try { recorder.stop(); } catch { /* already stopped */ } });
+  // strand it: the track dies either way, so the only question is whether the user gets the
+  // footage they already recorded. finish() runs the normal path, so they do.
+  source.onSourceEnded?.(finish);
 
-  let stopping = false;
   return {
     micActive: source.micActive,
     subscribe(cb: LevelCallback): () => void {
       subscribers.add(cb);
       return () => subscribers.delete(cb);
     },
-    async stop(): Promise<Blob> {
-      if (!stopping) {
-        stopping = true;
-        try { recorder.stop(); } catch { releaseDevices(); settle?.(new Blob(chunks)); }
-      }
+    stop(): Promise<Blob> {
+      finish();
       return finished;
     },
     cancel(): void {
-      stopping = true;
-      try { recorder.stop(); } catch { /* ignore */ }
+      finishing = true;         // block any later finish()/stop()
+      activeEngine.abort();
       releaseDevices();
-      settle?.(new Blob([])); // resolve any pending stop() with nothing
+      settle?.(new Blob([]));   // resolve any pending stop() with nothing
     },
   };
 }

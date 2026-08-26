@@ -4033,9 +4033,11 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         // carrying Lolly's id. Raster-only (no container rasters yet) and a no-op
         // until the encoder model is on-device. See plans/28-durable-content-credentials.md.
         if (urlDurable && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff'].includes(fmt)) expOpts.durable = true;
-        // Opt-in HDR (?hdr=1): Rec.2100 PQ raster export with brand-colour glow.
-        // PNG/JPEG/AVIF/TIFF (WebP excluded - no working HDR decode path). See engine/src/hdr.ts.
-        if (urlHdr && ['png', 'jpg', 'jpeg', 'avif', 'tiff'].includes(fmt)) {
+        // Opt-in HDR (?hdr=1): Rec.2100 PQ export with brand-colour glow. Raster
+        // (PNG/JPEG/AVIF/TIFF - WebP excluded, no working HDR decode) plus the 10-bit
+        // video containers (mp4/webm, plan 154 WP-2). urlHdr is null for ?hdr=0, so
+        // ?hdr=0 forces SDR and ?hdr=1 forces HDR (tri-state via parseHdr). See engine/src/hdr.ts.
+        if (urlHdr && ['png', 'jpg', 'jpeg', 'avif', 'tiff', 'mp4', 'webm'].includes(fmt)) {
           expOpts.hdr = true;
           expOpts.hdrPeakNits = urlHdr.peakNits;
           expOpts.hdrReach = urlHdr.reach;
