@@ -90,6 +90,7 @@ import {
   sliceFixedOf, formatFixed, contourGamuts,
 } from '../lib/oklch-slice.ts';
 import type { SliceChartState } from '../lib/oklch-slice.ts';
+import { releaseHdrCanvas } from '../lib/hdr-canvas.ts';
 import {
   renderGamutSlider, paintGamutSlider, wireGamutSlider, channelRange, clampIntoGamut,
 } from '../lib/gamut-slider.ts';
@@ -990,8 +991,19 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     return st;
   }
 
+  /** Free every chart's HDR GL context (Tier A). Called before a rebuild discards the
+   *  `<canvas data-okls-hdr-gl>` nodes, and on view teardown - the WebGL2 context is only
+   *  reclaimed on GC otherwise, so a rebuild-per-limit-change leaks one each time. */
+  const releaseChartHdrContexts = (): void => {
+    for (const plane of PLANES) {
+      const gl = $(`[data-lab-chart="${plane}"]`)?.querySelector<HTMLCanvasElement>('[data-okls-hdr-gl]');
+      if (gl) releaseHdrCanvas(gl);
+    }
+  };
+
   function buildCharts(): void {
     for (const fn of chartTeardowns.splice(0)) fn();
+    releaseChartHdrContexts();   // free the outgoing charts' GL contexts before innerHTML drops them
     for (const plane of PLANES) {
       const mount = $(`[data-lab-chart="${plane}"]`);
       if (!mount) continue;
@@ -2757,6 +2769,7 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   const prevCleanup = (view as ViewElement)._cleanup;
   (view as ViewElement)._cleanup = () => {
     prevCleanup?.();
+    releaseChartHdrContexts();   // Tier-A GL contexts are not otherwise freed on unmount
     for (const fn of cleanups) fn();
   };
 }
