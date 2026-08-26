@@ -663,6 +663,23 @@ test('encodeMuxWebCodecs: colorSpace set builds each frame via the buffer ctor c
   assert.equal(frameLog[0]!.init.format, 'RGBA', 'frameFormat defaults to RGBA');
 });
 
+test('encodeMuxWebCodecs: frameFormat I420P10 (WP-2 Phase 2) builds the buffer ctor with the packed 10-bit planes', async () => {
+  // The Phase-2 true-10-bit source: frames arrive as packed I420P10 Uint16 planes
+  // (Y ++ U ++ V), and the SAME buffer VideoFrame ctor carries format:'I420P10' + the
+  // PQ colorSpace. The seam is format-agnostic; this locks the 10-bit case explicitly.
+  const planes = Array.from({ length: 3 }, () => ({ data: new Uint16Array(640 * 360 + 2 * 320 * 180) }));
+  await runBuffered({ pick: PICK_MP4, frames: planes, colorSpace: HDR_VF_COLORSPACE, frameFormat: 'I420P10' });
+  assert.equal(frameLog.length, 3);
+  for (let i = 0; i < 3; i++) {
+    const init = frameLog[i]!.init;
+    assert.equal(init.format, 'I420P10', 'the Phase-2 seam passes I420P10 to the buffer ctor');
+    assert.equal(init.codedWidth, 640);
+    assert.equal(init.codedHeight, 360);
+    assert.deepEqual(init.colorSpace, HDR_VF_COLORSPACE, 'the PQ colorSpace still rides the frame');
+    assert.equal(frameLog[i]!.src, planes[i]!.data, 'the FIRST ctor arg is the packed I420P10 Uint16 buffer');
+  }
+});
+
 test('encodeMuxWebCodecs: the video output callback force-sets decoderConfig.colorSpace, and mediabunny writes a colr/nclx box', async () => {
   // Captures the metadata object each chunk is emitted with; the core's output callback
   // mutates it IN PLACE (force-set), so after the run every captured meta shows the tag.
@@ -697,4 +714,57 @@ test('encodeMuxWebCodecs: colorSpace UNSET keeps the image-source ctor and write
   }
   const bytes = new Uint8Array(r.buffer);
   assert.equal(indexOfBytes(bytes, [0x6e, 0x63, 0x6c, 0x78]), -1, 'no nclx colr box on the SDR path');
+});
+
+// ── Plan 154 STREAMING HDR: createStreamingMux carries colorSpace too ──────────
+// The sequence/viz/audiogram exports run through the STREAMING encoder, not the buffered
+// one. It grows the SAME seam: opts.colorSpace set ⇒ each frame is built via the BUFFER
+// VideoFrame ctor from a raw RGBA buffer, and the video output callback FORCE-SETS the
+// muxed decoderConfig.colorSpace so a colr/nclx box is written. colorSpace UNSET is the
+// exact SDR path (the sequence-render browser goldens set no opts.hdr - byte-identical).
+
+test('createStreamingMux: colorSpace set builds each frame via the buffer ctor carrying colorSpace + format', async () => {
+  const { session } = harness({ colorSpace: HDR_VF_COLORSPACE, frameFormat: 'RGBA' }, PICK_MP4);
+  const mux = await session;
+  const frames = [{ data: new Uint8ClampedArray(16) }, { data: new Uint8ClampedArray(16) }];
+  for (let i = 0; i < frames.length; i++) await mux.addFrame(frames[i] as any, i * 1000);
+  assert.equal(frameLog.length, 2);
+  for (let i = 0; i < 2; i++) {
+    const init = frameLog[i]!.init;
+    assert.equal(init.format, 'RGBA', 'buffer ctor gets the pixel format');
+    assert.equal(init.codedWidth, 640);
+    assert.equal(init.codedHeight, 360);
+    assert.deepEqual(init.colorSpace, HDR_VF_COLORSPACE, 'the PQ colorSpace rides the frame');
+    assert.equal(frameLog[i]!.src, frames[i]!.data, 'the FIRST ctor arg is the RGBA buffer, not the {data} wrapper');
+  }
+  // frameFormat defaults to RGBA when omitted (the sequence path always passes it, the core defaults it).
+  const b = harness({ colorSpace: HDR_VF_COLORSPACE }, PICK_MP4);
+  const m2 = await b.session;
+  await m2.addFrame({ data: new Uint8ClampedArray(16) } as any, 0);
+  assert.equal(frameLog[0]!.init.format, 'RGBA', 'frameFormat defaults to RGBA');
+});
+
+test('createStreamingMux: colorSpace set force-sets decoderConfig.colorSpace on the muxed metadata', async () => {
+  const { session, h } = harness({ colorSpace: HDR_VF_COLORSPACE }, PICK_MP4);
+  await session;
+  const meta = { decoderConfig: { codec: 'av01.0.08M.10', codedWidth: 640, codedHeight: 360 } as { colorSpace?: VideoColorSpaceInit; [k: string]: unknown } };
+  h.video.cb.output({ chunk: 1, timestamp: 0 }, meta);
+  assert.deepEqual(meta.decoderConfig.colorSpace, HDR_VF_COLORSPACE, 'colorSpace force-set on the muxed metadata');
+  // Chromium omits decoderConfig on non-keyframe chunks - the guard must not throw.
+  assert.doesNotThrow(() => h.video.cb.output({ chunk: 2, timestamp: 1000 }, undefined));
+  assert.doesNotThrow(() => h.video.cb.output({ chunk: 3, timestamp: 2000 }, {}));
+});
+
+test('createStreamingMux: colorSpace UNSET keeps the image-source ctor and never touches metadata (SDR byte-identical)', async () => {
+  const { session, h } = harness({}, PICK_MP4);              // no colorSpace/frameFormat
+  const mux = await session;
+  const canvas = { tag: 'canvas' } as any;
+  await mux.addFrame(canvas, 0);
+  assert.equal(frameLog[0]!.src, canvas, 'image-source ctor gets the canvas itself, not a buffer');
+  assert.equal(frameLog[0]!.init.format, undefined, 'no explicit pixel format');
+  assert.equal(frameLog[0]!.init.colorSpace, undefined, 'no colorSpace on the frame init');
+  assert.equal(frameLog[0]!.init.codedWidth, undefined, 'image-source ctor - no codedWidth');
+  const meta = { decoderConfig: { codec: 'avc1.42001f' } as { colorSpace?: VideoColorSpaceInit } };
+  h.video.cb.output({ chunk: 1, timestamp: 0 }, meta);
+  assert.equal(meta.decoderConfig.colorSpace, undefined, 'the SDR output callback leaves metadata untouched');
 });

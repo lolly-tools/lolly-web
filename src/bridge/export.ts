@@ -28,6 +28,7 @@ import {
   buildPptxParts, EMU_PER_PX,
   writeDocx, writeOdt, embedWavInfo,
   hdrBoostToPQ, pqBt2020IccProfile, HDR_PQ_CICP,
+  fromU8Srgb, hdrViewTransform, pqEncodeFrame, pqToI420P10,
 } from '@lolly/engine';
 import type { HdrBoostOptions } from '@lolly/engine';
 import {
@@ -1019,6 +1020,27 @@ function hdrCanvas(canvas: HTMLCanvasElement, opts: ExportOpts): void {
   const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
   hdrBoostToPQ(id.data, { targets: hdrTargets(opts), ...hdrTune(opts) });
   ctx.putImageData(id, 0, 0);
+}
+
+// WP-2 Phase 2 gate. True when this runtime can construct a tight-packed 10-bit
+// I420P10 VideoFrame - the deep HDR video source. The probe builds the EXACT layout
+// pqToI420P10 emits (Y ++ U ++ V, ⌈w/2⌉×⌈h/2⌉ chroma, one LE Uint16 per sample), so
+// a runtime that rejects that packing falls back to the Phase-1 8-bit-sourced RGBA
+// path instead of throwing mid-encode. Memoised - the answer is fixed per session.
+let _i420p10Support: boolean | undefined;
+function supportsI420P10Frame(): boolean {
+  if (_i420p10Support !== undefined) return _i420p10Support;
+  if (typeof VideoFrame === 'undefined') return (_i420p10Support = false);
+  try {
+    // 2×2 → Y(4) + U(1) + V(1) = 6 samples.
+    const f = new VideoFrame(new Uint16Array(6), {
+      format: 'I420P10' as VideoPixelFormat, codedWidth: 2, codedHeight: 2, timestamp: 0,
+    });
+    f.close();
+    return (_i420p10Support = true);
+  } catch {
+    return (_i420p10Support = false);
+  }
 }
 
 // Deep (16-bit) HDR PNG: canvas pixels -> engine float view transform -> full-
@@ -9748,6 +9770,11 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
   const hdrDesired = opts.hdr === true;
   const pick = await pickWebCodecsVideo(preferred, targetW, targetH, fps, baseBitrate, opts.videoCodec, hdrDesired);
   const hdrActive = hdrDesired && !!pick && is10bitHdrCodec(pick.codec);
+  // WP-2 Phase 2: prefer a TRUE 10-bit I420P10 source over Phase 1's 8-bit-sourced
+  // PQ RGBA when the runtime can build an I420P10 VideoFrame. Same brand boost + PQ
+  // math, but 10-bit through the encode, so the shadows the PQ transfer packs codes
+  // into stop banding. Falls back to Phase 1 (RGBA) where I420P10 isn't constructible.
+  const deep10 = hdrActive && supportsI420P10Frame();
 
   const frames: Array<ImageBitmap | { data: BufferSource }> = [];
   try {
@@ -9756,9 +9783,19 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
       // absolute seconds instead of guessing the span from its own metadata - the
       // guess is what let the caption clock disagree with the muxed audio.
       const cv = await source.frame(i / frameCount, plan.clipSec);
-      if (hdrActive) {
-        // PQ-transform the frame in place (engine hdrBoostToPQ via the shared stills
-        // helper - same targets/tune), then hand its RGBA buffer to the 10-bit path.
+      if (deep10) {
+        // Phase 2 (true 10-bit): 8-bit sRGB canvas -> linear DeepFrame -> brand-
+        // boosted rec2020-linear view -> full-precision PQ -> I420P10 YUV. Same boost
+        // knobs as Phase 1 (hdrViewTransform is the float dual of hdrBoostToPQ); the
+        // gain stays 10-bit through the encode. pqEncodeFrame's 203-nit anchor matches
+        // the view transform's SDR-white reference, so the tonescale is consistent.
+        const c = cv.getContext('2d', { willReadFrequently: true });
+        const id = c!.getImageData(0, 0, cv.width, cv.height);
+        const view = hdrViewTransform(fromU8Srgb(id.data, cv.width, cv.height), { targets: hdrTargets(opts), ...hdrTune(opts) });
+        frames.push({ data: pqToI420P10(pqEncodeFrame(view)).data as BufferSource });
+      } else if (hdrActive) {
+        // Phase 1 fallback: PQ-transform the frame in place (engine hdrBoostToPQ via the
+        // shared stills helper - same targets/tune), 8-bit-sourced PQ into an RGBA buffer.
         hdrCanvas(cv, opts);
         const c = cv.getContext('2d', { willReadFrequently: true });
         frames.push({ data: c!.getImageData(0, 0, cv.width, cv.height).data });
@@ -9854,11 +9891,11 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
       // In-thread encode: on failure the frames + live `audio` track stay valid for Phase 2.
       if (bedOk) {
         try {
-          _host?.log?.('info', `video: WebCodecs ${pick.container}/${pick.codec}${hdrActive ? ' HDR' : ''}${track ? '+' + audioPick!.codec : ''} ${targetW}×${targetH}@${fps} ${Math.round(bitrate / 1000)}kbps`);
+          _host?.log?.('info', `video: WebCodecs ${pick.container}/${pick.codec}${hdrActive ? (deep10 ? ' HDR/10-bit' : ' HDR') : ''}${track ? '+' + audioPick!.codec : ''} ${targetW}×${targetH}@${fps} ${Math.round(bitrate / 1000)}kbps`);
           const blob = await encodeVideoWithWebCodecs(frames, pick, {
             width: targetW, height: targetH, fps, bitrate, meta: opts.meta, audio: track,
             bitrateMode: opts.bitrateMode, hardwareAcceleration: opts.hardwareAcceleration,
-            ...(hdrActive ? { colorSpace: HDR_VF_COLORSPACE, frameFormat: 'RGBA' as const } : {}),
+            ...(hdrActive ? { colorSpace: HDR_VF_COLORSPACE, frameFormat: (deep10 ? 'I420P10' : 'RGBA') as 'I420P10' | 'RGBA' } : {}),
             ...(softSubs ? { subtitlesVtt: softSubs } : {}),   // WP-F soft caption track
           });
           frames.forEach(b => { if (b instanceof ImageBitmap) b.close(); });

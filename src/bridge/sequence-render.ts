@@ -120,7 +120,7 @@ import {
   type StreamingMux,
   type PcmSource,
 } from './video-encode-core.ts';
-import { pickWebCodecsVideo, pickWebCodecsAudio, type AudioPick } from './video-shared.ts';
+import { pickWebCodecsVideo, pickWebCodecsAudio, is10bitHdrCodec, HDR_VF_COLORSPACE, type AudioPick } from './video-shared.ts';
 // The DOM-free executor. Imported as an ordinary module for the in-thread path
 // AND spawned as a Worker below - one compositor, two hosts (see the header).
 import {
@@ -164,7 +164,9 @@ import {
   projectDepth,
   projectLayer,
   resolveCamera,
+  hdrBoostToPQ,
 } from '@lolly/engine';
+import type { HdrBoostOptions } from '@lolly/engine';
 // The compositor photographs the LIVE artboard, and the phase-2 clock has been
 // writing `.seq-off` (display:none) onto every box that is not under the playhead.
 // Without clearing it, every clip except the one being scrubbed rasterises blank.
@@ -445,6 +447,53 @@ function manualCaptureStream(canvas: HTMLCanvasElement, fps: number): { stream: 
 function videoMimeType(preferred: string, audio: boolean): string | null {
   if (typeof MediaRecorder === 'undefined') return null;
   return videoMimeCandidates(preferred, { audio }).find((t) => MediaRecorder.isTypeSupported?.(t)) ?? null;
+}
+
+// ── HDR (plan 154 WP-2, extended to the streaming path) ─────────────────────
+// The streaming compositor is 8-bit (the deep compositor is WP-3, deferred), so this
+// reuses the buffered renderVideo Phase-1 boost EXACTLY: PQ-transform each composited
+// frame and hand its RGBA buffer to the 10-bit streaming encoder. hdrTargets/hdrTune are
+// reproduced from export.ts (the same // from export.ts: convention this module already
+// uses for nine other helpers) so the glow is byte-for-byte identical between a buffered
+// video export and a sequence/viz/audiogram one - export.ts only exports renderSequence,
+// not these module-private helpers.
+
+// from export.ts:hdrTargets - brand primary hexes to boost, pulled from the live palette.
+// The engine stays brand-agnostic; white is added by hdrBoostToPQ itself.
+function hdrTargets(opts: ExportOpts): string[] {
+  const out: string[] = [];
+  for (const p of (opts.palette ?? []) as Array<{ hex?: string }>) {
+    if (p.hex && /^#?[0-9a-fA-F]{3,8}$/.test(p.hex)) out.push(p.hex);
+  }
+  return out;
+}
+
+// from export.ts:hdrTune - map the author's 0-100 dials onto the hdrBoostToPQ knobs. Any
+// dial left undefined falls through to the engine default (a plain hdr=1 looks as before).
+function hdrTune(opts: ExportOpts): Partial<HdrBoostOptions> {
+  const t: Partial<HdrBoostOptions> = {};
+  if (opts.hdrPeakNits != null) t.peakNits = opts.hdrPeakNits;
+  if (opts.hdrReach != null) {
+    const r = Math.min(1, Math.max(0, opts.hdrReach / 100));
+    const center = 0.65 - 0.45 * r;
+    t.kneeLo = Math.max(0, center - 0.12);
+    t.kneeHi = Math.min(1, center + 0.12);
+  }
+  if (opts.hdrLift != null) t.boostFloor = Math.min(1, Math.max(0, opts.hdrLift / 100));
+  if (opts.hdrRichness != null) t.richness = Math.min(1, Math.max(0, opts.hdrRichness / 100));
+  return t;
+}
+
+// Boost a composited 8-bit frame to Rec.2100-PQ in place (engine hdrBoostToPQ, same
+// targets/tune as the buffered path) and hand back its RGBA buffer - the shape the
+// streaming mux's HDR path (opts.colorSpace set) feeds to the buffer VideoFrame ctor.
+// Only called when hdrActive; SDR frames pass the canvas straight through, byte-for-byte.
+function hdrFrameData(ctx: AnyCtx, w: number, h: number, opts: ExportOpts): { data: BufferSource } {
+  const id = (ctx as CanvasRenderingContext2D).getImageData(0, 0, w, h);
+  hdrBoostToPQ(id.data, { targets: hdrTargets(opts), ...hdrTune(opts) });
+  // Uint8ClampedArray is a valid VideoFrame buffer source; the cast just crosses TS's
+  // ArrayBufferLike-vs-ArrayBuffer typed-array generic (the RGBA bytes are the same).
+  return { data: id.data as BufferSource };
 }
 
 // ── the audio envelope (from export.ts:connectMusic) ────────────────────────
@@ -1280,7 +1329,16 @@ async function renderSequenceAuthored(
   // (pro-settings) is honoured where supported; then trim `bitrate` to the picked codec's
   // efficiency, so every downstream mux/worker call inherits the AV1/HEVC saving.
   const baseBitrate = videoBitrate(outW, targetH, fps, bppForQuality(opts.videoQuality ?? 'balanced'));
-  const pick = streaming ? await pickWebCodecsVideo(format, outW, targetH, fps, baseBitrate, opts.videoCodec) : null;
+  // Plan 154 WP-2, extended to the streaming path. DEVICE-INDEPENDENT: hdrDesired is the
+  // explicit opts.hdr toggle ONLY, never displaySupportsHdr() - the display governs
+  // preview, never the encoded bytes, so a credentialed HDR viz/audiogram is byte-repro-
+  // ducible across machines. hdrActive additionally requires the ladder to have landed a
+  // real 10-bit HDR codec (pickWebCodecsVideo's hdr arm), so a browser that cannot encode
+  // one SILENTLY gets today's SDR bytes. When hdrActive is false, everything below is
+  // byte-for-byte the pre-WP-2 streaming path (the goldens set no opts.hdr).
+  const hdrDesired = opts.hdr === true;
+  const pick = streaming ? await pickWebCodecsVideo(format, outW, targetH, fps, baseBitrate, opts.videoCodec, hdrDesired) : null;
+  const hdrActive = hdrDesired && !!pick && is10bitHdrCodec(pick.codec);
   const bitrate = pick ? codecAdjustedBitrate(baseBitrate, pick.codec) : baseBitrate;
   if (streaming && !pick) {
     log('warn', 'sequence: WebCodecs encode unavailable - falling back to a real-time MediaRecorder replay (correct, but as slow as the clip is long).');
@@ -1688,7 +1746,11 @@ async function renderSequenceAuthored(
     if (useGl) return await renderGlComposite(job, mix, audioPick, liveRaster);
 
     // ── which thread executes ─────────────────────────────────────────────
-    if (pick && supportsWorkerSequenceRender()) {
+    // HDR forces the in-thread core: the worker offload transfers ImageBitmap frames and
+    // builds its own mux WITHOUT threading a colorSpace, so an HDR sequence takes the
+    // in-thread path below (whose frames are RGBA buffers), exactly as the buffered
+    // renderVideo path skips its worker for HDR.
+    if (pick && !hdrActive && supportsWorkerSequenceRender()) {
       log('info', `sequence: worker offload - ${hybrid
         ? `HYBRID (${liveBoxes.size} lottie layer(s) rastered on the main thread, one request in flight)`
         : 'fully worker-side (decode, composite, encode and mux all off the main thread)'}`);
@@ -1764,8 +1826,11 @@ async function renderSequenceAuthored(
           // of accumulating it in memory. Gated on frameCount, the SAME number the worker
           // path gates on (job.frameCount), so the two paths stay byte-identical.
           target: streamMuxTargetFor(frameCount),
+          // Plan 154 WP-2: an HDR pick tags the container colr/nclx and takes RGBA buffer
+          // frames. Absent ⇒ today's image-source path, byte-for-byte (the goldens).
+          ...(hdrActive ? { colorSpace: HDR_VF_COLORSPACE, frameFormat: 'RGBA' as const } : {}),
         });
-        log('info', `sequence: WebCodecs ${pick.container}/${pick.codec}${audioPick ? `+${audioPick.codec}` : ''} ${outW}×${targetH}@${fps} ${frameCount}f (in-thread)`);
+        log('info', `sequence: WebCodecs ${pick.container}/${pick.codec}${hdrActive ? ' HDR' : ''}${audioPick ? `+${audioPick.codec}` : ''} ${outW}×${targetH}@${fps} ${frameCount}f (in-thread)`);
       }
       // The audio mix is ready before the loop; feed its windows INTERLEAVED with
       // the frames (A2) so the mux's bounded merge advances as the render proceeds.
@@ -1780,7 +1845,7 @@ async function renderSequenceAuthored(
         aborted: () => opts.signal?.aborted === true,
         frame: async (c, cx, _i, tsUs) => {
           if (feeder) await feeder.upTo(tsUs);        // audio windows due by this frame
-          if (mux) await mux.addFrame(c as CanvasImageSource, tsUs);
+          if (mux) await mux.addFrame(hdrActive ? hdrFrameData(cx, outW, targetH, opts) : c as CanvasImageSource, tsUs);
           else if (streaming) bitmaps.push(await createImageBitmap(c as ImageBitmapSource));
           else if (format === 'apng') apngFrames.push(new Uint8Array(await (await canvasBlob(c, 'image/png')).arrayBuffer()));
           else if (format === 'webp-anim') webpFrames.push(await webpFrame(c, opts.quality ?? 0.9));
@@ -1863,8 +1928,10 @@ async function renderSequenceAuthored(
           audio: audioPick ? { ...audioPick, channels: [] } : null,
           // plans/156 WP-A part 3: long exports stream to OPFS (same frameCount gate).
           target: streamMuxTargetFor(frameCount),
+          // Plan 154 WP-2: HDR colr/nclx tag + RGBA buffer frames (SDR ⇒ untouched).
+          ...(hdrActive ? { colorSpace: HDR_VF_COLORSPACE, frameFormat: 'RGBA' as const } : {}),
         });
-        log('info', `sequence: TILT export via the GPU compositor (plans/104 P2b) - WebCodecs ${pick.container}/${pick.codec}${audioPick ? `+${audioPick.codec}` : ''} ${outW}×${targetH}@${fps} ${job.frameCount}f, one clean plate texture per layer.`);
+        log('info', `sequence: TILT export via the GPU compositor (plans/104 P2b) - WebCodecs ${pick.container}/${pick.codec}${hdrActive ? ' HDR' : ''}${audioPick ? `+${audioPick.codec}` : ''} ${outW}×${targetH}@${fps} ${job.frameCount}f, one clean plate texture per layer.`);
       } else {
         log('info', `sequence: TILT export via the GPU compositor (plans/104 P2b) - ${job.frameCount} frames of ${outW}×${targetH}, one clean plate texture per layer resampled on the GPU.`);
       }
@@ -1959,7 +2026,7 @@ async function renderSequenceAuthored(
         comp.readInto(destCtx as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D);
         const tsUs = Math.round(t * 1000);
         if (feeder) await feeder.upTo(tsUs);          // audio windows due by this frame
-        if (mux) await mux.addFrame(destCanvas as CanvasImageSource, tsUs);
+        if (mux) await mux.addFrame(hdrActive ? hdrFrameData(destCtx, outW, targetH, opts) : destCanvas as CanvasImageSource, tsUs);
         else if (streaming) bitmaps.push(await createImageBitmap(destCanvas as ImageBitmapSource));
         else if (format === 'apng') apngFrames.push(new Uint8Array(await (await canvasBlob(destCanvas, 'image/png')).arrayBuffer()));
         else if (format === 'webp-anim') webpFrames.push(await webpFrame(destCanvas, opts.quality ?? 0.9));
@@ -2076,9 +2143,11 @@ async function renderSequenceAuthored(
             audio: audioPick ? { ...audioPick, channels: [] } : null,
             // plans/156 WP-A part 3: long exports stream to OPFS (same frameCount gate).
             target: streamMuxTargetFor(frameCount),
+            // Plan 154 WP-2: HDR colr/nclx tag + RGBA buffer frames (SDR ⇒ untouched).
+            ...(hdrActive ? { colorSpace: HDR_VF_COLORSPACE, frameFormat: 'RGBA' as const } : {}),
           });
         }
-        log('info', `sequence: tilt capture - ${frameCount} frames of ${outW}×${targetH}, one dom-to-image shot each.`);
+        log('info', `sequence: tilt capture${hdrActive ? ' HDR' : ''} - ${frameCount} frames of ${outW}×${targetH}, one dom-to-image shot each.`);
         // Audio windows fed INTERLEAVED with the frames (A2), same as the other tiers.
         const feeder = mux && mix.spec && audioPick ? windowedAudioFeeder(mux, mix.spec, mix.totalSamples, MIX_CHANNELS) : null;
         for (let i = 0; i < frameCount; i++) {
@@ -2107,7 +2176,7 @@ async function renderSequenceAuthored(
           if (shot) ctx.drawImage(shot as unknown as CanvasImageSource, 0, 0);
           const tsUs = Math.round(t * 1000);
           if (feeder) await feeder.upTo(tsUs);        // audio windows due by this frame
-          if (mux) await mux.addFrame(canvas as CanvasImageSource, tsUs);
+          if (mux) await mux.addFrame(hdrActive ? hdrFrameData(ctx, outW, targetH, opts) : canvas as CanvasImageSource, tsUs);
           else if (streaming) bitmaps.push(await createImageBitmap(canvas as ImageBitmapSource));
           else if (format === 'apng') apngFrames.push(new Uint8Array(await (await canvasBlob(canvas, 'image/png')).arrayBuffer()));
           else if (format === 'webp-anim') webpFrames.push(await webpFrame(canvas, opts.quality ?? 0.9));

@@ -255,8 +255,10 @@ export interface PcmSource {
 
 /** A push-based encode+mux session. Frames stream in; memory stays O(1) in duration. */
 export interface StreamingMux {
-  /** Encode one frame at `tsUs` (µs). Resolves once the encoder has room for the next. */
-  addFrame(src: CanvasImageSource, tsUs: number): Promise<void>;
+  /** Encode one frame at `tsUs` (µs). Resolves once the encoder has room for the next.
+   *  An HDR session (opts.colorSpace set) takes a raw RGBA `{ data }` buffer instead of a
+   *  CanvasImageSource - the only VideoFrame ctor that carries a colorSpace. */
+  addFrame(src: CanvasImageSource | { data: BufferSource }, tsUs: number): Promise<void>;
   /** Encode one buffer's PCM (an AudioBuffer, or its planar equivalent in a
    *  worker), appended after everything added so far. */
   addAudio(buffer: PcmSource): Promise<void>;
@@ -379,7 +381,17 @@ export async function createStreamingMux(
   };
 
   const encoder = new VEnc({
-    output: (chunk: unknown, metadata: unknown) => { vQ.push({ chunk, metadata }); const t = tsOf(chunk); if (t > vHigh) vHigh = t; },
+    output: (chunk: unknown, metadata: unknown) => {
+      // HDR: force-set (not ??=) the full colorSpace struct so mediabunny's
+      // colorSpaceIsComplete always fires and writes a colr/nclx box - identical to
+      // encodeMuxWebCodecs. Chromium omits decoderConfig on non-keyframe chunks, so guard
+      // on it existing. Guarded on opts.colorSpace, so the SDR path is byte-for-byte
+      // untouched (the goldens set no colorSpace).
+      const m = metadata as { decoderConfig?: { colorSpace?: VideoColorSpaceInit } } | undefined;
+      if (opts.colorSpace && m?.decoderConfig) m.decoderConfig.colorSpace = { ...HDR_VF_COLORSPACE };
+      vQ.push({ chunk, metadata });
+      const t = tsOf(chunk); if (t > vHigh) vHigh = t;
+    },
     error: (e: unknown) => { fail(e); },
   });
   const config: any = { codec: pick.codec, width, height, bitrate, framerate: fps };
@@ -413,9 +425,17 @@ export async function createStreamingMux(
   };
 
   return {
-    async addFrame(src: CanvasImageSource, tsUs: number): Promise<void> {
+    async addFrame(src: CanvasImageSource | { data: BufferSource }, tsUs: number): Promise<void> {
       guard();
-      const frame = new VFrame(src, { timestamp: Math.round(tsUs), duration: durationUs });
+      // HDR frames arrive as raw RGBA buffers: the buffer VideoFrame ctor is the only one
+      // that takes a colorSpace (image-source VideoFrameInit has no such field). SDR frames
+      // stay on the exact image-source ctor as before - identical to encodeMuxWebCodecs.
+      const frame = opts.colorSpace
+        ? new VFrame((src as { data: BufferSource }).data, {
+            format: (opts.frameFormat ?? 'RGBA') as VideoPixelFormat, codedWidth: width, codedHeight: height,
+            timestamp: Math.round(tsUs), duration: durationUs, colorSpace: opts.colorSpace,
+          })
+        : new VFrame(src as CanvasImageSource, { timestamp: Math.round(tsUs), duration: durationUs });
       try {
         encoder.encode(frame, { keyFrame: frameIndex % keyEvery === 0 });
       } finally {
