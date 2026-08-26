@@ -29,7 +29,7 @@ import { escape } from '../utils.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import { perfUiOn } from '../feature-flags.ts';
 import { captureNeutralPinned } from '../lib/capture-neutral.ts';
-import { renderFeaturedVariant, displayFormatOf } from '../lib/featured-render.ts';
+import { renderFeaturedVariant, renderMissingLook, isManifestLook, displayFormatOf } from '../lib/featured-render.ts';
 import { toolSeedHref } from '../lib/seed-url.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { currentTheme } from '../theme.ts';
@@ -87,6 +87,16 @@ export function resolveExamples(src: { examples?: FeaturedVariant[]; featured?: 
 }
 
 type FeaturedHost = HostV1 & { previews?: PreviewsAPI };
+
+/** One queued look: the tool plus the example to paint. `index` is the look's ORIGINAL
+ *  manifest position (not its position after the theme filter), so it keys the render
+ *  cache and the preview manifest identically whichever looks a theme filters out. */
+interface VariantJob {
+  id: string;
+  formats: readonly string[] | undefined;
+  index: number;
+  values: Record<string, unknown>;
+}
 
 export interface FeaturedRowHandle {
   /** Pause/resume all motion (the gallery hides the row during search/filter). */
@@ -277,7 +287,21 @@ export function mountFeaturedRow(
   const markArt = (img: HTMLImageElement): void => { if (isReady(img)) img.closest('.ftile')?.classList.add('has-art'); };
   track.querySelectorAll<HTMLImageElement>('.ftile-img').forEach(markArt);   // warm-cache hits
   track.addEventListener('load', (e) => { const t = e.target as HTMLElement | null; if (t?.classList?.contains('ftile-img')) markArt(t as HTMLImageElement); }, { capture: true, signal });
-  track.addEventListener('error', (e) => { const t = e.target as HTMLElement | null; if (t?.classList?.contains('ftile-img')) t.remove(); }, { capture: true, signal });
+  // A look painted from the preview MANIFEST is a URL now (it used to be an inlined
+  // data-URL, which could not fail), so a missing look file reaches us here as `error`.
+  // Dropping the image alone would silently cost the tile that look - and if every look
+  // 404s, the hero stops cross-fading at all and the row is a static strip of committed
+  // previews. So an image that carries a job re-renders it live instead, the same
+  // degradation a stale bundle `sig` already takes (lib/featured-render.ts).
+  const lookJob = new WeakMap<HTMLImageElement, VariantJob>();
+  let retryLook: (job: VariantJob) => void = () => {};
+  track.addEventListener('error', (e) => {
+    const t = e.target as HTMLElement | null;
+    if (!t?.classList?.contains('ftile-img')) return;
+    const job = lookJob.get(t as HTMLImageElement);
+    t.remove();                    // no broken box either way; the icon stands in meanwhile
+    if (job) retryLook(job);
+  }, { capture: true, signal });
 
   function syncDots(link: Element, imgs: HTMLImageElement[], activeIdx: number): void {
     const dots = link.querySelector<HTMLElement>('.ftile-dots');
@@ -915,7 +939,7 @@ export function mountFeaturedRow(
   // leaves that tile with fewer looks.
   let ricId = 0;
   if (!reduced) {
-    const jobs: Array<{ id: string; formats: readonly string[] | undefined; index: number; values: Record<string, unknown> }> = [];
+    const jobs: VariantJob[] = [];
     const perTool = entries.map((e) => {
       const fmt = displayFormatOf(e.formats);
       return { id: e.id, formats: e.formats, canRender: !!fmt, variants: fmt ? resolveExamples(e) : [] };
@@ -934,16 +958,21 @@ export function mountFeaturedRow(
       }
     }
 
-    const addVariantImage = (toolId: string, dataUrl: string, values: Record<string, unknown>): void => {
+    const addVariantImage = (job: VariantJob, src: string): void => {
       // Append to the original tile AND its clone, so both stay in sync as they drift.
       const added: HTMLImageElement[] = [];
-      track.querySelectorAll<HTMLElement>(`.ftile[data-tool="${CSS.escape(toolId)}"] .ftile-stage`).forEach((stage) => {
+      track.querySelectorAll<HTMLElement>(`.ftile[data-tool="${CSS.escape(job.id)}"] .ftile-stage`).forEach((stage) => {
         const img = document.createElement('img');
         img.className = 'ftile-img';
         img.alt = '';
         img.setAttribute('aria-hidden', 'true');
         img.draggable = false;
-        img.src = dataUrl; // data URL - decodes synchronously-ish; the ticker rotates it in once ready
+        // A pre-rendered look is a manifest URL (fetched, and able to 404); a live render
+        // is a data-URL that decodes synchronously-ish. Either way the ticker rotates it
+        // in once ready - only the first kind needs the error handler's re-render, so only
+        // that kind carries its job.
+        if (isManifestLook(src)) lookJob.set(img, job);
+        img.src = src;
         stage.appendChild(img);
         added.push(img);
       });
@@ -952,12 +981,27 @@ export function mountFeaturedRow(
       // matching the gallery carousels. advanceStage points the tile's <a> at whichever look
       // is active; if this one is already showing when its URL resolves, refresh it now. A
       // failed build just leaves the default route (toolSeedHref falls back to it).
-      void toolSeedHref(toolId, values).then((href) => {
+      void toolSeedHref(job.id, job.values).then((href) => {
         for (const img of added) {
           img.dataset.seedhref = href;
           if (img.classList.contains('is-active')) refreshLinkHref(img.closest('.ftile-link'));
         }
       });
+    };
+
+    // A look whose manifest file 404'd: render it live and re-append it. Once per look,
+    // not once per <img> - the tile and each of setupLoop's wrap-clones carries its own
+    // copy of the same src, so they all error separately; addVariantImage then re-appends
+    // to every stage at once. The re-render is cached under its own namespace, so the
+    // repeat visit that 404s again reuses it instead of rendering a second time.
+    const retried = new Set<string>();
+    retryLook = (job: VariantJob): void => {
+      const key = `${job.id}:${job.index}`;
+      if (destroyed || retried.has(key)) return;
+      retried.add(key);
+      void renderMissingLook(host, job.id, job.formats, job.index, job.values)
+        .then((thumb) => { if (!destroyed) addVariantImage(job, thumb); })
+        .catch((e) => host.log?.('warn', `Featured look missing and re-render failed for ${job.id}`, { error: String((e as { message?: unknown })?.message ?? e) }));
     };
 
     // These variants are progressive "extra looks" cross-faded in later - NEVER the LCP
@@ -973,7 +1017,7 @@ export function mountFeaturedRow(
       const job = jobs.shift();
       if (!job) return;
       renderFeaturedVariant(host, job.id, job.formats, job.index, job.values)
-        .then((thumb) => { if (!destroyed) addVariantImage(job.id, thumb, job.values); })
+        .then((thumb) => { if (!destroyed) addVariantImage(job, thumb); })
         .catch((e) => host.log?.('warn', `Featured variant failed for ${job.id}`, { error: String((e as { message?: unknown })?.message ?? e) }))
         .finally(() => { if (!destroyed && onScreen && jobs.length) ricId = ric(pumpQueue); });
     };

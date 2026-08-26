@@ -41,6 +41,7 @@ const M = {
   MAX_VEL: 8000,
   MAX_FRAMES: 900,  // ~15s safety: force a restore if a gesture never settles
   SNAP_MS: 700,     // abandon the mesh (drag without a wobble) if the snapshot is too slow
+  PAD: 56,          // px captured beyond the panel box so its drop shadow rides in the texture
 };
 
 let blink: boolean | null = null;
@@ -133,28 +134,32 @@ function inlineComputedStyles(src: Element, dst: Element): void {
  * foreignObject-based, minus font embedding, so it is fast and cannot hang the main thread.
  * External/cross-origin images inside the panel render blank (fine for a transient wobble).
  */
-export async function captureToImage(el: HTMLElement, w: number, h: number, dpr: number): Promise<HTMLImageElement> {
+export async function captureToImage(el: HTMLElement, w: number, h: number, dpr: number, pad = 0): Promise<HTMLImageElement> {
+  const pw = w + 2 * pad, ph = h + 2 * pad;
   const clone = el.cloneNode(true) as HTMLElement;
   // A <details> renders only its <summary> unless open; force any in the clone open so the
   // collapsible bodies (e.g. a panel's expandable sections) appear in the snapshot.
   if (clone.tagName === 'DETAILS') (clone as HTMLDetailsElement).open = true;
   for (const d of clone.querySelectorAll('details')) (d as HTMLDetailsElement).open = true;
   inlineComputedStyles(el, clone);
-  // Neutralise the panel's own positioning so the clone fills the foreignObject at 0,0 flat.
-  clone.style.position = 'static';
-  clone.style.left = clone.style.top = clone.style.right = clone.style.bottom = 'auto';
+  // Neutralise the panel's own positioning and sit it at (pad,pad) in the padded holder, so
+  // its drop shadow has room around it inside the foreignObject.
+  clone.style.position = 'absolute';
+  clone.style.left = `${pad}px`;
+  clone.style.top = `${pad}px`;
+  clone.style.right = clone.style.bottom = 'auto';
   clone.style.margin = '0';
   clone.style.transform = 'none';
   clone.style.width = `${w}px`;
   clone.style.height = `${h}px`;
   const holder = document.createElement('div');
   holder.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
-  holder.style.cssText = `width:${w}px;height:${h}px;overflow:hidden`;
+  holder.style.cssText = `position:relative;width:${pw}px;height:${ph}px;overflow:hidden`;
   holder.appendChild(clone);
   const html = new XMLSerializer().serializeToString(holder);
   const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(w * dpr)}" height="${Math.round(h * dpr)}" viewBox="0 0 ${w} ${h}">` +
-    `<foreignObject x="0" y="0" width="${w}" height="${h}">${html}</foreignObject></svg>`;
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(pw * dpr)}" height="${Math.round(ph * dpr)}" viewBox="0 0 ${pw} ${ph}">` +
+    `<foreignObject x="0" y="0" width="${pw}" height="${ph}">${html}</foreignObject></svg>`;
   const img = new Image();
   img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   await img.decode();
@@ -245,11 +250,17 @@ export function startMeshWobble(
   active?.dispose();
 
   const N = M.GRID + 1;
+  const PAD = M.PAD;
   const rect = el.getBoundingClientRect();
-  const originLeft = rect.left, originTop = rect.top, w = rect.width, h = rect.height;
+  const w = rect.width, h = rect.height;
   if (w < 1 || h < 1) return null;
-  const grabX = clientX - originLeft, grabY = clientY - originTop;   // panel-local grab point
-  const diag = Math.hypot(w, h) || 1;
+  // Capture + mesh a region padded on all sides, so the panel's drop shadow (drawn OUTSIDE
+  // its box) sits inside the texture and warps with it. The mesh origin and grid span the
+  // padded rect; the panel content lives at (PAD,PAD) within it.
+  const pw = w + 2 * PAD, ph = h + 2 * PAD;
+  const originLeft = rect.left - PAD, originTop = rect.top - PAD;         // padded-region top-left, viewport px
+  const grabX = (clientX - rect.left) + PAD, grabY = (clientY - rect.top) + PAD;   // grab in padded-local px
+  const diag = Math.hypot(pw, ph) || 1;
 
   // Per-vertex state (flat arrays). rest = grid cell in panel-local px; off = current offset
   // from home (home = rest + totalDrag); vel = its velocity; lag = how much this vertex
@@ -262,8 +273,8 @@ export function startMeshWobble(
   for (let j = 0; j < N; j++) {
     for (let i = 0; i < N; i++) {
       const k = j * N + i;
-      restX[k] = (i / M.GRID) * w;
-      restY[k] = (j / M.GRID) * h;
+      restX[k] = (i / M.GRID) * pw;
+      restY[k] = (j / M.GRID) * ph;
       lag[k] = Math.min(1, Math.hypot(restX[k] - grabX, restY[k] - grabY) / diag);
       uv[k * 2] = i / M.GRID;
       uv[k * 2 + 1] = 1 - j / M.GRID;   // FLIP_Y on upload, so v=1 is the top row
@@ -300,7 +311,7 @@ export function startMeshWobble(
     try {
       const dpr = Math.min(2, window.devicePixelRatio || 1);
       const img = await Promise.race([
-        captureToImage(el, w, h, dpr),
+        captureToImage(el, w, h, dpr, PAD),
         new Promise<never>((_, rej) => setTimeout(() => rej(new Error('snapshot timeout')), M.SNAP_MS)),
       ]);
       if (disposed) return;

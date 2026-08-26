@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * mix-window.test.ts - plans/156 Phase B Step B1, the make-or-break NODE proof
- * (§5 STOP-5).
+ * (section 5 STOP-5).
  *
  * The ONE claim proven here: `mixWindow` concatenated over the 4800-sample audio
  * chunk grid equals a single whole-range `mixWindow` call SAMPLE-FOR-SAMPLE
@@ -12,7 +12,7 @@
  *
  * This deliberately does NOT compare against an OfflineAudioContext: OAC is
  * browser-only, and the analytic-vs-OAC RMS check is a later browser step
- * (plans/156 §2). Node-prove only the concat == whole identity.
+ * (plans/156 section 2). Node-prove only the concat == whole identity.
  */
 
 import { test } from 'node:test';
@@ -22,7 +22,7 @@ import { bedDuckEnvelope } from './audio-envelope.ts';
 import { mixWindow, MIX_WINDOW_RATE, type MixSpec } from './mix-window.ts';
 
 const RATE = MIX_WINDOW_RATE;
-const WINDOW = 4800; // 0.1s @ 48k - the mux's own chunk grid (plans/156 §1).
+const WINDOW = 4800; // 0.1s @ 48k - the mux's own chunk grid (plans/156 section 1).
 
 /** Deterministic non-trivial stereo PCM: two decorrelated tones per channel. */
 function synthStereo(nSamples: number, seed: number): Float32Array[] {
@@ -67,7 +67,7 @@ test('mixWindow: concat over the 4800 grid == whole-range call, sample-for-sampl
   const total = WINDOW * 25 + 1234; // 121234 samples ≈ 2.53s
   const totalSec = total / RATE;
 
-  // Clips with INTEGER-MS starts (start_c = round(startMs·48) lands exactly).
+  // Clips with INTEGER-MS starts (start_c = round(startMs·48) is exact).
   const clips = [
     { pcm: synthStereo(Math.round(1.0 * RATE), 1), startMs: 0 },     // [0, 1.0s)
     { pcm: synthStereo(Math.round(0.7 * RATE), 2), startMs: 500 },   // [0.5s, 1.2s) overlaps A

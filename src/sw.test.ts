@@ -52,6 +52,7 @@ interface Harness {
   offline: { value: boolean };
   /** What the network returns, keyed by pathname. */
   server: Map<string, string>;
+  install: () => Promise<void>;
   activate: () => Promise<void>;
 }
 
@@ -100,6 +101,11 @@ function loadServiceWorker(): Harness {
     caches: cacheStore,
     offline,
     server,
+    install: async () => {
+      let work: Promise<unknown> = Promise.resolve();
+      listeners.get('install')!({ waitUntil: (p: Promise<unknown>) => { work = p; } });
+      await work;
+    },
     activate: async () => {
       let work: Promise<unknown> = Promise.resolve();
       listeners.get('activate')!({ waitUntil: (p: Promise<unknown>) => { work = p; } });
@@ -199,6 +205,22 @@ describe('service worker: the app shell key', () => {
       'answering a document request with the app shell is the same lie in reverse');
   });
 
+  test('install precaches the app shell and nothing else', async () => {
+    // Whatever install writes into the generation bucket is a copy every later load is
+    // served from until the next CACHE bump, so the list is the app shell alone.
+    // /catalog/previews/bundle.json used to be on it, and the cost was paid twice: a
+    // duplicate fetch on every cold load, and - when the file changed FORMAT (inlined
+    // SVG payload → manifest of URLs, the v15 bump) - a held copy of the old shape that
+    // lib/preview-bundle.ts can no longer read. Precached, that copy outlives the deploy;
+    // left to the /catalog/previews/ SWR route, it is one stale hop that self-heals.
+    const h = loadServiceWorker();
+    await h.install();
+    const generation = [...h.caches.entries()].find(([name]) => name.startsWith('lolly-v'));
+    assert.ok(generation, 'install must open the versioned generation cache');
+    assert.deepEqual([...generation[1].entries.keys()], ['/'],
+      'PRECACHE_URLS is the shell alone - nothing else may ride the install');
+  });
+
   test('activate drops the previous generation, remediating an already-poisoned shell', async () => {
     const h = loadServiceWorker();
     const stale = new FakeCache();
@@ -219,7 +241,17 @@ describe('service worker: the app shell key', () => {
     // plus the voice bins ('lolly-speech', lib/speech-kokoro-worker.ts) - a SW
     // deploy must never take any of them back. Before v14 the generation sweep
     // deleted the two speech buckets on every update.
-    const KEEP = ['lolly-pins', 'lolly-app', 'lolly-ort', 'lolly-info', 'transformers-cache', 'lolly-speech'];
+    //
+    // This list is the whole of PERSISTENT_CACHES, deliberately: every entry a
+    // CACHE bump must NOT touch is asserted here, so the routine "bump the
+    // generation because sw.js changed" (v15 for the bundle.json format change)
+    // is covered by a test rather than by reading the filter in activate. The two
+    // added with that bump are 'lolly-installed' (sideloaded .lolly tools, which
+    // have NO network home - wiping it uninstalls them) and 'lolly-ort-hf'.
+    const KEEP = [
+      'lolly-pins', 'lolly-installed', 'lolly-app', 'lolly-ort', 'lolly-ort-hf',
+      'lolly-info', 'transformers-cache', 'lolly-speech',
+    ];
     const h = loadServiceWorker();
     for (const name of KEEP) h.caches.set(name, new FakeCache());
     h.caches.set('lolly-v11', new FakeCache());
@@ -377,10 +409,15 @@ describe('precache.json grouping (vite.config.js)', () => {
   // group lands in a bucket no fetch rule ever reads back. Regression pins for
   // the review findings that /ort-hf/ rode the `app` group (lolly-app can
   // never serve it - ORT_PATTERN routes /ort-hf/ to lolly-ort) and that
-  // /models/kokoro/ inflated the verify part's models size by ~95 MB.
+  // /models/kokoro/ inflated the verify part's models size by ~95 MB, and that
+  // the bundler's re-emitted /assets/ort-wasm-*.wasm copies (46.2 MB of the
+  // app group's 82.7, byte-identical to the /ort/ + /ort-hf/ originals the
+  // groups below own) rode the mandatory offline download.
   const urls = [
     '/index.html',
     '/assets/index-abc123.js',
+    '/assets/harfbuzz-CTCWZ5ti.wasm',
+    '/assets/ort-wasm-simd-threaded.jsep-DC5y_g6C.wasm',
     '/fonts/Outfit-latin[wght].woff2',
     '/ort/ort-wasm-simd-threaded.wasm',
     '/ort/ort.min.mjs',
@@ -403,8 +440,12 @@ describe('precache.json grouping (vite.config.js)', () => {
     const groups = groupPrecacheFiles(all);
     const names = (list: { url: string }[]) => list.map(f => f.url);
 
-    assert.deepEqual(names(groups.app), ['/index.html', '/assets/index-abc123.js', '/fonts/Outfit-latin[wght].woff2'],
-      'the app group must exclude /ort/, /ort-hf/ and /models/ - lolly-app never serves those');
+    assert.deepEqual(
+      names(groups.app),
+      ['/index.html', '/assets/index-abc123.js', '/assets/harfbuzz-CTCWZ5ti.wasm', '/fonts/Outfit-latin[wght].woff2'],
+      'the app group must exclude /ort/, /ort-hf/ and /models/ (lolly-app never serves those) AND the bundler-emitted '
+      + '/assets/ort-wasm-* duplicates - while KEEPING /assets/harfbuzz-*.wasm, which exists nowhere else and is what '
+      + 'shapes text into paths for offline SVG/PDF export');
     assert.deepEqual(names(groups.ort), [
       '/ort/ort-wasm-simd-threaded.wasm',
     ], 'the ort group is the /ort/ runtime ONLY (verify\'s deep-scan detectors) - the speech runtime moved to its own ortHf group');
@@ -412,6 +453,13 @@ describe('precache.json grouping (vite.config.js)', () => {
       '/ort-hf/1.22.0-dev.20250409-89f8206ba4/ort-wasm-simd-threaded.jsep.wasm',
       '/ort-hf/1.22.0-dev.20250409-89f8206ba4/ort-wasm-simd-threaded.mjs',
     ], 'the ortHf group is transformers.js\'s ort-wasm-* runtime - owned by the speech part so downloading Speech is offline-complete');
+    // The dropped duplicate must land in NO group: the ort/ortHf groups are anchored on
+    // the /ort/ + /ort-hf/ paths, so re-homing it there would only move the 46.2 MB into
+    // the opt-in parts, where the originals it duplicates already sit.
+    assert.deepEqual(
+      Object.entries(groups).filter(([, list]) => names(list).includes('/assets/ort-wasm-simd-threaded.jsep-DC5y_g6C.wasm')),
+      [],
+      'the bundler\'s /assets/ copy of an ORT runtime belongs to no offline group - /ort/ and /ort-hf/ ship the same bytes');
     assert.deepEqual(names(groups.models), ['/models/trustmark/decoder_Q.onnx'],
       'verify\'s models are the TrustMark ones only - kokoro belongs to the speech part');
     assert.deepEqual(names(groups.speech), [

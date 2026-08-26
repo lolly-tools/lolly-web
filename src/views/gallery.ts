@@ -37,7 +37,8 @@ import { offlineNudgeMarkup, mountOfflineNudge } from './offline-nudge.ts';
 import { profileSignature, canPersonalize, regeneratePreviews } from '../personalize-previews.ts';
 import { viewTopbarHtml, mountViewTopbar } from '../components/view-topbar.ts';
 import { mountFeaturedRow, resolveExamples } from '../components/featured-row.ts';
-import { previewMedia } from '../lib/preview-media.ts';
+import { previewMedia, isHtmlPreview } from '../lib/preview-media.ts';
+import { bundledLook } from '../lib/preview-bundle.ts';
 import { renderFeaturedVariant, renderFeaturedPages, displayFormatOf } from '../lib/featured-render.ts';
 import { currentTheme } from '../theme.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
@@ -143,6 +144,13 @@ const leadRank = new Map(LEAD_TOOL_ORDER.map((id, i) => [id, i]));
 // Most example looks a gallery tile's preview strip will show (after the lead slide).
 // Keeps the carousel DOM + the number of live renders per tile bounded.
 const EXAMPLE_MAX = 6;
+// How many tiles count as "above the fold" for image priority. Roughly two masonry rows
+// on a desktop viewport and the first three or four cards on a phone - deliberately a
+// small over-estimate, since an eager tile the user never sees costs one preview file,
+// while having NO eager tile costs the page its LCP candidate (before this, the app's
+// only fetchpriority hint was on the featured hero row, which doesn't even mount for a
+// first-time visitor - defaultFavourites is empty - so nothing was prioritised at all).
+const EAGER_TILES = 8;
 
 // Fit a page of aspect `ar` (width / height) inside the square deck box (hydratePaged),
 // as width/height percentages of that square. A landscape page keeps full width and loses
@@ -337,6 +345,20 @@ function reveal(el: HTMLElement, i: number): void {
   el.style.setProperty('--reveal-delay', `${i * REVEAL_STEP_MS}ms`);
   el.classList.add('is-in');
 }
+// Handed from the mount that painted from the SLIM index to the mount that upgrades it to
+// the full one. The cascade is a first-impression animation and it already played on the
+// slim tiles; replaying it a few hundred milliseconds later, over the same tiles, reads as
+// a stutter rather than an entrance. Module scope because each mount gets a fresh
+// `firstPaint` - but a bare "spent" boolean was NOT enough: it was consumed by whichever
+// gallery mount came next, so a slim paint followed by a trip into a tool cost the return
+// visit its own entrance, minutes later and for no reason the user could see. Holding the
+// slim paint's GRID scopes it to the mount it belongs to: the upgrade is a same-route
+// refresh, and navigate() deliberately leaves a same-name view's markup in place, so that
+// grid is still connected when its replacement mounts - while any other route swaps #view's
+// children first, detaching it. Read before this mount writes its own shell (below), and
+// one-shot either way. WeakRef so a session that never returns to the gallery doesn't hold
+// a detached tile tree (with its decoded preview art) for the rest of its life.
+let slimPaintedGrid: WeakRef<HTMLElement> | null = null;
 function revealCards(masonry: HTMLElement, animate: boolean): IntersectionObserver | null {
   // Not animating - returning from a tool, reduced motion, or no IO support:
   // leave tiles un-armed so the CSS renders them at full opacity immediately.
@@ -415,7 +437,25 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // `window as unknown as …` bypasses the global Window['__toolIndex'] augmentation
   // (typed as the loosely-shaped ToolIndex in catalog/sync); this view reads it as the
   // denormalised GalleryTool slice. Erased cast - no runtime effect.
-  const syncedIndex: { tools: GalleryTool[] } = (window as unknown as { __toolIndex?: { tools: GalleryTool[] } }).__toolIndex ?? { tools: [] };
+  // On a cold first visit the full index is still downloading, and the SLIM one
+  // (plans/155 Task 3.8 - grid fields only: icon, name, description, category, tags,
+  // preview) has already arrived. Painting from it is the whole point of that task:
+  // named, icon-led tiles now instead of a blank screen until 168 KB gz of i18n
+  // blocks, templates and example bodies arrive. main.ts re-navigates the moment the
+  // full index arrives, which is what fills in the example strips and translations - so
+  // this fallback is only ever on screen for the length of that download.
+  const slimIndex = (window as unknown as { __toolIndexSlim?: { tools: GalleryTool[] } }).__toolIndexSlim;
+  const syncedIndex: { tools: GalleryTool[] } = (window as unknown as { __toolIndex?: { tools: GalleryTool[] } }).__toolIndex ?? slimIndex ?? { tools: [] };
+  // True while this mount is drawing the slim entries - the tiles are deliberately
+  // incomplete (no example carousels, since a slim entry carries no `formats`), and
+  // two places below need to know: the preview reveal, and the entrance cascade of
+  // the mount that replaces this one.
+  const paintedFromSlim = !(window as unknown as { __toolIndex?: unknown }).__toolIndex && !!slimIndex;
+  // …and this is the ONE mount that upgrades such a paint to the full index (see
+  // slimPaintedGrid). Read HERE, at the top of the mount, because the shell innerHTML
+  // further down detaches the previous mount's grid - by then the question can't be asked.
+  const upgradesSlimPaint = !paintedFromSlim && !!slimPaintedGrid?.deref()?.isConnected;
+  slimPaintedGrid = null;
   // Fold in any tools the instance injects (lib/injected-tools, populated by the
   // control-plane seam in src/org/). Empty by default ⇒ byte-identical. An injected
   // tool never overrides a pack/catalog tool of the same id (the synced set wins).
@@ -1082,6 +1122,8 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // from a tool (cards are already known) nor on filter/search re-renders (those
   // show instantly). Tracked here so render() can decide and disconnect cleanly.
   const isReturning = viewEl.classList.contains('is-returning');
+  // (…and not on the mount that upgrades a slim paint to the full index either -
+  // upgradesSlimPaint, decided at the top of this mount. See slimPaintedGrid.)
   // Read once at mount, like darkTheme below: the hero rotation timer and the
   // entrance cascade are both decided as the view is built, so a toggle mid-session
   // takes effect on the next gallery visit.
@@ -1219,23 +1261,89 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     if (perfUiOn()) { gcar.classList.add('has-art'); return; }
     if (gcar.dataset.paged === '1') { await hydratePaged(gcar, toolId!, tool); return; }
     const looks = resolveExamples(tool);
-    for (const slide of gcar.querySelectorAll<HTMLElement>('.gcar-slide--ex')) {
-      if (!gcar.isConnected) return;                       // tile replaced by a re-render
-      const img = slide.querySelector<HTMLImageElement>('.gcar-img');
-      if (!img || img.getAttribute('src')) continue;       // already rendered
-      const v = looks[Number(slide.dataset.exIndex)];
-      if (!v) continue;
+    const slides = [...gcar.querySelectorAll<HTMLElement>('.gcar-slide--ex')];
+    // The one place a look's src is set, so every path shares the same load bookkeeping -
+    // and an `error` path. That matters now the bundle is a MANIFEST: a bundled look is a
+    // URL, and a URL can 404 (a look file deleted from the catalog, a half-copied deploy,
+    // a manifest that ran ahead of the previews). An inlined data-URL never could, so the
+    // old code only listened for `load` - and a missing file left the tile's waiting tracer
+    // spinning forever on an <img> that would never fire it. Callers that have a fallback
+    // pass onError and get the SAME degradation a stale sig already takes: live render.
+    const paint = (
+      slide: HTMLElement,
+      img: HTMLImageElement,
+      src: string,
+      placeholder = false,
+      onError?: () => void,
+    ): void => {
+      if (placeholder) img.dataset.ph = '1'; else delete img.dataset.ph;
+      img.addEventListener('load', () => {
+        slide.classList.add('is-loaded');
+        gcar.classList.add('has-art');   // first rendered look → stop the waiting tracer
+      }, { once: true });
+      if (onError) img.addEventListener('error', onError, { once: true });
+      img.src = src;
+    };
+
+    // The live engine render: the fallback for a look with no bundle entry, one whose sig is
+    // stale, and one whose FILE is missing (paint's onError above). That last case must ask
+    // for the render under its own cache namespace, because renderFeaturedVariant consults
+    // the look manifest itself for the 'featured' namespace (lib/featured-render.ts) - asked
+    // the ordinary way it would hand straight back the URL that just 404'd, and the tile would
+    // settle on a broken <img> instead of the render this fallback exists to produce. The
+    // separate key is honest as well as necessary: it holds the look the bundle could NOT
+    // serve, so the next visit (which 404s again) reuses the render instead of repeating it.
+    type LiveJob = { slide: HTMLElement; img: HTMLImageElement; i: number; values: Record<string, unknown> };
+    const renderLive = async ({ slide, img, i, values }: LiveJob, fileMissing = false): Promise<void> => {
+      if (!gcar.isConnected) return;                         // tile replaced by a re-render
       try {
-        const thumb = await renderFeaturedVariant(host, toolId!, tool.formats, Number(slide.dataset.exIndex), v.values as Record<string, unknown>);
+        const thumb = await renderFeaturedVariant(host, toolId!, tool.formats, i, values, fileMissing ? 'featured-missing' : 'featured');
         if (!gcar.isConnected) return;
-        img.addEventListener('load', () => {
-          slide.classList.add('is-loaded');
-          gcar.classList.add('has-art');   // first rendered look → stop the waiting tracer
-        }, { once: true });
-        img.src = thumb;
+        paint(slide, img, thumb);
       } catch (e) {
         host.log?.('warn', `Gallery example failed for ${toolId}`, { error: String((e as { message?: unknown })?.message ?? e) });
       }
+    };
+
+    // The tool's own committed preview goes in FIRST, before any await: it is a static file
+    // the tile can show while the look manifest is still in flight, so the strip is never an
+    // empty box waiting on the network (or on the tiles queued ahead of it in exJobs). The
+    // real look replaces it below. data-ph marks it as a placeholder so neither the swap nor
+    // a re-hydration mistakes it for a rendered look. Only the leading slide gets one - the
+    // rest are off-view until the strip is scrolled, and a lead slide (session thumb or
+    // authored card) already shows real art, so there is nothing to stand in for. Skipped
+    // during a docs capture: a placeholder that never got swapped would be a difference the
+    // vector baselines compare exactly (see captureNeutralPinned in armCarousels).
+    if (!captureNeutralPinned() && tool.preview && !isHtmlPreview(tool.preview) && !gcar.querySelector('.gcar-slide--lead')) {
+      const first = slides[0]?.querySelector<HTMLImageElement>('.gcar-img');
+      if (first && !first.getAttribute('src')) paint(slides[0]!, first, tool.preview, true);
+    }
+
+    // Bundled looks all resolve off ONE memoised manifest fetch, so every slide asks at
+    // once and paints the moment its entry resolves. Only a look with NO bundle entry falls
+    // through to the live engine render, and those stay strictly serial - each is a ~350 ms
+    // off-screen render plus a main-thread rasterise. The old loop awaited the whole chain
+    // in order, which put the cheap manifest lookups behind the expensive renders (and, when
+    // the bundle still inlined every look, put all of a tile's art behind a 2.6 MB download).
+    const live: LiveJob[] = [];
+    await Promise.all(slides.map(async (slide) => {
+      const img = slide.querySelector<HTMLImageElement>('.gcar-img');
+      if (!img || (img.getAttribute('src') && !img.dataset.ph)) return;   // already rendered
+      const i = Number(slide.dataset.exIndex);
+      const v = looks[i];
+      if (!v) return;
+      const values = v.values as Record<string, unknown>;
+      const src = await bundledLook(toolId!, i, JSON.stringify(values)).catch(() => null);
+      if (!gcar.isConnected) return;                       // tile replaced by a re-render
+      // A 404 repairs itself as soon as the browser reports it, rather than joining the
+      // serial queue below: the queue exists to keep the COMMON case of live renders off
+      // the main thread, and a missing look file is exceptional (one tile, one render).
+      if (src) { paint(slide, img, src, false, () => { void renderLive({ slide, img, i, values }, true); }); return; }
+      live.push({ slide, img, i, values });
+    }));
+    for (const job of live) {
+      if (!gcar.isConnected) return;
+      await renderLive(job);
     }
   }
   let carouselObserver: IntersectionObserver | null = null;
@@ -1493,8 +1601,16 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     // sort pass below (which re-appends tool tiles in order) leaves them in place
     // at the front rather than shuffling them among the tools.
     const viewCards = opts.only === 'utility' ? utilityViews(speechOk).map(v => viewCardMarkup(v)).join('') : '';
+    // Which tiles get eager, high-priority art. Sorted the way applyView() is about to
+    // reorder the live nodes - `allTools`' own order is NOT the on-screen order, so
+    // taking the first N of it would hand the priority hint to tiles further down the
+    // grid. Search/category can still filter an eager tile out of view, but neither is
+    // set on the cold load this exists for.
+    const eagerIds = new Set(
+      [...allTools].sort(sortCompare).filter(t => !hiddenTools.has(t.id)).slice(0, EAGER_TILES).map(t => t.id),
+    );
     masonry.innerHTML = viewCards + allTools
-      .map(t => cardMarkup(t, latestByTool(t.id), host.capabilities, personalizedByTool.get(t.id), isNew(t.id), thumbsByTool(t.id), darkTheme, opts.only === 'utility'))
+      .map(t => cardMarkup(t, latestByTool(t.id), host.capabilities, personalizedByTool.get(t.id), isNew(t.id), thumbsByTool(t.id), darkTheme, opts.only === 'utility', eagerIds.has(t.id)))
       .join('');
     masonry.append(noResults);
     masonry.append(hiddenBox);
@@ -1507,12 +1623,24 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     // Order + hide-show the fresh tiles BEFORE measuring geometry for the reveal
     // cascade, so the wave reads in final on-screen order.
     revealObserver?.disconnect();
-    const animateReveal = firstPaint && !isReturning && !prefersReduced;
+    const animateReveal = firstPaint && !isReturning && !prefersReduced && !upgradesSlimPaint;
     applyView();
     revealObserver = revealCards(masonry, animateReveal);
-    armPreviewReveal(masonry, animateReveal);
+    // The preview reveal is the one thing a slim paint must NOT arm (plans/155 Task
+    // 4.3). Armed, a demo-preview hero sits at opacity:0 until its image decodes - and
+    // the icon backdrop lives INSIDE that hero, so arming it on the paint whose whole
+    // purpose is "named tiles before any art" would hide the very placeholder the task
+    // asks for. Un-armed, each tile shows its icon + the .gtile-iconfill-trace shimmer
+    // immediately and the art appears over it as it arrives (the delegated load handler
+    // still stamps .is-ready, which is what stops the shimmer - it is not gated on the
+    // armed class).
+    armPreviewReveal(masonry, animateReveal && !paintedFromSlim);
     armCarousels();   // lazily hydrate example preview strips as their tiles near the viewport
     firstPaint = false;
+    // Hand THIS grid to the mount that will upgrade it, if it is a slim paint (see
+    // slimPaintedGrid). Nothing to hand on otherwise - the top of the mount already
+    // cleared the slot, so a paint from the full index can't leave one standing.
+    if (paintedFromSlim) slimPaintedGrid = new WeakRef(masonry);
     // Capture only: stamp the view once every image (including the strips armCarousels
     // is still hydrating) has decoded, so a `waitSelector=` recipe frames a final page.
     settleForCapture(viewEl);
@@ -2278,6 +2406,7 @@ function cardMarkup(
   sessionThumbs: string[] = [],
   darkTheme = false,
   utilityLayout = false,
+  eager = false,
 ): string {
   const sup = toolSupport(tool, shellCaps);
   const unavailable = sup.status === 'unavailable';
@@ -2286,7 +2415,9 @@ function cardMarkup(
     ? `<span class="badge badge-desktop">${t('Desktop')}</span>`
     : sup.status === 'install'
       ? `<span class="badge badge-install">${t('Add&#8209;on')}</span>`
-      : (tool.status !== 'official' ? `<span class="badge badge-${tool.status}">${escape(t(tool.status || ''))}</span>` : '');
+      : (tool.status !== 'official'
+          ? `<span class="badge badge-${tool.status}"${tool.status === 'experimental' ? ` title="${escape(t('Experimental - exports carry a PREVIEW watermark until the tool graduates.'))}"` : ''}>${escape(t(tool.status || ''))}</span>`
+          : '');
 
   const iconSvg = tool.icon ? `<span class="tool-card-icon" aria-hidden="true">${tool.icon}</span>` : '';
   // A url-source injected tool opens preconfigured (its URL-mode query); every other
@@ -2381,15 +2512,19 @@ function cardMarkup(
       : animCard
         ? `<li class="gcar-slide gcar-slide--lead gcar-slide--card">
              <a class="gcar-open" href="${openHref}" data-new-tool="${escape(tool.id)}" tabindex="-1" aria-hidden="true">
-               ${previewMedia(animCard, 'gcar-img')}
+               ${previewMedia(animCard, 'gcar-img', undefined, eager)}
              </a>
            </li>`
         : '';
     const hasLead = hasThumbHero || !!animCard;
-    const exSlides = exampleLooks.map(({ i }) =>
+    // These <img>s have no src in the markup - hydrateCarousel fills them - so the hint has
+    // to be on the element up front, ready for the src it is about to be given. Only the
+    // strip's FIRST visible slide gets it: the rest sit off-view until the strip is scrolled,
+    // and six high-priority requests per tile would just crowd out the tile next to it.
+    const exSlides = exampleLooks.map(({ i }, k) =>
       `<li class="gcar-slide gcar-slide--ex" data-ex-index="${i}">
          <a class="gcar-open" href="${openHref}" data-new-tool="${escape(tool.id)}" tabindex="-1" aria-hidden="true">
-           <img class="gcar-img" alt="" aria-hidden="true" decoding="async">
+           <img class="gcar-img" alt="" aria-hidden="true"${eager && k === 0 && !hasLead ? ' fetchpriority="high"' : ''} decoding="async">
          </a>
        </li>`).join('');
     const slideCount = (hasLead ? 1 : 0) + exampleLooks.length;
@@ -2450,7 +2585,7 @@ function cardMarkup(
           ? `<img class="gtile-hero-img" src="${escape(personalizedThumb)}" alt="" aria-hidden="true" loading="lazy" decoding="async">`
           // Fixed-square hero (gallery.css): the img/iframe fills it and contains within,
           // so no per-tool aspect is threaded through - every preview box is the same size.
-          : previewMedia(tool.preview!, 'gtile-hero-img')}
+          : previewMedia(tool.preview!, 'gtile-hero-img', undefined, eager)}
         <span class="gtile-continue">${t('Open')}</span>
         ${statusBadge}
       </a>`;

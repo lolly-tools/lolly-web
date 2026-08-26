@@ -40,12 +40,14 @@ import { subscribe, jobsSnapshot, cancelJob, type Job, type JobStatus } from './
 import { getFloatCluster } from './float-cluster.ts';
 import { t, tRaw } from '../i18n.ts';
 import { isTauriShell } from './instance-choice.ts';
-import { mountPerfHud } from './perf-hud.ts';
-import { attachWobble } from './wobble.ts';
+import { isFlagOnSync, perfHudOn, WOBBLY_FLAG } from '../feature-flags.ts';
+import type { WobbleHandle } from './wobble.ts';
 
 let root: HTMLElement | null = null;
-/** Wobbly-windows deform for the drag; self-gating, owns `transform` only. */
-let wobble: ReturnType<typeof attachWobble> | null = null;
+/** Wobbly-windows deform for the drag; self-gating, owns `transform` only. Null until
+ *  the lazy attach below resolves (and forever with the flag off) - every use site is
+ *  `wobble?.`, which is the same code path the flag-off case has always taken. */
+let wobble: WobbleHandle | null = null;
 let expanded = false;
 /** Last rendered structural signature - a pure progress tick patches in place. */
 let lastSig = '';
@@ -77,7 +79,22 @@ export function mountJobToast(): void {
   root.addEventListener('pointerup', onPointerEnd);
   root.addEventListener('pointercancel', onPointerEnd);
   wobble?.dispose();
-  wobble = attachWobble(root);
+  wobble = null;
+  // Wobble + perf HUD are both opt-in and default OFF, but main.ts mounts this toast at
+  // boot - so a static import of either put them on the entry's modulepreload set for
+  // every visitor (wobble + wobble-mesh 4.4 KB gz, perf-hud 1.2, measured 2026-08-25).
+  // The flag read moves OUT here so the bytes are fetched only by the user who turned
+  // the thing on; each module still re-reads its own flag as the real gate, so this
+  // outer check is a loader hint, not a second source of truth. A drag landing before
+  // the import resolves simply gets no deform (`wobble?.`), exactly as with the flag off.
+  const el = root;
+  if (isFlagOnSync(WOBBLY_FLAG)) {
+    void import('./wobble.ts').then(({ attachWobble }) => {
+      if (root !== el) return;            // remounted meanwhile - this handle is stale
+      wobble?.dispose();
+      wobble = attachWobble(el);
+    });
+  }
   getFloatCluster().appendChild(root);
   // Esc collapses the expanded panel (no browser-default hijack - only acts when
   // the panel is open and no modal is up, which owns Esc via its own <dialog>).
@@ -86,8 +103,9 @@ export function mountJobToast(): void {
   render(jobsSnapshot());
   // Same body-level floating cluster: the opt-in Performance HUD (lib/perf-hud.ts)
   // mounts here for a returning power user. It reads its own flag and no-ops when
-  // off, so with the flag off this call renders nothing and starts no rAF loop.
-  mountPerfHud();
+  // off; the perfHudOn() check here is the boot-weight gate described above, so the
+  // HUD's bytes never load for the overwhelming majority who never enabled it.
+  if (perfHudOn()) void import('./perf-hud.ts').then(({ mountPerfHud }) => mountPerfHud());
 }
 
 // ── Drag ─────────────────────────────────────────────────────────────────────

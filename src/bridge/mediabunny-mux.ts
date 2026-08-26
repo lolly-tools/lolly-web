@@ -131,7 +131,7 @@ function mapAudioCodec(muxCodec: string): AudioCodec {
   return c;
 }
 
-/** The sync-add / async-finalize surface the encode paths drive. Structurally a
+/** The sync-add / async-finalize surface the encode paths drive. Effectively a
  *  drop-in for the old muxers, except finalize is now a Promise. */
 export interface MediabunnyMuxer {
   addVideoChunk(chunk: unknown, metadata?: unknown): void;
@@ -245,7 +245,7 @@ export async function buildMediabunnyMux(spec: MuxSpec): Promise<BuiltMediabunny
   // The canonical interleave (see the file header), drained INCREMENTALLY as the
   // encode paths hand packets over rather than all at finalize. It is the same
   // bounded merge video-encode-core uses: ascending EncodedPacket.timestamp (in
-  // seconds), video winning a tie (e.g. 0.1s at 30fps, where audio lands on every
+  // seconds), video winning a tie (e.g. 0.1s at 30fps, where audio falls on every
   // third frame), gated by each stream's watermark - the highest timestamp seen so
   // far, below which nothing new can appear because both encoders emit monotonically
   // (no B-frames). A video packet is settled once its ts <= the audio watermark; an

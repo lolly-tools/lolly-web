@@ -11,17 +11,17 @@
 
 import { createBridge } from './bridge/index.ts';
 import type { Profile } from '@lolly-tools/core/host-v1';
-import { syncCatalog, syncCorePrefetch, defaultFavouriteAssetIds, toolIndexChanged, localizeToolIndex } from './catalog/sync.ts';
+import { syncCatalog, syncCorePrefetch, defaultFavouriteAssetIds, toolIndexChanged, localizeToolIndex, loadSlimToolIndex } from './catalog/sync.ts';
 import { mergeInstalledToolsIntoIndex } from './lib/installed-tools.ts';
 import { saveFavouriteAssets } from './lib/asset-favourites.ts';
 import { mountGallery } from './views/gallery.ts';
 import { initTheme, applyTheme } from './theme.ts';
 import { hydrateA11yPrefs, currentA11yPrefs, setA11yPref } from './lib/a11y-prefs.ts';
 import { computeViewportInsets } from './lib/viewport-insets.ts';
-import { initI18n } from './i18n.ts';
+import { initI18n, loadedLang } from './i18n.ts';
 import { applyChromeBrandVars } from './brand-vars.ts';
 import { hydrateSfxMuted, hydrateSfxVolume, installGlobalSfx, playSfx } from './lib/sfx.ts';
-import { hydrateFeatureFlags, flagEnabledSync, isFlagOnSync, setJellyDefault, applyPerfUi, PERFORMANCE_UI_FLAG } from './feature-flags.ts';
+import { hydrateFeatureFlags, flagEnabledSync, isFlagOnSync, setJellyDefault, setFlagMirror, applyPerfUi, JELLY_FLAG, PERFORMANCE_UI_FLAG } from './feature-flags.ts';
 // Side-effect only: registers the "Private collab" Share-dialog row into the
 // generic lib/share-sections.ts seam (plan 100 section 0/section 6, Track A - an OSS
 // individual feature, not under org/). The row itself stays gated on the
@@ -56,14 +56,22 @@ import { applyCaptureNeutral } from './lib/capture-neutral.ts';
 import { peekNeuroDemo, applyNeuroDemo } from './lib/neuro-demo.ts';
 import { syncJellyNavToggle, UTILITIES_FLAG_ID, type ViewToggleKey } from './components/view-toggle.ts';
 import { installGlobalReveal } from './lib/reveal.ts';
-import { maybeShowFirstRunInstanceSheet } from './lib/instance-choice.ts';
-import { maybeShowModelsWelcome } from './components/models-welcome.ts';
-import { initOrg } from './org/index.ts';
-import { registerBuiltinSendTargets } from './lib/send-targets-builtin.ts';
+import { maybeShowFirstRunInstanceSheet, isTauriShell } from './lib/instance-choice.ts';
+// The memoised instance-base load. Boot has no wiring of its own to do here (every
+// syncing entry point awaits the same promise itself) - it needs the handle only to
+// hold the control-plane probe back until the base it fetches through is known.
+import { initInstanceBase } from './lib/instance.ts';
+// components/models-welcome.ts is NOT imported here: it is Tauri-only, yet its static
+// graph (lib/offline-manager.ts + the four model-catalog modules) rode the WEB boot
+// bundle - the exact regression scripts/check-bundle-budget.ts:74-76 records as fixed
+// on 2026-08-10. It is one dynamic import() inside the isTauriShell() gate below now
+// (plans/155 Task 3.3).
+import { initOrg, orgFlagGovernance } from './org/index.ts';
 import { initSyncAutoPush, maybeApplyNewerAtBoot } from './lib/sync-service.ts';
 import type { BackupDeps } from './lib/sync-engine.ts';
 import { initSelectPreview } from './select-preview.ts';
 import { mountJobToast } from './lib/job-toast.ts';
+import { installDepthSeam } from './lib/depth-job.ts';
 import { recordTool, recordBatch, bumpMetric, recordFormat } from './metrics.ts';
 import { announce } from './a11y.ts';
 import { beginViewFade } from './view-fade.ts';
@@ -77,6 +85,11 @@ installLiveCollabMount();
 installNearbyBoot();
 // …and listen for inbound nearby invites (after the provider is registered above).
 installNearbyAccept();
+// Publish window.__lollyDepth, the seam the spatial-photo tool asks for a depth
+// map through (plans/160). Progressive enhancement in both directions: with no
+// seam the tool renders the flat photo, and with DEPTH_STAGED false the seam
+// resolves null rather than offering a download that cannot succeed.
+installDepthSeam();
 
 /** The web capability bridge, as produced by createBridge. */
 type WebHost = Awaited<ReturnType<typeof createBridge>>;
@@ -635,6 +648,10 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
 
 // Route-scoped font preload for the mono-heavy dashboards (see navigate). Added
 // once; the browser dedupes against the @font-face request that follows.
+// index.html preloads this same face for everyone now, so on a SUSE build this is
+// a no-op duplicate - it is still needed on any OTHER brand, where
+// brandChrome() strips the static /fonts/SUSE preloads from index.html but SUSE
+// Mono remains the shell-served platform mono.
 function ensureMonoPreload(): void {
   if (document.getElementById('preload-suse-mono')) return;
   const l = document.createElement('link');
@@ -643,7 +660,14 @@ function ensureMonoPreload(): void {
   l.as = 'font';
   l.type = 'font/woff2';
   l.crossOrigin = 'anonymous';
-  l.href = '/fonts/SUSEMono[wght].woff2'; // shell-served (fonts.css) - profile-independent
+  // Shell-served (fonts.css) - profile-independent. Spell the URL the way the
+  // stylesheet THIS build ships spells it, or the preload matches nothing and
+  // just fetches the 34.5 KB face a second time: vite runs public-file css urls
+  // through encodeURI, so the built fonts.css asks for `%5Bwght%5D`, while the
+  // dev server serves the literal brackets untouched. Same trap as the static
+  // preloads in index.html - see fontPreloadUrls() in vite.config.js.
+  const href = '/fonts/SUSEMono[wght].woff2';
+  l.href = import.meta.env.PROD ? encodeURI(href) : href;
   document.head.appendChild(l);
 }
 
@@ -788,8 +812,51 @@ function initMobilePlatformFit(): void {
   }
 }
 
+/** Run `fn` once the critical load has finished. A client-side re-entry (or a
+ *  late boot) is already 'complete', so run it straight away. */
+function onWindowLoad(fn: () => void): void {
+  if (document.readyState === 'complete') fn();
+  else window.addEventListener('load', fn, { once: true });
+}
+
+/** …and then on the next idle slot: the components/featured-row.ts pattern, for
+ *  work that is pure warming (correctness-neutral, no user waiting on it) and so
+ *  must never compete with first paint for bandwidth or main thread. */
+function afterLoadIdle(fn: () => void): void {
+  onWindowLoad(() => {
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(fn);
+    else setTimeout(fn, 200);
+  });
+}
+
 async function boot(): Promise<void> {
   const host = await createBridge();
+  // The optional deployment control plane's probe (src/org/) is up to a 1,500 ms
+  // time-boxed fetch that no other boot step feeds - not i18n, not the catalog - so it
+  // is started as early as it can correctly go and awaited at the gate far below
+  // (plans/155 Task 3.4); awaiting it there used to serialise the probe after every
+  // other boot step instead of alongside them. The gate semantics are unchanged: the
+  // resolved value is what decides whether a `gated` deployment stops boot.
+  //
+  // "As early as it can CORRECTLY go" is the whole subtlety. The probe has exactly one
+  // dependency, and it is not visible in its signature: every request it makes goes
+  // through instancePath()/instanceFetch(), and both its negative cache and its cached
+  // org-config are keyed by getInstanceBase() (org/index.ts). Fire it before the base
+  // has loaded and a shell pointed at a remote deployment probes its OWN origin and
+  // files the answer under the wrong key - a shell configured for an instance would
+  // silently boot as if that instance had no control plane. So the probe hangs off
+  // initInstanceBase(), which is memoised (catalog/sync.ts awaits the same promise, so
+  // this costs one shared IndexedDB read, not two) and never throws.
+  //
+  // On a Tauri shell the base has a SECOND source: the first-run instance sheet below,
+  // whose whole job is to set it, and which cannot be known until the user answers. So
+  // there the probe waits for that sheet - i.e. keeps the position it always had -
+  // and starting initInstanceBase early is itself skipped, since its read would race
+  // the sheet's setInstanceBase() write. Web/PWA never shows the sheet, and is where
+  // the overlap was worth having.
+  let releaseOrgProbe!: () => void;
+  const orgPromise = new Promise<void>(resolve => { releaseOrgProbe = resolve; }).then(() => initOrg());
+  if (!isTauriShell()) void initInstanceBase().then(releaseOrgProbe, releaseOrgProbe);
   trackVisualViewport();
   initMobilePlatformFit();
   // Native app menus (Tauri shells): the iPadOS menu bar / macOS menu drive
@@ -926,10 +993,22 @@ async function boot(): Promise<void> {
   } catch { /* storage off - nothing to migrate */ }
 
   // Language - same precedence chain as the theme, plus a session-only `lang`
-  // URL override (never written back to the profile - see i18n.ts). Awaited
-  // before the first navigate() below so every view renders in the resolved
-  // language from its very first paint, with no re-render pass.
-  await initI18n({ urlLang: peekUrlLang(), profileLang: (profile as { lang?: string }).lang });
+  // URL override (never written back to the profile - see i18n.ts). NOT awaited
+  // before the first navigate() any more (plans/155 Task 3.7): every language but
+  // English loads a 108-205 KB gz locale chunk, and blocking here put that whole
+  // download in front of first paint for the majority of the world. English IS the
+  // key - an unresolved catalog renders every t() as its English source string - so
+  // boot paints English and the continuation below re-renders once the chunk arrives,
+  // exactly the way the catalog sync's own late arrival is handled. The pre-paint
+  // script in index.html has already stamped <html lang>/dir from the localStorage
+  // mirror, so a right-to-left locale still starts out in the right direction.
+  const i18nReady = initI18n({ urlLang: peekUrlLang(), profileLang: (profile as { lang?: string }).lang })
+    // Boot used to die on the error card if this threw (the bare localStorage read
+    // inside initI18n raises in a storage-blocked browser). Now that no paint waits
+    // on it, a failed language resolve must not cost the user their app: log, stay
+    // in English. Attached HERE, not at the continuation below, so the rejection is
+    // never momentarily unhandled.
+    .catch((err: unknown) => { console.error('Language init failed - staying in English:', err); });
 
   // Interface sounds: the profile is the canonical mute store (like the theme). Reconcile
   // the sfx layer's localStorage-derived flag with the profile's value once it has loaded,
@@ -941,11 +1020,23 @@ async function boot(): Promise<void> {
   // Jelly effects default is brand-aware: OFF on a locked brand build (SUSE keeps
   // its stock chrome), ON for the customisable start profile (lolly.art). A user
   // who has toggled the flag keeps their choice either way. Resolved BEFORE the
-  // flag mirror below so jellyEnabled()/flagEnabledSync agree from first paint;
-  // isLocked() is memoised catalog metadata (IDB, index fetch only on a cold
-  // first load) so the await is cheap. Unreachable tokens ⇒ unlocked ⇒ ON.
+  // flag mirror below so jellyEnabled()/flagEnabledSync agree from first paint.
+  //
+  // Boot does NOT await isLocked() any more (plans/155 Task 3.2): it is memoised
+  // catalog metadata only once the catalog is in IDB - on a COLD load it fetches
+  // /catalog/assets/index.json itself, serially, in front of the catalog sync that
+  // then fetches the very same file again. So take the answer the PREVIOUS boot
+  // resolved, which is what its flag mirror holds, and reconcile off catalogReady
+  // below (where the read is free). setJellyDefault(false) first is what makes the
+  // read below the mirror alone: with a false built-in default, isFlagOnSync has no
+  // ON fallback to fall through to, so an unknown brand starts jelly OFF rather
+  // than paying for a 52 KB chunk (and non-stock chrome) it may have to take back.
+  // The reconcile writes its answer to the mirror, so this is self-correcting from
+  // the second load on; the cost is that the first EVER load of an unlocked brand
+  // arms jelly late - the same late arrival the ensureJelly() race below tolerates.
   const jellyHost = host as { tokens?: { isLocked?(): Promise<boolean> } };
-  setJellyDefault(!(await jellyHost.tokens?.isLocked?.().catch(() => false)));
+  setJellyDefault(false);
+  setJellyDefault(isFlagOnSync(JELLY_FLAG));
   // Mirror the profile's feature flags to localStorage so surfaces that render before
   // (or without) the profile - the Sound control's Neurospicy player in popovers - can
   // gate synchronously.
@@ -955,9 +1046,12 @@ async function boot(): Promise<void> {
   // just-hydrated profile). Opt-in, so default OFF ⇒ attribute absent ⇒ full chrome.
   applyPerfUi(isFlagOnSync(PERFORMANCE_UI_FLAG));
   // The persistent bottom search bar (plans/99 M1) - one instance for the whole
-  // session, mounted after #view. Needs t() (initI18n above) and the flag mirror
-  // (hydrateFeatureFlags above, for the Pro link); hidden until the first
-  // navigate() below applies the route's footer mode.
+  // session, mounted after #view. Needs the flag mirror (hydrateFeatureFlags above,
+  // for the Pro link); hidden until the first navigate() below applies the route's
+  // footer mode. Its copy renders in whatever language t() has resolved by now -
+  // English while a locale chunk is still in flight (Task 3.7) - and claimSearchBar
+  // re-renders the bar when the placeholder changes, so the post-locale re-navigate
+  // repaints it without a second init.
   initSearchBar();
   // The spotlight overlay (plans/99 M2): hooks into the bar synchronously (the
   // chord + combobox semantics from first paint) and lazy-loads the provider
@@ -967,7 +1061,8 @@ async function boot(): Promise<void> {
   // clear. It has to land HERE - after the line above rewrites the flag mirror from
   // the profile (which discards anything seeded earlier), and before the two reads
   // just below act on it. Inert for everyone else. See lib/capture-neutral.ts.
-  if (applyCaptureNeutral()) console.info('[lolly] neutral capture state pinned');
+  const captureNeutral = applyCaptureNeutral();
+  if (captureNeutral) console.info('[lolly] neutral capture state pinned');
   // Neurospicy Mode + Atmosphere beds - reconcile the saved focus-loop / bed state,
   // then (only if enabled and left on) arm a one-shot gesture to resume, since audio
   // can't autoplay before a gesture. Both modules (lib/neurospicy.ts + lib/atmosphere.ts,
@@ -979,30 +1074,48 @@ async function boot(): Promise<void> {
   // gesture landing in the ~ms import window would miss a one-time resume, which affects
   // only the flag-on minority. The ?neuro docs deep-link runs INSIDE the .then, AFTER the
   // hydrates (they'd overwrite its in-memory demo state) and after applyCaptureNeutral.
+  //
+  // Deferred is not the same as free: two chunks were still fetched at boot for EVERY
+  // user, and the flag is opt-OUT (on by default), so gating on it changed nothing.
+  // What actually decides whether there is anything to do here is whether the profile
+  // carries state for either mode - both are profile-canonical (the localStorage copy
+  // is only a mirror, written alongside the profile), so "no state" means the user has
+  // never turned one on: nothing to hydrate, no arm that isn't an early return, and no
+  // dock. Those users pay nothing at boot now and load the modules on first use, from
+  // the Sound control's own imports (plans/155 Task 3.3).
   const neuroDemo = peekNeuroDemo();
-  void Promise.all([import('./lib/neurospicy.ts'), import('./lib/atmosphere.ts')]).then(([neuro, atmo]) => {
-    neuro.hydrateNeurospicy((profile as { neurospicy?: unknown }).neurospicy);
-    atmo.hydrateAtmosphere((profile as { atmosphere?: unknown }).atmosphere);
-    if (neuroDemo) void applyNeuroDemo(host as unknown as Parameters<typeof applyNeuroDemo>[0], neuroDemo);
-    if (flagEnabledSync('neurospicy')) {
-      neuro.armNeurospicy(host as unknown as Parameters<typeof neuro.armNeurospicy>[0]);
-      atmo.armAtmosphere(host as unknown as Parameters<typeof atmo.armAtmosphere>[0]);
-      // Show the bottom-right dock if the mode was left on. The dock (and the music
-      // player inside it) is dynamic-imported and only when the mode is actually enabled.
-      if (neuro.getNeurospicy().enabled) {
-        void import('./components/neuro-dock.ts')
-          .then(m => m.syncNeuroDock(host as unknown as Parameters<typeof m.syncNeuroDock>[0]));
+  const neuroState = (profile as { neurospicy?: unknown }).neurospicy !== undefined
+    || (profile as { atmosphere?: unknown }).atmosphere !== undefined;
+  if (neuroState || neuroDemo) {
+    void Promise.all([import('./lib/neurospicy.ts'), import('./lib/atmosphere.ts')]).then(([neuro, atmo]) => {
+      neuro.hydrateNeurospicy((profile as { neurospicy?: unknown }).neurospicy);
+      atmo.hydrateAtmosphere((profile as { atmosphere?: unknown }).atmosphere);
+      if (neuroDemo) void applyNeuroDemo(host as unknown as Parameters<typeof applyNeuroDemo>[0], neuroDemo);
+      if (flagEnabledSync('neurospicy')) {
+        neuro.armNeurospicy(host as unknown as Parameters<typeof neuro.armNeurospicy>[0]);
+        atmo.armAtmosphere(host as unknown as Parameters<typeof atmo.armAtmosphere>[0]);
+        // Show the bottom-right dock if the mode was left on. The dock (and the music
+        // player inside it) is dynamic-imported and only when the mode is actually enabled.
+        if (neuro.getNeurospicy().enabled) {
+          void import('./components/neuro-dock.ts')
+            .then(m => m.syncNeuroDock(host as unknown as Parameters<typeof m.syncNeuroDock>[0]));
+        }
       }
-    }
-  });
+    });
+  }
   // Jelly effects - start the lazy bundle load now, racing the rest of boot
   // (catalog sync + first view mount) rather than blocking or idle-deferring:
   // surfaces check the synchronous jellyActive() gate at paint, and a
   // same-origin ~52 KB chunk usually wins that race (always, once the service
   // worker has it). If it loses, that first render shows the plain controls - 
   // and the .then() below retrofits the persistent nav pill for the view that
-  // already mounted. Flag-off users never fetch the chunk.
-  if (jellyEnabled()) void ensureJelly().then(ok => { if (ok) syncJellyNavToggle(navKeyForRoute(parseRoute().name)); });
+  // already mounted. Flag-off users never fetch the chunk. Named, because the
+  // brand-lock reconcile below can turn the flag on after this line has run and
+  // must arm jelly the same way (ensureJelly is idempotent - one shared promise).
+  const armJelly = (): void => {
+    if (jellyEnabled()) void ensureJelly().then(ok => { if (ok) syncJellyNavToggle(navKeyForRoute(parseRoute().name)); });
+  };
+  armJelly();
   // Sliders. Deferred off the boot path (no native range paints on the gallery's
   // first frame; the upgrader is a MutationObserver + one initial document sweep, so a
   // late install still catches every range already mounted). Idle-scheduled after the
@@ -1028,8 +1141,9 @@ async function boot(): Promise<void> {
   // paint immediately, before the network catalog sync resolves. syncCatalog
   // overwrites window.__toolIndex with fresh data when it lands. (Mirrors the
   // 'sbt-tool-index' fallback key written by catalog/sync.js.) localizeToolIndex
-  // runs AFTER initI18n above has resolved the active language, so the very
-  // first paint already shows translated tool names/descriptions.
+  // overlays the active language's names/descriptions - a no-op while the locale
+  // catalog is still in flight (Task 3.7 stopped awaiting it), which is why the
+  // continuation after the first navigate re-runs it once the locale resolves.
   if (!window.__toolIndex) {
     try {
       const cached = localStorage.getItem('sbt-tool-index');
@@ -1041,6 +1155,26 @@ async function boot(): Promise<void> {
     } catch { /* ignore corrupt/oversized cache */ }
   }
 
+  // No cached index = a genuinely cold visit, and the ONE case where the first
+  // gallery paint has nothing to draw until the network answers. The slim index
+  // (plans/155 Task 3.8) is ~19 KB gz against the full index's 168, already in flight
+  // from index.html's preload, and the race below paints from whichever of the two
+  // answers first. Skipped entirely for everyone who has a cache, so no repeat visitor
+  // pays for a fetch they won't read.
+  //
+  // WHEN it starts follows the same rule as the org probe above, and for the same
+  // reason: loadSlimToolIndex awaits initInstanceBase(), so starting it here on a
+  // Tauri shell would fire that memoised IndexedDB read against the first-run sheet's
+  // setInstanceBase() write - a race whose loser decides both which deployment's
+  // catalog this cold paint comes from and, if the read resolves late, what base every
+  // later caller sees. On web/PWA the sheet never shows, the base has exactly one
+  // source, and the overlap with the sheet + probe is the whole point of the slim
+  // index, so it starts here; on Tauri it starts below, once the sheet has settled
+  // the base for good. Correctness costs Tauri nothing measurable - the sheet is one
+  // fast IndexedDB read on every boot after the first.
+  const coldGallery = !window.__toolIndex;
+  let slimIndexReady = coldGallery && !isTauriShell() ? loadSlimToolIndex() : null;
+
   // First-run instance choice (Tauri shells only, once): gate BEFORE the first
   // catalog sync so a chosen instance is honoured immediately instead of a
   // bundled sync followed by a second one. A no-op (one fast IndexedDB read,
@@ -1048,24 +1182,65 @@ async function boot(): Promise<void> {
   // components/instance-sheet.ts's own header for the two callers (this gate,
   // and the profile "Change" button later).
   await maybeShowFirstRunInstanceSheet(host);
+  // The instance base is now settled for good - the sheet above is its only other
+  // source - so release the control-plane probe on the shells that were waiting for
+  // it (see the orgPromise block at the top of boot). A no-op on web, where the base
+  // resolved long ago and the promise is already released; on Tauri this is the first
+  // initInstanceBase() call, made AFTER the sheet so it cannot race the sheet's write.
+  void initInstanceBase().then(releaseOrgProbe, releaseOrgProbe);
+  // ...and for the same reason, this is where a Tauri shell's cold-visit slim index
+  // starts: after the sheet, so it reads the base the user just chose rather than
+  // racing it. Web already started it above and this is a no-op there.
+  if (coldGallery && isTauriShell()) slimIndexReady = loadSlimToolIndex();
 
   // First-run desktop models sheet (Tauri shells only, once): offer to pre-download
   // the heavy on-device AI image models from the model host (VITE_MODELS_BASE) so
   // background removal / upscaling work instantly and offline. Non-blocking - it
   // floats over the gallery as it paints, and is a fast no-op on web, CLI, and
-  // every later boot. See components/models-welcome.ts.
-  void maybeShowModelsWelcome();
+  // every later boot. See components/models-welcome.ts. The gate is HERE (not only
+  // inside the sheet, which re-checks it) so the module - and lib/offline-manager.ts
+  // + the model-catalog chain behind it - is imported on Tauri alone and never joins
+  // the web shell's boot graph (plans/155 Task 3.3).
+  if (isTauriShell()) {
+    void import('./components/models-welcome.ts').then(m => m.maybeShowModelsWelcome());
+  }
 
   // Sideloaded tools (installed from a .lolly) are spliced into the tool index the moment
   // the catalog lands, so they appear in the galleries/pickers and pass the tool view's
   // existence check. Part of catalogReady so the first gallery paint already includes them.
   const catalogReady = syncCatalog(host as unknown as Parameters<typeof syncCatalog>[0])
     .then(async () => { try { await mergeInstalledToolsIntoIndex(); } catch { /* no installed tools / no index yet */ } });
-  catalogReady.then(() => syncCorePrefetch(host as unknown as Parameters<typeof syncCorePrefetch>[0])); // fire-and-forget after sync
+  // Core-asset warming: 32 fetches / ~787 KB, fire-and-forget, and nothing on screen
+  // waits for any of it. Firing at catalog-land put it in direct competition with the
+  // first viewport's preview art, so it waits for load + idle now (plans/155 Task 3.6,
+  // the components/featured-row.ts pattern) - same work, after the paint that matters.
+  catalogReady.then(() => afterLoadIdle(() => { void syncCorePrefetch(host as unknown as Parameters<typeof syncCorePrefetch>[0]); }));
+  // Brand-lock reconcile for the Jelly default (see the provisional far above): the
+  // assets are in IDB by now, so isLocked() is the memoised read its comment always
+  // described, with no fetch of its own. Write the resolved answer into the flag
+  // mirror - that is what the NEXT boot reads as its provisional - and arm jelly if
+  // this just turned it on. Skipped entirely under a neutral capture pin, whose whole
+  // job is to hold these flags off (lib/capture-neutral.ts).
+  catalogReady.then(async () => {
+    if (captureNeutral) return;
+    const locked = !!(await jellyHost.tokens?.isLocked?.().catch(() => false));
+    setJellyDefault(!locked);
+    // …but only where the brand signal is what decides. An explicit user choice and
+    // control-plane governance both outrank it and are already in the mirror (that is
+    // hydrateFeatureFlags' precedence, and overwriting either with a default would
+    // break it); everyone else gets the resolved answer written down.
+    const chosen = (profile as { featureFlags?: Record<string, boolean> }).featureFlags?.[JELLY_FLAG.id];
+    if (chosen === undefined && !orgFlagGovernance(JELLY_FLAG.id)) setFlagMirror(JELLY_FLAG.id, !locked);
+    armJelly();
+  }).catch(() => { /* unreachable tokens ⇒ leave the provisional standing for this session */ });
   // The Neurospicy dock mounts ABOVE, before this sync starts - on a cold install its
   // track list would be built from a not-yet-synced catalog. Rebuild it once assets land.
+  // Same `neuroState` gate as that mount (Task 3.3): with the module never loaded there
+  // is no stale track list to invalidate and no persisted selection to heal - it loads
+  // on first use, against the synced catalog. Without the gate this line pulled the
+  // chunk back onto every boot, since the flag is ON by default for everyone.
   catalogReady.then(async () => {
-    if (!flagEnabledSync('neurospicy')) return;
+    if (!neuroState || !flagEnabledSync('neurospicy')) return;
     const m = await import('./lib/neurospicy.ts');
     m.invalidateNeurospicyTracks();
     // Now that the real track list has landed, heal a persisted selection pointing at an
@@ -1120,27 +1295,83 @@ async function boot(): Promise<void> {
   // one tolerant, time-boxed probe, remembered so later boots skip even that. A
   // `gated` deployment with no signed-in member renders its own sign-in gate in
   // place of the app and returns `gate: true`; stop boot before any view mounts.
-  // Built-in cloud send targets, BEFORE initOrg so an instance can re-register
-  // or withdraw a kind (lib/send-target.ts - each is dormant without its config).
-  registerBuiltinSendTargets();
-  const org = await initOrg();
+  // Built-in cloud send targets used to be registered right here, ahead of initOrg.
+  // They aren't registered at boot at all any more (plans/155 Task 3.3): eight OAuth
+  // cloud drivers, ~59 KB (nextcloud-send alone is 25 KB), for a capability that first
+  // matters when an export panel opens - and on most builds never, since each is
+  // dormant without its own config. lib/send-targets-builtin.ts is loaded ON DEMAND by
+  // the export panel now (views/tool-actions.ts, ensureBuiltinSendTargets), which is
+  // both the first surface to consult the registry and the only one that can tell the
+  // user their destinations arrived late. A boot-time idle slot was tried first and is
+  // NOT the answer: the panel reads the registry once, at mount, with no change
+  // notification, so anyone opening a tool before that callback fired got no Send
+  // section at all.
+  const org = await orgPromise;
   if (org?.gate) return;
 
   const routeName = parseRoute().name;
+  // A cold gallery visit gets ONE extra chance before it falls back to waiting on the
+  // whole catalog sync: whichever of the slim index and the full sync resolves first
+  // (plans/155 Task 3.8). Racing them is what makes this safe to add - the slim fetch
+  // has no retry and no timeout of its own, so awaiting it alone could hold boot
+  // longer than today; against catalogReady (which resolves even offline, falling back
+  // to cache) this can only ever be faster. When the full sync wins, slimPainted stays
+  // false and the fastPath decision below is byte-identical to what it always was, so
+  // we don't register a re-render for data that was already in hand at paint time.
+  const haveFullIndex = !!window.__toolIndex;
+  let slimPainted = false;
+  if (routeName === 'gallery' && !haveFullIndex && slimIndexReady) {
+    slimPainted = !!(await Promise.race([slimIndexReady, catalogReady.then(() => null)]));
+  }
   const fastPath =
-    ((routeName === 'gallery') && window.__toolIndex) ||
+    ((routeName === 'gallery') && (haveFullIndex || slimPainted)) ||
     routeName === 'dashboard';
 
-  if (fastPath) {
+  // The one re-render path for everything that arrives AFTER the first paint - the
+  // catalog sync, and (Task 3.7) the locale catalog. Both go through here so two
+  // arrivals can't run navigate() concurrently: each would tear down the view the
+  // other was mounting. Collapsed within a tick, serialised across ticks.
+  let refreshQueued = false;
+  let refreshing: Promise<void> = Promise.resolve();
+  const refreshMountedView = (): void => {
+    if (refreshQueued) return;
+    refreshQueued = true;
+    refreshing = refreshing.then(() => {
+      refreshQueued = false;
+      return navigate(host, { force: true });
+    }).catch(console.error);
+  };
+
+  // Which language the first paint actually rendered in - loadedLang(), the language
+  // whose catalog t() was answering from, NOT currentLang(). initI18n set the REQUESTED
+  // language synchronously hundreds of lines above, so currentLang() already reads 'es'
+  // for a Spanish visitor whose chunk is still in flight and whose paint is therefore
+  // English: sampled here it would equal itself at the comparison below and the
+  // re-render would never fire (i18n.ts's loadedLang carries the same warning). Read as
+  // late as possible - the else-branch below waits on the whole catalog sync first,
+  // which is long enough for the locale chunk to land before the paint, and
+  // re-rendering then would be pure churn.
+  let paintedLang = loadedLang();
+  const firstNavigate = async (): Promise<void> => {
+    paintedLang = loadedLang();
     await navigate(host, { force: true });
+  };
+
+  if (fastPath) {
+    await firstNavigate();
     catalogReady.then(() => {
       const now = parseRoute().name;
-      if (!toolIndexChanged()) return; // no-op sync - data is byte-identical to the cached copy
+      // A slim first paint ALWAYS has an upgrade waiting for it - descriptions,
+      // example strips, templates, translations - so it re-renders whatever the
+      // content compare says. (toolIndexChanged() can't stand in for that: it is
+      // false whenever localStorage is unreadable, which is exactly a session that
+      // had no cache to paint from either.)
+      if (!slimPainted && !toolIndexChanged()) return; // no-op sync - data is byte-identical to the cached copy
       if (now === 'gallery') {
         // Re-render from fresh data - the gallery's cascade only replays because
         // the data actually changed (guarded above), not on every sync. force: the
         // route is unchanged (gallery→gallery), so the dedup would otherwise skip it.
-        navigate(host, { force: true }).catch(console.error);
+        refreshMountedView();
       } else if (now === 'dashboard') {
         // Patch the tool count in place. Re-navigating would replay the entrance
         // cascade just to update a number - the exact jitter we're removing. The
@@ -1150,8 +1381,27 @@ async function boot(): Promise<void> {
     });
   } else {
     await catalogReady;
-    await navigate(host, { force: true });
+    await firstNavigate();
   }
+
+  // The locale catalog is the second thing that can land after the first paint, and
+  // it gets the same treatment as the first (Task 3.7): re-overlay the tool index's
+  // translated names - localizeToolIndex is idempotent and stashes the pristine
+  // English once - then re-render the mounted view through the shared path above.
+  // Attached HERE, after the first navigate has resolved, so it can never race it;
+  // nothing to do when the language never moved off what that paint rendered.
+  void i18nReady.then(() => {
+    if (loadedLang() === paintedLang) return;
+    if (window.__toolIndex) localizeToolIndex(window.__toolIndex);
+    // Only the stateless listing views are re-mounted. A tool / batch / projects view
+    // can already hold work the user started (and a tool re-mount re-runs loadTool +
+    // createRuntime), so it keeps its English chrome until the next navigation rather
+    // than being torn down under them. In practice none of them reach this line
+    // anyway: every route but the gallery/dashboard fast path waits for the whole
+    // catalog sync first, which a locale chunk comfortably beats.
+    const now = parseRoute().name;
+    if (now === 'gallery' || now === 'utilities' || now === 'dashboard') refreshMountedView();
+  });
 
   // Device sync (plans/138 B1), both best-effort and after the first paint: arm the
   // debounced auto-push (silent no-op while sync is off), then offer to apply a
@@ -1279,6 +1529,12 @@ function peekUrlLang(): string | null {
 const RENAMED_TOOL_IDS: Record<string, string> = {
   'layout-studio': 'design', 'sequence-studio': 'design', 'carousel-maker': 'design',
   'bitmap-studio': 'darkroom', 'layer-stack': 'darkroom',
+  // barcode folded into qr-code (plans/147 T7a, 2026-08-26): its EAN/UPC/Code-128
+  // encoders became qr-code `payload` kinds, and qr-code keeps barcode's `value` id
+  // so a saved barcode session's value carries. A retired-tool link that named the
+  // old `symbology` param drops it (qr-code has no such input) - the value opens and
+  // the barcode kind is re-picked. Barcode shipped 2026-08-24, so ~no links exist yet.
+  'barcode': 'qr-code',
 };
 const canonToolId = (id: string): string => RENAMED_TOOL_IDS[id] ?? id;
 
@@ -1431,8 +1687,14 @@ function parseRoute(): Route {
 // Only register the service worker in production builds. In dev it would cache
 // /tools/ files, so a slow reload could serve a stale edit instead of the file
 // just changed on disk.
+//
+// On window.load, not at module top level (plans/155 Task 3.5): registering here
+// used to start the SW install - and with it the whole precache - while the boot
+// chunks and the first viewport's art were still downloading, so the install ate
+// bandwidth from the paint it exists to make faster next time. Nothing about the
+// FIRST load depends on the SW being registered early.
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch(() => {});
+  onWindowLoad(() => { navigator.serviceWorker.register('/sw.js').catch(() => {}); });
 }
 
 

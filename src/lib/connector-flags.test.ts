@@ -74,9 +74,18 @@ test('every built-in send target has a kill switch (drift guard on the real regi
   const builtin = readFileSync(`${dir}send-targets-builtin.ts`, 'utf8');
   // One driver module per registered factory; each names its provider kind once,
   // as `const KIND = '…'` or (google-drive) the literal on the target itself.
-  const modules = [...builtin.matchAll(/import \{ (\w+) \} from '\.\/([\w-]+)\.ts'/g)]
-    .filter((m) => builtin.includes(`registerSendTarget(${m[1]}())`))
-    .map((m) => m[2]!);
+  // The drivers are `await import()`ed off the boot graph (plans/155 Task 3.3), so
+  // the module and the binding that registers it are in two separate lists - the
+  // destructuring on the left of the Promise.all and the specifiers inside it.
+  // Zip them positionally, which is the only thing that ties them together in the
+  // source, then require each binding to actually reach registerSendTarget: a
+  // module imported and never registered must not count towards the ≥8.
+  const bindings = /const \[([\w,\s]+)\] = await Promise\.all\(\[/.exec(builtin)?.[1]
+    ?.split(',').map((s) => s.trim()).filter(Boolean) ?? [];
+  const specifiers = [...builtin.matchAll(/import\('\.\/([\w-]+)\.ts'\)/g)].map((m) => m[1]!);
+  assert.equal(bindings.length, specifiers.length, 'every dynamically imported driver is bound');
+  const modules = specifiers
+    .filter((_, i) => new RegExp(`registerSendTarget\\(${bindings[i]}\\.`).test(builtin));
   assert.ok(modules.length >= 8, `found ${modules.length} built-in drivers`);
   const flagged = new Set(CONNECTOR_FLAGS.map((f) => f.connector));
   for (const mod of modules) {

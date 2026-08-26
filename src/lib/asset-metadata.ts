@@ -189,7 +189,14 @@ async function addAudioFields(blob: Blob, push: Push, size: number | null, ref: 
   let duration = 0;
   try {
     const mb = await import('mediabunny');
-    const input = new mb.Input({ formats: mb.ALL_FORMATS, source: new mb.BlobSource(blob) });
+    // Explicit container set, not ALL_FORMATS: the audio-bearing containers only,
+    // matching sequence-providers' AUDIO_CONTAINERS. ALL_FORMATS silently drags
+    // HLS/MPEG-TS demuxers into this lazy chunk and breaks the bundle-discipline
+    // rule the other decode sites state and guard.
+    const input = new mb.Input({
+      formats: [mb.MP4, mb.QTFF, mb.WEBM, mb.MATROSKA, mb.OGG, mb.MP3, mb.WAVE, mb.ADTS, mb.FLAC],
+      source: new mb.BlobSource(blob),
+    });
     try {
       try { duration = await input.computeDuration(); } catch { /* keep 0 */ }
       if (Number.isFinite(duration) && duration > 0) { push(t('Duration'), formatDuration(duration)); gotCore = true; }
@@ -245,7 +252,12 @@ async function addAudioFields(blob: Blob, push: Push, size: number | null, ref: 
 async function addVideoFields(blob: Blob, push: Push): Promise<void> {
   try {
     const mb = await import('mediabunny');
-    const input = new mb.Input({ formats: mb.ALL_FORMATS, source: new mb.BlobSource(blob) });
+    // Explicit video container set, not ALL_FORMATS - matches sequence-providers'
+    // VIDEO_CONTAINERS (see the audio-side note above; same bundle-discipline rule).
+    const input = new mb.Input({
+      formats: [mb.MP4, mb.QTFF, mb.WEBM, mb.MATROSKA],
+      source: new mb.BlobSource(blob),
+    });
     try {
       let track: Awaited<ReturnType<typeof input.getPrimaryVideoTrack>> = null;
       try { track = await input.getPrimaryVideoTrack(); } catch { /* none */ }

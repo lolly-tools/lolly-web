@@ -3,7 +3,7 @@
  * mix-window.ts - the PURE analytic audio-mix-window evaluator (plans/156, Phase B
  * Step B1).
  *
- * The whole reason this file can exist is the load-bearing fact from plans/156 §0:
+ * The whole reason this file can exist is the essential fact from plans/156 section 0:
  * the sequence audio graph has NO stateful DSP. Its only two node types are
  * `createBufferSource` (a unity-gain buffer read placed at an absolute start) and
  * `createGain` (a precomputed *linear* automation, i.e. a pure analytic function of
@@ -11,7 +11,7 @@
  * (`clip.pcm(from,to,48000)`), so buffer sources play at rate 1. There is therefore
  * no attack/release/reverb tail, no resampler state, nothing to carry across a
  * window boundary. The whole-timeline destination signal is a closed form in the
- * output sample index `n` (plans/156 §1):
+ * output sample index `n` (plans/156 section 1):
  *
  *   out[n] = Σ_clips  clipPCM_c[n − start_c]                    (when n∈clip range, unity)
  *          + Σ_beds   bed_b[phase_b(n)] · envelopeGainAt(events_b, n / rate)
@@ -21,7 +21,7 @@
  * sample**, so a windowed mix is provably an identity on concatenation: this module
  * evaluates exactly that closed form over an arbitrary half-open window `[w0, w1)`,
  * and `mix-window.test.ts` pins concat-over-the-4800-grid == one whole-range call,
- * bit-for-bit (plans/156 §5 STOP-5).
+ * bit-for-bit (plans/156 section 5 STOP-5).
  *
  * This is Step B1: the evaluator + its NODE proof, with NO wiring into the
  * production render path. B2/B3 route `mixSequenceAudio` / `sequenceAudioPcm`
@@ -48,7 +48,7 @@ export interface MixClip {
   /**
    * Placement, milliseconds. The sample start is `round(startMs · rate / 1000)` -
    * i.e. `round(startMs · 48)` at 48 kHz - matching `node.start(startMs/1000)` in
-   * the OAC graph (plans/156 §1: `start_c = round(startMs_c · 48)`).
+   * the OAC graph (plans/156 section 1: `start_c = round(startMs_c · 48)`).
    */
   startMs: number;
 }
@@ -89,7 +89,7 @@ export interface MixSpec {
  * Evaluate the closed form over the half-open window `[w0, w1)`, returning a fresh
  * stereo pair `[left, right]` of length `w1 - w0`.
  *
- * BIT-EXACT CONCATENATION (plans/156 §5 STOP-5). Every output sample is an
+ * BIT-EXACT CONCATENATION (plans/156 section 5 STOP-5). Every output sample is an
  * independent accumulator starting at 0, and the per-sample summation order (all
  * clips in `spec.clips` order, then all beds in `spec.beds` order) does not depend
  * on the window bounds. So the value written at any absolute `n` is identical

@@ -18,7 +18,7 @@
  */
 
 import { verifyAssetChecksum } from '../bridge/assets.ts';
-import { assertToolIndexIntegrity } from './integrity.ts';
+import { assertToolIndexIntegrity, getToolIntegrity } from './integrity.ts';
 import { currentLang, t } from '../i18n.ts';
 import { pinnedAssetIds, refreshPinnedToolFiles } from '../lib/offline-pins.ts';
 // The "Available offline" download manager is DYNAMICALLY imported: this module is
@@ -116,6 +116,12 @@ declare global {
   interface Window {
     /** In-memory tool catalog index, populated at boot by syncTools. */
     __toolIndex?: ToolIndex;
+    /** The slim FIRST-PAINT index (plans/155 Task 3.8), populated by
+     *  loadSlimToolIndex on a cold visit only. Deliberately a SEPARATE global from
+     *  __toolIndex: ~30 surfaces read that one for descriptions, templates, formats
+     *  and i18n, and none of them may ever be handed a cut-down entry. The gallery
+     *  is the single reader here, and only while __toolIndex is still absent. */
+    __toolIndexSlim?: ToolIndex;
   }
 }
 
@@ -227,6 +233,36 @@ export async function syncCatalog(host: SyncHost): Promise<void> {
   }
 }
 
+/**
+ * Conditional (ETag/Last-Modified) fetch of a catalog index, with the validator
+ * kept in localStorage rather than left to the browser's HTTP cache - that cache
+ * is evictable and small, and this layer exists precisely so a repeat visitor
+ * whose disk entry is gone still gets a 304 instead of the whole index.
+ *
+ * WHICH IS WHY THESE URLS MUST NOT BE PRELOADED. A `<link rel=preload>` looks
+ * like free speed here and is the opposite: markup cannot set request headers,
+ * so a preloaded request is unconditional by construction. It can only ever
+ * spend the bytes the 304 was about to save - 40.3 KB gz for the asset index,
+ * 168.8 KB gz for the tool index - on every visitor who has a validator.
+ *
+ * Nor can the app adopt the preloaded response instead of re-requesting, on two
+ * independent counts. (1) `as="fetch"` without `crossorigin` creates a request
+ * with mode "no-cors" and credentials "include", while a bare `fetch()` defaults
+ * to mode "cors" and credentials "same-origin" - the preload key differs, so the
+ * entry is never matched. (2) Even with `crossorigin` it still would not match:
+ * instanceFetch stamps every same-origin request with `x-lolly-client`, and
+ * Chromium compares request headers when matching a preloaded raw resource
+ * (RawResource::CanReuse ignores only Cache-Control, If-Modified-Since,
+ * If-None-Match, Origin, Pragma, Purpose, Referer, User-Agent and
+ * X-HTTP-Method-Override - a custom header is not on that list). The result is
+ * the body downloaded twice, or once plus a must-revalidate round-trip.
+ *
+ * plans/155 task 3.1 added a preload for `/catalog/assets/index.json` on the
+ * reasoning that the fetch started too late; it was removed again once the above
+ * was traced. The fetch genuinely does start late - the fix for that is a
+ * smaller first-paint payload (loadSlimToolIndex below), not a hint that cannot
+ * speak this protocol.
+ */
 async function conditionalFetch(url: string, etagKey: string): Promise<Response | null> {
   const stored = getCatalogMeta(etagKey);
   const headers: Record<string, string> = {};
@@ -244,6 +280,69 @@ async function conditionalFetch(url: string, etagKey: string): Promise<Response 
     setCatalogMeta(etagKey, { etag, lastModified });
   }
   return resp;
+}
+
+// Fetched at most once per page - the cold-visit fast path, not a sync.
+let slimPromise: Promise<ToolIndex | null> | null = null;
+
+/**
+ * The slim tool index (`/catalog/tools/index.slim.json`) - the gallery's first paint
+ * on a COLD visit, where there is no cached index to prime from and the full
+ * 551 KB / 168 KB gz download is the only thing between an empty screen and a
+ * gallery (plans/155 Task 3.8). It carries one cut-down entry per tool: what the
+ * grid paints with, no i18n blocks, no templates, no example bodies.
+ *
+ * Not a replacement for syncTools and not a cache layer: it never writes
+ * `sbt-tool-index`, never touches `window.__toolIndex`, and never moves the
+ * toolIndexChanged() watermark - the full sync below owns all three, and it runs
+ * unchanged alongside this. main.ts races the two and re-renders when the full
+ * index arrives; everything past the first paint reads only the full one.
+ *
+ * Deliberately NOT a conditionalFetch: with no stored validator we can never be
+ * answered 304 with nothing to show, and storing one would mean caching a second
+ * copy of the catalog in localStorage for an audience that by definition has no
+ * cache. The file is served must-revalidate (vercel.json) and is small enough that
+ * a revalidation round-trip is the whole cost.
+ *
+ * That is also the one reason index.html may preload THIS url and not the two
+ * conditional ones above: with no validator in play there is no 304 for an
+ * unconditional hint to defeat. The preloaded response is still never ADOPTED by
+ * this fetch (conditionalFetch's note has the mechanism) - what the hint buys is
+ * a warm HTTP-cache entry, so the boot-time request below is answered by a
+ * must-revalidate 304 off disk instead of an 18.9 KB gz download. It is worth
+ * the round-trip only because the hint starts at HTML parse and this call starts
+ * after the boot chunks execute; in the window where boot outruns the hint the
+ * two requests are independent and the body is fetched twice, which is why the
+ * inline script gates it to visitors with no cached index at all.
+ *
+ * Resolves null - never throws - on anything unusual: an offline/failed fetch, a
+ * deployment that predates the file, an empty index, or a build that pins a catalog
+ * signing key. That last one matters: the signed envelope binds index.json's bytes,
+ * so a slim index has no signature of its own and a key-pinned build must not paint
+ * from unverified bytes. It falls back to today's blocking full-index path instead.
+ */
+export function loadSlimToolIndex(): Promise<ToolIndex | null> {
+  slimPromise ??= (async () => {
+    try {
+      // The base decides WHICH deployment's catalog this is; syncCatalog awaits the
+      // same memoised promise, so this costs one shared IndexedDB read, not two.
+      await initInstanceBase();
+      if (await getToolIntegrity()) return null;
+      const resp = await instanceFetch(instancePath(`${CATALOG_BASE}/tools/index.slim.json`));
+      if (!resp.ok) return null;
+      const index = await resp.json() as ToolIndex;
+      if (!Array.isArray(index?.tools) || !index.tools.length) return null;
+      // No localizeToolIndex: the slim entries carry no i18n block by design, so a
+      // non-English first paint renders English names and the full index's landing
+      // re-runs the overlay - the same trade Task 3.7 already makes while a locale
+      // chunk is in flight.
+      window.__toolIndexSlim = index;
+      return index;
+    } catch {
+      return null;
+    }
+  })();
+  return slimPromise;
 }
 
 async function syncTools(host: SyncHost): Promise<void> {

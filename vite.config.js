@@ -151,16 +151,37 @@ function serveRepoStatic() {
 export function groupPrecacheFiles(all) {
   // The app group is the offline boot payload: everything EXCEPT the opt-in
   // runtime/model binaries - /ort/, /ort-hf/ (the speech worker's runtime,
-  // which the SW can only serve from lolly-ort, never lolly-app) and /models/.
-  const app = all.filter(f => !f.url.startsWith('/ort/') && !f.url.startsWith('/ort-hf/') && !f.url.startsWith('/models/'));
+  // which the SW can only serve from lolly-ort, never lolly-app) and /models/
+  // - and except the ORT wasm the BUNDLER re-emits into /assets/.
+  //
+  // That last exclusion is worth 46.2 MB of 82.7 (measured 2026-08-25). ORT's
+  // package entrypoints are imported as real modules, so rolldown follows
+  // `new URL('ort-wasm-simd-threaded.jsep.wasm', import.meta.url)` and emits a
+  // hash-named COPY under /assets/ - byte-identical (sha256-verified) to the
+  // ones already staged at /ort/ and /ort-hf/, which the ort/ortHf groups
+  // below already own. Precaching them in `app` made the mandatory offline
+  // download carry the two biggest binaries on the site so it could serve the
+  // opt-in runtime a second time, from a second bucket. Excluded by name
+  // (`/assets/ort-wasm-*`), NOT by extension: /assets/harfbuzz-*.wasm (390 KB,
+  // the text-to-path shaper behind SVG/PDF outline export) has no copy
+  // anywhere else, so an extension-wide filter would take offline vector
+  // export out with the duplicates.
+  const app = all.filter(f =>
+    !f.url.startsWith('/ort/') && !f.url.startsWith('/ort-hf/') && !f.url.startsWith('/models/')
+    && !/^\/assets\/ort-wasm-/.test(f.url));
   // The runtime wasm each ONNX runtime loads (ort-wasm-*), split by OWNER so each
   // offline part is self-complete: `ort` is the 1.27 build at /ort/ (the verify
   // deep-scan detectors), `ortHf` is transformers.js's pinned build at
   // /ort-hf/<version>/ (the Kokoro/Whisper speech worker). They used to share one
   // `ort` group the VERIFY part downloaded, so pre-downloading Speech alone still
   // fetched the ~22 MB /ort-hf/ runtime on first synthesis; owning it here lets the
-  // speech part be truly offline-complete. The other ort.*.mjs files are package
-  // dist entrypoints Vite bundles - dead weight.
+  // speech part be truly offline-complete. Neither group takes the ort.*.mjs
+  // files sitting beside them: those are the package dist entrypoints, and the
+  // build bundles its own copies, so nothing ever fetches them from /ort/ or
+  // /ort-hf/. That bundling is also what emits the /assets/ort-wasm-*.wasm
+  // copies the app filter above drops - so what leaks out of a plain
+  // "everything under /assets/" app group is not the ~200 KB of stray .mjs this
+  // comment used to imply, it is 46.2 MB of duplicated runtime.
   const ort = all.filter(f => /^\/ort\/ort-wasm-/.test(f.url));
   const ortHf = all.filter(f => /^\/ort-hf\/[^/]+\/ort-wasm-/.test(f.url));
   // The verify part's models are the TrustMark decoders ONLY - downloaded via
@@ -290,7 +311,70 @@ function brandChrome() {
       return html
         .replace("var CANON = 'lolly.tools';", `var CANON = '${CANON_BY_PROFILE[profile] ?? ''}';`)
         .replace('<meta name="theme-color" content="#0c322c" />', `<meta name="theme-color" content="${NEUTRAL}" />`)
-        .replace(/\n\s*<link rel="preload" as="font"[^>]*SUSE\[wght\][^>]*>/, '');
+        // Every SUSE face preload, not just the upright one - index.html carries
+        // two (SUSE + SUSEMono) since plans/155 task 1.3, hence the /g. Match on
+        // the `/fonts/SUSE` path prefix rather than the filename: `[wght]` is
+        // spelled literally in index.html but percent-encoded in the built output
+        // (see fontPreloadUrls), so a `SUSE\[wght\]` literal here would match in
+        // one and not the other - and a strip that silently no-ops leaves non-SUSE
+        // brands shipping preloads for faces their pack never paints. This hook is
+        // a normal-order transformIndexHtml and fontPreloadUrls' is order:'post',
+        // so the strip always sees the literal form regardless of plugin order.
+        .replace(/\n\s*<link rel="preload" as="font"[^>]*\/fonts\/SUSE[^>]*>/g, '');
+    },
+  };
+}
+
+// Re-apply vite's OWN css-side URL normalisation to the /fonts/ preload hrefs in
+// index.html, so a preload and the @font-face it is meant to satisfy name one
+// identical URL string.
+//
+// The shell's UI faces carry the upstream filenames `SUSE[wght].woff2` /
+// `SUSEMono[wght].woff2` (the fvar axis tag is part of the name), and vite
+// normalises those brackets in OPPOSITE directions on its two pipelines:
+//   - CSS:  styles/fonts.css says url('/fonts/SUSE[wght].woff2'); the public-file
+//     branch runs the path through `encodeURI` (vite/dist/node/chunks/node.js
+//     `encodeURIPath` at the publicAssetUrlRE replace), so the BUILT css requests
+//     `/fonts/SUSE%5Bwght%5D.woff2`.
+//   - HTML: an asset attribute is `decodeURI`d first and re-emitted through
+//     `partialEncodeURIPath`, which escapes `%` and nothing else - so the built
+//     HTML carries the LITERAL `[wght]` whatever index.html spelled.
+// A preload matches on the URL string alone, so out of the box the 83 KB upright
+// face was fetched twice on every cold load. Hand-writing `%5Bwght%5D` into
+// index.html (the first pass at plans/155 task 1.3) fixed nothing - vite decoded
+// it straight back and dist/index.html came out byte-identical to the broken
+// form. Encoding here instead is the one place that survives, and it calls
+// `encodeURI` - the same function the css pipeline uses - so the two sides cannot
+// drift apart into two spellings again.
+//
+// Build-only: the dev server rewrites neither pipeline, so in dev the literal
+// hrefs in index.html already match the css it serves.
+//
+// This is the workaround, NOT the cure. The cure named by plans/155 task 1.3 is
+// renaming the faces to bracket-free filenames, since brackets are exactly what
+// makes the two normalisations differ. That rename is blocked outside this shell:
+// the same bracketed names are baked into the docs submodule (docs/build.ts's
+// @font-face block and its per-page font preload) and into the 4,373 generated
+// pages under public/info/ that ship from this same origin, so renaming without
+// regenerating the docs site would 404 the docs' own fonts.
+function fontPreloadUrls() {
+  return {
+    name: 'lolly-font-preload-urls',
+    apply: 'build',
+    transformIndexHtml: {
+      // 'post' so this runs after every other transformIndexHtml hook - notably
+      // brandChrome(), which may have removed the whole preload run for a
+      // non-SUSE brand, leaving nothing here to encode.
+      order: 'post',
+      handler(html) {
+        return html.replace(
+          /(<link rel="preload" as="font"[^>]*\shref=")(\/fonts\/[^"]*)(")/g,
+          // A href that already contains a percent escape is left alone:
+          // encodeURI would turn its `%` into `%25` and produce a third,
+          // equally wrong spelling.
+          (whole, head, href, tail) => (href.includes('%') ? whole : head + encodeURI(href) + tail),
+        );
+      },
     },
   };
 }
@@ -328,8 +412,9 @@ export default defineConfig({
   // staging dirs from dist before the manifest scan. precacheManifest LAST: its
   // closeBundle scans dist/ after serveRepoStatic's closeBundle has copied
   // catalog/tools/schemas in (it skips those, but the ordering keeps the scan
-  // deterministic either way).
-  plugins: [serveRepoStatic(), brandChrome(), stripModelCandidates(), precacheManifest()],
+  // deterministic either way). fontPreloadUrls' position here is cosmetic - it
+  // declares order:'post', so it runs after brandChrome() wherever it sits.
+  plugins: [serveRepoStatic(), brandChrome(), fontPreloadUrls(), stripModelCandidates(), precacheManifest()],
   // The Neurospicy player + video music-bed exporter render ZzFXM songs in a
   // module worker (src/lib/zzfxm-worker.ts, which ESM-imports the engine). Emit
   // it as an ES module so the import graph survives the build unchanged.

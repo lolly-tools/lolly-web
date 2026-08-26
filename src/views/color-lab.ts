@@ -95,8 +95,9 @@ import {
 } from '../lib/gamut-slider.ts';
 import type { GamutChannel } from '../lib/gamut-slider.ts';
 import {
-  onDisplayGamutChange, acquire2d,
+  onDisplayGamutChange, acquire2d, displayAnchorGamut, displayAnchor, displaySupportsHdr,
 } from '../lib/display-gamut.ts';
+import { hdrPngUrl } from '../lib/hdr-image.ts';
 import { jellyActive, ensureJelly } from '../lib/jelly.ts';
 import { icon } from '../lib/icons.ts';
 import {
@@ -939,7 +940,9 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   // the wide-gamut option) only REPAINTS: the encode space is part of the paint
   // key, and the "your display" contour is set during the paint. It must not move
   // the tab - the display changing is not the reader changing their comparison.
-  cleanups.push(onDisplayGamutChange(() => { paintCharts(); }));
+  // renderReadouts() too, so the preview swatch's HDR fill (paintSwatchHdr) and the
+  // gamut readouts re-resolve for the new display, not just the charts.
+  cleanups.push(onDisplayGamutChange(() => { paintCharts(); renderReadouts(); }));
 
   const boundsBox = $<HTMLInputElement>('[data-lab-bounds]');
   if (boundsBox) {
@@ -1114,7 +1117,10 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    *  the gamut the charts are drawn to - but scaled to controlCMax(), so pressing a
    *  narrower tab recolours the track without shortening it. */
   function sliderState(ch: GamutChannel) {
-    return { channel: ch, base: desc.oklch, limit, cMax: controlCMax() };
+    // displayGamut lets a P3 screen paint its P3 segments opaque + in true colour
+    // (see gamut-slider.ts); an sRGB screen keeps the honest wash. Repainted on a
+    // display change via the onDisplayGamutChange hook below.
+    return { channel: ch, base: desc.oklch, limit, cMax: controlCMax(), displayGamut: displayAnchorGamut() };
   }
 
   /** Repaint the broken tracks - their segments depend on the OTHER two channels,
@@ -2908,6 +2914,41 @@ function paintSwatch(el: HTMLElement, d: ColorDescription): void {
   // The shared inversion rule (contrastText) - the big swatch used to flip to black
   // a good deal earlier than the dial disc sitting right below it.
   el.style.color = contrastText(d.srgbHex);
+  paintSwatchHdr(el, d);
+}
+
+/** The blob URL currently backing each swatch's HDR fill, so it can be revoked. */
+const SWATCH_HDR = new WeakMap<HTMLElement, string>();
+
+/**
+ * On an HDR display, back the preview with a Rec.2100-PQ cICP image of the colour
+ * instead of the CSS fill, so a bright colour GLOWS above SDR white and a wide one
+ * shows unclamped - the same headroom the slice charts use (lib/hdr-image.ts). A CSS
+ * `background`/`color()` can carry wide gamut but nothing above SDR white; only an
+ * HDR image can, and it works on every HDR display (WebKit and Chromium alike -
+ * there is no live interaction here that would want the canvas path). The colour is
+ * a tiny solid, so this encodes inline; the CSS fill from paintSwatch stays as the
+ * fallback under it (and on non-HDR displays the image is simply never set).
+ */
+function paintSwatchHdr(el: HTMLElement, d: ColorDescription): void {
+  const prev = SWATCH_HDR.get(el);
+  if (prev) { URL.revokeObjectURL(prev); SWATCH_HDR.delete(el); }
+  el.style.backgroundImage = ''; // clear any prior HDR fill → CSS colour shows through
+  if (!displaySupportsHdr()) return;
+  const encode = displayAnchor();
+  // encodeOklch is the engine's painter path (the same one the slices/quads use), so
+  // the preview and the charts cannot disagree; a colour past the display gamut is
+  // mapped to its boundary here, exactly as a pixel in a slice would be.
+  const [r, g, b] = encodeOklch(d.oklch.l, d.oklch.c, d.oklch.h, encode);
+  const byte = (v: number): number => Math.round(Math.min(1, Math.max(0, v)) * 255);
+  const solid = new Uint8ClampedArray([byte(r), byte(g), byte(b), 255, byte(r), byte(g), byte(b), 255,
+    byte(r), byte(g), byte(b), 255, byte(r), byte(g), byte(b), 255]); // 2×2 solid
+  try {
+    const url = hdrPngUrl(solid, 2, 2, encode === 'display-p3' ? 'display-p3-linear' : 'srgb-linear', undefined, 8);
+    el.style.backgroundImage = `url("${url}")`;
+    el.style.backgroundSize = 'cover';
+    SWATCH_HDR.set(el, url);
+  } catch { /* keep the CSS fill from paintSwatch */ }
 }
 
 /** Multiply a hex toward black by `k` - the solid's soft top-light. */

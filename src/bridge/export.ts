@@ -55,7 +55,8 @@ import { RASTER_DEFAULT_SCALE } from './export-scale.ts';
 import { videoMimeCandidates, videoBitrate, LIVE_BITS_PER_PIXEL, videoFramePlan, AUDIO_FRAME_HEADROOM } from './video-mime.ts';
 import { bedDuckEnvelope, scheduleGainEvents } from './audio-envelope.ts';
 import type { ExportAudio, ExportAudioMixIn } from './audio-envelope.ts';
-import { encodeMuxWebCodecs, type EncodeAudio } from './video-encode-core.ts';
+import { encodeMuxWebCodecs, type EncodeAudio, type EncodePick } from './video-encode-core.ts';
+import { pickWebCodecsVideo, pickWebCodecsAudio, type AudioPick } from './video-shared.ts';
 import { supportsWorkerVideoEncode, encodeVideoInWorker } from './video-encode.ts';
 // Capability probes live in format-support.ts so the tool view can import them
 // without pulling this rasteriser onto the tool-open path. Re-exported here for
@@ -166,7 +167,7 @@ export interface ExportOpts {
    *  (scripts/convert-trustmark-encoder-onnx.py). Raster-only (png/jpg/webp/avif/
    *  tiff) - see lib/trustmark-embed.ts and plans/28-durable-content-credentials.md. */
   durable?: boolean;
-  /** Reserved id carried by the durable mark (0 until the CAI id scheme lands). */
+  /** Reserved id carried by the durable mark (0 until the CAI id scheme ships). */
   durableId?: number;
   /** OPT-IN HDR raster export (the `hdr` URL param). When set, an HDR-capable
    *  raster (png/jpeg/avif/tiff) is encoded in Rec.2100 PQ with the brand's primary
@@ -375,6 +376,19 @@ let domToImageMore: DomToImage | null = null;
 // bridge/index.js ordering), so read it lazily at render time, not here.
 export let _host: WebHost | null = null;
 
+// User-visible EXPORT QUALITY notices (not errors): the frame rate was lowered to
+// fit the buffer, the clip was truncated, or a sped-up clip's audio was dropped.
+// host.log() is console-only, so these degradations were invisible to the person
+// exporting - and ClipPlan.truncated's contract explicitly requires surfacing them
+// "somewhere a person will see it, not only through host.log". This shell-internal
+// sink is the seam: tool-actions registers it around a download and paints each
+// message onto the export card (plus an aria-live announce). Module-global like
+// `_host` - the download button is disabled for the duration of one export, so a
+// single sink is never shared between two concurrent runs. NOT part of HostV1 and
+// never serialized; a null sink (nobody listening) simply drops the notice.
+export let _exportNoticeSink: ((msg: string) => void) | null = null;
+export function _setExportNoticeSink(fn: ((msg: string) => void) | null): void { _exportNoticeSink = fn; }
+
 /**
  * Resolve the requested output size for an export.
  *
@@ -412,6 +426,16 @@ export function createExportAPI(host: WebHost) {
   _host = host;
   return {
     async render(node: Element, format: string, opts: ExportOpts = {}): Promise<Blob> {
+      // Wait for the brand webfont before ANY format reads the live node's layout.
+      // render() rasterises (renderRaster/renderBitmap) or walks (renderSvg/pdf) the
+      // LIVE node, so an export fired before the font has loaded would capture the
+      // fallback-font reflow: wider metrics, so a heading that fits on the card in the
+      // brand face wraps in the export and its second line lands on the subtitle
+      // (audiogram, plans/147). This lives in the web shell's shared export entry, not
+      // the engine (fonts are a browser API the DOM-free engine cannot see), so EVERY
+      // tool and EVERY format inherits it. `document.fonts.ready` is already-resolved
+      // (a no-op) once the faces are in, so it costs nothing on the common path.
+      try { await (document as Document & { fonts?: FontFaceSet }).fonts?.ready; } catch { /* no FontFaceSet on this host */ }
       const watermark = Boolean(opts.watermark);
 
       // Watermark with a live overlay on the original node, not a detached clone.
@@ -674,7 +698,17 @@ const SEQUENCE_MOTION_FORMATS = new Set(['webm', 'mp4', 'gif', 'apng']);
 // precedent) - they load the first time a timed composition is exported.
 async function renderSequenceStage(node: Element, format: 'mp4' | 'webm' | 'gif' | 'apng', opts: ExportOpts): Promise<Blob> {
   const { renderSequence } = await import('./sequence-render.ts');
-  return renderSequence(node, format, opts, _host ?? null);
+  // Wrap the host so the compositor's user-visible quality notices (a sped-up
+  // clip's audio dropped) reach the SAME export-card sink the WebCodecs video
+  // path uses; log + assets pass straight through. The mix is main-thread only,
+  // so `notice` fires without a worker hop.
+  const h = _host;
+  const seqHost = h ? {
+    log: (l: string, m: string) => { h.log?.(l as 'debug' | 'info' | 'warn' | 'error', m); },
+    notice: (m: string) => { _exportNoticeSink?.(m); },
+    assets: h.assets,
+  } : null;
+  return renderSequence(node, format, opts, seqHost);
 }
 
 // ── audio-only export (wav / mp3 / m4a / opus) ───────────────────────────────
@@ -9529,45 +9563,13 @@ function manualCaptureStream(canvas: HTMLCanvasElement, fps: number): { stream: 
 // clips, and it can't stall in a backgrounded tab). pickWebCodecsVideo returns null when
 // WebCodecs - or a codec for the requested size - isn't available, so renderVideo falls
 // back to the MediaRecorder path.
-interface WebCodecsPick { container: 'mp4' | 'webm'; codec: string; muxCodec: string; }
-async function pickWebCodecsVideo(preferred: string, width: number, height: number, fps: number, bitrate: number): Promise<WebCodecsPick | null> {
-  if (typeof VideoEncoder === 'undefined') return null;
-  const mp4: WebCodecsPick[] = [
-    { container: 'mp4', codec: 'avc1.640033', muxCodec: 'avc' },     // H.264 High L5.1
-    { container: 'mp4', codec: 'avc1.4d0033', muxCodec: 'avc' },     // H.264 Main L5.1
-  ];
-  const webm: WebCodecsPick[] = [
-    { container: 'webm', codec: 'vp09.00.10.08', muxCodec: 'V_VP9' },
-    { container: 'webm', codec: 'vp8', muxCodec: 'V_VP8' },
-  ];
-  for (const pick of preferred === 'mp4' ? [...mp4, ...webm] : [...webm, ...mp4]) {
-    try {
-      const support = await VideoEncoder.isConfigSupported({ codec: pick.codec, width, height, bitrate, framerate: fps });
-      if (support?.supported) return pick;
-    } catch { /* try the next candidate */ }
-  }
-  return null;
-}
+// `pickWebCodecsVideo` / `pickWebCodecsAudio` moved to bridge/video-shared.ts
+// (imported at the top) - the shared avc→vp9→vp8 ladder + per-container audio pick
+// this file used to own and two others copied. The export audio bed is 48 kHz
+// stereo at AUDIO_BITRATE (the shared defaults), so its call passes only the
+// container.
 
-interface WebCodecsAudioPick { codec: string; muxCodec: string; sampleRate: number; numberOfChannels: number; bitrate: number; }
-// Pick a WebCodecs audio codec for the chosen container: AAC-LC for mp4, Opus for
-// webm. Returns null when AudioEncoder (or that codec) isn't available, so an audio
-// export cleanly falls back to the MediaRecorder path that muxes the live track.
-async function pickWebCodecsAudio(container: 'mp4' | 'webm'): Promise<WebCodecsAudioPick | null> {
-  if (typeof AudioEncoder === 'undefined') return null;
-  const sampleRate = 48_000, numberOfChannels = 2, bitrate = AUDIO_BITRATE;
-  // WebCodecs codec string vs the muxer's own codec token differ per container.
-  const cand = container === 'mp4'
-    ? { codec: 'mp4a.40.2', muxCodec: 'aac' }
-    : { codec: 'opus',      muxCodec: 'A_OPUS' };
-  try {
-    const s = await AudioEncoder.isConfigSupported({ codec: cand.codec, sampleRate, numberOfChannels, bitrate });
-    if (s?.supported) return { ...cand, sampleRate, numberOfChannels, bitrate };
-  } catch { /* unsupported */ }
-  return null;
-}
-
-interface WebCodecsAudioTrack extends WebCodecsAudioPick { buffer: AudioBuffer; }
+interface WebCodecsAudioTrack extends AudioPick { buffer: AudioBuffer; }
 
 // An offline-rendered audio bed (AudioBuffer) → the transferable planar form the DOM-free
 // encode core takes. numberOfChannels stays the track's declared count; the core clamps
@@ -9582,7 +9584,7 @@ function audioTrackToPlanar(a: WebCodecsAudioTrack): EncodeAudio {
 // off-thread and wraps identically.
 async function encodeVideoWithWebCodecs(
   frames: ImageBitmap[],
-  pick: WebCodecsPick,
+  pick: EncodePick,
   o: { width: number; height: number; fps: number; bitrate: number; meta?: ExportMeta | null; audio?: WebCodecsAudioTrack | null },
 ): Promise<Blob> {
   const { buffer, type } = await encodeMuxWebCodecs(frames, pick, {
@@ -9642,10 +9644,16 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
   const fps        = plan.fps;
   const frameMs    = 1000 / fps;
   const frameCount = plan.frameCount;
-  if (fps !== reqFps)
+  if (fps !== reqFps) {
     _host?.log?.('warn', `Video frame rate lowered to ${fps}fps to keep the whole ${(durationMs / 1000).toFixed(1)}s clip inside the frame buffer.`);
-  if (plan.truncated)
-    _host?.log?.('warn', `Video truncated to ${plan.clipSec.toFixed(1)}s of the requested ${(durationMs / 1000).toFixed(1)}s. The export is the start of the clip and stays in step with its audio.`);
+    // ...and say so where a person will actually see it (host.log is console-only).
+    _exportNoticeSink?.(`Exported at ${fps} fps (lowered from ${reqFps} to fit this length).`);
+  }
+  if (plan.truncated) {
+    const msg = `Video truncated to ${plan.clipSec.toFixed(1)}s of the requested ${(durationMs / 1000).toFixed(1)}s. The export is the start of the clip and stays in step with its audio.`;
+    _host?.log?.('warn', msg);
+    _exportNoticeSink?.(msg);   // ClipPlan.truncated's contract: surface it visibly.
+  }
 
   // Phase 1: render all frames sequentially through the shared FrameSource.
   // Animation advances in real time between frames, so each captures a unique

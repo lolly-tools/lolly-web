@@ -288,7 +288,7 @@ test('createStreamingMux: finalize interleaves streams canonically - ascending t
   const { session, h } = harness({ audio: AUDIO });
   const mux = await session;
   await mux.addFrame({} as any, 0);
-  // Adversarial ARRIVAL order: audio lands first, out of timestamp order, with
+  // Adversarial ARRIVAL order: audio arrives first, out of timestamp order, with
   // one exact tie at 100000µs. The muxer must still see one canonical order.
   h.audio!.cb.output({ chunk: 'a@100000', timestamp: 100_000 }, undefined);
   h.audio!.cb.output({ chunk: 'a@200000', timestamp: 200_000 }, undefined);
@@ -490,7 +490,7 @@ test('encodeMuxWebCodecs: mp4 pick pins avc config and returns real video/mp4 by
   assert.equal(cfg.codec, 'avc1.42001f');
   assert.deepEqual(cfg.avc, { format: 'avc' });
   const bytes = new Uint8Array(a.buffer);
-  // Non-vacuity: a real container, not an empty buffer - sized, structurally
+  // Non-vacuity: a real container, not an empty buffer - sized, properly
   // marked, and carrying the stub chunk payload in its mdat.
   assert.ok(bytes.length > 200, `mp4 output too small (${bytes.length} bytes)`);
   assert.deepEqual([...bytes.subarray(4, 8)], [0x66, 0x74, 0x79, 0x70], 'ftyp box marker');
@@ -565,7 +565,7 @@ test('encodeMuxWebCodecs: a muxer rejection inside the output callback propagate
 // SAME real mediabunny muxer is pointed at a StreamTarget over an injected in-memory
 // SEEKABLE sink, so `fastStart:false` (MP4) and the streaming WebM writer are driven
 // end to end and the finalized artifact is read back and checked for completeness -
-// exactly the browser smoke test the plan asks for, but deterministic and in node.
+// exactly the browser sanity check the plan asks for, but deterministic and in node.
 
 test('encodeMuxWebCodecs: mp4 over a StreamTarget/OPFS sink reads back a complete, seekable container', async () => {
   const sink = memSeekableSink();
@@ -578,7 +578,7 @@ test('encodeMuxWebCodecs: mp4 over a StreamTarget/OPFS sink reads back a complet
   assert.ok(bytes.length > 200, `opfs mp4 too small (${bytes.length} bytes) - likely truncated`);
   assert.deepEqual([...bytes.subarray(4, 8)], [0x66, 0x74, 0x79, 0x70], 'leading ftyp box');
   // fastStart:false streams the mdat and BACKPATCHES the moov at the end via seek -
-  // so a positioned write landed the moov, and it is present (not lost to truncation).
+  // so a positioned write placed the moov, and it is present (not lost to truncation).
   assert.ok(indexOfBytes(bytes, [0x6d, 0x6f, 0x6f, 0x76]) >= 0, 'moov box present (backpatched at the end)');
   assert.ok(indexOfBytes(bytes, [0x00, videoPayload, 0xc3, 0xd4, 0xe5]) >= 0, 'frame 0 payload reached the mdat');
 });
@@ -608,7 +608,7 @@ test('encodeMuxWebCodecs: the OPFS sink carries the audio track too', async () =
 // The plan's A4 stamps the streamed OPFS container through the shell's existing
 // provenance chain; A3's return contract already routes the OPFS bytes into it (the
 // File IS a Blob, and renderSequence/renderFormat stamp whatever finalize returns).
-// The load-bearing risk is STOP GATE 4: the MP4 written by fastStart:false has its
+// The critical risk is STOP GATE 4: the MP4 written by fastStart:false has its
 // `moov` at the END, and the container-metadata embedder must accept that layout
 // rather than reject it. `embedMp4Meta` (engine/src/video-meta.ts) explicitly does -
 // it finds `moov` wherever it sits and only patches chunk offsets when `mdat` follows

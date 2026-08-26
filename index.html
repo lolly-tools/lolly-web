@@ -72,13 +72,70 @@
   <link rel="icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" href="/icons/icon-192.png" type="image/png" />
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-  <!-- Preload the upright UI face so it isn't discovered only after
+  <!-- Preload the UI faces so they aren't discovered only after
        app.css → @import fonts.css resolves (which causes a visible swap).
-       SUSE is the shell-served platform default on every profile, so ONE
-       preload covers every brand pack - before 2026-08-10 this was Outfit
-       plus a catalog-served SUSE that 404'd on any pack but brands/suse.
-       crossorigin is required for fonts. -->
+       SUSE is the shell-served platform default on every profile, so these
+       cover every brand pack - before 2026-08-10 this was Outfit plus a
+       catalog-served SUSE that 404'd on any pack but brands/suse. Mono is
+       preloaded too: 34.5 KB of chrome type (code/number runs) that was
+       previously discovered only after the CSS parsed. crossorigin is
+       required for fonts.
+
+       Write the hrefs with LITERAL brackets - the way the files on disk and
+       fonts.css spell them. A preload only matches the request @font-face
+       makes if the two URL STRINGS are equal, and vite normalises its two
+       pipelines in OPPOSITE directions: the CSS pipeline puts a public-file
+       url() through `encodeURI`, so the BUILT css asks for
+       `/fonts/SUSE%5Bwght%5D.woff2`, while the HTML pipeline decodes an
+       attribute href and re-emits it with only `%` escaped, so the built HTML
+       carries the literal `[wght]` no matter what is written here. That is why
+       the first attempt at this fix (2026-08-25, hrefs hand-written as
+       `%5Bwght%5D`) changed nothing in dist/index.html and the 83 KB upright
+       face kept downloading twice. The dev server rewrites neither side, so
+       the literal form below is already correct in dev; fontPreloadUrls() in
+       vite.config.js re-applies vite's own `encodeURI` to these hrefs at build
+       time so the built HTML and the built CSS name one identical string.
+       The real cure is bracket-free filenames (plans/155 task 1.3) - see the
+       blocker note on fontPreloadUrls().
+       Keep these two lines adjacent - brandChrome() in vite.config.js strips
+       the whole run for non-SUSE brands by matching `/fonts/SUSE`. -->
   <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/SUSE[wght].woff2" />
+  <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/SUSEMono[wght].woff2" />
+  <!-- The two CONDITIONAL catalog indexes - /catalog/tools/index.json and
+       /catalog/assets/index.json - are deliberately NOT preloaded. Task 3.1 added
+       a hint for the asset index and it was a pure loss both ways, traced in full
+       in catalog/sync.ts's conditionalFetch note: markup cannot set request
+       headers, so the hint is unconditional by construction and spends exactly the
+       40.3 KB gz the visitor's If-None-Match was about to save; and the response is
+       never adopted by the app's own fetch either, because `as="fetch"` without
+       crossorigin makes a mode "no-cors" / credentials "include" request while a
+       bare fetch() defaults to "cors" / "same-origin" (the preload key differs), and
+       instanceFetch's x-lolly-client header would keep it from matching even with
+       crossorigin. Result: the index downloaded twice on every load. The late start
+       those hints were aimed at is fixed by the slim index below, not by a hint that
+       cannot speak this protocol.
+
+       The TOOLS index IS preloaded in its slim form (task 3.8), because that one url
+       is fetched unconditionally - no validator, so no 304 for the hint to defeat -
+       and served must-revalidate, so the warmed cache entry turns the boot fetch into
+       a 304 instead of an 18.9 KB gz download. Only for the visitors who will read it:
+       a repeat visitor paints from their cached copy and main.ts never fetches slim, so
+       a static preload would download a file they never use and log "preload not used"
+       for it. `in` rather than getItem: it answers from the key list without
+       materialising the half-megabyte value. (The one url this can still waste is the
+       first load after a switch to a remote instance - setInstanceBase clears
+       sbt-tool-index, and the base lives in IndexedDB where this script cannot read it,
+       so the hint fetches THIS origin's copy while the app fetches the instance's.) -->
+  <script>
+    (() => {
+      try {
+        if ('sbt-tool-index' in localStorage) return;   // cached index → main.ts never fetches slim
+        var l = document.createElement('link');
+        l.rel = 'preload'; l.as = 'fetch'; l.href = '/catalog/tools/index.slim.json';
+        document.head.appendChild(l);
+      } catch (e) { /* storage blocked - the fetch just starts at boot instead */ }
+    })();
+  </script>
   <link rel="stylesheet" href="/src/styles/app.css" />
   <!-- Apply saved theme before CSS paints to prevent flash of wrong theme.
        With no saved preference, seed from the OS colour scheme (mirrors

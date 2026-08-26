@@ -7,7 +7,8 @@
  *   • sandbox="allow-same-origin" - no scripts run (safe), but the banner's own brand
  *     @font-face can still load from same-origin /catalog/fonts.
  *   • pointer-events:none - clicks fall through to the tile's own link/button.
- *   • loading="lazy" - an off-screen banner costs nothing until it scrolls near.
+ *   • loading="lazy" (unless `eager`, below) - an off-screen banner costs nothing until
+ *     it scrolls near.
  * It's a few KB of vector-crisp CSS that animates natively and pauses off-screen - far
  * lighter than an APNG/GIF/video for an HTML/CSS tool.
  *
@@ -16,6 +17,12 @@
  * `iframeSize` CSS fragment for the fitting the context needs (the default fills a
  * definite box; a fixed-height slot such as the hero or a picker tile passes an
  * aspect-ratio instead so the responsive banner isn't stretched).
+ *
+ * `eager` is for the handful of tiles that are above the fold on a cold load. Lazy is the
+ * right default for a long grid, but a lazy image is discovered only after layout, so with
+ * EVERY tile lazy the browser has no high-priority image to race - and the app's LCP
+ * element ends up being whatever text painted first. The eager tiles opt out of that and
+ * ask for `fetchpriority="high"`, which is what makes one of them the LCP candidate.
  */
 import { escape } from '../utils.ts';
 
@@ -23,9 +30,11 @@ export function isHtmlPreview(src: string | undefined | null): boolean {
   return !!src && src.endsWith('.html');
 }
 
-export function previewMedia(src: string, cls: string, iframeSize = 'width:100%;height:100%'): string {
+export function previewMedia(src: string, cls: string, iframeSize = 'width:100%;height:100%', eager = false): string {
   if (isHtmlPreview(src)) {
-    return `<iframe class="${cls}" src="${escape(src)}" tabindex="-1" aria-hidden="true" loading="lazy" scrolling="no" sandbox="allow-same-origin" style="border:0;background:transparent;pointer-events:none;${iframeSize}"></iframe>`;
+    // No fetchpriority on the iframe: it isn't an LCP candidate (its own document paints
+    // the art), and the attribute has no defined effect on a frame's subresources.
+    return `<iframe class="${cls}" src="${escape(src)}" tabindex="-1" aria-hidden="true" loading="${eager ? 'eager' : 'lazy'}" scrolling="no" sandbox="allow-same-origin" style="border:0;background:transparent;pointer-events:none;${iframeSize}"></iframe>`;
   }
-  return `<img class="${cls}" src="${escape(src)}" alt="" aria-hidden="true" loading="lazy" decoding="async">`;
+  return `<img class="${cls}" src="${escape(src)}" alt="" aria-hidden="true" loading="${eager ? 'eager' : 'lazy'}"${eager ? ' fetchpriority="high"' : ''} decoding="async">`;
 }

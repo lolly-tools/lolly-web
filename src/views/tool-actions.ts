@@ -49,6 +49,7 @@ import { listRateCards, listCatalogRateCards, getRateCardBlob } from '../lib/rat
 import { mountSlot, onExtensionsChanged, slotHasResolved } from '../lib/extensions.ts';
 import type { Disposer } from '@lolly-tools/core/extension-v1';
 import { RASTER_DEFAULT_SCALE, SUPERSAMPLED_EXPORT_FORMATS } from '../bridge/export-scale.ts';
+import { _setExportNoticeSink } from '../bridge/export.ts';
 import { CENTRE_LOW } from '../bridge/audio-envelope.ts';
 import { getExportPolicy, exportAffordance } from '../lib/export-policy.ts';
 import { openApprovalRequest } from '../lib/approval-request.ts';
@@ -992,16 +993,22 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     : '';
 
   // Cloud send destinations - the PROVIDER-AGNOSTIC send-target seam
-  // (lib/send-target.ts): built-ins register at boot and each is dormant
-  // without its own config (e.g. gdrive needs a Google OAuth client id), and a
-  // deployment's control plane can add or replace kinds. The container renders
-  // per-format via renderSendTargets below; when no target serves any of this
-  // tool's formats there is no container at all. Why this exists at all (the
-  // gdrive case): Drive re-types plain web uploads server-side from its
-  // extension table (measured 2026-08-18), so an authenticated upload is the
-  // one path that lands an EMF openable in - or converted straight into -
-  // Google Drawings, the paste-into-Slides journey.
-  const sendRow = formats.some(f => sendTargetsFor(f).length) ? '<div data-send-targets></div>' : '';
+  // (lib/send-target.ts): each built-in is dormant without its own config (e.g.
+  // gdrive needs a Google OAuth client id), and a deployment's control plane can add
+  // or replace kinds. The container renders per-format via renderSendTargets below.
+  // Why this exists at all (the gdrive case): Drive re-types plain web uploads
+  // server-side from its extension table (measured 2026-08-18), so an authenticated
+  // upload is the one path that lands an EMF openable in - or converted straight
+  // into - Google Drawings, the paste-into-Slides journey.
+  //
+  // The container is ALWAYS emitted, and hidden while it holds no cards. It used to be
+  // conditional on sendTargetsFor() finding something at this instant, which was only
+  // sound while the built-ins were registered during boot: they are loaded on demand
+  // now (plans/155 Task 3.3, kicked off below), so at this line the registry is
+  // legitimately empty on the first panel of the session and a conditional container
+  // would decide "no Send section" for a tool that has one. Emitting it costs an empty
+  // `hidden` div - the same shape as the ingredient note two rows up.
+  const sendRow = '<div data-send-targets hidden></div>';
 
   // Tier 4 - actions. Copy · Save · Share share one equal-width row; Download is
   // the primary CTA, alone on its own full-width line at the very bottom.
@@ -1134,6 +1141,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     ${actions.includes('download') ? `${filenameRow}${dimsRow}${aspectWarnRow}${fidelityWarnRow}${hdrRow}${cmykRow}${printRow}${protectionRow}<div class="export-ingredient-note" data-ingredient-note hidden></div>${audioRow}${settingsRow}${sendRow}${preflightRow}${costRow}` : ''}
     ${secondaryRow}
     ${downloadRow}
+    ${actions.includes('download') ? `<p class="export-degraded-note" data-export-degraded role="status" hidden style="margin:.2rem 0 0;color:hsl(var(--muted-foreground));font-size:12px;text-align:center"></p>` : ''}
   `;
   void fillIngredientNote();
 
@@ -2694,6 +2702,22 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     }
     announce('Exporting…');
 
+    // Surface the export-quality degradations the bridge would otherwise only
+    // console.log (host.log is console-only): the frame rate was lowered to fit the
+    // buffer, the clip was truncated, or a sped-up clip's audio was dropped. The
+    // bridge calls this sink synchronously as it degrades; we announce each once
+    // (a: aria-live) and paint them onto the card when the export settles (b). The
+    // sink is registered only for THIS export and cleared in the finally below, so
+    // a Save/Send that shares runtime.export never inherits a stale listener.
+    const degradeNote = el!.querySelector<HTMLElement>('[data-export-degraded]');
+    if (degradeNote) { degradeNote.hidden = true; degradeNote.textContent = ''; }
+    const degradedNotes: string[] = [];
+    _setExportNoticeSink((msg) => {
+      if (degradedNotes.includes(msg)) return;   // per-clip mutes can repeat the same line
+      degradedNotes.push(msg);
+      announce(msg);
+    });
+
     // Any zzfxm/tracker track is rendered to a transient WAV blob URL below (the
     // tool audio and a mix-in bed can each mint one); revoke them once the export
     // has consumed them (declared out here so the catch can free them too).
@@ -3108,7 +3132,16 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       void (async () => {
         try {
           if (!downloadedBlob) return;
-          const { autoSendToExportHome } = await import('../lib/export-home.ts');
+          // autoSendToExportHome resolves the pinned cloud through the same
+          // sendTargetsFor() registry the panel renders from, and finding nothing there
+          // is indistinguishable from "not connected on this device" - it returns
+          // silently. So wait for the panel's own on-demand driver load (memoised;
+          // long resolved by the time anyone has exported) rather than reading a
+          // registry that may not be filled yet.
+          const [{ autoSendToExportHome }] = await Promise.all([
+            import('../lib/export-home.ts'),
+            sendTargetsReady,
+          ]);
           await autoSendToExportHome(host as unknown as Parameters<typeof autoSendToExportHome>[0], {
             blob: downloadedBlob,
             format: downloadedIsZip ? 'zip' : fmt,
@@ -3141,12 +3174,20 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       announce(why, { assertive: true });
       setTimeout(() => { btn.textContent = prev; btn.toggleAttribute('disabled', false); }, 3500);
       return;
+    } finally {
+      // Always release the module-global sink, whatever exit the export took.
+      _setExportNoticeSink(null);
     }
 
     btn.removeAttribute('aria-busy');
     btn.textContent = prev;
     btn.toggleAttribute('disabled', false);
     announce('Export complete');
+    // (b) A calm, visible line on the card for each degradation, honest not alarmed.
+    if (degradeNote && degradedNotes.length) {
+      degradeNote.textContent = degradedNotes.join(' ');
+      degradeNote.hidden = false;
+    }
     void offerDetailsAsk().catch(() => { /* the ask is an extra, never a failure path */ });
   });
 
@@ -3164,14 +3205,40 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   function renderSendTargets(fmt: string): void {
     const box = el!.querySelector<HTMLElement>('[data-send-targets]');
     if (!box) return;
-    box.innerHTML = sendTargetsFor(fmt).map(tg => `
+    const offered = sendTargetsFor(fmt);
+    box.innerHTML = offered.map(tg => `
       <div class="section-card export-send"${tg.hint ? ` title="${escape(tg.hint)}"` : ''}>
         <span class="c2pa-head">${icon('upload', { className: 'c2pa-icon' })}<span>${escape(tg.label)}</span></span>
         <button type="button" data-send-kind="${escape(tg.kind)}">${escape(tg.actionLabel?.(fmt) ?? t('Send to {name}', { name: tg.label }))}</button>
         <span class="send-status" data-send-status="${escape(tg.kind)}" role="status"></span>
       </div>`).join('');
+    // The container outlives its contents (it is emitted unconditionally so late
+    // registration has somewhere to land), so it carries the empty state itself: no
+    // destination for this format ⇒ nothing in the panel, exactly as when the row
+    // wasn't rendered at all.
+    box.hidden = !offered.length;
   }
   renderSendTargets(initialFmt ?? formats[0] ?? '');
+  // …and load the built-in destinations, if this is the first export panel of the
+  // session. They are no longer registered at boot (plans/155 Task 3.3 took ~59 KB of
+  // OAuth/upload drivers off the boot graph for a capability most builds never use);
+  // an export panel opening is the first moment anything consults them, so it is the
+  // panel that fetches them. Memoised in lib/send-targets-builtin.ts, so every later
+  // panel reuses one registration. The re-render is what makes the late arrival
+  // invisible: the call above painted with whatever was registered at mount (nothing,
+  // the first time), and this repaints against the real set - reading the CURRENT
+  // format, since the user may have changed it while the drivers were in flight.
+  // Kept as the shared promise: the export-home auto-send in the download handler
+  // above awaits this same one rather than racing it (a download fired seconds after
+  // mount would otherwise find an empty registry and silently skip the user's pinned
+  // cloud). That is a read from a closure, so the declaration order is fine - the
+  // handler cannot run before the panel is mounted.
+  const sendTargetsReady = actions.includes('download')
+    ? import('../lib/send-targets-builtin.ts')
+      .then(m => m.ensureBuiltinSendTargets())
+      .then(() => renderSendTargets(formatEl?.value || initialFmt || formats[0] || ''))
+      .catch((err: unknown) => { console.error('Send destinations unavailable:', err); })
+    : Promise.resolve();
   el.querySelector<HTMLElement>('[data-send-targets]')?.addEventListener('click', async (ev) => {
     const btn = (ev.target as HTMLElement).closest?.('[data-send-kind]') as HTMLButtonElement | null;
     if (!btn || btn.hasAttribute('disabled')) return;

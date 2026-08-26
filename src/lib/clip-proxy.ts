@@ -448,7 +448,11 @@ async function mediabunnyConverter(): Promise<ProxyConverter> {
       const isMp4 = codec === 'avc';
       const target = new m.BufferTarget();
       const output = new m.Output({
-        format: isMp4 ? new m.Mp4OutputFormat() : new m.WebMOutputFormat(),
+        // `fastStart: 'in-memory'` puts the moov box up front. A scrub proxy exists
+        // to be seeked densely; a trailing moov (the bare default) is the worst
+        // layout for that. The whole proxy is already in a BufferTarget, so this is
+        // free - it mirrors the export muxer (bridge/mediabunny-mux.ts).
+        format: isMp4 ? new m.Mp4OutputFormat({ fastStart: 'in-memory' }) : new m.WebMOutputFormat(),
         target,
       });
       const input = openInput(source);

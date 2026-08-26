@@ -1585,15 +1585,29 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
 
 .tool-layout.is-visitor { display: block; height: auto; }
 
+/* `height` carries !important to beat `.tool-layout[data-sidebar="hidden"]
+   .tool-stage` (parts/tool.css), which clamps the stage to 100dvh !important for
+   fullscreen utility tools. A visitor page always hides the sidebar, so that rule
+   always applies here; without the override the stage stays one viewport tall and
+   a page taller than the window is unreachable. */
 .tool-layout.is-visitor .tool-stage {
   position: static;
   display: block;
-  height: auto;
+  height: auto !important;
   min-height: 100dvh;
   overflow: visible;
   padding: 0;
   background: none;
 }
+
+/* The stage flowing is not enough on its own: #view is `.app-view.tool-view`,
+   which sets `overflow: hidden` (parts/base.css) so the editor's stage owns its
+   own scaling and panning. On a visitor page that clips the document instead -
+   the page grows past the viewport, #view swallows the overflow, and body/html
+   never learn there is more, so nothing scrolls and every `animation-timeline:
+   view()` sits frozen at its start. :has() reaches the ancestor the state lives
+   under; where it is unsupported the page renders as it does today. */
+.app-view.tool-view:has(.tool-layout.is-visitor) { overflow: visible; }
 
 .tool-layout.is-visitor .tool-canvas-outer {
   width: 100% !important;   /* fitCanvas never runs here, but stale inline sizes must not win */

@@ -78,6 +78,34 @@
   image-rendering: auto;
 }
 
+/* The HDR slice: a Rec.2100-PQ cICP PNG laid over the canvas on an HDR display
+   (see paintHdrOverlay in oklch-slice.ts). Same box as the canvas, above it and
+   below the boundary contours; its transparent pixels reveal the canvas/checker
+   below, so it never has to be a full opaque replacement. */
+.okls-hdr {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+  image-rendering: auto;
+}
+.okls-hdr[hidden] { display: none; }
+
+/* Tier A: the live HDR WebGL canvas (see hdr-canvas.ts). Same box/layer role as
+   .okls-hdr; at most one of the two is shown. Inert (hidden, no GL context) on every
+   display that lacks the HDR-canvas API. */
+.okls-hdr-gl {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+}
+.okls-hdr-gl[hidden] { display: none; }
+
 .okls-edges {
   position: absolute;
   inset: 0;

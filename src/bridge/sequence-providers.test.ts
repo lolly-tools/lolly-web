@@ -217,18 +217,28 @@ function mbOpts(world: FakeWorld, extra: Partial<ProviderOpts> = {}): ProviderOp
 // ── source guard (rule 5: lazy, explicit singletons only) ───────────────────
 
 test('source guard: mediabunny is lazy-imported and never via ALL_FORMATS', () => {
-  const src = readFileSync(fileURLToPath(new URL('./sequence-providers.ts', import.meta.url)), 'utf8');
-  const code = src
+  const strip = (src: string): string => src
     .replace(/\/\*[\s\S]*?\*\//g, '')      // block comments (the header talks about all of this)
     .replace(/^\s*\/\/.*$/gm, '');         // line comments
 
-  assert.equal(/^\s*import[\s\S]*?from\s+['"]mediabunny['"]/m.test(code), false,
-    'static import of mediabunny: +352kB (+89kB gzip) on the preload entry');
-  assert.equal(code.includes('ALL_FORMATS'), false,
-    'ALL_FORMATS drags MP3/WAVE/Ogg/FLAC/ADTS/TS/HLS in: 92kB gzip vs 60kB');
-  assert.match(code, /await import\('mediabunny'\)/, 'the lazy import must survive with a literal specifier');
+  // Every lazy-mediabunny decode site obeys the same two rules: no static import
+  // (it would land the whole library, +89kB gzip, on the preload entry) and no
+  // ALL_FORMATS (it drags MP3/WAVE/Ogg/FLAC/ADTS/TS/HLS demuxers into the lazy
+  // chunk - 92kB gzip vs 60kB). asset-metadata.ts was the one site that violated
+  // the second, silently; plan 153 quick-win 2 fixed it and this now guards it.
+  for (const rel of ['./sequence-providers.ts', '../lib/asset-metadata.ts']) {
+    const code = strip(readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8'));
+    assert.equal(/^\s*import[\s\S]*?from\s+['"]mediabunny['"]/m.test(code), false,
+      `${rel}: static import of mediabunny costs +352kB (+89kB gzip) on the preload entry`);
+    assert.equal(code.includes('ALL_FORMATS'), false,
+      `${rel}: ALL_FORMATS drags MP3/WAVE/Ogg/FLAC/ADTS/TS/HLS in (92kB gzip vs 60kB)`);
+    assert.match(code, /await import\('mediabunny'\)/, `${rel}: the lazy import must survive with a literal specifier`);
+  }
+
+  // sequence-providers additionally names the four VIDEO singletons explicitly.
+  const spCode = strip(readFileSync(fileURLToPath(new URL('./sequence-providers.ts', import.meta.url)), 'utf8'));
   for (const singleton of ['MP4', 'QTFF', 'WEBM', 'MATROSKA']) {
-    assert.match(code, new RegExp(`m\\.${singleton}\\b`), `explicit ${singleton} singleton must be imported`);
+    assert.match(spCode, new RegExp(`m\\.${singleton}\\b`), `explicit ${singleton} singleton must be imported`);
   }
 });
 

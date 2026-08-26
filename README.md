@@ -84,6 +84,7 @@ Typechecking is `tsc -p shells/web` plus `tsc -p shells/web/tsconfig.tests.json`
 - **`src/org/` is dormant on a plain deployment.** It probes an optional control plane once, tolerantly and time-boxed, and a build without the module behaves identically. Do not assume there is a server.
 - **`src/catalog/integrity.ts` is inert unless the build pins `VITE_CATALOG_PUBLIC_KEY_JWK`**, and when a key is pinned it fails closed.
 - `html2canvas-stub.js` at the root of this directory exists to keep a transitive dependency out of the bundle. It is not a rendering path.
+- **Routing, redirects and `Cache-Control` are not configured here.** They live in the umbrella's root `vercel.json`; the Vercel project deploys from the umbrella root, so a `vercel.json` in this directory is read by nothing (one used to sit here and had silently diverged).
 
 ## Submodule caveat
 

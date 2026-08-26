@@ -133,8 +133,15 @@ test('a pointer-drag repositions the HUD, clamped on-screen', () => {
 // ── Wiring, by source scan ──────────────────────────────────────────────────
 
 test('the job-toast boot hook mounts the HUD in the same floating cluster', () => {
-  assert.match(JOB_TOAST, /import \{ mountPerfHud \} from '\.\/perf-hud\.ts'/, 'boot hook imports it');
-  assert.match(JOB_TOAST, /mountPerfHud\(\);/, 'and calls it from mountJobToast');
+  // The import MUST stay dynamic and flag-gated. main.ts mounts the toast at boot, so a
+  // static `import { mountPerfHud }` here puts the HUD (1.2 KB gz, measured 2026-08-25)
+  // on the entry's modulepreload set for every visitor of an opt-in, default-OFF panel -
+  // plans/155 task 3.3. mountPerfHud() still re-reads the flag itself; perfHudOn() here
+  // is the loader gate, not a second source of truth.
+  assert.ok(!/import \{[^}]*mountPerfHud[^}]*\} from '\.\/perf-hud\.ts'/.test(JOB_TOAST),
+    'the boot hook must NOT statically import the HUD');
+  assert.match(JOB_TOAST, /if \(perfHudOn\(\)\) void import\('\.\/perf-hud\.ts'\)/, 'boot hook imports it behind the flag');
+  assert.match(JOB_TOAST, /mountPerfHud\(\)\)/, 'and calls it from mountJobToast');
 });
 
 test('the profile view offers the toggle and mounts/unmounts it live', () => {

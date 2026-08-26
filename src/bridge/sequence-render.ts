@@ -244,7 +244,7 @@ export const MAX_SEQUENCE_MS = 600_000;
  * enough to cross the frame gate AND real OPFS present - and `MAX_SEQUENCE_MS` otherwise.
  * OPFS streams the container to disk as it is written, so its peak no longer grows with
  * the encoded stream; the one remaining O(filesize) hold is the bounded C2PA read-back at
- * finalize (a ~135 MB transient tail at 30 min - acceptable; see plans/156 §2 A3 Step 5).
+ * finalize (a ~135 MB transient tail at 30 min - acceptable; see plans/156 section 2 A3 Step 5).
  */
 export const MAX_SEQUENCE_STREAM_MS = 1_800_000;
 
@@ -306,11 +306,11 @@ interface WindowedAudioFeeder {
  *
  * BIT-IDENTICAL to one terminal `addAudio(wholeMix)`: `mixWindow(spec, w0, w1)`
  * concatenated over the AUDIO_WINDOW grid equals a single whole-range call
- * sample-for-sample (mix-window.test.ts, plans/156 §5 STOP-5), because every output
+ * sample-for-sample (mix-window.test.ts, plans/156 section 5 STOP-5), because every output
  * sample is an independent accumulator and the envelope/loop-phase are evaluated at
  * the ABSOLUTE sample index - the window seam carries no state. The mux continues its
  * position-based session clock across calls (video-encode-core.ts's addAudio), so the
- * window starting at sample `off` still lands at absolute time round(off / MIX_RATE ·
+ * window starting at sample `off` still falls at absolute time round(off / MIX_RATE ·
  * 1e6) µs - the same grid the mux stamps its chunks on - and only the MOMENT each
  * window is produced changes, which the mux's clock does not observe. The win is that
  * the O(duration) finished PCM is never materialised: only one 0.1 s window exists at
@@ -973,7 +973,7 @@ async function mixSequenceAudio(
       if (!frames) continue;
       // A unity-gain buffer read placed at an absolute start. The OAC graph played it
       // with node.start(max(0, startMs/1000)); mixWindow places it at
-      // round(startMs · rate / 1000) - the same sample (plans/156 §1). A mono source
+      // round(startMs · rate / 1000) - the same sample (plans/156 section 1). A mono source
       // fans out into both output channels exactly as copyToChannel's clamp did.
       clips.push({ pcm: channels, startMs: Math.max(0, L.startMs) });
       spans.push({ from: L.startMs / 1000, to: L.startMs / 1000 + frames / MIX_RATE });

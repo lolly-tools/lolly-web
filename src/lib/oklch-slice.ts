@@ -5,7 +5,7 @@
  *
  * This is the companion to palette-wheel.ts, not a replacement. The wheel is an
  * instrument dial: it shows a palette's spread of hue and chroma at a glance.
- * What it structurally cannot show is where the gamut ends, because the sRGB
+ * What it simply cannot show is where the gamut ends, because the sRGB
  * boundary is a curve in lightness×chroma that moves with hue, and the wheel has
  * no lightness axis. That curve is the thing a brand decision turns on - it is
  * why a yellow can be twice as chromatic as a blue, why an evenly-stepped ramp
@@ -24,7 +24,7 @@
  * cost three slice passes instead of one - the bulk of the lag while dragging.
  * The contour carries the same information without editing the colour.
  *
- * Honesty note, and it matters: the fill is encoded in the DISPLAY's own space - 
+ * Note, and it matters: the fill is encoded in the DISPLAY's own space - 
  * `display-p3` on a wide-gamut screen, sRGB otherwise (see lib/display-gamut.ts,
  * which acquires the context and reports the space actually granted). Colour up to
  * THAT space's boundary is the real thing; only pixels past it are painted
@@ -43,10 +43,13 @@
 import {
   hexToOklch, oklchSlice, sliceGamutRegion, gamutSourceId, chromaAxisMax, resolveGamutSource,
 } from '@lolly/engine';
-import type { SlicePlane, GamutName, GamutLimit } from '@lolly/engine';
+import type { SlicePlane, GamutName, GamutLimit, PixelSpace } from '@lolly/engine';
 import type { EncodeSpace } from '@lolly/engine';
 import { escapeHtml } from './html.ts';
-import { acquire2d, displayAnchorGamut, noteEncodeDowngrade } from './display-gamut.ts';
+import { acquire2d, displayAnchorGamut, noteEncodeDowngrade, displaySupportsHdr } from './display-gamut.ts';
+import { hdrPngUrl, hdrExposedLinearRgba } from './hdr-image.ts';
+import type { HdrJob, HdrResult } from './hdr-image.ts';
+import { hdrCanvasSupported, paintHdrCanvas } from './hdr-canvas.ts';
 import {
   SLICE_AXES, oklchSliceXY, sliceXYToOklch, sliceOffPlane, sliceTicks, tickThinned,
 } from './oklch-slice-geom.ts';
@@ -183,6 +186,8 @@ export function renderSliceChart(
         </div>
         <div class="okls-plot${edit}" data-okls-plot role="group" aria-label="${escapeHtml(label)}">
           <canvas class="okls-canvas" data-okls-canvas aria-hidden="true"></canvas>
+          <img class="okls-hdr" data-okls-hdr alt="" aria-hidden="true" hidden>
+          <canvas class="okls-hdr-gl" data-okls-hdr-gl aria-hidden="true" hidden></canvas>
           <svg class="okls-edges" data-okls-edges viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
             <path class="okls-edge okls-edge--p3" data-okls-edge="p3" fill="none" vector-effect="non-scaling-stroke"></path>
             <path class="okls-edge okls-edge--srgb" data-okls-edge="srgb" fill="none" vector-effect="non-scaling-stroke"></path>
@@ -277,6 +282,17 @@ export function paintSliceChart(
 
   const cMax = sliceCMax(state);
   const draft = opts.quality === 'draft';
+  // HDR overlay tiering (plan 154 WP-5). On an HDR display the finished slice is
+  // shown above SDR white one of two ways:
+  //   Tier A - a live WebGL RGBA16F canvas (Chromium w/ configureHighDynamicRange):
+  //            no encode, live even mid-drag. Preferred where available.
+  //   Tier B - a Rec.2100-PQ cICP <img> (WebKit, which has no live HDR canvas):
+  //            encoded off-thread, resolves on settle (full quality only).
+  // Everything currently testable lacks the Tier A API, so tierA is false and the
+  // behaviour is exactly Tier B. Both are in the key so a display/tier change repaints.
+  const wantHdr = displaySupportsHdr();
+  const tierA = wantHdr && hdrCanvasSupported();
+  const hdrActive = !draft && wantHdr && !tierA; // Tier B: image path, settle-only
   // Cap the backing store: past ~2 device pixels per CSS pixel the extra detail
   // is invisible on a gradient field but the paint cost is real.
   // 0.75 rather than 0.5: at half resolution the draft was visibly blocky while
@@ -299,7 +315,7 @@ export function paintSliceChart(
   // unchanged while the boundary marked as "yours" has to move - and the marking
   // happens inside the paint.
   const keyFor = (encode: EncodeSpace): string =>
-    `${state.plane}|${state.fixed.toFixed(4)}|${cMax}|${gamutSourceId(limit)}|${encode}|${displayAnchorGamut()}|${w}x${h}`;
+    `${state.plane}|${state.fixed.toFixed(4)}|${cMax}|${gamutSourceId(limit)}|${encode}|${displayAnchorGamut()}|${hdrActive}|${tierA}|${w}x${h}`;
 
   // The context, the ImageData and the engine's `encode` MUST name the same space - 
   // mismatching them shifts every pixel with nothing on screen to say so. They are
@@ -347,7 +363,134 @@ export function paintSliceChart(
   ctx.putImageData(out, 0, 0);
   PAINTED.set(canvas, keyFor(encode));
 
+  const space: PixelSpace = encode === 'display-p3' ? 'display-p3-linear' : 'srgb-linear';
+  const glCanvas = root.querySelector<HTMLCanvasElement>('[data-okls-hdr-gl]');
+  if (tierA) {
+    // Tier A: live HDR canvas. If it paints, hide the Tier B <img>; if the GPU path
+    // fails at runtime, fall back to the Tier B image for this paint.
+    const ok = glCanvas
+      ? paintHdrCanvas(glCanvas, hdrExposedLinearRgba(img.data, w, h, space), w, h, encode === 'display-p3' ? 'display-p3' : 'srgb')
+      : false;
+    if (glCanvas) glCanvas.hidden = !ok;
+    scheduleHdrOverlay(root, img.data, w, h, encode, ok ? false : (!draft && wantHdr));
+  } else {
+    if (glCanvas) glCanvas.hidden = true;
+    scheduleHdrOverlay(root, img.data, w, h, encode, hdrActive);
+  }
   paintEdges(root, state, cMax, limit);
+}
+
+/** Pending settle-timer per chart, so a superseding change cancels the last one. */
+const HDR_TIMERS = new WeakMap<HTMLElement, number>();
+/** Latest posted job id per chart, so a late worker reply for a state that has
+ *  since changed is discarded rather than painted over the current one. */
+const HDR_LATEST = new WeakMap<HTMLElement, number>();
+/** In-flight job id → the `<img>` to update when the worker replies. */
+const HDR_PENDING = new Map<number, HTMLImageElement>();
+let hdrSeq = 0;
+/** undefined = not tried yet, null = no Worker here, else the shared encoder. */
+let hdrWorker: Worker | null | undefined;
+
+/** Settle delay before the (off-thread) HDR encode is posted. The SDR canvas has
+ *  already painted, so the colour change is instant; only a PAUSE posts an encode,
+ *  which is what keeps a mobile CPU from queuing three PNGs on every drag frame. */
+const HDR_SETTLE_MS = 120;
+
+const hideHdr = (img: HTMLImageElement): void => {
+  const prev = img.getAttribute('src');
+  if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev); // never hold two blobs for one <img>
+  img.hidden = true;
+  img.removeAttribute('src');
+};
+
+/**
+ * The shared HDR encode worker (hdr-image.worker.ts), created lazily on first HDR
+ * use. Encoding a PNG is heavy enough to jank a phone on the UI thread, and it is
+ * DOM-free, so it runs off-thread - which is what buys back full 16-bit with no
+ * jank. Null where `Worker` is unavailable (a non-browser host), so callers fall
+ * back to a synchronous encode.
+ */
+function hdrEncodeWorker(): Worker | null {
+  if (hdrWorker !== undefined) return hdrWorker;
+  if (typeof Worker === 'undefined') { hdrWorker = null; return null; }
+  try {
+    const w = new Worker(new URL('./hdr-image.worker.ts', import.meta.url), { type: 'module' });
+    w.onmessage = (e: MessageEvent<HdrResult>): void => {
+      const { id, png } = e.data;
+      const img = HDR_PENDING.get(id);
+      HDR_PENDING.delete(id);
+      if (!img) return; // superseded or torn down while in flight - drop it
+      const prev = img.getAttribute('src');
+      if (prev?.startsWith('blob:')) URL.revokeObjectURL(prev);
+      img.src = URL.createObjectURL(new Blob([png], { type: 'image/png' }));
+      img.hidden = false;
+    };
+    // If the worker fails to load or throws, retire it: the next encode falls back
+    // to the synchronous path (the SDR canvas is already correct in the meantime).
+    w.onerror = (ev): void => {
+      hdrWorker = null;
+      HDR_PENDING.clear();
+      console.warn('[color-lab] HDR encode worker failed, falling back to inline encode', ev.message ?? ev);
+    };
+    hdrWorker = w;
+  } catch { hdrWorker = null; }
+  return hdrWorker;
+}
+
+/** Forget any in-flight/pending job for a chart (on hide or supersede), so its late
+ *  worker reply is discarded. */
+function dropHdrJob(root: HTMLElement): void {
+  const id = HDR_LATEST.get(root);
+  if (id !== undefined) HDR_PENDING.delete(id);
+  HDR_LATEST.delete(root);
+}
+
+/**
+ * Schedule the finished slice to be laid over the canvas as a Rec.2100-PQ cICP PNG
+ * on an HDR display, or hide it. The `<img>` is a sibling of the canvas in
+ * `.okls-plot`, so a canvas node swap (a monitor change) never orphans it, and its
+ * transparent (beyond-gamut) pixels stay transparent so the plot checkerboard reads
+ * through exactly as under the canvas.
+ *
+ * DEBOUNCED, then encoded OFF the main thread: WebKit has no live HDR canvas, so HDR
+ * means a PNG encode - expensive on a phone, and it janked the iPad when it ran
+ * synchronously on every colour change. The settle coalesces rapid changes and the
+ * worker keeps the encode off the UI thread, so the SDR update stays instant, the
+ * HDR image catches up a beat later, and it can be full 16-bit again. Failure or a
+ * missing worker degrades to a synchronous 8-bit encode (or, on error, the SDR
+ * canvas alone), never a blank.
+ */
+function scheduleHdrOverlay(
+  root: HTMLElement,
+  rgba: Uint8ClampedArray | Uint8Array,
+  w: number,
+  h: number,
+  encode: EncodeSpace,
+  active: boolean,
+): void {
+  const img = root.querySelector<HTMLImageElement>('[data-okls-hdr]');
+  if (!img) return;
+  const pending = HDR_TIMERS.get(root);
+  if (pending !== undefined) { clearTimeout(pending); HDR_TIMERS.delete(root); }
+  if (!active) { dropHdrJob(root); hideHdr(img); return; }
+  // `rgba` is a fresh oklchSlice buffer (never mutated in place), so capturing it
+  // for the deferred encode is safe even if another paint arrives first.
+  const space: PixelSpace = encode === 'display-p3' ? 'display-p3-linear' : 'srgb-linear';
+  const timer = window.setTimeout(() => {
+    HDR_TIMERS.delete(root);
+    const worker = hdrEncodeWorker();
+    if (worker) {
+      const id = ++hdrSeq;
+      dropHdrJob(root); // discard any earlier in-flight result for this chart
+      HDR_LATEST.set(root, id);
+      HDR_PENDING.set(id, img);
+      const buf = rgba.slice().buffer; // a detachable copy; the caller's buffer is left intact
+      worker.postMessage({ id, rgba: buf, width: w, height: h, space, depth: 16 } satisfies HdrJob, [buf]);
+    } else {
+      try { img.src = hdrPngUrl(rgba, w, h, space, undefined, 8); img.hidden = false; } catch { hideHdr(img); }
+    }
+  }, HDR_SETTLE_MS);
+  HDR_TIMERS.set(root, timer);
 }
 
 /** Trace the sRGB and P3 boundaries as polylines, where the plane has one. */
@@ -357,7 +500,7 @@ export function paintSliceChart(
  * Built from `sliceGamutRegion` (closed rings) rather than the open-curve
  * `sliceGamutEdge`, because rings exist for ALL THREE planes - 'lh' has no
  * single-valued boundary curve, and it used to be left with no contour at all.
- * The ring also runs along the achromatic edge, which lands on the plot border
+ * The ring also runs along the achromatic edge, which sits on the plot border
  * where it reads as part of the frame.
  *
  * One of the contours is also THE DISPLAY'S - when the chart reaches wider than the

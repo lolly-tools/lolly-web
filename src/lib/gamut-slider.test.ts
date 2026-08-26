@@ -87,6 +87,46 @@ test('a segment states its ring as a CSS token, and tier 0 states nothing', () =
     !inGamut(HUE.base.l, HUE.base.c, 200, 'srgb'));
 });
 
+test('a P3 display paints its P3 rings opaque and in true colour; sRGB keeps the wash', () => {
+  // The blue chroma axis leaves sRGB but is still inside P3 for a stretch. On a P3
+  // screen that stretch is real colour, not a hint.
+  const p3runs = gamutRuns({ ...CHROMA, displayGamut: 'p3' });
+  const shownRings = p3runs.filter(r => r.displayable && r.tier > 0);
+  assert.ok(shownRings.length >= 1, 'a ring sRGB cannot show but P3 can is now displayable');
+  for (const r of shownRings) {
+    assert.ok(r.stops.every(s => s.startsWith('oklch(')),
+      `a displayable run is emitted in the display gamut (CSS oklch), not sRGB hex: ${JSON.stringify(r.stops)}`);
+  }
+  // Colours no ladder gamut holds are never called displayable, even on a P3 screen.
+  assert.ok(p3runs.filter(r => r.tier === BEYOND_TIER).every(r => !r.displayable),
+    'BEYOND is never displayable');
+
+  // The SAME axis on an sRGB screen: no out-of-sRGB ring is displayable, and every
+  // washed run stays sRGB hex - the honest wash the module has always painted.
+  const srgbRuns = gamutRuns({ ...CHROMA, displayGamut: 'srgb' });
+  for (const r of srgbRuns) {
+    if (r.tier > 0) assert.equal(r.displayable, false, 'an sRGB screen cannot truthfully show a ring');
+    if (!r.displayable) assert.ok(r.stops.every(s => /^#[0-9a-f]{6}$/i.test(s)), 'washed runs stay hex');
+  }
+
+  // No displayGamut at all ⇒ nothing is displayable: byte-for-byte the old behaviour.
+  assert.ok(gamutRuns(CHROMA).every(r => !r.displayable), 'no display info ⇒ no override');
+});
+
+test('paint: on a P3 display exactly the non-displayable rings carry a --seg-a wash', () => {
+  const state: GamutSliderState = { ...CHROMA, displayGamut: 'p3' };
+  const runs = gamutRuns(state);
+  assert.ok(runs.some(r => r.displayable && r.tier > 0), 'the fixture has an opaque P3 ring to prove');
+  const washedRuns = runs.filter(r => r.tier !== 0 && !r.displayable).length;
+
+  const root = document.createElement('div');
+  root.innerHTML = renderGamutSlider('p3s', state, CHROMA.base.c);
+  paintGamutSlider(root, state, CHROMA.base.c);
+  const washedSegs = [...root.querySelectorAll<HTMLElement>('.gsl-seg')]
+    .filter(s => s.style.getPropertyValue('--seg-a')).length;
+  assert.equal(washedSegs, washedRuns, 'a displayable P3 ring is opaque; only beyond-P3 rings wash');
+});
+
 test('the wash opacity defaults to fully opaque, for the non-gamut sliders', () => {
   // views/color-lab.ts hand-builds a .gsl-seg for the blend-steps gradient preview.
   // It is not a gamut axis and must not be washed, which is why `.gsl-seg` reads

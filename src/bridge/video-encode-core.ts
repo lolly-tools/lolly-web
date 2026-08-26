@@ -64,7 +64,7 @@ export interface MuxerLike {
   finalize(): Promise<void>;
 }
 
-/** Where the finished container lands: a BufferTarget exposes `.buffer` (in-memory);
+/** Where the finished container ends up: a BufferTarget exposes `.buffer` (in-memory);
  *  an OPFS StreamTarget a lazily-read `.blob()` (step A3). Both yield the bytes only
  *  after finalize. */
 export type MuxTarget = { buffer: ArrayBuffer | null } | { blob(): Promise<Blob> };
@@ -194,7 +194,7 @@ const DEQUEUE_FALLBACK_MS = 25;
 /**
  * The slice of `AudioBuffer` addAudio actually reads.
  *
- * A real `AudioBuffer` satisfies this structurally, so every existing caller is
+ * A real `AudioBuffer` satisfies this by shape, so every existing caller is
  * unchanged. It is spelled out because `AudioBuffer` is a main-thread-only
  * global: the sequence-render worker receives planar `Float32Array`s over
  * postMessage and wraps them in this shape, and there is no other way to feed
@@ -275,7 +275,7 @@ export async function createStreamingMux(
   const asError = (e: unknown): Error => (e instanceof Error ? e : new Error(String(e ?? 'encoder error')));
 
   // Deterministic interleave. The two encoders' output callbacks fire on their
-  // own schedule, and an audio chunk lands every 100000µs - a timestamp every
+  // own schedule, and an audio chunk arrives every 100000µs - a timestamp every
   // third 30fps video frame TIES exactly - so feeding the muxer in arrival
   // order made the interleave (and therefore the file's bytes) depend on
   // scheduler load: same render, same pixels, same size, different sha. The

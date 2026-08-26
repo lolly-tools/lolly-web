@@ -108,6 +108,12 @@ const NAMESPACE_LOADERS: Record<Namespace, (lang: NonEnglishLang) => Promise<{ d
 };
 
 let active: Lang = 'en';
+/** The language the CURRENT `catalog` belongs to, which is not always `active`:
+ *  setActiveLang assigns `active` synchronously and only then awaits the locale
+ *  chunk, so in between, t() is still answering in English under a non-English
+ *  `active`. English starts out true of both - the English "catalog" is the empty
+ *  map, in effect from the first tick. See loadedLang(). */
+let loadedCatalogLang: Lang = 'en';
 let catalog: Record<string, string> = {};
 /** Namespaces merged into `catalog`, keyed `<lang>:<ns>` - a language switch
  *  rebuilds the catalog, so the same namespace must load again for the new one. */
@@ -141,6 +147,22 @@ export async function loadNamespace(ns: Namespace): Promise<void> {
 /** The active language code. */
 export function currentLang(): Lang {
   return active;
+}
+
+/**
+ * The language whose catalog t() is actually answering from RIGHT NOW - which is
+ * what a caller comparing "what did I paint?" against "what is in effect?" has to
+ * read. currentLang() cannot serve there: it reports the REQUESTED language, which
+ * setActiveLang assigns before it awaits the locale chunk, so a caller that samples
+ * it either side of the load compares a value with itself and concludes nothing
+ * changed (main.ts's post-locale re-render, plans/155 Task 3.7).
+ *
+ * A chunk that FAILS to load still moves this: the catalog in effect is that
+ * language's, and its being empty is exactly the "missing key ⇒ English" contract,
+ * not a reason to keep claiming English is still loading.
+ */
+export function loadedLang(): Lang {
+  return loadedCatalogLang;
 }
 
 /** Native-name options for a picker, English first. */
@@ -193,6 +215,7 @@ function stripUrlLangOverride(): void {
 export async function setActiveLang(lang: Lang, opts: { persist?: boolean } = {}): Promise<void> {
   active = lang;
   catalog = lang === 'en' ? {} : (await LOADERS[lang]().catch(() => ({ default: {} }))).default;
+  loadedCatalogLang = lang;   // t() answers in `lang` from here on - see loadedLang()
   loadedNamespaces.clear(); // the catalog they were merged into is gone
 
   document.documentElement.lang = LANG_META[lang].htmlLang;

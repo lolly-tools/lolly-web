@@ -34,7 +34,7 @@ import { openDB as idbOpen, deleteDB as idbDelete } from 'idb';
 import type { IDBPDatabase } from 'idb';
 
 const DB_NAME = 'lolly';
-const DB_VERSION = 15;
+const DB_VERSION = 16;
 
 // How long to wait for the DB to open before giving up. A healthy open is
 // near-instant; this only trips when the connection is genuinely wedged.
@@ -211,6 +211,16 @@ function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
         // Rebuilt whole by re-loading the pack file, so NOT in REQUIRED_STORES -
         // its absence must never escalate into wiping user data.
         db.createObjectStore('pack-files');
+      }
+      if (oldVersion < 16) {
+        // Monocular depth model weights (plans/160, lib/depth-models.ts) - the
+        // same fetch-once/IndexedDB-forever cache the shared ORT fetcher writes
+        // (createModelFetcher store:'depth-models'). Pure and re-downloadable
+        // exactly like 'matte-models'/'ocr-models', so likewise NOT in
+        // REQUIRED_STORES (its absence must never escalate into a data-wipe) and
+        // out of the portable backup. Inert until DEPTH_STAGED flips, but it has
+        // to exist before it does or every run re-downloads the weights.
+        db.createObjectStore('depth-models');
       }
     },
     blocking() {

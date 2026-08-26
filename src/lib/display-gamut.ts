@@ -33,6 +33,19 @@ export type GamutClaim = 'srgb' | 'p3' | 'rec2020' | 'unknown';
 const CLAIM_ORDER: readonly Exclude<GamutClaim, 'unknown'>[] = ['rec2020', 'p3', 'srgb'];
 
 /**
+ * What the display's DYNAMIC RANGE claims. 'unknown' when there is no `matchMedia`.
+ *
+ * Detected via `(dynamic-range: high)` ONLY. The `(video-dynamic-range: …)` variant
+ * is NOT used: it is unreliable on Safari - it returned `false` on a panel where
+ * `(dynamic-range: high)` returned `true` (verified on an iPad Pro tandem OLED,
+ * 2026-08-25). Like the gamut claim this is a DEFAULT and a readout, never a
+ * decision about a colour - and note that a high-range display also matches
+ * `standard` (high is a superset), so 'high' is tested first.
+ */
+export type DynamicRangeClaim = 'standard' | 'high' | 'unknown';
+const DR_ORDER: readonly Exclude<DynamicRangeClaim, 'unknown'>[] = ['high', 'standard'];
+
+/**
  * The retained MediaQueryLists.
  *
  * Retained for two reasons: a live `MediaQueryList` is what fires 'change' when a
@@ -42,6 +55,10 @@ const CLAIM_ORDER: readonly Exclude<GamutClaim, 'unknown'>[] = ['rec2020', 'p3',
  */
 let lists: MediaQueryList[] | null = null;
 let claimCache: GamutClaim | null = null;
+/** The retained `(dynamic-range: …)` MediaQueryLists + their cached claim, built
+ *  lazily the same way `lists`/`claimCache` are, and torn down together. */
+let drLists: MediaQueryList[] | null = null;
+let drCache: DynamicRangeClaim | null = null;
 /** One-way latch: a surface refused the wide-gamut option, so stop asking for it.
  *  Cleared only by a real display change - see {@link onDisplayGamutChange}. */
 let downgraded = false;
@@ -53,6 +70,7 @@ function announceChange(): void {
 
 const onMediaChange = (): void => {
   claimCache = null;
+  drCache = null;
   // A different display is a different surface: the previous refusal says nothing
   // about this one. This is the ONLY thing that unlatches.
   downgraded = false;
@@ -77,6 +95,34 @@ export function displayGamutClaim(): GamutClaim {
   }
   claimCache = claim;
   return claim;
+}
+
+/** Build the `(dynamic-range: …)` MediaQueryLists lazily, mirroring {@link ensureLists}. */
+function ensureDrLists(): MediaQueryList[] {
+  if (drLists) return drLists;
+  if (typeof matchMedia !== 'function') { drLists = []; return drLists; }
+  drLists = DR_ORDER.map((r) => matchMedia(`(dynamic-range: ${r})`));
+  for (const l of drLists) l.addEventListener?.('change', onMediaChange);
+  return drLists;
+}
+
+/** What the display's dynamic range claims. Cached until a `(dynamic-range: …)`
+ *  query changes (a monitor swap). 'high' means the panel reports HDR headroom. */
+export function displayDynamicRange(): DynamicRangeClaim {
+  if (drCache) return drCache;
+  const mqls = ensureDrLists();
+  let claim: DynamicRangeClaim = 'unknown';
+  for (let i = 0; i < mqls.length; i++) {
+    if (mqls[i]?.matches) { claim = DR_ORDER[i] as DynamicRangeClaim; break; }
+  }
+  drCache = claim;
+  return claim;
+}
+
+/** True when the display reports HDR headroom - the go/no-go for showing colours
+ *  above SDR white. `(dynamic-range: high)`; see {@link DynamicRangeClaim}. */
+export function displaySupportsHdr(): boolean {
+  return displayDynamicRange() === 'high';
 }
 
 /**
@@ -113,6 +159,7 @@ export function noteEncodeDowngrade(actual: EncodeSpace): void {
  *  real teardown - mounts must push it onto their cleanups. */
 export function onDisplayGamutChange(fn: () => void): () => void {
   ensureLists();
+  ensureDrLists(); // so a dynamic-range change (monitor swap) also notifies
   subscribers.add(fn);
   return () => { subscribers.delete(fn); };
 }
@@ -182,8 +229,11 @@ export function acquire2d(
  */
 export function resetDisplayGamut(): void {
   if (lists) for (const l of lists) l.removeEventListener?.('change', onMediaChange);
+  if (drLists) for (const l of drLists) l.removeEventListener?.('change', onMediaChange);
   lists = null;
+  drLists = null;
   claimCache = null;
+  drCache = null;
   downgraded = false;
   subscribers.clear();
 }

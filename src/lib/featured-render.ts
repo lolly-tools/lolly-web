@@ -14,6 +14,11 @@
  * gallery reuses the cached data-URL; editing a variant's values invalidates it.
  * The synthetic key can't collide with a real toolId, so it never disturbs the
  * personalized-preview records keyed by tool id.
+ *
+ * The BUILD's pre-rendered look (lib/preview-bundle.ts) comes first and skips the engine
+ * entirely - a look the previews pipeline already rendered offline. Since that manifest
+ * stopped inlining looks it hands back a URL, so a returned src is now one of two kinds
+ * and only one of them can fail late: see isManifestLook / renderMissingLook below.
  */
 
 // render-export (→ createRuntime → Handlebars + tool loader → Ajv) is imported LAZILY
@@ -154,6 +159,41 @@ export async function renderFeaturedVariant(
     }
     throw e;
   }
+}
+
+/**
+ * Did this look src come from the preview MANIFEST - a same-origin file the browser
+ * still has to fetch, and can therefore 404 - or from a live render, which is a
+ * data-URL and cannot fail after it is set? While the bundle inlined its looks the
+ * question didn't exist: every src was a data-URL. Callers use it to decide whether
+ * an <img> needs the error path below.
+ */
+export function isManifestLook(src: string): boolean {
+  return !src.startsWith('data:');
+}
+
+/**
+ * Re-render a look LIVE because its manifest file was MISSING - an <img> painted from
+ * the manifest fired `error` (a look deleted from the catalog, a half-copied deploy, a
+ * manifest that ran ahead of the previews). The ONE fallback idiom for that failure;
+ * every surface that paints a bundled look (hero row, gallery carousel, info dialog)
+ * calls this, so a missing file degrades exactly the way a stale `sig` already does.
+ *
+ * It has to ask under its own cache namespace: asked the ordinary way,
+ * renderFeaturedVariant consults the manifest FIRST and would hand straight back the URL
+ * that just 404'd, settling the tile on a broken <img> instead of the render this exists
+ * to produce. The separate key is honest as well as necessary - it holds the look the
+ * bundle could NOT serve, so the next visit (which 404s again) reuses the render instead
+ * of repeating it.
+ */
+export function renderMissingLook(
+  host: FeaturedHost,
+  toolId: string,
+  formats: readonly string[] | undefined,
+  variantIndex: number | string,
+  values: Record<string, unknown>,
+): Promise<string> {
+  return renderFeaturedVariant(host, toolId, formats, variantIndex, values, 'featured-missing');
 }
 
 /** Render one page set at an exact format, cached as a JSON array of data-URLs. */

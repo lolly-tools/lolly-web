@@ -38,6 +38,16 @@ export interface GamutSliderState {
    *  (`chromaAxisMax`), so a chroma track never runs past the gamut it is drawn
    *  for - nor stops short of it. */
   cMax?: number;
+  /**
+   * The gamut THIS DISPLAY can actually show - `displayAnchorGamut()`, so 'srgb'
+   * or 'p3'. When given, a run the display can render TRUTHFULLY is painted opaque
+   * and in the display's own space (CSS `oklch()`, which the browser resolves in
+   * that gamut) instead of washed and sRGB-clamped: on a P3 screen the P3 segments
+   * become real colour, not a faint hint. Omitted ⇒ every out-of-`limit` run
+   * washes as before - the honest default for an sRGB screen, which genuinely
+   * cannot show those colours.
+   */
+  displayGamut?: GamutLimit;
 }
 
 /** Only for a caller with no gamut in hand; see SLICE_C_MAX in oklch-slice-geom.ts. */
@@ -93,6 +103,11 @@ export interface GamutRun {
   to: number;
   stops: string[];
   tier: number;
+  /** True when {@link GamutSliderState.displayGamut} can render this run - it is
+   *  then painted opaque (tier notwithstanding) and its `stops` are CSS `oklch()`
+   *  in the display's gamut rather than sRGB hex. Always false when no
+   *  `displayGamut` was given, so the wash behaves exactly as before. */
+  displayable: boolean;
 }
 
 /**
@@ -118,11 +133,15 @@ export function gamutRuns(state: GamutSliderState, samples = 180): GamutRun[] {
   const { min, max } = channelRange(state.channel, cMaxOf(state));
   const n = Math.max(8, Math.floor(samples));
   const tierAt = gamutTierProbe(state.limit);
+  // A second, independent probe against what THIS DISPLAY can show. A run inside it
+  // is painted truthfully (opaque, in-gamut colour) regardless of its `limit` tier.
+  const showsAt = state.displayGamut ? gamutTierProbe(state.displayGamut) : null;
   const runs: GamutRun[] = [];
   let start = 0;
   let startTier: number | null = null;
+  let startShown = false;
 
-  const close = (endIdx: number, tier: number): void => {
+  const close = (endIdx: number, tier: number, displayable: boolean): void => {
     const from = start / n;
     const to = endIdx / n;
     if (to <= from) return;
@@ -132,25 +151,30 @@ export function gamutRuns(state: GamutSliderState, samples = 180): GamutRun[] {
     const steps = Math.max(1, Math.min(12, Math.round((to - from) * 24)));
     for (let k = 0; k <= steps; k++) {
       const v = min + (from + ((to - from) * k) / steps) * (max - min);
-      // Out-of-gamut positions are mapped, so a wash still shades in the right
-      // direction rather than flat-lining at the boundary colour.
-      stops.push(oklchToHex(colorAt(state, v)));
+      const o = colorAt(state, v);
+      // A displayable run is emitted as CSS oklch() so the browser paints the REAL
+      // colour in the display's gamut. Everything else is sRGB-mapped hex, so a
+      // wash still shades in the right direction rather than promising a colour the
+      // screen cannot deliver (or flat-lining at the boundary).
+      stops.push(displayable ? `oklch(${o.l.toFixed(4)} ${o.c.toFixed(4)} ${o.h.toFixed(2)})` : oklchToHex(o));
     }
-    runs.push({ from, to, stops, tier });
+    runs.push({ from, to, stops, tier, displayable });
   };
 
   for (let i = 0; i <= n; i++) {
     const v = min + (i / n) * (max - min);
     const o = colorAt(state, v);
     const tier = tierAt(o.l, o.c, o.h);
-    if (startTier === null) { startTier = tier; start = i; continue; }
-    if (tier !== startTier) {
-      close(i, startTier);
+    const shown = showsAt ? showsAt(o.l, o.c, o.h) === 0 : false;
+    if (startTier === null) { startTier = tier; startShown = shown; start = i; continue; }
+    if (tier !== startTier || shown !== startShown) {
+      close(i, startTier, startShown);
       startTier = tier;
+      startShown = shown;
       start = i;
     }
   }
-  if (startTier !== null) close(n, startTier);
+  if (startTier !== null) close(n, startTier, startShown);
   return runs;
 }
 
@@ -202,7 +226,9 @@ export function paintGamutSlider(root: HTMLElement, state: GamutSliderState, val
       // (--track-tier-*, styles/tokens.css) so it is tunable without touching this,
       // and it is the SAME scale the picker's color-mix stops read - one scale, two
       // mechanisms (here an element really can carry an `opacity`).
-      const alpha = run.tier === 0
+      // Opaque when the run is in `limit` (tier 0) OR when the display can render
+      // it truthfully (displayable) - on a P3 screen the P3 rings stop being a hint.
+      const alpha = (run.tier === 0 || run.displayable)
         ? ''
         : `--seg-a:var(${run.tier === BEYOND_TIER ? '--track-tier-beyond' : `--track-tier-${run.tier}`}, 0%);`;
       return `<span class="gsl-seg" style="${alpha}left:${left}%;width:${width}%;background:${grad}"></span>`;

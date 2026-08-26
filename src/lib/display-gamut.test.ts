@@ -14,6 +14,7 @@ import assert from 'node:assert/strict';
 import {
   displayGamutClaim, displayAnchor, displayAnchorGamut, noteEncodeDowngrade,
   onDisplayGamutChange, acquire2d, resetDisplayGamut,
+  displayDynamicRange, displaySupportsHdr,
 } from './display-gamut.ts';
 import { inGamut } from '@lolly/engine';
 
@@ -248,4 +249,63 @@ test('the subject fixtures are what the widening test needs them to be', () => {
   for (const g of ['srgb', 'p3', 'rec2020'] as const) {
     assert.ok(!inGamut(BEYOND.l, BEYOND.c, BEYOND.h, g), `${g} cannot hold the beyond fixture`);
   }
+});
+
+// ── dynamic range (HDR headroom) ─────────────────────────────────────────────
+
+/** A controllable `(dynamic-range: …)` stub. 'high' also matches 'standard'
+ *  (high is a superset), the way a real HDR display reports. */
+function installDynamicRange(initial: 'high' | 'standard' | 'none'): { set(c: 'high' | 'standard' | 'none'): void; fire(): void } {
+  let range = initial;
+  const handlers = new Set<() => void>();
+  const covers: Record<string, readonly string[]> = { high: ['high', 'standard'], standard: ['standard'], none: [] };
+  (globalThis as { matchMedia?: unknown }).matchMedia = (q: string) => ({
+    get matches(): boolean {
+      const m = /\(dynamic-range:\s*(\w+)\)/.exec(q);
+      return m ? (covers[range] as string[]).includes(m[1] as string) : false;
+    },
+    media: q,
+    addEventListener(_t: string, fn: () => void) { handlers.add(fn); },
+    removeEventListener(_t: string, fn: () => void) { handlers.delete(fn); },
+    onchange: null,
+    dispatchEvent: () => false,
+  });
+  resetDisplayGamut();
+  return { set(c) { range = c; }, fire() { for (const fn of [...handlers]) fn(); } };
+}
+
+test('dynamic range: high on an HDR panel, standard otherwise, unknown with no matchMedia', () => {
+  const s = installDynamicRange('high');
+  assert.equal(displayDynamicRange(), 'high');
+  assert.equal(displaySupportsHdr(), true);
+  s.set('standard'); s.fire(); // a monitor swap invalidates the cache + notifies
+  assert.equal(displayDynamicRange(), 'standard');
+  assert.equal(displaySupportsHdr(), false, 'standard is not headroom');
+  noMatchMedia();
+  assert.equal(displayDynamicRange(), 'unknown', 'no matchMedia is unknown, not a claim');
+  assert.equal(displaySupportsHdr(), false);
+});
+
+test('dynamic range detection IGNORES video-dynamic-range (the Safari-unreliable query)', () => {
+  // The trap found on the iPad Pro: (video-dynamic-range: high) can be false while
+  // (dynamic-range: high) is true. A stub that answers ONLY the video query must
+  // therefore read as unknown - we never key off it.
+  (globalThis as { matchMedia?: unknown }).matchMedia = (q: string) => ({
+    get matches(): boolean { return /\(video-dynamic-range:\s*high\)/.test(q); },
+    media: q, addEventListener() {}, removeEventListener() {}, onchange: null, dispatchEvent: () => false,
+  });
+  resetDisplayGamut();
+  assert.equal(displayDynamicRange(), 'unknown');
+  assert.equal(displaySupportsHdr(), false);
+  noMatchMedia();
+});
+
+test('a dynamic-range change notifies onDisplayGamutChange subscribers', () => {
+  const s = installDynamicRange('standard');
+  let hits = 0;
+  const off = onDisplayGamutChange(() => { hits++; });
+  s.set('high'); s.fire();
+  assert.equal(hits, 1, 'a monitor going HDR notifies the same subscribers as a gamut change');
+  assert.equal(displayDynamicRange(), 'high', 'the cache refreshed after the change');
+  off();
 });
