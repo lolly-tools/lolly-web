@@ -52,7 +52,7 @@ import { assembleAnimatedSvg } from '../lib/svg-anim-core.ts';
 import { recTransition } from '../lib/transitions.ts';
 import { suspendNodeRasters, drainNodeRasters } from '../lib/clip-thumbs.ts';
 import { RASTER_DEFAULT_SCALE } from './export-scale.ts';
-import { videoMimeCandidates, videoBitrate, codecAdjustedBitrate, LIVE_BITS_PER_PIXEL, videoFramePlan, AUDIO_FRAME_HEADROOM } from './video-mime.ts';
+import { videoMimeCandidates, videoBitrate, bppForQuality, codecAdjustedBitrate, LIVE_BITS_PER_PIXEL, videoFramePlan, AUDIO_FRAME_HEADROOM } from './video-mime.ts';
 import { bedDuckEnvelope, scheduleGainEvents } from './audio-envelope.ts';
 import type { ExportAudio, ExportAudioMixIn } from './audio-envelope.ts';
 import { encodeMuxWebCodecs, type EncodeAudio, type EncodePick } from './video-encode-core.ts';
@@ -237,6 +237,15 @@ export interface ExportOpts {
    *  result. */
   signal?: AbortSignal;
   fps?: number;
+  /** WP-B video quality stop (export card) → a bits-per-pixel target; 'balanced' is
+   *  the default and equals the historical rate. Distinct from `quality` (JPEG/WebP). */
+  videoQuality?: 'smaller' | 'balanced' | 'best';
+  /** WP-B explicit video codec (pro-settings): a WebCodecs codec string, honoured only
+   *  where it probes supported in the chosen container; absent ⇒ the auto ladder. */
+  videoCodec?: string;
+  /** WP-B pro-settings, passed to the VideoEncoder config: CBR vs VBR + the HW hint. */
+  bitrateMode?: 'variable' | 'constant';
+  hardwareAcceleration?: 'no-preference' | 'prefer-hardware' | 'prefer-software';
   repeat?: number;
   dither?: boolean;
   convertPaths?: boolean;
@@ -9585,11 +9594,12 @@ function audioTrackToPlanar(a: WebCodecsAudioTrack): EncodeAudio {
 async function encodeVideoWithWebCodecs(
   frames: ImageBitmap[],
   pick: EncodePick,
-  o: { width: number; height: number; fps: number; bitrate: number; meta?: ExportMeta | null; audio?: WebCodecsAudioTrack | null },
+  o: { width: number; height: number; fps: number; bitrate: number; meta?: ExportMeta | null; audio?: WebCodecsAudioTrack | null; bitrateMode?: 'variable' | 'constant'; hardwareAcceleration?: 'no-preference' | 'prefer-hardware' | 'prefer-software' },
 ): Promise<Blob> {
   const { buffer, type } = await encodeMuxWebCodecs(frames, pick, {
     width: o.width, height: o.height, fps: o.fps, bitrate: o.bitrate,
     audio: o.audio ? audioTrackToPlanar(o.audio) : null,
+    bitrateMode: o.bitrateMode, hardwareAcceleration: o.hardwareAcceleration,
   });
   return withVideoMeta(new Blob([buffer], { type }), type, o.meta ?? null);
 }
@@ -9692,10 +9702,12 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
   // frames + the live `audio` track stay valid for Phase 2).
   {
     const clipSec = frames.length / fps;         // bed length == the ACTUAL (maybe capped) video length
-    // Codec-agnostic base bitrate (H.264-equivalent) probes the ladder; once a codec is
-    // picked, trim to its efficiency (AV1/HEVC reach the same quality at fewer bytes).
-    const baseBitrate = videoBitrate(targetW, targetH, fps);
-    const pick = await pickWebCodecsVideo(preferred, targetW, targetH, fps, baseBitrate);
+    // Codec-agnostic base bitrate (H.264-equivalent at the chosen quality stop) probes
+    // the ladder; once a codec is picked, trim to its efficiency (AV1/HEVC reach the
+    // same quality at fewer bytes). An explicit codec (pro-settings) is honoured where
+    // it probes supported, else the auto ladder wins.
+    const baseBitrate = videoBitrate(targetW, targetH, fps, bppForQuality(opts.videoQuality ?? 'balanced'));
+    const pick = await pickWebCodecsVideo(preferred, targetW, targetH, fps, baseBitrate, opts.videoCodec);
     const bitrate = pick ? codecAdjustedBitrate(baseBitrate, pick.codec) : baseBitrate;
     const wantAudio = !!opts.audio?.url;
     const audioPick = pick && wantAudio ? await pickWebCodecsAudio(pick.container) : null;
@@ -9751,7 +9763,7 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
       if (bedOk) {
         try {
           _host?.log?.('info', `video: WebCodecs ${pick.container}/${pick.codec}${track ? '+' + audioPick!.codec : ''} ${targetW}×${targetH}@${fps} ${Math.round(bitrate / 1000)}kbps`);
-          const blob = await encodeVideoWithWebCodecs(frames, pick, { width: targetW, height: targetH, fps, bitrate, meta: opts.meta, audio: track });
+          const blob = await encodeVideoWithWebCodecs(frames, pick, { width: targetW, height: targetH, fps, bitrate, meta: opts.meta, audio: track, bitrateMode: opts.bitrateMode, hardwareAcceleration: opts.hardwareAcceleration });
           frames.forEach(b => b.close());
           audio?.stop();                            // discard the now-unused live MediaRecorder audio track
           return blob;

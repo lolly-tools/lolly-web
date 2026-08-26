@@ -47,6 +47,12 @@ export interface EncodeOpts {
   target?: 'buffer' | 'opfs';
   /** Test seam for `target:'opfs'` - the seekable sink factory (defaults to OPFS). */
   seekableSink?: SeekableSinkFactory;
+  /** WP-B pro-settings, passed straight to the VideoEncoder config. `bitrateMode`
+   *  picks CBR ('constant') vs the browser-default VBR ('variable'); omit to leave the
+   *  encoder default. `hardwareAcceleration` is the HW/SW hint. Absent ⇒ unset, so an
+   *  export that names neither is byte-for-byte what it was. */
+  bitrateMode?: 'variable' | 'constant';
+  hardwareAcceleration?: 'no-preference' | 'prefer-hardware' | 'prefer-software';
 }
 
 // ── Muxer wiring (shared seam) ────────────────────────────────────────────────
@@ -120,6 +126,8 @@ export async function encodeMuxWebCodecs(
   });
   const config: any = { codec: pick.codec, width, height, bitrate, framerate: fps };
   if (isMp4 && pick.codec.startsWith('avc')) config.avc = { format: 'avc' };   // length-prefixed avcC, which the mp4 container needs (H.264 only)
+  if (o.bitrateMode) config.bitrateMode = o.bitrateMode;
+  if (o.hardwareAcceleration) config.hardwareAcceleration = o.hardwareAcceleration;
   encoder.configure(config);
 
   for (const t of videoFrameSchedule(frames.length, fps)) {
@@ -338,6 +346,8 @@ export async function createStreamingMux(
   });
   const config: any = { codec: pick.codec, width, height, bitrate, framerate: fps };
   if (isMp4 && pick.codec.startsWith('avc')) config.avc = { format: 'avc' };   // length-prefixed avcC, which the mp4 container needs (H.264 only)
+  if (opts.bitrateMode) config.bitrateMode = opts.bitrateMode;
+  if (opts.hardwareAcceleration) config.hardwareAcceleration = opts.hardwareAcceleration;
   encoder.configure(config);
 
   let aEnc: any = null;

@@ -371,6 +371,17 @@ export interface RunExportOpts {
   barRadiusPt?: number;
   dither?: boolean;
   fps?: number;
+  /** WP-B video quality stop (export card). Maps to a bits-per-pixel target in the
+   *  bitrate authority; 'balanced' is the default and equals the historical rate.
+   *  Distinct from `quality` (the 0..1 JPEG/WebP knob). */
+  videoQuality?: 'smaller' | 'balanced' | 'best';
+  /** WP-B explicit video codec (pro-settings picker): a WebCodecs codec string such
+   *  as 'av01.0.08M.08' / 'hvc1.1.6.L93.B0' / 'avc1.640033'. Absent ⇒ the auto ladder.
+   *  Honoured only where it probes supported in the chosen container. */
+  videoCodec?: string;
+  /** WP-B pro-settings: VBR (default) vs CBR, and the hardware-acceleration hint. */
+  bitrateMode?: 'variable' | 'constant';
+  hardwareAcceleration?: 'no-preference' | 'prefer-hardware' | 'prefer-software';
   wait?: number;
   duration?: number;
   live?: boolean;

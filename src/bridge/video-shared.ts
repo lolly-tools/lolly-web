@@ -39,17 +39,44 @@ function audioEncoder(): { isConfigSupported?: (c: unknown) => Promise<{ support
   return (globalThis as { AudioEncoder?: { isConfigSupported?: (c: unknown) => Promise<{ supported?: boolean }> } }).AudioEncoder;
 }
 
+/** An EncodePick for an EXPLICIT codec in a container (WP-B pro-settings picker),
+ *  including codecs kept OUT of the default ladder (HEVC). Returns null when the
+ *  codec is not legal in that container (e.g. HEVC/H.264 in WebM, VP9 in MP4), so the
+ *  caller falls back to the auto ladder rather than emitting an illegal pairing. */
+function explicitPick(codec: string, container: 'mp4' | 'webm'): EncodePick | null {
+  const c = codec.toLowerCase();
+  if (c.startsWith('av01')) return { container, codec, muxCodec: container === 'mp4' ? 'av1' : 'V_AV1' };
+  if (c.startsWith('avc1') || c.startsWith('avc3')) return container === 'mp4' ? { container, codec, muxCodec: 'avc' } : null;
+  if (c.startsWith('hvc1') || c.startsWith('hev1')) return container === 'mp4' ? { container, codec, muxCodec: 'hevc' } : null;
+  if (c.startsWith('vp09') || c.startsWith('vp9')) return container === 'webm' ? { container, codec, muxCodec: 'V_VP9' } : null;
+  if (c.startsWith('vp8')) return container === 'webm' ? { container, codec, muxCodec: 'V_VP8' } : null;
+  return null;
+}
+
 /**
  * First encodable video codec for `width×height@fps`/`bitrate`, honouring the
- * caller's container preference (mp4 tries H.264 first, webm tries VP9/VP8 first).
- * Returns null when WebCodecs - or any codec at that size - is unavailable, so the
- * caller falls back to the MediaRecorder path.
+ * caller's container preference (mp4 tries AV1→H.264 first, webm tries AV1→VP9/VP8
+ * first). An explicit `forceCodec` (the pro-settings picker) is tried first in the
+ * preferred container, still `isConfigSupported`-gated so an unsupported explicit pick
+ * quietly falls through to the auto ladder. Returns null when WebCodecs - or any codec
+ * at that size - is unavailable, so the caller falls back to the MediaRecorder path.
  */
 export async function pickWebCodecsVideo(
   preferred: 'mp4' | 'webm' | string, width: number, height: number, fps: number, bitrate: number,
+  forceCodec?: string,
 ): Promise<EncodePick | null> {
   const VE = videoEncoder();
   if (!VE?.isConfigSupported) return null;
+  const container: 'mp4' | 'webm' = preferred === 'webm' ? 'webm' : 'mp4';
+  if (forceCodec) {
+    const ep = explicitPick(forceCodec, container);
+    if (ep) {
+      try {
+        const s = await VE.isConfigSupported({ codec: ep.codec, width, height, bitrate, framerate: fps });
+        if (s?.supported) return ep;
+      } catch { /* explicit pick unavailable - fall through to the auto ladder */ }
+    }
+  }
   const ladder = preferred === 'webm' ? [...WEBM_LADDER, ...MP4_LADDER] : [...MP4_LADDER, ...WEBM_LADDER];
   for (const pick of ladder) {
     try {

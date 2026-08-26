@@ -145,7 +145,7 @@ import {
 // The geometry helpers moved to the executor with `drawItem`; re-exported so the
 // module's public surface (and sequence-render.test.ts) is unchanged.
 export { radiiOf, fitRect };
-import { videoBitrate, videoMimeCandidates } from './video-mime.ts';
+import { videoBitrate, bppForQuality, codecAdjustedBitrate, videoMimeCandidates } from './video-mime.ts';
 import { bedDuckEnvelope, scheduleGainEvents, MIX_RAMP_SEC, type DuckSpan } from './audio-envelope.ts';
 // plans/156 Phase B: the analytic mix-window evaluator. B2/B3 route BOTH the whole
 // buffer (sequenceAudioPcm, the worker handover) AND the on-demand streaming windows
@@ -1275,8 +1275,12 @@ async function renderSequenceAuthored(
   // count, because whether WebCodecs can encode decides whether the frame cap
   // applies: the streaming muxer holds no frames, the MediaRecorder fallback holds
   // an ImageBitmap for every one of them.
-  const bitrate = videoBitrate(outW, targetH, fps);
-  const pick = streaming ? await pickWebCodecsVideo(format, outW, targetH, fps, bitrate) : null;
+  // Codec-agnostic base at the chosen quality stop probes the ladder; an explicit codec
+  // (pro-settings) is honoured where supported; then trim `bitrate` to the picked codec's
+  // efficiency, so every downstream mux/worker call inherits the AV1/HEVC saving.
+  const baseBitrate = videoBitrate(outW, targetH, fps, bppForQuality(opts.videoQuality ?? 'balanced'));
+  const pick = streaming ? await pickWebCodecsVideo(format, outW, targetH, fps, baseBitrate, opts.videoCodec) : null;
+  const bitrate = pick ? codecAdjustedBitrate(baseBitrate, pick.codec) : baseBitrate;
   if (streaming && !pick) {
     log('warn', 'sequence: WebCodecs encode unavailable - falling back to a real-time MediaRecorder replay (correct, but as slow as the clip is long).');
   }
@@ -1752,6 +1756,7 @@ async function renderSequenceAuthored(
       if (pick) {
         mux = await createStreamingMux(pick, {
           width: outW, height: targetH, fps, bitrate,
+          bitrateMode: opts.bitrateMode, hardwareAcceleration: opts.hardwareAcceleration,
           audio: audioPick ? { ...audioPick, channels: [] } : null,
           // plans/156 WP-A part 3: a long export streams its container to OPFS instead
           // of accumulating it in memory. Gated on frameCount, the SAME number the worker
@@ -1849,6 +1854,7 @@ async function renderSequenceAuthored(
       if (pick) {
         mux = await createStreamingMux(pick, {
           width: outW, height: targetH, fps, bitrate,
+          bitrateMode: opts.bitrateMode, hardwareAcceleration: opts.hardwareAcceleration,
           audio: audioPick ? { ...audioPick, channels: [] } : null,
           // plans/156 WP-A part 3: long exports stream to OPFS (same frameCount gate).
           target: streamMuxTargetFor(frameCount),
@@ -2058,6 +2064,7 @@ async function renderSequenceAuthored(
         if (pick) {
           mux = await createStreamingMux(pick, {
             width: outW, height: targetH, fps, bitrate,
+            bitrateMode: opts.bitrateMode, hardwareAcceleration: opts.hardwareAcceleration,
             audio: audioPick ? { ...audioPick, channels: [] } : null,
             // plans/156 WP-A part 3: long exports stream to OPFS (same frameCount gate).
             target: streamMuxTargetFor(frameCount),
