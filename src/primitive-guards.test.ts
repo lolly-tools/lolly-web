@@ -660,10 +660,13 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'views/anim-transport.ts': 2,
   'views/ask.ts': 3, // +1 M1 consent chip (plans/103): t()/tRaw() copy + a computed integer, no user input
 
-  // The #/convert view's 3 innerHTML writes interpolate only t() strings, escape()d
+  // The #/convert view's innerHTML writes interpolate only t() strings, escape()d
   // file names (utils.ts escape), and static in-code format labels/ids - no user
-  // markup reaches a sink unescaped.
-  'views/convert.ts': 3,
+  // markup reaches a sink unescaped. +4 reviewed 2026-08-26: renderVideo (the 153
+  // AV column) - a t()-only status line, two convert-none lines (escape()d name),
+  // and the target list (escape()d name; TRANSMUX_CONTAINERS ids/exts are in-code
+  // constants).
+  'views/convert.ts': 7,
   // The spreadsheet (data) view. Reviewed 2026-08-07: the 4 sinks are the static page
   // scaffold (t() labels + static DOWNLOAD_TARGETS id/label), the limits banner
   // (escape()d LIMITS_HTML + escape()d truncated note), the sheet tabs (escape()d sheet

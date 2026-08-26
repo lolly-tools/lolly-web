@@ -4,16 +4,17 @@ import assert from 'node:assert/strict';
 
 import { memberSaveValues, applySharedEdit, type LazyMember } from './multi-edit-lazy.ts';
 import type { Runtime } from '../../../../engine/src/runtime.js';
+import type { InputValue } from '../../../../engine/src/inputs.js';
 
 // A minimal fake runtime: records setInput calls; modelValues reads its store.
-function fakeRuntime(store: Record<string, unknown>): Runtime {
+function fakeRuntime(store: Record<string, InputValue>): Runtime {
   return {
-    async setInput(id: string, value: unknown) { store[id] = value; },
+    async setInput(id: string, value: unknown) { store[id] = value as InputValue; },
   } as unknown as Runtime;
 }
-const model = (r: Runtime): Record<string, unknown> => (r as unknown as { _store?: never }) && STORE.get(r)!;
-const STORE = new WeakMap<Runtime, Record<string, unknown>>();
-function runtimeWith(store: Record<string, unknown>): Runtime {
+const model = (r: Runtime): Record<string, InputValue> => (r as unknown as { _store?: never }) && STORE.get(r)!;
+const STORE = new WeakMap<Runtime, Record<string, InputValue>>();
+function runtimeWith(store: Record<string, InputValue>): Runtime {
   const r = fakeRuntime(store);
   STORE.set(r, store);
   return r;
@@ -31,7 +32,7 @@ test('save reads the buffered seed when a cell was never built', () => {
 });
 
 test('a shared edit on a live cell goes through its runtime', async () => {
-  const store: Record<string, unknown> = { url: 'old' };
+  const store: Record<string, InputValue> = { url: 'old' };
   const m: LazyMember = { runtime: runtimeWith(store), values: {}, dirty: false };
   await applySharedEdit(m, 'url', 'https://new.example');
   assert.equal(store.url, 'https://new.example', 'runtime received the edit');

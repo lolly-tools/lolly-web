@@ -666,7 +666,8 @@ test('encodeMuxWebCodecs: colorSpace set builds each frame via the buffer ctor c
 test('encodeMuxWebCodecs: the video output callback force-sets decoderConfig.colorSpace, and mediabunny writes a colr/nclx box', async () => {
   // Captures the metadata object each chunk is emitted with; the core's output callback
   // mutates it IN PLACE (force-set), so after the run every captured meta shows the tag.
-  const emitted: Array<{ decoderConfig?: { colorSpace?: VideoColorSpaceInit } }> = [];
+  // The stub emits the full encoder-config shape; the core only touches colorSpace.
+  const emitted: Array<{ decoderConfig?: { colorSpace?: VideoColorSpaceInit; [k: string]: unknown } }> = [];
   class CapturingEncoder extends StubEncoder {
     override encode(frame: any, opts?: any): void {
       super.encode(frame, opts);
