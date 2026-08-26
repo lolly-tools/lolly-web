@@ -16,7 +16,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseWav } from '../../../../engine/src/wav.ts';
 import {
-  encodeWav, encodeMp3, encodeM4a, encodeOpus, encodeAudio, renderAudioExport,
+  encodeWav, encodeMp3, encodeM4a, encodeAac, encodeOpus, encodeOgg, encodeAudio, renderAudioExport,
   sliceWithEnvelope, sniffAudioFormat, pcmFromAudioBuffer, NO_AUDIO_MSG,
   type AudioPcm,
 } from './audio-encode.ts';
@@ -101,9 +101,26 @@ class StubChunk {
 
 interface StubLog { configs: any[]; chunks: number }
 
+/** A minimal valid OpusHead - mediabunny's Ogg writer (unlike its WebM one) demands
+ *  the Opus decoder description, and the real WebCodecs Opus encoder supplies exactly
+ *  this in each chunk's decoderConfig.description. */
+function opusHead(channels: number, sampleRate: number): Uint8Array {
+  const h = new Uint8Array(19);
+  h.set([0x4f, 0x70, 0x75, 0x73, 0x48, 0x65, 0x61, 0x64]);   // 'OpusHead'
+  h[8] = 1;                                                   // version
+  h[9] = channels;                                            // channel count
+  const dv = new DataView(h.buffer);
+  dv.setUint16(10, 3840, true);                               // pre-skip
+  dv.setUint32(12, sampleRate, true);                         // original sample rate
+  dv.setUint16(16, 0, true);                                  // output gain
+  h[18] = 0;                                                  // mapping family 0
+  return h;
+}
+
 /** An AudioEncoder that answers isConfigSupported with `supported` and emits one
- *  encoded chunk per encode() call. */
-function stubEncoder(supported: boolean, log: StubLog, description = new Uint8Array([0x11, 0x90])) {
+ *  encoded chunk per encode() call. `withOpusHead` makes the opus path carry an
+ *  OpusHead description (needed for the Ogg container, optional for WebM). */
+function stubEncoder(supported: boolean, log: StubLog, description = new Uint8Array([0x11, 0x90]), withOpusHead = false) {
   return class {
     static async isConfigSupported(c: any) { return { supported, config: c }; }
     encodeQueueSize = 0;
@@ -116,11 +133,14 @@ function stubEncoder(supported: boolean, log: StubLog, description = new Uint8Ar
     encode(data: any): void {
       log.chunks++;
       // A real WebCodecs decoderConfig: mediabunny validates the codec string.
-      // Opus needs no codec-private data; AAC carries an AudioSpecificConfig.
+      // AAC carries an AudioSpecificConfig; Opus needs no private data for WebM but
+      // an OpusHead for Ogg.
       this.out(new StubChunk(data.timestamp, 20_000, new Uint8Array([1, 2, 3, 4])), {
         decoderConfig: {
           codec: this.cfg.codec, sampleRate: this.cfg.sampleRate, numberOfChannels: this.cfg.numberOfChannels,
-          ...(this.cfg.codec === 'opus' ? {} : { description }),
+          ...(this.cfg.codec === 'opus'
+            ? (withOpusHead ? { description: opusHead(this.cfg.numberOfChannels, this.cfg.sampleRate) } : {})
+            : { description }),
         },
       });
     }
@@ -175,6 +195,47 @@ test('encodeOpus: EBML magic, and mono PCM is declared mono', async () => {
   }
 });
 
+test('encodeAac: ADTS syncword (not an MP4 box), configured at the PCM rate', async () => {
+  const g = globalThis as any;
+  const saved = { v: g.EncodedVideoChunk, a: g.EncodedAudioChunk };
+  g.EncodedVideoChunk = StubChunk;
+  g.EncodedAudioChunk = StubChunk;
+  try {
+    const log: StubLog = { configs: [], chunks: 0 };
+    const pcm = tone(48_000, 44_100);                                     // deliberately not 48 kHz
+    const u8 = await bytesOf(await encodeAac(pcm, {}, { AudioEncoder: stubEncoder(true, log), AudioData: StubAudioData }));
+    // ADTS frame: 0xFF then 12-bit syncword completion with layer bits zero.
+    assert.equal(u8[0], 0xff);
+    assert.equal(u8[1]! & 0xf6, 0xf0, `expected an ADTS syncword, got byte1 ${u8[1]!.toString(16)}`);
+    assert.equal(sniffAudioFormat(u8), 'aac');                            // and our own sniff agrees
+    assert.equal(log.configs[0].codec, 'mp4a.40.2');                      // SAME AAC encoder as m4a
+    assert.equal(log.configs[0].sampleRate, 44_100);
+  } finally {
+    g.EncodedVideoChunk = saved.v;
+    g.EncodedAudioChunk = saved.a;
+  }
+});
+
+test('encodeOgg: OggS magic, the SAME Opus encoder as opus, and mono declared mono', async () => {
+  const g = globalThis as any;
+  const saved = { v: g.EncodedVideoChunk, a: g.EncodedAudioChunk };
+  g.EncodedVideoChunk = StubChunk;
+  g.EncodedAudioChunk = StubChunk;
+  try {
+    const log: StubLog = { configs: [], chunks: 0 };
+    const pcm: AudioPcm = { channels: [new Float32Array(9600)], sampleRate: RATE };
+    // Ogg-Opus needs the encoder's OpusHead; the real encoder emits it, so the stub does too.
+    const u8 = await bytesOf(await encodeOgg(pcm, {}, { AudioEncoder: stubEncoder(true, log, undefined, true), AudioData: StubAudioData }));
+    assert.equal(tag(u8, 0, 4), 'OggS');
+    assert.equal(sniffAudioFormat(u8), 'ogg');
+    assert.equal(log.configs[0].codec, 'opus');                          // NOT an mp4a AAC config
+    assert.equal(log.configs[0].numberOfChannels, 1);
+  } finally {
+    g.EncodedVideoChunk = saved.v;
+    g.EncodedAudioChunk = saved.a;
+  }
+});
+
 test('m4a/opus degrade with a message rather than throwing when WebCodecs is missing', async () => {
   await assert.rejects(
     () => encodeM4a(tone(100), {}, { AudioEncoder: undefined, AudioData: undefined }),
@@ -199,6 +260,9 @@ test('sniffAudioFormat: recognises each container, and nothing else', async () =
   assert.equal(sniffAudioFormat(new Uint8Array([0xff, 0xfb, 0x90, 0, 0, 0, 0, 0, 0, 0, 0, 0])), 'mp3');
   assert.equal(sniffAudioFormat(new Uint8Array([0, 0, 0, 0x20, 0x66, 0x74, 0x79, 0x70, 0x4d, 0x34, 0x41, 0x20])), 'm4a');
   assert.equal(sniffAudioFormat(new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 0, 0, 0, 0, 0, 0, 0, 0])), 'opus');
+  assert.equal(sniffAudioFormat(new Uint8Array([0x4f, 0x67, 0x67, 0x53, 0, 0, 0, 0, 0, 0, 0, 0])), 'ogg');   // 'OggS'
+  // ADTS AAC also leads with 0xFF; it must NOT be mistaken for an MP3 frame.
+  assert.equal(sniffAudioFormat(new Uint8Array([0xff, 0xf1, 0x4c, 0x80, 0, 0, 0, 0, 0, 0, 0, 0])), 'aac');
   assert.equal(sniffAudioFormat(new Uint8Array([1, 2, 3])), null);
 });
 
@@ -292,19 +356,20 @@ test('pcmFromAudioBuffer: folds an AudioBuffer-shaped source to at most stereo p
 // ── the capability probe (bridge/format-support.ts) ──────────────────────────
 // Its cache is module state, so these run in order, last, and each overwrites it.
 
-test('audioSupport: wav and mp3 are unconditional; m4a/opus start false in a browser with no AudioEncoder', async () => {
+test('audioSupport: wav and mp3 are unconditional; the WebCodecs formats start false with no AudioEncoder', async () => {
   const { audioSupport } = await import('../bridge/format-support.ts');
-  assert.deepEqual(audioSupport(), { wav: true, mp3: true, m4a: false, opus: false });
+  assert.deepEqual(audioSupport(), { wav: true, mp3: true, m4a: false, aac: false, opus: false, ogg: false });
 });
 
-test('audioSupport: an AAC-only encoder unlocks m4a alone once the probe resolves', async () => {
+test('audioSupport: an AAC-only encoder unlocks m4a AND aac (its ADTS sibling), never opus/ogg', async () => {
   const { probeWebCodecsAudioSupport, audioSupport } = await import('../bridge/format-support.ts');
   const codecs: string[] = [];
   await probeWebCodecsAudioSupport({
     isConfigSupported: async (c: any) => { codecs.push(c.codec); return { supported: c.codec === 'mp4a.40.2' }; },
   });
-  assert.deepEqual(audioSupport(), { wav: true, mp3: true, m4a: true, opus: false });
-  assert.deepEqual(codecs.sort(), ['mp4a.40.2', 'opus']);
+  // aac rides the same mp4a.40.2 probe as m4a; ogg rides the same opus probe as opus.
+  assert.deepEqual(audioSupport(), { wav: true, mp3: true, m4a: true, aac: true, opus: false, ogg: false });
+  assert.deepEqual(codecs.sort(), ['mp4a.40.2', 'opus'], 'still only TWO probes back all four WebCodecs formats');
 });
 
 test('probeWebCodecsAudioSupport: a throwing isConfigSupported reads as unsupported, never rejects', async () => {
@@ -318,4 +383,22 @@ test('encodeAudio: dispatches each format to its own container', async () => {
   const pcm = tone(2400);
   assert.equal(tag(await bytesOf(await encodeAudio('wav', pcm)), 0, 4), 'RIFF');
   assert.equal((await encodeAudio('mp3', pcm)).type, 'audio/mpeg');
+});
+
+test('encodeAudio: routes ogg to Ogg and aac to ADTS through the one entry point', async () => {
+  const g = globalThis as any;
+  const saved = { v: g.EncodedVideoChunk, a: g.EncodedAudioChunk };
+  g.EncodedVideoChunk = StubChunk;
+  g.EncodedAudioChunk = StubChunk;
+  try {
+    const log: StubLog = { configs: [], chunks: 0 };
+    const pcm = tone(2400);
+    const ogg = await bytesOf(await encodeAudio('ogg', pcm, {}, { AudioEncoder: stubEncoder(true, log, undefined, true), AudioData: StubAudioData }));
+    assert.equal(tag(ogg, 0, 4), 'OggS');
+    const aac = await bytesOf(await encodeAudio('aac', pcm, {}, { AudioEncoder: stubEncoder(true, log), AudioData: StubAudioData }));
+    assert.equal(aac[0]! === 0xff && (aac[1]! & 0xf6) === 0xf0, true);
+  } finally {
+    g.EncodedVideoChunk = saved.v;
+    g.EncodedAudioChunk = saved.a;
+  }
 });

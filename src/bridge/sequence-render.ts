@@ -155,6 +155,7 @@ import { mixWindow, type MixSpec, type MixClip, type MixBed } from './mix-window
 import { insertPngPhys, insertPngMeta, insertPngIcc, iccWanted } from './export-image-meta.ts';
 import {
   packApng,
+  packWebpAnim,
   videoProvenanceTags,
   embedMp4Meta,
   embedWebmMeta,
@@ -1201,13 +1202,13 @@ export async function sequenceAudioPcm(
  * stage again half way through the film.
  */
 export async function renderSequence(
-  node: Element, format: 'mp4' | 'webm' | 'gif' | 'apng', opts: ExportOpts, host: SeqHost | null = null,
+  node: Element, format: 'mp4' | 'webm' | 'gif' | 'apng' | 'webp-anim', opts: ExportOpts, host: SeqHost | null = null,
 ): Promise<Blob> {
   return await withAuthoredDom(node as HTMLElement, () => renderSequenceAuthored(node, format, opts, host));
 }
 
 async function renderSequenceAuthored(
-  node: Element, format: 'mp4' | 'webm' | 'gif' | 'apng', opts: ExportOpts, host: SeqHost | null = null,
+  node: Element, format: 'mp4' | 'webm' | 'gif' | 'apng' | 'webp-anim', opts: ExportOpts, host: SeqHost | null = null,
 ): Promise<Blob> {
   const log = (l: string, m: string): void => host?.log?.(l, m);
   // The stage declares its own length (data-seq-ms), which is the default and tracks
@@ -1751,6 +1752,7 @@ async function renderSequenceAuthored(
     let mux: StreamingMux | null = null;
     const bitmaps: ImageBitmap[] = [];             // MediaRecorder fallback only
     const apngFrames: Uint8Array[] = [];
+    const webpFrames: Uint8Array[] = [];
     const gifPixels: Uint8ClampedArray[] = [];
     try {
       if (pick) {
@@ -1781,6 +1783,7 @@ async function renderSequenceAuthored(
           if (mux) await mux.addFrame(c as CanvasImageSource, tsUs);
           else if (streaming) bitmaps.push(await createImageBitmap(c as ImageBitmapSource));
           else if (format === 'apng') apngFrames.push(new Uint8Array(await (await canvasBlob(c, 'image/png')).arrayBuffer()));
+          else if (format === 'webp-anim') webpFrames.push(await webpFrame(c, opts.quality ?? 0.9));
           else gifPixels.push((cx as CanvasRenderingContext2D).getImageData(0, 0, outW, targetH).data);
         },
       });
@@ -1793,6 +1796,7 @@ async function renderSequenceAuthored(
       }
       if (streaming) return await recorderReplay(bitmaps, canvas as HTMLCanvasElement, ctx as CanvasRenderingContext2D, format, fps, opts, host);
       if (format === 'apng') return await apngBlob(apngFrames, fps, opts);
+      if (format === 'webp-anim') return await webpAnimBlob(webpFrames, outW, targetH, fps, opts);
       return await gifBlob(gifPixels, outW, targetH, opts);
     } finally {
       if (mux) { try { await mux.abort(); } catch { /* already down */ } }
@@ -1849,6 +1853,7 @@ async function renderSequenceAuthored(
     let mux: StreamingMux | null = null;
     const bitmaps: ImageBitmap[] = [];
     const apngFrames: Uint8Array[] = [];
+    const webpFrames: Uint8Array[] = [];
     const gifPixels: Uint8ClampedArray[] = [];
     try {
       if (pick) {
@@ -1957,6 +1962,7 @@ async function renderSequenceAuthored(
         if (mux) await mux.addFrame(destCanvas as CanvasImageSource, tsUs);
         else if (streaming) bitmaps.push(await createImageBitmap(destCanvas as ImageBitmapSource));
         else if (format === 'apng') apngFrames.push(new Uint8Array(await (await canvasBlob(destCanvas, 'image/png')).arrayBuffer()));
+        else if (format === 'webp-anim') webpFrames.push(await webpFrame(destCanvas, opts.quality ?? 0.9));
         else gifPixels.push((destCtx as CanvasRenderingContext2D).getImageData(0, 0, outW, targetH).data);
         opts.onProgress?.(i + 1, job.frameCount);
       }
@@ -1969,6 +1975,7 @@ async function renderSequenceAuthored(
       }
       if (streaming) return await recorderReplay(bitmaps, destCanvas as HTMLCanvasElement, destCtx as CanvasRenderingContext2D, format, fps, opts, host);
       if (format === 'apng') return await apngBlob(apngFrames, fps, opts);
+      if (format === 'webp-anim') return await webpAnimBlob(webpFrames, outW, targetH, fps, opts);
       return await gifBlob(gifPixels, outW, targetH, opts);
     } finally {
       if (mux) { try { await mux.abort(); } catch { /* already down */ } }
@@ -2055,6 +2062,7 @@ async function renderSequenceAuthored(
       let mux: StreamingMux | null = null;
       const bitmaps: ImageBitmap[] = [];
       const apngFrames: Uint8Array[] = [];
+      const webpFrames: Uint8Array[] = [];
       const gifPixels: Uint8ClampedArray[] = [];
       try {
         const mix = streaming
@@ -2102,6 +2110,7 @@ async function renderSequenceAuthored(
           if (mux) await mux.addFrame(canvas as CanvasImageSource, tsUs);
           else if (streaming) bitmaps.push(await createImageBitmap(canvas as ImageBitmapSource));
           else if (format === 'apng') apngFrames.push(new Uint8Array(await (await canvasBlob(canvas, 'image/png')).arrayBuffer()));
+          else if (format === 'webp-anim') webpFrames.push(await webpFrame(canvas, opts.quality ?? 0.9));
           else gifPixels.push((ctx as CanvasRenderingContext2D).getImageData(0, 0, outW, targetH).data);
           opts.onProgress?.(i + 1, frameCount);
         }
@@ -2113,6 +2122,7 @@ async function renderSequenceAuthored(
         }
         if (streaming) return await recorderReplay(bitmaps, canvas as HTMLCanvasElement, ctx as CanvasRenderingContext2D, format, fps, opts, host);
         if (format === 'apng') return await apngBlob(apngFrames, fps, opts);
+        if (format === 'webp-anim') return await webpAnimBlob(webpFrames, outW, targetH, fps, opts);
         return await gifBlob(gifPixels, outW, targetH, opts);
       } finally {
         if (mux) { try { await mux.abort(); } catch { /* already down */ } }
@@ -2550,6 +2560,27 @@ async function gifBlob(frames: Uint8ClampedArray[], w: number, h: number, opts: 
   });
   gif.finish();
   return new Blob([gif.bytesView()], { type: 'image/gif' });
+}
+
+/** One animated-WebP frame: a browser-encoded WebP bitstream. Throws (like the still
+ *  renderWebpAnim) when this browser lacks WebP canvas encoding, so the caller fails
+ *  loudly rather than muxing PNGs the engine would reject. */
+async function webpFrame(canvas: AnyCanvas, quality: number): Promise<Uint8Array> {
+  const b = await canvasBlob(canvas, 'image/webp', quality);
+  if (!/webp/.test(b.type)) throw sequenceError('SEQ_NO_CODEC', 'This browser cannot encode WebP; export as GIF or APNG instead.');
+  return new Uint8Array(await b.arrayBuffer());
+}
+
+/** Animated WebP: the engine muxes the per-frame WebP bitstreams into one RIFF/WEBP
+ *  (full colour + alpha, smaller than GIF or APNG). C2PA is placed downstream via the
+ *  'webp' key mapping, exactly as gif/apng are stamped after this returns. */
+async function webpAnimBlob(frames: Uint8Array[], w: number, h: number, fps: number, opts: ExportOpts): Promise<Blob> {
+  const bytes = packWebpAnim(frames, {
+    width: w, height: h,
+    delayMs: Math.round(1000 / fps),
+    loops: opts.repeat === -1 ? 1 : (opts.repeat ?? 0),
+  });
+  return new Blob([bytes as BlobPart], { type: 'image/webp' });
 }
 
 /**

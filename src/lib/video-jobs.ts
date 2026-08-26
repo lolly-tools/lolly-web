@@ -66,6 +66,7 @@ import {
   chromaKeyAlpha, parseLutText, applyLutFrame, applyGrainVignette, GRAIN_REF_LONG_EDGE,
 } from '@lolly/engine';
 import { packGifAlpha } from './gif-alpha.ts';
+import type { LosslessTrimCtx, LosslessTrimResult } from './lossless-trim.ts';
 import { startJob, type JobHandle } from './jobs.ts';
 import { t, tRaw } from '../i18n.ts';
 import type {
@@ -199,7 +200,16 @@ export interface GradeVideoParams {
 
 /** Trim carries no pixel parameters - the request-level `range` is the whole edit.
  *  `fps <= 0` means "keep the source's own frame rate" (the reader derives it). */
-export interface TrimVideoParams { fps: number; bitrate: number; }
+export interface TrimVideoParams {
+  fps: number;
+  bitrate: number;
+  /** Opt in (WP-H) to the lossless packet-copy fast path snapping the cut-in back to
+   *  the previous keyframe when the requested in-point is mid-GOP. Off (the default)
+   *  keeps the exact bounds: an off-keyframe cut then falls back to the transcoding
+   *  trim rather than the fast path silently moving the in-point. A cut that already
+   *  lands on a keyframe takes the fast path either way. */
+  snapToKeyframe?: boolean;
+}
 
 // ── Caps (refuse, never OOM) ─────────────────────────────────────────────────
 
@@ -1167,6 +1177,10 @@ export interface VideoJobDeps {
   extractIngredient?: (bytes: Uint8Array) => unknown | null;
   /** Sign the output bytes with the assembled container-level credential. */
   stamp?: (host: VideoJobHost, blob: Blob, format: string, o: VideoStampOpts) => Promise<Blob>;
+  /** The lossless keyframe-aligned trim fast path (WP-E). Returns a byte-lossless
+   *  packet copy when the window is keyframe-alignable, or null to fall back to the
+   *  transcoding trim. Throws AbortError on a genuine cancel. */
+  losslessTrim?: (blob: Blob, inSec: number, outSec: number, ctx: LosslessTrimCtx) => Promise<LosslessTrimResult | null>;
 }
 
 /** Default ingredient extraction: the source video's preserved C2PA store. */
@@ -1187,6 +1201,17 @@ async function defaultStamp(host: VideoJobHost, blob: Blob, format: string, o: V
     ...(o.ingredients ? { ingredients: o.ingredients as never } : {}),
     ...(o.dimensions ? { dimensions: o.dimensions } : {}),
   });
+}
+
+/** Default lossless trim (WP-E): wrap the source blob in a mediabunny BlobSource and
+ *  run the standalone packet-copy engine. mediabunny AND the engine are imported
+ *  lazily (same as every other decode path here) so neither enters the preload
+ *  bundle. Returns null when the cut is not keyframe-alignable; throws AbortError on
+ *  a genuine cancel - both handled by the caller. */
+async function defaultLosslessTrim(blob: Blob, inSec: number, outSec: number, ctx: LosslessTrimCtx): Promise<LosslessTrimResult | null> {
+  const { BlobSource } = await import('mediabunny');
+  const { losslessTrim } = await import('./lossless-trim.ts');
+  return losslessTrim(new BlobSource(blob), inSec, outSec, undefined, ctx);
 }
 
 /** A fresh, standalone ArrayBuffer holding a view's bytes (drops any SharedArrayBuffer
@@ -1274,6 +1299,96 @@ export async function runVideoJob(
     : (req.upscale?.fps ?? 30);
 
   const reader = await openReader(sourceBlob, fps, req.range);
+
+  // Stamp the output bytes, save the derived user asset, resolve its ref. The single
+  // finish path both the transcode pipeline and the lossless fast path below run
+  // through, so they stamp C2PA identically (the source carried as an ingredient) and
+  // save the same record shape.
+  const finish = async (
+    result: WriterResult, prov: VideoProvenance, outFmt: string,
+    assetType: AssetRef['type'], animated: boolean,
+  ): Promise<AssetRef | null> => {
+    const outFormat = outFmt || result.format;
+    // Container-level C2PA: stamp the OUTPUT bytes with the op's plain/genAI edit and
+    // carry the source video as an ingredient. Best-effort - a failed sign still ships.
+    let blob = result.blob;
+    try {
+      const ingredient = (deps.extractIngredient ?? defaultExtractIngredient)(sourceBytes);
+      blob = await (deps.stamp ?? defaultStamp)(host, result.blob, outFormat, {
+        title: req.sourceName,
+        tool: prov.tool,
+        actions: prov.actions,
+        ...(ingredient ? { ingredients: [ingredient] } : {}),
+        dimensions: `${result.width}×${result.height}`,
+      });
+    } catch (e) {
+      host.log?.('warn', 'Video job: provenance stamp failed', { error: String(e) });
+    }
+
+    const now = Date.now();
+    const { id, name } = videoJobIds(req.op, req.sourceName, outFormat, now);
+    const aiGenerated = prov.aiGenerated ?? req.aiGeneratedSource;
+    await host.assets._uploadUserAsset({
+      id,
+      type: assetType,
+      format: outFormat,
+      blob,
+      width: result.width,
+      height: result.height,
+      version: '1.0.0',
+      ...(aiGenerated ? { aiGenerated } : {}),
+      meta: {
+        name,
+        bytes: blob.size,
+        ...(animated ? { animated: true } : {}),
+        // A catalog-initiated job is a PLAIN derived asset - NOT tagged 'renders'
+        // (that is WP-B's download-path contract only).
+      },
+    });
+    return await host.assets.get(id);
+  };
+
+  // ── Lossless trim FAST PATH (plan 153 WP-E/WP-H) ─────────────────────────────
+  // Before decoding + re-encoding every frame, try lifting the window out as a
+  // byte-lossless, keyframe-aligned packet copy: instant, no generation loss, HDR
+  // colour signalling preserved. losslessTrim returns null when the cut is not
+  // keyframe-alignable (or the source is unreadable), which is the cue to fall through
+  // to the transcoding trim below UNCHANGED. exactBounds is on unless the user opted
+  // into keyframe snapping, so a mid-GOP cut keeps its exact bounds (falls back) rather
+  // than the fast path silently moving the in-point - a cut already on a keyframe takes
+  // the fast path either way. The C2PA stamp is `videoProvenanceFor('trim')`, the exact
+  // credential the transcode trim records (finish() above signs both).
+  if (req.op === 'trim' && req.range) {
+    const doLosslessTrim = deps.losslessTrim ?? defaultLosslessTrim;
+    let fast: LosslessTrimResult | null;
+    try {
+      fast = await doLosslessTrim(sourceBlob, req.range.startSec, req.range.endSec, {
+        ...(ctx.signal ? { signal: ctx.signal } : {}),
+        ...(ctx.isCancelled ? { isCancelled: ctx.isCancelled } : {}),
+        onProgress: (done, total) => ctx.onProgress?.(done, total),
+        copyNote: t('Trimming video'),
+        exactBounds: !req.trim?.snapToKeyframe,
+      });
+    } catch (e) {
+      // A genuine cancel is the SAME null result the transcode path returns on cancel
+      // (runFramePipeline's cancelled branch), never a job failure.
+      if ((e as Error | null)?.name === 'AbortError') { await reader.close(); return null; }
+      throw e;
+    }
+    if (fast) {
+      // The packet copy decoded nothing; drop the reader we opened only for its dims.
+      // The copied track keeps the source's exact display size (no even-dimension snap).
+      // ponytail: reader.width/height reuse means a source the browser can't DECODE
+      // fails at openReader above even though a packet copy needs no decoder - read the
+      // dims from the mediabunny track in defaultLosslessTrim if that source ever matters.
+      await reader.close();
+      return await finish(
+        { blob: fast.blob, format: fast.ext, width: reader.width, height: reader.height },
+        videoProvenanceFor('trim'), fast.ext, 'video', false,
+      );
+    }
+    // null → fall through to the transcoding trim below, unchanged.
+  }
 
   // Build the op + the writer per op.
   let op: FrameOp;
@@ -1365,46 +1480,7 @@ export async function runVideoJob(
 
   const piped = await runFramePipeline(reader, op, writer, ctx);
   if (piped.cancelled || !piped.result) return null;
-  const result = piped.result;
-  outFormat = outFormat || result.format;
-
-  // Container-level C2PA: stamp the OUTPUT bytes with the op's plain/genAI edit and
-  // carry the source video as an ingredient. Best-effort - a failed sign still ships.
-  let blob = result.blob;
-  try {
-    const ingredient = (deps.extractIngredient ?? defaultExtractIngredient)(sourceBytes);
-    blob = await (deps.stamp ?? defaultStamp)(host, result.blob, outFormat, {
-      title: req.sourceName,
-      tool: prov.tool,
-      actions: prov.actions,
-      ...(ingredient ? { ingredients: [ingredient] } : {}),
-      dimensions: `${result.width}×${result.height}`,
-    });
-  } catch (e) {
-    host.log?.('warn', 'Video job: provenance stamp failed', { error: String(e) });
-  }
-
-  const now = Date.now();
-  const { id, name } = videoJobIds(req.op, req.sourceName, outFormat, now);
-  const aiGenerated = prov.aiGenerated ?? req.aiGeneratedSource;
-  await host.assets._uploadUserAsset({
-    id,
-    type: assetType,
-    format: outFormat,
-    blob,
-    width: result.width,
-    height: result.height,
-    version: '1.0.0',
-    ...(aiGenerated ? { aiGenerated } : {}),
-    meta: {
-      name,
-      bytes: blob.size,
-      ...(animated ? { animated: true } : {}),
-      // A catalog-initiated job is a PLAIN derived asset - NOT tagged 'renders'
-      // (that is WP-B's download-path contract only).
-    },
-  });
-  return await host.assets.get(id);
+  return await finish(piped.result, prov, outFormat, assetType, animated);
 }
 
 /**

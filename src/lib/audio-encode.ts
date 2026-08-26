@@ -3,8 +3,8 @@
  * Audio encoders - PCM in, a finished audio file out.
  *
  * Two callers today: the voice recorder's "MP3" download (blobToMp3, unchanged),
- * and the audio-only export formats (wav / mp3 / m4a / opus) that bridge/export.ts
- * dispatches here. The seam is deliberately PCM-in / bytes-out, like
+ * and the audio-only export formats (wav / mp3 / m4a / aac / opus / ogg) that
+ * bridge/export.ts dispatches here. The seam is deliberately PCM-in / bytes-out, like
  * bridge/export-hdr-png.ts, so every encoder is testable under node with no DOM.
  *
  * ── The PCM shape ────────────────────────────────────────────────────────────
@@ -25,8 +25,13 @@
  *            when nothing was trimmed or mixed.
  *  - m4a - WebCodecs AudioEncoder (AAC-LC, mp4a.40.2) muxed by mediabunny into an
  *            audio-only MP4. LOSSY. Needs a platform encoder (see audioSupport).
+ *  - aac - the SAME AAC-LC encoder as m4a, in a bare ADTS stream (.aac) rather
+ *            than an MP4 box tree. LOSSY. Same platform encoder + probe as m4a.
  *  - opus - WebCodecs AudioEncoder (opus) muxed by mediabunny into an audio-only
  *            WebM. LOSSY. Needs a platform encoder.
+ *  - ogg - the SAME Opus encoder as opus, in an Ogg container (.ogg) rather than
+ *            WebM - the honest voice-memo shape, since opus-in-WebM looks like a
+ *            video file. LOSSY. Same platform encoder + probe as opus.
  *
  * Every LOSSY path is a genuine re-encode of the samples given, so a lossy source
  * that is neither trimmed nor mixed must NOT be routed through one when the
@@ -44,14 +49,16 @@ import { buildMediabunnyMux } from '../bridge/mediabunny-mux.ts';
 export type AudioPcm = WavAudio;
 
 /** The audio-only export formats, in the order the picker lists them. */
-export const AUDIO_FORMATS = ['wav', 'mp3', 'm4a', 'opus'] as const;
+export const AUDIO_FORMATS = ['wav', 'mp3', 'm4a', 'aac', 'opus', 'ogg'] as const;
 export type AudioFormat = (typeof AUDIO_FORMATS)[number];
 
 const AUDIO_MIME: Record<AudioFormat, string> = {
   wav: 'audio/wav',
   mp3: 'audio/mpeg',
   m4a: 'audio/mp4',
+  aac: 'audio/aac',    // bare ADTS AAC stream
   opus: 'audio/webm',
+  ogg: 'audio/ogg',    // Opus in an Ogg container
 };
 
 /** Container MIME for a finished file in `format`. */
@@ -147,9 +154,11 @@ interface AudioMuxerLike {
 interface BuiltAudioMuxer { muxer: AudioMuxerLike; target: { buffer: ArrayBuffer } }
 
 /** Factory for the audio-only muxer - swappable so the encode path is drivable
- *  under node without a real muxer or a real AudioEncoder. */
+ *  under node without a real muxer or a real AudioEncoder. `mp4`/`webm` ride the
+ *  shared video/audio muxer; `ogg`/`adts` are audio-only containers it doesn't
+ *  cover, so they go through buildAudioOnlyMux below. */
 export type AudioMuxerFactory = (
-  container: 'mp4' | 'webm',
+  container: 'mp4' | 'webm' | 'ogg' | 'adts',
   track: { codec: string; numberOfChannels: number; sampleRate: number },
 ) => Promise<BuiltAudioMuxer>;
 
@@ -159,9 +168,63 @@ export type AudioMuxerFactory = (
 export const defaultAudioMuxerFactory: AudioMuxerFactory = async (container, track) => {
   // Audio-only export always uses the in-memory BufferTarget (no step-A3 OPFS
   // streaming here), so the target is the `.buffer` kind.
+  if (container === 'ogg' || container === 'adts') {
+    return await buildAudioOnlyMux(container, track.codec);
+  }
   const { muxer, target } = await buildMediabunnyMux({ container, audio: track.codec });
   return { muxer, target: target as { buffer: ArrayBuffer } };
 };
+
+/** mux-codec id (the encode path's spelling) → mediabunny codec, for the two
+ *  audio-only containers. Deliberately the SAME spellings the shared muxer's
+ *  AUDIO_CODEC map uses, so a caller can name a codec one way for either. */
+const AUDIO_ONLY_CODEC: Record<string, 'opus' | 'aac'> = { A_OPUS: 'opus', aac: 'aac' };
+
+/**
+ * A minimal single-track mux for the audio-only containers buildMediabunnyMux
+ * doesn't cover: Ogg (Opus) and ADTS (AAC). mediabunny is lazy-imported, as
+ * everywhere here. No cross-stream interleave (one encoder, monotonic decode
+ * order) and no OPFS - audio export is always the in-memory BufferTarget. Each
+ * chunk's bytes are copied out of its (closeable) WebCodecs chunk synchronously by
+ * fromEncodedChunk, and the async source.add()s are serialised onto one chain so
+ * finalize() only has to await the settled tail. This mirrors the add/finalize
+ * shape of buildMediabunnyMux, minus the two-stream bounded merge it needs and
+ * this one doesn't. (Ogg-Opus needs the encoder's OpusHead in the chunk metadata's
+ * decoderConfig.description; the real AudioEncoder supplies it, and it flows
+ * through unchanged.)
+ */
+async function buildAudioOnlyMux(
+  container: 'ogg' | 'adts', muxCodec: string,
+): Promise<BuiltAudioMuxer> {
+  const MB = await import('mediabunny');
+  const codec = AUDIO_ONLY_CODEC[muxCodec];
+  if (!codec) throw new Error(`audio-encode: unknown audio-only mux codec '${muxCodec}'`);
+  const target = new MB.BufferTarget();
+  const format = container === 'ogg' ? new MB.OggOutputFormat() : new MB.AdtsOutputFormat();
+  const output = new MB.Output({ format, target });
+  const src = new MB.EncodedAudioPacketSource(codec);
+  output.addAudioTrack(src);
+
+  let started: Promise<void> | null = null;
+  const ensureStarted = (): Promise<void> => (started ??= output.start());
+  let chain: Promise<void> = Promise.resolve();
+  let err: unknown = null;
+
+  const muxer: AudioMuxerLike = {
+    addAudioChunk(chunk, meta) {
+      const packet = MB.EncodedPacket.fromEncodedChunk(chunk as EncodedAudioChunk);
+      chain = chain
+        .then(async () => { await ensureStarted(); await src.add(packet, meta as EncodedAudioChunkMetadata | undefined); })
+        .catch((e) => { err ??= e; });
+    },
+    async finalize() {
+      await chain;
+      if (err) throw err instanceof Error ? err : new Error(String(err));
+      await output.finalize();
+    },
+  };
+  return { muxer, target: target as unknown as { buffer: ArrayBuffer } };
+}
 
 /** Injection seam for the WebCodecs globals + the muxer (node has neither). */
 export interface AudioEncodeDeps {
@@ -172,23 +235,34 @@ export interface AudioEncodeDeps {
 
 interface WebCodecsAudioOpts { bitrate?: number }
 
+/** The four WebCodecs-backed audio formats, keyed by format id. Two encoders
+ *  (AAC-LC, Opus) across four containers: m4a/aac share the AAC encoder + its
+ *  isConfigSupported probe (differing only in container), opus/ogg share Opus.
+ *  That codec sharing is exactly why format-support.ts gates all four on the same
+ *  two probes. */
+const WEBCODECS_AUDIO: Record<'m4a' | 'aac' | 'opus' | 'ogg',
+  { codec: string; muxCodec: string; container: 'mp4' | 'webm' | 'ogg' | 'adts' }> = {
+  m4a:  { codec: 'mp4a.40.2', muxCodec: 'aac',    container: 'mp4' },
+  aac:  { codec: 'mp4a.40.2', muxCodec: 'aac',    container: 'adts' },
+  opus: { codec: 'opus',      muxCodec: 'A_OPUS', container: 'webm' },
+  ogg:  { codec: 'opus',      muxCodec: 'A_OPUS', container: 'ogg' },
+};
+
 /** Encode + mux `pcm` as an audio-only file. Codec settings mirror export.ts's
- *  pickWebCodecsAudio (AAC-LC for mp4, Opus for webm, 128 kbps) with ONE
+ *  pickWebCodecsAudio (AAC-LC for mp4/adts, Opus for webm/ogg, 128 kbps) with ONE
  *  difference: the sample rate is the PCM's own, not a fixed 48 kHz. A video
  *  export renders its bed at 48 kHz on purpose; here the samples already exist,
  *  and declaring a rate they were not sampled at would play the file back at the
  *  wrong speed. */
 async function encodeWebCodecsAudio(
-  pcm: AudioPcm, container: 'mp4' | 'webm', opts: WebCodecsAudioOpts = {}, deps: AudioEncodeDeps = {},
+  pcm: AudioPcm, format: 'm4a' | 'aac' | 'opus' | 'ogg', opts: WebCodecsAudioOpts = {}, deps: AudioEncodeDeps = {},
 ): Promise<Blob> {
   const g = globalThis as any;
   const AEnc = deps.AudioEncoder ?? g.AudioEncoder;
   const AData = deps.AudioData ?? g.AudioData;
   if (!AEnc || !AData) throw new Error(NO_WEBCODECS_MSG);
 
-  const isMp4 = container === 'mp4';
-  const codec = isMp4 ? 'mp4a.40.2' : 'opus';
-  const muxCodec = isMp4 ? 'aac' : 'A_OPUS';
+  const { codec, muxCodec, container } = WEBCODECS_AUDIO[format];
   const numberOfChannels = Math.max(1, Math.min(MAX_CHANNELS, pcm.channels.length));
   const sampleRate = pcm.sampleRate;
   const bitrate = opts.bitrate ?? AUDIO_BITRATE;
@@ -238,19 +312,29 @@ async function encodeWebCodecsAudio(
   if (encErr) throw encErr instanceof Error ? encErr : new Error('AudioEncoder error');
 
   await muxer.finalize();
-  return new Blob([target.buffer as BlobPart], { type: isMp4 ? AUDIO_MIME.m4a : AUDIO_MIME.opus });
+  return new Blob([target.buffer as BlobPart], { type: AUDIO_MIME[format] });
 }
 
 const NO_WEBCODECS_MSG = 'This browser cannot encode that audio format. Try WAV or MP3.';
 
 /** LOSSY AAC-LC in an MP4 container (.m4a). */
 export function encodeM4a(pcm: AudioPcm, opts: WebCodecsAudioOpts = {}, deps: AudioEncodeDeps = {}): Promise<Blob> {
-  return encodeWebCodecsAudio(pcm, 'mp4', opts, deps);
+  return encodeWebCodecsAudio(pcm, 'm4a', opts, deps);
+}
+
+/** LOSSY AAC-LC in a bare ADTS stream (.aac) - the same encoder as m4a. */
+export function encodeAac(pcm: AudioPcm, opts: WebCodecsAudioOpts = {}, deps: AudioEncodeDeps = {}): Promise<Blob> {
+  return encodeWebCodecsAudio(pcm, 'aac', opts, deps);
 }
 
 /** LOSSY Opus in a WebM container (audio-only .webm). */
 export function encodeOpus(pcm: AudioPcm, opts: WebCodecsAudioOpts = {}, deps: AudioEncodeDeps = {}): Promise<Blob> {
-  return encodeWebCodecsAudio(pcm, 'webm', opts, deps);
+  return encodeWebCodecsAudio(pcm, 'opus', opts, deps);
+}
+
+/** LOSSY Opus in an Ogg container (.ogg) - the same encoder as opus. */
+export function encodeOgg(pcm: AudioPcm, opts: WebCodecsAudioOpts = {}, deps: AudioEncodeDeps = {}): Promise<Blob> {
+  return encodeWebCodecsAudio(pcm, 'ogg', opts, deps);
 }
 
 /** Encode `pcm` to `format`. The one entry point the export dispatch needs. */
@@ -263,7 +347,9 @@ export function encodeAudio(
     // lamejs takes kbps; every other encoder here (and AUDIO_BITRATE) is bits/s.
     case 'mp3': return encodeMp3(pcm, opts.bitrate ? { bitrate: Math.round(opts.bitrate / 1000) } : {});
     case 'm4a': return encodeM4a(pcm, opts, deps);
+    case 'aac': return encodeAac(pcm, opts, deps);
     case 'opus': return encodeOpus(pcm, opts, deps);
+    case 'ogg': return encodeOgg(pcm, opts, deps);
   }
 }
 
@@ -376,7 +462,7 @@ export function sliceWithEnvelope(
   return { channels: channels.length ? channels : [new Float32Array(n)], sampleRate: rate };
 }
 
-/** Container sniff on the leading bytes - enough to tell the four apart, so the
+/** Container sniff on the leading bytes - enough to tell the six apart, so the
  *  pass-through above never claims a match it cannot see. */
 export function sniffAudioFormat(bytes: ArrayBuffer | Uint8Array): AudioFormat | null {
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
@@ -384,8 +470,13 @@ export function sniffAudioFormat(bytes: ArrayBuffer | Uint8Array): AudioFormat |
   const tag = (at: number, len: number): string => String.fromCharCode(...u8.subarray(at, at + len));
   if (tag(0, 4) === 'RIFF' && tag(8, 4) === 'WAVE') return 'wav';
   if (tag(4, 4) === 'ftyp') return 'm4a';
+  if (tag(0, 4) === 'OggS') return 'ogg';                                                  // Ogg (our Opus-in-Ogg)
   if (u8[0] === 0x1a && u8[1] === 0x45 && u8[2] === 0xdf && u8[3] === 0xa3) return 'opus';  // EBML (webm)
   if (tag(0, 3) === 'ID3') return 'mp3';
+  // ADTS AAC before the looser MPEG sync: a 12-bit syncword (0xFFF) with the layer
+  // bits zero. MP3's frame sync is only 11 bits and its layer bits are non-zero, so
+  // (byte1 & 0xF6) === 0xF0 tells the two 0xFF-lead streams apart.
+  if (u8[0] === 0xff && (u8[1]! & 0xf6) === 0xf0) return 'aac';
   if (u8[0] === 0xff && (u8[1]! & 0xe0) === 0xe0) return 'mp3';                             // MPEG frame sync
   return null;
 }

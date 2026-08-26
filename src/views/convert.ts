@@ -14,6 +14,12 @@
  */
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 import { sfntKind, sfntToWoff, woffToSfnt, gzip, gunzip, sniffContainer, encodeBmp, packTiff, readXlsx, writeXlsx, rowsToCsv, parseTableText, joinPageText } from '@lolly/engine';
+// The AV column (plan 153 WP-H): the two FREE copy paths only - a lossless container
+// rewrite (transmux) and a lossless audio stream-copy (extract). Both are byte-lossless
+// and never re-encode; no transcode is offered here. mediabunny rides in lazily through
+// these engines, so nothing here enters the preload bundle.
+import { transmuxContainer, TRANSMUX_CONTAINERS, type TransmuxTarget } from '../lib/transmux.ts';
+import type { ExtractAudioHost } from '../lib/extract-audio.ts';
 import { t } from '../i18n.ts';
 import { escape } from '../utils.ts';   // the single shared HTML escaper (R11) - never re-fork it
 import { backHomeHtml, mountBackPill } from '../components/back-pill.ts';
@@ -115,6 +121,9 @@ function detectKind(bytes: Uint8Array, file: File): string {
   if (/\.csv$/i.test(file.name) || /^text\/csv/.test(file.type)) return 'csv';
   if (/\.json$/i.test(file.name) || (/^application\/json/.test(file.type) && /^\s*[[{]/.test(head))) return 'json';
   if (/^image\//.test(file.type) || /\.(png|jpe?g|webp|gif|avif|bmp)$/i.test(file.name)) return 'raster';
+  // A video for the AV column. The kind is a coarse gate; the real capability check is
+  // probeVideo (mediabunny), which refuses anything the copy engines cannot read.
+  if (/^video\//.test(file.type) || /\.(mp4|m4v|mov|qt|mkv|webm)$/i.test(file.name)) return 'video';
   return 'unknown';
 }
 
@@ -328,6 +337,157 @@ async function canvasToIco(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Blob([out as BlobPart], { type: 'image/x-icon' });
 }
 
+// ── AV column: lossless copy paths only (plan 153 WP-H) ──────────────────────
+// Two FREE, byte-lossless copies for an uploaded video: a container rewrite
+// (transmux) and an audio stream-copy (extract). Neither decodes or re-encodes, so
+// this is NOT a transcoder - the UI says so. Both ride the frozen engines
+// (lib/transmux.ts, lib/extract-audio.ts) unchanged.
+
+/** MP4 leads: where several containers are legal, MP4 is the safe default. */
+const TRANSMUX_ORDER: TransmuxTarget[] = ['mp4', 'mov', 'mkv', 'webm'];
+
+/** A video's container + track codecs, enough to gate the offered targets to exactly
+ *  what transmuxContainer would accept. Codecs are kept as plain strings so the
+ *  decision logic below stays free of mediabunny types (and testable without it). */
+export interface VideoProbe {
+  /** The source's own container, so a rewrite into it can be refused (nothing to do). */
+  container: TransmuxTarget | null;
+  hasVideo: boolean;
+  videoCodec: string | null;
+  audioCodecs: string[];
+}
+
+/**
+ * Which transmux targets a probed video can be rewritten into, mirroring
+ * transmuxContainer's own legality EXACTLY so we never offer a target the engine would
+ * refuse with null: a target that IS the source container is dropped (nothing to copy);
+ * a source that has a picture must keep it, so a target that cannot carry the video
+ * codec is dropped; a source with no video needs at least one audio codec the target
+ * can carry. `legal` is the per-container codec test (built from mediabunny's supported
+ * lists in production, injected in the test). Pure, so the option logic is provable
+ * without a real media file.
+ */
+export function transmuxTargetsFor(
+  probe: VideoProbe,
+  legal: (target: TransmuxTarget, kind: 'video' | 'audio', codec: string) => boolean,
+): TransmuxTarget[] {
+  return TRANSMUX_ORDER.filter((target) => {
+    if (target === probe.container) return false;
+    if (probe.hasVideo) return probe.videoCodec != null && legal(target, 'video', probe.videoCodec);
+    return probe.audioCodecs.some((codec) => legal(target, 'audio', codec));
+  });
+}
+
+/** Read a video's container + track codecs through mediabunny (lazy, so it never enters
+ *  the preload bundle), plus the per-target codec-legality test each output format
+ *  reports for itself. Null when the file cannot be read as one of the four containers
+ *  the copy engines rewrite among - the caller then offers nothing. */
+async function probeVideo(bytes: Uint8Array): Promise<
+  { probe: VideoProbe; legal: (t: TransmuxTarget, kind: 'video' | 'audio', codec: string) => boolean } | null
+> {
+  let MB: typeof import('mediabunny');
+  try { MB = await import('mediabunny'); } catch { return null; }
+  let input: import('mediabunny').Input | null = null;
+  try {
+    // The same container set transmux.ts opens with, not ALL_FORMATS.
+    input = new MB.Input({ formats: [MB.MP4, MB.QTFF, MB.WEBM, MB.MATROSKA], source: new MB.BlobSource(new Blob([bytes as BlobPart])) });
+    if (!(await input.canRead())) return null;
+    const fmt = await input.getFormat();
+    // The source's own container id - the mapping transmux.ts uses internally, replicated
+    // here because it isn't exported (WebM and MKV are distinct format singletons).
+    const container: TransmuxTarget | null =
+      fmt === MB.MP4 ? 'mp4' : fmt === MB.QTFF ? 'mov' : fmt === MB.WEBM ? 'webm' : fmt === MB.MATROSKA ? 'mkv' : null;
+    let hasVideo = false;
+    let videoCodec: string | null = null;
+    const audioCodecs: string[] = [];
+    for (const track of await input.getTracks()) {
+      if (track.isVideoTrack()) { hasVideo = true; videoCodec ??= await track.getCodec(); }
+      else if (track.isAudioTrack()) { const c = await track.getCodec(); if (c) audioCodecs.push(c); }
+    }
+    // Each output format is the authority on the codecs it can carry, exactly as
+    // transmuxContainer checks - so the offered set can never drift from what a rewrite
+    // would actually accept.
+    const support = new Map<TransmuxTarget, { video: Set<string>; audio: Set<string> }>();
+    for (const tgt of TRANSMUX_ORDER) {
+      const f: import('mediabunny').OutputFormat =
+        tgt === 'mp4' ? new MB.Mp4OutputFormat()
+          : tgt === 'mov' ? new MB.MovOutputFormat()
+            : tgt === 'mkv' ? new MB.MkvOutputFormat()
+              : new MB.WebMOutputFormat();
+      support.set(tgt, { video: new Set<string>(f.getSupportedVideoCodecs()), audio: new Set<string>(f.getSupportedAudioCodecs()) });
+    }
+    const legal = (t: TransmuxTarget, kind: 'video' | 'audio', codec: string): boolean =>
+      (kind === 'video' ? support.get(t)!.video : support.get(t)!.audio).has(codec);
+    return { probe: { container, hasVideo, videoCodec, audioCodecs }, legal };
+  } catch {
+    return null;
+  } finally {
+    try { input?.dispose(); } catch { /* best-effort resource release */ }
+  }
+}
+
+/** The AV column: probe the video, then offer the legal container rewrites (MP4 first)
+ *  and, when it has a sound track, Extract audio. Both are on-device lossless copies. */
+async function renderVideo(result: HTMLElement, bytes: Uint8Array, file: File, host: HostV1): Promise<void> {
+  result.hidden = false;
+  result.innerHTML = `<p class="convert-status">${t('Reading the video…')}</p>`;
+  const probed = await probeVideo(bytes);
+  if (!probed) {
+    result.innerHTML = `<p class="convert-none">${t('No on-device conversion is available for')} <b>${escape(file.name)}</b> ${t('yet')}.</p>`;
+    return;
+  }
+  const { probe, legal } = probed;
+  const muxTargets = transmuxTargetsFor(probe, legal);
+  const canExtract = probe.audioCodecs.length > 0;
+  if (!muxTargets.length && !canExtract) {
+    result.innerHTML = `<p class="convert-none">${t('No on-device conversion is available for')} <b>${escape(file.name)}</b> ${t('yet')}.</p>`;
+    return;
+  }
+  const base = file.name.replace(/\.[^.]+$/, '') || 'converted';
+  const muxBtns = muxTargets.map((tt) =>
+    `<button type="button" class="btn convert-target" data-mux="${tt}">${t('Container')}: ${TRANSMUX_CONTAINERS[tt].ext.toUpperCase()} (.${TRANSMUX_CONTAINERS[tt].ext})</button>`).join('');
+  const extractBtn = canExtract ? `<button type="button" class="btn convert-target" data-extract>${t('Extract audio…')}</button>` : '';
+  result.innerHTML = `<p class="convert-file"><b>${escape(file.name)}</b> - ${t('convert to')}:</p>
+    <div class="convert-targets">${muxBtns}${extractBtn}</div>
+    <p class="convert-note">${t('Container changes and audio extraction copy the media without re-encoding, on your device - so they are instant and lossless. Converting the video itself is not offered here.')}</p>
+    <p class="convert-status" data-status></p>`;
+  const status = result.querySelector<HTMLElement>('[data-status]')!;
+
+  // Container rewrite - download the lossless copy the engine produced. No provenance
+  // stamp: no convert download path stamps today, and transmux writes a fresh container
+  // (see provenance_flags - whether to carry a source credential forward is a new
+  // decision, not made here).
+  result.querySelectorAll<HTMLButtonElement>('[data-mux]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const target = btn.dataset.mux as TransmuxTarget;
+      btn.disabled = true; status.textContent = t('Converting…');
+      try {
+        const MB = await import('mediabunny');
+        const res = await transmuxContainer(new MB.BlobSource(new Blob([bytes as BlobPart])), target, { copyNote: t('Copying the media…') });
+        if (!res) throw new Error(t('That conversion is not supported.'));
+        await host.export.download(res.blob, `${base}.${res.ext}`);
+        status.textContent = `${t('Downloaded')} ${base}.${res.ext} (${fmtBytes(res.blob.size)}).`;
+      } catch (e) {
+        status.textContent = (e as Error).message || t('Conversion failed.');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+
+  // Extract audio - reuse the catalog dialog UNCHANGED (its own format picker, WP-F
+  // background job, and the c2pa.edited + source-video-as-ingredient stamp). It saves a
+  // derived audio asset to the catalog rather than downloading, and says so itself.
+  result.querySelector<HTMLButtonElement>('[data-extract]')?.addEventListener('click', async () => {
+    const { openExtractAudioDialog } = await import('../lib/extract-audio.ts');
+    await openExtractAudioDialog(host as unknown as ExtractAudioHost, {
+      source: new Blob([bytes as BlobPart], { type: file.type || 'video/mp4' }),
+      sourceName: file.name,
+    });
+    status.textContent = t('Audio extraction started - it will appear in your catalog when it’s done.');
+  });
+}
+
 export async function mountConvert(viewEl: HTMLElement, host: HostV1, _params = ''): Promise<void> {
   document.title = 'Convert - Lolly';
   viewEl.innerHTML = `
@@ -339,9 +499,9 @@ export async function mountConvert(viewEl: HTMLElement, host: HostV1, _params = 
         <p class="plat-sub">${t('Change a file from one format to another, on your device. Nothing is uploaded.')}</p>
       </header>
       <div class="convert-drop" data-drop tabindex="0" role="button" aria-label="${t('Drop a file to convert')}">
-        <p>${t('Drop a font, image, SVG, document or deck here, or choose one.')}</p>
+        <p>${t('Drop a font, image, SVG, video, document or deck here, or choose one.')}</p>
         <button type="button" class="btn" data-pick>${t('Choose a file…')}</button>
-        <input type="file" hidden data-file accept=".ttf,.otf,.woff,.svg,.svgz,image/*,.pdf,.pptx,.docx">
+        <input type="file" hidden data-file accept=".ttf,.otf,.woff,.svg,.svgz,image/*,video/*,.mp4,.mov,.mkv,.webm,.pdf,.pptx,.docx">
       </div>
       <div class="convert-result" data-result hidden></div>
     </div>`;
@@ -372,6 +532,9 @@ export async function mountConvert(viewEl: HTMLElement, host: HostV1, _params = 
     let kind = detectKind(bytes, file);
     // A zip whose name/type said nothing: its part map still names it.
     if (kind === 'unknown' && sniffContainer(bytes) === 'zip') kind = await sniffOfficeZip(bytes);
+    // A video takes the AV column (its own async probe + copy paths), not the generic
+    // detect → target-list → download flow the file formats share.
+    if (kind === 'video') { await renderVideo(result, bytes, file, host); return; }
     const targets = targetsFor(kind).filter((tt) => tt.id !== kind);   // never offer the source format
     result.hidden = false;
     if (!targets.length) {

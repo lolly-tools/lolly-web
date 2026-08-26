@@ -136,12 +136,15 @@ export function videoSupport(): { webm: boolean; mp4: boolean } {
 
 // The audio-only export formats (lib/audio-encode.ts). wav and mp3 are pure JS
 // (engine packWav / lamejs), so they are unconditional - no probe can fail them.
-// m4a and opus ride the platform's WebCodecs AudioEncoder, whose isConfigSupported
-// is async while audioSupport() is a sync gate, so this follows the same shape as
-// probeWebCodecsVideoSupport above: fire once at module load, cache, and report
-// the safe answer (false) until it resolves. The option appears on the next gate
-// read; it is never wrongly offered. Nominal config only - audio-encode.ts
-// re-probes at the clip's real sample rate before it encodes.
+// m4a/aac and opus/ogg ride the platform's WebCodecs AudioEncoder, whose
+// isConfigSupported is async while audioSupport() is a sync gate, so this follows
+// the same shape as probeWebCodecsVideoSupport above: fire once at module load,
+// cache, and report the safe answer (false) until it resolves. The option appears
+// on the next gate read; it is never wrongly offered. Only TWO probes are needed:
+// m4a and aac are the same AAC encoder in different containers (so they share the
+// mp4a.40.2 result), and opus and ogg are the same Opus encoder (sharing the opus
+// result). Nominal config only - audio-encode.ts re-probes at the clip's real
+// sample rate before it encodes.
 const _wcAudio = { m4a: false, opus: false };
 export async function probeWebCodecsAudioSupport(
   AE: ConfigProbe | undefined = (globalThis as { AudioEncoder?: ConfigProbe }).AudioEncoder,
@@ -162,7 +165,12 @@ export async function probeWebCodecsAudioSupport(
 void probeWebCodecsAudioSupport();
 
 // Which audio-only formats this browser can actually produce. The picker gates on
-// this exactly as it does on videoSupport().
-export function audioSupport(): { wav: boolean; mp3: boolean; m4a: boolean; opus: boolean } {
-  return { wav: true, mp3: true, m4a: _wcAudio.m4a, opus: _wcAudio.opus };
+// this exactly as it does on videoSupport(). aac shares m4a's AAC encoder and ogg
+// shares opus's Opus encoder, so each pair reports the same probe result.
+export function audioSupport(): { wav: boolean; mp3: boolean; m4a: boolean; aac: boolean; opus: boolean; ogg: boolean } {
+  return {
+    wav: true, mp3: true,
+    m4a: _wcAudio.m4a, aac: _wcAudio.m4a,
+    opus: _wcAudio.opus, ogg: _wcAudio.opus,
+  };
 }

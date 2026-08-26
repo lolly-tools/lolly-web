@@ -701,11 +701,11 @@ function isSequenceStage(node: Element): boolean {
 
 // The formats a sequence stage renders through the compositor. Everything else is
 // a STILL: the frame at the playhead, exactly as the preview shows it.
-const SEQUENCE_MOTION_FORMATS = new Set(['webm', 'mp4', 'gif', 'apng']);
+const SEQUENCE_MOTION_FORMATS = new Set(['webm', 'mp4', 'gif', 'apng', 'webp-anim']);
 
 // Lazy so mediabunny + the compositor stay out of the initial bundle (the muxer
 // precedent) - they load the first time a timed composition is exported.
-async function renderSequenceStage(node: Element, format: 'mp4' | 'webm' | 'gif' | 'apng', opts: ExportOpts): Promise<Blob> {
+async function renderSequenceStage(node: Element, format: 'mp4' | 'webm' | 'gif' | 'apng' | 'webp-anim', opts: ExportOpts): Promise<Blob> {
   const { renderSequence } = await import('./sequence-render.ts');
   // Wrap the host so the compositor's user-visible quality notices (a sped-up
   // clip's audio dropped) reach the SAME export-card sink the WebCodecs video
@@ -952,6 +952,7 @@ async function renderFormatDispatch(node: Element, format: string, opts: ExportO
       if (isSequenceStage(node)) return await renderSequenceStage(node, 'apng', opts);
       return await renderApng(node, opts);
     case 'webp-anim':
+      if (isSequenceStage(node)) return await renderSequenceStage(node, 'webp-anim', opts);
       return await renderWebpAnim(node, opts);
     // Audio-only: the sound alone, no picture. See renderAudioOnly for where the
     // audio comes from and what each format does to it.
