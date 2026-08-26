@@ -5730,9 +5730,9 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /**
-   * Decode the frame under the playhead from the clip's ORIGINAL asset - never the
-   * scrub proxy (lib/clip-proxy.ts's non-negotiable rule) - at the media's own
-   * native resolution, save it as a new user-catalog asset, and hand the same bytes
+   * Decode the frame under the playhead from the clip's ORIGINAL asset at the media's
+   * own native resolution (never a downscaled preview surface), save it as a new
+   * user-catalog asset, and hand the same bytes
    * to the browser's download flow. `mediaOf(id).url` is read straight off the
    * mounted `<video>` element's `currentSrc`/`src`, which - by the same invariant
    * that keeps every OTHER export path honest (see bridge/export.ts and

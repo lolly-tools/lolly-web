@@ -31,7 +31,7 @@
  * cancellable BETWEEN frames.
  *
  * The reader/writer are SEAMS: the real ones decode with mediabunny (the
- * clip-proxy approach) and encode with the streaming WebCodecs mux
+ * bridge/sequence-providers approach) and encode with the streaming WebCodecs mux
  * (bridge/video-encode-core.ts) or the alpha packers. The seams let the loop and
  * every op be unit-tested with a synthetic decoder/encoder pair - there are no
  * real codecs in jsdom.
@@ -42,7 +42,7 @@
  * extrapolation - are unit-tested headless (video-jobs.test.ts). The mediabunny
  * decode and the WebCodecs/alpha encode adapters have NOT been run in this
  * environment (no codecs under node); they are verified by Andy's in-browser
- * smoke test. Their shape mirrors the already-shipping clip-proxy transcode and
+ * smoke test. Their shape mirrors the already-shipping sequence-providers decode and
  * sequence-render streaming mux. That covers the reader's RANGE window and its
  * source-fps derivation (mediabunny packet stats) too: the range reaches the
  * reader through a dep seam a fake can record, but what a real decoder does with
@@ -746,8 +746,8 @@ export function makeGradeOp(params: GradeVideoParams): FrameOp {
 // ── Real adapters (browser-only, lazily built; honesty ledger) ───────────────
 //
 // These touch mediabunny / WebCodecs / <canvas> and are NOT exercised under node.
-// Tests inject fake readers/writers. Their shape mirrors lib/clip-proxy.ts (decode)
-// and bridge/video-encode-core.ts (encode), both already shipping.
+// Tests inject fake readers/writers. Their shape mirrors bridge/sequence-providers.ts
+// (decode) and bridge/video-encode-core.ts (encode), both already shipping.
 
 /**
  * Read a source track's own average frame rate from a bounded packet scan. Used

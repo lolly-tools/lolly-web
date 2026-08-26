@@ -9,7 +9,7 @@
  *   - asset-blob - cached asset bytes, keyed by id+format+version
  *   - user-assets - user-uploaded assets (headshots, custom images)
  *   - derived-media - DERIVED, evictable bytes computed on device FROM a user
- *                     asset (today: timeline scrub proxies, lib/clip-proxy.ts)
+ *                     asset (today: depth maps, lib/depth-job.ts)
  *   - audio-peaks - DERIVED overview waveforms for audio assets, ~128 bytes
  *                     each (lib/audio-peaks.ts)
  *   - audio-cover-bakes - DERIVED MilkDrop cover images, keyed by
@@ -126,12 +126,12 @@ function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
         db.createObjectStore('contentseal-models');
       }
       if (oldVersion < 8) {
-        // DERIVED media built on device from a user asset - today just the
-        // keyframe-dense 720p scrub proxies the timeline uses for filmstrips and
-        // waveforms (see lib/clip-proxy.ts). Keyed `<assetId>:proxy`, one row per
-        // asset, records carry their own `key` so this is a keyPath store.
-        // Derived, evictable, regenerable: a missing row just means "scrub the
-        // original", so - like 'asset-blob'/'generated-previews' - it is
+        // DERIVED media built on device from a user asset. Originally the timeline's
+        // keyframe-dense scrub proxies (retired in WP-C once filmstrips moved to
+        // mediabunny CanvasSink); now the store carries depth maps (keyed `depth:<id>`,
+        // see lib/depth-job.ts). Records carry their own `key` so this is a keyPath store.
+        // Derived, evictable, regenerable: a missing row just means "recompute it", so -
+        // like 'asset-blob'/'generated-previews' - it is
         // intentionally NOT in REQUIRED_STORES (its absence must never escalate
         // into wiping the user's real data) and NOT part of the portable backup
         // (it isn't user data - it is recomputable from data that IS backed up).

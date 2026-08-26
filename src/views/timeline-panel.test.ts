@@ -5810,8 +5810,7 @@ test('kfPoseWrite in \'set\' mode writes the size ABSOLUTELY - the resize seam\'
 
 // ── Export frame (WP-D) ────────────────────────────────────────────────────
 
-test('Export frame decodes the clip\'s ORIGINAL asset at its own local media time - never a registered scrub proxy', async () => {
-  const { noteScrubSource, setProxyUrl, resetScrubCache } = await import('../lib/scrub-registry.ts');
+test('Export frame decodes the clip\'s ORIGINAL asset at its own local media time', async () => {
   const calls: Array<{ url: string; tSec: number }> = [];
   _setFrameAtImpl(async (url, tSec) => { calls.push({ url, tSec }); return null; });
   const h = mount([{ id: 'v', start: 1, dur: 4, lane: 'seq', clipIn: 2, speed: 2 } as Box]);
@@ -5822,13 +5821,6 @@ test('Export frame decodes the clip\'s ORIGINAL asset at its own local media tim
     // (unspecified, here) src-attribute resolution.
     Object.defineProperty(video, 'src', { value: 'blob:clip-original-abc', configurable: true });
     h.panel.setOpen(false); h.panel.setOpen(true);
-
-    // Register a scrub proxy for EXACTLY this URL - the same registration path a real
-    // upload wires (bridge/assets.ts's noteScrubSource + the proxy build's setProxyUrl).
-    // If "Export frame" ever swapped it in - the way filmstrip()/scrubUrl() deliberately
-    // do for a scrubbing preview - this is the proxy it would pick up.
-    noteScrubSource('blob:clip-original-abc', 'user/video/1');
-    setProxyUrl('user/video/1', 'blob:proxy-fake', false);
 
     // Playhead at 2s, on a box that starts at 1s, trimmed in 2s of media and playing
     // at 2×: one second of timeline has elapsed since the box's own start, which is
@@ -5844,12 +5836,10 @@ test('Export frame decodes the clip\'s ORIGINAL asset at its own local media tim
     await frames(3);
 
     assert.equal(calls.length, 1, 'the decode was attempted exactly once');
-    assert.equal(calls[0]!.url, 'blob:clip-original-abc', 'the ORIGINAL asset url - never the registered proxy');
-    assert.notEqual(calls[0]!.url, 'blob:proxy-fake', 'the proxy is never the id this resolves to');
+    assert.equal(calls[0]!.url, 'blob:clip-original-abc', 'the ORIGINAL asset url');
     assert.equal(calls[0]!.tSec, 4, 'clipIn + elapsed×speed - the box\'s own local-media-time mapping');
   } finally {
     _setFrameAtImpl(null);
-    resetScrubCache();
     h.teardown();
   }
 });

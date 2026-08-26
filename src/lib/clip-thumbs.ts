@@ -61,18 +61,12 @@
  * is expected to call `onIdle()` (exported here) to defer capture until the main
  * thread is free, and to abort in-flight work the moment a drag/zoom starts.
  *
- * SCRUB PROXIES (phase 4 Track A): both entry points read through
- * `peekScrubUrl()` (lib/clip-proxy.ts), so an uploaded clip that has a
- * keyframe-dense 720p proxy is decoded from the proxy instead of the original.
- * A filmstrip needs 24 random seeks, which is exactly the workload a long GOP
- * punishes. The lookup is SYNCHRONOUS and falls back to the original URL, so a
- * missing/unbuilt proxy costs one map miss. `primeScrubUrl()` is kicked off (not
- * awaited) on the miss so the next call can use it. The cache key follows
- * whichever URL was chosen, so proxy and original results never collide.
- * This is a PREVIEW-ONLY substitution: nothing here is on an export path.
+ * DECODE PATH (WP-C): the filmstrip decodes the original asset directly through
+ * mediabunny's CanvasSink (captureFilmstripSink) - the monotonic frame grid, each
+ * packet at most once, no `<video>` seeking and no scrub proxy. Where WebCodecs or the
+ * codec is unavailable it falls back to the pooled-`<video>` element-seek path
+ * (captureFilmstripElement). This is PREVIEW-ONLY: nothing here is on an export path.
  */
-
-import { peekScrubUrl, primeScrubUrl } from './clip-proxy.ts';
 
 // ── tunables ────────────────────────────────────────────────────────────────
 
@@ -720,27 +714,6 @@ function withProbe<T>(fn: () => Promise<T>): Promise<T> {
   return next;
 }
 
-/**
- * The URL a preview capture should actually read.
- *
- * Synchronous: `filmstrip`/`peaks` have a same-tick cache-hit path and must not
- * grow a database round-trip on every call. A first ask for an unprimed clip
- * gets the original and warms the proxy in the background, so the swap lands
- * from the second capture of that asset onward (bars re-capture on zoom/resize,
- * and a fresh upload's proxy is usually built before the first scrub anyway).
- * Never throws, and never returns a proxy for anything that has none.
- */
-function scrubUrl(url: string, need: { audio?: boolean } = {}): string {
-  try {
-    const swapped = peekScrubUrl(url, need);
-    if (swapped !== url) return swapped;
-    void primeScrubUrl(url);
-    return url;
-  } catch {
-    return url;
-  }
-}
-
 const isCrossOrigin = (url: string): boolean => {
   if (typeof location === 'undefined') return false;
   if (!/^https?:/i.test(url)) return false;
@@ -823,11 +796,10 @@ async function captureFilmstripElement(assetUrl: string, opts: FilmstripOpts, si
   // abort-on-drag/zoom pattern) would otherwise still create the <video>, attach it,
   // and fire a real media request that nothing will ever consume.
   if (signal.aborted) return [];
-  // The scrub proxy (a small transcode) is what makes this element-seek fallback
-  // bearable; the primary CanvasSink path (captureFilmstripSink) decodes the original
-  // directly and never touches it. Resolving it here, not in filmstrip(), keeps the
-  // proxy an implementation detail of the slow path.
-  const url = scrubUrl(assetUrl);
+  // No scrub proxy any more: the primary CanvasSink path decodes the original, and this
+  // element-seek fallback (rare - only where WebCodecs is unavailable) seeks the original
+  // directly too.
+  const url = assetUrl;
   const count = clampInt(opts.count, 1, MAX_FRAMES);
   const targetH = clampInt(opts.h, 8, 240);
   const made: ImageBitmap[] = [];
@@ -920,10 +892,9 @@ export function filmstrip(assetUrl: string, opts: FilmstripOpts, signal?: AbortS
  * A SINGLE frame decoded from a clip's ORIGINAL asset, at the media's own native
  * resolution - the read path behind the sequence editor's "Export frame" action.
  *
- * Deliberately NOT built on `filmstrip()`: filmstrip swaps in the scrub proxy via
- * `scrubUrl()` (a lossy, downscaled re-encode - see lib/clip-proxy.ts) and caps its
- * canvas at a bar-sized target height, both exactly right for a scrubbing filmstrip
- * and exactly wrong for an export. `frameAt` reads `assetUrl` EXACTLY as given - no
+ * Deliberately NOT built on `filmstrip()`: filmstrip caps its canvas at a bar-sized
+ * target height, exactly right for a scrubbing filmstrip and exactly wrong for an
+ * export. `frameAt` reads `assetUrl` EXACTLY as given - no
  * proxy swap of any kind - and draws at the decoded video's own `videoWidth`/
  * `videoHeight`. It also skips the shared filmstrip probe/cache entirely: an export
  * is a rare, deliberate action rather than a scrub-time hot path, so a dedicated
@@ -1907,16 +1878,11 @@ export function peaks(
   win?: { fromSec?: number; toSec?: number },
 ): Promise<Float32Array> {
   if (!audioUrl) return Promise.resolve(EMPTY_PEAKS);
-  // A proxy is smaller, which also means a clip that was over
-  // MAX_AUDIO_DECODE_BYTES as an original may be decodable as a proxy - but ONLY
-  // if the transcode kept the audio. It may not have: a proxy is re-containered
-  // into whatever the browser can encode, and an AAC track cannot ride in WebM,
-  // in which case mediabunny discards it and the conversion is still valid. A
-  // waveform read off such a proxy would be flat silence over a clip that exports
-  // with sound, so this asks for audio explicitly and gets the original whenever
-  // the proxy cannot answer. A pure-audio asset has no proxy at all, so this is a
-  // no-op for those.
-  const url = scrubUrl(audioUrl, { audio: true });
+  // Read the original directly. The scrub proxy was always a no-op here anyway: peaks
+  // handles pure-audio assets (see the doc above), and an audio asset never had a video
+  // proxy. Video-soundtrack waveforms via AudioBufferSink (which would also lift the
+  // MAX_AUDIO_DECODE_BYTES ceiling) are WP-C part 2, still future work.
+  const url = audioUrl;
   const key = peaksKey(url);
   const shape = (m: MasterPeaks): Float32Array =>
     windowPeaks(m.peaks, m.durationSec, win?.fromSec ?? 0, win?.toSec ?? m.durationSec, buckets);

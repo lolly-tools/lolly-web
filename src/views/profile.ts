@@ -68,7 +68,6 @@ import { beginOfflineRun, cancelOfflineRun, offlineRunActive, offlineRunLine, su
 import type { OfflineRunHandle, OfflineRunLine } from '../lib/offline-run.ts';
 import { upscaleCacheBytes, matteCacheBytes, ocrCacheBytes } from '../lib/model-prefetch.ts';
 import { toolSupport } from '../capabilities.ts';
-import { derivedMediaSize, resetScrubCache } from '../lib/clip-proxy.ts';
 import { getInstanceBase } from '../lib/instance.ts';
 import { isTauriShell } from '../lib/instance-choice.ts';
 import { openInstanceSheet } from '../components/instance-sheet.ts';
@@ -1265,12 +1264,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const estP = navigator.storage?.estimate
       ? navigator.storage.estimate().catch(() => null)
       : Promise.resolve(null);
-    const [estimate, sessions, sessionSizes, blobCacheBytes, derivedBytes, allImages, imagesBytes, previews, pins, speech, upscale, matte, ocr, reword, aiDetect] = await Promise.all([
+    const [estimate, sessions, sessionSizes, blobCacheBytes, allImages, imagesBytes, previews, pins, speech, upscale, matte, ocr, reword, aiDetect] = await Promise.all([
       estP,
       host.state.list().catch((): SessionEntry[] => []),
       host.state.sizes!().catch((): Record<string, number> => ({})),
       host.assets._blobCacheSize!().catch(() => 0),
-      derivedMediaSize().catch(() => 0),
       host.assets._listUserAssets!().catch((): AssetRef[] => []),
       host.assets._userAssetsSize!().catch(() => 0),
       measurePreviews(),
@@ -1283,14 +1281,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       aiDetectCacheBytes().catch(() => ({ bytes: 0, files: 0 })),
     ]);
     const sessBytes = Object.values(sessionSizes).reduce((s, n) => s + n, 0);
-    // Derived scrub proxies (lib/clip-proxy.ts) are folded into the Asset cache
-    // slice rather than given a row of their own: they are the same promise to the
-    // user ("derived bytes, safe to clear, they come back on demand"), the existing
-    // Clear cache button already evicts them, and folding keeps them OUT of the
-    // unlabelled "Other" remainder, so the total stays accurate. A dedicated
-    // row would need new UI strings, and the locale catalogs are owned elsewhere
-    // this cycle; splitting the slice out later is a display-only change.
-    const cacheBytes = blobCacheBytes + derivedBytes;
+    const cacheBytes = blobCacheBytes;
     // The grid shows visual uploads only: the headshot is hidden, and the non-visual
     // user assets (brand tokens doc, font faces - managed in the Adjust your brand card)
     // would render as broken tiles. Their bytes stay in the slice either way.
@@ -1822,7 +1813,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       // 'derived-media' rides with the asset cache: it is the same kind of thing
       // (downloaded/derived bytes that regenerate on demand), so it is counted in
       // the same slice - see measure() - and must be cleared by the same button.
-      if (cacheBtn) { await clearRegenerable(cacheBtn, () => clearIdbStores(['asset-blob', 'asset-meta', 'derived-media', 'audio-peaks', 'audio-cover-bakes']).then(() => { resetScrubCache(); }), t('Cleared asset cache')); return; }
+      if (cacheBtn) { await clearRegenerable(cacheBtn, () => clearIdbStores(['asset-blob', 'asset-meta', 'derived-media', 'audio-peaks', 'audio-cover-bakes']), t('Cleared asset cache')); return; }
 
       const prevBtn = (e.target as Element).closest<HTMLButtonElement>('#clear-previews-btn');
       if (prevBtn) { await clearRegenerable(prevBtn, () => host.previews?.clear(), t('Cleared tool previews')); return; }
@@ -1966,7 +1957,6 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         // future needs the same check: does its KEY or its VALUE say anything about the
         // user's own content?
         await clearIdbStores(['state', 'profile', 'user-assets', 'asset-blob', 'asset-meta', 'derived-media', 'audio-peaks', 'audio-cover-bakes']);
-        resetScrubCache();
         // The 'profile' wipe above dropped the pin RECORDS; also drop the pinned
         // tools' Cache Storage bucket so no orphaned bytes survive the clear.
         await unpinAll().catch(() => { /* cache API unavailable - nothing pinned */ });

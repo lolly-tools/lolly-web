@@ -3245,44 +3245,6 @@ async function probeMediaDurationMs(file: Blob, kind: 'video' | 'audio'): Promis
   }
 }
 
-/**
- * Kick off the timeline scrub proxy for a freshly stored clip (phase 4 Track A).
- *
- * Deferred to an idle callback so a burst of uploads doesn't queue transcodes in
- * front of the UI, and completely detached from the upload: `ensureProxy` never
- * throws, and the extra guard here means even a broken import can't turn a
- * successful upload into a failed one. The measured duration/dimensions from the
- * ingest probe ride along as a hint so the common case skips a second container
- * walk. A skipped proxy stays invisible; the transcode itself now runs as a WP-F
- * job, so it shares the one heavy slot and a failure lands in the global toast
- * instead of nowhere. Either way the timeline just scrubs the original.
- */
-function scheduleProxyBuild(
-  assetId: string,
-  bytes: Blob,
-  durationMs?: number,
-  width?: number,
-  height?: number,
-): void {
-  onIdle(() => {
-    void (async () => {
-      try {
-        const { ensureProxy } = await import('../lib/clip-proxy.ts');
-        await ensureProxy(assetId, bytes, {
-          hint: {
-            ...(durationMs != null ? { durationSec: durationMs / 1000 } : {}),
-            ...(width != null ? { width } : {}),
-            ...(height != null ? { height } : {}),
-          },
-        });
-      } catch { /* derived data: a proxy that never appears changes nothing */ }
-    })();
-  }, PROXY_IDLE_TIMEOUT_MS);
-}
-
-/** How long the proxy build may wait for an idle slot before running anyway. */
-const PROXY_IDLE_TIMEOUT_MS = 5000;
-
 /** The first existing upload whose bytes are identical to `file`, or null.
  *  Size-gates before hashing: the new file is hashed once, and only same-size
  *  candidates are read back and hashed. Object URLs resolve from memory (the
@@ -3920,14 +3882,6 @@ export async function storeUserUpload(host: PickerHost, file: File, o: { skipDup
   // Fire-and-forget: it must never delay or fail the upload it follows.
   void maybeNudgeAssetMilestone(host);
 
-  // Build the timeline scrub proxy for a video, on idle. Fire-and-forget for the
-  // same reason as the nudge above and then some: it is a transcode, so it must
-  // never be in front of the picker returning, and a failure is a silent no-op
-  // (the timeline just scrubs the original, exactly as it did before phase 4).
-  // The record is already durably written at this point, so the job can safely
-  // outlive this call. EXPORT NEVER SEES THIS - see lib/clip-proxy.ts's header.
-  if (record.type === 'video') scheduleProxyBuild(id, blob, durationMs, width, height);
-
   // Re-resolve via the public API so we get a proper AssetRef with object URL.
   return host.assets.get(id);
 }
@@ -4006,12 +3960,6 @@ export async function replaceUserUpload(host: ReplaceHost, targetId: string, fil
     // be wrong). The format badge tracks `format`, not the label's extension.
     meta: { ...carried.meta, ...(oldName != null ? { name: String(oldName) } : {}) },
   });
-
-  // The re-key went through _uploadUserAsset, which (unlike _restampUserAsset / _deleteUserAsset)
-  // does NOT drop a stale clip proxy - so a video replace would keep scrubbing the OLD frames.
-  // Drop it here (a no-op when there is no proxy); the timeline scrubs the new bytes until a
-  // fresh proxy builds on demand.
-  await import('../lib/clip-proxy.ts').then((m) => m.deleteProxy(targetId)).catch(() => {});
 
   // A fresh AssetRef for the replaced id (new version ⇒ new object URL).
   return (await host.assets.get(targetId)) ?? { ...fresh, id: targetId };
