@@ -34,6 +34,7 @@ import { createClipboardAPI } from './clipboard.ts';
 // host.media / host.recorder are lazy facades (see below); only their SYNCHRONOUS
 // availability probes are needed at boot, and those live in their own leaf.
 import { cameraAvailable, recorderAvailable } from './capture-support.ts';
+import { createScanAPI, scanAvailable } from './scan.ts';
 // The PROBE leaf, not capture-extension.ts itself: the impl choice below is made
 // at boot, the postMessage transport behind it is not (see the probe's header).
 import { hasCaptureExtension } from './capture-extension-probe.ts';
@@ -318,6 +319,20 @@ export async function createBridge(): Promise<WebHost> {
     record: async (opts) => (await loadRecorder()).record(opts),
     still: async (opts) => (await loadRecorder()).still(opts),
   } as WebHost['recorder'];
+  // host.scan (v1.153, plans/162 Part 2) - on-device code reader. Progressive
+  // enhancement like media: attached only where a decoder exists so a tool
+  // feature-detects `host.scan`. WP-A wires the native BarcodeDetector rung;
+  // scanAvailable() is true where the platform provides it. (WP-B will also
+  // attach a zxing-wasm-only path for shells without native support.) The wasm
+  // chunk stays a separate lazy import inside scan.ts, so this attach is cheap.
+  if (scanAvailable()) {
+    const scanImpl = createScanAPI();
+    void scanImpl.ready; // prime the supported-format list so formats() populates
+    host.scan = {
+      formats: () => scanImpl.formats(),
+      detect: (frame, opts) => scanImpl.detect(frame, opts),
+    };
+  }
   // host.color (perceptual colour tools, v1.40) and host.geom (path booleans,
   // offset, stroke-to-fill, spline lowering, hit testing, v1.64) are pure engine
   // math attached verbatim so web/CLI/Tauri can never drift - but they are also

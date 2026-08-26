@@ -68,9 +68,6 @@ export function gallerySearchBox(opts: { placeholder: string; ariaLabel: string;
 }
 
 export interface FooterNavOpts {
-  /** Whether to show the Batch link. Always true now that Batch/Pro is available to everyone
-   *  (the pro-batch flag was retired); kept as a prop so the bar stays presentation-only. */
-  proEnabled: boolean;
   /** The middle search field - gallerySearchBox(...). */
   searchHtml: string;
 }
@@ -108,8 +105,10 @@ function navItem(o: { href: string; nativeClass: string; variant?: string; style
   return `<a href="${escape(o.href)}" class="${o.nativeClass}"${sfxAttr} aria-label="${escape(o.aria)}">${o.inner}</a>`;
 }
 
-/** The shared bottom bar: [Open] [Pro?] [Dashboard]  <search>  [Verify] [What?]. */
-export function footerNav({ proEnabled, searchHtml }: FooterNavOpts): string {
+/** The shared bottom bar: [Open] [Dashboard]  <search>  [Verify] [What?].
+ *  Batch moved OUT of here (Andy, 2026-08-26) - it now lives in the Projects top bar
+ *  only (views/projects.ts topRightSlot), since a batch is a Projects-scoped action. */
+export function footerNav({ searchHtml }: FooterNavOpts): string {
   if (jellyActive()) ensureNavHandler();
   const label = (txt: string) => `<span class="gallery-nav-label">${txt}</span>`;
   // "Open" is an ACTION, not a route - it opens the OS file picker to import a
@@ -120,12 +119,6 @@ export function footerNav({ proEnabled, searchHtml }: FooterNavOpts): string {
   const open = jellyActive()
     ? `<jelly-button class="gallery-nav-jelly" size="sm" variant="platinum" data-open-file data-sfx="click" aria-label="${escape(openAria)}">${openInner}</jelly-button>`
     : `<button type="button" class="gallery-nav-link btn" data-open-file data-sfx="click" aria-label="${escape(openAria)}">${openInner}</button>`;
-  // "Batch", table icon (Andy, 2026-08-20 - formerly "Pro" on #/pro; route
-  // renamed with no redirect inside the pre-08-29 break window).
-  const pro = proEnabled ? navItem({
-    href: '#/batch', nativeClass: 'gallery-batch-link btn', variant: 'platinum',
-    aria: t('Open Batch mode - for power users'), inner: `${NAV_ICONS.table}${label(t('Batch'))}`,
-  }) : '';
   const dashboard = navItem({
     href: '#/d', nativeClass: 'gallery-nav-link btn', variant: 'platinum', sfx: 'dashboard',
     aria: t('Dashboard - this device, the brand system & the full feature set'), inner: `${NAV_ICONS.dashboard}${label(t('Dashboard'))}`,
@@ -148,7 +141,6 @@ export function footerNav({ proEnabled, searchHtml }: FooterNavOpts): string {
   return `
     <footer class="gallery-footer${jellyActive() ? ' gallery-footer--jelly' : ''}">
       ${open}
-      ${pro}
       ${dashboard}
       ${searchHtml}
       ${verify}

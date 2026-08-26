@@ -213,7 +213,7 @@ export interface TrimVideoParams {
    *  the previous keyframe when the requested in-point is mid-GOP. Off (the default)
    *  keeps the exact bounds: an off-keyframe cut then falls back to the transcoding
    *  trim rather than the fast path silently moving the in-point. A cut that already
-   *  lands on a keyframe takes the fast path either way. */
+   *  aligns to a keyframe takes the fast path either way. */
   snapToKeyframe?: boolean;
 }
 

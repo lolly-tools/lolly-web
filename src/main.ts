@@ -488,7 +488,48 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
         bumpMetric('filesRendered', files.length);
         for (const f of files) recordFormat(String(f.name).split('.').pop());
       };
-      await mountPro(view, host as unknown as Parameters<typeof mountPro>[1], { sessionSlot, seedToolId, seedRefs, onBatchRendered, openFolderOverlay } as unknown as Parameters<typeof mountPro>[2]);
+      // Save-a-batch-to-a-project (Andy, 2026-08-26): the Projects Batch button /
+      // "Edit as sheet" carry `?from=<folderId>` as the batch's origin. folders.ts is
+      // a shell-side sibling /pro must not import, so the shell injects a tiny folder
+      // API (mirrors openFolderOverlay); a memoised store keeps it off the mount path.
+      const originFolderId = q.get('from') || null;
+      let folderStore: ReturnType<Awaited<typeof import('./folders.ts')>['createFolderStore']> | null = null;
+      const withStore = async () => {
+        if (!folderStore) {
+          const { createFolderStore } = await import('./folders.ts');
+          folderStore = createFolderStore(host as unknown as Parameters<typeof createFolderStore>[0]);
+        }
+        return folderStore;
+      };
+      const folderApi = {
+        async list() {
+          const s = await withStore();
+          const folders = await s.list();
+          const byId = new Map(folders.map(f => [f.id, f]));
+          const depthOf = (f: { parentId?: string | null }): number => {
+            let d = 0; let p = f.parentId ?? null;
+            while (p && d < 32) { d++; p = byId.get(p)?.parentId ?? null; }
+            return d;
+          };
+          // Path-ordered so a child follows its parent (a flat alpha sort scatters the tree).
+          const pathOf = (f: { id: string; name: string; parentId?: string | null }): string => {
+            const parts: string[] = []; let cur: typeof f | undefined = f;
+            while (cur) { parts.unshift(cur.name.toLowerCase()); cur = cur.parentId ? byId.get(cur.parentId) : undefined; }
+            return parts.join('/');
+          };
+          return [...folders]
+            .sort((a, b) => pathOf(a).localeCompare(pathOf(b)))
+            .map(f => ({ id: f.id, name: f.name, depth: depthOf(f) }));
+        },
+        async create(name: string, parentId: string | null) {
+          const f = await (await withStore()).create(name, parentId);
+          return { id: f.id, name: f.name };
+        },
+        async file(slot: string, folderId: string | null) {
+          await (await withStore()).moveItem(slot, folderId, 'session');
+        },
+      };
+      await mountPro(view, host as unknown as Parameters<typeof mountPro>[1], { sessionSlot, seedToolId, seedRefs, onBatchRendered, openFolderOverlay, originFolderId, folderApi } as unknown as Parameters<typeof mountPro>[2]);
       break;
     }
     // --- Projects: a gallery-style view of folders of saved sessions. Shares the

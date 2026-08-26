@@ -117,7 +117,7 @@ const LIVE: Record<string, { render: () => string | HTMLElement; wire?: (stage: 
   backPill: { render: () => backPillHtml({ class: '' }) },
   themeSeg: { render: () => themeSegmentHtml() },
   soundSwitch: { render: () => soundSwitchHtml() },
-  footerNav: { render: () => footerNav({ proEnabled: false, searchHtml: gallerySearchBox({ placeholder: t('Search'), ariaLabel: t('Search') }) }) },
+  footerNav: { render: () => footerNav({ searchHtml: gallerySearchBox({ placeholder: t('Search'), ariaLabel: t('Search') }) }) },
   catGlyph: { render: () => `<span style="display:inline-flex;gap:.7rem;align-items:center">${['logos', 'photos', 'swatches', 'fonts'].map(categoryGlyph).join('')}</span>` },
   catSummary: { render: () => catalogSummaryBody([
     { id: 'qr-code', category: 'utility', status: 'official' },

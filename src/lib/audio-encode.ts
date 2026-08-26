@@ -203,7 +203,7 @@ const AUDIO_ONLY_CODEC: Record<string, 'opus' | 'aac'> = { A_OPUS: 'opus', aac: 
  * chunk's bytes are copied out of its (closeable) WebCodecs chunk synchronously by
  * fromEncodedChunk, and the async source.add()s are serialised onto one chain so
  * finalize() only has to await the settled tail. This mirrors the add/finalize
- * shape of buildMediabunnyMux, minus the two-stream bounded merge it needs and
+ * the structure of buildMediabunnyMux, minus the two-stream bounded merge it needs and
  * this one doesn't. (Ogg-Opus needs the encoder's OpusHead in the chunk metadata's
  * decoderConfig.description; the real AudioEncoder supplies it, and it flows
  * through unchanged.)

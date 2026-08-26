@@ -82,7 +82,7 @@ test('webCodecsRecorderAvailable: an A/V take needs all three; neither-track is 
   });
 });
 
-// ── the container decided up front lands somewhere signable ───────────────────
+// ── the container decided up front reaches somewhere signable ─────────────────
 
 test('webCodecsContainerMime: every container the path can hand back is a signable CaptureFormat', () => {
   for (const kind of ['video', 'audio'] as const) {

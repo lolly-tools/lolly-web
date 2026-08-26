@@ -33,3 +33,14 @@ declare module '*.css?raw' {
   const source: string;
   export default source;
 }
+
+/**
+ * Vite's `?url` suffix: the built asset's URL as the default export. Declared for
+ * `.wasm` only, the one use in the shell - bridge/scan.ts loads the zxing-wasm
+ * reader binary this way so it is bundled + PWA-precached rather than fetched
+ * from a CDN. A blanket `*?url` would swallow typos in ordinary specifiers.
+ */
+declare module '*.wasm?url' {
+  const url: string;
+  export default url;
+}

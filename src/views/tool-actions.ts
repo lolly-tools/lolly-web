@@ -128,10 +128,11 @@ const isImprintFmt = (f: string | undefined): boolean => !!f && ['png', 'jpg', '
 // Durable (neural TrustMark) embed is RASTER-ONLY - no pdf/pptx container path yet
 // (export.ts durableEmbedCanvas; see plans/28-durable-content-credentials.md).
 const isDurableFmt = (f: string | undefined): boolean => !!f && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff'].includes(f);
-// HDR (Rec.2100 PQ) raster export. PNG (cICP) + JPEG (PQ ICC) + AVIF (native nclx
-// colr) + TIFF (PQ ICC tag, archival). WebP is excluded on purpose - it has no
-// working HDR decode path, so a PQ WebP would just look dark.
-const isHdrFmt = (f: string | undefined): boolean => !!f && ['png', 'jpg', 'jpeg', 'avif', 'tiff'].includes(f);
+// HDR (Rec.2100 PQ) export. Raster: PNG (cICP) + JPEG (PQ ICC) + AVIF (native nclx
+// colr) + TIFF (PQ ICC tag, archival). Video: mp4/webm carry a 10-bit PQ track with a
+// colr/nclx (Colour on WebM) box (plan 154 WP-2). WebP is excluded on purpose - it has
+// no working HDR decode path, so a PQ WebP would just look dark.
+const isHdrFmt = (f: string | undefined): boolean => !!f && ['png', 'jpg', 'jpeg', 'avif', 'tiff', 'mp4', 'webm'].includes(f);
 
 // Print marks & bleed apply to the three print formats (pdf / pdf-cmyk / cmyk-tiff).
 // Defaults when the user turns the card on; the CSV tokens (crop,reg,bleed,bars)
@@ -2977,8 +2978,9 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         ...((el!.querySelector<HTMLInputElement>('[data-action="imprint"]')?.checked ?? exportDefaults.imprint) ? { imprint: true } : {}),
         ...((el!.querySelector<HTMLInputElement>('[data-action="durable"]')?.checked ?? exportDefaults.durable) ? { durable: true } : {}),
         // HDR (Rec.2100 PQ) - opt-in; passes the live brand palette as the colours
-        // to boost + the author's slider dials. The bridge applies it only to raster
-        // (png/jpeg/avif/tiff), so it's a harmless pass-through elsewhere.
+        // to boost + the author's slider dials. The bridge applies it to raster
+        // (png/jpeg/avif/tiff) and the 10-bit video containers (mp4/webm, plan 154 WP-2);
+        // a harmless pass-through for any other format.
         ...((el!.querySelector<HTMLInputElement>('[data-action="hdr"]')?.checked ?? exportDefaults.hdr)
           ? {
               hdr: true, palette: brandPalette,
@@ -3371,7 +3373,9 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // "Make variants" / multi-edit - the icon button NEXT TO THE TOOL NAME (markup
   // in tool.ts's sidebar header; it lives outside `el`, hence the document lookup).
   // Deliberately not an export option: it's a step BEFORE export. The click opens
-  // a how-many dropdown (2–8, multi-edit's MIN_SEL–MAX_SEL); picking a count
+  // a how-many dropdown (a 2–8 quick-pick - multi-edit's grid holds far more now,
+  // but a dropdown of one tool's variants stays short; for a big fan-out use the
+  // gallery's multi-select "Make copies"); picking a count
   // persists the CURRENT live state into that many fresh sessions (labelled A…H - 
   // the same payload + slot shape performSave writes, so they're ordinary saved
   // sessions everywhere) and jumps straight into multi-edit with them side by

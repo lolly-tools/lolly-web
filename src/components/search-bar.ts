@@ -133,7 +133,6 @@ function render(): void {
   renderedPlaceholder = placeholder;
   const tpl = document.createElement('template');
   tpl.innerHTML = footerNav({
-    proEnabled: true,   // Batch/Pro available to everyone now (flag retired)
     searchHtml: gallerySearchBox({
       placeholder, ariaLabel, value: currentClaim?.value ?? '',
       // Advertise ⌃␣ ONLY - ⌘Space stays bound but silent (plans/99 section 2f, locked).

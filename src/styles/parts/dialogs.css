@@ -38,6 +38,29 @@
   .modal:has(.modal-actions--choices) { width: auto; max-width: min(760px, 92vw); }
   .modal-actions--choices { flex-wrap: nowrap; }
 }
+/* ─── "Make copies…" chooser (gallery bulk action) ──────────────────────────
+   A compact list of the selected tools, each with a native copy-count field,
+   above the two editor destinations (Edit together / Edit as sheet). */
+.copies-dialog { width: min(460px, 92vw); }
+.copies-list {
+  list-style: none; margin: 0 0 12px; padding: 0;
+  display: flex; flex-direction: column; gap: 8px;
+  max-height: min(46vh, 360px); overflow-y: auto;
+}
+.copies-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.copies-name {
+  font-size: calc(13px * var(--a11y-fs)); font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.copies-count {
+  flex: none; width: 4.5em; text-align: center; padding: 6px 8px;
+  border: 1px solid hsl(var(--input)); border-radius: var(--radius);
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+  font-size: calc(13px * var(--a11y-fs));
+}
+.copies-total { margin: 0 0 16px; font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.copies-dialog .modal-actions button svg { width: 16px; height: 16px; }
+
 /* askExportLock's password + zip-tier controls (lib/export-lock.ts). Both are
    plain `.field-input` / `.field-select` now; the only thing the old inline
    recipe carried that the primitive doesn't is the hairline gap between the two

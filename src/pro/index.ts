@@ -13,7 +13,7 @@
  * To remove the feature: delete this folder and that one route case.
  */
 import './pro.css';
-import { isHiddenSlot } from '../lib/batch-slots.ts';
+import { isHiddenSlot, BATCH_SLOT_PREFIX } from '../lib/batch-slots.ts';
 import { serializeUrlState, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION } from '@lolly/engine';
 import { marksToCsv, csvToMarks } from '../lib/print-marks-csv.ts';
 
@@ -90,6 +90,20 @@ interface ProMountOpts {
   seedRefs?: string[];
   onBatchRendered?: (files: any[]) => void;
   openFolderOverlay?: (host: ProHost, cfg: any) => void;
+  /** The Projects folder the batch was invoked from (`#/batch?from=<id>`) - the
+   *  save's default destination. null/absent = top-level Projects (library root). */
+  originFolderId?: string | null;
+  /** Injected folder store (the shell owns folders.ts; /pro stays import-isolated),
+   *  so a batch can be SAVED into a project - default the origin, or a chosen /
+   *  freshly-created subfolder. Absent → the save keeps its old library-only behaviour. */
+  folderApi?: {
+    /** Every project folder, each with its nesting depth (0 = top level), path-ordered. */
+    list(): Promise<Array<{ id: string; name: string; depth: number }>>;
+    /** Create a subfolder under `parentId` (null = top level) and return it. */
+    create(name: string, parentId: string | null): Promise<{ id: string; name: string }>;
+    /** File the batch slot into `folderId` (null = library root, i.e. no project). */
+    file(slot: string, folderId: string | null): Promise<void>;
+  };
 }
 
 // One batch row. `manifest` is the loaded tool manifest (null until the tool
@@ -1282,6 +1296,12 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
         <input type="text" class="pro-sess-input" placeholder="Session name" value="${escape(state.zipName.trim())}" autocomplete="off" spellcheck="false" maxlength="60">
         <button type="button" class="pro-btn pro-btn--primary" data-save>Save</button>
       </div>
+      ${opts.folderApi ? `<div class="pro-sess-project">
+        <label class="pro-sess-project-label" for="pro-sess-project-sel">Save to project</label>
+        <select id="pro-sess-project-sel" data-project aria-label="Project to save this batch into"></select>
+        <input type="text" class="pro-sess-newsub" data-new-subfolder placeholder="New subfolder name" autocomplete="off" maxlength="60" aria-label="New subfolder name" hidden>
+        <p class="pro-sess-project-hint">You can add more later.</p>
+      </div>` : ''}
       <div class="pro-sess-csv">
         <span class="pro-sess-csv-label">Offline CSV</span>
         <button type="button" class="pro-btn" data-csv-export title="Download this batch as a CSV to edit in any spreadsheet">↓ Download</button>
@@ -1312,7 +1332,35 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
       await drawSessions(pop);
     }));
 
-    const input = pop.querySelector<HTMLInputElement>('.pro-sess-input')!;
+    // ── Project picker (only when the shell injects a folderApi) ──────────────
+    // Choose where the saved batch is FILED: its origin folder by default (the
+    // Projects folder Batch was opened from), any existing project, or a fresh
+    // subfolder created "for the batch". Options are DOM-built (a folder name is
+    // user data, never a raw-HTML sink).
+    const NEW_SUB = '__new_subfolder__';
+    const projectSel = pop.querySelector<HTMLSelectElement>('[data-project]');
+    const newSubInput = pop.querySelector<HTMLInputElement>('[data-new-subfolder]');
+    if (opts.folderApi && projectSel) {
+      const mkOpt = (value: string, label: string, depth = 0): HTMLOptionElement => {
+        const o = document.createElement('option');
+        o.value = value;
+        o.textContent = (depth ? `${'  '.repeat(depth)}↳ ` : '') + label;
+        return o;
+      };
+      projectSel.replaceChildren(mkOpt('', 'No project (Library)'));
+      void opts.folderApi.list().then(folders => {
+        for (const f of folders) projectSel.appendChild(mkOpt(f.id, f.name, f.depth));
+        projectSel.appendChild(mkOpt(NEW_SUB, '＋ New subfolder…'));
+        // Default to the origin folder the batch was invoked from, when it still exists.
+        if (opts.originFolderId && folders.some(f => f.id === opts.originFolderId)) projectSel.value = opts.originFolderId;
+      }).catch(() => { /* leave the "No project" option only */ });
+      projectSel.addEventListener('change', () => {
+        const isNew = projectSel.value === NEW_SUB;
+        if (newSubInput) { newSubInput.hidden = !isNew; if (isNew) newSubInput.focus(); }
+      });
+    }
+
+    const input = pop.querySelector<HTMLInputElement>('.pro-sess-save .pro-sess-input')!;
     const doSave = async () => {
       const name = input.value.trim();
       if (!name) { input.focus(); return; }
@@ -1320,12 +1368,28 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
         showProgress(`<p class="pro-progress-msg">Pick at least one template before saving a session.</p>`);
         return;
       }
-      await sessions.save(name, state);
+      const label = await sessions.save(name, state);
+      // File the saved batch into the chosen project - default its origin folder, a
+      // picked one, or a freshly-created subfolder. Injected, so it degrades to the old
+      // library-only save when no folderApi is present. A filing hiccup never loses the
+      // save itself (the batch is already persisted), so it's logged, not thrown.
+      let filedInto: string | null = null;
+      if (opts.folderApi && projectSel) {
+        try {
+          let folderId: string | null = projectSel.value || null;
+          if (folderId === NEW_SUB) {
+            const sub = (newSubInput?.value || '').trim();
+            folderId = sub ? (await opts.folderApi.create(sub, opts.originFolderId ?? null)).id : (opts.originFolderId ?? null);
+          }
+          await opts.folderApi.file(BATCH_SLOT_PREFIX + label, folderId);
+          filedInto = folderId;
+        } catch (err) { console.warn('Filing the batch into a project failed:', err); }
+      }
       markClean();                            // saving makes the batch clean
       if (leaveAfterSave) { closeSessions(); goHome(); return; }
       await drawSessions(pop);
-      pop.querySelector<HTMLElement>('.pro-sess-input')?.focus();
-      showProgress(`<p class="pro-progress-msg">Saved session “${escape(name)}”.</p>`);
+      pop.querySelector<HTMLElement>('.pro-sess-save .pro-sess-input')?.focus();
+      showProgress(`<p class="pro-progress-msg">Saved “${escape(name)}”${filedInto ? ' to your project' : ''}.</p>`);
     };
     pop.querySelector('[data-save]')!.addEventListener('click', doSave);
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doSave(); } });

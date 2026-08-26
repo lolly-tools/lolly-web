@@ -15,6 +15,7 @@
     "@breezystack/lamejs": "^1.2.7",
     "@huggingface/transformers": "^3.8.1",
     "@lolly/engine": "*",
+    "@mediabunny/flac-encoder": "^1.55.3",
     "@tiptap/core": "^3.27.1",
     "@tiptap/extension-image": "^3.27.1",
     "@tiptap/extension-placeholder": "^3.27.1",
@@ -40,11 +41,12 @@
     "jspdf": "^4.2.1",
     "kiwi-schema": "^0.5.0",
     "lottie-web": "^5.12.2",
-    "mediabunny": "^1.51.0",
+    "mediabunny": "^1.55.3",
     "onnxruntime-web": "^1.27.0",
     "pdf-lib": "^1.17.1",
     "phonemizer": "^1.2.1",
-    "woff2-encoder": "^2.0.0"
+    "woff2-encoder": "^2.0.0",
+    "zxing-wasm": "3.1.3"
   },
   "devDependencies": {
     "vite": "^8.0.13"

@@ -51,6 +51,8 @@ import { wireTileSelect } from '../lib/tile-select.ts';
 import { startJob } from '../lib/jobs.ts';
 import type { BulkBarConfig } from '../lib/bulk-bar.ts';
 import { mountModal } from '../components/modal.ts';
+import { planCopies } from '../lib/plan-copies.ts';
+import { MULTI_EDIT_MAX } from '../lib/multi-edit-limits.ts';
 import type { PickerHost } from './picker.ts';
 import { announce } from '../a11y.ts';
 import { playSfx, playGalleryAah, cancelArrivalAah } from '../lib/sfx.ts';
@@ -270,6 +272,12 @@ const USERS_ICON = icon('users');
 const STAR_ICON = icon('star');
 // Lucide "download" - the "available offline" action (bulk bar + context menu).
 const DOWNLOAD_ICON = icon('download');
+// "Make copies…" (bulk bar + menu) → the how-many dialog. Stack glyph = copies;
+// the dialog's two destinations reuse Projects' Edit-together (pen) / Edit-as-sheet
+// (Batch's table) marks so the vocabulary reads the same across views.
+const COPIES_ICON = icon('layersStack');
+const EDIT_ICON = icon('pen');
+const SHEET_ICON = icon('table');
 // Sentinel category id for the starred-favourites filter (not a real catalog category).
 const FAV_CAT = 'favourites';
 
@@ -597,6 +605,9 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   const allSelectedFav = (): boolean => selected.size > 0 && [...selected].every(r => favourites.has(r));
   const allSelectedHidden = (): boolean => selected.size > 0 && [...selected].every(r => hiddenTools.has(r));
   const sessionToolIds = (): string[] => selectedToolIds().filter(id => countByTool(id) > 0);
+  // Tools we can spin fresh sessions from + edit in THIS shell (excludes desktop-only
+  // "unavailable" tools, which can't mount here - same gate as pinnableIds).
+  const copyableIds = (): string[] => selectedToolIds().filter(id => !unavailableIds.has(id));
 
   // The floating selection bar (lib/bulk-bar.ts - shared with projects/catalog).
   // Labels are smart toggles read at sync time: all-favourited → Unfavourite, etc.
@@ -607,6 +618,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     actions: [
       { id: 'pin', icon: DOWNLOAD_ICON, label: () => allSelectedPinned() ? t('Remove from offline') : t('Available offline'), disabled: () => pinnableIds().length === 0 },
       { id: 'sessions', icon: HISTORY_ICON, label: () => t('View sessions'), title: () => t('Open Projects filtered to the selected tools’ saved sessions'), disabled: () => sessionToolIds().length === 0 },
+      { id: 'copies', icon: COPIES_ICON, label: () => t('Make copies…'), title: () => t('Make copies of the selected tools and edit them together or as a sheet'), hidden: () => copyableIds().length < 2 },
       { id: 'fav', icon: STAR_ICON, label: () => allSelectedFav() ? t('Unfavourite') : t('Favourite') },
       { id: 'hide', icon: EYE_ICON, label: () => allSelectedHidden() ? t('Unhide') : t('Hide') },
       // Single-selection extras: the same About + Copy link the context menu carries,
@@ -2065,6 +2077,80 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     window.location.hash = `#/p?tools=${ids.map(encodeURIComponent).join(',')}`;
   }
 
+  // multi-edit's cap - the only ceiling here. "Edit as sheet" (Batch) has none,
+  // which is exactly the reassurance the dialog leans on: pick a few now, add more later.
+  const MAX_TOGETHER = MULTI_EDIT_MAX;
+
+  /** "Make copies…" - list the selected tools, let the user choose how many fresh
+   *  copies of EACH to start with (native number fields, default 1), then open them
+   *  side by side (multi-edit, ≤8) or as rows in the Batch grid (no limit). The
+   *  copies are ordinary saved sessions seeded from each tool's defaults, so
+   *  "you can add more later" is literally true - they land in Projects. */
+  function openCopiesDialog(ids: string[]): void {
+    if (ids.length < 2) return;
+    const nameOf = (id: string): string => toolById.get(id)?.name ?? id;
+    const rows = ids.map(id => `
+      <li class="copies-row">
+        <span class="copies-name">${escape(nameOf(id))}</span>
+        <input class="copies-count" type="number" inputmode="numeric" min="1" max="99" value="1"
+          data-copy-id="${escape(id)}" aria-label="${t('Copies of {name}', { name: nameOf(id) })}">
+      </li>`).join('');
+    const content = `
+      <h2 class="modal-title" id="copies-title">${escape(t('Make copies'))}</h2>
+      <p class="modal-msg">${escape(t('Pick how many of each to start with. You can add more later.'))}</p>
+      <ul class="copies-list">${rows}</ul>
+      <p class="copies-total" aria-live="polite"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn" data-act="cancel"><span>${escape(t('Cancel'))}</span></button>
+        <button type="button" class="btn" data-dest="batch">${SHEET_ICON}<span>${escape(t('Edit as sheet'))}</span></button>
+        <button type="button" class="btn modal-primary" data-dest="multi">${EDIT_ICON}<span>${escape(t('Edit together'))}</span></button>
+      </div>`;
+    const modal = mountModal(content, {
+      className: 'modal copies-dialog',
+      ariaLabel: t('Make copies'),
+      initialFocus: (el) => el.querySelector<HTMLElement>('.copies-count'),
+    });
+    const countInputs = (): HTMLInputElement[] => [...modal.el.querySelectorAll<HTMLInputElement>('.copies-count')];
+    const counts = (): Array<{ id: string; n: number }> =>
+      countInputs().map(inp => ({ id: inp.dataset.copyId!, n: Math.max(1, Math.min(99, Math.floor(Number(inp.value) || 1))) }));
+    const total = (): number => counts().reduce((s, c) => s + c.n, 0);
+    const together = modal.el.querySelector<HTMLButtonElement>('[data-dest="multi"]')!;
+    const totalLine = modal.el.querySelector<HTMLElement>('.copies-total')!;
+    const refresh = (): void => {
+      const n = total();
+      totalLine.textContent = t('{n} copies in total', { n });
+      together.disabled = n > MAX_TOGETHER;
+      together.title = n > MAX_TOGETHER ? t('Up to {n} for editing together - use a sheet for more', { n: MAX_TOGETHER }) : '';
+    };
+    refresh();
+    let busy = false;
+    modal.el.addEventListener('input', (e) => { if ((e.target as HTMLElement).classList?.contains('copies-count')) refresh(); });
+    modal.el.addEventListener('click', (e) => {
+      const el = (e.target as HTMLElement).closest<HTMLElement>('[data-act],[data-dest]');
+      if (!el) return;
+      if (el.dataset.act === 'cancel') { modal.close(); return; }
+      const dest = el.dataset.dest === 'multi' ? 'multi' : 'batch';
+      if (busy) return;
+      busy = true;
+      for (const b of modal.el.querySelectorAll<HTMLButtonElement>('button')) b.disabled = true;
+      void (async () => {
+        try {
+          const plan = planCopies(counts(), nameOf, Date.now());
+          for (const p of plan) await host.state.save(p.slot, { __toolId: p.toolId, __label: p.label }, null);
+          announce(t('{n} copies added to your projects', { n: plan.length }));
+          modal.close();
+          window.location.hash = `#/${dest}?s=${plan.map(p => encodeURIComponent(p.slot)).join(',')}`;
+        } catch (err) {
+          console.error('Make copies failed:', err);
+          announce(t('Couldn’t make the copies'), { assertive: true });
+          busy = false;
+          for (const b of modal.el.querySelectorAll<HTMLButtonElement>('button')) b.disabled = false;
+          refresh();   // restore the together-cap disable the reset above cleared
+        }
+      })();
+    });
+  }
+
   /** Copy the canonical link for one tile: /t/<id> for a tool (the crawler-visible
    *  share stub), the app route for a view card. Flashes "Copied!" on the trigger. */
   async function copyLink(ref: string | null, feedbackBtn: HTMLElement | null = null): Promise<void> {
@@ -2095,6 +2181,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     if (action === 'fav') { favouriteSelection(); return; }
     if (action === 'hide') { await hideSelection(); return; }
     if (action === 'pin') { pinSelection(); return; }
+    if (action === 'copies') { openCopiesDialog(copyableIds()); return; }
     if (action === 'sessions') { viewSessionsForSelection(); return; }
     if (action === 'info') {
       const ref = [...selected][0];
@@ -2156,6 +2243,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     return `<p class="folder-menu-head">${t('{n} selected', { n: selected.size })}</p>`
       + `<div class="folder-menu-list" role="menu" aria-label="${escape(t('Selection actions'))}">${[
         pinnableIds().length ? menuItemHtml('pin', DOWNLOAD_ICON, allSelectedPinned() ? t('Remove from offline') : t('Available offline')) : '',
+        copyableIds().length >= 2 ? menuItemHtml('copies', COPIES_ICON, t('Make copies…')) : '',
         sessionToolIds().length ? menuItemHtml('sessions', HISTORY_ICON, t('View sessions')) : '',
         menuItemHtml('fav', STAR_ICON, allSelectedFav() ? t('Unfavourite') : t('Favourite')),
         menuItemHtml('hide', EYE_ICON, allSelectedHidden() ? t('Unhide') : t('Hide')),

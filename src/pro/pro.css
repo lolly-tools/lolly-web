@@ -687,6 +687,16 @@ body.pro-row-dragging, body.pro-row-dragging * { cursor: grabbing !important; us
   border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .5);
 }
 .pro-sess-input:focus { outline: none; border-color: hsl(var(--primary)); box-shadow: 0 0 0 2px hsl(var(--primary) / .35); }
+/* "Save to project" picker below the name row (only when the shell injects a folderApi). */
+.pro-sess-project { display: flex; flex-direction: column; gap: .35rem; margin-top: .5rem; }
+.pro-sess-project-label { font-size: calc(.72rem * var(--a11y-fs)); text-transform: uppercase; letter-spacing: .05em; color: hsl(var(--muted-foreground)); }
+.pro-sess-project select, .pro-sess-newsub {
+  width: 100%; padding: .35rem .5rem; font: inherit; font-size: calc(.85rem * var(--a11y-fs));
+  background: hsl(var(--background)); color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .5);
+}
+.pro-sess-project select:focus, .pro-sess-newsub:focus { outline: none; border-color: hsl(var(--primary)); box-shadow: 0 0 0 2px hsl(var(--primary) / .35); }
+.pro-sess-project-hint { margin: 0; font-size: calc(.72rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 /* Offline CSV round-trip inside the sessions dialog. */
 .pro-sess-csv { display: flex; align-items: center; gap: .4rem; margin-top: .6rem; padding-top: .6rem; border-top: 1px solid hsl(var(--border)); }
 .pro-sess-csv-label { font-size: calc(.72rem * var(--a11y-fs)); text-transform: uppercase; letter-spacing: .05em; color: hsl(var(--muted-foreground)); margin-right: auto; }

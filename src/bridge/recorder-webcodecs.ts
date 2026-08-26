@@ -12,7 +12,7 @@
  * guessing off whatever mime MediaRecorder happened to choose.
  *
  * Same mediabunny `Mp4OutputFormat` / `WebMOutputFormat` writer the export path already
- * stamps AV1-in-mp4 through, so a take from here lands in a container the capture
+ * stamps AV1-in-mp4 through, so a take from here arrives in a container the capture
  * credential path already knows - a confirmation, not new placer work.
  *
  * Chromium-first by design: the whole path leans on `MediaStreamTrackProcessor` (mediabunny

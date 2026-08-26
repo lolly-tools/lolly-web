@@ -29,6 +29,7 @@ import type { Folder, FolderItem, TrashEntry, ProjectTemplate } from '../folders
 import { TRASH_SLOT_PREFIX, PTPL_SLOT_PREFIX, isHiddenSlot } from '../lib/batch-slots.ts';
 import { showUndoToast, flushUndoToasts } from '../lib/undo-toast.ts';
 import { livePalette } from '../lib/live-palette.ts';
+import { MULTI_EDIT_MIN, MULTI_EDIT_MAX } from '../lib/multi-edit-limits.ts';
 import { svgDataUrl } from '../lib/format.ts';
 import {
   folderTile, sessionTile, imageTile, tileColsHtml, FOLDER_ICON, MENU_ICON,
@@ -178,6 +179,7 @@ const DUPLICATE_ICON = icon('duplicate', { strokeWidth: 1.9 });
 const STAR_ICON = icon('star', { strokeWidth: 1.9 });
 const STAR_FILLED_ICON = icon('star', { filled: true });
 const SHEET_ICON = icon('grid', { strokeWidth: 1.9 });
+const BATCH_ICON = icon('table', { strokeWidth: 1.9 });
 const MOVE_ICON = icon('move', { strokeWidth: 1.9 });
 const TRASH_ICON = icon('trash', { strokeWidth: 1.9 });
 const PALETTE_ICON = icon('palette', { strokeWidth: 1.9 });
@@ -601,6 +603,7 @@ export async function mountProjects(
     // create tiles for the compact actions row above the table.
     const list = viewMode === 'list';
     return shell(t('Projects'), 'projects', `
+      <div class="projects-roothead">${batchButtonHtml()}</div>
       ${favourites.size && !list ? `<div class="projects-featured" data-fav-strip></div>` : ''}
       ${invite}
       ${list ? `<div class="projects-actions">${listCreateBtns()}</div>` : ''}
@@ -788,6 +791,7 @@ export async function mountProjects(
         ${searching ? '' : `<span class="projects-count">${count === 1 ? t('1 item') : t('{n} items', { n: count })}</span>`}
         <span class="projects-head-spacer"></span>
         ${searching ? '' : listCreateBtns(isUncat)}
+        ${searching ? '' : batchButtonHtml()}
         ${!searching && count ? `<button type="button" class="projects-render btn" data-render-folder="${escape(id)}">${RENDER_ICON}<span>${t('Render folder')}</span></button>` : ''}
         ${isUncat || searching ? '' : `<button type="button" class="tile-menu-btn projects-head-menu" data-menu="${escape(id)}" data-menu-kind="folder" aria-label="${escape(t('Folder actions (rename, render, delete)'))}">${MENU_ICON}</button>`}
       </div>`;
@@ -890,6 +894,17 @@ export async function mountProjects(
         `;
   }
 
+  /** The "Batch" button that leads to the grid (moved off the shared bottom bar,
+   *  Andy 2026-08-26 - a batch is a Projects-scoped action). Rendered in the Projects
+   *  content header of BOTH the root and folder views. Carries the current REAL folder
+   *  as the batch's origin (`?from=`), so a batch saved from inside a folder defaults
+   *  back to that folder; root/Uncategorised carry none (save defaults to top level). */
+  function batchButtonHtml(): string {
+    const batchFrom = folderId && folderId !== UNCAT ? folderId : null;
+    const batchHref = `#/batch${batchFrom ? `?from=${encodeURIComponent(batchFrom)}` : ''}`;
+    return `<a href="${escape(batchHref)}" class="btn projects-batch-btn" aria-label="${escape(t('Open Batch mode - render many at once'))}" title="${escape(t('Batch'))}">${BATCH_ICON}<span>${t('Batch')}</span></a>`;
+  }
+
   function shell(heading: string, active: 'tools' | 'projects' | 'catalog', inner: string, { inFolder = false }: { inFolder?: boolean } = {}): string {
     // projects--searching marks the URL-entered results mode (plans/99 section 2a) - it can
     // never flip mid-view from typing, since live keystrokes go to the spotlight
@@ -968,7 +983,7 @@ export async function mountProjects(
 
   /** The selected slots IFF the whole selection is 2–8 single-tool sessions; else null. */
   function editableSelection(): string[] | null {
-    if (selected.size < 2 || selected.size > 8) return null;
+    if (selected.size < MULTI_EDIT_MIN || selected.size > MULTI_EDIT_MAX) return null;
     const slots: string[] = [];
     for (const [ref, kind] of selected) {
       if (kind !== 'session' || isBatchSlot(ref)) return null;
@@ -977,11 +992,14 @@ export async function mountProjects(
     return slots;
   }
 
-  /** Open the selected sessions in the multi-edit view (#/multi?s=slot,slot…). */
+  /** Open the selected sessions in the multi-edit view (#/multi?s=slot,slot…). Carries
+   *  the current real folder as the origin (`&from=`) so its "Save all" picker defaults
+   *  back here. */
   function editSelection(): void {
     const slots = editableSelection();
     if (!slots) return;
-    window.location.hash = `#/multi?s=${slots.map(encodeURIComponent).join(',')}`;
+    const from = folderId && folderId !== UNCAT ? `&from=${encodeURIComponent(folderId)}` : '';
+    window.location.hash = `#/multi?s=${slots.map(encodeURIComponent).join(',')}${from}`;
   }
 
   /** The selected SESSION + IMAGE refs (any count), or null if the selection has
@@ -993,11 +1011,13 @@ export async function mountProjects(
     return refs.length ? refs : null;
   }
 
-  /** Open the selection as rows in the Batch grid (#/batch?s=slot,slot…). */
+  /** Open the selection as rows in the Batch grid (#/batch?s=slot,slot…). Carries the
+   *  current real folder as the batch's origin (`&from=`) so a save defaults back here. */
   function editAsSheet(): void {
     const refs = sheetableSelection();
     if (!refs) return;
-    window.location.hash = `#/batch?s=${refs.map(encodeURIComponent).join(',')}`;
+    const from = folderId && folderId !== UNCAT ? `&from=${encodeURIComponent(folderId)}` : '';
+    window.location.hash = `#/batch?s=${refs.map(encodeURIComponent).join(',')}${from}`;
   }
 
   // ── wiring ─────────────────────────────────────────────────────────────────

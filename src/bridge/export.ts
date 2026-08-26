@@ -447,7 +447,7 @@ export function createExportAPI(host: WebHost) {
       // render() rasterises (renderRaster/renderBitmap) or walks (renderSvg/pdf) the
       // LIVE node, so an export fired before the font has loaded would capture the
       // fallback-font reflow: wider metrics, so a heading that fits on the card in the
-      // brand face wraps in the export and its second line lands on the subtitle
+      // brand face wraps in the export and its second line sits on the subtitle
       // (audiogram, plans/147). This lives in the web shell's shared export entry, not
       // the engine (fonts are a browser API the DOM-free engine cannot see), so EVERY
       // tool and EVERY format inherits it. `document.fonts.ready` is already-resolved
@@ -1224,7 +1224,7 @@ async function renderRaster(node: Element, format: string, opts: ExportOpts): Pr
         if (gm) return new Blob([gm as BlobPart], { type: 'image/jpeg' });
       }
       // HDR first: the PQ transform is the base encoding, so any provenance mark
-      // below lands in the final (PQ) pixel space and embed/detect stay consistent.
+      // below arrives in the final (PQ) pixel space and embed/detect stay consistent.
       if (hdrOn) hdrCanvas(canvas, opts);
       // png is lossless → the gentler LOSSLESS_STRENGTH; jpeg keeps the
       // quantization-calibrated DEFAULT_STRENGTH (undefined ⇒ engine default).

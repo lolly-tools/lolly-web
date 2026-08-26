@@ -1,5 +1,23 @@
 /* ─── Projects view (/p) - gallery-style page over folders of saved sessions ─ */
 .projects-view { display: block; }
+
+/* "Batch" button - moved off the shared bottom bar (Andy, 2026-08-26) into the
+   Projects content header of BOTH the root (.projects-roothead, right-aligned above
+   the grid) and folder (.projects-head, beside Render folder) views. In-flow content,
+   so it never fights the fixed centred view-toggle the way the top-right cluster did.
+   A neutral pill - "Render folder" keeps the primary accent. */
+.projects-roothead { display: flex; justify-content: flex-end; margin: 0 0 .75rem; }
+.projects-batch-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 40px; padding: 0 14px;
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+  background: hsl(var(--card)); color: hsl(var(--foreground));
+  font-size: calc(13px * var(--a11y-fs)); font-weight: 600; white-space: nowrap;
+}
+.projects-batch-btn svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
+.projects-batch-btn:hover, .projects-batch-btn:focus-visible {
+  border-color: hsl(var(--primary)); background: hsl(var(--primary) / 0.08);
+}
 /* Full-bleed like the gallery so the window uses all the space; the top-right
    profile/history cluster reuses .gallery-topright (position:fixed; right:2em) verbatim,
    so the profile button sits in the SAME window spot when toggling Tools ↔ Projects. */

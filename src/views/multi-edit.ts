@@ -32,6 +32,7 @@ import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
 import { getTool, chooseFormat, isExportable } from '../bridge/tool-loader.ts';
 import { createNetAPI } from '../bridge/net.ts';
 import { neutralizeEmbeds, hydrateEmbeds } from '../bridge/embed.ts';
+import { namespaceInlinedSvgIds } from '../bridge/svg-inline-ids.ts';
 import { runTemplateScripts } from '../lib/render-lifecycle.ts';
 import { attachCanvasCommit } from '../lib/canvas-commit.ts';
 import { scopeCss, scopeTemplateStyles } from '../lib/scope-css.ts';
@@ -43,6 +44,8 @@ import { fold, tokenize, scoreHaystack } from '../lib/search/match.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { mountZoomHud } from '../components/zoom-hud.ts';
 import { startBatchExport } from '../lib/batch-job.ts';
+import { MULTI_EDIT_MIN, MULTI_EDIT_MAX } from '../lib/multi-edit-limits.ts';
+import { memberSaveValues, applySharedEdit } from '../lib/multi-edit-lazy.ts';
 
 import type { WebToolHost, PanelEl } from './tool.ts';
 import type { InputModelItem, InputValue, InputSpec } from '../../../../engine/src/inputs.js';
@@ -60,23 +63,38 @@ interface Member {
   label: string;
   toolName: string;
   tool: LoadedTool;
-  /** Assigned AFTER the grid paints - see the hydrate loop in mountMultiEdit. */
-  runtime: Runtime;
+  /** Created LAZILY - null until this cell nears the viewport (or its card opens, or
+   *  it leads a shared input). `values` stays the authoritative session state until
+   *  then, so a cell whose runtime is never built still saves/exports correctly. */
+  runtime: Runtime | null;
+  /** In-flight createRuntime, so concurrent ensureRuntime() calls dedupe to one. */
+  creating: Promise<Runtime> | null;
   data: SavedStateData;
-  /** The session's saved input values, held so the runtime can be created later. */
+  /** The session's live input values: the createRuntime seed, and - while a cell is
+   *  un-created - the buffer a fanned-out shared edit writes into so it is present when
+   *  the runtime is finally built. Once the runtime exists, IT is authoritative. */
   values: Record<string, InputValue>;
   thumb: string | null;
   canvasEl: HTMLElement;
+  /** Rescale this cell's canvas to its freshly-rendered aspect (set in the cell loop). */
+  fit: () => void;
+  /** The stored-thumbnail placeholder, dropped once the live canvas has real content. */
+  thumbEl: HTMLElement | null;
   panelEl: PanelEl;
   panelModel: InputModelItem[] | null;
   lastPainted: string | null;
   paintRaf: number;
   renderGen: number;
   dirty: boolean;
+  /** Within the IntersectionObserver's margin - live paints only while true; a far
+   *  cell freezes on its last frame and repaints on approach (needsPaint). */
+  near: boolean;
+  /** The runtime emitted while this cell was frozen far off-screen - repaint on approach. */
+  needsPaint: boolean;
 }
 
-const MIN_SEL = 2;
-const MAX_SEL = 8;
+const MIN_SEL = MULTI_EDIT_MIN;
+const MAX_SEL = MULTI_EDIT_MAX;
 
 // Preview-zoom bounds. Card width is a single CSS var on the grid; auto-fill
 // reflows the columns to fit. Each press multiplies/divides by ZOOM_STEP ("a few
@@ -108,6 +126,11 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   document.title = tRaw('{name} - Lolly', { name: t('Multi-edit') });
   const slots = (new URLSearchParams(params).get('s') ?? '')
     .split(',').map(s => decodeURIComponent(s.trim())).filter(Boolean);
+  // The Projects folder this multi-edit was opened from (`#/multi?s=…&from=<id>`),
+  // the "Save all" project picker's default. Absent when opened from the Tools gallery
+  // ("Make copies…"), where the copies are loose and there IS no current project - the
+  // case this picker exists to solve.
+  const originFolderId = new URLSearchParams(params).get('from') || null;
 
   const fail = (msg: string): void => {
     viewEl.innerHTML = `
@@ -154,16 +177,21 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
       label: String(entry.label || data.__label || tool.manifest.name || toolId),
       toolName: tool.manifest.name ?? toolId,
       tool, data, values,
-      // Hydrated after the grid paints (same late-bind idiom as canvasEl/panelEl below).
-      runtime: null as unknown as Runtime,
+      // Runtime is built lazily (ensureRuntime) - never eagerly for all cells.
+      runtime: null,
+      creating: null,
       thumb: entry.thumb ?? null,
       canvasEl: null as unknown as HTMLElement,
+      fit: () => { /* set in the cell loop */ },
+      thumbEl: null,
       panelEl: null as unknown as PanelEl,
       panelModel: null,
       lastPainted: null,
       paintRaf: 0,
       renderGen: 0,
       dirty: false,
+      near: false,
+      needsPaint: false,
     });
   }
 
@@ -282,36 +310,106 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   cleanups.push(attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host));
   mountBackPill(viewEl);
 
-  // ── Hydrate the runtimes ────────────────────────────────────────────────────
-  // Deferred to HERE, after the grid markup is in the DOM, so each session's stored
-  // thumbnail is the first paint and the live canvas swaps in behind it. createRuntime
-  // runs the tool's onInit and resolves its asset refs (real network), so running this
-  // before the markup - as this view used to - left the grid blank for the whole loop,
-  // scaling with the selection (up to 8 sessions). Live canvases are still the point of
-  // this view; they're just the enhancement now, not the first frame.
-  // Same rule as views/tool.ts: a manifest `network.allowlist` gives that MOUNT a
-  // host clone whose `net` enforces exactly that list - the shared boot host keeps
-  // its fail-closed empty allowlist and is never mutated (bridge methods are
-  // closures, not `this`-bound, so a shallow spread is safe). Per member, not
-  // per view: the grid can mix tools with different (or no) allowlists.
-  for (const m of members) {
-    const mountHost = m.tool.manifest.network?.allowlist?.length
-      ? { ...host, net: createNetAPI({ allowlist: m.tool.manifest.network.allowlist }) }
-      : host;
-    m.runtime = await createRuntime(m.tool, mountHost, m.values);
-  }
-
-  // Declared ahead of the cell loop: runtime.subscribe emits synchronously, so
+  // Declared ahead of everything: runtime.subscribe emits synchronously, so
   // scheduleSidebar (hoisted fn) runs before the sidebar block below is reached.
   let sidebarRaf = 0;
 
-  // ── Canvas cells: scoped styles + rAF-coalesced live paint per runtime ─────
+  // ── Lazy runtimes + viewport-gated paint ────────────────────────────────────
+  // Runtimes are NOT created up front. createRuntime runs the tool's onInit and
+  // resolves its asset refs (real network), so building all N eagerly - as this view
+  // used to (capped at 8) - put the whole selection's boot on the critical path and
+  // its memory in play at once. Instead each cell's runtime is built the moment the
+  // cell nears the viewport (ensureRuntime, via the IntersectionObserver below); a
+  // cell far off-screen stays a stored thumbnail until then, and once painted it
+  // FREEZES on its last frame (needsPaint) and repaints only on approach. This is
+  // what lets the grid hold many designs (MULTI_EDIT_MAX) at a paint cost that tracks
+  // what's on screen, not the selection size. `m.values` stays authoritative until a
+  // runtime exists, so a never-created cell still saves/exports correctly.
+
+  // Tools that appear MORE THAN ONCE in the grid: only their cells get per-cell id
+  // namespacing (below). Scoping it to duplicates keeps a mixed-tool grid byte-identical
+  // to before and shields any tool whose script hard-codes an element id - the reported
+  // "multiple of the same tool render wrong" is exactly the duplicate case.
+  const dupToolIds = new Set<string>();
+  {
+    const seen = new Set<string>();
+    for (const m of members) {
+      const id = m.tool.manifest.id;
+      if (seen.has(id)) dupToolIds.add(id); else seen.add(id);
+    }
+  }
+
+  // paint(m,i): rewrite this cell to its runtime's latest hydrated output.
+  const paint = (m: Member, i: number): void => {
+    m.paintRaf = 0;
+    m.needsPaint = false;
+    const rt = m.runtime;
+    if (!rt) return;
+    const hydrated = rt.getHydrated();
+    if (hydrated === m.lastPainted) return;
+    const gen = ++m.renderGen;
+    try {
+      m.canvasEl.innerHTML = neutralizeEmbeds(hydrated);
+      // Same containment as the single-tool view: a template <style> is unscoped and
+      // unlayered as authored, so it would beat every app layer and leak across panes.
+      scopeTemplateStyles(m.canvasEl, `#me-c${i}`);
+      runTemplateScripts(m.canvasEl);
+      // Namespace this cell's SVG def ids (gradients, filters, clipPaths, masks,
+      // markers, <use href>) when this tool is DUPLICATED in the grid. Every cell renders
+      // into ONE document, so N copies of the same tool otherwise define the same `id` N
+      // times and every `url(#id)` binds to the FIRST cell's def - a diverged copy
+      // silently paints the first cell's gradient (or blanks). A per-cell prefix (mc0,
+      // mc1, …) makes each cell self-contained. After the template script, so a script's
+      // own getElementById still sees originals.
+      if (dupToolIds.has(m.tool.manifest.id)) namespaceInlinedSvgIds(m.canvasEl, `mc${i}`);
+      void hydrateEmbeds(m.canvasEl, { host, isCurrent: () => gen === m.renderGen });
+      m.fit();   // re-fit to the freshly-rendered aspect (width/height may have changed)
+      m.lastPainted = hydrated;
+      m.thumbEl?.remove();
+      m.thumbEl = null;
+    } catch (err) {
+      console.warn('multi-edit paint failed:', err);
+    }
+  };
+  // Live paint only for a near cell; a far cell records needsPaint and freezes on
+  // its last frame until it scrolls back into range (the IntersectionObserver below).
+  const schedulePaint = (m: Member, i: number): void => {
+    if (!m.runtime) return;
+    if (!m.near) { m.needsPaint = true; return; }
+    if (!m.paintRaf) m.paintRaf = requestAnimationFrame(() => paint(m, i));
+  };
+
+  // Build one cell's runtime on demand (dedupes concurrent calls), wire its live
+  // paint + sidebar sync, and paint it once. Seeded from m.values, which carries any
+  // shared edit buffered while the cell was un-created. Same allowlist rule as
+  // views/tool.ts: a manifest `network.allowlist` gives THIS mount a host clone whose
+  // `net` enforces exactly that list; the shared boot host keeps its fail-closed empty
+  // allowlist (bridge methods are closures, not `this`-bound, so a shallow spread is
+  // safe). Per member - the grid can mix tools with different (or no) allowlists.
+  const ensureRuntime = (m: Member, i: number): Promise<Runtime> => {
+    if (m.runtime) return Promise.resolve(m.runtime);
+    if (m.creating) return m.creating;
+    m.creating = (async () => {
+      const mountHost = m.tool.manifest.network?.allowlist?.length
+        ? { ...host, net: createNetAPI({ allowlist: m.tool.manifest.network.allowlist }) }
+        : host;
+      const rt = await createRuntime(m.tool, mountHost, m.values);
+      m.runtime = rt;
+      // Bind this canvas to ITS OWN runtime: an interactive tool (mesh-gradient dots,
+      // street-map pan) commits 1:1 to this session, never through the shared/fan
+      // sidebar control that a global data-input-id query would hit.
+      attachCanvasCommit(m.canvasEl, rt);
+      cleanups.push(rt.subscribe(() => { schedulePaint(m, i); scheduleSidebar(); }));
+      schedulePaint(m, i);   // first paint (near by construction - we only create on approach/open)
+      scheduleSidebar();     // its card may be open, waiting on the model
+      return rt;
+    })();
+    return m.creating;
+  };
+
+  // ── Canvas cells: scoped styles + fit (runtime + paint arrive lazily) ───────
   members.forEach((m, i) => {
     m.canvasEl = viewEl.querySelector<HTMLElement>(`#me-c${i}`)!;
-    // Bind this canvas to ITS OWN runtime: an interactive tool (mesh-gradient
-    // dots, street-map pan) commits 1:1 to this session, never through the
-    // shared/fan sidebar control that a global data-input-id query would hit.
-    attachCanvasCommit(m.canvasEl, m.runtime);
     m.panelEl = viewEl.querySelector<PanelEl>(`[data-me-panel="${i}"]`)!;
     if (m.tool.styles) {
       const styleEl = document.createElement('style');
@@ -320,18 +418,13 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
     }
     const manifestW = m.tool.manifest.render?.width ?? 800;
     const manifestH = m.tool.manifest.render?.height ?? 600;
-    // Scale the native-size canvas to the cell (transform, so tool layout math
-    // sees its true pixel size - same trick as the single-tool stage fit).
+    // Scale the native-size canvas to the cell (transform, so tool layout math sees its
+    // true pixel size). Fit the WHOLE tool into its cell rather than cropping a tall one:
+    // the cell adopts the tool's real aspect (read off the hydrated SVG's viewBox), so a
+    // portrait chart gets its full frame. Canvas tools with no viewBox keep the manifest box.
     const scaleHost = viewEl.querySelector<HTMLElement>(`[data-me-scale="${i}"]`)!;
     const stage = scaleHost.parentElement!;
-    // Fit the WHOLE tool into its cell rather than cropping a tall one. cellHtml sizes
-    // the cell from the MANIFEST dimensions, but a render tool draws its SVG at its
-    // ACTUAL size (the width/height inputs can differ from the manifest default - e.g.
-    // a portrait chart), which then overflowed the fixed box and got clipped. So the
-    // cell adopts the tool's real aspect (read off the hydrated SVG's viewBox, present
-    // before the tool's own script even runs), giving every design its full frame - a
-    // bento of true-aspect cells. Canvas tools with no viewBox keep the manifest box.
-    const fit = (): void => {
+    m.fit = (): void => {
       const vb = scaleHost.querySelector('svg')?.viewBox?.baseVal;
       const cw = vb && vb.width > 0 ? vb.width : manifestW;
       const ch = vb && vb.height > 0 ? vb.height : manifestH;
@@ -341,40 +434,53 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
       if (stage.style.aspectRatio !== ar) stage.style.aspectRatio = ar;
       scaleHost.style.transform = `scale(${stage.clientWidth / cw})`;
     };
-    const ro = new ResizeObserver(fit);
+    const ro = new ResizeObserver(m.fit);
     ro.observe(stage);
     cleanups.push(() => ro.disconnect());
-
-    // The stored thumbnail that carried this cell's first paint (cellHtml), retired
-    // once the live canvas has real content below. Left in place on a paint failure - 
-    // a pre-rendered still beats an empty cell.
-    let thumbEl = viewEl.querySelector<HTMLElement>(`[data-me-thumb="${i}"]`);
-
-    const paint = (): void => {
-      m.paintRaf = 0;
-      const hydrated = m.runtime.getHydrated();
-      if (hydrated === m.lastPainted) return;
-      const gen = ++m.renderGen;
-      try {
-        m.canvasEl.innerHTML = neutralizeEmbeds(hydrated);
-        // Same containment as the single-tool view: a template <style> is unscoped and
-        // unlayered as authored, so it would beat every app layer and leak across panes.
-        scopeTemplateStyles(m.canvasEl, `#me-c${i}`);
-        runTemplateScripts(m.canvasEl);
-        void hydrateEmbeds(m.canvasEl, { host, isCurrent: () => gen === m.renderGen });
-        fit();   // re-fit to the freshly-rendered aspect (width/height may have changed)
-        m.lastPainted = hydrated;
-        thumbEl?.remove();
-        thumbEl = null;
-      } catch (err) {
-        console.warn('multi-edit paint failed:', err);
-      }
-    };
-    const schedulePaint = (): void => { if (!m.paintRaf) m.paintRaf = requestAnimationFrame(paint); };
-    schedulePaint();
-    cleanups.push(m.runtime.subscribe(() => { schedulePaint(); scheduleSidebar(); }));
-    cleanups.push(() => { if (m.paintRaf) cancelAnimationFrame(m.paintRaf); });
+    // The stored thumbnail carrying this cell's first paint (cellHtml), retired once the
+    // live canvas has real content. Left in place on a paint failure - a still beats blank.
+    m.thumbEl = viewEl.querySelector<HTMLElement>(`[data-me-thumb="${i}"]`);
   });
+  cleanups.push(() => { for (const m of members) if (m.paintRaf) cancelAnimationFrame(m.paintRaf); });
+
+  // ── Viewport gating: create + live-update cells near the viewport, freeze the rest.
+  // The margin pre-warms roughly a screen above/below so a scroll reveals a live (not
+  // blank) cell. Once created a runtime STAYS alive on scroll-away - cheap at tens of
+  // cells, keeps interactive edits, and avoids re-running onInit; only the DOM paint is
+  // gated. ponytail: fixed 600px lead; widen if very tall cells scroll in still-blank.
+  const NEAR_MARGIN = 600;
+  // Whether a cell is within the live band RIGHT NOW - computed synchronously so the
+  // first paint never waits on IntersectionObserver's async first callback. (IO's first
+  // delivery is a frame or two out, and is paused entirely while the tab is hidden - so
+  // gating the initial paint on it left visible cells blank; the observer below only
+  // needs to catch CHANGES as the user scrolls.)
+  const isNear = (cell: Element): boolean => {
+    const r = cell.getBoundingClientRect();
+    return r.bottom > -NEAR_MARGIN && r.top < window.innerHeight + NEAR_MARGIN;
+  };
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      const i = Number((e.target as HTMLElement).dataset.meCell);
+      const m = members[i];
+      if (!m) continue;
+      m.near = e.isIntersecting;
+      if (e.isIntersecting) void ensureRuntime(m, i).then(() => { if (m.needsPaint) schedulePaint(m, i); });
+    }
+  }, { rootMargin: `${NEAR_MARGIN}px 0px` });
+  members.forEach((m, i) => {
+    const cell = viewEl.querySelector(`[data-me-cell="${i}"]`);
+    if (!cell) return;
+    io.observe(cell);
+    // Initial live band: mark + build the cells on screen now, so they paint on the
+    // first frame instead of waiting for the observer.
+    if (isNear(cell)) { m.near = true; void ensureRuntime(m, i); }
+  });
+  cleanups.push(() => io.disconnect());
+
+  // Shared-input LEADS must be live so the Shared card can read (and fan out from) a
+  // real model - create just those up front (usually member 0, already built above if
+  // it's on screen). Everything else waits for its cell to scroll into range.
+  for (const s of shared) void ensureRuntime(s.lead, members.indexOf(s.lead));
 
   // ── The combined sidebar ────────────────────────────────────────────────────
   // Shared card: a fan-out "runtime". renderInputs drives it through setInput,
@@ -388,14 +494,20 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   let sharedModelPrev: InputModelItem[] | null = null;
   const sharedModel = (): InputModelItem[] =>
     shared.flatMap(({ id, lead }) => {
-      const item = lead.runtime.getModel().find(it => it.id === id);
+      // Lead runtimes are created up front, but createRuntime is async - a first
+      // syncSidebar can run before it resolves. Skip until it does; ensureRuntime
+      // re-runs scheduleSidebar on completion, so the item appears a frame later.
+      const item = lead.runtime?.getModel().find(it => it.id === id);
       // showIf deps may live outside the shared set - always show shared items.
       return item ? [{ ...item, showIf: undefined }] : [];
     });
   const fanRuntime = {
     manifest: members[0]?.tool.manifest,
     async setInput(id: string, value: InputValue): Promise<void> {
-      for (const m of sharedMembersOf(id)) { await m.runtime.setInput(id, value); m.dirty = true; }
+      // A live cell applies the edit through its runtime (re-render → paint if near); a
+      // still-frozen cell buffers it into m.values, so createRuntime seeds it when the
+      // cell is finally built (lib/multi-edit-lazy.applySharedEdit, unit-tested).
+      for (const m of sharedMembersOf(id)) await applySharedEdit(m, id, value);
     },
     getModel: () => sharedModel(),
   } as unknown as Runtime;
@@ -418,8 +530,12 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
     members.forEach((m, i) => {
       const card = viewEl.querySelector<HTMLDetailsElement>(`details[data-me-card="${i}"]`);
       if (!card?.open) { m.panelModel = null; return; } // sync lazily on open
-      const model = m.runtime.getModel();
-      syncGuarded(() => { m.panelModel = syncInputs(m.panelEl, model, m.panelModel, m.runtime, host, () => { m.dirty = true; }); });
+      // An opened card needs a live runtime for its model; build it if the cell was
+      // still frozen, and re-sync once it arrives (ensureRuntime calls scheduleSidebar).
+      const rt = m.runtime;
+      if (!rt) { void ensureRuntime(m, i); return; }
+      const model = rt.getModel();
+      syncGuarded(() => { m.panelModel = syncInputs(m.panelEl, model, m.panelModel, rt, host, () => { m.dirty = true; }); });
     });
   }
   function scheduleSidebar(): void { if (!sidebarRaf) sidebarRaf = requestAnimationFrame(syncSidebar); }
@@ -591,9 +707,12 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   async function saveOne(i: number): Promise<void> {
     const m = members[i]!;
     const opts = exportOpts(i);
+    // A live cell's runtime is authoritative; a never-created cell saves the values it
+    // was seeded with plus any shared edits buffered into m.values (lib/multi-edit-lazy).
+    const values = memberSaveValues(m, modelValues);
     const data: SavedStateData = {
       ...m.data,
-      ...modelValues(m.runtime),
+      ...values,
       __toolId: m.tool.manifest.id,
       __toolVersion: m.tool.manifest.version,
       __export_format: opts.format ?? '',
@@ -608,6 +727,41 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   }
   async function saveAll(): Promise<void> {
     for (let i = 0; i < members.length; i++) await saveOne(i);
+  }
+
+  // "Save all" opens the shared Save dialog's "Add to a project" picker (the same one
+  // the tool view uses), so the sessions LAND somewhere the user can find them - the
+  // fix for "Save all does nothing" when multi-edit was reached from the Tools gallery
+  // ("Make copies…"), where the copies are loose and there is no current project. The
+  // picker defaults to the folder we were opened from, else the folder these sessions
+  // already share; "Save" persists every edit AND files every session into the choice.
+  async function saveToProject(): Promise<void> {
+    const [{ openSaveDialog }, { createFolderStore }] = await Promise.all([
+      import('../lib/save-dialog.ts'),
+      import('../folders.ts'),
+    ]);
+    const store = createFolderStore(host as unknown as Parameters<typeof createFolderStore>[0]);
+    const folders = await store.list().catch(() => []);
+    // Preselect where a re-save should land: our origin folder, else the one folder these
+    // sessions already share (null when they're loose or spread across folders).
+    const shared = new Set(members.map(m => store.folderOfRef(folders, m.slot)));
+    const common = shared.size === 1 ? [...shared][0]! : null;
+    openSaveDialog({
+      toolName: t('these designs'),
+      hasTemplates: false,
+      bases: [],
+      currentFolderId: originFolderId ?? common,
+      listFolders: async () => (await store.list()).map(f => ({ id: f.id, name: f.name })),
+      createFolder: async (name) => { const f = await store.create(name, null); return { id: f.id, name: f.name }; },
+      saveToLibrary: async (folderId) => {
+        await saveAll();
+        for (const m of members) await store.moveItem(m.slot, folderId, 'session');
+        return true;
+      },
+      saveTemplate: async () => { /* not offered for a multi-edit save */ },
+      announce: (msg) => announce(msg),
+      t: (s) => t(s),
+    });
   }
 
   const authorForExport = async () => {
@@ -658,8 +812,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
           });
         });
       } else if (save) {
-        await saveAll();
-        announce(t('Saved {n} sessions', { n: members.length }));
+        await saveToProject();
       }
     } catch (err) {
       console.warn('multi-edit action failed:', err);
