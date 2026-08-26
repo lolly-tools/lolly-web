@@ -42,6 +42,7 @@ import {
   planPull,
   providerCapability,
   resampleLinear,
+  downmixToStereo,
   withTimeout,
   type InstrumentedProvider,
   type MediabunnyModule,
@@ -428,6 +429,43 @@ test('assemblePcmWindow returns no channels for an empty or degenerate window', 
   assert.deepEqual(assemblePcmWindow([], 0, 1, 48000).channels, []);
   const chunks: PcmChunk[] = [{ channels: [ramp(10)], sampleRate: 10, timestamp: 0 }];
   assert.deepEqual(assemblePcmWindow(chunks, 1, 1, 10).channels, []);
+});
+
+const SQ = Math.SQRT1_2;
+
+test('downmixToStereo: 1 and 2 channels pass through untouched (same arrays)', () => {
+  const mono = [Float32Array.from([1, 2, 3])];
+  assert.equal(downmixToStereo(mono), mono, 'mono is returned as-is; the caller duplicates');
+  const stereo = [Float32Array.from([1, 2]), Float32Array.from([3, 4])];
+  assert.equal(downmixToStereo(stereo), stereo, 'stereo is returned as-is');
+});
+
+test('downmixToStereo: 3ch folds the centre into both channels at -3 dB', () => {
+  const [L, R] = downmixToStereo(
+    [Float32Array.from([1, 0]), Float32Array.from([0, 1]), Float32Array.from([1, 1])],
+  ) as [Float32Array, Float32Array];
+  assert.ok(Math.abs((L[0] as number) - (1 + SQ)) < 1e-6, 'L0 = L + .707C');
+  assert.ok(Math.abs((R[0] as number) - (0 + SQ)) < 1e-6, 'R0 = R + .707C');
+  assert.ok(Math.abs((L[1] as number) - (0 + SQ)) < 1e-6);
+  assert.ok(Math.abs((R[1] as number) - (1 + SQ)) < 1e-6);
+});
+
+test('downmixToStereo: 5.1 folds centre + surrounds and DROPS the LFE', () => {
+  // [L, R, C, LFE, Ls, Rs] as constants, so the weighted sum is easy to read.
+  const ch = [[2], [3], [4], [9], [5], [6]].map((v) => Float32Array.from(v));
+  const [L, R] = downmixToStereo(ch) as [Float32Array, Float32Array];
+  assert.ok(Math.abs((L[0] as number) - (2 + SQ * 4 + SQ * 5)) < 1e-6, 'L = L + .707C + .707Ls, LFE ignored');
+  assert.ok(Math.abs((R[0] as number) - (3 + SQ * 4 + SQ * 6)) < 1e-6, 'R = R + .707C + .707Rs, LFE ignored');
+});
+
+test('assemblePcmWindow folds a surround source to a stereo window (not left 6-wide)', () => {
+  const chunks: PcmChunk[] = [
+    { channels: [[1], [2], [4], [0], [8], [16]].map((v) => Float32Array.from(v)), sampleRate: 1, timestamp: 0 },
+  ];
+  const out = assemblePcmWindow(chunks, 0, 1, 1);
+  assert.equal(out.channels.length, 2, 'a 5.1 source is capped to stereo, centre/surround folded in');
+  assert.ok(Math.abs((out.channels[0] as Float32Array)[0] as number - (1 + SQ * 4 + SQ * 8)) < 1e-6);
+  assert.ok(Math.abs((out.channels[1] as Float32Array)[0] as number - (2 + SQ * 4 + SQ * 16)) < 1e-6);
 });
 
 test('resampleLinear holds the last sample rather than reading past the end', () => {

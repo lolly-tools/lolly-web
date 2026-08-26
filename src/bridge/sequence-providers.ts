@@ -554,6 +554,43 @@ export function resampleLinear(src: Float32Array, srcRate: number, dstRate: numb
 }
 
 /**
+ * Fold a multi-channel source to stereo with the standard ITU-R BS.775 matrix, so a
+ * surround clip's centre and surround energy is MIXED IN rather than dropped on the
+ * floor (which is what happens today: the mixer reads only channels 0 and 1). 1-2
+ * channels pass straight through untouched - mono duplication stays the caller's job.
+ *
+ * The fold assumes the SMPTE channel order a browser AudioDecoder emits, keyed by count:
+ *   3 = L R C      4 = L R Ls Rs      5 = L R C Ls Rs
+ *   6 = L R C LFE Ls Rs (5.1)         8 = 5.1 + Lb Rb (7.1)
+ * Centre and surrounds fold in at -3 dB (0.707); the LFE (channel 3 of 5.1/7.1) is
+ * dropped - it carries no localisable content and would only muddy a stereo mix. The
+ * matrix is not renormalised, so a hot surround mix can exceed unity; the sequence
+ * mixer's own levels ride above this and a clip bed is quiet by construction. Pure and
+ * deterministic (a fixed weighted sum), so the analytic mix stays byte-identical.
+ */
+export function downmixToStereo(channels: Float32Array[]): Float32Array[] {
+  const n = channels.length;
+  if (n <= 2) return channels;
+  const len = channels[0]?.length ?? 0;
+  const L = new Float32Array(len);
+  const R = new Float32Array(len);
+  const G = Math.SQRT1_2;   // 0.70710678..., a -3 dB fold
+  const at = (k: number, i: number): number => channels[k]?.[i] ?? 0;
+  for (let i = 0; i < len; i++) {
+    let l = at(0, i);
+    let r = at(1, i);
+    if (n === 3 || n >= 5) { const c = at(2, i); l += G * c; r += G * c; }   // centre
+    if (n === 4)      { l += G * at(2, i); r += G * at(3, i); }              // quad surrounds
+    else if (n === 5) { l += G * at(3, i); r += G * at(4, i); }             // 5.0 surrounds
+    else if (n >= 6)  { l += G * at(4, i); r += G * at(5, i); }             // 5.1 surrounds (LFE = ch3, dropped)
+    if (n >= 8)       { l += G * at(6, i); r += G * at(7, i); }             // 7.1 rears
+    L[i] = l;
+    R[i] = r;
+  }
+  return [L, R];
+}
+
+/**
  * Assemble the exact PCM window `[fromSec, toSec)` from packet-granular chunks.
  *
  * THIS IS THE TRIM (spike rule 6). `AudioBufferSink.buffers(a, b)` yields the
@@ -579,9 +616,13 @@ export function assemblePcmWindow(
   let channelCount = 0;
   for (const c of chunks) channelCount = Math.max(channelCount, c.channels.length);
   if (length === 0 || channelCount === 0) return { channels: [], sampleRate };
+  // The sequence mix is stereo: a >2-channel source is folded to 2 with the BS.775
+  // matrix (downmixToStereo) rather than having its centre/surround silently dropped by
+  // the mixer. An all-mono set stays 1 channel (the mixer duplicates it into both).
+  const targetChannels = Math.min(2, channelCount);
 
   const out: Float32Array[] = [];
-  for (let c = 0; c < channelCount; c++) out.push(new Float32Array(length));
+  for (let c = 0; c < targetChannels; c++) out.push(new Float32Array(length));
 
   for (const chunk of chunks) {
     if (!chunk.channels.length || !(chunk.sampleRate > 0)) continue;
@@ -590,15 +631,19 @@ export function assemblePcmWindow(
     const chunkEnd = chunk.timestamp + srcLen / chunk.sampleRate;
     if (chunkEnd <= fromSec || chunk.timestamp >= toSec) continue;   // wholly outside: the straddle trim
 
+    // Fold surround to stereo BEFORE resample/place - fewer channels to resample, and
+    // the placement loop then reads real L/R. Mono/stereo pass through unchanged.
+    const srcChannels = chunk.channels.length > 2 ? downmixToStereo(chunk.channels) : chunk.channels;
+
     // Resample first, then place: doing it the other way round would round the
     // offset at the source rate and drift by up to a sample per chunk.
     const needsResample = Math.abs(chunk.sampleRate - sampleRate) > 1e-6;
     const dstLen = needsResample ? Math.max(1, Math.round((srcLen / chunk.sampleRate) * sampleRate)) : srcLen;
     const dstStart = Math.round((chunk.timestamp - fromSec) * sampleRate);
 
-    for (let c = 0; c < channelCount; c++) {
+    for (let c = 0; c < targetChannels; c++) {
       // Mono source into a stereo window: duplicate rather than leave a dead channel.
-      const src = chunk.channels[Math.min(c, chunk.channels.length - 1)] as Float32Array;
+      const src = srcChannels[Math.min(c, srcChannels.length - 1)] as Float32Array;
       const data = needsResample ? resampleLinear(src, chunk.sampleRate, sampleRate, dstLen) : src;
       const target = out[c] as Float32Array;
       // Head trim (chunk starts before the window) and tail trim (runs past it).
