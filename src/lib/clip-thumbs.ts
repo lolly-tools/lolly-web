@@ -747,13 +747,87 @@ const isCrossOrigin = (url: string): boolean => {
   try { return new URL(url, location.href).origin !== location.origin; } catch { return false; }
 };
 
-async function captureFilmstrip(url: string, opts: FilmstripOpts, signal: AbortSignal): Promise<ImageBitmap[]> {
+/** Explicit container singletons for the filmstrip decode - never ALL_FORMATS (the
+ *  mediabunny source guard), mirroring bridge/sequence-providers' VIDEO_CONTAINERS. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function filmstripContainers(m: any): unknown[] {
+  return [m.MP4, m.QTFF, m.WEBM, m.MATROSKA];
+}
+
+/**
+ * Filmstrip via mediabunny's CanvasSink: decode the monotonic frame grid directly (each
+ * packet at most once), no hidden-`<video>` seeking and no scrub proxy - the sink pattern
+ * bridge/sequence-providers already ships for export. Returns null when WebCodecs or the
+ * codec is unavailable here, so captureFilmstrip falls back to the element-seek path;
+ * returns [] (not null) on abort so the caller does not then retry the fallback.
+ *
+ * mediabunny is loaded lazily and typed loosely here (the decode surface has no ambient
+ * types in this module; the strongly-typed provider lives in bridge/sequence-providers).
+ */
+async function captureFilmstripSink(url: string, opts: FilmstripOpts, signal: AbortSignal): Promise<ImageBitmap[] | null> {
+  if (!hasDom() || typeof createImageBitmap !== 'function') return null;
+  if (typeof (globalThis as { VideoDecoder?: unknown }).VideoDecoder === 'undefined') return null;   // no WebCodecs
+  if (signal.aborted) return [];
+  const count = clampInt(opts.count, 1, MAX_FRAMES);
+  const targetH = clampInt(opts.h, 8, 240);
+  const made: ImageBitmap[] = [];
+  const bail = (): ImageBitmap[] => { for (const b of made) { try { b.close?.(); } catch { /* gone */ } } return []; };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let input: any = null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mb: any = await import('mediabunny');
+    input = new mb.Input({ formats: filmstripContainers(mb), source: new mb.UrlSource(url) });
+    const track = await input.getPrimaryVideoTrack();
+    if (!track) { input.dispose?.(); return null; }
+    let decodable = false;
+    try { decodable = await track.canDecode(); } catch { decodable = false; }
+    if (!decodable) { input.dispose?.(); return null; }        // codec not decodable here -> fallback
+    const dur = await input.computeDuration();
+    if (!Number.isFinite(dur) || dur <= 0) { input.dispose?.(); return null; }
+    if (signal.aborted) { input.dispose?.(); return bail(); }
+    // Only height is set, so mediabunny derives width from the display aspect ratio -
+    // an aspect-correct canvas exactly like the old scratch (targetH×auto), no letterbox.
+    const times = frameTimes(opts.clipInSec, opts.clipOutSec, count, dur);
+    const sink = new mb.CanvasSink(track, { height: targetH, poolSize: 0 });
+    for await (const wrapped of sink.canvasesAtTimestamps(times)) {
+      if (signal.aborted) { input.dispose?.(); return bail(); }
+      if (wrapped?.canvas) {
+        try { made.push(await createImageBitmap(wrapped.canvas)); }
+        catch { input.dispose?.(); return bail(); }           // tainted / decoder hiccup: whole strip
+      }
+    }
+    input.dispose?.();
+    return made;
+  } catch {
+    input?.dispose?.();
+    return null;   // undecodable / mediabunny error -> element-seek fallback
+  }
+}
+
+/**
+ * One filmstrip run: the CanvasSink path first (direct decode, no proxy, no shared probe
+ * so it runs concurrently), falling back to the pooled-`<video>` element-seek path (under
+ * the probe lock) where WebCodecs or the codec is unavailable.
+ */
+async function captureFilmstrip(assetUrl: string, opts: FilmstripOpts, signal: AbortSignal): Promise<ImageBitmap[]> {
+  const viaSink = await captureFilmstripSink(assetUrl, opts, signal);
+  if (viaSink !== null) return viaSink;
+  return withProbe(() => captureFilmstripElement(assetUrl, opts, signal));
+}
+
+async function captureFilmstripElement(assetUrl: string, opts: FilmstripOpts, signal: AbortSignal): Promise<ImageBitmap[]> {
   if (!hasDom() || typeof createImageBitmap !== 'function') return [];
   // Check the signal BEFORE touching the probe. `share()` defers this run by a
   // microtask, so a caller that aborted in the same tick (the prescribed
   // abort-on-drag/zoom pattern) would otherwise still create the <video>, attach it,
   // and fire a real media request that nothing will ever consume.
   if (signal.aborted) return [];
+  // The scrub proxy (a small transcode) is what makes this element-seek fallback
+  // bearable; the primary CanvasSink path (captureFilmstripSink) decodes the original
+  // directly and never touches it. Resolving it here, not in filmstrip(), keeps the
+  // proxy an implementation detail of the slow path.
+  const url = scrubUrl(assetUrl);
   const count = clampInt(opts.count, 1, MAX_FRAMES);
   const targetH = clampInt(opts.h, 8, 240);
   const made: ImageBitmap[] = [];
@@ -824,14 +898,16 @@ async function captureFilmstrip(url: string, opts: FilmstripOpts, signal: AbortS
  */
 export function filmstrip(assetUrl: string, opts: FilmstripOpts, signal?: AbortSignal): Promise<ImageBitmap[]> {
   if (!assetUrl || !hasDom()) return Promise.resolve([]);
-  const url = scrubUrl(assetUrl);
-  const key = filmstripKey(url, opts);
+  // Key + capture on the ORIGINAL asset: the CanvasSink path decodes it directly, and the
+  // proxy is now internal to the element-seek fallback (captureFilmstripElement). The
+  // dispatcher (captureFilmstrip) owns the probe lock, so we no longer wrap in withProbe.
+  const key = filmstripKey(assetUrl, opts);
   const hit = cache.get(key);
   if (Array.isArray(hit)) return Promise.resolve(hit);
   return share<ImageBitmap[]>(
     key,
     async (runSignal) => {
-      const frames = await withProbe(() => captureFilmstrip(url, opts, runSignal));
+      const frames = await captureFilmstrip(assetUrl, opts, runSignal);
       if (frames.length) cache.set(key, frames);
       return frames;
     },
