@@ -48,9 +48,16 @@
  * the next caller for the same key. `clearClipThumbCache()` / `releaseClipThumbs()`
  * are the only things that close them.
  *
- * AUDIO SIZE CEILING (phase-1 lesson): `decodeAudioData` expands to raw f32 PCM,
+ * AUDIO DECODE (WP-C): the primary peaks path (computePeaksSink) decodes the original
+ * through mediabunny's AudioBufferSink one buffer at a time and accumulates the peak
+ * envelope incrementally, so it holds no whole-file PCM and has no size ceiling. It
+ * reads a video container's soundtrack as readily as a pure-audio file. Where WebCodecs
+ * audio is unavailable (or the codec is not decodable) it falls back to the older
+ * `decodeAudioData` path, and only that fallback keeps the ceiling below.
+ *
+ * AUDIO SIZE CEILING (the fallback only): `decodeAudioData` expands to raw f32 PCM,
  * about 97x for opus (a 30 MB opus file becomes about 2.9 GB of PCM), about 11x for mp3. There is no
- * streaming decode in the platform API, so the only defence is refusing to start.
+ * streaming decode in that platform API, so the only defence is refusing to start.
  * Anything whose Content-Length exceeds `MAX_AUDIO_DECODE_BYTES` is refused before
  * the body is read. A response that declares no length is read through a bounded
  * reader that abandons it at the same ceiling: the fetch is never allowed to buffer
@@ -1839,7 +1846,117 @@ export async function readBounded(res: BoundedBody, max: number, signal?: { abor
   return out.buffer as ArrayBuffer;
 }
 
+/**
+ * Explicit container singletons for the audio decode, mirroring
+ * sequence-providers' AUDIO_CONTAINERS - never ALL_FORMATS (the mediabunny source
+ * guard). The four AV containers are here as well as the audio-only ones, because a
+ * VIDEO's soundtrack lives inside its own container and getPrimaryAudioTrack reads it.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function audioSinkContainers(m: any): unknown[] {
+  return [m.MP4, m.QTFF, m.WEBM, m.MATROSKA, m.OGG, m.MP3, m.WAVE, m.ADTS, m.FLAC];
+}
+
+/**
+ * Peak envelope via mediabunny's AudioBufferSink: the primary peaks path, and the one
+ * that removes the MAX_AUDIO_DECODE_BYTES ceiling. decodeAudioData expands the WHOLE
+ * file to raw f32 PCM before anything can bucket it, so the file must fit in memory.
+ * The sink hands back one decoded buffer at a time, and this accumulates the peak
+ * envelope INCREMENTALLY: a sample's bucket is derived from its position in the whole
+ * track, so no decoded PCM is retained past the buffer it came in. Memory is
+ * O(MASTER_BUCKETS), not O(duration), and an arbitrarily long file waveforms fine.
+ *
+ * Because getPrimaryAudioTrack reads a video container's soundtrack too, a plain video
+ * asset now waveforms through here as well, not just a pure-audio file.
+ *
+ * Returns null (never throws) when WebCodecs audio is unavailable, the container has no
+ * audio track, the codec cannot be decoded here, or mediabunny errors - computePeaks
+ * then falls back to the decodeAudioData path. Returns the SAME { peaks, durationSec }
+ * shape bucketPeaks/computePeaks produce, so peaks()/windowPeaks downstream is unchanged.
+ *
+ * mediabunny is loaded lazily and typed loosely here, matching captureFilmstripSink;
+ * the strongly-typed provider lives in bridge/sequence-providers.
+ */
+export async function computePeaksSink(url: string, signal: AbortSignal): Promise<MasterPeaks | null> {
+  // WebCodecs is how mediabunny decodes a compressed audio track. A PCM WAV needs no
+  // AudioDecoder, but everything else does, so gate the same way the filmstrip sink
+  // gates on VideoDecoder and let computePeaks fall back where it is missing.
+  if (typeof (globalThis as { AudioDecoder?: unknown }).AudioDecoder === 'undefined') return null;
+  if (signal.aborted) return null;
+  const n = MASTER_BUCKETS;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let input: any = null;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mb: any = await import('mediabunny');
+    input = new mb.Input({ formats: audioSinkContainers(mb), source: new mb.UrlSource(url) });
+    const track = await input.getPrimaryAudioTrack();
+    if (!track) { input.dispose?.(); return null; }          // no soundtrack -> fallback returns null too
+    let decodable = false;
+    try { decodable = await track.canDecode(); } catch { decodable = false; }
+    if (!decodable) { input.dispose?.(); return null; }       // codec not decodable here -> fallback
+    const durationSec = await input.computeDuration();
+    if (!Number.isFinite(durationSec) || durationSec <= 0) { input.dispose?.(); return null; }
+    if (signal.aborted) { input.dispose?.(); return null; }
+
+    // The running peak envelope, filled as buffers arrive. `pos` counts samples seen so
+    // far across every buffer; `total` is how many the whole track is expected to hold,
+    // fixed once from the duration and the first buffer's sample rate. A bucket index is
+    // (pos + j) / total, so a sample maps to a bucket without any whole-file PCM in hand.
+    const out = new Float32Array(n);
+    let max = 0;
+    let pos = 0;
+    let total = 0;
+    let sawAny = false;
+
+    const sink = new mb.AudioBufferSink(track);
+    for await (const wrapped of sink.buffers()) {
+      if (signal.aborted) { input.dispose?.(); return null; }
+      const buf = wrapped?.buffer;
+      if (!buf || !buf.length) continue;
+      if (total <= 0) total = Math.max(1, Math.round(durationSec * buf.sampleRate));
+      const ch0 = buf.getChannelData(0);
+      const ch1 = buf.numberOfChannels > 1 ? buf.getChannelData(1) : null;
+      const len = ch0.length;
+      // Stride-32 sparse scan and (L+R)/2 downmix of at most the first two channels,
+      // exactly as bucketPeaks does: a waveform bar shows a peak envelope, so reading
+      // every 32nd frame is indistinguishable from reading all of them and far cheaper.
+      // A track with more than two channels is read as its first two, which is what
+      // bucketPeaks does as well, so no separate downmix is needed here.
+      for (let j = 0; j < len; j += 32) {
+        const l = ch0[j] ?? 0;
+        const r = ch1 ? (ch1[j] ?? 0) : null;
+        const v = Math.abs(r === null ? l : (l + r) / 2);
+        let bi = Math.floor(((pos + j) / total) * n);
+        if (bi < 0) bi = 0; else if (bi >= n) bi = n - 1;   // a slightly-off total only nudges a neighbour
+        if (v > (out[bi] as number)) out[bi] = v;
+        if (v > max) max = v;
+      }
+      pos += len;
+      sawAny = true;
+    }
+    input.dispose?.();
+    input = null;
+    if (!sawAny) return null;                                 // decoded to nothing -> let the caller decide
+    // Normalise exactly as bucketPeaks does: the loudest bucket becomes 1.0, a 0.04
+    // visual floor keeps a quiet passage drawing a sliver, all-silence stays all-zero.
+    if (max > 0) for (let k = 0; k < n; k++) out[k] = Math.max(0.04, (out[k] as number) / max);
+    else out.fill(0);
+    return { peaks: out, durationSec };
+  } catch {
+    input?.dispose?.();
+    return null;                                              // undecodable / mediabunny error -> fallback
+  }
+}
+
 async function computePeaks(url: string, signal: AbortSignal): Promise<MasterPeaks | null> {
+  // The AudioBufferSink path first: it decodes incrementally, so it has no size ceiling
+  // and it reads a video's soundtrack. Only when it declines (no WebCodecs audio, no
+  // audio track, an undecodable codec, or a mediabunny error) do we fall back to the
+  // decodeAudioData path below, which is bounded by MAX_AUDIO_DECODE_BYTES.
+  const viaSink = await computePeaksSink(url, signal);
+  if (viaSink) return viaSink;
+  if (signal.aborted) return null;
   const ctx = getDecodeCtx();
   if (!ctx || typeof fetch !== 'function') return null;
   try {
@@ -1864,12 +1981,17 @@ async function computePeaks(url: string, signal: AbortSignal): Promise<MasterPea
 }
 
 /**
- * Peak envelope (0..1 per bucket) for a pure-audio asset, for a waveform bar.
+ * Peak envelope (0..1 per bucket) for a waveform bar.
  *
- * Video-clip audio is phase 3 (it needs AudioBufferSink) - pass audio files only.
+ * Works on a pure-audio asset AND on a video's soundtrack: the primary path
+ * (computePeaksSink) reads whichever the container's primary audio track is. It decodes
+ * incrementally through mediabunny's AudioBufferSink, so there is no size ceiling on the
+ * asset it can waveform. Only the decodeAudioData fallback (taken where WebCodecs audio
+ * is unavailable) is still bounded by MAX_AUDIO_DECODE_BYTES.
+ *
  * Resolves an EMPTY Float32Array - never throws - when the asset is undecodable,
- * larger than MAX_AUDIO_DECODE_BYTES, aborted, or Web Audio is unavailable.
- * The returned array is owned by this module's cache: do not mutate it.
+ * aborted, or neither decode path is available. The returned array is owned by this
+ * module's cache: do not mutate it.
  */
 export function peaks(
   audioUrl: string,
@@ -1878,10 +2000,9 @@ export function peaks(
   win?: { fromSec?: number; toSec?: number },
 ): Promise<Float32Array> {
   if (!audioUrl) return Promise.resolve(EMPTY_PEAKS);
-  // Read the original directly. The scrub proxy was always a no-op here anyway: peaks
-  // handles pure-audio assets (see the doc above), and an audio asset never had a video
-  // proxy. Video-soundtrack waveforms via AudioBufferSink (which would also lift the
-  // MAX_AUDIO_DECODE_BYTES ceiling) are WP-C part 2, still future work.
+  // Read the original directly. The AudioBufferSink path (computePeaksSink) decodes it,
+  // which lifts the MAX_AUDIO_DECODE_BYTES ceiling and waveforms a video's soundtrack
+  // too; the decodeAudioData fallback reads the same url. No scrub proxy is involved.
   const url = audioUrl;
   const key = peaksKey(url);
   const shape = (m: MasterPeaks): Float32Array =>
