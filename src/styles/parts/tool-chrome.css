@@ -1511,6 +1511,70 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
 /* Its tick is `.field-check` - nothing to restate here (the 5px row gap above is
    the only genuine delta from `.field-toggle`). */
 
+/* ── WP-B video quality select + "Pro settings" fold (tool-actions.ts videoQualityRow).
+   The quality stop is the everyday control; the fold holds codec / fps / rate-mode /
+   encoder for pros. `.export-pro-settings` takes its box from the shared `.section-card`
+   (disclosure.css); only the header button, the caret and the body layout are local. */
+.export-video-quality {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.vq-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: calc(12px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+}
+.vq-main > span { font-weight: 600; }
+.export-pro-settings { padding: 8px 10px; gap: 6px; }
+.prosettings-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-size: calc(11px * var(--a11y-fs));
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+.prosettings-head:hover { color: hsl(var(--foreground)); }
+.prosettings-head:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; border-radius: calc(var(--radius) * 0.75); }
+.prosettings-head svg { flex: 0 0 auto; color: hsl(var(--primary)); }
+/* Caret: a rotated corner glyph, not a one-sided border on a radiused box. */
+.prosettings-head::after {
+  content: "";
+  margin-inline-start: auto;
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 0.15s ease;
+}
+.export-pro-settings.is-open .prosettings-head::after { transform: rotate(225deg); }
+.prosettings-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding-top: 8px;
+}
+.prosettings-body .vp-field {
+  font-size: calc(12px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+}
+.prosettings-body .vp-field > span { font-weight: 600; }
+@media (prefers-reduced-motion: reduce) {
+  .prosettings-head::after { transition: none; }
+}
+
 /* Action buttons - base recipe (.btn + .tool-actions button) now lives in
    parts/buttons.css, imported globally from app.css. */
 

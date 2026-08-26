@@ -897,11 +897,6 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
             <input type="checkbox" class="field-check" data-action="gif-dither">
             Dither
           </label>
-          <label class="gif-dither-toggle" data-webm-only
-                 style="display:${initialFmt === 'webm' ? 'flex' : 'none'}">
-            <input type="checkbox" class="field-check" data-action="webm-60fps">
-            60fps
-          </label>
           ${liveCaptureSupport() ? `<label class="gif-dither-toggle" data-video-only data-live-capture
                  style="display:${isVideoFmt(initialFmt) ? 'flex' : 'none'}"
                  title="Record the on-screen preview in real time through a screen share - motion matches exactly what you see. Pick this tab in the share dialog and keep it visible for the whole take.">
@@ -978,6 +973,60 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         <div class="audio-fade">
           <label>Music level <input type="number" data-action="audio-volume" min="0" max="100" step="5" value="100"><span>%</span></label>
           <label title="When your clip has its own sound, the music dips to this level under it (100% = no ducking).">Duck to <input type="number" data-action="audio-duck" min="0" max="100" step="5" value="35"><span>%</span></label>
+        </div>
+      </div>`;
+
+  // WP-B: video quality select (Smaller / Balanced / Best) plus a default-collapsed
+  // "Pro settings" disclosure (explicit codec, frame rate, rate mode, encoder hint).
+  // Video-only. The quality stop drives the bitrate authority; the pro knobs override
+  // the auto ladder / encoder config. Every control is optional - an untouched export
+  // takes Balanced + the auto ladder + the encoder defaults, byte-for-byte as before.
+  const ICON_SLIDERS = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>`;
+  const videoQualityRow = !hasVideo ? '' : `
+      <div class="export-video-quality" data-video-only style="display:${isVideoFmt(initialFmt) ? 'flex' : 'none'}">
+        <label class="vp-field vq-main"><span>${escape(t('Quality'))}</span>
+          <select class="field-select field-select--sm" data-action="video-quality" aria-label="${escape(t('Video quality'))}">
+            <option value="smaller">${escape(t('Smaller file'))}</option>
+            <option value="balanced" selected>${escape(t('Balanced'))}</option>
+            <option value="best">${escape(t('Best quality'))}</option>
+          </select>
+        </label>
+        <div class="section-card export-pro-settings">
+          <button type="button" class="prosettings-head" data-action="prosettings-toggle" aria-expanded="false">${ICON_SLIDERS}<span>${escape(t('Pro settings'))}</span></button>
+          <div class="prosettings-body" data-prosettings-body style="display:none">
+            <label class="vp-field"><span>${escape(t('Codec'))}</span>
+              <select class="field-select field-select--sm" data-action="video-codec" aria-label="${escape(t('Video codec'))}">
+                <option value="" selected>${escape(t('Auto (best available)'))}</option>
+                <option value="av01.0.08M.08">AV1</option>
+                <option value="avc1.640033">H.264</option>
+                <option value="hvc1.1.6.L93.B0">HEVC</option>
+                <option value="vp09.00.10.08">VP9</option>
+              </select>
+            </label>
+            <label class="vp-field"><span>${escape(t('Frame rate'))}</span>
+              <select class="field-select field-select--sm" data-action="video-fps" aria-label="${escape(t('Frame rate'))}">
+                <option value="" selected>${escape(t('Auto'))}</option>
+                <option value="24">24</option>
+                <option value="25">25</option>
+                <option value="30">30</option>
+                <option value="50">50</option>
+                <option value="60">60</option>
+              </select>
+            </label>
+            <label class="vp-field"><span>${escape(t('Rate mode'))}</span>
+              <select class="field-select field-select--sm" data-action="video-bitratemode" aria-label="${escape(t('Bitrate mode'))}">
+                <option value="" selected>${escape(t('VBR (default)'))}</option>
+                <option value="constant">${escape(t('CBR (constant)'))}</option>
+              </select>
+            </label>
+            <label class="vp-field"><span>${escape(t('Encoder'))}</span>
+              <select class="field-select field-select--sm" data-action="video-hwaccel" aria-label="${escape(t('Hardware acceleration'))}">
+                <option value="" selected>${escape(t('Auto'))}</option>
+                <option value="prefer-hardware">${escape(t('Prefer hardware'))}</option>
+                <option value="prefer-software">${escape(t('Prefer software'))}</option>
+              </select>
+            </label>
+          </div>
         </div>
       </div>`;
 
@@ -1150,7 +1199,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   }
 
   el.innerHTML = `
-    ${actions.includes('download') ? `${filenameRow}${dimsRow}${aspectWarnRow}${fidelityWarnRow}${hdrRow}${cmykRow}${printRow}${protectionRow}<div class="export-ingredient-note" data-ingredient-note hidden></div>${audioRow}${settingsRow}${sendRow}${preflightRow}${costRow}` : ''}
+    ${actions.includes('download') ? `${filenameRow}${dimsRow}${aspectWarnRow}${fidelityWarnRow}${hdrRow}${cmykRow}${printRow}${protectionRow}<div class="export-ingredient-note" data-ingredient-note hidden></div>${audioRow}${settingsRow}${videoQualityRow}${sendRow}${preflightRow}${costRow}` : ''}
     ${secondaryRow}
     ${downloadRow}
     ${actions.includes('download') ? `<p class="export-degraded-note" data-export-degraded role="status" hidden style="margin:.2rem 0 0;color:hsl(var(--muted-foreground));font-size:12px;text-align:center"></p>` : ''}
@@ -1164,7 +1213,6 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
 
   const animParamsEl  = el.querySelector<HTMLElement>('[data-anim-params]');
   const ditherEl      = el.querySelector<HTMLElement>('[data-gif-only]');
-  const webm60El      = el.querySelector<HTMLElement>('[data-webm-only]');
   const formatEl      = el.querySelector<HTMLSelectElement>('[data-action="format"]');
   const aspectWarnEl  = el.querySelector<HTMLElement>('[data-aspect-warning]');
   const fidelityWarnEl = el.querySelector<HTMLElement>('[data-fidelity-warning]');
@@ -1530,7 +1578,6 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       const fmt = formatEl.value;
       if (animParamsEl) animParamsEl.style.display = isAnimatedFmt(fmt) ? 'flex' : 'none';
       if (ditherEl)     ditherEl.style.display     = fmt === 'gif'  ? 'flex' : 'none';
-      if (webm60El)     webm60El.style.display      = fmt === 'webm' ? 'flex' : 'none';
       el.querySelectorAll<HTMLElement>('[data-vector-only]').forEach(c => { c.style.display = isVectorFmt(fmt) ? 'flex' : 'none'; });
       // `data-suppressed` wins over the video-format test: syncSequenceUi sets it on
       // "Record live" for a timed composition, and without this check switching format
@@ -1734,6 +1781,16 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     if (body) body.style.display = open ? 'flex' : 'none';
     el!.querySelector('[data-action="pdfpass-toggle"]')?.setAttribute('aria-expanded', String(open));
     if (open) el!.querySelector<HTMLInputElement>('[data-action="pdf-password"]')?.focus();
+  });
+
+  // WP-B "Pro settings" disclosure - same idiom as the password card: the header toggles
+  // the body open/closed (purely visual; the selects drive export whether open or not).
+  el.querySelector<HTMLButtonElement>('[data-action="prosettings-toggle"]')?.addEventListener('click', () => {
+    const card = el!.querySelector('.export-pro-settings');
+    const open = card?.classList.toggle('is-open') ?? false;
+    const body = el!.querySelector<HTMLElement>('[data-prosettings-body]');
+    if (body) body.style.display = open ? 'flex' : 'none';
+    el!.querySelector('[data-action="prosettings-toggle"]')?.setAttribute('aria-expanded', String(open));
   });
 
   // "Content protection" disclosure - the outer header toggles the whole group of
@@ -2315,14 +2372,30 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   runtime.subscribe(() => refreshPreflight());
   refreshPreflight();
 
-  function videoParams(): { wait: number; duration: number; fps: number | undefined; live: boolean; durationUserSet: boolean } {
+  function videoParams(): { wait: number; duration: number; fps: number | undefined; live: boolean; durationUserSet: boolean;
+      videoQuality?: 'smaller' | 'balanced' | 'best'; videoCodec?: string; bitrateMode?: 'variable' | 'constant';
+      hardwareAcceleration?: 'no-preference' | 'prefer-hardware' | 'prefer-software' } {
     const wait     = parseFloat(el!.querySelector<HTMLInputElement>('[data-action="video-wait"]')?.value ?? '')     ?? 1;
     const duration = parseFloat(el!.querySelector<HTMLInputElement>('[data-action="video-duration"]')?.value ?? '') ?? 5;
-    const hiFps    = el!.querySelector<HTMLInputElement>('[data-action="webm-60fps"]')?.checked ?? false;
+    const fpsSel   = el!.querySelector<HTMLSelectElement>('[data-action="video-fps"]')?.value ?? '';
+    const qSel     = el!.querySelector<HTMLSelectElement>('[data-action="video-quality"]')?.value ?? '';
+    const codecSel = el!.querySelector<HTMLSelectElement>('[data-action="video-codec"]')?.value ?? '';
+    const brmSel   = el!.querySelector<HTMLSelectElement>('[data-action="video-bitratemode"]')?.value ?? '';
+    const hwSel    = el!.querySelector<HTMLSelectElement>('[data-action="video-hwaccel"]')?.value ?? '';
+    const fpsNum   = Number(fpsSel);
     return {
       wait:     isFinite(wait)     ? Math.max(0,  wait)     : 1,
       duration: isFinite(duration) ? Math.max(0.5, duration) : 5,
-      fps:      hiFps ? 60 : undefined,
+      // Frame-rate select (24/25/30/50/60), the WP-B replacement for the old webm-only
+      // 60fps checkbox. 'Auto' (empty) leaves fps unset, so each format keeps its default.
+      fps:      fpsSel && Number.isFinite(fpsNum) ? fpsNum : undefined,
+      // WP-B pro-settings: the quality stop drives the bitrate authority; the codec /
+      // rate-mode / encoder knobs override the auto ladder + encoder config. Each is
+      // undefined unless the user moved it off 'Auto', so a default export is unchanged.
+      videoQuality: qSel === 'smaller' || qSel === 'best' ? qSel : qSel === 'balanced' ? 'balanced' : undefined,
+      videoCodec:   codecSel || undefined,
+      bitrateMode:  brmSel === 'constant' ? 'constant' : undefined,
+      hardwareAcceleration: hwSel === 'prefer-hardware' || hwSel === 'prefer-software' ? hwSel : undefined,
       // "Record live" (webm/mp4): capture the on-screen preview via a screen share
       // instead of the offline render - see bridge/live-capture.ts. Popup-local.
       // Offered for timed compositions too - the compositor is the default, live
