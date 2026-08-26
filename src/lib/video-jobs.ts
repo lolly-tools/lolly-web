@@ -971,8 +971,12 @@ export async function videoEncodeWriter(
 ): Promise<VideoFrameWriter> {
   const { createStreamingMux } = await import('../bridge/video-encode-core.ts');
   const { pickWebCodecsVideo, pickWebCodecsAudio } = await import('../bridge/video-shared.ts');
+  const { codecAdjustedBitrate } = await import('../bridge/video-mime.ts');
   const pick = await pickWebCodecsVideo('mp4', plan.width, plan.height, plan.fps, plan.bitrate);
   if (!pick) throw new Error(t("This browser can't encode video."));
+  // The incoming bitrate is the H.264-equivalent target; trim to the picked codec's
+  // efficiency so an AV1/HEVC job is not encoded at the wasteful H.264 rate.
+  const encBitrate = codecAdjustedBitrate(plan.bitrate, pick.codec);
 
   let audioDecl: import('../bridge/video-encode-core.ts').EncodeAudio | null = null;
   if (plan.audio && plan.audio.length > 0) {
@@ -984,7 +988,7 @@ export async function videoEncodeWriter(
   }
 
   const mux = await createStreamingMux(pick, {
-    width: plan.width, height: plan.height, fps: plan.fps, bitrate: plan.bitrate, audio: audioDecl,
+    width: plan.width, height: plan.height, fps: plan.fps, bitrate: encBitrate, audio: audioDecl,
   });
 
   const canvas = document.createElement('canvas');

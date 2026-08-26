@@ -72,6 +72,35 @@ export function videoBitrate(width: number, height: number, fps: number, bitsPer
   return Math.max(1_000_000, Math.min(raw, 24_000_000));
 }
 
+// ── Quality stops + codec efficiency (WP-B Decision 3) ────────────────────────
+// The one bitrate authority the three-stop quality select drives. 'balanced' equals
+// the historical flat 0.1 bits-per-pixel, so an export that does not choose a stop is
+// byte-for-byte what it was. The base bitrate is CODEC-AGNOSTIC (the H.264-equivalent,
+// which also probes the ladder); once a codec is picked, codecAdjustedBitrate trims it
+// for that codec's efficiency, so AV1 reaches the same quality at fewer bytes instead
+// of wasting bits at the H.264 rate.
+export type VideoQuality = 'smaller' | 'balanced' | 'best';
+const QUALITY_BPP: Record<VideoQuality, number> = { smaller: 0.06, balanced: 0.1, best: 0.16 };
+export function bppForQuality(quality: VideoQuality): number { return QUALITY_BPP[quality]; }
+
+/** Per-codec bitrate efficiency vs H.264 (=1.0): a modern codec reaches the same
+ *  visual quality at fewer bits, so it is GIVEN fewer bits, not the same. AV1 and HEVC
+ *  are the big wins, VP9 is between, VP8 is no better than H.264. Conservative (biased
+ *  to preserve quality) and tunable against a visual A/B. */
+export function codecBitrateScale(codec: string): number {
+  if (codec.startsWith('av01')) return 0.55;
+  if (codec.startsWith('hvc1') || codec.startsWith('hev1')) return 0.65;
+  if (codec.startsWith('vp09') || codec.startsWith('vp9')) return 0.8;
+  return 1.0; // avc / vp8
+}
+
+/** The codec-aware encode bitrate: the quality/size base scaled for the chosen codec's
+ *  efficiency, never below 1 Mbps. Callers compute the base with videoBitrate, then
+ *  adjust once a codec is picked. */
+export function codecAdjustedBitrate(baseBitrate: number, codec: string): number {
+  return Math.max(1_000_000, Math.round(baseBitrate * codecBitrateScale(codec)));
+}
+
 // ── WebCodecs encode scheduling (pure - DOM-free, unit-tested) ────────────────
 // The per-frame timing + keyframe cadence for the WebCodecs video encode, and the audio
 // PCM chunk boundaries, split out of the encode loop (export.ts encodeVideoWithWebCodecs)

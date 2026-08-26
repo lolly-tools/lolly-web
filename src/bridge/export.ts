@@ -52,7 +52,7 @@ import { assembleAnimatedSvg } from '../lib/svg-anim-core.ts';
 import { recTransition } from '../lib/transitions.ts';
 import { suspendNodeRasters, drainNodeRasters } from '../lib/clip-thumbs.ts';
 import { RASTER_DEFAULT_SCALE } from './export-scale.ts';
-import { videoMimeCandidates, videoBitrate, LIVE_BITS_PER_PIXEL, videoFramePlan, AUDIO_FRAME_HEADROOM } from './video-mime.ts';
+import { videoMimeCandidates, videoBitrate, codecAdjustedBitrate, LIVE_BITS_PER_PIXEL, videoFramePlan, AUDIO_FRAME_HEADROOM } from './video-mime.ts';
 import { bedDuckEnvelope, scheduleGainEvents } from './audio-envelope.ts';
 import type { ExportAudio, ExportAudioMixIn } from './audio-envelope.ts';
 import { encodeMuxWebCodecs, type EncodeAudio, type EncodePick } from './video-encode-core.ts';
@@ -9692,8 +9692,11 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
   // frames + the live `audio` track stay valid for Phase 2).
   {
     const clipSec = frames.length / fps;         // bed length == the ACTUAL (maybe capped) video length
-    const bitrate = videoBitrate(targetW, targetH, fps);
-    const pick = await pickWebCodecsVideo(preferred, targetW, targetH, fps, bitrate);
+    // Codec-agnostic base bitrate (H.264-equivalent) probes the ladder; once a codec is
+    // picked, trim to its efficiency (AV1/HEVC reach the same quality at fewer bytes).
+    const baseBitrate = videoBitrate(targetW, targetH, fps);
+    const pick = await pickWebCodecsVideo(preferred, targetW, targetH, fps, baseBitrate);
+    const bitrate = pick ? codecAdjustedBitrate(baseBitrate, pick.codec) : baseBitrate;
     const wantAudio = !!opts.audio?.url;
     const audioPick = pick && wantAudio ? await pickWebCodecsAudio(pick.container) : null;
     // The "silent video" warning for a dropped live track was deferred to here

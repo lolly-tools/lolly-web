@@ -9,12 +9,34 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { videoBitrate, videoFrameSchedule, audioChunkSchedule, videoFramePlan, FPS_FLOOR } from './video-mime.ts';
+import { videoBitrate, bppForQuality, codecBitrateScale, codecAdjustedBitrate, videoFrameSchedule, audioChunkSchedule, videoFramePlan, FPS_FLOOR } from './video-mime.ts';
 
 test('videoBitrate: scales with pixels×fps, clamped to 1–24 Mbps', () => {
   assert.equal(videoBitrate(1, 1, 1), 1_000_000);              // floor
   assert.equal(videoBitrate(10000, 10000, 60), 24_000_000);    // ceiling
   assert.equal(videoBitrate(1920, 1080, 30), Math.round(1920 * 1080 * 30 * 0.1));
+});
+
+test('bppForQuality: three stops, balanced == the historical flat 0.1', () => {
+  assert.equal(bppForQuality('balanced'), 0.1);
+  assert.ok(bppForQuality('smaller') < bppForQuality('balanced'));
+  assert.ok(bppForQuality('best') > bppForQuality('balanced'));
+});
+
+test('codecBitrateScale: modern codecs get fewer bits; H.264/VP8 unchanged', () => {
+  assert.equal(codecBitrateScale('avc1.640033'), 1.0);
+  assert.equal(codecBitrateScale('vp8'), 1.0);
+  assert.ok(codecBitrateScale('av01.0.08M.08') < codecBitrateScale('hvc1.1.6.L93.B0'));   // AV1 < HEVC
+  assert.ok(codecBitrateScale('hvc1.1.6.L93.B0') < codecBitrateScale('vp09.00.10.08'));   // HEVC < VP9
+  assert.ok(codecBitrateScale('vp09.00.10.08') < 1.0);                                    // VP9 < H.264
+});
+
+test('codecAdjustedBitrate: trims by codec, never below the 1 Mbps floor', () => {
+  const base = videoBitrate(1920, 1080, 30);                   // ~6.22 Mbps, above the floor
+  assert.equal(codecAdjustedBitrate(base, 'avc1.640033'), base);            // H.264 unchanged
+  assert.equal(codecAdjustedBitrate(base, 'av01.0.08M.08'), Math.round(base * 0.55));
+  assert.equal(codecAdjustedBitrate(2_000_000, 'av01.0.08M.08'), Math.max(1_000_000, Math.round(2_000_000 * 0.55)));
+  assert.equal(codecAdjustedBitrate(1_000_000, 'av01.0.08M.08'), 1_000_000);  // floor holds after the trim
 });
 
 test('videoFrameSchedule: µs timestamps + ~2s keyframe cadence', () => {
