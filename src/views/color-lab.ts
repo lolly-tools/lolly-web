@@ -99,6 +99,7 @@ import {
   onDisplayGamutChange, acquire2d, displayAnchorGamut, displayAnchor, displaySupportsHdr,
 } from '../lib/display-gamut.ts';
 import { hdrPngUrl } from '../lib/hdr-image.ts';
+import type { HdrExposure } from '../lib/hdr-image.ts';
 import { jellyActive, ensureJelly } from '../lib/jelly.ts';
 import { icon } from '../lib/icons.ts';
 import {
@@ -305,6 +306,25 @@ const DEFAULT_LIMIT: Exclude<GamutName, 'none'> = 'rec2020';
 const CONTROL_LIMIT: Exclude<GamutName, 'none'> = 'rec2020';
 
 /**
+ * The headroom / nits axis (plan 154 WP-5).
+ *
+ * A SEPARATE, labelled control - the peak luminance the light end of each chart is
+ * exposed to on an HDR display - NOT an extension of the OKLab L slider past 1.0.
+ * OKLab L stays honest at <= 1; this axis says "how far into the display's headroom
+ * the top of the lightness axis is pushed", which is an exposure choice, not a
+ * perceptual coordinate.
+ *
+ * The floor is SDR reference white (BT.2408 diffuse white, {@link NITS_SDR_WHITE}):
+ * at the floor the gain is 1 and nothing rises above SDR white, which is the honest
+ * "no headroom used" end. The default and ceiling mirror hdr-image.ts's own
+ * `peakNits` default (1000) and leave room to tune upward on a brighter panel.
+ */
+const NITS_SDR_WHITE = 203;
+const NITS_DEFAULT = 1000;
+const NITS_MIN = NITS_SDR_WHITE;
+const NITS_MAX = 2000;
+
+/**
  * The contrast matrix is N×N over the palette (plus white and black), and N is
  * capped so the grid stays readable and the O(N²) APCA recompute stays cheap. A
  * cap that bites is SURFACED - `renderCvdMatrix` logs it and shows a "first N of M"
@@ -443,6 +463,24 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    * are dragging (see clampIntoGamut).
    */
   let boundsOn = false;
+  /**
+   * The headroom / nits axis's current value - the peak luminance the light end of
+   * the charts is exposed to on an HDR display (plan 154 WP-5, {@link NITS_DEFAULT}).
+   *
+   * Seeded from `&nits=` when a shared link carried one, so an HDR-tuned link
+   * reproduces the sender's exposure. `nitsPinned` decides whether it rides back out
+   * in the URL - a value the reader chose (or arrived on) is worth sharing; the bare
+   * default is not. This is NOT a lightness coordinate - see {@link NITS_DEFAULT}.
+   */
+  const urlNits = nitsFrom(params);
+  let exposureNits = urlNits ?? NITS_DEFAULT;
+  let nitsPinned = urlNits != null;
+  /**
+   * The A/B preview: true shows the HDR boost, false forces the SDR rendering so the
+   * two can be compared on the same panel. Only meaningful on an HDR display (on an
+   * SDR one there is no boost either way); the control that flips it is hidden off HDR.
+   */
+  let hdrPreview = true;
   /** The tone ramp's step count. The blend carries its own - see `blendStops`. */
   let steps = 9;
   /**
@@ -942,8 +980,10 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
   // key, and the "your display" contour is set during the paint. It must not move
   // the tab - the display changing is not the reader changing their comparison.
   // renderReadouts() too, so the preview swatch's HDR fill (paintSwatchHdr) and the
-  // gamut readouts re-resolve for the new display, not just the charts.
-  cleanups.push(onDisplayGamutChange(() => { paintCharts(); renderReadouts(); }));
+  // gamut readouts re-resolve for the new display, not just the charts. And the nits
+  // control is shown or hidden to match: dragging a window onto an HDR panel gives it
+  // headroom, dragging back off takes it away.
+  cleanups.push(onDisplayGamutChange(() => { syncHdrVisibility(); paintCharts(); renderReadouts(); }));
 
   const boundsBox = $<HTMLInputElement>('[data-lab-bounds]');
   if (boundsBox) {
@@ -956,6 +996,56 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     };
     boundsBox.addEventListener('change', onBounds);
     cleanups.push(() => boundsBox.removeEventListener('change', onBounds));
+  }
+
+  // ── The headroom / nits axis + the SDR↔HDR preview (plan 154 WP-5) ─────────
+  // A SEPARATE control from the lightness slider: it sets how far into the display's
+  // peak the light end of each chart is exposed, not a lightness past 1.0. Shown only
+  // where the panel has the headroom to answer it (`syncHdrVisibility`).
+  syncHdrVisibility();
+  /** Update the nits readout on the slider itself, live. The verdict card is refreshed
+   *  by renderReadouts on commit; this is the cheap continuous echo. */
+  const paintNitsOut = (): void => {
+    const out = $('[data-lab-nits-slider] [data-gsl-val]');
+    if (out) out.textContent = `${exposureNits}`;
+  };
+  const nitsBox = $('[data-lab-nits-slider]');
+  if (nitsBox) {
+    // The input's markup value is the default; a `&nits=` link may have moved the
+    // state, so bring the thumb and readout to it before wiring.
+    const nitsInput = nitsBox.querySelector<HTMLInputElement>('[data-gsl-input]');
+    if (nitsInput) nitsInput.value = String(exposureNits);
+    paintNitsOut();
+    const clampNits = (v: number): number =>
+      Math.max(NITS_MIN, Math.min(NITS_MAX, Math.round(v)));
+    cleanups.push(wireGamutSlider(nitsBox, {
+      // Continuous: move the exposure and repaint at draft quality (the SDR fill is
+      // instant; the HDR overlay catches up on release, same as a colour drag).
+      onInput: (v) => { exposureNits = clampNits(v); nitsPinned = true; paintNitsOut(); paintCharts('draft'); },
+      onChange: (v) => {
+        exposureNits = clampNits(v);
+        nitsPinned = true;
+        paintNitsOut();
+        renderReadouts();   // the nits verdict card + the preview swatch follow
+        paintCharts('full');
+        syncUrl();
+      },
+    }));
+  }
+  const hdrSeg = $('[data-lab-hdr-ab]');
+  if (hdrSeg) {
+    const onHdrAb = (e: Event): void => {
+      const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-val]');
+      const next = btn?.dataset.val === 'sdr' ? false : btn?.dataset.val === 'hdr' ? true : undefined;
+      if (next === undefined || next === hdrPreview) return;
+      hdrPreview = next;
+      hdrSeg.querySelectorAll<HTMLElement>('[data-val]')
+        .forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+      renderReadouts();   // the preview swatch drops or regains its HDR fill too
+      paintCharts('full');
+    };
+    hdrSeg.addEventListener('click', onHdrAb);
+    cleanups.push(() => hdrSeg.removeEventListener('click', onHdrAb));
   }
 
   // ── The 2D charts ────────────────────────────────────────────────────────
@@ -1159,12 +1249,52 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
     }
   }
 
+  /** The exposure the headroom axis is set to, as {@link HdrExposure}. Only
+   *  `peakNits` moves for now (the floor, knees stay at hdr-image.ts's defaults);
+   *  the rest are Andy's to tune on-device. Consumed by the charts' HDR overlay and
+   *  the preview swatch, so the two cannot read different exposures. */
+  const currentExposure = (): HdrExposure => ({ peakNits: exposureNits, sdrWhiteNits: NITS_SDR_WHITE });
+
+  /**
+   * The luminance THIS colour reaches once the headroom exposure lifts it, in nits.
+   *
+   * Mirrors hdr-image.ts's gate exactly (a Rec.709 luma on the LINEAR pixel drives a
+   * smoothstep between the knees), so darks hold near SDR luminance and only the light
+   * end rises toward the peak - and a readout here can never claim a lift the pixels
+   * do not get. It is a readout OF the exposure, not a change to OKLab L: pure white
+   * reaches the full peak, this colour reaches its own share of it.
+   */
+  function exposedNits(d: ColorDescription): number {
+    const lin = convertColor(d.parsed, 'srgb-linear').components;
+    const luma = Math.max(0, 0.2126 * (lin[0] ?? 0) + 0.7152 * (lin[1] ?? 0) + 0.0722 * (lin[2] ?? 0));
+    const maxGain = Math.max(1, exposureNits / NITS_SDR_WHITE);
+    // smoothstep across the default knees (kneeLo 0.5, kneeHi 1) - the same Hermite
+    // ramp applyExposure uses, so the two agree at every luma.
+    const edge = Math.max(0, Math.min(1, (luma - 0.5) / 0.5));
+    const gate = edge * edge * (3 - 2 * edge);
+    const gain = 1 + (maxGain - 1) * gate;
+    return Math.round(luma * gain * NITS_SDR_WHITE);
+  }
+
+  /** Show the nits control only where the panel actually has headroom - on an SDR
+   *  display a control that cannot do anything is worse than absent, so it is hidden
+   *  and the readout card carries the one-line "no headroom" note instead (Tier C). */
+  function syncHdrVisibility(): void {
+    const panel = $('[data-lab-hdr]');
+    if (panel) panel.hidden = !displaySupportsHdr();
+  }
+
   function paintCharts(quality: 'full' | 'draft' = 'full'): void {
+    // One exposure + one preview flag for the whole row, so the three charts cannot
+    // disagree. On an SDR display `hdr`/`exp` are inert (paintSliceChart gates on
+    // displaySupportsHdr()), so the fill stays byte-identical to today.
+    const exp = currentExposure();
+    const hdr = hdrPreview;
     for (const plane of PLANES) {
       const mount = $(`[data-lab-chart="${plane}"]`);
       if (!mount) continue;
       const st = chartStateFor(plane);
-      paintSliceChart(mount, st, { quality });
+      paintSliceChart(mount, st, { quality, exp, hdr });
       updateSliceDot(mount, 0, desc.srgbHex, st, desc.oklch);
       const label = $(`[data-lab-slice-at="${plane}"]`);
       if (label) label.textContent = formatFixed(plane, st.fixed);
@@ -2160,13 +2290,17 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
    *  recipient's own screen re-deciding it. */
   function syncUrl(): void {
     const url = `#/lab?c=${encodeURIComponent(subject)}`
-      + (limitPinned && limitParam ? `&limit=${encodeURIComponent(limitParam)}` : '');
+      + (limitPinned && limitParam ? `&limit=${encodeURIComponent(limitParam)}` : '')
+      // The headroom axis rides along once it has been set, so an HDR-tuned link
+      // reproduces the sender's exposure. Independent of the display: the value is
+      // kept even where this screen has no headroom, so forwarding it stays honest.
+      + (nitsPinned ? `&nits=${exposureNits}` : '');
     if (window.location.hash !== url) window.history.replaceState(null, '', url);
   }
 
   /** Everything that is text or a swatch, rebuilt from `desc`. */
   function renderReadouts(): void {
-    paintSwatch(swatch, desc);
+    paintSwatch(swatch, desc, currentExposure(), hdrPreview);
     // The swatch leads with the value in the space the PICKER is set to - OKLCH by
     // default - so the number on the swatch and the number under your hands are
     // the same number. The authored form is never lost: it stays in the entry
@@ -2283,6 +2417,30 @@ export async function mountColorLab(view: HTMLElement, host: ColorLabHost, param
         <span class="lab-ceil-val">${c.toFixed(3)}${gain}</span>
       </li>`;
     }).join('');
+
+    // Headroom / nits axis (plan 154 WP-5). A SEPARATE readout from chroma headroom:
+    // how bright this colour's light gets on the display's luminance axis once the
+    // exposure lifts it. Nits, not lightness - OKLab L above is untouched.
+    const nitsCard = $('[data-lab-nits]');
+    if (nitsCard) {
+      const hasHeadroom = displaySupportsHdr();
+      const valEl = nitsCard.querySelector('[data-lab-nits-val]')!;
+      const noteEl = nitsCard.querySelector('[data-lab-nits-note]')!;
+      if (!hasHeadroom) {
+        // Tier C: nothing above SDR white to show, so the axis is inert on this screen.
+        nitsCard.dataset.state = 'sdr';
+        valEl.textContent = t('SDR only');
+        noteEl.textContent = t('This screen reports no HDR headroom, so there is nothing above SDR white to show. On an HDR display the light end of each chart would glow.');
+      } else if (!hdrPreview) {
+        nitsCard.dataset.state = 'sdr-preview';
+        valEl.textContent = t('SDR preview');
+        noteEl.textContent = t('The A/B toggle is holding the charts at SDR. Flip it back to HDR to see the boost.');
+      } else {
+        nitsCard.dataset.state = 'hdr';
+        valEl.textContent = tRaw('{n} nits', { n: String(exposedNits(desc)) });
+        noteEl.textContent = tRaw('where this colour’s light lands, of a {peak}-nit ceiling. Pure white reaches the ceiling; darks hold at SDR luminance.', { peak: String(exposureNits) });
+      }
+    }
 
     renderPress();
     renderContrast();
@@ -2895,6 +3053,23 @@ function limitFrom(params: string): string | null {
 }
 
 /**
+ * `?…&nits=` from the route params - the headroom axis's peak luminance, so an
+ * HDR-tuned link reproduces the sender's exposure (plan 154 WP-5). Bounded to the
+ * axis's own range and rounded; anything outside or unparseable falls back to null →
+ * {@link NITS_DEFAULT}. Carried through even on an SDR recipient (like `&limit=`)
+ * rather than dropped, so forwarding the link a second time keeps it intact.
+ */
+function nitsFrom(params: string): number | null {
+  try {
+    const q = new URLSearchParams(params.startsWith('?') ? params.slice(1) : params);
+    const v = q.get('nits');
+    if (!v) return null;
+    const n = Math.round(Number(v));
+    return Number.isFinite(n) && n >= NITS_MIN && n <= NITS_MAX ? n : null;
+  } catch { return null; }
+}
+
+/**
  * A profile's substrate as PCS Lab: zero ink for an ink space (no ink IS the
  * paper), device white otherwise.
  *
@@ -2919,7 +3094,7 @@ function paperWhite(p: IccProfile, intent: RenderingIntent): [number, number, nu
  * does its own per-display mapping - which beats us deciding up front that
  * nobody can see it.
  */
-function paintSwatch(el: HTMLElement, d: ColorDescription): void {
+function paintSwatch(el: HTMLElement, d: ColorDescription, exp?: HdrExposure, preview?: boolean): void {
   el.style.background = d.srgbHex;
   el.style.background = d.input;
   // Ink is chosen against the RENDERED fallback: it has to be readable on the
@@ -2927,7 +3102,7 @@ function paintSwatch(el: HTMLElement, d: ColorDescription): void {
   // The shared inversion rule (contrastText) - the big swatch used to flip to black
   // a good deal earlier than the dial disc sitting right below it.
   el.style.color = contrastText(d.srgbHex);
-  paintSwatchHdr(el, d);
+  paintSwatchHdr(el, d, exp, preview);
 }
 
 /** The blob URL currently backing each swatch's HDR fill, so it can be revoked. */
@@ -2943,11 +3118,14 @@ const SWATCH_HDR = new WeakMap<HTMLElement, string>();
  * a tiny solid, so this encodes inline; the CSS fill from paintSwatch stays as the
  * fallback under it (and on non-HDR displays the image is simply never set).
  */
-function paintSwatchHdr(el: HTMLElement, d: ColorDescription): void {
+function paintSwatchHdr(el: HTMLElement, d: ColorDescription, exp?: HdrExposure, preview?: boolean): void {
   const prev = SWATCH_HDR.get(el);
   if (prev) { URL.revokeObjectURL(prev); SWATCH_HDR.delete(el); }
   el.style.backgroundImage = ''; // clear any prior HDR fill → CSS colour shows through
-  if (!displaySupportsHdr()) return;
+  // `preview === false` is the A/B toggle's SDR side (plan 154 WP-5): the swatch drops
+  // its glow to match the charts. On an SDR display displaySupportsHdr() is already
+  // false, so the swatch was never lifted there and this stays byte-identical.
+  if (!displaySupportsHdr() || preview === false) return;
   const encode = displayAnchor();
   // encodeOklch is the engine's painter path (the same one the slices/quads use), so
   // the preview and the charts cannot disagree; a colour past the display gamut is
@@ -2957,7 +3135,7 @@ function paintSwatchHdr(el: HTMLElement, d: ColorDescription): void {
   const solid = new Uint8ClampedArray([byte(r), byte(g), byte(b), 255, byte(r), byte(g), byte(b), 255,
     byte(r), byte(g), byte(b), 255, byte(r), byte(g), byte(b), 255]); // 2×2 solid
   try {
-    const url = hdrPngUrl(solid, 2, 2, encode === 'display-p3' ? 'display-p3-linear' : 'srgb-linear', undefined, 8);
+    const url = hdrPngUrl(solid, 2, 2, encode === 'display-p3' ? 'display-p3-linear' : 'srgb-linear', exp, 8);
     el.style.backgroundImage = `url("${url}")`;
     el.style.backgroundSize = 'cover';
     SWATCH_HDR.set(el, url);
@@ -3150,6 +3328,33 @@ function shellHtml(): string {
           <input type="checkbox" class="field-check" data-lab-bounds>
           <span>${escape(t('Keep in bounds'))}</span>
         </label>
+      </div>
+      ${/* The headroom / nits axis + the SDR/HDR A/B preview (plan 154 WP-5). Hidden
+            until the display reports HDR headroom (syncHdrVisibility unhides it), so an
+            SDR screen never carries a control it cannot answer. The slider wears the
+            channel sliders' `.gsl` skin but drives an EXPOSURE into the display's peak,
+            deliberately NOT the lightness slider run past 1.0 - see NITS_DEFAULT. */''}
+      <div class="lab-hdr" data-lab-hdr hidden>
+        <div class="lab-hdr-head">
+          <span class="lab-field-label">${escape(t('Headroom / nits'))}</span>
+          <p class="lab-hdr-why">${escape(t('How far into your display’s peak the light end of each chart is exposed - an exposure into the display’s headroom, not the lightness axis pushed past 100%.'))}</p>
+        </div>
+        <div class="lab-hdr-row">
+          <div class="gsl lab-mix lab-nits-slider" data-lab-nits-slider>
+            <span class="gsl-key" aria-hidden="true">${escape(t('Nits').charAt(0))}</span>
+            <div class="gsl-well">
+              <div class="gsl-track" data-gsl-track aria-hidden="true"></div>
+              <input type="range" class="gsl-input" data-gsl-input
+                min="${NITS_MIN}" max="${NITS_MAX}" step="1" value="${NITS_DEFAULT}"
+                aria-label="${escape(t('Peak nits'))}">
+            </div>
+            <output class="gsl-val" data-gsl-val>${NITS_DEFAULT}</output>
+          </div>
+          <div class="view-seg lab-seg lab-hdr-ab" role="group" aria-label="${escape(t('Preview'))}" data-lab-hdr-ab>
+            <button type="button" class="view-seg-btn" data-val="hdr" aria-pressed="true">${escape(t('HDR'))}</button>
+            <button type="button" class="view-seg-btn" data-val="sdr" aria-pressed="false">${escape(t('SDR'))}</button>
+          </div>
+        </div>
       </div>
       <div class="lab-charts" data-lab-charts>
         ${PLANES.map(chart).join('')}
@@ -3345,6 +3550,16 @@ function shellHtml(): string {
           <p class="lab-card-label">${escape(t('Chroma ceiling here'))}</p>
           <ul class="lab-ceilings" data-lab-ceilings></ul>
           <p class="lab-card-note">${escape(t('The most chroma each gamut allows at this lightness and hue.'))}</p>
+        </div>
+        ${/* The headroom / nits card (plan 154 WP-5). A SEPARATE luminance readout,
+              not a lightness one: filled by renderReadouts with the nits this colour
+              reaches on an HDR panel, or a Tier C "no headroom" note on an SDR screen.
+              Always present so the grid slot is stable; its content follows the
+              display. */''}
+        <div class="lab-card lab-nits" data-lab-nits>
+          <p class="lab-card-label">${escape(t('Headroom / nits'))}</p>
+          <p class="lab-card-value" data-lab-nits-val></p>
+          <p class="lab-card-note" data-lab-nits-note></p>
         </div>
         ${/* The press card. Present but hidden until a profile is mounted, so its
               slot in the grid is stable and adding one does not reflow the row's

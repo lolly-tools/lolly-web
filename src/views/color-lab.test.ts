@@ -68,6 +68,31 @@ Object.defineProperty(globalThis, 'navigator', {
 
 const { mountColorLab, swatchGamutState, contrastMatrix, simulatePalette } = await import('./color-lab.ts');
 const { contrastText } = await import('../components/color-field.ts');
+const { resetDisplayGamut } = await import('../lib/display-gamut.ts');
+
+/**
+ * Run `fn` with a stubbed HDR-capable display, then restore SDR detection.
+ *
+ * display-gamut.ts reads the bare `matchMedia` global and caches; jsdom has none, so
+ * `displaySupportsHdr()` is false by default (which is what the SDR-path tests want).
+ * This installs a stub whose `(dynamic-range: high)` matches, resets the module's
+ * caches around it, and tears the stub back down so the surrounding tests stay SDR.
+ */
+async function withHdrDisplay(fn: () => Promise<void>): Promise<void> {
+  const mm = (q: string): object => ({
+    matches: /dynamic-range:\s*high/.test(q),
+    media: q,
+    addEventListener() {}, removeEventListener() {},
+    addListener() {}, removeListener() {},
+  });
+  (globalThis as unknown as { matchMedia?: unknown }).matchMedia = mm;
+  resetDisplayGamut();
+  try { await fn(); }
+  finally {
+    delete (globalThis as unknown as { matchMedia?: unknown }).matchMedia;
+    resetDisplayGamut();
+  }
+}
 
 const view = document.getElementById('view')!;
 
@@ -104,6 +129,7 @@ test('the report mounts with every section present', async () => {
   for (const sel of [
     '[data-lab-swatch]', '[data-lab-picker]', '[data-lab-limit]',
     '[data-lab-gamut]', '[data-lab-headroom]', '[data-lab-ceilings]',
+    '[data-lab-nits]', '[data-lab-hdr]',
     '[data-lab-contrast]', '[data-lab-ramp]', '[data-lab-notations]',
     '[data-lab-chart="lc"]', '[data-lab-chart="ch"]', '[data-lab-chart="lh"]',
     '[data-lab-solid]', '[data-lab-steps]', '[data-lab-blend]', '[data-lab-blend-raw]',
@@ -1690,4 +1716,59 @@ test('the palette is capped to a readable N and the truncation is surfaced', asy
   const note = $('[data-lab-matrix-note]') as HTMLElement;
   assert.equal(note.hidden, false, 'the cap is shown, not silent');
   assert.match(note.textContent ?? '', /12.*20/, `the note names first-N-of-M: ${note.textContent}`);
+});
+
+// ── The headroom / nits axis (plan 154 WP-5) ────────────────────────────────
+
+test('on an SDR display the nits control is hidden and the card gives a Tier C note', async () => {
+  await mount();   // no matchMedia stub → the display reports no HDR headroom
+  assert.equal(($('[data-lab-hdr]') as HTMLElement).hidden, true,
+    'the nits control is hidden where there is no headroom to answer it');
+  const nits = $('[data-lab-nits]')!;
+  assert.equal(nits.dataset.state, 'sdr');
+  assert.ok(text('[data-lab-nits] [data-lab-nits-note]').length > 0,
+    'the readout card explains there is nothing above SDR white to show');
+  // The nits axis must never touch the honest lightness readout - L stays <= 1.
+  assert.ok(subjectOklch().l <= 1, 'OKLab L is unmoved by the nits card');
+});
+
+test('on an HDR display the nits control appears and the card reads in nits', async () => {
+  await withHdrDisplay(async () => {
+    await mount('?c=oklch(0.97 0.02 95)');   // a light colour, so it rides into headroom
+    const panel = $('[data-lab-hdr]') as HTMLElement;
+    assert.ok(panel, 'the HDR control block is present');
+    assert.equal(panel.hidden, false, 'and shown once the display reports headroom');
+    assert.ok($('[data-lab-nits-slider] [data-gsl-input]'), 'the nits slider is mounted');
+    assert.ok($('[data-lab-hdr-ab] [data-val="hdr"]') && $('[data-lab-hdr-ab] [data-val="sdr"]'),
+      'the SDR/HDR A/B toggle is present');
+    const nits = $('[data-lab-nits]')!;
+    assert.equal(nits.dataset.state, 'hdr');
+    assert.match(text('[data-lab-nits] [data-lab-nits-val]'), /nits/,
+      'the readout card reports a luminance in nits');
+  });
+});
+
+test('the A/B toggle forces the SDR preview and the nits card follows', async () => {
+  await withHdrDisplay(async () => {
+    await mount('?c=oklch(0.95 0.03 95)');
+    assert.equal($('[data-lab-nits]')!.dataset.state, 'hdr', 'starts on the HDR preview');
+    const seg = $('[data-lab-hdr-ab]')!;
+    const sdrBtn = seg.querySelector<HTMLElement>('[data-val="sdr"]')!;
+    sdrBtn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    assert.equal(sdrBtn.getAttribute('aria-pressed'), 'true', 'the SDR side is pressed');
+    assert.equal($('[data-lab-nits]')!.dataset.state, 'sdr-preview',
+      'and the readout card reports the forced-SDR preview');
+  });
+});
+
+test('the nits axis round-trips through the URL on an HDR display', async () => {
+  await withHdrDisplay(async () => {
+    await mount('?c=oklch(0.9 0.05 95)&nits=1400');
+    const input = $('[data-lab-nits-slider] [data-gsl-input]') as HTMLInputElement;
+    assert.equal(input.value, '1400', 'a shared link seeds the exposure the sender set');
+    // A change writes the exposure back to the hash, so forwarding it stays intact.
+    input.value = '900';
+    input.dispatchEvent(new dom.window.Event('change'));
+    assert.match(window.location.hash, /nits=900/, 'the chosen exposure rides the URL');
+  });
 });

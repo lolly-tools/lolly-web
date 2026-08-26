@@ -78,3 +78,18 @@ test('the exposure lifts lights but holds darks', () => {
     'darks hold at SDR luminance regardless of the peak',
   );
 });
+
+test('peakNits is a continuous headroom axis: white rises monotonically with it', () => {
+  // The Lab's nits slider spans this axis (plan 154 WP-5). Every step of the peak has
+  // to lift white further, or the control would be inert between its endpoints - so
+  // the floor (SDR white, no boost) < a mid peak < the default 1000.
+  const white = rgba([[255, 255, 255]]);
+  const whiteLin = (peakNits: number): number =>
+    hdrExposedLinearRgba(white, 1, 1, 'srgb-linear', { peakNits })[0]!;
+  const floor = whiteLin(203);   // maxGain 1 → no lift
+  const mid = whiteLin(600);
+  const top = whiteLin(1000);
+  assert.ok(Math.abs(floor - 1) < 1e-6, `at SDR white the gain is 1, got ${floor}`);
+  assert.ok(mid > floor, `a mid peak lifts white above the floor (${mid} > ${floor})`);
+  assert.ok(top > mid, `the default peak lifts it further still (${top} > ${mid})`);
+});

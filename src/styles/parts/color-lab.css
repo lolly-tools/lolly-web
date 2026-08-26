@@ -418,6 +418,19 @@
 .lab-headroom[data-state="over"] .lab-card-value { color: oklch(0.58 0.19 25); }
 .lab-headroom[data-state="under"] .lab-card-value { color: oklch(0.55 0.14 150); }
 
+/* The headroom / nits card (plan 154 WP-5). A full-border accent when the display
+   has headroom in play; muted where it has none. A full box-shadow ring, never a
+   single-edge rail (house rule). The nits figure takes the warm accent that reads as
+   "into the peak"; the SDR states drop to the muted colour so the card plainly says
+   there is nothing above SDR white to show here. */
+.lab-nits[data-state="hdr"] { box-shadow: 0 0 0 2px oklch(0.75 0.15 75); }
+.lab-nits[data-state="hdr"] .lab-card-value { color: oklch(0.7 0.16 70); }
+.lab-nits[data-state="sdr"] .lab-card-value,
+.lab-nits[data-state="sdr-preview"] .lab-card-value {
+  color: hsl(var(--muted-foreground));
+  font-size: calc(1.15rem * var(--a11y-fs));
+}
+
 .lab-ceilings { margin: 0.1rem 0 0; padding: 0; list-style: none; display: grid; gap: 0.2rem; }
 .lab-ceil {
   display: flex;
@@ -685,6 +698,41 @@
   font-size: calc(0.78rem * var(--a11y-fs));
   white-space: nowrap;
 }
+
+/* The headroom / nits control (plan 154 WP-5). A full-width block under the target
+   row: the nits slider stretches, the SDR/HDR toggle stays compact beside it. A
+   fully padded, washed block - never a single-edge rail (house rule). Hidden by
+   default in the markup; the view unhides it only on an HDR display. */
+.lab-hdr {
+  margin-top: 0.6rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: var(--radius);
+  background: hsl(var(--muted) / 0.4);
+  box-shadow: inset 0 0 0 1px hsl(var(--border));
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.lab-hdr-head { display: flex; flex-direction: column; gap: 0.15rem; }
+.lab-hdr-why {
+  margin: 0;
+  font-size: calc(0.76rem * var(--a11y-fs));
+  line-height: 1.4;
+  color: hsl(var(--muted-foreground));
+}
+.lab-hdr-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.9rem;
+}
+/* The nits slider borrows the `.gsl`/`.lab-mix` skin (lib/oklch-slice.css) but drives
+   an exposure, not a colour, so it never carries the `is-out` mark - and it drops the
+   `.lab-mix` bottom margin, since it sits in a flex row rather than above a ramp. */
+.lab-nits-slider { flex: 1 1 16rem; min-width: 0; margin-bottom: 0; }
+.lab-nits-slider .gsl-val { min-width: 3.4rem; }
+/* The A/B toggle is content-width here, not the full-row `.lab-seg` default. */
+.lab-hdr-ab { flex: 0 0 auto; width: auto; }
 
 /* Full width above the charts - it governs the whole row, so it spans it. The
    shared segmented control is normally content-width; these options split the

@@ -48,7 +48,7 @@ import type { EncodeSpace } from '@lolly/engine';
 import { escapeHtml } from './html.ts';
 import { acquire2d, displayAnchorGamut, noteEncodeDowngrade, displaySupportsHdr } from './display-gamut.ts';
 import { hdrPngUrl, hdrExposedLinearRgba } from './hdr-image.ts';
-import type { HdrJob, HdrResult } from './hdr-image.ts';
+import type { HdrJob, HdrResult, HdrExposure } from './hdr-image.ts';
 import { hdrCanvasSupported, paintHdrCanvas } from './hdr-canvas.ts';
 import {
   SLICE_AXES, oklchSliceXY, sliceXYToOklch, sliceOffPlane, sliceTicks, tickThinned,
@@ -272,7 +272,7 @@ const PAINTED = new WeakMap<HTMLCanvasElement, string>();
 export function paintSliceChart(
   root: HTMLElement,
   state: SliceChartState,
-  opts: { quality?: 'full' | 'draft' } = {},
+  opts: { quality?: 'full' | 'draft'; exp?: HdrExposure; hdr?: boolean } = {},
 ): void {
   let canvas = root.querySelector<HTMLCanvasElement>('[data-okls-canvas]');
   const plot = root.querySelector<HTMLElement>('[data-okls-plot]');
@@ -290,8 +290,20 @@ export function paintSliceChart(
   //            encoded off-thread, resolves on settle (full quality only).
   // Everything currently testable lacks the Tier A API, so tierA is false and the
   // behaviour is exactly Tier B. Both are in the key so a display/tier change repaints.
-  const wantHdr = displaySupportsHdr();
+  //
+  // `opts.hdr === false` is the SDR side of the Lab's A/B preview toggle (plan 154
+  // WP-5): it forces the SDR rendering on an HDR panel so the boost can be compared
+  // against no boost. It can only SUBTRACT headroom, never add it - on an SDR display
+  // `displaySupportsHdr()` is already false, so this leaves that path byte-identical.
+  const wantHdr = displaySupportsHdr() && opts.hdr !== false;
   const tierA = wantHdr && hdrCanvasSupported();
+  // The exposure the headroom axis is set to (plan 154 WP-5). Part of the paint key
+  // below so a nits change forces the repaint that reschedules the HDR encode; the
+  // SDR fill is unaffected by it, so on an SDR display it changes nothing on screen.
+  const exp = opts.exp;
+  const expKey = exp
+    ? `${exp.peakNits ?? ''},${exp.sdrWhiteNits ?? ''},${exp.kneeLo ?? ''},${exp.kneeHi ?? ''}`
+    : '';
   const hdrActive = !draft && wantHdr && !tierA; // Tier B: image path, settle-only
   // Cap the backing store: past ~2 device pixels per CSS pixel the extra detail
   // is invisible on a gradient field but the paint cost is real.
@@ -315,7 +327,7 @@ export function paintSliceChart(
   // unchanged while the boundary marked as "yours" has to move - and the marking
   // happens inside the paint.
   const keyFor = (encode: EncodeSpace): string =>
-    `${state.plane}|${state.fixed.toFixed(4)}|${cMax}|${gamutSourceId(limit)}|${encode}|${displayAnchorGamut()}|${hdrActive}|${tierA}|${w}x${h}`;
+    `${state.plane}|${state.fixed.toFixed(4)}|${cMax}|${gamutSourceId(limit)}|${encode}|${displayAnchorGamut()}|${hdrActive}|${tierA}|${expKey}|${w}x${h}`;
 
   // The context, the ImageData and the engine's `encode` MUST name the same space - 
   // mismatching them shifts every pixel with nothing on screen to say so. They are
@@ -369,13 +381,13 @@ export function paintSliceChart(
     // Tier A: live HDR canvas. If it paints, hide the Tier B <img>; if the GPU path
     // fails at runtime, fall back to the Tier B image for this paint.
     const ok = glCanvas
-      ? paintHdrCanvas(glCanvas, hdrExposedLinearRgba(img.data, w, h, space), w, h, encode === 'display-p3' ? 'display-p3' : 'srgb')
+      ? paintHdrCanvas(glCanvas, hdrExposedLinearRgba(img.data, w, h, space, exp), w, h, encode === 'display-p3' ? 'display-p3' : 'srgb')
       : false;
     if (glCanvas) glCanvas.hidden = !ok;
-    scheduleHdrOverlay(root, img.data, w, h, encode, ok ? false : (!draft && wantHdr));
+    scheduleHdrOverlay(root, img.data, w, h, encode, ok ? false : (!draft && wantHdr), exp);
   } else {
     if (glCanvas) glCanvas.hidden = true;
-    scheduleHdrOverlay(root, img.data, w, h, encode, hdrActive);
+    scheduleHdrOverlay(root, img.data, w, h, encode, hdrActive, exp);
   }
   paintEdges(root, state, cMax, limit);
 }
@@ -467,6 +479,7 @@ function scheduleHdrOverlay(
   h: number,
   encode: EncodeSpace,
   active: boolean,
+  exp?: HdrExposure,
 ): void {
   const img = root.querySelector<HTMLImageElement>('[data-okls-hdr]');
   if (!img) return;
@@ -485,9 +498,9 @@ function scheduleHdrOverlay(
       HDR_LATEST.set(root, id);
       HDR_PENDING.set(id, img);
       const buf = rgba.slice().buffer; // a detachable copy; the caller's buffer is left intact
-      worker.postMessage({ id, rgba: buf, width: w, height: h, space, depth: 16 } satisfies HdrJob, [buf]);
+      worker.postMessage({ id, rgba: buf, width: w, height: h, space, depth: 16, exp } satisfies HdrJob, [buf]);
     } else {
-      try { img.src = hdrPngUrl(rgba, w, h, space, undefined, 8); img.hidden = false; } catch { hideHdr(img); }
+      try { img.src = hdrPngUrl(rgba, w, h, space, exp, 8); img.hidden = false; } catch { hideHdr(img); }
     }
   }, HDR_SETTLE_MS);
   HDR_TIMERS.set(root, timer);
