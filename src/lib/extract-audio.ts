@@ -1,8 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Extract audio from a video - decode the video's sound track on-device and save
- * it as an ordinary audio user asset (WAV, or Opus where the platform encoder is
- * available).
+ * Extract audio from a video and save it as an ordinary audio user asset.
+ *
+ * The primary path is a LOSSLESS stream copy (plan 153 WP-E, "copy, don't decode"):
+ * the source's encoded audio packets are read and written, untouched, into a fresh
+ * audio-only container that matches the codec (AAC to .m4a, Opus/Vorbis to Ogg, MP3,
+ * FLAC, or PCM to WAV). Nothing is decoded or re-encoded, so the audio is preserved
+ * byte for byte and the copy is near instant. The copy itself lives in the DOM-free
+ * lib/audio-remux.ts (the audio twin of bridge/mediabunny-mux.ts).
+ *
+ * When the copy cannot serve a source (a codec with no honest container, an empty
+ * track, or a read failure) it falls back to the original decode + re-encode path:
+ * decode the whole track to PCM through Web Audio, then encode it to the user's
+ * chosen format (WAV, or Opus where the platform encoder is available). That path is
+ * lossy and slow, and its size + duration caps guard it, so it stays a fallback.
  *
  * Two entry points share one pipeline:
  *
@@ -14,39 +25,42 @@
  *
  * ── It runs as a background JOB ─────────────────────────────────────────────
  * The dialog picks a format and ENQUEUES (`startExtractAudioJob`), then closes -
- * the matte/upscale hand-off (lib/matte-job.ts, lib/upscale-job.ts). Fetch,
- * decode, encode, stamp and save all happen on the WP-F serial heavy queue
- * (lib/jobs.ts), so the global toast owns progress and cancel and the work
- * survives the modal closing or the user navigating away. A whole-file
- * `decodeAudioData` wants most of the tab's address space, which is exactly what
- * the single heavy slot exists to serialise.
+ * the matte/upscale hand-off (lib/matte-job.ts, lib/upscale-job.ts). Fetch, copy or
+ * decode, stamp and save all happen on the WP-F serial heavy queue (lib/jobs.ts), so
+ * the global toast owns progress and cancel and the work survives the modal closing
+ * or the user navigating away. The decode fallback's whole-file `decodeAudioData`
+ * wants most of the tab's address space, which is exactly what the single heavy slot
+ * exists to serialise; a stream copy is cheap but rides the same queue for simplicity.
  *
  * ── What CANCEL really does (be honest about it) ────────────────────────────
- * There is no abortable decoder here. `decodeAudioData` and the WebCodecs
- * `AudioEncoder` loop both run to completion once started - neither takes a
- * signal, and nothing in a browser can preempt them. So a cancel:
- *   - ABORTS the source fetch outright when the bytes are still downloading
- *     (`fetch(url, { signal })`), which is the long wait for a big remote video;
- *   - past that, is COOPERATIVE: the pipeline checks between stages (after the
- *     read, after the decode, after the encode, and immediately before the save)
- *     and throws an AbortError at the first check it reaches. The stage already
- *     in flight finishes its work in the background and its memory is only freed
- *     when it does - but NOTHING is written: no provenance stamp, no user asset,
- *     no catalog entry. "Cancel" means "this will not land", not "this stops
- *     computing this instant".
+ * A cancel ABORTS the source fetch outright when the bytes are still downloading
+ * (`fetch(url, { signal })`), which is the long wait for a big remote video. Past
+ * that, the two paths differ:
+ *   - The stream copy checks the signal BETWEEN packets, so a cancel during a long
+ *     copy stops it there. There is no whole-file decode to wait out.
+ *   - The decode fallback has no abortable decoder: `decodeAudioData` and the
+ *     WebCodecs `AudioEncoder` both run to completion once started, so a cancel is
+ *     COOPERATIVE, observed at the checks between stages (after the read, after the
+ *     decode, after the encode, and immediately before the save). The stage already
+ *     in flight finishes in the background and its memory frees only when it does.
+ * Either way NOTHING is written: no provenance stamp, no user asset, no catalog
+ * entry. "Cancel" means "this will not be saved", not "this stops computing now".
  *
- * ── v1 decode is whole-file ─────────────────────────────────────────────────
+ * ── Caps guard the decode fallback ──────────────────────────────────────────
  * The browser's only decoder for a compressed track is `decodeAudioData`, which
- * decodes the ENTIRE file into memory (PCM = duration × rate × channels × 4
- * bytes). A long clip is therefore a real OOM risk, so this REFUSES above a
- * source-size cap before the decode and above a duration cap after it, with a
- * plain message, rather than letting the tab die. No demuxer / stream-copy path
- * is built - that is explicitly out of scope for v1.
+ * decodes the ENTIRE file into memory (PCM = duration x rate x channels x 4 bytes).
+ * A long clip is therefore a real OOM risk, so the pipeline REFUSES above a
+ * source-size cap before the read and above a duration cap after the decode, rather
+ * than letting the tab die. The stream copy never allocates PCM and so does not need
+ * the caps, but for now it runs behind the same source-size gate (a future pass can
+ * lift the cap for the copy, which reads a large file without decoding it).
  *
  * ── Format ──────────────────────────────────────────────────────────────────
- * WAV is always offered: pure JS, lossless w.r.t. the decode, plays everywhere.
- * Opus is offered as a smaller second choice ONLY when the WebCodecs AudioEncoder
- * probes as supported; when the probe fails the select collapses to WAV-only.
+ * The stream copy saves whatever container matches the source codec (see
+ * lib/audio-remux.ts for the codec to container map). The decode fallback offers WAV
+ * always (pure JS, lossless w.r.t. the decode, plays everywhere) and Opus as a
+ * smaller second choice ONLY when the WebCodecs AudioEncoder probes as supported;
+ * when the probe fails the select collapses to WAV-only.
  *
  * ── Provenance ──────────────────────────────────────────────────────────────
  * The extracted essence is a NEW derivative, so it is disclosed as a plain edit
@@ -55,6 +69,7 @@
  * is best-effort - a failed sign still saves the file.
  */
 import { pcmToWavBlob } from './pcm-wav.ts';
+import { streamCopyAudio, type RemuxResult } from './audio-remux.ts';
 import { encodeOpus, AUDIO_BITRATE, type AudioPcm } from './audio-encode.ts';
 import { startJob, type JobHandle } from './jobs.ts';
 import { mountModal } from '../components/modal.ts';
@@ -113,10 +128,20 @@ export interface DecodedPcm {
 }
 
 /** Inject the decode + Opus encode for tests (node has neither Web Audio nor a
- *  WebCodecs AudioEncoder). Production supplies the real Web Audio decode. */
+ *  WebCodecs AudioEncoder), and the stream copy so the orchestration can be driven
+ *  without a real media file. Production supplies the real Web Audio decode and the
+ *  real mediabunny-backed copy. */
 export interface ExtractAudioDeps {
   decode?: (bytes: ArrayBuffer) => Promise<DecodedPcm>;
   encodeOpusPcm?: (pcm: AudioPcm) => Promise<Blob>;
+  /** The lossless stream copy. Returns a RemuxResult on the common case, or null to
+   *  fall back to decode + re-encode. Defaults to the real streamCopyAudio. */
+  streamCopy?: (input: Blob, ctx: {
+    signal?: AbortSignal;
+    isCancelled?: () => boolean;
+    onProgress?: (done: number, total: number, note?: string) => void;
+    copyNote?: string;
+  }) => Promise<RemuxResult | null>;
 }
 
 /**
@@ -261,12 +286,14 @@ export interface ExtractAudioToAssetOpts {
   deps?: ExtractAudioDeps;
 }
 
-/** A file-safe id + a display name from the source name. */
-export function extractAudioIds(sourceName: string, format: ExtractAudioFormat, now: number): { id: string; name: string } {
+/** A file-safe id + a display name from the source name. `ext` is the saved file's
+ *  extension: 'wav' or 'opus' from the decode path, or a stream copy's own container
+ *  extension ('m4a', 'ogg', 'mp3', 'flac', ...). */
+export function extractAudioIds(sourceName: string, ext: string, now: number): { id: string; name: string } {
   const base = sourceName.replace(/\.[a-z0-9]+$/i, '');
   const slug = base.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
   return {
-    id: `user/audio/${now}-${slug || 'audio'}.${format}`,
+    id: `user/audio/${now}-${slug || 'audio'}.${ext}`,
     name: tRaw('Audio from {name}', { name: base || t('video') }),
   };
 }
@@ -337,7 +364,47 @@ export async function extractAudioToAsset(
   const sizeRefusal = extractAudioSizeRefusal(bytes.byteLength);
   if (sizeRefusal) throw new Error(sizeRefusal);
 
-  const extracted = await extractAudioBlob(bytes, opts.format, opts.deps, ctx);
+  // Primary path: LOSSLESS stream copy. Read the source's encoded audio packets and
+  // write them, untouched, into a container that matches the codec. No decode, no
+  // re-encode, so the audio is preserved byte for byte and the copy is near instant.
+  // A null result means the copy cannot serve this source (a codec with no honest
+  // container, an empty track, or a read failure), so the decode + re-encode path
+  // below takes over. A real cancel surfaces as an AbortError and is re-thrown, never
+  // quietly demoted to the slow path.
+  const streamCopy = opts.deps?.streamCopy ?? streamCopyAudio;
+  let remux: RemuxResult | null = null;
+  try {
+    remux = await streamCopy(new Blob([bytes]), {
+      ...(ctx.signal ? { signal: ctx.signal } : {}),
+      ...(ctx.isCancelled ? { isCancelled: ctx.isCancelled } : {}),
+      ...(ctx.onProgress ? { onProgress: ctx.onProgress } : {}),
+      copyNote: t('Copying the sound track…'),
+    });
+  } catch (e) {
+    if ((e as Error | null)?.name === 'AbortError') throw e;
+    remux = null;
+  }
+
+  // The saved copy's bytes, extension, C2PA container key and duration come from
+  // whichever path produced them: the stream copy above, or the decode + re-encode
+  // fallback here (the original v1 path, kept intact). The fallback decodes the whole
+  // track to PCM and encodes it to the user's chosen format.
+  let outBlob: Blob;
+  let outExt: string;
+  let outC2pa: string | null;
+  let outDuration: number;
+  if (remux) {
+    outBlob = remux.blob;
+    outExt = remux.ext;
+    outC2pa = remux.c2paFormat;
+    outDuration = remux.durationSec;
+  } else {
+    const extracted = await extractAudioBlob(bytes, opts.format, opts.deps, ctx);
+    outBlob = extracted.blob;
+    outExt = opts.format;
+    outC2pa = opts.format === 'opus' ? 'webm' : 'wav';
+    outDuration = extracted.durationSec;
+  }
 
   // Last check before anything is WRITTEN. A cancel past this point would leave a
   // half-declared asset in the catalog, so it stops here instead.
@@ -346,35 +413,38 @@ export async function extractAudioToAsset(
 
   // Stamp the derived copy's own bytes with a plain-edit credential, carrying the
   // source video's own credential forward as an ingredient. Best-effort: a failed
-  // sign still ships the file.
-  let blob = extracted.blob;
-  try {
-    const { stampDerivedC2pa } = await import('../bridge/export.ts');
-    const ex = extractC2paStore(new Uint8Array(bytes));
-    const ingredient = ex ? prepareC2paIngredientFromStore(ex.store, ex.format) : null;
-    blob = await stampDerivedC2pa(host, extracted.blob, opts.format === 'opus' ? 'webm' : 'wav', {
-      title: opts.sourceName,
-      tool: 'Extract audio',
-      actions: [{ action: 'c2pa.edited', description: `Audio extracted from ${opts.sourceName}` }],
-      ...(ingredient ? { ingredients: [ingredient] } : {}),
-    });
-  } catch (e) {
-    host.log?.('warn', 'Extract audio: provenance stamp failed', { error: String(e) });
+  // sign still ships the file. Skipped when the container has no C2PA placer (a FLAC
+  // copy), which saves unsigned rather than claiming a credential it cannot embed.
+  let blob = outBlob;
+  if (outC2pa) {
+    try {
+      const { stampDerivedC2pa } = await import('../bridge/export.ts');
+      const ex = extractC2paStore(new Uint8Array(bytes));
+      const ingredient = ex ? prepareC2paIngredientFromStore(ex.store, ex.format) : null;
+      blob = await stampDerivedC2pa(host, outBlob, outC2pa, {
+        title: opts.sourceName,
+        tool: 'Extract audio',
+        actions: [{ action: 'c2pa.edited', description: `Audio extracted from ${opts.sourceName}` }],
+        ...(ingredient ? { ingredients: [ingredient] } : {}),
+      });
+    } catch (e) {
+      host.log?.('warn', 'Extract audio: provenance stamp failed', { error: String(e) });
+    }
   }
 
   const now = Date.now();
-  const { id, name } = extractAudioIds(opts.sourceName, opts.format, now);
+  const { id, name } = extractAudioIds(opts.sourceName, outExt, now);
   const record: ExtractAudioAssetRecordInput = {
     id,
     type: 'audio',
-    format: opts.format,
+    format: outExt,
     blob,
     version: '1.0.0',
     ...(opts.aiGenerated ? { aiGenerated: opts.aiGenerated } : {}),
     meta: {
       name,
       bytes: blob.size,
-      durationMs: Math.round(extracted.durationSec * 1000),
+      durationMs: Math.round(outDuration * 1000),
       // 'renders' ONLY for the download path (WP-B's contract); a catalog-side
       // extraction is its own derived asset and stays untagged.
       ...(opts.fromDownloadPath ? { tags: ['renders'] } : {}),

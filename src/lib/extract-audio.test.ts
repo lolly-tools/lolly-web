@@ -192,6 +192,75 @@ test('extractAudioToAsset (download path): tags renders, and carries aiGenerated
   assert.equal(rec.aiGenerated, 'partial');
 });
 
+// ── stream copy is the primary path (WP-E) ───────────────────────────────────
+//
+// When the injected copy returns a RemuxResult the pipeline saves that container and
+// never touches the decoder; when it returns null the pipeline falls back to decode +
+// re-encode; and a cancel from the copy aborts without writing anything.
+
+test('extractAudioToAsset: a successful stream copy saves the copied container, no decode', async () => {
+  const { host, store } = makeHost();
+  const src = new Blob([new Uint8Array([1, 2, 3])], { type: 'video/mp4' });
+  let decodeCalled = false;
+  const remux = { blob: new Blob([new Uint8Array([9, 9, 9])], { type: 'audio/mp4' }),
+    codec: 'aac', ext: 'm4a', mime: 'audio/mp4', c2paFormat: 'm4a', durationSec: 2.5 };
+  const notes: Array<string | undefined> = [];
+  const ref = await extractAudioToAsset(host as never, {
+    source: src, sourceName: 'clip.mp4', format: 'wav',
+    deps: {
+      decode: async () => { decodeCalled = true; return { channels: [new Float32Array(1)], sampleRate: 48000 }; },
+      streamCopy: async (_input: Blob, cctx: { onProgress?: (d: number, t: number, n?: string) => void; copyNote?: string }) => {
+        cctx.onProgress?.(0, 0, cctx.copyNote);
+        return remux as never;
+      },
+    },
+  }, { onProgress: (_d, _t, n) => { notes.push(n); } });
+  assert.ok(ref);
+  assert.equal(decodeCalled, false, 'the lossless copy path skips the decoder entirely');
+  const rec = store[0]!;
+  assert.equal(rec.type, 'audio');
+  assert.equal(rec.format, 'm4a', 'the asset takes the copied container extension');
+  assert.match(rec.id, /^user\/audio\/\d+-clip\.m4a$/);
+  assert.equal(rec.meta?.durationMs, 2500, 'the duration comes from the copied track');
+  assert.ok(notes.includes('Copying the sound track…'), 'the copy stage is reported');
+  assert.ok(!notes.includes('Decoding the sound track…'), 'no decode note on the copy path');
+  assert.ok(notes.includes('Saving…'));
+});
+
+test('extractAudioToAsset: a null stream copy falls back to decode + re-encode', async () => {
+  const { host, store } = makeHost();
+  const src = new Blob([new Uint8Array([0])], { type: 'video/mp4' });
+  let decodeCalled = false;
+  await extractAudioToAsset(host as never, {
+    source: src, sourceName: 'clip.webm', format: 'wav',
+    deps: {
+      decode: async () => { decodeCalled = true; return { channels: [Float32Array.from([0, 0.5, -0.5])], sampleRate: 48000 }; },
+      streamCopy: async () => null,   // a mismatch: fall back to the decode path
+    },
+  });
+  assert.equal(decodeCalled, true, 'a mismatch decodes and re-encodes');
+  const rec = store[0]!;
+  assert.equal(rec.format, 'wav', 'the fallback saves the user-chosen format');
+  assert.match(rec.id, /\.wav$/);
+});
+
+test('extractAudioToAsset: a cancel from the stream copy aborts and writes nothing', async () => {
+  const { host, store } = makeHost();
+  const src = new Blob([new Uint8Array([0])], { type: 'video/mp4' });
+  await assert.rejects(
+    () => extractAudioToAsset(host as never, {
+      source: src, sourceName: 'clip.mp4', format: 'wav',
+      deps: {
+        decode: decode3,
+        streamCopy: async () => { throw Object.assign(new Error('cancelled'), { name: 'AbortError' }); },
+      },
+    }),
+    (e: Error) => e.name === 'AbortError',
+    'a copy-stage cancel surfaces as an AbortError, not a fall-back',
+  );
+  assert.equal(store.length, 0, 'nothing is written when the copy is cancelled');
+});
+
 test('extractAudioToAsset: refuses a source larger than the byte cap', async () => {
   const { host, store } = makeHost();
   // A blob whose arrayBuffer reports a byteLength over the cap, without allocating it -
