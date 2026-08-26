@@ -443,7 +443,19 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const orgFormats    = getExportPolicy()?.formatsFor(manifest.id);
   const orgAllow      = orgFormats && new Set(orgFormats.map(f => (f === 'jpeg' ? 'jpg' : f)));
   const orgNarrowed   = orgAllow ? capFormats.filter(f => orgAllow.has(f)) : capFormats;
-  const formats       = orgNarrowed.length ? orgNarrowed : capFormats;
+  // WP-B Decision 1: MP4 leads WebM in the select where BOTH survive keepFormat - its
+  // C2PA credential is standard bmff, WebM's is Lolly's own mapping. This lifts mp4 to
+  // just before webm and moves nothing else, so initialFmt (which falls back to
+  // formats[0]) defaults to mp4 wherever mp4 actually probed supported; a webm-only or
+  // mp4-only tool is untouched. WebM stays for transparency (WP-G) and Firefox.
+  const mp4BeforeWebm = (fmts: string[]): string[] => {
+    const i = fmts.indexOf('mp4'), j = fmts.indexOf('webm');
+    if (i === -1 || j === -1 || i < j) return fmts;   // not both present, or already mp4-first
+    const out = fmts.filter(f => f !== 'mp4');
+    out.splice(out.indexOf('webm'), 0, 'mp4');
+    return out;
+  };
+  const formats       = mp4BeforeWebm(orgNarrowed.length ? orgNarrowed : capFormats);
   const hasAnimated   = formats.some(isAnimatedFmt);
   // matchExportFormat: default the export to a dropped file's OWN format (a JPEG →
   // jpg) until the user picks one. Reads AssetRef.format off the flagged input.
