@@ -34,7 +34,7 @@
  * mediabunny is `import()`ed lazily (as the old muxers were), so it never enters
  * the preload bundle - it loads only when someone exports.
  */
-import type { AudioCodec, EncodedPacket, StreamTargetChunk, VideoCodec } from 'mediabunny';
+import type { AudioCodec, EncodedPacket, MetadataTags, StreamTargetChunk, VideoCodec } from 'mediabunny';
 
 /**
  * A seekable byte sink for step A3's StreamTarget path: a WritableStream of
@@ -136,6 +136,10 @@ export function mapAudioCodec(muxCodec: string): AudioCodec {
 export interface MediabunnyMuxer {
   addVideoChunk(chunk: unknown, metadata?: unknown): void;
   addAudioChunk(chunk: unknown, metadata?: unknown): void;
+  /** Container metadata tags (title/artist/…). Must run before the first packet
+   *  (mediabunny rejects a tag change after start); the audio-only m4a/opus export
+   *  path calls it up front. A no-op once started, so video callers never regress. */
+  setMetadataTags(tags: MetadataTags): void;
   finalize(): Promise<void>;
 }
 
@@ -315,6 +319,12 @@ export async function buildMediabunnyMux(spec: MuxSpec): Promise<BuiltMediabunny
   };
 
   const muxer: MediabunnyMuxer = {
+    // Tags before start(): the m4a/opus audio export sets them up front, before any
+    // packet. Guarded so a post-start call (or a video export that never sets tags)
+    // is inert - the interleave/goldens are untouched.
+    setMetadataTags(tags) {
+      if (!startPromise) output.setMetadataTags(tags);
+    },
     // fromEncodedChunk copies the chunk's bytes out immediately, so buffering the
     // packet does not pin the (closeable) WebCodecs chunk.
     addVideoChunk(chunk, meta) {

@@ -180,6 +180,27 @@ test('encodeM4a: ftyp box at offset 4, and the encoder is configured at the PCM 
   }
 });
 
+test('encodeM4a: tags reach the mp4 via the shared muxer setMetadataTags (m4a/opus path)', async () => {
+  const g = globalThis as any;
+  const saved = { v: g.EncodedVideoChunk, a: g.EncodedAudioChunk };
+  g.EncodedVideoChunk = StubChunk;
+  g.EncodedAudioChunk = StubChunk;
+  try {
+    const log: StubLog = { configs: [], chunks: 0 };
+    // m4a routes through buildMediabunnyMux (MediabunnyMuxer), NOT buildAudioOnlyMux, so
+    // this exercises MediabunnyMuxer.setMetadataTags specifically - the wiring that was a
+    // no-op until the muxer exposed the method.
+    // No date arg - the export path omits it, and mediabunny's validateMetadataTags
+    // rejects a non-Date date (a string would throw), so this matches real usage.
+    const tags = buildAudioTags({ tool: 'ZZUniqueTitle', author: 'ZZArtist' } as never);
+    const u8 = await bytesOf(await encodeM4a(tone(9600), { tags }, { AudioEncoder: stubEncoder(true, log), AudioData: StubAudioData }));
+    assert.ok(String.fromCharCode(...u8).includes('ZZUniqueTitle'), 'the mp4 must carry the title written through muxer.setMetadataTags');
+  } finally {
+    g.EncodedVideoChunk = saved.v;
+    g.EncodedAudioChunk = saved.a;
+  }
+});
+
 test('encodeOpus: EBML magic, and mono PCM is declared mono', async () => {
   const g = globalThis as any;
   const saved = { v: g.EncodedVideoChunk, a: g.EncodedAudioChunk };
