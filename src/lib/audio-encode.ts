@@ -32,6 +32,13 @@
  *  - ogg - the SAME Opus encoder as opus, in an Ogg container (.ogg) rather than
  *            WebM - the honest voice-memo shape, since opus-in-WebM looks like a
  *            video file. LOSSY. Same platform encoder + probe as opus.
+ *  - flac - mediabunny's libFLAC WASM encoder (@mediabunny/flac-encoder, MPL-2.0),
+ *            registered into mediabunny once and driven natively - NOT WebCodecs.
+ *            LOSSLESS: the PCM is fed at its own rate/channels, never resampled.
+ *            libFLAC only accepts a fixed set of sample rates, so encodeFlac
+ *            re-probes canEncodeAudio('flac') at the clip's real rate and fails with
+ *            a message rather than mid-encode. No C2PA placer exists for FLAC (see
+ *            engine/src/c2pa-containers.ts), so a FLAC export ships UNSIGNED.
  *
  * Every LOSSY path is a genuine re-encode of the samples given, so a lossy source
  * that is neither trimmed nor mixed must NOT be routed through one when the
@@ -40,6 +47,7 @@
  * The muxer (mediabunny) and lamejs are lazy-imported so neither enters the
  * preload bundle; they load only when someone exports audio.
  */
+import type { MetadataTags } from 'mediabunny';
 import { packWav, type WavAudio, type WavSampleFormat } from '../../../../engine/src/wav.ts';
 import { audioChunkSchedule } from '../bridge/video-mime.ts';
 import { buildMediabunnyMux } from '../bridge/mediabunny-mux.ts';
@@ -49,7 +57,7 @@ import { buildMediabunnyMux } from '../bridge/mediabunny-mux.ts';
 export type AudioPcm = WavAudio;
 
 /** The audio-only export formats, in the order the picker lists them. */
-export const AUDIO_FORMATS = ['wav', 'mp3', 'm4a', 'aac', 'opus', 'ogg'] as const;
+export const AUDIO_FORMATS = ['wav', 'mp3', 'm4a', 'aac', 'opus', 'ogg', 'flac'] as const;
 export type AudioFormat = (typeof AUDIO_FORMATS)[number];
 
 const AUDIO_MIME: Record<AudioFormat, string> = {
@@ -59,6 +67,7 @@ const AUDIO_MIME: Record<AudioFormat, string> = {
   aac: 'audio/aac',    // bare ADTS AAC stream
   opus: 'audio/webm',
   ogg: 'audio/ogg',    // Opus in an Ogg container
+  flac: 'audio/flac',  // lossless FLAC (mediabunny libFLAC encoder)
 };
 
 /** Container MIME for a finished file in `format`. */
@@ -150,6 +159,12 @@ function floatToInt16(f32: Float32Array): Int16Array {
 interface AudioMuxerLike {
   addAudioChunk(chunk: unknown, metadata?: unknown): void;
   finalize(): Promise<void>;
+  /** Set the container's metadata tags BEFORE the first chunk (Output.start()).
+   *  Present only on the audio-only containers this module owns (Ogg/ADTS); the
+   *  shared video/audio muxer (bridge/mediabunny-mux.ts) does NOT expose it, so
+   *  m4a/opus tags are a followup blocked on that file. Optional so the WebCodecs
+   *  path's `?.` call is a safe no-op there. */
+  setMetadataTags?(tags: MetadataTags): void;
 }
 interface BuiltAudioMuxer { muxer: AudioMuxerLike; target: { buffer: ArrayBuffer } }
 
@@ -211,6 +226,10 @@ async function buildAudioOnlyMux(
   let err: unknown = null;
 
   const muxer: AudioMuxerLike = {
+    // Must be called before the first addAudioChunk (which triggers output.start());
+    // mediabunny's setMetadataTags throws if called after start. Ogg writes them as
+    // Vorbis comments; ADTS carries them in an ID3 header.
+    setMetadataTags(tags) { output.setMetadataTags(tags); },
     addAudioChunk(chunk, meta) {
       const packet = MB.EncodedPacket.fromEncodedChunk(chunk as EncodedAudioChunk);
       chain = chain
@@ -231,9 +250,12 @@ export interface AudioEncodeDeps {
   AudioEncoder?: any;
   AudioData?: any;
   muxerFactory?: AudioMuxerFactory;
+  /** FLAC Output builder override (tests). Default: lazy-import mediabunny +
+   *  @mediabunny/flac-encoder, register the encoder, and re-probe at the real rate. */
+  flacOutput?: FlacOutputFactory;
 }
 
-interface WebCodecsAudioOpts { bitrate?: number }
+interface WebCodecsAudioOpts { bitrate?: number; tags?: MetadataTags }
 
 /** The four WebCodecs-backed audio formats, keyed by format id. Two encoders
  *  (AAC-LC, Opus) across four containers: m4a/aac share the AAC encoder + its
@@ -280,6 +302,11 @@ async function encodeWebCodecsAudio(
   const { muxer, target } = await (deps.muxerFactory ?? defaultAudioMuxerFactory)(
     container, { codec: muxCodec, numberOfChannels, sampleRate },
   );
+
+  // Metadata tags BEFORE the first chunk (which starts the Output). Only the
+  // audio-only containers this module owns (Ogg/ADTS) expose setMetadataTags; for
+  // mp4/webm the shared muxer hides its Output, so this is a no-op there (followup).
+  if (opts.tags && Object.keys(opts.tags).length) muxer.setMetadataTags?.(opts.tags);
 
   let encErr: unknown = null;
   const enc = new AEnc({
@@ -337,12 +364,98 @@ export function encodeOgg(pcm: AudioPcm, opts: WebCodecsAudioOpts = {}, deps: Au
   return encodeWebCodecsAudio(pcm, 'ogg', opts, deps);
 }
 
+// ── flac (mediabunny + @mediabunny/flac-encoder, NOT WebCodecs) ───────────────
+
+const NO_FLAC_MSG = 'This browser cannot encode FLAC audio. Try WAV or MP3.';
+
+/** The mediabunny FLAC Output this module drives - the primitives encodeFlac needs,
+ *  swappable so the tags path is drivable under node with a stub Output. */
+export interface FlacBuild {
+  output: { setMetadataTags(tags: MetadataTags): void; start(): Promise<void>; finalize(): Promise<void> };
+  source: { add(sample: unknown): Promise<void> };
+  target: { buffer: ArrayBuffer };
+  AudioSample: new (init: { data: ArrayBufferView; format: string; numberOfChannels: number; sampleRate: number; timestamp: number }) => { close?(): void };
+}
+export type FlacOutputFactory = (spec: { numberOfChannels: number; sampleRate: number }) => Promise<FlacBuild>;
+
+/** Registered once per realm. registerEncoder dedupes internally (same class ref),
+ *  and canEncodeAudio short-circuits re-entry, but this avoids even the probe. */
+let _flacRegistered = false;
+
+/** Build the real mediabunny FLAC Output. Registers the libFLAC encoder (guarded so
+ *  it never overrides a native FLAC encoder, and never double-registers), then
+ *  re-probes canEncodeAudio at the CLIP's real rate/channels - libFLAC only accepts
+ *  a fixed set of sample rates, so an odd decode rate fails HERE with a message,
+ *  not mid-encode (mirrors encodeWebCodecsAudio's real-config probe). */
+const defaultFlacOutputFactory: FlacOutputFactory = async ({ numberOfChannels, sampleRate }) => {
+  const MB = await import('mediabunny');
+  if (!_flacRegistered) {
+    if (!(await MB.canEncodeAudio('flac'))) {
+      const { registerFlacEncoder } = await import('@mediabunny/flac-encoder');
+      registerFlacEncoder();
+    }
+    _flacRegistered = true;
+  }
+  if (!(await MB.canEncodeAudio('flac', { numberOfChannels, sampleRate }))) throw new Error(NO_FLAC_MSG);
+  const target = new MB.BufferTarget();
+  const output = new MB.Output({ format: new MB.FlacOutputFormat(), target });
+  const source = new MB.AudioSampleSource({ codec: 'flac' });
+  output.addAudioTrack(source);
+  return {
+    output,
+    source,
+    target: target as unknown as { buffer: ArrayBuffer },
+    AudioSample: MB.AudioSample as unknown as FlacBuild['AudioSample'],
+  };
+};
+
+/** LOSSLESS FLAC. Feeds `pcm` at its own rate/channels through mediabunny's
+ *  registered libFLAC encoder - no resample, no reduce. Tags (if any) are written
+ *  into the Vorbis comment block BEFORE start(). Ships UNSIGNED: there is no FLAC
+ *  C2PA placer (engine/src/c2pa-containers.ts). */
+export async function encodeFlac(
+  pcm: AudioPcm, opts: { tags?: MetadataTags } = {}, deps: AudioEncodeDeps = {},
+): Promise<Blob> {
+  const numberOfChannels = Math.max(1, Math.min(MAX_CHANNELS, pcm.channels.length));
+  const sampleRate = pcm.sampleRate;
+  const { output, source, target, AudioSample } = await (deps.flacOutput ?? defaultFlacOutputFactory)(
+    { numberOfChannels, sampleRate },
+  );
+
+  if (opts.tags && Object.keys(opts.tags).length) output.setMetadataTags(opts.tags);
+  await output.start();
+
+  const total = pcm.channels[0]?.length ?? 0;
+  const CHUNK = 4800;                                   // ~0.1s @ 48k, as the WebCodecs path uses
+  for (const span of audioChunkSchedule(total, sampleRate, CHUNK)) {
+    const n = span.numFrames;
+    // Fresh plane per chunk (not a reused scratch buffer): source.add() may queue the
+    // sample past its await, so the bytes must stay owned by this sample.
+    const planar = new Float32Array(n * numberOfChannels);
+    for (let ch = 0; ch < numberOfChannels; ch++) {
+      const plane = pcm.channels[Math.min(ch, pcm.channels.length - 1)]!;
+      planar.set(plane.subarray(span.offsetFrames, span.offsetFrames + n), ch * n);
+    }
+    const sample = new AudioSample({
+      format: 'f32-planar', numberOfChannels, sampleRate,
+      timestamp: span.offsetFrames / sampleRate,        // AudioSample timestamps are in SECONDS
+      data: planar,
+    });
+    try { await source.add(sample); } finally { sample.close?.(); }
+  }
+
+  await output.finalize();
+  return new Blob([target.buffer as BlobPart], { type: AUDIO_MIME.flac });
+}
+
 /** Encode `pcm` to `format`. The one entry point the export dispatch needs. */
 export function encodeAudio(
   format: AudioFormat, pcm: AudioPcm,
-  opts: { bitrate?: number; sampleFormat?: WavSampleFormat } = {}, deps: AudioEncodeDeps = {},
+  opts: { bitrate?: number; sampleFormat?: WavSampleFormat; tags?: MetadataTags } = {}, deps: AudioEncodeDeps = {},
 ): Promise<Blob> {
   switch (format) {
+    // wav tags are written by export.ts embedWavInfo (RIFF INFO), not here; mp3 is
+    // lamejs (no mediabunny Output) so it carries no tags yet - both ignore opts.tags.
     case 'wav': return Promise.resolve(encodeWav(pcm, opts));
     // lamejs takes kbps; every other encoder here (and AUDIO_BITRATE) is bits/s.
     case 'mp3': return encodeMp3(pcm, opts.bitrate ? { bitrate: Math.round(opts.bitrate / 1000) } : {});
@@ -350,6 +463,7 @@ export function encodeAudio(
     case 'aac': return encodeAac(pcm, opts, deps);
     case 'opus': return encodeOpus(pcm, opts, deps);
     case 'ogg': return encodeOgg(pcm, opts, deps);
+    case 'flac': return encodeFlac(pcm, opts.tags ? { tags: opts.tags } : {}, deps);
   }
 }
 
@@ -377,6 +491,11 @@ export interface AudioExportRequest {
   duration?: number;
   bitrate?: number;
   sampleFormat?: WavSampleFormat;
+  /** Container metadata tags (buildAudioTags output). Written by the mediabunny-Output
+   *  encoders (aac/ogg/flac; m4a/opus pending - see AudioMuxerLike.setMetadataTags).
+   *  wav is tagged separately by export.ts embedWavInfo; a pass-through (untrimmed
+   *  source already in `format`) returns the source bytes untagged. */
+  tags?: MetadataTags;
   log?: (level: 'debug' | 'info' | 'warn' | 'error', msg: string) => void;
   /** Decode override (tests / non-DOM hosts). Default: AudioContext.decodeAudioData. */
   decode?: (bytes: ArrayBuffer) => Promise<AudioPcm>;
@@ -402,6 +521,7 @@ export async function renderAudioExport(
   const encodeOpts = {
     ...(req.bitrate ? { bitrate: req.bitrate } : {}),
     ...(req.sampleFormat ? { sampleFormat: req.sampleFormat } : {}),
+    ...(req.tags ? { tags: req.tags } : {}),
   };
   if (req.pcm) return await encodeAudio(format, req.pcm, encodeOpts, deps);
 
@@ -469,6 +589,7 @@ export function sniffAudioFormat(bytes: ArrayBuffer | Uint8Array): AudioFormat |
   if (u8.length < 12) return null;
   const tag = (at: number, len: number): string => String.fromCharCode(...u8.subarray(at, at + len));
   if (tag(0, 4) === 'RIFF' && tag(8, 4) === 'WAVE') return 'wav';
+  if (tag(0, 4) === 'fLaC') return 'flac';                                                 // FLAC stream marker (0x66 4C 61 43)
   if (tag(4, 4) === 'ftyp') return 'm4a';
   if (tag(0, 4) === 'OggS') return 'ogg';                                                  // Ogg (our Opus-in-Ogg)
   if (u8[0] === 0x1a && u8[1] === 0x45 && u8[2] === 0xdf && u8[3] === 0xa3) return 'opus';  // EBML (webm)

@@ -63,6 +63,7 @@ import { supportsWorkerVideoEncode, encodeVideoInWorker } from './video-encode.t
 // dynamic callers (e.g. bridge/compose.ts does `await import('./export.ts')`).
 import { canRecord } from './format-support.ts';
 import type { AudioFormat, AudioPcm } from '../lib/audio-encode.ts';
+import { buildAudioTags } from '../lib/audio-tags.ts';
 import { chromePaintsOverLive, countToolMutations, createStaticChromeGuard, staticChromeFrameAction, staticChromeVerdict, type Box, type ChromeEl } from './frame-static.ts';
 export { videoSupport, cmykTiffSupport, tiffSupport } from './format-support.ts';
 import type { ClipShape } from '../../../../engine/src/css-paint.ts';
@@ -767,10 +768,17 @@ async function renderAudioOnly(node: Element, format: AudioFormat, opts: ExportO
     const { sequenceAudioPcm } = await import('./sequence-render.ts');
     pcm = await sequenceAudioPcm(node, opts, _host ?? null);
   }
+  // Container metadata tags for the mediabunny-Output formats (aac/ogg/flac now;
+  // m4a/opus pending the shared muxer exposing setMetadataTags). WAV is tagged
+  // separately below (embedWavInfo, RIFF INFO), so encodeWav ignores these. Date is
+  // deliberately omitted (parity with WAV's fieldset + a deterministic, clock-free
+  // tags path); buildAudioTags accepts an injected date for any byte-compared caller.
+  const tags = opts.meta ? buildAudioTags(opts.meta) : undefined;
   const blob = await renderAudioExport(format, {
     pcm,
     audio: opts.audio ?? null,
     ...(opts.duration != null ? { duration: opts.duration } : {}),
+    ...(tags && Object.keys(tags).length ? { tags } : {}),
     log: (l, m) => { _host?.log?.(l, m); },
   });
   // WAV LIST/INFO parity (plans/144 Wave 2 G4): the same ExportMeta fields the
@@ -969,6 +977,7 @@ async function renderFormatDispatch(node: Element, format: string, opts: ExportO
     case 'aac':
     case 'opus':
     case 'ogg':
+    case 'flac':
       return await renderAudioOnly(node, format, opts);
     default:
       throw new Error(`Unsupported export format: ${format}`);

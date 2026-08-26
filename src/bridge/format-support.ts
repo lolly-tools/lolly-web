@@ -164,13 +164,27 @@ export async function probeWebCodecsAudioSupport(
 }
 void probeWebCodecsAudioSupport();
 
+// FLAC rides @mediabunny/flac-encoder's libFLAC WASM encoder, REGISTERED into
+// mediabunny at encode time - it is not a platform (WebCodecs) codec, so it works
+// wherever WebAssembly does. This gate is therefore a cheap WASM-presence probe, the
+// "or an equivalent" the plan allows, NOT a mediabunny import: dragging mediabunny
+// onto the tool-open path is exactly what this file exists to avoid (see header). It
+// is not a hardcoded `true` - it reads false where WASM is absent. The AUTHORITATIVE
+// check - register the encoder, then canEncodeAudio('flac') at the CLIP's real sample
+// rate (libFLAC accepts only a fixed rate set) - happens in lib/audio-encode.ts
+// encodeFlac, which throws a clean message where the real rate is unsupported.
+export function flacSupport(): boolean {
+  return typeof WebAssembly !== 'undefined';
+}
+
 // Which audio-only formats this browser can actually produce. The picker gates on
 // this exactly as it does on videoSupport(). aac shares m4a's AAC encoder and ogg
 // shares opus's Opus encoder, so each pair reports the same probe result.
-export function audioSupport(): { wav: boolean; mp3: boolean; m4a: boolean; aac: boolean; opus: boolean; ogg: boolean } {
+export function audioSupport(): { wav: boolean; mp3: boolean; m4a: boolean; aac: boolean; opus: boolean; ogg: boolean; flac: boolean } {
   return {
     wav: true, mp3: true,
     m4a: _wcAudio.m4a, aac: _wcAudio.m4a,
     opus: _wcAudio.opus, ogg: _wcAudio.opus,
+    flac: flacSupport(),
   };
 }

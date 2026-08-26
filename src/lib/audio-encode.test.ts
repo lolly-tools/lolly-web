@@ -17,11 +17,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parseWav } from '../../../../engine/src/wav.ts';
 import {
-  encodeWav, encodeMp3, encodeM4a, encodeAac, encodeOpus, encodeOgg, encodeAudio, renderAudioExport,
+  encodeWav, encodeMp3, encodeM4a, encodeAac, encodeOpus, encodeOgg, encodeFlac, encodeAudio, renderAudioExport,
   sliceWithEnvelope, sniffAudioFormat, pcmFromAudioBuffer, NO_AUDIO_MSG,
   AUDIO_FORMATS,
-  type AudioPcm,
+  type AudioPcm, type FlacOutputFactory, type FlacBuild,
 } from './audio-encode.ts';
+import { buildAudioTags } from './audio-tags.ts';
 
 const RATE = 48_000;
 
@@ -238,6 +239,26 @@ test('encodeOgg: OggS magic, the SAME Opus encoder as opus, and mono declared mo
   }
 });
 
+test('encodeOgg: metadata tags are set on the real Ogg Output without breaking the container', async () => {
+  const g = globalThis as any;
+  const saved = { v: g.EncodedVideoChunk, a: g.EncodedAudioChunk };
+  g.EncodedVideoChunk = StubChunk;
+  g.EncodedAudioChunk = StubChunk;
+  try {
+    const log: StubLog = { configs: [], chunks: 0 };
+    const pcm: AudioPcm = { channels: [new Float32Array(9600)], sampleRate: RATE };
+    const tags = buildAudioTags({ tool: 'Memo', author: 'Ada', software: 'Lolly' } as never);
+    // Real Ogg muxer (buildAudioOnlyMux), stub encoder: setMetadataTags(tags) runs on
+    // the real mediabunny Output before start, so a throw or a broken header shows here.
+    const u8 = await bytesOf(await encodeOgg(pcm, { tags }, { AudioEncoder: stubEncoder(true, log, undefined, true), AudioData: StubAudioData }));
+    assert.equal(tag(u8, 0, 4), 'OggS');
+    assert.equal(sniffAudioFormat(u8), 'ogg');
+  } finally {
+    g.EncodedVideoChunk = saved.v;
+    g.EncodedAudioChunk = saved.a;
+  }
+});
+
 test('m4a/opus degrade with a message rather than throwing when WebCodecs is missing', async () => {
   await assert.rejects(
     () => encodeM4a(tone(100), {}, { AudioEncoder: undefined, AudioData: undefined }),
@@ -254,6 +275,82 @@ test('m4a/opus degrade with a message when the platform refuses the config', asy
   assert.equal(log.configs.length, 0, 'a refused config must not reach configure()');
 });
 
+// ── flac (mediabunny libFLAC encoder, native - no WebCodecs) ──────────────────
+
+/** A stub FLAC Output: records the tag object + call order and hands back 8 bytes
+ *  that start with the FLAC stream marker, so encodeFlac's tags path is drivable
+ *  under node without the real libFLAC WASM encoder. */
+function stubFlacOutput(rec: { tags: unknown; order: string[]; samples: number }): FlacOutputFactory {
+  const bytes = new Uint8Array([0x66, 0x4c, 0x61, 0x43, 0, 0, 0, 0]);   // 'fLaC'
+  return async () => ({
+    output: {
+      setMetadataTags(t: unknown) { rec.tags = t; rec.order.push('tags'); },
+      async start() { rec.order.push('start'); },
+      async finalize() { rec.order.push('finalize'); },
+    },
+    source: { async add() { rec.samples++; } },
+    target: { buffer: bytes.buffer },
+    AudioSample: class { close(): void {} } as unknown as FlacBuild['AudioSample'],
+  });
+}
+
+test('encodeFlac: writes the buildAudioTags object to the Output BEFORE start/finalize, and emits fLaC bytes', async () => {
+  const rec = { tags: null as unknown, order: [] as string[], samples: 0 };
+  const date = new Date('2020-01-02T03:04:05Z');
+  const meta = { tool: 'Voice Memo', author: 'Ada', software: 'Lolly', description: 'a note', contact: 'a@b.c' } as never;
+  const tags = buildAudioTags(meta, date);
+  const blob = await encodeFlac(tone(9600), { tags }, { flacOutput: stubFlacOutput(rec) });
+  assert.equal(blob.type, 'audio/flac');
+  assert.equal(tag(await bytesOf(blob), 0, 4), 'fLaC');
+  // The mapped tags reached setMetadataTags verbatim (title/artist/album/comment/date).
+  assert.deepEqual(rec.tags, { title: 'Voice Memo', artist: 'Ada', album: 'Lolly', comment: 'a note · a@b.c', date });
+  // Provenance rule: a metadata write happens BEFORE the credential, so tags land
+  // before the container is even started, and certainly before finalize.
+  assert.equal(rec.order[0], 'tags');
+  assert.ok(rec.order.indexOf('tags') < rec.order.indexOf('finalize'));
+  assert.ok(rec.samples >= 1, 'the PCM was fed to the encoder');
+});
+
+test('encodeFlac: no tags means setMetadataTags is never called (deterministic, untagged file)', async () => {
+  const rec = { tags: null as unknown, order: [] as string[], samples: 0 };
+  await encodeFlac(tone(4800), {}, { flacOutput: stubFlacOutput(rec) });
+  assert.equal(rec.tags, null);
+  assert.ok(!rec.order.includes('tags'));
+});
+
+test('encodeFlac: the REAL libFLAC encoder yields a valid FLAC (skips cleanly if unavailable)', async (t) => {
+  let u8: Uint8Array;
+  try {
+    u8 = await bytesOf(await encodeFlac(tone(9600)));           // 48 kHz - a valid FLAC rate
+  } catch (e) {
+    t.skip(`libFLAC encoder unavailable in this environment: ${(e as Error).message}`);
+    return;
+  }
+  assert.equal(tag(u8, 0, 4), 'fLaC');
+  assert.equal(sniffAudioFormat(u8), 'flac');                  // and our own sniff agrees
+  assert.ok(u8.length > 100, 'a real FLAC stream, not just the marker');
+});
+
+test('encodeFlac: an unsupported sample rate fails with a message, never mid-encode', async (t) => {
+  // libFLAC accepts only a fixed rate set; 47999 Hz is not one, so the real-rate
+  // re-probe must reject up front (mirrors the WebCodecs isConfigSupported guard).
+  try {
+    await assert.rejects(
+      () => encodeFlac({ channels: [new Float32Array(1000)], sampleRate: 47999 }),
+      /cannot encode FLAC/,
+    );
+  } catch (e) {
+    t.skip(`libFLAC encoder unavailable in this environment: ${(e as Error).message}`);
+  }
+});
+
+test('encodeAudio: routes flac to the FLAC Output through the one entry point', async () => {
+  const rec = { tags: null as unknown, order: [] as string[], samples: 0 };
+  const blob = await encodeAudio('flac', tone(4800), {}, { flacOutput: stubFlacOutput(rec) });
+  assert.equal(blob.type, 'audio/flac');
+  assert.equal(tag(await bytesOf(blob), 0, 4), 'fLaC');
+});
+
 // ── sniff / slice ─────────────────────────────────────────────────────────────
 
 test('sniffAudioFormat: recognises each container, and nothing else', async () => {
@@ -263,6 +360,7 @@ test('sniffAudioFormat: recognises each container, and nothing else', async () =
   assert.equal(sniffAudioFormat(new Uint8Array([0, 0, 0, 0x20, 0x66, 0x74, 0x79, 0x70, 0x4d, 0x34, 0x41, 0x20])), 'm4a');
   assert.equal(sniffAudioFormat(new Uint8Array([0x1a, 0x45, 0xdf, 0xa3, 0, 0, 0, 0, 0, 0, 0, 0])), 'opus');
   assert.equal(sniffAudioFormat(new Uint8Array([0x4f, 0x67, 0x67, 0x53, 0, 0, 0, 0, 0, 0, 0, 0])), 'ogg');   // 'OggS'
+  assert.equal(sniffAudioFormat(new Uint8Array([0x66, 0x4c, 0x61, 0x43, 0, 0, 0, 0, 0, 0, 0, 0])), 'flac');  // 'fLaC'
   // ADTS AAC also leads with 0xFF; it must NOT be mistaken for an MP3 frame.
   assert.equal(sniffAudioFormat(new Uint8Array([0xff, 0xf1, 0x4c, 0x80, 0, 0, 0, 0, 0, 0, 0, 0])), 'aac');
   assert.equal(sniffAudioFormat(new Uint8Array([1, 2, 3])), null);
@@ -360,7 +458,8 @@ test('pcmFromAudioBuffer: folds an AudioBuffer-shaped source to at most stereo p
 
 test('audioSupport: wav and mp3 are unconditional; the WebCodecs formats start false with no AudioEncoder', async () => {
   const { audioSupport } = await import('../bridge/format-support.ts');
-  assert.deepEqual(audioSupport(), { wav: true, mp3: true, m4a: false, aac: false, opus: false, ogg: false });
+  // flac rides the WASM libFLAC encoder (present under node), so it is unconditional here.
+  assert.deepEqual(audioSupport(), { wav: true, mp3: true, m4a: false, aac: false, opus: false, ogg: false, flac: true });
 });
 
 test('audioSupport: an AAC-only encoder unlocks m4a AND aac (its ADTS sibling), never opus/ogg', async () => {
@@ -370,7 +469,7 @@ test('audioSupport: an AAC-only encoder unlocks m4a AND aac (its ADTS sibling), 
     isConfigSupported: async (c: any) => { codecs.push(c.codec); return { supported: c.codec === 'mp4a.40.2' }; },
   });
   // aac rides the same mp4a.40.2 probe as m4a; ogg rides the same opus probe as opus.
-  assert.deepEqual(audioSupport(), { wav: true, mp3: true, m4a: true, aac: true, opus: false, ogg: false });
+  assert.deepEqual(audioSupport(), { wav: true, mp3: true, m4a: true, aac: true, opus: false, ogg: false, flac: true });
   assert.deepEqual(codecs.sort(), ['mp4a.40.2', 'opus'], 'still only TWO probes back all four WebCodecs formats');
 });
 
