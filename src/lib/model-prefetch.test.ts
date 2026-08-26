@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { upscaleOfflineFiles, matteOfflineFiles } from './model-prefetch.ts';
 import { UPSCALE_MODEL_FILES, UPSCALE_FACE_DETECT_FILE, stagedUpscaleModels } from './upscale-models.ts';
-import { MATTE_MODEL_FILES, matteModelsFor } from './matte-models.ts';
+import { MATTE_MODEL_FILES, MATTE_NATIVE_ONLY, matteModelsFor, stagedMatteModels } from './matte-models.ts';
 
 test('the upscale offline part vendors every staged upscaler + the face detector', () => {
   const files = upscaleOfflineFiles();
@@ -28,16 +28,20 @@ test('the illustration/anime model is in the offline part (the fix)', () => {
 });
 
 test('the matte offline part vendors exactly the cut-out models this shell can run', () => {
-  // Cache parity is against what the picker OFFERS, which is backend-gated: the
-  // native-only full BiRefNet (~467 MB) is withheld where it can't run, so the
-  // offline section must not pre-download it there either. This test runs with no
+  // Cache parity is against what the picker OFFERS, which is backend-gated: a model
+  // that can't run here must not be pre-downloaded here either. This test runs with no
   // Tauri backend (isTauriShell() === false), so matteOfflineFiles() is the
   // wasm-runnable subset - matteModelsFor(false).
   assert.deepEqual(
     [...matteOfflineFiles()].sort(),
     matteModelsFor(false).map(m => MATTE_MODEL_FILES[m.id]).sort(),
   );
-  // The native-only heavyweight is explicitly NOT vendored on the web/CLI side.
-  assert.ok(!matteOfflineFiles().includes(MATTE_MODEL_FILES['birefnet']),
-    'the wasm-impossible full BiRefNet is not offered for web offline download');
+  // No native-only model's bytes may ride the web/CLI offline part. Asserted against
+  // MATTE_NATIVE_ONLY rather than a named id (the full BiRefNet, the only model that
+  // ever needed it, was removed 2026-08-26) so the guard survives the empty roster and
+  // still bites when a future heavyweight flips a flag back on.
+  const nativeOnly = stagedMatteModels().filter(m => MATTE_NATIVE_ONLY[m.id]).map(m => MATTE_MODEL_FILES[m.id]);
+  for (const f of nativeOnly) {
+    assert.ok(!matteOfflineFiles().includes(f), `${f} needs a native backend - not a web offline download`);
+  }
 });

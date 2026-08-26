@@ -21,7 +21,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { __resetJobsForTest, cancelJob, jobsSnapshot, subscribe } from './jobs.ts';
 import {
-  depthErrorMessage, imageChecksum, installDepthSeam, runDepthJob, startDepthJob,
+  depthErrorMessage, imageChecksum, runDepthJob, startDepthJob,
   type DepthCache, type DepthJobDeps, type DepthJobRequest,
 } from './depth-job.ts';
 import { depthCacheKey, type DepthFrame, type DepthMap, type DepthProgress } from './depth-models.ts';
@@ -148,25 +148,6 @@ test('cancelling the job ABORTS the run and caches nothing', async () => {
   assert.equal(jobsSnapshot().find((j) => j.id === job.id)!.status, 'cancelled');
   assert.equal(cache.store.size, 0, 'a cancelled run caches nothing');
   assert.deepEqual(completions, [null], 'a cancel must settle the caller, never hang it');
-});
-
-test('installDepthSeam publishes one forImage, is idempotent, and skips a non-window host', () => {
-  const g = globalThis as unknown as { __lollyDepth?: unknown; window?: unknown };
-  const hadWindow = 'window' in g;
-  delete g.__lollyDepth;
-  try {
-    installDepthSeam();
-    assert.equal(g.__lollyDepth, undefined, 'a worker or an SSR pass has no window and must get no seam');
-    g.window = g;
-    installDepthSeam();
-    const seam = g.__lollyDepth as { forImage: unknown } | undefined;
-    assert.equal(typeof seam?.forImage, 'function', 'the tool feature-detects exactly this');
-    installDepthSeam();
-    assert.equal(g.__lollyDepth, seam, 'a second boot must not swap the seam under an in-flight request');
-  } finally {
-    delete g.__lollyDepth;
-    if (!hadWindow) delete g.window;
-  }
 });
 
 test('a failed run reports a human message, never the raw runtime string', async () => {

@@ -11,7 +11,10 @@
  */
 
 import type { Profile } from '@lolly-tools/core/host-v1';
-import { orgFlagGovernance } from './org/index.ts';
+// The registry leaf, NOT org/index.ts: this module is first-paint work, and that
+// one edge dragged the whole control plane onto the preload set of every visit for
+// a read that answers null on any deployment without one (see org/governance.ts).
+import { orgFlagGovernance } from './org/governance.ts';
 
 export interface FeatureFlag {
   id: string;

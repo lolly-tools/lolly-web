@@ -46,7 +46,15 @@
  * that doesn't provide it just doesn't offer token-driven swatches.
  */
 
-import { createTokenSet, aliasPath } from '../../../../engine/src/tokens.ts';
+// Loaded on demand, not statically: the engine's tokens module carries the colour cluster
+// (css-color, brand-derive, color-faces - the whole `engine-util` chunk, 12.9 KB gz), and a
+// static edge from this bridge module put all of it on the render-blocking boot payload for
+// a resolution step nothing does before first paint (measured 2026-08-26, plans/155 WP-3).
+// Both call sites below are already inside async functions, so nothing became more
+// asynchronous than it was. Memoised, so the chunk is fetched at most once.
+let tokensModPromise: Promise<typeof import('../../../../engine/src/tokens.ts')> | null = null;
+const tokensMod = (): Promise<typeof import('../../../../engine/src/tokens.ts')> =>
+  (tokensModPromise ??= import('../../../../engine/src/tokens.ts'));
 // The versioned design-system model. The ENGINE leaf, not `@lolly/engine` and not
 // lib/design-system/versions.ts (its studio re-export): this module is on the boot
 // path, and both of those pull the barrel - the same rule the engine imports above
@@ -346,6 +354,7 @@ function tokenSurface(loadDoc: () => Promise<unknown>): TokenDocSurface {
   async function ensure(theme?: string): Promise<TokenSet> {
     const key = theme ?? '';
     if (setByTheme.has(key)) return setByTheme.get(key)!;
+    const { createTokenSet } = await tokensMod();
     const set = createTokenSet(await doc(), { theme });
     if (set.size > 0) setByTheme.set(key, set); // don't cache an empty (failed) load
     return set;
@@ -362,6 +371,7 @@ function tokenSurface(loadDoc: () => Promise<unknown>): TokenDocSurface {
       const list = (await ensure(opts.theme)).colors();
       const excluded = new Set(getExcludedSwatches(await doc()));
       if (!excluded.size) return list;
+      const { aliasPath } = await tokensMod();
       // Exclusion keys are brand-doc keys, which ALWAYS carry a `color.` root
       // (brand-doc.ts prepends one when a doc's colour leaves live under some
       // other top-level group) - the engine's token paths for such docs don't.

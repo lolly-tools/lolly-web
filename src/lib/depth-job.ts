@@ -284,25 +284,16 @@ export function startDepthJob(
   return job;
 }
 
-// ── The tool-facing seam (plans/160 section 7) ───────────────────────────────
+// ── The body behind the tool-facing seam (plans/160 section 7) ───────────────
 //
-// A tool is DATA: community/spatial-photo can never import this module. So the
-// web shell publishes exactly one function on `window`, and the tool feature-
-// detects it - absent (the CLI, both Tauri shells, any host with no model) the
-// tool renders the flat photo and stays honest. This is the whole seam; nothing
-// else about depth is exposed.
+// `window.__lollyDepth` itself is published by lib/depth-seam.ts, which loads
+// this module on the first request - see that file's header for why the two are
+// split. What lives here is the work: decode the source, run the job, settle.
 //
-// NOT YET CALLED: one `installDepthSeam()` in shells/web/src/main.ts's boot is
-// the remaining wiring, alongside the 'depth-models' object store missing from
-// bridge/db.ts (DB_VERSION 15 -> 16) and flipping DEPTH_STAGED once the weights
-// are published. Until all three land the seam is absent and the tool is flat.
-
-export interface DepthSeam {
-  /** Depth for the image at `url`, or null when it could not be read (no model,
-   *  a cancel, a decode failure). NEVER rejects - a tool must not have to handle
-   *  an error it cannot act on; the job toast already carries the human message. */
-  forImage(url: string): Promise<DepthMap | null>;
-}
+// Still gated on the 'depth-models' object store missing from bridge/db.ts
+// (DB_VERSION 15 -> 16) and on flipping DEPTH_STAGED once the weights are
+// published; until both land every run ends in ModelNotInstalledError and the
+// tool renders flat.
 
 async function decodeToFrame(url: string): Promise<{ frame: DepthFrame; checksum: string } | null> {
   const resp = await fetch(url);
@@ -322,16 +313,12 @@ async function decodeToFrame(url: string): Promise<{ frame: DepthFrame; checksum
   }
 }
 
-/** Publish the seam. Idempotent, and a no-op outside a window (worker/SSR). */
-export function installDepthSeam(): void {
-  const target = globalThis as unknown as { __lollyDepth?: DepthSeam; window?: unknown };
-  if (typeof target.window === 'undefined' || target.__lollyDepth) return;
-  target.__lollyDepth = {
-    forImage: (url) => new Promise<DepthMap | null>((resolve) => {
-      void decodeToFrame(url).then((decoded) => {
-        if (!decoded) { resolve(null); return; }
-        startDepthJob(decoded, { onComplete: resolve, onError: () => resolve(null) });
-      }, () => resolve(null));
-    }),
-  };
+/** What `window.__lollyDepth.forImage` runs. Never rejects - see DepthSeam. */
+export function depthForImage(url: string): Promise<DepthMap | null> {
+  return new Promise<DepthMap | null>((resolve) => {
+    void decodeToFrame(url).then((decoded) => {
+      if (!decoded) { resolve(null); return; }
+      startDepthJob(decoded, { onComplete: resolve, onError: () => resolve(null) });
+    }, () => resolve(null));
+  });
 }

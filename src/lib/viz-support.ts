@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
  * The visualizer's capability probe, deliberately alone in its own module with no
- * imports (neuro-demo.ts, the one exception, is itself import-free at top level):
+ * imports (neuro-demo-peek.ts, the one exception, is itself import-free at top level):
  * the dock has to decide SYNCHRONOUSLY whether to render its visualizer
  * button, and everything else in the feature (butterchurn itself, the presets, the
  * palette derivation, the overlay chrome) should stay out of the main bundle until
@@ -9,7 +9,7 @@
  * wrapper would drag the whole graph in.
  */
 
-import { neuroDemoActive } from './neuro-demo.ts';
+import { neuroDemoActive } from './neuro-demo-peek.ts';
 
 let cached: boolean | null = null;
 let cachedLax: boolean | null = null;
@@ -26,7 +26,7 @@ let cachedLax: boolean | null = null;
 export function vizSupported(): boolean {
   // A ?neuro demo capture runs on headless SwiftShader, which fails the strict
   // failIfMajorPerformanceCaveat probe by definition (it IS a software rasteriser)
-  // - so the demo takes the lax answer instead. neuro-demo.ts is import-free at
+  // - so the demo takes the lax answer instead. neuro-demo-peek.ts is import-free at
   // module level, so this module's "no imports" cheapness holds.
   if (neuroDemoActive()) return vizPossible();
   return strictProbe();

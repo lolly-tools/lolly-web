@@ -19,12 +19,12 @@
  * goes silent.
  *
  * The tensor descriptors (MATTE_MODEL_SPEC) are NOT decoration: normalization
- * genuinely DIFFERS per model (MODNet uses mean 0.5 / std 0.5; u2netp/BiRefNet use
- * ImageNet), and the output activation differs too (min-max for the bounded heads,
- * sigmoid for BiRefNet's logit head). A wrong mean/std or activation does not
- * crash - it silently degrades the matte. Every value here MUST be confirmed
- * against the real ONNX graph before a model is staged (see the human-verification
- * gates in the fetch script header).
+ * genuinely DIFFERS per model (MODNet uses mean 0.5 / std 0.5; u2netp uses
+ * ImageNet), and the output activation differs too (min-max for a bounded head,
+ * sigmoid for a logit head). A wrong mean/std or activation does not crash - it
+ * silently degrades the matte. Every value here MUST be confirmed against the real
+ * ONNX graph before a model is staged (see the human-verification gates in the
+ * fetch script header).
  */
 
 import type { MatteModelId, MatteModelInfo } from '@lolly-tools/core/host-v1';
@@ -44,14 +44,30 @@ export const MATTE_MODEL_CACHE_VERSION = 1;
 /** The weights file for each selectable model. */
 export const MATTE_MODEL_FILES: Record<MatteModelId, string> = {
   'u2netp': 'u2netp.onnx',
-  'birefnet-lite': 'birefnet-lite.onnx',
-  'birefnet': 'birefnet.onnx',
   'modnet': 'modnet.onnx',
 };
 
-/** The default when `opts.model` is omitted: BiRefNet-lite - the transformer that
- *  handles dark / low-contrast subjects the fast saliency net can't. */
-export const MATTE_DEFAULT_MODEL: MatteModelId = 'birefnet-lite';
+/** The default when `opts.model` is omitted: U²-Net lite - the only GENERAL-subject
+ *  net left on the roster. MODNet is portrait-tuned (its own note: "weaker on
+ *  non-portrait subjects"), so defaulting every logo, product shot and pet photo to
+ *  it would be wrong. The trade is honest and worth saying out loud: u2netp is a
+ *  4.5 MB saliency net at 320², so first use costs ~4.5 MB instead of the retired
+ *  BiRefNet-lite's 114.5 MB and runs in a fraction of the time, but its edges are
+ *  softer and it is weaker on dark / low-contrast backgrounds. */
+export const MATTE_DEFAULT_MODEL: MatteModelId = 'u2netp';
+
+/** Coerce a caller-supplied id to one this build actually carries. The roster
+ *  NARROWS (isnet-general 2026-08-05, the BiRefNet pair 2026-08-26) while ids
+ *  outlive it in saved projects, `?model=` URLs and the dialog's remembered
+ *  localStorage choice - and an id with no MATTE_MODEL_FILES/MATTE_MODEL_SPEC entry
+ *  crashes the runner on `spec.inputSize` or silently fetches
+ *  `/models/matte/undefined`. So every entry point normalizes first: a retired id
+ *  degrades to the default with one console line, never a throw and never a hang. */
+export function resolveMatteModel(id: string | null | undefined): MatteModelId {
+  if (id && Object.hasOwn(MATTE_MODEL_FILES, id)) return id as MatteModelId;
+  if (id) console.warn(`[matte] unknown model "${id}" - using ${MATTE_DEFAULT_MODEL}`);
+  return MATTE_DEFAULT_MODEL;
+}
 
 // ── The catalogue ────────────────────────────────────────────────────────────
 //
@@ -63,37 +79,21 @@ export const MATTE_DEFAULT_MODEL: MatteModelId = 'birefnet-lite';
 // length from the downloaded file and this must be reconciled before staging.
 
 // Order here IS the picker order (models() filters to the staged set, preserving it):
-// fast preview → the general default → the max-quality full model → the portrait specialist.
+// the general default → the portrait specialist.
 export const MATTE_MODELS: MatteModelInfo[] = [
   {
     id: 'u2netp',
-    name: 'U²-Net lite (fast)',
-    tier: 'fast',
+    name: 'U²-Net lite',
+    // Retiered 'fast' → 'default' when the BiRefNet pair was removed (2026-08-26):
+    // this is the only general-subject net left, so it IS the default rather than a
+    // preview step below one. The name loses "(fast)" for the same reason - it is
+    // no longer the quick option, it is the option.
+    tier: 'default',
     approxBytes: 4_574_861,   // exact vendored size (verified 2026-08-05)
     license: 'Apache-2.0',
     attribution: 'U²-Net © 2020 Xuebin Qin et al. (Apache-2.0)',
     version: 'u2netp',
-    note: 'Tiny and instant - soft edges. Good for a quick preview.',
-  },
-  {
-    id: 'birefnet-lite',
-    name: 'BiRefNet lite',
-    tier: 'default',
-    approxBytes: 114_538_221,   // exact vendored size (fp16, verified 2026-08-05)
-    license: 'MIT',
-    attribution: 'BiRefNet © 2024 Peng Zheng et al. (MIT)',
-    version: 'lite',
-    note: 'Best all-round - a transformer that copes with dark and low-contrast backgrounds. The default.',
-  },
-  {
-    id: 'birefnet',
-    name: 'BiRefNet (max quality)',
-    tier: 'pro',
-    approxBytes: 489_666_272,   // exact vendored size (fp16, verified 2026-08-06)
-    license: 'MIT',
-    attribution: 'BiRefNet © 2024 Peng Zheng et al. (MIT)',
-    version: 'full',
-    note: 'The full model - cleanest edges on hair, fur and fine detail. A large (~490 MB) one-time download and slower to run; best on a powerful machine.',
+    note: 'Works on any subject and downloads in seconds. Edges are soft, and busy or low-contrast backgrounds can confuse it.',
   },
   {
     id: 'modnet',
@@ -120,9 +120,13 @@ export const MATTE_MODEL_BYTES: Record<MatteModelId, number> = MATTE_MODELS.redu
 // differ. All models: pixel/255 → (x − mean)/std, RGB, NCHW, single-channel mask
 // out. `activation` decides how the mask is turned into 0..1 alpha:
 //   'minmax' - the head is already bounded (rembg saliency nets): (x−min)/(max−min).
-//   'sigmoid' - the head is a logit (BiRefNet): 1/(1+e^-x), used directly.
+//   'sigmoid' - the head is a logit: 1/(1+e^-x), used directly.
 // Getting these backwards (sigmoid on a bounded head, min-max on a logit) washes
 // or over-contrasts the matte with NO crash - verify empirically before staging.
+// Both models on today's roster are minmax; 'sigmoid' is KEPT (activateMask still
+// implements it, matter.test.ts still covers it) because dropping it would make the
+// next logit-head model silently minmax - exactly the no-crash degradation above.
+// It was BiRefNet's activation before that pair was retired 2026-08-26.
 
 export interface MatteModelSpec {
   /** Fixed model input [height, width]; the source is letterbox-padded to it. */
@@ -154,22 +158,6 @@ export const MATTE_MODEL_SPEC: Record<MatteModelId, MatteModelSpec> = {
     std: [0.5, 0.5, 0.5],
     activation: 'minmax',
   },
-  'birefnet-lite': {
-    inputSize: [1024, 1024],
-    mean: IMAGENET_MEAN,
-    std: IMAGENET_STD,
-    activation: 'sigmoid',
-  },
-  'birefnet': {
-    // The FULL BiRefNet - same contract as the lite (same exporter/family):
-    // input_image f32 [1,3,1024,1024], LOGIT head → sigmoid. CONFIRMED against
-    // the real ONNX graph in onnxruntime-node (2026-08-06): ran clean in 18 s on
-    // CPU, output range [−78,+31] (unbounded logits, so sigmoid, NOT minmax).
-    inputSize: [1024, 1024],
-    mean: IMAGENET_MEAN,
-    std: IMAGENET_STD,
-    activation: 'sigmoid',
-  },
 };
 
 // ── Which weights are actually vendored in THIS build ────────────────────────
@@ -188,10 +176,8 @@ export const MATTE_MODEL_SPEC: Record<MatteModelId, MatteModelSpec> = {
  *  a permissive licence (Apache-2.0/MIT, MPL-compatible), and a clean run on the
  *  CPU/WASM path - matte is WASM-only, so no WebGPU gate applies. */
 export const MATTE_STAGED: Record<MatteModelId, boolean> = {
-  'u2netp': true,          // fast preview (saliency, minmax)
-  'birefnet-lite': true,   // DEFAULT - transformer, fixes dark/low-contrast (logit → sigmoid)
-  'birefnet': true,        // MAX quality - full Swin-L BiRefNet, ~490 MB fp16 (logit → sigmoid); graph inspected + ran clean on CPU 2026-08-06
-  'modnet': true,          // portrait specialist - soft hair ([-1,1] norm, bounded alpha → minmax)
+  'u2netp': true,   // DEFAULT - general saliency net (ImageNet norm, bounded head → minmax)
+  'modnet': true,   // portrait specialist - soft hair ([-1,1] norm, bounded alpha → minmax)
 };
 
 /** The models actually runnable in this build - what the picker should OFFER.
@@ -206,18 +192,19 @@ export function stagedMatteModels(): MatteModelInfo[] {
 // ── Which staged models need a NATIVE ORT backend ────────────────────────────
 //
 // Staging (MATTE_STAGED) is a WEIGHTS-verified fact; this is a separate BACKEND
-// fact. The full BiRefNet is a Swin-L transformer that runs at a fixed 1024²: its
-// upcast fp32 weights (~490 MB fp16 → ~980 MB) plus a Swin-L's activations blow
-// past the ~4 GB ceiling of the single-thread wasm32 heap the web/CLI runner uses
-// (ort.ts numThreads=1), so `session.run()` aborts with std::bad_alloc - on
-// EFFECTIVELY ANY DEVICE, since it's an ADDRESS-SPACE limit, not a RAM one. It ran
-// clean under onnxruntime-node (native, 64-bit) in ~18 s, so it is offered ONLY
-// where a native ORT backend exists (Tauri desktop, via bridge-overrides/matte.ts).
-// The other three fit the wasm heap and run everywhere.
+// fact: a model whose fp32-upcast weights plus activations blow past the ~4 GB
+// ceiling of the single-thread wasm32 heap (ort.ts numThreads=1) aborts with
+// std::bad_alloc on EFFECTIVELY ANY DEVICE, because that is an ADDRESS-SPACE limit
+// and not a RAM one. Such a model is offered only where a native ORT backend exists
+// (Tauri desktop, via bridge-overrides/matte.ts).
+//
+// EVERY entry is false as of 2026-08-26: the full BiRefNet (Swin-L @1024²) was the
+// only model that ever needed the gate, and it has been removed. The table and the
+// matteModelsFor() gate stay because they are the mechanism, not the model - the
+// picker and the offline pre-download share this one answer, and a future
+// heavyweight must not have to re-invent it.
 export const MATTE_NATIVE_ONLY: Record<MatteModelId, boolean> = {
   'u2netp': false,
-  'birefnet-lite': false,
-  'birefnet': true,   // full Swin-L @1024² - wasm32 OOMs; native-only
   'modnet': false,
 };
 

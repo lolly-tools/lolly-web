@@ -62,9 +62,10 @@ export function upscaleOfflineFiles(): string[] {
 }
 
 /** The matte files the offline part vendors: every model THIS shell can actually
- *  run (matteModelsFor mirrors the picker). The native-only full BiRefNet is a
- *  ~467 MB download that only the desktop shell can use, so the web/PWA offline
- *  section never offers it - pre-downloading bytes you can't run would be dishonest. */
+ *  run (matteModelsFor mirrors the picker). A native-only model is withheld where it
+ *  can't run - pre-downloading bytes you can't use would be dishonest. Nothing on
+ *  today's roster is native-only, so web and desktop currently vendor the same two
+ *  files (~30 MB), down from ~145 MB before the BiRefNet pair was removed. */
 export function matteOfflineFiles(): string[] {
   return matteModelsFor(isTauriShell()).map(m => MATTE_MODEL_FILES[m.id]);
 }

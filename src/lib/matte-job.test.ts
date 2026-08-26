@@ -30,7 +30,7 @@ import type { AssetRef, MatteFrame, MatteOpts, MatteProgress } from '@lolly-tool
 
 // ── fixture ───────────────────────────────────────────────────────────────────
 
-const MODEL = { id: 'birefnet-lite', name: 'BiRefNet lite', version: '1.0', tier: 'default', approxBytes: 1, license: 'MIT', attribution: '' };
+const MODEL = { id: 'u2netp', name: 'U²-Net lite', version: '1.0', tier: 'default', approxBytes: 1, license: 'Apache-2.0', attribution: '' };
 
 const frame = (w = 10, h = 5): MatteFrame => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) });
 
@@ -74,7 +74,7 @@ const req = (over: Partial<MatteJobRequest> = {}): MatteJobRequest => ({
   frame: frame(),
   sourceName: 'my photo.jpg',
   sourceBytes: new Uint8Array([9, 9, 9]),
-  model: 'birefnet-lite',
+  model: 'u2netp',
   outFormat: 'png',
   ...over,
 });
@@ -101,7 +101,7 @@ test('the saved cutout carries the same credential and meta the modal path wrote
   assert.equal(s.tool, 'Remove background');
   assert.deepEqual(s.actions, [{
     action: 'c2pa.edited',
-    description: 'Background removed with BiRefNet lite 1.0 (on-device)',
+    description: 'Background removed with U²-Net lite 1.0 (on-device)',
   }], 'a plain edit step naming the model - no digitalSourceType, so no genAI claim');
   assert.deepEqual(s.ingredients, [{ kind: 'ingredient-of-source' }], 'the original rides along as an ingredient');
   assert.equal(s.dimensions, '10×5');
@@ -119,7 +119,7 @@ test('the saved cutout carries the same credential and meta the modal path wrote
   const meta = up.meta as Record<string, unknown>;
   assert.equal(meta.name, matteAssetIds('my photo.jpg', 0).name);
   assert.equal(meta.bytes, 7);
-  assert.deepEqual(meta.matte, { model: 'birefnet-lite', version: '1.0' });
+  assert.deepEqual(meta.matte, { model: 'u2netp', version: '1.0' });
   assert.equal(ref?.id, up.id, 'the job resolves the saved asset it just wrote');
 });
 

@@ -8,7 +8,7 @@
  *
  * This is the PORTABLE half: it lives under lib/ (not bridge/) so a native shell
  * override (shells/tauri-desktop/bridge-overrides/matte.ts) can reuse it verbatim
- * for the wasm-runnable models and only intercept the native-only heavyweight.
+ * for the wasm-runnable models and only intercept any native-only heavyweight.
  * bridge/matte.ts is a one-line re-export of createWasmMatteAPI so the web host
  * path (bridge/index.ts → import('./matte.ts')) is byte-identical.
  *
@@ -79,14 +79,16 @@ export function createWasmMatteAPI(): MatteAPI {
     },
 
     models(): MatteModelInfo[] {
-      // The wasm-runnable staged set: native-only heavyweights (the full BiRefNet)
-      // are withheld here because they OOM the wasm32 heap. A native shell override
-      // provides its own models() with the full set. Copies so a caller can't corrupt
-      // the source of truth.
+      // The wasm-runnable staged set: a model that would OOM the wasm32 heap is
+      // withheld here (no model on today's roster does - see MATTE_NATIVE_ONLY) and a
+      // native shell override provides its own models() with the full set. Copies so
+      // a caller can't corrupt the source of truth.
       return matteModelsFor(false).map((m) => ({ ...m }));
     },
 
     modelBytes(id: MatteModelId): number {
+      // A retired id has no size; 0 is the honest answer for the consent UI, and
+      // `run` will resolve the same id to the default anyway (resolveMatteModel).
       return MATTE_MODEL_BYTES[id] ?? 0;
     },
 

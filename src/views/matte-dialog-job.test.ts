@@ -84,8 +84,8 @@ const { openMatteDialog } = await import('./matte-dialog.ts');
 // ── fixture ───────────────────────────────────────────────────────────────────
 
 const MODEL = {
-  id: 'birefnet-lite', name: 'BiRefNet lite', tier: 'default', version: '1.0',
-  approxBytes: 45_000_000, license: 'MIT', attribution: 'ZhengPeng7',
+  id: 'u2netp', name: 'U²-Net lite', tier: 'default', version: '1.0',
+  approxBytes: 4_574_861, license: 'Apache-2.0', attribution: 'Xuebin Qin et al.',
 };
 
 function makeHost() {

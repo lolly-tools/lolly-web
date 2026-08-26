@@ -13,7 +13,7 @@
  * brand-doc.ts re-exports it so studio callers keep one import site.
  */
 
-import { TOKEN_EXT } from '../../../../engine/src/tokens.ts';
+import { TOKEN_EXT } from '../../../../engine/src/token-ext.ts';
 
 type Rec = Record<string, unknown>;
 const isRec = (v: unknown): v is Rec => typeof v === 'object' && v !== null && !Array.isArray(v);

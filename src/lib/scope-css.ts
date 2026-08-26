@@ -186,7 +186,13 @@ function transformCss(css: string, scope: string, mapSelectors: (selectors: stri
     if (c === '{') {                                     // block open: `buf` is the prelude
       const prelude = buf;
       buf = '';
-      const trimmed = prelude.trim();
+      // The prelude carries any comment that precedes the rule, so the at-rule
+      // test has to look past it: `/* … */ @supports (…)` is an at-rule, and
+      // trimming alone would leave the comment in front of the `@`. Scoping it
+      // like a selector emits `#scope @supports (…) { … }` - an invalid rule
+      // the browser drops wholesale, taking every rule inside with it.
+      const [lead, rest] = peelLeadingTrivia(prelude);
+      const trimmed = rest.trim();
       if (trimmed.startsWith('@')) {
         const name = atName(trimmed);
         out += prelude + '{';
@@ -201,7 +207,6 @@ function transformCss(css: string, scope: string, mapSelectors: (selectors: stri
           : 'raw',                                       // @font-face/@page/… body
         );
       } else if (ctx() === 'scope' && trimmed) {         // a real style-rule selector list
-        const [lead, rest] = peelLeadingTrivia(prelude);
         out += lead + mapSelectors(rest, scope) + ' {';
         stack.push('raw');                               // its body is declarations
       } else {                                           // keyframe stop, or nested (relative) rule

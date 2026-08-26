@@ -77,7 +77,7 @@ const PICKER_TYPE_FILTERS: ReadonlyArray<{ key: PickerTypeFilter; label: string 
 ];
 import { VISUAL_TYPES, isPlaceableAsset } from '../lib/asset-kinds.ts';
 import { autoplayLottieThumbs } from './lottie-mount.ts';
-import { previewMedia } from '../lib/preview-media.ts';
+import { previewMedia, motionVideoThumb, armMotionPreviews } from '../lib/preview-media.ts';
 import { escapeHtml } from '../lib/html.ts';
 import { NAV_EVENTS } from '../utils.ts';
 import { t, tRaw, docsAppHref } from '../i18n.ts';
@@ -121,6 +121,9 @@ export interface PickerTool {
   description?: string;
   icon?: string;
   preview?: string;
+  /** The tool's motion preview, when its content genuinely animates (catalog index `anim`).
+   *  `preview` stays the still poster - see lib/preview-media.ts. */
+  anim?: string;
   formats?: readonly string[];
   exportable?: boolean;
   // Canvas dimensions (from the catalog index) - used to fit an animated card.html banner
@@ -630,6 +633,10 @@ async function render(
   // torn down with the dialog so an in-flight decode can't paint into a dead grid.
   let audioThumbs: { destroy(): void } | null = null;
   let textThumbs: { destroy(): void } | null = null;
+  // The playback gate for every video thumbnail and every animated tool preview in the
+  // dialog (see refreshMotionThumbs); torn down with the dialog so nothing keeps decoding
+  // behind a closed picker.
+  let motionThumbs: { destroy(): void } | null = null;
   // Answers an open trim-to-content card on the user's behalf (keeping the original
   // margins) if the dialog goes away while it is still asking - see offerTrim below.
   let pendingTrim: (() => void) | null = null;
@@ -641,6 +648,7 @@ async function render(
     lottieThumbs?.destroy();
     audioThumbs?.destroy();
     textThumbs?.destroy();
+    motionThumbs?.destroy();
     // Before the wipe: the card's teardown revokes its preview URLs, and the upload
     // it is blocking still has to reach storeUserUpload with an answer.
     pendingTrim?.();
@@ -692,6 +700,15 @@ async function render(
       (id) => candidateById.get(id) ?? userAssets.find(a => a.id === id),
       () => body.isConnected,
     );
+  };
+  // (Re)arm the ONE motion-playback policy (lib/preview-media.ts) over the picker BODY -
+  // same scope and lifecycle as the waveform upgrader, and for the same reason: video
+  // thumbnails and animated tool previews appear in the library, in Favourites, in "Your
+  // images" and in a project folder, so a gate on one grid and not the others is the bug
+  // being removed here.
+  const refreshMotionThumbs = (): void => {
+    motionThumbs?.destroy();
+    motionThumbs = armMotionPreviews(body, { isCurrent: () => body.isConnected });
   };
   const libraryEl    = root.querySelector<HTMLElement>('.asset-picker-library')!;
   const favEl        = root.querySelector<HTMLElement>('.asset-picker-favourites');
@@ -1221,6 +1238,7 @@ async function render(
     refreshLottieThumbs();
     refreshAudioThumbs();
     refreshTextThumbs();
+    refreshMotionThumbs();
   }
 
   /**
@@ -1579,6 +1597,7 @@ async function render(
     refreshLottieThumbs();
     refreshAudioThumbs();
     refreshTextThumbs();
+    refreshMotionThumbs();
   }
 
   // ── Icon theme strip ────────────────────────────────────────────────────────
@@ -1762,6 +1781,7 @@ async function render(
     refreshLottieThumbs();
     refreshAudioThumbs();
     refreshTextThumbs();
+    refreshMotionThumbs();
   }
 
   function renderFavourites(): void {
@@ -1790,6 +1810,7 @@ async function render(
     refreshLottieThumbs();
     refreshAudioThumbs();
     refreshTextThumbs();
+    refreshMotionThumbs();
   }
 
   // ── Saved creations (previous single-tool sessions) ────────────────────────
@@ -1919,6 +1940,7 @@ async function render(
       : `<p class="asset-picker-empty">${q ? t('Nothing here matches.') : (cur ? t('This folder is empty.') : t('No folders yet.'))}</p>`);
     refreshAudioThumbs();
     refreshTextThumbs();
+    refreshMotionThumbs();
   }
 
   // ── Tools (configure first, then insert) ───────────────────────────────────
@@ -2400,12 +2422,15 @@ async function render(
 
 
 
-// A muted, looping, autoplaying <video> thumbnail. muted + playsinline are
-// mandatory for the browser to allow autoplay; preload="metadata" keeps a grid of
-// them light. Class-scoped CSS (.asset-picker-thumb / .cat-thumb) sizes <video>
-// the same as <img>, so no per-element rule is needed.
+// A muted, looping <video> thumbnail, PLAYED ONLY ON INTENT - hover/focus on a mouse, the
+// most-centered tile on touch (lib/preview-media.ts owns that one policy; the
+// refreshMotionThumbs arm wires this grid into it). It used to be
+// `autoplay preload="metadata"` with no visibility gate at all, so opening the picker
+// fetched a header for every clip in the library and played every one of them, on screen or
+// not. Class-scoped CSS (.asset-picker-thumb / .cat-thumb) sizes <video> the same as <img>,
+// so no per-element rule is needed.
 function videoThumb(url: string, className: string): string {
-  return `<video class="${className}" src="${escapeHtml(url)}" muted loop autoplay playsinline preload="metadata"></video>`;
+  return motionVideoThumb(url, className);
 }
 
 // A looping Lottie thumbnail: an on-screen-gated player (autoplayLottieThumbs, wired by the
@@ -2780,7 +2805,7 @@ function toolCard(t: PickerTool, quickAdd = false): string {
   // the "+ Add" control is a SIBLING of the open-primary, never nested (nested buttons
   // are invalid HTML and break the delegated handler - same reasoning as userCard).
   const openBtn = `<button type="button" class="asset-picker-card asset-picker-toolitem${hasPreview ? '' : ' no-preview'}${quickAdd ? ' asset-picker-toolitem--collect' : ''}" data-tool-id="${escapeHtml(t.id)}" title="${escapeHtml(t.description ?? t.name)}">
-      ${hasPreview ? previewMedia(t.preview!, 'asset-picker-toolitem-preview', iframeSize) : ''}
+      ${hasPreview ? previewMedia(t.preview!, 'asset-picker-toolitem-preview', iframeSize, false, t.anim) : ''}
       <span class="asset-picker-toolitem-icon" aria-hidden="true">${t.icon ?? ''}</span>
       <span class="asset-picker-name">${escapeHtml(t.name)}</span>
     </button>`;

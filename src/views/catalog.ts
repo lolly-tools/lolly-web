@@ -63,6 +63,7 @@ import { wireDisclosure } from '../components/body-popover.ts';
 import { mountZoomHud } from '../components/zoom-hud.ts';
 import { playSfx, playCatalogAah, cancelArrivalAah } from '../lib/sfx.ts';
 import { autoplayLottieThumbs, mountLottieMarker, destroyLottiePlayers, lottiePlayerFor } from './lottie-mount.ts';
+import { motionVideoThumb, armMotionPreviews } from '../lib/preview-media.ts';
 import { extractAssetMetadata } from '../lib/asset-metadata.ts';
 import { analyzeVerifyText, buildHighlightSegments, heatBucket } from './valid-text.ts';
 import type { TextSignalPanel, TextSignalMark } from './valid-text.ts';
@@ -109,6 +110,8 @@ import { attachAudioMeter } from '../lib/audio-meter.ts';
 import { exportSwatches, paletteEntriesToSwatches, type SwatchExportFormat } from '../lib/swatch-export.ts';
 import { groupPalette, isTransparent, swatch } from '../lib/swatches.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
+import { perfUiOn } from '../feature-flags.ts';
+import { offsetToUv, halfWindow, type Loupe } from '../lib/loupe-gl.ts';
 import { parseHex, hexToOklch, oklchToHex } from '../../../../engine/src/brand-derive.ts';
 import { rampOklab } from '../../../../engine/src/color-tools.ts';
 import { rgbToCmyk } from '../../../../engine/src/color.ts';
@@ -448,6 +451,9 @@ function attachZoom(dlg: HTMLDialogElement): void {
   const MIN = 0.15, FIT = 1, MAX = 20;   // out to 15%, fit=100%, in to 2000%
   const PAD = 20;                        // matches .cat-zoom-stage padding
   let s = 1, tx = 0, ty = 0;
+  // The optional glass loupe (lib/loupe-gl.ts), lazy-mounted only when a pixel-peeper turns it
+  // on. Null the rest of the time - zero cost. Re-captures its texture on scale change (below).
+  let loupe: Loupe | null = null;
   // The s=1 "fit" box: the largest aspect-preserving rectangle inside the padded stage.
   // Zoom multiplies this box; the SVG/image then renders at that true pixel size. Measured
   // ONCE and locked - never re-measured in place. (In the mobile layout the stage height is
@@ -524,6 +530,7 @@ function attachZoom(dlg: HTMLDialogElement): void {
     if (s <= FIT + 0.001) { tx = 0; ty = 0; }   // fit or zoomed out ⇒ re-centre
     clampPan();
     apply();
+    syncLoupe();   // scale changed ⇒ (de)activate the easter egg and re-capture if it's on
   };
   const offsetFrom = (e: { clientX: number; clientY: number }): [number, number] => {
     const r = stage.getBoundingClientRect();
@@ -536,6 +543,40 @@ function attachZoom(dlg: HTMLDialogElement): void {
   // read the exact pixels when zoomed in. Skipped for a Lottie - inline SVG has no raster to
   // sharpen. `image-rendering: pixelated` on the media is the whole effect.
   let pixelated = false;
+  const closeLoupe = (): void => {
+    loupe?.dispose();
+    loupe = null;
+    stage.classList.remove('has-loupe');
+  };
+  // The glass loupe is an EASTER EGG for pixel-peepers: no button of its own, and it exists only in
+  // the one rare spot where a peeper lives - the stage zoomed all the way in (2000%) AND switched to
+  // pixel-accurate viewing. Hitting that combination auto-mounts the WebGL magnifier (lib/loupe-gl.ts,
+  // lazy-imported on first use); leaving it (zoom out, or interpolation back on) tears it down. Only
+  // for a still image on a hover-capable pointer, stood down under reduced-motion / the perf-UI flag.
+  const loupeCapable = !isLottie && !isVideo
+    && typeof matchMedia === 'function' && matchMedia('(pointer: fine)').matches
+    && !prefersReducedMotion() && !perfUiOn();
+  const loupeWanted = (): boolean => pixelated && s >= MAX - 0.001;   // MAX = 20 = 2000%
+  const activateLoupe = async (): Promise<void> => {
+    if (!loupeCapable || loupe) return;
+    const { mountLoupe } = await import('../lib/loupe-gl.ts');
+    if (loupe || !loupeWanted()) return;   // condition lapsed (or already mounted) while importing
+    // A big lens - ~62% of the stage's short side, clamped - so the peeper gets a generous glass.
+    const r = stage.getBoundingClientRect();
+    const size = Math.max(320, Math.min(520, Math.round(Math.min(r.width, r.height) * 0.62)));
+    const l = mountLoupe(stage, img, () => [baseW * s, baseH * s], size);
+    if (!l) return;   // no WebGL, or a tainted cross-origin source ⇒ silently stay on plain zoom
+    loupe = l;
+    stage.classList.add('has-loupe');
+  };
+  // Reconcile the loupe with the live state - called whenever zoom or the toggle changes.
+  const syncLoupe = (): void => {
+    if (!loupeCapable) return;
+    const want = loupeWanted();
+    if (want && !loupe) { void activateLoupe(); return; }
+    if (!want && loupe) { closeLoupe(); return; }
+    if (loupe) loupe.refresh();   // still on, scale changed ⇒ re-capture so a vector stays crisp
+  };
   const interpBtn = document.createElement('button');
   interpBtn.type = 'button';
   interpBtn.className = 'cat-zoom-btn cat-zoom-interp';
@@ -548,13 +589,14 @@ function attachZoom(dlg: HTMLDialogElement): void {
     media.style.imageRendering = pixelated ? 'pixelated' : '';
     interpBtn.classList.toggle('is-active', pixelated);
     interpBtn.setAttribute('aria-pressed', String(pixelated));
+    syncLoupe();   // the loupe only appears when pixel-accurate meets 2000%
   });
   const hud = hudEl ? mountZoomHud(hudEl, {
     ariaLabel: t('Zoom'),
     classes: { btn: 'cat-zoom-btn', pct: 'cat-zoom-pct', fit: 'cat-zoom-fit', sep: 'cat-zoom-sep' },
     initialReadout: '100%',
     onZoom: (dir) => zoomTo(s * (dir > 0 ? 1.5 : 1 / 1.5)),
-    onFit: () => { s = FIT; tx = 0; ty = 0; apply(); },
+    onFit: () => { s = FIT; tx = 0; ty = 0; apply(); syncLoupe(); },
     fitPosition: 'start',
     fitContent: FIT_ICON, fitAriaLabel: t('Fit to view'), fitTitle: t('Fit to view'),
     outContent: ZOOM_OUT_ICON,
@@ -591,6 +633,19 @@ function attachZoom(dlg: HTMLDialogElement): void {
   };
   stage.addEventListener('pointerup', endDrag);
   stage.addEventListener('pointercancel', endDrag);
+  // Glass loupe render pass. Registered AFTER the pan handler so tx/ty are already updated for
+  // this same pointermove. No rAF - the lens redraws only when the pointer moves.
+  stage.addEventListener('pointermove', (e) => {
+    if (!loupe) return;
+    const [ox, oy] = offsetFrom(e);
+    const W = baseW * s, H = baseH * s;
+    const uv = offsetToUv(ox, oy, W, H, tx, ty);
+    if (!uv) { loupe.hide(); return; }   // cursor off the art
+    const [hu, hv] = halfWindow(W, H, loupe.size);
+    const r = stage.getBoundingClientRect();
+    loupe.render(e.clientX - r.left - loupe.size / 2, e.clientY - r.top - loupe.size / 2, uv[0], uv[1], hu, hv);
+  });
+  stage.addEventListener('pointerleave', () => loupe?.hide());
   stage.addEventListener('dblclick', (e) => {
     if (cropModeActive) return;
     const [ox, oy] = offsetFrom(e);
@@ -605,6 +660,7 @@ function attachZoom(dlg: HTMLDialogElement): void {
     media.style.width = ''; media.style.height = '';
     baseLocked = false;
     apply();
+    syncLoupe();
   };
   if (isLottie) {
     // The player's <svg> mounts a tick or two after the modal opens; re-fit the moment it lands so
@@ -625,6 +681,8 @@ function attachZoom(dlg: HTMLDialogElement): void {
     if (typeof img.decode === 'function') img.decode().then(refit).catch(() => {});
     img.addEventListener('load', refit, { once: true });
   }
+  // Free the loupe's GL context when the modal closes (a <dialog> fires 'close' on .close()).
+  dlg.addEventListener('close', closeLoupe, { once: true });
   apply();
 }
 
@@ -840,6 +898,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   let lottieThumbs: { destroy(): void } | null = null;   // on-screen-gated lottie grid autoplayer
   let audioThumbs: { destroy(): void } | null = null;    // on-screen-gated waveform upgrader
   let textThumbs: { destroy(): void } | null = null;     // on-screen-gated text-excerpt upgrader
+  let motionThumbs: { destroy(): void } | null = null;   // intent gate for every video thumbnail
   let pdfThumbs: { destroy(): void } | null = null;      // on-screen-gated PDF first-page upgrader
   let viewOptsOpen = false;
   let closeViewOpts: () => void = () => {};              // set in wire(); called on teardown
@@ -1115,12 +1174,20 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       if (poster) return `<img class="cat-thumb" src="${escape(poster)}" alt="" loading="lazy" decoding="async">`;
       return `<span class="cat-thumb cat-thumb-stub" aria-hidden="true">▶</span>`;
     }
-    // A video plays itself (an <img> src=mp4 would break). <video> is phrasing
+    // A video needs a <video> (an <img> src=mp4 would break). <video> is phrasing
     // content, so it's valid inside the tile's <button> - no span/div switch needed.
-    // muted + playsinline are mandatory for autoplay. (gif/apng/animated-webp are
-    // type:'raster' and animate natively in the <img> below.)
+    // It PLAYS ONLY ON INTENT - hover/focus on a mouse, the most-centered tile on touch -
+    // through the one policy in lib/preview-media.ts, armed by mountMotionThumbs below.
+    // It used to be `autoplay preload="metadata"` with no visibility gate, so painting the
+    // grid fetched a header for every clip in the catalog and played all of them at once.
+    // (gif/apng/animated-webp are type:'raster' and animate natively in the <img> below.)
+    // In the details modal (`full`) the user has explicitly opened THIS asset, so it is
+    // the one video that should load and play on sight - the intent gate exists to stop a
+    // grid of them, not to make an opened clip sit there dead with no poster to show.
     if (ref.type === 'video') {
-      return `<video class="cat-thumb" src="${escape(ref.url)}" muted loop autoplay playsinline preload="metadata"></video>`;
+      return full
+        ? `<video class="cat-thumb" src="${escape(ref.url)}" muted loop autoplay playsinline preload="metadata"></video>`
+        : motionVideoThumb(ref.url, 'cat-thumb');
     }
     // Audio. In the details modal (full) it gets a real <audio controls> player to preview;
     // on a grid tile it draws its own MEASURED waveform (mountAudioThumbs swaps the glyph
@@ -2017,6 +2084,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     mountLottieThumbs();
     mountAudioThumbGrid();
     mountTextThumbGrid();
+    mountMotionThumbs();
     mountPdfThumbGrid();
     mountDropzone();
     if (firstPaint) { armViewEnter(viewEl, '.cat-assets, .cat-group--ref'); firstPaint = false; }
@@ -2048,6 +2116,16 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // The text sibling: upgrade ¶ stubs to brand-inked, signal-focused excerpts
   // (lib/text-thumbs.ts). Same lifecycle as the waveform upgrader, called from
   // the same places; models cache module-side so re-renders repaint instantly.
+  // The playback gate every video thumbnail in the grid goes through (lib/preview-media.ts):
+  // hover/focus on a mouse, the most-centered tile on touch, nothing at all under reduced
+  // motion. Same lifecycle as the upgraders above - a re-render replaced the elements the
+  // previous observer was holding.
+  function mountMotionThumbs(): void {
+    motionThumbs?.destroy();
+    const body = viewEl.querySelector<HTMLElement>('.catalog-body');
+    motionThumbs = body ? armMotionPreviews(body, { isCurrent: () => mounted }) : null;
+  }
+
   function mountTextThumbGrid(): void {
     textThumbs?.destroy();
     const body = viewEl.querySelector<HTMLElement>('.catalog-body');
@@ -2099,6 +2177,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     mountLottieThumbs();
     mountAudioThumbGrid();
     mountTextThumbGrid();
+    mountMotionThumbs();
     mountPdfThumbGrid();
     mountDropzone();
     fillStorageChip();
@@ -6501,6 +6580,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     audioThumbs = null;
     textThumbs?.destroy();
     textThumbs = null;
+    motionThumbs?.destroy();
+    motionThumbs = null;
     closeViewOpts();
     closeDetails();
     closeDownloadDialog();

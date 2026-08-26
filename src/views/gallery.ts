@@ -37,7 +37,7 @@ import { offlineNudgeMarkup, mountOfflineNudge } from './offline-nudge.ts';
 import { profileSignature, canPersonalize, regeneratePreviews } from '../personalize-previews.ts';
 import { viewTopbarHtml, mountViewTopbar } from '../components/view-topbar.ts';
 import { mountFeaturedRow, resolveExamples } from '../components/featured-row.ts';
-import { previewMedia, isHtmlPreview } from '../lib/preview-media.ts';
+import { previewMedia, isHtmlPreview, armMotionPreviews, playMotionIn, stopMotionIn } from '../lib/preview-media.ts';
 import { bundledLook } from '../lib/preview-bundle.ts';
 import { renderFeaturedVariant, renderFeaturedPages, displayFormatOf } from '../lib/featured-render.ts';
 import { currentTheme } from '../theme.ts';
@@ -92,6 +92,10 @@ interface GalleryTool {
   exportable?: boolean;
   icon?: string;
   preview?: string;
+  /** The tool's MOTION preview (tools/<id>/card.webm or an APNG card.png), when its content
+   *  genuinely animates - see lib/preview-media.ts. `preview` stays the still poster; this
+   *  file is fetched only once a hover, a focus or the centered tile asks for it. */
+  anim?: string;
   personalized?: boolean;
   featured?: FeaturedManifest;
   examples?: FeaturedVariant[];
@@ -147,10 +151,19 @@ const EXAMPLE_MAX = 6;
 // How many tiles count as "above the fold" for image priority. Roughly two masonry rows
 // on a desktop viewport and the first three or four cards on a phone - deliberately a
 // small over-estimate, since an eager tile the user never sees costs one preview file,
-// while having NO eager tile costs the page its LCP candidate (before this, the app's
-// only fetchpriority hint was on the featured hero row, which doesn't even mount for a
-// first-time visitor - defaultFavourites is empty - so nothing was prioritised at all).
+// while having NO eager tile costs the page its LCP candidate.
 const EAGER_TILES = 8;
+// Same, for a mount that also shows the featured hero row. The strip pushes the grid down by
+// its own height, so only about the first masonry row is still above the fold - and the hero's
+// own first tile is already eager + fetchpriority=high (featured-row.ts tileMarkup) and sits
+// ABOVE the masonry in document order, so it wins the equal-priority race and is the LCP
+// candidate. Hinting all eight grid tiles here would only put them in that image's way.
+const EAGER_TILES_WITH_HERO = 4;
+// How many manifest-curated tools stand in for a first-run visitor's (empty) favourites in the
+// hero strip - see firstRunFeatured(). About one screen of the filmstrip and a full Cover Flow
+// fan; a first visit should read as a curated shelf, not the catalog listed twice. Set to 0 to
+// go back to a flat grid on first run - it is the only switch this behaviour has.
+const FIRST_RUN_FEATURED_MAX = 6;
 
 // Fit a page of aspect `ar` (width / height) inside the square deck box (hydratePaged),
 // as width/height percentages of that square. A landscape page keeps full width and loses
@@ -674,19 +687,45 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     };
   };
 
+  // Which tools the hero strip promotes when the user has no favourites of their own.
+  //
+  // The strip is favourites-only, and `profile.favourites` is undefined until the first star -
+  // so the fifteen tools whose manifests carry a curated `featured.order` + blurb (eight in the
+  // lolly-start pack) were only ever seen by someone who had ALREADY starred something, and a
+  // brand-new visitor got a flat grid. That set is the shipped curation, per pack, authored in
+  // the tool data rather than in shell code, and each entry's blurb was written for this strip.
+  //
+  // Read per call, not captured at mount: saveFavourites() sets profile.favourites synchronously
+  // before refreshFeatured() runs, so the first star flips the strip to the user's own list in
+  // the same tick. NOTHING is written to the profile - the stand-in is derived, so an existing
+  // user's favourites are never merged into, reordered, or overwritten, and `[]` (starring then
+  // unstarring everything) is a real choice that leaves the strip empty. Same rule main.ts
+  // applies to the catalog's seeded asset favourites.
+  //
+  // Sorted before the cap because featured-row.ts re-sorts by `featured.order` anyway: slicing
+  // catalog order first could drop a lower-order tool and leave a higher-order one as the hero.
+  const firstRunFeatured = (): Set<string> | null => {
+    if (profile?.favourites !== undefined || FIRST_RUN_FEATURED_MAX <= 0) return null;
+    const curated = index.tools
+      .filter(t => t.featured?.order != null && !hidden.has(t.category) && !hiddenTools.has(t.id))
+      .sort((a, b) => a.featured!.order! - b.featured!.order!)
+      .slice(0, FIRST_RUN_FEATURED_MAX);
+    return curated.length ? new Set(curated.map(t => t.id)) : null;
+  };
+
   // Featured hero row - the user's favourites, and ONLY their favourites (starring a tool
   // promotes it into the hero strip), minus any in a hidden category (a category the user
-  // turned off shouldn't be promoted). A fresh session has no favourites, so the strip is
-  // empty and collapses (see mountFeatured's has-featured toggle): a new visitor builds the
-  // carousel up by adding, not by clearing out a pre-curated default set. Manifest `featured`
-  // no longer auto-seeds the strip - its blurb/variants still style a tile once the tool is
-  // favourited (see toFeaturedEntry). Tools appear in catalog order. Carries the "New" flag
-  // through. Recomputed on every star toggle (refreshFeatured).
+  // turned off shouldn't be promoted), falling back to the pack's curated set for a visitor
+  // who has never starred anything (firstRunFeatured above). Manifest `featured` doesn't
+  // auto-seed a favourite - its blurb/variants style a tile either way (see toFeaturedEntry).
+  // Tools appear in catalog order. Carries the "New" flag through. Recomputed on every star
+  // toggle (refreshFeatured).
   const featuredEntriesNow = (): FeaturedEntry[] => {
     const seen = new Set<string>();
     const out: FeaturedEntry[] = [];
+    const promoted = firstRunFeatured() ?? favourites;
     for (const t of index.tools) {
-      if (!seen.has(t.id) && favourites.has(t.id) && !hidden.has(t.category) && !hiddenTools.has(t.id)) { out.push(toFeaturedEntry(t)); seen.add(t.id); }
+      if (!seen.has(t.id) && promoted.has(t.id) && !hidden.has(t.category) && !hiddenTools.has(t.id)) { out.push(toFeaturedEntry(t)); seen.add(t.id); }
     }
     // Starred VIEW cards (Verify, Unpack, Colour Lab) promote into the
     // hero strip exactly like starred tools - as icon-hero tiles, since a view has
@@ -1376,6 +1415,17 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   }
   cleanups.push(() => carouselObserver?.disconnect());
 
+  // Motion previews (plans/155 WP-5.3). hover:false because the tile's own pointerenter
+  // hook (wireCards) already drives hover - this arm covers keyboard focus everywhere and,
+  // on a device with no hover, the centered-tile observer. Re-armed on each full paint
+  // because innerHTML replaced the elements the previous observer held.
+  let motionPreviews: { destroy(): void } | null = null;
+  function armMotion(): void {
+    motionPreviews?.destroy();
+    motionPreviews = masonry ? armMotionPreviews(masonry, { hover: false }) : null;
+  }
+  cleanups.push(() => motionPreviews?.destroy());
+
   // Move to a given slide (by index) and by ±1 (with wrap for the auto-advance loop),
   // then reflect it in the dots. Uses smooth native scroll so touch, trackpad and this
   // code all land on the same scroll-snap points.
@@ -1605,9 +1655,12 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     // reorder the live nodes - `allTools`' own order is NOT the on-screen order, so
     // taking the first N of it would hand the priority hint to tiles further down the
     // grid. Search/category can still filter an eager tile out of view, but neither is
-    // set on the cold load this exists for.
+    // set on the cold load this exists for. mountFeatured() has already run by here, so
+    // featuredHandle answers whether a hero row is taking the top of the viewport (and
+    // the LCP image with it) - fewer grid tiles are above the fold when it is.
     const eagerIds = new Set(
-      [...allTools].sort(sortCompare).filter(t => !hiddenTools.has(t.id)).slice(0, EAGER_TILES).map(t => t.id),
+      [...allTools].sort(sortCompare).filter(t => !hiddenTools.has(t.id))
+        .slice(0, featuredHandle ? EAGER_TILES_WITH_HERO : EAGER_TILES).map(t => t.id),
     );
     masonry.innerHTML = viewCards + allTools
       .map(t => cardMarkup(t, latestByTool(t.id), host.capabilities, personalizedByTool.get(t.id), isNew(t.id), thumbsByTool(t.id), darkTheme, opts.only === 'utility', eagerIds.has(t.id)))
@@ -1636,6 +1689,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     // armed class).
     armPreviewReveal(masonry, animateReveal && !paintedFromSlim);
     armCarousels();   // lazily hydrate example preview strips as their tiles near the viewport
+    armMotion();      // motion previews: hover/focus on a mouse, the centered tile on touch
     firstPaint = false;
     // Hand THIS grid to the mount that will upgrade it, if it is a slim paint (see
     // slimPaintedGrid). Nothing to hand on otherwise - the top of the mount already
@@ -1724,9 +1778,17 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     // Example preview strips: arrows, dots, and pause-on-interaction. Re-wired each
     // render since innerHTML replaced the elements the prior listeners were bound to.
     container.querySelectorAll<HTMLElement>('.gcar').forEach(wireCarousel);
-    // Prefetch a tool's files on first hover of its open affordance.
+    // Hover on a tile's open affordance means the same thing twice: prefetch the tool's
+    // files, and (plans/155 WP-5.3) start its motion preview if it has one. Both ride this
+    // ONE listener rather than a second hover listener stacked on the same element - the
+    // pointer-fine half of the playback policy, with armMotionPreviews below covering
+    // keyboard focus and the touch case. pointerleave stops and rewinds.
     container.querySelectorAll<HTMLElement>('[data-new-tool]').forEach(el => {
-      el.addEventListener('pointerenter', () => prefetchTool(el.dataset.newTool), { once: true });
+      el.addEventListener('pointerenter', () => {
+        prefetchTool(el.dataset.newTool);
+        playMotionIn(el);
+      });
+      el.addEventListener('pointerleave', () => stopMotionIn(el));
       el.addEventListener('click', () => el.closest('.gtile')?.classList.add('is-navigating'));
     });
     // Resume the latest session (the hero preview).
@@ -2512,7 +2574,7 @@ function cardMarkup(
       : animCard
         ? `<li class="gcar-slide gcar-slide--lead gcar-slide--card">
              <a class="gcar-open" href="${openHref}" data-new-tool="${escape(tool.id)}" tabindex="-1" aria-hidden="true">
-               ${previewMedia(animCard, 'gcar-img', undefined, eager)}
+               ${previewMedia(animCard, 'gcar-img', undefined, eager, tool.anim)}
              </a>
            </li>`
         : '';
@@ -2585,7 +2647,7 @@ function cardMarkup(
           ? `<img class="gtile-hero-img" src="${escape(personalizedThumb)}" alt="" aria-hidden="true" loading="lazy" decoding="async">`
           // Fixed-square hero (gallery.css): the img/iframe fills it and contains within,
           // so no per-tool aspect is threaded through - every preview box is the same size.
-          : previewMedia(tool.preview!, 'gtile-hero-img', undefined, eager)}
+          : previewMedia(tool.preview!, 'gtile-hero-img', undefined, eager, tool.anim)}
         <span class="gtile-continue">${t('Open')}</span>
         ${statusBadge}
       </a>`;
@@ -3015,8 +3077,15 @@ function savedItem(entry: SavedEntry, bytes: number | undefined): string {
 
 // ── Misc helpers ────────────────────────────────────────────────────────────
 
+/** Tools already prefetched this page-load. The hover hook used to be `{ once: true }`,
+ *  which guarded this incidentally; it now fires on every enter (it drives motion playback
+ *  too), so the guard has to be here - and it is the better place regardless, since one
+ *  tool can appear in both the featured row and the grid. */
+const prefetched = new Set<string>();
+
 function prefetchTool(toolId: string | undefined): void {
-  if (!toolId) return;
+  if (!toolId || prefetched.has(toolId)) return;
+  prefetched.add(toolId);
   const base = `/tools/${toolId}`;
   for (const file of ['tool.json', 'template.html', 'hooks.js']) {
     const link = document.createElement('link');

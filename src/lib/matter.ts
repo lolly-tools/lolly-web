@@ -23,8 +23,8 @@ import {
   type FetchProgress,
 } from './ort.ts';
 import {
-  MATTE_DEFAULT_MODEL, MATTE_MODEL_CACHE_VERSION, MATTE_MODEL_DIR, MATTE_MODEL_FILES,
-  MATTE_MODEL_SPEC, MATTE_MODEL_STORE, type MatteModelSpec,
+  MATTE_MODEL_CACHE_VERSION, MATTE_MODEL_DIR, MATTE_MODEL_FILES,
+  MATTE_MODEL_SPEC, MATTE_MODEL_STORE, resolveMatteModel, type MatteModelSpec,
 } from './matte-models.ts';
 
 type OrtModule = typeof import('onnxruntime-web');
@@ -111,9 +111,11 @@ function loadSession(fileName: string, onDownload?: (p: FetchProgress) => void):
   return entry;
 }
 
-/** Are a model's bytes already on device? Never downloads. */
+/** Are a model's bytes already on device? Never downloads. A retired id resolves to
+ *  the default, so the answer is about a file that exists rather than a probe for
+ *  `/models/matte/undefined`. */
 export async function modelCached(id: MatteModelId): Promise<boolean> {
-  const bytes = await fetchModelBytes(MATTE_MODEL_FILES[id], true);
+  const bytes = await fetchModelBytes(MATTE_MODEL_FILES[resolveMatteModel(id)], true);
   return !!bytes;
 }
 
@@ -207,7 +209,7 @@ export function canRun(src: { width: number; height: number }, opts: MatteOpts =
       return { ok: false, reason: 'no-backend', message: 'This browser can’t run the model.' };
     }
     // Rough peak: source RGBA + output RGBA + model input tensor + output mask.
-    const model = MATTE_MODEL_SPEC[opts.model ?? MATTE_DEFAULT_MODEL];
+    const model = MATTE_MODEL_SPEC[resolveMatteModel(opts.model)];
     const edge = model.inputSize[0];
     const peak = src.width * src.height * 4 + outW * outH * 4 + edge * edge * 3 * 4 + edge * edge * 4;
     const budget = deviceMemoryGb() * 1024 * 1024 * 1024 * 0.25;
@@ -328,7 +330,11 @@ export function postprocessMatte(rawMask: ArrayLike<number>, pre: MattePre): Mat
  *  heavyweight - see shells/tauri-desktop/bridge-overrides/matte.ts. */
 export async function runMatte(frame: MatteFrame, opts: MatteOpts, ctx: MatteRunCtx): Promise<MatteFrame> {
   ctx.checkAbort();
-  const id = opts.model ?? MATTE_DEFAULT_MODEL;
+  // A saved project or a `?model=` link can still name a RETIRED model (the roster
+  // narrows; ids do not). Resolving before the lookup is what turns that into a
+  // slightly-different matte plus a console line, instead of a TypeError on
+  // `spec.inputSize` or a download of `/models/matte/undefined` that never resolves.
+  const id = resolveMatteModel(opts.model);
   const spec = MATTE_MODEL_SPEC[id];
   const edge = spec.inputSize[0];
 

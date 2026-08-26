@@ -81,9 +81,12 @@ test('activateMask sigmoid squashes logits (0 → 0.5, large + → ~1, large −
   assert.ok(m[2]! < 0.001);
 });
 
-test('the roster activations are pinned: bounded heads = minmax, BiRefNet = sigmoid', () => {
+test('the roster activations are pinned: every current head is bounded = minmax', () => {
+  // Both models left after the BiRefNet pair was removed (2026-08-26) have bounded
+  // heads. The sigmoid branch above is deliberately kept and still covered: it is the
+  // logit path, and deleting it would make the next logit-head model silently minmax -
+  // which washes the matte with no crash, the exact failure MATTE_MODEL_SPEC exists to
+  // prevent.
   assert.equal(MATTE_MODEL_SPEC['u2netp'].activation, 'minmax');
   assert.equal(MATTE_MODEL_SPEC['modnet'].activation, 'minmax');
-  assert.equal(MATTE_MODEL_SPEC['birefnet-lite'].activation, 'sigmoid');
-  assert.equal(MATTE_MODEL_SPEC['birefnet'].activation, 'sigmoid');
 });

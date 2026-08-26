@@ -304,7 +304,11 @@ test('navigate() applies the route footer mode + name; boot mounts the singleton
   assert.ok(MAIN_SRC.includes("applySearchBarRoute(ROUTES[route.name].footer ?? 'none', route.name)"));
   assert.equal(MAIN_SRC.match(/initSearchBar\(\)/g)?.length, 1);
   // The overlay registers into the bar, so it must boot AFTER it (plans/99 M2).
+  // Since plans/155 WP-3 what boots is the SHIM (components/spotlight-boot.ts),
+  // which registers a hook synchronously and fetches the overlay on the first
+  // query - the ordering rule is unchanged, and a bar left with no hook at all is
+  // the failure both this pin and spotlight-boot.test.ts exist to catch.
   const barAt = MAIN_SRC.indexOf('initSearchBar()');
-  const spotAt = MAIN_SRC.indexOf('initSpotlight(host)');
-  assert.ok(spotAt > barAt && barAt > 0, 'initSpotlight(host) boots directly after initSearchBar()');
+  const spotAt = MAIN_SRC.indexOf('initSpotlightBoot(host)');
+  assert.ok(spotAt > barAt && barAt > 0, 'initSpotlightBoot(host) boots directly after initSearchBar()');
 });

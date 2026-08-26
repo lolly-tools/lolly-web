@@ -463,14 +463,13 @@ export function ortWasmFromPublic() {
   let isBuild = false;
   return {
     name: 'lolly-ort-wasm-from-public',
-    // PARTIALLY WORKING - check dist/assets before assuming it removed anything. Measured
-    // 2026-08-26: the rewrite lands (dist carries the rewritten `/ort/ort-wasm-simd-threaded
-    // .jsep.wasm` literal), but BOTH binaries are still emitted, 46.2 MB.
+    // This plugin only removes the duplicates while it is registered TWICE - in the main
+    // `plugins` array and in `worker.plugins` (see the comment there). For a build where it
+    // sat in `plugins` alone, dist/assets carried both binaries (46.2 MB, 2026-08-26) even
+    // though the rewrite itself was right, because every ORT-importing chunk except one was
+    // built by the worker pass, which has its own plugin container.
     //
-    // What is established, so nobody re-derives it:
-    //   - the hook runs and MATCHES: a probe on the return value printed hit=true for
-    //     node_modules/onnxruntime-web/dist/ort.bundle.min.mjs, and the rewritten literal
-    //     is present in the built output;
+    // Dead ends checked on the way there, so nobody re-derives them:
     //   - vite:asset-import-meta-url DOES honour `/* @vite-ignore */` (vite 8's plugin tests
     //     hasViteIgnoreRE over the span between the call start and the url literal, which is
     //     exactly where the rewrite puts it), so the marker is not the problem;
@@ -478,18 +477,12 @@ export function ortWasmFromPublic() {
     //     transform, changed nothing;
     //   - rolldown 1.1 has no native new-URL-to-asset path (no such option in its bindings),
     //     so vite's plugin is the only emitter.
-    // The actual gap: only ONE ORT module ever reaches this transform. The two surviving
-    // emissions are referenced from chunks built out of modules it never sees - the
-    // emscripten glue (onnxruntime-web/dist/ort-wasm-simd-threaded.jsep.mjs, which carries
-    // its own `new URL` site) and the nested @huggingface/transformers copy, which supplies
-    // the second binary. Next step is to find why those siblings bypass the hook rather than
-    // to change the rewrite, which is correct.
     //
-    // Left in place with its tests because the rewrite is right and the trail above is worth
-    // more than a deleted file, but it is NOT yet a working optimisation. Nothing
-    // user-facing depends on it: the emitted copies are never fetched (ORT resolves /ort/
-    // through wasmPaths, transformers.js its pinned /ort-hf/<version>/), so what is at stake
-    // is deploy upload weight, not first load.
+    // Nothing user-facing depends on any of this: the emitted copies were never fetched (ORT
+    // resolves /ort/ through wasmPaths, transformers.js its pinned /ort-hf/<version>/), so
+    // what it buys is deploy upload weight, not first load - and correctness of the fallback
+    // outranks the size win, which is why the rewrite retargets the literal rather than
+    // deleting the branch.
     enforce: 'pre',
     configResolved(config) { isBuild = config.command === 'build'; },
     transform(code, id) {
@@ -534,7 +527,19 @@ export default defineConfig({
   // The Neurospicy player + video music-bed exporter render ZzFXM songs in a
   // module worker (src/lib/zzfxm-worker.ts, which ESM-imports the engine). Emit
   // it as an ES module so the import graph survives the build unchanged.
-  worker: { format: 'es' },
+  //
+  // `plugins` is NOT a redundant copy of the array above. Vite bundles each worker
+  // entry in a separate pass whose plugin container is built from `worker.plugins()`
+  // ALONE - resolveConfig's createWorkerPlugins takes only that list and re-adds
+  // vite's own internals; the main `plugins` array is never inherited. That is what
+  // kept 46.2 MB of duplicate ORT binaries in dist/assets while ortWasmFromPublic's
+  // rewrite was already correct: only the main graph's ort.bundle.min chunk came out
+  // rewritten, while the workers' own copy of it and the four transformers.web-*
+  // worker chunks kept their `new URL(...)` sites for vite:asset-import-meta-url -
+  // which DOES run in the worker pass - to emit as build assets.
+  // Only this plugin is repeated: the other five act at closeBundle over the whole
+  // dist or on index.html, neither of which a worker pass has.
+  worker: { format: 'es', plugins: () => [ortWasmFromPublic()] },
   // onnxruntime-web (lazy-loaded by the /verify deep-scan: lib/trustmark.ts +
   // lib/contentseal.ts) must NOT go through Vite's esbuild dep pre-bundler - it
   // rewrites the package's `import.meta.url`-relative wasm/worker loading and the

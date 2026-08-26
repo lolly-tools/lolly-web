@@ -19,41 +19,19 @@ import { initTheme, applyTheme } from './theme.ts';
 import { hydrateA11yPrefs, currentA11yPrefs, setA11yPref } from './lib/a11y-prefs.ts';
 import { computeViewportInsets } from './lib/viewport-insets.ts';
 import { initI18n, loadedLang } from './i18n.ts';
-import { applyChromeBrandVars } from './brand-vars.ts';
 import { hydrateSfxMuted, hydrateSfxVolume, installGlobalSfx, playSfx } from './lib/sfx.ts';
 import { hydrateFeatureFlags, flagEnabledSync, isFlagOnSync, setJellyDefault, setFlagMirror, applyPerfUi, JELLY_FLAG, PERFORMANCE_UI_FLAG } from './feature-flags.ts';
-// Side-effect only: registers the "Private collab" Share-dialog row into the
-// generic lib/share-sections.ts seam (plan 100 section 0/section 6, Track A - an OSS
-// individual feature, not under org/). The row itself stays gated on the
-// private-collab flag + a registered opener and renders nothing until both
-// exist (see the module header) - importing it is the whole of the wiring.
-import './lib/collab-share-private.ts';
-// Side-effect only: registers the 'private' opener that row consults, so pressing
-// "Start a collab" opens the inviter ceremony (plan 100 section 6.1). Gated INSIDE the opener
-// on the same private-collab flag, and platform-free on this path - the ceremony
-// dialog, the QR encoder and the WebRTC transport are one dynamic import behind the
-// press, sharing the chunk the #/join route loads (see the module header).
-import './collab/private-opener.ts';
-// The other end of that ceremony: what turns a connected pair into a MOUNTED, co-editing
-// tool (plan 100 section 5, section 6.2a). `lib/collab-mount.ts`'s header specifies the two-line stitch
-// - register, then drain whatever the ceremony parked while this module was importing - 
-// and `installLiveCollabMount()` (called below the import block) is its only call site.
-// Platform-free on the boot path for the same reason as the opener above: everything
-// under it (the memory state bridge, the tool route itself) is a dynamic import.
-import { installLiveCollabMount } from './lib/collab-live-mount.ts';
-// Side-effect wire for LAN discovery (plans/110 section 3): registers the 'lan' NearbyProvider
-// ONLY when the Tauri runtime is present (probed at call time). A no-op on the web - a
-// PWA cannot do mDNS/sockets - so the registry stays empty and every Nearby affordance
-// stays absent, keeping the web build byte-identical. The native side is Rust `nearby.rs`.
-import { installNearbyBoot } from './lib/nearby-boot.ts';
-// The acceptor side of a nearby pairing: opens the accept ceremony when a peer hands us an
-// invite over the nearby channel (plans/110 section 3). Dormant off Tauri / with the flag off.
-import { installNearbyAccept } from './collab/nearby-accept.ts';
+// The collab + nearby WIRING is installed after first paint (see installCollabWiring
+// below the import block): five registration modules whose bodies do nothing until a
+// human opens a Share dialog or arrives on #/join, but whose static graph - the private
+// opener, the live-mount stitch, the mount seam, the LAN provider, the accept side -
+// was 94.7 KB of source (~7 KB gz) on the render-blocking preload set of every visit
+// (plans/155 WP-3).
 import { initSearchBar, applySearchBarRoute } from './components/search-bar.ts';
-import { initSpotlight } from './components/spotlight.ts';
+import { initSpotlightBoot } from './components/spotlight-boot.ts';
 import { ensureJelly, jellyEnabled } from './lib/jelly.ts';
 import { applyCaptureNeutral } from './lib/capture-neutral.ts';
-import { peekNeuroDemo, applyNeuroDemo } from './lib/neuro-demo.ts';
+import { peekNeuroDemo } from './lib/neuro-demo-peek.ts';
 import { syncJellyNavToggle, UTILITIES_FLAG_ID, type ViewToggleKey } from './components/view-toggle.ts';
 import { installGlobalReveal } from './lib/reveal.ts';
 import { maybeShowFirstRunInstanceSheet, isTauriShell } from './lib/instance-choice.ts';
@@ -66,25 +44,41 @@ import { initInstanceBase } from './lib/instance.ts';
 // bundle - the exact regression scripts/check-bundle-budget.ts:74-76 records as fixed
 // on 2026-08-10. It is one dynamic import() inside the isTauriShell() gate below now
 // (plans/155 Task 3.3).
-import { initOrg, orgFlagGovernance } from './org/index.ts';
+// The PROBE leaf, not org/index.ts: a deployment with no control plane - which is
+// every public one - answers dormant from a negative cache or one 404 and never loads
+// the 47 KB of gate/policy/injectable code behind it (plans/155 WP-3). Governance
+// comes from its own registry leaf for the same reason.
+import { initOrgProbeFirst } from './org/probe.ts';
+import { orgFlagGovernance } from './org/governance.ts';
 import { initSyncAutoPush, maybeApplyNewerAtBoot } from './lib/sync-service.ts';
 import type { BackupDeps } from './lib/sync-engine.ts';
 import { initSelectPreview } from './select-preview.ts';
-import { mountJobToast } from './lib/job-toast.ts';
-import { installDepthSeam } from './lib/depth-job.ts';
+import { installDepthSeam } from './lib/depth-seam.ts';
 import { recordTool, recordBatch, bumpMetric, recordFormat } from './metrics.ts';
 import { announce } from './a11y.ts';
 import { beginViewFade } from './view-fade.ts';
 import { noteLeavingHref, takeLeavingHref, recordLeave, noteMountedView } from './lib/back-nav.ts';
 
-// Own co-editing (see the import). Registering here rather than as an import side effect
-// is deliberate: the drain half must run AFTER the registration, and a drain hidden
-// inside `registerCollabMount` would fire re-entrantly during that module's own import.
-installLiveCollabMount();
-// Register the LAN discovery provider if we're on Tauri; dormant no-op on the web.
-installNearbyBoot();
-// …and listen for inbound nearby invites (after the provider is registered above).
-installNearbyAccept();
+// The collab + nearby wiring, installed once the critical load is done rather than at
+// module scope. All five are REGISTRATIONS - a Share-dialog row, the opener that row
+// consults, the live-mount stitch, the LAN provider and the accept side - and none of
+// them can be reached without a human gesture that is many seconds away: opening a
+// Share dialog, or completing a #/join ceremony. The one race that exists is the one
+// lib/collab-mount.ts was built for and documents: a connection made before anyone
+// registered is PARKED, and `installLiveCollabMount()` drains what it finds - which is
+// exactly why registration deliberately does not drain by itself.
+//
+// Order matters: the nearby provider must be registered before the accept side
+// listens for invites over it.
+function installCollabWiring(): void {
+  void import('./lib/collab-share-private.ts');
+  void import('./collab/private-opener.ts');
+  void import('./lib/collab-live-mount.ts').then(m => m.installLiveCollabMount());
+  void import('./lib/nearby-boot.ts')
+    .then(m => { m.installNearbyBoot(); return import('./collab/nearby-accept.ts'); })
+    .then(m => m.installNearbyAccept());
+}
+onWindowLoad(installCollabWiring);
 // Publish window.__lollyDepth, the seam the spatial-photo tool asks for a depth
 // map through (plans/160). Progressive enhancement in both directions: with no
 // seam the tool renders the flat photo, and with DEPTH_STAGED false the seam
@@ -855,7 +849,7 @@ async function boot(): Promise<void> {
   // the sheet's setInstanceBase() write. Web/PWA never shows the sheet, and is where
   // the overlap was worth having.
   let releaseOrgProbe!: () => void;
-  const orgPromise = new Promise<void>(resolve => { releaseOrgProbe = resolve; }).then(() => initOrg());
+  const orgPromise = new Promise<void>(resolve => { releaseOrgProbe = resolve; }).then(() => initOrgProbeFirst());
   if (!isTauriShell()) void initInstanceBase().then(releaseOrgProbe, releaseOrgProbe);
   trackVisualViewport();
   initMobilePlatformFit();
@@ -878,11 +872,16 @@ async function boot(): Promise<void> {
     document.head.appendChild(meta);
   }
 
-  // The global async-job progress toast (plans/124 WP-F). Mounted once here, on
-  // document.body OUTSIDE main#view, so it survives every router view teardown -
-  // a video/retouch job keeps showing progress after the user leaves the catalog.
-  // Idempotent; owns nothing until startJob() is first called.
-  mountJobToast();
+  // The global async-job progress toast (plans/124 WP-F). Mounted on document.body
+  // OUTSIDE main#view, so it survives every router view teardown - a video/retouch
+  // job keeps showing progress after the user leaves the catalog. Idempotent; owns
+  // nothing until startJob() is first called.
+  //
+  // After the critical load, not during it (plans/155 WP-3): a job is always
+  // downstream of a user gesture that is many seconds away, and mountJobToast's own
+  // last line is `render(jobsSnapshot())` - so a job somehow started first is picked
+  // up by the mount rather than missed by it.
+  onWindowLoad(() => { void import('./lib/job-toast.ts').then(m => m.mountJobToast()); });
 
   // Installing the PWA re-arms the one-time offline nudge (views/offline-nudge.ts):
   // an install puts an icon on the device while precaching only the shell, so a
@@ -971,7 +970,14 @@ async function boot(): Promise<void> {
       const { loadUserFonts } = await import('./lib/load-user-fonts.ts');
       await loadUserFonts(host);
     })
-    .finally(() => { void applyChromeBrandVars(host); });
+    .finally(() => {
+      // brand-vars.ts is 3.6 KB gz of colour maths (it reaches engine tokens +
+      // brand-derive) for an effect that was ALREADY unordered: it refines the
+      // chrome accents in place whenever it resolves. Static-importing it only to
+      // call it from inside a dynamic import's .finally() put those bytes on the
+      // preload set for every visitor and bought nothing (plans/155 WP-3).
+      void import('./brand-vars.ts').then(m => m.applyChromeBrandVars(host));
+    });
 
   // Profile is the canonical theme store. Apply it now so the theme is correct
   // before the first view renders. Also keeps localStorage in sync for FOUC.
@@ -1054,9 +1060,11 @@ async function boot(): Promise<void> {
   // repaints it without a second init.
   initSearchBar();
   // The spotlight overlay (plans/99 M2): hooks into the bar synchronously (the
-  // chord + combobox semantics from first paint) and lazy-loads the provider
-  // set off the boot path. Must follow the bar init above - it registers into it.
-  initSpotlight(host);
+  // chord + combobox semantics from first paint) and lazy-loads BOTH the overlay
+  // and its provider set off the boot path - see components/spotlight-boot.ts for
+  // why that is a shim rather than a deferral. Must follow the bar init above - it
+  // registers into it.
+  initSpotlightBoot(host);
   // An automated screenshot run pins neutral chrome: effect flags off, a11y prefs
   // clear. It has to land HERE - after the line above rewrites the flag mirror from
   // the profile (which discards anything seeded earlier), and before the two reads
@@ -1090,7 +1098,7 @@ async function boot(): Promise<void> {
     void Promise.all([import('./lib/neurospicy.ts'), import('./lib/atmosphere.ts')]).then(([neuro, atmo]) => {
       neuro.hydrateNeurospicy((profile as { neurospicy?: unknown }).neurospicy);
       atmo.hydrateAtmosphere((profile as { atmosphere?: unknown }).atmosphere);
-      if (neuroDemo) void applyNeuroDemo(host as unknown as Parameters<typeof applyNeuroDemo>[0], neuroDemo);
+      if (neuroDemo) void import('./lib/neuro-demo.ts').then(d => d.applyNeuroDemo(host as unknown as Parameters<typeof d.applyNeuroDemo>[0], neuroDemo));
       if (flagEnabledSync('neurospicy')) {
         neuro.armNeurospicy(host as unknown as Parameters<typeof neuro.armNeurospicy>[0]);
         atmo.armAtmosphere(host as unknown as Parameters<typeof atmo.armAtmosphere>[0]);

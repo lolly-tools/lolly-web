@@ -21,7 +21,10 @@
  *
  * All traffic goes through instanceFetch/instancePath (src/lib/instance.ts) so a
  * shell pointed at a remote instance consults THAT instance's control plane, and
- * the X-Lolly-Client header rides along for same-origin/native requests.
+ * the X-Lolly-Client header rides along for same-origin/native requests. Step 1 -
+ * the probe, its negative cache and the tolerant fetch helpers - lives in
+ * org/probe.ts, which is what boot imports: a deployment that answers nothing
+ * never loads this file. Everything after the probe is initOrgWithAuth() below.
  *
  * Comments here describe a generic "deployment" / "instance" capability, never a
  * specific product: the control plane is a separate, optional server product, and
@@ -29,7 +32,7 @@
  */
 
 import {
-  instanceFetch, instancePath, getInstanceBase,
+  instancePath, getInstanceBase,
   ensureInstallId, setInstallTag, setInstanceSession,
 } from '../lib/instance.ts';
 import { setFieldPolicies } from '../lib/field-policy.ts';
@@ -43,6 +46,11 @@ import { registerSessionSource } from '../lib/session-source.ts';
 import { registerNearbyProvider } from '../lib/nearby.ts';
 import { createOrgNearbyProvider } from './nearby-source.ts';
 import { setInjectedTools } from '../lib/injected-tools.ts';
+import { setOrgGovernanceResolver, type FlagGovernance } from './governance.ts';
+// The probe half of this seam, in its own leaf so boot can run it without loading
+// this module - see org/probe.ts's header. The helpers below are shared, not
+// duplicated: one definition of "tolerant, time-boxed, JSON-only".
+import { PROBE_TIMEOUT_MS, isRecentlyAbsent, jsonBody, probeAuthConfig, rememberAbsent, safeFetch } from './probe.ts';
 // Import from the LEAF module, not the '@lolly/engine' barrel: org/index.ts is on the boot
 // static-import chain (jelly → feature-flags → org), so a barrel import drags the whole
 // engine (render/c2pa/handlebars/ajv, ~555KB) onto first paint. tool-url.ts only pulls the
@@ -201,15 +209,6 @@ let unregisterCollabShareSection: (() => void) | null = null;
  *  opener existing. Same last-wins reasoning as the handles above. */
 let unregisterCollabOpener: (() => void) | null = null;
 
-/** Short probe budget - a hung network must never delay boot by more than this. */
-const PROBE_TIMEOUT_MS = 1500;
-/** localStorage negative-cache TTL (per instance base). Optional acceleration
- *  only: it lets a known-dormant origin skip even the one probe on later boots,
- *  and self-heals - if a deployment later gains a control plane, it is seen once
- *  the cached negative expires. Never on the critical path for correctness. */
-const ABSENT_TTL_MS = 6 * 60 * 60 * 1000; // 6h
-const absentKey = (): string => `lolly:org-absent:${getInstanceBase() || 'same-origin'}`;
-
 /** How long a successfully-fetched org-config may stand in for a live one when the
  *  (present) control plane can't be reached on a later boot - a bounded freshness
  *  window so a control-plane outage is a non-event, not a fleet-wide policy drop.
@@ -230,22 +229,34 @@ export function orgSession(): Session | null {
   return session;
 }
 
-/** Control-plane governance for one feature flag, or null when no control plane
- *  is present or it has no opinion on this flag. Consumed by feature-flags.ts to
- *  resolve the default and hide governed toggles. */
-export function orgFlagGovernance(id: string): { default?: boolean; hidden?: boolean } | null {
+/** Control-plane governance for one feature flag, or null when this control plane
+ *  has no opinion on it. Consumed by feature-flags.ts to resolve the default and
+ *  hide governed toggles - through the org/governance.ts registry, not from here,
+ *  so that read costs nothing on a deployment with no control plane. */
+function readFlagGovernance(id: string): FlagGovernance {
   const gov = orgConfigState?.featureFlags?.[id] ?? null;
   // Legacy bridge: `can['export.preflight']` predates the personal
   // 'export-preflight' flag (2026-08-06). An instance still granting the
   // capability - with no explicit featureFlags entry for the flag, which wins - 
   // reads as governance defaulting the flag ON: members keep the card unless
   // they turn it off themselves. (String literal, not an import: flag ids are
-  // permanent contracts, and feature-flags.ts imports this module.)
+  // permanent contracts, and feature-flags.ts reaches this module through the
+  // governance registry.)
   if (!gov && id === 'export-preflight' && orgConfigState?.can?.['export.preflight'] === true) {
     return { default: true };
   }
   return gov;
 }
+
+// Registered at module scope, not from initOrg(): the read must be correct from the
+// moment this module exists, however it was reached - the lazy boot path below, a
+// direct import from a view, or a test. Before that it answers null, which is the
+// dormant answer.
+setOrgGovernanceResolver(readFlagGovernance);
+
+/** Re-exported so `org/index.ts` stays the one import path for org consumers that
+ *  already load it; feature-flags.ts imports the registry leaf directly instead. */
+export { orgFlagGovernance } from './governance.ts';
 
 /**
  * The instance-admin console href when the current member's role is admin/owner,
@@ -264,45 +275,6 @@ function emit(): void {
 }
 
 // ── Network helpers (all tolerant; a control-plane hiccup never throws to boot) ─
-
-/** A time-boxed instanceFetch that never rejects - resolves null on any failure
- *  (network error, abort, thrown). */
-async function safeFetch(path: string, init?: RequestInit, timeoutMs?: number): Promise<Response | null> {
-  const ctrl = timeoutMs ? new AbortController() : null;
-  const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
-  try {
-    return await instanceFetch(instancePath(path), ctrl ? { ...init, signal: ctrl.signal } : init);
-  } catch {
-    return null;
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
-/** Parse a JSON body only when the response looks like real JSON - a 200 that is
- *  actually an SPA-fallback HTML page (a misrouted /api on a static host) is
- *  rejected, so it can never be mistaken for a control-plane reply. */
-async function jsonBody<T>(res: Response | null): Promise<T | null> {
-  if (!res || !res.ok) return null;
-  const ct = res.headers.get('content-type') || '';
-  if (!/\bjson\b/i.test(ct)) return null;
-  try {
-    return (await res.json()) as T;
-  } catch {
-    return null;
-  }
-}
-
-function isAuthConfig(v: unknown): v is AuthConfig {
-  return !!v && typeof v === 'object'
-    && ['open', 'gated', 'per-tool'].includes((v as AuthConfig).mode);
-}
-
-/** Probe for a control plane. Returns its auth config, or null (dormant). */
-async function probeAuthConfig(): Promise<AuthConfig | null> {
-  const cfg = await jsonBody<AuthConfig>(await safeFetch('/api/auth/config', undefined, PROBE_TIMEOUT_MS));
-  return isAuthConfig(cfg) ? cfg : null;
-}
 
 async function fetchSession(): Promise<Session | null> {
   const res = await safeFetch('/api/auth/session');
@@ -658,6 +630,21 @@ export async function initOrg(): Promise<OrgState | null> {
     const auth = await probeAuthConfig();
     if (!auth) { rememberAbsent(); return null; }
 
+    return await initOrgWithAuth(auth);
+  } catch (e) {
+    console.warn('[org] init failed - proceeding without a control plane', e);
+    return null;
+  }
+}
+
+/**
+ * Everything initOrg does AFTER a control plane has answered the probe. Split out
+ * so boot can run the probe from the org/probe.ts leaf and only load this module
+ * when the answer was yes (plans/155 WP-3) - the dormant deployment never executes
+ * a line of it. Same tolerance contract: it resolves, it does not throw to boot.
+ */
+export async function initOrgWithAuth(auth: AuthConfig): Promise<OrgState | null> {
+  try {
     session = await fetchSession();
     const isMember = session?.kind === 'member';
 
@@ -840,21 +827,6 @@ export async function initOrg(): Promise<OrgState | null> {
 }
 
 // ── localStorage negative cache (best-effort; never breaks the dormant path) ──
-
-function isRecentlyAbsent(): boolean {
-  try {
-    const raw = localStorage.getItem(absentKey());
-    if (!raw) return false;
-    const at = Number(raw);
-    if (Number.isFinite(at) && Date.now() - at < ABSENT_TTL_MS) return true;
-    localStorage.removeItem(absentKey());
-  } catch { /* storage unavailable - just probe */ }
-  return false;
-}
-
-function rememberAbsent(): void {
-  try { localStorage.setItem(absentKey(), String(Date.now())); } catch { /* ignore */ }
-}
 
 // ── Resilient org-config cache (best-effort; makes a control-plane outage a non-event) ─
 

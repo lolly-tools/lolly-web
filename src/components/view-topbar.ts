@@ -27,7 +27,6 @@
 import { escape } from '../utils.ts';
 import { t, LANG_ICON_SVG } from '../i18n.ts';
 import { viewToggle, type ViewToggleKey } from './view-toggle.ts';
-import { attachProfileMenu } from './profile-menu.ts';
 import { LOLLY_MARK_SVG } from '../lib/lolly-mark.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 
@@ -62,7 +61,7 @@ export function viewTopbarHtml(opts: ViewTopbarHtmlOpts): string {
       <div class="gallery-topright">
         ${right}
         <button type="button" class="lang-fab" aria-label="${escape(t('Language'))}" aria-haspopup="menu" aria-expanded="false" title="${escape(t('Language'))}">${LANG_ICON_SVG}</button>
-        <a href="#/profile" class="profile-link${hasAvatar ? ' has-avatar' : ''}" aria-label="${escape(t('Open your profile'))}">${hasAvatar ? `<img class="profile-link-avatar" src="${escape(profile.headshotUrl!)}" alt="">` : ''}<span class="profile-link-mark" aria-hidden="true">${LOLLY_MARK_SVG}</span><span class="profile-link-name">${escape(profile.firstname || t('Profile'))}</span></a>
+        <a href="#/profile" class="profile-link${hasAvatar ? ' has-avatar' : ''}" aria-label="${escape(t('Open your profile'))}" aria-haspopup="menu" aria-expanded="false">${hasAvatar ? `<img class="profile-link-avatar" src="${escape(profile.headshotUrl!)}" alt="">` : ''}<span class="profile-link-mark" aria-hidden="true">${LOLLY_MARK_SVG}</span><span class="profile-link-name">${escape(profile.firstname || t('Profile'))}</span></a>
         ${popover}
       </div>
     </div>`;
@@ -80,7 +79,13 @@ export interface MountViewTopbarOpts {
 /** Wires the parts of the top bar that never vary between views: the language
  *  menu, the profile pill's mobile menu, and (optionally) a deferred avatar fetch. */
 export function mountViewTopbar(viewEl: HTMLElement, host: HostV1, opts: MountViewTopbarOpts = {}): void {
-  attachProfileMenu(viewEl.querySelector<HTMLElement>('.profile-link'), host, opts.profileMenu);
+  // The profile pill's popover, lazy-loaded for the same reason as the language menu
+  // below and on the same terms: the pill's markup (including its menu semantics) is
+  // rendered above, and opening it is a gesture. attachProfileMenu's whole synchronous
+  // half was setting those two aria attributes, which viewTopbarHtml now writes - so
+  // what is deferred is only the popover body. Worth 1.9 KB gz off first paint: this is
+  // the topbar's only boot importer of it (plans/155 WP-3).
+  void import('./profile-menu.ts').then(m => m.attachProfileMenu(viewEl.querySelector<HTMLElement>('.profile-link'), host, opts.profileMenu));
   // The language menu's dropdown logic (components/lang-menu.ts) is lazy-loaded OFF the boot
   // path - the fab is inline markup above, and the menu is a click gesture. Fire-and-forget
   // at mount so it wires within ~ms (a fab click in that sliver just no-ops once). This is

@@ -4285,6 +4285,11 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
     // `position: absolute|fixed` blockifies computed display (CSS Display 3
     // section 2.7) - so every layer-2/6/7 child already fails the inlineFlow test and
     // is already visited today.
+    // The own-paint boundary: everything in contentG up to here is this element's
+    // own background/border/shadow. A negative-z pseudo has to land just past it -
+    // under the children and text appended below - so svgPseudoContent's negInsert
+    // (DOM-order mode) inserts there, advancing the cursor to keep encounter order.
+    let negCursor: ChildNode | null = contentG.lastChild;
     const kids: Element[] = stackingOrder && isFlexOrGridContainer(style.display)
       ? orderModifiedChildren(renderedChildren(el),
           (c) => Number.parseInt(window.getComputedStyle(c).order || '0', 10) || 0)
@@ -4383,7 +4388,11 @@ export async function renderSvgFromHtml(node: Element, opts: ExportOpts): Promis
               childCtx, contentG);
             return pg;
           }
-        : undefined);
+        : undefined,
+      (pg) => {
+        contentG.insertBefore(pg, negCursor ? negCursor.nextSibling : contentG.firstChild);
+        negCursor = pg;
+      });
 
     // ── Finalise this stacking context (CSS 2.1 Appendix E section E.2) ──────────────
     // Everything deferred by descendants is appended here, in spec order. This
@@ -4903,10 +4912,15 @@ function pseudoDescriptor(el: Element, name: string): PseudoDescriptor | null {
 // `defer` (page-snapshot stacking-order mode only) supplies a <g> for one pseudo
 // given its used z-index, having already placed that <g> in the right Appendix E
 // layer of the enclosing stacking context. Absent ⇒ everything appends to
-// parentG exactly as before, which is what every tool export does.
+// parentG exactly as before, which is what every tool export does - EXCEPT a
+// pseudo with a NEGATIVE z-index, which CSS paints under the element's in-flow
+// content: `negInsert` places its <g> at the element's own-paint boundary, so a
+// full-bleed `::before { z-index: -1 }` wash lands under the text it sits
+// behind on screen instead of over it (jump's cinema scenes shipped with every
+// label buried under its scene wash this way).
 async function svgPseudoContent(
   NS: string, parentG: Element, rootRect: { left: number; top: number }, el: Element, vectorText: boolean,
-  defer?: (z: number) => Element,
+  defer?: (z: number) => Element, negInsert?: (pg: Element) => void,
 ): Promise<void> {
   for (const name of ['::before', '::after']) {
     const ds = pseudoDescriptor(el, name);
@@ -4916,7 +4930,16 @@ async function svgPseudoContent(
     // pseudoDescriptor already guarantees `position: absolute`, so the pseudo is
     // a positioned descendant; only its z-index decides which layer.
     const zRaw = (ds.ps.zIndex || 'auto').trim();
-    let parentG_ = defer ? defer(zRaw === 'auto' ? 0 : (Number.parseInt(zRaw, 10) || 0)) : parentG;
+    const z = zRaw === 'auto' ? 0 : (Number.parseInt(zRaw, 10) || 0);
+    let parentG_: Element;
+    if (defer) {
+      parentG_ = defer(z);
+    } else if (z < 0 && negInsert) {
+      parentG_ = document.createElementNS(NS, 'g');
+      negInsert(parentG_);
+    } else {
+      parentG_ = parentG;
+    }
     // A rotate/scale/skew on the pseudo itself: one <g> about its transform-origin,
     // holding the fill and the text. (The translate component is already in x/y.)
     if (ds.mat) {

@@ -131,9 +131,10 @@ export function openMatteDialog(host: MatteHost, opts: MatteDialogOpts = {}): Pr
       `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)}</option>`).join('');
     // Open on the model the user LAST chose (persisted per device), so nobody
     // accidentally re-downloads a different model or falls back to the fast one when
-    // they had picked a better one. Falls back to the canonical default (birefnet-lite)
-    // then the first staged entry when there is no prior choice (or it is no longer
-    // available). Only ever preselects a model that is actually in the offered list.
+    // they had picked a better one. Falls back to the canonical default then the first
+    // staged entry when there is no prior choice. A device that remembered a RETIRED id
+    // (a BiRefNet, removed 2026-08-26) takes that same fallback, because the find()
+    // misses. Only ever preselects a model that is actually in the offered list.
     const defaultModel = models.find(m => m.id === readMatteModel())?.id
       ?? models.find(m => m.id === MATTE_DEFAULT_MODEL)?.id
       ?? models[0]?.id ?? ('' as MatteModelId);   // '' only when model-less: the chroma method never reads it

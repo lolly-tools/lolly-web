@@ -99,9 +99,11 @@ export function openVideoJobDialog(host: VideoJobHost, opts: VideoJobDialogOpts)
     const isMatte = opts.op === 'matte';
     const isUpscale = opts.op === 'upscale';
 
-    // Matte model options: the fast net is the video default; the transformer is
-    // offered as the slow "best" choice. Only staged, wasm-runnable models.
-    const matteModels = (host.matte?.models() ?? []).filter((m) => m.id === 'u2netp' || m.id === 'birefnet-lite');
+    // Whatever the shell offers for stills, offered for video too. This used to be a
+    // hard-coded pair (u2netp | birefnet-lite) labelled "Fast" / "Best (much slower)";
+    // removing BiRefNet (2026-08-26) left that list naming a model that no longer
+    // exists, so it now reads host.matte.models() like every other picker.
+    const matteModels = host.matte?.models() ?? [];
     const upscaleModels = host.upscale?.models() ?? [];
     // The colour-key method needs no model, so "Remove background" is offered for any
     // decodable video. When no matte model is staged, default the method to the colour
@@ -131,7 +133,7 @@ export function openVideoJobDialog(host: VideoJobHost, opts: VideoJobDialogOpts)
       </label>
       <label class="vjob-field" data-model-field><span>${escapeHtml(t('Model'))}</span>
         <select class="field-select" data-model>
-          ${matteModels.map((m) => `<option value="${escapeHtml(m.id)}"${m.id === MATTE_VIDEO_DEFAULT_MODEL ? ' selected' : ''}>${escapeHtml(m.id === 'u2netp' ? t('Fast') : t('Best (much slower)'))}</option>`).join('')}
+          ${matteModels.map((m) => `<option value="${escapeHtml(m.id)}"${m.id === MATTE_VIDEO_DEFAULT_MODEL ? ' selected' : ''}>${escapeHtml(m.name)}</option>`).join('')}
         </select>
       </label>
       <label class="vjob-field"><span>${escapeHtml(t('Resolution'))}</span>

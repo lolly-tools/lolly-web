@@ -22,31 +22,18 @@
  */
 import type { NeurospicyHost } from './neurospicy.ts';
 
-export type NeuroDemoMode = 'player' | 'viz';
+// The two synchronous reads live in a leaf (lib/neuro-demo-peek.ts) so boot and
+// the visualizer probe can ask "is this a ?neuro load?" without this driver. Re-
+// exported here so every existing import site keeps working.
+export { neuroDemoActive, peekNeuroDemo } from './neuro-demo-peek.ts';
+export type { NeuroDemoMode } from './neuro-demo-peek.ts';
+import { peekNeuroDemo, type NeuroDemoMode } from './neuro-demo-peek.ts';
 
 /** How long to wait for the catalog sync before giving up on picking a demo track.
  *  Bounded so an empty catalog still yields a dock (with no selection) rather than
  *  a promise that never settles. */
 const TRACKS_WAIT_MS = 20_000;
 
-// Read once per page load: the demo is a property of how the page was opened, so a
-// later in-app hash navigation neither activates nor deactivates it.
-let peeked: NeuroDemoMode | null | undefined;
-
-/** The demo mode this page load was opened with, or null. Mirrors peekUrlLang in
- *  main.ts: the hash query first (#/?neuro=viz), then the search string. */
-export function peekNeuroDemo(): NeuroDemoMode | null {
-  if (peeked !== undefined) return peeked;
-  if (typeof window === 'undefined') return (peeked = null);
-  const hashQuery = window.location.hash.split('?')[1] ?? '';
-  const v = new URLSearchParams(hashQuery).get('neuro')
-    ?? new URLSearchParams(window.location.search).get('neuro');
-  peeked = v === 'player' || v === 'viz' ? v : null;   // closed vocabulary - anything else is ignored
-  return peeked;
-}
-
-/** Is this page load a ?neuro demo? The gate the dock/visualizer bypasses hang on. */
-export function neuroDemoActive(): boolean { return peekNeuroDemo() !== null; }
 
 type NeuroModule = typeof import('./neurospicy.ts');
 

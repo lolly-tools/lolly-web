@@ -250,6 +250,12 @@ export function currentSearchRoute(): string {
   return routeName;
 }
 
+/** The id of the overlay's listbox, so the boot shim (components/spotlight-boot.ts)
+ *  can point the combobox at it without importing the overlay it names. Defined
+ *  HERE - the one module both the shim and the overlay already depend on - rather
+ *  than duplicated as a literal in two places that must never drift. */
+export const SPOTLIGHT_LISTBOX_ID = 'spotlight-listbox';
+
 /** Register the spotlight overlay (once, at boot, right after initSearchBar).
  *  Upgrades the field to an ARIA combobox pointing at the overlay's listbox. */
 export function registerSpotlightHook(hook: SpotlightHook, opts: { listboxId: string }): void {

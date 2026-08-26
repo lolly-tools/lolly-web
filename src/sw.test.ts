@@ -413,6 +413,11 @@ describe('precache.json grouping (vite.config.js)', () => {
   // the bundler's re-emitted /assets/ort-wasm-*.wasm copies (46.2 MB of the
   // app group's 82.7, byte-identical to the /ort/ + /ort-hf/ originals the
   // groups below own) rode the mandatory offline download.
+  //
+  // A current build emits no such copy at all (ortWasmFromPublic, covered by the
+  // describe below), so the /assets/ort-wasm-* entry in this fixture is a
+  // hypothetical - the filter it exercises is the backstop for an ORT upgrade
+  // that gets past the rewrite, and it has to keep working while unused.
   const urls = [
     '/index.html',
     '/assets/index-abc123.js',
@@ -428,7 +433,7 @@ describe('precache.json grouping (vite.config.js)', () => {
     '/models/kokoro/voices/af_heart.bin',
     '/models/whisper/onnx/encoder_model_quantized.onnx',
     '/models/upscale/realesr-general-x4v3.onnx',
-    '/models/matte/birefnet-lite.onnx',
+    '/models/matte/u2netp.onnx',
     '/models/reword/smollm2-360m-instruct/onnx/model_q4.onnx',
     '/models/embed/onnx/model_quantized.onnx',
     '/models/ai-detect/modernbert-raid-mage/onnx/model_quantized.onnx',
@@ -469,7 +474,7 @@ describe('precache.json grouping (vite.config.js)', () => {
     ], 'the speech group is the kokoro + whisper model sets - nothing else');
     assert.deepEqual(names(groups.upscale), ['/models/upscale/realesr-general-x4v3.onnx'],
       'the upscale group is the AI-upscaler models only (host.upscale) - SW-bypassed like the others');
-    assert.deepEqual(names(groups.matte), ['/models/matte/birefnet-lite.onnx'],
+    assert.deepEqual(names(groups.matte), ['/models/matte/u2netp.onnx'],
       'the matte group is the background-removal models only (host.matte) - SW-bypassed like the others');
     assert.deepEqual(names(groups.reword), ['/models/reword/smollm2-360m-instruct/onnx/model_q4.onnx'],
       'the reword group is the SmolLM2 model set only (plans/127) - it rides transformers-cache like speech, never the app bucket');
@@ -487,5 +492,98 @@ describe('precache.json grouping (vite.config.js)', () => {
     assert.equal(precacheNeedsHash('/models/trustmark/decoder_Q.onnx'), false);
     assert.equal(precacheNeedsHash('/fonts/Outfit-latin[wght].woff2'), true,
       'stable-named files still need the hash to catch same-size content changes');
+  });
+});
+
+// These cover the ORT wasm URL REWRITE in isolation - that it finds every emittable site in
+// the real installed packages, points each at the right staged prefix, and is registered in
+// BOTH bundling passes. They still do not observe dist/assets, so a green run here is not by
+// itself proof that the duplicates are gone; the build is what settles that.
+describe('ORT wasm URL rewrite (vite.config.js)', () => {
+  // The duplicate that made this necessary: onnxruntime-web's emscripten glue
+  // falls back to `new URL('ort-wasm-simd-threaded.jsep.wasm', import.meta.url)`
+  // when wasmPaths is unset, vite:asset-import-meta-url resolved that literal, and
+  // dist/assets came out carrying 46.2 MB of runtime already staged at /ort/ and
+  // /ort-hf/ (sha256-identical, verified 2026-08-25). Nothing ever fetched the
+  // /assets/ copies - lib/ort.ts sets wasmPaths='/ort/' and every transformers.js
+  // worker sets it to ORT_HF_BASE - they just uploaded on every deploy.
+  //
+  // Run over the REAL installed package rather than a fixture: the thing that
+  // breaks this is an ORT release reshaping its loader, and a hand-written sample
+  // of the old shape would keep passing through exactly that.
+  const ORT_DIST = fileURLToPath(new URL('../../../node_modules/onnxruntime-web/dist/', import.meta.url));
+
+  // vite's own detector, verbatim from vite/dist/node/chunks/node.js
+  // (assetImportMetaUrlRE) - what it matches, it emits.
+  const VITE_ASSET_RE = /\bnew\s+URL\s*\(\s*('[^']+'|"[^"]+"|`[^`]+`)\s*,\s*import\.meta\.url\s*(?:,\s*)?\)/g;
+  const emittable = (code: string) =>
+    [...code.matchAll(VITE_ASSET_RE)].map(m => m[1] ?? '').filter(u => u.includes('ort-wasm'));
+
+  // `ort.bundle.min.mjs` is the entry the built chunk is named after; the plain
+  // `.mjs` sibling is the same loader unminified, so a rewrite that only handled
+  // one of the two would be a coin flip on the next dependency bump.
+  for (const file of ['ort.bundle.min.mjs', 'ort.mjs']) {
+    test(`${file}'s wasm fallback points at /ort/, not the bundle`, async () => {
+      const { ortWasmFromPublic } = await import('../vite.config.js');
+      const code = readFileSync(ORT_DIST + file, 'utf8');
+      assert.ok(emittable(code).length > 0,
+        `${file} no longer carries an emittable ort-wasm URL - if ORT changed how it loads its binary, `
+        + 'this whole rewrite may be obsolete; confirm dist/assets is clean before deleting it');
+
+      const out = ortWasmFromPublic().transform(code, ORT_DIST + file);
+      assert.ok(out, 'the plugin must rewrite onnxruntime-web/dist sources');
+      assert.deepEqual(emittable(out.code), [],
+        'no ort-wasm URL may survive in a shape vite:asset-import-meta-url would emit as a build asset');
+      assert.match(out.code, /new URL\(\/\* @vite-ignore \*\/ ['"`]\/ort\/ort-wasm-simd-threaded[\w.-]*\.wasm/,
+        'the fallback must resolve to the same-origin copy scripts/copy-ort.ts stages into public/ort/');
+    });
+  }
+
+  test('the nested transformers.js copy resolves to its own pinned runtime', async () => {
+    // A DIFFERENT ORT release (1.22.0-dev) from the top-level dependency, staged
+    // under its version by scripts/copy-transformers-ort.ts. Handing it /ort/'s
+    // 1.27 binary would be an ABI mismatch, not a size win.
+    const { ortWasmFromPublic } = await import('../vite.config.js');
+    const { ORT_HF_BASE } = await import('./lib/ort-hf-base.ts');
+    const nested = fileURLToPath(new URL(
+      '../../../node_modules/@huggingface/transformers/node_modules/onnxruntime-web/dist/ort.bundle.min.mjs',
+      import.meta.url));
+    const out = ortWasmFromPublic().transform(readFileSync(ORT_DIST + 'ort.bundle.min.mjs', 'utf8'), nested);
+    assert.ok(out, 'the plugin must rewrite the nested onnxruntime-web copy too');
+    assert.ok(out.code.includes(`${ORT_HF_BASE}ort-wasm-simd-threaded.jsep.wasm`),
+      'a wasm URL inside @huggingface/transformers must resolve to ORT_HF_BASE');
+    assert.ok(!out.code.includes('"/ort/ort-wasm') && !out.code.includes("'/ort/ort-wasm"),
+      'and must never fall back to the top-level /ort/ runtime');
+  });
+
+  test('the plugin is registered in the worker pass as well as the main one', async () => {
+    // The rewrite was correct for months while 46.2 MB still shipped, because vite builds
+    // every worker entry in a separate pass whose plugin container comes from
+    // `worker.plugins()` alone - so a plugin listed only in `plugins` sees the main graph
+    // and nothing else. Five of the six chunks that carried an ORT wasm URL were worker
+    // chunks (four transformers.web-*, plus the workers' own copy of ort.bundle.min), so
+    // dropping this registration puts nearly all of the duplication straight back with
+    // every other test here still green.
+    const { default: config } = await import('../vite.config.js');
+    const registered = (list: unknown) => (Array.isArray(list) ? list.flat(Infinity) : [])
+      .some(p => (p as { name?: string } | null)?.name === 'lolly-ort-wasm-from-public');
+    assert.ok(registered(config.plugins), 'the main `plugins` array must carry the rewrite');
+    // vite 8 takes `worker.plugins` as a FACTORY - it calls it once per nested worker
+    // bundle chain. Passing an array still works, but only behind a deprecation warning.
+    const workerPlugins = config.worker?.plugins;
+    assert.equal(typeof workerPlugins, 'function', 'worker.plugins must be the factory form');
+    assert.ok(registered((workerPlugins as () => unknown)()),
+      'and the factory it returns must carry the rewrite too');
+  });
+
+  test('non-ORT wasm imports are left alone', async () => {
+    // /assets/harfbuzz-*.wasm (390 KB) is the text-to-path shaper behind offline
+    // SVG/PDF outline export and has no copy anywhere else on the origin - an
+    // extension-wide rewrite would take vector export out with the duplicates.
+    const { ortWasmFromPublic } = await import('../vite.config.js');
+    const code = "export const u = new URL('harfbuzz.wasm', import.meta.url).href;"; // harfbuzzjs/dist/harfbuzz.js, verbatim shape
+    assert.equal(ortWasmFromPublic().transform(code, '/x/node_modules/harfbuzzjs/dist/harfbuzz.js'), null);
+    assert.equal(ortWasmFromPublic().transform(code, ORT_DIST + 'ort.mjs'), null,
+      'even inside onnxruntime-web, only ort-wasm-* names are rewritten');
   });
 });

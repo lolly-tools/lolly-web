@@ -974,6 +974,18 @@ button.cat-download { font: inherit; cursor: pointer; }
 .cat-zoom-sep { flex: none; width: 1px; height: 18px; margin: 0 2px; background: #ffffff40; }
 .cat-zoom-interp.is-active { background: #ffffff33; color: #fff; }
 .cat-zoom-interp.is-active:hover { background: #ffffff4d; }
+/* The glass loupe canvas (lib/loupe-gl.ts). Follows the pointer via a JS-set transform, never
+   intercepts the stage's own wheel/drag, and sits under the HUD pill. Positioned from the
+   stage's top-left; `display` is toggled by the renderer, hidden when the cursor is off the art. */
+.cat-loupe {
+  position: absolute; left: 0; top: 0;
+  pointer-events: none; z-index: 2; display: none;
+  border-radius: 50%;
+  box-shadow: 0 6px 20px hsl(0 0% 0% / .4), inset 0 0 0 1px hsl(0 0% 100% / .25);
+  will-change: transform;
+}
+/* Hide the OS cursor while the lens is up - the lens is the cursor. */
+.cat-zoom-stage.has-loupe { cursor: none; }
 /* Play/pause overlay for the details-modal Lottie player. Bottom-left of the preview, clear of
    the centred zoom HUD and the vertically-centred prev/next chevrons. z-index above the stage so
    the stage's wheel/drag surface doesn't swallow the click. */

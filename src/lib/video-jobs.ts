@@ -85,8 +85,8 @@ export interface CropRect { x: number; y: number; w: number; h: number; }
 export interface VideoRange { startSec: number; endSec: number; }
 
 export interface MatteVideoParams {
-  /** Default u2netp for video - fast; birefnet-lite is "best (much slower)".
-   *  Read only for the 'model' method; the colour key ignores it. */
+  /** Defaults to u2netp - a video is hundreds of runs, so the cheapest general net
+   *  wins. Read only for the 'model' method; the colour key ignores it. */
   model: MatteModelId;
   /** Transparent output container. WebP/PNG carry the matte's SOFT alpha verbatim;
    *  GIF thins it to 1-bit (hard-edged) - the dialog says so. */
@@ -224,7 +224,9 @@ export const MATTE_MAX_OUTPUT_FRAMES = 450;
 /** Transparent-output defaults (WP-H honesty: whole frames, so keep them small). */
 export const MATTE_DEFAULT_LONG_EDGE = 720;
 export const MATTE_DEFAULT_FPS = 12;
-/** The fast model is the video default (birefnet-lite is offered as "best, slower"). */
+/** The video default. Same id as the still default since 2026-08-26, but kept as its
+ *  own constant: a video runs the net once per frame, so if the still default ever
+ *  moves to something heavier this must NOT follow it. */
 export const MATTE_VIDEO_DEFAULT_MODEL: MatteModelId = 'u2netp';
 
 /** Destination-resolution choices the dialog offers (longest output edge, px). The

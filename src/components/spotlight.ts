@@ -43,13 +43,13 @@ import {
   type SearchGroupId, type SearchHit, type SearchProvider,
 } from '../lib/search/registry.ts';
 import {
-  registerSpotlightHook, setSearchBarExpanded, currentSearchRoute,
+  registerSpotlightHook, setSearchBarExpanded, currentSearchRoute, SPOTLIGHT_LISTBOX_ID,
   type SpotlightHook,
 } from './search-bar.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import { computeViewportInsets } from '../lib/viewport-insets.ts';
 
-const LISTBOX_ID = 'spotlight-listbox';
+const LISTBOX_ID = SPOTLIGHT_LISTBOX_ID;
 
 /**
  * Injectable seams - module-level and mutable ON PURPOSE (the registry's
@@ -374,14 +374,18 @@ const hook: SpotlightHook = {
 };
 
 /**
- * Boot the overlay: hook into the bar (synchronous, so the chord and combobox
- * semantics work immediately) and load the default provider set lazily. Called
- * once from main.ts, directly after initSearchBar().
+ * Boot the overlay: hook into the bar (replacing the boot shim's registration,
+ * last-wins) and load the default provider set lazily. Reached through
+ * components/spotlight-boot.ts, which owns the shim and hands back whatever the
+ * user typed while this module was in flight as `pending` - re-run here so a
+ * query is answered rather than swallowed, the same repair the provider race
+ * below already makes.
  */
-export function initSpotlight(host: unknown): void {
+export function initSpotlight(host: unknown, pending?: string | null): void {
   if (inited) return;
   inited = true;
   registerSpotlightHook(hook, { listboxId: LISTBOX_ID });
+  if (pending != null) onQueryChanged(pending);
   void Promise.resolve()
     .then(() => spotlightSeams.loadProviders(host))
     .then(() => {

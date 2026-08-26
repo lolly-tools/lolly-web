@@ -36,6 +36,20 @@ test('nested @media inside @media still scopes the inner style rules', () => {
   assert.match(scopeCss('@media screen{@media (min-width:1px){.a{}}}', S), /#c \.a/);
 });
 
+test('regression: an at-rule directly after a comment is still an at-rule', () => {
+  // The prelude buffer carries the comment, so a trim-only check saw `/…` and
+  // scoped `@supports (…)` like a selector - `#c @supports (…) { … }` is an
+  // invalid rule the browser drops wholesale, inner rules and all (jump's
+  // cinema washes shipped dead this way).
+  const out = scopeCss('/* washes */\n@supports (background: color-mix(in oklch, red, blue)){.a{color:red}}', S);
+  assert.doesNotMatch(out, /#c @supports/);
+  assert.match(out, /@supports \(background: color-mix\(in oklch, red, blue\)\)/);
+  assert.match(out, /#c \.a/);
+  const med = scopeCss('/* note */@media screen{.a{}}', S);
+  assert.doesNotMatch(med, /#c @media/);
+  assert.match(med, /#c \.a/);
+});
+
 test('at-statements and @font-face bodies are left alone', () => {
   assert.match(scopeCss('@import "x.css";.a{}', S), /@import "x\.css";/);
   const ff = scopeCss('@font-face{font-family:Foo;src:url(a.woff2)}', S);

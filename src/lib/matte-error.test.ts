@@ -46,7 +46,7 @@ test('a not-installed model is recognised by class AND by the worker-flattened m
   assert.equal(classifyMatteError(typed), 'not-installed');
   // The wasm worker loses the class across postMessage - only the text survives.
   assert.equal(
-    classifyMatteError(new Error("The birefnet matte model isn't downloaded on this device yet.")),
+    classifyMatteError(new Error("The u2netp matte model isn't downloaded on this device yet.")),
     'not-installed');
 });
 
