@@ -12,7 +12,7 @@ interface EncodeRequest {
   id: number;
   frames: ImageBitmap[];
   pick: EncodePick;
-  o: { width: number; height: number; fps: number; bitrate: number; audio?: EncodeAudio | null };
+  o: { width: number; height: number; fps: number; bitrate: number; audio?: EncodeAudio | null; subtitlesVtt?: string };
 }
 
 // Worker-scope postMessage overload (message, transfer) - narrow it past the DOM lib's

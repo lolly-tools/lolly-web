@@ -26,15 +26,20 @@ import type { MetadataTags } from 'mediabunny';
  *   title   = the tool's name        (meta.tool)
  *   artist  = the author             (meta.author)
  *   album   = the software           (meta.software, "Lolly")
- *   comment = description · contact   (the WAV comment field's parity line)
+ *   comment = description · contact · rights   (see below)
  *   date    = injected export date    (omitted when not supplied)
  *
- * Rights (copyright/license) have no normalized MetadataTags slot - they'd go
- * through the per-container `raw` map - so they are NOT written here yet; that is
- * a followup, tracked alongside the audio-encode.ts forward.
+ * Rights (copyright/license) have NO normalized MetadataTags slot (mediabunny's
+ * type carries title/artist/album/comment/date/… and a per-container `raw` map,
+ * but no copyright field - a single normalized object can't name `raw` keys that
+ * differ Ogg vs ID3 vs FLAC). So, as the WAV RIFF path joins copyright + license
+ * into one ICOP string, we fold the same "copyright · license" line into the
+ * `comment` here - format-agnostic and validateMetadataTags-safe (a plain string),
+ * so the rights survive into every container instead of being dropped.
  */
 export function buildAudioTags(meta: ExportMeta, date?: Date): MetadataTags {
-  const comment = [meta.description, meta.contact].filter(Boolean).join(' · ');
+  const rights = [meta.copyright, meta.license].filter(Boolean).join(' · ');
+  const comment = [meta.description, meta.contact, rights].filter(Boolean).join(' · ');
   const tags: MetadataTags = {};
   if (meta.tool) tags.title = meta.tool;
   if (meta.author) tags.artist = meta.author;

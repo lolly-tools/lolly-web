@@ -289,6 +289,28 @@ test('Apply on the trim tab enqueues op:trim with the range and fps 0 (source ra
   assert.deepEqual(rig.done, [null], 'the mode ends on enqueue; the toast owns the job from here');
 });
 
+test('the snap-to-keyframe checkbox is off by default - a trim runs exact bounds', async () => {
+  const rig = await mount('trim', 60);
+  rig.setEdge('in', '5');
+  rig.setEdge('out', '21.5');
+  assert.equal(rig.q<HTMLInputElement>('[data-snap]').checked, false, 'default UNCHECKED - opt-in only');
+  rig.click('[data-apply]');
+  await settle();
+  const req = jobs()[0]!.req as { trim: { snapToKeyframe?: boolean } };
+  assert.equal(req.trim.snapToKeyframe, undefined, 'unchecked leaves the field off, so exact bounds run');
+});
+
+test('checking snap-to-keyframe opts the trim into the lossless packet-copy fast path', async () => {
+  const rig = await mount('trim', 60);
+  rig.setEdge('in', '5');
+  rig.setEdge('out', '21.5');
+  rig.q<HTMLInputElement>('[data-snap]').checked = true;
+  rig.click('[data-apply]');
+  await settle();
+  const req = jobs()[0]!.req as { trim: { snapToKeyframe?: boolean } };
+  assert.equal(req.trim.snapToKeyframe, true, 'checked flips the trim to the keyframe-aligned packet copy');
+});
+
 test('a trim that has not moved an edge is not applicable, and the missing gesture is named', async () => {
   // The tab OPENS on the whole clip, so this is its first state rather than an
   // unusual one. Applying it would re-encode the source to a lossy copy and hand it

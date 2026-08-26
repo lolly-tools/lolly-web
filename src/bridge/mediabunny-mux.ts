@@ -34,7 +34,7 @@
  * mediabunny is `import()`ed lazily (as the old muxers were), so it never enters
  * the preload bundle - it loads only when someone exports.
  */
-import type { AudioCodec, EncodedPacket, MetadataTags, StreamTargetChunk, VideoCodec } from 'mediabunny';
+import type { AudioCodec, EncodedPacket, MetadataTags, Rotation, StreamTargetChunk, VideoCodec, VideoTrackMetadata } from 'mediabunny';
 
 /**
  * A seekable byte sink for step A3's StreamTarget path: a WritableStream of
@@ -180,6 +180,16 @@ export interface MuxSpec {
    */
   frameRate?: number;
   /**
+   * Container rotation metadata, in degrees clockwise. MP4-ONLY: ISOBMFF carries it,
+   * but MkvOutputFormat.supportsVideoRotationMetadata is false and addVideoTrack THROWS
+   * if a rotation is handed to a WebM output - so it is passed only on the isMp4 branch
+   * and silently ignored for WebM. Absent/0 ⇒ no rotation box and byte-identical output
+   * (the determinism guard for the rotation-free sequence-render goldens). This is what
+   * a phone films: the pixels stay landscape and a 90/270 tag tells the player to turn
+   * them - the element-seek export path relies on the browser applying that tag.
+   */
+  rotation?: Rotation;
+  /**
    * WP-F soft subtitles. A WebVTT document to embed as a player-toggleable subtitle
    * track (mp4 `wvtt`, WebM `S_TEXT/WEBVTT`), IN ADDITION to any burned-in captions.
    * Added ONLY when this is a NON-EMPTY string AND the container's OutputFormat lists
@@ -247,7 +257,16 @@ export async function buildMediabunnyMux(spec: MuxSpec): Promise<BuiltMediabunny
   // floored per-frame timecodes instead.
   const vSrc = videoCodec ? new MB.EncodedVideoPacketSource(videoCodec) : null;
   const aSrc = audioCodec ? new MB.EncodedAudioPacketSource(audioCodec) : null;
-  if (vSrc) output.addVideoTrack(vSrc, isMp4 && spec.frameRate ? { frameRate: spec.frameRate } : undefined);
+  if (vSrc) {
+    // MP4 (ISOBMFF) carries frameRate + rotation metadata; WebM (Matroska) supports
+    // neither here - a declared frameRate would snap its 1ms timecodes off the frame
+    // grid (see above), and addVideoTrack THROWS on a rotation. So both ride the isMp4
+    // branch only, and a WebM track keeps its undefined metadata (bytes unchanged).
+    const vMeta: VideoTrackMetadata = {};
+    if (isMp4 && spec.frameRate) vMeta.frameRate = spec.frameRate;
+    if (isMp4 && spec.rotation) vMeta.rotation = spec.rotation;
+    output.addVideoTrack(vSrc, Object.keys(vMeta).length ? vMeta : undefined);
+  }
   if (aSrc) output.addAudioTrack(aSrc);
 
   // ── WP-F soft subtitle track (default-on when a transcript exists) ──────────

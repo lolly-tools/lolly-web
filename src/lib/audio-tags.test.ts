@@ -28,7 +28,9 @@ test('maps the core fields to normalized tags', () => {
   assert.equal(tags.title, 'Audiogram');
   assert.equal(tags.artist, 'Jane Doe');
   assert.equal(tags.album, 'Lolly');
-  assert.equal(tags.comment, 'Made with Lolly · jane@example.com · +1 555 0100');
+  // comment carries description · contact · copyright · license (rights have no
+  // normalized mediabunny slot, so they fold into the comment, as the WAV path joins them).
+  assert.equal(tags.comment, 'Made with Lolly · jane@example.com · +1 555 0100 · © 2026 Jane Doe. All rights reserved. · CC BY 4.0');
   assert.equal(tags.date, date);
 });
 
@@ -50,7 +52,9 @@ test('empty ExportMeta fields are omitted, not written blank', () => {
 });
 
 test('comment falls back to description alone when contact is empty', () => {
-  const tags = buildAudioTags({ ...full, contact: '' });
+  // Isolate the contact-empty fallback: no rights either, so the comment is the
+  // description alone (rights-folding has its own test).
+  const tags = buildAudioTags({ ...full, contact: '', copyright: '', license: '' });
   assert.equal(tags.comment, 'Made with Lolly');
 });
 

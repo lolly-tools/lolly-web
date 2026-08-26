@@ -1117,6 +1117,16 @@ export async function createElementProvider(url: string, opts: ProviderOpts = {}
       // single draw so the in-flight ledger reads the same way as mediabunny's.
       ledger.acquire();
       try {
+        // CONTAINER ROTATION IS THE BROWSER'S JOB HERE, and it does it. A phone films
+        // landscape pixels + a 90/270 rotation TAG; modern Chromium BAKES that tag into
+        // the frame the element presents, so `videoWidth/Height` (this provider's w/h)
+        // already report the turned display size and `drawImage(v)` already paints the
+        // turned picture. Re-applying track.getRotation() on top would DOUBLE-rotate,
+        // which is why this path deliberately does NO rotation of its own - matching the
+        // mediabunny path, where sample.draw() bakes the same tag. Verified against real
+        // Chrome on a 90°-tagged MP4 (plan 153 QW4; guarded by the "OBSERVE: element-seek
+        // fallback vs a 90°-tagged MP4" browser golden). WebM never reaches this concern:
+        // it cannot carry rotation metadata at all (MkvOutputFormat forbids it).
         ctx.drawImage(v as unknown as CanvasImageSource, dest.dx, dest.dy, dest.dw, dest.dh);
         ledger.raw.decoded++;
         ledger.raw.lastSourceSec = landed ?? target;

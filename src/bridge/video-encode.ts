@@ -57,7 +57,7 @@ export function supportsWorkerVideoEncode(): boolean {
 export function encodeVideoInWorker(
   frames: ImageBitmap[],
   pick: EncodePick,
-  o: { width: number; height: number; fps: number; bitrate: number; audio?: EncodeAudio | null },
+  o: { width: number; height: number; fps: number; bitrate: number; audio?: EncodeAudio | null; subtitlesVtt?: string },
 ): Promise<{ buffer: ArrayBuffer; type: string }> {
   const w = ensureWorker();
   const id = ++seq;

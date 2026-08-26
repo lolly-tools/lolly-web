@@ -9831,17 +9831,17 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
       // encode failure unlikely; a failure surfaces as a clear error and the user re-exports).
       // Worker path is OFF for HDR: it transfers ImageBitmaps and does not thread a
       // colorSpace, so HDR always takes the in-thread core below (frames are RGBA buffers).
-      // WP-F: also OFF when there's a soft subtitle track to embed - the worker's opts
-      // don't thread subtitlesVtt yet, so captions take the in-thread core (which does).
-      // Threading it across the worker postMessage boundary is a followup.
-      if (bedOk && !hdrActive && !softSubs && supportsWorkerVideoEncode()) {
+      // WP-F: a soft subtitle track (subtitlesVtt) DOES ride the worker boundary - it's a
+      // plain string, structured-clone-safe, so no transfer wiring, and the worker runs the
+      // same DOM-free core that muxes it in-thread.
+      if (bedOk && !hdrActive && supportsWorkerVideoEncode()) {
         try {
           const workerAudio: EncodeAudio | null = track ? {
             channels: Array.from({ length: track.buffer.numberOfChannels }, (_, i) => new Float32Array(track!.buffer.getChannelData(i))),
             sampleRate: track.sampleRate, numberOfChannels: track.numberOfChannels, codec: track.codec, muxCodec: track.muxCodec, bitrate: track.bitrate,
           } : null;
           _host?.log?.('info', `video: WebCodecs (worker) ${pick.container}/${pick.codec}${track ? '+' + audioPick!.codec : ''} ${targetW}×${targetH}@${fps}`);
-          const enc = await encodeVideoInWorker(frames as ImageBitmap[], pick, { width: targetW, height: targetH, fps, bitrate, audio: workerAudio });
+          const enc = await encodeVideoInWorker(frames as ImageBitmap[], pick, { width: targetW, height: targetH, fps, bitrate, audio: workerAudio, ...(softSubs ? { subtitlesVtt: softSubs } : {}) });
           const blob = await withVideoMeta(new Blob([enc.buffer], { type: enc.type }), enc.type, opts.meta ?? null);
           audio?.stop();                            // the worker consumed + closed the frames
           return blob;

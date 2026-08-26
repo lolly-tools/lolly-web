@@ -48,6 +48,7 @@
  * preload bundle; they load only when someone exports audio.
  */
 import type { MetadataTags } from 'mediabunny';
+import { concatBytes } from '../../../../engine/src/bytes.ts';
 import { packWav, type WavAudio, type WavSampleFormat } from '../../../../engine/src/wav.ts';
 import { audioChunkSchedule } from '../bridge/video-mime.ts';
 import { buildMediabunnyMux } from '../bridge/mediabunny-mux.ts';
@@ -115,8 +116,12 @@ export function encodeWav(pcm: AudioPcm, opts: { sampleFormat?: WavSampleFormat 
 
 // ── mp3 (lamejs) ──────────────────────────────────────────────────────────────
 
-/** LOSSY MP3 re-encode of `pcm` (lamejs). Deterministic: same PCM, same bytes. */
-export async function encodeMp3(pcm: AudioPcm, { bitrate = 160 }: { bitrate?: number } = {}): Promise<Blob> {
+/** LOSSY MP3 re-encode of `pcm` (lamejs). Deterministic: same PCM, same bytes.
+ *  lamejs emits a bare MPEG stream with no metadata, so when `tags` carry anything
+ *  a hand-built ID3v2.3 block (TIT2/TPE1/TALB/COMM) is prepended (id3v2Tag). */
+export async function encodeMp3(
+  pcm: AudioPcm, { bitrate = 160, tags }: { bitrate?: number; tags?: MetadataTags } = {},
+): Promise<Blob> {
   const { Mp3Encoder } = await import('@breezystack/lamejs');
   const channels = Math.min(MAX_CHANNELS, pcm.channels.length) >= 2 ? 2 : 1;
   const enc = new Mp3Encoder(channels, pcm.sampleRate, bitrate);
@@ -124,15 +129,83 @@ export async function encodeMp3(pcm: AudioPcm, { bitrate = 160 }: { bitrate?: nu
   const right = channels === 2 ? floatToInt16(pcm.channels[1]!) : null;
 
   const BLOCK = 1152; // lamejs works on 1152-sample frames
-  const chunks: Uint8Array[] = [];
+  const chunks: BlobPart[] = [];
+  const id3 = tags ? id3v2Tag(tags) : null;
+  if (id3) chunks.push(id3 as BlobPart);
   for (let i = 0; i < left.length; i += BLOCK) {
     const l = left.subarray(i, i + BLOCK);
     const buf = right ? enc.encodeBuffer(l, right.subarray(i, i + BLOCK)) : enc.encodeBuffer(l);
-    if (buf.length) chunks.push(buf);
+    if (buf.length) chunks.push(buf as BlobPart);
   }
   const tail = enc.flush();
-  if (tail.length) chunks.push(tail);
-  return new Blob(chunks as BlobPart[], { type: AUDIO_MIME.mp3 });
+  if (tail.length) chunks.push(tail as BlobPart);
+  return new Blob(chunks, { type: AUDIO_MIME.mp3 });
+}
+
+// ── ID3v2.3 (hand-built - lamejs writes no metadata) ──────────────────────────
+//
+// A minimal tag block prepended to the bare MPEG stream: 'ID3' header + a text
+// frame per present field. Deterministic (pure function of the strings, no clock).
+// Text is UTF-16LE with a BOM (encoding byte 0x01) so a user-supplied artist name
+// in any script survives - ID3v2.3 has no UTF-8 encoding (that is v2.4). Only the
+// four frames the task names; `date` has no frame here (the mediabunny encoders
+// carry it), and rights fold into `comment` upstream (buildAudioTags).
+
+/** ID3v2.3 tag bytes for `tags`, or null when no mapped field is set (so an
+ *  untagged export stays a bare MPEG stream, byte-identical to before). */
+function id3v2Tag(tags: MetadataTags): Uint8Array | null {
+  const frames: Uint8Array[] = [];
+  if (tags.title) frames.push(id3Frame('TIT2', id3TextPayload(tags.title)));
+  if (tags.artist) frames.push(id3Frame('TPE1', id3TextPayload(tags.artist)));
+  if (tags.album) frames.push(id3Frame('TALB', id3TextPayload(tags.album)));
+  if (tags.comment) frames.push(id3Frame('COMM', id3CommPayload(tags.comment)));
+  if (!frames.length) return null;
+
+  const body = concatBytes(frames);
+  const header = new Uint8Array(10);
+  header.set([0x49, 0x44, 0x33, 0x03, 0x00, 0x00]);   // 'ID3', v2.3.0, flags 0
+  // Tag size (excluding this 10-byte header) as a 28-bit syncsafe integer.
+  header[6] = (body.length >>> 21) & 0x7f;
+  header[7] = (body.length >>> 14) & 0x7f;
+  header[8] = (body.length >>> 7) & 0x7f;
+  header[9] = body.length & 0x7f;
+  return concatBytes([header, body]);
+}
+
+/** UTF-16LE bytes with a leading BOM (ID3v2.3 encoding 0x01). */
+function utf16le(s: string): Uint8Array {
+  const out = new Uint8Array(2 + s.length * 2);
+  out[0] = 0xff; out[1] = 0xfe;                        // UTF-16LE BOM
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    out[2 + i * 2] = c & 0xff;
+    out[3 + i * 2] = c >>> 8;
+  }
+  return out;
+}
+
+/** Text-frame payload: encoding byte 0x01 (UTF-16) + the BOM-led string. */
+function id3TextPayload(value: string): Uint8Array {
+  return concatBytes([new Uint8Array([0x01]), utf16le(value)]);
+}
+
+/** COMM payload: encoding 0x01, language 'eng', empty UTF-16 descriptor, then text. */
+function id3CommPayload(comment: string): Uint8Array {
+  return concatBytes([
+    new Uint8Array([0x01, 0x65, 0x6e, 0x67]),          // encoding 0x01, language 'eng'
+    new Uint8Array([0xff, 0xfe, 0x00, 0x00]),          // empty descriptor: BOM + UTF-16 terminator
+    utf16le(comment),
+  ]);
+}
+
+/** Wrap a frame payload in the 10-byte ID3v2.3 frame header (4-char id, 32-bit
+ *  big-endian size - NOT syncsafe in v2.3 - and two zero flag bytes). */
+function id3Frame(id: string, payload: Uint8Array): Uint8Array {
+  const frame = new Uint8Array(10 + payload.length);
+  for (let i = 0; i < 4; i++) frame[i] = id.charCodeAt(i);
+  new DataView(frame.buffer).setUint32(4, payload.length, false);
+  frame.set(payload, 10);
+  return frame;
 }
 
 /** Decode any recorded audio Blob and re-encode it to an MP3 Blob (audio/mpeg).
@@ -454,11 +527,14 @@ export function encodeAudio(
   opts: { bitrate?: number; sampleFormat?: WavSampleFormat; tags?: MetadataTags } = {}, deps: AudioEncodeDeps = {},
 ): Promise<Blob> {
   switch (format) {
-    // wav tags are written by export.ts embedWavInfo (RIFF INFO), not here; mp3 is
-    // lamejs (no mediabunny Output) so it carries no tags yet - both ignore opts.tags.
+    // wav tags are written by export.ts embedWavInfo (RIFF INFO), not here, so
+    // encodeWav ignores opts.tags; mp3 carries them in a hand-built ID3v2.3 block.
     case 'wav': return Promise.resolve(encodeWav(pcm, opts));
     // lamejs takes kbps; every other encoder here (and AUDIO_BITRATE) is bits/s.
-    case 'mp3': return encodeMp3(pcm, opts.bitrate ? { bitrate: Math.round(opts.bitrate / 1000) } : {});
+    case 'mp3': return encodeMp3(pcm, {
+      ...(opts.bitrate ? { bitrate: Math.round(opts.bitrate / 1000) } : {}),
+      ...(opts.tags ? { tags: opts.tags } : {}),
+    });
     case 'm4a': return encodeM4a(pcm, opts, deps);
     case 'aac': return encodeAac(pcm, opts, deps);
     case 'opus': return encodeOpus(pcm, opts, deps);
@@ -492,9 +568,10 @@ export interface AudioExportRequest {
   bitrate?: number;
   sampleFormat?: WavSampleFormat;
   /** Container metadata tags (buildAudioTags output). Written by the mediabunny-Output
-   *  encoders (aac/ogg/flac; m4a/opus pending - see AudioMuxerLike.setMetadataTags).
-   *  wav is tagged separately by export.ts embedWavInfo; a pass-through (untrimmed
-   *  source already in `format`) returns the source bytes untagged. */
+   *  encoders (aac/ogg/flac; m4a/opus pending - see AudioMuxerLike.setMetadataTags)
+   *  and by the mp3 path (a hand-built ID3v2.3 block). wav is tagged separately by
+   *  export.ts embedWavInfo; a pass-through (untrimmed source already in `format`)
+   *  returns the source bytes untagged. */
   tags?: MetadataTags;
   log?: (level: 'debug' | 'info' | 'warn' | 'error', msg: string) => void;
   /** Decode override (tests / non-DOM hosts). Default: AudioContext.decodeAudioData. */

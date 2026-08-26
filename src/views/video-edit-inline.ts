@@ -441,6 +441,7 @@ export async function mountInlineVideoEdit(host: VideoJobHost, env: VideoEditInl
         </div>
         <p class="cat-vid-dur" data-dur></p>
         <p class="cat-vid-note">${escapeHtml(t('Drag either end of the strip to choose what is kept. The frame shows the cut as you drag.'))}</p>
+        <label class="field-toggle cat-vid-snap"><input type="checkbox" class="field-check" data-snap> ${escapeHtml(t('Snap to a keyframe for an instant, lossless trim'))}</label>
       </div>
       <p class="cat-vid-error" data-error hidden></p>
       <p class="cat-vid-refusal" data-refusal hidden></p>
@@ -461,6 +462,7 @@ export async function mountInlineVideoEdit(host: VideoJobHost, env: VideoEditInl
   const durEl = q<HTMLElement>('[data-dur]');
   const inTimeEl = q<HTMLInputElement>('[data-in-time]');
   const outTimeEl = q<HTMLInputElement>('[data-out-time]');
+  const snapEl = q<HTMLInputElement>('[data-snap]');
   const stripEl = q<HTMLElement>('[data-strip]');
   const stripCanvas = q<HTMLCanvasElement>('[data-strip-canvas]');
   const veilInEl = q<HTMLElement>('[data-veil-in]');
@@ -1191,7 +1193,7 @@ export async function mountInlineVideoEdit(host: VideoJobHost, env: VideoEditInl
     } else {
       // fps 0 means "keep the source rate" - a trim changes WHEN, never how
       // smooth, so resampling it to 30 would be a second, unasked-for edit.
-      req.trim = { fps: 0, bitrate: OUT_BITRATE };
+      req.trim = { fps: 0, bitrate: OUT_BITRATE, ...(snapEl.checked ? { snapToKeyframe: true } : {}) };
     }
     // The window is a REQUEST-level field, not a trim parameter: it is the
     // reader's decode window, so a crop or a grade with in/out set encodes just

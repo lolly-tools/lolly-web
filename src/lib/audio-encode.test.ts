@@ -41,6 +41,20 @@ async function bytesOf(blob: Blob): Promise<Uint8Array> {
   return new Uint8Array(await blob.arrayBuffer());
 }
 const tag = (u8: Uint8Array, at: number, len: number): string => String.fromCharCode(...u8.subarray(at, at + len));
+const asciiBytes = (s: string): Uint8Array => new Uint8Array([...s].map((c) => c.charCodeAt(0)));
+/** UTF-16LE bytes of `s`, no BOM - the run that follows the BOM inside an ID3 text frame. */
+function utf16leBytes(s: string): Uint8Array {
+  const out = new Uint8Array(s.length * 2);
+  for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); out[i * 2] = c & 0xff; out[i * 2 + 1] = c >>> 8; }
+  return out;
+}
+function indexOfBytes(hay: Uint8Array, needle: Uint8Array): number {
+  outer: for (let i = 0; i + needle.length <= hay.length; i++) {
+    for (let j = 0; j < needle.length; j++) if (hay[i + j] !== needle[j]) continue outer;
+    return i;
+  }
+  return -1;
+}
 
 // ── wav ───────────────────────────────────────────────────────────────────────
 
@@ -84,6 +98,61 @@ test('encodeMp3: MPEG frame sync (or ID3) magic, and byte-deterministic', async 
   const sync = a[0] === 0xff && (a[1]! & 0xe0) === 0xe0;
   assert.ok(id3 || sync, `expected ID3 or an MPEG frame sync, got ${a[0]!.toString(16)} ${a[1]!.toString(16)}`);
   assert.deepEqual(a, b);
+});
+
+test('encodeMp3: no tags stays a bare MPEG stream (no ID3 prepend, byte-identical)', async () => {
+  const a = await bytesOf(await encodeMp3(tone(2 * 1152)));
+  assert.notEqual(tag(a, 0, 3), 'ID3');                 // lamejs alone writes no metadata
+  assert.deepEqual(a, await bytesOf(await encodeMp3(tone(2 * 1152), {})));
+});
+
+test('encodeMp3: tags prepend an ID3v2.3 block carrying TIT2 = the title (UTF-16, any script)', async () => {
+  const tags = buildAudioTags({ tool: 'ZZ Memo', author: 'Ada Ünïçøde', software: 'Lolly' } as never);
+  const u8 = await bytesOf(await encodeMp3(tone(3 * 1152), { tags }));
+  assert.equal(tag(u8, 0, 3), 'ID3');
+  assert.equal(u8[3], 0x03, 'ID3v2.3');
+  assert.ok(indexOfBytes(u8, asciiBytes('TIT2')) >= 0, 'a TIT2 title frame');
+  assert.ok(indexOfBytes(u8, utf16leBytes('ZZ Memo')) >= 0, 'the title as UTF-16LE');
+  assert.ok(indexOfBytes(u8, utf16leBytes('Ada Ünïçøde')) >= 0, 'a non-Latin-1 artist survives (not ISO-8859-1)');
+  // The syncsafe tag size must land EXACTLY on the first MPEG frame - the bug a
+  // wrong size byte would cause (players read the tag length from these 4 bytes).
+  const size = (u8[6]! << 21) | (u8[7]! << 14) | (u8[8]! << 7) | u8[9]!;
+  assert.equal(u8[10 + size], 0xff, 'the ID3 size lands on the MPEG frame sync');
+  assert.equal(u8[10 + size + 1]! & 0xe0, 0xe0, 'and that byte is a real MPEG sync');
+});
+
+test('encodeMp3: comment maps to a COMM frame; deterministic bytes', async () => {
+  const tags = buildAudioTags({ tool: 'T', description: 'a note', contact: 'a@b.c' } as never);
+  const a = await bytesOf(await encodeMp3(tone(2 * 1152), { tags }));
+  assert.ok(indexOfBytes(a, asciiBytes('COMM')) >= 0, 'a COMM comment frame');
+  assert.ok(indexOfBytes(a, utf16leBytes('a note · a@b.c')) >= 0, 'the comment text (UTF-16LE)');
+  assert.deepEqual(a, await bytesOf(await encodeMp3(tone(2 * 1152), { tags })));
+});
+
+test('encodeAudio: threads tags to the mp3 ID3 block through the one entry point', async () => {
+  const tags = buildAudioTags({ tool: 'Routed' } as never);
+  const u8 = await bytesOf(await encodeAudio('mp3', tone(2 * 1152), { tags }));
+  assert.equal(tag(u8, 0, 3), 'ID3');
+  assert.ok(indexOfBytes(u8, utf16leBytes('Routed')) >= 0);
+});
+
+// ── buildAudioTags: rights folding (no normalized copyright/license slot) ─────
+
+test('buildAudioTags: folds copyright + license into the comment, invents no rejected field', () => {
+  const tags = buildAudioTags({ description: 'a note', contact: 'a@b.c', copyright: '© 2026 Jane', license: 'CC BY 4.0' } as never);
+  assert.equal(tags.comment, 'a note · a@b.c · © 2026 Jane · CC BY 4.0');
+  // Only normalized string slots are set - no invented copyright/license key that
+  // mediabunny's strict validateMetadataTags would reject. (The real strict path
+  // is exercised by the encodeOgg/encodeFlac tag tests, which push buildAudioTags
+  // output through a real mediabunny Output.)
+  assert.equal((tags as Record<string, unknown>).copyright, undefined, 'no invented copyright key');
+  assert.equal((tags as Record<string, unknown>).license, undefined, 'no invented license key');
+  assert.deepEqual(Object.keys(tags).sort(), ['comment']);
+});
+
+test('buildAudioTags: rights alone become the comment; no rights leaves comment untouched', () => {
+  assert.equal(buildAudioTags({ copyright: '© 2026 Jane' } as never).comment, '© 2026 Jane');
+  assert.equal(buildAudioTags({ description: 'a note', contact: 'a@b.c' } as never).comment, 'a note · a@b.c');
 });
 
 // ── m4a / opus (stub AudioEncoder, real muxers) ───────────────────────────────
