@@ -409,8 +409,9 @@ async function openDeviceSource(opts: RecordOpts): Promise<OpenSource> {
  * codec for the first time. The bytes are the same container the EXPORT path already stamps
  * AV1-in-mp4 through - a confirmation, not new placer work - but it is a provenance-relevant
  * default change, so it stays OFF until the owner signs off. MediaRecorder is untouched while
- * this is false. */
-const WEBCODECS_RECORDER = false;
+ * this is false. Owner sign-off given 2026-08-26 (Andy): AV1-in-mp4 as the default
+ * capture codec is accepted; any WebCodecs failure still falls back to MediaRecorder. */
+const WEBCODECS_RECORDER = true;
 
 /**
  * The encode+mux engine behind one take. Hides from openSession whether it is MediaRecorder
