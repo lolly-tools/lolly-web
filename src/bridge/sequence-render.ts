@@ -114,6 +114,13 @@ import {
   createClipAudio,
   type ClipAudio,
 } from './sequence-providers.ts';
+// WP-3 (plan 154): the deep float HDR encode source + its flag/capability gates. Pure,
+// node-testable; nothing here runs unless hdrDeep (hdrActive && flag && probe) is true.
+import {
+  deepHdrCompositorEnabled,
+  supportsI420P10Frame,
+  hdrDeepI420P10,
+} from './hdr-deep-frame.ts';
 import {
   createStreamingMux,
   type EncodePick,
@@ -484,16 +491,42 @@ function hdrTune(opts: ExportOpts): Partial<HdrBoostOptions> {
   return t;
 }
 
-// Boost a composited 8-bit frame to Rec.2100-PQ in place (engine hdrBoostToPQ, same
-// targets/tune as the buffered path) and hand back its RGBA buffer - the shape the
-// streaming mux's HDR path (opts.colorSpace set) feeds to the buffer VideoFrame ctor.
+/** One-shot perf holder (plan 154 WP-3): the first deep frame times the float pipeline
+ *  against the 8-bit path at the real resolution and logs the delta, so the flag's cost
+ *  is data-driven. `done` flips after the first deep frame; `log` is the render's own. */
+interface HdrDeepPerf { log: (level: string, msg: string) => void; done: boolean; }
+
+// Boost a composited 8-bit frame to Rec.2100-PQ and hand back the buffer the streaming
+// mux's HDR path (opts.colorSpace set) feeds to the buffer VideoFrame ctor.
+//   deep=false (default / degraded): engine hdrBoostToPQ IN PLACE -> 8-bit RGBA PQ,
+//     byte-for-byte the WP-2 Phase-1 path (the goldens set no hdr, so never reached).
+//   deep=true  (WP-3, opt-in + I420P10-capable): the engine's float dual -> 10-bit
+//     I420P10, so a boosted highlight rides 1024 PQ codes instead of banding at 256.
 // Only called when hdrActive; SDR frames pass the canvas straight through, byte-for-byte.
-function hdrFrameData(ctx: AnyCtx, w: number, h: number, opts: ExportOpts): { data: BufferSource } {
+function hdrFrameData(
+  ctx: AnyCtx, w: number, h: number, opts: ExportOpts, deep: boolean, perf: HdrDeepPerf | null,
+): { data: BufferSource } {
   const id = (ctx as CanvasRenderingContext2D).getImageData(0, 0, w, h);
-  hdrBoostToPQ(id.data, { targets: hdrTargets(opts), ...hdrTune(opts) });
-  // Uint8ClampedArray is a valid VideoFrame buffer source; the cast just crosses TS's
-  // ArrayBufferLike-vs-ArrayBuffer typed-array generic (the RGBA bytes are the same).
-  return { data: id.data as BufferSource };
+  const tune = { targets: hdrTargets(opts), ...hdrTune(opts) };
+  if (!deep) {
+    hdrBoostToPQ(id.data, tune);
+    // Uint8ClampedArray is a valid VideoFrame buffer source; the cast just crosses TS's
+    // ArrayBufferLike-vs-ArrayBuffer typed-array generic (the RGBA bytes are the same).
+    return { data: id.data as BufferSource };
+  }
+  if (perf && !perf.done) {
+    // A/B on the FIRST deep frame only: the 8-bit path on a throwaway copy vs the float
+    // pipeline, both on real pixels at the export resolution. Surfaces the added cost.
+    const t0 = performance.now();
+    hdrBoostToPQ(id.data.slice() as Uint8ClampedArray, tune);
+    const t1 = performance.now();
+    const data = hdrDeepI420P10(id.data, w, h, tune);
+    const t2 = performance.now();
+    perf.done = true;
+    perf.log('info', `[measured] deep-hdr float frame ${(t2 - t1).toFixed(1)}ms vs 8-bit ${(t1 - t0).toFixed(1)}ms at ${w}×${h} (+${(t2 - t1 - (t1 - t0)).toFixed(1)}ms/frame; lolly.hdrCompositor)`);
+    return { data: data as unknown as BufferSource };
+  }
+  return { data: hdrDeepI420P10(id.data, w, h, tune) as unknown as BufferSource };
 }
 
 // ── the audio envelope (from export.ts:connectMusic) ────────────────────────
@@ -1339,6 +1372,17 @@ async function renderSequenceAuthored(
   const hdrDesired = opts.hdr === true;
   const pick = streaming ? await pickWebCodecsVideo(format, outW, targetH, fps, baseBitrate, opts.videoCodec, hdrDesired) : null;
   const hdrActive = hdrDesired && !!pick && is10bitHdrCodec(pick.codec);
+  // WP-3 (plan 154): the DEEP float HDR encode. Opt-in (perf-sensitive) AND capability-
+  // gated - the deep path only runs where the runtime can build the 10-bit I420P10 frame
+  // it emits; anywhere else (WebKit today, flag off, or SDR) it DEGRADES to the 8-bit
+  // path above, byte-for-byte. So `hdrDeep` false ⇒ the WP-2 streaming path unchanged.
+  const hdrDeep = hdrActive && deepHdrCompositorEnabled() && supportsI420P10Frame();
+  // The buffer layout the mux tags each HDR VideoFrame with: 10-bit YUV on the deep path,
+  // 8-bit RGBA otherwise. Only consulted when hdrActive (the ...spread below is empty when not).
+  const hdrFrameFormat: 'RGBA' | 'I420P10' = hdrDeep ? 'I420P10' : 'RGBA';
+  // One-shot perf A/B, shared across the render tiers (only one runs per export).
+  const hdrPerf: HdrDeepPerf | null = hdrDeep ? { log, done: false } : null;
+  if (hdrDeep) log('info', 'sequence: HDR deep float encode (plan 154 WP-3, lolly.hdrCompositor) - boost in float, 10-bit I420P10 out.');
   const bitrate = pick ? codecAdjustedBitrate(baseBitrate, pick.codec) : baseBitrate;
   if (streaming && !pick) {
     log('warn', 'sequence: WebCodecs encode unavailable - falling back to a real-time MediaRecorder replay (correct, but as slow as the clip is long).');
@@ -1828,7 +1872,7 @@ async function renderSequenceAuthored(
           target: streamMuxTargetFor(frameCount),
           // Plan 154 WP-2: an HDR pick tags the container colr/nclx and takes RGBA buffer
           // frames. Absent ⇒ today's image-source path, byte-for-byte (the goldens).
-          ...(hdrActive ? { colorSpace: HDR_VF_COLORSPACE, frameFormat: 'RGBA' as const } : {}),
+          ...(hdrActive ? { colorSpace: HDR_VF_COLORSPACE, frameFormat: hdrFrameFormat } : {}),
         });
         log('info', `sequence: WebCodecs ${pick.container}/${pick.codec}${hdrActive ? ' HDR' : ''}${audioPick ? `+${audioPick.codec}` : ''} ${outW}×${targetH}@${fps} ${frameCount}f (in-thread)`);
       }
@@ -1845,7 +1889,7 @@ async function renderSequenceAuthored(
         aborted: () => opts.signal?.aborted === true,
         frame: async (c, cx, _i, tsUs) => {
           if (feeder) await feeder.upTo(tsUs);        // audio windows due by this frame
-          if (mux) await mux.addFrame(hdrActive ? hdrFrameData(cx, outW, targetH, opts) : c as CanvasImageSource, tsUs);
+          if (mux) await mux.addFrame(hdrActive ? hdrFrameData(cx, outW, targetH, opts, hdrDeep, hdrPerf) : c as CanvasImageSource, tsUs);
           else if (streaming) bitmaps.push(await createImageBitmap(c as ImageBitmapSource));
           else if (format === 'apng') apngFrames.push(new Uint8Array(await (await canvasBlob(c, 'image/png')).arrayBuffer()));
           else if (format === 'webp-anim') webpFrames.push(await webpFrame(c, opts.quality ?? 0.9));
@@ -1929,7 +1973,7 @@ async function renderSequenceAuthored(
           // plans/156 WP-A part 3: long exports stream to OPFS (same frameCount gate).
           target: streamMuxTargetFor(frameCount),
           // Plan 154 WP-2: HDR colr/nclx tag + RGBA buffer frames (SDR ⇒ untouched).
-          ...(hdrActive ? { colorSpace: HDR_VF_COLORSPACE, frameFormat: 'RGBA' as const } : {}),
+          ...(hdrActive ? { colorSpace: HDR_VF_COLORSPACE, frameFormat: hdrFrameFormat } : {}),
         });
         log('info', `sequence: TILT export via the GPU compositor (plans/104 P2b) - WebCodecs ${pick.container}/${pick.codec}${hdrActive ? ' HDR' : ''}${audioPick ? `+${audioPick.codec}` : ''} ${outW}×${targetH}@${fps} ${job.frameCount}f, one clean plate texture per layer.`);
       } else {
@@ -2026,7 +2070,7 @@ async function renderSequenceAuthored(
         comp.readInto(destCtx as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D);
         const tsUs = Math.round(t * 1000);
         if (feeder) await feeder.upTo(tsUs);          // audio windows due by this frame
-        if (mux) await mux.addFrame(hdrActive ? hdrFrameData(destCtx, outW, targetH, opts) : destCanvas as CanvasImageSource, tsUs);
+        if (mux) await mux.addFrame(hdrActive ? hdrFrameData(destCtx, outW, targetH, opts, hdrDeep, hdrPerf) : destCanvas as CanvasImageSource, tsUs);
         else if (streaming) bitmaps.push(await createImageBitmap(destCanvas as ImageBitmapSource));
         else if (format === 'apng') apngFrames.push(new Uint8Array(await (await canvasBlob(destCanvas, 'image/png')).arrayBuffer()));
         else if (format === 'webp-anim') webpFrames.push(await webpFrame(destCanvas, opts.quality ?? 0.9));
@@ -2144,7 +2188,7 @@ async function renderSequenceAuthored(
             // plans/156 WP-A part 3: long exports stream to OPFS (same frameCount gate).
             target: streamMuxTargetFor(frameCount),
             // Plan 154 WP-2: HDR colr/nclx tag + RGBA buffer frames (SDR ⇒ untouched).
-            ...(hdrActive ? { colorSpace: HDR_VF_COLORSPACE, frameFormat: 'RGBA' as const } : {}),
+            ...(hdrActive ? { colorSpace: HDR_VF_COLORSPACE, frameFormat: hdrFrameFormat } : {}),
           });
         }
         log('info', `sequence: tilt capture${hdrActive ? ' HDR' : ''} - ${frameCount} frames of ${outW}×${targetH}, one dom-to-image shot each.`);
@@ -2176,7 +2220,7 @@ async function renderSequenceAuthored(
           if (shot) ctx.drawImage(shot as unknown as CanvasImageSource, 0, 0);
           const tsUs = Math.round(t * 1000);
           if (feeder) await feeder.upTo(tsUs);        // audio windows due by this frame
-          if (mux) await mux.addFrame(hdrActive ? hdrFrameData(ctx, outW, targetH, opts) : canvas as CanvasImageSource, tsUs);
+          if (mux) await mux.addFrame(hdrActive ? hdrFrameData(ctx, outW, targetH, opts, hdrDeep, hdrPerf) : canvas as CanvasImageSource, tsUs);
           else if (streaming) bitmaps.push(await createImageBitmap(canvas as ImageBitmapSource));
           else if (format === 'apng') apngFrames.push(new Uint8Array(await (await canvasBlob(canvas, 'image/png')).arrayBuffer()));
           else if (format === 'webp-anim') webpFrames.push(await webpFrame(canvas, opts.quality ?? 0.9));
