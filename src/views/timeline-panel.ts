@@ -82,11 +82,12 @@ import {
   onionNeighbours,
   dropIndexAt, moveOverlay, moveSeqClip, packSeq, removeAndRipple, rippleOverlays, seqBoxes,
   setClipIn, setDuration, setSpeed,
-  detachAudio, isThroughEdit, joinClips, reattachAudio, splitAll,
+  detachAudio, isThroughEdit, joinClips, reattachAudio, restackOverlay, splitAll,
   snapTime, trimClip,
   // The keyframe surface's arithmetic (plans/104 section 8). EVERY number the diamonds, the
   // latch and the CRUD list need is one of these - the panel converts a pointer to an
   // intent and hands the intent over.
+  type LaneDrop,
   clearKfTrack, kfBoxTrack, kfDiamondAt, kfDiamondTimes, kfDuplicateMs, kfFormatChannel,
   kfKeyAt, kfLocalMs, kfLocalSec, kfPoseAt, kfSeekDiamond, kfSlideMs, kfTimelineSec, kfWriteMs,
   kfTrackDelete, kfTrackDuplicate, kfTrackRetime, kfTrackSetEase, rescaleKfTrack, setKfTrack, writeKfPose,
@@ -890,6 +891,10 @@ interface Gesture {
   /** Seq reorder only. */
   index0: number;
   index: number;
+  /** Overlay vertical drag (plans/165 Slice C-tracks): the resolved lane drop, and
+   *  the overlay rows' geometry, cached at the first vertical breach of the drag. */
+  laneDrop?: LaneDrop | null;
+  laneRects?: { el: HTMLElement; anchor: string; members: string[]; top: number; bottom: number }[];
   /** Panel resize only. */
   h0: number;
   moved: boolean;
@@ -1695,7 +1700,13 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // grouped bars never overlap in time (cues are sequential), so side by side on one
     // row is both honest and readable. The lane-explosion decision, section 5 of the plan.
     const groupLanes = new Map<string, HTMLElement>();
-    for (const b of boxes) {
+    // REVERSE model order (plans/165 Slice C-tracks): array order is paint order,
+    // and the NLE convention every editor teaches is that the TOP track is the
+    // FRONTMOST layer - so the last overlay in the array takes the first row, and
+    // the magnetic seq row stays the floor (video-track-one at the bottom). A
+    // group row sits where its frontmost member does.
+    for (let bi = boxes.length - 1; bi >= 0; bi--) {
+      const b = boxes[bi];
       if (!b) continue;
       const id = b[cfg.idField];
       if (id == null || id === '') continue;
@@ -1710,6 +1721,9 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         // layout. Flattening them keeps every `role="option"` bar owned by the listbox.
         lane.setAttribute('role', 'presentation');
         lane.dataset.lane = 'overlay';
+        // The row's FRONTMOST member (first placed in reverse order) - what a
+        // vertical bar drag restacks against.
+        lane.dataset.anchor = String(id);
         if (group) {
           groupLanes.set(group, lane);
           // A generated caption row says what it is. Other groups keep an unlabelled
@@ -5237,6 +5251,70 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * The three edge states, armed. Every class added here comes off in endGesture - the
    * single teardown - and never at a call site, matching the `is-drop-target` discipline.
    */
+  /** A drag has to travel this far vertically before it reads as a lane change. */
+  const LANE_DRAG_PX = 14;
+  /** Pointer within this of a row boundary reads as the GAP, not the row. */
+  const LANE_EDGE_PX = 6;
+
+  function clearLaneDropPaint(): void {
+    for (const el of laneWrap.querySelectorAll('.is-drop-target')) el.classList.remove('is-drop-target');
+  }
+
+  /**
+   * The vertical half of an overlay bar drag (plans/165 Slice C-tracks): resolve
+   * which lane row (or gap between rows) the pointer is over, remember it on the
+   * gesture for pointerup, and paint the drop row. Rows render top = frontmost, so
+   * a gap maps to "directly behind the row above it" and the top gap to "in front
+   * of everything" - the LaneDrop vocabulary restackOverlay speaks. Row
+   * geometry is cached at the first vertical breach: rows do not move during a
+   * drag (the dragged bar previews via transform, which never reflows).
+   */
+  function resolveLaneDrop(g: Gesture): void {
+    const originRow = g.el?.closest<HTMLElement>('.tl-lane');
+    if (!originRow || originRow.dataset.lane !== 'overlay') return;   // seq bars have their own reorder
+    if (!g.laneRects) {
+      if (Math.abs(g.y - g.y0) < LANE_DRAG_PX) return;
+      g.laneRects = Array.from(laneWrap.querySelectorAll<HTMLElement>('.tl-lane[data-lane="overlay"]')).map((el) => {
+        const r = el.getBoundingClientRect();
+        return {
+          el,
+          anchor: el.dataset.anchor || '',
+          members: Array.from(el.querySelectorAll<HTMLElement>('.tl-clip')).map((b) => b.dataset.id || ''),
+          top: r.top,
+          bottom: r.bottom,
+        };
+      });
+    }
+    const rows = g.laneRects;
+    let drop: LaneDrop | null = null;
+    let hover: HTMLElement | null = null;
+    const y = g.y;
+    // A gap drop references a ROW - but never the dragged bar itself (leaving a
+    // shared row would otherwise resolve to a self-target, which restackOverlay
+    // reads as identity and the drag silently does nothing). Substitute the row's
+    // next member; a row the drag is the sole member of has no reference to give.
+    const refFor = (r: { anchor: string; members: string[] }): string | null =>
+      (r.anchor !== g.id ? r.anchor : r.members.find((m) => m && m !== g.id) ?? null);
+    const over = rows.find((r) => y >= r.top + LANE_EDGE_PX && y <= r.bottom - LANE_EDGE_PX);
+    if (over && over.el !== originRow && over.anchor && over.anchor !== g.id) {
+      drop = { onto: over.anchor };
+      hover = over.el;
+    } else if (!over && rows.length) {
+      const belowIdx = rows.findIndex((r) => y < r.top + LANE_EDGE_PX);
+      if (belowIdx === 0) drop = { before: null };                       // above the top row
+      else if (belowIdx > 0) {
+        const ref = refFor(rows[belowIdx - 1]!);                          // between two rows
+        drop = ref ? { before: ref } : null;
+      } else if (y > rows[rows.length - 1]!.bottom - LANE_EDGE_PX && y < rows[rows.length - 1]!.bottom + 24) {
+        const ref = refFor(rows[rows.length - 1]!);                       // just under the bottom row
+        drop = ref ? { before: ref } : null;
+      }
+    }
+    g.laneDrop = drop;
+    clearLaneDropPaint();
+    if (hover) hover.classList.add('is-drop-target');
+  }
+
   function beginTrimChrome(g: Gesture): void {
     if (!g.el) return;
     g.el.classList.add('is-trimming');
@@ -5467,6 +5545,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     }
     if (g.kind === 'move') {
       previewRows(moveOverlay(getBoxes(), cfg, g.id, maybeSnap(g.start0 + deltaSec, g.alt, g.id)));
+      resolveLaneDrop(g);
       return;
     }
     if (g.kind === 'trim') {
@@ -5608,7 +5687,21 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (g.kind === 'move') {
       // moveOverlay owns the clamp AND the ms rounding, so a drag and the inspector's
       // Start field land on exactly the same value for the same time.
-      write(moveOverlay(boxes, cfg, g.id, maybeSnap(g.start0 + deltaSec, alt, g.id, coarse)));
+      let next = moveOverlay(boxes, cfg, g.id, maybeSnap(g.start0 + deltaSec, alt, g.id, coarse));
+      // The drag's vertical half: restack against the row under the drop (or between).
+      // ONE write for both halves, so the whole drop is one undo step; identity from
+      // restackOverlay means a wobble that went nowhere costs nothing extra.
+      if (g.laneDrop) {
+        const dropped = restackOverlay(next, cfg, g.id, g.laneDrop);
+        if (dropped !== next) {
+          next = dropped;
+          announce('onto' in g.laneDrop
+            ? tRaw('Now sharing a layer with {name}', { name: labelFor(g.laneDrop.onto) })
+            : t('Layer order changed'));
+        }
+      }
+      clearLaneDropPaint();
+      write(next);
     } else if (g.kind === 'trim') {
       const raw = g.edge === 'in' ? g.start0 + deltaSec : g.start0 + g.dur0 + deltaSec;
       const snapped = maybeSnap(raw, alt, g.id, coarse);
@@ -5641,6 +5734,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   function onPointerCancel(): void {
     if (!gesture) return;
     const g = gesture;
+    clearLaneDropPaint();
     endGesture(g);
     // A cancelled resize still left the panel at its dragged height; re-assert the
     // reserve so the artboard and the panel agree.

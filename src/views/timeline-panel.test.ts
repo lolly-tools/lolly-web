@@ -1101,6 +1101,21 @@ test('promote with dur:null authors a REAL length when the open window would be 
   } finally { mid.teardown(); }
 });
 
+test('overlay lanes render top = frontmost, the NLE track order (plans/165 C-tracks)', async () => {
+  // Array order is paint order, so the LAST overlay in the array is the frontmost
+  // layer on canvas - and must take the TOP track row, with the seq row the floor.
+  const h = mount([overlay('back', 0, 2), overlay('front', 1, 2), clip('a', 0, 3)]);
+  try {
+    await frames(3);
+    const rows = Array.from(h.root.querySelectorAll<HTMLElement>('.tl-lane[data-lane="overlay"]'));
+    assert.equal(rows.length, 2, 'one row per ungrouped overlay');
+    assert.equal(rows[0]!.dataset.anchor, 'front', 'the top row anchors the frontmost box');
+    assert.equal(rows[1]!.dataset.anchor, 'back', 'the backmost box sits nearest the seq row');
+    const seqRow = h.root.querySelector('.tl-lane-seq');
+    assert.ok(seqRow && rows[1]!.compareDocumentPosition(seqRow) & 4 /* FOLLOWING */, 'the seq row stays the floor');
+  } finally { h.teardown(); }
+});
+
 test('a timed OVERLAY demotes back to scenery in one commit - "always on" is not a trap', async () => {
   const h = mount([clip('a', 0, 3), clip('b', 3, 2), overlay('o', 1, 1)]);
   try {

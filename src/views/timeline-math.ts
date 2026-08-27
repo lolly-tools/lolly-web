@@ -1322,6 +1322,77 @@ export function dropIndexAt(boxes: Box[], cfg: TimeCfg, tSec: number, draggedId:
  * A seq-lane box is returned unchanged - its start is derived by the pack, so writing
  * one directly would be overwritten on the next repack (use moveSeqClip instead).
  */
+/**
+ * Where a vertically-dragged overlay bar was dropped (plans/165 Slice C-tracks).
+ * `onto` = dropped ON another overlay's row: the two share that row (the caption
+ * rows' own group mechanism) and the moved box stacks directly in front of it.
+ * `before` = dropped BETWEEN rows: the box takes its own row directly behind the
+ * named overlay (null = in FRONT of every overlay - the new top row), leaving
+ * any shared row it was on.
+ */
+export type LaneDrop = { onto: string } | { before: string | null };
+
+/** An overlay ROW member: timed, and not on the magnetic seq row. */
+function isOverlayRow(b: Box | undefined, cfg: TimeCfg): boolean {
+  if (!b || !isTimed(b, cfg)) return false;
+  return boxTiming(b, cfg).lane !== 'seq';
+}
+
+/**
+ * Restack an overlay against another - the timeline's vertical drag, writing the
+ * SAME order the canvas paints (array order IS z), plus the row-sharing group
+ * when the tool declares one. Sharing degrades to plain adjacency on a tool
+ * without `groupField` (progressive, like linkField). Seq boxes are never moved
+ * relative to each other and a seq target is refused outright: the magnetic row
+ * is joined deliberately, never by a stray vertical wobble. Identity when
+ * nothing would change, so a no-op drag costs no commit and no undo step.
+ */
+export function restackOverlay(boxes: Box[], cfg: TimeCfg, id: string, drop: LaneDrop): Box[] {
+  const rows = Array.isArray(boxes) ? boxes : [];
+  const i = indexOfId(rows, cfg, id);
+  if (i < 0) return rows;
+  const box = rows[i]!;
+  if (!isOverlayRow(box, cfg)) return rows;
+  const gf = cfg.groupField ?? '';
+
+  const targetId = 'onto' in drop ? drop.onto : drop.before;
+  const ti = targetId == null ? -1 : indexOfId(rows, cfg, targetId);
+  if (targetId != null && (ti < 0 || ti === i)) return rows;
+  if (targetId != null && !isOverlayRow(rows[ti], cfg)) return rows;
+
+  let moved = box;
+  let target = ti >= 0 ? rows[ti]! : null;
+  if ('onto' in drop) {
+    if (gf) {
+      const tGroup = String(target![gf] ?? '') || `share-${String(targetId)}`;
+      if (String(target![gf] ?? '') !== tGroup) target = withFields(target!, { [gf]: tGroup });
+      if (String(moved[gf] ?? '') !== tGroup) moved = withFields(moved, { [gf]: tGroup });
+    }
+  } else if (gf && String(box[gf] ?? '') !== '') {
+    moved = withFields(moved, { [gf]: '' });
+  }
+
+  const without: Box[] = [];
+  for (let k = 0; k < rows.length; k++) {
+    if (k === i) continue;
+    without.push(k === ti && target ? target : rows[k]!);
+  }
+  let insertAt: number;
+  if ('onto' in drop) {
+    insertAt = indexOfId(without, cfg, String(targetId)) + 1;   // directly in front of the row anchor
+  } else if (drop.before != null) {
+    insertAt = indexOfId(without, cfg, drop.before);            // directly behind it
+  } else {
+    let last = -1;
+    for (let k = 0; k < without.length; k++) if (isOverlayRow(without[k], cfg)) last = k;
+    insertAt = last + 1;                                        // in front of every overlay
+  }
+  const next = [...without.slice(0, insertAt), moved, ...without.slice(insertAt)];
+  // Identity when the drag changed nothing - same order, same rows.
+  if (next.length === rows.length && next.every((b, k) => b === rows[k])) return rows;
+  return next;
+}
+
 export function moveOverlay(boxes: Box[], cfg: TimeCfg, id: string, atSec: number): Box[] {
   const rows = Array.isArray(boxes) ? boxes : [];
   const i = indexOfId(rows, cfg, id);
