@@ -1496,15 +1496,21 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     return id == null || id === '' ? null : mediaOf(String(id)).dur;
   };
 
-  /** A bar's human label: the box's own text if it has any, else its media kind. */
+  /** A bar's human label: the user's own name if one was set (rename), else the box's
+   *  own text if it has any, else its media kind. */
   function labelFor(id: string): string {
     const el = boxEl(id);
-    // A CAMERA first, and off the MODEL: it paints nothing, so every probe below reads
+    const rows = getBoxes();
+    const ci = indexOfId(rows, cfg, id);
+    // The user's own name wins over everything - that is what a rename is for.
+    if (ci >= 0 && cfg.labelField) {
+      const own = String(rows[ci]![cfg.labelField] ?? '').trim();
+      if (own) return own.length > 48 ? `${own.slice(0, 47)}…` : own;
+    }
+    // A CAMERA next, and off the MODEL: it paints nothing, so every probe below reads
     // '' on it and its chip would have said "Clip" - the one thing a camera is not
     // (plans/104 section 5.4). This is the label the "Always on" scenery chip wears, which is
     // the whole affordance the implicit scene camera is discovered through.
-    const rows = getBoxes();
-    const ci = indexOfId(rows, cfg, id);
     if (ci >= 0 && isCameraBox(rows[ci]!)) return t('Camera');
     const txt = el?.querySelector<HTMLElement>('.lolly-box-text')?.textContent?.trim();
     if (txt) return txt.length > 48 ? `${txt.slice(0, 47)}…` : txt;
@@ -1514,6 +1520,56 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (kind === 'image') return t('Image');
     if (kind === 'lottie') return t('Animation');
     return t('Clip');
+  }
+
+  /**
+   * Inline rename: swap the bar's label for a text input in place. Enter/blur commits
+   * (an empty value CLEARS the name, so the derived label comes back), Escape cancels.
+   * One write through the panel's own path; the label refresh rides the normal restyle.
+   * Reached from a double-click on the bar and from its context menu.
+   */
+  function renameClip(id: string): void {
+    if (!cfg.labelField) return;
+    const el = bars.get(id);
+    const label = el?.querySelector<HTMLElement>('.tl-clip-label');
+    if (!el || !label || el.querySelector('.tl-clip-rename')) return;
+    const rows = getBoxes();
+    const i = indexOfId(rows, cfg, id);
+    if (i < 0) return;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'tl-clip-rename';
+    input.value = String(rows[i]![cfg.labelField] ?? '').trim();
+    input.placeholder = labelFor(id);
+    input.setAttribute('aria-label', t('Rename'));
+    input.maxLength = 120;
+    let settled = false;
+    const finish = (commitIt: boolean): void => {
+      if (settled) return;
+      settled = true;
+      const v = input.value.trim();
+      input.remove();
+      label.hidden = false;
+      if (commitIt && v !== String(getBoxes()[i]?.[cfg.labelField!] ?? '').trim()) {
+        write(patchBox(getBoxes(), id, { [cfg.labelField!]: v }));
+      }
+      // Back onto the bar: its accessible name is its label span, so AT reads the
+      // new name on the refocus - no separate announcement needed.
+      el.focus?.();
+    };
+    // Typing must not reach the panel's roving-focus/shortcut keys, and a pointerdown
+    // in the input must not start a bar drag.
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') finish(true);
+      else if (e.key === 'Escape') finish(false);
+    });
+    input.addEventListener('pointerdown', (e) => e.stopPropagation());
+    input.addEventListener('blur', () => finish(true));
+    label.hidden = true;
+    el.appendChild(input);
+    input.focus();
+    input.select();
   }
 
   const durationSec = (): number => deriveDuration(getBoxes(), cfg) / 1000;
@@ -2411,6 +2467,11 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       el.appendChild(menuItem(t('Make always on'), 'layers', act(() => demote(ctxId))));
     } else {
       el.appendChild(menuItem(t('Add to the timeline'), 'plus', act(() => promote(ctxId))));
+    }
+    // Rename: the second door onto the double-click inline editor. Needs a BAR to
+    // anchor the input, so a scenery chip (no bar) does not offer it.
+    if (cfg.labelField && bars.has(ctxId)) {
+      el.appendChild(menuItem(t('Rename'), 'tag', act(() => renameClip(ctxId))));
     }
     el.appendChild(menuItem(t('Delete'), 'trash', act(() => deleteBox(ctxId)), { danger: true }));
     return el.querySelector<HTMLElement>('.folder-menu-item');
@@ -7493,6 +7554,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (chip?.dataset.id) selectAndReveal([chip.dataset.id]);
   });
   laneWrap.addEventListener('dblclick', (e) => {
+    // On a bar: rename in place. The junction affordance keeps the seams (a
+    // double-click BETWEEN clips hits the lane, not a bar, so the two never race).
+    const bar = (e.target as HTMLElement | null)?.closest<HTMLElement>('.tl-clip');
+    if (bar?.dataset.id && cfg.labelField) { renameClip(bar.dataset.id); return; }
     const at = timeAt((e as MouseEvent).clientX);
     const j = junctionAt(getBoxes(), cfg, at, pxPerSec);
     if (j) openJunction(j.aId, j.bId);

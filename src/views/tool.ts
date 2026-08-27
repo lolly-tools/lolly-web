@@ -772,7 +772,12 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
     let seed = await fetchTemplateSeed(toolId, templateParam, presetParam);
     if (!seed && Array.isArray(templateMeta)) seed = templateValuesById(templateMeta, templateParam, presetParam);
     if (seed) initialValues = { ...seed, ...initialValues };
-  } else if (!slot && !seededDirect && Object.keys(values).length === 0 && !reachedViaLink) {
+  } else if (!slot && !seededDirect && Object.keys(values).length === 0 && (!reachedViaLink || templateParam === '')) {
+    // An EMPTY `?template=` (present, no id) is an explicit ask for the chooser - the
+    // gallery card's "+ new" button navigates with it - so it overrides the
+    // reachedViaLink skip that would otherwise read "?template=" as a deep link with
+    // its own intent. Auto-export/`?full` links never carry a bare `template`, so the
+    // no-modal-over-headless-export guarantee holds.
     // The chooser opens on a blank fresh open (no resume, no seed, no link) when the tool
     // has built-in templates OR the current user has saved templates/variations for this
     // toolId - so a tool whose only starting points are user-saved is still reachable. The
@@ -1315,7 +1320,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
 
   viewEl.innerHTML = `
     ${noAside && !visitorPage ? backPillHtml(backPillOpts) : ''}
-    <div class="tool-layout${chromeless ? ' is-editor' : ''}${documentLayout ? ' is-document' : ''}${pagedDoc ? ' is-paged' : ''}${webDoc ? ' is-webdoc' : ''}${visitorPage ? ' is-visitor' : ''}" id="tool-layout"${documentLayout ? ' data-theme="light"' : ''} data-sidebar="${noAside ? 'hidden' : (sidebarOpen ? 'open' : 'closed')}">
+    <div class="tool-layout${chromeless ? ' is-editor' : ''}${documentLayout ? ' is-document' : ''}${pagedDoc ? ' is-paged' : ''}${webDoc ? ' is-webdoc' : ''}${visitorPage ? ' is-visitor' : ''}${hideSidebar && !visitorPage ? ' is-bare' : ''}" id="tool-layout"${documentLayout ? ' data-theme="light"' : ''} data-sidebar="${noAside ? 'hidden' : (sidebarOpen ? 'open' : 'closed')}">
       ${showAside ? `
         <aside class="sidebar" id="tool-sidebar">
           <div class="sidebar-header">
@@ -1436,20 +1441,15 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   const exportSourceNode = bareExport ? contentEl : canvasEl;
 
   // Shell chrome a full-bleed tool can host INSIDE its own top toolbar via
-  // [data-shell-slot] hooks: the render/export control and the real app theme toggle
-  // (light→dark→brand). A hideSidebar tool has no sidebar footer and no stage-nav HUD,
-  // so without this it would miss both - the toggle especially, since the tool's palette
-  // already follows the app theme tokens (--background/--primary). Re-applied after each
-  // template paint (paint() swaps innerHTML, recreating the empty slots). Generic: any
-  // tool that renders these slots gets them; no tool that doesn't is affected.
+  // [data-shell-slot] hooks: the render/export control. Re-applied after each
+  // template paint (paint() swaps innerHTML, recreating the empty slots).
+  // The theme slot ([data-shell-slot="theme"]) is retired (2026-08-27, Andy):
+  // full-bleed utilities now dock the consolidated profile menu top-right - theme,
+  // sound/Neurospicy and Language all live inside it - so the standalone toggle
+  // would be a duplicate control. Tools that still author the slot get an empty
+  // span, which renders nothing.
   let placeRenderPill: (() => void) | null = null;
   const mountToolbarSlots = (): void => {
-    const themeSlot = contentEl.querySelector<HTMLElement>('[data-shell-slot="theme"]');
-    if (themeSlot && !themeSlot.firstElementChild) {
-      themeSlot.appendChild(createThemeToggle(
-        host as unknown as Parameters<typeof createThemeToggle>[0],
-        { className: 'stage-nav-btn stage-nav-theme shell-slot-theme' }));
-    }
     placeRenderPill?.();
   };
   // Slide-sorter filmstrip for paged tools - mounted lazily on the first paint (below),
@@ -1745,8 +1745,12 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     const cs = getComputedStyle(stageEl);
     const reserveTop    = Math.max(0, parseFloat(cs.getPropertyValue('--stage-reserve-top'))    || 0);
     const reserveBottom = Math.max(0, parseFloat(cs.getPropertyValue('--stage-reserve-bottom')) || 0);
+    // Left band: the free-canvas rail docks into a fixed-width left panel while the
+    // timeline is open (see dockRailForTimeline). Same margin mechanism as top/bottom -
+    // centring the margin box puts the canvas exactly centred in the remaining band.
+    const reserveLeft   = Math.max(0, parseFloat(cs.getPropertyValue('--stage-reserve-left'))   || 0);
 
-    const availW    = Math.max(40, stageRect.width  - 32);
+    const availW    = Math.max(40, stageRect.width  - reserveLeft - 32);
     const availH    = Math.max(40, stageRect.height - topPad - reserveTop - reserveBottom - 32);
     const scale     = Math.min(1, availW / canvasW, availH / canvasH);
     canvasEl.style.transform = scale < 1 ? `scale(${scale.toFixed(4)})` : '';
@@ -1754,6 +1758,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     outerEl.style.height = Math.round(canvasH * scale) + 'px';
     outerEl.style.marginTop    = reserveTop    ? `${reserveTop}px`    : '';
     outerEl.style.marginBottom = reserveBottom ? `${reserveBottom}px` : '';
+    outerEl.style.marginLeft   = reserveLeft   ? `${reserveLeft}px`   : '';
     stageZoom?.sync(); // refresh the zoom % readout after a re-fit
   }
 
@@ -1876,6 +1881,18 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     if (themeToggle) hud.append(themeToggle);
     if (soundToggle) hud.append(soundToggle);
     stageEl.appendChild(hud);
+  } else if (hideSidebar && !visitorPage && !isFull) {
+    // Full-bleed utility (is-bare): no zoom HUD, but the consolidated profile menu
+    // (theme, sound/Neurospicy, Language, Settings) docks top-right in the reserved
+    // chrome strip - the mirror of the back pill's top-left pin, reusing the main
+    // views' .gallery-topright cluster (chrome layer, globally loaded). This replaces
+    // the standalone theme toggle these tools used to host in their own toolbars.
+    // Appended to the layout so the view's innerHTML swap tears it down; the menu
+    // popover itself already closes on any navigation (NAV_EVENTS).
+    const cluster = document.createElement('div');
+    cluster.className = 'gallery-topright';
+    cluster.appendChild(createProfileControl(host as unknown as Parameters<typeof createProfileControl>[0]));
+    layout.appendChild(cluster);
   }
 
   // ── Live collab: presence chrome (plan 100 section 4.6, section 5) ───────────────────────

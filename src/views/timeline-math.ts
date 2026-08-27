@@ -68,6 +68,8 @@ export interface TimeCfg {
    * every reader treats an absent value as 1 (as recorded).
    */
   gainField?: string;
+  /** OPTIONAL: the user's own clip name (timeline rename); '' or absent = derived label. */
+  labelField?: string;
   /**
    * OPTIONAL, on the same progressive-capability terms as `linkField`. The sub-fields
    * carrying each preset's authored GEOMETRY curve - a preset name or a CSS

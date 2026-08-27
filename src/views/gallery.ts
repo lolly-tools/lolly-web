@@ -1124,7 +1124,9 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     const target = e.target as HTMLElement;
     // Controls with their own behaviour (resume, the selection dot, carousel nav/dots)
     // already stopPropagation or preventDefault; skip anything inside them defensively.
-    if (target.closest('.gcar-nav, .gcar-dot, [data-resume], [data-select]')) return;
+    // The "+ New" chip too: it must reach the template chooser un-seeded, so the
+    // example-look hijack below must never claim its click.
+    if (target.closest('.gcar-nav, .gcar-dot, [data-resume], [data-select], .gtile-new')) return;
     const tile = target.closest<HTMLElement>('.gtile');
     const gcar = tile?.querySelector<HTMLElement>('.gcar');
     if (!tile || !gcar) return;
@@ -2784,7 +2786,12 @@ function cardMarkup(
               ? `<span class="gtile-tpl">${tool.templates.length === 1 ? t('1 template') : tRaw('{n} templates', { n: tool.templates.length })}</span>`
               : ''}
           </span>
-          ${hasSession ? `<span class="gtile-new" aria-hidden="true">${t('+ New')}</span>` : ''}
+          ${unavailable ? ''
+            // Persistent "+ New" action on every card: opens the tool's template
+            // chooser via the empty-`?template=` boot flag (views/tool.ts reads it as
+            // an explicit chooser ask); a tool with no templates just opens blank.
+            // openQuery (url-source injected tools) rides along so their seed survives.
+            : `<a class="gtile-new" href="#/tool/${escape(tool.id)}?template=${tool.openQuery ? `&amp;${escape(tool.openQuery)}` : ''}" data-new-tool="${escape(tool.id)}" aria-label="${escape(tRaw('Start a new {name} session', { name: tool.name }))}">${t('+ New')}</a>`}
           ${hasImageHero
             // Badge moved onto the preview image (see the hero markup), but that
             // hero is aria-hidden / aria-labelled, so keep the status announced.
@@ -2862,8 +2869,6 @@ function showInfoDialog(tool: GalleryTool | undefined, host: GalleryHost, darkTh
             <span class="meta-look-name">${escape(tp.name)}</span>
             ${tp.description ? `<span class="meta-look-desc">${escape(tp.description)}</span>` : ''}
           </a>
-          ${(tp.presets ?? []).length ? `<span class="meta-look-presets" role="group" aria-label="${escape(tRaw('{name} variants', { name: tp.name }))}">${(tp.presets ?? []).map(p =>
-            `<a class="meta-look-preset" href="#/tool/${escape(tool.id)}?template=${escape(encodeURIComponent(tp.id))}&preset=${escape(encodeURIComponent(p.id))}"${p.description ? ` title="${escape(p.description)}"` : ''}>${escape(p.name)}</a>`).join('')}</span>` : ''}
           </li>`).join('')}
         </ul>
       </section>` : '';
@@ -2929,9 +2934,8 @@ function showInfoDialog(tool: GalleryTool | undefined, host: GalleryHost, darkTh
   modal.el.setAttribute('aria-labelledby', 'tool-info-title');
   modal.el.querySelectorAll('.meta-dialog-close').forEach(b => b.addEventListener('click', () => modal.close()));
   modal.el.querySelector('.meta-dialog-open')?.addEventListener('click', () => modal.close());
-  // A template (or preset-variant) link navigates via its href; just take the
-  // dialog down with it.
-  modal.el.querySelectorAll('.meta-look:not([data-ex]), .meta-look-preset').forEach(a => a.addEventListener('click', () => modal.close()));
+  // A template link navigates via its href; just take the dialog down with it.
+  modal.el.querySelectorAll('.meta-look:not([data-ex])').forEach(a => a.addEventListener('click', () => modal.close()));
   // A preset opens the tool seeded with that exact look (same path as clicking the
   // card's example slide). Modified / middle clicks keep the plain href fallback.
   modal.el.querySelectorAll<HTMLElement>('.meta-look[data-ex]').forEach(a => {

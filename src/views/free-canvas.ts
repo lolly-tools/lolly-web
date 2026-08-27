@@ -224,6 +224,9 @@ interface CanvasCfg {
    *  not offer detach - the ten-field time check below does NOT include it. */
   linkField?: string;
   gainField?: string;
+  /** OPTIONAL: the user's own clip name (timeline rename). Editor metadata only -
+   *  nothing renders it; the panel's labelFor prefers it over the derived label. */
+  labelField?: string;
   /** OPTIONAL time sub-fields: the authored geometry curve for each preset. Absent
    *  leaves every preset on its built-in curve, so they sit outside that same check. */
   enterEaseField?: string; exitEaseField?: string;
@@ -1196,6 +1199,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       linkField: cv.linkField || '',
       // Same optional terms: the clip-volume sub-field (plans/165 WP-1).
       gainField: cv.gainField || '',
+      labelField: cv.labelField || '',
       // Also optional, for the same reason: the authored easing curves are additive on
       // top of a time model that was complete without them, so a manifest that declares
       // no ease sub-fields keeps every preset on its built-in curve.
@@ -1547,6 +1551,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (stageEl.style.getPropertyValue('--stage-reserve-bottom') === next) return;
     if (next) stageEl.style.setProperty('--stage-reserve-bottom', next);
     else stageEl.style.removeProperty('--stage-reserve-bottom');
+    // The reserve is the timeline panel's open/close/height signal, so this is also
+    // where the tool rail auto-docks (open) and returns to floating (close).
+    dockRailForTimeline(px > 0);
     canvasEl.dispatchEvent(new Event('canvas-resize'));
   }
 
@@ -1923,6 +1930,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // Unconditional, even if destroy() above threw: a leaked reserve permanently shrinks
     // the stage for every other tool mounted in this session.
     stageEl.style.removeProperty('--stage-reserve-bottom');
+    dockRailForTimeline(false);
     try { canvasEl.dispatchEvent(new Event('canvas-resize')); } catch { /* stage detached */ }
   }
 
@@ -2495,6 +2503,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   let railDrag: { pointerId: number; dx: number; dy: number; lx: number; ly: number } | null = null;
   let railWant: { left: number; top: number } | null = null;
   let railRaf = 0;
+  /** Whether the open timeline has auto-docked the rail (see dockRailForTimeline). */
+  let railDockedForTl = false;
   // Self-gating (no-op unless the flag is on and motion is allowed); wobble owns the
   // transform on the dock (only ever set mid-drag, while the popover is closed).
   const wobble = attachWobble(toolbarDock);
@@ -2535,9 +2545,50 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     toolbarDock.style.top = pos.top + 'px';
   }
   /** Keep a detached rail inside the stage when the stage itself changes size. */
-  function reclampRail(): void { if (railSession) placeRail(railSession); }
+  function reclampRail(): void {
+    // While the timeline has auto-docked the rail, a stage resize must not re-detach
+    // it - the remembered position comes back when the panel closes.
+    if (railDockedForTl && !toolbarDock.classList.contains('is-detached')) return;
+    if (railSession) placeRail(railSession);
+  }
+  /**
+   * Timeline open: the rail stops floating and becomes a fixed-width left PANEL - the
+   * mirror of the right edge-dock column (export settings / player). Content is
+   * NUDGED right, never overlapped: the measured panel width goes on the stage as
+   * `--stage-reserve-left` (fitCanvas margins the canvas into the remaining band,
+   * exactly like the timeline's bottom reserve) and onto <html> as `--ldock-w` so
+   * the fixed back pill insets past it (the `--dock-w` pattern). Dragging is off
+   * while docked - a set-width panel has nowhere to drag to - and `railSession`
+   * (the user's floating position) is kept and restored when the panel closes.
+   * The panel look itself is CSS (`.has-tl-reserve` in editor.css).
+   */
+  function dockRailForTimeline(on: boolean): void {
+    // Desktop only, like the right edge-dock: a fixed left column is dead space on a
+    // phone, so below the shell's breakpoint the rail keeps its floating behaviour.
+    // Feature-detect matchMedia (absent under jsdom/CLI, where docking is harmless).
+    if (on && typeof window.matchMedia === 'function' && !window.matchMedia('(min-width: 641px)').matches) return;
+    if (on === railDockedForTl) return;
+    railDockedForTl = on;
+    stageEl.classList.toggle('has-tl-reserve', on);
+    if (on) {
+      toolbarDock.classList.remove('is-detached');
+      toolbarDock.style.removeProperty('left');
+      toolbarDock.style.removeProperty('top');
+      // Measure the floating rail BEFORE the panel styles land, +gutters. A rail that
+      // cannot be measured (display:none mid-navigation) falls back to its design width.
+      const railW = Math.ceil(toolbar.getBoundingClientRect().width) || 46;
+      const panelW = `${railW + 12}px`;
+      stageEl.style.setProperty('--stage-reserve-left', panelW);
+      document.documentElement.style.setProperty('--ldock-w', panelW);
+    } else {
+      stageEl.style.removeProperty('--stage-reserve-left');
+      document.documentElement.style.removeProperty('--ldock-w');
+      if (railSession) placeRail(railSession);
+    }
+  }
   const onRailDown = (e: PointerEvent): void => {
     if (e.button !== 0 || railDrag) return;
+    if (railDockedForTl) return;   // a docked panel has a set width and place - no drag
     // Buttons/fields already stop pointerdown before it reaches here; this is the
     // belt to that pair of braces, and it keeps the colour trigger draggable-proof.
     if ((e.target as HTMLElement).closest?.('button, input, select, .fc-color-btn')) return;

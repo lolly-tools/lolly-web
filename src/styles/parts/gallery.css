@@ -1457,11 +1457,13 @@ a.gtile-name:focus-visible::after {
   border-radius: calc(var(--radius) * 0.8);
 }
 
-/* "+ New" chip - fades in on hover/focus of the body so a tool that already has
-   a saved session keeps an obvious "start fresh" affordance, distinct from the
-   hero's Continue. */
+/* "+ New" action - a persistent link on every card that opens the tool's template
+   chooser (empty ?template= boot flag). Sits above the stretched title link
+   (a.gtile-name::after, z-index 1) so it takes its own click. */
 .gtile-new {
   flex: none;
+  position: relative;
+  z-index: 2;
   font-size: calc(11px * var(--a11y-fs));
   font-weight: 700;
   line-height: 1;
@@ -1469,11 +1471,10 @@ a.gtile-name:focus-visible::after {
   border: 1px solid hsl(var(--primary) / 0.5);
   border-radius: 999px;
   padding: 4px 9px;
-  opacity: 0;
-  transition: opacity 0.14s;
+  text-decoration: none;
+  transition: background 0.14s;
 }
-.gtile-body--link:hover .gtile-new,
-.gtile-body--link:focus-within .gtile-new { opacity: 1; }
+.gtile-new:hover { background: hsl(var(--primary) / 0.12); }
 
 /* "New" badge - a recently-added tool (one of the last few in catalog order). A
    small filled pill leading the caption. Distinct from the hover-only ".gtile-new"
@@ -1764,18 +1765,6 @@ a.gtile-name:focus-visible::after {
    the glyph when it arrives. Harmless for single-child thumbs. */
 .meta-look-thumb > * { grid-area: 1 / 1; }
 .meta-look-thumb:has(.meta-look-img[src]) .meta-look-glyph { visibility: hidden; }
-/* Preset variant chips under a template tile (plans/142) - neutral rounded pills,
-   never accent/dashed borders. */
-.meta-look-presets { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-.meta-look-preset {
-  padding: 2px 8px;
-  font-size: calc(11px * var(--a11y-fs));
-  color: hsl(var(--muted-foreground));
-  border: 1px solid hsl(var(--border) / 0.7);
-  border-radius: 999px;
-  text-decoration: none;
-}
-.meta-look-preset:hover { color: hsl(var(--foreground)); background: hsl(var(--muted)); }
 .meta-look-name { font-size: calc(12px * var(--a11y-fs)); font-weight: 600; line-height: 1.25; }
 .meta-look-desc {
   font-size: calc(11px * var(--a11y-fs));

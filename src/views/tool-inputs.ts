@@ -28,7 +28,7 @@ import { splitMarkdownIntoBlocks } from '../lib/markdown.ts';
 import { playSliderTick, playScrubTick } from '../lib/sfx.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import { rowIdField, ulid } from '../lib/row-id.ts';
-import { icon, hasIcon } from '../lib/icons.ts';
+import { icon, hasIcon, type IconName } from '../lib/icons.ts';
 // Generic per-input display policy (empty/no-op unless a deployment's control plane
 // has populated it via src/org/) - a rendering overlay only; the engine input model
 // stays the single source of truth.
@@ -2288,11 +2288,20 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
         const cur = String(input.value ?? '');
         const btns = selOpts.map(o => {
           const on = o.value === cur;
+          // vector/raster pills draw the export picker's format glyphs (svg → penTool,
+          // png → image) instead of the word, so the pill and the export chip agree on
+          // what each output kind looks like; the word survives as title + aria-label.
+          // Any other badge string still prints as text.
+          const glyph: IconName | undefined = o.badge === 'vector' ? 'penTool' : o.badge === 'raster' ? 'image' : undefined;
+          const pill = !o.badge ? ''
+            : glyph
+              ? `<span class="badge-select-pill badge-select-pill--icon" data-badge="${escape(o.badge)}" role="img" aria-label="${escape(o.badge)}" title="${escape(o.badge)}">${icon(glyph, { size: 12 })}</span>`
+              : `<span class="badge-select-pill" data-badge="${escape(o.badge)}">${escape(o.badge)}</span>`;
           return `<button type="button" role="radio" class="badge-select-opt${on ? ' is-on' : ''}"`
             + ` data-badge-value="${escape(o.value)}" aria-checked="${on ? 'true' : 'false'}"`
             + ` tabindex="${on ? '0' : '-1'}"${on ? ` data-input-id="${id}"` : ''}>`
             + `<span class="badge-select-label">${escape(o.label)}</span>`
-            + (o.badge ? `<span class="badge-select-pill" data-badge="${escape(o.badge)}">${escape(o.badge)}</span>` : '')
+            + pill
             + `</button>`;
         }).join('');
         // A long list of short labels lays out two-up (compactOptionGrid). The

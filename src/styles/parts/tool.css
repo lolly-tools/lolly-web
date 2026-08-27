@@ -735,7 +735,10 @@
      1.25rem/1.25rem, which put it a few px low and a few px in from where the
      cluster started. */
   top: calc(var(--chrome-top) + var(--vv-top, 0px));
-  left: calc(var(--chrome-inset) + var(--vv-left, 0px));
+  /* --ldock-w: the free-canvas rail's docked left panel (set on <html> while the
+     timeline is open - see dockRailForTimeline), the mirror of the right dock's
+     --dock-w inset. Unset everywhere else, so this resolves to the plain inset. */
+  left: calc(var(--chrome-inset) + var(--vv-left, 0px) + var(--ldock-w, 0px));
   z-index: 99999;
 }
 
@@ -1286,6 +1289,18 @@
 .badge-select-pill[data-badge="vector"] {
   background: hsl(var(--primary) / 0.15);
   color: hsl(var(--primary));
+}
+/* Icon pill (vector/raster): the export picker's format glyph replaces the word.
+   Glyph box rides the a11y type multiplier like other chrome icons. */
+.badge-select-pill--icon {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 6px;
+}
+.badge-select-pill--icon svg {
+  display: block;
+  width: calc(12px * var(--a11y-fs));
+  height: calc(12px * var(--a11y-fs));
 }
 
 /* Compact option grid (>4 options, all short labels - see compactOptionGrid in
@@ -2708,6 +2723,15 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
       rgba(255,255,255,.025) 0% 25%,
       rgba(0,0,0,.025) 0% 50%)
      50% / 2em 2em;
+}
+
+/* Full-bleed utility (is-bare, hideSidebar tools like the sandbox): reserve the
+   top chrome strip so the fixed back pill (top-left) and profile cluster
+   (top-right) never sit OVER the tool's own toolbar - the tool's UI must be
+   readable the moment it opens. Padding rides the STAGE (app chrome), never
+   #tool-content itself, so an exported render does not move by a pixel. */
+.tool-layout.is-bare .tool-stage {
+  padding-top: calc(var(--chrome-top) + var(--chrome-h) + 0.5rem);
 }
 
 /* Live-camera toggle - top-left of the stage (zoom controls sit bottom-right).

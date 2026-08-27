@@ -85,6 +85,40 @@
   align-items: flex-start;
   padding-left: 0;
 }
+/* Timeline open (free-canvas toggles .has-tl-reserve + writes --stage-reserve-left):
+   the rail stops floating and becomes a fixed-width left PANEL, the mirror of the
+   right edge-dock column (export settings / player). fitCanvas margins the canvas
+   into the remaining band, so content is nudged right, never overlapped. The column
+   takes the FULL viewport height - the timeline band starts at its right edge
+   (the .tl-panel shift below) rather than running under it. The grip hides and
+   free-canvas refuses rail drags while docked - a set-width panel has nowhere to
+   drag to. Desktop only: free-canvas skips the dock below the 640px breakpoint. */
+.tool-stage.has-tl-reserve .fc-toolbar-dock {
+  width: var(--stage-reserve-left, 58px);
+  padding-left: 0;
+  justify-content: center;
+  background: hsl(var(--card));
+  border-right: 1px solid hsl(var(--border));
+  /* Short viewports scroll the column. align-items flips off `center` because a
+     centred flex child taller than its container overflows BOTH ends and the top
+     becomes unreachable; the toolbar's auto block margins centre it when it fits
+     and collapse to 0 when it does not - the scroll-safe centring. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  align-items: flex-start;
+  pointer-events: auto;              /* the column is chrome now, not a pass-through */
+}
+.tool-stage.has-tl-reserve .fc-toolbar { margin-block: auto; flex: none; }
+.tool-stage.has-tl-reserve .tl-panel { left: var(--stage-reserve-left, 0px); }
+/* A docked panel is chrome, not a hover reveal: always visible, and the floating
+   card dressing (shadow, own background) comes off - the panel column carries it. */
+.tool-stage.has-tl-reserve .fc-toolbar {
+  opacity: 1;
+  transition-delay: 0s;
+  box-shadow: none;
+  background: transparent;
+}
+.tool-stage.has-tl-reserve .fc-grip { display: none; }
 .fc-toolbar {
   pointer-events: auto;
   display: flex;

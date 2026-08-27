@@ -199,8 +199,9 @@ test('a navigate-away before the pick lands cannot patch a torn-down runtime', (
 test('the chooser gate opens on built-in OR user templates', () => {
   assert.match(
     CODE,
-    /else if \(!slot && !seededDirect && Object\.keys\(values\)\.length === 0 && !reachedViaLink\) \{/,
-    'the gate condition dropped the hard hasTemplates requirement so a user-template-only tool reaches it',
+    /else if \(!slot && !seededDirect && Object\.keys\(values\)\.length === 0 && \(!reachedViaLink \|\| templateParam === ''\)\) \{/,
+    'the gate condition dropped the hard hasTemplates requirement so a user-template-only tool reaches it'
+    + ' (an EMPTY ?template= - the gallery card + New button - is an explicit chooser ask that overrides reachedViaLink)',
   );
   assert.match(CODE, /hasUserTemplates = mine\.length > 0;/,
     'the user templates are counted from the store list()');
@@ -214,7 +215,7 @@ test('the built-in fast path skips the user-template store read before mount', (
   // A tool WITH built-in templates always opens, so it must not pay the async store read on
   // the mount path - the count is guarded behind `if (!hasTemplates)`, and the chooser
   // promise below still fetches the user templates off the mount path as it always did.
-  const branch = bodyAfter(CODE, 'else if (!slot && !seededDirect && Object.keys(values).length === 0 && !reachedViaLink)');
+  const branch = bodyAfter(CODE, "else if (!slot && !seededDirect && Object.keys(values).length === 0 && (!reachedViaLink || templateParam === ''))");
   const countAt = branch.indexOf('hasUserTemplates = mine.length > 0;');
   assert.notEqual(countAt, -1, 'the user-template count is inside this branch');
   assert.match(branch.slice(0, countAt), /if \(!hasTemplates\) \{/,
