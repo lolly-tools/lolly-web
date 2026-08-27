@@ -131,6 +131,182 @@ export function bedDuckEnvelope(o: {
   return events;
 }
 
+/**
+ * One placed clip's whole gain timeline, in CLIP-LOCAL seconds (t = 0 is the
+ * clip's own start on the timeline): a flat volume, shaped by an optional
+ * fade-in/out pair. The SAME list drives both consumers - the preview clock
+ * schedules it onto a GainNode (scheduleGainEvents) and the export mix evaluates
+ * it analytically per sample (mixWindow) - so what plays is what renders, by
+ * construction. Volume keyframes (plans/165 WP-3) fold in here as further ramp
+ * segments; both consumers then inherit them with no extra wiring.
+ *
+ * A no-op timeline (gain 1, no fades) comes back as the single set the evaluator
+ * expects; `isTrivialGain` names that case so hot paths can skip the multiply.
+ */
+export interface VolumeKey {
+  /** CLIP-LOCAL seconds (a kf key's own `t`, /1000). */
+  tSec: number;
+  /** The keyed multiplier, 0..2. */
+  value: number;
+}
+
+/** Sanitise + sort a caller's volume keys once, shared by both evaluators. */
+function cleanVolumeKeys(keys: readonly VolumeKey[] | undefined): VolumeKey[] | null {
+  if (!keys || keys.length === 0) return null;
+  const out = keys
+    .filter((k) => Number.isFinite(k.tSec) && Number.isFinite(k.value))
+    .map((k) => ({ tSec: Math.max(0, k.tSec), value: Math.min(2, Math.max(0, k.value)) }))
+    .sort((a, b) => a.tSec - b.tSec);
+  return out.length ? out : null;
+}
+
+/** The v-track value at t: hold before the first key, linear between, hold after. */
+function volumeKeyValueAt(keys: readonly VolumeKey[], t: number): number {
+  const first = keys[0]!;
+  if (t <= first.tSec) return first.value;
+  for (let i = 1; i < keys.length; i++) {
+    const k = keys[i]!;
+    if (t <= k.tSec) {
+      const prev = keys[i - 1]!;
+      const span = k.tSec - prev.tSec;
+      return span > 0 ? prev.value + (k.value - prev.value) * ((t - prev.tSec) / span) : k.value;
+    }
+  }
+  return keys[keys.length - 1]!.value;
+}
+
+/** How finely a region where BOTH factors ramp is subdivided: their product is
+ *  quadratic and a linear ramp can only approximate it. 50 ms keeps the error
+ *  inaudible (< 0.5% of full scale on any real fade) and the list small. */
+const GAIN_SUBDIVIDE_SEC = 0.05;
+
+interface ClipGainShape {
+  span: number;
+  g: number;
+  fi: number;
+  fo: number;
+  keys: VolumeKey[] | null;
+}
+
+function clipGainShape(o: {
+  spanSec: number; gain?: number; fadeInSec?: number; fadeOutSec?: number;
+  volumeKeys?: readonly VolumeKey[];
+}): ClipGainShape {
+  const span = Math.max(0, o.spanSec);
+  const g = Math.min(2, Math.max(0, Number.isFinite(o.gain as number) ? (o.gain as number) : 1));
+  let fi = Math.max(0, Math.min(o.fadeInSec ?? 0, MAX_CLIP_FADE_SEC));
+  let fo = Math.max(0, Math.min(o.fadeOutSec ?? 0, MAX_CLIP_FADE_SEC));
+  // Fades that together outrun the clip shrink proportionally and meet in the
+  // middle - the shape a user dragging one fade past the other expects, never a step.
+  if (span > 0 && fi + fo > span) {
+    const k = span / (fi + fo);
+    fi *= k;
+    fo *= k;
+  }
+  return { span, g, fi, fo, keys: cleanVolumeKeys(o.volumeKeys) };
+}
+
+/** The 0..1 fade factor at t for a resolved shape. */
+function fadeFactorAt(sh: ClipGainShape, t: number): number {
+  let f = 1;
+  if (sh.fi > 0.001 && t < sh.fi) f = Math.min(f, t / sh.fi);
+  if (sh.fo > 0.001 && sh.span > 0 && t > sh.span - sh.fo) f = Math.min(f, (sh.span - t) / sh.fo);
+  return Math.min(1, Math.max(0, f));
+}
+
+/** The full clip-gain value at t: flat gain × fade factor × keyed multiplier. */
+function shapeValueAt(sh: ClipGainShape, t: number): number {
+  const v = sh.keys ? volumeKeyValueAt(sh.keys, t) : 1;
+  return sh.g * fadeFactorAt(sh, t) * v;
+}
+
+/** Is the fade factor non-constant anywhere strictly inside (a, b)? */
+function fadeRampsIn(sh: ClipGainShape, a: number, b: number): boolean {
+  return (sh.fi > 0.001 && a < sh.fi) || (sh.fo > 0.001 && b > sh.span - sh.fo);
+}
+
+/** Is the v-track non-constant anywhere strictly inside (a, b)? */
+function keysRampIn(sh: ClipGainShape, a: number, b: number): boolean {
+  if (!sh.keys || sh.keys.length < 2) return false;
+  for (let i = 1; i < sh.keys.length; i++) {
+    const p = sh.keys[i - 1]!;
+    const k = sh.keys[i]!;
+    if (p.value !== k.value && k.tSec > a && p.tSec < b) return true;
+  }
+  return false;
+}
+
+export function clipGainEvents(o: {
+  /** The clip's placed length on the timeline, seconds. */
+  spanSec: number;
+  /** Flat clip volume, 0..2 (1 = as recorded). */
+  gain?: number;
+  fadeInSec?: number;
+  fadeOutSec?: number;
+  /** Volume keyframes (the kf grammar's `v` channel), clip-local. Linear between
+   *  keys, held beyond the ends - the DAW convention; ease tokens on a key move
+   *  the POSE and deliberately not the volume. */
+  volumeKeys?: readonly VolumeKey[];
+}): GainEvent[] {
+  const sh = clipGainShape(o);
+  // The classic shapes stay EXACT and small: no keys means every segment is a
+  // pure linear ramp of a single factor.
+  if (!sh.keys) {
+    const events: GainEvent[] = [];
+    if (sh.fi > 0.001) events.push({ t: 0, v: 0, ramp: false }, { t: sh.fi, v: sh.g, ramp: true });
+    else events.push({ t: 0, v: sh.g, ramp: false });
+    if (sh.fo > 0.001 && sh.span > 0) events.push({ t: sh.span - sh.fo, v: sh.g, ramp: false }, { t: sh.span, v: 0, ramp: true });
+    return events;
+  }
+  // Keys present: emit the product at every breakpoint (fade edges + key times),
+  // subdividing only where fade AND keys ramp together - the one region where the
+  // product is quadratic and a linear ramp merely approximates it.
+  const marks = new Set<number>([0, sh.span]);
+  if (sh.fi > 0.001) marks.add(Math.min(sh.fi, sh.span));
+  if (sh.fo > 0.001 && sh.span > 0) marks.add(Math.max(0, sh.span - sh.fo));
+  for (const k of sh.keys) if (k.tSec > 0 && k.tSec < sh.span) marks.add(k.tSec);
+  const sorted = [...marks].sort((a, b) => a - b);
+  const events: GainEvent[] = [{ t: 0, v: shapeValueAt(sh, 0), ramp: false }];
+  for (let i = 1; i < sorted.length; i++) {
+    const a = sorted[i - 1]!;
+    const b = sorted[i]!;
+    if (fadeRampsIn(sh, a, b) && keysRampIn(sh, a, b)) {
+      const steps = Math.max(1, Math.ceil((b - a) / GAIN_SUBDIVIDE_SEC));
+      for (let n = 1; n <= steps; n++) {
+        const t = a + ((b - a) * n) / steps;
+        events.push({ t, v: shapeValueAt(sh, t), ramp: true });
+      }
+    } else {
+      events.push({ t: b, v: shapeValueAt(sh, b), ramp: true });
+    }
+  }
+  return events;
+}
+
+/** The ceiling one clip fade may run, seconds. plans/165 WP-2 (the 15 s proposal
+ *  from plans/101 section 10 awaits an owner call; the wire clamp stays 3 s until then,
+ *  so this only bounds junk). */
+export const MAX_CLIP_FADE_SEC = 15;
+
+/**
+ * The clip-gain value at one CLIP-LOCAL instant - the closed form of
+ * clipGainEvents + envelopeGainAt, allocation-free for per-frame callers (the
+ * preview drives a <video>'s `volume` with it). MUST match the event builder,
+ * proportional fade-shrink included; the round-trip test pins the two together.
+ */
+export function clipGainValueAt(o: {
+  spanSec: number; gain?: number; fadeInSec?: number; fadeOutSec?: number;
+  volumeKeys?: readonly VolumeKey[]; tSec: number;
+}): number {
+  const sh = clipGainShape(o);
+  return shapeValueAt(sh, Math.min(Math.max(0, o.tSec), sh.span));
+}
+
+/** Is this envelope the do-nothing one (a single set at gain 1)? */
+export function isTrivialGain(events: GainEvent[] | null | undefined): boolean {
+  return !events || events.length === 0 || (events.length === 1 && !events[0]!.ramp && events[0]!.v === 1);
+}
+
 /** The subset of AudioParam the scheduler touches - fakeable in Node tests. */
 export interface GainParamLike {
   setValueAtTime(value: number, time: number): unknown;

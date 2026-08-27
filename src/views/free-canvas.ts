@@ -223,6 +223,7 @@ interface CanvasCfg {
   /** OPTIONAL time sub-field: the A/V link (detached audio). Absent on a tool that does
    *  not offer detach - the ten-field time check below does NOT include it. */
   linkField?: string;
+  gainField?: string;
   /** OPTIONAL time sub-fields: the authored geometry curve for each preset. Absent
    *  leaves every preset on its built-in curve, so they sit outside that same check. */
   enterEaseField?: string; exitEaseField?: string;
@@ -1193,6 +1194,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // (`linkOf`) - so this is a live gate for the next tool to opt in, not a
       // description of one that exists.
       linkField: cv.linkField || '',
+      // Same optional terms: the clip-volume sub-field (plans/165 WP-1).
+      gainField: cv.gainField || '',
       // Also optional, for the same reason: the authored easing curves are additive on
       // top of a time model that was complete without them, so a manifest that declares
       // no ease sub-fields keeps every preset on its built-in curve.

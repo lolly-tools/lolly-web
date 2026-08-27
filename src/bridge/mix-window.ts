@@ -28,7 +28,7 @@
  * through it.
  */
 
-import { envelopeGainAt, type GainEvent } from './audio-envelope.ts';
+import { envelopeGainAt, isTrivialGain, type GainEvent } from './audio-envelope.ts';
 
 /** Everything mixes at 48 kHz stereo (MIX_RATE / MIX_CHANNELS in sequence-render.ts). */
 export const MIX_WINDOW_RATE = 48_000;
@@ -51,6 +51,12 @@ export interface MixClip {
    * the OAC graph (plans/156 section 1: `start_c = round(startMs_c · 48)`).
    */
   startMs: number;
+  /**
+   * The clip's gain timeline in CLIP-LOCAL seconds (clipGainEvents: flat volume,
+   * fades, volume keyframes), evaluated per sample exactly as the beds' envelope
+   * is. Absent or trivial = the historical unity-gain read, byte-identical.
+   */
+  events?: GainEvent[];
 }
 
 /**
@@ -118,11 +124,16 @@ export function mixWindow(spec: MixSpec, w0: number, w1: number): [Float32Array,
     // Intersect the placed range [start, start + clipLen) with the window [w0, w1).
     const lo = Math.max(w0, start);
     const hi = Math.min(w1, start + clipLen);
+    // The clip's own gain timeline (volume, fades, volume keyframes) - evaluated
+    // per sample like the beds' envelope below, skipped entirely for the plain
+    // unity clip so the historical path stays multiply-free.
+    const ev = !isTrivialGain(clip.events) ? (clip.events as GainEvent[]) : null;
     for (let n = lo; n < hi; n++) {
       const i = n - start;
       const o = n - w0;
-      left[o] = (left[o] as number) + (srcL[i] as number);
-      right[o] = (right[o] as number) + (srcR[i] as number);
+      const g = ev ? envelopeGainAt(ev, i / rate) : 1;
+      left[o] = (left[o] as number) + (srcL[i] as number) * g;
+      right[o] = (right[o] as number) + (srcR[i] as number) * g;
     }
   }
 

@@ -15,6 +15,7 @@ import assert from 'node:assert/strict';
 import {
   bedDuckEnvelope, envelopeGainAt, scheduleGainEvents,
   MIX_RAMP_SEC, CENTRE_LOW, type GainEvent,
+  clipGainEvents, clipGainValueAt, isTrivialGain,
 } from './audio-envelope.ts';
 
 /** RMS of the envelope over [from, to), sampled at 1 kHz - the "tiny mix" render. */
@@ -136,4 +137,88 @@ test('tiny mix render: bed + primary reads as the section 6.1 use case', () => {
   near(Math.sqrt(sum / n), 0.8);
   // Head vs centre vs tail genuinely differ per the levels, both selects.
   assert.ok(rms(low, 0, 2.9) > 4 * rms(low, 4, 11) && rms(off, 4, 11) < 0.01);
+});
+
+// ── clip gain (plans/165 WP-1/2): the builder, the closed form, and their bond ──
+
+test('clipGainEvents: flat gain, fades, and the proportional shrink', () => {
+  // Flat unity is the single set isTrivialGain names.
+  assert.deepEqual(clipGainEvents({ spanSec: 5 }), [{ t: 0, v: 1, ramp: false }]);
+  assert.ok(isTrivialGain(clipGainEvents({ spanSec: 5 })));
+  assert.ok(!isTrivialGain(clipGainEvents({ spanSec: 5, gain: 0.5 })));
+
+  // A fade pair inside the span keeps its authored lengths.
+  const ev = clipGainEvents({ spanSec: 10, gain: 0.8, fadeInSec: 1, fadeOutSec: 2 });
+  near(envelopeGainAt(ev, 0), 0);
+  near(envelopeGainAt(ev, 0.5), 0.4);              // halfway up the in-ramp
+  near(envelopeGainAt(ev, 5), 0.8);                // the flat middle
+  near(envelopeGainAt(ev, 9), 0.4);                // halfway down the out-ramp
+  near(envelopeGainAt(ev, 10), 0);
+
+  // Fades that outrun the clip shrink proportionally and meet in the middle.
+  const tight = clipGainEvents({ spanSec: 2, fadeInSec: 3, fadeOutSec: 1 });
+  near(envelopeGainAt(tight, 1.5), 1);             // the meeting point (3:1 split of 2s)
+  near(envelopeGainAt(tight, 0.75), 0.5);          // halfway up the shrunken 1.5s in-ramp
+  near(envelopeGainAt(tight, 1.75), 0.5);          // halfway down the shrunken 0.5s out-ramp
+
+  // Junk clamps: gain to [0,2], NaN to 1.
+  assert.equal(clipGainEvents({ spanSec: 5, gain: 9 })[0]!.v, 2);
+  assert.equal(clipGainEvents({ spanSec: 5, gain: Number.NaN })[0]!.v, 1);
+});
+
+test('clipGainValueAt IS clipGainEvents + envelopeGainAt - the closed form cannot drift', () => {
+  // The per-frame video-volume path (sequence-clock) uses the closed form; the mix
+  // and the GainNode schedule use the event list. Sweep both across shapes and
+  // instants - any divergence is a preview/export split.
+  const shapes = [
+    { spanSec: 10, gain: 1 },
+    { spanSec: 10, gain: 0.6, fadeInSec: 1.5 },
+    { spanSec: 10, gain: 1.4, fadeOutSec: 3 },
+    { spanSec: 8, gain: 0.9, fadeInSec: 2, fadeOutSec: 2 },
+    { spanSec: 2, gain: 1, fadeInSec: 3, fadeOutSec: 1 },   // the shrink case
+    { spanSec: 0.5, gain: 2, fadeInSec: 0.2, fadeOutSec: 0.4 },
+  ];
+  for (const o of shapes) {
+    const ev = clipGainEvents(o);
+    for (let t = 0; t <= o.spanSec + 0.001; t += o.spanSec / 40) {
+      const a = envelopeGainAt(ev, Math.min(t, o.spanSec));
+      const b = clipGainValueAt({ ...o, tSec: t });
+      assert.ok(Math.abs(a - b) < 1e-6, `${JSON.stringify(o)} @${t.toFixed(2)}: events=${a} closed=${b}`);
+    }
+  }
+});
+
+test('clipGainEvents: volume keys ramp linearly, hold past the ends, and compose with gain', () => {
+  // Keys at 1s (0.4) and 3s (1.6) inside a 5s clip at gain 0.5.
+  const ev = clipGainEvents({
+    spanSec: 5, gain: 0.5,
+    volumeKeys: [{ tSec: 1, value: 0.4 }, { tSec: 3, value: 1.6 }],
+  });
+  near(envelopeGainAt(ev, 0), 0.5 * 0.4);          // held before the first key
+  near(envelopeGainAt(ev, 1), 0.5 * 0.4);
+  near(envelopeGainAt(ev, 2), 0.5 * 1.0);          // halfway up the ramp
+  near(envelopeGainAt(ev, 3), 0.5 * 1.6);
+  near(envelopeGainAt(ev, 5), 0.5 * 1.6);          // held after the last key
+  // Junk keys clamp and sort; an empty list is the un-keyed envelope.
+  const clamped = clipGainEvents({ spanSec: 5, volumeKeys: [{ tSec: 2, value: 99 }] });
+  near(envelopeGainAt(clamped, 4), 2);
+  assert.ok(isTrivialGain(clipGainEvents({ spanSec: 5, volumeKeys: [] })));
+});
+
+test('clipGainValueAt matches the keyed event list, subdivided overlap regions included', () => {
+  const shapes = [
+    { spanSec: 6, gain: 1, volumeKeys: [{ tSec: 2, value: 0.2 }, { tSec: 4, value: 1.8 }] },
+    // Keys ramping INSIDE a fade: the product is quadratic, the event list is a
+    // 50 ms piecewise approximation - hold both consumers within half a percent.
+    { spanSec: 6, gain: 0.8, fadeInSec: 3, volumeKeys: [{ tSec: 1, value: 1 }, { tSec: 2.5, value: 0.3 }] },
+    { spanSec: 4, gain: 1.5, fadeOutSec: 2, volumeKeys: [{ tSec: 2.5, value: 0.5 }, { tSec: 3.8, value: 1.2 }] },
+  ];
+  for (const o of shapes) {
+    const ev = clipGainEvents(o);
+    for (let t = 0; t <= o.spanSec + 0.001; t += o.spanSec / 60) {
+      const a = envelopeGainAt(ev, Math.min(t, o.spanSec));
+      const b = clipGainValueAt({ ...o, tSec: t });
+      assert.ok(Math.abs(a - b) < 0.005, `${JSON.stringify(o)} @${t.toFixed(2)}: events=${a} closed=${b}`);
+    }
+  }
 });

@@ -110,6 +110,8 @@ export interface Timing {
   exitEase: string;
   /** True when the box declared `data-t-mute="1"` (its audio stays silent). */
   mute: boolean;
+  /** Clip volume 0..2 (`data-t-gain`; absent = 1 = as recorded). */
+  gain: number;
   lane: 'seq' | '';
   /**
    * The box's DEPTH in px above the surface (`data-t-z`), held to the engine's own
@@ -165,6 +167,7 @@ export function readTiming(el: Element): Timing {
     enterEase: el.getAttribute('data-t-enter-ease') || '',
     exitEase: el.getAttribute('data-t-exit-ease') || '',
     mute: el.getAttribute('data-t-mute') === '1',
+    gain: clamp(attrNum(el, 'data-t-gain', 1), 0, 2),
     lane: el.getAttribute('data-t-lane') === 'seq' ? 'seq' : '',
     z: readDepthZ(el.getAttribute('data-t-z')),
     kf: kfTrackOf(el.getAttribute('data-t-kf')),

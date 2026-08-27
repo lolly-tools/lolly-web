@@ -63,6 +63,12 @@ export interface TimeCfg {
    */
   linkField?: string;
   /**
+   * OPTIONAL, progressive like linkField: the clip-volume sub-field (design's
+   * `gain`, plans/165 WP-1). A tool that declares none simply gets no Volume row;
+   * every reader treats an absent value as 1 (as recorded).
+   */
+  gainField?: string;
+  /**
    * OPTIONAL, on the same progressive-capability terms as `linkField`. The sub-fields
    * carrying each preset's authored GEOMETRY curve - a preset name or a CSS
    * cubic-bezier, '' when unauthored, in which case the preset keeps the built-in
@@ -554,6 +560,9 @@ export function kfTrackJoin(a: KfTrack, b: KfTrack, offsetMs: number): KfKey[] {
  */
 export const KF_NEUTRAL: Readonly<Record<KfChannel, number>> = Object.freeze({
   x: 0, y: 0, z: 0, s: 1, r: 0, rx: 0, ry: 0, o: 1, b: 0, f: 0, a: 0, p: DEFAULT_PERSPECTIVE,
+  // Clip volume is a multiplier over the box's own gain field: neutral 1, and the
+  // visual fold never reads it (it is the audio mix's channel - plans/165 WP-3).
+  v: 1,
   // `w`/`h` are the `z` case again: their neutral is THE BOX'S OWN SIZE, which is not a
   // number this table can hold, so 0 stands for "unauthored" and the fold reads it as
   // "use `boxW`/`boxH`". Like `z` and `b`, they are deliberately absent from

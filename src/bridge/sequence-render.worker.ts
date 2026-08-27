@@ -198,6 +198,8 @@ export interface SeqJobLayer {
   clipInMs: number;
   speed: number;
   mute: boolean;
+  /** Clip volume 0..2; absent from an older job reads as 1. */
+  gain?: number;
   enter: SeqLayer['enter'];
   enterMs: number;
   exit: SeqLayer['exit'];
@@ -274,7 +276,7 @@ export function toJobLayer(
 ): SeqJobLayer {
   return {
     idx: L.idx, startMs: L.startMs, durMs: L.durMs, clipInMs: L.clipInMs, speed: L.speed,
-    mute: L.mute, enter: L.enter, enterMs: L.enterMs, exit: L.exit, exitMs: L.exitMs,
+    mute: L.mute, gain: L.gain, enter: L.enter, enterMs: L.enterMs, exit: L.exit, exitMs: L.exitMs,
     enterEase: L.enterEase, exitEase: L.exitEase,
     lane: L.lane, kind: L.kind,
     rect: { x: L.rect.x, y: L.rect.y, w: L.rect.w, h: L.rect.h, rot: L.rect.rot },
@@ -304,7 +306,7 @@ export function hydrateJobLayer(w: SeqJobLayer): SeqLayer {
   return {
     el: NO_EL,
     idx: w.idx, startMs: w.startMs, durMs: w.durMs, clipInMs: w.clipInMs, speed: w.speed,
-    mute: w.mute, enter: w.enter, enterMs: w.enterMs, exit: w.exit, exitMs: w.exitMs,
+    mute: w.mute, gain: Number.isFinite(w.gain as number) ? (w.gain as number) : 1, enter: w.enter, enterMs: w.enterMs, exit: w.exit, exitMs: w.exitMs,
     enterEase: w.enterEase || '', exitEase: w.exitEase || '',
     lane: w.lane, kind: w.kind, rect: { ...w.rect }, opacity: w.opacity, blend: w.blend,
     radius: w.radius, clipPath: w.clipPath, openEnded: w.openEnded,

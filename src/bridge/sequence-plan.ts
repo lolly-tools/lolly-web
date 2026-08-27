@@ -106,6 +106,23 @@ export function kfTrackOf(raw: string | null | undefined): KfTrack {
 }
 
 /**
+ * The volume keys of a parsed track (the kf grammar's `v` channel - plans/165
+ * WP-3), in the CLIP-LOCAL seconds the audio envelope consumes. null when the
+ * track keys no volume, so both consumers skip the work on the common un-keyed
+ * clip. Pose channels on the same keys are ignored here exactly as the visual
+ * fold ignores `v`.
+ */
+export function volumeKeysOf(track: KfTrack | null | undefined): { tSec: number; value: number }[] | null {
+  if (!track || track.length === 0) return null;
+  const out: { tSec: number; value: number }[] = [];
+  for (const k of track) {
+    const v = k.v.v;
+    if (typeof v === 'number' && Number.isFinite(v)) out.push({ tSec: k.t / 1000, value: v });
+  }
+  return out.length ? out : null;
+}
+
+/**
  * A `data-t-z` attribute → the box's depth, px above the surface.
  *
  * Clamped with the ENGINE's `KF_Z_FIELD_CLAMP` rather than a re-typed −300…900: the
@@ -164,6 +181,8 @@ export interface SeqLayer {
   /** Playback-rate multiplier, 0.25–4. */
   speed: number;
   mute: boolean;
+  /** Clip volume 0..2 (1 = as recorded) - the audio mix's flat gain. */
+  gain: number;
   enter: TransitionKind | null;
   enterMs: number;
   exit: TransitionKind | null;
@@ -332,6 +351,7 @@ export function readLayer(el: HTMLElement, idx: number, totalMs: number): SeqLay
     clipInMs: clamp(num(el.getAttribute?.('data-clip-in') ?? null, 0), 0, MAX_TIME_MS),
     speed: clamp(num(el.getAttribute?.('data-t-speed') ?? null, 1), MIN_SPEED, MAX_SPEED),
     mute: (el.getAttribute?.('data-t-mute') ?? null) === '1',
+    gain: clamp(num(el.getAttribute?.('data-t-gain') ?? null, 1), 0, 2),
     enter: isTransitionKind(enter) ? enter : null,
     enterMs: clamp(num(el.getAttribute?.('data-t-enter-ms') ?? null, DEFAULT_TRANSITION_MS), MIN_TRANSITION_MS, MAX_TRANSITION_MS),
     exit: isTransitionKind(exit) ? exit : null,

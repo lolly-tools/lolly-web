@@ -62,9 +62,11 @@
  */
 
 import { recTransition, isTransitionKind, type TransitionKind } from '../lib/transitions.ts';
+import { clipGainEvents, clipGainValueAt, isTrivialGain, scheduleGainEvents } from '../bridge/audio-envelope.ts';
 // The ref test alone - deliberately a leaf module (see its header) so the composer
 // stays out of this module's eager graph; the composer itself is imported lazily in
 // renderZzfxmToBuffer below.
+import { volumeKeysOf } from '../bridge/sequence-plan.ts';
 import { isZzfxmRef } from '../../../../engine/src/zzfxm-ref.ts';
 import type { ZzfxSong } from '../../../../engine/src/zzfxm.ts';
 import {
@@ -550,6 +552,8 @@ interface VideoRec {
 interface AudioRec {
   key: string;
   node: AudioBufferSourceNode | null;
+  /** The per-box gain stage (volume, fades, volume keyframes), torn down with the source. */
+  gainNode: GainNode | null;
 }
 
 type AudioCtxCtor = new () => AudioContext;
@@ -682,13 +686,15 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
 
   /** Everything that decides WHETHER and WHERE a box sounds. */
   function audioKey(url: string, timing: Timing): string {
-    return `${url}|${timing.start}|${timing.dur}|${timing.clipIn}|${timing.speed}|${timing.mute ? 1 : 0}`;
+    return `${url}|${timing.start}|${timing.dur}|${timing.clipIn}|${timing.speed}|${timing.mute ? 1 : 0}`
+      + `|${timing.gain}|${timing.enter ?? ''}:${timing.enterMs}|${timing.exit ?? ''}:${timing.exitMs}`;
   }
 
-  function stopAudioNode(node: AudioBufferSourceNode): void {
+  function stopAudioNode(node: AudioBufferSourceNode, gainNode?: GainNode | null): void {
     try { node.onended = null; } catch { /* fake/detached node */ }
     try { node.stop(); } catch { /* never started, or already ended */ }
     try { node.disconnect(); } catch { /* already torn down */ }
+    if (gainNode) { try { gainNode.disconnect(); } catch { /* already torn down */ } }
   }
 
   /** Silence one box and forget it, so the next pass may re-place it. */
@@ -696,12 +702,12 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
     const rec = audios.get(el);
     if (!rec) return;
     audios.delete(el);
-    if (rec.node) stopAudioNode(rec.node);
+    if (rec.node) stopAudioNode(rec.node, rec.gainNode);
   }
 
   /** Silence the whole preview mix. Every exit from playback goes through here. */
   function stopAllAudio(): void {
-    for (const [, rec] of audios) if (rec.node) stopAudioNode(rec.node);
+    for (const [, rec] of audios) if (rec.node) stopAudioNode(rec.node, rec.gainNode);
     audios.clear();
   }
 
@@ -830,28 +836,56 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
     let dur = endSec - from;
     if (srcDur > 0) dur = Math.min(dur, srcDur - offset);
     if (!(dur > 0)) return;
+    // The box's gain timeline (volume, fades - plans/165 WP-1/2), the SAME
+    // clipGainEvents list the export mix evaluates, so what plays is what renders.
+    // Events are CLIP-LOCAL; the schedule is anchored at the clip's start on the
+    // context timeline (t0 + startSec), which is exactly right whether playback
+    // begins at the clip's head or mid-window (a set/ramp scheduled in the past
+    // resolves to its current value). Span anchors to the PLACED audible length,
+    // matching the export's placed-PCM anchor.
+    const spanSec = srcDur > 0
+      ? Math.min(endSec - startSec, Math.max(0, srcDur - timing.clipIn / 1000))
+      : endSec - startSec;
+    const events = clipGainEvents({
+      spanSec,
+      gain: timing.gain,
+      fadeInSec: timing.enter ? timing.enterMs / 1000 : 0,
+      fadeOutSec: timing.exit ? timing.exitMs / 1000 : 0,
+      volumeKeys: volumeKeysOf(timing.kf) ?? undefined,
+    });
     let node: AudioBufferSourceNode;
+    let gainNode: GainNode | null = null;
     try {
       node = c.createBufferSource();
       node.buffer = buf;
-      node.connect(c.destination);
+      if (isTrivialGain(events)) {
+        node.connect(c.destination);
+      } else {
+        gainNode = c.createGain();
+        scheduleGainEvents(gainNode.gain, events, t0 + startSec);
+        node.connect(gainNode);
+        gainNode.connect(c.destination);
+      }
     } catch (err) {
       log('warn', `sequence audio: could not connect a source - ${err instanceof Error ? err.message : String(err)}`);
       return;
     }
     rec.node = node;
+    rec.gainNode = gainNode;
     node.onended = (): void => {
       // Keep the RECORD (the box has been dealt with at this playhead) but drop the
       // node, so the per-frame pass neither restarts it nor stops a dead node.
       const cur = audios.get(el);
-      if (cur === rec && cur.node === node) cur.node = null;
+      if (cur === rec && cur.node === node) { cur.node = null; cur.gainNode = null; }
       try { node.disconnect(); } catch { /* already torn down */ }
+      if (gainNode) { try { gainNode.disconnect(); } catch { /* already torn down */ } }
     };
     try {
       node.start(Math.max(t0 + from, c.currentTime), offset, dur);
     } catch (err) {
       rec.node = null;
-      stopAudioNode(node);
+      rec.gainNode = null;
+      stopAudioNode(node, gainNode);
       log('warn', `sequence audio: start refused - ${err instanceof Error ? err.message : String(err)}`);
     }
   }
@@ -866,9 +900,9 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
     if (!audioCtx()) return;                        // no output device: picture only
     const seq = seqMs();
     if (tMs / 1000 >= audioEndSec(timing, seq)) return;   // already past it
-    if (timing.mute) { audios.set(el, { key, node: null }); return; }
+    if (timing.mute) { audios.set(el, { key, node: null, gainNode: null }); return; }
     if (timing.speed !== 1) {
-      audios.set(el, { key, node: null });
+      audios.set(el, { key, node: null, gainNode: null });
       if (!speedWarned) {
         speedWarned = true;
         log('warn', `sequence audio: a clip at ${Math.round(timing.start)}ms plays at ${timing.speed}× - silent (v1 does not time-stretch audio), matching the export mix`);
@@ -876,7 +910,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
       return;
     }
     if (!url) return;
-    audios.set(el, { key, node: null });
+    audios.set(el, { key, node: null, gainNode: null });
     void bufferFor(url).then((buf) => {
       const cur = audios.get(el);
       if (!buf || !cur || cur.key !== key || cur.node) return;
@@ -935,6 +969,27 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
         if (rec.loopWas == null) { rec.loopWas = video.loop; try { video.loop = false; } catch { /* detached */ } }
         const wantMuted = !!timing.mute;
         if (video.muted !== wantMuted) video.muted = wantMuted;   // no per-frame write
+        // Clip volume + fades on the element (plans/165 WP-1/2): the closed form of
+        // the exact envelope the export mixes with. The element caps at 1, so a
+        // boosted clip (gain > 1) previews at full and boosts only in the file -
+        // stated in the inspector's copy. Fades follow the export's kind rule: a
+        // video's soundtrack fades only under the `fade` kind.
+        if (!wantMuted) {
+          const spanRawSec = (endOf(timing, seqMs()) - timing.start) / 1000;
+          const gainSpanSec = mediaEnd > 0
+            ? Math.min(spanRawSec, Math.max(0, mediaEnd - timing.clipIn / 1000))
+            : spanRawSec;
+          const vol = clipGainValueAt({
+            spanSec: gainSpanSec,
+            gain: timing.gain,
+            fadeInSec: timing.enter === 'fade' ? timing.enterMs / 1000 : 0,
+            fadeOutSec: timing.exit === 'fade' ? timing.exitMs / 1000 : 0,
+            volumeKeys: volumeKeysOf(timing.kf) ?? undefined,
+            tSec: (tMs - timing.start) / 1000,
+          });
+          const capped = Math.min(1, vol);
+          if (Math.abs(video.volume - capped) > 0.003) { try { video.volume = capped; } catch { /* detached */ } }
+        }
         try { video.playbackRate = timing.speed; } catch { /* rate out of engine range */ }
         if (pastEnd) {
           // Media exhausted inside the window: hold the last frame, exactly as the

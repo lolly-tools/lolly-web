@@ -85,6 +85,7 @@ import {
   type SeqLayer,
   type SeqErrorCode,
   type SeqPlanEnv,
+  volumeKeysOf,
 } from './sequence-plan.ts';
 // The plate budget (plans/104 section 5.5) and the spill geometry it prices. Both pure; the
 // budget is what turns "shoot the flown-past layer sharper" into a bounded promise.
@@ -154,6 +155,9 @@ import {
 export { radiiOf, fitRect };
 import { videoBitrate, bppForQuality, codecAdjustedBitrate, videoMimeCandidates } from './video-mime.ts';
 import { bedDuckEnvelope, scheduleGainEvents, MIX_RAMP_SEC, type DuckSpan } from './audio-envelope.ts';
+// Separate line on purpose: sequence-render.test.ts pins the line above verbatim
+// (the one-envelope contract), and the clip-gain names are a different concern.
+import { clipGainEvents, isTrivialGain } from './audio-envelope.ts';
 // plans/156 Phase B: the analytic mix-window evaluator. B2/B3 route BOTH the whole
 // buffer (sequenceAudioPcm, the worker handover) AND the on-demand streaming windows
 // through this one PURE function, so "whole" and "windowed" are literally the same
@@ -1054,11 +1058,30 @@ async function mixSequenceAudio(
       const { channels } = await clip.pcm(from, to, MIX_RATE);
       const frames = channels[0]?.length ?? 0;
       if (!frames) continue;
-      // A unity-gain buffer read placed at an absolute start. The OAC graph played it
+      // A buffer read placed at an absolute start. The OAC graph played it
       // with node.start(max(0, startMs/1000)); mixWindow places it at
       // round(startMs · rate / 1000) - the same sample (plans/156 section 1). A mono source
       // fans out into both output channels exactly as copyToChannel's clamp did.
-      clips.push({ pcm: channels, startMs: Math.max(0, L.startMs) });
+      //
+      // The clip's own gain timeline rides along (plans/165 WP-1/2): flat volume from
+      // `data-t-gain`, shaped by fades. An AUDIO box fades on any authored in/out
+      // (its transition kinds have no picture to mean anything else); a VIDEO clip's
+      // soundtrack fades only under the `fade` kind - a rise or pop moves the
+      // picture without touching the sound, but a crossfading picture with
+      // hard-cutting audio is a mistake no editor ships. Spans anchor to the PLACED
+      // audio length, so a window trimmed past its media fades on audible material.
+      const placedSec = frames / MIX_RATE;
+      const audioBox = L.kind === 'audio';
+      const fadeInSec = ((audioBox && L.enter) || L.enter === 'fade') ? L.enterMs / 1000 : 0;
+      const fadeOutSec = ((audioBox && L.exit) || L.exit === 'fade') ? L.exitMs / 1000 : 0;
+      const events = clipGainEvents({
+        spanSec: placedSec, gain: L.gain, fadeInSec, fadeOutSec,
+        volumeKeys: volumeKeysOf(L.kf) ?? undefined,
+      });
+      clips.push({
+        pcm: channels, startMs: Math.max(0, L.startMs),
+        ...(isTrivialGain(events) ? {} : { events }),
+      });
       spans.push({ from: L.startMs / 1000, to: L.startMs / 1000 + frames / MIX_RATE });
     } catch (err) {
       log('warn', `sequence audio: ${toCodedError(err).message} - clip will be silent`);

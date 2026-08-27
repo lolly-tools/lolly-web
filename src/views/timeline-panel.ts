@@ -4055,7 +4055,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // did: the pose row shows the box's depth wherever no keyframe overrides it (section 5.2),
     // so a depth edit made anywhere else must repaint this row or it prints a stale
     // number. `mute` is what flips the speaker toggle's glyph and `aria-pressed`.
-    const key = box ? `${id}|${JSON.stringify([box[cfg.startField], box[cfg.durField], box[cfg.clipInField], box[cfg.speedField], box[cfg.enterField], box[cfg.exitField], box[cfg.enterMsField], box[cfg.exitMsField], box[cfg.muteField], cfg.enterEaseField ? box[cfg.enterEaseField] : '', cfg.exitEaseField ? box[cfg.exitEaseField] : '', cfg.kfField ? box[cfg.kfField] : '', cfg.zField ? box[cfg.zField] : '', cfg.linkField ? box[cfg.linkField] : '', box.kind])}` : '';
+    const key = box ? `${id}|${JSON.stringify([box[cfg.startField], box[cfg.durField], box[cfg.clipInField], box[cfg.speedField], box[cfg.enterField], box[cfg.exitField], box[cfg.enterMsField], box[cfg.exitMsField], box[cfg.muteField], cfg.enterEaseField ? box[cfg.enterEaseField] : '', cfg.exitEaseField ? box[cfg.exitEaseField] : '', cfg.kfField ? box[cfg.kfField] : '', cfg.zField ? box[cfg.zField] : '', cfg.linkField ? box[cfg.linkField] : '', box.kind, cfg.gainField ? box[cfg.gainField] : ''])}` : '';
     if (key === inspectorKey) return;
     inspectorKey = key;
     inspectorId = id;
@@ -4297,9 +4297,31 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     //
     // Never on a CAMERA: v1 ignores a camera box's enter/exit outright (section 5.4), so these
     // would be four controls writing fields no evaluator reads.
-    const animG = isCamera ? null : inspectorGroup('animate', t('Animate'), 'animate');
+    const mediaKind = id ? mediaOf(id).kind : '';
+    const audioFades = mediaKind === 'audio';
+    const animG = isCamera ? null : inspectorGroup('animate', audioFades ? t('Fades') : t('Animate'), 'animate');
     if (animG) inspector.appendChild(animG.root);
-    if (animG) {
+    if (animG && audioFades) {
+      // A sound has no picture for `rise` or `pop` to move: its in/out ARE fades
+      // (plans/165 WP-2 - the mix reads any authored kind on an audio box as a fade,
+      // and this writer only ever authors 'fade'). Duration-only rows; 0 clears the
+      // kind so an unfaded box stays byte-identical to one written before this change.
+      const fadeRow = (label: string, kindField: string, msField: string): void => {
+        const cur = isTransitionKind(String(box[kindField] ?? '')) ? finite(box[msField], 400) : 0;
+        animG.body.appendChild(row(label, numField(cur, 50, 100, (v) => {
+          const ms = Math.round(clamp(v, 0, MAX_TRANSITION_MS));
+          write(patchBox(getBoxes(), id, ms > 0
+            ? { [kindField]: 'fade', [msField]: Math.max(MIN_TRANSITION_MS, ms) }
+            : { [kindField]: '', [msField]: '' }));
+        })));
+      };
+      fadeRow(t('Fade in'), cfg.enterField, cfg.enterMsField);
+      fadeRow(t('Fade out'), cfg.exitField, cfg.exitMsField);
+      const fi = isTransitionKind(String(box[cfg.enterField] ?? '')) ? finite(box[cfg.enterMsField], 400) : 0;
+      const fo = isTransitionKind(String(box[cfg.exitField] ?? '')) ? finite(box[cfg.exitMsField], 400) : 0;
+      animG.setSummary([fi > 0 || fo > 0 ? `${fmtDur(fi / 1000)} / ${fmtDur(fo / 1000)}` : t('No fades')]);
+    }
+    if (animG && !audioFades) {
       animG.body.appendChild(row(t('Animate in'), kindSelect(box[cfg.enterField], (v) => write(patchBox(getBoxes(), id, { [cfg.enterField]: v })))));
       animG.body.appendChild(row(t('In (ms)'), numField(finite(box[cfg.enterMsField], 400), 50, 100, (v) => write(patchBox(getBoxes(), id, { [cfg.enterMsField]: Math.round(clamp(v, MIN_TRANSITION_MS, MAX_TRANSITION_MS)) })))));
       // The curve sits beside its duration, not beside its kind: "how long" and "how it
@@ -4392,6 +4414,108 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // inspector needs a permanent seat for.
     //
     // Mute is a playback concern, so it exists only on something that plays.
+    //
+    // VOLUME sits beside it on the same terms (plans/165 WP-1): a percent slider
+    // writing the manifest's gain sub-field, shown only where the tool declares one
+    // and the box actually carries sound. 100% = as recorded; up to 200% boosts the
+    // RENDERED file - the preview element caps at 100%, which the title states so
+    // the difference is a documented behaviour, not a surprise.
+    if (timed && cfg.gainField && (mediaKind === 'audio' || mediaKind === 'video')) {
+      const gf = cfg.gainField;
+      const cur = clamp(finite(box[gf], 1), 0, 2);
+      const wrap = document.createElement('label');
+      wrap.className = 'field-row field-row--inline tl-field tl-volume-row';
+      const lab = document.createElement('span');
+      lab.className = 'field-label';
+      lab.textContent = t('Volume');
+      const slider = document.createElement('input');
+      slider.className = 'tl-kf-slider tl-volume-slider';
+      slider.type = 'range';
+      slider.min = '0';
+      slider.max = '200';
+      slider.step = '5';
+      slider.setAttribute('aria-label', t('Volume'));
+      slider.value = String(Math.round(cur * 100));
+      const num = document.createElement('input');
+      num.className = 'field-input tl-num tl-volume-num';
+      num.type = 'number';
+      num.min = '0';
+      num.max = '200';
+      num.step = '5';
+      num.value = String(Math.round(cur * 100));
+      num.title = t('Percent of the recorded level. Above 100% boosts the exported file; the preview plays at 100%.');
+      // One model write per gesture, the depth row's own contract: `input` mirrors
+      // the number live, `change` commits once. 100% clears the field so an
+      // untouched box stays byte-identical to one written before this change.
+      const commit = (raw: number): void => {
+        const pct = Math.round(clamp(raw, 0, 200));
+        num.value = String(pct);
+        slider.value = String(pct);
+        write(patchBox(getBoxes(), id, { [gf]: pct === 100 ? '' : pct / 100 }));
+      };
+      slider.addEventListener('input', () => { num.value = slider.value; });
+      slider.addEventListener('change', () => commit(finite(slider.value, 100)));
+      num.addEventListener('change', () => commit(finite(num.value, 100)));
+      wrap.append(lab, slider, num);
+      // VOLUME KEYFRAMES (plans/165 WP-3): the diamond keys the row's current value
+      // at the playhead, riding the SAME kf grammar as pose keys (`v` channel), so
+      // split/trim/join rebase volume automation with zero extra code. Deliberately
+      // NOT the pose popup: an audio box is excluded from pose keyframing by the
+      // disclosure law, and volume is a property of the sound, so its authoring
+      // affordance lives beside the volume it keys. Linear between keys, held past
+      // the ends - the DAW convention.
+      if (cfg.kfField) {
+        const keyBtn = btn('tl-volume-key', t('Key volume at the playhead'), icon('keyframe'));
+        keyBtn.removeAttribute('data-tip');
+        keyBtn.title = t('Key volume at the playhead');
+        keyBtn.addEventListener('click', () => {
+          const rows = getBoxes();
+          const bi = indexOfId(rows, cfg, id);
+          if (bi < 0) return;
+          const bx = rows[bi]!;
+          const atMs = kfWriteMs(bx, cfg, clock.t() / 1000);
+          const track = kfBoxTrack(bx, cfg);
+          const val = clamp(finite(num.value, 100), 0, 200) / 100;
+          const hit = track.findIndex((k) => k.t === atMs);
+          const keys = hit >= 0
+            ? track.map((k, j) => (j === hit ? { t: k.t, ease: k.ease, v: { ...k.v, v: val } } : k))
+            : [...track, { t: atMs, ease: '', v: { v: val } }];
+          // The key CAPTURES the row's level and the flat trim resets to neutral in
+          // the SAME commit - otherwise the two multiply and the keyed level plays
+          // double. From here the slider is a trim over the automation (the DAW
+          // model); the rebuild snaps it back to 100%.
+          write(patchBox(setKfTrack(rows, cfg, id, keys as never), id, { [gf]: '' }));
+          announce(t('Volume keyframe set'));
+        });
+        wrap.appendChild(keyBtn);
+        const vCount = kfBoxTrack(box, cfg).filter((k) => typeof k.v.v === 'number').length;
+        if (vCount > 0) {
+          const meta = document.createElement('span');
+          meta.className = 'tl-volume-keys field-label';
+          meta.textContent = vCount === 1 ? t('1 volume key') : t('{n} volume keys', { n: String(vCount) });
+          const clearBtn = btn('tl-volume-clear', t('Clear volume keys'), icon('scissors'));
+          clearBtn.removeAttribute('data-tip');
+          clearBtn.title = t('Clear volume keys');
+          clearBtn.addEventListener('click', () => {
+            const rows = getBoxes();
+            const bi = indexOfId(rows, cfg, id);
+            if (bi < 0) return;
+            const track = kfBoxTrack(rows[bi]!, cfg);
+            const keys = track
+              .map((k) => {
+                const pose = { ...k.v } as Record<string, number>;
+                delete pose.v;
+                return { t: k.t, ease: k.ease, v: pose };
+              })
+              .filter((k) => Object.keys(k.v).length > 0);
+            write(setKfTrack(rows, cfg, id, keys as never));
+            announce(t('Volume keyframes cleared'));
+          });
+          wrap.append(meta, clearBtn);
+        }
+      }
+      inspector.appendChild(wrap);
+    }
     if (timed) {
       const muted = box[cfg.muteField] === true || box[cfg.muteField] === 'true';
       const muteLabel = muted ? t('Unmute clip') : t('Mute clip');

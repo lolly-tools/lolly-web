@@ -99,7 +99,7 @@ function layer(over: Partial<SeqJobLayer> = {}): SeqJobLayer {
   const base = toJobLayer({
     el: null as never,
     idx: layerIdx++,
-    startMs: 0, durMs: 1000, clipInMs: 0, speed: 1, mute: false,
+    startMs: 0, durMs: 1000, clipInMs: 0, speed: 1, mute: false, gain: 1,
     enter: null, enterMs: 0, exit: null, exitMs: 0, enterEase: '', exitEase: '',
     lane: 'seq', kind: 'static',
     rect: { x: 0, y: 0, w: 100, h: 100, rot: 0 },
