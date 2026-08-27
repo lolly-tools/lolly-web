@@ -40,6 +40,8 @@
  * dock also reads, synchronously, to decide whether to show its button at all).
  */
 import { getNeurospicyAnalyser, neurospicySignalState } from './neurospicy.ts';
+import { boostHdrCanvas, hdrCanvasSupported, releaseHdrCanvas } from './hdr-canvas.ts';
+import { displaySupportsHdr } from './display-gamut.ts';
 import { vizSupported, vizPossible } from './viz-support.ts';
 import { vizPalette, vizPaletteDiagnostics, type VizPalette, type VizPaletteHost } from './viz-palette.ts';
 import { vizPresetById, type VizPreset } from './viz-presets.ts';
@@ -248,6 +250,22 @@ export interface VizHandle {
 }
 
 /**
+ * Whether a mount should light up the WP-4 live on-screen HDR path (plan 154): an
+ * HDR-capable display (Chromium `configureHighDynamicRange` + a float drawing buffer) AND
+ * a LIVE surface - never a `capture` one. Every export/cover/thumbnail/`?neuro` demo mount
+ * passes `capture: true` and feeds a byte-exact snapshot pipeline, so those stay on the
+ * plain butterchurn canvas, unchanged, and no export path is ever touched. `supported` is
+ * injectable for tests; production requires BOTH an HDR-capable canvas AND an HDR
+ * display - hdrCanvasSupported() is capability-only (the Canvas-HDR API exists), so
+ * without displaySupportsHdr() (the real `(dynamic-range: high)` probe) a Chromium on
+ * an SDR monitor would run the whole boost pipeline for nothing. This matches the
+ * sibling WP-5 Tier-A gate (oklch-slice.ts ANDs displaySupportsHdr() too).
+ */
+export function vizWantsHdr(capture: boolean, supported: boolean = hdrCanvasSupported() && displaySupportsHdr()): boolean {
+  return !capture && supported;
+}
+
+/**
  * Attach a visualizer to `canvas` and start rendering. Resolves null when the
  * browser can't do WebGL2 or the audio graph doesn't exist yet - callers should
  * check `vizSupported()`/`vizAudioReady()` first and retry the latter on
@@ -278,6 +296,13 @@ export async function mountViz(
   // nothing" rather than "a slower visualiser". The dock still gates its ambient BUTTON
   // on the strict vizSupported().
   if ((!analyser && !inject) || !vizPossible()) return null;
+
+  // WP-4 live HDR. When on: butterchurn renders to an OFFSCREEN canvas and a boost pass
+  // presents it onto `canvas` (the DOM element) as an extended-range HDR image. Off (SDR
+  // display, WebKit, and every `capture` mount): `renderCanvas === canvas`, butterchurn
+  // renders straight to it exactly as before and nothing below diverges - byte-identical.
+  const useHdr = vizWantsHdr(!!opts?.capture);
+  const renderCanvas = useHdr ? document.createElement('canvas') : canvas;
 
   const mod = await loadButterchurn();
   // A caller that already has a palette (a chosen SCHEME, or a tool's own colours)
@@ -322,15 +347,19 @@ export async function mountViz(
   };
   const first = box();
 
+  // Sizes butterchurn's OWN surface (renderCanvas), which is `canvas` itself unless the
+  // HDR path split it off. `box()` above still measures `canvas` - the DOM element whose
+  // CSS box drives the device-pixel target - in both modes.
   const applySize = (w: number, h: number): void => {
-    if (canvas.width !== w) canvas.width = w;
-    if (canvas.height !== h) canvas.height = h;
+    if (renderCanvas.width !== w) renderCanvas.width = w;
+    if (renderCanvas.height !== h) renderCanvas.height = h;
   };
   applySize(first.w, first.h);
 
   // Must precede createVisualizer - see VizMountOpts.capture for why a later
-  // getContext can't add the flag.
-  if (opts?.capture) canvas.getContext('webgl2', { preserveDrawingBuffer: true });
+  // getContext can't add the flag. The HDR path pre-acquires with the same flag so the
+  // offscreen buffer is readable when the boost pass uploads it as a texture.
+  if (opts?.capture || useHdr) renderCanvas.getContext('webgl2', { preserveDrawingBuffer: true });
 
   // A null context is legal: butterchurn's AudioProcessor only builds its analyser
   // graph `if (context)` and allocates its sample arrays either way, which is exactly
@@ -340,7 +369,7 @@ export async function mountViz(
   // bare Math.random() at construction (butterchurn.js noiseWrap/noise init), and
   // preset shaders sample them every frame - unseeded, two deterministic runs still
   // paint different fields. loadPreset/render seeding alone cannot cover this.
-  const viz = withSeed(opts?.deterministic ? 0x10dd : null, () => mod.createVisualizer(analyser?.context as BaseAudioContext, canvas, {
+  const viz = withSeed(opts?.deterministic ? 0x10dd : null, () => mod.createVisualizer(analyser?.context as BaseAudioContext, renderCanvas, {
     width: first.w,
     height: first.h,
     pixelRatio: 1,
@@ -422,6 +451,9 @@ export async function mountViz(
     // stand down, so the surface can say what happened instead of looking dead.
     try {
       drawOne(1 / 60);
+      // WP-4: present butterchurn's offscreen SDR frame onto the DOM canvas as HDR. A
+      // no-op branch on every SDR/WebKit/capture mount (useHdr false), so those pay nothing.
+      if (useHdr) boostHdrCanvas(canvas, renderCanvas, renderCanvas.width, renderCanvas.height, 'srgb');
     } catch (err) {
       alive = false;
       raf = 0;
@@ -473,7 +505,7 @@ export async function mountViz(
       // and not part of its API. Guarded rather than asserted: a version that renames
       // them should cost reproducibility, not the visualizer.
       try {
-        const gl = canvas.getContext('webgl2');
+        const gl = renderCanvas.getContext('webgl2');
         const r = (viz as unknown as { renderer?: Record<string, unknown> }).renderer;
         if (!gl || !r) return;
         // The renderer's clock. `time` is a running accumulator (`time += 1/fps`) that
@@ -510,6 +542,9 @@ export async function mountViz(
       if (!alive) return;
       try {
         drawOne(elapsed);
+        // Driven callers are all `capture` today (useHdr false → no-op); guarded anyway so
+        // a future non-capture driven surface still presents HDR through the same path.
+        if (useHdr) boostHdrCanvas(canvas, renderCanvas, renderCanvas.width, renderCanvas.height, 'srgb');
       } catch (err) {
         // Same one-strike rule as the loop: a preset the renderer won't accept throws
         // every frame, and a caller stepping an export would otherwise take the throw
@@ -531,6 +566,16 @@ export async function mountViz(
       // Selective disconnect: drops only analyser→butterchurn, never the
       // analyser→destination edge the player's audio actually flows through.
       if (analyser) try { viz.disconnectAudio(analyser); } catch { /* already gone */ }
+      // WP-4: give BOTH GL contexts back - the HDR present context on the DOM canvas and
+      // butterchurn's own on the offscreen render canvas - or a remount leaks them (browsers
+      // cap WebGL2 contexts at ~16 and silently drop the oldest).
+      if (useHdr) {
+        releaseHdrCanvas(canvas);
+        try {
+          (renderCanvas.getContext('webgl2') as WebGL2RenderingContext | null)
+            ?.getExtension('WEBGL_lose_context')?.loseContext();
+        } catch { /* already gone */ }
+      }
     },
   };
 }

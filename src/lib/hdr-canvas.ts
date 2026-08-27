@@ -26,6 +26,15 @@ export const TIER_A_ENABLED = true;
  *  float buffer wanted the other encoding). */
 const TIER_A_ENCODE = 1;
 
+/** Live-viz boost (plan 154 WP-4): how far a full-brightness pixel is pushed ABOVE SDR
+ *  white on the extended-range buffer. 2.0 ≈ two stops of headroom for the brightest brand
+ *  colours; mids and shadows stay where butterchurn put them.
+ *  ponytail: tuning knob - the perceived glow needs a real HDR panel to set; adjust here. */
+const HDR_BOOST_HEADROOM = 2.0;
+/** Brightness (max channel, 0..1) where the boost starts ramping in. Below it a pixel
+ *  passes through unchanged, so dark fields stay SDR and only the punchy bits glow. */
+const HDR_BOOST_KNEE = 0.5;
+
 let supportCache: boolean | undefined;
 
 /** True when this browser can paint a live HDR canvas: the HDR API, WebGL2, and a
@@ -77,6 +86,25 @@ float enc(float v){ float s = v < 0.0 ? -1.0 : 1.0; float a = abs(v);
 void main() {
   vec4 c = texture(tex, uv);
   o = vec4(uEncode > 0.5 ? vec3(enc(c.r), enc(c.g), enc(c.b)) : c.rgb, c.a);
+}`;
+
+/** WP-4 live-viz boost shader: sample the SDR source (butterchurn's [0,1] output) and
+ *  scale bright pixels ABOVE 1.0 so they land above SDR white on the extended-range buffer.
+ *  A per-pixel SCALAR gain preserves the R:G:B ratio (hue/chroma), only brightness grows -
+ *  the same hue-preserving intent as the stills/export glow. */
+const FRAG_BOOST = `#version 300 es
+precision highp float;
+in vec2 uv;
+uniform sampler2D tex;
+uniform float uHeadroom;
+uniform float uKnee;
+out vec4 o;
+void main() {
+  vec4 c = texture(tex, uv);
+  float b = max(c.r, max(c.g, c.b));
+  float t = clamp((b - uKnee) / max(1e-4, 1.0 - uKnee), 0.0, 1.0);
+  float gain = 1.0 + (uHeadroom - 1.0) * t * t;
+  o = vec4(c.rgb * gain, c.a);
 }`;
 
 function compile(gl: WebGL2RenderingContext, type: number, src: string): WebGLShader {
@@ -161,11 +189,101 @@ export function paintHdrCanvas(
   }
 }
 
-/** Release a chart's HDR context (on teardown), so the GPU resource is not held. */
-export function releaseHdrCanvas(canvas: HTMLCanvasElement): void {
-  const st = STATE.get(canvas);
-  STATE.delete(canvas);
-  if (st) {
-    try { st.gl.getExtension('WEBGL_lose_context')?.loseContext(); } catch { /* ignore */ }
+/* ── WP-4: live-viz HDR boost ─────────────────────────────────────────────────
+ * A separate program from the Colour-Lab slice paint above: it samples a SOURCE
+ * CANVAS (butterchurn's own WebGL2 output, an [0,1] sRGB image) rather than a float
+ * array, and boosts it. Keyed on the PRESENT canvas, which is only ever used by one
+ * of the two paths, never both. */
+interface BoostState {
+  gl: WebGL2RenderingContext;
+  prog: WebGLProgram;
+  tex: WebGLTexture;
+  uHeadroom: WebGLUniformLocation | null;
+  uKnee: WebGLUniformLocation | null;
+  w: number;
+  h: number;
+}
+const BOOST = new WeakMap<HTMLCanvasElement, BoostState | null>(); // null = init failed, don't retry
+
+function initBoost(canvas: HTMLCanvasElement, colorSpace: 'srgb' | 'display-p3'): BoostState | null {
+  const gl = canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: false, antialias: false });
+  if (!gl) return null;
+  try {
+    (canvas as unknown as { configureHighDynamicRange(o: { mode: string }): void })
+      .configureHighDynamicRange({ mode: 'extended' });
+    (gl as unknown as { drawingBufferColorSpace: string }).drawingBufferColorSpace = colorSpace;
+    const prog = gl.createProgram()!;
+    gl.attachShader(prog, compile(gl, gl.VERTEX_SHADER, VERT));
+    gl.attachShader(prog, compile(gl, gl.FRAGMENT_SHADER, FRAG_BOOST));
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error('HDR boost link: ' + gl.getProgramInfoLog(prog));
+    gl.useProgram(prog);
+    const tex = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); // canvas texel row 0 is the top; flip to screen orientation
+    gl.uniform1i(gl.getUniformLocation(prog, 'tex'), 0);
+    return { gl, prog, tex, uHeadroom: gl.getUniformLocation(prog, 'uHeadroom'), uKnee: gl.getUniformLocation(prog, 'uKnee'), w: 0, h: 0 };
+  } catch (e) {
+    console.warn('[viz] HDR boost init failed, staying SDR', (e as Error)?.message ?? e);
+    return null;
   }
+}
+
+/**
+ * Present butterchurn's SDR frame onto `present` as a live HDR image (plan 154 WP-4):
+ * upload the `source` canvas (butterchurn's [0,1] sRGB output) as a texture and run the
+ * hue-preserving boost so whites and bright brand colours land ABOVE 1.0 = above SDR white
+ * on the extended-range RGBA16F buffer. Returns false on any failure so the caller can
+ * leave the plain SDR canvas up. Only ever call when `hdrCanvasSupported()`; upload happens
+ * the same tick butterchurn rendered, so its drawing buffer is still valid to read.
+ */
+export function boostHdrCanvas(
+  present: HTMLCanvasElement,
+  source: TexImageSource,
+  w: number,
+  h: number,
+  colorSpace: 'srgb' | 'display-p3',
+): boolean {
+  let st = BOOST.get(present);
+  if (st === undefined) { st = initBoost(present, colorSpace); BOOST.set(present, st); }
+  if (!st) return false;
+  const { gl, tex } = st;
+  try {
+    if (st.w !== w || st.h !== h) {
+      present.width = w; present.height = h;
+      (gl as unknown as { drawingBufferStorage(f: number, w: number, h: number): void })
+        .drawingBufferStorage(gl.RGBA16F, w, h);
+      gl.viewport(0, 0, w, h);
+      st.w = w; st.h = h;
+    }
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+    gl.useProgram(st.prog);
+    if (st.uHeadroom) gl.uniform1f(st.uHeadroom, HDR_BOOST_HEADROOM);
+    if (st.uKnee) gl.uniform1f(st.uKnee, HDR_BOOST_KNEE);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    return true;
+  } catch (e) {
+    console.warn('[viz] HDR boost paint failed, staying SDR', (e as Error)?.message ?? e);
+    BOOST.set(present, null); // stop retrying on this canvas
+    return false;
+  }
+}
+
+/** Release a canvas's HDR context (on teardown), so the GPU resource is not held. Covers
+ *  both the Colour-Lab slice paint and the WP-4 live-viz boost - a given canvas is only in
+ *  one of the two maps, so the other lookup is a harmless miss. */
+export function releaseHdrCanvas(canvas: HTMLCanvasElement): void {
+  const a = STATE.get(canvas);
+  STATE.delete(canvas);
+  if (a) { try { a.gl.getExtension('WEBGL_lose_context')?.loseContext(); } catch { /* ignore */ } }
+  const b = BOOST.get(canvas);
+  BOOST.delete(canvas);
+  if (b) { try { b.gl.getExtension('WEBGL_lose_context')?.loseContext(); } catch { /* ignore */ } }
 }

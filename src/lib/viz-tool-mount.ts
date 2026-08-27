@@ -45,6 +45,7 @@
  *                     once this mounts
  */
 import { mountViz, type VizHandle } from './butterchurn-viz.ts';
+import { releaseHdrCanvas } from './hdr-canvas.ts';
 import { buildVizPalette, type VizPalette } from './viz-palette.ts';
 import { vizPresetById, VIZ_PRESETS } from './viz-presets.ts';
 import { vizSupported } from './viz-support.ts';
@@ -187,6 +188,10 @@ function ownPresetId(cfg: VizToolConfig): string {
 function destroyEntry(e: Entry): void {
   e.stop();
   try { e.handle.destroy(); } catch { /* already down */ }
+  // handle.destroy() already releases any HDR context this mount allocated; this is the
+  // belt-and-suspenders for destroyToolViz (WP-4). A no-op today - the tool viz mounts with
+  // `capture: true`, so it never takes the HDR path - but harmless if that ever changes.
+  releaseHdrCanvas(e.canvas);
   e.canvas.remove();
   delete e.canvas.__lollyFrameRender;
 }
