@@ -7,8 +7,8 @@
  * one place, not 50.
  *
  * Watermarking: applied when the tool is 'experimental' OR opts.watermark is true.
- * The watermark is a corner overlay clone-injected into the node before rasterisation.
- * For SVG we inject an <text> element instead.
+ * A single "DRAFT USE ONLY" overlay div is added to the LIVE node before capture, so
+ * every format (raster, SVG walker, PDF) sees the identical mark - preview == output.
  */
 
 import {
@@ -5628,7 +5628,7 @@ function c2paAuthor(meta: ExportMeta | null | undefined): { name: string; email?
 
 // User-asserted IP → the signed manifest's dc:rights (engine c2pa.ts). Combines the
 // © notice + any licence into one line. Empty on ordinary exports - only tools that
-// declare bindToMeta copyright/license (embed-track-image) populate meta.copyright/
+// declare bindToMeta copyright/license (claim) populate meta.copyright/
 // meta.license, so a normal render never asserts rights it can't stand behind.
 function c2paRights(meta: ExportMeta | null | undefined): string | undefined {
   const r = [meta?.copyright, meta?.license].filter(Boolean).join(' · ');
@@ -8069,7 +8069,7 @@ async function bakeImageFilter(imgEl: any, dataUrl: string, filterStr: string | 
 //
 // The case that forced this: a gallery preview committed as a 3200x1800 PNG appears in
 // a 341px tile, so the walker was inlining 5.76M pixels for a box that resolves at ~700.
-// One such tile was 4.6 MB of a 6.6 MB shot; the mesh-gradient and street-map example
+// One such tile was 4.6 MB of a 6.6 MB shot; the gradient and street-map example
 // previews are all 1800-3200px. Faithfully inlining the source is correct but wildly
 // wasteful for a thumbnail.
 //
@@ -10963,16 +10963,22 @@ function ditherFloydSteinberg(data: Uint8ClampedArray, width: number, height: nu
 // which is required by dom-to-image-more and captureStream-based video capture.
 function addWatermarkOverlay(node: HTMLElement): () => void {
   const stamp = document.createElement('div');
-  stamp.textContent = 'EXPERIMENTAL - NOT BRAND APPROVED';
+  stamp.textContent = 'DRAFT USE ONLY';
+  // Size the mark to the node so one line spans ~80% of its width and NEVER wraps
+  // (a wrapped stamp is why 1:1 exports looked different from the preview). Scaling
+  // to node width also covers a larger area on big artboards. ~0.6em per monospace
+  // char × 14 chars ≈ 8.4em, so W/11 fits ~0.8W. Floor keeps tiny nodes legible.
+  const fontSize = Math.max(12, (node.offsetWidth || node.getBoundingClientRect().width) / 11);
   Object.assign(stamp.style, {
     position: 'absolute',
-    bottom: '8px',
-    right: '8px',
-    padding: '4px 8px',
-    background: 'rgba(255, 255, 255, 0.85)',
-    color: '#c0392b',
-    font: 'bold 10px monospace',
-    border: '1px solid #c0392b',
+    inset: '0',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    whiteSpace: 'nowrap',
+    background: 'none',
+    color: 'rgba(118, 118, 118, 0.5)',
+    font: `bold ${fontSize}px monospace`,
     pointerEvents: 'none',
     zIndex: '9999',
   });

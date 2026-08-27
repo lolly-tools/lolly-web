@@ -41,6 +41,8 @@ import { MAX_TIME_S } from './timeline-math.ts';
 import { bumpMetric, recordFormat } from '../metrics.js';
 import { videoSupport, audioSupport, cmykTiffSupport, tiffSupport, liveCaptureSupport, durableSupport, proFormatSupport } from '../bridge/format-support.js';
 import { isAudioFormat as isAudioFmt } from '../lib/audio-encode.js';
+import { formatTriggerHtml, formatPanelHtml, wireFormatPicker } from './export-format-picker.ts';
+import { getAudioTake, onAudioTakeChange, saveTakeMp3, saveTakeNative, takeNativeExt } from '../lib/audio-take.ts';
 import { formatCaptions } from '../lib/caption-format.ts';
 import { stashedTranscript } from '../lib/stt-job.ts';
 import { transcriptWordsOf, ttsWordsOf } from './timeline-captions.ts';
@@ -55,6 +57,7 @@ import { RASTER_DEFAULT_SCALE, SUPERSAMPLED_EXPORT_FORMATS } from '../bridge/exp
 import { _setExportNoticeSink } from '../bridge/export.ts';
 import { CENTRE_LOW } from '../bridge/audio-envelope.ts';
 import { getExportPolicy, exportAffordance } from '../lib/export-policy.ts';
+import { saveExportPrefs } from '../lib/export-prefs.ts';
 import { openApprovalRequest } from '../lib/approval-request.ts';
 
 import type { InputValue } from '../../../../engine/src/inputs.js';
@@ -75,7 +78,7 @@ import { c2paDefaultOn } from '../lib/c2pa-policy.ts';
 import { jellyActive } from '../lib/jelly.ts';
 
 // Human-readable labels and file extensions for format identifiers that differ
-// Export-target opt-in (plan: run-web-code render). A tool whose exported output is
+// Export-target opt-in (plan: sandbox render). A tool whose exported output is
 // NOT its whole canvas - e.g. a code sandbox whose rendered preview is transplanted
 // into a same-origin mirror node - marks that node with `data-export-root`; the
 // walker then rasterises the mirror instead of the IDE chrome. Inert by construction
@@ -431,6 +434,11 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // Mirrors VECTOR_FORMATS in engine/src/inputs.js - formats where text→path
   // outlining (the 'Convert paths' toggle) applies. Bitmap formats don't.
   const isVectorFmt   = (f: string | undefined): boolean => f === 'svg' || f === 'pdf' || f === 'pdf-cmyk';
+  // Formats that carry an alpha channel, and so have something to be transparent
+  // ABOUT. Gates the transparency mirror below: a JPEG, a PDF page or a video frame
+  // has no alpha to keep, so offering the toggle there would promise nothing.
+  const isAlphaFmt    = (f: string | undefined): boolean =>
+    !!f && ['png', 'webp', 'avif', 'svg', 'svgz', 'apng', 'webp-anim', 'svg-anim'].includes(f);
   // Show only the video containers this browser can produce (Safari→mp4, Firefox→webm,
   // recent Chrome→both); non-video formats always pass. See keepFormat / videoSupport.
   // A tool with a float-compose exportStill hook + host.codec can originate the pro
@@ -536,12 +544,34 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const ICON_W = `<svg class="dim-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="7 8 3 12 7 16"/><polyline points="17 8 21 12 17 16"/><line x1="4" y1="12" x2="20" y2="12"/></svg>`;
   const ICON_H = `<svg class="dim-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="8 7 12 3 16 7"/><polyline points="8 17 12 21 16 17"/><line x1="12" y1="4" x2="12" y2="20"/></svg>`;
 
+  // ?c2pa= (parsed { on, days }) beats the tool's render.c2pa default; the days
+  // value pre-selects the ephemeral-lifetime picker in the protection card.
+  // Hoisted above autoFilename because the name suffix reads the same defaults.
+  const c2paInitOn = exportDefaults.c2pa ? exportDefaults.c2pa.on : c2paDefaultOn(manifest);
+  const c2paInitDays = [7, 30, 90, 365].includes(exportDefaults.c2pa?.days as number) ? exportDefaults.c2pa!.days : 30;
+
+  // Will this export carry provenance? Reads the live protection checkboxes once
+  // they exist; before the panel paints it falls back to the same defaults the
+  // checkboxes initialise from. Gated per format, so a plain .txt never claims it.
+  const provenanceOn = (): boolean => {
+    const fmt = el?.querySelector<HTMLSelectElement>('[data-action="format"]')?.value ?? initialFmt;
+    const c2 = el?.querySelector<HTMLInputElement>('[data-action="pdf-c2pa"]');
+    const im = el?.querySelector<HTMLInputElement>('[data-action="imprint"]');
+    const c2On = c2 ? c2.checked : (formats.some(isC2paFmt) && c2paInitOn);
+    const imOn = im ? im.checked : (formats.some(isImprintFmt) && exportDefaults.imprint !== false);
+    return (c2On && (isC2paFmt(fmt) || fmt === 'zip')) || (imOn && (isImprintFmt(fmt) || fmt === 'zip'));
+  };
+
   // Content-derived auto filename (plans/140 S1): render.filenameFrom names the
   // input ids whose live values name the file ("ana-kovac", "suse-com-events").
   // Read fresh at download time so the name follows the inputs; falls back to
   // the tool name. An explicit value typed into the filename field always wins.
-  const autoFilename = (): string =>
-    deriveExportFilename(manifest, Object.fromEntries(runtime.getModel().map(i => [i.id, i.value]))) || manifest.name;
+  // A file that will carry provenance gets a "-lolly" suffix: the name itself
+  // tells a recipient there is a credential to check on #/verify.
+  const autoFilename = (): string => {
+    const base = deriveExportFilename(manifest, Object.fromEntries(runtime.getModel().map(i => [i.id, i.value]))) || manifest.name;
+    return provenanceOn() && !/-lolly$/i.test(base) ? `${base}-lolly` : base;
+  };
 
   // Tier 1 - filename · format. The format selector is the highest-priority
   // control; the filename rides alongside it as the natural "name.format" pair.
@@ -554,14 +584,21 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // Studio), and otherwise nowhere (a plain tool has no float master). The markup
   // then has no optgroup in it at all. See views/export-depth.ts.
   const formatOptions = formatOptionsHtml(formats, initialFmt, fmtLabel);
+  // The native select is kept as the VALUE CARRIER only (hidden): the mode-driven
+  // narrowing, matchExportFormat auto-pick and every 'change' listener still talk
+  // to it. What the user sees is the grouped picker: the pill's trigger half plus
+  // a floating dropdown anchored to this row (views/export-format-picker.ts) -
+  // floating so the rows below never move when it opens.
   const filenameRow = `
       <div class="filename-extension">
         <input type="text" class="export-filename" data-action="filename"
               value="${escape(exportDefaults.filename ?? '')}" placeholder="${escape(autoFilename())}" spellcheck="false">
         ${formats.length > 1 ? `
-          <select data-action="format" aria-label="Export format">
+          <select data-action="format" aria-label="Export format" hidden aria-hidden="true" tabindex="-1">
             ${formatOptions}
           </select>
+          ${formatTriggerHtml(initialFmt ?? formats[0] ?? '', fmtLabel)}
+          ${formatPanelHtml(formats, initialFmt ?? formats[0] ?? '', fmtLabel)}
         ` : ''}
       </div>`;
 
@@ -678,10 +715,8 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // open-password: an encrypted document can't take the C2PA incremental
   // update (see refreshC2paUi). A tool pre-selects it via manifest render.c2pa.
   const ICON_CRED = `<svg class="c2pa-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 11.5 2 2 4-4"/></svg>`;
-  // ?c2pa= (parsed { on, days }) beats the tool's render.c2pa default; the days
-  // value pre-selects the ephemeral-lifetime picker below.
-  const c2paInitOn = exportDefaults.c2pa ? exportDefaults.c2pa.on : c2paDefaultOn(manifest);
-  const c2paInitDays = [7, 30, 90, 365].includes(exportDefaults.c2pa?.days as number) ? exportDefaults.c2pa!.days : 30;
+  // c2paInitOn / c2paInitDays are hoisted above autoFilename (the "-lolly" name
+  // suffix reads the same defaults before the checkboxes exist).
   const c2paFormats = formats.filter(isC2paFmt);
   // The old always-visible explanation moves behind an info (?) tip so the card
   // reads as just "C2PA Credentials" + a toggle. The tip links to OUR on-device
@@ -702,7 +737,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         </label>
         <p class="c2pa-hint" data-c2pa-webm style="display:${initialFmt === 'webm' ? 'block' : 'none'}">WebM credentials are Lolly's own mapping for now - external C2PA viewers can't read WebM.</p>
         <div class="c2pa-life" data-c2pa-life>
-          <label class="c2pa-life-pick"><span class="c2pa-life-label">Expires:</span>
+          <label class="c2pa-life-pick"><span class="c2pa-life-label">${escape(t('Verified for'))}</span>
             <select class="field-select field-select--sm field-select--auto" data-action="c2pa-days" aria-label="Credential lifetime">
               ${[7, 30, 90, 365].map(d => `<option value="${d}"${d === c2paInitDays ? ' selected' : ''}>${d} days</option>`).join('')}
             </select>
@@ -874,26 +909,73 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         </div>
       </div>` : '';
 
-  // Tier 3 - ancillary settings. Everything optional (transparent bg, timing,
-  // dithering) lives in one wrapping chip cluster so the panel reads consistently
-  // no matter which controls a given tool/format enables.
+  // Tier 3 - ancillary settings. Everything optional (transparent bg, dithering)
+  // lives in one wrapping chip cluster so the panel reads consistently no matter
+  // which controls a given tool/format enables.
+  //
+  // Several of these inputs are injected by the engine WITH a help string
+  // (inputs.ts synthesises 'Convert paths' and explains what turning it off keeps),
+  // and the chip used to drop that text on the floor - the one control in the sheet
+  // whose jargon had an answer written for it that nobody could read. Render it as
+  // the same (i) affordance the sidebar and the cards above use. The LABEL still
+  // comes from the engine, untouched.
   const optionChips = exportOpts.map(i => {
     // 'Convert paths' only affects vector output, so its chip is gated to the
     // selected format (hidden for png/jpg/etc). Other export options are global.
     const vectorOnly = i.id === 'convertPaths';
     const hide = vectorOnly && !isVectorFmt(initialFmt);
+    const tip = i.help ? helpTip(i.help) : null;
     return `
-        <label class="export-option"${vectorOnly ? ' data-vector-only' : ''}${hide ? ' style="display:none"' : ''}>
+        <label class="export-option${tip ? ' help-tip-host' : ''}"${vectorOnly ? ' data-vector-only' : ''}${hide ? ' style="display:none"' : ''}>
           <input type="checkbox" class="field-check" data-input-id="${escape(i.id)}" ${i.value ? 'checked' : ''}>
           ${escape(i.label ?? i.id)}
+          ${tip ? `${tip.button}${tip.pop}` : ''}
         </label>`;
   }).join('');
-  const videoChip = hasAnimated ? `
+
+  // F22 (plans/163) - transparency, mirrored from the sidebar.
+  //
+  // The engine synthesises `transparentBg` as an ordinary SIDEBAR input, not an
+  // export one (inputs.ts): the background is a creative choice people make next to
+  // colour and theme. True - but the moment they go looking for it is when they are
+  // exporting a PNG, and by then the sidebar is behind the sheet. So the same input
+  // gets a second home here, as one more chip in the strip beside Convert paths.
+  // One input id, two views of it, never two settings. Only shown for a format with
+  // an alpha channel to keep; the label and the help text come from the engine's
+  // spec, exactly like the chips above.
+  // A tool may declare `transparentBg` itself instead of letting the engine synthesise
+  // it (asset-export calls it "No background"); either way it is the same input id and
+  // the same checkbox. The type test keeps the mirror honest if one is ever declared as
+  // something other than a boolean.
+  const transparentInput = runtime.getModel().find(i => i.id === 'transparentBg' && i.type === 'boolean');
+  const transparentTip = transparentInput?.help ? helpTip(transparentInput.help) : null;
+  const transparentChip = transparentInput ? `
+        <label class="export-option${transparentTip ? ' help-tip-host' : ''}" data-alpha-only
+               style="display:${isAlphaFmt(initialFmt) ? 'flex' : 'none'}">
+          <input type="checkbox" class="field-check" data-action="transparent-bg" ${transparentInput.value ? 'checked' : ''}>
+          ${escape(transparentInput.label ?? transparentInput.id)}
+          ${transparentTip ? `${transparentTip.button}${transparentTip.pop}` : ''}
+        </label>` : '';
+  // Tier 2.1 - timing (animated formats only). How long the clip runs, and how long
+  // to hold before recording starts, are size-like decisions: for a video the length
+  // is the first thing anyone changes. So the row sits directly under the dimensions
+  // rather than at the bottom of the optional chip strip, where it used to rank below
+  // the audio card's ducking controls. The Dither toggle rides along because it is
+  // the GIF-only quality dial for the same take. Nothing else moves: the data-actions,
+  // the [data-anim-params] / [data-gif-only] / [data-video-only] hooks and the
+  // per-format show/hide handlers are the same ones as before.
+  const timingTip = hasAnimated ? helpTip(t(
+    'Start after holds the canvas still for a moment before recording begins, so animations and fonts settle first. Duration is how long the finished clip runs.'
+  )) : null;
+  const liveTip = hasAnimated && liveCaptureSupport() ? helpTip(t(
+    'Records the on-screen preview in real time through a screen share, so motion matches exactly what you see. Pick this tab in the share dialog and keep it visible for the whole take.'
+  )) : null;
+  const timingRow = hasAnimated ? `
         <div class="video-params" data-anim-params style="display:${isAnimatedFmt(initialFmt) ? 'flex' : 'none'}">
-          <span class="vp-field"><span>Wait</span>
+          <span class="vp-field help-tip-host"><span>${escape(t('Start after'))}</span>
             <input type="number" data-action="video-wait" value="${defaultWait}" min="0" max="30" step="0.5"
-                   aria-label="${escape(t('Wait before recording (seconds)'))}"><span>s</span></span>
-          <span class="vp-field"><span>Duration</span>
+                   aria-label="${escape(t('Start recording after (seconds)'))}"><span>s</span>${timingTip!.button}${timingTip!.pop}</span>
+          <span class="vp-field"><span>${escape(t('Duration'))}</span>
             <input type="number" data-action="video-duration" value="${defaultDuration}" min="1" max="${durationMax}" step="0.5"
                    aria-label="${escape(t('Recording duration (seconds)'))}"><span>s</span></span>
           <label class="gif-dither-toggle" data-gif-only
@@ -901,11 +983,11 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
             <input type="checkbox" class="field-check" data-action="gif-dither">
             Dither
           </label>
-          ${liveCaptureSupport() ? `<label class="gif-dither-toggle" data-video-only data-live-capture
-                 style="display:${isVideoFmt(initialFmt) ? 'flex' : 'none'}"
-                 title="Record the on-screen preview in real time through a screen share - motion matches exactly what you see. Pick this tab in the share dialog and keep it visible for the whole take.">
+          ${liveTip ? `<label class="gif-dither-toggle help-tip-host" data-video-only data-live-capture
+                 style="display:${isVideoFmt(initialFmt) ? 'flex' : 'none'}">
             <input type="checkbox" class="field-check" data-action="video-live">
-            Record live
+            ${escape(t('Record live'))}
+            ${liveTip.button}${liveTip.pop}
           </label>` : ''}
           ${runtime.hasFrameHook ? `<span class="vp-live-hint" style="flex-basis:100%;font-size:11px;opacity:.7;margin-top:2px">Records the live feed - start <strong>Go&nbsp;live</strong> on the canvas first.</span>` : ''}
         </div>` : '';
@@ -948,7 +1030,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           <button type="button" class="audio-preview" data-action="audio-preview" title="Preview track" aria-label="Preview track" disabled>${ICON_PLAY}</button>
           <button type="button" class="audio-preview" data-action="audio-regen" hidden title="${escape(t('Regenerate music'))}" aria-label="${escape(t('Regenerate music'))}">${icon('refresh')}</button>
         </div>
-        <div class="audio-fade">
+        <div class="audio-fade" data-track-extras style="display:none">
           <label>Fade in <input type="number" data-action="audio-fadein" min="0" max="5" step="0.5" value="1"><span>s</span></label>
           <label>Fade out <input type="number" data-action="audio-fadeout" min="0" max="5" step="0.5" value="1.5"><span>s</span></label>
         </div>`;
@@ -960,7 +1042,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         </div>
         <span class="audio-head help-tip-host">${ICON_NOTE}<span>${escape(t('Mix in'))}</span>${mixTip!.button}${mixTip!.pop}</span>
         ${bedPickHtml}
-        <div class="audio-fade">
+        <div class="audio-fade" data-track-extras style="display:none">
           <label>${escape(t('Centre volume'))}
             <select class="field-select" data-action="audio-centre" aria-label="${escape(t('Centre volume'))}"
                     title="${escape(t('The mix-in track’s volume while this tool’s audio is playing. It always plays at full volume before and after.'))}">
@@ -974,7 +1056,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       <div class="export-audio" data-video-only style="display:${isVideoFmt(initialFmt) ? 'flex' : 'none'}">
         <span class="audio-head help-tip-host">${ICON_NOTE}<span>Audio track</span>${audioTip!.button}${audioTip!.pop}</span>
         ${bedPickHtml}
-        <div class="audio-fade">
+        <div class="audio-fade" data-track-extras style="display:none">
           <label>Music level <input type="number" data-action="audio-volume" min="0" max="100" step="5" value="100"><span>%</span></label>
           <label title="When your clip has its own sound, the music dips to this level under it (100% = no ducking).">Duck to <input type="number" data-action="audio-duck" min="0" max="100" step="5" value="35"><span>%</span></label>
         </div>
@@ -1053,8 +1135,8 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           <input type="checkbox" class="field-check" data-action="emf-outline">
           ${t('Outline fonts')}
         </label>` : '';
-  const settingsRow = (optionChips || videoChip || htmlChip || emfChip)
-    ? `<div class="export-settings">${optionChips}${htmlChip}${emfChip}${videoChip}</div>`
+  const settingsRow = (transparentChip || optionChips || htmlChip || emfChip)
+    ? `<div class="export-settings">${transparentChip}${optionChips}${htmlChip}${emfChip}</div>`
     : '';
 
   // Cloud send destinations - the PROVIDER-AGNOSTIC send-target seam
@@ -1127,6 +1209,18 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const costRow = costPanelHtml();
   const secondaryRow = `<div class="export-action-buttons">${copyBtn}${saveBtn}${copyUrlBtn}</div>`;
   const downloadRow = downloadBtn ? `<div class="export-action-buttons">${downloadBtn}</div>` : blockedNote;
+
+  // Audio-capture tools (render.capture:'audio'): the recording is the deliverable,
+  // and the format list below only covers the share CARD - so the sheet leads with
+  // a "Your recording" card fed by the latest take (lib/audio-take.ts, written by
+  // views/record-control.ts). Before any take exists it says plainly what the
+  // Download below saves, closing the "Export is not my recording" trap.
+  const isAudioCaptureTool = manifest.render.capture === 'audio';
+  const recordingRow = isAudioCaptureTool ? `
+      <div class="section-card export-recording" data-recording-row>
+        <span class="c2pa-head">${icon('mic', { className: 'c2pa-icon' })}<span>${escape(t('Your recording'))}</span></span>
+        <div class="export-recording-body" data-recording-body></div>
+      </div>` : '';
 
   // The panel host (#tool-actions) is present for every export-capable tool that
   // reaches here; guard the type for strict null-safety (never null in practice).
@@ -1202,22 +1296,94 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     await store.set?.({ ...current, personalizeNudgeDismissed: true });
   }
 
+  // The action buttons are the sheet's PRIMARY content, so they come FIRST -
+  // Copy / Save / Share and Download at the very top, before any setting - and
+  // the dock sticks to the top edge so they stay in reach while the long sheets
+  // (Print PDF, MP4) are scrolled.
   el.innerHTML = `
-    ${actions.includes('download') ? `${filenameRow}${dimsRow}${aspectWarnRow}${fidelityWarnRow}${hdrRow}${cmykRow}${printRow}${protectionRow}<div class="export-ingredient-note" data-ingredient-note hidden></div>${audioRow}${settingsRow}${videoQualityRow}${sendRow}${preflightRow}${costRow}` : ''}
-    ${secondaryRow}
-    ${downloadRow}
-    ${actions.includes('download') ? `<p class="export-degraded-note" data-export-degraded role="status" hidden style="margin:.2rem 0 0;color:hsl(var(--muted-foreground));font-size:12px;text-align:center"></p>` : ''}
+    <div class="export-actions-dock">
+      ${secondaryRow}
+      ${downloadRow}
+      ${actions.includes('download') ? `<p class="export-degraded-note" data-export-degraded role="status" hidden style="margin:.2rem 0 0;color:hsl(var(--muted-foreground));font-size:12px;text-align:center"></p>` : ''}
+    </div>
+    ${actions.includes('download') ? `${recordingRow}${filenameRow}${dimsRow}${timingRow}${aspectWarnRow}${fidelityWarnRow}${hdrRow}${cmykRow}${printRow}${protectionRow}<div class="export-ingredient-note" data-ingredient-note hidden></div>${audioRow}${settingsRow}${videoQualityRow}${sendRow}${preflightRow}${costRow}` : ''}
   `;
   void fillIngredientNote();
+
+  // "Your recording" card (audio-capture tools): paints from the shared take
+  // registry and repaints when a take arrives or is cleared. Save actions are
+  // the same signed paths the stage's post-record bar uses.
+  if (isAudioCaptureTool) {
+    const recBody = el.querySelector<HTMLElement>('[data-recording-body]');
+    const fmtSize = (n: number): string => n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
+    const paintRecording = (): void => {
+      if (!recBody) return;
+      const take = getAudioTake();
+      if (!take) {
+        recBody.innerHTML = `<p class="export-recording-hint">${escape(t('Nothing recorded yet. Record on the canvas first - Download saves the share card image, not audio.'))}</p>`;
+        return;
+      }
+      recBody.innerHTML = `
+        <div class="export-recording-actions">
+          <button type="button" class="btn btn--primary" data-action="take-mp3">${escape(t('Save MP3'))}</button>
+          <button type="button" class="btn" data-action="take-native">${escape(tRaw('Save .{ext}', { ext: takeNativeExt(take) }))}</button>
+          <span class="export-recording-size">${fmtSize(take.blob.size)}</span>
+        </div>`;
+    };
+    paintRecording();
+    onAudioTakeChange(paintRecording);
+    recBody?.addEventListener('click', async (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-action]');
+      const take = getAudioTake();
+      if (!btn || !take) return;
+      if (btn.dataset.action === 'take-native') { void saveTakeNative(host, take); return; }
+      if (btn.dataset.action === 'take-mp3') {
+        const was = btn.textContent;
+        btn.disabled = true; btn.textContent = t('Encoding…');
+        try { await saveTakeMp3(host, take); }
+        catch (err) {
+          host.log('warn', 'export-sheet mp3 transcode failed - saving the native container', { error: String(err) });
+          void saveTakeNative(host, take);
+        }
+        finally { btn.disabled = false; btn.textContent = was; }
+      }
+    });
+  }
 
   exportOpts.forEach(i => {
     el.querySelector<HTMLInputElement>(`[data-input-id="${escape(i.id)}"]`)
       ?.addEventListener('change', ({ target }) => runtime.setInput(i.id, (target as HTMLInputElement).checked));
   });
 
+  // The transparency mirror, wired BOTH ways against the one input it reflects.
+  // Ticking the chip goes through runtime.setInput, so the canvas repaints under the
+  // open sheet - seeing the background go is the whole point of putting it here. And
+  // the sidebar still owns the same input, so follow the model back: subscribe fires
+  // on every model change, and writing the same boolean onto a checkbox emits no
+  // event, so there is no loop between the two views.
+  const transparentEl = el.querySelector<HTMLInputElement>('[data-action="transparent-bg"]');
+  if (transparentEl) {
+    transparentEl.addEventListener('change', () => runtime.setInput('transparentBg', transparentEl.checked));
+    runtime.subscribe(() => {
+      transparentEl.checked = Boolean(runtime.getModel().find(i => i.id === 'transparentBg')?.value);
+    });
+  }
+
   const animParamsEl  = el.querySelector<HTMLElement>('[data-anim-params]');
   const ditherEl      = el.querySelector<HTMLElement>('[data-gif-only]');
   const formatEl      = el.querySelector<HTMLSelectElement>('[data-action="format"]');
+  // The grouped-category UI over the hidden select (trigger + accordion panel).
+  const formatPicker  = wireFormatPicker(el, formatEl, fmtLabel);
+  // The filename placeholder is derived from live input values plus the
+  // provenance state, so it goes stale the moment either moves. Re-derive on
+  // format/protection changes and every time the sheet opens (views/tool.ts
+  // dispatches 'lolly:export-open' on the panel).
+  const filenameInputEl = el.querySelector<HTMLInputElement>('[data-action="filename"]');
+  const refreshFilenamePlaceholder = (): void => { if (filenameInputEl) filenameInputEl.placeholder = autoFilename(); };
+  formatEl?.addEventListener('change', refreshFilenamePlaceholder);
+  el.querySelectorAll<HTMLInputElement>('[data-action="pdf-c2pa"], [data-action="imprint"]')
+    .forEach(cb => cb.addEventListener('change', refreshFilenamePlaceholder));
+  el.addEventListener('lolly:export-open', refreshFilenamePlaceholder);
   const aspectWarnEl  = el.querySelector<HTMLElement>('[data-aspect-warning]');
   const fidelityWarnEl = el.querySelector<HTMLElement>('[data-fidelity-warning]');
   const durationEl    = el.querySelector<HTMLInputElement>('[data-action="video-duration"]');
@@ -1528,7 +1694,14 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const syncAudioRegenVisible = (): void => {
     if (audioRegenBtn) audioRegenBtn.hidden = audioSel?.value !== '__generate__';
   };
-  audioSel?.addEventListener('change', () => { stopAudioPreview(); previewSrcId = null; syncAudioPreviewEnabled(); syncAudioRegenVisible(); });
+  // Fade / level / duck / centre-volume only mean anything once a track is
+  // chosen - with "None" they are dead controls, so they stay hidden.
+  const syncTrackExtras = (): void => {
+    const on = !!audioSel?.value;
+    el.querySelectorAll<HTMLElement>('[data-track-extras]').forEach(x => { x.style.display = on ? '' : 'none'; });
+  };
+  audioSel?.addEventListener('change', () => { stopAudioPreview(); previewSrcId = null; syncAudioPreviewEnabled(); syncAudioRegenVisible(); syncTrackExtras(); });
+  syncTrackExtras();
   if (audioPreviewBtn) {
     audioPreviewBtn.addEventListener('click', async () => {
       const id = audioSel?.value;
@@ -1606,6 +1779,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       if (animParamsEl) animParamsEl.style.display = isAnimatedFmt(fmt) ? 'flex' : 'none';
       if (ditherEl)     ditherEl.style.display     = fmt === 'gif'  ? 'flex' : 'none';
       el.querySelectorAll<HTMLElement>('[data-vector-only]').forEach(c => { c.style.display = isVectorFmt(fmt) ? 'flex' : 'none'; });
+      el.querySelectorAll<HTMLElement>('[data-alpha-only]').forEach(c => { c.style.display = isAlphaFmt(fmt) ? 'flex' : 'none'; });
       // `data-suppressed` wins over the video-format test: syncSequenceUi sets it on
       // "Record live" for a timed composition, and without this check switching format
       // would hand the control straight back.
@@ -2614,6 +2788,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     const cur = formatEl.value;
     const next = narrowed.includes(cur) ? cur : narrowed[0]!;
     formatEl.innerHTML = formatOptionsHtml(narrowed, next, fmtLabel);
+    formatPicker?.refresh(narrowed, next);
     if (next !== cur) formatEl.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
@@ -3215,6 +3390,19 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       }
       revokeTrackUrls();
       bumpMetric('filesRendered'); recordFormat(fmt); // local usage metric
+      // L3 (plans/163) - remember the format and size this was exported at, so the
+      // next fresh mount of this tool opens on them. Best-effort and non-blocking,
+      // like the history record and the library copy below: the file has already
+      // reached the user, and a lost write only costs the memory. No UI, no switch -
+      // the tool's defaults just get better with use. Explicit values (a link's
+      // params, a resumed session) still win on the way back in; see
+      // lib/export-prefs.ts.
+      {
+        const { w: lastW, h: lastH } = rawDims();
+        void saveExportPrefs(host, manifest.id, {
+          format: fmt, width: lastW, height: lastH, unit: dimUnit(), dpi: dimDpi(),
+        });
+      }
       // Log the download to the export history (Dashboard "Latest exports"). Best-effort,
       // non-blocking: a thumbnail of what was exported + enough state to reopen it.
       void (async () => {
@@ -3329,12 +3517,23 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     const box = el!.querySelector<HTMLElement>('[data-send-targets]');
     if (!box) return;
     const offered = sendTargetsFor(fmt);
-    box.innerHTML = offered.map(tg => `
-      <div class="section-card export-send"${tg.hint ? ` title="${escape(tg.hint)}"` : ''}>
-        <span class="c2pa-head">${icon('upload', { className: 'c2pa-icon' })}<span>${escape(tg.label)}</span></span>
-        <button type="button" data-send-kind="${escape(tg.kind)}">${escape(tg.actionLabel?.(fmt) ?? t('Send to {name}', { name: tg.label }))}</button>
-        <span class="send-status" data-send-status="${escape(tg.kind)}" role="status"></span>
-      </div>`).join('');
+    // ONE row for every destination, not a card each. Each target used to render as
+    // a full .section-card with its own icon head and a full-width button, which gave
+    // "Send to Google Drive" the same weight as Content protection - and more weight
+    // than Download - for someone who has never connected a cloud. The head names the
+    // job once; a destination is a compact button beside its siblings. The kind, the
+    // status span and the delegated click handling are unchanged. The button now shows
+    // the provider NAME rather than the target's own actionLabel ("Send to Google
+    // Drive"), which would repeat the head next to it.
+    box.innerHTML = offered.length ? `
+      <div class="section-card export-send">
+        <span class="c2pa-head">${icon('share', { className: 'c2pa-icon' })}<span>${escape(t('Send to'))}</span></span>
+        <div class="export-send-row">
+          ${offered.map(tg => `
+          <button type="button" data-send-kind="${escape(tg.kind)}"${tg.hint ? ` title="${escape(tg.hint)}"` : ''}>${icon('upload', { size: 14 })}<span>${escape(tg.label)}</span></button>
+          <span class="send-status" data-send-status="${escape(tg.kind)}" role="status"></span>`).join('')}
+        </div>
+      </div>` : '';
     // The container outlives its contents (it is emitted unconditionally so late
     // registration has somewhere to land), so it carries the empty state itself: no
     // destination for this format ⇒ nothing in the panel, exactly as when the row
@@ -3370,11 +3569,15 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     const target = sendTargetsFor(fmt).find(tg => tg.kind === kind);
     if (!target) return;
     const status = el!.querySelector<HTMLElement>(`[data-send-status="${CSS.escape(kind)}"]`);
-    const prev = btn.textContent;
+    // Progress wording swaps the LABEL SPAN, not the button - the button also holds
+    // the destination glyph, and writing textContent on it would delete that glyph
+    // and never bring it back.
+    const label = btn.querySelector<HTMLElement>('span') ?? btn;
+    const prev = label.textContent;
     btn.toggleAttribute('disabled', true);
     btn.setAttribute('aria-busy', 'true');
     try {
-      btn.textContent = t('Rendering…');
+      label.textContent = t('Rendering…');
       const opts = {
         ...exportDims(),
         ...(fmt === 'emf' && el!.querySelector<HTMLInputElement>('[data-action="emf-outline"]')?.checked ? { text: 'outline' as const } : {}),
@@ -3384,7 +3587,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       const multiPage = fmt === 'pdf' || fmt === 'pdf-cmyk' || fmt === 'pptx' || fmt === 'docx' || fmt === 'odt' || isAnimatedFmt(fmt);
       const sendNode = multiPage ? exportTargetNode(canvasEl) : flatExportNode(canvasEl);
       const blob = await exportUnscaled(() => runtime.export(sendNode, fmt, opts), { shutter: true });
-      btn.textContent = t('Sending…');
+      label.textContent = t('Sending…');
       const name = el!.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() || autoFilename();
       const out = await target.send({ bytes: new Uint8Array(await blob.arrayBuffer()), name, format: fmt, mime: blob.type });
       if (status) {
@@ -3401,7 +3604,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       announce('Send failed', { assertive: true });
     } finally {
       btn.removeAttribute('aria-busy');
-      btn.textContent = prev;
+      label.textContent = prev;
       btn.toggleAttribute('disabled', false);
     }
   });

@@ -93,31 +93,37 @@ body > svg:not([style]) {
    added FAB never coexists with data-back-home by construction. */
 .chrome-topleft .tools-home[data-back-home] ~ .home-fab { display: none; }
 
-/* ≤640px: views whose profile control carries the consolidated mobile menu
-   (attachProfileMenu / mountProfileFab - the menu has a Home row) drop the
-   standalone Home FAB entirely. Its presence there depended on where you came
-   FROM (data-back-home above), so it read as a control that wanders view to
-   view; the back pill stays, and Home now has one fixed place in the avatar
-   menu. Extend the list only alongside an attachProfileMenu()/mountProfileFab()
-   call in that view. /start + the Lab carry theirs in their own rows, not
-   .chrome-topleft. */
-@media (max-width: 640px) {
-  .docs-view .chrome-topleft .home-fab,
-  .ask-view .chrome-topleft .home-fab,
-  .data-view .chrome-topleft .home-fab,
-  .convert-view .chrome-topleft .home-fab,
-  .pdfx-view .chrome-topleft .home-fab,
-  .scriptst-view .chrome-topleft .home-fab,
-  .verify-view .chrome-topleft .home-fab,
-  .dashboard-view .chrome-topleft .home-fab,
-  .start-view .start-back-row .home-fab,
-  .lab-back [data-home-fab] { display: none; }
-  /* The cluster's own language FAB folds into the same menu wherever the
-     profile FAB sits beside it - self-scoping, so a view gaining
-     mountProfileFab() needs no entry here (the topbar views' copy of this
-     rule is in topbar.css's collapse block; docs' is in docs.css). */
-  .gallery-topright:has(.profile-fab) .lang-fab { display: none; }
-}
+/* Views whose profile control carries the consolidated menu (attachProfileMenu /
+   mountProfileFab - Home + Theme + Language rows) drop the standalone Home, Theme
+   and Language FABs the menu duplicates. At EVERY width since 2026-08-26 (was
+   ≤640px-only): the menu now opens on desktop too, so "standardise on it" means
+   one place for these controls at all sizes. The Home FAB's presence depended on
+   where you came FROM (data-back-home above), so it read as a control that
+   wanders view to view; the back pill stays, and Home/Theme/Language now have one
+   fixed place in the avatar menu. Extend the list only alongside an
+   attachProfileMenu()/mountProfileFab() call in that view. /start + the Lab carry
+   their Home in their own rows, not .chrome-topleft.
+   KEEP untouched: view-specific buttons (filter, history), the on-canvas theme
+   toggle on tool/editor (.stage-nav-*, no menu there), and the Colour Lab's own
+   theme control (.lab-chrome-btn - a core workflow affordance, not chrome). */
+.docs-view .chrome-topleft .home-fab,
+.ask-view .chrome-topleft .home-fab,
+.data-view .chrome-topleft .home-fab,
+.convert-view .chrome-topleft .home-fab,
+.pdfx-view .chrome-topleft .home-fab,
+.scriptst-view .chrome-topleft .home-fab,
+.verify-view .chrome-topleft .home-fab,
+.dashboard-view .chrome-topleft .home-fab,
+.start-view .start-back-row .home-fab,
+.lab-back [data-home-fab] { display: none; }
+/* The cluster's own language + theme FABs fold into the same menu wherever a
+   profile menu trigger (mountProfileFab's .profile-fab, or mountViewTopbar's
+   .profile-link pill) sits in the cluster - self-scoping, so a view gaining one
+   needs no entry here. `.theme-fab` is ONLY ever mountThemeFab's output and always
+   co-occurs with a profile menu, so this covers every one of them. (The topbar
+   views' copy of the lang rule is in topbar.css; docs' is in docs.css.) */
+.gallery-topright:has(.profile-fab, .profile-link) .lang-fab,
+.gallery-topright:has(.profile-fab, .profile-link) .theme-fab { display: none; }
 
 /* The same Home FAB beside the tool sidebar's back pill (mountBackPill →
    addHomeEscape). That row holds the pill at one end and undo/redo at the other

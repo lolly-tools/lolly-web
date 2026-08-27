@@ -419,7 +419,19 @@ input.field-range.is-upgraded { display: none; }
 
 .custom-slider {
   position: relative;
-  padding: 8px 0 20px;
+  /* The two numbers the whole box is built from. The coarse-pointer block in
+     parts/notfound.css raises just these; everything below derives, so the tick
+     row and the padding can no longer drift apart from the track the way they
+     had (the old ticks were pinned at a literal 17px, which on a touch device's
+     6px track landed ON the track instead of under it). */
+  --cs-pad-top: 8px;
+  --cs-track-h: 4px;
+  /* Bottom padding IS the tick gutter and nothing else, so a slider with no
+     detents to draw doesn't reserve one - which is most of them, since anything
+     past 30 stops (a 0-100 step-1 range, say) is too fine to hatch. Eight of
+     these stack up in a section like Filter's Pattern, so the empty gutter was
+     the single biggest thing making that panel scroll. */
+  padding: var(--cs-pad-top) 0;
   cursor: pointer;
   outline: none;
   user-select: none;
@@ -429,10 +441,12 @@ input.field-range.is-upgraded { display: none; }
   touch-action: none;
   -webkit-tap-highlight-color: transparent;
 }
+/* Ticked sliders keep a gutter, sized to clear the tallest (first/last) tick. */
+.custom-slider:has(.cs-ticks) { padding-bottom: 12px; }
 
 .cs-track {
   position: relative;
-  height: 4px;
+  height: var(--cs-track-h);
   border-radius: 2px;
   /* `--input` is only 1.49:1 against the page in the light theme - under WCAG
      1.4.11's 3:1 for a control boundary. Raised with the native range track
@@ -525,7 +539,8 @@ input.field-range.is-upgraded { display: none; }
   position: absolute;
   left: 0;
   right: 0;
-  top: calc(8px + 4px + 5px);
+  /* Just under the track, wherever the track happens to sit. */
+  top: calc(var(--cs-pad-top) + var(--cs-track-h) + 4px);
   height: 8px;
   pointer-events: none;
 }

@@ -38,8 +38,8 @@ test('shotSlug strips path, extension, dark twin and locale - matching the recip
 
 test('toolRouteId matches live-tool routes and rejects view captures', () => {
   assert.equal(toolRouteId('/#/tool/qr-code?url=https://suse.com&color=%230c322c'), 'qr-code');
-  assert.equal(toolRouteId('#/tool/d3?ct=treemap&full'), 'd3');
-  assert.equal(toolRouteId('/t/mesh-gradient?count=3'), 'mesh-gradient');
+  assert.equal(toolRouteId('#/tool/chart?ct=treemap&full'), 'chart');
+  assert.equal(toolRouteId('/t/gradient?count=3'), 'gradient');
   // View captures - the content gate must reject every one.
   assert.equal(toolRouteId('/#/'), null);
   assert.equal(toolRouteId('/#/start'), null);
@@ -53,9 +53,9 @@ test('embedSrcFor forces full-bleed and strips export/copy triggers, preserving 
     '/#/tool/qr-code?url=https://suse.com&color=%230c322c&full',
   );
   // Already full → unchanged.
-  assert.equal(embedSrcFor('/#/tool/d3?ct=treemap&full'), '/#/tool/d3?ct=treemap&full');
+  assert.equal(embedSrcFor('/#/tool/chart?ct=treemap&full'), '/#/tool/chart?ct=treemap&full');
   // No query → gains ?full.
-  assert.equal(embedSrcFor('/#/tool/mesh-gradient'), '/#/tool/mesh-gradient?full');
+  assert.equal(embedSrcFor('/#/tool/gradient'), '/#/tool/gradient?full');
   // Export/copy/download triggers dropped so the embed never auto-downloads.
   assert.equal(
     embedSrcFor('/#/tool/qr-code?url=x&format=png&export&copy&filename=my-qr'),

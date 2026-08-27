@@ -433,6 +433,27 @@ export interface RolesModel {
 }
 
 /**
+ * A swatch name for the value line, with a bare ramp step given its ramp back.
+ *
+ * A ramp step's name is its `$description`, and the shipped starter ramps
+ * describe only a couple of their steps - so `walkSwatches` falls back to the
+ * leaf key and a role reads "9" or "1" beside PRIMARY "Jungle" (plans/163 F6).
+ * The ramp is right there in the key the role points at (`color.ramp.neutral.9`),
+ * so the two are simply put back together: "Neutral 9".
+ *
+ * DISPLAY ONLY - nothing here is written to the document or to the tokens. A
+ * name that is anything but one or two bare digits is handed straight back, so
+ * every described swatch reads exactly as its author named it.
+ */
+export function rampStepName(name: string, key: string): string {
+  const step = name.trim();
+  if (!/^\d{1,2}$/.test(step)) return name;
+  const ramp = key.split('.').at(-2) ?? '';
+  if (!ramp || /^\d+$/.test(ramp)) return name;
+  return `${ramp.replace(/[-_]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} ${step}`;
+}
+
+/**
  * The strip's model. Pure: everything the markup needs, computed from the
  * document, the theme, and the swatches on offer.
  *
@@ -454,7 +475,7 @@ export function buildRolesModel(
       id,
       label: roleLabel(id),
       hex: r.hex,
-      value: named?.name || (r.ref ?? '') || r.hex || t('Not set'),
+      value: (named && rampStepName(named.name, r.ref ?? '')) || (r.ref ?? '') || r.hex || t('Not set'),
       set,
       selected: r.ref && byKey.has(r.ref) ? r.ref : '',
       contrast: r.contrast,

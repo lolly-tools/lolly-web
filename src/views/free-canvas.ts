@@ -9057,6 +9057,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // its media is. Authoring a length HERE would pin a 45s audio track to 3s and would
       // overwrite the `card` kind's own seeded 2.5s. Unauthored, the seq pack derives it
       // from the media and an overlay runs to the sequence end - same as a canvas add.
+      // (One exception, owned by promoteRows: at/after the sequence end - where the
+      // playhead parks after a play-through, and where an untimed doc always is - an
+      // open window would be EMPTY, so promote authors a real length there instead.)
       if (addAtMs != null) timelinePanel?.promote(id, { start: addAtMs / 1000, dur: null });
       // A new timed box is only useful next to a timeline, so creating one opens it - and
       // a CAMERA needs the timeline up too, because camera mode (and with it the shift-drag

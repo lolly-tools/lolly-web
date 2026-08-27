@@ -125,7 +125,7 @@ body {
   /* Deliberately NOT on the --a11y-fs multiplier, unlike every other chrome
      font-size. This declaration is inherited by tool markup: neither #tool-content,
      .pro-export-canvas nor .me-canvas sets a font-size of its own, and 13 shipped
-     templates (chart-creator, d3, text-helper, qr-code, battlecards, …) declare no
+     templates (chart-creator, chart, text-helper, qr-code, battlecards, …) declare no
      font-size at all while screencap sizes in `em` - so all of them resolve against
      this value, in the live canvas AND on the offscreen stages an export is captured
      from. Scaling it here would move exported text metrics, which no preference may

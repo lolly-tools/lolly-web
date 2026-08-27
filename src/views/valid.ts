@@ -1940,7 +1940,7 @@ function wireMasonry(viewEl: HTMLElement, reportEl: HTMLElement): void {
 // credentials, then claim the file" is one surface. The signed file downloads and
 // the panel re-verifies in place so the viewer immediately sees their claim on the chain.
 
-/** Licence options offered when claiming a file - mirrors community/embed-track-image
+/** Licence options offered when claiming a file - mirrors community/claim
  *  (option value = the exact string embedded as dc:rights, incl. the CC deed URL). */
 const CLAIM_LICENCES: Array<{ value: string; label: string }> = [
   { value: '', label: 'Proprietary - All rights reserved' },

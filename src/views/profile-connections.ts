@@ -24,7 +24,7 @@
  * hidden - a missing Drive row with no explanation reads as a bug.
  */
 
-import { t } from '../i18n.ts';
+import { t, tRaw } from '../i18n.ts';
 import { escape } from '../utils.ts';
 import {
   driveAvailable, driveDesktopAvailable, connectDriveDesktop, disconnectDriveDesktop,
@@ -228,8 +228,19 @@ function publishRowsHtml(conns: Map<string, ProviderConnection>): string {
     </details>`)}`;
 }
 
-/** Fill the section body and wire it. Re-renders itself after every change. */
-export async function mountConnectionsBody(body: HTMLElement, host: ConnHost): Promise<void> {
+/** Provider display name for one connection kind - the labels are otherwise spread
+ *  across the row builders, and /profile's folded section summary needs to name a
+ *  provider without rendering a row. */
+const kindLabel = (kind: string): string => ({
+  gdrive: t('Google Drive'), dropbox: t('Dropbox'), o365: t('OneDrive'),
+  s3: t('S3 bucket'), webdav: t('Nextcloud / WebDAV'),
+  mastodon: t('Mastodon'), bluesky: t('Bluesky'), discord: t('Discord'),
+} as Record<string, string>)[kind] ?? kind;
+
+/** Fill the section body and wire it. Re-renders itself after every change.
+ *  `onSummary` (optional) receives the one-line "what is connected" text for the
+ *  card's folded summary, on the first mount and after every re-render. */
+export async function mountConnectionsBody(body: HTMLElement, host: ConnHost, onSummary?: (text: string) => void): Promise<void> {
   const conns = new Map((await listConnections()).map((c) => [c.kind, c]));
   const home = (await host.profile.get().catch(() => ({}) as Profile)).exportHome;
   const oauthRows = OAUTH_ROWS.filter((r) => connectorEnabled(r.kind) && r.available())
@@ -253,6 +264,13 @@ export async function mountConnectionsBody(body: HTMLElement, host: ConnHost): P
     ${gdriveRow}
     ${oauthRows}
     ${credentialRowsHtml(conns, home)}`;
+
+  // A provider switched off in Feature flags has no row here, so it must not count
+  // as connected either.
+  const live = [...conns.keys()].filter(connectorEnabled);
+  onSummary?.(live.length === 0 ? t('None connected')
+    : live.length === 1 ? kindLabel(live[0]!)
+    : tRaw('{first} + {n}', { first: kindLabel(live[0]!), n: live.length - 1 }));
 
   const readForm = (kind: string): Record<string, string> => {
     const out: Record<string, string> = {};
@@ -348,7 +366,7 @@ export async function mountConnectionsBody(body: HTMLElement, host: ConnHost): P
         if (!res.ok) return;
         await connectWebdav(cfg);
       }
-      await mountConnectionsBody(body, host); // re-render with the new state
+      await mountConnectionsBody(body, host, onSummary); // re-render with the new state
     } catch (err) {
       const kind = connectKind ?? disconnectKind ?? saveKind ?? '';
       const msg = String((err as Error)?.message || t('That did not work - try again'));
@@ -370,6 +388,6 @@ export async function mountConnectionsBody(body: HTMLElement, host: ConnHost): P
     if (cb.checked) next.exportHome = kind;
     else if (current.exportHome === kind) delete next.exportHome;
     try { await host.profile.set(next); } catch { /* storage off - non-fatal */ }
-    await mountConnectionsBody(body, host);   // re-render so the choice stays single
+    await mountConnectionsBody(body, host, onSummary);   // re-render so the choice stays single
   };
 }

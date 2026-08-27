@@ -22,6 +22,7 @@
 import { summarizeTokensDoc, createTokenSet } from '@lolly/engine';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 import { listLogos } from '../../brand-logos.ts';
+import { roleAssignments } from '../roles.ts';
 import { primaryFontFamily, displayFontFamily, monoFontFamily, italicFontFamily } from '../../../user-fonts.ts';
 import type { BrandEditorHandle } from '../../brand-editor.ts';
 import { icon } from '../../icons.ts';
@@ -66,9 +67,22 @@ export interface OverviewModel {
    *  Optional so a caller that has nothing to say about ownership can leave it
    *  out; 0 and absent mean the same thing. */
   starterCount?: number;
+  /** Enough of a design system here to be worth exporting - see
+   *  {@link isWorthExporting}. Optional for the same reason `starterCount` is:
+   *  absent and false mean the same thing. */
+  worthExporting?: boolean;
 }
 
 const STRIP_MAX = 12;
+
+/** How many colours of a person's own read as a palette rather than a first
+ *  try. Two is a colour and a second thought; three is a set. */
+const OWN_COLORS_ENOUGH = 3;
+
+/** The ramp family only a generate writes. The blank brand ships `primary` and
+ *  `neutral`; `deriveBrandTokens` always adds `secondary`, so its presence is
+ *  the cheapest honest answer to "has a palette been generated here". */
+const GENERATED_RAMP = /(^|\.)ramp\.secondary\./;
 
 /** The starter catalog's placeholder tokens asset (brands/lolly-start). Matching
  *  it is the shell's existing "unbranded" test - views/gallery.ts gates the
@@ -112,6 +126,38 @@ async function starterColors(host: OverviewHost): Promise<Map<string, string>> {
   try {
     return new Map(createTokenSet(doc).colors().map(c => [c.path, c.value]));
   } catch { return new Map(); }
+}
+
+/**
+ * Is there enough of a design system here to be worth EXPORTING?
+ *
+ * A harder question than `furnished`, and a different one. Furnished asks
+ * whether a design system exists at all, which the very first write makes true -
+ * so gating the studio's Export / Tokens / Versions actions on it grew three
+ * power actions on the rail one gesture in (plans/163 F4). This asks whether
+ * there is something in there a file would be worth carrying, and any ONE of
+ * these answers yes:
+ *
+ *  - the person owns {@link OWN_COLORS_ENOUGH} colours or more (`own` is the
+ *    palette minus whatever is still the shipped starter ramp, unchanged);
+ *  - a palette has been generated (a `secondary` ramp exists - see
+ *    {@link GENERATED_RAMP});
+ *  - more than one role points at a colour of theirs. The blank brand ships
+ *    every role pre-assigned, so only roles pointing somewhere the starter did
+ *    not count - otherwise this would be true from the first write too.
+ *
+ * Reads what `readOverview` has already loaded. Nothing here writes.
+ */
+function isWorthExporting(
+  swatches: Array<{ value: string; path?: string }>, starter: Map<string, string>, doc: unknown, own: number,
+): boolean {
+  if (own >= OWN_COLORS_ENOUGH) return true;
+  if (swatches.some(s => GENERATED_RAMP.test(s.path ?? ''))) return true;
+  const current = new Map(swatches.filter(s => !!s.path).map(s => [s.path!, s.value]));
+  // Same test the starter split uses, applied to the swatch a role points at:
+  // a key the starter never had, or one whose colour has been changed since.
+  return Object.values(roleAssignments(doc))
+    .filter(r => starter.get(r.key) !== current.get(r.key)).length > 1;
 }
 
 /**
@@ -160,6 +206,9 @@ export async function readOverview(host: OverviewHost): Promise<OverviewModel> {
   }
 
   const starter = await starterColors(host);
+  const starterCount = starter.size
+    ? swatches.filter(s => !!s.path && starter.get(s.path) === s.value).length
+    : 0;
   return {
     furnished: true,
     colors: swatches.slice(0, STRIP_MAX).map(s => s.value),
@@ -167,9 +216,8 @@ export async function readOverview(host: OverviewHost): Promise<OverviewModel> {
     fonts: [...new Set(families.filter(Boolean))],
     logoCount: logos.length,
     tokenCount,
-    starterCount: starter.size
-      ? swatches.filter(s => !!s.path && starter.get(s.path) === s.value).length
-      : 0,
+    starterCount,
+    worthExporting: isWorthExporting(swatches, starter, doc, swatches.length - starterCount),
   };
 }
 

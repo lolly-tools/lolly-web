@@ -133,73 +133,39 @@
 /* Search filter: hide cards that don't match the active query. */
 .profile-view .profile-card.is-filtered-out { display: none; }
 
-/* Below the two-column threshold the fixed side rail can't stay a side column, and a
-   horizontally-scrolling text strip ran its section labels off-screen at tablet width.
-   So fold the layout to one column and turn the section nav into a SOLID, floating
-   icon-only bar pinned above the persistent search footer - the same bar phones already
-   used, now across the whole tablet band. The cutoff is the full tablet-landscape width
-   (1024px): between ~861px and ~1024px the fixed 216px rail plus a details column that
-   can't shrink below its fixed headshot overran the viewport and forced a horizontal
-   scrollbar. */
+/* Below the two-column threshold the fixed side rail can't stay a side column. It used
+   to become a floating icon-only bar (11 unlabelled glyphs, scrolled horizontally with
+   its scrollbar hidden, occluding the cards behind it) - and now that every summary row
+   carries its section's value, the collapsed list IS the nav here: it names all eleven
+   sections, on screen, in page order (plans/163 4.4). So the rail goes entirely below
+   1024px and the layout folds to one column. Desktop keeps the rail unchanged.
+   The 1024px cutoff is the full tablet-landscape width: between ~861px and ~1024px the
+   fixed 216px rail plus a details column that can't shrink below its fixed headshot
+   overran the viewport and forced a horizontal scrollbar. */
 @media (max-width: 1024px) {
   .profile-view .profile-layout {
     grid-template-columns: 1fr;
     gap: 1rem;
-    /* Clear the raised floating bar so the last card can scroll fully into view above it. */
-    padding-bottom: calc(var(--safe-bottom) + 10rem);
+    /* Clear the floating Home pill, which is fixed to the top-left corner and used to
+       sit on the first card's header. Derived from the chrome tokens, so it follows
+       the pill's own size (largeText included) instead of guessing at it. */
+    padding-top: calc(var(--chrome-top) + var(--chrome-h) + .75rem);
+    /* Footer clearance is #view's shared .has-search-footer padding (gallery.css);
+       this is the small extra breathing room under the last card. */
+    padding-bottom: calc(var(--safe-bottom) + 1.5rem);
   }
   /* Last-resort guard so no child can push the page sideways in the tablet band. */
   .profile-view { overflow-x: clip; }
-
-  /* Float the nav as its OWN bar above the persistent search footer, over the scrolling
-     cards, rather than a sticky top strip. Only the pill catches input, so taps pass
-     through the empty gutters to the content below. The bottom offset clears the whole
-     footer (search field + its wrapped nav row) plus a gap, so the bar floats above it. */
-  .profile-view .profile-nav {
-    position: fixed; top: auto; z-index: 40;
-    left: var(--vv-left, 0px); right: var(--vv-right, 0px);
-    bottom: calc(var(--vv-bottom, 0px) + var(--safe-bottom) + 7rem);
-    max-height: none; overflow: visible;
-    padding: 0 .6rem; background: none;
-    pointer-events: none;
-  }
-  /* The settings-search box has no room on the icon bar (and the shell search sits below). */
-  .profile-view .profile-nav-search { display: none; }
-  /* The bar itself: SOLID/opaque so cards scrolling under it stay legible, rounded, lifted;
-     grows with its icons up to the viewport, then scrolls horizontally. */
-  .profile-view .profile-nav-list {
-    pointer-events: auto;
-    flex-direction: row; flex-wrap: nowrap; gap: .3rem; justify-content: flex-start;
-    overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
-    width: max-content; max-width: 100%; margin: 0 auto;
-    padding: .35rem .45rem;
-    background: hsl(var(--card));
-    border: 1px solid hsl(var(--border));
-    border-radius: 999px;
-    box-shadow: 0 4px 18px hsl(0 0% 0% / .3);
-  }
-  .profile-view .profile-nav-list::-webkit-scrollbar { display: none; }
-  /* Icon-only pills: no label shown (kept for assistive tech), the active one filled solid. */
-  .profile-view .profile-nav-item {
-    flex: 0 0 auto; width: auto; gap: 0; padding: .55rem; border: 0; border-radius: 999px;
-  }
-  .profile-view .profile-nav-item .profile-nav-text {
-    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-    overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
-  }
-  /* Active = a strong primary TINT + ring (not a solid fill: the solid primary-on-
-     primary-foreground recipe lives once in buttons.css - R2). Clear on the icon bar. */
-  .profile-view .profile-nav-item.is-active { background: hsl(var(--primary) / .22); color: hsl(var(--primary)); box-shadow: inset 0 0 0 1.5px hsl(var(--primary) / .55); }
-  .profile-view .profile-nav-empty { display: none; }
+  .profile-view .profile-nav { display: none; }
   /* Stack the fields + headshot/theme columns: side by side, the .6fr headshot column
      couldn't shrink enough and shoved the card past the viewport. */
   .profile-view .profile-details-grid { grid-template-columns: 1fr; gap: 1.25rem; }
 }
 
-/* (Phones share the tablet band's treatment now: the floating icon-only section bar,
-   the single-column layout, and the overflow guard all live in the max-width:1024px
-   block above. The phone-specific details-card layout - headshot on top, fields stacked
-   and centred - stays in the max-width:640px block below.) */
+/* (Phones share the tablet band's treatment now: no section rail, the single-column
+   layout, and the overflow guard all live in the max-width:1024px block above. The
+   phone-specific details-card layout - headshot on top, fields stacked and centred -
+   stays in the max-width:640px block below.) */
 
 /* (The old two-button .profile-footer toolbar is retired - the shell's persistent
    search bar shows on this route instead; see components/search-bar.ts.) */
@@ -253,13 +219,33 @@
 .profile-view .profile-collapse-body { padding: 0 1.4rem 1.25rem; }
 /* Identity in the "Your details" summary: every card starts folded now, so the
    person's name rides beside that heading - a page of closed cards still reads as
-   someone's profile. Quiet (it is a value, not a heading) and it truncates rather
-   than pushing the chevron off the row. */
+   someone's profile. Quiet (it is a value, not a heading); it sits inside the
+   shared value slot below, which is what truncates the row. */
 .profile-view .profile-summary-name {
-  flex: 0 1 auto; min-width: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: calc(.9rem * var(--a11y-fs)); font-weight: 600;
   color: hsl(var(--foreground));
+}
+/* The right-hand value preview every folded summary carries (plans/163 4.1):
+   what the section is set to, in a word or two, so a page of closed cards reads
+   as a dashboard instead of eleven identical grey headers. Quiet on purpose -
+   never heavier than the title beside it - and it truncates rather than pushing
+   the chevron off the row. Blank until a lazy section measures its own value. */
+.profile-view .profile-summary-value {
+  flex: 0 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  text-align: end;
+  font-size: calc(.8rem * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+}
+/* Stand-in for a lazy section's body until its load lands - it replaced the word
+   "Loading…", which told the reader nothing. Deliberately unanimated: a shimmer
+   would be one more thing to switch off under Reduce motion. */
+.profile-view .profile-skeleton {
+  height: 1.1rem;
+  width: min(14rem, 60%);
+  margin: .35rem 0 .6rem;
+  border-radius: calc(var(--radius) * .75);
+  background: hsl(var(--muted));
 }
 @media (prefers-reduced-motion: reduce) { .profile-view .profile-collapse-chev { transition: none; } }
 
@@ -299,6 +285,24 @@
    the components' size tables so they sit at the compact form scale the native
    controls use; width:100% fills the field grid cell like a native input. */
 .profile-view .profile-field jelly-input { width: 100%; }
+
+/* The provenance opt-in leads "Your details" now (plans/163 4.3) - it decides
+   whether anything in the form below ever leaves this device, so it is framed as
+   its own row at the top of the form with one plain sentence under it, rather
+   than trailing the Save button. The pill inside is the unchanged .profile-check. */
+.profile-view .profile-optin {
+  margin: 0 0 1.25rem;
+  padding: .85rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--muted) / .35);
+}
+.profile-view .profile-optin .profile-check { margin: 0; }
+.profile-view .profile-optin-note {
+  margin: .5rem 0 0;
+  font-size: calc(.78rem * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+}
 
 /* Form: "use my details" toggle (a pill that hugs its label) + actions row */
 .profile-view .profile-check {
@@ -752,8 +756,9 @@
 @media (max-width: 640px) {
   /* Single-column flow. Flatten both column wrappers (display: contents) so the
      headshot - which lives in .profile-side - can sit above the name/email
-     fields, while Save + opt-in (.profile-actions) drop to the bottom. Order:
-     headshot → details → sound → actions. */
+     fields, while Save (.profile-actions) drops to the bottom. Order:
+     headshot → details → sound → actions. (The opt-in row is no longer in here:
+     it leads the form, above the whole grid.) */
   .profile-view .profile-details-grid { display: flex; flex-direction: column; gap: 1.4rem; align-items: center; }
   .profile-view .profile-details-main,
   .profile-view .profile-side { display: contents; }

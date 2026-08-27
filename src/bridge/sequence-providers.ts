@@ -299,6 +299,8 @@ interface MbSample {
 interface MbVideoSink {
   getSample(timestamp: number): Promise<MbSample | null>;
   samplesAtTimestamps(timestamps: Iterable<number>): AsyncGenerator<MbSample | null, void, unknown>;
+  /** Monotonic cluster walk. The rescue path for index-poor files - see sampleSequential. */
+  samples(start?: number, end?: number): AsyncGenerator<MbSample | null, void, unknown>;
 }
 
 interface MbVideoTrack {
@@ -486,7 +488,7 @@ export interface PullPlan {
    * to draw.
    */
   advance: number;
-  /** The primed index the cursor lands on (only meaningful for 'primed'). */
+  /** The primed index the cursor ends on (only meaningful for 'primed'). */
   index: number;
 }
 
@@ -781,6 +783,7 @@ export async function createVideoProvider(src: Blob | string, opts: ProviderOpts
 async function openMediabunnyProvider(src: Blob | string, opts: ProviderOpts): Promise<InstrumentedProvider> {
   const deps = opts.deps ?? {};
   const timeout = opts.timeoutMs ?? OP_TIMEOUT_MS;
+  const log = opts.log ?? ((): void => { /* silent by default */ });
   const mb = await (deps.loadMediabunny ?? loadMediabunny)();
 
   const source = typeof src === 'string' ? new mb.UrlSource(src) : new mb.BlobSource(src);
@@ -876,6 +879,79 @@ async function openMediabunnyProvider(src: Blob | string, opts: ProviderOpts): P
     try { sample.close(); } finally { ledger.release(); }
   };
 
+  // ── the sequential rescue: for containers timestamp addressing goes blind on ──
+  //
+  // A MediaRecorder capture writes no Cues element (no seek index), and on such a
+  // file mediabunny's timestamp addressing - samplesAtTimestamps AND getSample -
+  // returns null for every instant past the first cluster, while the plain cluster
+  // walk `samples(from, to)` reads every frame from ANY offset (measured on a real
+  // capture: getSample(t) null for all t >= 0.4 s of a 2.2 s file; samples(1.8, end)
+  // complete). Real users upload exactly these files - screen recordings, Meet
+  // exports - so a miss the file's own computeDuration() contradicts switches this
+  // clip to a monotonic walk: each packet decoded once, the primed grid's own cost
+  // profile. Export grids are monotonic, so one walk serves the whole clip.
+  //
+  // KNOWN CEILING: when the output grid is denser than the source (60 fps export of
+  // a 30 fps file) the walk can serve a frame half a source-frame early - it holds
+  // ONE look-ahead sample, never a back-buffer, to stay inside MAX_IN_FLIGHT. Only
+  // index-poor files ever enter this path, and a half-frame nudge beats the black
+  // frame / SEQ_TRUNCATED refusal it replaces.
+  let seqGen: AsyncGenerator<MbSample | null, void, unknown> | null = null;
+  /** The walk sample currently ON SCREEN. Owned here, never by drawAt's close - it is
+   *  re-served for every end-hold (a clip trimmed past its media redraws its last
+   *  frame) and for a grid denser than the source, without re-opening the walk. */
+  let seqServed: MbSample | null = null;
+  let seqAhead: MbSample | null = null;
+  let seqLastT = -1;
+  let addressingBlind = false;   // once true, skip the doomed addressing for this clip
+
+  const dropSeq = (): void => {
+    const g = seqGen;
+    seqGen = null;
+    if (seqServed) { closeSample(seqServed); seqServed = null; }
+    if (seqAhead) { closeSample(seqAhead); seqAhead = null; }
+    seqLastT = -1;
+    if (g) { void Promise.resolve(g.return(undefined)).catch(() => { /* already finished */ }); }
+  };
+
+  const pullSeq = async (): Promise<MbSample | null> => {
+    const g = seqGen;
+    if (!g) return null;
+    const res = await withTimeout(g.next(), timeout, 'decode (sequential walk)');
+    if (res.done) { seqGen = null; return null; }
+    if (res.value) ledger.acquire();
+    return res.value ?? null;
+  };
+
+  /**
+   * The latest frame at or before `t` off the walk (or, past the walk's end, the
+   * retained tail). The returned sample stays OWNED by the walk - the caller draws
+   * it and must NOT close it; dropSeq/dispose do.
+   */
+  const sampleSequential = async (t: number): Promise<MbSample | null> => {
+    // The walk is over and the frame in hand still answers: an end-hold.
+    if (!seqGen && !seqAhead && seqServed && t >= seqServed.timestamp) return seqServed;
+    if ((!seqGen && !seqAhead) || t < seqLastT) {
+      dropSeq();
+      try { seqGen = sink.samples(t, duration); } catch { seqGen = null; return null; }
+    }
+    seqLastT = t;
+    try {
+      for (;;) {
+        const next = seqAhead ?? await pullSeq();
+        seqAhead = null;
+        if (!next) return seqServed;             // exhausted: hold whatever is on screen
+        if (next.timestamp > t && seqServed) { seqAhead = next; return seqServed; }
+        if (seqServed) closeSample(seqServed);
+        seqServed = next;
+        if (seqServed.timestamp > t) return seqServed;   // first frame already past t
+      }
+    } catch (err) {
+      dropSeq();
+      throw coded(err, 'SEQ_DECODE_FAILED');
+    }
+  };
+
   const provider: InstrumentedProvider = {
     get w() { return w; },
     get h() { return h; },
@@ -884,6 +960,9 @@ async function openMediabunnyProvider(src: Blob | string, opts: ProviderOpts): P
 
     prime(timestamps) {
       if (disposed) return;
+      // Addressing already proved blind on this file: a primed grid would yield
+      // nothing but nulls, so leave the sequential walk in charge.
+      if (addressingBlind) return;
       dropGenerator();
       const list = timestamps.filter((t) => Number.isFinite(t)).map((t) => Math.max(0, t));
       // A grid that is not sorted would defeat the whole point of
@@ -904,7 +983,15 @@ async function openMediabunnyProvider(src: Blob | string, opts: ProviderOpts): P
       if (disposed) throw coded(new Error('provider disposed'), 'SEQ_ABORTED');
       const t = Number.isFinite(sourceSec) ? Math.max(0, sourceSec) : 0;
       ledger.request(t);
+      // A request past the media's own end HOLDS THE LAST FRAME, matching both the
+      // preview (sequence-clock's MEDIA_END_EPS_S rule) and the element provider
+      // (currentTime clamps) - without this a clip trimmed longer than its media
+      // simply vanished from the rendered file while the preview kept showing it.
+      // The ledger got the RAW time first: `unreachable` is how reconcile excuses
+      // asks past an intact file's end, and that accounting must stay truthful.
+      const tc = Math.min(t, Math.max(0, duration - 0.001));
       let sample: MbSample | null = null;
+      let fromWalk = false;
 
       const plan = gen ? planPull(primed, cursor, t) : { mode: 'random' as const, advance: 0, index: cursor };
       if (plan.mode === 'primed') {
@@ -933,12 +1020,24 @@ async function openMediabunnyProvider(src: Blob | string, opts: ProviderOpts): P
         }
       }
 
-      if (!sample) {
+      if (!sample && !addressingBlind) {
         try {
-          sample = await withTimeout(sink.getSample(t), timeout, 'decode (random access)');
+          sample = await withTimeout(sink.getSample(tc), timeout, 'decode (random access)');
           if (sample) ledger.acquire();
         } catch (err) {
           throw coded(err, 'SEQ_DECODE_FAILED');
+        }
+      }
+
+      // Addressing found nothing for an instant the file's own duration says exists:
+      // an index-poor container. Walk instead - see sampleSequential.
+      if (!sample) {
+        sample = await sampleSequential(tc);
+        fromWalk = !!sample;
+        if (sample && !addressingBlind) {
+          addressingBlind = true;
+          dropGenerator();   // the primed grid would only yield more nulls
+          log('warn', 'sequence provider: this file has no usable seek index - decoding it as a straight walk instead');
         }
       }
 
@@ -957,14 +1056,17 @@ async function openMediabunnyProvider(src: Blob | string, opts: ProviderOpts): P
       } catch (err) {
         throw coded(err, 'SEQ_UNSUPPORTED_MEDIA');
       } finally {
-        // Same tick as the draw, on every path including a throwing draw.
-        closeSample(sample);
+        // Same tick as the draw, on every path including a throwing draw. A WALK
+        // sample is the one exception: sampleSequential retains it for end-holds
+        // and denser grids, and dropSeq/dispose own its close.
+        if (!fromWalk) closeSample(sample);
       }
     },
 
     async dispose() {
       if (disposed) return;
       disposed = true;
+      dropSeq();
       dropGenerator();
       // Give the abandoned generator its return() a microtask to land before the
       // input pulls the decoders out from under it.

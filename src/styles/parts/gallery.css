@@ -383,6 +383,26 @@
   .gallery-footer > .gallery-nav-jelly { flex: 1 1 0; min-width: 0; }
   .gallery-footer > .btn { padding-inline: .4rem; }
   .gallery-footer .gallery-nav-label { display: none; }
+  /* First run only (plans/163 F11): footer-nav.ts marks the bar [data-first-run]
+     while the privacy notice is unacknowledged, and for that window each glyph
+     gets its name back underneath in small muted type. Nothing else changes: the
+     two rules stop matching the moment the attribute goes, leaving the icon-only
+     bar above. The coarse-pointer 44px floor further down is a MINIMUM, so the
+     taller stacked button never shrinks a tap target. */
+  .gallery-footer[data-first-run] > .btn,
+  .gallery-footer[data-first-run] > .gallery-nav-jelly { flex-direction: column; gap: 1px; }
+  .gallery-footer[data-first-run] .gallery-nav-label {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    /* Muted via opacity, not a token colour: the same rule has to read right on
+       the plain buttons AND on Verify's solid green pill, whose text is white. */
+    opacity: .78;
+    font-size: calc(9px * var(--a11y-fs));
+    line-height: 1.15;
+  }
 }
 
 /* Empty state: every tool category is hidden (or there are none). */

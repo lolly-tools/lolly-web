@@ -8,6 +8,7 @@ import { escape } from '../utils.ts';
 import { t, docsAppHref } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
 import { jellyActive } from '../lib/jelly.ts';
+import { privacyNoticeAcknowledged } from '../views/privacy-notice.ts';
 
 /** The nav-bar glyphs (Lucide house style), shared so all three footers match.
  *  Path data lives in lib/icons.ts - .shield is 'shieldCheck' there, deduped
@@ -138,8 +139,15 @@ export function footerNav({ searchHtml }: FooterNavOpts): string {
     href: docsAppHref('index'), nativeClass: 'gallery-info-link btn', variant: 'platinum',
     aria: t('What is Lolly? - about & help'), inner: `${NAV_ICONS.help}${label(t('What?'))}`,
   });
+  // First run only (plans/163 F11): on a phone the four buttons collapse to bare
+  // glyphs, which a newcomer has to guess at. While the privacy notice is still
+  // unacknowledged - the app's existing "this person has just arrived" flag, also
+  // set by settling the welcome dialog - the bar carries data-first-run and
+  // gallery.css shows each button's name underneath in small muted type. Once the
+  // flag is set the attribute is gone and the markup is byte-identical to before.
+  const firstRun = privacyNoticeAcknowledged() ? '' : ' data-first-run';
   return `
-    <footer class="gallery-footer${jellyActive() ? ' gallery-footer--jelly' : ''}">
+    <footer class="gallery-footer${jellyActive() ? ' gallery-footer--jelly' : ''}"${firstRun}>
       ${open}
       ${dashboard}
       ${searchHtml}

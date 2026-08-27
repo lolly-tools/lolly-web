@@ -14,7 +14,7 @@
  */
 import './pro.css';
 import { isHiddenSlot, BATCH_SLOT_PREFIX } from '../lib/batch-slots.ts';
-import { serializeUrlState, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION } from '@lolly/engine';
+import { serializeUrlState, buildEmbedUrl, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION } from '@lolly/engine';
 import { marksToCsv, csvToMarks } from '../lib/print-marks-csv.ts';
 
 // Output-dimension units the batch can target. px is the design canvas; the
@@ -51,6 +51,9 @@ import type { HostV1 } from '@lolly-tools/core/host-v1';
 import type { Unit } from '../../../../engine/src/units.ts';
 import type { ToolManifest } from '../../../../engine/src/loader.ts';
 import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
+import { setPendingToolSeed } from '../lib/drop-router.ts';
+import { navigateTo } from '../nav.ts';
+import { announce } from '../a11y.ts';
 
 // The asset-picker options shape, derived from the host bridge so the local
 // casts below stay in lockstep with it (type-only; erased at runtime).
@@ -287,6 +290,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
         <button type="button" class="pro-btn pro-print-btn" id="pro-print" hidden aria-expanded="false"
           title="${escape(t('Bleed, print marks and the CMYK press profile for every row'))}">${ICON_CROP} ${t('Print')}</button>
         <button type="button" class="pro-btn" id="pro-sessions" title="${escape(t('Save or load a snapshot of this whole batch'))}">⛁ ${t('Sessions')}</button>
+        <button type="button" class="pro-btn" id="pro-tosheet" title="${escape(t('Lay every row out on a printable sheet, n-up, to cut apart'))}">${t('Send to Print Sheet')}</button>
         <button type="button" class="pro-btn pro-btn--primary" id="pro-render" title="${escape(t('Render the batch'))}">${t('Render')}</button>
         ${langFabHtml()}
       </div>
@@ -1545,6 +1549,33 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
   document.addEventListener('keydown', onAddRowKey, true);
 
   renderBtn.addEventListener('click', () => { runBatchFlow().catch(err => reportFatal(err)); });
+
+  // Send every filled row to Print Sheet as a LIVE tool link - no render is baked here.
+  // Each cell holds the row's canonical embed URL (the same serializeUrlState → buildEmbedUrl
+  // recipe openPreview uses for its deep link), which print-sheet re-renders through
+  // host.compose.renderUrl on every mount, so the sheet follows later edits. The seed is
+  // handed straight to print-sheet's mount (setPendingToolSeed → the tool view's seededDirect
+  // path), so N links never have to fit in a URL. `once` lays each row out a single time and
+  // paginates; row order is the drop-in order.
+  const toSheetBtn = viewEl.querySelector<HTMLButtonElement>('#pro-tosheet')!;
+  toSheetBtn.addEventListener('click', () => {
+    const cells: { art: { id: string } }[] = [];
+    for (const row of state.rows) {
+      if (!row.toolId || !row.manifest) continue;
+      const model = (row.manifest.inputs ?? []).map((i: any) => ({ ...i, value: row.values[i.id] ?? i.default }));
+      const fmts = row.manifest.render?.formats ?? [];
+      // Vector where the tool offers it (scales cleanly for print), else a raster still.
+      const format = fmts.includes('svg') ? 'svg' : (fmts.find((f: string) => ['png', 'jpg', 'jpeg', 'webp'].includes(f)) ?? 'png');
+      const url = buildEmbedUrl({ toolId: row.toolId, format, query: serializeUrlState(model) });
+      // The cell's artwork must be a REF OBJECT ({id}), not a bare string - the runtime's
+      // assetRefId reads .id off an object and ignores bare strings, so a bare URL renders
+      // an empty grid. The id is the canonical embed URL; resolveAssetRefs re-renders it.
+      if (url) cells.push({ art: { id: url } });
+    }
+    if (!cells.length) { announce(t('Add a tool to a row first, then send the batch to a print sheet.')); return; }
+    setPendingToolSeed('print-sheet', { cells, fill: 'once' });
+    navigateTo('#/tool/print-sheet');
+  });
   viewEl.querySelector('#pro-sessions')!.addEventListener('click', (e) => { openSessions(e.currentTarget as HTMLElement).catch(err => reportFatal(err)); });
 
   // Hamburger: at narrow widths the toolbar controls collapse into a dropdown

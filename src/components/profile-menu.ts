@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Mobile profile menu - the avatar in the top-right cluster becomes a single
- * compact button on narrow screens (the standalone history button, language FAB
- * and the "Profile" wordmark are hidden by CSS), and tapping it opens this
- * popover with everything that was scattered across the bar: the theme
- * switcher, Home, saved sessions (history), the language menu (opened as a
- * child popover off its row), and a link to the full Settings page. Home and
- * Language live here so utility views (docs, ask) get ONE stable place for
- * them on mobile instead of per-view wandering fabs.
+ * Profile menu - clicking the avatar/pill in the top-right cluster opens this
+ * popover on every width (2026-08-26: was mobile-only; standardised across
+ * desktop too so there's ONE consolidated place to switch theme, jump Home,
+ * pick a language, etc.). It gathers what used to be scattered across the bar:
+ * the theme switcher, Home, saved sessions (history), the language menu (opened
+ * as a child popover off its row), and a link to the full Settings page. On
+ * mobile the standalone history button, language FAB and "Profile" wordmark
+ * also fold into it (hidden by CSS at <=640px).
  *
- * On desktop the avatar is left alone - it stays a plain link to #/profile - so
- * this only intercepts the click while the small-screen layout is active.
+ * The avatar stays an `<a href="#/profile">` for no-JS / middle-click / open-in-
+ * new-tab; the click handler preventDefaults and opens the menu instead, and the
+ * full profile page is reachable from the menu's Settings row.
  *
  * attachProfileMenu(trigger, host, { savedCount, onHistory }) - wires `trigger`
  * (the .profile-link anchor). Returns a cleanup function that detaches listeners
@@ -24,10 +25,10 @@ import { setTheme, type SetThemeHost } from '../lib/set-theme.ts';
 import { escape } from '../utils.ts';
 import { icon } from '../lib/icons.ts';
 import { mountBodyPopover } from './body-popover.ts';
+import { soundSwitchHtml, wireSoundSwitch } from './sound-toggle.ts';
+import { LOLLY_MARK_SVG } from '../lib/lolly-mark.ts';
 import { t, LANG_META, currentLang, type LangSwitchHost } from '../i18n.ts';
-
-// Matches the gallery/projects mobile breakpoint (the chrome only collapses there).
-const MOBILE = '(max-width: 640px)';
+import type { HostV1 } from '@lolly-tools/core/host-v1';
 
 // The chevron every navigation row wears (was hand-copied per row).
 const CHEVRON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>';
@@ -36,6 +37,16 @@ const CHEVRON = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" str
 // no-index-signature pattern) plus switchLang's - the Language row hands the
 // host to lang-menu's switchLang. Every caller passes a full HostV1 anyway.
 type ProfileMenuHost = SetThemeHost & LangSwitchHost;
+
+// The Sound/Neurospicy switch + the avatar headshot need a real assets API. The main
+// views pass a full HostV1, but the two chrome slices (color-lab, /start) pass narrowed
+// hosts - so detect a usable assets API at runtime rather than demanding it in the type,
+// and simply omit those pieces when it isn't there.
+type AssetsHost = ProfileMenuHost & { assets: HostV1['assets'] };
+function hasAssets(h: ProfileMenuHost): h is AssetsHost {
+  const a = (h as { assets?: unknown }).assets;
+  return !!a && typeof (a as { get?: unknown }).get === 'function';
+}
 
 /** True when `node` sits inside the language popover this menu spawns - the
  *  body-popover `isInside` escape hatch, so a tap or Escape in the child
@@ -65,6 +76,7 @@ export function attachProfileMenu(
       <div class="profile-menu-theme" role="group" aria-label="${escape(t('Theme'))}">
         ${THEMES.map(seg => `<button type="button" class="profile-menu-seg" role="menuitemradio" data-theme-seg="${seg}" aria-checked="${seg === theme}">${escape(t(THEME_LABELS[seg] ?? seg))}</button>`).join('')}
       </div>
+      ${hasAssets(host) ? `<div class="profile-menu-sound">${soundSwitchHtml()}</div>` : ''}
       <a class="profile-menu-item" role="menuitem" href="/#/" data-act="home">
         <span>${t('Home')}</span>
         ${CHEVRON}
@@ -122,6 +134,11 @@ export function attachProfileMenu(
       rove(segs[(i + step + segs.length) % segs.length]!);
     });
 
+    // Sound + Neurospicy switch (the same unified control the view-option popovers
+    // carry) - rendered + wired only when the host can supply loop bytes. Cast:
+    // SetThemeHost's profile.set is optional, wireSoundSwitch wants it required.
+    if (hasAssets(host)) wireSoundSwitch(el, host as unknown as Parameters<typeof wireSoundSwitch>[1]);
+
     el.querySelector('[data-act="history"]')?.addEventListener('click', () => {
       pop.close();
       onHistory?.();
@@ -156,9 +173,8 @@ export function attachProfileMenu(
   }, {
     className: 'profile-menu',
     ariaLabel: escape(t('Profile and settings')),
-    // A viewport resize past the breakpoint (rotate / desktop) makes the menu moot -
-    // the inline buttons take over again - so just dismiss it rather than reflow.
-    onResize: (pop) => { if (!window.matchMedia(MOBILE).matches) pop.close(); },
+    // No onResize override: body-popover's default re-runs position() so the menu
+    // just re-anchors on resize (it's a valid control at every width now).
     // The Language row's child popover is a body sibling - own it (see inLangMenu).
     isInside: inLangMenu,
     // Close the child with the parent, whichever route closed it (Escape,
@@ -167,8 +183,10 @@ export function attachProfileMenu(
   });
 
   const onClick = (e: MouseEvent) => {
-    // Desktop: leave the avatar as a direct link to the profile page.
-    if (!window.matchMedia(MOBILE).matches) return;
+    // Left-click on every width opens the consolidated menu; a modified click
+    // (middle/cmd/ctrl/shift - open in new tab, etc.) falls through to the
+    // anchor's href so #/profile is still directly reachable.
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
     popover.isOpen() ? popover.close(true) : popover.open();
   };
@@ -182,9 +200,9 @@ export function attachProfileMenu(
  * topbar.css, same box as `.theme-fab`) to a view's fixed top-right cluster and
  * attach the mobile menu to it - the mirror of theme-toggle.ts's mountThemeFab,
  * for the nav-less utility views (Dashboard, Verify, Convert, Spreadsheet,
- * Unpack, Script, /start, the Lab). Desktop: a plain quick link to the profile;
- * ≤640px: the consolidated menu, and the cluster's own language FAB hides
- * against it (overrides.css `.gallery-topright:has(.profile-fab) .lang-fab`).
+ * Unpack, Script, /start, the Lab). Clicking it opens the consolidated menu at
+ * every width; the cluster's own language + theme FABs hide against it at every
+ * width too (overrides.css `.gallery-topright:has(.profile-fab, .profile-link)`).
  * A no-op when the cluster isn't present, like mountThemeFab.
  */
 export function mountProfileFab(
@@ -201,4 +219,35 @@ export function mountProfileFab(
   link.innerHTML = icon('user');
   cluster.appendChild(link);
   attachProfileMenu(link, host);
+}
+
+/**
+ * Build a standalone, icon-only profile control (the `.profile-link` avatar the
+ * topbar uses, no name) wired to the consolidated menu, and RETURN it - for surfaces
+ * that dock it themselves rather than into a `.gallery-topright` cluster (the canvas
+ * zoom HUD in the tool editor). Renders the Lolly-mark immediately, then swaps in the
+ * user's headshot off the first-paint path (like mountViewTopbar's deferred fetch).
+ */
+export function createProfileControl(host: ProfileMenuHost, opts: { className?: string } = {}): HTMLAnchorElement {
+  const link = document.createElement('a');
+  link.href = '#/profile';
+  link.className = `profile-link${opts.className ? ` ${opts.className}` : ''}`;
+  link.setAttribute('aria-label', t('Open your profile'));
+  link.innerHTML = `<span class="profile-link-mark" aria-hidden="true">${LOLLY_MARK_SVG}</span>`;
+  attachProfileMenu(link, host);   // sets aria-haspopup/expanded + opens the menu on click
+  // Swap in the headshot after boot: it's a blob fetch by id (its object URL goes
+  // stale across reloads), so keep it off first paint - a failure leaves the mark.
+  if (!hasAssets(host)) return link;
+  void host.profile.get().then(p => {
+    const hid = (p as { headshot?: { id?: string } }).headshot?.id;
+    if (!hid) return;
+    void host.assets.get(hid).then(res => {
+      if (!res?.url || !link.isConnected) return;
+      let img = link.querySelector<HTMLImageElement>('.profile-link-avatar');
+      if (!img) { img = document.createElement('img'); img.className = 'profile-link-avatar'; img.alt = ''; link.prepend(img); }
+      img.src = res.url;
+      link.classList.add('has-avatar');
+    }).catch(() => { /* no avatar - the mark stands */ });
+  }).catch(() => { /* no profile - the mark stands */ });
+  return link;
 }

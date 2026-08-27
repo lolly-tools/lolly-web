@@ -8,6 +8,13 @@
    history button and the "Profile" wordmark fold into the avatar's menu. */
 .gallery-topbar { display: contents; }
 
+/* The standalone language FAB folds into the avatar menu at EVERY width now
+   (2026-08-26): the profile menu (profile-menu.ts Language row) opens on desktop
+   too, so the cluster's globe button is redundant wherever this bar's profile
+   pill carries the menu. Was ≤640px-only. The tool sidebar's compact
+   .lang-fab-sm has no such menu and is untouched (it isn't inside .gallery-topbar). */
+.gallery-topbar .lang-fab { display: none; }
+
 @media (max-width: 640px) {
   .gallery-topbar {
     display: flex;
@@ -43,13 +50,13 @@
   /* Fold the standalone history button + "Profile" wordmark into the avatar menu. */
   .gallery-topbar .history-fab { display: none; }
   .gallery-topbar .profile-link-name { display: none; }
-  /* Language folds into the avatar menu too (profile-menu.ts Language row) -
-     scoped to .gallery-topbar so utility views' standalone lang FABs, which
-     have no such menu, keep theirs. */
-  .gallery-topbar .lang-fab { display: none; }
   .gallery-topbar .profile-link {
     position: static; top: auto; right: auto;
-    width: 2.9em; height: 2.9em; padding: 0; border-radius: 50%;
+    /* Match the sibling FABs' box so the round avatar is a true circle, not an
+       oval: `height` is floored by the base `min-height: var(--chrome-h)`, so a
+       narrower `width` (the old 2.9em) left the headshot centred in a taller-
+       than-wide egg. One token for both dimensions keeps it round. */
+    width: var(--chrome-h); height: var(--chrome-h); padding: 0; border-radius: 50%;
     display: inline-flex; flex: none;
   }
   /* Re-centre the avatar dot/image now the pill padding is gone. */
@@ -138,6 +145,14 @@
   background: hsl(var(--card)); color: hsl(var(--foreground)); box-shadow: 0 1px 3px hsl(0 0% 0% / 0.12);
 }
 .profile-menu-seg:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+
+/* The unified Sound + Neurospicy switch, folded into the menu between the theme
+   group and the nav rows. The control styles itself (sound-toggle.ts injects its
+   CSS); this only gives it row padding + a divider to match the menu items. */
+.profile-menu-sound {
+  padding: 9px 12px; margin-bottom: 4px;
+  border-bottom: 1px solid hsl(var(--border));
+}
 
 .profile-menu-item {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;

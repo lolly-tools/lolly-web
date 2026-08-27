@@ -1297,7 +1297,10 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         </div>
       </details>
 
-      <details class="be-wing" data-be-wing="curves">
+      ${/* The three wings below are for a system that already exists (plans/163
+            F7): they are marked advanced so they read quieter than Generate,
+            and so the palette rides above them wherever the split stacks. */''}
+      <details class="be-wing be-wing--advanced" data-be-wing="curves">
         <summary class="be-wing-head">
           <span class="be-wing-title">${t('Shade curves')}</span>
           <span class="be-wing-sub">${t('Reshape a ramp point by point. Lightness, chroma and hue each have their own curve.')}</span>
@@ -1320,7 +1323,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         </div>
       </details>
 
-      <details class="be-wing" data-be-wing="contrast">
+      <details class="be-wing be-wing--advanced" data-be-wing="contrast">
         <summary class="be-wing-head">
           <span class="be-wing-title">${t('Contrast')}</span>
           <span class="be-wing-sub">${t('Retone a ramp to APCA targets, or turn it around the hue wheel.')}</span>
@@ -1377,7 +1380,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         </div>
       </details>
 
-      <details class="be-wing" data-be-wing="print">
+      <details class="be-wing be-wing--advanced" data-be-wing="print">
         <summary class="be-wing-head">
           <span class="be-wing-title">${t('Print')}</span>
           <span class="be-wing-sub">${t('What the primary becomes on press: a pinned CMYK build or a named spot ink.')}</span>
@@ -3498,6 +3501,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const addedNameEl = addedEl?.querySelector<HTMLElement>('[data-be-added-name]') ?? null;
   const addedGen = addedEl?.querySelector<HTMLElement>('[data-be-added-gen]') ?? null;
   const addedPrimaryBtn = addedEl?.querySelector<HTMLButtonElement>('[data-be-added-primary]') ?? null;
+  const addedTuneBtn = addedEl?.querySelector<HTMLButtonElement>('[data-be-added-tune]') ?? null;
   /** The swatch the visible chip describes, or null when no chip is showing. */
   let addedSwatch: { path: string[]; name: string } | null = null;
   /** Put the chip away. Called by the next add, by Dismiss, by either action
@@ -3517,6 +3521,10 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (!addedEl || !addedNameEl) return;
     addedSwatch = { path: one.path, name: one.name };
     addedNameEl.textContent = one.name;
+    // A previous chip may have ended in the primary-set state (buttons hidden,
+    // generate offer kept) - a fresh add starts with both actions back.
+    if (addedPrimaryBtn) addedPrimaryBtn.hidden = false;
+    if (addedTuneBtn) addedTuneBtn.hidden = false;
     addedSw?.style.setProperty('--sw', one.hex || 'transparent');
     // The handover to the Generate wing is offered on the FIRST colour of a
     // person's own, and only over a starter palette: it is the answer to "you
@@ -3530,6 +3538,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   addedEl?.addEventListener('click', (e) => {
     const target = e.target as HTMLElement;
     if (target.closest('[data-be-added-dismiss]')) { clearAddedChip(); focusAddField(); return; }
+    // The generate link navigates on its own; the chip's job is done.
+    if (target.closest('[data-be-added-gen]')) { clearAddedChip(); return; }
     if (target.closest('[data-be-added-tune]')) {
       const path = addedSwatch?.path ?? null;
       clearAddedChip();       // before the popover opens - it takes focus itself
@@ -3545,8 +3555,21 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const key = swatches.find(s => s.path.length === path.length && s.path.every((seg, i) => seg === path[i]))?.key;
     if (!key || !assignRole(doc, 'primary', key)) { clearAddedChip(); focusAddField(); return; }
     repaintPalette(); persist(true); playSfx('click');
-    clearAddedChip();
-    focusAddField();
+    // Taking the primary is step ONE of the same gesture the generate offer
+    // completes - and this chip is the offer's only home, so retiring the whole
+    // row here destroyed it exactly on the first colour (plans/163 F3). Keep the
+    // chip up as a confirmation with the offer still live; without the offer the
+    // chip has nothing left to say, so it clears as before.
+    const genOffered = !!addedGen && !addedGen.hidden;
+    if (genOffered) {
+      if (addedPrimaryBtn) addedPrimaryBtn.hidden = true;
+      if (addedTuneBtn) addedTuneBtn.hidden = true;
+      if (addedNameEl) addedNameEl.textContent = tRaw('{role} is now {name}', { role: roleLabel('primary'), name });
+      (addedGen as HTMLAnchorElement).focus();
+    } else {
+      clearAddedChip();
+      focusAddField();
+    }
     announce(tRaw('{role} is now {name}', { role: roleLabel('primary'), name }));
   });
 

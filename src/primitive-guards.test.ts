@@ -724,7 +724,12 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // 1 → 2, 2026-08-24: mountProfileFab's icon-injection sink - the argument is
   // the constant lib/icons 'user' glyph, never user input (same shape as
   // home-fab.ts / theme-toggle.ts above).
-  'components/profile-menu.ts': 2,
+  // 2 → 3, 2026-08-27: createProfileControl (the standalone avatar the canvas zoom
+  // HUD docks itself) paints its first-frame mark - `<span class="profile-link-mark"
+  // aria-hidden="true">${LOLLY_MARK_SVG}</span>`. Reviewed: LOLLY_MARK_SVG is the
+  // module-level constant from lib/lolly-mark.ts, the only interpolation in the
+  // template, and the later headshot swap is an <img> built by createElement, not HTML.
+  'components/profile-menu.ts': 3,
   'components/profiles-manager.ts': 3,
   // The persistent bar singleton's one render (plans/99 M1): a template.innerHTML of
   // footerNav()+gallerySearchBox() markup, whose only dynamic interpolations - 
@@ -1019,6 +1024,11 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // escape()s each one: the finding text (which carries brand token data, an
   // OPEN FinishKind union and tool-authored input labels, all attacker-shaped),
   // the finding id, and both halves of every fact row.
+  // 1 as of 2026-08-26: the grouped format picker's refresh() rebuilds the
+  // category accordion after a setFormats narrowing. Reviewed - format ids and
+  // labels are escape()d, category labels are escape(t(…)) literals, and the
+  // chevron comes from the shared icon() generator.
+  'views/export-format-picker.ts': 1,
   'views/export-preflight.ts': 1,
   // 41 as of 2026-08-07: +1 for the Line tool's drawLineRubber (connectLayer.innerHTML,
   // plan 90) - coordinates via cf2 (numbers), colour via cAttr (strips <>"), and the
@@ -1102,7 +1112,12 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // +2 2026-08-20 (plans/134): the Recent section (recentsEl.innerHTML - card() output,
   // every value escapeHtml()d) and the type-pill bar (typebarEl.innerHTML - constant
   // labels through t(), no user text).
-  'views/picker.ts': 29,
+  // +1 2026-08-27: renderUserAssets split its single `userEl.innerHTML = sectionHtml(…)`
+  // into two sinks - the empty state (t() literals only, no interpolation) and the
+  // folder-grouped grid. Reviewed: the grid's only dynamic values are the folder name
+  // (escapeHtml()d), the t('Ungrouped') heading, and userCard() output, the same card
+  // builder the flat list already used.
+  'views/picker.ts': 30,
   // Personal send targets (plans/129): the connections section body. One sink; every
   // dynamic value (labels, provider kind, account names, scopes notes, field values)
   // goes through escape() in oauthRowHtml/credentialRowsHtml, the rest is t() output.
@@ -1115,7 +1130,12 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'views/profile.ts': 18,  // +1 2026-07-31: the Offline-tools download manager list (loadOffline) - ids/names escape()d, sizes via fmtBytes, glyphs via icon(); +1 2026-08-17: the "Save my renders" auto-save toggle (jelly-switch) - label + id escape()d; 23 → 18 2026-08-19: "Export everything" became a background job (lib/batch-job.ts), so its five progress-toast writes are gone - the global job toast reports it now
                            // +1 2026-08-01: the offline persistence line (syncPersistLine) - both t() strings escape()d, the button markup is static
   'views/projects.ts': 9,   // 10 → 9: the context-menu popover sink moved to lib/context-menu.ts (2026-08-09)
-  'views/record-control.ts': 6,
+  // 6 → 7, 2026-08-27: the choose-microphone stage button's glyph injection,
+  // `micBtn.innerHTML = icon('mic', { size: 18 })`. Reviewed: icon() is the shared
+  // trusted glyph generator (lib/icons.ts PATHS constant, R9-guarded), the name is a
+  // literal, and nothing else about the button is written as HTML - its label, title
+  // and aria-label are setAttribute/property writes.
+  'views/record-control.ts': 7,
   'views/screen-capture-control.ts': 4,
   // 3 as of 2026-08-02: the Script-audio TTS dialog. Reviewed - the shell
   // template escape()s every attribute interpolation (the rest are static t()),
@@ -1202,8 +1222,27 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // interpolated value in both sinks is escape()d (kind/label/hint/actionLabel from
   // the registered SendTarget, and the outcome url/label); icon() is the shared
   // trusted glyph generator.
-  'views/tool-actions.ts': 11,
-  'views/tool-inputs.ts': 9,
+  // 11 → 13 on 2026-08-26: the "Your recording" card for audio-capture tools -
+  // paintRecording() writes the empty-state hint and the take's save-actions row.
+  // Reviewed: every interpolation is a t()/tRaw() literal through escape(), the
+  // container extension comes from takeNativeExt (a fixed three-way map), and the
+  // size string is locally formatted digits. No user/peer/tool value reaches
+  // either sink unescaped.
+  'views/tool-actions.ts': 13,
+  // 9 → 11, 2026-08-27: the table input's ghost-row promotion (a blank placeholder row
+  // that gains content becomes real in place, without waiting for the panel rebuild).
+  // Two sinks: the row's delete-button cell, whose only interpolations are the numeric
+  // `tr.sectionRowIndex`; and the freshly appended placeholder row, built cell-by-cell
+  // by the SAME tableBodyCellHtml() the panel render uses - it escape()s the field id,
+  // the column name and the value (here the '' constant), and tableColumnEditor()
+  // clamps the editor kind to a fixed three-way enum. No tool or user text reaches
+  // either sink unescaped.
+  'views/tool-inputs.ts': 11,
+  // 1 as of 2026-08-27: the stage zoom HUD's drag grip. The pill is all buttons, so the
+  // grip is the one drag surface, and its sink is `grip.innerHTML = icon('grip',
+  // { filled: true })` - the shared trusted glyph generator with a literal name, no
+  // interpolation. Everything else the HUD writes is textContent/classList/style.
+  'views/tool-stage-nav.ts': 1,
   // 16 → 17 on 2026-08-09: the canvas "Play" button gained the same two-span label the
   // "Go live" button beside it already had (`<span class="canvas-live-dot">` +
   // `<span class="canvas-live-label">`). Reviewed - both spans are static markup and the
@@ -1215,7 +1254,10 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // 15 → 16, 2026-08-14 (plan 112): openPresenter mounts a detached `presentSource` whose
   // innerHTML is `runtime.getHydrated()` - the tool's OWN rendered template output (the same
   // engine render the canvas shows), escaped by Handlebars, never a raw external value.
-  'views/tool.ts': 16,
+  // 16 → 15, 2026-08-27: attrition - the sidebar's small lang-fab
+  // (`group.insertAdjacentHTML('beforeend', langFabHtml())`) is gone; the canvas HUD's
+  // profile avatar opens the consolidated menu, which carries the Language row.
+  'views/tool.ts': 15,
   // 21 as of 2026-07-31: +2 deep-scan watermark notes (trustmarkNoteHtml,
   // contentSealNoteHtml). Reviewed - every attacker-controlled value on this
   // page (decoded payload/message hex, schema, filenames, hex dumps of file

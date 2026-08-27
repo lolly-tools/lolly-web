@@ -289,9 +289,6 @@
   letter-spacing: 0;
   font-size: calc(12px * var(--a11y-fs));
 }
-/* "Your images" uses the shared group chrome; its wrapper keeps the divider. */
-.asset-picker-userassets .asset-picker-group { margin-top: 0; }
-
 /* ── Category filter row ─────────────────────────────────────────────────────
    One icon per present library category, pinned to the top of the library pane.
    Clicking one pins its section open and collapses the rest (a quick filter); the
@@ -1115,14 +1112,11 @@
 .pdfpick-btn--primary:hover { background: hsl(var(--primary)); filter: brightness(1.08); }
 .pdfpick-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* ── User's personal image library ─────────────────────────────────────── */
+/* ── The user's private assets (their own uploads, its own picker tab) ──── */
 
 .asset-picker-userassets {
   padding-bottom: 16px;
-  margin-bottom: 16px;
-  border-bottom: 1px solid hsl(var(--border));
 }
-.asset-picker-userassets[hidden] { display: none; }
 
 .asset-picker-section-head {
   display: flex;
@@ -1333,3 +1327,23 @@
   text-decoration: line-through;
   text-decoration-thickness: 1px;
 }
+
+/* Fade-not-hide "hide incompatible" toggle (plans/162): when a broadened catalog
+   is cluttered, one tap hides the dimmed tiles (pure CSS; they stay in the DOM). */
+.asset-picker-fitbar { display: flex; justify-content: flex-end; margin: 0 0 6px; }
+.asset-picker-fit-toggle {
+  appearance: none;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--muted) / 0.4);
+  color: hsl(var(--muted-foreground));
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.asset-picker-fit-toggle.is-active {
+  background: hsl(var(--primary) / 0.16);
+  color: hsl(var(--foreground));
+  border-color: hsl(var(--primary) / 0.5);
+}
+.asset-picker-pane.hide-incompatible .asset-picker-card.is-incompatible { display: none; }

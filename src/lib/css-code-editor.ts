@@ -2,7 +2,7 @@
 /**
  * A small, dependency-free CSS code editor for the shell (plan 112 M4 - the Custom CSS
  * panel, reusable anywhere). The classic overlay trick: a transparent <textarea> over a
- * coloured <pre> that mirrors it token-for-token (the run-web-code pattern), plus a
+ * coloured <pre> that mirrors it token-for-token (the sandbox pattern), plus a
  * property/value autocomplete. No CodeMirror/Monaco - CSS's vocabulary is bounded, so a
  * ~250-word property list + a compact tokenizer covers it offline and light.
  *

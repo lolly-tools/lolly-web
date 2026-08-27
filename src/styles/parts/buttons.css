@@ -108,6 +108,7 @@
 .script-audio-save,                               /* script-audio.css */
 .upscale-run,                                     /* upscale.css - on-device AI upscale Run */
 .rt-actions .rt-run,                              /* retouch.css - content-aware fill/save primary */
+.fmt-chip[aria-pressed="true"],                   /* tool-chrome.css - export format picker chosen chip */
 .be-cta {                                         /* brand-studio.css */
   background: hsl(var(--primary));
   color: hsl(var(--primary-foreground));

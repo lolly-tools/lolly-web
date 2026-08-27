@@ -1536,6 +1536,13 @@ export function setSpeed(
  * t is not strictly inside (start + MIN_DUR, end - MIN_DUR), so a split can never
  * mint a sub-minimum sliver, and null when the clip has no resolvable end.
  *
+ * An OPEN-ENDED clip (no authored dur - it runs to the sequence end) splits too, when
+ * the caller supplies `totalSec` to resolve its effective end: the left half gets the
+ * authored span up to the cut, and the right half stays OPEN-ENDED - it keeps running
+ * to the sequence end, exactly as the whole clip did, so the null-dur contract
+ * ("derive from the media / follow the sequence") survives the cut on the half where
+ * it still means something. Without `totalSec` an open-ended clip is refused as before.
+ *
  * The transitions belong to the OUTER edges of the original clip: A keeps its enter
  * and loses its exit, B keeps its exit and loses its enter. B's source in-point
  * advances by the media time consumed by A - (t - start) * speed. B is inserted
@@ -1549,15 +1556,18 @@ export function setSpeed(
  * Everything else - the link field, the asset ref, the geometry - is copied exactly
  * as before.
  */
-export function splitBox(boxes: Box[], cfg: TimeCfg, id: string, tSec: number, mintId: () => string): Box[] | null {
+export function splitBox(boxes: Box[], cfg: TimeCfg, id: string, tSec: number, mintId: () => string, totalSec?: number): Box[] | null {
   const rows = Array.isArray(boxes) ? boxes : [];
   const i = indexOfId(rows, cfg, id);
   if (i < 0) return null;
   const box = rows[i]!;
   const t = boxTiming(box, cfg);
-  if (t.dur === null) return null;               // open-ended: no end to split against
   const start = t.start ?? 0;
-  const end = start + t.dur;
+  // Open-ended: the effective end is the sequence's, when the caller names it.
+  const openEnded = t.dur === null;
+  const total = num(totalSec ?? NaN, NaN);
+  if (openEnded && !(Number.isFinite(total) && total > start)) return null;
+  const end = openEnded ? total : start + (t.dur as number);
   const at = num(tSec, NaN);
   if (!Number.isFinite(at)) return null;
   if (!(at > start + MIN_DUR && at < end - MIN_DUR)) return null;
@@ -1592,7 +1602,9 @@ export function splitBox(boxes: Box[], cfg: TimeCfg, id: string, tSec: number, m
     ...(kf ? { [kf]: serialiseKf(kfTrackAfter(track, cutMs)) } : {}),
     [cfg.idField]: mintId(),
     [cfg.startField]: bStart,
-    [cfg.durField]: bDur,
+    // An open-ended original leaves its right half open-ended too ('' = unauthored,
+    // demote's own convention) - it keeps following the sequence end.
+    [cfg.durField]: openEnded ? '' : bDur,
     [cfg.clipInField]: clamp(r3(t.clipIn + aDur * t.speed), 0, MAX_TIME_S),
     [cfg.enterField]: 'none',
   };
@@ -1601,7 +1613,7 @@ export function splitBox(boxes: Box[], cfg: TimeCfg, id: string, tSec: number, m
   return out;
 }
 
-/** Result of {@link splitAll}: the new array plus which ids the cut actually landed on. */
+/** Result of {@link splitAll}: the new array plus which ids the cut actually hit. */
 export interface SplitAllResult {
   /** The boxes after every successful split. IDENTICAL to the input when none landed. */
   next: Box[];
@@ -1634,7 +1646,7 @@ export interface SplitAllResult {
  * already failed to be unique.
  */
 export function splitAll(
-  boxes: Box[], cfg: TimeCfg, ids: string[], tSec: number, mintId: () => string,
+  boxes: Box[], cfg: TimeCfg, ids: string[], tSec: number, mintId: () => string, totalSec?: number,
 ): SplitAllResult {
   const rows = Array.isArray(boxes) ? boxes : [];
   let acc = rows;
@@ -1651,7 +1663,7 @@ export function splitAll(
   for (const raw of Array.isArray(ids) ? ids : []) {
     const id = raw == null ? '' : String(raw);
     if (!id) continue;
-    const next = splitBox(acc, cfg, id, tSec, mint);
+    const next = splitBox(acc, cfg, id, tSec, mint, totalSec);
     if (!next) { skipped.push(id); continue; }
     // splitBox inserts B immediately after A, so the minted half is the next row.
     const i = indexOfId(next, cfg, id);

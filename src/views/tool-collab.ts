@@ -217,7 +217,7 @@ function holdsPickedFile(value: unknown): boolean {
  * tool has to interpret.
  *
  * Both the DECLARED type and the value shape are checked. The declaration is the contract
- * (`file`, and `darkroom`/`convert-image`/`compress-pdf`/`embed-track-image`/
+ * (`file`, and `darkroom`/`convert-image`/`compress-pdf`/`claim`/
  * `font-convert`/`strip-data`/`redact`/`rebrand-deck` all have one); the shape is what a
  * hook could put anywhere, and the property that matters is "no bytes leave", not "the
  * manifest was honest".

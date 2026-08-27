@@ -1584,6 +1584,17 @@ const RENAMED_TOOL_IDS: Record<string, string> = {
   // old `symbology` param drops it (qr-code has no such input) - the value opens and
   // the barcode kind is re-picked. Barcode shipped 2026-08-24, so ~no links exist yet.
   'barcode': 'qr-code',
+  // The one-word-promise renames (plans/164, 2026-08-27, inside the id window):
+  // pure id renames - inputs untouched, so old links and ?slot= resumes carry
+  // whole through canonToolId with no per-tool migration shim needed.
+  'mesh-gradient': 'gradient',
+  'd3': 'chart',
+  'embed-track-image': 'claim',
+  'run-web-code': 'sandbox',
+  'code-canvas': 'snippet',
+  'screenshot-frame': 'frame',
+  'web-icon': 'icon',
+  'prompt-to-image': 'prompt-card',
 };
 const canonToolId = (id: string): string => RENAMED_TOOL_IDS[id] ?? id;
 

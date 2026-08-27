@@ -35,13 +35,15 @@ const MOBILE_MQ = '(max-width: 640px)';   // the shell's canonical breakpoint (m
 const RAIL_W = 48;
 const MIN_W = 280;
 const DEFAULT_W = 340;
+const COMPACT_ONLY_W = 230;   // width when the column holds only the compact zoom bar (fits the bar + the card inset)
 const MIN_SLOT_H = 120;
 const DROP_BAND = 52;
 
-// Column order is fixed: the player on top, the export panel below it, so the split
-// means "player height fraction". Both can be docked at once; one docks full-height.
-type PanelId = 'neuro' | 'export';
-const ORDER: readonly PanelId[] = ['neuro', 'export'];
+// Column order is fixed, top-to-bottom: the zoom HUD (a COMPACT bar), then the
+// player, then the export panel. The player/export are full panels and share the
+// resizable split; the zoom bar is fixed-height and sits above them, out of it.
+type PanelId = 'zoom' | 'neuro' | 'export';
+const ORDER: readonly PanelId[] = ['zoom', 'neuro', 'export'];
 
 interface Occupant {
   el: HTMLElement;
@@ -51,11 +53,16 @@ interface Occupant {
   /** Trusted SVG markup (icon()) + label for the collapsed rail's per-panel button. */
   icon?: string;
   label?: string;
+  /** A compact occupant (the zoom HUD) is a fixed-height bar: it does not stretch to
+   *  fill, and it sits outside the two-panel resize split. */
+  compact?: boolean;
 }
 
 export interface DockHooks {
   onRelease?: () => void;
   onCollapse?: (collapsed: boolean) => void;
+  /** Dock as a fixed-height compact bar rather than a full-height panel. */
+  compact?: boolean;
   icon?: string;
   label?: string;
 }
@@ -106,10 +113,26 @@ function injectCss(): void {
   background: hsl(var(--background)); 
   box-shadow: -8px 0 24px -18px rgba(0,0,0,.5);
 }
-.edge-dock-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+/* Inset padding so each docked occupant reads as a distinct card/pane (the column
+   background shows around it), not an edge-to-edge slab. */
+.edge-dock-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding: 8px; box-sizing: border-box; }
 .edge-dock-slot { min-height: 0; overflow: auto; position: relative; }
 .edge-dock-slot--fill { flex: 1 1 auto; }
-.edge-dock-slot > * {
+/* A docked occupant is a pane now, not a floating pill/rounded card: drop its large
+   outer radius to a small pane corner. Overrides the panel's own (pill or big) radius. */
+.edge-dock-slot > * { border-radius: 6px !important; }
+/* The compact bar (zoom HUD): fixed height, sits at the top, centred, and does NOT
+   stretch its child to fill (that override lives below, scoped away from it). */
+.edge-dock-slot--compact { flex: 0 0 auto; overflow: visible; display: flex; justify-content: center; padding: 0; }
+/* A gap (the column background) separates the compact bar from a panel below it - it
+   has no resize divider, and the gap reads as "two panes". */
+.edge-dock-slot--compact:not(:last-child) { margin-block-end: 8px; }
+.edge-dock-slot--compact > * {
+  position: static !important; inset: auto !important; margin: 0 !important;
+  height: auto !important; width: auto !important; max-width: 100% !important;
+  visibility: visible !important; opacity: 1 !important; pointer-events: auto !important;
+}
+.edge-dock-slot:not(.edge-dock-slot--compact) > * {
   position: static !important; inset: auto !important; margin: 0 !important;
   width: 100% !important; height: 100% !important; max-width: none !important; max-height: none !important;
   /* The dock owns visibility here: the export panel's reveal is scoped to its #tool-layout
@@ -118,7 +141,9 @@ function injectCss(): void {
   visibility: visible !important; opacity: 1 !important; pointer-events: auto !important;
 }
 .edge-dock-grip {
-  position: absolute; inset-block: 0; inset-inline-start: -3px; width: 8px;
+  /* Wide hit strip straddling the dock's inner edge; the glowing pill comes from the
+     shared .resize-grip component (tool.css) - the SAME grip the inputs sidebar uses. */
+  position: absolute; inset-block: 0; inset-inline-start: -8px; width: 16px;
   cursor: col-resize; touch-action: none; z-index: 2;
 }
 .edge-dock-divider {
@@ -160,7 +185,7 @@ function ensureColumn(): void {
   col.setAttribute('aria-label', 'Docked panels');
 
   const grip = document.createElement('div');
-  grip.className = 'edge-dock-grip';
+  grip.className = 'edge-dock-grip resize-grip';
   grip.setAttribute('role', 'separator');
   grip.setAttribute('aria-orientation', 'vertical');
   grip.setAttribute('aria-label', 'Resize docked panels');
@@ -203,7 +228,11 @@ function relayout(): void {
   body.textContent = '';
   const slots = new Map<PanelId, HTMLElement>();
   present.forEach((id, i) => {
-    if (i > 0) {
+    // A resize divider only sits BETWEEN two full panels (the split is theirs). The
+    // fixed-height compact bar (zoom) can't be resized, so its boundary gets none - a
+    // border on the compact slot separates it instead.
+    const prev = present[i - 1];
+    if (i > 0 && !occupants.get(id)!.compact && prev && !occupants.get(prev)!.compact) {
       const div = document.createElement('div');
       div.className = 'edge-dock-divider';
       div.setAttribute('role', 'separator');
@@ -213,17 +242,19 @@ function relayout(): void {
     }
     const slot = document.createElement('div');
     slot.className = 'edge-dock-slot';
+    if (occupants.get(id)!.compact) slot.classList.add('edge-dock-slot--compact');
     slot.dataset.slot = id;
     slot.appendChild(occupants.get(id)!.el);
     body!.appendChild(slot);
     slots.set(id, slot);
   });
 
-  // Heights: with two panels, the top (player) takes `split` of the body and the
-  // bottom fills the rest; the split defaults to the player's natural height. With
-  // one panel it fills.
-  const bottom = present[present.length - 1]!;
-  slots.get(bottom)!.classList.add('edge-dock-slot--fill');
+  // Heights: the full panels share the vertical space - with two of them the top takes
+  // `split` and the bottom fills the rest; with one it fills. A compact bar (zoom) is
+  // fixed-height and never fills, so the fill/split only ever see the full panels.
+  const panels = present.filter(id => !occupants.get(id)!.compact);
+  const bottom = panels[panels.length - 1];
+  if (bottom) slots.get(bottom)!.classList.add('edge-dock-slot--fill');
   applySplit();
 
   // Collapsed rail: an icon button per occupant, click expands.
@@ -257,7 +288,8 @@ function relayout(): void {
  */
 function applySplit(): void {
   if (!body) return;
-  const slots = body.querySelectorAll<HTMLElement>('.edge-dock-slot');
+  // The split is between the two FULL panels only; a compact bar sits outside it.
+  const slots = body.querySelectorAll<HTMLElement>('.edge-dock-slot:not(.edge-dock-slot--compact)');
   if (slots.length !== 2) return;
   const top = slots[0]!;
   if (geom.split === undefined) { top.style.flex = ''; top.style.height = ''; return; }
@@ -268,7 +300,12 @@ function applySplit(): void {
 }
 
 function applyWidth(): void {
-  const w = geom.collapsed ? RAIL_W : clamp(geom.width ?? DEFAULT_W, MIN_W, maxWidth());
+  // A column holding ONLY the compact zoom bar (no full panel) is slim - a full 280px
+  // panel column reserved for a row of zoom buttons would shove the canvas for nothing.
+  const compactOnly = occupants.size > 0 && [...occupants.values()].every(o => o.compact);
+  const w = geom.collapsed ? RAIL_W
+    : compactOnly ? COMPACT_ONLY_W
+    : clamp(geom.width ?? DEFAULT_W, MIN_W, maxWidth());
   document.documentElement.style.setProperty('--dock-w', `${w}px`);
 }
 
@@ -299,6 +336,7 @@ export function requestDock(id: PanelId, el: HTMLElement, hooks: DockHooks = {})
     onCollapse: hooks.onCollapse,
     icon: hooks.icon,
     label: hooks.label,
+    compact: hooks.compact,
   });
   relayout();
   if (geom.collapsed) hooks.onCollapse?.(true);
@@ -330,11 +368,16 @@ export function edgeDockWidth(): number {
   return v ? (parseFloat(v) || 0) : 0;
 }
 
-/** Is `clientX` within the inline-end drop band? RTL-aware (inline-end is the left). */
+/** Is `clientX` within the inline-end drop band? RTL-aware (inline-end is the left).
+ *  When a column is ALREADY open its whole width is the target, not just the thin
+ *  edge band - otherwise a stage-clamped drag (the zoom HUD) can't reach the band,
+ *  which sits ~300px deep inside the open dock, and adding to an existing dock feels
+ *  broken. With no column open, the thin edge band stands. */
 export function edgeDockHitTest(clientX: number): boolean {
   if (!edgeDockAvailable()) return false;
   const vw = window.innerWidth;
-  return isRTL() ? clientX <= DROP_BAND : clientX >= vw - DROP_BAND;
+  const band = Math.max(DROP_BAND, edgeDockWidth());
+  return isRTL() ? clientX <= band : clientX >= vw - band;
 }
 
 /** Show / hide the drop-zone affordance while a panel drag hovers the edge. */

@@ -125,6 +125,35 @@ export function createLiveControls(opts: LiveControlsOpts): LiveControls {
   const facingDefault = (runtime.manifest.render as { liveFacing?: 'user' | 'environment' } | undefined)?.liveFacing;
   let facing: 'user' | 'environment' = facingDefault === 'environment' ? 'environment' : 'user';
 
+  // Auto-camera binding (plans/162): a tool can tie the live camera to an input
+  // value - `render.liveCameraWhen: { input, value }`. The camera turns ON when that
+  // input holds the value (including on load) and OFF otherwise, so a reader like
+  // scan-code needs no "turn on" tap - selecting Camera as the source, or just
+  // opening the tool in camera mode, starts it. Handled in syncFromModel.
+  const camWhen = (runtime.manifest.render as { liveCameraWhen?: { input: string; value: string } } | undefined)?.liveCameraWhen;
+  let camDenied = false;  // the user actively declined the permission prompt: don't re-prompt
+  let camUserOff = false; // the user tapped Stop while still in camera mode: respect it
+  // iOS Safari won't open the camera from a bare page-load call - getUserMedia needs a
+  // user gesture there even over https. So when the camera is WANTED but hasn't opened,
+  // we arm a one-time listener that retries on the first tap anywhere (the big viewfinder
+  // included). autoWanted tracks that "should be live" intent so the retry knows to fire.
+  let autoWanted = false;
+  let gestureArmed = false;
+  const onFirstGesture = (): void => {
+    disarmGesture();
+    if (autoWanted && mode !== 'camera' && !runtime.isLive() && !camDenied && !camUserOff) void startCamera();
+  };
+  function armGesture(): void {
+    if (gestureArmed || disposed) return;
+    gestureArmed = true;
+    document.addEventListener('pointerdown', onFirstGesture, { once: true, capture: true });
+  }
+  function disarmGesture(): void {
+    if (!gestureArmed) return;
+    gestureArmed = false;
+    document.removeEventListener('pointerdown', onFirstGesture, { capture: true } as EventListenerOptions);
+  }
+
   // ── Source classification ──────────────────────────────────────────────────
   // `playSource` is the resolved thing Play would start right now: the picked
   // asset when it's animated, else the sample (liveDefault). `fromPick` gates
@@ -232,12 +261,15 @@ export function createLiveControls(opts: LiveControlsOpts): LiveControls {
       const ok = await runtime.startLive({ facingMode: facing });
       if (!ok) return false;
     } catch (e) {
-      announce((e as { name?: string })?.name === 'NotAllowedError'
+      if ((e as { name?: string })?.name === 'NotAllowedError') camDenied = true; // said no: stop asking
+      announce(camDenied
         ? t('Camera permission was declined.')
         : t('Couldn’t start the camera.'), { assertive: true });
       log('startLive failed', { error: String(e), toolId: runtime.manifest.id });
       return false;
     }
+    autoWanted = false; // opened: the gesture-retry has nothing left to do
+    disarmGesture();
     mode = 'camera';
     onStart();
     updateUi();
@@ -247,6 +279,7 @@ export function createLiveControls(opts: LiveControlsOpts): LiveControls {
 
   function stopCamera(): void {
     if (mode !== 'camera') return;
+    disarmGesture();
     runtime.stopLive();
     onStop();
     mode = null;
@@ -265,8 +298,9 @@ export function createLiveControls(opts: LiveControlsOpts): LiveControls {
   }
 
   async function toggleCamera(): Promise<void> {
-    if (mode === 'camera') { stopCamera(); return; }
+    if (mode === 'camera') { camUserOff = true; stopCamera(); return; } // manual Stop: don't auto-restart
     if (mode === 'asset') stopPlayback({ silent: true });
+    camUserOff = false;
     await startCamera();
   }
 
@@ -393,6 +427,24 @@ export function createLiveControls(opts: LiveControlsOpts): LiveControls {
     },
     syncFromModel(model): void {
       if (!enabled || disposed) return;
+      // Auto-camera: start/stop the camera to match the bound input (render.
+      // liveCameraWhen). Runs on load AND on every input change, so opening a reader
+      // in camera mode - or switching the source TO camera - turns it on; switching
+      // away turns it off. A denied/failed auto-start is remembered so we don't
+      // re-prompt on every keystroke (the manual "Use camera" button still works).
+      if (camWhen && cameraAvailable()) {
+        const want = String(model.find(i => i.id === camWhen.input)?.value ?? '') === String(camWhen.value);
+        if (want) {
+          autoWanted = true;
+          if (mode !== 'camera' && !runtime.isLive() && !camDenied && !camUserOff) {
+            void startCamera(); // best-effort now (prompts where allowed without a gesture)
+            armGesture();       // and retry on the first tap (iOS needs a user gesture)
+          }
+        } else {
+          autoWanted = false; camDenied = false; camUserOff = false; disarmGesture(); // left camera mode; a later return may re-start
+          if (mode === 'camera') stopCamera();
+        }
+      }
       const key = sourceValue(model)?.url ?? null;
       const first = lastKey === undefined;
       if (!first && key === lastKey) return;
@@ -415,6 +467,7 @@ export function createLiveControls(opts: LiveControlsOpts): LiveControls {
     cameraLive: () => mode === 'camera' && runtime.isLive(),
     dispose(): void {
       disposed = true;
+      disarmGesture();
       classifyToken++;
       buttons.clear();
       registry.delete(runtime);

@@ -5,22 +5,22 @@ This file exists so you can find the code for a feature without reading all of i
 The counts below are GENERATED - `npm run build:web-src-readme`, checked in CI by `npm run check:web-src-readme`, so they cannot rot the way the hand-measured ones did. They convey proportion; don't cite them as an API.
 
 <!-- web-src-dirs:start -->
-Roughly 420,000 lines of TypeScript, tests included, and 39,000 lines of CSS.
+Roughly 423,000 lines of TypeScript, tests included, and 40,000 lines of CSS.
 
 | Directory | Source | Tests | CSS |
 |---|---|---|---|
-| `views/` | 94 files, 100,859 lines | 89 files, 34,423 lines | none |
-| `lib/` | 355 files, 92,672 lines | 216 files, 47,333 lines | 7 files, 1,098 lines |
-| `bridge/` | 88 files, 39,643 lines | 70 files, 17,246 lines | none |
-| `components/` | 42 files, 19,093 lines | 23 files, 8,123 lines | 1 file, 138 lines |
+| `views/` | 96 files, 101,801 lines | 92 files, 35,129 lines | none |
+| `lib/` | 357 files, 93,167 lines | 218 files, 47,609 lines | 7 files, 1,098 lines |
+| `bridge/` | 89 files, 39,950 lines | 72 files, 17,438 lines | none |
+| `components/` | 44 files, 19,565 lines | 25 files, 8,282 lines | 2 files, 221 lines |
 | `collab/` | 18 files, 12,959 lines | 20 files, 13,682 lines | none |
-| `pro/` | 20 files, 7,873 lines | 10 files, 1,666 lines | 2 files, 1,210 lines |
+| `pro/` | 20 files, 7,901 lines | 10 files, 1,666 lines | 2 files, 1,210 lines |
 | `org/` | 16 files, 5,604 lines | 12 files, 3,642 lines | none |
 | `catalog/` | 2 files, 785 lines | 1 file, 86 lines | none |
 | `ext/` | 2 files, 136 lines | 1 file, 86 lines | none |
-| `styles/` | none | 3 files, 761 lines | 74 files, 36,982 lines |
+| `styles/` | none | 3 files, 761 lines | 74 files, 37,561 lines |
 
-Plus 39 `.ts`/`.js` files at the top level of `src/`, 12,895 lines all told, of which 14 are tests and 3 are ambient declarations. `main.ts` is 1,865 of that.
+Plus 39 `.ts`/`.js` files at the top level of `src/`, 12,917 lines all told, of which 14 are tests and 3 are ambient declarations. `main.ts` is 1,876 of that.
 <!-- web-src-dirs:end -->
 
 ## How do I find a feature
@@ -58,26 +58,26 @@ Do not be ambushed by these. The largest source files, by line count:
 <!-- web-src-largest:start -->
 | Lines | File | Direct test coverage |
 |---|---|---|
-| 11,175 | `bridge/export.ts` | yes, but mostly gated. `export-audio-bed.test.ts` imports `bedStartOffset` and `connectMusic` directly and always runs; the SVG and PDF emission is covered by ten `chromiumOrSkip()` suites (`export-m3`, `export-paint-order`, `export-stroke-paint`, `export-shadow-fidelity`, `export-pdf-shadow-fidelity`, `export-emf-eps-shadow`, `export-atomic-inline`, `export-backdrop-blur`, `export-form-controls`, `export-text-emission`) that esbuild-bundle the real `renderSvgFromHtml` and drive it in Chromium, and which **self-skip** when no Chromium is installed. `export-text-emission` is the newest and covers the `<path>`-vs-`<text>` decision layer specifically; unlike the SUSE-gated golden suite it is brand-independent, so it runs on `lolly-start` too. |
+| 11,212 | `bridge/export.ts` | yes, but mostly gated. `export-audio-bed.test.ts` imports `bedStartOffset` and `connectMusic` directly and always runs; the SVG and PDF emission is covered by ten `chromiumOrSkip()` suites (`export-m3`, `export-paint-order`, `export-stroke-paint`, `export-shadow-fidelity`, `export-pdf-shadow-fidelity`, `export-emf-eps-shadow`, `export-atomic-inline`, `export-backdrop-blur`, `export-form-controls`, `export-text-emission`) that esbuild-bundle the real `renderSvgFromHtml` and drive it in Chromium, and which **self-skip** when no Chromium is installed. `export-text-emission` is the newest and covers the `<path>`-vs-`<text>` decision layer specifically; unlike the SUSE-gated golden suite it is brand-independent, so it runs on `lolly-start` too. |
 | 10,932 | `views/free-canvas.ts` | yes, nine `free-canvas-*.test.ts` files |
 | 7,572 | `views/timeline-panel.ts` | yes |
 | 6,649 | `views/catalog.ts` | partial - the selection model (visibility, filetype filter, search, favourites dedupe, selectable ids, prune) is extracted to `catalog-filter.ts` and covered by `catalog-filter.test.ts`; the 3,000-line `mountCatalog` body around it is not. |
-| 5,098 | `lib/brand-editor.ts` | none |
-| 5,024 | `views/tool.ts` | partial - the undo/redo model (coalescing, the byte-carrying filter, the cap, the redo chain) is extracted to `tool-history.ts` and covered by `tool-history.test.ts`; the rest of `mountTool` is not. |
-| 4,090 | `views/picker.ts` | partial - the format and embeddability rules are extracted to `picker-formats.ts` and covered by `picker-formats.test.ts`, plus `picker-initial-tab.test.ts`; the 3,000-line panel body is not. |
+| 5,121 | `lib/brand-editor.ts` | none |
+| 5,056 | `views/tool.ts` | partial - the undo/redo model (coalescing, the byte-carrying filter, the cap, the redo chain) is extracted to `tool-history.ts` and covered by `tool-history.test.ts`; the rest of `mountTool` is not. |
+| 4,179 | `views/picker.ts` | partial - the format and embeddability rules are extracted to `picker-formats.ts` and covered by `picker-formats.test.ts`, plus `picker-initial-tab.test.ts`; the 3,000-line panel body is not. |
+| 3,916 | `views/tool-actions.ts` | yes |
 | 3,915 | `views/valid.ts` | `valid-verdict.test.ts` only |
-| 3,713 | `views/tool-actions.ts` | yes |
 | 3,656 | `views/color-lab.ts` | yes |
-| 3,252 | `views/projects.ts` | none |
-| 3,251 | `views/profile.ts` | none |
+| 3,337 | `views/profile.ts` | none |
+| 3,258 | `views/projects.ts` | none |
 | 3,203 | `views/gallery.ts` | none |
-| 3,098 | `views/tool-inputs.ts` | none |
-| 2,898 | `views/start.ts` | yes |
+| 3,137 | `views/tool-inputs.ts` | none |
+| 2,917 | `views/start.ts` | yes |
+| 2,752 | `bridge/sequence-render.ts` | yes |
 | 2,675 | `views/deck-editor.ts` | yes |
-| 2,639 | `bridge/sequence-render.ts` | yes |
 | 2,322 | `views/design-import.ts` | **none** |
 | 2,062 | `components/collab-ceremony.ts` | yes |
-| 2,026 | `lib/clip-thumbs.ts` | yes |
+| 2,050 | `pro/index.ts` | yes |
 <!-- web-src-largest:end -->
 
 The pattern is consistent and worth internalising: the **pure helpers** extracted out of a big view are well covered (`free-canvas-math.ts`, `timeline-math.ts`, `valid-verdict.ts`, `export-css.ts`, `text-svg.ts`, `svg-ir.ts`, `catalog-filter.ts`, `tool-history.ts`, `picker-formats.ts`), while the DOM-mounting bodies of the big views mostly are not. When you change one of the uncovered files, the cheapest way to get coverage is to extract the logic into a sibling pure module and test that, which is how the covered ones came to exist.

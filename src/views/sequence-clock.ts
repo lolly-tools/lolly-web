@@ -62,6 +62,11 @@
  */
 
 import { recTransition, isTransitionKind, type TransitionKind } from '../lib/transitions.ts';
+// The ref test alone - deliberately a leaf module (see its header) so the composer
+// stays out of this module's eager graph; the composer itself is imported lazily in
+// renderZzfxmToBuffer below.
+import { isZzfxmRef } from '../../../../engine/src/zzfxm-ref.ts';
+import type { ZzfxSong } from '../../../../engine/src/zzfxm.ts';
 import {
   createSeekQueue, readBounded, withinDecodeBudget, MAX_AUDIO_DECODE_BYTES,
   type SeekableEl,
@@ -276,6 +281,48 @@ async function defaultRenderModule(ctx: BaseAudioContext, bytes: Uint8Array): Pr
   return mod.renderModToAudioBuffer(ctx, bytes);
 }
 
+/**
+ * A PROCEDURAL BED (`zzfxm:<seed>[:<style>]`) is not a file: nothing can fetch it,
+ * so handing it to `fetch` produced "Failed to fetch - silent in preview" for the
+ * one audio source the Video template ships by default. The export mix composes the
+ * seeded song on demand (bridge/sequence-providers' openZzfxmAudio); preview renders
+ * the SAME song here - same seed→spec draw, same length quantiser - so what plays is
+ * what exports. Composer and renderer stay behind dynamic imports for the same
+ * reason libopenmpt does above: a composition with no procedural bed never loads them.
+ *
+ * `wantedSec` is the SEQUENCE length - the ceiling on what a bed can be heard under
+ * (audioEndSec clips every box to the sequence). A bed trimmed in with a large
+ * clipIn can outrun the composed length and end early; that is the same degradation
+ * class as the decode budgets, never a throw.
+ */
+async function renderZzfxmToBuffer(ctx: BaseAudioContext, url: string, wantedSec: number): Promise<AudioBuffer> {
+  const [{ parseZzfxmRef }, { composeSong, generatedSongSpec }, { zzfxmTargetSec }, { renderSongToAudioBuffer }] = await Promise.all([
+    import('../../../../engine/src/zzfxm-ref.ts'),
+    import('../../../../engine/src/zzfx-compose.ts'),
+    import('../bridge/sequence-providers.ts'),
+    import('../lib/zzfxm-render.ts'),
+  ]);
+  const ref = parseZzfxmRef(url);
+  if (!ref) throw new Error(`malformed procedural audio ref: ${url}`);
+  return renderSongToAudioBuffer(ctx, composeSong(generatedSongSpec(ref.seed, zzfxmTargetSec(wantedSec), ref.style)));
+}
+
+/**
+ * An UPLOADED ZzFXM SONG (a MIDI ingested as a `format:'zzfxm'` asset) resolves to a
+ * blob: URL whose bytes are song JSON, and the hook's `data-audio-src` carries only
+ * that URL - the format is gone by the time a box reaches this module, exactly the
+ * tracker-module situation above. The bytes are already in hand when this is asked,
+ * so recognising one costs a JSON parse on a '{'-leading buffer and no second fetch.
+ */
+function parseZzfxmSongJson(bytes: ArrayBuffer): ZzfxSong | null {
+  try {
+    const o = JSON.parse(new TextDecoder().decode(bytes)) as ZzfxSong;
+    return o && Array.isArray(o.instruments) && Array.isArray(o.patterns) && Array.isArray(o.sequence) ? o : null;
+  } catch {
+    return null;
+  }
+}
+
 // ── the DOM applier: IMPORTED, never re-derived ─────────────────────────────
 //
 // The half-open activity window, the transition resolution and the composition with
@@ -326,7 +373,7 @@ export interface SeekableMedia extends SeekableEl {
 }
 
 export interface SeekerDeps {
-  /** Confirm the seek landed; resolves the presented time (or null). */
+  /** Confirm the seek completed; resolves the presented time (or null). */
   waitFrame(el: SeekableMedia, signal?: AbortSignal): Promise<number | null>;
   now?(): number;
   /** Schedule the trailing scrub flush. Returns a canceller. */
@@ -483,6 +530,10 @@ interface VideoRec {
   seeker: VideoSeeker;
   /** The element's own `muted` before we touched it, restored on pause/destroy. */
   mutedWas: boolean | null;
+  /** The element's own `loop` before we touched it, restored on pause/destroy. The
+   *  clock owns the clip's end while it drives: a looping element wraps to 0 inside
+   *  a window trimmed past its media, where the export holds the last frame. */
+  loopWas: boolean | null;
   playing: boolean;
 }
 
@@ -580,9 +631,17 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
       rec = {
         seeker: createVideoSeeker(video, { waitFrame: (el, signal) => waitSeekConfirmed(el, signal) }),
         mutedWas: null,
+        loopWas: null,
         playing: false,
       };
       videos.set(video, rec);
+      // A video still LOADING when this pass runs cannot be posed yet - and nothing
+      // else re-applies when its data lands, so it would sit at frame 0 (or, with the
+      // hook's authored autoplay, free-run) until the next scrub. One apply pass when
+      // it becomes drawable puts it at the playhead's own frame. {once} self-cleans.
+      if (typeof video.addEventListener === 'function' && video.readyState < 2 /* HAVE_CURRENT_DATA */) {
+        video.addEventListener('loadeddata', () => { if (!dead) schedule(); }, { once: true });
+      }
     }
     return rec;
   }
@@ -591,6 +650,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
   function releaseVideo(video: HTMLVideoElement, rec: VideoRec): void {
     if (rec.playing) { try { video.pause(); } catch { /* detached */ } rec.playing = false; }
     if (rec.mutedWas != null) { try { video.muted = rec.mutedWas; } catch { /* detached */ } rec.mutedWas = null; }
+    if (rec.loopWas != null) { try { video.loop = rec.loopWas; } catch { /* detached */ } rec.loopWas = null; }
   }
 
   // ── preview audio: SCHEDULED against the master clock, never polled ──────────
@@ -656,6 +716,9 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
   async function fetchAndDecode(url: string, signal: AbortSignal): Promise<AudioBuffer | null> {
     const c = audioCtx();
     if (!c || typeof fetch !== 'function') return null;
+    // Not a file - composed, not fetched. Sized to the sequence, the ceiling on
+    // what any box can be heard under. See renderZzfxmToBuffer.
+    if (isZzfxmRef(url)) return renderZzfxmToBuffer(c, url, seqMs() / 1000);
     const res = await fetch(url, { signal });
     if (!res.ok || signal.aborted) return null;
     const declared = Number(res.headers?.get?.('content-length') ?? Number.NaN);
@@ -677,6 +740,14 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
       } catch (err) {
         // Named, never swallowed - bufferFor's catch logs it against this url.
         throw new Error(`tracker module could not be rendered (${err instanceof Error ? err.message : String(err)})`);
+      }
+    }
+    // An ingested-MIDI song asset: JSON bytes behind a blob: URL. See parseZzfxmSongJson.
+    if (new Uint8Array(bytes)[0] === 0x7b /* '{' */) {
+      const song = parseZzfxmSongJson(bytes);
+      if (song) {
+        const { renderSongToAudioBuffer } = await import('../lib/zzfxm-render.ts');
+        return await renderSongToAudioBuffer(c, song);
       }
     }
     return await c.decodeAudioData(bytes);
@@ -848,22 +919,46 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
       const targetSec = pastEnd ? Math.max(0, mediaEnd - MEDIA_END_EPS_S) : rawSec;
       if (!active) {
         releaseVideo(video, rec);
+        // The hook authors `autoplay loop` for the NO-CLOCK experience (ambient
+        // scenery). With a timeline mounted the clock owns time: an off-window video
+        // left free-running burns its decoder invisibly, and rec.playing only tracks
+        // playback WE started - so silence the element itself, not just our record.
+        if (!video.paused) { try { video.pause(); } catch { /* detached */ } }
       } else if (isPlaying) {
         // Free-run: the element's own clock is the smoothest thing available, so we
         // only intervene on drift. Rate follows the clip's speed so a 2× clip plays
         // 2× rather than being re-seeked 60 times a second.
         if (rec.mutedWas == null) { rec.mutedWas = video.muted; }
+        // The authored `loop` belongs to the NO-CLOCK ambience. Under the clock a
+        // looping element wraps to 0 inside a window trimmed past its media - the
+        // export holds the last frame there, and the preview must show the same.
+        if (rec.loopWas == null) { rec.loopWas = video.loop; try { video.loop = false; } catch { /* detached */ } }
         const wantMuted = !!timing.mute;
         if (video.muted !== wantMuted) video.muted = wantMuted;   // no per-frame write
         try { video.playbackRate = timing.speed; } catch { /* rate out of engine range */ }
-        const drift = Math.abs((video.currentTime || 0) - targetSec);
-        if (!pastEnd && drift > DRIFT_TOLERANCE_S) rec.seeker.request(targetSec);
-        if (!rec.playing) {
-          rec.playing = true;
-          try { void video.play()?.catch(() => { /* autoplay policy - silent */ }); } catch { /* detached */ }
+        if (pastEnd) {
+          // Media exhausted inside the window: hold the last frame, exactly as the
+          // compositor renders it. The element would otherwise fire `ended` (or, on
+          // a shorter media, sit wherever it stopped) while the box stays visible.
+          if (!video.paused) { try { video.pause(); } catch { /* detached */ } }
+          rec.playing = false;
+          if (Math.abs((video.currentTime || 0) - targetSec) > DRIFT_TOLERANCE_S) rec.seeker.request(targetSec);
+        } else {
+          const drift = Math.abs((video.currentTime || 0) - targetSec);
+          if (drift > DRIFT_TOLERANCE_S) rec.seeker.request(targetSec);
+          if (!rec.playing) {
+            rec.playing = true;
+            try { void video.play()?.catch(() => { /* autoplay policy - silent */ }); } catch { /* detached */ }
+          }
         }
       } else {
-        if (rec.playing) { try { video.pause(); } catch { /* detached */ } rec.playing = false; }
+        // A parked editor holds every video FROZEN at the playhead's frame. Pause the
+        // ELEMENT unconditionally, not just when rec.playing says we started it: the
+        // hook's authored `autoplay` free-runs a clip that finished loading after the
+        // last apply pass, and a paused canvas showing a moving picture reads as
+        // broken (it also diverges from what the export will render).
+        if (!video.paused) { try { video.pause(); } catch { /* detached */ } }
+        rec.playing = false;
         // Past the source end the target no longer moves, so only ask once.
         if (!pastEnd || Math.abs((video.currentTime || 0) - targetSec) > DRIFT_TOLERANCE_S) {
           rec.seeker.request(targetSec, { scrubbing });
@@ -1043,7 +1138,16 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
         // audio box, and including the settling pass pause() itself runs.
         stopAllAudio();
       }
-      schedule();
+      // A DISCRETE seek applies before returning; only a SCRUB coalesces to rAF.
+      // Callers act on the new position the moment seek() returns - the panel's
+      // pointerup runs sync() → emitTime, whose active-ids signature is computed
+      // from the MODEL and gates the next fire - so a deferred apply left every
+      // synchronous reader (the off-playhead banner, the selection chrome) reading
+      // the PREVIOUS position's DOM, permanently one seek behind: the very next
+      // apply changed nothing the signature could see. A scrub keeps the rAF
+      // coalescing (60 Hz of pointermoves must not each pay a full apply pass);
+      // its consumers ride onTick, which applyNow fans out AFTER applying.
+      if (scrubbing) schedule(); else applyNow();
     },
     play() {
       if (dead || isPlaying) return;

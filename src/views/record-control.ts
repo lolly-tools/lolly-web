@@ -8,9 +8,10 @@ import { mountCoachHud, coachAudio, type CoachHud, type CoachTarget } from '../l
 import { frameLuma, coachVideo } from '../lib/video-coach-core.ts';
 import { subscribeRecordPreview } from '../lib/record-preview.ts';
 import { mountRecordingHelp, createTipFlasher, type RecordingHelp } from '../lib/recording-tips.ts';
-import { blobToMp3 } from '../lib/audio-encode.ts';
+import { setAudioTake, saveTakeMp3, saveTakeNative } from '../lib/audio-take.ts';
 import { storeRecordingAsset } from './picker.ts';
 import { fmtBytes } from '../lib/device-info.ts';
+import { icon } from '../lib/icons.ts';
 import type { AssetRef, RecordOpts } from '@lolly-tools/core/host-v1';
 import type { ToolRuntime, WebToolHost } from './tool.ts';
 
@@ -72,6 +73,30 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
       facingMode = facingMode === 'user' ? 'environment' : 'user';
       if (viewfinder) { stopViewfinder(); void startViewfinder(); }   // re-frame with the new camera
       announce(facingMode === 'environment' ? 'Rear camera' : 'Front camera');
+    });
+  }
+
+  // Choose-mic control (device picker) - offered where this take captures audio.
+  // The chosen mic feeds BOTH the sound-check meter and the take (the pairing).
+  let micDeviceId: string | null = null;
+  const micBtn = document.createElement('button');
+  micBtn.type = 'button';
+  micBtn.className = 'canvas-record-mic';
+  micBtn.title = 'Choose microphone';
+  micBtn.setAttribute('aria-label', 'Choose microphone');
+  micBtn.hidden = true;
+  micBtn.innerHTML = icon('mic', { size: 18 });
+  if (wantAudio && host.recorder) {
+    stageEl.appendChild(micBtn);
+    micBtn.addEventListener('click', async () => {
+      const { openDevicePicker } = await import('../components/device-picker.ts');
+      const pick = await openDevicePicker({ kind: 'audioinput', currentMicId: micDeviceId ?? undefined, title: 'Choose a microphone' });
+      if (!pick) return;
+      micDeviceId = pick.deviceId;
+      // If a sound-check meter is already running, restart it on the new mic so the
+      // levels match what the take will record.
+      if (state === 'armed') { try { runtime.stopMeter(); await runtime.startMeter({ deviceId: micDeviceId }); } catch { /* ignore */ } }
+      announce('Microphone changed');
     });
   }
 
@@ -137,6 +162,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
       timerEl.hidden = true;
     }
     if (canFlip) flipBtn.hidden = state === 'recording';   // can't switch cameras mid-take
+    if (wantAudio && host.recorder) micBtn.hidden = state === 'recording'; // can't switch mics mid-take
   };
   render();
 
@@ -329,6 +355,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
         format: wantVideo ? 'mp4' : 'webm',
         maxMs: MAX_MS,
         ...(wantVideo ? { maxEdge: 1280, facingMode } : {}),
+        ...(wantAudio && micDeviceId ? { audioDeviceId: micDeviceId } : {}),
       };
       await runtime.startRecording(opts);
       coachPhase = 'record';     // switch the HUD from room-check to level coaching
@@ -366,7 +393,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
     else if (res) announce('That recording was too short to save - try again.', { assertive: true });
     // Audio resumes the live meter for the next take; video returns to idle so the
     // freshly-captured clip is shown (tap Record again to re-frame and re-record).
-    if (isAudio && runtime.hasLevelHook) { try { coachPhase = 'check'; await runtime.startMeter(); state = 'armed'; render(); } catch { /* ignore */ } }
+    if (isAudio && runtime.hasLevelHook) { try { coachPhase = 'check'; await runtime.startMeter(micDeviceId ? { deviceId: micDeviceId } : undefined); state = 'armed'; render(); } catch { /* ignore */ } }
   }
 
   // First tap ARMS (audio: mic sound-check; video: camera framing) - so the camera /
@@ -377,7 +404,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
     try {
       if (isAudio) {
         coachPhase = 'check';   // arming an audio take is a sound check (room cues valid)
-        await runtime.startMeter();
+        await runtime.startMeter(micDeviceId ? { deviceId: micDeviceId } : undefined);
         announce('Microphone live - check your levels, then tap Record');
       } else {
         await startViewfinder(); // no-op if the camera is denied; recording still works
@@ -462,6 +489,9 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
     let clip = blob;
     if (container) clip = (await stampCaptureClip(host, blob, container, { microphone: true })).blob;
     else host.log('warn', 'record: take saved without Content Credentials - no embedder for this container', { mimeType });
+    // Publish the take so the export sheet's "Your recording" card offers the
+    // same saves (lib/audio-take.ts) - the sheet otherwise only exports the card.
+    setAudioTake({ blob: clip, mimeType, container: container ?? null });
     showAudioDownload(clip, mimeType, container);
   }
 
@@ -633,23 +663,21 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
     dlBar.append(player, actions);
     stageEl.appendChild(dlBar);
 
-    const base = 'voice-recording';
-    natBtn.addEventListener('click', () => { void host.export.file(blob, { filename: `${base}.${nativeExt}` }); });
+    // Both saves route through lib/audio-take.ts, the same helpers the export
+    // sheet's "Your recording" card calls - one signing path, one filename rule
+    // (signed saves carry the "-lolly" suffix). The MP3 helper re-signs the
+    // transcode as the same live mic capture; without that the PRIMARY save
+    // button was the one shipping unsigned.
+    const take = { blob, mimeType, container: container ?? null };
+    natBtn.addEventListener('click', () => { void saveTakeNative(host, take); });
     mp3Btn.addEventListener('click', async () => {
       mp3Btn.disabled = true; mp3Btn.textContent = 'Encoding…';
       try {
-        // Transcoding rebuilds the bytes, so the take's own credential does not survive
-        // it - re-sign the MP3 as what it is: the same live mic capture, re-encoded on
-        // device (created/digitalCapture + a c2pa.converted step). Without this the
-        // PRIMARY save button was the one shipping unsigned.
-        const mp3 = await blobToMp3(blob);
-        const { stampCaptureClip } = await import('../bridge/export.ts');
-        const { blob: signed } = await stampCaptureClip(host, mp3, 'mp3', { microphone: true, transcoded: true });
-        await host.export.file(signed, { filename: `${base}.mp3` });
+        await saveTakeMp3(host, take);
       } catch (err) {
         host.log('warn', 'mp3 transcode failed', { error: String(err) });
         announce('MP3 encoding failed - saving the original instead.', { assertive: true });
-        await host.export.file(blob, { filename: `${base}.${nativeExt}` });
+        await saveTakeNative(host, take);
       } finally { mp3Btn.disabled = false; mp3Btn.textContent = 'Save MP3'; }
     });
     xBtn.addEventListener('click', () => { dlBar?.remove(); dlBar = null; if (dlUrl) { URL.revokeObjectURL(dlUrl); dlUrl = null; } });
@@ -668,6 +696,7 @@ export function setupRecordControl({ stageEl, runtime, host, mode, markSessionDi
     liveCurtain?.close();
     dlBar?.remove();
     if (dlUrl) { URL.revokeObjectURL(dlUrl); dlUrl = null; }
+    setAudioTake(null);   // the take must not outlive its tool view
     // Free the last captured clip's object URL only if it's OUR in-memory fallback (id
     // `recording.<ext>`). A persisted user/* or library clip's URL is bridge-owned +
     // cached - revoking it would break a later read of the same asset elsewhere.

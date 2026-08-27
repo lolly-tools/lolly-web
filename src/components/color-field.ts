@@ -47,6 +47,8 @@ import type { CssColor } from '@lolly/engine';
 import { PALETTE } from '../palette.ts';
 import { contrastText } from '../brand-vars.ts';
 import { escape } from '../utils.ts';
+import { t } from '../i18n.ts';
+import { icon } from '../lib/icons.ts';
 import { wireTabs } from '../lib/tabs.ts';
 import {
   colorSpaces, getColorSpace, composeColor, decomposeColor, channelRuns, pinValue,
@@ -680,9 +682,11 @@ const pinNote = (label: string): string => `Outside ${label} - the slider is pin
  * bare.
  *
  * The OKLCH panel keeps `.color-lch` alongside `.color-space`: views/color-lab.test.ts
- * asserts it is mounted, and the non-modes popover's focus-to-expand selector is
- * `.color-popover > .color-lch[hidden]`. The other panels keep the legacy
- * `.color-modegroup` so components.css's height reservation still applies to them.
+ * asserts it is mounted. (The old focus-to-expand reveal keyed on
+ * `.color-popover > .color-lch[hidden]` is gone - the whole fine section now
+ * sits behind the popover's Fine-tune fold, so the panel renders visible inside
+ * it.) The other panels keep the legacy `.color-modegroup` so components.css's
+ * height reservation still applies to them.
  */
 function spacePanelHtml(
   eid: string, spec: SpaceSpec, seed: CssColor, lastHue: number,
@@ -863,7 +867,18 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
       <span class="color-trigger-name">${escape(name)}</span>
     </button>`}
     <div class="color-popover" role="group" aria-label="Colour options"${inline ? '' : ' hidden'}>
-      ${swatchesOnly ? '' : `<div class="color-input-wrap"${painted ? ` style="${Object.entries(colorInputPaint(shown)).map(([k, v]) => `${k}:${v}`).join(';')}"` : ''}>
+      ${inline
+        // Inline has no always-open palette (the brand editor's own tiles ARE the
+        // palette). The swatch grid instead lives in a menu the result disc's edit
+        // action opens - "the swatch context menu" - so presets stay one click away.
+        ? '<div class="color-swatch-menu" data-swatch-menu hidden><div class="color-swatches"></div></div>'
+        // In a click-to-open popover the PALETTE leads: most picks are a brand
+        // swatch, so the grid is the whole first screen and the fine controls
+        // (value/eyedropper/sliders/alpha) wait behind the Fine-tune fold below.
+        : '<div class="color-swatches"></div>'}
+      ${swatchesOnly ? '' : `${inline ? '' : `<button type="button" class="color-fine-toggle" data-color-fine-toggle="${eid}" aria-expanded="false">${icon('sliders', { size: 13 })}<span>${escape(t('Fine-tune'))}</span>${icon('chevronDown', { className: 'color-fine-chev', size: 14 })}</button>`}
+      <div class="color-fine"${inline ? '' : ' data-color-fine hidden'}>
+      <div class="color-input-wrap"${painted ? ` style="${Object.entries(colorInputPaint(shown)).map(([k, v]) => `${k}:${v}`).join(';')}"` : ''}>
       ${/* NO maxlength: this field takes any CSS colour ('rebeccapurple',
             'color(display-p3 1 0 0)'), and the 9-character hex cap silently
             truncated every one of them mid-paste. What it SHOWS is still a hex
@@ -875,11 +890,11 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
       </div>
       ${modes
         ? colorModesHtml(eid, seed, st.lastHue, st.mode, wantDials)
-        // In a click-to-open POPOVER (float / regular sidebar / block), the sliders start
-        // COLLAPSED - the popover opens compact (value + alpha + swatches), which keeps it in
-        // the viewport, and they expand when the user focuses the .color-input. The INLINE
-        // panel (brand editor) is a dedicated always-open editor, so its sliders/dials stay shown.
-        : spacePanelHtml(eid, getColorSpace('oklch')!, seed, st.lastHue, { hidden: !inline, dials: wantDials, tabbed: false }) + noteHtml(eid)}
+        // The whole fine section is gated by the Fine-tune fold in a popover, so
+        // the sliders inside it render VISIBLE - expanding the fold is the one
+        // reveal. The inline panel (brand editor) is a dedicated always-open
+        // editor and shows everything with no fold at all.
+        : spacePanelHtml(eid, getColorSpace('oklch')!, seed, st.lastHue, { hidden: false, dials: wantDials, tabbed: false }) + noteHtml(eid)}
       <div class="color-alpha-row">
         <span class="color-alpha-label" aria-hidden="true">A</span>
         ${/* The gradient ends are emitted HERE as well as repainted from JS: nothing
@@ -892,13 +907,8 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
         <span class="color-alpha-pct" data-alpha-pct="${eid}">${alphaPct}%</span>
       </div>
       <input type="color" class="color-popover-native" data-input-id="${eid}" value="${escape(rgbHex)}" aria-label="Pick a custom colour">
-      <button type="button" class="color-nearest" data-color-nearest="${eid}" hidden></button>`}
-      ${inline
-        // Inline has no always-open palette (the brand editor's own tiles ARE the
-        // palette). The swatch grid instead lives in a menu the result disc's edit
-        // action opens - "the swatch context menu" - so presets stay one click away.
-        ? '<div class="color-swatch-menu" data-swatch-menu hidden><div class="color-swatches"></div></div>'
-        : '<div class="color-swatches"></div>'}
+      <button type="button" class="color-nearest" data-color-nearest="${eid}" hidden></button>
+      </div>`}
     </div>
   </div>`;
 }
@@ -1477,6 +1487,38 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   // their nearest-brand hint up front. (They carry no swatch grid to build.)
   scope.querySelectorAll<HTMLElement>('.color-field--inline[data-color-field]').forEach(f => seedNearest(f));
 
+  // ── The Fine-tune fold ───────────────────────────────────────────────────────
+  // The popover leads with the palette; value/eyedropper/sliders/alpha wait
+  // behind this fold. No reposition on toggle: positioning already reserved the
+  // expanded height (measuredFullHeight), so the section grows into held space.
+  const setFine = (field: HTMLElement, open: boolean): void => {
+    const fine = field.querySelector<HTMLElement>('[data-color-fine]');
+    const toggle = field.querySelector<HTMLElement>('[data-color-fine-toggle]');
+    if (!fine || !toggle) return;
+    fine.hidden = !open;
+    toggle.setAttribute('aria-expanded', String(open));
+  };
+  scope.querySelectorAll<HTMLElement>('[data-color-fine-toggle]').forEach(toggle => {
+    const field = toggle.closest<HTMLElement>('[data-color-field]');
+    if (!field) return;
+    toggle.addEventListener('click', () => {
+      const fine = field.querySelector<HTMLElement>('[data-color-fine]');
+      if (fine) setFine(field, fine.hidden);
+    });
+  });
+  // A colour the palette cannot produce opens the fold by itself: that user is
+  // already in fine territory, and a grid with nothing selected explains less
+  // than the value field does. Sticky - an expanded fold never re-collapses on
+  // reopen (same instance rule the old slider reveal had).
+  const autoExpandFine = (field: HTMLElement): void => {
+    const fine = field.querySelector<HTMLElement>('[data-color-fine]');
+    if (!fine || !fine.hidden) return;                 // absent (swatchesOnly) or already open
+    const st = STATE.get(field);
+    const v = st ? (st.kind === 'transparent' ? 'transparent' : bakedHex(st)) : (field.dataset.colorCanon ?? '');
+    const isSwatch = v === 'transparent' || (!!v && (nearestSwatch(v)?.d ?? 1) < 0.005);
+    if (!SWATCHES.length || !isSwatch) setFine(field, true);
+  };
+
   // ── Trigger: open/close the popover ──────────────────────────────────────────
   scope.querySelectorAll<HTMLElement>('[data-color-trigger]').forEach(trigger => {
     const field = trigger.closest<HTMLElement>('[data-color-field]');
@@ -1492,7 +1534,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
       popover.hidden = !popover.hidden;
       trigger.setAttribute('aria-expanded', String(!popover.hidden));
       if (popover.hidden) { popover.style.cssText = ''; disarmOutside(); }
-      else { buildSwatches(field!); seedNearest(field); positionPopover(field!, trigger, popover); }
+      else { buildSwatches(field!); seedNearest(field); autoExpandFine(field!); positionPopover(field!, trigger, popover); }
     });
 
     // Escape closes this field's open popover and returns focus to the trigger.
@@ -1516,13 +1558,13 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   // "swatch component jumps" flip and the "clicking a slider closes the picker" miss (the
   // popover moved out from under the pointer between press and release).
   function measuredFullHeight(popover: HTMLElement, width: number): number {
-    const lch = popover.querySelector<HTMLElement>(':scope > .color-lch[hidden]');
-    if (lch) lch.hidden = false;                       // measure the expanded height
+    const fine = popover.querySelector<HTMLElement>('[data-color-fine][hidden]');
+    if (fine) fine.hidden = false;                     // measure the expanded height
     const prev = popover.style.cssText;
     popover.style.cssText = `position:fixed;visibility:hidden;left:-9999px;top:0;width:${width}px;`;
     const h = popover.offsetHeight;
     popover.style.cssText = prev;
-    if (lch) lch.hidden = true;                        // restore the collapsed render
+    if (fine) fine.hidden = true;                      // restore the collapsed render
     return h;
   }
 
@@ -1596,6 +1638,7 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   // Outside-click / scroll close (float + regular sidebar fields, both position:fixed).
   let outside: ((e: PointerEvent) => void) | null = null;
   let onScroll: (() => void) | null = null;
+  let onDocKey: ((e: KeyboardEvent) => void) | null = null;
   function armOutside(field: HTMLElement, popover: HTMLElement): void {
     disarmOutside();
     const close = (): void => { popover.hidden = true; popover.style.cssText = ''; field.querySelector('.color-trigger')?.setAttribute('aria-expanded', 'false'); disarmOutside(); };
@@ -1607,13 +1650,24 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     // out from under a slider drag ("clicking the sliders just closes it"). Focus inside the
     // popover ⇒ the scroll is the interaction's own, not a dismiss.
     onScroll = () => { if (popover.contains(document.activeElement)) return; close(); };
+    // Escape closes even when focus never entered the field - the canvas-anchored
+    // popover opens from a control-point tap that leaves focus on the canvas, so
+    // the field-level Escape handler above cannot see the key. Bubble phase, so
+    // the field handler (which also restores focus to the trigger) wins when
+    // focus IS inside and stops propagation before this one runs.
+    onDocKey = (e) => { if (e.key === 'Escape') close(); };
     setTimeout(() => {
-      document.addEventListener('pointerdown', outside!);
+      // CAPTURE, not bubble: canvas control-point layers stop pointerdown
+      // propagation for their own drag handling, which starved a bubble-phase
+      // listener and left the popover stranded on the last selected point.
+      document.addEventListener('pointerdown', outside!, true);
+      document.addEventListener('keydown', onDocKey!);
       window.addEventListener('scroll', onScroll!, true);
     }, 0);
   }
   function disarmOutside(): void {
-    if (outside) { document.removeEventListener('pointerdown', outside); outside = null; }
+    if (outside) { document.removeEventListener('pointerdown', outside, true); outside = null; }
+    if (onDocKey) { document.removeEventListener('keydown', onDocKey); onDocKey = null; }
     if (onScroll) { window.removeEventListener('scroll', onScroll, true); onScroll = null; }
   }
 
@@ -1808,14 +1862,9 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     if (!field) return;
     input.addEventListener('focus', () => {
       if (!FOCUS_HELD.has(field)) { FOCUS_HELD.add(field); interact(true); }
-      // Expand the collapsed sliders on first focus/tap of the value input. Only the simple
-      // popover's panel (a DIRECT child of .color-popover) - never the modes picker's nested
-      // panels, whose visibility the tabs own. NO re-position here: the popover was already
-      // laid out for its expanded height (measuredFullHeight), so the sliders grow into
-      // reserved space. Repositioning on reveal is exactly what caused the popover to jump and
-      // to slip out from under a slider press (closing instead of dragging).
-      const panel = field.querySelector<HTMLElement>('.color-popover > .color-lch[hidden]');
-      if (panel) panel.hidden = false;
+      // The old reveal-on-focus of the collapsed sliders is gone: the whole fine
+      // section (value input included) now sits behind the explicit Fine-tune
+      // fold, so by the time this input can take focus the section is open.
     });
     // The release is bracketed on the FIELD, not on the input. Moving focus to another
     // control INSIDE the picker (grabbing a slider, or a space tab, right after the value

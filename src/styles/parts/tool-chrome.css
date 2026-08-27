@@ -381,10 +381,11 @@ html[data-a11y-motion="reduce"] .url-budget-fill { transition: none; }
 html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
 
 /* ─── Actions bar ───────────────────────────────────────────────────────── */
-/* The export panel is a strict priority stack: filename·format → dimensions →
-   ancillary settings → action buttons. DOM order encodes the hierarchy, so a
-   flex column keeps the layout stable no matter which optional rows a given
-   tool/format contributes. */
+/* The export panel is a strict priority stack: action buttons (docked to the top,
+   so they stay in reach down a long sheet) → filename·format → dimensions →
+   timing → the format cards → ancillary settings → destinations. DOM order
+   encodes the hierarchy, so a flex column keeps the layout stable no matter which
+   optional rows a given tool/format contributes. */
 .tool-actions {
   display: flex;
   flex-direction: column;
@@ -778,6 +779,124 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   flex: 0 0 auto;
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
+}
+
+/* Grouped format picker (views/export-format-picker.ts). The native select is
+   hidden (value carrier only); the trigger takes its visual place as the fused
+   right half of the name.format pill - the SAME dress as the select it
+   replaced (`.tool-actions select:not(.field-select)` above), so the pill
+   reads solid and its --radius corners are unchanged. The dropdown floats
+   over the rows below (a compact context menu): opening it must never move
+   the settings underneath. */
+.fmt-trigger {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 12px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--input));
+  border-radius: 0 var(--radius) var(--radius) 0;
+  font: inherit;
+  font-size: calc(13px * var(--a11y-fs));
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+.fmt-trigger:hover:not(:focus) { border-color: hsl(var(--ring) / 0.4); }
+.fmt-trigger .fmt-chev { width: calc(14px * var(--a11y-fs)); height: calc(14px * var(--a11y-fs)); opacity: .6; }
+.fmt-trigger[aria-expanded="true"] .fmt-chev { transform: rotate(180deg); }
+/* The row anchors the dropdown. */
+.filename-extension { position: relative; }
+.fmt-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  inset-inline-end: 0;
+  z-index: 6;   /* over the sticky actions dock (3) and every settings row */
+  min-width: min(260px, 100%);
+  max-width: 100%;
+  max-height: min(420px, 55dvh);
+  overflow-y: auto;
+  padding: 10px;
+  border-radius: var(--radius);
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 12px 32px #00000038;
+}
+.fmt-cat + .fmt-cat { margin-top: 10px; padding-top: 10px; border-top: 1px solid hsl(var(--border)); }
+.fmt-cat-head {
+  padding: 0 2px 6px;
+  font-size: calc(11px * var(--a11y-fs));
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+}
+.fmt-cat-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.fmt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  font: inherit;
+  font-size: calc(12px * var(--a11y-fs));
+  cursor: pointer;
+}
+.fmt-chip .fmt-chip-ic {
+  width: calc(13px * var(--a11y-fs));
+  height: calc(13px * var(--a11y-fs));
+  opacity: .75;
+  flex: 0 0 auto;
+}
+/* Resting paint ONLY on the un-pressed state: the chosen chip's primary FILL
+   comes from buttons.css's alias list (R2 - the fill pair is declared once),
+   which is in the earlier `primitives` layer - a restated background here
+   (views layer) would beat it at any specificity. */
+.fmt-chip:not([aria-pressed="true"]) {
+  background: hsl(var(--background));
+  color: inherit;
+}
+.fmt-chip[aria-pressed="true"] { border-color: hsl(var(--primary)); }
+
+/* "Your recording" card (audio-capture tools) - the actual take's saves, above
+   the card-image formats. */
+.export-recording { gap: 8px; }
+.export-recording-hint {
+  margin: 0;
+  font-size: calc(12px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+}
+.export-recording-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.export-recording-size {
+  font-size: calc(12px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  font-variant-numeric: tabular-nums;
+}
+
+/* Sticky action dock - Copy/Save/Share + Download are the sheet's primary
+   actions, so they lead it and stay pinned to the top edge while the long
+   sheets scroll. Background matches the popup card so settings slide beneath. */
+.export-actions-dock {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: hsl(var(--card));
+  padding-bottom: 8px;
+  box-shadow: 0 10px 12px -12px hsl(var(--foreground) / 0.4);
 }
 
 /* The depth fact - what the export WILL carry beyond an ordinary 8-bit image
@@ -1454,13 +1573,14 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
 .tool-actions select:not(.field-select):hover:not(:focus) {
   border-color: hsl(var(--ring) / 0.4);
 }
-/* Timing inputs - wait and duration, shown for webm and gif formats */
-/* Shown only for animated formats. Takes its own full-width row in the Tier-3
-   cluster and wraps internally, so the timing controls reflow cleanly instead
-   of overflowing a narrow sidebar. */
+/* Timing inputs - "Start after" and Duration, shown for webm and gif formats.
+   Its own row directly under the dimensions (it used to be the last child of the
+   Tier-3 chip strip, which is why it carried `flex: 1 1 100%` to claim a full line
+   there). As a direct child of the .tool-actions COLUMN it needs no flex sizing at
+   all - a basis of 100% would resolve against the panel's height. It still wraps
+   internally so the controls reflow cleanly in a narrow sidebar. */
 .video-params {
   display: flex;
-  flex: 1 1 100%;
   flex-wrap: wrap;
   align-items: center;
   column-gap: 8px;
@@ -1575,6 +1695,34 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   .prosettings-head::after { transition: none; }
 }
 
+/* ── Destinations (tool-actions.ts renderSendTargets) ──────────────────────────
+   ONE card headed "Send to", holding a compact button per connected destination.
+   A card each - which is what this rendered before - gave a cloud upload the same
+   weight as Content protection, and a heavier button than Download. The card box
+   and its head are the shared .section-card / .c2pa-head anatomy; only the button
+   row is local. */
+.export-send-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.export-send-row button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  font-size: calc(12px * var(--a11y-fs));
+}
+.export-send-row button svg { flex: 0 0 auto; color: hsl(var(--muted-foreground)); }
+/* The outcome line (a provider link, or why a send failed). Empty until a send
+   finishes, and an empty inline box in a wrap row would leave a stray gap. */
+.export-send .send-status {
+  font-size: calc(12px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+}
+.export-send .send-status:empty { display: none; }
+
 /* Action buttons - base recipe (.btn + .tool-actions button) now lives in
    parts/buttons.css, imported globally from app.css. */
 
@@ -1600,6 +1748,19 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   background: transparent;
   border-color: transparent;
   box-shadow: none;
+}
+
+/* The tips on the timing row and the setting chips hang off hosts only a few
+   characters wide, and .help-tip-pop's default left:0;right:0 would size the tip
+   to its host - a one-word-per-line column. Same recipe as the profile view's
+   pref rows and tool.css's .block-control tips: let it take its own width, capped
+   so it cannot spill off a narrow phone. */
+.tool-actions .export-option > .help-tip-pop,
+.tool-actions .video-params .help-tip-host > .help-tip-pop {
+  right: auto;
+  width: max-content;
+  min-width: 11rem;
+  max-width: min(22rem, 70vw);
 }
 
 /* Copy button armed by the ?copy URL action - pulses to invite the click that

@@ -5,4 +5,4 @@
  * (lib/app-menu.ts -> the iPadOS menu bar and the macOS menu), and mirrored
  * by the App Store screenshots (appstore/store-listing.md).
  */
-export const LEAD_TOOL_ORDER: readonly string[] = ['design', 'darkroom', 'filter', 'd3', 'code-canvas', 'qr-code'];
+export const LEAD_TOOL_ORDER: readonly string[] = ['design', 'darkroom', 'filter', 'chart', 'snippet', 'qr-code'];

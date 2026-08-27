@@ -3,7 +3,7 @@
  * Per-canvas commit channel - the 1:1 path an interactive tool uses to write a
  * value back to ITS OWN runtime.
  *
- * Interactive tool templates (mesh-gradient dot drags, street-map pan/zoom)
+ * Interactive tool templates (gradient dot drags, street-map pan/zoom)
  * historically committed a canvas edit by reaching into the sidebar with a
  * GLOBAL `document.querySelector('[data-input-id="…"]')` + a bubbling `input`
  * event. That assumes exactly one sidebar bound to one runtime - true in the
@@ -60,6 +60,26 @@ export interface CanvasCommitEl extends HTMLElement {
    */
   __lollyNudge?: (id: string) => void;
   /**
+   * Mount the shell's ONE colour picker (components/color-field.ts) into a
+   * container the tool owns - the same field every sidebar colour input uses,
+   * so a tool's on-canvas colour affordance (the gradient tool's mesh-node
+   * popover) offers the full picker instead of hand-rolling swatches around a
+   * native `<input type=color>` (which the shell itself never opens). The
+   * component is imported lazily at call time so this module stays type-only
+   * for its node-run unit test. Absent offscreen and in older shells - the
+   * tool keeps its self-contained fallback then.
+   */
+  __lollyColorField?: (container: HTMLElement, id: string, opts: {
+    value?: unknown;
+    onChange(value: string): void;
+    swatchesOnly?: boolean;
+    inline?: boolean;
+    modes?: boolean;
+    dials?: boolean;
+    onInteractStart?(): void;
+    onInteractEnd?(): void;
+  }) => void;
+  /**
    * Write `id`→`value` with NO undo-history entry, for a correction the tool
    * makes on the user's behalf rather than an edit the user made.
    *
@@ -105,4 +125,7 @@ export function attachCanvasCommit(canvasEl: CanvasCommitEl, runtime: Runtime): 
   };
   canvasEl.__lollyModel = () => runtime.getModel();
   canvasEl.__lollySubscribe = (cb) => runtime.subscribe(cb);
+  canvasEl.__lollyColorField = (container, id, opts) => {
+    void import('../components/color-field.ts').then(m => { m.mountColorField(container, id, opts); });
+  };
 }

@@ -131,7 +131,7 @@ function randomMaterial(rnd: () => number): SdpMaterial {
 function randomInvite(rnd: () => number): InviteMeta {
   const meta: InviteMeta = {
     v: SDP_CODEC_VERSION,
-    toolId: pick(rnd, ['design', 'qr-code', 'meeting-planner', 'd3', 'a', 'street-map']),
+    toolId: pick(rnd, ['design', 'qr-code', 'meeting-planner', 'chart', 'a', 'street-map']),
     toolVersion: pick(rnd, ['1.4.0', '0.0.1', '12.255.7', '2.0.0-beta.3', '1.10.0']),
     engineVersion: pick(rnd, ['1.108.0', '1.77.0', '2.0.0', '1.108.0-rc.1']),
   };

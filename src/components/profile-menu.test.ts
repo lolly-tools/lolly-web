@@ -31,7 +31,7 @@ globalThis.Element = dom.window.Element;
 (globalThis.window as { matchMedia?: (q: string) => { matches: boolean } }).matchMedia =
   (q: string) => ({ matches: q.includes('max-width') });
 
-const { attachProfileMenu, mountProfileFab } = await import('./profile-menu.ts');
+const { attachProfileMenu, mountProfileFab, createProfileControl } = await import('./profile-menu.ts');
 
 /** A host slice good enough for setTheme/switchLang signatures - never invoked
  *  here (no theme click, no language pick reaches switchLang). */
@@ -52,7 +52,7 @@ function pointerDownOn(target: Element): void {
   target.dispatchEvent(e);
 }
 
-test('mobile click opens the menu with the consolidated rows', async () => {
+test('click opens the menu with the consolidated rows', async () => {
   const detach = attachProfileMenu(trigger(), host);
   trigger().dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
   const el = menu();
@@ -68,6 +68,33 @@ test('mobile click opens the menu with the consolidated rows', async () => {
   assert.ok(el!.querySelector('[data-act="settings"]'), 'Settings row still present');
   detach();
   assert.equal(menu(), null, 'detach removes the popover');
+});
+
+test('opens on desktop too (no longer gated to the mobile breakpoint)', () => {
+  const saved = window.matchMedia;
+  // Desktop: no max-width query matches.
+  (window as { matchMedia: (q: string) => { matches: boolean } }).matchMedia = () => ({ matches: false });
+  try {
+    const detach = attachProfileMenu(trigger(), host);
+    trigger().dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    assert.ok(menu(), 'desktop click opens the consolidated menu');
+    detach();
+  } finally {
+    window.matchMedia = saved;
+  }
+});
+
+test('a modified click (open-in-new-tab) falls through to the #/profile href', () => {
+  const detach = attachProfileMenu(trigger(), host);
+  // A trailing listener (fires after attachProfileMenu's onClick) records whether the
+  // handler left the default intact, THEN cancels it - so jsdom never follows the
+  // #/profile anchor and leaks a hashchange into a later test's open menu (NAV_EVENTS).
+  let handlerPrevented: boolean | null = null;
+  trigger().addEventListener('click', (e) => { handlerPrevented = e.defaultPrevented; e.preventDefault(); });
+  trigger().dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }));
+  assert.equal(menu(), null, 'menu did not open');
+  assert.equal(handlerPrevented, false, 'handler left navigation intact for the new-tab gesture');
+  detach();
 });
 
 test('Language spawns the child lang-menu; taps inside it never dismiss the parent', async () => {
@@ -102,12 +129,12 @@ test('mountProfileFab appends the right-most quick link and wires the same menu'
   mountProfileFab(cluster, host);
   const fab = cluster.querySelector<HTMLAnchorElement>('a.profile-fab');
   assert.ok(fab, 'fab appended');
-  assert.equal(fab!.getAttribute('href'), '#/profile', 'desktop: a plain quick link to the profile');
+  assert.equal(fab!.getAttribute('href'), '#/profile', 'still an anchor to the profile page (for no-JS / new-tab)');
   assert.equal(cluster.lastElementChild, fab, 'appended last, so it sits right-most in the cluster');
   assert.ok(fab!.getAttribute('aria-label'), 'accessible name present');
-  // Mobile (matchMedia stub says max-width matches): the click opens the menu.
+  // A plain click opens the consolidated menu (every width).
   fab!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
-  assert.ok(menu(), 'mobile click opens the consolidated menu');
+  assert.ok(menu(), 'click opens the consolidated menu');
   await tick();
   pointerDownOn(document.body);
   assert.equal(menu(), null);
@@ -122,4 +149,45 @@ test('a pointerdown outside both popovers closes the parent', async () => {
   pointerDownOn(document.body);
   assert.equal(menu(), null, 'outside tap dismissed the menu');
   detach();
+});
+
+// ── Sound switch in the menu (only when the host can supply loop bytes) ─────────
+
+/** The narrow `host` above has no assets → no sound switch. A full host does. */
+const assetsHost = {
+  profile: { get: async () => ({ firstname: 'Ada', headshot: { id: 'head1' } }), set: async () => {} },
+  assets: { get: async () => ({ url: 'blob:head' }) },
+} as unknown as Parameters<typeof attachProfileMenu>[1];
+
+test('the Sound/Neurospicy switch appears only when the host has an assets API', () => {
+  // No assets → the switch is omitted (the narrow chrome slices, color-lab/start).
+  const d1 = attachProfileMenu(trigger(), host);
+  trigger().dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  assert.equal(menu()!.querySelector('.profile-menu-sound'), null, 'no sound switch without assets');
+  d1();
+  // Full host → the switch is present.
+  const d2 = attachProfileMenu(trigger(), assetsHost);
+  trigger().dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  assert.ok(menu()!.querySelector('.profile-menu-sound [data-sound-switch]'), 'sound switch present with assets');
+  d2();
+});
+
+// ── createProfileControl: the HUD avatar that opens the same menu ───────────────
+
+test('createProfileControl returns an icon-only .profile-link that opens the consolidated menu', async () => {
+  const link = createProfileControl(assetsHost, { className: 'stage-nav-profile' });
+  assert.ok(link.classList.contains('profile-link') && link.classList.contains('stage-nav-profile'));
+  assert.equal(link.getAttribute('href'), '#/profile', 'still an anchor to the profile page');
+  assert.ok(link.querySelector('.profile-link-mark'), 'carries the Lolly-mark avatar');
+  assert.equal(link.querySelector('.profile-link-name'), null, 'icon only - no name span');
+  document.body.appendChild(link);
+  await tick(); await tick();  // profile.get → assets.get (two async hops) resolve
+  const img = link.querySelector<HTMLImageElement>('.profile-link-avatar');
+  assert.ok(img && link.classList.contains('has-avatar'), 'headshot swapped in off first paint');
+  link.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+  assert.ok(menu(), 'clicking the avatar opens the consolidated menu');
+  await tick();
+  pointerDownOn(document.body);
+  assert.equal(menu(), null);
+  link.remove();
 });

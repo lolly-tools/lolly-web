@@ -146,6 +146,102 @@ test('sidebar: a slot with no actions row gets one created for the buttons', () 
   lc.dispose();
 });
 
+test('auto-camera: render.liveCameraWhen starts the camera on load and stops when the mode leaves camera', async () => {
+  let starts = 0, stops = 0, live = false;
+  const model = [{ id: 'mode', type: 'select', value: 'camera' }];
+  const rt = {
+    hasFrameHook: true,
+    isLive: () => live,
+    startLive: async () => { starts++; live = true; return true; },
+    stopLive: () => { stops++; live = false; },
+    getModel: () => model,
+    manifest: { id: 'scan-code', render: { liveCameraWhen: { input: 'mode', value: 'camera' } } },
+  };
+  const h = makeHost();
+  const lc = createLiveControls({ runtime: rt, host: h.host, t, announce: () => {}, fetchSvgMarkup: h.fetchSvgMarkup });
+  registerLiveControls(rt as object, lc);
+
+  // On load (mode=camera): auto-starts, no tap.
+  lc.syncFromModel(model);
+  await tick();
+  assert.equal(starts, 1, 'camera auto-started on load in camera mode');
+  assert.equal(live, true);
+
+  // Switch the source away from camera: it stops.
+  model[0] = { id: 'mode', type: 'select', value: 'image' };
+  lc.syncFromModel(model);
+  await tick();
+  assert.equal(stops, 1, 'stopped when the mode left camera');
+  assert.equal(live, false);
+
+  // Switch back to camera: it starts again.
+  model[0] = { id: 'mode', type: 'select', value: 'camera' };
+  lc.syncFromModel(model);
+  await tick();
+  assert.equal(starts, 2, 're-started when the mode returned to camera');
+  lc.dispose();
+});
+
+test('auto-camera: a load-time start that does not open is retried on the first tap (iOS gesture)', async () => {
+  let attempts = 0, live = false;
+  const model = [{ id: 'mode', type: 'select', value: 'camera' }];
+  const rt = {
+    hasFrameHook: true,
+    isLive: () => live,
+    // iOS Safari won't open the camera from a bare page-load call: model that as
+    // the first attempt not opening, then succeeding once a gesture drives it.
+    startLive: async () => { attempts++; if (attempts === 1) return false; live = true; return true; },
+    stopLive: () => { live = false; },
+    getModel: () => model,
+    manifest: { id: 'scan-code', render: { liveCameraWhen: { input: 'mode', value: 'camera' } } },
+  };
+  const h = makeHost();
+  const lc = createLiveControls({ runtime: rt, host: h.host, t, announce: () => {}, fetchSvgMarkup: h.fetchSvgMarkup });
+  registerLiveControls(rt as object, lc);
+
+  lc.syncFromModel(model);
+  await tick();
+  assert.equal(attempts, 1, 'tried to open on load');
+  assert.equal(live, false, 'did not open without a gesture');
+
+  // The first tap anywhere (the big viewfinder included) retries and opens it.
+  document.dispatchEvent(new Event('pointerdown'));
+  await tick();
+  assert.equal(attempts, 2, 'retried on the first tap');
+  assert.equal(live, true, 'camera opened after the gesture');
+  lc.dispose();
+});
+
+test('auto-camera: a declined permission is remembered - no re-prompt on later syncs', async () => {
+  let attempts = 0, live = false;
+  const model = [{ id: 'mode', type: 'select', value: 'camera' }];
+  const rt = {
+    hasFrameHook: true,
+    isLive: () => live,
+    startLive: async () => { attempts++; const e = new Error('denied'); (e as { name?: string }).name = 'NotAllowedError'; throw e; },
+    stopLive: () => { live = false; },
+    getModel: () => model,
+    manifest: { id: 'scan-code', render: { liveCameraWhen: { input: 'mode', value: 'camera' } } },
+  };
+  const h = makeHost();
+  const lc = createLiveControls({ runtime: rt, host: h.host, t, announce: () => {}, fetchSvgMarkup: h.fetchSvgMarkup });
+  registerLiveControls(rt as object, lc);
+
+  lc.syncFromModel(model);
+  await tick();
+  assert.equal(attempts, 1, 'prompted once');
+
+  // A later keystroke re-runs sync and must NOT re-prompt a camera the user declined.
+  lc.syncFromModel(model);
+  await tick();
+  assert.equal(attempts, 1, 'declined permission is remembered');
+  // Nor does a later tap re-prompt it.
+  document.dispatchEvent(new Event('pointerdown'));
+  await tick();
+  assert.equal(attempts, 1, 'a declined camera is not re-prompted by a tap either');
+  lc.dispose();
+});
+
 test('camera: manifest render.liveFacing opens the rear camera, and flip toggles front/rear', async () => {
   const facings: Array<string | undefined> = [];
   const live = { v: false };

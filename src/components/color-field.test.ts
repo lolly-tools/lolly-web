@@ -197,17 +197,31 @@ test('one flat tablist, grouped into three labelled families, wired to its panel
   assert.ok(field.querySelector('.color-space.color-lch[data-space-group="oklch"]'));
 });
 
-test('a field with no space tabs still renders the OKLCH panel as a popover child', () => {
+test('a popover field folds every fine control behind Fine-tune, sliders visible inside', () => {
   const { field } = mount('#30ba78', { float: true });
   assert.equal(field.querySelectorAll('[role="tablist"]').length, 0);
-  // A DIRECT child of .color-popover, hidden - that pair is what the value-field
-  // focus handler expands and what measuredFullHeight measures.
-  const panel = field.querySelector<HTMLElement>('.color-popover > .color-lch')!;
-  assert.ok(panel);
-  assert.equal(panel.hidden, true);
+  // The whole fine section - value input, OKLCH panel, alpha - is one gated
+  // wrapper; the panel itself is no longer individually hidden (the fold is the
+  // one reveal, and measuredFullHeight measures the wrapper).
+  const fine = field.querySelector<HTMLElement>('[data-color-fine]')!;
+  assert.ok(fine);
+  assert.equal(fine.hidden, true, 'the fold starts closed');
+  const panel = fine.querySelector<HTMLElement>('.color-lch')!;
+  assert.ok(panel, 'the OKLCH panel lives inside the fold');
+  assert.equal(panel.hidden, false, 'no second gate on the panel itself');
   assert.equal(panel.getAttribute('role'), null, 'a lone panel is not a tabpanel');
-  valueInput(field).dispatchEvent(new dom.window.FocusEvent('focus', { bubbles: false }));
-  assert.equal(panel.hidden, false, 'focusing the value field expands the sliders');
+  assert.ok(fine.contains(valueInput(field)), 'the value field is folded too');
+  // The palette leads: swatches come before the fold in the popover.
+  const popover = field.querySelector<HTMLElement>('.color-popover')!;
+  const kids = [...popover.children];
+  assert.ok(kids.indexOf(popover.querySelector('.color-swatches')!) < kids.indexOf(fine));
+  const toggle = field.querySelector<HTMLElement>('[data-color-fine-toggle]')!;
+  assert.equal(toggle.getAttribute('aria-expanded'), 'false');
+  toggle.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  assert.equal(fine.hidden, false, 'the toggle opens the fold');
+  assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+  toggle.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  assert.equal(fine.hidden, true, 'and closes it again');
 });
 
 // ── Trap 2: the dials are no longer gated on `inline` ────────────────────────

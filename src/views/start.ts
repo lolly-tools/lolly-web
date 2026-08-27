@@ -420,7 +420,11 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
           <!-- Foot: whole-system actions. They belong to the studio rather than
                to any one room, and the transient note rides with them. -->
           <div class="ds-rail-actions">
-            <button type="button" class="be-btn start-import-cta" data-start-import aria-haspopup="dialog">
+            <!-- Hidden while the studio is empty: the Overview room's own two
+                 doors are showing then, and "Start from a file" opens this very
+                 modal - three ways into one dialog on one screen (plans/163 F2).
+                 It appears with the furnished room, which is where the doors go. -->
+            <button type="button" class="be-btn start-import-cta" data-start-import aria-haspopup="dialog" hidden>
               <span class="start-import-cta-ic" aria-hidden="true">↓</span> <span>${t('Add from…')}</span></button>
             <!-- Hidden until a scan actually keeps something: an empty concept is
                  never advertised (plan 97 section 9). The count rides the subscription. -->
@@ -428,11 +432,14 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
               <span class="ds-tray-toggle-ic" aria-hidden="true">${icon('dock')}</span>
               <span>${t('Tray')}</span>
               <span class="ds-tray-toggle-n" data-start-tray-n></span></button>
-            <!-- Both exports wait for the system to hold something (plans/137 B1).
-                 An empty studio has nothing to send anywhere, and offering to
-                 export it is a button that can only disappoint; data-start-furnished
-                 is what refreshFurnished() reveals, on the same reading the
-                 Overview room decides its empty state with. -->
+            <!-- Both exports wait for a system worth exporting (plans/137 B1,
+                 raised by plans/163 F4). An empty studio has nothing to send
+                 anywhere, and offering to export it is a button that can only
+                 disappoint - and one colour in is still nearly empty, which is
+                 why the bar is readOverview's worthExporting rather than its
+                 furnished. data-start-furnished is what refreshFurnished()
+                 reveals, on the same reading the Overview room decides its own
+                 empty state with. -->
             <button type="button" class="be-btn start-export-btn" data-start-export data-start-furnished data-sfx="whoosh" hidden>
               <span aria-hidden="true">↑</span> <span>${t('Export')}</span></button>
             <!-- The pack zip carries fonts, logos and a theme preference; this is
@@ -541,8 +548,11 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   const versionsLink = viewEl.querySelector<HTMLButtonElement>('[data-ds-versions-link]');
   const railEl = viewEl.querySelector<HTMLElement>('.ds-rail')!;
   const roomBtns = [...viewEl.querySelectorAll<HTMLButtonElement>('[data-ds-room]')];
-  /** The foot actions that only exist once the design system holds something. */
+  /** The foot actions that only exist once there is a system worth exporting. */
   const furnishedOnly = [...viewEl.querySelectorAll<HTMLElement>('[data-start-furnished]')];
+  /** The rail's "Add from…" hero. Declared up here because refreshFurnished()
+   *  below reveals it; its click wiring is with the rest of the picker's. */
+  const importBtn = viewEl.querySelector<HTMLButtonElement>('[data-start-import]');
 
   // The save discipline's substrate (plan 97 section 6): used here for the checkpoint a
   // source install takes before it lands, so "revert to before the import" is a
@@ -650,16 +660,20 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   // and the panel it opens is a region named after it. `overview` on the editor's
   // data-active-tab matches none of its five panels, which is how the editor
   // hides itself while the Overview room shows.
-  // Does the design system hold anything at all? The Overview room's own answer
-  // (readOverview → `furnished`), reused rather than re-derived, so the foot's
-  // export actions can never contradict the room's "Nothing here yet" (plans/137
-  // B1). Latched on: an install is what flips it, and nothing in a session takes
-  // a design system away again.
+  // Is there a system worth EXPORTING here? The Overview room's own answer
+  // (readOverview → `worthExporting`), reused rather than re-derived, so the
+  // foot's export actions can never contradict the room (plans/137 B1). The bar
+  // used to be the room's `furnished` - which the first colour makes true, so
+  // one gesture in the rail grew Export, Tokens and Versions (plans/163 F4).
+  // Latched on: nothing in a session takes a design system away again.
   //
-  // Cheap while it matters. readOverview returns its empty model straight after
-  // the tokens-asset lookup, so an unfurnished studio pays one keyed read per
-  // call; the moment it answers true this stops calling at all.
-  let furnished = false;
+  // Cheap where it matters most. readOverview returns its empty model straight
+  // after the tokens-asset lookup, so an EMPTY studio pays one keyed read per
+  // call; a furnished one pays the full read on each room change and commit
+  // until this answers true, after which nothing here reads again. That window
+  // is a handful of user-paced gestures wide, which is what it buys: the rail
+  // grows its power actions when the system does, not on the first colour.
+  let worthExporting = false;
   // Whether the foot's Versions entry is offered at all. Two ways in: something
   // has actually been published (the version index, read once below), or the panel was
   // asked for by name - a `?area=versions` link must never land on a control that
@@ -676,21 +690,24 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   const syncVersionsEntry = (): void => {
     if (activeArea === 'versions') versionsOffered = true;
     if (versionsBtn) versionsBtn.hidden = !versionsOffered;
-    // The first publish has to stay one press away, so a furnished system that
-    // has never published gets the quiet entry instead of the rail one - and
+    // The first publish has to stay one press away, so a system worth exporting
+    // that has never published gets the quiet entry instead of the rail one - and
     // drops it again as soon as the rail entry latches on.
-    if (versionsLink) versionsLink.hidden = versionsOffered || !furnished;
+    if (versionsLink) versionsLink.hidden = versionsOffered || !worthExporting;
   };
-  /** Re-read the furnished signal and reveal the actions that wait on it. Called
-   *  from the two paths the studio already refreshes on - every room change and
-   *  every committed edit - so a system furnished mid-session reveals them
-   *  without a reload, whichever room the edit was made in. */
+  /** Re-read the room's signals and reveal what each of the two latches owes.
+   *  Called from the two paths the studio already refreshes on - every room
+   *  change and every committed edit - so a studio that grows mid-session
+   *  reveals them without a reload, whichever room the edit was made in. */
   const refreshFurnished = (): void => {
-    if (furnished) return;
+    if (worthExporting) return;  // the harder latch is set, so both are
     void readOverview(host as unknown as Parameters<typeof readOverview>[0])
       .then(model => {
-        if (!shell.isConnected || !model.furnished) return;
-        furnished = true;
+        if (!shell.isConnected) return;
+        // The hero only duplicates a door while the doors are up (plans/163 F2).
+        if (model.furnished && importBtn) importBtn.hidden = false;
+        if (!model.worthExporting) return;
+        worthExporting = true;
         for (const el of furnishedOnly) el.hidden = false;
         syncVersionsEntry();
       })
@@ -940,7 +957,10 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
         // only when focus was actually dropped, so this can never be a steal.
         // Queried here, not captured: this fires long after mount either way.
         if (!open && trayToggle?.hidden && document.activeElement === document.body) {
-          viewEl.querySelector<HTMLElement>('[data-start-import]')?.focus();
+          // The hero is itself hidden on an empty studio (plans/163 F2), and
+          // focus() on a hidden element does nothing - so fall back to the rail.
+          const back = importBtn?.hidden === false ? importBtn : railEl.querySelector<HTMLElement>('[data-ds-room]');
+          back?.focus();
         }
       },
     });
@@ -1717,7 +1737,6 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   // and the delegated result handlers below stay wired to the same nodes for the
   // life of the view. Everything else is the shared modal primitive: Escape,
   // backdrop dismissal, focus containment and restore come free (components/modal.ts).
-  const importBtn = viewEl.querySelector<HTMLButtonElement>('[data-start-import]');
   const importHome = viewEl.querySelector<HTMLElement>('[data-start-import-home]')!;
   const importPanel = viewEl.querySelector<HTMLElement>('[data-start-import-panel]')!;
   let importModal: ModalHandle<void> | null = null;

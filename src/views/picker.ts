@@ -144,7 +144,7 @@ interface PickerSession {
   updatedAt: string;
 }
 
-type TabId = 'library' | 'sessions' | 'projects' | 'tools';
+type TabId = 'library' | 'uploads' | 'sessions' | 'projects' | 'tools';
 interface Tab {
   id: TabId;
   label: string;
@@ -519,8 +519,11 @@ async function render(
   let activeTreatment: string | null | undefined = currentTreatment;
   const isTreatableRef = (ref: AssetRef | undefined): ref is AssetRef => ref?.type === 'raster';
 
-  // Which sources get a tab. Library is always present; the rest are conditional.
-  const tabs: Tab[] = [{ id: 'library', label: 'Library' }];
+  // Which sources get a tab. The Catalog is always present; the rest are conditional.
+  // ("library" stays the internal id/data-pane - the visible label is "Catalog".)
+  const tabs: Tab[] = [{ id: 'library', label: 'Catalog' }];
+  // The user's own uploads live on their own tab - private to them until shared.
+  if (showUserAssets) tabs.push({ id: 'uploads', label: 'Private assets' });
   if (allowToolUrl) tabs.push({ id: 'sessions', label: 'Saved creations' });
   if (showProjects) tabs.push({ id: 'projects', label: 'Projects' });
   if (embedTools.length) tabs.push({ id: 'tools', label: 'Tools' });
@@ -548,6 +551,7 @@ async function render(
     id === 'tools'    ? t('Search tools…')
     : id === 'sessions' ? t('Search your saved creations…')
     : id === 'projects' ? t('Search your projects…')
+    : id === 'uploads'  ? t('Search your private assets…')
     : allowToolUrl    ? t('Search, or paste a Lolly link…')
     : t('Search…');
 
@@ -573,15 +577,16 @@ async function render(
       </div>` : ''}
       <div class="asset-picker-body">
         <section class="asset-picker-pane"${paneAria('library')} data-pane="library">
+          ${visualSlot ? `<div class="asset-picker-fitbar"><button type="button" class="asset-picker-fit-toggle" data-fit-toggle aria-pressed="false">${escapeHtml(t('Hide items this slot can’t use'))}</button></div>` : ''}
           <div class="asset-picker-typebar" role="group" aria-label="${escapeHtml(t('Filter by type'))}" hidden></div>
           <div class="asset-picker-catbar" role="group" aria-label="${escapeHtml(t('Filter by category'))}" hidden></div>
           <section class="asset-picker-recents" hidden></section>
           <section class="asset-picker-favourites" hidden></section>
-          ${showUserAssets ? `<section class="asset-picker-userassets" hidden></section>` : ''}
           <section class="asset-picker-library">
             <div class="asset-picker-loading">${t('Loading…')}</div>
           </section>
         </section>
+        ${showUserAssets ? `<section class="asset-picker-pane"${paneAria('uploads')} data-pane="uploads" hidden><section class="asset-picker-userassets"></section></section>` : ''}
         ${allowToolUrl ? `<section class="asset-picker-pane"${paneAria('sessions')} data-pane="sessions" hidden></section>` : ''}
         ${showProjects ? `<section class="asset-picker-pane"${paneAria('projects')} data-pane="projects" hidden></section>` : ''}
         ${embedTools.length ? `<section class="asset-picker-pane"${paneAria('tools')} data-pane="tools" hidden></section>` : ''}
@@ -613,6 +618,7 @@ async function render(
     const counts = new Map<TabId, number>();
     if (q) {
       counts.set('library', typeFiltered(libraryCandidates).filter(c => searchMatches(q, String(c.meta?.name ?? c.id), c.id)).length);
+      if (showUserAssets) counts.set('uploads', userAssets.filter(a => searchMatches(q, String(a.meta?.name ?? a.id), a.id)).length);
       if (sessions) counts.set('sessions', sessions.filter(s2 => searchMatches(q, s2.toolName, s2.label, s2.toolId)).length);
       counts.set('tools', embedTools.filter(t2 => searchMatches(q, t2.name, t2.description ?? '', t2.id)).length);
     }
@@ -682,6 +688,15 @@ async function render(
   const body         = root.querySelector<HTMLElement>('.asset-picker-body')!;
   const currentEl    = root.querySelector<HTMLElement>('.asset-picker-current');
   const libraryPane  = root.querySelector<HTMLElement>('.asset-picker-pane[data-pane="library"]')!;
+  // Fade-not-hide toggle: flip a class so pure CSS hides the dimmed (incompatible)
+  // tiles when a broadened catalog gets cluttered. No re-render - the tiles stay in
+  // the DOM, just display:none; aria-disabled already keeps them out of keyboard nav.
+  root.querySelector('[data-fit-toggle]')?.addEventListener('click', (e) => {
+    const btn = e.currentTarget as HTMLButtonElement;
+    const on = libraryPane.classList.toggle('hide-incompatible');
+    btn.setAttribute('aria-pressed', String(on));
+    btn.classList.toggle('is-active', on);
+  });
   // (Re)arm the lottie autoplayer over the library pane - its favourites, user-uploads, and
   // library grids all render inside it. Called after each of those grids (re)renders so newly
   // built [data-lottie-src] markers get observed; destroys the prior observer to avoid stacking.
@@ -1222,6 +1237,7 @@ async function render(
     // don't fight it by re-filtering a list underneath.
     if (!(allowToolUrl && /^https?:\/\//i.test(raw))) {
       if (id === 'library') restoreLibrary(q);
+      else if (id === 'uploads') renderUserAssets();
       else if (id === 'sessions') renderSessions(q);
       else if (id === 'projects') renderProjects(q);
       else if (id === 'tools') renderTools(q);
@@ -1231,10 +1247,22 @@ async function render(
     if (first) first.focus({ preventScroll: true });
   }
 
+  // The "Private assets" pane - the user's own uploads, private to them until shared.
+  // Filtered by the live search box (so the pane's search placeholder isn't a lie).
   function renderUserAssets(): void {
     if (!userEl) return;
-    if (userAssets.length === 0) { userEl.hidden = true; userEl.innerHTML = ''; return; }
-    userEl.hidden = false;
+    const q = searchInput.value.trim().toLowerCase();
+    const list = q
+      ? userAssets.filter(a => searchMatches(q, String(a.meta?.name ?? a.id), a.id))
+      : userAssets;
+    if (list.length === 0) {
+      userEl.innerHTML = `<p class="asset-picker-empty" role="status">${
+        userAssets.length === 0
+          ? t('Nothing here yet. Upload your own with the button below - your assets stay private until you share them.')
+          : t('No private assets match.')
+      }</p>`;
+      return;
+    }
 
     // Group the loaded images by the folder each belongs to (if any), preserving
     // the newest-first order within each group. Cards keep their existing markup
@@ -1243,7 +1271,7 @@ async function render(
     for (const f of folders) for (const it of f.items) if (it.type === 'image') folderOf.set(it.ref, f);
     const groups = new Map<string, { name: string; items: AssetRef[] }>();   // folderId → { name, items }
     const ungrouped: AssetRef[] = [];
-    for (const a of userAssets) {
+    for (const a of list) {
       const f = folderOf.get(a.id);
       if (f) { if (!groups.has(f.id)) groups.set(f.id, { name: f.name, items: [] }); groups.get(f.id)!.items.push(a); }
       else ungrouped.push(a);
@@ -1258,14 +1286,7 @@ async function render(
       if (groups.size) inner += `<div class="asset-picker-folder-head">${t('Ungrouped')}</div>`;
       inner += `<div class="asset-picker-grid">${ungrouped.map(userCard).join('')}</div>`;
     }
-    // Same collapsible section chrome as the library groups (one delegated toggle
-    // handler serves both); state persists in collapsedGroups across re-renders.
-    userEl.innerHTML = sectionHtml(
-      { key: 'your-images', label: 'Your images' },
-      String(userAssets.length),
-      '',
-      inner,
-    );
+    userEl.innerHTML = inner;
     refreshLottieThumbs();
     refreshAudioThumbs();
     refreshTextThumbs();
@@ -1503,8 +1524,8 @@ async function render(
   let catFilterSeeded = false;
   const CHEVRON = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>';
 
-  // One collapsible section shell - used by the library groups, their nested
-  // sub-groups, and the "Your images" section, so the delegated toggle handler
+  // One collapsible section shell - used by the library groups and their nested
+  // sub-groups, so the delegated toggle handler
   // and collapse-state Set serve all of them identically. `collapsed` defaults to
   // the persisted state but callers can override it (the library forces every
   // section open while a search query is active so matches are never hidden).
@@ -1798,7 +1819,6 @@ async function render(
   }
 
   function restoreLibrary(q: string): void {
-    renderUserAssets();
     if (!libraryLoaded) { libraryEl.innerHTML = `<div class="asset-picker-loading">${t('Loading…')}</div>`; return; }
     if (!q) { renderLibrary(typeFiltered(libraryCandidates)); return; }
     renderLibrary(typeFiltered(libraryCandidates).filter(c => searchMatches(q, String(c.meta?.name ?? c.id), c.id)));
@@ -2477,6 +2497,7 @@ async function render(
       clearTimeout(searchDebounce);
       searchDebounce = setTimeout(() => {
         if (activeTab === 'library') restoreLibrary(q);
+        else if (activeTab === 'uploads') renderUserAssets();
         else if (activeTab === 'sessions') renderSessions(q);
         else if (activeTab === 'projects') renderProjects(q);
         else if (activeTab === 'tools') renderTools(q);

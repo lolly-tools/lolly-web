@@ -28,7 +28,7 @@ globalThis.document = dom.window.document;
 
 const {
   ROLE_IDS, roleLabel, readRoles, roleAssignments, assignRole, clearRole,
-  roleContrast, roleReadouts, buildRolesModel, rolesStripHtml, mountRolesStrip, WEAK_LC,
+  roleContrast, roleReadouts, buildRolesModel, rampStepName, rolesStripHtml, mountRolesStrip, WEAK_LC,
 } = await import('./roles.ts');
 type RoleId = import('./roles.ts').RoleId;
 
@@ -397,6 +397,25 @@ test('buildRolesModel: names the assigned swatch, and marks the rest unset', () 
   const surface = model.rows.find(r => r.id === 'surface')!;
   assert.equal(surface.set, false);
   assert.equal(surface.selected, '');
+});
+
+// plans/163 F6: an undescribed starter ramp step is named for its leaf key, so
+// SURFACE read "9" and TEXT read "1". Display only - the doc is never touched.
+test('rampStepName: a bare ramp step is shown with the ramp it belongs to', () => {
+  assert.equal(rampStepName('9', 'color.ramp.neutral.9'), 'Neutral 9');
+  assert.equal(rampStepName('1', 'base.color.ramp.brand-blue.1'), 'Brand Blue 1');
+  assert.equal(rampStepName('Jungle', 'color.ramp.primary.4'), 'Jungle', 'a described step is left alone');
+  assert.equal(rampStepName('2026', 'color.custom.2026'), '2026', 'only one or two digits read as a step');
+  assert.equal(rampStepName('9', '9'), '9', 'a key with no ramp segment has nothing to add');
+});
+
+test('buildRolesModel: a bare ramp step reads with its ramp name', () => {
+  const doc = imported();
+  assignRole(doc, 'surface', 'color.ramp.neutral.9');
+  const model = buildRolesModel(doc, 'light', [
+    ...OPTIONS, { key: 'color.ramp.neutral.9', name: '9', hex: '#ffffff', group: 'Neutral' },
+  ], resolverFor(doc));
+  assert.equal(model.rows.find(r => r.id === 'surface')!.value, 'Neutral 9');
 });
 
 test('buildRolesModel: a semantic swatch is never offered as an option', () => {

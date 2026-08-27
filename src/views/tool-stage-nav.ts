@@ -13,6 +13,8 @@
 import { mountZoomHud } from '../components/zoom-hud.ts';
 import type { ZoomHud } from '../components/zoom-hud.ts';
 import { isTypingTarget } from '../lib/typing-target.ts';
+import { icon } from '../lib/icons.ts';
+import { requestDock, releaseDock, isDocked, edgeDockHitTest, edgeDockPreview, edgeDockAvailable } from '../lib/edge-dock.ts';
 
 /** A client-space point. */
 export interface Point { x: number; y: number; }
@@ -41,7 +43,7 @@ const isTyping = (): boolean => isTypingTarget();
 // One module so both pointer types share a single transform model and never drift.
 // The transform sits on the OUTER wrapper, layered on top of the fitCanvas scale;
 // `scale` is a multiplier where 1 == the fitted view ("Fit").
-export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvasEl: HTMLElement | null, nativeW: number, onFit: (() => void) | null | undefined, themeToggle?: HTMLElement, soundToggle?: HTMLElement): StageNav {
+export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvasEl: HTMLElement | null, nativeW: number, onFit: (() => void) | null | undefined, themeToggle?: HTMLElement, soundToggle?: HTMLElement, profileToggle?: HTMLElement): StageNav {
   const MAX_ABS = 16;             // zoom-IN ceiling: 16× native export pixels (≈1600% in the HUD)
   const MIN_ABS = 0.2;            // zoom-out floor: 20% of native export pixels
   const PINCH_DEADZONE = 0.02;    // ignore <2% finger-spread wobble so a pan ≠ zoom
@@ -134,12 +136,6 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
   function stageCentre(): Point {
     const sr = stageEl.getBoundingClientRect();
     return { x: (sr.left + sr.right) / 2, y: (sr.top + sr.bottom) / 2 };
-  }
-
-  // Effective on-screen size vs native export pixels - the figure the HUD shows.
-  function pct(): number {
-    const w = canvasEl ? canvasEl.getBoundingClientRect().width : 0;
-    return w > 0 ? Math.round(w / nativeW * 100) : 100;
   }
 
   // Jump to true 100% (1 CSS px per export px) about the stage centre.
@@ -270,7 +266,6 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
   let hud: ZoomHud | null = null;
 
   function syncHud(): void {
-    hud?.setReadout(pct() + '%');
     hud?.setZoomed(isZoomed());
   }
 
@@ -312,10 +307,11 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
   // The rule ships in live-capture.ts's injected <style>, scoped to the take.
   hudEl.setAttribute('data-live-hide', '');
   stageEl.appendChild(hudEl);
-  // Dock the theme cycle + sound toggles at the end of the HUD (a hairline
-  // separator sets them apart from the zoom controls), so every canvas tool
-  // carries a theme switcher without cluttering the sidebar.
-  const extras = [themeToggle, soundToggle].filter((el): el is HTMLElement => !!el);
+  // Dock the theme cycle + sound toggles and the profile avatar at the end of the
+  // HUD (a hairline separator sets them apart from the zoom controls), so every canvas
+  // tool carries theme/sound/profile without cluttering the sidebar. Profile sits last
+  // (right of the sound/mute toggle).
+  const extras = [themeToggle, soundToggle, profileToggle].filter((el): el is HTMLElement => !!el);
   hud = mountZoomHud(hudEl, {
     ariaLabel: 'Zoom',
     // editor.css's mobile stacked-order rules key off the literal `data-nav`
@@ -323,19 +319,140 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
     // every other caller gets the component's private, collision-proof default.
     navAttr: 'data-nav',
     classes: { btn: 'stage-nav-btn', pct: 'stage-nav-pct', fit: 'stage-nav-fit', sep: 'stage-nav-sep' },
+    // No percent readout (it doubled as a Fit/100% toggle, reading as a second Fit
+    // control); a single Fit button sits BETWEEN − and + as the reset, shown as an
+    // icon. True 100% still lives on the keyboard (`1`); double-tap still fits.
+    noReadout: true,
+    fitPosition: 'middle',
     onZoom: (dir) => { const c = stageCentre(); zoomAbout(dir > 0 ? 1.25 : 0.8, c.x, c.y); },
     onFit: fit,
-    onPct: () => { if (isZoomed()) fit(); else actual(); },
     outAriaLabel: 'Zoom out',
     inAriaLabel: 'Zoom in',
-    pctAriaLabel: 'Toggle Fit and 100%',
     fitAriaLabel: 'Fit to window',
-    fitContent: 'Fit',
-    initialReadout: '100%',
+    fitTitle: 'Fit to window',
+    fitContent: icon('resize'),
     extras,
   });
 
+  // ── Drag the HUD (by its grip) to reposition it over the canvas, or onto the
+  //    inline-end edge to dock it into the desktop dock column (lib/edge-dock.ts),
+  //    exactly like the export/player panels. Desktop only: the dock does not exist
+  //    below the mobile breakpoint, and the vertical touch capsule stays put. State
+  //    (floated position, or docked) persists per this device. ──────────────────────
+  const HUD_STATE_KEY = 'lolly:stage-nav-dock';
+  const HUD_DRAG_THRESHOLD = 4;   // px travel before a press counts as a drag
+  let hudDragCleanup: (() => void) | null = null;
+
+  type HudState = { mode?: 'edge'; left?: number; top?: number };
+  const loadHudState = (): HudState => {
+    try { return (JSON.parse(localStorage.getItem(HUD_STATE_KEY) || 'null') as HudState) || {}; }
+    catch { return {}; }
+  };
+  const saveHudState = (s: HudState): void => {
+    try { localStorage.setItem(HUD_STATE_KEY, JSON.stringify(s)); } catch { /* best-effort */ }
+  };
+
+  function setupHudDrag(): () => void {
+    // The pill is all buttons, so a dedicated grip is the drag surface (the rest keeps
+    // clicking through to zoom). It rides along in the mobile stacked capsule too.
+    const grip = document.createElement('div');
+    grip.className = 'stage-nav-grip';
+    grip.setAttribute('aria-hidden', 'true');
+    grip.innerHTML = icon('grip', { filled: true });
+    hudEl.prepend(grip);
+
+    // No wobble spring here (unlike the URL gauge): docking re-parents the HUD into the
+    // dock column mid-drag, which orphans the wobble's GPU layer as a stuck ghost. The
+    // drag itself needs no spring.
+
+    // Stage-relative bounds (the HUD is position:absolute in #tool-stage), matching the
+    // URL gauge's offsetLeft/offsetParent model, so a drag can never leave it off-screen.
+    const bounds = (): { maxL: number; maxT: number } => {
+      const par = (hudEl.offsetParent as HTMLElement | null);
+      const pw = par?.clientWidth ?? stageEl.clientWidth;
+      const ph = par?.clientHeight ?? stageEl.clientHeight;
+      return { maxL: Math.max(4, pw - hudEl.offsetWidth - 4), maxT: Math.max(4, ph - hudEl.offsetHeight - 4) };
+    };
+
+    // Float the HUD at an explicit stage-relative position (or clear back to the CSS
+    // default top-right when no coords are given, e.g. after undocking).
+    const applyFloat = (left?: number, top?: number): void => {
+      hudEl.removeAttribute('data-docked');
+      if (typeof left === 'number' && typeof top === 'number') {
+        const { maxL, maxT } = bounds();
+        hudEl.style.right = 'auto';
+        hudEl.style.left = `${Math.min(Math.max(left, 4), maxL)}px`;
+        hudEl.style.top = `${Math.min(Math.max(top, 4), maxT)}px`;
+      } else {
+        hudEl.style.left = hudEl.style.top = hudEl.style.right = '';
+      }
+    };
+
+    // edge-dock moved the HUD back into the stage (drag-out, or the mobile-breakpoint
+    // guard): just restore its float look. Persistence is driven by the user gesture
+    // (onUp / dockEdge), NOT here, so a breakpoint bounce doesn't wipe the 'edge' pref.
+    const onUndock = (): void => applyFloat();
+
+    const dockEdge = (): void => {
+      if (!requestDock('zoom', hudEl, { compact: true, onRelease: onUndock, icon: icon('resize'), label: 'Zoom' })) return;
+      hudEl.setAttribute('data-docked', '');
+      hudEl.style.left = hudEl.style.top = hudEl.style.right = '';
+      saveHudState({ mode: 'edge' });
+    };
+
+    let dragging = false, moved = false, sx = 0, sy = 0, bl = 0, bt = 0;
+    const onMove = (e: PointerEvent): void => {
+      if (!dragging) return;
+      if (!moved && Math.hypot(e.clientX - sx, e.clientY - sy) > HUD_DRAG_THRESHOLD) moved = true;
+      if (!moved) return;
+      // Grabbing a docked HUD drags it out; re-baseline so it continues from the pointer
+      // (its stage-relative home) rather than jumping by the dock's body-level coords.
+      if (isDocked('zoom')) { releaseDock('zoom'); sx = e.clientX; sy = e.clientY; bl = hudEl.offsetLeft; bt = hudEl.offsetTop; }
+      const dx = e.clientX - sx, dy = e.clientY - sy;
+      const { maxL, maxT } = bounds();
+      hudEl.style.right = 'auto';
+      hudEl.style.left = `${Math.min(Math.max(bl + dx, 4), maxL)}px`;
+      hudEl.style.top = `${Math.min(Math.max(bt + dy, 4), maxT)}px`;
+      edgeDockPreview(edgeDockHitTest(e.clientX));   // light the drop zone near the edge
+    };
+    const onUp = (e: PointerEvent): void => {
+      if (!dragging) return;
+      dragging = false;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      edgeDockPreview(false);
+      if (!moved) return;
+      if (edgeDockHitTest(e.clientX)) dockEdge();
+      else saveHudState({ left: hudEl.offsetLeft, top: hudEl.offsetTop });
+    };
+    const onDown = (e: PointerEvent): void => {
+      if (e.button !== 0) return;
+      e.preventDefault(); e.stopPropagation();
+      dragging = true; moved = false;
+      sx = e.clientX; sy = e.clientY;
+      bl = hudEl.offsetLeft; bt = hudEl.offsetTop;
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    };
+    grip.addEventListener('pointerdown', onDown);
+
+    // Restore last session's placement.
+    const saved = loadHudState();
+    if (saved.mode === 'edge' && edgeDockAvailable()) dockEdge();
+    else if (typeof saved.left === 'number' && typeof saved.top === 'number') applyFloat(saved.left, saved.top);
+
+    return () => {
+      grip.removeEventListener('pointerdown', onDown);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      edgeDockPreview(false);
+      if (isDocked('zoom')) releaseDock('zoom');   // return the HUD to the stage before teardown removes it
+    };
+  }
+
   if (!isTouch) {
+    hudDragCleanup = setupHudDrag();
+
     // Cmd/Ctrl-wheel (and trackpad pinch, which the browser delivers as ctrl+wheel)
     // zooms about the cursor; a plain wheel pans, but only once zoomed in (nothing
     // to pan at Fit). passive:false so we can preventDefault the page zoom/scroll.
@@ -387,6 +504,7 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
   function destroy(): void {
     window.removeEventListener('keydown', onKeyDown);
     window.removeEventListener('keyup', onKeyUp);
+    hudDragCleanup?.();   // undock (return the HUD to the stage) + drop drag listeners first
     hud?.destroy();
     hudEl.remove();
   }

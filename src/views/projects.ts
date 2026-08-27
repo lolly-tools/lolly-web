@@ -563,8 +563,10 @@ export async function mountProjects(
     if (query) return shell(t('Projects'), 'projects', searchBodyHtml());
     if (toolsFilter.length) return shell(t('Projects'), 'projects', toolsBodyHtml());
     const loose = sortSessions(uncategorised());
-    const createFolder = createTile('folder', FOLDER_PLUS_ICON, t('New folder'), t('Group saved sessions'));
-    const createTool = createTile('tool', FILE_PLUS_ICON, t('New asset'), t('Start a fresh creation'));
+    // Card copy says "project" for the thing the user made (plans/163 F14) - the
+    // stored record stays a session everywhere in the code.
+    const createFolder = createTile('folder', FOLDER_PLUS_ICON, t('New folder'), t('Group related projects'));
+    const createTool = createTile('tool', FILE_PLUS_ICON, t('New asset'), t('Start a new project'));
     // Only TOP-LEVEL folders at the root; nested folders show inside their parent.
     const topFolders = sortFolders(childFolders(folders, null));
     const folderTiles = topFolders.map(f => folderTile(f, folderTileOpts(f))).join('');
@@ -576,8 +578,9 @@ export async function mountProjects(
     const looseTiles = loose.map(e => sessionTile(e, sessionTileOpts(e))).join('');
     // First run: no folders AND no loose sessions → lead with a one-line invite explaining
     // what Projects hold, instead of a grid that's only the two "new" tiles.
-    const invite = (!topFolders.length && !loose.length)
-      ? `<p class="projects-empty">${t('Your saved sessions land here - save one from any tool to start a project.')}</p>`
+    const nothingSaved = !topFolders.length && !loose.length;
+    const invite = nothingSaved
+      ? `<p class="projects-empty">${t('Your projects appear here - save one from any tool to begin.')}</p>`
       : '';
     // Folders lead (the file-manager convention - containers first, so the structure
     // reads before the loose items), then loose creations (newest first within their
@@ -603,7 +606,10 @@ export async function mountProjects(
     // create tiles for the compact actions row above the table.
     const list = viewMode === 'list';
     return shell(t('Projects'), 'projects', `
-      <div class="projects-roothead">${batchButtonHtml()}</div>
+      ${/* Batch needs something to batch (plans/163 F14): with nothing saved yet the
+            pill is an offer the view cannot honour, so the whole row waits for the
+            first project. */ ''}
+      ${nothingSaved ? '' : `<div class="projects-roothead">${batchButtonHtml()}</div>`}
       ${favourites.size && !list ? `<div class="projects-featured" data-fav-strip></div>` : ''}
       ${invite}
       ${list ? `<div class="projects-actions">${listCreateBtns()}</div>` : ''}

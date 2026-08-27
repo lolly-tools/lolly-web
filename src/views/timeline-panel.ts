@@ -1986,11 +1986,15 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   function updateRovingTabindex(): void {
     const list = Array.from(bars.values());
     if (!list.length) return;
-    if (!focusedId || !bars.has(focusedId)) {
-      const sel = selection.get().find((id) => bars.has(id));
-      focusedId = sel || String(list[0]!.dataset.id || '');
-    }
-    for (const el of list) el.tabIndex = el.dataset.id === focusedId ? 0 : -1;
+    // The fallback is COMPUTED, never written back: a rebuild can run against a
+    // model the latest edit has not reached yet (bars briefly missing the id focus
+    // was just moved to), and persisting the stand-in permanently re-aimed every
+    // keyboard edit (Shift+D, [/]/e) at the FIRST bar while the selection painted
+    // elsewhere. A stale focusedId self-heals on the next pass once its bar exists.
+    const target = (focusedId && bars.has(focusedId))
+      ? focusedId
+      : (selection.get().find((id) => bars.has(id)) || String(list[0]!.dataset.id || ''));
+    for (const el of list) el.tabIndex = el.dataset.id === target ? 0 : -1;
   }
 
   // ── promotion / demotion (scenery ⇄ timed) ──────────────────────────────────
@@ -2040,7 +2044,18 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const media = mediaOf(id).dur;
     const start = want?.start ?? clock.t() / 1000;
     const own = boxTiming(rows[i]!, cfg).dur;
-    const dur = want && 'dur' in want ? want.dur : (own ?? media ?? DEFAULT_CLIP_S);
+    let dur = want && 'dur' in want ? want.dur : (own ?? media ?? DEFAULT_CLIP_S);
+    // "Author no length" means "run open-ended to the sequence end" - which is NOTHING
+    // when the start is AT the end of an already-derived sequence. And the playhead
+    // (the default start) parks exactly there after every play-through, so the ordinary
+    // "+ then pick" flow was minting clips nobody could see, scrub to, or play. When the
+    // open window would be empty, author a real length instead (the media's when the
+    // canvas knows it, else the pack's own default) - the sequence extends to hold it,
+    // which is what adding at the end means everywhere else. Gated on a sequence
+    // EXISTING (duration > 0): on a doc with no derived length yet, unauthored is still
+    // right - the hook's DEFAULT_SEQ_S fallback opens a window for it, and authoring
+    // here is what would pin a 45s track to 3s before its picker ever opened.
+    if (dur == null && clock.duration() > 0 && start * 1000 >= clock.duration() - 1) dur = own ?? media ?? DEFAULT_CLIP_S;
     const moved = moveOverlay(rows, cfg, id, start);
     return dur == null ? moved : setDuration(moved, cfg, id, dur, media, mediaDur);
   }
@@ -5589,19 +5604,21 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * Is `at` a place this box could actually be CUT? Deliberately the same predicate
    * splitBox uses (timeline-math), not a plain "inside the span" test:
    *
-   *   - an open-ended clip has no end to split against, so splitBox refuses it outright
-   *     (`dur === null`) even though `span()` would happily give it one;
-   *   - splitBox also refuses within MIN_DUR of either edge rather than mint a sliver,
+   *   - an open-ended clip resolves its end against the SEQUENCE's (splitBox is handed
+   *     `durationSec()` for exactly this) - the same start..total window span() gives it;
+   *   - splitBox refuses within MIN_DUR of either edge rather than mint a sliver,
    *     and at any zoom past ~80 px/s the snap tolerance is smaller than MIN_DUR, so the
    *     playhead can rest inside that band without being pulled onto the cut.
    *
-   * Both cases used to read as "Split clip", enabled - and then announce a refusal on
-   * the press. The label cannot promise what the press refuses, so it asks the same
+   * A mismatch here used to read as "Split clip", enabled - and then announce a refusal
+   * on the press. The label cannot promise what the press refuses, so it asks the same
    * question.
    */
   function spanContains(b: Box, at: number, total = durationSec()): boolean {
     if (!b || !isTimed(b, cfg)) return false;
-    if (boxTiming(b, cfg).dur === null) return false;
+    // An open-ended clip splits against the SEQUENCE's end now (splitBox takes the
+    // total for exactly this), so it is in scope whenever its effective span - which
+    // span() already resolves to start..total - contains the cut.
     const { start, dur } = span(b, total);
     return at > start + MIN_DUR && at < start + dur - MIN_DUR;
   }
@@ -5710,14 +5727,17 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const boxes = getBoxes();
     const { at, ids } = splitScope(!!opts?.everything, boxes);
     if (!ids.length) { announce(t('Move the playhead inside a clip to split it')); return; }
-    const { next, split } = splitAll(boxes, cfg, ids, at, mintId);
+    const { next, split } = splitAll(boxes, cfg, ids, at, mintId, durationSec());
     // Identity, not deep equality: nothing was cut, so nothing is written and the undo
     // stack is untouched. The commonest way here is a second press at the same instant.
     if (next === boxes) { announce(t('The playhead is already at a cut')); return; }
     write(next);
     // Select the right-hand halves - what you carry on editing after a cut is the part
     // ahead of the playhead, and the panel's one selection writer keeps it on screen.
-    if (split.length) selectAndReveal(split);
+    // Focus moves WITH the selection: trimTargetId prefers focusedId, and leaving it
+    // on the left half sent the next keyboard edit (Shift+D, [/]/e) at a clip other
+    // than the one painted selected.
+    if (split.length) { focusedId = split[0]!; selectAndReveal(split); }
     announce(split.length > 1 ? t('Split {n} clips', { n: String(split.length) }) : t('Clip split'));
   }
 

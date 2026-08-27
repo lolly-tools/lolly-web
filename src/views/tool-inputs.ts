@@ -12,6 +12,7 @@
  */
 import { parseUrlState, serializeUrlState, buildEmbedUrl, parseToolUrl, parseDataRows, DEFAULT_FILE_MAX_BYTES, bakeAssetRef, parseColor, colorToHexString, normalizeTableValue, looksLikeTable, parseTableText, toTsv, toHtmlTable, readXlsx } from '@lolly/engine';
 import type { TableValue } from '@lolly/engine';
+import { tableBodyCellHtml, tableColumnEditor, wantsGhostRow } from './table-cells.ts';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
 import { escape, NAV_EVENTS } from '../utils.js';
 import { mountModal } from '../components/modal.ts';
@@ -431,6 +432,22 @@ export function shouldOpenSection(
   return wasOpen || (firstRender && sheetMode && index === 0);
 }
 
+/**
+ * Whether a badged option list lays itself out two-up instead of as a stack of
+ * full-width rows. Filter's EFFECT list is ten of those rows - most of a phone
+ * screen before the effect's own settings even appear - and each row is a short
+ * label with a small badge, so half of it is empty. Two conditions, because
+ * either alone gets it wrong: past FOUR options the stack is long enough to be
+ * worth splitting, and every label has to be short enough to still read in half
+ * a sidebar (a long one would just ellipsize, which loses the word the list
+ * exists to show). Nothing else changes - same buttons, same radiogroup, same
+ * badges; only the box.
+ * Pure - exported for tests.
+ */
+export function compactOptionGrid(labels: string[]): boolean {
+  return labels.length > 4 && labels.every(l => l.length <= 16);
+}
+
 function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, host: WebToolHost, onDirty?: (id: string) => void, toolId?: string): void {
   // Generic input-policy overlay for the mounted tool (empty/no-op by default).
   const policyFor = (id: string): InputPolicy | undefined => getInputPolicy(toolId, id);
@@ -493,7 +510,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   const focusFloating = !!active?.closest?.('.floatp .table-input');
 
   // A vector that carries the SAME trailing index as the colour right above it is
-  // that colour's sub-control, not its sibling - mesh-gradient's `color3` → `pos3`.
+  // that colour's sub-control, not its sibling - gradient's `color3` → `pos3`.
   // Marked here (the row markup is the only place that can see both) so the sidebar
   // can tuck the pair together; the shell CSS can't correlate two ids on its own.
   // Deliberately narrow: filter-duotone's `colorBg` → `imageFraming` shares no index
@@ -1173,7 +1190,11 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
         ? modelValue()                          // grid not mounted yet - never read the empty DOM
         : ({
             columns: [...wrap.querySelectorAll<HTMLInputElement>('thead .table-cell')].map(h => h.value),
-            rows: [...wrap.querySelectorAll('tbody tr')].map(tr =>
+            // The placeholder row joins the value the moment any of its cells has
+            // content; until then it is display-only and dropped here.
+            rows: [...wrap.querySelectorAll('tbody tr')].filter(tr =>
+              !tr.hasAttribute('data-table-ghost')
+              || [...tr.querySelectorAll<HTMLInputElement>('.table-cell')].some(c => c.value.trim() !== '')).map(tr =>
               [...tr.querySelectorAll<HTMLInputElement>('.table-cell')].map(c => c.value)),
           });
     const commit = (t: TableValue): void => { void runtime.setInput(tid, t); onDirty?.(tid); };
@@ -1196,9 +1217,66 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
         if (saved) { const vp = vgrid.querySelector<HTMLElement>('.dg-viewport'); if (vp) vp.scrollTop = saved; }
       });
     } else {
-      wrap.querySelectorAll<HTMLInputElement>('.table-cell').forEach(cell => {
-        cell.addEventListener('input', () => commit(read()));
+      const wireDelRow = (btn: HTMLButtonElement): void => btn.addEventListener('click', () => {
+        const t = read();
+        t.rows.splice(Number(btn.dataset.tableDelRow), 1);
+        commit(t);
       });
+      // Cell edits defer the panel rebuild (so focus stays put), which means the
+      // blank placeholder row cannot wait for a repaint to become real when it
+      // gains content: it promotes itself in place - ghost marker off, delete
+      // button on, a freshly wired placeholder appended beneath - and the
+      // eventual rebuild re-renders the exact same shape from the value.
+      const editors = (wrap.dataset.columnEditors ?? '').split(',');
+      const promote = (tr: HTMLTableRowElement): void => {
+        tr.removeAttribute('data-table-ghost');
+        const ri = tr.sectionRowIndex;
+        const ctl = tr.querySelector('.table-rowctl');
+        if (ctl) {
+          ctl.innerHTML = `<button type="button" class="table-del-row" data-table-del-row="${ri}" aria-label="Remove row ${ri + 1}">✕</button>`;
+          const del = ctl.querySelector('button');
+          if (del) wireDelRow(del);
+        }
+        const cols = read().columns;
+        const ghostTr = document.createElement('tr');
+        ghostTr.setAttribute('data-table-ghost', '');
+        ghostTr.innerHTML = cols.map((_c, ci) =>
+          tableBodyCellHtml('', ri + 1, ci, cols, tableColumnEditor(editors, ci), `${tid}:t:${ri + 1}:${ci}`)).join('')
+          + '<td class="table-rowctl"></td>';
+        tr.after(ghostTr);
+        wireCells(ghostTr);
+      };
+      const maybePromote = (cell: Element): void => {
+        const tr = cell.closest('tr');
+        if (!tr?.hasAttribute('data-table-ghost')) return;
+        if ([...tr.querySelectorAll<HTMLInputElement>('.table-cell')].some(c => c.value.trim() !== '')) promote(tr);
+      };
+      const wireCells = (root: ParentNode): void => {
+        root.querySelectorAll<HTMLInputElement>('.table-cell').forEach(cell => {
+          cell.addEventListener('input', () => { maybePromote(cell); commit(read()); });
+        });
+        // An `emoji` column's cells are buttons (manifest columnEditors), so they
+        // never fire `input`: the popover writes the button's native `value` and the
+        // pick is what commits. The picker, its stylesheet and the 1.9 MB colour
+        // font all arrive with this dynamic import, so a table nobody taps costs
+        // nothing. Focus goes back on the cell BEFORE the commit, because the
+        // rebuild restores the caret by data-field-id and the popover has just
+        // taken focus into itself. The glyph is written in place too - a deferred
+        // rebuild would otherwise leave the button showing "Pick" after a pick.
+        root.querySelectorAll<HTMLButtonElement>('[data-emoji-cell]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            void import('../components/emoji-picker.ts').then(({ openEmojiPopover }) =>
+              openEmojiPopover(btn, (emoji) => {
+                btn.value = emoji;
+                btn.textContent = emoji;
+                maybePromote(btn);
+                btn.focus();
+                commit(read());
+              }));
+          });
+        });
+      };
+      wireCells(wrap);
     }
 
     // Structural edits commit a mutated read(); the pressed button isn't a
@@ -2217,7 +2295,11 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
             + (o.badge ? `<span class="badge-select-pill" data-badge="${escape(o.badge)}">${escape(o.badge)}</span>` : '')
             + `</button>`;
         }).join('');
-        return `<div class="badge-select${segmented ? ' badge-select--segmented' : ''}" role="radiogroup" data-badge-select="${id}" aria-label="${escape(input.label ?? id)}">${btns}</div>`;
+        // A long list of short labels lays out two-up (compactOptionGrid). The
+        // segmented variant is already a single row, so it never takes it.
+        const compact = !segmented && compactOptionGrid(selOpts.map(o => o.label));
+        const variant = segmented ? ' badge-select--segmented' : compact ? ' badge-select--compact' : '';
+        return `<div class="badge-select${variant}" role="radiogroup" data-badge-select="${id}" aria-label="${escape(input.label ?? id)}">${btns}</div>`;
       }
       return `<select data-input-id="${id}">${selOpts.map(o =>
         `<option value="${escape(o.value)}" ${o.value === String(input.value ?? '') ? 'selected' : ''}>${escape(o.label)}</option>`
@@ -2354,11 +2436,23 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
           <input class="table-cell table-cell--head" ${cellAttrs(-1, ci)} value="${escape(c)}" aria-label="Column ${ci + 1} heading">
           <button type="button" class="table-del-col" data-table-del-col="${ci}" aria-label="Remove column ${escape(c || String(ci + 1))}">&#x2715;</button>
         </th>`).join('');
-      // Body cells are textareas, not inputs: cell copy is often a full
-      // paragraph (field-sizing: content auto-grows them; rows=1 is the floor).
+      // Per-column editors (manifest `columnEditors`, matched to columns by
+      // position). Presentation only: whichever editor writes a cell, the stored
+      // value is the same plain string, so URL mode and the CLI never see this.
       const body = t.rows.map((row, ri) => `<tr>${row.map((cell, ci) =>
-          `<td><textarea class="table-cell" rows="1" ${cellAttrs(ri, ci)} aria-label="${escape(t.columns[ci] || `Column ${ci + 1}`)}, row ${ri + 1}">${escape(cell)}</textarea></td>`).join('')
+          tableBodyCellHtml(cell, ri, ci, t.columns, tableColumnEditor(input.columnEditors, ci), `${input.id}:t:${ri}:${ci}`)).join('')
         }<td class="table-rowctl"><button type="button" class="table-del-row" data-table-del-row="${ri}" aria-label="Remove row ${ri + 1}">&#x2715;</button></td></tr>`).join('');
+      // A blank placeholder row always waits below the filled rows (and IS the
+      // first row of an empty table). It renders past the value at the next row
+      // index, so when typing makes it real the rebuilt cell keeps the same
+      // data-field-id and the caret survives. read() in the wiring pass skips it
+      // while every cell is empty, so an untouched placeholder never reaches the
+      // value or the share link. No delete button - there is nothing to remove.
+      const ghost = wantsGhostRow(t.rows)
+        ? `<tr data-table-ghost>${t.columns.map((_c, ci) =>
+            tableBodyCellHtml('', t.rows.length, ci, t.columns, tableColumnEditor(input.columnEditors, ci), `${input.id}:t:${t.rows.length}:${ci}`)).join('')
+          }<td class="table-rowctl"></td></tr>`
+        : '';
       // Past the threshold, a big table renders the virtualized data-grid (mounted in
       // the wiring pass below) instead of a full <table> of live cells - same
       // TableValue contract, so the toolbar/paste/copy/pop all keep working. Small
@@ -2368,13 +2462,13 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
         : t.rows.length > TABLE_VIRTUALIZE_ROWS
           ? `<div class="table-vgrid" data-table-vgrid></div>`
           : `<div class="table-scroll"><table class="table-grid">
-            <thead><tr>${head}<th class="table-rowctl"></th></tr></thead><tbody>${body}</tbody></table></div>`;
+            <thead><tr>${head}<th class="table-rowctl"></th></tr></thead><tbody>${body}${ghost}</tbody></table></div>`;
       // The pop-out sits at the grid's top-right corner, not in the toolbar
       // below: it acts on the TABLE, and in a sidebar that toolbar can be a long
       // scroll away from the header you were reading when you decided the grid
       // was too cramped. Its own bar rather than an overlay on the corner cell - 
       // the last column's remove-× already lives there.
-      return `<div class="table-input" data-table-id="${id}">
+      return `<div class="table-input" data-table-id="${id}" data-column-editors="${(input.columnEditors ?? []).join(',')}">
         <div class="table-headbar">
           <button type="button" class="table-pop" data-table-pop title="Pop out into a floating window" aria-label="Pop out into a floating window">&#x2922;</button>
         </div>

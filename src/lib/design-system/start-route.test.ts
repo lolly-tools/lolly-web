@@ -231,8 +231,8 @@ test('B2: only a PUBLISHED version puts Versions in the rail, and the first publ
   // Removing the rail entry would strand a furnished system with no way to make
   // its FIRST version, so the quiet export-group entry is the other half of B2
   // and is gated on exactly those two facts.
-  assert.match(src, /versionsLink\.hidden = versionsOffered \|\| !furnished/,
-    'the quiet entry shows for a furnished system that has never published, and only then');
+  assert.match(src, /versionsLink\.hidden = versionsOffered \|\| !worthExporting/,
+    'the quiet entry shows for a system worth exporting that has never published, and only then');
   assert.match(src, /data-ds-versions-link/, 'and it is rendered in the rail foot');
 });
 
@@ -252,6 +252,12 @@ test('B1: the export actions wait for the system to hold something', async () =>
     'and so does the plain tokens document');
   assert.match(src, /querySelectorAll<HTMLElement>\('\[data-start-furnished\]'\)/,
     'one query reveals them, so a third action needs no new wiring');
+  // The bar itself (plans/163 F4): `furnished` is already true one colour in, so
+  // it is the room's harder answer that these three wait for.
+  assert.match(src, /if \(!model\.worthExporting\) return;/,
+    'the export actions wait for a system worth exporting, not merely one that exists');
+  assert.match(src, /if \(model\.furnished && importBtn\) importBtn\.hidden = false;/,
+    'and the "Add from…" hero waits for the Overview room’s own doors to go (F2)');
   // Called from the two paths the studio already refreshes on, so furnishing
   // mid-session does not need a reload: every room change, and every committed
   // edit (before onChange's hidden-Overview early return).

@@ -47,11 +47,37 @@ test('the language row opens collapsed: the detected language plus one expander'
   assert.equal(el.querySelectorAll('[data-lang]').length, 1, 'one chip only - not the whole wall');
   assert.equal(el.querySelector('[data-lang]')?.getAttribute('data-lang'), 'en');
   assert.equal(el.querySelectorAll('[data-lang-more]').length, 1);
-  // The visible twin of Escape, and the privacy line the standalone strip carries.
+  // The visible twin of Escape, and page 1's short assurance line with its way
+  // through to the full privacy page.
   assert.equal(el.querySelector('.welcome-skip')?.getAttribute('data-choice'), 'dismiss');
-  assert.match(el.querySelector('.welcome-privacy')?.textContent ?? '', /stay on this device/);
-  assert.equal(el.querySelector('.welcome-privacy-link')?.getAttribute('href'), '#/docs/privacy');
+  assert.match(el.querySelector('.welcome-privacy')?.textContent ?? '', /stays on this device/);
+  assert.equal(el.querySelector('.welcome-privacy-link')?.getAttribute('data-page'), '2');
   el.querySelector<HTMLButtonElement>('.welcome-skip')?.click();
+  await settled;
+});
+
+test('page 2 is the privacy page, and only its "Got it" acknowledges the notice', async () => {
+  const settled = open();
+  const shell = dialog();
+  assert.equal(localStorage.getItem('lolly-privacy-ack'), null, 'opening the dialog acknowledges nothing');
+
+  // The page dots switch pages inside the SAME <dialog> - no second modal.
+  shell.querySelector<HTMLButtonElement>('.welcome-dot[data-page="2"]')?.click();
+  assert.equal(document.querySelectorAll('.welcome-dialog').length, 1);
+  assert.equal(dialog(), shell, 'a page change re-paints the dialog, it never re-opens one');
+  assert.equal(shell.querySelectorAll('.welcome-card').length, 0, 'the doors are page 1 only');
+  assert.equal(shell.querySelector('.welcome-privacy-link')?.getAttribute('href'), '#/docs/privacy');
+  assert.ok(shell.querySelector('.welcome-skip'), 'the footer rides every page');
+  assert.equal(shell.querySelectorAll('.welcome-dot').length, 2);
+  assert.equal(localStorage.getItem('lolly-privacy-ack'), null, 'reading page 2 acknowledges nothing');
+
+  // "Got it": acknowledges the standalone notice and returns to the doors.
+  shell.querySelector<HTMLButtonElement>('.welcome-gotit')?.click();
+  assert.equal(localStorage.getItem('lolly-privacy-ack'), '1');
+  assert.equal(dialog(), shell);
+  assert.ok(shell.querySelector('.welcome-card--brand'), 'back on page 1');
+
+  shell.querySelector<HTMLButtonElement>('.welcome-skip')?.click();
   await settled;
 });
 

@@ -777,6 +777,40 @@ async function captureFilmstripSink(url: string, opts: FilmstripOpts, signal: Ab
         catch { input.dispose?.(); return bail(); }           // tainted / decoder hiccup: whole strip
       }
     }
+    // An index-poor container (a MediaRecorder capture writes no Cues) answers
+    // timestamp addressing only inside its first cluster, so the grid comes back
+    // partial while the file itself is fine - the same failure the export provider
+    // rescues with a straight cluster walk (sequence-providers, sampleSequential).
+    // Walk here too: one pass, nearest frame at-or-after each target, the last frame
+    // covering any tail the walk ends before. Only entered when the grid fell short.
+    if (made.length < times.length) {
+      const walked: ImageBitmap[] = [];
+      let ti = 0;
+      try {
+        const wsink = new mb.CanvasSink(track, { height: targetH, poolSize: 0 });
+        let lastCanvas: unknown = null;
+        for await (const wrapped of wsink.canvases(0, dur)) {
+          if (signal.aborted) { for (const b of walked) { try { b.close?.(); } catch { /* gone */ } } input.dispose?.(); return bail(); }
+          if (!wrapped?.canvas) continue;
+          lastCanvas = wrapped.canvas;
+          while (ti < times.length && wrapped.timestamp >= (times[ti] as number)) {
+            walked.push(await createImageBitmap(wrapped.canvas));
+            ti++;
+          }
+          if (ti >= times.length) break;
+        }
+        while (ti < times.length && lastCanvas) {   // targets past the last frame hold it
+          walked.push(await createImageBitmap(lastCanvas as HTMLCanvasElement));
+          ti++;
+        }
+      } catch { /* the walk is best-effort: keep whatever the grid managed */ }
+      if (walked.length > made.length) {
+        for (const b of made) { try { b.close?.(); } catch { /* gone */ } }
+        input.dispose?.();
+        return walked;
+      }
+      for (const b of walked) { try { b.close?.(); } catch { /* gone */ } }
+    }
     input.dispose?.();
     return made;
   } catch {
@@ -1949,7 +1983,45 @@ export async function computePeaksSink(url: string, signal: AbortSignal): Promis
   }
 }
 
-async function computePeaks(url: string, signal: AbortSignal): Promise<MasterPeaks | null> {
+/** The procedural-bed scheme (engine/src/zzfxm-ref.ts ZZFXM_SCHEME - a string test
+ *  here so this module keeps its zero static imports). */
+const isZzfxmUrl = (url: string): boolean => url.startsWith('zzfxm:');
+
+/**
+ * Peaks for a PROCEDURAL BED (`zzfxm:<seed>[:<style>]`). Not a file: handing the
+ * scheme to UrlSource/fetch produced two console errors per mount and a permanently
+ * plain bar - for the one audio source the Video template ships by default. The song
+ * is composed and rendered exactly as the export mix and the preview clock do it
+ * (same seed→spec draw, same length quantiser), so the waveform drawn is the
+ * waveform that plays. Composer + renderer stay behind dynamic imports, keeping this
+ * module's zero-static-import discipline and the first-paint graph clean.
+ *
+ * `durationSec` is the RENDERED length, not the asked-for target - windowPeaks maps
+ * window seconds to buckets with it, so it must be the length the samples actually
+ * span.
+ */
+async function computePeaksZzfxm(url: string, wantedSec: number | undefined, signal: AbortSignal): Promise<MasterPeaks | null> {
+  try {
+    const [{ parseZzfxmRef }, { composeSong, generatedSongSpec }, { zzfxmTargetSec }, { renderSong }] = await Promise.all([
+      import('../../../../engine/src/zzfxm-ref.ts'),
+      import('../../../../engine/src/zzfx-compose.ts'),
+      import('../bridge/sequence-providers.ts'),
+      import('./zzfxm-render.ts'),
+    ]);
+    const ref = parseZzfxmRef(url);
+    if (!ref) return null;
+    const target = zzfxmTargetSec(wantedSec ?? 0);   // clamps up to the composer's minimum
+    const { left, right, sampleRate } = await renderSong(composeSong(generatedSongSpec(ref.seed, target, ref.style)));
+    if (signal.aborted || !left.length || !sampleRate) return null;
+    return { peaks: bucketPeaks([left, right], MASTER_BUCKETS), durationSec: left.length / sampleRate };
+  } catch {
+    return null;   // a failed compose degrades to the plain bar, like any undecodable file
+  }
+}
+
+async function computePeaks(url: string, signal: AbortSignal, wantedSec?: number): Promise<MasterPeaks | null> {
+  // Composed, not fetched - see computePeaksZzfxm.
+  if (isZzfxmUrl(url)) return computePeaksZzfxm(url, wantedSec, signal);
   // The AudioBufferSink path first: it decodes incrementally, so it has no size ceiling
   // and it reads a video's soundtrack. Only when it declines (no WebCodecs audio, no
   // audio track, an undecodable codec, or a mediabunny error) do we fall back to the
@@ -2009,12 +2081,17 @@ export function peaks(
     windowPeaks(m.peaks, m.durationSec, win?.fromSec ?? 0, win?.toSec ?? m.durationSec, buckets);
 
   const hit = cache.get(key);
-  if (hit && !Array.isArray(hit) && !(hit instanceof Float32Array)) return Promise.resolve(shape(hit));
+  if (hit && !Array.isArray(hit) && !(hit instanceof Float32Array)) {
+    // A procedural bed is COMPOSED to a length rather than decoded from a file, so a
+    // cached master can genuinely be shorter than the window now asked for (the box
+    // was dragged longer). Fall through and re-compose; files keep the plain hit.
+    if (!isZzfxmUrl(url) || hit.durationSec >= (win?.toSec ?? 0)) return Promise.resolve(shape(hit));
+  }
 
   return share<Float32Array>(
     key,
     async (runSignal) => {
-      const master = await computePeaks(url, runSignal);
+      const master = await computePeaks(url, runSignal, win?.toSec);
       if (!master || !master.peaks.length) return EMPTY_PEAKS;
       cache.set(key, master);
       return shape(master);

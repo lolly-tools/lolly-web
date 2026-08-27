@@ -107,13 +107,21 @@ interface Harness {
   ask: () => HTMLElement | null;
   /** Every profile the panel wrote back, in order. */
   profileWrites: () => Array<Record<string, unknown>>;
+  /** Every runtime.setInput(id, value) the panel made, in order. */
+  inputWrites: () => Array<{ id: string; value: unknown }>;
+  /** Every host.state.save(slot, data) the panel made, in order. */
+  stateWrites: () => Array<{ slot: string; data: Record<string, unknown> }>;
+  /** Change a model value the way the sidebar would, then notify the panel. */
+  setModel: (id: string, value: unknown) => void;
 }
 
 /** Mount the export bar over a canvas that is (or isn't) a timed composition.
  *  `profile` installs a profile store on the host (absent by default, the way a
  *  host without one behaves). */
-function mount({ seqMs, videoDuration = 12, formats = ['webm', 'mp4', 'png'], profile }:
-  { seqMs: number | null; videoDuration?: number; formats?: string[]; profile?: Record<string, unknown> }): Harness {
+function mount({ seqMs, videoDuration = 12, formats = ['webm', 'mp4', 'png'], profile, model = [], toolId = 'sequence-studio' }:
+  { seqMs: number | null; videoDuration?: number; formats?: string[]; profile?: Record<string, unknown>;
+    /** The runtime's input model - only the tests that read it pass one. */
+    model?: Array<Record<string, unknown>>; toolId?: string }): Harness {
   const doc = dom.window.document;
   doc.body.innerHTML = '';
   const panel = doc.createElement('div');
@@ -130,14 +138,22 @@ function mount({ seqMs, videoDuration = 12, formats = ['webm', 'mp4', 'png'], pr
 
   const seen: Array<{ format: string; opts: Record<string, unknown> }> = [];
   const manifest = {
-    id: 'sequence-studio', name: 'Sequence Studio', version: '1.0.0', inputs: [],
+    id: toolId, name: 'Sequence Studio', version: '1.0.0', inputs: [],
     render: { width: 1920, height: 1080, formats, video: { wait: 0, duration: videoDuration } },
   };
+  const live = model.map(i => ({ ...i }));
+  const subscribers: Array<() => void> = [];
+  const inputWrites: Array<{ id: string; value: unknown }> = [];
   const runtime = {
-    getModel: () => [],
-    setInput: async () => {},
+    getModel: () => live,
+    setInput: async (id: string, value: unknown) => {
+      inputWrites.push({ id, value });
+      const item = live.find(i => i.id === id);
+      if (item) item.value = value;
+      subscribers.forEach(fn => fn());
+    },
     setInputNoHistory: async () => {},
-    subscribe: () => {},
+    subscribe: (fn: () => void) => { subscribers.push(fn); },
     refresh: () => {},
     hasFrameHook: false,
     isLive: () => false,
@@ -147,9 +163,13 @@ function mount({ seqMs, videoDuration = 12, formats = ['webm', 'mp4', 'png'], pr
     },
   };
   const profileWrites: Array<Record<string, unknown>> = [];
+  const stateWrites: Array<{ slot: string; data: Record<string, unknown> }> = [];
   const host = {
     assets: { query: async () => [] },
-    state: { save: async () => {} },
+    state: {
+      save: async (slot: string, data: Record<string, unknown>) => { stateWrites.push({ slot, data }); },
+      load: async () => null,
+    },
     export: { download: async () => {} },
     ...(profile ? {
       profile: {
@@ -189,6 +209,13 @@ function mount({ seqMs, videoDuration = 12, formats = ['webm', 'mp4', 'png'], pr
       .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
     ask: () => panel.querySelector('.export-details-ask') as HTMLElement | null,
     profileWrites: () => profileWrites,
+    inputWrites: () => inputWrites,
+    stateWrites: () => stateWrites,
+    setModel: (id: string, value: unknown) => {
+      const item = live.find(i => i.id === id);
+      if (item) item.value = value;
+      subscribers.forEach(fn => fn());
+    },
   };
 }
 
@@ -1052,4 +1079,201 @@ test('a host with no profile store exports exactly as before', async () => {
   await settle();
   assert.equal(h.ask(), null);
   assert.equal(h.downloads().length, 1, 'the export itself is untouched');
+});
+
+// ── 11. sheet order: timing sits with size, not at the bottom of the chip strip ──
+// plans/163 F17. "Start after" / Duration used to be the last child of the unlabeled
+// settings chip strip, below the audio card - so for a video the length of the clip
+// ranked under the music bed's ducking level. They are a size-like decision, so the
+// row belongs directly under the dimensions and above every format card.
+
+/** Index of the first element matching `sel` among the panel's direct children. */
+function rowIndex(panel: HTMLElement, sel: string): number {
+  return [...panel.children].findIndex(c => c.matches(sel));
+}
+
+test('the timing row sits directly after dims and above the format cards', () => {
+  const h = mount({ seqMs: null, formats: ['webm', 'mp4', 'png'] });
+  const dims = rowIndex(h.panel, '.export-dims');
+  const timing = rowIndex(h.panel, '[data-anim-params]');
+  assert.ok(dims >= 0 && timing >= 0, 'both rows are in the panel at all');
+  assert.equal(timing, dims + 1, 'timing is the row immediately after the dimensions');
+  for (const later of ['.export-hdr', '.export-protection', '.export-audio', '.export-settings']) {
+    const i = rowIndex(h.panel, later);
+    if (i >= 0) assert.ok(i > timing, `${later} must rank below the timing row`);
+  }
+  assert.equal(h.panel.querySelector('.export-settings [data-anim-params]'), null,
+    'and it has left the ancillary chip strip entirely');
+});
+
+test('the timing labels read as words, with a help tip on the pair', () => {
+  const h = mount({ seqMs: null, formats: ['webm', 'png'] });
+  const row = h.panel.querySelector('[data-anim-params]') as HTMLElement;
+  assert.match(row.textContent ?? '', /Start after/, '"Wait" was jargon for a hold before recording');
+  assert.doesNotMatch(row.textContent ?? '', /\bWait\b/);
+  assert.ok(row.querySelector('.help-tip-host .help-tip-btn'), 'the pair carries the standard (i)');
+  const live = h.liveLabel()!;
+  assert.ok(live.querySelector('.help-tip-btn'), 'Record live had only a title= - now a real tip');
+  assert.equal(live.getAttribute('title'), null, 'and the title is not left behind as a second copy');
+});
+
+// ── 12. Convert paths renders the help the engine already wrote (F18) ──────────
+// engine/src/inputs.ts injects the export-option inputs WITH a `help` string. The
+// chip renderer dropped it, which made the one piece of jargon in the sheet the one
+// with an unreadable answer attached.
+
+test('an export-option chip renders its engine help as the standard (i)', () => {
+  const doc = dom.window.document;
+  doc.body.innerHTML = '';
+  const panel = doc.createElement('div');
+  const canvas = doc.createElement('div');
+  doc.body.append(panel, canvas);
+  const model = [
+    { id: 'convertPaths', label: 'Convert paths', type: 'boolean', group: 'export', control: 'checkbox',
+      value: true, help: 'Outline text as vector paths so SVG/PDF render identically.' },
+    { id: 'transparent', label: 'Transparent', type: 'boolean', group: 'export', control: 'checkbox', value: false },
+  ];
+  const runtime = {
+    getModel: () => model, setInput: async () => {}, setInputNoHistory: async () => {},
+    subscribe: () => {}, refresh: () => {}, hasFrameHook: false, isLive: () => false,
+    export: async () => new dom.window.Blob(['x']),
+  };
+  const host = { assets: { query: async () => [] }, state: { save: async () => {} }, export: { download: async () => {} } };
+  renderActions(
+    panel as never, { id: 't', name: 'T', version: '1.0.0', inputs: [], render: { width: 8, height: 8, formats: ['svg', 'png'] } } as never,
+    runtime as never, canvas, host as never, () => {}, (async (fn: () => unknown) => fn()) as never, {},
+  );
+  const chip = panel.querySelector('.export-option:has([data-input-id="convertPaths"])') as HTMLElement;
+  assert.ok(chip, 'the chip still renders');
+  assert.match(chip.textContent ?? '', /Convert paths/, 'the label is the engine\'s, unrelabelled');
+  assert.ok(chip.classList.contains('help-tip-host'), 'the chip anchors its own tip');
+  assert.match(chip.querySelector('.help-tip-pop')?.textContent ?? '', /Outline text as vector paths/);
+  const plain = panel.querySelector('.export-option:has([data-input-id="transparent"])') as HTMLElement;
+  assert.equal(plain.querySelector('.help-tip-btn'), null, 'an option with no help gets no empty (i)');
+});
+
+// ── 13. Destinations are ONE row, not a card per provider (F23) ───────────────
+// Every registered target used to paint a full .section-card with an icon head and a
+// full-width button - the same weight as Content protection, and heavier than
+// Download, for someone who has never connected a cloud.
+
+test('every send destination shares one "Send to" row', async () => {
+  const { registerSendTarget, unregisterSendTarget } = await import('../lib/send-target.ts');
+  const mk = (kind: string, label: string) => ({
+    kind, label, available: () => true,
+    actionLabel: () => `Send to ${label}`,
+    send: async () => ({ label: 'done' }),
+  });
+  registerSendTarget(mk('testcloud', 'Test Cloud'));
+  registerSendTarget(mk('testdrive', 'Test Drive'));
+  try {
+    const h = mount({ seqMs: null, formats: ['png'] });
+    const cards = h.panel.querySelectorAll('.export-send');
+    assert.equal(cards.length, 1, 'one card for the whole destination list');
+    assert.match(cards[0]!.querySelector('.c2pa-head')?.textContent ?? '', /Send to/,
+      'the head names the job once');
+    const btns = [...cards[0]!.querySelectorAll('[data-send-kind]')];
+    assert.deepEqual(btns.map(b => b.getAttribute('data-send-kind')), ['testcloud', 'testdrive'],
+      'the click delegation still keys off data-send-kind');
+    assert.deepEqual(btns.map(b => b.querySelector('span')?.textContent), ['Test Cloud', 'Test Drive'],
+      'each button is the provider NAME - the head already said "Send to"');
+    assert.equal(cards[0]!.querySelectorAll('.export-send-row').length, 1, 'they wrap in one row');
+    assert.equal(cards[0]!.querySelectorAll('[data-send-status]').length, 2,
+      'and each keeps its own outcome line');
+  } finally {
+    unregisterSendTarget('testcloud');
+    unregisterSendTarget('testdrive');
+  }
+});
+
+// ── 14. one vocabulary for the credential lifetime (F25) ──────────────────────
+// /profile calls the identical 7/30/90/365 select "Verified for"; the export sheet
+// said "Expires:" and said it untranslated.
+
+test('the credential lifetime label matches the profile view, translated', () => {
+  const h = mount({ seqMs: null, formats: ['png'] });
+  const label = h.panel.querySelector('.c2pa-life-label') as HTMLElement;
+  assert.equal(label.textContent, 'Verified for');
+});
+
+// ── 15. transparency, mirrored from the sidebar (F22) ─────────────────────────
+// `transparentBg` is a SIDEBAR input (the engine synthesises it that way, and the
+// engine is not changing), but people go looking for it while they are exporting a
+// PNG. The sheet gets a second view of the same input - never a second setting - and
+// only for a format with an alpha channel to keep.
+
+const TRANSPARENT_INPUT = {
+  id: 'transparentBg', label: 'Transparent background', type: 'boolean', control: 'checkbox',
+  value: false, help: 'Remove the background fill so alpha-supporting formats keep transparency.',
+};
+
+const mirror = (h: Harness): HTMLInputElement | null =>
+  h.panel.querySelector('[data-action="transparent-bg"]');
+
+test('the transparency mirror renders only for a tool that has the input', () => {
+  assert.ok(mirror(mount({ seqMs: null, formats: ['png'], model: [TRANSPARENT_INPUT] })),
+    'a tool with render.transparentBg gets the chip');
+  assert.equal(mirror(mount({ seqMs: null, formats: ['png'] })), null,
+    'a tool without the input gets nothing');
+});
+
+test('the mirror wears the engine label and its help tip', () => {
+  const h = mount({ seqMs: null, formats: ['png'], model: [TRANSPARENT_INPUT] });
+  const chip = mirror(h)!.closest('label') as HTMLElement;
+  assert.match(chip.textContent ?? '', /Transparent background/);
+  assert.ok(chip.classList.contains('help-tip-host'), 'the engine help text is offered, not dropped');
+});
+
+test('the mirror is shown for alpha formats and hidden for the rest', () => {
+  const h = mount({ seqMs: null, formats: ['png', 'jpg', 'svg', 'pdf'], model: [TRANSPARENT_INPUT] });
+  const chip = mirror(h)!.closest('label') as HTMLElement;
+  assert.equal(chip.style.display, 'flex', 'png opens on it');
+  h.setFormat('jpg');
+  assert.equal(chip.style.display, 'none', 'a JPEG has no alpha to keep');
+  h.setFormat('svg');
+  assert.equal(chip.style.display, 'flex');
+  h.setFormat('pdf');
+  assert.equal(chip.style.display, 'none');
+});
+
+test('ticking the mirror writes through to the one input it reflects', () => {
+  const h = mount({ seqMs: null, formats: ['png'], model: [TRANSPARENT_INPUT] });
+  const box = mirror(h)!;
+  box.checked = true;
+  box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  assert.deepEqual(h.inputWrites(), [{ id: 'transparentBg', value: true }],
+    'the sheet sets the input - it does not keep a second copy of the setting');
+});
+
+test('the sidebar moving the input re-syncs the mirror', () => {
+  const h = mount({ seqMs: null, formats: ['png'], model: [TRANSPARENT_INPUT] });
+  assert.equal(mirror(h)!.checked, false);
+  h.setModel('transparentBg', true);          // the sidebar toggle, from the panel's side
+  assert.equal(mirror(h)!.checked, true, 'the two views must agree');
+  h.setModel('transparentBg', false);
+  assert.equal(mirror(h)!.checked, false);
+});
+
+// ── 16. the export shape is remembered per tool (L3) ──────────────────────────
+// A successful Download writes {format, width, height, unit, dpi} through
+// host.state - never localStorage - under the hidden `__xprefs__:` slot, so the
+// next fresh mount of the tool opens on it. See lib/export-prefs.test.ts for the
+// precedence rule on the way back in.
+
+test('a finished download remembers the shape it was exported at', async () => {
+  const h = mount({ seqMs: null, formats: ['png'], toolId: 'qr-code' });
+  (h.panel.querySelector('[data-action="export-width"]') as HTMLInputElement).value = '1080';
+  (h.panel.querySelector('[data-action="export-height"]') as HTMLInputElement).value = '1080';
+  h.download();
+  await settle();
+
+  const write = h.stateWrites().find(w => w.slot.startsWith('__xprefs__:'));
+  assert.ok(write, 'the download path writes the remembered shape');
+  assert.equal(write.slot, '__xprefs__:qr-code', 'one slot per tool');
+  assert.deepEqual(write.data, { format: 'png', width: 1080, height: 1080, unit: 'px', dpi: 300 });
+});
+
+test('nothing is remembered when nothing was downloaded', () => {
+  const h = mount({ seqMs: null, formats: ['png'], toolId: 'qr-code' });
+  assert.deepEqual(h.stateWrites().filter(w => w.slot.startsWith('__xprefs__:')), []);
 });

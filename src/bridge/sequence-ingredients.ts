@@ -121,6 +121,11 @@ export async function gatherSequenceIngredients(
 async function ingredientForUrl(
   url: string, cap: number, deps: SequenceIngredientDeps,
 ): Promise<IngredientCredential | null> {
+  // A procedural bed (`zzfxm:<seed>` - engine/src/zzfxm-ref.ts's scheme; a string
+  // test to keep this module import-free) is composed, not stored: there are no
+  // bytes to scan and no credential to find, and fetching the scheme only produces
+  // the browser's own "cannot load" console error before the catches below.
+  if (url.startsWith('zzfxm:')) return null;
   // Whether the id route ANSWERED - not whether its answer parsed. Passed to the
   // scan below because a null answer is not an answer: a stored record that never
   // had a credential written onto it (a video job's own output, a voice upload the

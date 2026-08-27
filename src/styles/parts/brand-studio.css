@@ -326,11 +326,13 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
   margin: 0 auto;
   padding: 7px 9px;
   border-radius: calc(var(--radius) * 2);
-  background: hsl(var(--background) / .82);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
+  /* SOLID, not frosted: the pill floats over panel body text on phones (no
+     pane scroller below 1100px), and the old .82-alpha + blur let that text
+     read through the controls (plans/163 F5). A card-solid fill with the
+     border and a slightly deeper shadow keeps it legible as a docked bar. */
+  background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
-  box-shadow: 0 3px 14px #0000001f;
+  box-shadow: 0 4px 16px #00000029;
 }
 /* The box/chevron/focus recipe now comes from `.field-select .field-select--sm`
    (parts/fields.css, layer primitives - the markup carries both). Only the dock's
@@ -705,6 +707,16 @@ background-image:
 .be-wing-title { font-size: calc(.84rem * var(--a11y-fs)); letter-spacing: .02em; text-transform: uppercase; color: hsl(var(--foreground)); }
 .be-wing-sub { flex: 1 1 18ch; font-size: calc(.74rem * var(--a11y-fs)); line-height: 1.5; color: hsl(var(--muted-foreground)); }
 .be-wing-body { display: grid; gap: 1.1rem; padding-top: .9rem; }
+/* Shade curves, Contrast and Print are for a system that already exists, and
+   four identical collapsed headers made Generate - the one a first run needs -
+   look like a fourth setting (plans/163 F7). Same control, quieter: a smaller
+   title in the muted ink the sub-line already uses, and a softer edge. */
+.be-wing--advanced { padding: .8rem .9rem; border-color: hsl(var(--border) / .6); }
+.be-wing--advanced .be-wing-title {
+  font-size: calc(.76rem * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+}
+.be-wing--advanced .be-wing-sub { font-size: calc(.7rem * var(--a11y-fs)); }
 .be-ramppick { flex-wrap: wrap; }
 
 /* Replace palette + its review card. The card IS the review (there is no
@@ -848,13 +860,23 @@ background-image:
       display:none and the side content simply follows the main column in flow.
       (This block sits AFTER the .be-tab rules above - the column-gap override
       relies on source order at equal specificity.) */
-.be-split-main { display: grid; gap: 1.1rem; align-content: start; min-width: 0; }
+/* Below the split the two panes simply stack, which put SHADE CURVES, CONTRAST
+   and PRINT between Roles and the palette a person is building (plans/163 F7).
+   The order wanted there is: Add a colour, Roles, Generate, Palette, Gradients,
+   then the advanced wings - but the main column's panels and the side pane sit
+   in different parents, so the main column gives up its own box and its panels
+   become items of the tab's grid, where `order` can interleave them with the
+   side pane. It gets the box back at >=1100px below, where the two panes are
+   real columns that scroll internally. The `order` values ride along up there
+   harmlessly: they leave main / divider / side in exactly source order. */
+.be-split-main { display: contents; }
+.be-wing--advanced { order: 2; }
 /* The panels live in .be-split-scroll (the pane's internal scroller ≥1100px);
    the download dock sits OUTSIDE it, so however far the palette scrolls the
    dock keeps its seat at the pane's anchored bottom edge. Panel spacing is
    margins, not gap - block flow below 1100px, and the ≥1100px flex column
    reserves its gap-free layout for the scroller/dock split. */
-.be-split-side { display: block; min-width: 0; }
+.be-split-side { display: block; min-width: 0; order: 1; }
 .be-split-scroll { min-width: 0; }
 .be-split-scroll > * + * { margin-top: 1.1rem; }
 .be-split-side > .be-pal-dock { margin-top: .75rem; }
@@ -872,6 +894,10 @@ background-image:
   .be-tab--split.is-collapsed { grid-template-columns: minmax(0, 1fr) 16px 0; }
   .be-tab--split.is-collapsed .be-split-side { overflow: hidden; }
   .be-split-main {
+    display: grid;
+    gap: 1.1rem;
+    align-content: start;
+    min-width: 0;
     overflow-y: auto;
     min-height: 0;
     overscroll-behavior: contain;

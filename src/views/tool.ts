@@ -63,7 +63,6 @@ import { jellyActive } from '../lib/jelly.ts';
 import { toolSupport, capabilityLabel, canBatchTool, singleFileInputId } from '../capabilities.ts';
 import { collectBulkFiles } from '../lib/bulk-files.ts';
 import { docsAppHref, currentLang, t, tRaw } from '../i18n.ts';
-import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { announce } from '../a11y.ts';
 import { setupRecordControl } from './record-control.ts';
 import { livePalette } from '../lib/live-palette.ts';
@@ -73,9 +72,11 @@ import { askLollyIntent } from './picker.ts';
 import { applyBrandVars } from '../brand-vars.ts';
 import { createThemeToggle } from '../components/theme-toggle.ts';
 import { createSoundToggle } from '../components/sound-toggle.ts';
+import { createProfileControl } from '../components/profile-menu.ts';
 import { scopeCss, scopeTemplateStyles } from '../lib/scope-css.ts';
 import { setupMobileSheet, flickDirection } from '../lib/mobile-sheet.ts';
 import { wireExportPanelFloat } from '../lib/export-panel-float.ts';
+import { loadExportPrefs, mergeExportPrefs } from '../lib/export-prefs.ts';
 import { isDocked, releaseDock } from '../lib/edge-dock.ts';
 import { runTemplateScripts, waitForQuiescence } from '../lib/render-lifecycle.ts';
 import { playSfx } from '../lib/sfx.ts';
@@ -1006,6 +1007,12 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
         await runtime.applyPatch(seed);
         if (templatePickTornDown) return;   // torn down while applyPatch was in flight
         await migrateBlockRowIds(runtime);
+        // applyPatch resolves no refs (it's the keystroke/collab path); a template's
+        // {color.*} backdrop tokens and tool-URL image stubs arrive unresolved, so do
+        // the one resolve pass the mount does - else a seeded template renders black
+        // colours + a placeholder where its own preview showed the real render.
+        if (templatePickTornDown) return;
+        await runtime.resolveRefs();
       })
       .catch(e => host.log?.('warn', 'template seed failed - staying blank: ' + String(e)));
   }
@@ -1215,7 +1222,13 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // The one-page sizing of each box is kept (that's what export reads); it just stops
   // bounding what the editor shows. Excludes the chromeless editor/document layouts,
   // which own their own canvas presentation.
-  const pagedDoc = tool.manifest.render.paged === true && !chromeless && !hideSidebar;
+  // A no-export web-page tool (render.webPreview - jump, countdown): the preview
+  // is a real viewport, not a scaled artboard. It rides the paged plumbing (the
+  // scrolling surface, no zoom HUD) but skips the zoom fit entirely: the canvas
+  // fills the pane's width and REFLOWS as the pane resizes, so dragging the
+  // sidebar edge is the browser-window test a visitor's device would give.
+  const webDoc = (tool.manifest.render as { webPreview?: boolean }).webPreview === true && noExport && !chromeless && !hideSidebar;
+  const pagedDoc = (tool.manifest.render.paged === true || webDoc) && !chromeless && !hideSidebar;
   // Which edge the slide-sorter rail runs along. Left (a vertical rail) suits tall
   // documents; "bottom" is the deck-strip shape for tools whose pages are wide and few,
   // where a left rail would eat the width the page needs. Unknown values fall back to
@@ -1302,7 +1315,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
 
   viewEl.innerHTML = `
     ${noAside && !visitorPage ? backPillHtml(backPillOpts) : ''}
-    <div class="tool-layout${chromeless ? ' is-editor' : ''}${documentLayout ? ' is-document' : ''}${pagedDoc ? ' is-paged' : ''}${visitorPage ? ' is-visitor' : ''}" id="tool-layout"${documentLayout ? ' data-theme="light"' : ''} data-sidebar="${noAside ? 'hidden' : (sidebarOpen ? 'open' : 'closed')}">
+    <div class="tool-layout${chromeless ? ' is-editor' : ''}${documentLayout ? ' is-document' : ''}${pagedDoc ? ' is-paged' : ''}${webDoc ? ' is-webdoc' : ''}${visitorPage ? ' is-visitor' : ''}" id="tool-layout"${documentLayout ? ' data-theme="light"' : ''} data-sidebar="${noAside ? 'hidden' : (sidebarOpen ? 'open' : 'closed')}">
       ${showAside ? `
         <aside class="sidebar" id="tool-sidebar">
           <div class="sidebar-header">
@@ -1337,7 +1350,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
             ` : ''}
             <div class="tool-actions" id="tool-actions"></div>
           </div>
-          <div class="sidebar-drag-handle" id="sidebar-drag-handle"></div>
+          <div class="sidebar-drag-handle resize-grip" id="sidebar-drag-handle"></div>
         </aside>
         <!-- Grip lives OUTSIDE the sheet (it's position:fixed): keeps it from being
              clipped by the sheet's overflow, which must stay hidden so the form
@@ -1442,7 +1455,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // Slide-sorter filmstrip for paged tools - mounted lazily on the first paint (below),
   // refreshed on each re-render, and torn down with the view. See lib/page-filmstrip.ts.
   let filmstrip: Filmstrip | null = null;
-  // Interactive tools (mesh-gradient, street-map) commit canvas edits through
+  // Interactive tools (gradient, street-map) commit canvas edits through
   // this per-canvas channel bound to the one runtime; the marker persists across
   // every innerHTML paint. (The legacy global-sidebar-poke path stays as their
   // fallback for offscreen export, where no canvas is mounted.)
@@ -1491,13 +1504,8 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     };
     const undoBtn = mkBtn(t('Undo'), ICON_UNDO, undoHistory);
     const redoBtn = mkBtn(t('Redo'), ICON_REDO, redoHistory);
-    // Smaller lang-fab variant beside undo/redo - same trigger/popover as the
-    // gallery/dashboard/verify one, just sized down (30px, no border) to match
-    // .history-btn's compact icon-button chrome instead of the regular 2.9em box.
-    group.insertAdjacentHTML('beforeend', langFabHtml());
-    const sidebarLangFab = group.querySelector<HTMLElement>('.lang-fab');
-    sidebarLangFab?.classList.add('lang-fab-sm');
-    attachLangMenu(sidebarLangFab, host);
+    // (The sidebar language picker that used to sit here is gone: the canvas HUD's
+    // profile avatar now opens the consolidated menu, which carries the Language row.)
     historyControls = {
       sync: (canUndo: boolean, canRedo: boolean) => {
         // If the button that ran the action is about to disable itself (e.g. the
@@ -1522,6 +1530,10 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // The interface-sound (sfx) toggle rides the same HUD, right after the theme toggle, so
   // the editor/Design (which has no sidebar) can mute/unmute sounds from the canvas.
   const soundToggle = createSoundToggle(host as unknown as Parameters<typeof createSoundToggle>[0]);
+  // The profile avatar sits after the sound toggle - icon only, opening the same
+  // consolidated menu the main views' top-right avatar opens (theme, sound/Neurospicy,
+  // Language, Settings…), so a canvas tool needs no separate sidebar language/theme controls.
+  const profileToggle = createProfileControl(host as unknown as Parameters<typeof createProfileControl>[0], { className: 'stage-nav-profile' });
 
   // Removed-image notice: announce it (live region) and let the user dismiss it.
   if (dropped.length) {
@@ -1763,6 +1775,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // (exportUnscaled) so each page still prints at its true, unscaled page size.
   function fitPagedDoc(): void {
     if (!canvasEl) return;
+    // A web-page preview never zooms: the canvas IS the viewport, CSS gives it
+    // the pane's full width and the content reflows there like a real page.
+    if (webDoc) { canvasEl.style.zoom = ''; stageZoom?.sync(); return; }
     const stageRect = stageEl.getBoundingClientRect();
     // Leave the surface's side padding (24px each) PLUS room for each page's drop-shadow,
     // so the left/right shadows aren't clipped by the scroll surface.
@@ -1842,7 +1857,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // CURRENT layout (e.g. the area left by the mobile sheet), not just the
     // stale fit that reset() restores. themeToggle docks into the HUD (its icon
     // sits alongside the zoom controls; see setupStageNav).
-    stageZoom = setupStageNav(stageEl, outerEl, canvasEl, nativeW, fitCanvas, themeToggle, soundToggle);
+    stageZoom = setupStageNav(stageEl, outerEl, canvasEl, nativeW, fitCanvas, themeToggle, soundToggle, profileToggle);
     // The Artboards navigator (free-canvas) asks the stage to frame one artboard by
     // dispatching `fc-focus-rect` with the frame's native rect - the overlay never
     // touches the pan/zoom transform itself. Wired here because only tool.ts holds the
@@ -2017,6 +2032,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       layout.classList.add('export-open');
       renderFab.setAttribute('aria-expanded', 'true');
       applyModality();
+      // Let the panel refresh anything derived from live state (the auto
+      // filename placeholder follows the inputs and the provenance toggles).
+      actionsEl.dispatchEvent(new CustomEvent('lolly:export-open'));
       // Move focus into the dialog (its close button) for keyboard/SR users - but
       // not when auto-opened from ?options on load, where grabbing focus is jarring.
       if (focus) exportOverlay.querySelector<HTMLElement>('.export-popup-close')?.focus();
@@ -2272,7 +2290,14 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   const formatDriver = exportFormatDriver(tool.manifest);
   let lastFmtDriveVal: unknown;
 
-  const exportDefaults: ExportDefaults = {
+  // L3 (plans/163) - the format and size of the last successful download of THIS tool,
+  // if there was one. Read here, at the same point in the mount as the saved session, so
+  // the panel is built once with the final values. It fills only what nothing else
+  // supplied: everything explicit is already in the literal below, and mergeExportPrefs
+  // never overwrites it (see lib/export-prefs.ts for the precedence rule).
+  const rememberedExport = await loadExportPrefs(host, toolId).catch(() => null);
+
+  const exportDefaults: ExportDefaults = mergeExportPrefs({
     filename: urlFilename || (initialValues.__export_filename as string | undefined),
     format:   urlFormat || (initialValues.__export_format as string | undefined),
     width:    urlWidth  || Number(initialValues.__export_width)  || sizeDims?.width  || undefined,
@@ -2315,7 +2340,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // clears it on exit, so the live query is the wrong thing to photograph. A still
     // export of a framed doc then renders just that slide (tool-actions' fan-out).
     slide:    presentAddress || undefined,
-  };
+  }, rememberedExport, tool.manifest.render?.formats ?? []);
   // Rewrite the URL hash query string to reflect the current tool state so the
   // page is shareable and bookmarkable. Uses replaceState - no history entry.
   // Params the user has explicitly touched - only these are written to the URL.
@@ -2453,7 +2478,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       // "[object Object]", which would then ride into a lolly-URL embed of this tool.
       const str = type === 'color' && isTokenValue(value) ? value.ref : String(value);
       // A `longtext` is CONTENT (d3 data, design customCss, code) and rides uncapped like a
-      // table - it must NOT be dropped from the bar, or a shared d3 link would open blank. The
+      // table - it must NOT be dropped from the bar, or a shared chart link would open blank. The
       // 150-char cap stays only for short single-line scalars (a stray-long label is bloat).
       if (type !== 'longtext' && str.length > 150) continue;
       params.set(key, str);
@@ -3071,7 +3096,13 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         const chosen = await pick;
         if (templatePickTornDown || !viewEl.isConnected) return;
         for (const [k, v] of Object.entries(chosen ?? {})) await runtime.setInput(k, v);
-        if (Object.keys(chosen ?? {}).length) await migrateBlockRowIds(runtime);
+        if (Object.keys(chosen ?? {}).length) {
+          await migrateBlockRowIds(runtime);
+          // setInput resolves no refs, so the template's {color.*} tokens + tool-URL
+          // image stubs would render black/placeholder; run the mount's resolve pass
+          // once, mirroring the fresh-open seed path above.
+          if (!templatePickTornDown && viewEl.isConnected) await runtime.resolveRefs();
+        }
       } catch (e) {
         host.log?.('warn', 'template chooser failed: ' + String(e));
       } finally { templateChooserBusy = false; }

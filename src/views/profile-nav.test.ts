@@ -18,6 +18,10 @@
  *  6. (plans/137 D1) The empty-state headshot circle row-scales down at
  *     <=640px so First name reaches the first screen; a set photo keeps the
  *     full-size circle.
+ *  7. (plans/163 4.1/4.2/4.4) The rail order IS the page order - the scroll-spy
+ *     assumes they agree - every card header is built by the one summaryRow()
+ *     helper (so none can ship without its value preview), and below 1024px the
+ *     rail is gone: with summaries, the collapsed list is the nav.
  *
  * Run directly:
  *   node --import ./tests/css-stub.mjs --test shells/web/src/views/profile-nav.test.ts
@@ -54,6 +58,41 @@ test('every NAV_SECTIONS id is a section id in the rendered markup', () => {
   for (const s of NAV_SECTIONS) {
     assert.ok(PROFILE_SRC.includes(`id="${s.id}"`), `markup carries id="${s.id}"`);
   }
+});
+
+test('NAV_SECTIONS order IS the page order, and every card carries a summary value (plans/163 4.1/4.2)', () => {
+  // The rail and the render are two hand-kept lists of the same eleven cards; a
+  // reorder in one and not the other leaves the rail's scroll-spy (which assumes
+  // page order == NAV_SECTIONS order) lighting the wrong section.
+  let prev = -1;
+  for (const s of NAV_SECTIONS) {
+    const at = PROFILE_SRC.indexOf(`id="${s.id}"`);
+    assert.notEqual(at, -1, `${s.id} is rendered`);
+    assert.ok(at > prev, `${s.id} renders after the section before it in NAV_SECTIONS`);
+    prev = at;
+    // Its header goes through the one helper, so it cannot be built without a value slot.
+    assert.ok(PROFILE_SRC.includes(`summaryRow('${s.id}'`), `${s.id}'s header goes through summaryRow()`);
+  }
+  assert.ok(
+    PROFILE_SRC.includes('class="profile-summary-value" data-summary='),
+    'summaryRow emits the value span the summaries are filled through',
+  );
+  assert.equal(
+    PROFILE_SRC.split('${summaryRow(').length - 1,
+    NAV_SECTIONS.length,
+    'one summary per section, all of them through the helper',
+  );
+  assert.equal(
+    PROFILE_SRC.split('<summary class="profile-collapse-summary').length - 1,
+    1,
+    'the helper is the only place a summary row is written',
+  );
+});
+
+test('the section rail is desktop-only - below 1024px the summaries are the nav (plans/163 4.4)', () => {
+  const phoneBlock = CSS_SRC.slice(CSS_SRC.indexOf('@media (max-width: 1024px)'), CSS_SRC.indexOf('@media (max-width: 640px)'));
+  assert.match(phoneBlock, /\.profile-view \.profile-nav \{ display: none; \}/, 'the rail is hidden, not restyled into a floating bar');
+  assert.match(phoneBlock, /padding-top:\s*calc\(var\(--chrome-top\)/, 'the content column clears the fixed Home pill');
 });
 
 test('?focus= honours ANY NAV_SECTIONS id, not a hard-coded list', () => {

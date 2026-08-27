@@ -34,5 +34,17 @@ export const PTPL_SLOT_PREFIX = '__ptpl__:';
 export const isTemplateSlot = (slot: unknown): boolean =>
   typeof slot === 'string' && slot.startsWith(PTPL_SLOT_PREFIX);
 
-/** A slot no user-facing session list should show: trashed or template-held. */
-export const isHiddenSlot = (slot: unknown): boolean => isTrashedSlot(slot) || isTemplateSlot(slot);
+/**
+ * Remembered-export-shape namespace (plans/163 L3): the last format/size a tool was
+ * downloaded as, at `__xprefs__:<tool id>`. A shell preference, not saved work, so it
+ * is hidden from every session list exactly like the trash - one per tool the user has
+ * ever exported from would otherwise fill Projects with untitled tiles.
+ */
+export const XPREFS_SLOT_PREFIX = '__xprefs__:';
+
+export const isExportPrefsSlot = (slot: unknown): boolean =>
+  typeof slot === 'string' && slot.startsWith(XPREFS_SLOT_PREFIX);
+
+/** A slot no user-facing session list should show: trashed, template-held or a preference. */
+export const isHiddenSlot = (slot: unknown): boolean =>
+  isTrashedSlot(slot) || isTemplateSlot(slot) || isExportPrefsSlot(slot);

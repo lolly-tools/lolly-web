@@ -200,6 +200,78 @@ test('a catalog that ships no starter attributes nothing', async () => {
   assert.match(overviewHtml(model), /1 colour(?!s)/);
 });
 
+// ── Worth exporting (plans/163 F4) ───────────────────────────────────────────
+// `furnished` goes true on the first write, so gating the studio's Export /
+// Tokens / Versions actions on it grew three power actions one gesture in. These
+// pin the harder question those actions ask instead.
+
+/** The starter's own roles, in the shape the blank brand ships them: every slot
+ *  pre-assigned, into the starter's own ramp. */
+const STARTER_ROLES = {
+  color: {
+    semantic: {
+      primary: { $value: '{color.ramp.primary.1}' },
+      text: { $value: '{color.ramp.primary.2}' },
+    },
+  },
+};
+const STARTER_SWATCHES = [
+  { path: 'color.ramp.primary.1', value: '#111111' },
+  { path: 'color.ramp.primary.2', value: '#222222' },
+];
+
+test('one colour over the starter palette is furnished, but not worth exporting', async () => {
+  const model = await readOverview(stubHost({
+    installed: true, starter: STARTER, doc: STARTER_ROLES,
+    swatches: [...STARTER_SWATCHES, { path: 'color.custom.mine', value: '#ff6600' }],
+  }));
+  assert.equal(model.furnished, true, 'a design system exists here');
+  assert.equal(model.worthExporting, false,
+    'the roles the starter itself assigned are not the user having wired any up');
+});
+
+test('three colours of your own are worth exporting', async () => {
+  const model = await readOverview(stubHost({
+    installed: true, starter: STARTER,
+    swatches: [
+      ...STARTER_SWATCHES,
+      { path: 'color.custom.mine', value: '#ff6600' },
+      { path: 'color.custom.second', value: '#0060ff' },
+      { path: 'color.custom.third', value: '#111111' },
+    ],
+  }));
+  assert.equal(model.worthExporting, true);
+});
+
+test('a generated palette is worth exporting on its own', async () => {
+  const model = await readOverview(stubHost({
+    installed: true, starter: STARTER,
+    // A secondary ramp is what a generate adds and the starter never ships.
+    swatches: [...STARTER_SWATCHES, { path: 'color.ramp.secondary.5', value: '#00aa88' }],
+  }));
+  assert.equal(model.worthExporting, true);
+});
+
+test('two roles pointing at colours of your own are worth exporting', async () => {
+  const model = await readOverview(stubHost({
+    installed: true, starter: STARTER,
+    doc: {
+      color: {
+        semantic: {
+          primary: { $value: '{color.custom.mine}' },
+          text: { $value: '{color.custom.ink}' },
+        },
+      },
+    },
+    swatches: [
+      ...STARTER_SWATCHES,
+      { path: 'color.custom.mine', value: '#ff6600' },
+      { path: 'color.custom.ink', value: '#111111' },
+    ],
+  }));
+  assert.equal(model.worthExporting, true, 'two roles wired up, on two own colours');
+});
+
 test('the plain count returns once the palette is mostly the user\'s own', () => {
   const html = overviewHtml({
     furnished: true, colors: [], colorCount: 5, starterCount: 2,

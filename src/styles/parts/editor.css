@@ -57,7 +57,7 @@
 
 /* Floating tool palette - a detached, DRAGGABLE rail rather than a full-height
    slab: auto-hidden at rest on desktop (revealed whenever the pointer is over the
-   editor stage, like the mesh-gradient tool's on-canvas controls), always-on for
+   editor stage, like the gradient tool's on-canvas controls), always-on for
    touch. At rest a flex DOCK wrapper parks it against the left edge; once dragged
    the dock carries plain left/top (`.is-detached`).
 
@@ -1377,24 +1377,53 @@ button.fc-readout:empty { display: none; }
 
 /* The pill around these already grows (min-height is --chrome-h, which carries the
    type multiplier - tokens.css), so the segments inside it grow on the same factor:
-   held at a flat 26px they would shrink INSIDE a taller pill, and "100%" at 1.2×
-   no longer fits the percentage segment's 48px floor. */
-.stage-nav-btn,
-.stage-nav-pct {
+   held at a flat 26px they would shrink INSIDE a taller pill. */
+.stage-nav-btn {
   border: none;
   background: none;
   cursor: pointer;
   font: inherit;
   color: hsl(var(--foreground));
   height: calc(26px * var(--a11y-fs));
+  width: calc(26px * var(--a11y-fs));
+  font-size: calc(16px * var(--a11y-fs));
+  line-height: 1;
   border-radius: 999px;
   transition: background 0.12s, color 0.12s;
 }
-.stage-nav-btn { width: calc(26px * var(--a11y-fs)); font-size: calc(16px * var(--a11y-fs)); line-height: 1; }
-.stage-nav-pct { min-width: calc(48px * var(--a11y-fs)); font-size: calc(12px * var(--a11y-fs)); font-variant-numeric: tabular-nums; }
-.stage-nav-fit { width: auto; padding: 0 10px; font-size: calc(12px * var(--a11y-fs)); font-weight: 600; }
-.stage-nav-btn:hover,
-.stage-nav-pct:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
+/* Fit is the middle reset control - an icon button, so size its glyph like the
+   theme/sound toggles rather than the ± digits. */
+.stage-nav-fit svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
+.stage-nav-btn:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
+
+/* The drag grip (tool-stage-nav.ts) - the only draggable surface on the pill, since
+   every other segment is a click target. Grab it to move the HUD over the canvas, or
+   onto the inline-end edge to dock it (lib/edge-dock.ts). Desktop only (added under
+   !isTouch); touch keeps the fixed vertical capsule. */
+.stage-nav-grip {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  /* Wider than a button so it's an easy grab target (the dots stay centred). */
+  width: calc(30px * var(--a11y-fs)); height: calc(26px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  cursor: grab; touch-action: none; border-radius: 999px;
+  transition: background 0.12s, color 0.12s, box-shadow 0.12s;
+}
+/* Glow on hover so the grab target announces itself (matches the primary-tinted glow
+   the top-right chrome FABs use). */
+.stage-nav-grip:hover,
+.stage-nav-grip:focus-visible {
+  color: hsl(var(--primary));
+  background: hsl(var(--primary) / 0.14);
+  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.35), 0 0 10px hsl(var(--primary) / 0.5);
+  outline: none;
+}
+.stage-nav-grip:active { cursor: grabbing; }
+.stage-nav-grip svg { width: calc(14px * var(--a11y-fs)); height: calc(14px * var(--a11y-fs)); display: block; }
+
+/* Docked into the edge column: always solid (no rest-dimming), laid out as a row
+   regardless of the mobile stacking rules, and no floating pill offset (the dock slot
+   owns position). */
+.stage-nav[data-docked] { position: static; opacity: 1; flex-direction: row; }
 
 /* Theme cycle + sound toggles docked at the end of the HUD (createThemeToggle /
    createSoundToggle) - icon-only .stage-nav-btn, set off from the zoom controls by a
@@ -1413,6 +1442,23 @@ button.fc-readout:empty { display: none; }
   background: hsl(var(--border));
 }
 
+/* Profile avatar docked in the HUD, right of the sound/mute toggle (createProfileControl,
+   the same consolidated menu the top-right avatar opens). Icon only - no name - in every
+   state. The shared `.profile-link` pins itself to a view's top-right corner
+   (components.css, chrome layer); reset that so it flows inline as a circle in the pill
+   (this views-layer rule out-ranks it). */
+.stage-nav .profile-link {
+  position: relative; right: auto; top: auto; inset: auto; z-index: auto;
+  min-height: 0;
+  width: calc(26px * var(--a11y-fs)); height: calc(26px * var(--a11y-fs));
+  padding: 0; border-radius: 50%; overflow: hidden; flex: none;
+}
+.stage-nav .profile-link-mark,
+.stage-nav .profile-link-avatar {
+  left: 50%; transform: translate(-50%, -50%);
+  width: calc(20px * var(--a11y-fs)); height: calc(20px * var(--a11y-fs));
+}
+
 /* Mobile: stack the zoom HUD into a vertical capsule so it fits the narrow stage,
    reading + / NN% / − / Fit top-to-bottom like a map zoom control. It hangs DOWN from
    the top-right corner, so nothing here needs a bottom offset any more (the base rule
@@ -1428,12 +1474,12 @@ button.fc-readout:empty { display: none; }
   }
   .stage-nav-btn { width: auto; }                 /* fill the column when stacked */
   .stage-nav [data-nav="in"]  { order: 1; }       /* + */
-  .stage-nav [data-nav="pct"] { order: 2; }       /* NN% */
+  .stage-nav [data-nav="fit"] { order: 2; }       /* Fit (between + and −) */
   .stage-nav [data-nav="out"] { order: 3; }       /* − */
-  .stage-nav [data-nav="fit"] { order: 4; }       /* Fit */
-  .stage-nav-sep              { order: 5; }        /* divider */
-  .stage-nav-theme            { order: 6; }        /* theme */
-  .stage-nav-sound            { order: 7; }        /* sound (capsule's bottom) */
+  .stage-nav-sep              { order: 4; }        /* divider */
+  .stage-nav-theme            { order: 5; }        /* theme */
+  .stage-nav-sound            { order: 6; }        /* sound */
+  .stage-nav .profile-link    { order: 7; width: auto; height: calc(26px * var(--a11y-fs)); }  /* profile (capsule's bottom) */
   /* The separator turns horizontal in the stacked capsule. */
   .stage-nav-sep {
     width: auto;
@@ -1441,12 +1487,12 @@ button.fc-readout:empty { display: none; }
     margin: 3px 6px;
     align-self: stretch;
   }
-  /* Round the capsule's ends: top button (+) and the bottom (sound) toggle. The theme
-     toggle is now a middle segment (sound follows it), so it loses its round. */
+  /* Round the capsule's ends: top button (+) and the bottom (profile) control. Fit is
+     a middle segment now (between + and −), so it carries no round. */
   .stage-nav [data-nav="in"]  { border-radius: 6em 6em 1em 1em; }
-  .stage-nav [data-nav="fit"] { border-radius: 999px; }
   .stage-nav-theme            { border-radius: 1em; }
-  .stage-nav-sound            { border-radius: 1em 1em 6em 6em; }
+  .stage-nav-sound            { border-radius: 1em; }
+  .stage-nav .profile-link    { border-radius: 1em 1em 6em 6em; }
 }
 
 /* On touch the HUD is the primary zoom control; the canvas also keeps pinch/drag. */

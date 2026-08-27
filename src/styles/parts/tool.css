@@ -252,14 +252,34 @@
   right: -8px;
   width: 16px;
   height: 100%;
-  cursor: col-resize;
   z-index: 10;
-  transition: background 0.12s;
 }
 
-.sidebar-drag-handle:hover,
-.sidebar.is-dragging .sidebar-drag-handle {
-  background: hsl(var(--primary) / 0.25);
+/* Shared resize grip - the SAME drag component for the inputs sidebar's edge and the
+   right-side dock's edge (lib/edge-dock.ts adds .resize-grip to its width grip). A
+   wide, invisible-at-rest hit strip with a centred pill that glows on hover / while
+   dragging, so both side panels resize with one consistent, discoverable affordance.
+   The sidebar stays a sidebar (resizable, not dockable); only the right side is a dock. */
+.resize-grip { cursor: col-resize; touch-action: none; }
+.resize-grip::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  inset-block: 0;
+  margin-block: auto;
+  width: 4px;
+  height: 44px;
+  border-radius: 999px;
+  background: hsl(var(--primary));
+  opacity: 0;
+  transition: opacity 0.12s, box-shadow 0.12s;
+}
+.resize-grip:hover::before,
+.resize-grip:active::before,
+.sidebar.is-dragging .sidebar-drag-handle::before {
+  opacity: 1;
+  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.35), 0 0 10px hsl(var(--primary) / 0.55);
 }
 
 .sidebar-header {
@@ -534,7 +554,28 @@
 .tool-layout.is-sheet-dragging .sheet-grip { cursor: grabbing; }
 
 .sidebar-utils{display: grid;
-    grid-template-columns: 1fr;}
+    grid-template-columns: 1fr;
+    /* The reset/clear control is the last thing in the scroll. It used to be a
+       muted right-aligned link that blended into the panel - easy to miss on
+       reaching the bottom. Divider + a full-width, legible button (below) make
+       it read as a deliberate "start over" footer once you scroll to it. */
+    border-top: 1px solid hsl(var(--border));
+    padding-top: 12px;}
+/* Only the reset button is promoted; sibling utilities (grade-video, transcribe)
+   stay compact and secondary via the base .clear-inputs-btn rule. Scoped by id so
+   it out-specifies that class regardless of source order. */
+#clear-inputs-btn {
+  place-self: stretch;
+  max-width: none;
+  width: 100%;
+  min-height: 40px;
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--muted));
+  font-weight: 500;
+}
+#clear-inputs-btn:hover {
+  background-color: hsl(var(--destructive) / 0.1);
+}
 /* Inline, FULL-WIDTH two-step confirm for "Clear changes" (replaces the centred modal).
    The grid is one column, so both buttons span the whole sidebar; place-self:stretch
    overrides the resting button's place-self:end. */
@@ -599,7 +640,10 @@
 /* minmax(0,1fr): let the single column shrink below its content's intrinsic
    width (default grid tracks are min-content), so long values (e.g. an asset
    file path) truncate instead of widening the sidebar. */
-.tool-inputs{display:grid; grid-template-columns:minmax(0,1fr); gap: 18px}
+/* 16px between top-level rows - the same rhythm the sections use, one notch
+   tighter than the 18px it was, so an unsectioned tool reads at the density of
+   a sectioned one. */
+.tool-inputs{display:grid; grid-template-columns:minmax(0,1fr); gap: 16px}
 
 /* Notice shown when a saved design referenced an image that's since been deleted. */
 .tool-notice {
@@ -880,6 +924,13 @@
   letter-spacing: 0.06em;
   color: hsl(var(--muted-foreground));
 }
+
+/* A slider row's caption is one short line with its live value already sitting
+   on it (the `.input-value` span below), so the 1.5 body leading is document
+   text spacing this row never asked for. Slider rows only: a text field's label
+   floats itself against its own line box, and moving that would shift the
+   floating-label offsets tuned further down this sheet. */
+.input-row:has(.custom-slider) > .input-label { line-height: 1.25; }
 
 .input-value {
   font-size: calc(11px * var(--a11y-fs));
@@ -1235,6 +1286,33 @@
 .badge-select-pill[data-badge="vector"] {
   background: hsl(var(--primary) / 0.15);
   color: hsl(var(--primary));
+}
+
+/* Compact option grid (>4 options, all short labels - see compactOptionGrid in
+   views/tool-inputs.ts) - the same radiogroup laid out two-up. Filter's ten-option
+   EFFECT list halves from ten rows to five, and the badge keeps its place at the
+   right edge of each cell because the button was already a space-between row. */
+.badge-select--compact {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.badge-select--compact .badge-select-opt {
+  min-width: 0;   /* grid item: let the label truncate instead of widening the cell */
+}
+.badge-select--compact .badge-select-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Back to one column where two readable cells no longer fit - the same breakpoint
+   and the same large-text opt-out the dense section grid below uses, since both
+   are the same bet about how narrow a sidebar column can get. */
+@media (max-width: 380px) {
+  .badge-select--compact { grid-template-columns: 1fr; }
+}
+html[data-a11y-text="large"] .badge-select--compact {
+  grid-template-columns: 1fr;
 }
 
 /* Segmented select (display:'segmented') - the same radiogroup laid out as a row of
@@ -1637,6 +1715,19 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .table-cell--head { font-weight: 600; padding-right: 20px; white-space: nowrap; }
 .table-grid thead tr { background: hsl(var(--muted, var(--border)) / 0.35); }
 .table-cell:focus { outline: none; background: hsl(var(--ring) / 0.08); }
+/* An `emoji` column's cell (manifest columnEditors): a button, not a textarea, so
+   it opens the picker instead of the keyboard. It keeps the flat .table-cell box
+   and only changes what a glyph looks like inside it. The face it renders in is
+   set by components/emoji-picker.css, which arrives with the picker chunk. */
+.table-cell--emoji {
+  cursor: pointer; text-align: center;
+  min-height: 28px;
+  font-size: calc(18px * var(--a11y-fs)); line-height: 1.2;
+}
+.table-cell--emoji:hover, .table-cell--emoji:focus-visible { background: hsl(var(--ring) / 0.08); }
+.table-emoji-empty { color: hsl(var(--muted-foreground)); font-size: calc(11px * var(--a11y-fs)); }
+/* A fingertip needs the whole cell to be the target, not an 18px glyph. */
+@media (pointer: coarse) { .table-cell--emoji { min-height: 40px; } }
 .table-del-col {
   position: absolute; top: 50%; right: 2px; transform: translateY(-50%);
   width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center;
@@ -1659,6 +1750,12 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   }
 }
 .table-rowctl { width: 24px; }
+/* The blank placeholder row waiting under the filled rows (views/table-cells.ts
+   wantsGhostRow) - dimmed until the user engages it, full-strength once typed into
+   (the rebuild then renders it as a real row and grows a fresh one beneath). */
+.table-grid tr[data-table-ghost] { opacity: .55; }
+.table-grid tr[data-table-ghost]:focus-within,
+.table-grid tr[data-table-ghost]:hover { opacity: 1; }
 .table-del-row {
   /* Positioned (not just for layout) so the coarse-pointer ::before below resolves
      its inset against THIS box, not the row it sits in. */
@@ -2084,11 +2181,11 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
    keeps its own aria-label, so the accessible name is unaffected. */
 .input-row:has(.vector-input) .input-label { display: none; }
 
-/* A sub-control belongs to the row above it (mesh-gradient: "Colour 3" then its X/Y
-   - see isSubControl in tool-inputs.ts). The 18px .tool-inputs grid gap gives them
+/* A sub-control belongs to the row above it (gradient: "Colour 3" then its X/Y
+   - see isSubControl in tool-inputs.ts). The 16px .tool-inputs grid gap gives them
    equal spacing on both sides, so the pair doesn't read as a pair; pull it up until
-   it sits nearer its own colour (8px) than the next control (18px). */
-.input-row--sub { margin-top: -10px; }
+   it sits nearer its own colour (8px) than the next control (16px). */
+.input-row--sub { margin-top: -8px; }
 
 .vector-input {
   display: flex;
@@ -2863,6 +2960,31 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 }
 .canvas-record-flip:hover { border-color: hsl(var(--primary)); }
 .canvas-record-flip[hidden] { display: none; }
+
+/* Choose-microphone control (device picker) - same pill as flip, bottom-LEFT so
+   both can show for an audio+video (av) take without overlapping. plans/162. */
+.canvas-record-mic {
+  position: absolute;
+  bottom: 14px;
+  left: 14px;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  background: hsl(var(--card) / 0.95);
+  color: hsl(var(--card-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  transition: border-color 0.12s, background 0.12s;
+}
+.canvas-record-mic:hover { border-color: hsl(var(--primary)); }
+.canvas-record-mic[hidden] { display: none; }
 .canvas-record-dot {
   width: 12px; height: 12px;
   border-radius: 50%;
@@ -3398,10 +3520,27 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 /* Undo the tool root's own fill-and-internal-scroll (e.g. .mpdf-doc { height:100%;
    overflow:auto }) so the pages stack naturally to full length. Targets the mounted
    root generically (skips the tool's <style>), never a tool-specific class. */
-.tool-layout.is-paged #tool-canvas > *:not(style) {
+/* Scoped away from the web-page preview below: a web page's root keeps its own
+   min-height semantics (its 100vh opening IS the design), so only true PAGE
+   stacks get flattened. */
+.tool-layout.is-paged:not(.is-webdoc) #tool-canvas > *:not(style) {
   height: auto !important;
   min-height: 0 !important;
   overflow: visible !important;
+}
+
+/* Web-page preview (render.webPreview - the paged surface with the zoom fit
+   dropped): the canvas is a real viewport. Full pane width, live reflow on any
+   pane resize, natural height, edge-to-edge - the page's own paper is the only
+   chrome, exactly what a visitor's browser would show. */
+.tool-layout.is-webdoc .tool-canvas-outer {
+  padding: 0;
+  align-items: stretch;
+}
+.tool-layout.is-webdoc #tool-canvas {
+  width: 100% !important;
+  height: auto !important;
+  box-shadow: none;
 }
 
 /* ── Slide-sorter filmstrip (paged tools) ────────────────────────────────────

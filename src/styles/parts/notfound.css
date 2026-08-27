@@ -142,10 +142,13 @@ button {
 
   /* Bigger, easier-to-grab slider: a taller track and a thumb sized for a
      fingertip. The row already captures the whole hit-area, so this is purely
-     making the target legible. */
-  .cs-track { height: 6px; }
+     making the target legible. Only the two numbers the box is built from move -
+     the track height, the tick row and the padding all derive from them in
+     parts/fields.css, so a touch slider can no longer end up with its detents
+     drawn on top of its own track. The box still stands 26px tall around a 22px
+     thumb, clear of WCAG 2.5.8's 24px target. */
   .cs-thumb { width: 22px; height: 22px; }
-  .custom-slider { padding: 12px 0 24px; }
+  .custom-slider { --cs-pad-top: 10px; --cs-track-h: 6px; }
 
   /* Roomier swatches and checkbox. */
   .color-swatch { height: 2.4em; width: 2.4em; }

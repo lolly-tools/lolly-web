@@ -272,21 +272,39 @@ export interface ProfileNavSection {
   label: string;
   keywords: string;
 }
+// Order is the page order, top to bottom (plans/163 section 4.2): what goes into
+// your files first (your details, then the credentials that sign them), then how
+// the app dresses for you, then where your work goes, then the data and app
+// plumbing. "Lolly instance" is read-only info on the web, so it sits last.
 export const NAV_SECTIONS: ReadonlyArray<ProfileNavSection> = [
   { id: 'details-section', icon: 'user', label: 'Your details', keywords: 'name email headshot photo avatar personal' },
+  { id: 'identity-section', icon: 'credentialShield', label: 'Content Credentials', keywords: 'c2pa credentials provenance verify signing identity certificate' },
   { id: 'appearance-section', icon: 'palette', label: 'Appearance', keywords: 'theme dark light mode colour color sound look' },
   { id: 'a11y-section', icon: 'eye', label: 'Accessibility', keywords: 'motion contrast large text previews comfort a11y reduce sound mute focus music neurospicy atmosphere' },
-  { id: 'renders-section', icon: 'image', label: 'Your renders', keywords: 'renders downloads library save copy export tag auto-save' },
-  { id: 'instance-section', icon: 'globe', label: 'Lolly instance', keywords: 'instance server source tools catalogue connect disconnect' },
-  { id: 'activity-section', icon: 'history', label: 'Your activity', keywords: 'activity usage metrics stats history recent' },
-  { id: 'storage-section', icon: 'package', label: 'Storage', keywords: 'storage data space sessions images clear export delete' },
-  { id: 'offline-section', icon: 'download', label: 'Available offline', keywords: 'offline download pwa install cache' },
   // Sync across devices lives INSIDE this card (its own titled sub-block), so its
   // search keywords ride here - a query for "passphrase" or "icloud" must still land.
   { id: 'connections-section', icon: 'upload', label: 'Connected services', keywords: 'connect send drive dropbox onedrive s3 bucket nextcloud webdav providers oauth sync devices continuity snapshot backup cloud icloud across phone desktop passphrase encrypt' },
+  { id: 'renders-section', icon: 'image', label: 'Your renders', keywords: 'renders downloads library save copy export tag auto-save' },
+  { id: 'storage-section', icon: 'package', label: 'Storage', keywords: 'storage data space sessions images clear export delete' },
+  { id: 'offline-section', icon: 'download', label: 'Available offline', keywords: 'offline download pwa install cache' },
+  { id: 'activity-section', icon: 'history', label: 'Your activity', keywords: 'activity usage metrics stats history recent' },
   { id: 'feature-flags-section', icon: 'flask', label: 'Feature flags', keywords: 'features experimental beta jelly neurospicy flags toggles' },
-  { id: 'identity-section', icon: 'credentialShield', label: 'Content Credentials', keywords: 'c2pa credentials provenance verify signing identity certificate' },
+  { id: 'instance-section', icon: 'globe', label: 'Lolly instance', keywords: 'instance server source tools catalogue connect disconnect' },
 ];
+
+// One collapsed card header: the section title, a short right-aligned value
+// preview, then the chevron (plans/163 section 4.1). The value is what turns a
+// page of folded cards into a dashboard - sections whose numbers need a lazy
+// load render it empty and fill it in through setSummary() when that load
+// returns, so nothing here waits on first paint.
+const summaryRow = (id: string, title: string, value = ''): string =>
+  `<summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${title}</h2><span class="profile-summary-value" data-summary="${id}">${value}</span>${COLLAPSE_CHEV}</summary>`;
+
+// Stand-in for a lazy section's body until its load returns. A plain static bar,
+// deliberately never animated: a shimmer would be one more thing to switch off
+// under Reduce motion, and the word "Loading…" told the reader nothing.
+const skeletonRow = (): string =>
+  `<div class="profile-skeleton" role="status" aria-label="${escape(t('Loading'))}"></div>`;
 
 // A small "i" badge with a hover/focus tooltip - used beside storage headings.
 // Was a bespoke .info-dot/.info-tip pair; now the shared help-tip button
@@ -458,6 +476,16 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     ? `<jelly-button type="submit" class="profile-btn-jelly">${t('Save Profile')}</jelly-button>`
     : `<button type="submit" class="profile-btn-primary">${t('Save Profile')}</button>`;
 
+  // Every flag the list below renders, for the card's folded summary to count the
+  // switched-off ones. The standalone eight are spelled out rather than mapped
+  // because the list's own rows are hand-written (dividers and a group heading sit
+  // between them) and two feature tests pin those call sites by name - keep the two
+  // in step when a flag joins or leaves the list.
+  const LISTED_FLAGS = [
+    ...CATEGORY_FLAGS,
+    JELLY_FLAG, WOBBLY_FLAG, WOBBLY_MESH_FLAG, PERFORMANCE_UI_FLAG, PERF_HUD_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG, PRIVATE_COLLAB_FLAG,
+    ...CONNECTOR_FLAGS,
+  ];
   // The Feature-flags card's <ul> contents - a function so the jelly-flag toggle
   // can re-render the list in place (its switches change kind on the spot).
   const flagListHtml = () => `
@@ -593,6 +621,26 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // profile (the heading alone is honest when there is no-one to name yet).
   const displayName = [profile.firstname, profile.lastname].filter(Boolean).join(' ').trim() || (profile.email ?? '').trim();
 
+  // ── Folded-card summaries (plans/163 section 4.1) ────────────────────────────
+  // Each one is a couple of words, read from the same state the section's own
+  // body renders from - never a second source of truth. The three below are known
+  // at first paint; the lazy sections leave theirs empty and call setSummary().
+  const metrics = getMetrics();
+  // currentTheme() can hand back a name that is not one of THEMES (a stale stored
+  // value), so a miss shows the raw name rather than an empty summary.
+  const themeLabel = (name: string): string => tRaw((THEME_LABELS as Record<string, string>)[name] ?? name);
+  const a11yOnCount = () => A11Y_ROWS.filter(r => a11yState[r.key]).length;
+  const a11ySummary = () => (a11yOnCount() ? tRaw('{n} on', { n: a11yOnCount() }) : t('Off'));
+  const rendersSummary = () => (renderSaveState ? t('Keeping copies') : t('Off'));
+  const flagsOffCount = () => LISTED_FLAGS.filter(f => !flagHidden(f.id) && !isFlagOn(liveProfile, f)).length;
+  const flagsSummary = () => (flagsOffCount() ? tRaw('{n} off', { n: flagsOffCount() }) : t('All on'));
+  // Fills a section's summary value after the fact - textContent, so the caller
+  // passes plain text (tRaw, not t). A section that never loads keeps its blank.
+  const setSummary = (id: string, text: string): void => {
+    const el = viewEl.querySelector<HTMLElement>(`[data-summary="${id}"]`);
+    if (el) el.textContent = text;
+  };
+
   viewEl.innerHTML = `
     ${backHomeHtml()}
     <div class="gallery-topbar" style="justify-content:flex-end">
@@ -617,9 +665,25 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       <div class="profile-panes">
 
       <details class="profile-card profile-collapse" id="details-section"${startOpen('details-section')}>
-        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Your details')}</h2>${displayName ? `<span class="profile-summary-name">${escape(displayName)}</span>` : ''}${COLLAPSE_CHEV}</summary>
+        ${summaryRow('details-section', t('Your details'), displayName
+          ? `<span class="profile-summary-name">${escape(displayName)}</span>`
+          : t('Nothing added - exports stay anonymous'))}
         <div class="profile-collapse-body section-card-body">
         <form class="profile-form" id="profile-form">
+          ${/* The opt-in leads the form (plans/163 section 4.3): it is the door that
+               decides whether anything below ever leaves this device, so it reads
+               before the fields rather than after the Save button. Same checkbox,
+               same name, same live label swap - placement and one sentence only. */''}
+          <div class="profile-optin">
+            <label class="profile-check">
+              <span class="profile-check-tag">${t(profile.useDetails ? 'Opted-in' : 'opt-in')}</span>
+              ${jellyOn
+                ? `<jelly-checkbox name="useDetails" size="sm" label="${escape(t('Use my details to create'))}"${profile.useDetails ? ' checked' : ''}></jelly-checkbox>`
+                : `<input type="checkbox" name="useDetails" ${profile.useDetails ? 'checked' : ''}>`}
+              <span class="profile-check-text">${t(profile.useDetails ? 'Using my details' : 'Use my details to create')}</span>
+            </label>
+            <p class="profile-optin-note">${t('Only when this is on do your details go into the files you export - shown per file at export time.')}</p>
+          </div>
           <div class="profile-details-grid">
             <div class="profile-details-main">
               <div class="profile-fields">
@@ -647,13 +711,6 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
               <div class="profile-actions">
                 ${saveButtonHtml()}
-                <label class="profile-check">
-                  <span class="profile-check-tag">${t(profile.useDetails ? 'Opted-in' : 'opt-in')}</span>
-                  ${jellyOn
-                    ? `<jelly-checkbox name="useDetails" size="sm" label="${escape(t('Use my details to create'))}"${profile.useDetails ? ' checked' : ''}></jelly-checkbox>`
-                    : `<input type="checkbox" name="useDetails" ${profile.useDetails ? 'checked' : ''}>`}
-                  <span class="profile-check-text">${t(profile.useDetails ? 'Using my details' : 'Use my details to create')}</span>
-                </label>
               </div>
             </div>
 
@@ -677,8 +734,16 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         </div>
       </details>
 
+      ${/* Content Credentials sits second, right under Your details: the two are one
+           subject - what goes into the files you export - and splitting them across
+           the page was what made the provenance story unfindable (plans/163 4.2). */''}
+      <details class="profile-card profile-collapse" id="identity-section"${startOpen('identity-section')}>
+        ${summaryRow('identity-section', t('Content Credentials'))}
+        <div class="profile-collapse-body section-card-body" id="identity-body">${skeletonRow()}</div>
+      </details>
+
       <details class="profile-card profile-collapse profile-card--appearance" id="appearance-section"${startOpen('appearance-section')}>
-        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Appearance')}</h2>${COLLAPSE_CHEV}</summary>
+        ${summaryRow('appearance-section', t('Appearance'), escape(themeLabel(activeTheme)))}
         <div class="profile-collapse-body section-card-body">
         <p class="profile-appearance-sub">${t('How the app dresses for you - your preference, separate from your brand. Applied instantly and remembered on this device.')}</p>
         <div class="profile-theme-grid" data-theme-pick>
@@ -699,7 +764,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       </details>
 
       <details class="profile-card profile-collapse profile-card--a11y" id="a11y-section"${startOpen('a11y-section')}>
-        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Accessibility')}</h2>${COLLAPSE_CHEV}</summary>
+        ${summaryRow('a11y-section', t('Accessibility'), a11ySummary())}
         <div class="profile-collapse-body section-card-body">
         <p class="profile-appearance-sub">${t('Comfort settings for the app around your work. Each one is off until you turn it on, and none of them touch your designs or your exports.')}</p>
         <ul class="feature-flags profile-a11y-prefs" id="a11y-prefs">${a11yListHtml()}
@@ -715,8 +780,22 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         </div>
       </details>
 
+      ${/* Sync across devices is a sub-block of this card, not a card of its own: it
+           syncs THROUGH the providers connected right above it, so the two were
+           always one subject. Both bodies mount lazily when the card opens. */''}
+      <details class="profile-card profile-collapse" id="connections-section"${startOpen('connections-section')}>
+        ${summaryRow('connections-section', t('Connected services'))}
+        <div class="profile-collapse-body section-card-body">
+          <div id="connections-body">${skeletonRow()}</div>
+          <div class="storage-subsection">
+            <div class="storage-subsection-header"><h3>${t('Sync across devices')}</h3></div>
+            <div id="sync-body">${skeletonRow()}</div>
+          </div>
+        </div>
+      </details>
+
       <details class="profile-card profile-collapse" id="renders-section"${startOpen('renders-section')}>
-        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Your renders')}</h2>${COLLAPSE_CHEV}</summary>
+        ${summaryRow('renders-section', t('Your renders'), rendersSummary())}
         <div class="profile-collapse-body section-card-body">
         <p class="profile-appearance-sub">${t('Keep a copy of everything you download, ready to reopen or reuse.')}</p>
         <ul class="feature-flags profile-a11y-prefs" id="render-save-prefs">${renderSaveListHtml()}
@@ -724,8 +803,32 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         </div>
       </details>
 
+      <details class="profile-card profile-collapse" id="storage-section"${startOpen('storage-section')}>
+        ${summaryRow('storage-section', t('Storage'))}
+        <div class="profile-collapse-body section-card-body" id="storage-body">${skeletonRow()}</div>
+      </details>
+
+      <details class="profile-card profile-collapse" id="offline-section"${startOpen('offline-section')}>
+        ${summaryRow('offline-section', t('Available offline'))}
+        <div class="profile-collapse-body section-card-body" id="offline-body">${skeletonRow()}</div>
+      </details>
+
+      <details class="profile-card profile-collapse profile-activity" id="activity-section"${startOpen('activity-section')}>
+        ${summaryRow('activity-section', t('Your activity'), t('{n} renders', { n: metrics.filesRendered }))}
+        <div class="profile-collapse-body section-card-body">${renderActivity(metrics, window.__toolIndex?.tools ?? [])}</div>
+      </details>
+
+      <details class="profile-card profile-collapse" id="feature-flags-section"${startOpen('feature-flags-section')}>
+        ${summaryRow('feature-flags-section', t('Feature flags'), flagsSummary())}
+        <div class="profile-collapse-body section-card-body">
+          <p class="storage-hint-text feature-hint-text">${t('Self-governance, autonomy, choice. Enable or disable parts of the app here')}</p>
+          <ul class="feature-flags" id="feature-flags">${flagListHtml()}
+          </ul>
+        </div>
+      </details>
+
       <details class="profile-card profile-collapse" id="instance-section"${startOpen('instance-section')}>
-        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Lolly instance')}</h2>${COLLAPSE_CHEV}</summary>
+        ${summaryRow('instance-section', t('Lolly instance'), instanceBase ? escape(instanceBase) : t('Bundled'))}
         <div class="profile-collapse-body section-card-body">
         <p class="profile-appearance-sub">${t('Where this install gets its tools and catalogue from.')}</p>
         <div class="store-manage--row">
@@ -739,49 +842,6 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         </div>
         ${canChangeInstance ? '' : `<p class="profile-appearance-sub">${t('Pointing at another Lolly instance needs the desktop app - a browser blocks a page from loading tools and assets across origins.')}</p>`}
         </div>
-      </details>
-
-      <details class="profile-card profile-collapse profile-activity" id="activity-section"${startOpen('activity-section')}>
-        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Your activity')}</h2>${COLLAPSE_CHEV}</summary>
-        <div class="profile-collapse-body section-card-body">${renderActivity(getMetrics(), window.__toolIndex?.tools ?? [])}</div>
-      </details>
-
-      <details class="profile-card profile-collapse" id="storage-section"${startOpen('storage-section')}>
-        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Storage')}</h2>${COLLAPSE_CHEV}</summary>
-        <div class="profile-collapse-body section-card-body" id="storage-body"><p class="storage-hint-text">${t('Loading…')}</p></div>
-      </details>
-
-      <details class="profile-card profile-collapse" id="offline-section"${startOpen('offline-section')}>
-        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Available offline')}</h2>${COLLAPSE_CHEV}</summary>
-        <div class="profile-collapse-body section-card-body" id="offline-body"><p class="storage-hint-text">${t('Loading…')}</p></div>
-      </details>
-
-      ${/* Sync across devices is a sub-block of this card, not a card of its own: it
-           syncs THROUGH the providers connected right above it, so the two were
-           always one subject. Both bodies mount lazily when the card opens. */''}
-      <details class="profile-card profile-collapse" id="connections-section"${startOpen('connections-section')}>
-        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Connected services')}</h2>${COLLAPSE_CHEV}</summary>
-        <div class="profile-collapse-body section-card-body">
-          <div id="connections-body"><p class="storage-hint-text">${t('Loading…')}</p></div>
-          <div class="storage-subsection">
-            <div class="storage-subsection-header"><h3>${t('Sync across devices')}</h3></div>
-            <div id="sync-body"><p class="storage-hint-text">${t('Loading…')}</p></div>
-          </div>
-        </div>
-      </details>
-
-      <details class="profile-card profile-collapse" id="feature-flags-section"${startOpen('feature-flags-section')}>
-        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Feature flags')}</h2>${COLLAPSE_CHEV}</summary>
-        <div class="profile-collapse-body section-card-body">
-          <p class="storage-hint-text feature-hint-text">${t('Self-governance, autonomy, choice. Enable or disable parts of the app here')}</p>
-          <ul class="feature-flags" id="feature-flags">${flagListHtml()}
-          </ul>
-        </div>
-      </details>
-
-      <details class="profile-card profile-collapse" id="identity-section"${startOpen('identity-section')}>
-        <summary class="profile-collapse-summary section-card-summary"><h2 class="section-card-title">${t('Content Credentials')}</h2>${COLLAPSE_CHEV}</summary>
-        <div class="profile-collapse-body section-card-body" id="identity-body"><p class="storage-hint-text">${t('Loading…')}</p></div>
       </details>
 
       </div>
@@ -913,6 +973,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     // Keep the synchronous mirror in step so the Neurospicy player (rendered in
     // popovers, outside the profile-aware views) reflects the change on next render.
     setFlagMirror(flagId, input.checked);
+    setSummary('feature-flags-section', flagsSummary());
     // Performance UI applies on the spot: reflect it onto <html> so the gated stylesheet
     // switches immediately - no reload, and off restores the full chrome byte-for-byte.
     if (flagId === PERFORMANCE_UI_FLAG.id) applyPerfUi(input.checked);
@@ -978,6 +1039,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     if (!input) return;
     const key = input.dataset.a11y as keyof A11yPrefs;
     a11yState[key] = input.checked;   // keeps a jelly-flag re-render in step with the live state
+    setSummary('a11y-section', a11ySummary());
     await setA11yPref(host, key, input.checked);
     announce(input.checked ? t('Enabled') : t('Disabled'));
   });
@@ -988,6 +1050,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const input = (e.target as Element).closest<HTMLInputElement>('[data-save-renders]');
     if (!input) return;
     renderSaveState = input.checked;   // keep a jelly-flag re-render in step
+    setSummary('renders-section', rendersSummary());
     const current = await host.profile.get();
     await host.profile.set!({ ...current, saveRenders: input.checked });
     liveProfile = { ...current, saveRenders: input.checked };
@@ -1047,6 +1110,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       b.setAttribute('aria-pressed', String(on));
     });
     await setTheme(host, next);
+    setSummary('appearance-section', themeLabel(currentTheme()));
   });
 
   // Lolly instance - "Change" re-opens the sheet (views/profile.ts is one of
@@ -1585,6 +1649,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     // manage-summary badges) from a fresh model. Never rebuilds the session list/grid.
     function applyMeter(m: StorageModel) {
       countUp(heroNum, m.hasEstimate ? m.total : m.measured);
+      // Same number as the hero, so the folded summary and the open card agree.
+      setSummary('storage-section', tRaw('{size} used', { size: fmtBytes(m.hasEstimate ? m.total : m.measured) }));
       const headroom = body.querySelector<HTMLElement>('#store-headroom');
       if (headroom) {
         if (m.hasEstimate && m.quota) {
@@ -2234,6 +2300,13 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       partRecords().catch(() => ({} as PartState)),
       persistenceState(),
     ]);
+    // The folded summary: what this device is actually holding offline, tools plus
+    // parts. Measured once, when the card opens - a download made later in the same
+    // visit shows in the card's own rows, and this line catches up on the next mount.
+    const heldBytes = Object.values(pins).reduce((n, r) => n + (r?.bytes || 0), 0)
+      + Object.values(parts).reduce((n, r) => n + (r?.bytes || 0), 0);
+    setSummary('offline-section', heldBytes ? fmtBytes(heldBytes) : tRaw('Not downloaded'));
+
     const sum = (files: readonly { size: number }[]) => files.reduce((n, f) => n + f.size, 0);
     const plannedBytes: Record<OfflinePartId, number> = {
       app: precache ? sum(precache.groups.app) : 0,
@@ -2904,7 +2977,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const body = viewEl.querySelector<HTMLElement>('#connections-body');
     if (!body) return;
     const { mountConnectionsBody } = await import('./profile-connections.ts');
-    await mountConnectionsBody(body, host as Parameters<typeof mountConnectionsBody>[1]);
+    await mountConnectionsBody(body, host as Parameters<typeof mountConnectionsBody>[1],
+      text => setSummary('connections-section', text));
   };
   // Sync across devices (plans/138 B1) - the sub-block inside the same card, so it
   // rides the same open: one toggle, two bodies. The module owns its own
@@ -2954,6 +3028,17 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       ...(cfg.suse ? ['suse'] : []),
       ...(health?.devProvider === true ? ['dev'] : []),
     ];
+    // Nothing to enrol WITH on this deployment: the pitch, the permanence warning
+    // and the certificate-lifetime picker would all be controls that lead nowhere,
+    // teaching the jargon for a door that isn't there (plans/163 4.5). One status
+    // line stands in for the lot. Verifying a file needs no enrolment, so that
+    // link stays exactly where it was.
+    if (!providers.length) {
+      return `
+      <p class="storage-hint-text">${t('No sign-in provider is configured on this deployment yet.')}</p>
+      ${verifyLink()}
+      <p class="identity-error" role="alert" hidden></p>`;
+    }
     return `
       <p class="identity-blurb">${t('Sign exports with a verified identity - a short-lived certificate ties your email to files you export; the key never leaves this device.')} <a href="${docsAppHref('content-credentials-identity')}" target="_blank" rel="noopener">${t('How it works')}</a></p>
       <p class="identity-blurb identity-permanence">${t('Know before you enrol: your email address is written into every file you export while enrolled. It stays in every copy you share and cannot be removed later, even after the certificate expires.')}</p>
@@ -2967,9 +3052,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         <span class="identity-days-hint">${t('- longer keeps exports verified longer; shorter limits misuse if this device is lost. The CA has the final say.')}</span>
       </label>
       <div class="identity-providers">
-        ${providers.length
-    ? providers.map(p => `<button type="button" class="btn" data-identity-provider="${p}">${escape(PROVIDER_LABELS[p] ?? p)}</button>`).join('')
-    : `<p class="storage-hint-text">${t('No sign-in provider is configured on this deployment yet.')}</p>`}
+        ${providers.map(p => `<button type="button" class="btn" data-identity-provider="${p}">${escape(PROVIDER_LABELS[p] ?? p)}</button>`).join('')}
       </div>
       ${verifyLink()}
       <p class="identity-error" role="alert" hidden></p>`;
@@ -3007,6 +3090,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     body.innerHTML = identityStatus?.enrolled
       ? renderIdentityStatus(identityStatus)
       : renderEnrollForm(await caHealth());
+    setSummary('identity-section', identityStatus?.enrolled
+      ? (identityStatus.identity?.email ?? tRaw('Enrolled'))
+      : tRaw('Not enrolled'));
     staggerReveal([...body.children], { sound: false });  // cascade async content (shuffle already played on open)
   }
 

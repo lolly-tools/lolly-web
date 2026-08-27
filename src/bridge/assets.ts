@@ -979,6 +979,10 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
     // (v1.31), cached per id, since the bytes are immutable for a given
     // version.
     async credential(id: string): Promise<{ store: Uint8Array; format: string } | null> {
+      // A procedural ref names a song that is COMPOSED on demand - there are no
+      // stored bytes to carry a credential, and fetching the scheme only produces
+      // the browser's own "cannot load" console error before the catch below.
+      if (isZzfxmRef(id)) return null;
       if (id.startsWith('user/')) {
         const rec = await db.get('user-assets', id);
         if (!rec?.credential || !rec.credentialFormat) return null;

@@ -24,15 +24,26 @@
  *
  * Dismissing by any other means (Escape, backdrop) persists the flag too - a
  * welcome that keeps re-appearing after being waved away is a nag, not a hello.
- * Any of those explicit dismissals also acknowledges the privacy notice: the
- * one-liner it carries is in this dialog's footer, so the standalone strip has
- * nothing left to say (plans/137 A2). A route change (close(null)) is not a
- * dismissal and acknowledges nothing.
+ * Any of those explicit dismissals also acknowledges the privacy notice: page 1
+ * carries the short assurance line, so the standalone strip has nothing left to
+ * say (plans/137 A2). A route change (close(null)) is not a dismissal and
+ * acknowledges nothing.
  *
- * The language row starts collapsed to the detected language plus a "More
- * languages…" expander - 26 chips is a wall of choice nobody asked for at boot
- * (plans/137 A3). Expanding re-renders the dialog in place with today's full
- * wrapping row.
+ * Two pages, one dialog. The shell is a fixed size on both pages (a scrolling
+ * body plus a footer that never moves - styles/parts/welcome.css), so switching
+ * pages does not resize the dialog and the footer can never be clipped off the
+ * bottom of a phone screen:
+ *
+ *   Page 1  the three doors above.
+ *   Page 2  "Private by design" - the privacy assurance in full, with a "Got it"
+ *           button that calls ackPrivacyNotice() and returns to page 1. Only that
+ *           button acknowledges; opening the dialog or reading page 2 does not.
+ *
+ * The footer holds the two page dots (clickable), the language row and "Skip for
+ * now" on both pages. The language row starts collapsed to the detected language
+ * plus a "More languages…" expander - 26 chips is a wall of choice nobody asked
+ * for at boot (plans/137 A3). Expanding, switching language and changing page all
+ * re-render the same <dialog> in place; nothing re-opens a modal.
  *
  * Singleton: the gallery force re-mounts itself after a catalog sync, and a
  * second show call while open must hand back the SAME promise instead of
@@ -74,16 +85,14 @@ let openPromise: Promise<WelcomeChoice> | null = null;
 // same path a route change does (resolve without persisting the flag).
 let settleOpen: ((choice: WelcomeChoice | null) => void) | null = null;
 
-// Renders the dialog's own copy through t() so a language-chip switch can
-// re-paint it in place, and the chip row itself (native names, active state
-// from the resolved boot-time language - see i18n.ts's initI18n).
-// `withImport` gates the "Bring your design" card on the caller having handed
-// over an upload-capable host (the drop router needs it for the library route).
-// `langsOpen` is the A3 expander's state: false shows the detected language plus
-// "More languages…", true shows every chip. Both new controls are plain
-// <button>s, so they take the global keyboard focus ring (parts/base.css).
-function renderWelcomeContent(withImport: boolean, langsOpen: boolean): string {
-  const langs = langsOpen ? langOptions() : langOptions().filter(o => o.code === currentLang());
+/** The pages of the carousel. Page 1 is the three doors, page 2 the privacy page. */
+type WelcomePage = 1 | 2;
+const PAGE_COUNT = 2;
+
+// Page 1: the three doors. `withImport` gates the "Bring your design" card on the
+// caller having handed over an upload-capable host (the drop router needs it for
+// the library route).
+function welcomeDoors(withImport: boolean): string {
   return `
     <p class="welcome-eyebrow">${t('Welcome to Lolly')}</p>
     <h2 class="welcome-title">${t('Your tools, your rules')}</h2>
@@ -109,19 +118,65 @@ function renderWelcomeContent(withImport: boolean, langsOpen: boolean): string {
         <span class="welcome-card-cta" aria-hidden="true">${t('Browse the gallery →')}</span>
       </button>
     </div>
-    <button type="button" class="welcome-skip" data-choice="dismiss">${t('Skip for now')}</button>
-    <div class="welcome-langs" role="group" aria-label="Language">
-      ${LANG_ICON_SVG}
-      ${langs.map(o => {
-        const flags = o.flags.length ? `<span class="welcome-lang-flags" aria-hidden="true">${o.flags.map(flagEmoji).join('')}</span>` : '';
-        return `<button type="button" class="welcome-lang${o.code === currentLang() ? ' is-active' : ''}" data-lang="${o.code}" aria-pressed="${o.code === currentLang()}">${flags}${escape(o.nativeName)}</button>`;
-      }).join('')}
-      ${langsOpen ? '' : `<button type="button" class="welcome-lang welcome-lang-more" data-lang-more aria-expanded="false">${t('More languages…')}</button>`}
-    </div>
     <p class="welcome-privacy">
-      ${t('Your designs and files stay on this device - no tracking, no analytics.')}
-      <a href="${docsAppHref('privacy')}" class="welcome-privacy-link">${t('What we store')}</a>
+      ${t('Everything you make stays on this device.')}
+      <button type="button" class="welcome-privacy-link" data-page="2">${t('Private by design')}</button>
     </p>`;
+}
+
+// Page 2: the privacy assurance in full, ending in the "Got it" button that
+// acknowledges the standalone notice (see the click handler in showWelcomeDialog).
+// The copy matches views/privacy-notice.ts and docs/privacy.md - keep the three
+// in step when any of them changes.
+function welcomePrivacy(): string {
+  return `
+    <p class="welcome-eyebrow">${t('Private by design')}</p>
+    <h2 class="welcome-title">${t('Your designs and files stay on this device')}</h2>
+    <p class="welcome-sub">${t('No tracking, no analytics, no accounts.')}</p>
+    <ul class="welcome-facts">
+      <li>${t('Your documents, theme and preferences are kept in this browser only.')}</li>
+      <li>${t('Exports are made here and saved wherever you choose.')}</li>
+      <li>${t('Nothing is sent anywhere unless you start something that needs the internet, such as adding a Google Font.')}</li>
+    </ul>
+    <p class="welcome-privacy">
+      <a href="${docsAppHref('privacy')}" class="welcome-privacy-link">${t('What we store')}</a>
+    </p>
+    <button type="button" class="welcome-gotit btn btn--primary" data-ack>${t('Got it')}</button>`;
+}
+
+// The pinned footer, identical on every page: the page dots, the language row and
+// the skip link. Rendering it inside the one dialog markup (rather than as its own
+// node) keeps the single innerHTML sink this module is reviewed for.
+// `langsOpen` is the A3 expander's state: false shows the detected language plus
+// "More languages…", true shows every chip. Every control is a plain <button>, so
+// they all take the global keyboard focus ring (parts/base.css).
+function welcomeFoot(page: WelcomePage, langsOpen: boolean): string {
+  const langs = langsOpen ? langOptions() : langOptions().filter(o => o.code === currentLang());
+  const dots = [1, 2].map(n => `<button type="button" class="welcome-dot${n === page ? ' is-active' : ''}" data-page="${n}"${n === page ? ' aria-current="true"' : ''} aria-label="${t('Page {n} of {total}', { n, total: PAGE_COUNT })}"></button>`).join('');
+  return `
+    <div class="welcome-foot">
+      <div class="welcome-dots" role="group" aria-label="${t('Pages')}">${dots}</div>
+      <div class="welcome-langs" role="group" aria-label="Language">
+        ${LANG_ICON_SVG}
+        ${langs.map(o => {
+          const flags = o.flags.length ? `<span class="welcome-lang-flags" aria-hidden="true">${o.flags.map(flagEmoji).join('')}</span>` : '';
+          return `<button type="button" class="welcome-lang${o.code === currentLang() ? ' is-active' : ''}" data-lang="${o.code}" aria-pressed="${o.code === currentLang()}">${flags}${escape(o.nativeName)}</button>`;
+        }).join('')}
+        ${langsOpen ? '' : `<button type="button" class="welcome-lang welcome-lang-more" data-lang-more aria-expanded="false">${t('More languages…')}</button>`}
+      </div>
+      <button type="button" class="welcome-skip" data-choice="dismiss">${t('Skip for now')}</button>
+    </div>`;
+}
+
+// Renders the dialog's own copy through t() so a language-chip switch or a page
+// change can re-paint it in place (native language names and the active chip come
+// from the resolved boot-time language - see i18n.ts's initI18n). The scrolling
+// body and the fixed-height footer are the same two elements on both pages, so the
+// dialog keeps one size for the whole run (styles/parts/welcome.css).
+function renderWelcomeContent(withImport: boolean, langsOpen: boolean, page: WelcomePage): string {
+  return `
+    <div class="welcome-body">${page === 2 ? welcomePrivacy() : welcomeDoors(withImport)}</div>
+    ${welcomeFoot(page, langsOpen)}`;
 }
 
 /**
@@ -138,9 +193,10 @@ function renderWelcomeContent(withImport: boolean, langsOpen: boolean): string {
 export function showWelcomeDialog(profileApi?: WebProfileAPI, uploadHost?: PickerHost): Promise<WelcomeChoice> {
   if (openPromise) return openPromise;
   openPromise = new Promise((resolve) => {
-    // Per-dialog, not persisted: a fresh welcome opens collapsed again.
+    // Per-dialog, not persisted: a fresh welcome opens collapsed, on page 1.
     let langsOpen = false;
-    const modal = mountModal<WelcomeChoice | null>(renderWelcomeContent(!!uploadHost, langsOpen), {
+    let page: WelcomePage = 1;
+    const modal = mountModal<WelcomeChoice | null>(renderWelcomeContent(!!uploadHost, langsOpen, page), {
       className: 'welcome-dialog',
       ariaLabel: 'Welcome to Lolly',
       cancelValue: 'dismiss', // Escape / backdrop click
@@ -157,11 +213,19 @@ export function showWelcomeDialog(profileApi?: WebProfileAPI, uploadHost?: Picke
     });
     settleOpen = (choice) => modal.close(choice);
     const onNav = (): void => modal.close(null);
-    // The one in-place repaint path, shared by the language switch and the
-    // expander - `focus` is the selector to put focus back on afterwards.
+    // The one in-place repaint path, shared by the language switch, the expander
+    // and the page dots - `focus` is the selector to put focus back on afterwards.
+    // It rewrites the contents of the SAME <dialog>, so a page change is never a
+    // second modal and never re-runs the open animation.
     const repaint = (focus: string): void => {
-      modal.el.innerHTML = renderWelcomeContent(!!uploadHost, langsOpen);
+      modal.el.innerHTML = renderWelcomeContent(!!uploadHost, langsOpen, page);
       modal.el.querySelector<HTMLElement>(focus)?.focus();
+    };
+    /** Move to a page and focus its first control. No-op when already there. */
+    const goToPage = (next: WelcomePage): void => {
+      if (next === page) return;
+      page = next;
+      repaint(page === 2 ? '.welcome-gotit' : '.welcome-card--brand');
     };
 
     modal.el.addEventListener('click', (e) => {
@@ -193,6 +257,22 @@ export function showWelcomeDialog(profileApi?: WebProfileAPI, uploadHost?: Picke
       if (target?.closest('[data-lang-more]')) {
         langsOpen = true;
         repaint('.welcome-lang');
+        return;
+      }
+
+      // "Got it" on the privacy page: the only thing that acknowledges the
+      // standalone privacy notice (views/privacy-notice.ts) - reading page 2 is
+      // not enough, the user has to say so. Then back to the doors.
+      if (target?.closest('[data-ack]')) {
+        ackPrivacyNotice();
+        goToPage(1);
+        return;
+      }
+
+      // Page dots (and the "Private by design" link on page 1).
+      const pageBtn = target?.closest<HTMLElement>('[data-page]');
+      if (pageBtn) {
+        goToPage(pageBtn.dataset.page === '2' ? 2 : 1);
         return;
       }
 

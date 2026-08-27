@@ -27,7 +27,9 @@
  */
 import '../styles/parts/tool.css';        // .tool-inputs control styles (shared chunk with the tool view)
 import '../styles/parts/multi-edit.css';
-import { UNITS } from '@lolly/engine';
+import { UNITS, serializeUrlState, buildEmbedUrl, buildInputModel } from '@lolly/engine';
+import { setPendingToolSeed } from '../lib/drop-router.ts';
+import { navigateTo } from '../nav.ts';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
 import { getTool, chooseFormat, isExportable } from '../bridge/tool-loader.ts';
 import { createNetAPI } from '../bridge/net.ts';
@@ -274,6 +276,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
         <h1 class="me-title">${t('Multi-edit')} <span class="me-count">${t('{n} designs', { n: members.length })}</span></h1>
         <div class="me-head-actions">
           <button type="button" class="btn" data-me-saveall data-sfx="save">${t('Save all')}</button>
+          <button type="button" class="btn" data-me-tosheet data-sfx="whoosh" title="${escape(t('Lay every design out on a printable sheet, n-up, to cut apart'))}">${t('Send to Print Sheet')}</button>
           <button type="button" class="btn me-primary" data-me-downloadall data-sfx="whoosh">${t('Download all')}</button>
           ${langFabHtml()}
         </div>
@@ -395,7 +398,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
         : host;
       const rt = await createRuntime(m.tool, mountHost, m.values);
       m.runtime = rt;
-      // Bind this canvas to ITS OWN runtime: an interactive tool (mesh-gradient dots,
+      // Bind this canvas to ITS OWN runtime: an interactive tool (gradient dots,
       // street-map pan) commits 1:1 to this session, never through the shared/fan
       // sidebar control that a global data-input-id query would hit.
       attachCanvasCommit(m.canvasEl, rt);
@@ -729,6 +732,34 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
     for (let i = 0; i < members.length; i++) await saveOne(i);
   }
 
+  // Send every design to Print Sheet as a live tool link - NO render is baked here.
+  // Each cell holds the member's canonical embed URL (createRuntime → serializeUrlState
+  // → buildEmbedUrl, the same recipe the asset picker's "embed a saved session" uses),
+  // which print-sheet re-renders through host.compose.renderUrl on every mount. So the
+  // sheet stays live: edit a design later and its cell follows. The seed is handed to
+  // print-sheet's mount directly (setPendingToolSeed → the tool view's `seededDirect`
+  // path), so N links never have to survive a URL. `once` lays each design out a single
+  // time and paginates; the drop-in order is the members' order.
+  function toSheet(): void {
+    const cells: { art: { id: string } }[] = [];
+    for (const m of members) {
+      // Prefer the live runtime model (captures unsaved edits); fall back to the
+      // seed values for a cell whose runtime was never built.
+      const model = m.runtime ? m.runtime.getModel() : buildInputModel(m.tool.manifest, { initial: m.values });
+      const fmts = m.tool.manifest.render?.formats ?? [];
+      // Vector where the tool offers it (scales cleanly for print), else a raster still.
+      const format = fmts.includes('svg') ? 'svg' : (fmts.find(f => ['png', 'jpg', 'jpeg', 'webp'].includes(f)) ?? 'png');
+      const url = buildEmbedUrl({ toolId: m.tool.manifest.id, format, query: serializeUrlState(model) });
+      // The cell's artwork must be a REF OBJECT ({id}), not a bare string - the runtime's
+      // assetRefId reads .id off an object and ignores bare strings, so a bare URL renders
+      // an empty grid. The id is the canonical embed URL; resolveAssetRefs re-renders it.
+      if (url) cells.push({ art: { id: url } });
+    }
+    if (!cells.length) { announce(t('Nothing to send.')); return; }
+    setPendingToolSeed('print-sheet', { cells, fill: 'once' });
+    navigateTo('#/tool/print-sheet');
+  }
+
   // "Save all" opens the shared Save dialog's "Add to a project" picker (the same one
   // the tool view uses), so the sessions LAND somewhere the user can find them - the
   // fix for "Save all does nothing" when multi-edit was reached from the Tools gallery
@@ -776,6 +807,9 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   let exporting = false;
   viewEl.addEventListener('click', async (e) => {
     const target = e.target as HTMLElement; // not `t` - that's the i18n lookup
+    // Send to Print Sheet navigates away with an in-memory seed - no render, no async
+    // work, so it sits before the export busy-guard below.
+    if (target.closest<HTMLElement>('[data-me-tosheet]')) { toSheet(); return; }
     const one = target.closest<HTMLElement>('[data-me-download]');
     const all = target.closest<HTMLElement>('[data-me-downloadall]');
     const save = target.closest<HTMLElement>('[data-me-saveall]');

@@ -2,7 +2,7 @@
 /**
  * hdr-deep-frame.test.ts - plan 154 WP-3.
  *
- * The load-bearing claim, asserted WITHOUT an HDR display: the deep float encode path
+ * The claim this file exists to prove, asserted WITHOUT an HDR display: the deep float encode path
  * (hdrDeepI420P10) preserves >8-bit precision that today's 8-bit path (hdrBoostToPQ)
  * bands away. Both run the SAME brand boost on the SAME pixels; the only difference is
  * that the 8-bit path quantises the boosted PQ to 256 codes and the deep path carries it

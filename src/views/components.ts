@@ -122,7 +122,7 @@ const LIVE: Record<string, { render: () => string | HTMLElement; wire?: (stage: 
   catSummary: { render: () => catalogSummaryBody([
     { id: 'qr-code', category: 'utility', status: 'official' },
     { id: 'brand-lockup', category: 'designer', status: 'experimental' },
-    { id: 'web-icon', category: 'utility', status: 'official' },
+    { id: 'icon', category: 'utility', status: 'official' },
   ] as never) },
   tileBadges: { render: () => `<span class="tile-badges">${fmtBadge('svg')}${dimBadge(512, 512, 'px')}${rowCountBadge(8)}</span>` },
   dialogTriggers: {

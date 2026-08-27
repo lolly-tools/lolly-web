@@ -249,6 +249,32 @@ test('an untyped pick tiles only the user assets that HAVE a picture', async () 
 });
 
 
+// ── uploads live on their own "Private assets" tab, not inside the Catalog ─────
+
+test('user uploads render on the uploads pane, not the library pane', async () => {
+  setToolIndex(TOOLS);
+  const mine = [asset('user/images/photo', 'raster')];
+  const p = await open({ allowUpload: true }, [asset('a/one')], mine);
+  assert.ok(p.tab('uploads'), 'allowUpload gives a Private assets tab');
+  // The card is in the uploads pane's section, not the catalog library section.
+  const inUploads = p.panel.querySelector('[data-pane="uploads"] [data-asset-id="user/images/photo"]');
+  assert.ok(inUploads, 'the upload tiles in the uploads pane');
+  assert.equal(p.panel.querySelector('.asset-picker-library [data-asset-id="user/images/photo"]'), null,
+    'and NOT inside the catalog library section');
+  // Switching to the tab shows that pane and only that pane.
+  p.tab('uploads')!.dispatchEvent(new W.MouseEvent('click', { bubbles: true }));
+  await settle();
+  assert.equal(p.visiblePane(), 'uploads');
+  await p.close();
+});
+
+test('no uploads tab when the pick disallows upload', async () => {
+  setToolIndex(TOOLS);
+  const p = await open({ allowUpload: false }, [asset('a/one')]);
+  assert.equal(p.tab('uploads'), null, 'no upload → no Private assets tab');
+  await p.close();
+});
+
 // ── the upload classifier: code files are text assets ─────────────────────────
 // APPENDED (2026-08-18): storeUserUpload's classifier claims and its ingest-time
 // AI-signal note. These ride this suite for its jsdom + real-picker-module setup;

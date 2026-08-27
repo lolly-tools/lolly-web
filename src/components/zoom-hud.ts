@@ -56,9 +56,14 @@ export interface ZoomHudOptions {
   /** aria-live on the readout when it's a plain span (e.g. 'polite'). Ignored
    *  when `pctInteractive` is true (a button announces via its own click). */
   pctAriaLive?: string;
-  /** Where the Fit button sits relative to −/readout/+. Default 'end' (stage-nav's
-   *  order); multi-edit puts Fit first. Ignored when `classes.fit` is omitted. */
-  fitPosition?: 'start' | 'end';
+  /** Where the Fit button sits relative to −/readout/+. Default 'end' (multi-edit
+   *  puts Fit first with 'start'); stage-nav uses 'middle' so Fit sits between −
+   *  and + as the single reset control. Ignored when `classes.fit` is omitted. */
+  fitPosition?: 'start' | 'middle' | 'end';
+  /** Drop the readout entirely (no percent element). stage-nav does this: the
+   *  readout doubled as a Fit/100% toggle, which read as a second Fit control, so
+   *  the dedicated Fit button is now the only reset. setReadout() becomes a no-op. */
+  noReadout?: boolean;
   /** Raw markup (icon svg or glyph) for each button - trusted, not escaped. */
   outContent?: string; inContent?: string; fitContent?: string;
   outAriaLabel?: string; inAriaLabel?: string; pctAriaLabel?: string; fitAriaLabel?: string;
@@ -122,23 +127,27 @@ export function mountZoomHud(container: HTMLElement, opts: ZoomHudOptions): Zoom
   const outBtn = makeButton(classes.btn, navAttr, 'out', opts.outContent ?? '−', opts.outAriaLabel, opts.outTitle);
   const inBtn  = makeButton(classes.btn, navAttr, 'in',  opts.inContent  ?? '+', opts.inAriaLabel,  opts.inTitle);
 
-  let readoutEl: HTMLElement;
-  if (pctInteractive) {
-    readoutEl = makeButton(classes.pct, navAttr, 'pct', '', opts.pctAriaLabel, opts.pctTitle);
-  } else {
-    readoutEl = document.createElement('span');
-    readoutEl.className = classes.pct;
-    if (opts.pctAriaLive) readoutEl.setAttribute('aria-live', opts.pctAriaLive);
+  let readoutEl: HTMLElement | null = null;
+  if (!opts.noReadout) {
+    if (pctInteractive) {
+      readoutEl = makeButton(classes.pct, navAttr, 'pct', '', opts.pctAriaLabel, opts.pctTitle);
+    } else {
+      readoutEl = document.createElement('span');
+      readoutEl.className = classes.pct;
+      if (opts.pctAriaLive) readoutEl.setAttribute('aria-live', opts.pctAriaLive);
+    }
+    readoutEl.textContent = opts.initialReadout ?? '';
   }
-  readoutEl.textContent = opts.initialReadout ?? '';
 
   const fitBtn = classes.fit
     ? makeButton(`${classes.btn} ${classes.fit}`, navAttr, 'fit', opts.fitContent ?? 'Fit', opts.fitAriaLabel, opts.fitTitle)
     : null;
 
-  const order = opts.fitPosition === 'start' && fitBtn
-    ? [fitBtn, outBtn, readoutEl, inBtn]
-    : fitBtn ? [outBtn, readoutEl, inBtn, fitBtn] : [outBtn, readoutEl, inBtn];
+  const readout = readoutEl ? [readoutEl] : [];
+  const order = fitBtn && opts.fitPosition === 'start' ? [fitBtn, outBtn, ...readout, inBtn]
+    : fitBtn && opts.fitPosition === 'middle' ? [outBtn, fitBtn, inBtn, ...readout]
+    : fitBtn ? [outBtn, ...readout, inBtn, fitBtn]
+    : [outBtn, ...readout, inBtn];
   container.append(...order);
 
   if (opts.extras?.length) {
@@ -168,7 +177,7 @@ export function mountZoomHud(container: HTMLElement, opts: ZoomHudOptions): Zoom
   };
   container.addEventListener('click', onClick);
 
-  function setReadout(text: string): void { readoutEl.textContent = text; }
+  function setReadout(text: string): void { if (readoutEl) readoutEl.textContent = text; }
   function setValue(v: number): void {
     if (opts.min !== undefined) outBtn.disabled = v <= opts.min;
     if (opts.max !== undefined) inBtn.disabled = v >= opts.max;

@@ -446,6 +446,8 @@ interface Harness {
   canvasEl: HTMLElement;
   panel: {
     destroy(): void; setOpen(v: boolean): void; isOpen(): boolean;
+    /** The one-commit promote free-canvas's timeline-armed create path calls. */
+    promote(id: string, want?: { start?: number; dur?: number | null }): void;
     /** The playhead-contextual write seam free-canvas commits through (plans/104 section 8). */
     kfPoseIds(ids: readonly string[]): string[];
     kfPoseWrite(boxes: Box[], ids: readonly string[], delta: Record<string, number>, mode?: 'add' | 'set'): Box[];
@@ -1059,6 +1061,44 @@ test('the scenery chip\'s + button promotes straight from the strip, one commit'
     await frames(3);
     assert.ok(h.root.querySelector('.tl-clip[data-id="s"]'), 'it is on a lane');
   } finally { h.teardown(); }
+});
+
+test('promote with dur:null authors a REAL length when the open window would be empty', () => {
+  // The free-canvas create path passes `dur: null` ("author nothing - run open-ended
+  // to the sequence end"). That window is EMPTY when the start is at the end of an
+  // already-derived sequence - and the playhead, the default start, parks exactly
+  // there after every play-through - so the "+ then pick" flow was minting a
+  // permanently zero-length clip nobody could see, scrub to, or play.
+  const atEnd = mount([clip('a', 0, 3), clip('b', 3, 2), scenery('s')]);
+  try {
+    atEnd.canvasEl.setAttribute('data-seq-ms', '5000');
+    atEnd.panel.promote('s', { start: 5, dur: null });
+    const written = atEnd.commits[0]!.find((b) => b.id === 's')!;
+    assert.equal(written.start, 5, 'the start still lands at the end');
+    assert.equal(written.dur, 3, 'a real length is authored, so the sequence extends to hold it');
+  } finally { atEnd.teardown(); }
+
+  // On a doc with NO derived sequence yet, unauthored stays right: the hook's
+  // DEFAULT_SEQ_S fallback opens a window for the first timed box, and authoring here
+  // is what would pin a 45s track to 3s before its picker ever opened (the same
+  // contract free-canvas-timeline-add.test.ts pins from the other side).
+  const untimed = mount([scenery('s')]);          // no data-seq-ms: a doc with no timeline yet
+  try {
+    untimed.panel.promote('s', { start: 0, dur: null });
+    const written = untimed.commits[0]!.find((b) => b.id === 's')!;
+    assert.equal(written.dur, '', 'the first timed box on an untimed doc stays unauthored');
+  } finally { untimed.teardown(); }
+
+  // Mid-sequence, "author nothing" keeps meaning open-ended-to-the-end - the case the
+  // null contract exists for (a 45s track must not be pinned to 3s before its picker opens).
+  const mid = mount([clip('a', 0, 3), clip('b', 3, 2), scenery('s')]);
+  try {
+    mid.canvasEl.setAttribute('data-seq-ms', '5000');
+    mid.panel.promote('s', { start: 2, dur: null });
+    const written = mid.commits[0]!.find((b) => b.id === 's')!;
+    assert.equal(written.start, 2);
+    assert.equal(written.dur, '', 'mid-sequence stays unauthored: open-ended to the end');
+  } finally { mid.teardown(); }
 });
 
 test('a timed OVERLAY demotes back to scenery in one commit - "always on" is not a trap', async () => {

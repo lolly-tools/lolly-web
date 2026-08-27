@@ -124,6 +124,29 @@
   gap: 10px;
 }
 
+/* The Fine-tune fold. `display: contents` keeps the section's children laid out
+   as direct popover flex items - the expanded popover is pixel-identical to the
+   pre-fold layout - while the [hidden] rule restores the fold (an author
+   `display: contents` would otherwise beat the UA's [hidden] display:none). */
+.color-fine { display: contents; }
+.color-fine[hidden] { display: none; }
+.color-fine-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: none;
+  border: none;
+  border-top: 1px solid hsl(var(--border));
+  color: hsl(var(--muted-foreground));
+  font: inherit;
+  font-size: calc(12px * var(--a11y-fs));
+  cursor: pointer;
+}
+.color-fine-toggle:hover { color: hsl(var(--foreground)); }
+.color-fine-toggle .color-fine-chev { margin-inline-start: auto; opacity: .6; }
+.color-fine-toggle[aria-expanded="true"] .color-fine-chev { transform: rotate(180deg); }
+
 /* Inline mode - the picker as a spacious, always-open panel (no trigger, no
    floating): the popover flows in place and sheds its own card chrome (the host
    panel already is one). It carries no swatch palette (see colorFieldHtml: every

@@ -68,8 +68,8 @@ test('scalar: a short-scalar value over the 150-char cap is DROPPED (dropped-len
   assert.equal(r.label, 'Blurb');
 });
 
-test('longtext: content rides UNCAPPED (never dropped) - a d3 data table / design customCss', () => {
-  // A longtext is the tool's content; dropping it at 150 chars opened a shared d3 link blank.
+test('longtext: content rides UNCAPPED (never dropped) - a chart data table / design customCss', () => {
+  // A longtext is the tool's content; dropping it at 150 chars opened a shared chart link blank.
   // Like a table it rides in full and escalates to .lolly by length instead of silently dropping.
   const big = 'Region,Coffee,Tea\n' + Array.from({ length: 300 }, (_, i) => `City ${i},${i},${i}`).join('\n');
   const r = only(mk({ id: 'data', type: 'longtext', value: big, urlKey: 'd', label: 'Data' }));

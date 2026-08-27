@@ -44,12 +44,13 @@ function panel(id: string): HTMLElement {
   return el;
 }
 function reset(): void {
+  ED.releaseDock('zoom');
   ED.releaseDock('neuro');
   ED.releaseDock('export');
   document.querySelector('.edge-dock-drop')?.remove();
   document.documentElement.dir = '';
   mobile = false;
-  for (const el of [...document.querySelectorAll('#pn, #px')]) el.remove();
+  for (const el of [...document.querySelectorAll('#pn, #px, #pz')]) el.remove();
 }
 const dockW = (): string => document.documentElement.style.getPropertyValue('--dock-w');
 const hasCol = (): boolean => !!document.querySelector('.edge-dock');
@@ -101,6 +102,29 @@ test('two panels stack player-over-export with one divider between', () => {
   assert.equal(slots[1]!.getAttribute('data-slot'), 'export');   // export below
   assert.equal(document.querySelectorAll('.edge-dock-divider').length, 1);
   assert.ok(slots[1]!.classList.contains('edge-dock-slot--fill'), 'bottom panel fills the remainder');
+});
+
+test('a compact bar docks on TOP of the panels, fixed-height, with no divider above it', () => {
+  reset();
+  ED.requestDock('export', panel('px'));
+  ED.requestDock('neuro', panel('pn'));
+  ED.requestDock('zoom', panel('pz'), { compact: true });
+  const slots = [...document.querySelectorAll('.edge-dock-slot')];
+  assert.equal(slots.length, 3);
+  assert.equal(slots[0]!.getAttribute('data-slot'), 'zoom', 'compact bar is the top slot');
+  assert.ok(slots[0]!.classList.contains('edge-dock-slot--compact'));
+  assert.ok(!slots[0]!.classList.contains('edge-dock-slot--fill'), 'the compact bar never fills');
+  assert.ok(slots[2]!.classList.contains('edge-dock-slot--fill'), 'the last FULL panel fills the remainder');
+  // Only one resize divider - between the two full panels, none above the fixed compact bar.
+  assert.equal(document.querySelectorAll('.edge-dock-divider').length, 1);
+});
+
+test('an open dock widens the drop zone to its full width, not just the edge band', () => {
+  reset();
+  ED.requestDock('export', panel('px'));   // opens the column at the seeded 400px width
+  const vw = window.innerWidth;
+  assert.equal(ED.edgeDockHitTest(vw - 300), true, '300px in is outside the 52px band but inside the open dock');
+  assert.equal(ED.edgeDockHitTest(vw - 500), false, 'past the dock is not a drop');
 });
 
 test('RTL-aware hit-test tracks the inline-end edge', () => {

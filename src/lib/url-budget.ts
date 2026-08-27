@@ -35,7 +35,7 @@ import { asRow } from '../views/tool-types.ts';
 /** A SHORT single-line scalar (`text`/`url`/…) longer than this is dropped - at that length it's
  *  an accident or bloat, not the point of the field. Does NOT apply to the CONTENT types, which
  *  ride uncapped and escalate to a `.lolly` by length instead of silently dropping: `table`,
- *  `blocks`, and `longtext` (a d3 data table, design's customCss, a code tool's source). */
+ *  `blocks`, and `longtext` (a chart data table, design's customCss, a code tool's source). */
 export const SCALAR_CAP = 150;
 /** A reference size for a blocks value (a design's boxes, a deck's slides). NO LONGER a
  *  drop threshold - like a table, a blocks value now rides uncapped and escalates to a
@@ -269,7 +269,7 @@ export function encodeModelParam(input: InputModelItem): EncodedModelParam[] {
   // recipient's tokens; never leaks "[object Object]"). Cap is on the pre-hex-strip
   // string, matching tool.ts:4163-4168.
   let str = type === 'color' && isTokenValue(value) ? value.ref : String(value);
-  // A `longtext` is CONTENT (a d3 data table, design's customCss, a code tool's source), not a
+  // A `longtext` is CONTENT (a chart data table, design's customCss, a code tool's source), not a
   // stray-long label - so like a table/blocks it rides UNCAPPED and a huge one escalates to the
   // .lolly by length, never silently dropping the chart/design from the link. The SCALAR_CAP drop
   // stays for short single-line types (`text`/`url`/…), where >150 chars is an accident or bloat
