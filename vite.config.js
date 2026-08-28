@@ -261,7 +261,15 @@ export function mergeModelsManifest(all, manifest) {
   return filled.length ? [...all, ...filled].sort((a, b) => a.url.localeCompare(b.url)) : all;
 }
 
-function precacheManifest() {
+// Exported, and outDir-aware, so the DESKTOP shell can run it too. It used to hard-code
+// resolve(webDir, 'dist'), which is right for this build and wrong for every other: the
+// Tauri shells set their own build.outDir (their vite root is ../web but their output is
+// their own dist/), so the scan looked at the wrong directory and no precache.json was
+// emitted at all. The desktop app then had no manifest to read, and the "Available
+// offline" manager in views/profile.ts - whose every model row is gated on `!!precache` -
+// showed "Not offered by this server" for all of them, on a build whose model host was
+// serving perfectly well. Reading the resolved config makes it correct for whoever runs it.
+export function precacheManifest() {
   const SKIP = new Set(['catalog', 'tools', 'schemas', 'info', 'sw.js', 'precache.json']);
   const needsHash = precacheNeedsHash;
   const walk = (dir, base) => {
@@ -286,11 +294,16 @@ function precacheManifest() {
     }
     return out;
   };
+  let resolvedOutDir = null;
   return {
     name: 'lolly-precache-manifest',
     apply: 'build',
+    configResolved(config) {
+      // build.outDir may be relative to root or absolute; resolve() handles both.
+      resolvedOutDir = resolve(config.root ?? webDir, config.build?.outDir ?? 'dist');
+    },
     closeBundle() {
-      const outDir = resolve(webDir, 'dist');
+      const outDir = resolvedOutDir ?? resolve(webDir, 'dist');
       if (!existsSync(outDir)) return;
       let all = walk(outDir, outDir).sort((a, b) => a.url.localeCompare(b.url));
       // Models pruned from this build (the rewrite-served Vercel deploys) still
