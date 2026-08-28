@@ -10964,14 +10964,23 @@ function ditherFloydSteinberg(data: Uint8ClampedArray, width: number, height: nu
 function addWatermarkOverlay(node: HTMLElement): () => void {
   const stamp = document.createElement('div');
   stamp.textContent = 'DRAFT USE ONLY';
-  // Size the mark to the node so one line spans ~80% of its width and NEVER wraps
-  // (a wrapped stamp is why 1:1 exports looked different from the preview). Scaling
-  // to node width also covers a larger area on big artboards. ~0.6em per monospace
-  // char × 14 chars ≈ 8.4em, so W/11 fits ~0.8W. Floor keeps tiny nodes legible.
-  const fontSize = Math.max(12, (node.offsetWidth || node.getBoundingClientRect().width) / 11);
+  // EXPLICIT px size, not inset:0. dom-to-image clones the node into a foreignObject
+  // and re-lays-it-out; an absolute child sized only by inset:0 collapses to 0×0 in
+  // that clone (visible live, absent in the raster). A concrete width/height from the
+  // live node can't collapse, so preview == output on every format.
+  const rect = node.getBoundingClientRect();
+  const w = node.offsetWidth || rect.width;
+  const h = node.offsetHeight || rect.height;
+  // One centred line that spans ~80% of the width and NEVER wraps (a wrapped stamp is
+  // why 1:1 exports diverged from the preview). Scaling to width also covers a larger
+  // area on big artboards. ~0.6em/monospace char × 14 chars ≈ 8.4em, so W/11 ≈ 0.8W.
+  const fontSize = Math.max(12, w / 11);
   Object.assign(stamp.style, {
     position: 'absolute',
-    inset: '0',
+    left: '0',
+    top: '0',
+    width: `${w}px`,
+    height: `${h}px`,
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
