@@ -73,7 +73,15 @@ const NON_MARKDOWN_PAGES = new Set<string>([
   'index', // the landing page (docs/build.ts buildLandingContent) - injected HTML, no twin body
 ]);
 
-test('drift guard: every markdown page fully aligns; the pinned exceptions do not', () => {
+test('drift guard: every markdown page fully aligns; the pinned exceptions do not', (t) => {
+  // The guard reads the BUILT docs site (docs/build.ts emits search-index.json into
+  // public/info/). CI never builds /info, so the file is absent there - skip with a
+  // reason, like the SUSE-font and Chromium gates. Local runs and the ship gate
+  // (which runs build:info) still enforce the drift.
+  if (!existsSync(`${INFO}search-index.json`)) {
+    t.skip('no built docs site at public/info/search-index.json (run npm run build:info) - drift is enforced where the site is built');
+    return;
+  }
   const index = JSON.parse(readFileSync(`${INFO}search-index.json`, 'utf-8')) as Rec[];
   const byPage = new Map<string, Rec[]>();
   for (const r of index) {
