@@ -9,7 +9,7 @@
  * Previews are stored-thumb + metadata only: we never live-render here. A batch
  * session has no single thumbnail, so it shows a package glyph plus metadata badges.
  */
-import { escape } from './utils.ts';
+import { escape, safeHref } from './utils.ts';
 import { icon } from './lib/icons.ts';
 
 // Batch-slot helpers are the shared, /pro-free lib module now (finding #13),
@@ -292,7 +292,10 @@ export function folderTile(folder: { id: string; name: string; items?: readonly 
  *  (draggable="false" so the TILE's own HTML5 drag, not a link drag, starts),
  *  else the plain button every tile had before. */
 function primaryTag(href: string | undefined, attrs: string): [string, string] {
-  return href
+  // Links only for schemes the shell trusts (utils.safeHref): a caller-supplied
+  // javascript:/data: href degrades to the plain button, exactly like no href.
+  return href && safeHref(href)
+    // nosemgrep: lolly-href-escape-is-not-scheme-validation - safeHref()-gated in the guard above
     ? [`<a class="tile-primary" href="${escape(href)}" draggable="false" ${attrs}>`, '</a>']
     : [`<button type="button" class="tile-primary" ${attrs}>`, '</button>'];
 }

@@ -908,6 +908,7 @@ export async function mountProjects(
   function batchButtonHtml(): string {
     const batchFrom = folderId && folderId !== UNCAT ? folderId : null;
     const batchHref = `#/batch${batchFrom ? `?from=${encodeURIComponent(batchFrom)}` : ''}`;
+    // nosemgrep: lolly-href-escape-is-not-scheme-validation - first-party `#/batch` hash route built just above
     return `<a href="${escape(batchHref)}" class="btn projects-batch-btn" aria-label="${escape(t('Open Batch mode - render many at once'))}" title="${escape(t('Batch'))}">${BATCH_ICON}<span>${t('Batch')}</span></a>`;
   }
 

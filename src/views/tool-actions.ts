@@ -16,7 +16,7 @@ import type {
 } from '@lolly/engine';
 import type { MoneyContext } from '@lolly-tools/core';
 import type { Profile } from '@lolly-tools/core/host-v1';
-import { escape } from '../utils.js';
+import { escape, safeHref } from '../utils.js';
 import { t, tRaw } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
 import { navigateTo } from '../nav.js';
@@ -3591,7 +3591,11 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       const name = el!.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() || autoFilename();
       const out = await target.send({ bytes: new Uint8Array(await blob.arrayBuffer()), name, format: fmt, mime: blob.type });
       if (status) {
-        status.innerHTML = out.url
+        // The driver's url is REMOTE-SOURCED (an upload service's response), so it
+        // must pass the scheme gate before it renders as a link - a bad one
+        // degrades to the plain label.
+        status.innerHTML = out.url && safeHref(out.url)
+          // nosemgrep: lolly-href-escape-is-not-scheme-validation - safeHref()-gated in the guard above
           ? `<a href="${escape(out.url)}" target="_blank" rel="noopener">${escape(out.label)}</a>`
           : escape(out.label);
       }

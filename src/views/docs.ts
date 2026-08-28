@@ -35,7 +35,7 @@
  * page, because the landing shipped no rehostable fragment.
  */
 import '../styles/parts/docs.css';
-import { escape } from '../utils.ts';
+import { escape, safeHref } from '../utils.ts';
 import { t, tRaw, currentLang, normalizeLang, docsInfoHref, LANG_ICON_SVG, type Lang } from '../i18n.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { backHomeHtml, mountBackPill } from '../components/back-pill.ts';
@@ -177,6 +177,11 @@ export async function mountDocs(
   const showStatus = (message: string, extra = ''): void => {
     contentEl.innerHTML = `<p class="docs-status">${escape(message)}${extra}</p>`;
   };
+  // The static-page escape hatch every failure branch below appends. `url` is the
+  // first-party /info/ path built above (route-constrained slug), and the gate keeps
+  // that true if the construction ever changes.
+  // nosemgrep: lolly-href-escape-is-not-scheme-validation - safeHref()-gated in the guard above
+  const openDocsLink = safeHref(url) ? ` <a href="${escape(url)}" target="_blank" rel="noopener">${t('Open the docs')}</a>` : '';
 
   let html: string;
   try {
@@ -194,7 +199,7 @@ export async function mountDocs(
       // 404 etc. - a real message, plus the static page as an escape hatch.
       showStatus(
         t('That documentation page could not be found.'),
-        ` <a href="${escape(url)}" target="_blank" rel="noopener">${t('Open the docs')}</a>`,
+        openDocsLink,
       );
       return;
     }
@@ -203,7 +208,7 @@ export async function mountDocs(
     if (!viewEl.isConnected) return;
     showStatus(
       t('Could not load the documentation. Check your connection and try again.'),
-      ` <a href="${escape(url)}" target="_blank" rel="noopener">${t('Open the docs')}</a>`,
+      openDocsLink,
     );
     return;
   }
@@ -217,7 +222,7 @@ export async function mountDocs(
   if (!fragment) {
     showStatus(
       t('That documentation page could not be displayed.'),
-      ` <a href="${escape(url)}" target="_blank" rel="noopener">${t('Open the docs')}</a>`,
+      openDocsLink,
     );
     return;
   }
