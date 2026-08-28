@@ -245,6 +245,22 @@ export function groupPrecacheFiles(all) {
 export const precacheNeedsHash = (url) =>
   !url.startsWith('/assets/') && !url.startsWith('/ort/') && !url.startsWith('/ort-hf/') && !url.startsWith('/models/');
 
+// Fill in /models/** entries the dist scan could not see. The Vercel app deploys
+// exclude shells/web/public/models from the upload (.vercelignore) and serve
+// /models/** through a rewrite to the static model host (deploy/models-host/),
+// so on those builds the files are simply not on disk - but the offline download
+// manager and the desktop models-welcome sheet still read model URLs + sizes
+// from precache.json. The committed listing (models-manifest.json, regenerated
+// by scripts/gen-models-manifest.ts when a model is promoted) supplies exactly
+// the entries the scan is missing; any url the scan DID see keeps its scanned
+// size, so a build with the files on disk (local, self-hosted nginx) is
+// byte-identical to before. Exported for the sw.test.ts pin.
+export function mergeModelsManifest(all, manifest) {
+  const seen = new Set(all.map(f => f.url));
+  const filled = manifest.filter(f => f && typeof f.url === 'string' && f.url.startsWith('/models/') && !seen.has(f.url));
+  return filled.length ? [...all, ...filled].sort((a, b) => a.url.localeCompare(b.url)) : all;
+}
+
 function precacheManifest() {
   const SKIP = new Set(['catalog', 'tools', 'schemas', 'info', 'sw.js', 'precache.json']);
   const needsHash = precacheNeedsHash;
@@ -276,7 +292,14 @@ function precacheManifest() {
     closeBundle() {
       const outDir = resolve(webDir, 'dist');
       if (!existsSync(outDir)) return;
-      const all = walk(outDir, outDir).sort((a, b) => a.url.localeCompare(b.url));
+      let all = walk(outDir, outDir).sort((a, b) => a.url.localeCompare(b.url));
+      // Models pruned from this build (the rewrite-served Vercel deploys) still
+      // belong in the manifest - see mergeModelsManifest above.
+      const modelsListing = resolve(webDir, 'models-manifest.json');
+      if (existsSync(modelsListing)) {
+        try { all = mergeModelsManifest(all, JSON.parse(readFileSync(modelsListing, 'utf8'))); }
+        catch (e) { console.warn('[precache] models-manifest.json unreadable - models entries may be missing:', e); }
+      }
       const groups = groupPrecacheFiles(all);
       const version = createHash('sha256')
         .update(all.map(f => `${f.url}:${f.size}:${f.hash ?? ''}`).join('\n'))

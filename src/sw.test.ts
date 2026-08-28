@@ -484,6 +484,28 @@ describe('precache.json grouping (vite.config.js)', () => {
       'the aiDetect group is the AI-text detector set only (plans/126 WP-A) - it rides transformers-cache like the others');
   });
 
+  test('mergeModelsManifest fills only the /models/ entries the dist scan is missing', async () => {
+    const { mergeModelsManifest } = await import('../vite.config.js');
+    const scanned = [
+      { url: '/index.html', size: 10 },
+      { url: '/models/kokoro/onnx/model_quantized.onnx', size: 999 },   // on disk - scanned truth wins
+    ];
+    const listing = [
+      { url: '/models/kokoro/onnx/model_quantized.onnx', size: 5 },     // stale size must NOT override
+      { url: '/models/upscale/realesr-general-x4v3.onnx', size: 7 },    // pruned from dist - filled in
+      { url: '/assets/evil.js', size: 1 },                              // non-model listing rows are ignored
+    ];
+    const merged = mergeModelsManifest(scanned, listing);
+    assert.deepEqual(merged.map((f: { url: string; size: number }) => `${f.url}:${f.size}`), [
+      '/index.html:10',
+      '/models/kokoro/onnx/model_quantized.onnx:999',
+      '/models/upscale/realesr-general-x4v3.onnx:7',
+    ], 'the committed models listing fills gaps only - scanned files and non-model rows are untouched');
+    // Nothing missing → the SAME array back (no re-sort churn, version hash stable).
+    assert.equal(mergeModelsManifest(scanned, [listing[0]!]), scanned,
+      'a listing fully covered by the scan changes nothing');
+  });
+
   test('release-versioned binaries are exempt from content hashing', async () => {
     const { precacheNeedsHash } = await import('../vite.config.js');
     assert.equal(precacheNeedsHash('/ort/ort-wasm-simd-threaded.wasm'), false);
