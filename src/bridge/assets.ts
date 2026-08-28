@@ -74,6 +74,12 @@ interface AssetMetaRecord {
   /** Tokens assets only: this brand is authoritative and not user-overridable
    *  (see bridge/tokens.ts). Rides the index entry through _syncFromIndex. */
   brandLock?: boolean;
+  /** The date this asset's primary file was first added to its brand pack
+   *  (YYYY-MM-DD), stamped into the index by scripts/checksum-assets.ts from the
+   *  committed date map. Rides the index entry through _syncFromIndex and surfaces
+   *  on AssetRef.meta.added for the catalog details modal. Uploads have no such
+   *  field - they carry their own millisecond stamp (see assetAddedAt). */
+  added?: string;
   checksum?: string;
   width?: number;
   height?: number;
@@ -278,6 +284,20 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
         const userAsset = await db.get('user-assets', id);
         if (!userAsset) throw new Error(`User asset not found: ${id}`);
         return toAssetRef(userAsset, 'user');
+      }
+
+      // A DIRECT URL as the asset id - `data:` inline bytes, or an http(s) file
+      // (Andy, 2026-08-28: asset inputs accept URLs, not only files - the door
+      // agents and URL-mode links arrive through, e.g. `/t/frame?image=<url>`).
+      // Lolly share links never reach here: the runtime's resolveOne routes
+      // them to compose first, so this is a plain fetch of plain bytes. What
+      // actually SUCCEEDS is platform policy, not this code: the web shell's
+      // CSP admits 'self' + data: (+ its connect-src allowlist) and refuses
+      // arbitrary origins by posture; Tauri and the CLI admit more. A blocked
+      // or failed fetch throws, and resolveOne already drops the asset with a
+      // logged warning instead of breaking the mount.
+      if (/^data:/i.test(id) || /^https?:\/\//i.test(id)) {
+        return await resolveUrlAsset(id);
       }
 
       // A presentation modifier can ride in the id, chosen at pick time and
@@ -488,6 +508,7 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
             ...(thumbUrl ? { thumbUrl } : {}),
             ...(animationUrl ? { animationUrl } : {}),
             ...(m.aiGenerated ? { aiGenerated: m.aiGenerated } : {}),
+            ...(m.added ? { added: m.added } : {}),
           },
         };
       });
@@ -1119,6 +1140,50 @@ const healLegacyType = (record: AssetRefSource): AssetRef['type'] =>
   record.type === 'video' && LEGACY_IMAGE_AS_VIDEO.has((record.format ?? '').toLowerCase())
     ? 'raster'
     : record.type;
+
+/** MIME → the AssetRef type vocabulary. SVG is vector; other images raster. */
+function urlAssetType(mime: string): { type: AssetRef['type']; format: string } | null {
+  const m = mime.toLowerCase().split(';')[0]!.trim();
+  if (m === 'image/svg+xml') return { type: 'vector', format: 'svg' };
+  if (m.startsWith('image/')) return { type: 'raster', format: m.slice(6).replace('jpeg', 'jpg') };
+  if (m.startsWith('video/')) return { type: 'video', format: m.slice(6) };
+  if (m.startsWith('audio/')) return { type: 'audio', format: m.slice(6).replace('mpeg', 'mp3') };
+  return null;
+}
+
+/** Direct-URL assets (see get()): one object URL per remote id for the page's
+ *  lifetime, so re-resolves (every input edit re-runs resolveAssetRefs) don't
+ *  refetch or leak a new blob URL each time. */
+const urlAssetCache = new Map<string, AssetRef>();
+const URL_ASSET_TIMEOUT_MS = 20_000;
+const URL_ASSET_MAX_BYTES = 64 * 1024 * 1024;   // a poster-sized fetch, not a runaway
+
+async function resolveUrlAsset(id: string): Promise<AssetRef> {
+  const hit = urlAssetCache.get(id);
+  if (hit) return hit;
+  let ref: AssetRef;
+  if (/^data:/i.test(id)) {
+    // Inline bytes: the id IS the url (the CSP admits data: in img-src), no
+    // fetch and no object URL to manage. Type straight off the data: MIME.
+    const mime = /^data:([^;,]+)/i.exec(id)?.[1] ?? '';
+    const kind = urlAssetType(mime);
+    if (!kind) throw new Error(`Unsupported data: asset type: ${mime || 'unknown'}`);
+    ref = { source: 'remote', id, type: kind.type, format: kind.format, url: id };
+  } else {
+    const res = await fetch(id, { signal: AbortSignal.timeout(URL_ASSET_TIMEOUT_MS) });
+    if (!res.ok) throw new Error(`URL asset fetch failed (${res.status}): ${id}`);
+    const blob = await res.blob();
+    if (blob.size > URL_ASSET_MAX_BYTES) throw new Error(`URL asset too large (${Math.round(blob.size / 1048576)} MB): ${id}`);
+    // Content-type first; a served-as-octet-stream file falls back to its extension.
+    const ext = /\.([a-z0-9]{2,5})(?:[?#]|$)/i.exec(id)?.[1]?.toLowerCase();
+    const kind = urlAssetType(blob.type)
+      ?? (ext ? urlAssetType(ext === 'svg' ? 'image/svg+xml' : ext === 'mp3' ? 'audio/mpeg' : ext === 'mp4' || ext === 'webm' ? `video/${ext}` : `image/${ext}`) : null);
+    if (!kind) throw new Error(`Unsupported URL asset type (${blob.type || 'unknown'}): ${id}`);
+    ref = { source: 'remote', id, type: kind.type, format: kind.format, url: URL.createObjectURL(blob) };
+  }
+  urlAssetCache.set(id, ref);
+  return ref;
+}
 
 function toAssetRef(record: AssetRefSource, source: 'user' | 'library'): AssetRef {
   // record.cacheKey overrides the default key - themed icon refs key on the

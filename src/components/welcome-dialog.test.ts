@@ -71,14 +71,15 @@ test('page 2 is the privacy page, and only its "Got it" acknowledges the notice'
   assert.equal(shell.querySelectorAll('.welcome-dot').length, 2);
   assert.equal(localStorage.getItem('lolly-privacy-ack'), null, 'reading page 2 acknowledges nothing');
 
-  // "Got it": acknowledges the standalone notice and returns to the doors.
+  // "Got it": acknowledges the standalone notice and COMPLETES the dialog
+  // (audit 167 F-A4 - agreeing used to bounce back to page 1, which read as a
+  // loop). It behaves as a dismissal, so the welcome flag settles too.
   shell.querySelector<HTMLButtonElement>('.welcome-gotit')?.click();
   assert.equal(localStorage.getItem('lolly-privacy-ack'), '1');
-  assert.equal(dialog(), shell);
-  assert.ok(shell.querySelector('.welcome-card--brand'), 'back on page 1');
-
-  shell.querySelector<HTMLButtonElement>('.welcome-skip')?.click();
-  await settled;
+  const result = await settled;
+  assert.equal(result, 'dismiss', 'Got it resolves as a dismissal');
+  assert.equal(document.querySelectorAll('.welcome-dialog').length, 0, 'the dialog is gone - agreeing finished it');
+  assert.equal(localStorage.getItem('lolly-welcome-dismissed'), '1', 'and the welcome does not re-ask next visit');
 });
 
 test('"More languages…" expands in place to the full row and retires itself', async () => {
@@ -107,4 +108,18 @@ test('a route change is teardown, not a dismissal - it persists neither flag', a
   assert.equal(document.querySelector('.welcome-dialog'), null);
   assert.equal(localStorage.getItem('lolly-welcome-dismissed'), null);
   assert.equal(localStorage.getItem('lolly-privacy-ack'), null);
+});
+
+test('taking a door persists the dismissal - the fork never re-asks after a detour (audit 167 F-A5)', async () => {
+  // The brand door: choosing it IS an answer. Backing out of the brand room
+  // must not re-raise the welcome; its own empty state is the re-invitation.
+  const settled = open();
+  const shell = dialog();
+  shell.querySelector<HTMLButtonElement>('.welcome-card--brand')?.click();
+  const result = await settled;
+  assert.equal(result, 'brand');
+  assert.equal(localStorage.getItem('lolly-welcome-dismissed'), '1', 'the brand door settles the welcome');
+  // The door-taker never read page 2, so the privacy notice keeps its one-line
+  // turn on a later visit - the door must NOT ack it.
+  assert.equal(localStorage.getItem('lolly-privacy-ack'), null, 'privacy stays unacknowledged for the banner ladder');
 });

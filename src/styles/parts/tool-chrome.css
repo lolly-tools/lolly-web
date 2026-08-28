@@ -717,28 +717,21 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
 .copy-url-icon { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); flex-shrink: 0; }
 
 /* When the actions row gets too narrow for icon + label to sit comfortably
-   side by side, drop the labels and let Copy/Save/Share collapse to their
-   three icons. `title`/`aria-label` keep each button's meaning available. */
+   side by side, STACK the three as full-width labelled rows instead of
+   shedding the labels (audit 167 F-A8): the labels used to vanish exactly
+   where the sheet lives on desktop - the sidebar is narrower than a phone -
+   so desktop got a riddle of three unlabelled icons while mobile read
+   "Copy / Save / Share" in full. A slightly taller sheet beats that. */
 @container (max-width: 220px) {
-  .copy-btn > span,
-  .save-btn > [data-save-label],
-  .copy-url-btn > [data-copy-url-label] { display: none; }
-  .copy-btn,
-  .save-btn,
-  .copy-url-btn { gap: 0; }
-  /* Icon-only: drop back to a compact square rather than a tall, empty pill. */
-  .export-action-buttons button { padding-block: 6px; }
+  .export-action-buttons { flex-direction: column; }
+  .export-action-buttons button { flex: none; width: 100%; padding-block: 7px; }
 }
 /* Jelly pills run wider than the native buttons (component font + capsule
-   padding), so they shed their labels EARLIER - the Share label was clipping
-   at widths where the native row still fit. Icon-only jelly pills zero the
-   component's inline padding + slot gap so the glyph sits dead-centre. */
+   padding), so they stack EARLIER - the Share label was clipping at widths
+   where the native row still fit. */
 @container (max-width: 320px) {
-  .export-action-buttons jelly-button > span { display: none; }
-  .export-action-buttons jelly-button {
-    --jelly-button-padding-inline: 0;
-    --jelly-button-gap: 0;
-  }
+  .export-action-buttons:has(jelly-button) { flex-direction: column; gap: 5px; }
+  .export-action-buttons jelly-button { flex: none; width: 100%; }
 }
 /* The jelly row reads airier than the native one (capsules, no borders) - pull
    the three pills closer together. */
@@ -888,6 +881,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
    actions, so they lead it and stay pinned to the top edge while the long
    sheets scroll. Background matches the popup card so settings slide beneath. */
 .export-actions-dock {
+      border-radius: calc(var(--radius) * 1.35);
   position: sticky;
   top: 0;
   z-index: 3;
@@ -1405,7 +1399,8 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   flex-shrink: 0;
 }
 .export-pdfpass.is-open .pdfpass-head::after,
-.export-protection.is-open .protection-head::after { transform: rotate(45deg); }
+.export-protection.is-open .protection-head::after,
+.export-send.is-open .protection-head::after { transform: rotate(45deg); }
 .pdfpass-body,
 .protection-body {
   display: flex;
@@ -1699,8 +1694,9 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
    ONE card headed "Send to", holding a compact button per connected destination.
    A card each - which is what this rendered before - gave a cloud upload the same
    weight as Content protection, and a heavier button than Download. The card box
-   and its head are the shared .section-card / .c2pa-head anatomy; only the button
-   row is local. */
+   is the shared .section-card anatomy and the head is the same collapsed
+   .protection-head disclosure Content protection uses; only the button row is
+   local. */
 .export-send-row {
   display: flex;
   flex-wrap: wrap;

@@ -265,7 +265,7 @@ function neutralizeMarkup(html: string): string {
   return html.replace(/<dialog\b/gi, '<div data-cl-dialog').replace(/<\/dialog>/gi, '</div>');
 }
 
-export async function mountComponents(viewEl: HTMLElement, host: HostV1): Promise<void> {
+export async function mountComponents(viewEl: HTMLElement, host: HostV1, _params?: string): Promise<void> {
   document.title = 'Components - Lolly';
   viewEl.classList.add('cl-view', 'components-view');
 

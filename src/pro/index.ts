@@ -1351,7 +1351,7 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
         o.textContent = (depth ? `${'  '.repeat(depth)}↳ ` : '') + label;
         return o;
       };
-      projectSel.replaceChildren(mkOpt('', 'No project (Library)'));
+      projectSel.replaceChildren(mkOpt('', 'My library'));
       void opts.folderApi.list().then(folders => {
         for (const f of folders) projectSel.appendChild(mkOpt(f.id, f.name, f.depth));
         projectSel.appendChild(mkOpt(NEW_SUB, '＋ New subfolder…'));
@@ -1566,7 +1566,8 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
       const fmts = row.manifest.render?.formats ?? [];
       // Vector where the tool offers it (scales cleanly for print), else a raster still.
       const format = fmts.includes('svg') ? 'svg' : (fmts.find((f: string) => ['png', 'jpg', 'jpeg', 'webp'].includes(f)) ?? 'png');
-      const url = buildEmbedUrl({ toolId: row.toolId, format, query: serializeUrlState(model) });
+      // keepUserIds: a same-device embed identity (see picker.ts embedSession).
+      const url = buildEmbedUrl({ toolId: row.toolId, format, query: serializeUrlState(model, { keepUserIds: true }) });
       // The cell's artwork must be a REF OBJECT ({id}), not a bare string - the runtime's
       // assetRefId reads .id off an object and ignores bare strings, so a bare URL renders
       // an empty grid. The id is the canonical embed URL; resolveAssetRefs re-renders it.
@@ -1607,7 +1608,8 @@ export async function mountPro(viewEl: HTMLElement, host: ProHost, opts: ProMoun
     // Build a model from the row's values and hand it to the engine's canonical
     // URL serializer, so the deep link matches what the single-tool view expects.
     const model = (tool.manifest.inputs ?? []).map((i: any) => ({ ...i, value: row.values[i.id] ?? i.default }));
-    const qs = serializeUrlState(model, { format: row.format || state.format });
+    // keepUserIds: a same-device preview link - a user/ upload resolves here.
+    const qs = serializeUrlState(model, { format: row.format || state.format, keepUserIds: true });
     // Carry per-row export dimensions (reserved w/h params), and `full` so the
     // single-tool view hides its sidebar - a clean preview. The preview canvas
     // is on-screen px, so physical units are shown at their CSS-px (96dpi) size.

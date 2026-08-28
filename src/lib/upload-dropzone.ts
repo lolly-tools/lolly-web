@@ -42,7 +42,20 @@ export interface DropzoneOpts {
 }
 
 // What the ingest path ACTUALLY accepts - keep in step with UPLOAD_ACCEPT.
-const DEFAULT_HINT = 'Images (PNG, JPG, WEBP, GIF), SVG, PDF & Illustrator, PowerPoint, audio (MP3, WAV, OGG, M4A, FLAC), video & Lottie, plus text, Markdown & code files';
+// Rendered as glanceable category chips (label to scan, exact formats on hover) so the
+// support list is subordinate to the drop prompt instead of a run-on sentence beside it.
+const FORMAT_GROUPS: ReadonlyArray<{ label: string; formats: string }> = [
+  { label: 'Images', formats: 'PNG, JPG, WEBP, GIF' },
+  { label: 'SVG', formats: 'SVG vector' },
+  { label: 'PDF & AI', formats: 'PDF, Illustrator' },
+  { label: 'Slides', formats: 'PowerPoint' },
+  { label: 'Audio', formats: 'MP3, WAV, OGG, M4A, FLAC' },
+  { label: 'Video', formats: 'Video & Lottie' },
+  { label: 'Text & code', formats: 'Text, Markdown & code files' },
+];
+const DEFAULT_HINT_HTML = FORMAT_GROUPS
+  .map((g) => `<span class="updz-chip" title="${escape(g.formats)}">${escape(g.label)}</span>`)
+  .join('');
 
 // Lucide-style upload glyph (themes via currentColor; sized in dropzone.css).
 const UPLOAD_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>';
@@ -62,7 +75,7 @@ export function mountUploadDropzone(container: HTMLElement, host: PickerHost, op
       <span class="updz-icon" aria-hidden="true">${UPLOAD_ICON}</span>
       <span class="updz-copy">
         <span class="updz-text"><span class="updz-lead">Drag &amp; drop files here, or <span class="updz-browse">browse</span></span><span class="updz-cta btn btn--primary">${t('Choose files')}</span></span>
-        <span class="updz-hint">${escape(opts.hint ?? DEFAULT_HINT)}</span>
+        <span class="updz-hint">${opts.hint ? escape(opts.hint) : DEFAULT_HINT_HTML}</span>
       </span>
     </label>`;
   const zone = container.querySelector<HTMLElement>('.updz')!;

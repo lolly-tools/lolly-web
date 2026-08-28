@@ -78,17 +78,20 @@ function makeHost(svgByUrl: Record<string, string> = {}) {
   return { host, armed, fetchSvgMarkup };
 }
 
-/** A panel mirroring renderInputs' asset-picker markup (the documented structure
- *  mountSidebarLiveControls targets: trigger inside .asset-picker-row, with the
- *  slot-actions row as its following sibling). */
-function panelWithAssetRow(withSlotActions = false): HTMLElement {
+/** A panel mirroring renderInputs' asset-picker card (the structure
+ *  mountSidebarLiveControls targets: the pick trigger inside .asset-slot-source,
+ *  which is where Use camera / Play join it). `withSettings` adds the settings row
+ *  (a Fit-canvas chip) below, which the source cluster must not land in. */
+function panelWithAssetRow(withSettings = false): HTMLElement {
   const panel = document.createElement('div');
   panel.innerHTML = `<div class="input input--asset" role="group">
       <span class="input-label">Image</span>
-      <div class="asset-picker-row">
-        <button type="button" class="asset-picker-trigger" data-input-id="image">Choose asset…</button>
+      <div class="asset-picker-row asset-slot has-value">
+        <div class="asset-slot-source">
+          <button type="button" class="asset-picker-trigger asset-slot-tab" data-input-id="image"><span class="asset-slot-tab-label">Use image</span></button>
+        </div>
+        ${withSettings ? '<div class="asset-slot-settings"><div class="slot-actions"><button type="button" class="slot-act" data-fit-id="image">⤡ Fit canvas</button></div></div>' : ''}
       </div>
-      ${withSlotActions ? '<div class="slot-actions"><button type="button" class="slot-act" data-fit-id="image">⤡ Fit canvas</button></div>' : ''}
     </div>`;
   document.body.appendChild(panel);
   return panel;
@@ -111,20 +114,22 @@ function makeControls(o: {
 
 // ── Sidebar placement ────────────────────────────────────────────────────────
 
-test('sidebar: Play + Go live mount at the head of the asset slot-actions row', async () => {
+test('sidebar: Play + Go live join the asset source tab row, after the pick tab', async () => {
   const { rt, lc } = makeControls();
   registerLiveControls(rt as object, lc);
   const panel = panelWithAssetRow(true);
   mountSidebarLiveControls(panel, rt);
 
-  const actions = panel.querySelector('.slot-actions')!;
-  const cluster = actions.querySelector('[data-live-cluster="image"]');
-  assert.ok(cluster, 'the live cluster rides the existing slot-actions row');
-  assert.equal(actions.firstElementChild, cluster, 'live controls LEAD the row (before Fit canvas)');
+  const source = panel.querySelector('.asset-slot-source')!;
+  const cluster = source.querySelector('[data-live-cluster="image"]');
+  assert.ok(cluster, 'the live cluster joins the source tab row');
+  // The "Use image" pick tab LEADS; Use camera / Play follow it.
+  assert.ok(source.firstElementChild?.classList.contains('asset-slot-tab'), 'pick tab leads the source row');
+  assert.equal(source.lastElementChild, cluster, 'live controls follow the pick tab');
   assert.ok(cluster!.querySelector('[data-live-play]'), 'Play button present');
   assert.ok(cluster!.querySelector('[data-live-camera]'), 'Go live button present');
-  // Same row as the picker: the cluster's container is the picker row's sibling.
-  assert.equal(actions.previousElementSibling?.className, 'asset-picker-row');
+  // The settings row (Fit canvas) is a sibling below - the cluster does NOT land there.
+  assert.ok(!panel.querySelector('.asset-slot-settings [data-live-cluster]'), 'live controls are not in the settings row');
 
   // Re-mount after a panel rebuild is idempotent per rebuild.
   mountSidebarLiveControls(panel, rt);
@@ -133,15 +138,14 @@ test('sidebar: Play + Go live mount at the head of the asset slot-actions row', 
   lc.dispose();
 });
 
-test('sidebar: a slot with no actions row gets one created for the buttons', () => {
+test('sidebar: the live cluster mounts in the source row even when the slot has no settings', () => {
   const { rt, lc } = makeControls();
   registerLiveControls(rt as object, lc);
   const panel = panelWithAssetRow(false);
   mountSidebarLiveControls(panel, rt);
-  const actions = panel.querySelector('.slot-actions');
-  assert.ok(actions, 'slot-actions row created');
-  assert.equal(actions!.previousElementSibling?.className, 'asset-picker-row', 'created directly after the picker row');
-  assert.ok(actions!.querySelector('[data-live-play]'));
+  const source = panel.querySelector('.asset-slot-source');
+  assert.ok(source?.querySelector('[data-live-cluster="image"]'), 'cluster joined the source row');
+  assert.ok(source!.querySelector('[data-live-play]'));
   panel.remove();
   lc.dispose();
 });
@@ -212,7 +216,11 @@ test('auto-camera: a load-time start that does not open is retried on the first 
   lc.dispose();
 });
 
-test('auto-camera: a declined permission is remembered - no re-prompt on later syncs', async () => {
+test('auto-camera: a load-time NotAllowedError is NOT a denial - the first tap still prompts, and a denial THERE is remembered (iOS)', async () => {
+  // iOS Safari rejects a getUserMedia call made outside a user gesture with
+  // NotAllowedError WITHOUT prompting - that is not a real denial, so it must not
+  // disarm the tap-retry (that was the bug: scan-code's camera never opened on
+  // iPhone). A denial at the GESTURE prompt, on the other hand, IS remembered.
   let attempts = 0, live = false;
   const model = [{ id: 'mode', type: 'select', value: 'camera' }];
   const rt = {
@@ -229,16 +237,22 @@ test('auto-camera: a declined permission is remembered - no re-prompt on later s
 
   lc.syncFromModel(model);
   await tick();
-  assert.equal(attempts, 1, 'prompted once');
+  assert.equal(attempts, 1, 'tried to open on load');
 
-  // A later keystroke re-runs sync and must NOT re-prompt a camera the user declined.
+  // A later sync while the tap-retry is armed does NOT spam fresh no-gesture starts.
   lc.syncFromModel(model);
   await tick();
-  assert.equal(attempts, 1, 'declined permission is remembered');
-  // Nor does a later tap re-prompt it.
+  assert.equal(attempts, 1, 'no re-attempt on a later sync while the tap-retry is armed');
+
+  // The load-time failure was NOT treated as a denial: the first tap still prompts.
   document.dispatchEvent(new Event('pointerdown'));
   await tick();
-  assert.equal(attempts, 1, 'a declined camera is not re-prompted by a tap either');
+  assert.equal(attempts, 2, 'the first tap re-prompted despite the load-time NotAllowedError');
+
+  // That gesture prompt was denied - THAT is remembered, so a later sync does not re-prompt.
+  lc.syncFromModel(model);
+  await tick();
+  assert.equal(attempts, 2, 'a gesture-time denial is remembered');
   lc.dispose();
 });
 

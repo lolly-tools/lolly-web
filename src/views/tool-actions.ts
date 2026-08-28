@@ -250,6 +250,15 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // this, re-saving after an edit orphaned a fresh copy in Uncategorised and left the
   // original folder card frozen at its first-save state.
   let activeSlot = initialSlot;
+  // Monotonic save counter - lets the background thumbnail patch in performSave
+  // detect that a newer save superseded it (see the generation check there).
+  let saveGen = 0;
+  // The user now holds their artifact (a download, a clipboard copy, a library
+  // save). tool.ts listens for this to stand down the unsaved-changes leave
+  // guard: a session whose latest edits made it out is resolved, not unsaved.
+  const exportCompleted = (): void => {
+    el?.dispatchEvent(new CustomEvent('lolly:export-complete', { bubbles: true }));
+  };
   // Does the on-screen canvas ARTBOARD follow the export width/height (so a dimension
   // change resizes it 1:1), or is it a scaled preview thumbnail that must be clamped to
   // the native render size? This mirrors EXACTLY the condition under which tool.ts hands
@@ -332,17 +341,24 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       // session) so a re-save updates it in place; only mint a new slot the first time.
       const slot  = activeSlot || `${manifest.id}:${Date.now()}`;
       const data  = sessionSnapshot();
-      // The thumbnail is best-effort and MUST NOT block the save (the promise this routine
-      // makes). captureThumbnail swallows its own errors, but a render that never QUIESCES
-      // (waitForQuiescence waiting on a `tool:ready` that never fires) would hang the await
-      // forever - a save that silently never completes. Cap it: a stalled thumbnail degrades
-      // to no-thumbnail (the gallery just shows the tool glyph), the session still saves.
-      const thumb = await Promise.race([
+      // Durable FIRST. The thumbnail is best-effort decoration, but it used to be
+      // AWAITED ahead of the write - so in a throttled tab (hidden or occluded:
+      // rAF frozen, waitForQuiescence stalled) the put trailed the click by up to
+      // THUMB_CAPTURE_TIMEOUT_MS, and a tab closed or navigated in that window
+      // lost the save silently after its success UI had already played (audit 167
+      // F-A3's root cause). Now the record is written in milliseconds; the
+      // thumbnail patches it below, whenever it arrives.
+      await host.state.save(slot, data, null);
+      markSyncDirty();   // device sync (plans/138): a saved session is a change to push (no-op if sync is off)
+      // Background thumbnail patch. captureThumbnail swallows its own errors, and
+      // the race caps a render that never quiesces. The generation check keeps a
+      // slow capture from clobbering a NEWER re-save's data with this older data.
+      const gen = ++saveGen;
+      void Promise.race([
         captureThumbnail(manifest, canvasEl, runtime, exportUnscaled, data.__export_format),
         new Promise<null>(resolve => setTimeout(() => resolve(null), THUMB_CAPTURE_TIMEOUT_MS)),
-      ]);
-      await host.state.save(slot, data, thumb);
-      markSyncDirty();   // device sync (plans/138): a saved session is a change to push (no-op if sync is off)
+      ]).then((thumb) => (thumb && gen === saveGen ? host.state.save(slot, data, thumb) : undefined))
+        .catch(() => { /* the thumbnail is an extra - the session is already saved */ });
       // Remember the slot so the next save updates THIS session rather than creating a
       // duplicate (see activeSlot above). Set before filing so a fresh first-save is
       // both filed into its folder AND pinned as the active slot for later edits.
@@ -362,6 +378,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       fileIntoFolder = null;
       label.textContent = 'Saved';
       announce('Saved');
+      exportCompleted();
       return true;                              // leave the button as-is; the caller navigates away
     } catch (e) {
       console.error('Save failed:', e);
@@ -1279,12 +1296,12 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // personalizeNudgeDismissed flag the gallery toast reads, so whichever surface
   // asks first retires the other. Best-effort throughout - a profile store that
   // cannot be read or written costs nothing, the file has already reached the user.
-  async function offerDetailsAsk(): Promise<void> {
-    if (!el || el.querySelector('.export-details-ask')) return;
+  async function offerDetailsAsk(): Promise<boolean> {
+    if (!el || el.querySelector('.export-details-ask')) return false;
     const store = host.profile as ProfileStore | undefined;
-    if (!store?.get) return;
+    if (!store?.get) return false;
     const current = await store.get();
-    if (current.useDetails || current.personalizeNudgeDismissed) return;
+    if (current.useDetails || current.personalizeNudgeDismissed) return false;
     const line = document.createElement('p');
     line.className = 'export-details-ask';
     line.textContent = t('Add your details to this file? They stay on this device.');
@@ -1294,6 +1311,31 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     line.append(' ', link);
     el.appendChild(line);
     await store.set?.({ ...current, personalizeNudgeDismissed: true });
+    return true;
+  }
+
+  // The return ticket, taught once (audit 167 F-A11): every export carries its
+  // full recipe, and Verify can resurrect the live session from the file alone -
+  // the product's deepest retention hook, which nothing in the first-use journey
+  // mentioned. One quiet line in the same slot as the details ask, on the first
+  // download where that ask didn't run (the ask keeps priority - never two
+  // teaching lines on one download). Device-local show-once flag: this is
+  // chrome education like the tips strip, not tool or profile state.
+  const REOPEN_NOTE_KEY = 'lolly-reopen-note-seen';
+  function offerReopenNote(): void {
+    if (!el || el.querySelector('.export-details-ask')) return;
+    try {
+      if (localStorage.getItem(REOPEN_NOTE_KEY)) return;
+      localStorage.setItem(REOPEN_NOTE_KEY, '1');
+    } catch { return; }
+    const line = document.createElement('p');
+    line.className = 'export-details-ask';
+    line.textContent = t('This file remembers how it was made - drop it on Lolly anytime to reopen it.');
+    const link = document.createElement('a');
+    link.href = '#/verify';
+    link.textContent = t('See for yourself');
+    line.append(' ', link);
+    el.appendChild(line);
   }
 
   // The action buttons are the sheet's PRIMARY content, so they come FIRST -
@@ -2040,7 +2082,13 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     }
     if (pdfPassEl.value) c2paEl.checked = false;
     c2paEl.disabled    = Boolean(pdfPassEl.value);
-    pdfPassEl.disabled = c2paEl.checked;
+    // The exclusion is one-directional on purpose: while a password is typed the
+    // C2PA box is disabled (above), but the password field itself is NEVER disabled.
+    // Disabling it here deadlocked the panel - C2PA is default-ON for a normal PDF,
+    // so the field mounted disabled, and the only thing that clears C2PA (typing a
+    // password) could never happen in a field you can't type into. The default-on
+    // credential yields to the explicit action: typing a password unchecks C2PA.
+    pdfPassEl.disabled = false;
   }
   c2paEl?.addEventListener('change', () => refreshC2paUi('c2pa'));
   pdfPassEl?.addEventListener('input', () => refreshC2paUi('password'));
@@ -2846,6 +2894,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       announce(res?.method === 'download'
         ? 'Clipboard image not supported here - downloaded instead'
         : 'Copied to clipboard');
+      exportCompleted();
     }).catch(err => console.error('Copy failed:', err));
   });
 
@@ -3499,7 +3548,10 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       degradeNote.textContent = degradedNotes.join(' ');
       degradeNote.hidden = false;
     }
-    void offerDetailsAsk().catch(() => { /* the ask is an extra, never a failure path */ });
+    exportCompleted();
+    void offerDetailsAsk()
+      .then((shown) => { if (!shown) offerReopenNote(); })
+      .catch(() => { /* the ask is an extra, never a failure path */ });
   });
 
   el.querySelector<HTMLButtonElement>('[data-action="save"]')?.addEventListener('click', async function (this: HTMLButtonElement) {
@@ -3513,6 +3565,10 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // the cheap cases - dims plus the Outline-fonts chip when the format is EMF
   // - and hands them to the provider; the status line becomes the provider's
   // viewable link on success.
+  // Collapsed by default, exactly like Content protection - one tidy header for
+  // a capability most exports never touch. The open state lives in the closure so
+  // a format change (which rebuilds the card) doesn't slam it shut mid-use.
+  let sendOpen = false;
   function renderSendTargets(fmt: string): void {
     const box = el!.querySelector<HTMLElement>('[data-send-targets]');
     if (!box) return;
@@ -3526,9 +3582,9 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     // the provider NAME rather than the target's own actionLabel ("Send to Google
     // Drive"), which would repeat the head next to it.
     box.innerHTML = offered.length ? `
-      <div class="section-card export-send">
-        <span class="c2pa-head">${icon('share', { className: 'c2pa-icon' })}<span>${escape(t('Send to'))}</span></span>
-        <div class="export-send-row">
+      <div class="section-card export-send${sendOpen ? ' is-open' : ''}">
+        <button type="button" class="protection-head" data-action="send-toggle" aria-expanded="${sendOpen}">${icon('share', { className: 'c2pa-icon' })}<span>${escape(t('Send to'))}</span></button>
+        <div class="export-send-row" data-send-body style="display:${sendOpen ? 'flex' : 'none'}">
           ${offered.map(tg => `
           <button type="button" data-send-kind="${escape(tg.kind)}"${tg.hint ? ` title="${escape(tg.hint)}"` : ''}>${icon('upload', { size: 14 })}<span>${escape(tg.label)}</span></button>
           <span class="send-status" data-send-status="${escape(tg.kind)}" role="status"></span>`).join('')}
@@ -3562,6 +3618,16 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       .catch((err: unknown) => { console.error('Send destinations unavailable:', err); })
     : Promise.resolve();
   el.querySelector<HTMLElement>('[data-send-targets]')?.addEventListener('click', async (ev) => {
+    // The header toggle rides the same delegated listener (the card is rebuilt
+    // per format; the container survives) - same idiom as protection-toggle.
+    const head = (ev.target as HTMLElement).closest?.('[data-action="send-toggle"]');
+    if (head) {
+      sendOpen = el!.querySelector('.export-send')?.classList.toggle('is-open') ?? false;
+      head.setAttribute('aria-expanded', String(sendOpen));
+      const bodyEl = el!.querySelector<HTMLElement>('[data-send-body]');
+      if (bodyEl) bodyEl.style.display = sendOpen ? 'flex' : 'none';
+      return;
+    }
     const btn = (ev.target as HTMLElement).closest?.('[data-send-kind]') as HTMLButtonElement | null;
     if (!btn || btn.hasAttribute('disabled')) return;
     const kind = btn.dataset.sendKind!;

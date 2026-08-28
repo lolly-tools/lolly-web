@@ -1170,8 +1170,16 @@ test('every send destination shares one "Send to" row', async () => {
     const h = mount({ seqMs: null, formats: ['png'] });
     const cards = h.panel.querySelectorAll('.export-send');
     assert.equal(cards.length, 1, 'one card for the whole destination list');
-    assert.match(cards[0]!.querySelector('.c2pa-head')?.textContent ?? '', /Send to/,
-      'the head names the job once');
+    const head = cards[0]!.querySelector('[data-action="send-toggle"]') as HTMLButtonElement;
+    assert.match(head?.textContent ?? '', /Send to/, 'the head names the job once');
+    // Collapsed by default, the Content protection idiom: destinations are an
+    // occasional capability, so the closed header is the resting state.
+    assert.equal(head.getAttribute('aria-expanded'), 'false', 'collapsed by default');
+    const bodyEl = cards[0]!.querySelector('[data-send-body]') as HTMLElement;
+    assert.equal(bodyEl.style.display, 'none', 'the row is hidden until opened');
+    head.click();
+    assert.equal(head.getAttribute('aria-expanded'), 'true', 'the header opens it');
+    assert.equal(bodyEl.style.display, 'flex');
     const btns = [...cards[0]!.querySelectorAll('[data-send-kind]')];
     assert.deepEqual(btns.map(b => b.getAttribute('data-send-kind')), ['testcloud', 'testdrive'],
       'the click delegation still keys off data-send-kind');

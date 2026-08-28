@@ -14,7 +14,7 @@
    State classes set by the component: .is-dragover (a file drag is over the zone) and
    .is-busy (ingest in flight - pointer-events off so a second drop can't land). */
 .updz {
-  display: flex; align-items: center; justify-content: center; gap: 10px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
   margin-bottom: .9rem; padding: 14px 16px;
   min-height: 20vh; height:15em;
   border: 2px dashed hsl(var(--border)); border-radius: var(--radius);
@@ -22,17 +22,32 @@
   cursor: pointer;
   transition: border-color .12s, background .12s, color .12s;
 }
-.updz-icon { display: inline-flex; flex: none; }
-.updz-icon svg { width: calc(20px * var(--a11y-fs)); height: calc(20px * var(--a11y-fs)); }
+.updz-icon { display: inline-flex; flex: none; color: hsl(var(--muted-foreground)); }
+.updz-icon svg { width: calc(24px * var(--a11y-fs)); height: calc(24px * var(--a11y-fs)); }
+/* Stack the prompt over the format list so the two read as headline + fine print,
+   not one wrapped sentence. */
+.updz-copy { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+/* The prompt is the thing to see: larger and in the foreground tone against the zone's
+   muted body colour. */
+.updz-lead { font-size: calc(1.05rem * var(--a11y-fs)); font-weight: 500; color: hsl(var(--foreground)); }
 .updz--empty { flex-direction: column; gap: 12px; padding: 2.6rem 1.5rem; }
 .updz--empty .updz-icon svg { width: calc(28px * var(--a11y-fs)); height: calc(28px * var(--a11y-fs)); }
-.updz--compact { margin-bottom: 0; padding: 9px 12px; gap: 8px; font-size: calc(.85rem * var(--a11y-fs)); }
+.updz--compact { flex-direction: row; margin-bottom: 0; padding: 9px 12px; gap: 8px; font-size: calc(.85rem * var(--a11y-fs)); }
 .updz--compact .updz-hint { display: none; }
 .updz:hover, .updz:focus-within { border-color: hsl(var(--primary) / .55); color: hsl(var(--foreground)); }
 .updz:focus-within { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 .updz.is-dragover { border-color: hsl(var(--primary)); background: hsl(var(--primary) / .08); color: hsl(var(--foreground)); }
 .updz.is-busy { opacity: .6; pointer-events: none; }
 .updz-browse { color: hsl(var(--primary)); font-weight: 600; text-decoration: underline; }
+/* Supported formats as subtle, glanceable chips (exact formats in each chip's title). */
+.updz-hint { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; }
+.updz-chip {
+  padding: 2px 9px; border-radius: 999px;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--muted) / .4);
+  color: hsl(var(--muted-foreground));
+  font-size: calc(.72rem * var(--a11y-fs)); line-height: 1.6; white-space: nowrap;
+}
 
 /* Touch flips the hierarchy: "browse" was a small inline link inside a sentence about
    a gesture a phone does not have, in a zone spending a screenful on it. A coarse
@@ -45,7 +60,7 @@
 @media (pointer: coarse) {
   /* 68px = the CTA's 44px floor plus the padding, so the "Adding…" swap (which
      replaces the CTA with a line of text) does not shrink the zone under itself. */
-  .updz { min-height: 68px; height: auto; padding: 12px 14px; }
+  .updz { flex-direction: row; min-height: 68px; height: auto; padding: 12px 14px; }
   /* The roomier column layout is a desktop luxury; on touch both variants are the
      same [icon][CTA] band, so the CTA has a row to be full-width in. */
   .updz--empty { flex-direction: row; padding: 12px 14px; }

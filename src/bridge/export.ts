@@ -7,8 +7,8 @@
  * one place, not 50.
  *
  * Watermarking: applied when the tool is 'experimental' OR opts.watermark is true.
- * A single "DRAFT USE ONLY" overlay div is added to the LIVE node before capture, so
- * every format (raster, SVG walker, PDF) sees the identical mark - preview == output.
+ * A single localised "DRAFT" overlay div is added to the LIVE node before capture, so
+ * every format (raster, SVG walker, PDF) sees the identical mark.
  */
 
 import {
@@ -48,6 +48,7 @@ import { describeControl, controlText, isWidgetControl, rangeFraction, type Cont
 import { stackingRole, sortUnits, orderModifiedChildren, isFlexOrGridContainer } from './stacking-order.ts';
 import type { StackingRole } from './stacking-order.ts';
 import { unscopeStyleEls } from '../lib/scope-css.ts';
+import { tRaw } from '../i18n.ts';
 import { parseSvgRoot, namespaceSvgRefs, type VectorTwinCanvas } from '../lib/vector-paint.ts';
 import { assembleAnimatedSvg } from '../lib/svg-anim-core.ts';
 import { recTransition } from '../lib/transitions.ts';
@@ -9224,7 +9225,7 @@ function hideLiveCanvases(live: HTMLCanvasElement[]): () => void {
 
 // Exported for the co-located frame-source test (direct-canvas short-circuit +
 // hang-safe fall-through). Shipping callers reach it through the render functions below.
-export async function createFrameSource(node: Element, opts: ExportOpts = {}): Promise<{ width: number; height: number; frame(t?: number, clipSec?: number): Promise<HTMLCanvasElement>; dispose(): void }> {
+export async function createFrameSource(node: Element, opts: ExportOpts & { frameBg?: string } = {}): Promise<{ width: number; height: number; frame(t?: number, clipSec?: number): Promise<HTMLCanvasElement>; dispose(): void }> {
   const lib = await getDomToImage();
   const { width: nodeW, height: nodeH } = node.getBoundingClientRect();
   // CSS animations the per-frame scrub pauses, resumed in dispose() - without
@@ -9237,9 +9238,15 @@ export async function createFrameSource(node: Element, opts: ExportOpts = {}): P
   const evenFloor = (n: number): number => Math.max(2, Math.floor(n / 2) * 2);
   const targetW = evenFloor(((opts.width  as number) > 0) ? (opts.width  as number) : nodeW);
   const targetH = evenFloor(((opts.height as number) > 0) ? (opts.height as number) : nodeH);
+  // An opaque backdrop for a container that carries no alpha (video). Left undefined
+  // for the alpha paths (gif/apng/webp-anim, favicons), so their transparency is kept.
+  // Only renderVideo (webm/mp4) passes it; without it a transparentBg tool's frames
+  // capture transparent and the encoder flattens them to black.
+  const frameBg = opts.frameBg;
   const dtoOpts = {
     width:  targetW,
     height: targetH,
+    ...(frameBg ? { bgcolor: frameBg } : {}),
     style: {
       transform:       `scale(${targetW / nodeW})`,
       transformOrigin: 'top left',
@@ -9345,6 +9352,9 @@ export async function createFrameSource(node: Element, opts: ExportOpts = {}): P
     const s = targetW / nodeW;
     const ctx = f.out.getContext('2d')!;
     ctx.clearRect(0, 0, targetW, targetH);
+    // Same opaque backdrop the dom-to-image path applies via bgcolor: the cached chrome
+    // can be transparent where the tool omits a bg rect, so fill before compositing it.
+    if (frameBg) { ctx.fillStyle = frameBg; ctx.fillRect(0, 0, targetW, targetH); }
     ctx.drawImage(f.chrome, 0, 0);
     for (const c of f.live) {
       const r = c.getBoundingClientRect();
@@ -9753,8 +9763,16 @@ async function renderVideo(node: Element, opts: ExportOpts, preferred: string): 
   // Phase 1: render all frames sequentially through the shared FrameSource.
   // Animation advances in real time between frames, so each captures a unique
   // state - recording takes longer than real-time but never duplicates/skips.
+  // A video container carries no alpha, so a transparent backdrop encodes as black -
+  // the reason a transparentBg tool's mp4/webm came out black while its gif (an alpha
+  // format) did not. Composite every frame onto an opaque backdrop: the caller's
+  // background if it's a real colour, else white. transparentBg stays the tool default;
+  // it just means "transparent where the container supports it" - a tool that paints its
+  // own opaque background still wins, since that colour sits on top of this fill.
+  const videoBg = (typeof opts.background === 'string' && opts.background !== 'transparent')
+    ? opts.background : '#ffffff';
   const source  = await (async () => {
-    try { return await createFrameSource(node, opts); }
+    try { return await createFrameSource(node, { ...opts, frameBg: videoBg }); }
     catch (err) { audio?.stop(); throw err; }
   })();
   const targetW = source.width, targetH = source.height;
@@ -10963,18 +10981,20 @@ function ditherFloydSteinberg(data: Uint8ClampedArray, width: number, height: nu
 // which is required by dom-to-image-more and captureStream-based video capture.
 function addWatermarkOverlay(node: HTMLElement): () => void {
   const stamp = document.createElement('div');
-  stamp.textContent = 'DRAFT USE ONLY';
+  // One localised word so a local team reads what it's looking at. English source
+  // doubles as the i18n key; tRaw because this is a textContent (not HTML) sink.
+  stamp.textContent = tRaw('DRAFT');
   // EXPLICIT px size, not inset:0. dom-to-image clones the node into a foreignObject
   // and re-lays-it-out; an absolute child sized only by inset:0 collapses to 0×0 in
   // that clone (visible live, absent in the raster). A concrete width/height from the
-  // live node can't collapse, so preview == output on every format.
+  // live node can't collapse, so the mark reaches every format.
   const rect = node.getBoundingClientRect();
   const w = node.offsetWidth || rect.width;
   const h = node.offsetHeight || rect.height;
-  // One centred line that spans ~80% of the width and NEVER wraps (a wrapped stamp is
-  // why 1:1 exports diverged from the preview). Scaling to width also covers a larger
-  // area on big artboards. ~0.6em/monospace char × 14 chars ≈ 8.4em, so W/11 ≈ 0.8W.
-  const fontSize = Math.max(12, w / 11);
+  // Big centred word, sized to the node and NEVER wrapping. W/7 lets "DRAFT" (~0.4W)
+  // and longer localisations (e.g. ENTWURF ~0.6W) both sit inside the frame; a rare
+  // very long word overflows rather than wraps - acceptable for a destructive mark.
+  const fontSize = Math.max(14, w / 7);
   Object.assign(stamp.style, {
     position: 'absolute',
     left: '0',

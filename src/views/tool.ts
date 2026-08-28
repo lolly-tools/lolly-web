@@ -678,12 +678,12 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   const showExportPanel = !isFull && urlFlags.has('options');
   // Presentation mode (plan 112): `?present` opens a frame document as a fullscreen,
   // click-advanced deck; `?s=` deep-links a slide (1-based position, frame id, or `h.f`);
-  // `?loop` makes it signage. `present`/`s` are engine-reserved (url-mode.ts RESERVED); `loop`
-  // is read raw here because it is a real input id in other tools, so it is a present-only
-  // kiosk flag on this frame tool, never reserved globally.
+  // `?kiosk` makes it signage. All three are engine-reserved (url-mode.ts RESERVED) -
+  // `kiosk` was the unreserved `loop` flag until plan 171's freeze-day rename, because
+  // `loop` is a live input id in other tools and could never be reserved.
   const isPresent = urlFlags.has('present');
   const presentAddress = urlFlags.get('s');
-  const presentLoop = urlFlags.has('loop');
+  const presentLoop = urlFlags.has('kiosk');
 
   let initialValues: Record<string, InputValue> = values;
   if (slot) {
@@ -2364,12 +2364,20 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // Pre-seeded from any params already in the URL so shared/bookmarked links
   // are preserved across the first subscribe callback.
   let userHasMadeChanges = false;
+  // A completed export/copy/save since the last edit. When true, the leave guards
+  // stand down: the user finished - their latest state left as a file, a clipboard
+  // copy or a library save - and "Unsaved changes" at that moment reads as the app
+  // disbelieving them (audit 167 F-A2). Editing again re-arms the guard. The amber
+  // Save cue deliberately stays: the SESSION may still be worth keeping, the guard
+  // just stops blocking the door over it.
+  let exportedSinceEdit = false;
   // The render pill's Save half goes amber (with a one-shot flash) the moment the
   // first un-saved edit lands, and reverts to its resting state on save. We flash
   // only on the clean→dirty edge so it's an attention cue, not a strobe; the
   // animation is restarted by removing+re-adding the class (a no-op re-add wouldn't
   // replay it), so it fires again after each subsequent save→edit cycle.
   function markSessionDirty(): void {
+    exportedSinceEdit = false;               // a fresh edit re-arms the leave guard
     if (userHasMadeChanges) return;          // already dirty - keep the resting amber
     userHasMadeChanges = true;
     if (renderSaveBtn) {
@@ -2634,6 +2642,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   }
 
   const actionsApi = renderActions(actionsEl, tool.manifest, runtime, exportSourceNode, host, resetView, exportUnscaled, exportDefaults, syncUrl, playShutter, fileIntoFolder, returnTo, slot, reachedViaLink);
+  // renderActions announces every completed download/copy/save - see
+  // exportedSinceEdit above for why that quiets the unsaved-changes guards.
+  actionsEl?.addEventListener('lolly:export-complete', () => { exportedSinceEdit = true; });
 
   // "Bulk from rows" - hand this template to /batch, where a sheet of rows renders the
   // whole set in one run. Deliberately NOT an export option (like Make variants, it is a
@@ -2643,7 +2654,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // button for the sidebar layouts, the Lolly menu item for the chromeless editors.
   const openBulk = (): void => {
     const go = (): void => navigateTo(`#/batch?tool=${encodeURIComponent(toolId)}`);
-    if (!hasInputs || !userHasMadeChanges) { go(); return; }
+    if (!hasInputs || !userHasMadeChanges || exportedSinceEdit) { go(); return; }
     const canSave = !!actionsEl?.querySelector('[data-action="save"]') && !!actionsApi?.save;
     showUnsavedDialog(canSave ? async () => { if (await actionsApi!.save!()) go(); } : null, go);
   };
@@ -3039,7 +3050,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       if (sPending == null) return;
       const s = sPending; sPending = null;
       writePresentUrl((sp) => {
-        sp.set('present', ''); if (presentLoop) sp.set('loop', ''); sp.set('s', s);
+        sp.set('present', ''); if (presentLoop) sp.set('kiosk', ''); sp.set('s', s);
       });
     };
     const writePresentAddress = (frameId: string): void => {
@@ -3069,7 +3080,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           if (sTimer) { clearTimeout(sTimer); sTimer = null; }
           sPending = null;
           // Leave the editor's own URL clean: drop the present params on exit.
-          writePresentUrl((sp) => { sp.delete('present'); sp.delete('loop'); sp.delete('s'); });
+          writePresentUrl((sp) => { sp.delete('present'); sp.delete('kiosk'); sp.delete('s'); });
         },
       });
     };
@@ -3332,7 +3343,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // came from one, else the view the user arrived from).
   mountBackPill(viewEl, {
     intercept: (go) => {
-      if (!hasInputs || !userHasMadeChanges) return false;
+      if (!hasInputs || !userHasMadeChanges || exportedSinceEdit) return false;
       // Offer "Save & leave" only when the tool actually has a save action.
       const canSave = !!actionsEl?.querySelector('[data-action="save"]') && !!actionsApi?.save;
       // If the session carries heavy embedded bytes (a recorded clip stamps meta.bytes),
@@ -4623,11 +4634,11 @@ async function shrinkUrl(runtime: Runtime, manifest: ToolManifest, barSeq: BarSe
     if (input.urlKey) inputsByKey[input.urlKey] = input;
   }
 
-  // `present`/`s` are engine-reserved; `loop` is NOT reserved (it is a live input id
-  // in several tools) but the presenter reads it as a raw kiosk flag on design,
-  // so it must survive shrinkUrl here to keep signage links (`?present&loop`) whole. See
-  // plan 112 and the RESERVED note in engine/src/url-mode.ts.
-  const RESERVED_KEEP = new Set(['format', 'export', 'copy', 'slot', 'output', 'full', '_v', 'nostage', 'lang', 'present', 's', 'loop']);
+  // `present`/`s`/`kiosk` are engine-reserved; `kiosk` must also survive shrinkUrl
+  // here so signage links (`?present&kiosk`) stay whole. See plan 112 and the
+  // RESERVED note in engine/src/url-mode.ts (plan 171 renamed the flag from the
+  // never-reservable `loop`).
+  const RESERVED_KEEP = new Set(['format', 'export', 'copy', 'slot', 'output', 'full', '_v', 'nostage', 'lang', 'present', 's', 'kiosk']);
 
   const kept: string[] = [];
   for (const part of qs.split('&')) {

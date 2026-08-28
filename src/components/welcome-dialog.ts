@@ -9,15 +9,15 @@
  * Escape via the `cancel` event, backdrop-box click test, mounted on <body>),
  * offering two paths:
  *
- *   "Make it yours"          → the #/start brand wizard. Deliberately does NOT
- *                              set the dismissed flag - installing a brand (or
- *                              explicitly choosing to explore) is what settles
- *                              the question; backing out of the wizard brings
- *                              the welcome back next visit.
+ *   "Make it yours"          → the #/start brand wizard. Persists the dismissed
+ *                              flag (audit 167 F-A5: taking a door IS an answer;
+ *                              the fork re-appearing after a brand-room detour
+ *                              read as amnesia). The brand room's own empty
+ *                              state is the re-invitation if the user backs out.
  *   "Bring your design"      → the universal drop router's file picker
  *                              (lib/drop-router.ts): a Figma/Penpot/PDF/… file
- *                              routes into Design or the library. Like
- *                              the wizard path, it does NOT persist the flag.
+ *                              routes into Design or the library. Persists
+ *                              the flag, same reasoning as the wizard path.
  *   "Explore the tools"      → dismiss, persist the flag, stay on the gallery.
  *   "Skip for now"           → the quiet text link under the cards; identical to
  *                              Escape (dismiss + persist), just visible.
@@ -36,8 +36,10 @@
  *
  *   Page 1  the three doors above.
  *   Page 2  "Private by design" - the privacy assurance in full, with a "Got it"
- *           button that calls ackPrivacyNotice() and returns to page 1. Only that
- *           button acknowledges; opening the dialog or reading page 2 does not.
+ *           button that calls ackPrivacyNotice() and CLOSES the dialog (audit
+ *           167 F-A4: agreeing must complete something, not bounce to page 1).
+ *           Only that button acknowledges; opening the dialog or reading
+ *           page 2 does not.
  *
  * The footer holds the two page dots (clickable), the language row and "Skip for
  * now" on both pages. The language row starts collapsed to the detected language
@@ -204,7 +206,13 @@ export function showWelcomeDialog(profileApi?: WebProfileAPI, uploadHost?: Picke
       // `result` null = programmatic teardown (a navigation) - resolve without
       // persisting; every USER dismissal except the wizard path sets the flag.
       onClose: (result) => {
+        // Every USER choice ends the welcome for good (audit 167 F-A5): taking a
+        // door IS engagement, and re-raising the fork after a brand-room or
+        // import detour read as the app forgetting the answer. Only explore /
+        // dismiss also ack the privacy notice - a door-taker never saw page 2,
+        // so the one-line privacy banner keeps its turn on a later visit.
         if (result === 'explore' || result === 'dismiss') { markWelcomeDismissed(); ackPrivacyNotice(); }
+        else if (result === 'brand' || result === 'import') { markWelcomeDismissed(); }
         NAV_EVENTS.forEach(ev => window.removeEventListener(ev, onNav));
         settleOpen = null;
         openPromise = null;
@@ -262,10 +270,13 @@ export function showWelcomeDialog(profileApi?: WebProfileAPI, uploadHost?: Picke
 
       // "Got it" on the privacy page: the only thing that acknowledges the
       // standalone privacy notice (views/privacy-notice.ts) - reading page 2 is
-      // not enough, the user has to say so. Then back to the doors.
+      // not enough, the user has to say so. Agreeing COMPLETES the dialog
+      // (audit 167 F-A4): it used to bounce back to page 1, and "the button
+      // that agrees returns you to the start" read as a loop. Anyone who still
+      // wants the doors has the gallery underneath.
       if (target?.closest('[data-ack]')) {
         ackPrivacyNotice();
-        goToPage(1);
+        modal.close('dismiss');
         return;
       }
 
@@ -281,8 +292,8 @@ export function showWelcomeDialog(profileApi?: WebProfileAPI, uploadHost?: Picke
         const choice = card.dataset.choice as WelcomeChoice;
         modal.close(choice);
         if (choice === 'brand') window.location.hash = '#/start';
-        // Like the wizard path, 'import' doesn't persist the dismissal (onClose
-        // above) - cancelling the file picker brings the welcome back next visit.
+        // Both doors persist the dismissal in onClose above - a cancelled file
+        // picker still counted as engaging with the fork (audit 167 F-A5).
         if (choice === 'import' && uploadHost) openDropFilePicker(uploadHost);
       }
       // Backdrop dismissal is handled by mountModal (cancelValue: 'dismiss').
@@ -340,17 +351,17 @@ const BRANDED_INTRO_KEY = 'lolly-branded-intro-dismissed';
 export async function mountBrandedIntro(
   anchorEl: HTMLElement | null,
   state?: { list?: () => Promise<unknown[]> },
-): Promise<void> {
-  if (!anchorEl || !anchorEl.isConnected) return;
-  try { if (localStorage.getItem(BRANDED_INTRO_KEY) === '1') return; }
-  catch { return; } // storage off - a dismissal couldn't persist, so don't nag every visit
+): Promise<boolean> {
+  if (!anchorEl || !anchorEl.isConnected) return false;
+  try { if (localStorage.getItem(BRANDED_INTRO_KEY) === '1') return false; }
+  catch { return false; } // storage off - a dismissal couldn't persist, so don't nag every visit
   const settle = (): void => { try { localStorage.setItem(BRANDED_INTRO_KEY, '1'); } catch { /* storage off */ } };
   try {
     const slots = await state?.list?.();
-    if (slots && slots.length > 0) { settle(); return; }
+    if (slots && slots.length > 0) { settle(); return false; }
   } catch { /* state unavailable - fall through and show the strip */ }
-  if (!anchorEl.isConnected) return; // navigated away while the state check ran
-  if (anchorEl.parentElement?.querySelector('.brand-tips')) return; // one strip only
+  if (!anchorEl.isConnected) return false; // navigated away while the state check ran
+  if (anchorEl.parentElement?.querySelector('.brand-tips')) return false; // one strip only
   const strip = document.createElement('aside');
   strip.className = 'brand-tips brand-tips--intro';
   strip.setAttribute('role', 'note');
@@ -373,4 +384,5 @@ export async function mountBrandedIntro(
   NAV_EVENTS.forEach(ev => window.addEventListener(ev, onNav));
   strip.querySelector<HTMLButtonElement>('.brand-tips-dismiss')?.addEventListener('click', () => { settle(); teardown(); });
   anchorEl.before(strip);
+  return true;
 }

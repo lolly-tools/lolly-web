@@ -36,11 +36,11 @@ test('LEGACY: ?tab= opens the same rooms', () => {
 });
 
 test('LEGACY: #/start?tab=type - the dashboard "Manage fonts" link', () => {
-  assert.deepEqual(resolveStartRoute('tab=type'), { area: 'type', wheel: false, importOpen: false, focus: null, source: null });
+  assert.deepEqual(resolveStartRoute('tab=type'), { area: 'type', wheel: false, importOpen: false, focus: null, source: null, seed: null });
 });
 
 test('LEGACY: #/start?tab=color&wheel opens the colour room with the chart flag', () => {
-  assert.deepEqual(resolveStartRoute('tab=color&wheel'), { area: 'color', wheel: true, importOpen: false, focus: null, source: null });
+  assert.deepEqual(resolveStartRoute('tab=color&wheel'), { area: 'color', wheel: true, importOpen: false, focus: null, source: null, seed: null });
 });
 
 test('LEGACY: ?wheel is presence, not value - ?wheel=0 has always meant open', () => {
@@ -87,13 +87,13 @@ test('an inherited object key is never mistaken for a room', () => {
 });
 
 test('a leading ? is tolerated (a caller passing the raw search string)', () => {
-  assert.deepEqual(resolveStartRoute('?area=color&wheel'), { area: 'color', wheel: true, importOpen: false, focus: null, source: null });
+  assert.deepEqual(resolveStartRoute('?area=color&wheel'), { area: 'color', wheel: true, importOpen: false, focus: null, source: null, seed: null });
 });
 
 test('unknown params are ignored, not fatal', () => {
   assert.deepEqual(
     resolveStartRoute('area=tokens&utm_source=x&swatch=jungle-500'),
-    { area: 'tokens', wheel: false, importOpen: false, focus: null, source: null },
+    { area: 'tokens', wheel: false, importOpen: false, focus: null, source: null, seed: null },
   );
 });
 
@@ -171,7 +171,7 @@ test('?source rides a room param and does not move the room', () => {
 test('#/start?area=versions opens the Versions panel (plan 97 SS5 / SS6a)', () => {
   assert.deepEqual(
     resolveStartRoute('area=versions'),
-    { area: 'versions', wheel: false, importOpen: false, focus: null, source: null },
+    { area: 'versions', wheel: false, importOpen: false, focus: null, source: null, seed: null },
   );
   // The kept alias reaches it too: one resolution table, no second rule.
   assert.equal(resolveStartRoute('tab=versions').area, 'versions');
@@ -296,4 +296,20 @@ test('B4: one Home in the studio - the FAB stands down when the pill already is 
     'which is the form the studio asks for');
   assert.match(src, /const homeFab = pillIsHome \? '' : homeFabHtml\(\)/,
     'and both render sites take the same one value');
+});
+
+test('?seed carries a hex colour into the generate wing, and only a hex (audit 167 F-A12)', () => {
+  // The added-chip's "Generate your palette from this colour" mints this link -
+  // the seed must survive the route resolve so the generator opens primed with
+  // THE colour, not the starter primary.
+  const r = resolveStartRoute('area=color&focus=generate&seed=%23E8503A');
+  assert.equal(r.area, 'color');
+  assert.equal(r.focus, 'generate');
+  assert.equal(r.seed, '#E8503A');
+  // 8-digit hex (alpha) resolves too; anything unparseable degrades to null
+  // silently rather than handing the generator a value it would misread.
+  assert.equal(resolveStartRoute('seed=%23E8503A80').seed, '#E8503A80');
+  assert.equal(resolveStartRoute('seed=coral').seed, null);
+  assert.equal(resolveStartRoute('seed=oklch(70%25 .15 157)').seed, null);
+  assert.equal(resolveStartRoute('area=color').seed, null);
 });

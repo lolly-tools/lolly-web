@@ -24,7 +24,7 @@ import { isTauriShell } from './instance-choice.ts';
 import { codeGrant, refreshGrant, type TokenSet } from './provider-auth.ts';
 import {
   getConnection, saveConnection, removeConnection,
-  cachedToken, cacheToken, dropToken,
+  cachedToken, cacheToken, dropToken, cachedConnection,
 } from './provider-connections.ts';
 import type { SendTarget } from './send-target.ts';
 import type { SyncRemote, SnapshotMeta } from './sync-remote.ts';
@@ -44,7 +44,10 @@ export function setDropboxClientId(id: string | null): void { clientIdOverride =
 export function dropboxClientId(): string {
   if (clientIdOverride !== null) return clientIdOverride;
   const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
-  return env?.VITE_DROPBOX_CLIENT_ID || '';
+  // Deploy id first, else the user's OWN app key saved with their connection -
+  // the /profile bring-your-own path for deploys with no Dropbox registration.
+  // Sync read of the primed cache, same rule as hasConnection().
+  return env?.VITE_DROPBOX_CLIENT_ID || cachedConnection(KIND)?.config?.clientId || '';
 }
 
 export function dropboxAvailable(): boolean { return !!dropboxClientId(); }
@@ -109,9 +112,11 @@ async function rpc(path: string, body: unknown, fetchFn: typeof fetch = fetch): 
 
 // ── /profile connection surface ───────────────────────────────────────────────
 
-/** Interactive connect from /profile: grant, identity, custody. */
-export async function connectDropbox(persist: boolean, fetchFn: typeof fetch = fetch): Promise<string> {
-  const set = await codeGrant(grantCfg(), fetchFn);
+/** Interactive connect from /profile: grant, identity, custody. `appKey` is the
+ *  bring-your-own client id for deploys with no Dropbox registration - it rides
+ *  the connection record's config so later sends and refreshes find it. */
+export async function connectDropbox(persist: boolean, fetchFn: typeof fetch = fetch, appKey?: string): Promise<string> {
+  const set = await codeGrant(appKey ? { ...grantCfg(), clientId: appKey } : grantCfg(), fetchFn);
   remember(set);
   const who = await rpc('users/get_current_account', null, fetchFn);
   const account = (who.email as string) || ((who.name as { display_name?: string })?.display_name ?? t('Dropbox account'));
@@ -120,6 +125,7 @@ export async function connectDropbox(persist: boolean, fetchFn: typeof fetch = f
     account,
     persist,
     ...(persist && set.refreshToken ? { refreshToken: set.refreshToken } : {}),
+    ...(appKey ? { config: { clientId: appKey } } : {}),
     scopes: SCOPES,
     connectedAt: new Date().toISOString(),
   });

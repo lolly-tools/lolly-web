@@ -51,6 +51,9 @@ const OAUTH_ROWS: Array<{
   available: () => boolean;
   connect: (persist: boolean) => Promise<string>;
   disconnect: () => Promise<void>;
+  /** Extra markup inside the disconnected row - the bring-your-own-app-key form
+   *  for a deploy that registered no app of its own. */
+  setup?: () => string;
 }> = [
   {
     // Desktop only (plans/129 WP4): system-browser sign-in + refresh custody.
@@ -67,9 +70,17 @@ const OAUTH_ROWS: Array<{
     kind: 'dropbox',
     label: () => t('Dropbox'),
     scopesNote: () => t('Can only see the Lolly app folder in your Dropbox.'),
-    available: dropboxAvailable,
+    // No deploy registration does NOT hide the row (the individuals who rely on
+    // Dropbox get no say in their deploy's env): on web the row falls back to
+    // bring-your-own app key below. Popup OAuth needs a real browser, so Tauri
+    // still requires a deploy id.
+    available: () => dropboxAvailable() || !isTauriShell(),
     connect: connectDropbox,
     disconnect: disconnectDropbox,
+    setup: () => dropboxAvailable() ? '' : `
+      ${field('clientId', t('App key'), '', 'text', '')}
+      <p class="pconn-note">${t('This site ships no Dropbox app, so connect with your own: create an app in the Dropbox App Console (scoped access, App folder type), add {redirect} as a redirect URI, and paste its App key above. It is kept with the connection on this device.', { redirect: `${location.origin}/oauth-return.html` })}</p>
+      <span class="pconn-status" data-pconn-status="dropbox" role="status"></span>`,
   },
   {
     kind: 'o365',
@@ -97,7 +108,7 @@ function homeToggleHtml(kind: string, home: string | undefined, persisted: boole
   return `<label class="pconn-home"><input type="checkbox" data-pconn-home="${escape(kind)}"${home === kind ? ' checked' : ''}> ${t('Make this my export home')}</label>`;
 }
 
-function oauthRowHtml(kind: string, label: string, scopesNote: string, conn: ProviderConnection | null, home: string | undefined): string {
+function oauthRowHtml(kind: string, label: string, scopesNote: string, conn: ProviderConnection | null, home: string | undefined, setup = ''): string {
   if (conn) {
     return `
     <div class="store-manage--row pconn-row" data-pconn="${escape(kind)}">
@@ -113,6 +124,7 @@ function oauthRowHtml(kind: string, label: string, scopesNote: string, conn: Pro
     <div class="store-manage--row pconn-row" data-pconn="${escape(kind)}">
       <span class="store-manage-name">${escape(label)}
         <span class="pconn-note">${escape(scopesNote)}</span>
+        ${setup}
         <label class="pconn-persist"><input type="checkbox" data-pconn-persist="${escape(kind)}"> ${t('Stay connected on this device')}</label>
       </span>
       <button type="button" class="btn" data-pconn-connect="${escape(kind)}">${t('Connect')}</button>
@@ -244,7 +256,7 @@ export async function mountConnectionsBody(body: HTMLElement, host: ConnHost, on
   const conns = new Map((await listConnections()).map((c) => [c.kind, c]));
   const home = (await host.profile.get().catch(() => ({}) as Profile)).exportHome;
   const oauthRows = OAUTH_ROWS.filter((r) => connectorEnabled(r.kind) && r.available())
-    .map((r) => oauthRowHtml(r.kind, r.label(), r.scopesNote(), conns.get(r.kind) ?? null, home)).join('');
+    .map((r) => oauthRowHtml(r.kind, r.label(), r.scopesNote(), conns.get(r.kind) ?? null, home, r.setup?.() ?? '')).join('');
   // Names what a kill switch is hiding, so a vanished Drive row reads as a choice
   // the user made rather than a missing feature.
   const switchedOff = CONNECTOR_FLAGS.filter((f) => !connectorEnabled(f.connector!));
@@ -297,7 +309,16 @@ export async function mountConnectionsBody(body: HTMLElement, host: ConnHost, on
       if (connectKind) {
         const row = OAUTH_ROWS.find((r) => r.kind === connectKind);
         const persist = body.querySelector<HTMLInputElement>(`[data-pconn-persist="${CSS.escape(connectKind)}"]`)?.checked ?? false;
-        if (row) await row.connect(persist);
+        if (connectKind === 'dropbox' && !dropboxAvailable()) {
+          // Bring-your-own app key (no deploy registration): the key rides the
+          // grant and is saved with the connection.
+          const key = readForm('dropbox').clientId;
+          if (!key) {
+            status('dropbox', t('Paste your Dropbox App key first'));
+            return;
+          }
+          await connectDropbox(persist, undefined, key);
+        } else if (row) await row.connect(persist);
       } else if (disconnectKind) {
         if (disconnectKind === 's3') await disconnectS3();
         else if (disconnectKind === 'webdav') await disconnectWebdav();
@@ -371,6 +392,9 @@ export async function mountConnectionsBody(body: HTMLElement, host: ConnHost, on
       const kind = connectKind ?? disconnectKind ?? saveKind ?? '';
       const msg = String((err as Error)?.message || t('That did not work - try again'));
       status(kind, msg.length <= 140 ? msg : t('That did not work - try again'));
+    } finally {
+      // Also covers the validation early-returns above, which used to leave the
+      // button disabled. Harmless after a success re-render (btn is detached).
       if (btn) btn.disabled = false;
     }
   };

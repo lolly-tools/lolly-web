@@ -100,6 +100,40 @@ export function applyTheme(theme: string, animate = true): void {
   window.dispatchEvent(new CustomEvent('jelly-theme-change'));
 }
 
+// The values `?theme=` will honour. A Set, not an object lookup: an object answers
+// true for 'constructor' and every other inherited key (see lib/design-system/
+// start-route.ts). Anything else is silently ignored.
+const THEME_VALUES = new Set<string>(THEMES);
+
+/** Every address that names a TOOL: the hash form, the canonical /t/<id> path form,
+ *  and Design's /design vanity path (parseRoute in main.ts returns all three as tool
+ *  routes). Matched against the hash path when there is one, else the pathname. */
+const TOOL_ADDRESS = /^\/?(tool\/|t\/|design$)/;
+
+/**
+ * A `?theme=` override carried on the URL, or null.
+ *
+ * Session-only by contract: the caller stamps [data-theme] for THIS page load and
+ * NEVER persists it, so a pasted link or a screenshot run can pin the look without
+ * flipping the reader's own stored preference. Read from the hash query AND
+ * location.search, because the app's views arrive both ways - the same dual read
+ * main.ts's peekUrlLang does for `lang`.
+ *
+ * NOT honoured on a tool address. Unlike `lang`, `theme` is not engine-reserved, and
+ * it is a real declared INPUT id in a dozen shipping tools (quotes, snippet,
+ * street-map, deck-builder, …). On a tool link `?theme=dark` already means "draw the
+ * artwork dark", and it has meant that in every share link ever generated; making it
+ * ALSO repaint the app chrome would silently change what those links do. So this is an
+ * app-view param only, and the collision never arises.
+ */
+export function urlThemeOverride(): Theme | null {
+  const [hashPath, hashQuery = ''] = window.location.hash.slice(1).split('?');
+  if (TOOL_ADDRESS.test(hashPath || window.location.pathname)) return null;
+  const v = new URLSearchParams(hashQuery).get('theme')
+    ?? new URLSearchParams(window.location.search).get('theme');
+  return v && THEME_VALUES.has(v) ? (v as Theme) : null;
+}
+
 /** Called at module boot - applies the localStorage value before the profile loads. */
 export function initTheme(): void {
   // No saved preference yet: seed from the OS colour scheme so a dark-OS visitor

@@ -164,10 +164,8 @@ const PRIMARY_FILL_ALLOWED: Record<string, number> = {
   'pro/pro.css → .pro-fill-btn:hover': 1,                              // pro fill-tool hover state
   'styles/parts/editor.css → .fc-btn.is-armed': 1,                     // flow-chart editor armed state
   'styles/parts/editor.css → .fc-btn.fc-action-primary': 1,            // flow-chart editor primary action
-  'styles/parts/featured.css → .ftile-badge': 1,                       // featured-tile count badge
   'styles/parts/gallery.css → .personalize-nudge-cta': 1,              // personalize nudge CTA
   'styles/parts/gallery.css → .gtile-continue': 1,                     // gallery tile continue pill
-  'styles/parts/gallery.css → .gtile-newbadge': 1,                     // gallery tile "new" badge
   'styles/parts/profile.css → .profile-view .profile-theme-pill': 1,   // Appearance theme pill active
   'styles/parts/storage.css → .clear-dialog-actions .btn.btn-go': 1,   // clear-gate go button
   'styles/parts/tool-chrome.css → .scrub-readout': 1,                  // select-scrub readout bubble
@@ -721,15 +719,14 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // neuro-dock.ts lost its one sink in the @lolly-tools/audio-dock migration (Phase 2b,
   // 2026-08-15): the dock DOM is now built by createAudioDock (in the package, outside
   // this scan); this module only toggles classes + wires the shell's option callbacks.
-  // 1 → 2, 2026-08-24: mountProfileFab's icon-injection sink - the argument is
-  // the constant lib/icons 'user' glyph, never user input (same shape as
-  // home-fab.ts / theme-toggle.ts above).
-  // 2 → 3, 2026-08-27: createProfileControl (the standalone avatar the canvas zoom
-  // HUD docks itself) paints its first-frame mark - `<span class="profile-link-mark"
-  // aria-hidden="true">${LOLLY_MARK_SVG}</span>`. Reviewed: LOLLY_MARK_SVG is the
-  // module-level constant from lib/lolly-mark.ts, the only interpolation in the
-  // template, and the later headshot swap is an <img> built by createElement, not HTML.
-  'components/profile-menu.ts': 3,
+  // 3 → 2, 2026-08-28: mountProfileFab and createProfileControl now share one
+  // paintProfileMark helper (its `link.innerHTML = markHtml` is the single sink),
+  // so the mark FAB and the pill both paint the trusted LOLLY_MARK_SVG mark - no
+  // more per-caller sink. Reviewed: markHtml is either that module-level constant
+  // (lib/lolly-mark.ts) or `<span…>${LOLLY_MARK_SVG}</span>`, its only interpolation,
+  // and the later headshot swap is an <img> built by createElement, not HTML. The
+  // other sink is attachProfileMenu's static menu scaffold.
+  'components/profile-menu.ts': 2,
   'components/profiles-manager.ts': 3,
   // The persistent bar singleton's one render (plans/99 M1): a template.innerHTML of
   // footerNav()+gallerySearchBox() markup, whose only dynamic interpolations - 

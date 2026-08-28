@@ -149,6 +149,19 @@ describe('provider-connections custody', () => {
     assert.equal(await getConnection('dropbox'), null);
   });
 
+  test('a bring-your-own Dropbox app key makes the target available', async () => {
+    const { dropboxAvailable, dropboxClientId, setDropboxClientId } = await import('./dropbox-send.ts');
+    resetConnectionsForTests();
+    assert.ok(!dropboxAvailable(), 'dormant with no deploy id and no connection');
+    await saveConnection({ kind: 'dropbox', account: 'a@b.c', persist: false, config: { clientId: 'user-key' }, connectedAt: 'now' });
+    assert.equal(dropboxClientId(), 'user-key', 'the saved key is the client id');
+    assert.ok(dropboxAvailable());
+    setDropboxClientId('instance-key');
+    assert.equal(dropboxClientId(), 'instance-key', 'an instance override still wins');
+    setDropboxClientId(null);
+    resetConnectionsForTests();
+  });
+
   test('token cache honours expiry and disconnect', async () => {
     resetConnectionsForTests();
     cacheToken('o365', 'T', Date.now() + 60_000);

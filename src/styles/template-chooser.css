@@ -124,7 +124,8 @@
   text-align: left;
   background: hsl(var(--card));
   color: hsl(var(--card-foreground));
-  border: 1px solid hsl(var(--border));
+  border:0;
+  box-shadow: inset 0 0 0 .5px #fff1, 0 1.5px 6px #0002;
   border-radius: calc(var(--radius) * 1.5);
   cursor: pointer;
   transition: border-color 0.12s, background 0.12s, transform 0.08s;
@@ -190,10 +191,10 @@
 .tmpl-chooser-preset {
   padding: 3px 9px;
   font: inherit;
-  font-size: calc(11.5px * var(--a11y-fs));
+  font-size: calc(9px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
   background: hsl(var(--background));
-  border: 1px solid hsl(var(--border));
+  border:0;
   border-radius: 999px;
   cursor: pointer;
   transition: border-color 0.12s, background 0.12s, color 0.12s;

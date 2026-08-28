@@ -64,7 +64,6 @@ export interface FeaturedEntry {
   icon?: string;
   formats?: readonly string[];
   status?: string;
-  isNew?: boolean;
   /**
    * Where the tile links. Defaults to the tool route `#/tool/<id>`. Callers reusing the
    * strip for non-tool tiles (e.g. the Projects view's saved-session previews) set the
@@ -141,7 +140,7 @@ function byFeaturedOrder(a: FeaturedEntry, b: FeaturedEntry): number {
 }
 
 function tileMarkup(entry: FeaturedEntry, eager = false, menu = false): string {
-  const label = `${entry.isNew ? 'New - ' : ''}Open ${entry.name}${entry.featured.blurb ? ` - ${entry.featured.blurb}` : ''}`;
+  const label = `Open ${entry.name}${entry.featured.blurb ? ` - ${entry.featured.blurb}` : ''}`;
   // The committed preview is the instant first frame; rendered variants are appended
   // as layers as they arrive. A tool whose preview is missing (dev, before
   // `npm run previews`) simply starts on the themed backdrop until its first variant.
@@ -180,7 +179,6 @@ function tileMarkup(entry: FeaturedEntry, eager = false, menu = false): string {
           ${iconFill}
           ${iconName}
           ${base}
-          ${entry.isNew ? '<span class="ftile-badge">New</span>' : ''}
           <span class="ftile-open">Open ${ARROW}</span>
         </span>
         <span class="ftile-meta">

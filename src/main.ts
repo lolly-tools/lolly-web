@@ -15,7 +15,7 @@ import { syncCatalog, syncCorePrefetch, defaultFavouriteAssetIds, toolIndexChang
 import { mergeInstalledToolsIntoIndex } from './lib/installed-tools.ts';
 import { saveFavouriteAssets } from './lib/asset-favourites.ts';
 import { mountGallery } from './views/gallery.ts';
-import { initTheme, applyTheme } from './theme.ts';
+import { initTheme, applyTheme, urlThemeOverride } from './theme.ts';
 import { hydrateA11yPrefs, currentA11yPrefs, setA11yPref } from './lib/a11y-prefs.ts';
 import { computeViewportInsets } from './lib/viewport-insets.ts';
 import { initI18n, loadedLang } from './i18n.ts';
@@ -104,11 +104,11 @@ type Route =
   | { name: 'catalog'; params?: string }
   | { name: 'start'; params?: string }
   | { name: 'multi'; params?: string }
-  | { name: 'components' }
+  | { name: 'components'; params?: string }
   | { name: 'utilities'; params?: string }
   | { name: 'lab'; params?: string }
-  | { name: 'pdf' }
-  | { name: 'script' }
+  | { name: 'pdf'; params?: string }
+  | { name: 'script'; params?: string }
   | { name: 'ask'; params?: string }
   | { name: 'docs'; slug: string; lang: string | null; params?: string }
   | { name: 'join'; params?: string }
@@ -131,6 +131,13 @@ console.log('%c🍭 Welcome to Lolly', "font:600 13px/1.6 'SUSE',system-ui,-appl
 // Apply localStorage theme immediately - before the profile loads - so there
 // is no visible flash between the inline FOUC script and full JS boot.
 initTheme();
+// …then let `?theme=light|dark|brand` win for THIS page load only: a shared link or
+// a screenshot run pins the look without flipping the reader's stored preference.
+// Stamped straight onto [data-theme] rather than through applyTheme, which would
+// persist it. Re-stamped in boot() once the profile theme has been applied (the
+// profile is the canonical store and would otherwise overwrite it a beat later).
+const urlTheme = urlThemeOverride();
+if (urlTheme) document.documentElement.dataset.theme = urlTheme;
 // Make every <select> a keyboard + wheel live-preview scrubber (macOS otherwise
 // opens the native popup on arrow keys instead of cycling the value).
 initSelectPreview();
@@ -424,7 +431,7 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
     }
     case 'dashboard': {
       const { mountDashboard } = await import('./views/dashboard.ts');
-      await mountDashboard(view, host);
+      await mountDashboard(view, host, route.params);
       break;
     }
     // /verify - on-device Content Credentials check (aliases /valid, /v). Same
@@ -572,14 +579,14 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
       // Unpack (#/pdf). Lazy: it pulls the PDF interpreter and pdf-lib,
       // which nothing on the landing path needs.
       const { mountPdfExtract } = await import('./views/pdf-extract.ts');
-      await mountPdfExtract(view, host as unknown as Parameters<typeof mountPdfExtract>[1]);
+      await mountPdfExtract(view, host as unknown as Parameters<typeof mountPdfExtract>[1], route.params);
       break;
     }
     case 'script': {
       // Script audio (#/script) - the writing surface over host.speech. Lazy:
       // nothing on the landing path needs the speech plumbing.
       const { mountScriptStudio } = await import('./views/script-studio.ts');
-      await mountScriptStudio(view, host as unknown as Parameters<typeof mountScriptStudio>[1]);
+      await mountScriptStudio(view, host as unknown as Parameters<typeof mountScriptStudio>[1], route.params);
       break;
     }
     case 'ask': {
@@ -617,7 +624,7 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
       // surface, off every hot path. Its back pill is the shared one - it names
       // and returns to the view you came from, or the gallery on a cold deep link.
       const { mountComponents } = await import('./views/components.ts');
-      await mountComponents(view, host as unknown as Parameters<typeof mountComponents>[1]);
+      await mountComponents(view, host as unknown as Parameters<typeof mountComponents>[1], route.params);
       break;
     }
     case 'utilities':
@@ -1025,6 +1032,9 @@ async function boot(): Promise<void> {
   const profile = await host.profile.get();
   const profileTheme = (profile as { theme?: string }).theme;
   if (profileTheme) applyTheme(profileTheme, false);
+  // …unless the URL asked for a theme: a `?theme=` override outranks the stored
+  // preference for this page load, and is still never written back anywhere.
+  if (urlTheme) document.documentElement.dataset.theme = urlTheme;
 
   // Accessibility prefs ride the profile the same way (localStorage is only
   // their FOUC mirror, applied by the index.html inline script) - reconcile.
@@ -1471,6 +1481,9 @@ async function boot(): Promise<void> {
   const dropRouterReady = import('./lib/drop-router.ts').then((m) => {
     dropRouterMod = m;
     m.initShareTargetIngest(host as unknown as Parameters<typeof m.initShareTargetIngest>[0]);
+    // App Links (plan 171): a tapped https://lolly.tools/t/… link that opened the
+    // Android app resolves to its in-app route. Feature-detected no-op elsewhere.
+    m.initDeepLinkIntake();
     return m;
   });
 
@@ -1615,6 +1628,12 @@ function parseRoute(): Route {
     if (parts[0] === 'tool' && parts[1]) {
       return { name: 'tool', toolId: canonToolId(parts[1]), params: retiredToolParams(parts[1], query || '') };
     }
+    // #/design mirrors the /design vanity path (plan 171): before this, the hash
+    // spelling of the app's most-shared tool silently fell through to the gallery
+    // while /design and #/tool/design both worked.
+    if (parts[0] === 'design' && !parts[1]) {
+      return { name: 'tool', toolId: 'design', params: query || '' };
+    }
     if (parts[0] === 'profile') return { name: 'profile', params: query || '' };
     if (parts[0] === 'd' || parts[0] === 'dashboard') return { name: 'dashboard', params: query || '' };
     // /b and /brand are shortlinks straight to the Dashboard's Design System tab.
@@ -1636,13 +1655,21 @@ function parseRoute(): Route {
     if (parts[0] === 'data') return { name: 'data', params: query || '' }; // on-device spreadsheet viewer/editor
     if (parts[0] === 'start') return { name: 'start', params: query || '' }; // brand wizard
     if (parts[0] === 'multi') return { name: 'multi', params: query || '' }; // multi-edit (?s=slot,slot…)
-    if (parts[0] === 'batch') return { name: 'pro', params: query || '' }; // /batch mode (formerly /pro - renamed 2026-08-20, no redirect)
+    if (parts[0] === 'batch') return { name: 'pro', params: query || '' }; // /batch mode
+    // The pre-2026-08-20 name for it. Left with no redirect at the rename, so every
+    // old bookmark, docs recipe and `#/pro?s=…` "Edit as sheet" link fell through to
+    // the gallery instead. Same redirect style as /platform → /d, query preserved
+    // (a `?s=slot,slot` hand-off is the whole point of most of those links).
+    if (parts[0] === 'pro') {
+      window.location.replace(`/#/batch${query ? `?${query}` : ''}`);
+      return { name: 'pro', params: query || '' };
+    }
     if (parts[0] === 'p') return { name: 'projects', folderId: parts[1] || null, params: query || '' };
     if (parts[0] === 'c' || parts[0] === 'catalog') return { name: 'catalog', params: query || '' };
     if (parts[0] === 'u' || parts[0] === 'utilities') return { name: 'utilities', params: query || '' }; // gallery filtered to the utility category
     if (parts[0] === 'lab') return { name: 'lab', params: query || '' }; // Colour Lab (?c=<any css colour>)
-    if (parts[0] === 'pdf' || parts[0] === 'unpack') return { name: 'pdf' }; // Unpack - take a design file apart; #/unpack is canonical, #/pdf a kept alias for old shared links
-    if (parts[0] === 'script') return { name: 'script' }; // Script audio - the TTS writing surface
+    if (parts[0] === 'pdf' || parts[0] === 'unpack') return { name: 'pdf', params: query || '' }; // Unpack - take a design file apart; #/unpack is canonical, #/pdf a kept alias for old shared links
+    if (parts[0] === 'script') return { name: 'script', params: query || '' }; // Script audio - the TTS writing surface
     if (parts[0] === 'ask') return { name: 'ask', params: query || '' }; // Ask Lolly - in-app help (?q=<question>)
     // In-app docs reader. #/docs/<slug> renders in the app's current locale; the explicit
     // #/docs/<lang>/<slug> form (three segments) pins a language. A slug is always flat (no
@@ -1652,7 +1679,7 @@ function parseRoute(): Route {
         ? { name: 'docs', lang: parts[1], slug: parts[2], params: query || '' }
         : { name: 'docs', lang: null, slug: parts[1], params: query || '' };
     }
-    if (parts[0] === 'components') return { name: 'components' }; // the browsable component library
+    if (parts[0] === 'components') return { name: 'components', params: query || '' }; // the browsable component library
     // The two halves of a private collab's ceremony (plan 100 section 6.1, section 11.25). These
     // paths are minted by components/collab-ceremony.ts's JOIN_ROUTE / REPLY_ROUTE - 
     // an invite link carries ?inv=<token>, a reply link ?ans=<token>. A test pins the
@@ -1693,19 +1720,33 @@ function parseRoute(): Route {
     if (pathParts[0] === 'design') {
       return { name: 'tool', toolId: 'design', params: window.location.search.slice(1) };
     }
-    // /batch and /d are real routes; everything else is a tool shortcut. /platform and
+    // /batch and /d are real routes; everything else is a tool shortcut. /pro is the
+    // retired path spelling of /batch (renamed 2026-08-20) - without this it fell
+    // through to /#/tool/pro and 404'd on a tool id that doesn't exist. /platform and
     // /capabilities are retired aliases that fold into the Dashboard.
-    if (pathParts[0] === 'batch') { window.location.replace('/#/batch'); return { name: 'pro' }; }
+    if (pathParts[0] === 'batch' || pathParts[0] === 'pro') {
+      window.location.replace(`/#/batch${window.location.search}`);
+      return { name: 'pro', params: window.location.search.slice(1) };
+    }
     if (pathParts[0] === 'd' || pathParts[0] === 'dashboard' || pathParts[0] === 'platform' || pathParts[0] === 'capabilities') {
       // Preserve any deep-link query (e.g. /platform?print) across the redirect,
       // like the hash-form branch and the tool-shortcut fallback below.
       window.location.replace(`/#/d${window.location.search}`);
       return { name: 'dashboard', params: window.location.search.slice(1) };
     }
-    // /verify is canonical; /valid and the /v shortlink are aliases.
-    if (pathParts[0] === 'verify' || pathParts[0] === 'valid' || pathParts[0] === 'v') { window.location.replace('/#/verify'); return { name: 'verify' }; }
-    // /start is the brand wizard, not a tool shortcut.
-    if (pathParts[0] === 'start') { window.location.replace('/#/start'); return { name: 'start' }; }
+    // /verify is canonical; /valid and the /v shortlink are aliases. Preserve the
+    // query across the redirect (plan 171) - `/verify?src=…&check` links lost their
+    // payload before, while the hash-form alias kept it.
+    if (pathParts[0] === 'verify' || pathParts[0] === 'valid' || pathParts[0] === 'v') {
+      window.location.replace(`/#/verify${window.location.search}`);
+      return { name: 'verify', params: window.location.search.slice(1) };
+    }
+    // /start is the brand wizard, not a tool shortcut. Query preserved (plan 171):
+    // `/start?area=color&seed=…` deep links dropped it before.
+    if (pathParts[0] === 'start') {
+      window.location.replace(`/#/start${window.location.search}`);
+      return { name: 'start', params: window.location.search.slice(1) };
+    }
     // /components is the browsable component library, not a tool shortcut - a bare
     // /components would otherwise fall through to /#/tool/components and 404.
     if (pathParts[0] === 'components') { window.location.replace('/#/components'); return { name: 'components' }; }
@@ -1719,11 +1760,24 @@ function parseRoute(): Route {
       u:         { hash: '#/u',    route: { name: 'utilities' } },
       utilities: { hash: '#/u',    route: { name: 'utilities' } },
       c:         { hash: '#/c',    route: { name: 'catalog' } },
+      catalog:   { hash: '#/c',    route: { name: 'catalog' } },
       lab:       { hash: '#/lab',  route: { name: 'lab' } },
       // Unpack: /unpack is canonical, /pdf a kept alias (old shared links).
       unpack:    { hash: '#/unpack', route: { name: 'pdf' } },
       pdf:       { hash: '#/unpack', route: { name: 'pdf' } },
       profile:   { hash: '#/profile', route: { name: 'profile', params: '' } },
+      // The rest of the frozen path vocabulary (plan 171, engine APP_PATH_WORDS):
+      // every reserved word must resolve to its view rather than fall through to
+      // /#/tool/<word> and 404 - these are plausible hand-typed addresses, and the
+      // vocabulary is validator-enforced against tool ids, so nothing can claim them.
+      script:      { hash: '#/script',  route: { name: 'script' } },
+      ask:         { hash: '#/ask',     route: { name: 'ask' } },
+      multi:       { hash: '#/multi',   route: { name: 'multi' } },
+      convert:     { hash: '#/convert', route: { name: 'convert' } },
+      data:        { hash: '#/data',    route: { name: 'data' } },
+      docs:        { hash: '#/docs/index', route: { name: 'docs', lang: null, slug: 'index' } },
+      join:        { hash: '#/join',    route: { name: 'join' } },
+      'join-reply': { hash: '#/join-reply', route: { name: 'join-reply' } },
     };
     const view = PATH_VIEWS[pathParts[0]!];
     if (view) {

@@ -131,6 +131,13 @@ export function hasConnection(kind: string): boolean {
   return memory.has(kind);
 }
 
+/** SYNC read of the cached record itself, for gates that need its config - e.g.
+ *  a user-supplied Dropbox app key deciding dropboxAvailable(). Same priming
+ *  rule as hasConnection(). */
+export function cachedConnection(kind: string): ProviderConnection | null {
+  return memory.get(kind) ?? null;
+}
+
 /** Fire-and-forget cache warm-up (send-targets-builtin calls it at boot). */
 export function primeConnections(): void {
   void listConnections().catch(() => { /* no IDB - nothing to warm */ });

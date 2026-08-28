@@ -111,3 +111,32 @@ test('frame(): with no __lollyFrameCanvas, capture uses dom-to-image (baseline u
     } finally { src.dispose(); __setDomToImageForTest(null); }
   });
 });
+
+// A video container has no alpha: frameBg is the opaque backdrop that keeps a
+// transparentBg tool's mp4/webm off black. The alpha paths (gif/apng/webp-anim,
+// favicons) pass no frameBg and must stay transparent.
+test('frame(): frameBg is forwarded to dom-to-image as bgcolor (video is never transparent)', async () => {
+  await withNeutralGlobals(async () => {
+    const { lib, calls } = fakeDomToImage();
+    __setDomToImageForTest(lib);
+    const src = await createFrameSource(fakeNode(), { width: 200, height: 150, wait: 0, frameBg: '#0c322c' });
+    try {
+      await src.frame(0);
+      assert.equal(calls.length, 1);
+      assert.equal((calls[0]!.opts as { bgcolor?: string }).bgcolor, '#0c322c', 'the opaque backdrop reached dom-to-image');
+    } finally { src.dispose(); __setDomToImageForTest(null); }
+  });
+});
+
+test('frame(): with no frameBg, no bgcolor is set (alpha formats keep transparency)', async () => {
+  await withNeutralGlobals(async () => {
+    const { lib, calls } = fakeDomToImage();
+    __setDomToImageForTest(lib);
+    const src = await createFrameSource(fakeNode(), { width: 200, height: 150, wait: 0 });
+    try {
+      await src.frame(0);
+      assert.equal(calls.length, 1);
+      assert.equal('bgcolor' in (calls[0]!.opts as object), false, 'no backdrop forced on the alpha path');
+    } finally { src.dispose(); __setDomToImageForTest(null); }
+  });
+});

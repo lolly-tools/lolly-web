@@ -606,3 +606,16 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
 /* A sort with no column of its own (Date added) is still named in the header,
    so the list never reads as unsorted. */
 .listhead-sortnote { font-size: calc(11px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); font-weight: 500; white-space: nowrap; }
+
+/* "My library" label over the loose-session block at the root (plans/170
+   keeping-model naming): a full-width grid row between the folder tiles and
+   the library tiles, so the place the save dialog names is visible as one. */
+.projects-sec-label {
+  grid-column: 1 / -1;
+  margin: 6px 0 -2px;
+  font-size: calc(11px * var(--a11y-fs));
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: hsl(var(--muted-foreground));
+}

@@ -547,7 +547,7 @@ function resultMarkup(x: Extracted): string {
 
 // ── mount ─────────────────────────────────────────────────────────────────────
 
-export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1): Promise<void> {
+export async function mountPdfExtract(viewEl: HTMLElement, host: HostV1, _params?: string): Promise<void> {
   viewEl.innerHTML = `
     ${backHomeHtml()}
     <div class="gallery-topright">${langFabHtml()}</div>

@@ -92,6 +92,10 @@ interface GalleryTool {
   height?: number;
   unit?: string;
   exportable?: boolean;
+  /** YYYY-MM-DD the tool was first added to its pack (index `added`, from the
+   *  committed git-derived map). Info-dialog only - the retired "New" badge's
+   *  honest replacement. Full index only, absent on the slim boot cut. */
+  added?: string;
   icon?: string;
   preview?: string;
   /** The tool's MOTION preview (tools/<id>/card.webm or an APNG card.png), when its content
@@ -138,10 +142,6 @@ const FEATURED_VIEW_STORAGE = 'lolly-featured-view';
 // results show first. Persisted alongside the sort key.
 type SortDir = 'desc' | 'asc';
 const SORT_DIR_STORAGE = 'lolly-gallery-sort-dir';
-// How many trailing catalog entries (newest-appended) wear the "New" badge. The
-// catalog preserves authoring order and appends new tools, so the tail is genuinely
-// the newest - this stays honest and self-expiring as more tools ship.
-const NEW_COUNT = 5;
 // Fixed leads for the default browse order ('recent' sort, which every fresh
 // install starts on) - lib/lead-tools.ts, shared with the native app menus.
 // Only the default sort pins them - picking any sort in the filter popover, or
@@ -212,6 +212,13 @@ function categoryRank(cat: string): number {
 const CAT_LABEL: Record<string, string> = { everyone: 'Everyone', designer: 'Designer', event: 'Event', utility: 'Utilities' };
 const catLabel = (c: string | undefined) => CAT_LABEL[c as string] || (c ? c[0]!.toUpperCase() + c.slice(1) : 'Other');
 const statusLabel = (s: string | undefined) => ({ official: 'Official', community: 'Community', experimental: 'Experimental' } as Record<string, string>)[s as string] || s;
+// The info dialog's "Added" line: the index's YYYY-MM-DD in the viewer's own
+// date order (toLocaleDateString picks up the browser locale, same convention
+// as the Projects tiles' dates). Noon UTC so no timezone shifts the DAY.
+const addedDateText = (iso: string): string => {
+  const d = new Date(`${iso}T12:00:00Z`);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+};
 
 // Export-format display labels (mirrors the subset used by the tool view).
 const FMT_LABEL: Record<string, string> = {
@@ -252,6 +259,7 @@ function dimText(tool: GalleryTool | undefined): string {
 // Shared, /pro-free batch-slot helpers (finding #13) - the gallery still takes
 // zero dependency on the removable /pro folder.
 import { BATCH_SLOT_PREFIX, isBatchSlot } from '../lib/batch-slots.ts';
+import { yoursShelfTools, yoursShelfHtml } from './yours-shelf.ts';
 import { captureNeutralPinned, settleForCapture } from '../lib/capture-neutral.ts';
 
 // Lucide "info" and "history" - context-menu / bulk-bar action icons. Path data
@@ -548,15 +556,12 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   const toolById = new Map(index.tools.map(t => [t.id, t]));
 
   // Catalog order = authoring order with new tools appended, so a tool's position is
-  // our recency signal: the index → position map drives the 'recent' sort, and the
-  // trailing NEW_COUNT ids wear the "New" badge. Both read the whole catalog (not the
-  // filtered view), so applying a filter never changes what counts as new/recent.
+  // our recency signal: the index → position map drives the 'recent' sort. It reads
+  // the whole catalog (not the filtered view), so a filter never changes recency.
+  // (The "New" recency BADGE is gone - Andy, 2026-08-28: it collided with the
+  // "+New" start-blank chip, two meanings of new on one card. Recency now lives
+  // as the info dialog's "Added" line, from the index's `added` date.)
   const orderById = new Map(index.tools.map((t, i) => [t.id, i]));
-  const newIds = new Set(index.tools.slice(-NEW_COUNT).map(t => t.id));
-  // A tool is "new" if it's in the trailing window OR its manifest sets `new: true` - 
-  // the explicit flag keeps the badge on a tool we want highlighted even after later
-  // tools ship and push it out of the positional tail.
-  const isNew = (id: string): boolean => newIds.has(id) || toolById.get(id)?.new === true;
 
   // All saved sessions (tool + batch) newest first - the global drawer's list.
   const sortedSaved = [...savedEntries].sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
@@ -691,7 +696,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     const featured = t.featured ?? { blurb: t.description };
     return {
       id: t.id, name: t.name, preview: iconHero ? undefined : t.preview, icon: t.icon,
-      formats: t.formats, status: t.status, isNew: isNew(t.id),
+      formats: t.formats, status: t.status,
       examples: iconHero ? undefined : t.examples,
       // `featured.variants` is the pre-`examples` alias resolveExamples() still
       // honours, so an icon-hero entry must shed it too or the looks come back.
@@ -844,6 +849,12 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
         </div>
       `) : `
         <div class="featured-mount"></div>
+        ${opts.only ? '' : yoursShelfHtml(yoursShelfTools(
+          [...new Set(sortedSaved.filter(e => !isBatchSlot(e.slot)).map(e => e.toolId))],
+          favourites,
+          toolById,
+          hiddenTools,
+        ))}
         <p class="gallery-search-status visually-hidden" role="status" aria-live="polite"></p>
         <div class="tool-masonry${opts.only === 'utility' ? ' tool-masonry--utility' : ''}"></div>
       `}
@@ -1156,7 +1167,19 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   const filterPop  = viewEl.querySelector<HTMLElement>('.filter-popover');
   const filterBackdrop = viewEl.querySelector<HTMLElement>('.filter-backdrop');
 
+  // `#/?cat=&sort=&dir=` seed the browse state for THIS mount - the shape a shared
+  // link, a docs recipe or a screenshot run needs to land on a known view. They
+  // OUTRANK the stored preferences below but are never written back into
+  // localStorage: a link someone pasted must not rewrite their own sort. Like `q`
+  // and the `?tool=`/`?history=` flags, they're read at mount and never propagated
+  // into a generated link. An unknown value is ignored (the stored default stands).
+  const routeParams = new URLSearchParams(opts.params || '');
   let activeCat = 'all';   // active category pill
+  // The pill vocabulary exactly: 'all', the favourites sentinel, and whatever
+  // categories this profile actually shows (feature flags + only-mode already
+  // pruned them). A Set, so an inherited key like 'constructor' can't answer yes.
+  const urlCat = routeParams.get('cat');
+  if (urlCat && new Set<string>(['all', FAV_CAT, ...visibleCats]).has(urlCat)) activeCat = urlCat;
   let query = initialQuery.toLowerCase();  // current search text (lowercased)
   // The query folded + tokenized ONCE per change (mount + each debounced
   // keystroke), not per tile - matchesQuery runs over every tile per applyView.
@@ -1166,11 +1189,15 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     const saved = localStorage.getItem(SORT_KEY_STORAGE);
     if (saved && (SORT_KEYS as readonly string[]).includes(saved)) sortKey = saved as SortKey;
   } catch { /* storage off */ }
+  const urlSort = routeParams.get('sort');
+  if (urlSort && (SORT_KEYS as readonly string[]).includes(urlSort)) sortKey = urlSort as SortKey;
   let sortDir: SortDir = 'desc';   // 'asc' reverses whatever key is active (last results first)
   try {
     const savedDir = localStorage.getItem(SORT_DIR_STORAGE);
     if (savedDir === 'asc' || savedDir === 'desc') sortDir = savedDir;
   } catch { /* storage off */ }
+  const urlDir = routeParams.get('dir');
+  if (urlDir === 'asc' || urlDir === 'desc') sortDir = urlDir;
   // Entrance reveal runs the cascade once, on the cold mount - not when returning
   // from a tool (cards are already known) nor on filter/search re-renders (those
   // show instantly). Tracked here so render() can decide and disconnect cleanly.
@@ -1677,7 +1704,7 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
         .slice(0, featuredHandle ? EAGER_TILES_WITH_HERO : EAGER_TILES).map(t => t.id),
     );
     masonry.innerHTML = viewCards + allTools
-      .map(t => cardMarkup(t, latestByTool(t.id), host.capabilities, personalizedByTool.get(t.id), isNew(t.id), thumbsByTool(t.id), darkTheme, opts.only === 'utility', eagerIds.has(t.id)))
+      .map(t => cardMarkup(t, latestByTool(t.id), host.capabilities, personalizedByTool.get(t.id), thumbsByTool(t.id), darkTheme, opts.only === 'utility', eagerIds.has(t.id)))
       .join('');
     masonry.append(noResults);
     masonry.append(hiddenBox);
@@ -2299,7 +2326,8 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // Read the hash query directly (same shape as main.ts's peekUrlLang) - these
   // flags are this view's own, not router state (only `q` rides opts.params). `?tool=<id>`
   // opens that card's info dialog; adding the `history` flag (or `?history=<id>`)
-  // opens its saved-sessions dialog instead. Consumed here only - a READ-ONLY flag,
+  // opens its saved-sessions dialog instead; `welcome` re-opens the first-run
+  // dialog (see the ladder below). Consumed here only - READ-ONLY flags,
   // never propagated into a generated share link. An unknown/absent id opens
   // nothing; the gallery just renders normally.
   const deepLink = new URLSearchParams(window.location.hash.split('?')[1] ?? '');
@@ -2362,10 +2390,21 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     // strip module gates itself out for installs with saved work and settles
     // when any tool opens.
     if (locked || tokensId !== 'lolly/tokens/brand') {
-      if (!revealFirstRunBanner()) {
+      // Orientation FIRST on a branded install (plans/170 WP-4, audit 167
+      // F-A16): a colleague's very first visit reads "Your brand is loaded…"
+      // before any banner rung - the privacy one-liner is one line and keeps
+      // its turn on the next visit. Still one surface per visit: the intro OR
+      // a rung, never both. The settled-flag pre-check keeps the lazy chunk
+      // off every later visit (the key mirrors welcome-dialog's
+      // BRANDED_INTRO_KEY - keep the two literals in step).
+      let introSettled = true;
+      try { introSettled = localStorage.getItem('lolly-branded-intro-dismissed') === '1'; } catch { /* storage off - never nag */ }
+      if (!introSettled) {
         const welcome = await import('../components/welcome-dialog.ts');
-        if (galleryRoot.isConnected) void welcome.mountBrandedIntro(viewEl.querySelector<HTMLElement>('.tool-masonry'), host.state);
+        if (!galleryRoot.isConnected) return;
+        if (await welcome.mountBrandedIntro(viewEl.querySelector<HTMLElement>('.tool-masonry'), host.state)) return;
       }
+      revealFirstRunBanner();
       return;
     }
     const welcome = await import('../components/welcome-dialog.ts');
@@ -2373,7 +2412,12 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
     // 'brand' navigates itself; the upload host enables the "Bring your design" card.
     // A welcome visit is the whole ask - the banner stays hidden and the tips
     // strip waits for a later visit.
-    if (!welcome.isWelcomeDismissed()) {
+    // `#/?welcome` forces it open past the dismissed flag, so docs and screenshot
+    // runs can capture the greeting deterministically instead of needing a virgin
+    // profile. It rides INSIDE the ladder on purpose: everything above still
+    // applies, so a locked or already-branded install has already returned and the
+    // flag is silently ignored there - a deep link can't nag someone who has a brand.
+    if (!welcome.isWelcomeDismissed() || deepLink.has('welcome')) {
       void welcome.showWelcomeDialog(host.profile, host as unknown as PickerHost);
       return;
     }
@@ -2554,7 +2598,6 @@ function cardMarkup(
   latest: SavedEntry | undefined,
   shellCaps: readonly string[] | undefined,
   personalizedThumb: string | undefined,
-  isNew = false,
   sessionThumbs: string[] = [],
   darkTheme = false,
   utilityLayout = false,
@@ -2568,7 +2611,7 @@ function cardMarkup(
     : sup.status === 'install'
       ? `<span class="badge badge-install">${t('Add&#8209;on')}</span>`
       : (tool.status !== 'official'
-          ? `<span class="badge badge-${tool.status}"${tool.status === 'experimental' ? ` title="${escape(t('Experimental - exports carry a PREVIEW watermark until the tool graduates.'))}"` : ''}>${escape(t(tool.status || ''))}</span>`
+          ? `<span class="badge badge-${tool.status}"${tool.status === 'experimental' ? ` title="${escape(t('Experimental - exports carry a PREVIEW watermark until the tool graduates.'))}"` : ''}>${escape(t(statusLabel(tool.status) || ''))}</span>`
           : '');
 
   const iconSvg = tool.icon ? `<span class="tool-card-icon" aria-hidden="true">${tool.icon}</span>` : '';
@@ -2592,7 +2635,6 @@ function cardMarkup(
           <div class="gtile-cap">
             ${iconSvg}
             <span class="gtile-meta">
-              ${isNew ? `<span class="gtile-newbadge">${t('New')}</span>` : ''}
               ${uName}
               <p class="gtile-desc">${escape(tool.description ?? '')}</p>
             </span>
@@ -2776,7 +2818,6 @@ function cardMarkup(
         <div class="gtile-cap">
           ${iconSvg}
           <span class="gtile-meta">
-            ${isNew ? `<span class="gtile-newbadge">${t('New')}</span>` : ''}
             ${name}
             ${sub ? `<span class="gtile-sub">${sub}</span>` : ''}
             <p class="gtile-desc">${escape(tool.description ?? '')}</p>
@@ -2913,6 +2954,7 @@ function showInfoDialog(tool: GalleryTool | undefined, host: GalleryHost, darkTh
             ${caps.length ? `<div><dt>${t('Uses')}</dt><dd>${caps.map(c => escape(capabilityLabel(c))).join(', ')}</dd></div>` : ''}
             ${tool.privacy === 'on-device' ? `<div><dt>${t('Privacy')}</dt><dd>${t('Runs entirely on your device')}</dd></div>` : ''}
             ${tool.version ? `<div><dt>${t('Version')}</dt><dd>${escape(tool.version)}</dd></div>` : ''}
+            ${tool.added ? `<div><dt>${t('Added')}</dt><dd>${escape(addedDateText(tool.added))}</dd></div>` : ''}
           </dl>
         </div>
         <div class="meta-dialog-side">

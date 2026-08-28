@@ -2205,6 +2205,30 @@ async function render(
     renderPreview();
   }
 
+  // A pasted URL that points STRAIGHT AT AN IMAGE FILE (…/logo.png, …/photo.svg,
+  // a data: URI) becomes the asset itself - fetched, ingested through
+  // storeUserUpload (same validation/provenance as an upload), and picked
+  // (Andy, 2026-08-28: asset inputs accept URLs, not only files). Best-effort:
+  // whether the fetch SUCCEEDS is platform policy (the web CSP admits self +
+  // data: and refuses arbitrary origins; Tauri admits more), and any failure
+  // returns false so the page-capture / can't-open fallback keeps its turn.
+  async function tryDirectUrlAsset(url: string): Promise<boolean> {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+      if (!res.ok) return false;
+      const blob = await res.blob();
+      const mime = (blob.type || '').toLowerCase();
+      if (!(mime.startsWith('image/'))) return false;   // pages and non-images → capture fallback
+      const base = /^data:/i.test(url) ? `pasted-${Date.now()}` : (url.split('/').pop()?.split(/[?#]/)[0] || `url-${Date.now()}`);
+      const name = /\.[a-z0-9]{2,5}$/i.test(base) ? base : `${base}.${mime === 'image/svg+xml' ? 'svg' : mime.slice(6).replace('jpeg', 'jpg')}`;
+      const file = new File([blob], name, { type: blob.type || 'image/png' });
+      const ref = await storeUserUpload(host, file, { sourceHint: 'url' });
+      if (collect) { dismissTakeover(); collectToast(await collect.onAsset(ref)); return true; }
+      close(ref);
+      return true;
+    } catch { return false; }
+  }
+
   // A pasted https URL that ISN'T a Lolly link. Where the shell can capture pages
   // (extension / Tauri) and a raster screenshot would serve this slot, offer to
   // screenshot it; on a Chromium browser WITHOUT capture, point at the extension
@@ -2281,7 +2305,10 @@ async function render(
       if (!data) throw new Error('empty session');
       const tool = await getTool(entry.toolId);
       const runtime = await createRuntime(tool, host, data as Record<string, InputValue>);
-      const query = serializeUrlState(runtime.getModel());
+      // keepUserIds: this embed identity re-renders ON THIS DEVICE, where a user/
+      // upload resolves - the pre-plan-171 behaviour. Off-device it degrades to the
+      // same silent blank it always did (the id is device-local either way).
+      const query = serializeUrlState(runtime.getModel(), { keepUserIds: true });
       const url = buildEmbedUrl({ toolId: entry.toolId, format: imageFormatSeed(data.__export_format), query });
       const desc = url ? await host.compose._describeUrl(url) : null;
       if (!url || !desc) throw new Error('not renderable');
@@ -2474,8 +2501,11 @@ async function render(
         showTakeover(`<div class="asset-picker-loading">${t('Checking link…')}</div>`);
         const desc = await host.compose._describeUrl(raw).catch(() => null);
         if (seq !== detectSeq) return; // superseded by a newer keystroke
-        if (desc) showToolCard(desc, raw, { editUrl: raw });
-        else showUrlFallback(raw);
+        if (desc) { showToolCard(desc, raw, { editUrl: raw }); return; }
+        // Not a Lolly link - maybe it's a direct image file (…/logo.png).
+        if (await tryDirectUrlAsset(raw)) return;
+        if (seq !== detectSeq) return; // the fetch attempt took a while - re-check
+        showUrlFallback(raw);
         return;
       }
       detectSeq++; // invalidate any in-flight detection now that it's not a URL

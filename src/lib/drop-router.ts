@@ -1054,3 +1054,34 @@ export function initShareTargetIngest(host: PickerHost): void {
   window.addEventListener('lolly-share-target', poll);
   poll(); // cold start: the launching intent was stashed before this JS booted
 }
+
+/** The App-Link half of the `LollyShare` interface (plan 171): MainActivity
+ *  stashes a tapped ACTION_VIEW https URL, consumed on read. */
+interface LollyLinkBridge {
+  pendingDeepLink(): string;
+}
+
+/**
+ * Android App-Link intake: a tapped https://lolly.tools/t/… (or /design) link
+ * opens the app, and this maps it onto the in-app route - the SPA router owns
+ * the path+query+hash grammar, so navigateTo with the URL's own tail re-mounts
+ * exactly what the browser would have shown (packed z/zx links included; the
+ * zx password prompt runs at the tool view's own load boundary as usual).
+ * Same cold-poll + warm-event pattern as the share target; feature-detected,
+ * so a no-op everywhere but the Android app. Call once at boot (main.ts).
+ */
+export function initDeepLinkIntake(): void {
+  const bridge = (window as unknown as { LollyShare?: Partial<LollyLinkBridge> }).LollyShare;
+  if (typeof bridge?.pendingDeepLink !== 'function') return;
+  const link = bridge as LollyLinkBridge;
+  const poll = (): void => {
+    const raw = link.pendingDeepLink();
+    if (!raw) return;
+    let u: URL;
+    try { u = new URL(raw); } catch { return; }
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return;
+    void import('../nav.ts').then((m) => m.navigateTo(u.pathname + u.search + u.hash));
+  };
+  window.addEventListener('lolly-deep-link', poll);
+  poll(); // cold start: the launching intent was stashed before this JS booted
+}

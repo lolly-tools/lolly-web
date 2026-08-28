@@ -43,7 +43,7 @@ import { startJob, type JobHandle } from '../lib/jobs.ts';
 import { announce } from '../a11y.ts';
 import { armViewEnter } from '../view-enter.ts';
 import { playSfx } from '../lib/sfx.ts';
-import { takePendingVerify } from '../lib/verify-handoff.ts';
+import { prepareAssetForVerify, takePendingVerify } from '../lib/verify-handoff.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 import { backHomeHtml, mountBackPill } from '../components/back-pill.ts';
@@ -121,6 +121,21 @@ const MAX_VERIFY_BYTES = 256 * 1024 * 1024;
 // near-identical glyphs from catalog-summary.ts/category-icons.ts/profile.ts.
 const ICON_SHIELD = glyph('shield');
 const ICON_CHEVRON = glyph('chevronDown');
+
+// Supported inputs as glanceable category chips (label to scan, exact formats on
+// hover) - the same "prompt above, formats subordinate" hierarchy as the catalogue
+// drop area (lib/upload-dropzone.ts), rather than a run-on `·`-separated sentence.
+const VERIFY_FORMAT_GROUPS: ReadonlyArray<{ label: string; formats: string }> = [
+  { label: 'Images', formats: 'PNG, APNG, JPG, GIF, SVG, TIFF, WEBP, AVIF' },
+  { label: 'Documents', formats: 'PDF, PowerPoint, Word' },
+  { label: 'Audio', formats: 'MP3, WAV, M4A, OGG, OPUS' },
+  { label: 'Video', formats: 'MP4, WEBM, MOV, MKV' },
+  { label: 'Text & code', formats: 'HTML, Markdown, JS, CSS, TXT' },
+];
+const verifyFormatChips = (): string =>
+  VERIFY_FORMAT_GROUPS
+    .map((g) => `<span class="valid-drop-chip" title="${escape(t(g.formats))}">${escape(t(g.label))}</span>`)
+    .join('');
 
 // Small line icons, wrapped consistently - shared by the hero check scorecard
 // and the per-fact <dt> labels. /valid's icons are a hair thinner (1.9) than
@@ -2057,8 +2072,8 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
              a nested control - no second tab stop, no double picker on click. -->
         <span class="btn btn--primary valid-drop-cta">${t('Choose files')}</span>
         <strong class="valid-drop-lead">${t('Drop files here')}</strong>
-        <span>${t('pdf · png · jpg · gif · svg · tiff · webp · mp4 · webm · mp3 · wav · html · txt - check one or several at once')}</span>
-        <span>${t('or paste source text - a C2PA credential can travel inside an HTML document or plain text')}</span>
+        <span class="valid-drop-hint">${verifyFormatChips()}</span>
+        <span>${t('Check one or several at once, or paste source text - a C2PA credential can travel inside an HTML document or plain text')}</span>
       </div>
 
       <div class="valid-paste">
@@ -3901,14 +3916,35 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
 
   // Arrived here from the catalog's "Check credentials" link? Verify that asset straight
   // away, and surface the handoff note (e.g. re-encoded-on-import caveat) above the report.
+  const showHandoffNote = (note: string | undefined): void => {
+    if (!note) return;
+    reportEl.querySelector('.valid-reports-list')?.insertAdjacentHTML(
+      'afterbegin',
+      `<p class="valid-handoff-note">${escape(note)}</p>`,
+    );
+  };
   const handoff = takePendingVerify();
   if (handoff?.files.length) {
     await handle(handoff.files);
-    if (handoff.note) {
-      reportEl.querySelector('.valid-reports-list')?.insertAdjacentHTML(
-        'afterbegin',
-        `<p class="valid-handoff-note">${escape(handoff.note)}</p>`,
-      );
+    showHandoffNote(handoff.note);
+  } else {
+    // `#/verify?asset=<id>` (plan 171) - the shareable form of that same handoff:
+    // resolve the asset on THIS device and run the identical preparation (heal +
+    // captured-credential re-attach), so a link reaches the verdict the catalog's
+    // own button shows. Same-device semantics as every asset id: a catalog id
+    // resolves wherever that catalog is synced, a user/ id only where it lives;
+    // an id this device doesn't hold reports plainly instead of fetching anything.
+    const assetId = new URLSearchParams(params).get('asset');
+    if (assetId) {
+      let ref = null;
+      try { ref = await host.assets.get(assetId); } catch { ref = null; }
+      const prep = ref ? await prepareAssetForVerify(host, ref) : null;
+      if (prep?.files.length) {
+        await handle(prep.files);
+        showHandoffNote(prep.note);
+      } else {
+        sayVerifyProblem(t('No asset with that id is on this device, so there is nothing to check. Open the link where the asset lives, or drop the file here instead.'));
+      }
     }
   }
 }

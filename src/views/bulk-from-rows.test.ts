@@ -134,9 +134,11 @@ test('every tool layout can reach it: the sidebar header button and the Lolly me
 
 test('unsaved single-tool work is offered a save before the batch takes over', () => {
   // The batch starts from rows, so the current design does not travel; leaving with
-  // unsaved edits must make the same offer the back pill makes.
+  // unsaved edits must make the same offer the back pill makes. A session whose
+  // latest edits went out as an export counts as resolved, not unsaved (audit 167
+  // F-A2 - exportedSinceEdit), so the guard stands down for it too.
   const fn = TOOL.slice(TOOL.indexOf('const openBulk'), TOOL.indexOf('const openBulk') + 700);
-  assert.match(fn, /if \(!hasInputs \|\| !userHasMadeChanges\) \{ go\(\); return; \}/,
-    'a clean session leaves straight away');
+  assert.match(fn, /if \(!hasInputs \|\| !userHasMadeChanges \|\| exportedSinceEdit\) \{ go\(\); return; \}/,
+    'a clean or export-resolved session leaves straight away');
   assert.match(fn, /showUnsavedDialog\(/, 'a dirty session gets the shared unsaved dialog');
 });

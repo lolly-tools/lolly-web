@@ -77,6 +77,10 @@ export interface StartRoute {
    *  picker opens (see `importOpen`); it never fetches or reads anything by
    *  itself, so the link is a signpost, not an action. */
   source: StartSource | null;
+  /** `?seed=<hex>` - prime the Generate wing's primary with this colour before
+   *  it opens. Minted by the added-chip's "Generate your palette from this
+   *  colour" link (audit 167 F-A12); hex only, anything else is ignored. */
+  seed: string | null;
 }
 
 /**
@@ -96,6 +100,7 @@ export function resolveStartRoute(query: string): StartRoute {
   const tab = params.get('tab');
   const focus = params.get('focus');
   const source = params.get('source');
+  const seed = params.get('seed');
   const resolvedSource = source && SOURCES.has(source) ? (source as StartSource) : null;
   return {
     area: isStartArea(area) ? area : isStartArea(tab) ? tab : DEFAULT_AREA,
@@ -105,5 +110,8 @@ export function resolveStartRoute(query: string): StartRoute {
     importOpen: params.get('import') !== '0' && (params.has('import') || resolvedSource !== null),
     focus: focus && FOCUSES.has(focus) ? (focus as StartFocus) : null,
     source: resolvedSource,
+    // Hex only - the chip link mints hex, and a colour that must be parsed is a
+    // colour that can silently become a different colour. Unknown → null.
+    seed: seed && /^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$/.test(seed) ? seed : null,
   };
 }

@@ -738,6 +738,11 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     if (area === 'versions') openVersions();
     syncPaletteSheet();
     // Keep the URL shareable without spamming history.
+    // `area` is deliberately the ONLY param that survives: `focus`, `wheel`, `import`,
+    // `source` and `seed` are one-shot flags, consumed on mount and never propagated
+    // into a generated link (the contract in lib/design-system/start-route.ts). So a
+    // room click dropping them is the design, not a regression - the URL you copy
+    // afterwards says which room you are in, not which wing you once opened.
     try { history.replaceState(null, '', `#/start?area=${area}`); } catch { /* sandboxed */ }
     if (opts.sfx) playSfx('click');
   };
@@ -783,7 +788,11 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   // Deep-link: `#/start?area=color&focus=<wing>` opens that wing of the Colours
   // room (`chart` is the colour chart, the same target as `?wheel`). Same
   // consume-on-mount, no-op-when-degraded contract as the wheel flag.
+  // `?seed=<hex>` primes the Generate wing's primary FIRST, so the wing opens
+  // already showing ramps built from the carried colour (audit 167 F-A12 - the
+  // added-chip's "Generate your palette from this colour" finally means it).
   if (activeArea === 'color' && route.focus) {
+    if (route.seed) editor?.setGeneratePrimary?.(route.seed);
     if (route.focus === 'chart') editor?.openColorChart();
     else editor?.openWing?.(route.focus);
   }
@@ -1346,6 +1355,9 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     // unwind before it could leave the studio at all - the "back loop" that
     // stranded anyone who reached /start mid-session. The remount is what drains
     // the logos stash (the room reads it on paint), so it fires unconditionally.
+    // Like selectRoom, this writes `area` alone: the one-shot arrival flags
+    // (focus/wheel/import/source/seed) are consumed on mount by design and must not
+    // be carried forward - a remount would re-fire them.
     try { history.replaceState(null, '', '#/start?area=logos'); } catch { /* sandboxed */ }
     window.dispatchEvent(new Event('lolly:remount'));
   }

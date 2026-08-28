@@ -599,9 +599,15 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // this agnostic about what the target control IS - no asset-picker internals
     // here, so any control can host an attachment.
     const lead = (attachments.get(input.id) ?? []).map(attachedControlHtml).join('');
-    const rawControl = lead
-      ? `<div class="input-attached">${lead}${controlHtml(renderInput, modelValues, pol)}</div>`
-      : controlHtml(renderInput, modelValues, pol);
+    // An asset slot hosts its attachments (always fit/cover toggles) INSIDE its own
+    // settings zone, not as a lead column - so the card keeps its source→preview→
+    // settings hierarchy. Every other control still gets the generic .input-attached
+    // flex row, agnostic about what it wraps.
+    const rawControl = renderInput.control === 'asset-picker'
+      ? controlHtml(renderInput, modelValues, pol, lead)
+      : lead
+        ? `<div class="input-attached">${lead}${controlHtml(renderInput, modelValues, pol)}</div>`
+        : controlHtml(renderInput, modelValues, pol);
     // A locked control renders inert + dimmed: `inert` drops it from focus + events,
     // `pointer-events:none` covers pointer input for controls that don't honour
     // inert. Cooperative only - the server is the hard gate (locked values 422).
@@ -813,6 +819,12 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
         const dropped = await host.assets.get(assetId).catch(() => null);
         if (dropped) { runtime.setInput(id, dropped); onDirty?.(id); }
       });
+      // The preview tile is part of the same control - clicking the image/waveform
+      // opens the picker too, reusing the trigger's handler (incl. the Lolly
+      // edit-or-replace flow) rather than duplicating it.
+      control.closest('.asset-picker-row')
+        ?.querySelector<HTMLElement>('.asset-picker-thumb-inline')
+        ?.addEventListener('click', () => control.click());
       return;
     }
 
@@ -2214,7 +2226,7 @@ const TABLE_VIRTUALIZE_ROWS = 50;
 // cycle so a cell edit doesn't fling the grid back to the top.
 const tableGridScroll = new Map<string, number>();
 
-function controlHtml(input: InputModelItem, modelValues: Record<string, InputValue> = {}, policy?: InputPolicy): string {
+function controlHtml(input: InputModelItem, modelValues: Record<string, InputValue> = {}, policy?: InputPolicy, attachedHtml = ''): string {
   const id  = escape(input.id);
   const val = escape(input.value ?? '');
   switch (input.control) {
@@ -2350,9 +2362,13 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
                    data-audio-thumb="${escape(v.id)}"
                    data-audio-fp="${escape(peaksFingerprint(v))}"
                    aria-hidden="true">${audioThumbPlaceholder({})}</span>`
-          : thumbUrl
-            ? `<img class="asset-picker-thumb-inline" src="${escape(thumbUrl)}" alt="">`
-            : '';
+          // A video URL in an <img> is a broken-image icon (same trap as audio). A
+          // muted <video> at #t=0.1 paints a real poster frame in the same tile.
+          : v?.type === 'video' && thumbUrl
+            ? `<video class="asset-picker-thumb-inline" src="${escape(thumbUrl)}#t=0.1" muted playsinline preload="metadata" aria-hidden="true"></video>`
+            : thumbUrl
+              ? `<img class="asset-picker-thumb-inline" src="${escape(thumbUrl)}" alt="">`
+              : '';
       // An image minted from a pasted Lolly link keeps its origin in meta.toolUrl - 
       // the canonical, re-renderable embed URL (see compose.renderUrl). Surface that
       // provenance and an Edit affordance that re-opens the source tool's own inputs
@@ -2383,15 +2399,41 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
         slotBtns.push(`<button type="button" class="slot-act" data-matchdur-id="${id}" data-dur-ms="${sDur}" title="Set the export length to ${(sDur / 1000).toFixed(1)}s">⏱ Match length</button>`);
       if (hasValue && (isVidSlot || isAudSlot) && v?.url)
         slotBtns.push(`<button type="button" class="slot-act slot-play" data-preview-id="${id}" data-media-url="${escape(v.url)}" aria-label="Preview the sound">▶ Preview</button>`);
-      const slotActions = slotBtns.length ? `<div class="slot-actions">${slotBtns.join('')}</div>` : '';
+      // The card reads top-to-bottom as a hierarchy: a SOURCE tab row (this pick
+      // tab, plus Use camera / Play which live-controls.ts drops in beside it), then
+      // a PREVIEW area, then a SETTINGS row. The tab names the source ("Use image");
+      // the caption under the preview names the loaded asset.
+      const kind = isAudSlot ? 'audio' : isVidSlot ? 'video'
+        : (at === 'lottie' || v?.type === 'lottie') ? 'animation'
+        : (at === 'raster' || at === 'image' || at === 'vector') ? 'image' : 'asset';
+      const pickLabel = kind === 'audio' ? 'Use audio'
+        : kind === 'video' ? 'Use video'
+        : kind === 'animation' ? 'Use animation'
+        : kind === 'image' ? 'Use image'
+        : hasValue ? 'Change' : 'Choose…';
+      const sourceIcon = icon(kind === 'audio' ? 'music' : kind === 'video' ? 'play' : 'image', { size: 15 });
+      const spark = fromTool ? '<span class="asset-lolly-spark" aria-hidden="true">&#10022;</span> ' : '';
+      // Settings zone: the attached fit/cover toggle (attachTo - always an asset
+      // fit-toggle in the catalog) + the opt-in slot actions (Fit canvas / Match
+      // length / Preview). Both belong to the card, below the preview.
+      const settingsBits: string[] = [];
+      if (attachedHtml) settingsBits.push(attachedHtml);
+      if (slotBtns.length) settingsBits.push(`<div class="slot-actions">${slotBtns.join('')}</div>`);
+      const settings = settingsBits.length ? `<div class="asset-slot-settings">${settingsBits.join('')}</div>` : '';
       // A Lolly-backed slot reads differently at a glance (is-lolly: brand-tinted
-      // border + a ✦ spark on the trigger) so "this image is live, not a file"
+      // preview + a ✦ spark on the caption) so "this image is live, not a file"
       // is visible before clicking - the click then offers edit-or-replace.
-      return `<div class="asset-picker-row${fromTool ? ' is-lolly' : ''}">
-        ${thumb}
-        <button type="button" class="asset-picker-trigger" data-input-id="${id}">${fromTool ? '<span class="asset-lolly-spark" aria-hidden="true">&#10022;</span> ' : ''}${escape(currentLabel)}</button>
-        ${hasValue ? `<button type="button" class="asset-clear" data-clear-id="${id}" aria-label="Clear selection">&#x2715;</button>` : ''}
-      </div>${slotActions}${fromTool ? `<div class="asset-from-tool">
+      return `<div class="asset-picker-row asset-slot${hasValue ? ' has-value' : ''}${fromTool ? ' is-lolly' : ''}">
+        <div class="asset-slot-source">
+          <button type="button" class="asset-picker-trigger asset-slot-tab${hasValue ? ' is-active' : ''}" data-input-id="${id}">${sourceIcon}<span class="asset-slot-tab-label">${escape(pickLabel)}</span></button>
+        </div>
+        ${hasValue ? `<div class="asset-slot-preview">
+          ${thumb}
+          <button type="button" class="asset-clear" data-clear-id="${id}" aria-label="Clear selection">&#x2715;</button>
+        </div>
+        <div class="asset-slot-caption" title="${escape(currentLabel)}">${spark}${escape(currentLabel)}</div>` : ''}
+        ${settings}
+      </div>${fromTool ? `<div class="asset-from-tool">
         <span class="asset-from-tool-label"><span class="asset-from-tool-spark" aria-hidden="true">&#10022;</span> from <strong>${escape(fromTool)}</strong></span>
         <button type="button" class="asset-edit" data-edit-id="${id}">Edit</button>
       </div>` : ''}${bakedName ? `<div class="asset-from-tool asset-from-tool--baked">

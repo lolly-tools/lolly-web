@@ -169,7 +169,7 @@
     flex-shrink: 0;
   }
   /* .export-popup-title/-close: hoisted out of both breakpoints - see tool.css. */
-  .export-popup-body { overflow-y: auto; padding: 14px; }
+  .export-popup-body { overflow-y: auto; padding: 14px; padding-top:0;}
   .export-popup-body .tool-actions { margin: 0; padding: 0; border-top: none; }
   /* Let the last input scroll clear of the open export panel. */
   .tool-layout.export-open .sidebar-body { padding-bottom: 45vh; }
@@ -2297,14 +2297,80 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 
 /* Asset picker */
 .asset-picker-row {
-  display: block;
-  gap: 4px;
-  /* Don't let a long file path set the component's min width: allow the row to
-     shrink below its content (flex items default to min-width:auto) so the
-     trigger's ellipsis kicks in instead of widening / wrapping the sidebar. */
+  /* The asset card reads top-to-bottom as one hierarchy: a SOURCE tab row (Use
+     image / Use camera / Play), a PREVIEW area, a caption, then a SETTINGS row.
+     min-width:0 lets a long asset name ellipsise instead of widening the sidebar. */
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   min-width: 0;
   max-width: 100%;
 }
+
+/* ── Source tab row: how the slot is filled. The "Use image" pick tab leads;
+   live-controls.ts appends Use camera / Play (as .slot-act.slot-live) beside it. */
+.asset-slot-source { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.asset-slot-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 6px 12px;
+  font-size: calc(12px * var(--a11y-fs));
+  font-weight: 600;
+  line-height: 1;
+  border: 1px solid hsl(var(--input));
+  border-radius: 999px;
+  background: hsl(var(--muted) / 0.5);
+  color: hsl(var(--foreground));
+  cursor: pointer;
+  transition: border-color 0.12s, background-color 0.12s, color 0.12s;
+}
+.asset-slot-tab svg { flex: none; width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
+.asset-slot-tab-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asset-slot-tab:hover { border-color: hsl(var(--primary) / 0.55); background: hsl(var(--primary) / 0.07); }
+/* The active source reads as a filled tab. */
+.asset-slot-tab.is-active { border-color: hsl(var(--primary) / 0.55); background: hsl(var(--primary) / 0.12); color: hsl(var(--primary)); }
+/* Empty slot: the pick tab is the primary call to action - a full-width dashed drop
+   target (it accepts a dragged catalog tile), matching the app's drop-area language. */
+.asset-slot:not(.has-value) .asset-slot-tab { flex: 1 1 auto; justify-content: center; border-style: dashed; padding: 12px; }
+.asset-picker-row.is-dragover .asset-slot-tab { border-color: hsl(var(--primary)); background: hsl(var(--primary) / 0.12); }
+
+/* ── Preview area: the hero. A stable, generous box that holds any media type -
+   image/video object-fit:contain, the square audio waveform + Lottie glyph centred.
+   Capped so a many-slot tool (booth-studio's 9) stays scrollable. */
+.asset-slot-preview {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  max-height: 200px;
+  border: 1px solid hsl(var(--input));
+  border-radius: var(--radius);
+  background: hsl(var(--muted));
+  overflow: hidden;
+}
+/* Clear (✕) overlays the preview's top-right rather than taking a column. */
+.asset-slot-preview .asset-clear {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  background: hsl(var(--background) / 0.82);
+}
+/* ── Caption: names the loaded asset (the pick tab names the SOURCE, not the file). */
+.asset-slot-caption {
+  min-width: 0;
+  font-size: calc(12px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* ── Settings row: the fit/cover toggle (attachTo) + Fit canvas / Match / Preview. */
+.asset-slot-settings { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.asset-slot-settings .slot-actions { margin-top: 0; }
 .saved-row{font-weight:600;text-transform:capitalize;}
 
 .saved-row small{    display: grid;
@@ -2361,50 +2427,40 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
    The 32px box is unchanged - 19.2px inside it at the large-text factor. */
 .icon-toggle svg { display: block; width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
 
+/* One media-agnostic preview tile at a STABLE size, whatever the asset is. An
+   image or video sits object-fit:contain; the audio waveform (a square 64-viewBox
+   SVG, preserveAspectRatio meet) and the Lottie glyph centre in the same box - so
+   an audio slot no longer balloons to fill the sidebar. Click it to change (JS in
+   tool-inputs.ts forwards to the trigger). A `<span>` needs an explicit display to
+   honour width/height; block works for the img/video (which carry this class
+   directly) and the audio span alike - the Lottie modifier below re-flexes itself. */
+/* The thumb fills the preview area; the area owns the size/border/background. Any
+   media type: image/video object-fit:contain, the audio waveform SVG (square 64
+   viewBox, preserveAspectRatio meet) and the Lottie glyph centre in the same box.
+   Clicking it changes the asset (JS in tool-inputs.ts forwards to the pick tab). */
 .asset-picker-thumb-inline {
-  flex: none;
+  display: block;
   width: 100%;
-  height: 10em;
+  height: 100%;
   object-fit: contain;
-  border: 1px solid hsl(var(--input));
-  border-radius: var(--radius);
-  background: hsl(var(--muted));
+  cursor: pointer;
 }
+.asset-picker-thumb-inline > svg { width: 100%; height: 100%; display: block; }
 
 /* Play-glyph stub for picked Lottie animations (their URL is JSON, not an image). */
 .asset-picker-thumb-lottie {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: calc(28px * var(--a11y-fs));
   color: hsl(var(--muted-foreground));
-}
-
-.asset-picker-trigger {
-  flex: 1;
-  min-width: 0;
-  max-width:100%;
-  text-align: left;
-  padding: 7px 10px;
-  cursor: pointer;
-  font-size: calc(13px * var(--a11y-fs));
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  transition: border-color 0.12s;
-}
-
-.asset-picker-trigger:hover {
-  border-color: hsl(var(--ring) / 0.4);
 }
 
 .asset-clear {
   flex: none;
   width: 32px;
+  height: 32px;
   border: 1px solid hsl(var(--input));
-  position: absolute;
-    margin-top: -2em;
-    right: .5em;
   border-radius: var(--radius);
   background: hsl(var(--background));
   cursor: pointer;

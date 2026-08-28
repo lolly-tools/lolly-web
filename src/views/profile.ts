@@ -21,7 +21,7 @@ import '../styles/parts/tool.css';      // .help-tip-btn/-pop/-host styles - sha
                                          // from multi-edit.ts (component audit rec 13)
 import '../styles/parts/storage.css';   // the storage-reconciliation meter lives in /profile
 import '../styles/parts/offline-manager.css'; // the "Offline tools" download manager section
-import { applyTheme, currentTheme, THEMES, THEME_LABELS } from '../theme.ts';
+import { applyTheme, currentTheme, THEMES, THEME_LABELS, THEME_ICONS } from '../theme.ts';
 import { setTheme } from '../lib/set-theme.ts';
 import { currentA11yPrefs, setA11yPref, prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import { fold, tokenize, scoreHaystack } from '../lib/search/match.ts';
@@ -749,7 +749,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         <div class="profile-theme-grid" data-theme-pick>
           ${THEMES.map(theme => `
             <button type="button" class="profile-theme${theme === activeTheme ? ' is-active' : ''}" data-theme-set="${escape(theme)}" data-theme="${escape(theme)}" aria-pressed="${theme === activeTheme ? 'true' : 'false'}">
-              <div class="profile-theme-name">${escape(t(THEME_LABELS[theme]))}${theme === 'light' ? `<span class="profile-theme-pill">${t('default')}</span>` : ''}</div>
+              <div class="profile-theme-name"><span class="profile-theme-ic" aria-hidden="true">${THEME_ICONS[theme]}</span>${escape(t(THEME_LABELS[theme]))}${theme === 'light' ? `<span class="profile-theme-pill">${t('default')}</span>` : ''}</div>
               <div class="profile-theme-dots">
                 <span style="background:hsl(var(--primary))" title="primary"></span>
                 <span style="background:hsl(var(--card))" title="card"></span>

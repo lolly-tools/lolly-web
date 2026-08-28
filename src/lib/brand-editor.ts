@@ -988,6 +988,10 @@ export interface BrandEditorHandle {
   /** Open a level-2 wing of the Colours room. False when absent (a locked build
    *  renders no studio). Additive since plan 97 M1. */
   openWing?: (key: 'generate' | 'curves' | 'contrast' | 'print') => boolean;
+  /** Prime the Generate wing's primary colour (the `?seed=` deep link - the
+   *  added-chip's "Generate your palette from this colour"). Runs the same
+   *  fan-out a manual pick runs. Additive, audit 167 F-A12. */
+  setGeneratePrimary?: (hex: string) => void;
   /** Session undo for the room's destructive actions. Additive since M1. */
   undo?: () => boolean;
   canUndo?: () => boolean;
@@ -3531,7 +3535,13 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     // now have one colour and 25 you did not pick". Every later add is just an
     // add, and a brand with no starter never sees it at all.
     const own = swatches.filter(s => !starterSwatches.has(starterId(s.key, s.raw))).length;
-    if (addedGen) addedGen.hidden = !(starterSwatches.size > 0 && own <= 1);
+    if (addedGen) {
+      addedGen.hidden = !(starterSwatches.size > 0 && own <= 1);
+      // Carry THE colour into the generator (audit 167 F-A12): without the seed
+      // the link opened the generate wing primed with the starter primary - the
+      // one promise in "Generate your palette from this colour", dropped.
+      if (one.hex) addedGen.setAttribute('href', `#/start?area=color&focus=generate&seed=${encodeURIComponent(one.hex)}`);
+    }
     addedEl.hidden = false;
     addedPrimaryBtn?.focus();
   };
@@ -5114,6 +5124,19 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       return true;
     },
     openWing: (key) => openWing(key),
+    setGeneratePrimary: (hex) => {
+      setPrimaryTo(hex);
+      // The deep-linked promise is "one colour in, palette offered" (audit 167
+      // A13): once the caller opens the wing, bring the PROPOSAL into view -
+      // the ramp previews with Replace palette right under them - so the
+      // confirm is the first thing on screen, not the instrument. rAF because
+      // the wing opens in the same tick as this call; scrollIntoView guarded
+      // for jsdom, motion follows the shared reduced-motion read.
+      requestAnimationFrame(() => {
+        const previews = $('[data-be-previews]') as HTMLElement | null;
+        previews?.scrollIntoView?.({ block: 'center', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+      });
+    },
     undo: () => undoLast(),
     canUndo: () => undoStack.length > 0,
   };

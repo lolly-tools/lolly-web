@@ -81,7 +81,7 @@ export function formatListenEstimate(seconds: number): string {
  */
 const auditionUrls = new Map<string, Promise<string>>();
 
-export async function mountScriptStudio(viewEl: HTMLElement, host: ScriptAudioHost): Promise<void> {
+export async function mountScriptStudio(viewEl: HTMLElement, host: ScriptAudioHost, _params?: string): Promise<void> {
   document.title = tRaw('{name} - Lolly', { name: t('Script audio') });
   const speech = host.speech;
 

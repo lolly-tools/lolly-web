@@ -116,6 +116,12 @@ type Entry = Awaited<ReturnType<WebStateAPI['list']>>[number];
 // migrate to on load. 'tool' groups by the owning tool (folder views only).
 type SortBy = 'modified' | 'added' | 'name' | 'tool' | 'size';
 type ViewMode = 'preview' | 'list';
+// The two vocabularies a `#/p?view=&sort=` deep link is checked against. Sets, not
+// object lookups - an object answers true for 'constructor' and every other inherited
+// key (see lib/design-system/start-route.ts). The stored prefs above still parse with
+// their own literal comparisons; these exist for the URL, which is untrusted input.
+const VIEW_MODES = new Set<string>(['preview', 'list'] satisfies ViewMode[]);
+const SORT_BYS = new Set<string>(['modified', 'added', 'name', 'tool', 'size'] satisfies SortBy[]);
 type SelectKind = 'folder' | 'session' | 'image';   // images join via marquee (no checkbox)
 
 /** Query result: the (capped) tiles to render plus the true `total` so the header can
@@ -312,6 +318,17 @@ export async function mountProjects(
       sortRev = !!perFolder.r;
     }
   } catch { /* localStorage unavailable */ }
+  // `#/p?view=&sort=&rev` seed the same three for THIS mount, outranking both stored
+  // layers above - what a shared link, a docs recipe or a screenshot run needs to land
+  // on a known layout. Never written back to either localStorage key: a link someone
+  // pasted must not rewrite their own view preference. Read at mount only, like `q`
+  // and `tools`, and never propagated into a generated link. Sets, so an inherited key
+  // ('constructor') can't pass; anything unrecognised leaves the stored value standing.
+  const urlView = new URLSearchParams(opts.params || '').get('view');
+  if (urlView && VIEW_MODES.has(urlView)) viewMode = urlView as ViewMode;
+  const urlSort = new URLSearchParams(opts.params || '').get('sort');
+  if (urlSort && SORT_BYS.has(urlSort)) sortBy = urlSort as SortBy;
+  if (new URLSearchParams(opts.params || '').has('rev')) sortRev = true;
 
   async function reload(): Promise<void> {
     await loadRecentExports();
@@ -615,7 +632,12 @@ export async function mountProjects(
       ${list ? `<div class="projects-actions">${listCreateBtns()}</div>` : ''}
       <div class="folder-grid projects-grid${list ? ' projects-list' : ''}">
         ${list ? listHeadHtml() : ''}
-        ${folderTiles}${looseTiles}${list ? '' : `${createFolder}${createTool}${templateTile()}`}${teamTile}${trashTile}
+        ${folderTiles}${/* "My library" names the loose block when folders sit above
+          it (plans/170 keeping-model): the save dialog files here by that name,
+          so the place answers to it. Grid mode only - the list table has its own
+          header row - and pointless when the grid IS only the library. */ ''}
+        ${!list && loose.length && topFolders.length ? `<h2 class="projects-sec-label">${t('My library')}</h2>` : ''}
+        ${looseTiles}${list ? '' : `${createFolder}${createTool}${templateTile()}`}${teamTile}${trashTile}
       </div>
       ${recentExports.length ? `
         <section class="projects-exports folder-exports">

@@ -38,6 +38,7 @@ import {
   sortAssets,
   assetAddedAt,
   assetModifiedAt,
+  TYPE_FILTER_TYPES,
   type TypeFilter,
   type CatSort,
 } from './catalog-filter.ts';
@@ -126,8 +127,8 @@ import { listUserFonts, familyFromTokenValue } from '../user-fonts.ts';
 import {
   restyleIconTheme, buildThemedAssetId, parseThemedAssetId, treatmentFilterSvg,
   buildTreatedAssetId, parseTreatedAssetId, wrapRasterWithTreatment,
-  GENERATED_SOURCE_TYPE, C2PA_FORMATS,
-  extractC2paStore, attachC2paStore, verifyC2pa, humanizeText, LEXICON_VERSION,
+  GENERATED_SOURCE_TYPE,
+  extractC2paStore, verifyC2pa, humanizeText, LEXICON_VERSION,
   analyzeTextSignals, suggestRewrites, applySuggestion, rewordableSpans, rewordCandidates,
 } from '@lolly/engine';
 import type { HumanizeResult, RewordSuggestion, RewordSpan, RewordCandidate } from '@lolly/engine';
@@ -141,7 +142,7 @@ import { lampStripHtml, type TrustLamp } from './trust-lamps.ts';
 // The on-device model tier's shared seam (plans/126 WP-A): consent line,
 // estimate row and honesty copy for the classifier check.
 import { aiModelSlot } from './tsig-model-note.ts';
-import { setPendingVerify } from '../lib/verify-handoff.ts';
+import { prepareAssetForVerify, setPendingVerify } from '../lib/verify-handoff.ts';
 import { lollyBadge } from '../lib/lolly-badge.ts';
 import type { C2paActionInput } from '../../../../engine/src/c2pa.ts';
 // The shared derived-asset provenance path (plans/148 WP-E) - lifted out of this
@@ -288,6 +289,17 @@ const stripC2paManifest = (svg: string): string =>
   svg.replace(/<metadata>\s*<c2pa:manifest>[\s\S]*?<\/c2pa:manifest>\s*<\/metadata>/g, '')
     .replace(/<c2pa:manifest>[\s\S]*?<\/c2pa:manifest>/g, '');
 const isVector = (ref: AssetRef): boolean => ref.type === 'vector';
+// The date a CATALOG asset's file was first added to its brand pack, as the index
+// carries it (`added`, YYYY-MM-DD, stamped by npm run build:catalog). Read at noon
+// UTC so a reader west of UTC is not shown the day before. Empty string when the
+// asset has no date, which is every upload - those carry a millisecond stamp
+// instead and go through assetAddedAt.
+const catalogAddedText = (ref: AssetRef): string => {
+  const iso = typeof ref.meta?.added === 'string' ? ref.meta.added : '';
+  if (!iso) return '';
+  const d = new Date(`${iso}T12:00:00Z`);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+};
 // A safe, readable download filename from an asset's name (or id), + extension.
 function downloadName(ref: AssetRef, ext: string): string {
   const base = String(ref.meta?.name ?? ref.id.split('/').pop() ?? 'asset')
@@ -718,9 +730,18 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   let searchHaystack: Map<string, string> | null = null;
   const setOverrides = (v: Record<string, string>) => { overrides = v; searchHaystack = null; };
   let headshotUrl = '';
-  let showHidden = false;
+  // `#/c?hidden` and `#/c?type=<bucket>` seed the two grid filters for THIS mount -
+  // the same read-only, consumed-on-mount contract as `?asset=`/`?section=`/`?q=`
+  // above: never persisted, never written back into a generated link. Enough for a
+  // shared link or a screenshot recipe to land on a known grid. `type` is checked
+  // against the bucket table itself (a Set - an object lookup would answer yes to
+  // 'constructor'); anything unrecognised leaves the default 'all' standing.
+  let showHidden = new URLSearchParams(params).has('hidden');
   let loadFailed = false;                    // the catalog query threw - a total sync failure, distinct from an empty catalogue
-  let typeFilter: TypeFilter = 'all';        // filetype filter in the sticky toolbar (all/image/vector/motion/audio)
+  const urlType = new URLSearchParams(params).get('type');
+  let typeFilter: TypeFilter = urlType && new Set<string>(['all', ...Object.keys(TYPE_FILTER_TYPES)]).has(urlType)
+    ? urlType as TypeFilter
+    : 'all';                                 // filetype filter in the sticky toolbar (all/image/vector/motion/audio/text)
   // Footer search text (lowercased); filters the asset grid. Seeded from #/c?q=… on
   // mount (plans/99 M0) with the same trim+lowercase the input handler applies.
   let query = (new URLSearchParams(params).get('q') || '').trim().toLowerCase();
@@ -2245,48 +2266,26 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // still surfaces (flagged, since a re-encode makes the binding read as modified).
   async function checkCredentials(ref: AssetRef): Promise<void> {
     try {
-      const name = String(ref.meta?.name ?? ref.id);
-      const resp = await fetch(ref.url);
-      let bytes: Uint8Array = new Uint8Array(await resp.arrayBuffer());
-      let note: string | undefined;
-      const fmt = String(ref.format ?? '').toLowerCase();
-      // Heal-then-check: a TTS clip saved before the wav embed shipped holds bare
-      // bytes, so rebuild its credential from the stored meta.tts recipe, write it
-      // into the file AND the record, and check the stamped bytes - the user sees
-      // credentials appear. shouldHealTts refuses anything without the recipe, so
-      // recorded/uploaded audio is never stamped. Best-effort: a failed heal falls
-      // through to checking the plain bytes.
-      if (ref.source === 'user') {
+      // Shared preparation (lib/verify-handoff.ts): fetch, TTS heal, captured-
+      // credential re-attach - the same pipeline the #/verify?asset= deep link
+      // runs cold, so this warm hop and a shared link reach the same verdict.
+      const prep = await prepareAssetForVerify(host, ref);
+      if (!prep) {
+        announce(t('Could not open the credential checker for this asset.'));
+        return;
+      }
+      if (prep.healed) {
+        // The record now serves a fresh object URL - swap the grid's ref so a
+        // later open or download reads the stamped bytes, not the stale URL.
         try {
-          const { shouldHealTts, healTtsProvenance } = await import('../lib/tts-provenance.ts');
-          if (shouldHealTts(ref, bytes)) {
-            const healed = await healTtsProvenance(host, ref, bytes);
-            if (healed) {
-              bytes = new Uint8Array(await healed.arrayBuffer());
-              // The record now serves a fresh object URL - swap the grid's ref so
-              // a later open or download reads the stamped bytes, not the stale URL.
-              try {
-                const fresh = await host.assets.get(ref.id);
-                if (fresh) assetById.set(ref.id, fresh);
-              } catch { /* next reload catches up */ }
-            }
-          }
-        } catch { /* heal is additive - the plain bytes still get checked */ }
+          const fresh = await host.assets.get(ref.id);
+          if (fresh) assetById.set(ref.id, fresh);
+        } catch { /* next reload catches up */ }
       }
-      if (!extractC2paStore(bytes)) {
-        // Stored file has no embedded credential - fall back to the one captured at ingest.
-        let cred: { store: Uint8Array; format: string } | null = null;
-        try { cred = (await host.assets.credential?.(ref.id)) ?? null; } catch { cred = null; }
-        if (cred?.store && C2PA_FORMATS.includes(fmt)) {
-          try {
-            bytes = attachC2paStore(bytes, fmt, cred.store);
-            note = t('This Content Credential was captured when the file was imported. Lolly re-encoded the image on import, so it no longer binds to the stored copy byte-for-byte - the credential reads as "modified", but the provenance claims below are intact.');
-          } catch { /* re-attach failed - hand over the plain bytes and let Verify report */ }
-        }
-      }
-      const file = new File([bytes as BlobPart], name, { type: resp.headers.get('content-type') || undefined });
-      setPendingVerify({ files: [file], note });
-      location.hash = '#/verify';
+      setPendingVerify({ files: prep.files, note: prep.note });
+      // The address is shareable (plan 171): a cold #/verify?asset=<id> load
+      // re-runs the same preparation; the in-memory handoff covers this hop.
+      location.hash = `#/verify?asset=${encodeURIComponent(ref.id)}`;
     } catch {
       announce(t('Could not open the credential checker for this asset.'));
     }
@@ -2655,11 +2654,13 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           <div class="cat-details-origins-row"><dt>${t('Origins')}</dt><dd class="cat-details-ai" data-origins></dd></div>
           ${(() => {
             // Added/Modified (plans/132 WP-A): uploads always have a date (the id
-            // embeds mint time); catalog assets have none and show no row.
+            // embeds mint time); a catalog asset shows the date its file was first
+            // committed to its brand pack, which the index carries as `added`.
             const added = assetAddedAt(ref);
             const modified = assetModifiedAt(ref);
             const fmtDate = (ts: number): string => new Date(ts).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-            return (added ? `<div><dt>${t('Added')}</dt><dd>${escape(fmtDate(added))}</dd></div>` : '')
+            const addedText = added ? fmtDate(added) : catalogAddedText(ref);
+            return (addedText ? `<div><dt>${t('Added')}</dt><dd>${escape(addedText)}</dd></div>` : '')
               + (modified && added && modified - added > 60_000 ? `<div><dt>${t('Modified')}</dt><dd>${escape(fmtDate(modified))}</dd></div>` : '');
           })()}
           ${(() => {

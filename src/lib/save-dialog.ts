@@ -67,6 +67,16 @@ let lastPickedFolderId: string | null = null;
  *  UNFILED session here instead of scattering to the root). */
 export function lastPickedFolder(): string | null { return lastPickedFolderId; }
 
+/** The "More ways to save" disclosure (template / variation / create-a-tool),
+ *  collapsed for a first-timer so the everyday save reads as ONE decision
+ *  (plans/170 WP-1). Its open state is remembered per device - chrome
+ *  preference, same class as the catalogue's collapsed sections, never tool
+ *  state - so a template author who opens it keeps it open. */
+const SAVE_MORE_KEY = 'lolly-save-more-open';
+const savedMoreOpen = (): boolean => {
+  try { return localStorage.getItem(SAVE_MORE_KEY) === '1'; } catch { return false; }
+};
+
 export function openSaveDialog(deps: SaveDialogDeps): void {
   const t = deps.t ?? ((s: string) => s);
   const showTemplates = deps.hasTemplates;
@@ -145,9 +155,13 @@ export function openSaveDialog(deps: SaveDialogDeps): void {
         <input type="text" class="save-input save-new-project" data-new-project maxlength="80" placeholder="${escape(t('New project name'))}" aria-label="${escape(t('New project name'))}" hidden>
         <p class="save-card-err" data-err="project" hidden></p>
       </section>
-      ${templateCard}
-      ${variationCard}
-      ${createToolCard}
+      ${templateCard || variationCard || createToolCard ? `
+      <details class="save-more" data-save-more${savedMoreOpen() ? ' open' : ''}>
+        <summary>${escape(t('More ways to save'))}</summary>
+        ${templateCard}
+        ${variationCard}
+        ${createToolCard}
+      </details>` : ''}
     </div>
     ${shareFoot}`;
 
@@ -189,7 +203,10 @@ export function openSaveDialog(deps: SaveDialogDeps): void {
     o.value = value; o.textContent = label;
     return o;
   };
-  const noProject = (): HTMLOptionElement => opt('', t('No project (Library)'));
+  // "My library" - a place a person can go (Projects lists it), not a shrug.
+  // The audit (167 F-A3) found "No project (Library)" read as "this save goes
+  // nowhere", which is exactly where trust in the first save died.
+  const noProject = (): HTMLOptionElement => opt('', t('My library'));
   void deps.listFolders().then(folders => {
     projectSel?.replaceChildren(
       noProject(),
@@ -206,6 +223,11 @@ export function openSaveDialog(deps: SaveDialogDeps): void {
   projectSel?.addEventListener('change', () => {
     const isNew = projectSel.value === NEW_PROJECT;
     if (newProjectInput) { newProjectInput.hidden = !isNew; if (isNew) newProjectInput.focus(); }
+  });
+
+  // Remember the More-ways-to-save disclosure across dialogs (see SAVE_MORE_KEY).
+  q<HTMLElement>('[data-save-more]')?.addEventListener('toggle', (e) => {
+    try { localStorage.setItem(SAVE_MORE_KEY, (e.target as HTMLDetailsElement).open ? '1' : '0'); } catch { /* device pref only */ }
   });
 
   // ── Create-a-tool: format checkboxes, built as DOM (a format id is catalog data, but this

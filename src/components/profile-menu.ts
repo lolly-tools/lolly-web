@@ -20,10 +20,9 @@
  * Mirrors the filter popover's conventions: Escape + outside-pointerdown close,
  * focus returns to the trigger.
  */
-import { THEMES, THEME_LABELS, currentTheme } from '../theme.ts';
+import { THEMES, THEME_LABELS, THEME_ICONS, currentTheme } from '../theme.ts';
 import { setTheme, type SetThemeHost } from '../lib/set-theme.ts';
 import { escape } from '../utils.ts';
-import { icon } from '../lib/icons.ts';
 import { mountBodyPopover } from './body-popover.ts';
 import { soundSwitchHtml, wireSoundSwitch } from './sound-toggle.ts';
 import { LOLLY_MARK_SVG } from '../lib/lolly-mark.ts';
@@ -74,7 +73,7 @@ export function attachProfileMenu(
     const theme = currentTheme();
     el.innerHTML = `
       <div class="profile-menu-theme" role="group" aria-label="${escape(t('Theme'))}">
-        ${THEMES.map(seg => `<button type="button" class="profile-menu-seg" role="menuitemradio" data-theme-seg="${seg}" aria-checked="${seg === theme}">${escape(t(THEME_LABELS[seg] ?? seg))}</button>`).join('')}
+        ${THEMES.map(seg => { const name = escape(t(THEME_LABELS[seg] ?? seg)); return `<button type="button" class="profile-menu-seg" role="menuitemradio" data-theme-seg="${seg}" aria-checked="${seg === theme}" aria-label="${name}" title="${name}">${THEME_ICONS[seg]}</button>`; }).join('')}
       </div>
       ${hasAssets(host) ? `<div class="profile-menu-sound">${soundSwitchHtml()}</div>` : ''}
       <a class="profile-menu-item" role="menuitem" href="/#/" data-act="home">
@@ -216,9 +215,40 @@ export function mountProfileFab(
   link.className = opts.className ?? 'profile-fab';
   link.setAttribute('aria-label', t('Open your profile'));
   link.title = t('Profile');
-  link.innerHTML = icon('user');
+  // The Lolly mark (then the user's headshot), same as the topbar pill - not a
+  // generic person glyph. `.profile-fab svg` centres the mark; `.profile-fab-avatar`
+  // (topbar.css) fills the square once a headshot loads.
+  paintProfileMark(link, host, LOLLY_MARK_SVG, 'profile-fab-avatar');
   cluster.appendChild(link);
   attachProfileMenu(link, host);
+}
+
+/**
+ * Paint a profile trigger with the Lolly mark, then swap in the user's headshot
+ * off the first-paint path - it's a blob fetch by id (its object URL goes stale
+ * across reloads), so keep it off first paint; a failure leaves the mark. Shared
+ * by the pill (`.profile-link-mark` / `.profile-link-avatar`) and the square FAB
+ * (`.profile-fab-avatar`); each surface skins `markHtml` + `avatarClass` its way.
+ */
+function paintProfileMark(
+  link: HTMLAnchorElement,
+  host: ProfileMenuHost,
+  markHtml: string,
+  avatarClass: string,
+): void {
+  link.innerHTML = markHtml;
+  if (!hasAssets(host)) return;
+  void host.profile.get().then(p => {
+    const hid = (p as { headshot?: { id?: string } }).headshot?.id;
+    if (!hid) return;
+    void host.assets.get(hid).then(res => {
+      if (!res?.url || !link.isConnected) return;
+      let img = link.querySelector<HTMLImageElement>(`.${avatarClass}`);
+      if (!img) { img = document.createElement('img'); img.className = avatarClass; img.alt = ''; link.prepend(img); }
+      img.src = res.url;
+      link.classList.add('has-avatar');
+    }).catch(() => { /* no avatar - the mark stands */ });
+  }).catch(() => { /* no profile - the mark stands */ });
 }
 
 /**
@@ -233,21 +263,7 @@ export function createProfileControl(host: ProfileMenuHost, opts: { className?: 
   link.href = '#/profile';
   link.className = `profile-link${opts.className ? ` ${opts.className}` : ''}`;
   link.setAttribute('aria-label', t('Open your profile'));
-  link.innerHTML = `<span class="profile-link-mark" aria-hidden="true">${LOLLY_MARK_SVG}</span>`;
   attachProfileMenu(link, host);   // sets aria-haspopup/expanded + opens the menu on click
-  // Swap in the headshot after boot: it's a blob fetch by id (its object URL goes
-  // stale across reloads), so keep it off first paint - a failure leaves the mark.
-  if (!hasAssets(host)) return link;
-  void host.profile.get().then(p => {
-    const hid = (p as { headshot?: { id?: string } }).headshot?.id;
-    if (!hid) return;
-    void host.assets.get(hid).then(res => {
-      if (!res?.url || !link.isConnected) return;
-      let img = link.querySelector<HTMLImageElement>('.profile-link-avatar');
-      if (!img) { img = document.createElement('img'); img.className = 'profile-link-avatar'; img.alt = ''; link.prepend(img); }
-      img.src = res.url;
-      link.classList.add('has-avatar');
-    }).catch(() => { /* no avatar - the mark stands */ });
-  }).catch(() => { /* no profile - the mark stands */ });
+  paintProfileMark(link, host, `<span class="profile-link-mark" aria-hidden="true">${LOLLY_MARK_SVG}</span>`, 'profile-link-avatar');
   return link;
 }

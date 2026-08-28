@@ -392,21 +392,8 @@
   overflow: hidden;
 }
 
-.ftile-badge {
-  position: absolute;
-  /* Lower-left corner of the preview stage - out of the way of the top toggle/controls. */
-  bottom: clamp(10px, 2vh, 18px); left: clamp(12px, 1.6vw, 20px);
-  z-index: 3;
-  font-size: calc(10px * var(--a11y-fs));
-  font-weight: 700;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  color: hsl(var(--primary-foreground));
-  background: hsl(var(--primary));
-  padding: 3px 8px;
-  border-radius: var(--radius);
-  box-shadow: 0 1px 4px #0004;
-}
+/* (.ftile-badge - the featured tile's "New" pill - is retired with the recency
+   badge, Andy 2026-08-28; the info dialog's "Added" line carries recency now.) */
 
 /* The "Open →" affordance - a centred pill low in the preview stage (clear of the fixed
    top-right control cluster, which used to sit right over it and swallow the tap). It's a

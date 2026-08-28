@@ -11,11 +11,12 @@
  * flow through the tokens.css HSL variables (shell chrome, not brand values).
  */
 
-/* One fixed size for every page of the two-page carousel: the body scrolls, the
-   footer does not move, and neither can be clipped. The height is stated as well
-   as capped so a short page does not shrink the dialog when the user pages back
-   and forth; the cap also replaces the UA default max-height, which used to cut
-   the last line off a 393x852 phone with no scrollbar to show for it. */
+/* One fixed size for every page of the two-page carousel ON DESKTOP: the body
+   scrolls, the footer does not move, and neither can be clipped. The height is
+   stated as well as capped so a short page does not shrink the dialog when the
+   user pages back and forth; the cap also replaces the UA default max-height,
+   which used to cut the last line off a 393x852 phone with no scrollbar to show
+   for it. Phones size to content instead - see the 640px block below. */
 .welcome-dialog {
   border: 1px solid hsl(var(--border));
   padding: 0;
@@ -53,7 +54,11 @@
    let the body scroll instead. */
 .welcome-body > * { flex: none; }
 
-/* The pinned footer: page dots, language row, skip link. Same on both pages. */
+/* The pinned footer: page dots, language row, skip link. Same on both pages.
+   Opaque on purpose - the body scrolls UNDER it, and without its own paint the
+   scrolled cards showed through the language row as a text collision (audit 167
+   F-A6, the clipped third door at 393x852). The painted edge is also the scroll
+   cue: a card cut off at an opaque border reads as "more below". */
 .welcome-foot {
   flex: none;
   display: flex;
@@ -62,10 +67,19 @@
   gap: 8px 12px;
   padding: 14px 28px;
   border-top: 1px solid hsl(var(--border));
+  background: hsl(var(--card));
 }
 @media (max-width: 640px) {
+  /* Phones: size to content instead of holding the desktop's stated height -
+     three stacked doors plus the footer only just exceed a 393x740 viewport,
+     and a content-height dialog keeps the whole third door (CTA included) on
+     screen wherever it fits (audit 167 F-A6). Still capped, still scrollable. */
+  .welcome-dialog { block-size: auto; max-block-size: calc(100dvh - 16px); }
   .welcome-body { padding: 20px; }
   .welcome-foot { padding: 12px 20px; }
+  .welcome-card { padding: 12px; gap: 6px; }
+  .welcome-cards { gap: 10px; }
+  .welcome-sub { margin-bottom: 14px; }
 }
 
 /* Page dots - 8px marks in a 20px touch target, current one filled. */
@@ -247,7 +261,7 @@
      hint) all centre, and a top-left pill fought the centred topbar. */
   margin: 0 auto 14px;
   padding: 7px 8px 7px 14px;
-  border: 1px solid hsl(var(--border));
+  border: 0;
   border-radius: 999px;
   background: hsl(var(--card));
   color: hsl(var(--muted-foreground));

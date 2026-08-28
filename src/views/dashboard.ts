@@ -690,15 +690,16 @@ function renderStorageGlance(m: StorageGlance): string {
 
 // ────────────────────────────────────────────────────────────────────────────
 
-export async function mountDashboard(viewEl: HTMLElement, host: HostV1): Promise<void> {
+export async function mountDashboard(viewEl: HTMLElement, host: HostV1, routeParams?: string): Promise<void> {
   document.title = t('Dashboard - Lolly');
 
   // Deep links: `#/d?print`, `#/d?formats`, ... force-open a reference panel
-  // or a capability group and scroll to it. Read straight off the hash, no
-  // router change. `?tab=<key>` picks the starting tab (the /b - /brand
-  // aliases land here as ?tab=brand); it is NOT a section flag, so keep it
-  // out of the flag set.
-  const params = new URLSearchParams(window.location.hash.split('?')[1] || '');
+  // or a capability group and scroll to it. The router hands its parsed query
+  // through like every other view (plan 171); the hash re-parse stays as the
+  // fallback for any direct caller. `?tab=<key>` picks the starting tab (the
+  // /b - /brand aliases land here as ?tab=brand); it is NOT a section flag,
+  // so keep it out of the flag set.
+  const params = new URLSearchParams(routeParams ?? (window.location.hash.split('?')[1] || ''));
   const flags = new Set([...params.keys()].filter((k) => k !== 'tab'));
   const tabParam = params.get('tab') ?? '';
   // Design System is the landing tab: the brand is what people come here to

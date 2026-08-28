@@ -165,6 +165,20 @@
 
 .save-card-err { margin: 8px 0 0; font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--destructive, 0 70% 50%)); }
 
+/* "More ways to save" (plans/170 WP-1): the template / variation / create-a-tool
+   cards fold behind one disclosure so a first save reads as one decision. The
+   summary styles like a quiet card header; open state is remembered per device. */
+.save-more { display: flex; flex-direction: column; gap: 12px; }
+.save-more > summary {
+  cursor: pointer; list-style: none; user-select: none;
+  font-size: calc(12.5px * var(--a11y-fs)); font-weight: 600;
+  color: hsl(var(--muted-foreground)); padding: 2px 2px;
+}
+.save-more > summary::-webkit-details-marker { display: none; }
+.save-more > summary::before { content: '▸'; display: inline-block; margin-right: 6px; transition: transform 0.12s; }
+.save-more[open] > summary::before { transform: rotate(90deg); }
+.save-more > summary:hover, .save-more > summary:focus-visible { color: hsl(var(--foreground)); outline: none; }
+
 .save-dialog-foot {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding: 12px 20px 16px; border-top: 1px solid hsl(var(--border));

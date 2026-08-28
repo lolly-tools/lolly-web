@@ -4,12 +4,13 @@
  * affordances for tools with an `onFrame` hook, e.g. the filter effects.
  *
  * ONE controller per mounted tool owns the whole live state machine, and every
- * button - the sidebar pair riding the asset picker's slot-actions row AND the
+ * button - the sidebar pair riding the asset card's SOURCE tab row AND the
  * canvas-stage fallback pair - is just a view of it, so the two placements can
  * never disagree. Placement rule (Andy, 2026-08-10): when the tool has a sidebar
- * with an asset slot, Play + Go live belong THERE, with the picker button that
- * chooses what they act on; the floating canvas toggles remain only for tools
- * with no sidebar to ride (canvas layout, or no asset input at all).
+ * with an asset slot, Play + Go live belong THERE, beside the "Use image" pick
+ * tab that chooses what they act on (the source selector at the head of the card,
+ * above the preview and settings); the floating canvas toggles remain only for
+ * tools with no sidebar to ride (canvas layout, or no asset input at all).
  *
  * The frame path is the camera's, exactly: the media bridge's anim source
  * (bridge/media.ts AnimSourceSpec) replays the asset - a CSS/SMIL-animated SVG,
@@ -252,7 +253,13 @@ export function createLiveControls(opts: LiveControlsOpts): LiveControls {
     if (!o.silent) announce(t('Animation paused'));
   }
 
-  async function startCamera(): Promise<boolean> {
+  // `gesture` is false ONLY for the load-time best-effort auto-start (syncFromModel).
+  // iOS Safari rejects a getUserMedia call made outside a user gesture with
+  // NotAllowedError WITHOUT ever prompting - which is NOT a real denial. Treating it
+  // as one (camDenied) disarmed the tap-to-retry, so scan-code's camera never opened
+  // on iPhone. So only a user-initiated start may record a denial or announce a
+  // failure; the auto attempt fails silently and leaves the gesture retry armed.
+  async function startCamera({ gesture = true }: { gesture?: boolean } = {}): Promise<boolean> {
     if (disposed || mode !== null || runtime.isLive()) return false;
     // Camera and the animated source share the media singleton; disarm the anim
     // source so start() opens the camera rather than replaying the animation.
@@ -261,6 +268,7 @@ export function createLiveControls(opts: LiveControlsOpts): LiveControls {
       const ok = await runtime.startLive({ facingMode: facing });
       if (!ok) return false;
     } catch (e) {
+      if (!gesture) { log('camera auto-start deferred to gesture', { toolId: runtime.manifest.id }); return false; }
       if ((e as { name?: string })?.name === 'NotAllowedError') camDenied = true; // said no: stop asking
       announce(camDenied
         ? t('Camera permission was declined.')
@@ -436,9 +444,13 @@ export function createLiveControls(opts: LiveControlsOpts): LiveControls {
         const want = String(model.find(i => i.id === camWhen.input)?.value ?? '') === String(camWhen.value);
         if (want) {
           autoWanted = true;
-          if (mode !== 'camera' && !runtime.isLive() && !camDenied && !camUserOff) {
-            void startCamera(); // best-effort now (prompts where allowed without a gesture)
-            armGesture();       // and retry on the first tap (iOS needs a user gesture)
+          // `!gestureArmed`: once the first best-effort start has failed and a tap-retry
+          // is armed, don't re-fire a fresh no-gesture start on every later sync - that
+          // was a burst of silently-rejected getUserMedia calls on iOS. The armed tap
+          // owns the retry until it fires.
+          if (mode !== 'camera' && !runtime.isLive() && !camDenied && !camUserOff && !gestureArmed) {
+            void startCamera({ gesture: false }); // best-effort now (prompts where allowed without a gesture)
+            armGesture();                          // and retry on the first tap (iOS needs a user gesture)
           }
         } else {
           autoWanted = false; camDenied = false; camUserOff = false; disarmGesture(); // left camera mode; a later return may re-start
@@ -501,18 +513,13 @@ export function mountSidebarLiveControls(panel: HTMLElement, runtime: unknown): 
   let actions: HTMLElement | null = null;
   const key = lc.sourceInputId ?? '__standalone__';
   if (lc.sourceInputId) {
-    // Ride the asset picker's slot-actions row (a tool WITH an image source).
+    // Ride the asset card's SOURCE tab row (a tool WITH an image source): Use camera
+    // + Play sit beside the "Use image" pick tab, at the head of the card - the
+    // source selector, above the preview and the settings. See tool-inputs.ts.
     const trigger = panel.querySelector(`.asset-picker-trigger[data-input-id="${CSS.escape(lc.sourceInputId)}"]`);
-    const row = trigger?.closest('.asset-picker-row');
-    const parent = row?.parentElement;
-    if (!row || !parent) return;
-    if (parent.querySelector('[data-live-cluster]')) return; // already mounted this rebuild
-    actions = parent.querySelector(':scope > .slot-actions');
-    if (!actions) {
-      actions = panel.ownerDocument.createElement('div');
-      actions.className = 'slot-actions';
-      row.after(actions);
-    }
+    actions = trigger?.closest('.asset-slot-source') as HTMLElement | null;
+    if (!actions) return;
+    if (actions.querySelector('[data-live-cluster]')) return; // already mounted this rebuild
   } else {
     // No asset input (a reader like scan-code): a STANDALONE camera row pinned at
     // the top of the inputs, so the control is always in the inputs bar - reachable
@@ -526,6 +533,8 @@ export function mountSidebarLiveControls(panel: HTMLElement, runtime: unknown): 
   const cluster = panel.ownerDocument.createElement('span');
   cluster.className = 'slot-live-cluster';
   cluster.setAttribute('data-live-cluster', key);
-  actions.prepend(cluster);
+  // In the source tab row the pick tab ("Use image") leads and Use camera / Play
+  // follow it; a standalone camera row has only the cluster, so prepend is fine.
+  if (lc.sourceInputId) actions.append(cluster); else actions.prepend(cluster);
   lc.mountSidebarCluster(cluster);
 }
