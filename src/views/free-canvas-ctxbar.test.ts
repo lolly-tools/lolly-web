@@ -144,17 +144,20 @@ test('the readout reserves its width, so the bar cannot breathe mid-drag', () =>
   assert.match(rule![0], /font-variant-numeric:\s*tabular-nums/, 'which only means anything with fixed-width digits');
 });
 
-test('both bars reveal instantly and fade out on a delay (the anti-flicker hysteresis)', () => {
-  for (const sel of ['\\.fc-toolbar', '\\.fc-ctxbar']) {
-    const base = css.match(new RegExp(`^${sel}\\s*\\{[^}]*\\}`, 'm'));
-    assert.ok(base, `editor.css declares ${sel}`);
-    assert.match(base![0], /transition:\s*opacity[^;]*0\.\d+s\s*ease\s+0\.\d+s/,
-      `${sel} hides on a delay`);
-  }
-  assert.match(css, /\.tool-stage:hover \.fc-toolbar,[\s\S]{0,120}?transition-delay:\s*0s/,
-    'the rail\'s reveal cancels the delay');
+test('the ctx bar reveals instantly and fades out on a delay; the rail never auto-hides', () => {
+  // The rail's auto-hide came out 2026-08-28 (it annoyed more than it calmed, and it
+  // kept the rail out of every capture) - the toolbar is always visible now, so only
+  // the ctx bar keeps the anti-flicker hysteresis.
+  const base = css.match(/^\.fc-ctxbar\s*\{[^}]*\}/m);
+  assert.ok(base, 'editor.css declares .fc-ctxbar');
+  assert.match(base![0], /transition:\s*opacity[^;]*0\.\d+s\s*ease\s+0\.\d+s/,
+    '.fc-ctxbar hides on a delay');
   assert.match(css, /\.tool-stage:hover \.fc-ctxbar,[\s\S]{0,120}?transition-delay:\s*0s/,
     'the ctx bar\'s reveal cancels the delay');
+  const rail = css.match(/^\.fc-toolbar\s*\{[^}]*\}/m);
+  assert.ok(rail, 'editor.css declares .fc-toolbar');
+  assert.doesNotMatch(rail![0], /opacity:\s*0/, 'the rail must not auto-hide at rest');
+  assert.ok(!/\.tool-stage:hover \.fc-toolbar/.test(css), 'no hover reveal is left for the rail');
 });
 
 test('the rail does NOT try to keep a `[hidden]` button laid out', () => {

@@ -228,9 +228,9 @@ export async function mountDocs(
   }
 
   // Title from the fetched page (falls back to the slug) - for the tab and history entry.
-  // The landing keeps the reader's own "Documentation" title: its <title> is the site
-  // sentence ("Lolly - assets that stay the same so everything else can change"), which
-  // the suffix strip cannot shorten and which reads as a marketing line in a tab strip.
+  // The landing keeps the reader's own "Documentation" title: its <title> is the bare
+  // site name, which the suffix strip cannot shorten and which says nothing useful
+  // in a tab strip.
   const pageTitle = (doc.querySelector('title')?.textContent || '').replace(/\s*[--]\s*Lolly\s*$/, '').trim();
   if (pageTitle && !isLanding) document.title = tRaw('{name} - Lolly', { name: pageTitle });
 

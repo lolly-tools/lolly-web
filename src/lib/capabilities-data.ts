@@ -95,6 +95,14 @@ export interface CapCard {
    */
   shot?: string;
   /**
+   * The shot's file extension when it is not the default vector - a few docs
+   * baselines are raster on purpose (tests/docs-shots-vector.test.ts's
+   * RASTER_ALLOWED, e.g. `design`, whose subject includes export-hidden editor
+   * chrome the vector walker can never carry). The dialog appends this to both
+   * the light and `.dark` variants.
+   */
+  shotExt?: 'png';
+  /**
    * Extra search terms for this card - NOT rendered and NOT translated.
    * The visible copy is already indexed by the Capabilities search; this is for
    * the words a person types that the copy doesn't literally use (format ids,
@@ -267,7 +275,7 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
         { name: 'Animated GIF · Animated PNG · Animated WebP', desc: 'Animated rasters are recognised and kept <em>verbatim</em> - frames intact - so a looping GIF or animated PNG stays animated when you place it.' },
         { name: 'SVG', desc: 'Vector artwork is sanitised - scripts, <code>on*</code> handlers and <code>javascript:</code> URLs are stripped - and normalised to a clean viewBox before it’s stored.' },
       ] },
-      { icon: ICONS.vector, title: 'Design files', shot: 'design', keywords: 'figma fig penpot illustrator ai indesign idml pdf sketch import layout editable', features: [
+      { icon: ICONS.vector, title: 'Design files', shot: 'design', shotExt: 'png', keywords: 'figma fig penpot illustrator ai indesign idml pdf sketch import layout editable', features: [
         { name: 'Figma · Penpot · Illustrator · InDesign · PDF', desc: 'Design imports a native Figma <code>.fig</code>, a Penpot export, an Illustrator <code>.ai</code> or any <code>.pdf</code>, and an InDesign <code>.idml</code> - each parsed in the browser into editable boxes. Text stays text, shapes stay shapes, complex art flattens faithfully.' },
         { name: 'Photoshop (PSD · PSB) · GIMP (XCF)', desc: 'Layered Photoshop and GIMP files open with their layers intact - each layer becomes an editable box - read on-device by the engine’s own PSD/XCF parsers, big PSB documents included.' },
         { name: 'Any SVG is the wide door', desc: 'Almost every design app can export SVG, so an SVG export becomes an editable, brand-conformed layout - the universal way in.' },

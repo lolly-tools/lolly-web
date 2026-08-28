@@ -124,8 +124,8 @@ test('every card screenshot resolves to a committed file', () => {
   // parent clone), the source of truth is absent, so skip rather than fail.
   if (!existsSync(shotsDir)) return;
   const missing = allCards
-    .filter((c) => c.shot && !existsSync(new URL(`${c.shot}.svg`, shotsDir)))
-    .map((c) => `${c.title} → ${c.shot}.svg`);
+    .filter((c) => c.shot && !existsSync(new URL(`${c.shot}.${c.shotExt ?? 'svg'}`, shotsDir)))
+    .map((c) => `${c.title} → ${c.shot}.${c.shotExt ?? 'svg'}`);
   assert.deepEqual(missing, [], `card screenshots that do not exist: ${missing.join(', ')}`);
 });
 

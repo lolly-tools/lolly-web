@@ -110,7 +110,7 @@ const PAGE_HTML = `<!doctype html><html><head><title>Quickstart - Lolly</title><
  * landing mode" assertion has teeth (the same two headings fill the TOC on a doc page).
  */
 const LANDING_HTML = `<!doctype html><html>
-<head><title>Lolly - assets that stay the same so everything else can change</title></head>
+<head><title>Lolly Tools</title></head>
 <body>
   <nav class="nav-group">
     <a href="/info/creators.html">For Creators</a>

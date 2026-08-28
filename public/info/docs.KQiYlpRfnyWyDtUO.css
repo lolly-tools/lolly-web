@@ -290,6 +290,13 @@ strong{font-weight:600}
 /* Nav */
 nav{display:flex;align-items:center;gap:.25rem;padding:0 1.5rem;height:3.75rem;background:transparent;position:fixed;width:100%;top:0;z-index:100;overflow-x:auto;transition:background .25s}
 nav.nav-solid{background:hsl(var(--band-dark))}
+/* Phones: the top nav always carries its ground (plans/168 WP-6). Transparent-over-hero
+   is a desktop luxury - at 393px the hero's trust-chip row scrolls straight under the
+   bar and two rows of small text collide with the nav links. The :not()s keep this off
+   the quicknav and the doc jump nav, which paint their own surfaces. */
+@media(max-width:600px){
+  nav:not(.quicknav):not(.doc-jump-nav){background:hsl(var(--band-dark) / .94);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+}
 /* On-page quick nav - a sticky jump bar under the top nav, on the landing only. */
 html{scroll-behavior:smooth}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
@@ -354,6 +361,12 @@ nav .nav-group + .nav-group{margin-left:.5rem;padding-left:.625rem;border-left:1
     }
 }
 
+/* Band rhythm (plans/168 WP-2, 2026-08-28): every band's vertical padding here was cut
+   by roughly a third to a half. The landing measured 15,768px on desktop and 28,641px on
+   a phone, and the middle third read as empty screens at a normal scrolling pace. NOTHING
+   was deleted - the cut is whitespace only, so every message, card and mascot survives.
+   If you are about to make a band airier again, check the page height first: the numbers
+   above are what "generous everywhere" adds up to over nineteen bands. */
 .quicknav{position:sticky;top:3.75rem;z-index:90;background:hsl(var(--background) / 0.9);border-bottom:1px solid var(--border);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
 html[data-theme="dark"] .quicknav{background:rgba(9,26,21,.9)}
 .quicknav-inner{max-width:1180px;margin:0 auto;display:flex;gap:.15rem;padding:0 1.5rem;overflow-x:auto;scrollbar-width:none}
@@ -361,7 +374,27 @@ html[data-theme="dark"] .quicknav{background:rgba(9,26,21,.9)}
 .quicknav a{flex:none;padding:.72rem .8rem;font-size:.82rem;font-weight:600;color:var(--muted);text-decoration:none;border-bottom:2px solid transparent;white-space:nowrap;transition:color .12s}
 .quicknav a:hover{color:var(--green)}
 .quicknav a.is-current{color:var(--green);border-bottom-color:var(--green)}
-.section-more-row{text-align:center;margin-top:2rem}
+/* The one off-page door in the strip (plans/168 WP-5): the brand journey, which had no
+   landing entrance at all. Pushed to the inline end so it never reads as a section
+   anchor, and it carries no .is-current state - QUICKNAV_JS only tracks ids on THIS page,
+   and an app hash resolves to no element, so it is filtered out of the scroll-spy. */
+.quicknav .quicknav-app{margin-inline-start:auto;color:var(--green);font-weight:700}
+.quicknav .quicknav-app:hover{color:var(--dark)}
+/* Overflow affordance (plans/168 WP-6): the strip scrolls with its scrollbar hidden, so
+   below ~900px the last pills are cut off with nothing saying there is more. A fade on
+   the inline end is the hint. On the container, not the scroller - it has to stay put
+   while the pills move under it. */
+@media(max-width:900px){
+  /* Trailing room so the last pill can scroll CLEAR of the fade - without it the fade
+     sits permanently over the brand door, which is the one pill worth reaching. */
+  .quicknav-inner{padding-inline-end:3.25rem}
+  .quicknav::after{content:'';position:absolute;inset-block:0;inset-inline-end:0;width:2.75rem;pointer-events:none;
+    background:linear-gradient(to right,transparent,hsl(var(--background)))}
+  html[dir="rtl"] .quicknav::after{background:linear-gradient(to left,transparent,hsl(var(--background)))}
+  html[data-theme="dark"] .quicknav::after{background:linear-gradient(to right,transparent,#091a15)}
+  html[data-theme="dark"][dir="rtl"] .quicknav::after{background:linear-gradient(to left,transparent,#091a15)}
+}
+.section-more-row{text-align:center;margin-top:1.25rem}
 .section-more{display:inline-flex;align-items:center;gap:.4em;font-size:.92rem;font-weight:700;color:var(--green);text-decoration:none}
 .section-more:hover{text-decoration:underline}
 .section-more span{transition:transform .15s}
@@ -371,7 +404,7 @@ html[data-theme="dark"] .quicknav{background:rgba(9,26,21,.9)}
    both, and a single vertical gradient blends the hero green (#1c4a2e) into the
    pathways dark (--dark) so the two bands read as one continuous surface. */
 .hero-wrap{position:relative;overflow:hidden;background:linear-gradient(180deg,#1c4a2e 0%,hsl(var(--band-dark)) 100%)}
-.hero{background:transparent;color:hsl(var(--on-band-dark));padding:7rem 1.5rem 6rem;text-align:center;position:relative;z-index:1;min-height:50vh;user-select:none;-webkit-user-select:none}
+.hero{background:transparent;color:hsl(var(--on-band-dark));padding:4.5rem 1.5rem 3.5rem;text-align:center;position:relative;z-index:1;min-height:50vh;user-select:none;-webkit-user-select:none}
 /* Double-clicking the hero backdrop shouldn't highlight the heading/subtitle/trust copy; buttons keep normal selection. */
 .hero .btn{user-select:auto;-webkit-user-select:auto}
 .hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 90% 55% at 50% -5%,rgba(48,186,120,.13) 0%,transparent 65%);pointer-events:none}
@@ -452,9 +485,9 @@ html[data-a11y-motion="reduce"] .hero-logo-link:focus-visible .hero-logo-still{o
 .btn-primary,.btn-secondary{-webkit-backdrop-filter:blur(3px) saturate(1.45);backdrop-filter:blur(3px) saturate(1.45)}
 
 /* Three-door pathways band - sits directly under the hero on the landing page. */
-.pathways-section{background:transparent;position:relative;z-index:1;padding:4rem 1.5rem}
+.pathways-section{background:transparent;position:relative;z-index:1;padding:3rem 1.5rem}
 .pathways-inner{max-width:1080px;margin:0 auto;text-align:center}
-.pathways-head{display:flex;align-items:center;justify-content:center;gap:2.5rem;flex-wrap:wrap;margin:0 0 2.5rem;text-align:start}
+.pathways-head{display:flex;align-items:center;justify-content:center;gap:2.5rem;flex-wrap:wrap;margin:0 0 1.75rem;text-align:start}
 .pathways-headtext{max-width:38rem}
 .pathways-title{color:hsl(var(--on-band-dark));font-size:2rem;margin:0 0 .5rem}
 .pathways-mascot{width:clamp(160px,20vw,300px);flex-shrink:0}
@@ -502,7 +535,7 @@ html[data-a11y-motion="reduce"] .hero-logo-link:focus-visible .hero-logo-still{o
   grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);
   gap:2.5rem 5rem;
   align-items:start;
-  padding:3.75rem 3.5rem;
+  padding:2.5rem 3.5rem;
   max-width:1400px;
   margin:0 auto;
   scroll-margin-top:5rem;
@@ -547,10 +580,10 @@ html[data-a11y-motion="reduce"] .hero-logo-link:focus-visible .hero-logo-still{o
 .card-intro{font-size:.9375rem;color:var(--muted);line-height:1.75;margin-bottom:1.5rem}
 .card-main pre{font-size:.8rem;margin-top:0;margin-bottom:0;white-space:pre-wrap;overflow-wrap:anywhere;box-sizing:border-box}
 .card-main pre::-webkit-scrollbar{display:none}
-.card-benefits{display:grid;grid-template-columns:1fr 1fr;gap:4em;padding-left:0;list-style:none;margin:0;padding-top:.25rem}
+.card-benefits{display:grid;grid-template-columns:1fr 1fr;gap:1.5em 4em;padding-left:0;list-style:none;margin:0;padding-top:.25rem}
 .card-benefits li{display:flex;align-items:flex-start;gap:.75rem;font-size:.9375rem;line-height:1.6;color:var(--text)}
 .card-benefits li:last-child{margin-bottom:0}
-.bullet-icon{width:3em;height:3em;display:block;margin:1em 0;color:var(--green);flex-shrink:0}
+.bullet-icon{width:2.25em;height:2.25em;display:block;margin:.15em 0;color:var(--green);flex-shrink:0}
 .bullet-icon svg{width:100%;height:100%}
 .card-benefits strong{font-weight:700;color:var(--dark)}
 
@@ -560,8 +593,8 @@ html[data-a11y-motion="reduce"] .hero-logo-link:focus-visible .hero-logo-still{o
    BOTH sides of the seam reserve room for its halves: the columns carry enough bottom
    padding that the top half never covers their last lines, and the teaser that follows
    the wrap clears the bottom half the same way. Copy growth eats headroom, not text. */
-.platform-whats-wrap .platform-section,.platform-whats-wrap .whats-a-tool{flex:1;min-width:0;padding-bottom:8rem}
-.platform-whats-wrap+.teaser-section{padding-top:7.5rem}
+.platform-whats-wrap .platform-section,.platform-whats-wrap .whats-a-tool{flex:1;min-width:0;padding-bottom:5rem}
+.platform-whats-wrap+.teaser-section{padding-top:4.5rem}
 /* The floating section eyebrow at the band junction. The band-dark PAIR, not loose
    tokens: the previous background:var(--muted) was a FOREGROUND ink used as a ground,
    with a surface token as its text - two mid-tones in every theme. The pair is
@@ -569,9 +602,9 @@ html[data-a11y-motion="reduce"] .hero-logo-link:focus-visible .hero-logo-still{o
 .whats-label{position:absolute;top:0;left:50%;transform:translate(-50%,-50%);z-index:10;border-radius:3rem;padding:.85rem 2rem;font-weight:700;font-size:1.0625rem;white-space:nowrap;box-shadow:0 6px 20px rgba(0,0,0,.18);background:hsl(var(--band-dark));color:hsl(var(--on-band-dark))}
 
 /* Platform */
-.platform-section{background:linear-gradient(20deg,#0c322c 0%,#008657 100%);color:hsl(var(--on-band-dark));padding:4.5rem 3.5rem}
+.platform-section{background:linear-gradient(20deg,#0c322c 0%,#008657 100%);color:hsl(var(--on-band-dark));padding:3rem 3.5rem}
 .platform-inner{max-width:var(--col-cap);margin-left:auto;margin-right:0}
-.platform-header{text-align:center;margin-bottom:2.75rem}
+.platform-header{text-align:center;margin-bottom:1.75rem}
 .platform-section h2{margin-bottom:.5rem}
 .platform-tagline{color:hsl(var(--on-band-dark) / .8);font-size:1.0625rem;margin:0;letter-spacing:.01em}
 .platform-features{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.08);border-radius:14px;overflow:hidden;margin-bottom:1.75rem}
@@ -590,9 +623,9 @@ html[data-a11y-motion="reduce"] .hero-logo-link:focus-visible .hero-logo-still{o
    own inputs. The picture is the tool's own preview of that exact look, so the
    card cannot promise a look the click does not deliver. Cards are <a>, so the
    whole tile is the hit area and keyboard focus lands on it once. */
-.make-section{background:hsl(var(--background));padding:5rem 1.5rem}
+.make-section{background:hsl(var(--background));padding:3rem 1.5rem}
 .make-inner{max-width:1180px;margin:0 auto}
-.make-head{max-width:44rem;margin:0 auto 2.5rem;text-align:center}
+.make-head{max-width:44rem;margin:0 auto 1.75rem;text-align:center}
 .make-head h2{color:var(--dark);margin:0 0 .75rem}
 html[data-theme="dark"] .make-head h2{color:hsl(var(--foreground))}
 .make-lead{color:var(--muted);font-size:1.05rem;line-height:1.7;margin:0}
@@ -614,11 +647,11 @@ html[data-theme="dark"] .make-scene{color:hsl(var(--foreground))}
    The one full statement of internet-optionality on the page, and deliberately
    the quietest band on it: no cards, no icons, no illustration - one paragraph
    on the always-dark chrome surface, with two receipt links under it. */
-.sovereign-section{background:hsl(var(--band-dark));color:hsl(var(--on-band-dark));padding:5.5rem 1.5rem}
+.sovereign-section{background:hsl(var(--band-dark));color:hsl(var(--on-band-dark));padding:3.25rem 1.5rem}
 .sovereign-inner{max-width:52rem;margin:0 auto;text-align:center}
 .sovereign-statement{font-size:clamp(.9rem,2.2vw,1rem);line-height:1.75;margin:0;color:hsl(var(--on-band-dark) / .78);text-wrap:pretty}
 .sovereign-statement strong{color:hsl(var(--on-band-dark));font-weight:700}
-.sovereign-receipts{margin-top:2rem;display:flex;align-items:center;justify-content:center;gap:.75rem;font-size:.875rem}
+.sovereign-receipts{margin-top:1.35rem;display:flex;align-items:center;justify-content:center;gap:.75rem;font-size:.875rem}
 .sovereign-receipts a{color:hsl(var(--on-band-dark) / .62);text-decoration:underline;text-underline-offset:.25em}
 .sovereign-receipts a:hover{color:hsl(var(--on-band-dark))}
 .sovereign-dot{color:hsl(var(--on-band-dark) / .35)}
@@ -626,9 +659,9 @@ html[data-theme="dark"] .make-scene{color:hsl(var(--foreground))}
 /* ── Block 5: AI, on your terms ─────────────────────────────────────────────
    Three short answers, no illustration: this block exists to remove worry, and
    a decorated one would read as a pitch. */
-.ai-section{background:hsl(var(--background));padding:5rem 1.5rem;border-top:1px solid var(--border)}
+.ai-section{background:hsl(var(--background));padding:3rem 1.5rem;border-top:1px solid var(--border)}
 .ai-inner{max-width:1000px;margin:0 auto}
-.ai-head{max-width:42rem;margin:0 auto 2.5rem;text-align:center}
+.ai-head{max-width:42rem;margin:0 auto 1.75rem;text-align:center}
 .ai-head h2{color:var(--dark);margin:0 0 .75rem}
 html[data-theme="dark"] .ai-head h2{color:hsl(var(--foreground))}
 .ai-lead{color:var(--muted);font-size:1.05rem;line-height:1.7;margin:0}
@@ -641,12 +674,12 @@ html[data-theme="dark"] .ai-point strong{color:hsl(var(--foreground))}
 /* ── Block 7: who is behind this, and why ───────────────────────────────────
    The progressive-disclosure turn, low on the page and once. One paragraph in a
    narrow measure - the only place on the landing where "we" is the subject. */
-.behind-section{background:var(--pale);padding:4.5rem 1.5rem}
+.behind-section{background:var(--pale);padding:3rem 1.5rem}
 .behind-inner{max-width:66rem;margin:0 auto;text-align:start}
 /* Two columns, left-aligned (Andy, 2026-08-17): the sceptic paragraph and the assurance
    side by side, with the founded-by badge anchoring the foot row once. */
 .behind-cols{display:grid;grid-template-columns:1fr 1fr;gap:2rem 3.5rem;align-items:start}
-.behind-foot{display:flex;align-items:center;justify-content:space-between;gap:1.5rem;flex-wrap:wrap;margin-top:2.5rem}
+.behind-foot{display:flex;align-items:center;justify-content:space-between;gap:1.5rem;flex-wrap:wrap;margin-top:1.75rem}
 /* Moved here from build.ts (2026-08-17) so the reader gets it too: founded-by.svg is
    viewBox-only (no intrinsic width), and without the explicit width the inline anchor
    and the intrinsically-unsized image collapse to 0x0 together - which is exactly what
@@ -662,9 +695,9 @@ html[data-theme="dark"] .behind-para strong{color:hsl(var(--foreground))}
 .behind-assure{margin-top:0}
 /* The refusal band (plan 122 block 11): the trio + the visible vote, reusing the
    tool-feature card grid so the beats read as one set. */
-.refusal-section{padding:4.5rem 1.5rem;background:var(--page)}
+.refusal-section{padding:3rem 1.5rem;background:var(--page)}
 .refusal-section .assure-inner{max-width:1080px;margin:0 auto}
-.refusal-title{text-align:center;font-size:1.75rem;margin:0 0 2rem}
+.refusal-title{text-align:center;font-size:1.75rem;margin:0 0 1.25rem}
 .refusal-beats{margin-top:0}
 /* The quokka rides beside the 2x2 beats, at ease - a calm mascot for a section
    that promises nothing is taken. Beats flex-grow; the mascot holds its width. */
@@ -678,7 +711,7 @@ html[data-theme="dark"] .behind-para strong{color:hsl(var(--foreground))}
    is a light ruled audit sheet, one claim per row. Both escape the audience radio
    gating entirely (no .audience-card class). */
 .machines-section{padding-top:0}
-.machines-band{max-width:1400px;margin:0 auto 2.5rem;padding:0 3.5rem;display:flex;flex-direction:column;gap:2rem}
+.machines-band{max-width:1400px;margin:0 auto 1.5rem;padding:0 3.5rem;display:flex;flex-direction:column;gap:2rem}
 .machine-card{border-radius:16px;scroll-margin-top:5rem}
 .mc-eyebrow{display:inline-flex;align-items:center;gap:.5rem;font-size:.6875rem;text-transform:uppercase;letter-spacing:.14em;font-weight:700;color:var(--green)}
 .mc-ic{display:inline-flex}
@@ -735,7 +768,7 @@ html[data-theme="dark"] .behind-para strong{color:hsl(var(--foreground))}
 /* ── Block 9: the teaser a moved band leaves behind ─────────────────────────
    One line and one link. The reference content itself lives on its own page,
    with the layout that made it readable (formatsSection / importBand). */
-.teaser-section{background:hsl(var(--background));padding:3rem 1.5rem;border-top:1px solid var(--border)}
+.teaser-section{background:hsl(var(--background));padding:2.25rem 1.5rem;border-top:1px solid var(--border)}
 .teaser-inner{max-width:46rem;margin:0 auto;text-align:center}
 .teaser-line{font-size:1.05rem;line-height:1.7;color:var(--muted);margin:0 0 .6rem}
 
@@ -840,18 +873,18 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 }
 
 /* QoL pair - sound + bulk, side by side */
-.qol-section{background:var(--pale);padding:5.5rem 2rem}
+.qol-section{background:var(--pale);padding:3.25rem 2rem}
 .qol-inner{max-width:2480px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:1rem}
 .qol-panel{background:hsl(var(--card));border:1px solid var(--border);border-radius:20px;padding:2rem  1rem;box-shadow:0 4px 20px rgba(12,50,44,.06);display:flex;flex-direction:column;gap:1.5rem}
 .qol-panel h3{color:var(--dark);     font-size: 1rem;  margin: 1rem 0;    font-weight: 500;}
 .qol-panel p{color:var(--muted);font-size:.8rem;line-height:1.5;margin:0}
 .qol-panel p strong{color:var(--dark);font-weight:700}
-@media(max-width:768px){.qol-inner{grid-template-columns:1fr;gap:1.25rem}.qol-section{padding:3.5rem 1.25rem}}
+@media(max-width:768px){.qol-inner{grid-template-columns:1fr;gap:1.25rem}.qol-section{padding:2.5rem 1.25rem}}
 
 /* Assurance / provenance - the trust band */
-.assure-section{background:linear-gradient(155deg,#061816 0%,#0c322c 55%,#0a3b30 100%);color:hsl(var(--on-band-dark));padding:6.5rem 2rem}
+.assure-section{background:linear-gradient(155deg,#061816 0%,#0c322c 55%,#0a3b30 100%);color:hsl(var(--on-band-dark));padding:4rem 2rem}
 .assure-inner{max-width:1080px;margin:0 auto}
-.assure-lede-row{display:flex;align-items:flex-start;justify-content:space-between;gap:2.5rem;margin-bottom:3.5rem}
+.assure-lede-row{display:flex;align-items:flex-start;justify-content:space-between;gap:2.5rem;margin-bottom:2.25rem}
 .assure-lede{max-width:46rem}
 /* The magpie fills the gutter right of the lede. The section is literally about Content
    Credentials, so a signed genAI animal here is the argument in the flesh - curiosity by
@@ -863,7 +896,7 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 .assure-lead{font-size:1.12rem;line-height:1.75;color:hsl(var(--on-band-dark) / .72);margin:0}
 .assure-lead strong{color:hsl(var(--on-band-dark));font-weight:700}
 .assure-lead a{color:var(--light);text-decoration:underline;text-underline-offset:2px}
-.assure-main{max-width:46rem;margin-bottom:3.5rem}
+.assure-main{max-width:46rem;margin-bottom:2.25rem}
 .assure-checks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1.5rem}
 .assure-checks li{display:flex;gap:1rem;align-items:flex-start}
 .assure-check-ic{width:1.7rem;height:1.7rem;flex-shrink:0;color:var(--green);margin-top:.05rem}
@@ -886,7 +919,7 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
    reasoning and the caveats actually live, so they read as a quiet index rather
    than five more marketing cards - small caps label, hairline separators, no fill
    until you hover. */
-.assure-docs{margin-top:2.75rem;padding-top:2rem;border-top:1px solid rgba(255,255,255,.1)}
+.assure-docs{margin-top:1.75rem;padding-top:1.5rem;border-top:1px solid rgba(255,255,255,.1)}
 .assure-docs-label{display:block;font-size:.6875rem;text-transform:uppercase;letter-spacing:.12em;
   font-weight:700;color:hsl(var(--on-band-dark) / .45);margin-bottom:1.1rem}
 .assure-docs-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:.5rem}
@@ -897,20 +930,20 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 .assure-doc-ic svg{width:100%;height:100%}
 .assure-doc strong{display:block;color:hsl(var(--on-band-dark));font-size:.9375rem;margin-bottom:.3rem}
 .assure-doc-desc{display:block;color:hsl(var(--on-band-dark) / .55);font-size:.8125rem;line-height:1.5}
-@media(max-width:768px){.assure-section{padding:4.5rem 1.25rem}.assure-section h2{font-size:1.95rem}.assure-grid{grid-template-columns:1fr}}
+@media(max-width:768px){.assure-section{padding:3rem 1.25rem}.assure-section h2{font-size:1.95rem}.assure-grid{grid-template-columns:1fr}}
 [data-theme="dark"] .qol-section{background:hsl(var(--background))}
 [data-theme="dark"] .qol-panel{background:rgba(255,255,255,.035);border-color:hsl(var(--on-band-dark) / .1);box-shadow:none}
 [data-theme="dark"] .qol-panel h3,[data-theme="dark"] .qol-panel p strong{color:hsl(var(--on-band-dark))}
 [data-theme="dark"] .qol-panel p{color:hsl(var(--on-band-dark) / .6)}
 
 /* Everywhere section */
-.everywhere-section{padding:5rem 2rem;background:hsl(var(--band-dark));color:hsl(var(--on-band-dark))}
+.everywhere-section{padding:3.25rem 2rem;background:hsl(var(--band-dark));color:hsl(var(--on-band-dark))}
 .everywhere-inner{display:flex;flex-direction:column;gap:1.5rem;max-width:1400px;margin:0 auto;text-align:start}
 /* Mascot beside the TITLE only (per the brief), bigger than before; copy + chips run full
    width on their own lines below. */
 .everywhere-head{display:flex;align-items:center;justify-content:space-between;gap:2.5rem}
 .everywhere-head h2{margin:0;flex:1 1 auto}
-.everywhere-mascot{width:clamp(300px,34vw,600px);flex-shrink:0}
+.everywhere-mascot{width:clamp(240px,26vw,420px);flex-shrink:0}
 .everywhere-section h2{color:hsl(var(--on-band-dark))}
 .everywhere-copy{font-size:1.125rem;line-height:1.75;color:hsl(var(--on-band-dark) / .65);margin:0 0 1rem}
 .everywhere-chips{display:flex;flex-wrap:wrap;justify-content:flex-start;gap:1rem}
@@ -933,7 +966,7 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 @media(max-width:768px){.everywhere-models-grid{grid-template-columns:1fr;gap:2rem}.everywhere-models{margin-top:2.5rem}}
 
 /* What's a tool */
-.whats-a-tool{padding:4.5rem 3.5rem;background:var(--border)}
+.whats-a-tool{padding:3rem 3.5rem;background:var(--border)}
 .whats-inner{max-width:var(--col-cap);margin-right:auto;margin-left:0}
 .whats-a-tool .whats-inner>h2{color:var(--dark);font-size:2rem;margin-bottom:.625rem;text-align:center}
 .tool-lead{max-width:100%;margin:0 0 2rem;font-size:1.0625rem;line-height:1.8;color:var(--muted);text-align:center}
@@ -1013,23 +1046,23 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 .mascot-cred .shot-cred{max-width:calc(100% - 1rem)}
 .mascot-cred .shot-cred-line{max-width:100%}
 .mascot-cred .shot-cred-row{flex-wrap:wrap}
-.audience-header{display:flex;align-items:center;justify-content:center;gap:2rem;padding:4rem 3rem 1.75rem}
+.audience-header{display:flex;align-items:center;justify-content:center;gap:2rem;padding:2.75rem 3rem 1.5rem}
 .audience-header-text{text-align:start}
 .audience-mascot{width:clamp(200px,26vw,430px);flex-shrink:0;filter:drop-shadow(0 6px 20px rgba(12,50,44,.18))}
 @media(max-width:900px){.audience-mascot{width:clamp(160px,22vw,280px)}}
-@media(max-width:600px){.audience-header{flex-direction:column;gap:1rem;padding:2.5rem 1.25rem 1.25rem}.audience-header-text{text-align:center}.audience-mascot{width:clamp(140px,44vw,220px)}}
+@media(max-width:600px){.audience-header{flex-direction:column;gap:1rem;padding:2rem 1.25rem 1rem}.audience-header-text{text-align:center}.audience-mascot{width:clamp(140px,44vw,220px)}}
 .hero-founded{margin-top:2rem; max-width:15em;}
 /* About section */
-.about-section{padding:5rem 1.5rem;background:hsl(var(--band-dark));color:hsl(var(--on-band-dark))}
+.about-section{padding:3.25rem 1.5rem;background:hsl(var(--band-dark));color:hsl(var(--on-band-dark))}
 .about-inner{max-width:960px;margin:0 auto}
-.about-header{display:flex;align-items:center;gap:3rem;margin-bottom:3.5rem}
+.about-header{display:flex;align-items:center;gap:3rem;margin-bottom:2.25rem}
 .about-header-text{flex:1;min-width:0}
 .about-mascot{width:clamp(200px,26vw,360px);flex-shrink:0;filter:drop-shadow(0 16px 40px rgba(0,0,0,.5))}
 /* A second, smaller animal opposite the koala - the About section IS the "adorable
    Australian animals" section, so a companion here is on-theme, not clutter. */
 .about-mascot-2{width:clamp(120px,15vw,190px);flex-shrink:0;filter:drop-shadow(0 12px 30px rgba(0,0,0,.45))}
 .about-section h2{color:hsl(var(--on-band-dark));margin-bottom:1rem}
-.about-section h3{font-size:.75rem;font-weight:800;color:hsl(var(--on-band-dark) / .5);text-transform:uppercase;letter-spacing:.16em;margin:3rem 0 1.25rem;text-align:center}
+.about-section h3{font-size:.75rem;font-weight:800;color:hsl(var(--on-band-dark) / .5);text-transform:uppercase;letter-spacing:.16em;margin:2rem 0 1rem;text-align:center}
 .about-lead{font-size:1.0625rem;color:hsl(var(--on-band-dark) / .7);line-height:1.85;margin:0}
 .about-items{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem}
 .about-item{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:2rem 1.75rem;display:flex;flex-direction:row;align-items:flex-start;gap:1.125rem}
@@ -1038,10 +1071,10 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 .about-item p{color:hsl(var(--on-band-dark) / .6);line-height:1.8;font-size:.9375rem;margin:0}
 .about-item strong{color:hsl(var(--on-band-dark));font-weight:700}
 /* FAQ */
-.faq-section{padding:5rem 2rem;background:hsl(var(--background))}
+.faq-section{padding:3.25rem 2rem;background:hsl(var(--background))}
 .faq-inner{margin:0 auto; max-width: calc(var(--col-cap) * 1.4);}
 .faq-section h2{text-align:center;margin-bottom:.5rem}
-.faq-lead{text-align:center;color:var(--muted);font-size:1.0625rem;margin-bottom:2.5rem}
+.faq-lead{text-align:center;color:var(--muted);font-size:1.0625rem;margin-bottom:1.75rem}
 .faq-list{display:flex;flex-direction:column;gap:.75rem}
 .faq-item{border:1px solid var(--border);border-radius:12px;background:var(--pale);overflow:hidden;transition:box-shadow .15s,border-color .15s}
 .faq-item[open]{box-shadow:0 6px 20px rgba(12,50,44,.12)}
@@ -1082,7 +1115,9 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 .hero-trust{justify-content:flex-start}
 @media(max-width:600px){.hero-inner{flex-direction:column;text-align:center}.hero-heading{flex-direction:column;gap:1rem;align-items:center}.hero h1{text-align:center;font-size:clamp(2rem,10vw,4rem)}.hero-details{text-align:center}.hero-cta{justify-content:center}.hero-trust{justify-content:center}}
 /* Scroll reveal */
-.reveal{opacity:0;transform:translateY(22px);transition:opacity .55s ease,transform .55s ease}
+/* 300ms, both widths (plans/168 WP-3). The old .55s desktop fade ran longer than the
+   scroll that triggered it, so a band was still arriving as the reader passed it. */
+.reveal{opacity:0;transform:translateY(22px);transition:opacity .3s ease,transform .3s ease}
 .reveal.visible{opacity:1;transform:none}
 .reveal-1{transition-delay:.05s}
 .reveal-2{transition-delay:.15s}
@@ -1090,10 +1125,9 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 .reveal-4{transition-delay:.35s}
 .reveal-5{transition-delay:.45s}
 .reveal-6{transition-delay:.55s}
-/* Mobile: snappier reveals - drop the stagger and shorten the fade so content
-   doesn't lag behind the scroll (the observer also triggers earlier on mobile). */
+/* Mobile: drop the stagger too - one column means the "cards arriving in sequence"
+   the delays paint reads as lag rather than choreography. */
 @media(max-width:768px){
-  .reveal{transition-duration:.3s}
   .reveal-1,.reveal-2,.reveal-3,.reveal-4,.reveal-5,.reveal-6{transition-delay:0s}
 }
 @media(prefers-reduced-motion:reduce){
@@ -1125,16 +1159,16 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 [data-theme="dark"] .import-point{background:hsl(var(--card))}
 [data-theme="dark"] .import-source strong,[data-theme="dark"] .import-step strong,[data-theme="dark"] .import-point strong{color:var(--text)}
 /* ── Why we built Lolly + old-way vs Lolly-way matrix ─────────────────────── */
-.why-section{padding:5rem 1.5rem;background:var(--lolly-coin-glow)}
+.why-section{padding:3rem 1.5rem;background:var(--lolly-coin-glow)}
 .why-inner{max-width:1080px;margin:0 auto}
-.why-lede{display:flex;align-items:center;justify-content:center;gap:2.5rem;max-width:62rem;margin:0 auto 2.5rem;text-align:start}
+.why-lede{display:flex;align-items:center;justify-content:center;gap:2.5rem;max-width:62rem;margin:0 auto 1.75rem;text-align:start}
 .why-lede-text{max-width:44rem}
 .why-mascot{width:clamp(180px,22vw,340px);flex-shrink:0}
 @media(max-width:820px){.why-lede{flex-direction:column;text-align:center}}
 .why-eyebrow{display:inline-block;font-size:.75rem;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:var(--green);margin-bottom:.75rem}
 .why-section h2{font-size:clamp(1.8rem,4vw,2.5rem);color:var(--dark);line-height:1.12;margin-bottom:1rem}
 .why-lead{color:var(--muted);font-size:1.0625rem;line-height:1.7}
-.why-frustrations{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:2.5rem}
+.why-frustrations{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.75rem}
 .why-frustration{background:hsl(var(--card));border:0; box-shadow: inset 0 1px #fff1, 0 .2em .5em #0002;border-radius:14px;padding:1.5rem 1.375rem;text-align:center}
 .why-frustration-ic{display:inline-flex;width:2.75rem;height:2.75rem;align-items:center;justify-content:center;border-radius:50%;background:rgba(254,124,63,.12);color:var(--orange);margin-bottom:.75rem}
 .why-frustration-ic svg{width:1.4rem;height:1.4rem}
@@ -1142,10 +1176,14 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 .why-frustration p{color:var(--muted);font-size:.9rem;line-height:1.55}
 .matrix{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;align-items:stretch}
 .matrix-head{font-weight:800;text-transform:uppercase;letter-spacing:.08em;font-size:.8rem;padding:.85rem 1.1rem;border-radius:10px;text-align:center}
-.matrix-head--old{background:rgba(90,112,103,.14);color:var(--muted)}
+/* One step up from var(--muted) (plans/168 WP-6): the old-way column is meant to read
+   dimmer than the Lolly-way column, but "dim by design" had been taken past comfortable
+   reading. An alpha on the page's own ink keeps the rhetoric - still visibly quieter
+   than .matrix-cell--new's full var(--text) - in both themes with one value. */
+.matrix-head--old{background:rgba(90,112,103,.14);color:hsl(var(--foreground) / .74)}
 .matrix-head--new{background:var(--green);color:#fff}
 .matrix-cell{display:flex;gap:.7rem;align-items:flex-start;padding:1rem 1.15rem;border-radius:12px;font-size:.95rem;line-height:1.5}
-.matrix-cell--old{background:hsl(var(--card) / .7);border:0;color:var(--muted)}
+.matrix-cell--old{background:hsl(var(--card) / .7);border:0;color:hsl(var(--foreground) / .74)}
 .matrix-cell--new{background:rgba(48,186,120,.08);color:var(--text);box-shadow:0 2px 12px rgba(48,186,120,.12)}
 .matrix-mark{flex-shrink:0;width:1.35rem;height:1.35rem;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;font-size:.78rem;font-weight:800;margin-top:.05rem}
 .matrix-cell--old .matrix-mark{background:hsl(var(--card) / 1 );color:var(--muted)}

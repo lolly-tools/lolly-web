@@ -459,11 +459,14 @@ window.__lollyChipField=function(canvas,opt){
 })();
 ;
 (function(){var els=document.querySelectorAll('.reveal');if(!els.length)return;
-  // Mobile is trigger-happy: a positive bottom rootMargin pre-reveals elements as
-  // they approach (so they're faded in by the time you reach them), with threshold 0.
-  // Desktop keeps a subtler trigger just inside the viewport.
-  var eager=window.matchMedia('(max-width:768px)').matches;
-  var opts=eager?{threshold:0,rootMargin:'0px 0px 20% 0px'}:{threshold:0.1,rootMargin:'0px 0px -32px 0px'};
+  // Pre-reveal on BOTH widths (plans/168 WP-3). Desktop used to wait for 10% of a band
+  // to be inside the viewport minus 32px, which on this page's tall bands meant a
+  // normally-paced scroller met an empty screen before the content faded in - the
+  // un-revealed band still holds its layout space, so the gap is real, not perceived.
+  // A positive bottom rootMargin starts the fade while the band is still below the fold.
+  var opts={threshold:0,rootMargin:window.matchMedia('(max-width:768px)').matches
+    ?'0px 0px 20% 0px'
+    :'0px 0px 25% 0px'};
   var io=new IntersectionObserver(function(entries){entries.forEach(function(e){if(e.isIntersecting){e.target.classList.add('visible');io.unobserve(e.target);}});},opts);
   els.forEach(function(el){io.observe(el);});})();
 ;

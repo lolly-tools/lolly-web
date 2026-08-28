@@ -405,7 +405,7 @@ function wireCopyButtons(root: ParentNode): void {
 // `caps` namespace, merged into the catalog by the loadNamespace('caps')
 // below. A feature's `desc` carries authored inline HTML, so it stays raw;
 // its translation preserves the same tags (the pipeline validates that).
-function capCard(card: { icon: string; title: string; features: Array<{ name: string; desc: string }>; keywords?: string; shot?: string }): string {
+function capCard(card: { icon: string; title: string; features: Array<{ name: string; desc: string }>; keywords?: string; shot?: string; shotExt?: 'png' }): string {
   // The modal detail (full feature list) rides in an inert <template>.
   const feats = `<dl class="cap-feat dash-cap-feat">${
     card.features.map((f) => `<div><dt>${escape(t(f.name))}</dt><dd>${t(f.desc)}</dd></div>`).join('')
@@ -430,7 +430,9 @@ function capCard(card: { icon: string; title: string; features: Array<{ name: st
   // build an <img> at open time. A 264px card has no room for a screenshot, and
   // eagerly emitting ~45 <img> tags would fetch ~45 SVGs for a panel where most
   // are never opened. One image, on demand, for the card you actually clicked.
-  const shotAttr = card.shot ? ` data-cap-shot="${escape(card.shot)}"` : '';
+  const shotAttr = card.shot
+    ? ` data-cap-shot="${escape(card.shot)}"${card.shotExt ? ` data-cap-shot-ext="${escape(card.shotExt)}"` : ''}`
+    : '';
   return `
     <div class="dash-cap-item" data-cap-hay="${escape(haystack)}"${shotAttr}>
       <button type="button" class="dash-cap-card" data-cap-open aria-haspopup="dialog"
@@ -1113,10 +1115,13 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1, routePar
         // (and cleared on the way out) so the dialog can never show the previous
         // card's picture for the instant before a new one decodes.
         const slug = (item as HTMLElement | null)?.dataset.capShot;
+        // Nearly every baseline is vector; the few RASTER_ALLOWED shots declare
+        // their extension on the card (data-cap-shot-ext).
+        const shotExt = (item as HTMLElement | null)?.dataset.capShotExt || 'svg';
         if (mShot && mImg) {
           mShot.classList.remove('is-dark-shot');
           if (slug) {
-            const light = `/info/shots/${slug}.svg`;
+            const light = `/info/shots/${slug}.${shotExt}`;
             // Under any non-light theme (dark, brand) prefer the dark twin
             // the docs pipeline captured, `<slug>.dark.svg`. Not every shot
             // has one (a light-only recipe like auth-url-render, whose bare
@@ -1131,7 +1136,7 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1, routePar
             };
             if (currentTheme() !== 'light') {
               mShot.classList.add('is-dark-shot');
-              mImg.src = `/info/shots/${slug}.dark.svg`;
+              mImg.src = `/info/shots/${slug}.dark.${shotExt}`;
             } else {
               mImg.onerror = null;
               mImg.src = light;
