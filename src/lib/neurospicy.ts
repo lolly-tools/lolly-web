@@ -145,9 +145,55 @@ function audio(): { ctx: AudioContext; gain: GainNode } | null {
     analyser.smoothingTimeConstant = 0.8;
     gain.connect(analyser);
     analyser.connect(ctx.destination);
+    startAnalyserWatchdog();
   }
   if (ctx.state === 'suspended') void ctx.resume().catch(() => { /* stays suspended until the next gesture */ });
   return { ctx, gain: gain! };
+}
+
+// ── analyser stall watchdog (iOS/WebKit) ─────────────────────────────────────────
+// iOS stalls a *running* AnalyserNode after a while: audio keeps flowing through it to
+// `destination` (still audible) and rAF keeps firing, but getByte*Data stops updating - so
+// the visualizer's kicks/waveforms flat-line while playback and theme transitions carry on
+// (confirmed on-device 2026-08-29, across SomaFM streams and catalog tracks). A fresh node
+// reconnected into the same graph resumes updating; the source→gain path is never touched,
+// so audio does not drop during the swap. getNeurospicyAnalyser() returns the live
+// `analyser`, and the meter + visualizer both re-read it per frame, so they pick up the
+// replacement on the next frame with no extra wiring.
+const WATCHDOG_MS = 700;
+const STALL_TICKS = 4; // ~2.8s of a byte-identical waveform while live → treat as stalled
+let watchdog: ReturnType<typeof setInterval> | null = null;
+let lastWave: Uint8Array | null = null;
+let stallTicks = 0;
+
+function reviveAnalyser(): void {
+  if (!ctx || !gain) return;
+  try { gain.disconnect(analyser!); } catch { /* wasn't connected */ }
+  try { analyser?.disconnect(); } catch { /* wasn't connected */ }
+  const a = ctx.createAnalyser();
+  a.fftSize = 128;
+  a.smoothingTimeConstant = 0.8;
+  gain.connect(a);
+  a.connect(ctx.destination);
+  analyser = a;
+}
+
+function startAnalyserWatchdog(): void {
+  if (watchdog != null || typeof setInterval === 'undefined') return;
+  watchdog = setInterval(() => {
+    // Only judge while a signal is actually live: the raw time-domain waveform changes every
+    // read when audio flows, so byte-equality across STALL_TICKS reads means the node froze.
+    if (!analyser || neurospicySignalState() !== 'live') { stallTicks = 0; lastWave = null; return; }
+    const buf = new Uint8Array(analyser.fftSize);
+    analyser.getByteTimeDomainData(buf);
+    const same = lastWave != null && lastWave.length === buf.length && buf.every((v, i) => v === lastWave![i]);
+    if (same) {
+      if (++stallTicks >= STALL_TICKS) { reviveAnalyser(); stallTicks = 0; lastWave = null; }
+    } else {
+      stallTicks = 0;
+      lastWave = buf;
+    }
+  }, WATCHDOG_MS);
 }
 
 /** The analyser on the focus-loop graph, for a level meter. Null until audio starts. */

@@ -1513,6 +1513,23 @@ button.fc-readout:empty { display: none; }
   .stage-nav .profile-link    { border-radius: 1em 1em 6em 6em; }
 }
 
+/* ── Collapsible pill (#3): the lolly swirl is the anchor ──────────────────────
+   The zoom/theme/sound controls clutter every tool canvas, so they fold away behind
+   the lolly swirl. The swirl sits FIRST (top of the vertical capsule, left of the row)
+   and larger, reading as a handle; a long-press on it toggles the fold (tool-stage-nav.ts),
+   while a short tap still opens the profile menu. The drag grip moves to the far end. */
+.stage-nav .profile-link { order: -1; align-self: center;
+  width: calc(34px * var(--a11y-fs)); height: calc(34px * var(--a11y-fs));
+  border-radius: var(--radius-round);
+  -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: none; }
+.stage-nav .profile-link-mark,
+.stage-nav .profile-link-avatar { width: calc(28px * var(--a11y-fs)); height: calc(28px * var(--a11y-fs)); }
+.stage-nav-grip { order: 100; }
+.stage-nav.is-collapsed > :not(.profile-link) { display: none; }
+.stage-nav.is-collapsed { opacity: 1; padding: 3px; }
+/* A hint that the anchor holds more: a soft ring while collapsed. */
+.stage-nav.is-collapsed .profile-link { box-shadow: 0 0 0 2px hsl(var(--primary) / 0.35); }
+
 /* On touch the HUD is the primary zoom control; the canvas also keeps pinch/drag. */
 }
 

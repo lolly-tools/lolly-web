@@ -334,6 +334,38 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
     extras,
   });
 
+  // #3: fold the zoom/theme/sound controls behind the lolly swirl so a cluttered tool
+  // canvas becomes one unobtrusive anchor. Collapsed by default (persisted per device);
+  // a LONG-PRESS on the swirl toggles the fold, while a short TAP still opens the profile
+  // menu (kept behaving as it was). The swirl is enlarged + ordered first in editor.css.
+  const COLLAPSE_KEY = 'lolly:stage-nav-collapsed';
+  const startCollapsed = (() => { try { return localStorage.getItem(COLLAPSE_KEY) !== '0'; } catch { return true; } })();
+  if (startCollapsed) hudEl.classList.add('is-collapsed');
+  const profileEl = hudEl.querySelector<HTMLElement>('.stage-nav-profile');
+  if (profileEl) {
+    // iOS fires a native long-press callout/context menu that would fight the hold-to-fold
+    // gesture (and pop text/image selection). Suppress it on the anchor only.
+    profileEl.style.touchAction = 'none';
+    profileEl.addEventListener('contextmenu', (e) => e.preventDefault());
+    let holdTimer: ReturnType<typeof setTimeout> | null = null;
+    let held = false;
+    const clearHold = () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } };
+    profileEl.addEventListener('pointerdown', () => {
+      held = false;
+      clearHold();
+      holdTimer = setTimeout(() => {
+        held = true;
+        const collapsed = hudEl.classList.toggle('is-collapsed');
+        try { localStorage.setItem(COLLAPSE_KEY, collapsed ? '1' : '0'); } catch { /* best-effort */ }
+      }, 450);
+    });
+    for (const ev of ['pointerup', 'pointercancel', 'pointerleave'] as const) profileEl.addEventListener(ev, clearHold);
+    // A hold ends in a click; swallow it so the profile menu / #/profile nav doesn't fire too.
+    profileEl.addEventListener('click', (e) => {
+      if (held) { e.preventDefault(); e.stopImmediatePropagation(); held = false; }
+    }, true);
+  }
+
   // ── Drag the HUD (by its grip) to reposition it over the canvas, or onto the
   //    inline-end edge to dock it into the desktop dock column (lib/edge-dock.ts),
   //    exactly like the export/player panels. Desktop only: the dock does not exist

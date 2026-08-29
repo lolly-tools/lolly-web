@@ -1106,11 +1106,15 @@ function openMenu(s: Surface, x: number, y: number): void {
     s.menu.style.left = `${Math.max(8, Math.min(x - r.left, r.width - mw - 8))}px`;
     s.menu.style.top = `${Math.max(8, Math.min(y - r.top, r.height - mh - 8))}px`;
   }
-  // Focus the search field when there is one: with 200+ presets, typing is the primary
-  // way in and the list is far too long to hunt by eye.
+  // Focus the search field on a FINE pointer: with 200+ presets, typing is the primary
+  // way in and the list is far too long to hunt by eye. On TOUCH, though, a two-finger tap
+  // routes here (via contextmenu) and focusing the field pops the soft keyboard the instant
+  // the menu opens - jarring, and typing isn't the touch primary. So on coarse pointers focus
+  // the colour-scheme control ("the brand colour") instead: it's a button, so no keyboard.
   const search = s.menu.querySelector<HTMLInputElement>('[data-viz-search]');
-  if (search) search.focus();
-  else s.menu.querySelector<HTMLButtonElement>('.viz-menu-item, .viz-pill')?.focus();
+  const coarse = s.win.matchMedia?.('(pointer: coarse)').matches ?? false;
+  if (search && !coarse) search.focus();
+  else (s.menu.querySelector<HTMLButtonElement>('.viz-pill, .viz-menu-item') ?? search)?.focus();
 }
 
 /** The non-native full-VIEWPORT state - iOS Safari has no element fullscreen, so
