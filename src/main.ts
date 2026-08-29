@@ -338,7 +338,12 @@ async function navigate(host: WebHost, opts: { force?: boolean } = {}): Promise<
   if (prevSig && viewIdent(routeSig) !== viewIdent(prevSig)) recordLeave(leftHref);
 
   const view = document.getElementById('view') as ViewElement;
-  view._cleanup?.();
+  // NEVER let an outgoing view's teardown block the navigation: if _cleanup throws, the
+  // whole render below is skipped and the view "doesn't change" - a user gets trapped.
+  // This bit the scanner on iOS, where a live-camera teardown step threw, so tapping
+  // Home/back reacted but never swapped the view. Log and carry on; the incoming view
+  // still mounts. (Individual teardown steps are also hardened in tool.ts's cleanup.)
+  try { view._cleanup?.(); } catch (e) { console.error('[nav] outgoing view cleanup threw:', e); }
   delete view._cleanup;
 
   // The Projects "+ New tool" / resume flow arms one-shot sessionStorage markers

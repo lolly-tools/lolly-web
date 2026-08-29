@@ -2157,6 +2157,11 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
 
   // Cleanup: remove injected <style>, disconnect observer, tear down canvas nav + export.
   viewEl._cleanup = () => {
+    // Release the live camera FIRST and guarded: it's the one teardown step whose failure
+    // leaves hardware running, and a throw anywhere in this teardown used to abort the whole
+    // navigation (the scanner trap - see the router guard in main.ts). Idempotent, so the
+    // ordered call below re-runs harmlessly.
+    try { runtime.stopLive?.(); } catch (e) { console.error('[tool] stopLive on teardown:', e); }
     urlGauge?.dispose(); // cancel any pending pack-refine timer so it can't fire post-teardown
     // FIRST, because everything below destroys the thing it reads. Starting a collab
     // remounts this tool through a route that cannot carry an uploaded asset, a picked
