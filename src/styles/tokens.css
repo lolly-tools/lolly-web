@@ -16,10 +16,9 @@
  * font once one is loaded - the stacks below are the unbranded fallback tail
  * it appends. Tool templates may consume var(--font-brand, …) too (they
  * inherit through the canvas root). */
-:root {
-  --font-brand: 'SUSE', ui-sans-serif, system-ui, sans-serif;
-  --font-mono: 'SUSE Mono', ui-monospace, monospace;
-}
+/* --font-brand / --font-mono now live in the generated chrome block below
+ * (plans/172: shells/web/design/chrome-tokens.json is their source, so Penpot
+ * edits them as fontFamilies tokens). The override path is unchanged. */
 
 /* ─── Top-row chrome geometry ───────────────────────────────────────────────
  * The controls that float along the top of a view - the back pill on the left
@@ -288,6 +287,9 @@
    construction instead of restating the calc() 1,500 times. */
 /* @generated-chrome-tokens start */
 :root {
+  /* typeface stacks - the platform defaults (SUSE / SUSE Mono, shell-served). applyChromeBrandVars (brand-vars.ts) overrides both inline on <html> when the active brand's tokens declare font.brand / font.mono; these are the unbranded fallback */
+  --font-brand: 'SUSE', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'SUSE Mono', ui-monospace, monospace;
   /* edges - the hairline-ring-instead-of-border move (82 audited sites) */
   --edge: inset 0 0 0 1px hsl(var(--border));
   --edge-faint: inset 0 0 0 1px hsl(var(--foreground) / .1);
