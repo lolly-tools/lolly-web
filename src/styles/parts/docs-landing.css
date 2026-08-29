@@ -77,10 +77,13 @@ html[data-theme="dark"] .quicknav{background:rgba(9,26,21,.9)}
 .hero-logo:hover{filter: hue-rotate(-25deg) saturate(1.5) brightness(1.01)}
 /* The mark idles STILL until hover (Andy, 2026-08-17). The swirl animation lives
    INSIDE the signed icon.svg, which an <img> embeds as its own document - page CSS
-   cannot pause it and the signed file is never edited. So the derived raster of the
-   same mark (icon-512.png, from `npm run icons`) sits on top and lifts on hover/
-   focus to let the swirl run. Under reduced motion - the OS preference or the app's
-   a11y switch - the still never lifts. */
+   cannot pause it and the signed file is never edited. So a static raster sits on
+   top and lifts on hover/focus to let the swirl run. That raster is hero-still.png
+   (`npm run icons`), derived from the 3-D icon-primary.svg - its OWN derivative,
+   never one of the PWA rasters: the hero regressed to the flat mark the day
+   icon-512.png switched sources (2026-08-28), which is what this decoupling fixes.
+   Under reduced motion - the OS preference or the app's a11y switch - the still
+   never lifts. */
 .hero-logo-link{position:relative}
 .hero-logo-still{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;filter:hue-rotate(-15deg);transition:opacity .25s ease;pointer-events:none}
 .hero-logo-link:hover .hero-logo-still,.hero-logo-link:focus-visible .hero-logo-still{opacity:0}
