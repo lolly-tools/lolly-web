@@ -6,7 +6,7 @@
  * gdrive needs a Google OAuth client id), so registering all of them costs nothing
  * on a plain build: the panel consults sendTargetsFor() and renders exactly nothing.
  *
- * Which is why the eight driver modules are `await import()`ed here rather than
+ * Which is why the nine driver modules are `await import()`ed here rather than
  * imported statically, and why nothing calls this from boot any more (plans/155
  * Task 3.3): as static imports they welded ~59 KB of OAuth/upload code (nextcloud-send
  * alone is 25 KB) onto the boot graph for a capability that first matters when an
@@ -49,12 +49,15 @@ export function ensureBuiltinSendTargets(): Promise<void> {
 }
 
 export async function registerBuiltinSendTargets(): Promise<void> {
-  const [gdrive, dropbox, onedrive, s3, nextcloud, mastodon, bluesky, discord] = await Promise.all([
+  const [gdrive, dropbox, onedrive, s3, nextcloud, penpot, mastodon, bluesky, discord] = await Promise.all([
     import('./google-drive.ts'),
     import('./dropbox-send.ts'),
     import('./onedrive-send.ts'),
     import('./s3-send.ts'),
     import('./nextcloud-send.ts'),
+    // Penpot (plans/173): renders into a design file's media library, via the
+    // app-origin proxy - the one target whose bytes cross a Lolly server.
+    import('./penpot-send.ts'),
     // The publish tier (plans/129 WP5): post-shaped destinations.
     import('./mastodon-send.ts'),
     import('./bluesky-send.ts'),
@@ -65,6 +68,7 @@ export async function registerBuiltinSendTargets(): Promise<void> {
   registerSendTarget(onedrive.oneDriveSendTarget());
   registerSendTarget(s3.s3SendTarget());
   registerSendTarget(nextcloud.nextcloudSendTarget());
+  registerSendTarget(penpot.penpotSendTarget());
   registerSendTarget(mastodon.mastodonSendTarget());
   registerSendTarget(bluesky.blueskySendTarget());
   registerSendTarget(discord.discordSendTarget());

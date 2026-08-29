@@ -60,6 +60,7 @@ export const CONNECTOR_FLAGS: readonly FeatureFlag[] = [
   { id: 'conn-o365',     label: 'OneDrive',            connector: 'o365'     },
   { id: 'conn-s3',       label: 'S3 bucket',           connector: 's3'       },
   { id: 'conn-webdav',   label: 'Nextcloud / WebDAV',  connector: 'webdav'   },
+  { id: 'conn-penpot',   label: 'Penpot',              connector: 'penpot'   },
   { id: 'conn-mastodon', label: 'Mastodon',            connector: 'mastodon' },
   { id: 'conn-bluesky',  label: 'Bluesky',             connector: 'bluesky'  },
   { id: 'conn-discord',  label: 'Discord',             connector: 'discord'  },

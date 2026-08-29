@@ -1444,7 +1444,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
            away. Lives OUTSIDE .be-split-scroll - see above. -->
       <div class="be-pal-dock" data-be-pal-dock>
         <select class="field-select field-select--auto field-select--sm be-pal-fmt-sel" data-be-pal-fmt aria-label="${escape(t('Download the palette as'))}">
-          <option value="tokens-json">${t('Design tokens (JSON)')}</option>
+          <option value="tokens-json">${t('Design tokens (JSON)')} &middot; Penpot / Tokens Studio</option>
           <option value="css-vars">${t('CSS variables')}</option>
           <option value="css-classes">${t('CSS classes')}</option>
           <option value="scss">${t('SCSS variables')}</option>
@@ -4953,11 +4953,28 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // ── Palette download ─────────────────────────────────────────────────────
   const palErr = $('[data-be-pal-err]') as HTMLElement | null;
   const palFmtSel = $('[data-be-pal-fmt]') as HTMLSelectElement | null;
-  $('[data-be-pal-download]')?.addEventListener('click', () => {
+  // The brand's font.* role tokens, for the tokens-json export - so the faces a
+  // user assigned in the Type room travel with the palette (plans/173 slice 1).
+  // Only SET roles export: with none set the file has no font group, because
+  // exporting the platform default would claim SUSE as the user's own brand.
+  const exportFonts = async (): Promise<Array<{ role: string; families: string[] }>> => {
+    const out: Array<{ role: string; families: string[] }> = [];
+    for (const role of ['brand', 'mono', 'display', 'italic']) {
+      const v = await (tokens as { resolve?(ref: string): Promise<unknown> } | undefined)
+        ?.resolve?.(`{font.${role}}`).catch(() => null);
+      const fams = (Array.isArray(v) ? v : [v])
+        .filter((f): f is string => typeof f === 'string' && f.trim().length > 0)
+        .map((f) => f.trim().replace(/^['"]+|['"]+$/g, ''));
+      if (fams.length) out.push({ role, families: fams });
+    }
+    return out;
+  };
+  $('[data-be-pal-download]')?.addEventListener('click', async () => {
     if (palErr) palErr.hidden = true;
     try {
       const format = (palFmtSel?.value ?? 'tokens-json') as SwatchExportFormat;
-      const { blob, filename } = exportSwatches(swatches, format);
+      const fonts = format === 'tokens-json' ? await exportFonts() : undefined;
+      const { blob, filename } = exportSwatches(swatches, format, undefined, fonts?.length ? { fonts } : undefined);
       saveBlob(blob, filename);
       announce(tRaw('Palette downloaded as {filename}', { filename }));
     } catch (err) {

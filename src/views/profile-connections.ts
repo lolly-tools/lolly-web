@@ -34,6 +34,7 @@ import { dropboxAvailable, connectDropbox, disconnectDropbox } from '../lib/drop
 import { oneDriveAvailable, connectOneDrive, disconnectOneDrive } from '../lib/onedrive-send.ts';
 import { connectS3, disconnectS3, testS3, type S3Config } from '../lib/s3-send.ts';
 import { connectWebdav, disconnectWebdav, testWebdav, type WebdavConfig } from '../lib/nextcloud-send.ts';
+import { connectPenpot, disconnectPenpot, testPenpot } from '../lib/penpot-send.ts';
 import { connectMastodon, disconnectMastodon } from '../lib/mastodon-send.ts';
 import { connectBluesky, disconnectBluesky, testBluesky, type BlueskyConfig } from '../lib/bluesky-send.ts';
 import { connectDiscord, disconnectDiscord, testDiscord } from '../lib/discord-send.ts';
@@ -180,7 +181,38 @@ function credentialRowsHtml(conns: Map<string, ProviderConnection>, home: string
         </div>
       </div>
     </details>`)}
+    ${penpotRowHtml(conns)}
     ${publishRowsHtml(conns)}`;
+}
+
+/** Penpot (plans/173): a Personal Access Token + a destination project, picked
+ *  from a list the token itself fetches - the connect flow is two clicks on one
+ *  button (Load projects → Connect), with the picker injected in place by the
+ *  handler so the pasted PAT survives (a re-render would drop it). Custody is
+ *  the Mastodon shape: session-only by default, at rest only by explicit
+ *  choice. The helper text is deliberately honest about the pass-through -
+ *  this is the one connector whose bytes cross a Lolly server, because
+ *  Penpot's API refuses direct browser calls from other origins. */
+function penpotRowHtml(conns: Map<string, ProviderConnection>): string {
+  const pen = conns.get('penpot');
+  return gate('penpot', `<details class="pconn-cred" data-pconn="penpot">
+      <summary><span class="store-manage-name">${t('Penpot')}
+        ${pen ? `<span class="pconn-account">${escape(pen.account)}</span>` : `<span class="pconn-note">${t('Send renders into a Penpot project with an access token')}</span>`}
+      </span></summary>
+      <div class="pconn-form">
+        ${pen ? `
+        <span class="pconn-note">${escape(pen.persist ? t('Stays connected on this device') : t('Connected for this session only'))}</span>` : `
+        ${field('token', t('Access token'), '', 'password')}
+        <p class="pconn-note">${t('Make a token in Penpot under Settings → Access tokens. Exports are sent to Penpot through lolly.tools’s pass-through, because Penpot’s API does not allow browser calls from other sites - your token is forwarded with each send, not stored server-side. What is remembered on this device is your choice below.')}</p>
+        <label class="pconn-persist"><input type="checkbox" data-pconn-persist="penpot"> ${t('Stay connected on this device')}</label>`}
+        <div class="pconn-actions">
+          ${pen
+            ? `<button type="button" class="btn-link-danger" data-pconn-disconnect="penpot">${t('Disconnect')}</button>`
+            : `<button type="button" class="btn" data-pconn-save="penpot">${t('Load projects')}</button>`}
+          <span class="pconn-status" data-pconn-status="penpot" role="status"></span>
+        </div>
+      </div>
+    </details>`);
 }
 
 /** The publish tier (plans/129 WP5): Mastodon (per-server OAuth), Bluesky (app
@@ -245,7 +277,7 @@ function publishRowsHtml(conns: Map<string, ProviderConnection>): string {
  *  provider without rendering a row. */
 const kindLabel = (kind: string): string => ({
   gdrive: t('Google Drive'), dropbox: t('Dropbox'), o365: t('OneDrive'),
-  s3: t('S3 bucket'), webdav: t('Nextcloud / WebDAV'),
+  s3: t('S3 bucket'), webdav: t('Nextcloud / WebDAV'), penpot: t('Penpot'),
   mastodon: t('Mastodon'), bluesky: t('Bluesky'), discord: t('Discord'),
 } as Record<string, string>)[kind] ?? kind;
 
@@ -322,10 +354,48 @@ export async function mountConnectionsBody(body: HTMLElement, host: ConnHost, on
       } else if (disconnectKind) {
         if (disconnectKind === 's3') await disconnectS3();
         else if (disconnectKind === 'webdav') await disconnectWebdav();
+        else if (disconnectKind === 'penpot') await disconnectPenpot();
         else if (disconnectKind === 'mastodon') await disconnectMastodon();
         else if (disconnectKind === 'bluesky') await disconnectBluesky();
         else if (disconnectKind === 'discord') await disconnectDiscord();
         else await OAUTH_ROWS.find((r) => r.kind === disconnectKind)?.disconnect();
+      } else if (saveKind === 'penpot') {
+        // Two clicks on one button: first "Load projects" (probe the PAT, inject
+        // the destination picker IN PLACE - a full re-render would drop the
+        // pasted token), then "Connect" once a project is chosen.
+        const f = readForm('penpot');
+        if (!f.token) {
+          status('penpot', t('Paste your Penpot access token first'));
+          return;
+        }
+        const picker = body.querySelector<HTMLSelectElement>('[data-penpot-project]');
+        if (!picker) {
+          status('penpot', t('Checking…'));
+          const res = await testPenpot(f.token);
+          status('penpot', res.note);
+          if (!res.ok || !res.projects) return;
+          const label = document.createElement('label');
+          label.className = 'pconn-field';
+          const caption = document.createElement('span');
+          caption.textContent = t('Project');
+          const select = document.createElement('select');
+          select.className = 'field-input';
+          select.dataset.penpotProject = '';
+          for (const p of res.projects) {
+            const opt = document.createElement('option');
+            opt.value = p.id;
+            opt.textContent = p.name;
+            select.append(opt);
+          }
+          label.append(caption, select);
+          const actions = body.querySelector('[data-pconn="penpot"] .pconn-actions');
+          actions?.before(label);
+          if (btn) btn.textContent = t('Connect');
+          return;
+        }
+        const projectName = picker.selectedOptions[0]?.textContent ?? '';
+        const persist = body.querySelector<HTMLInputElement>('[data-pconn-persist="penpot"]')?.checked ?? false;
+        await connectPenpot(persist, f.token, { id: picker.value, name: projectName });
       } else if (saveKind === 'mastodon') {
         const f = readForm('mastodon');
         if (!f.server) {

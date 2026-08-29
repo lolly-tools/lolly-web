@@ -20,7 +20,7 @@ import type { BrandSwatch } from './brand-doc.ts';
 import type { PaletteEntry } from '../palette.ts';
 import {
   paletteTokensJson, paletteCssVariables, paletteCssClasses, paletteScssVariables,
-  paletteGpl, paletteAse,
+  paletteGpl, paletteAse, type PaletteTokensOpts,
 } from '../../../../engine/src/palette-export.ts';
 
 export type SwatchExportFormat = 'tokens-json' | 'css-vars' | 'css-classes' | 'scss' | 'gpl' | 'ase';
@@ -75,11 +75,15 @@ export function paletteEntriesToSwatches(entries: readonly PaletteEntry[]): Bran
 /** One entry point for the UI: pick a format, get a ready-to-save Blob + filename. */
 export function exportSwatches(
   swatches: BrandSwatch[], format: SwatchExportFormat, paletteName = 'Lolly brand',
+  opts?: PaletteTokensOpts,
 ): { blob: Blob; filename: string } {
   const base = slug(paletteName) || 'brand';
   switch (format) {
     case 'tokens-json':
-      return { blob: new Blob([paletteTokensJson(swatches)], { type: 'application/json' }), filename: `${base}-tokens.json` };
+      // The DTCG shape Penpot (>= 2.6) and Tokens Studio import natively; when the
+      // brand declares font.* roles they ride along as fontFamilies tokens, so the
+      // brand's faces reach Penpot with its colours (plans/173 slice 1).
+      return { blob: new Blob([paletteTokensJson(swatches, opts)], { type: 'application/json' }), filename: `${base}-tokens.json` };
     case 'css-vars':
       return { blob: new Blob([paletteCssVariables(swatches)], { type: 'text/css' }), filename: `${base}-variables.css` };
     case 'css-classes':

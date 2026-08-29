@@ -193,7 +193,10 @@ test('both enumerating UIs offer every format - none is reachable in only one', 
   const editor = readFileSync(join(HERE, 'brand-editor.ts'), 'utf8');
   const catalog = readFileSync(join(HERE, '../views/catalog.ts'), 'utf8');
 
-  const editorOpts = [...editor.matchAll(/<option value="([a-z-]+)">\$\{t\('(?:[^']*)'\)\}<\/option>/g)]
+  // The option body is t('label') optionally followed by an untranslated
+  // annotation (tokens-json carries "· Penpot / Tokens Studio" - product names
+  // don't translate, and appending keeps the 26 existing locale strings valid).
+  const editorOpts = [...editor.matchAll(/<option value="([a-z-]+)">\$\{t\('(?:[^']*)'\)\}[^<]*<\/option>/g)]
     .map(m => m[1]!)
     .filter(v => (FORMATS as string[]).includes(v));
   const catalogOpts = [...catalog.matchAll(/\{ fmt: '([a-z-]+)', label: '[^']*' \}/g)].map(m => m[1]!);
