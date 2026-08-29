@@ -113,13 +113,222 @@ html[data-a11y-motion="reduce"] .hero-logo-link:focus-visible .hero-logo-still{o
 .trust-dot{color:hsl(var(--on-band-dark) / .18)!important}
 .btn{display:inline-flex;align-items:center;padding:2rem 3rem;border-radius:1rem;font-weight:700;font-size:1rem;transition:all .18s ease;box-shadow:0 .2em 1em #0002}
 .btn-primary{background:rgba(48,186,120,.72);color:#000;mix-blend-mode:plus-lighter}
-.btn-primary:hover{background:var(--light);text-decoration:none;transform:translateY(-2px);box-shadow:0 8px 28px rgba(48,186,120,.35)}
+/* Hover BRIGHTENS. `var(--light)` is hsl(var(--primary) / .4), and --primary is the
+   near-black SUSE teal in the light theme - so under the plus-lighter blend the old
+   hover composited at roughly a sixth of the rest state's brightness in light and a
+   half of it in dark. The button visibly went out when you pointed at it. A literal
+   lightened Pine Green at full alpha instead: the blend adds luminance, so this
+   reads brighter than the rest state in BOTH themes rather than tracking a token
+   whose value flips with the theme. */
+.btn-primary:hover{background:#5fd79b;text-decoration:none;transform:translateY(-2px);
+  box-shadow:0 8px 32px rgba(95,215,155,.45)}
 .btn-secondary{background:rgba(255,255,255,.05);color:hsl(var(--on-band-dark));border:1px solid rgba(255,255,255,.22);position:relative}
 .btn-secondary:hover{background:rgba(255,255,255,.1);text-decoration:none;transform:translateY(-1px)}
 /* Glass baseline - frosted blur so the buttons read as glass even where the JS
    liquid-displacement filter can't render. The buildGlass script overrides this
    inline with the refractive filter where it's supported. */
 .btn-primary,.btn-secondary{-webkit-backdrop-filter:blur(3px) saturate(1.45);backdrop-filter:blur(3px) saturate(1.45)}
+
+
+/* ── Hero download rail ───────────────────────────────────────────────────────
+   The five packaged builds, inside the hero so they are above the fold on a
+   1280x720 laptop. Everything here sits on the dark hero band only, so the
+   colours are the on-band-dark tokens and there is no light-theme twin to keep
+   in step.
+
+   The tile is a CARD, not a row, because a row cannot hold this content at this
+   width: five tiles across the hero's text column is ~190px each, and "Phone and
+   tablet" beside a mark and a file-type badge truncates at that size. Stacking
+   gives the name the tile's full width and leaves the badge a corner of its own.
+
+   `--dl-accent` is the ONE per-tile variable: each tile sets it from its own
+   [data-dl] and every hover effect below reads it, so adding a sixth platform is
+   one line of colour rather than a sixth copy of the hover rules. The accents are
+   each project's own mark colour - the tile is recognised by the mark first and
+   read second, and a hover that lights up in the wrong green undoes that.
+
+   Motion is opt-out, not opt-in: the reduced-motion query at the end drops the
+   travel and keeps the colour and border changes, which are the part that
+   carries the meaning.                                                         */
+/* Space for the rail, taken from the gaps above it rather than from the rail.
+   The hero's stack (statement, subtitle, CTA pair, rail, trust line) has to clear
+   720px, which is the shortest laptop viewport this page is designed for, and the
+   two gaps below were 2.75rem and 2.5rem - generous when the CTA pair was the last
+   thing in the hero. Nothing here resizes the buttons or the H1. */
+.hero .subtitle{margin-bottom:1.9rem}
+.hero-cta{margin-bottom:1.6rem}
+.hero-downloads{position:relative;margin:0 0 1.6rem}
+.dl-head{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap;margin:0 0 .7rem}
+.dl-label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.14em;
+  color:hsl(var(--on-band-dark) / .85)}
+.dl-lead{font-size:.8rem;color:hsl(var(--on-band-dark) / .45);font-weight:300}
+/* auto-fit rather than repeat(5,1fr): five across the hero column, and the same
+   rule reflows to 3+2 and then 2+2+1 without a breakpoint per step. */
+.dl-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:.55rem}
+
+.dl-tile{--dl-accent:#30ba78;
+  position:relative;display:flex;flex-direction:column;gap:.3rem;isolation:isolate;
+  padding:.75rem .8rem .7rem;border-radius:.85rem;overflow:hidden;text-decoration:none;
+  background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);
+  color:hsl(var(--on-band-dark));
+  -webkit-backdrop-filter:blur(3px) saturate(1.45);backdrop-filter:blur(3px) saturate(1.45);
+  box-shadow:0 .15em .6em #0003;
+  transition:transform .22s cubic-bezier(.2,.9,.3,1.2),border-color .22s ease,
+             background-color .22s ease,box-shadow .22s ease}
+.dl-tile[data-dl="apple"]{--dl-accent:#e8eef2}
+.dl-tile[data-dl="opensuse"]{--dl-accent:#73ba25}
+.dl-tile[data-dl="flatpak"]{--dl-accent:#4a90d9}
+.dl-tile[data-dl="android"]{--dl-accent:#3ddc84}
+
+/* Entrance: the rail arrives after the CTA pair (.52s) and before the trust line
+   (.65s), each tile a beat behind the last, so the eye is walked left to right
+   across the five rather than meeting them as a block. */
+.dl-tile{animation:heroUp .55s ease both calc(.58s + var(--dl-i, 0) * .06s)}
+
+/* The wash: an accent-tinted glow that grows from behind the mark on hover. Sits
+   under the content (the tile is an isolation root), so it never touches the
+   text contrast. */
+.dl-tile::before{content:'';position:absolute;z-index:0;left:-30%;top:-40%;width:110%;aspect-ratio:1;
+  transform:scale(.25);border-radius:50%;opacity:0;pointer-events:none;
+  background:radial-gradient(circle,color-mix(in oklab,var(--dl-accent) 55%,transparent) 0%,transparent 70%);
+  transition:transform .45s cubic-bezier(.2,.9,.3,1),opacity .35s ease}
+/* The sheen: one pass of a skewed highlight, left to right, on hover only. */
+.dl-tile::after{content:'';position:absolute;z-index:1;inset:0 auto 0 -60%;width:45%;
+  pointer-events:none;transform:skewX(-18deg) translateX(0);
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.16),transparent);
+  opacity:0;transition:transform .6s ease,opacity .2s ease}
+.dl-tile>*{position:relative;z-index:2}
+
+.dl-top{display:flex;align-items:center;gap:.35rem;margin-bottom:.15rem}
+.dl-mark{display:flex;flex:0 0 auto;width:1.55rem;height:1.55rem;margin-inline-end:auto;
+  color:hsl(var(--on-band-dark) / .8);
+  transition:color .22s ease,transform .3s cubic-bezier(.2,.9,.3,1.4),filter .22s ease}
+/* The shared `.doc-logo` rule sizes marks for INLINE use in body text (1.1em with
+   a 1.35em ceiling, dimmed, with a trailing margin). None of that applies in a
+   tile, where the mark is the tile's own subject - so all five of those
+   properties are reset rather than fought with. */
+.dl-mark .doc-logo{display:flex;width:100%;height:100%;
+  max-width:none;max-height:none;margin-inline-end:0;opacity:1;vertical-align:baseline}
+.dl-mark svg{width:100%;height:100%;display:block}
+/* The download glyph keeps its slot at rest (invisible, not absent), so revealing
+   it on hover cannot shift the badge beside it by a pixel. */
+.dl-go{display:flex;flex:0 0 auto;width:.95rem;height:.95rem;color:var(--dl-accent);
+  opacity:0;transform:translateX(-.35rem);
+  transition:opacity .22s ease,transform .35s cubic-bezier(.2,.9,.3,1.5)}
+.dl-go svg{width:100%;height:100%;display:block}
+.dl-ext{flex:0 0 auto;font-size:.55rem;font-weight:700;letter-spacing:.07em;
+  padding:.18rem .34rem;border-radius:.3rem;
+  color:hsl(var(--on-band-dark) / .55);border:1px solid rgba(255,255,255,.16);
+  background:transparent;
+  transition:color .22s ease,background-color .22s ease,border-color .22s ease}
+
+.dl-name{font-size:.92rem;font-weight:600;line-height:1.15;color:hsl(var(--on-band-dark))}
+.dl-meta{display:flex;align-items:baseline;gap:.3rem;font-size:.66rem;line-height:1.3;
+  min-width:0}
+.dl-os{flex:0 0 auto;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
+  color:hsl(var(--on-band-dark) / .5);transition:color .22s ease}
+.dl-os::after{content:'\00b7';margin-inline-start:.3rem;color:hsl(var(--on-band-dark) / .25)}
+.dl-note{font-weight:300;color:hsl(var(--on-band-dark) / .38);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:color .22s ease}
+
+.dl-tile:hover,.dl-tile:focus-visible{outline:none;text-decoration:none;
+  transform:translateY(-3px);
+  background:rgba(255,255,255,.09);
+  border-color:color-mix(in oklab,var(--dl-accent) 60%,transparent);
+  box-shadow:0 .7em 1.6em #0005,0 0 0 1px color-mix(in oklab,var(--dl-accent) 35%,transparent),
+             0 .5em 2.2em -.4em color-mix(in oklab,var(--dl-accent) 45%,transparent)}
+.dl-tile:hover::before,.dl-tile:focus-visible::before{opacity:.45;transform:scale(1)}
+.dl-tile:hover::after,.dl-tile:focus-visible::after{opacity:1;transform:skewX(-18deg) translateX(360%)}
+.dl-tile:hover .dl-mark,.dl-tile:focus-visible .dl-mark{color:var(--dl-accent);
+  transform:scale(1.14) rotate(-5deg);
+  filter:drop-shadow(0 0 .5em color-mix(in oklab,var(--dl-accent) 55%,transparent))}
+.dl-tile:hover .dl-go,.dl-tile:focus-visible .dl-go{opacity:1;transform:translateX(0)}
+/* The badge fills with the accent and takes dark text - the one high-contrast
+   moment in the tile, so the file you are about to get names itself loudest. */
+.dl-tile:hover .dl-ext,.dl-tile:focus-visible .dl-ext{
+  background:var(--dl-accent);border-color:var(--dl-accent);color:#06170f}
+.dl-tile:hover .dl-os,.dl-tile:focus-visible .dl-os{color:var(--dl-accent)}
+.dl-tile:hover .dl-note,.dl-tile:focus-visible .dl-note{color:hsl(var(--on-band-dark) / .6)}
+.dl-tile:active{transform:translateY(-1px) scale(.99)}
+/* Keyboard focus needs a ring of its own: the hover treatment is a glow, and a
+   glow is not a focus indicator. */
+.dl-tile:focus-visible{box-shadow:0 0 0 2px hsl(var(--on-band-dark)),
+  0 0 0 4px color-mix(in oklab,var(--dl-accent) 70%,transparent),0 .7em 1.6em #0005}
+
+.dl-more{display:inline-flex;align-items:center;gap:.35rem;margin-top:.6rem;
+  font-size:.76rem;font-weight:600;color:hsl(var(--on-band-dark) / .55);
+  transition:color .18s ease,gap .18s ease}
+/* Not var(--light) - see the .btn-primary:hover note. On this always-dark band that
+   token resolves to a near-black teal at 40% in the light theme, which is a hover
+   state you cannot see. */
+.dl-more:hover,.dl-more:focus-visible{color:#5fd79b;text-decoration:none;gap:.6rem}
+
+/* Phones. "Above the fold" is the whole point of putting the rail in the hero, and
+   on a 430x860 phone the hero's own stack spent 808px before the rail started - so
+   the rail was the one thing that could not be seen. The height comes back from
+   three places, none of which is the rail itself:
+
+     1. the CTA pair stops stacking. Two full-width buttons at 2rem of vertical
+        padding are ~195px of hero on a phone; side by side at phone padding they
+        are ~60px, and they read better as a pair besides.
+     2. the lollipop's floor drops from 180px to 130px. It is the brand mark, not
+        the message, and it is the largest single block above the words.
+     3. the hero's own top padding halves.
+
+   The tile turns back into a ROW here, because two columns of ~200px is enough
+   width for a horizontal layout and a row is 50px tall where the card is 92px.
+   The note line goes: it is the least of the four facts, the install page carries
+   all of them, and the tile's aria-label still says every one to a screen reader. */
+@media(max-width:600px){
+  /* 4rem, not less: the top nav is fixed and ~60px tall, so a smaller pad slides
+     the lollipop under it. The height comes out of the slot's own bottom margin
+     and its floor instead, which costs nothing a reader can see. */
+  .hero{padding-top:4rem}
+  .hero-logo-slot{width:clamp(120px,32vw,340px);margin-bottom:.5rem}
+  .hero .subtitle{margin-bottom:1.2rem}
+  .hero-cta{margin-bottom:1.2rem;flex-wrap:nowrap;gap:.6rem}
+  .hero-cta .btn{flex:1 1 0;min-width:0;justify-content:center;padding:1.05rem .75rem;
+    font-size:.9375rem;border-radius:.85rem}
+
+  .dl-head{justify-content:center;margin-bottom:.5rem}
+  /* The lead is a grace note, and at this width it wraps to a second line that
+     costs more height than the sentence is worth. The label carries the meaning. */
+  .dl-lead{display:none}
+  .dl-grid{grid-template-columns:repeat(2,1fr);gap:.5rem}
+  /* The hero centres its text at this width; a tile must not. A name centred over
+     a left-hand mark reads as two unrelated things sharing a box. */
+  .dl-tile{text-align:start}
+  /* The name gets BOTH text columns and the badge drops to the line below it. At
+     two columns of ~167px, a badge beside the name leaves it ~80px, which is not
+     enough for "Apple silicon"; under the name it costs nothing, because the row
+     it shares with the OS label was half empty. */
+  .dl-tile{gap:.5rem;padding:.55rem .6rem;
+    display:grid;grid-template-columns:auto 1fr auto;
+    grid-template-areas:'mark name name' 'mark meta ext'}
+  .dl-top{display:contents}
+  .dl-mark{grid-area:mark;width:1.4rem;height:1.4rem;margin-inline-end:0;align-self:center}
+  .dl-ext{grid-area:ext;align-self:center;justify-self:end}
+  .dl-go{display:none}
+  /* One line, always: a name that wraps takes every tile in its row with it, so a
+     single long label would add a row's worth of height to the whole grid. */
+  .dl-name{grid-area:name;font-size:.84rem;align-self:end;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .dl-meta{grid-area:meta;align-self:start;font-size:.62rem}
+  .dl-note{display:none}
+  .dl-os::after{content:none}
+  .dl-more{align-self:center;margin-top:.4rem}
+}
+@media(prefers-reduced-motion:reduce){
+  /* Colour and border still change - that is the affordance. Only travel goes. */
+  .dl-tile{animation:none;transition:border-color .22s ease,background-color .22s ease}
+  .dl-tile:hover,.dl-tile:focus-visible,.dl-tile:active{transform:none}
+  .dl-tile::after{display:none}
+  .dl-tile::before{transition:opacity .2s ease;transform:scale(1)}
+  .dl-mark,.dl-go{transition:opacity .2s ease,color .2s ease}
+  .dl-tile:hover .dl-mark,.dl-tile:focus-visible .dl-mark{transform:none}
+  .dl-tile:hover .dl-go,.dl-tile:focus-visible .dl-go{transform:none}
+  .dl-more:hover,.dl-more:focus-visible{gap:.35rem}
+}
 
 /* Three-door pathways band - sits directly under the hero on the landing page. */
 .pathways-section{background:transparent;position:relative;z-index:1;padding:3rem 1.5rem}
