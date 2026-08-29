@@ -258,13 +258,18 @@ html[data-a11y-motion="reduce"] .hero-logo-link:focus-visible .hero-logo-still{o
 .dl-tile:focus-visible{box-shadow:0 0 0 2px hsl(var(--on-band-dark)),
   0 0 0 4px color-mix(in oklab,var(--dl-accent) 70%,transparent),0 .7em 1.6em #0005}
 
-.dl-more{display:inline-flex;align-items:center;gap:.35rem;margin-top:.6rem;
+.dl-more,.dl-verify{display:inline-flex;align-items:center;gap:.35rem;margin-top:.6rem;
   font-size:.76rem;font-weight:600;color:hsl(var(--on-band-dark) / .55);
   transition:color .18s ease,gap .18s ease}
+/* The verify link sits on its own row under the tiles; a hair more top gap sets it
+   apart from the grid, and the shield glyph tracks the text size. */
+.dl-verify{display:flex}
+.dl-verify svg{width:.95em;height:.95em;flex:0 0 auto}
 /* Not var(--light) - see the .btn-primary:hover note. On this always-dark band that
    token resolves to a near-black teal at 40% in the light theme, which is a hover
    state you cannot see. */
-.dl-more:hover,.dl-more:focus-visible{color:#5fd79b;text-decoration:none;gap:.6rem}
+.dl-more:hover,.dl-more:focus-visible,
+.dl-verify:hover,.dl-verify:focus-visible{color:#5fd79b;text-decoration:none;gap:.6rem}
 
 /* Phones. "Above the fold" is the whole point of putting the rail in the hero, and
    on a 430x860 phone the hero's own stack spent 808px before the rail started - so
