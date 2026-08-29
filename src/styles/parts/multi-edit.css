@@ -40,7 +40,6 @@
 [aria-busy="true"] { opacity: .6; pointer-events: none; }
 
 .me-body { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); align-items: start; gap: 0; flex: 1; }
-@media (max-width: 900px) { .me-body { grid-template-columns: 1fr; } }
 
 /* ── Sidebar ── */
 .me-sidebar {
@@ -51,8 +50,52 @@
   border-right: 1px solid hsl(var(--border));
   display: grid; gap: .6rem; align-content: start;
 }
+/* Desktop: the mobile-sheet grip is inert (the sheet vars are only read below). */
+.me-sheet-grip { display: none; }
+
+/* ── Mobile: the inputs become a draggable bottom sheet over the grid ──────────
+   Same split the tool view uses (lib/mobile-sheet.ts drives --me-sheet-h /
+   data-me-sheet / --me-peek-h / is-me-sheet-dragging on .me-body). The grid is the
+   static backdrop the sheet slides over; the grip is a sticky strip that stays
+   visible at every snap so the list can always be pulled back up. */
 @media (max-width: 900px) {
-  .me-sidebar { position: static; max-height: none; border-right: 0; border-bottom: 1px solid hsl(var(--border)); }
+  .me-body { grid-template-columns: 1fr; --me-sheet-h: 50dvh; }
+  .me-body[data-me-sheet="peek"] { --me-sheet-h: calc(var(--me-peek-h, 3rem) + var(--safe-bottom, 0px)); }
+  .me-body[data-me-sheet="half"] { --me-sheet-h: min(50dvh, calc(100dvh - var(--vv-bottom, 0px) - 12px)); }
+  .me-body[data-me-sheet="full"] { --me-sheet-h: min(88dvh, calc(100dvh - var(--vv-bottom, 0px) - 12px)); }
+
+  .me-sidebar {
+    /* bottom rides the visual-viewport bottom so the soft keyboard lifts the whole
+       sheet instead of burying it (0px at rest = full-bleed); padding-bottom carries
+       the home-indicator safe-area inset for the content. */
+    position: fixed; left: 0; right: 0; bottom: var(--vv-bottom, 0px); top: auto;
+    height: var(--me-sheet-h); max-height: 92dvh;
+    z-index: 40;
+    padding-bottom: calc(.9rem + var(--safe-bottom, 0px));
+    border-right: 0; border-bottom: 0;
+    border-radius: 16px 16px 0 0;
+    box-shadow: var(--edge-faint), var(--shadow-4);
+    transition: height .34s var(--ease-out, ease);
+  }
+  .me-body.is-me-sheet-dragging .me-sidebar { transition: none; } /* 1:1 finger tracking */
+
+  /* The always-visible drag strip: sticky so it rides the top of the sheet while
+     the inputs scroll under it, and full-bleed over the sidebar's own padding. */
+  .me-sheet-grip {
+    display: block; position: sticky; top: 0; z-index: 2;
+    width: calc(100% + 1.8rem); margin: -.9rem -.9rem .2rem; padding: .7rem 0 .55rem;
+    border: 0; background: hsl(var(--card));
+    border-radius: 16px 16px 0 0;
+    touch-action: none; cursor: grab; -webkit-user-select: none; user-select: none;
+  }
+  .me-sheet-grip::before {
+    content: ""; display: block; width: 2.4rem; height: 4px; margin: 0 auto;
+    border-radius: var(--radius-pill); background: hsl(var(--muted-foreground) / .5);
+  }
+  .me-body.is-me-sheet-dragging .me-sheet-grip { cursor: grabbing; }
+
+  /* Grid clears the peek strip so its last row isn't hidden behind the sheet. */
+  .me-gridwrap { padding-bottom: calc(var(--me-peek-h, 3rem) + var(--safe-bottom, 0px) + 12px); }
 }
 .me-search input {
   width: 100%; padding: .5rem .7rem; font: inherit; font-size: calc(.84rem * var(--a11y-fs));
@@ -175,6 +218,22 @@
 .me-cell:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 .me-cell.is-active { border-color: hsl(var(--primary) / .7); box-shadow: 0 0 0 1px hsl(var(--primary) / .7); }
 .me-stage { position: relative; overflow: hidden; background: hsl(var(--muted) / .3); contain: paint; }
+/* A singleInstance cell is a still until clicked (lib/multi-edit-single). Hint that the
+   preview is interactive; the hint fades on hover and once the cell is the live one. */
+.me-cell.is-single .me-live-hint {
+  position: absolute; inset-block-end: .5rem; inset-inline-start: .5rem; z-index: 2;
+  padding: .18rem .5rem; border-radius: var(--radius-pill);
+  background: hsl(var(--background) / .78); color: hsl(var(--muted-foreground));
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  font-size: var(--fs-xs); font-weight: 600; pointer-events: none;
+  opacity: 1; transition: opacity var(--dur-1) ease;
+}
+.me-cell.is-single:hover .me-live-hint,
+.me-cell.is-single.is-active .me-live-hint { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .me-cell.is-single .me-live-hint { transition: none; } }
+/* The live singleInstance cell: cursor-grab over the interactive canvas. */
+.me-cell.is-single.is-active .me-stage { cursor: grab; }
+.me-cell.is-single.is-active .me-stage:active { cursor: grabbing; }
 /* The session's stored thumbnail - this cell's FIRST paint, shown while its runtime
    hydrates (createRuntime resolves assets over the network). A plain sibling under
    .me-scale, so the transform that fits the native-size canvas never touches it; paint()
@@ -182,6 +241,9 @@
 .me-thumb { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .me-scale { position: absolute; inset: 0 auto auto 0; transform-origin: top left; }
 .me-canvas { width: 100%; height: 100%; }
+/* A singleInstance tool's cell is a still preview (lib/multi-edit-single) rather than a
+   live canvas - the rendered PNG fills the native-size box, then scales with .me-scale. */
+.me-canvas > img.me-preview { width: 100%; height: 100%; object-fit: contain; display: block; }
 .me-cap {
   display: flex; align-items: baseline; gap: .5rem; justify-content: space-between;
   padding: .5rem .7rem;

@@ -18,8 +18,10 @@
  * media type appears rather than silently vanishing).
  */
 
-/** Types that render as an image tile. */
-export const VISUAL_TYPES: ReadonlySet<string> = new Set(['raster', 'vector', 'video', 'lottie']);
+/** Types that render as an image tile. `model` (3-D GLB) and `lut` (a .cube colour
+ *  grade) tile from a rendered still poster, exactly as a lottie/video tiles from
+ *  its poster - the primary file (mesh / lookup table) is not itself an image. */
+export const VISUAL_TYPES: ReadonlySet<string> = new Set(['raster', 'vector', 'video', 'lottie', 'model', 'lut']);
 
 /** Types that are engine data, with nothing to show. */
 export const DATA_TYPES: ReadonlySet<string> = new Set(['palette', 'tokens', 'font', 'profile', 'ratecard', 'text', 'data']);

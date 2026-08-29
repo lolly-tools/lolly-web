@@ -80,6 +80,12 @@ interface AssetMetaRecord {
    *  on AssetRef.meta.added for the catalog details modal. Uploads have no such
    *  field - they carry their own millisecond stamp (see assetAddedAt). */
   added?: string;
+  /** SPDX-ish licence id for a catalog asset (e.g. 'cc-by-4.0', 'cc0-1.0'). Rides the
+   *  index entry through _syncFromIndex; surfaces on AssetRef.meta.license. */
+  license?: string;
+  /** Human-readable credit for a licensed asset that requires attribution (a CC-BY
+   *  work, e.g. the SUSE7 LUT). Rides through; surfaces on AssetRef.meta.attribution. */
+  attribution?: string;
   checksum?: string;
   width?: number;
   height?: number;
@@ -477,13 +483,19 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
         const still = m.formats.find(f => !/^(json|mp4|webm|mov)$/i.test(f.format))?.url ?? '';
         const lottiePoster = m.type === 'lottie' ? still : '';
         const videoPoster = m.type === 'video' ? still : '';
+        // A 3-D model (GLB) or a LUT (.cube colour grade) tiles from a rendered still:
+        // the companion PNG/WebP (the mesh / lookup table stays `primary`/`url` so the
+        // tool that consumes it still fetches the real file, not the picture of it).
+        const filePoster = (m.type === 'model' || m.type === 'lut')
+          ? (m.formats.find(f => /^(png|webp|jpe?g)$/i.test(f.format))?.url ?? '')
+          : '';
         const directUrl = lottiePoster || (primary?.url ?? '');
         // Catalog animated rasters (gif/apng/animated-webp) are authored
         // type:'raster' and tagged "animated" so the picker badges the
         // motion (user uploads carry the same flag from ingest). Same-MIME
         // still/animated can't be told apart otherwise.
         const animated = m.type === 'raster' && (m.tags?.includes('animated') ?? false);
-        const posterUrl = lottiePoster || videoPoster;
+        const posterUrl = lottiePoster || videoPoster || filePoster;
         // The small WebP derivative (scripts/build-thumbnails.ts), if this
         // raster has one. Surfaced so a grid/list view can show the ~30 KB
         // thumb instead of the full-res original while a details/zoom view
@@ -509,6 +521,8 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
             ...(animationUrl ? { animationUrl } : {}),
             ...(m.aiGenerated ? { aiGenerated: m.aiGenerated } : {}),
             ...(m.added ? { added: m.added } : {}),
+            ...(m.license ? { license: m.license } : {}),
+            ...(m.attribution ? { attribution: m.attribution } : {}),
           },
         };
       });

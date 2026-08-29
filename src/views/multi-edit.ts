@@ -44,10 +44,13 @@ import { announce } from '../a11y.ts';
 import { t, tRaw } from '../i18n.ts';
 import { fold, tokenize, scoreHaystack } from '../lib/search/match.ts';
 import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
+import { mountProfileFab } from '../components/profile-menu.ts';
 import { mountZoomHud } from '../components/zoom-hud.ts';
 import { startBatchExport } from '../lib/batch-job.ts';
 import { MULTI_EDIT_MIN, MULTI_EDIT_MAX } from '../lib/multi-edit-limits.ts';
 import { memberSaveValues, applySharedEdit } from '../lib/multi-edit-lazy.ts';
+import { createSinglePreviewer } from '../lib/multi-edit-single.ts';
+import { setupMobileSheet } from '../lib/mobile-sheet.ts';
 
 import type { WebToolHost, PanelEl } from './tool.ts';
 import type { InputModelItem, InputValue, InputSpec } from '../../../../engine/src/inputs.js';
@@ -229,14 +232,16 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   const cellHtml = (m: Member, i: number): string => {
     const w = m.tool.manifest.render?.width ?? 800;
     const h = m.tool.manifest.render?.height ?? 600;
+    const single = !!m.tool.manifest.singleInstance;
     return `
-      <figure class="me-cell" data-me-cell="${i}" tabindex="0" role="button"
-        aria-label="${escape(tRaw('Show the inputs for {label}', { label: m.label }))}">
+      <figure class="me-cell${single ? ' is-single' : ''}" data-me-cell="${i}" tabindex="0" role="button"
+        aria-label="${escape(single ? tRaw('Show the inputs for {label}, or click the preview to interact with it', { label: m.label }) : tRaw('Show the inputs for {label}', { label: m.label }))}">
         <div class="me-stage" style="aspect-ratio:${w} / ${h}">
           ${m.thumb ? `<img class="me-thumb" data-me-thumb="${i}" src="${escape(m.thumb)}" alt="" aria-hidden="true">` : ''}
           <div class="me-scale" data-me-scale="${i}" style="width:${w}px;height:${h}px">
             <div class="me-canvas" id="me-c${i}"></div>
           </div>
+          ${single ? `<span class="me-live-hint" aria-hidden="true">${escape(t('Click to interact'))}</span>` : ''}
         </div>
         <figcaption class="me-cap">
           <span class="me-cap-label">${escape(m.label)}</span>
@@ -277,12 +282,14 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
         <div class="me-head-actions">
           <button type="button" class="btn" data-me-saveall data-sfx="save">${t('Save all')}</button>
           <button type="button" class="btn" data-me-tosheet data-sfx="whoosh" title="${escape(t('Lay every design out on a printable sheet, n-up, to cut apart'))}">${t('Send to Print Sheet')}</button>
+          <button type="button" class="btn" data-me-tobatch data-sfx="whoosh" title="${escape(t('Save your edits, then open every design as a row in the batch sheet'))}">${t('Batch grid')}</button>
           <button type="button" class="btn me-primary" data-me-downloadall data-sfx="whoosh">${t('Download all')}</button>
           ${langFabHtml()}
         </div>
       </header>
       <div class="me-body">
         <aside class="me-sidebar" aria-label="${escape(t('Combined inputs'))}">
+          <button type="button" class="me-sheet-grip" aria-label="${escape(t('Drag to resize the inputs, tap to expand'))}"></button>
           <div class="me-search">
             <input type="search" placeholder="${escape(t('Filter inputs…'))}" aria-label="${escape(t('Filter inputs'))}" data-me-search>
           </div>
@@ -310,8 +317,34 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
 
   const cleanups: Array<() => void> = [];
 
+  // singleInstance tools (WebGL / window-global) can't run N live copies in one document
+  // (the later cell's script disposes the earlier ones). Their cells render sequential
+  // still previews through the export path instead of live canvases.
+  const previewer = createSinglePreviewer(host);
+  cleanups.push(() => previewer.dispose());
+
   cleanups.push(attachLangMenu(viewEl.querySelector<HTMLElement>('.lang-fab'), host));
+  // The profile FAB every other nav-less view carries (dashboard, convert, valid…);
+  // it supersedes the header's lang fab (overrides.css hides .lang-fab beside it).
+  mountProfileFab(viewEl.querySelector('.me-head-actions'), host);
   mountBackPill(viewEl);
+
+  // Mobile: the inputs become a bottom sheet dragged over the grid (the same
+  // draggable split the tool view uses - lib/mobile-sheet), so the list can be
+  // pulled up to fill the screen or down to a peek strip. Desktop is untouched:
+  // the grip is display:none and the sheet vars are only read under the media query.
+  {
+    const meBody = viewEl.querySelector<HTMLElement>('.me-body');
+    const meSidebar = viewEl.querySelector<HTMLElement>('.me-sidebar');
+    const meGrip = viewEl.querySelector<HTMLElement>('.me-sheet-grip');
+    if (meBody && meSidebar && meGrip) {
+      const sheet = setupMobileSheet(meBody, meSidebar, meGrip, {
+        anchor: 'bottom', mq: '(max-width: 900px)', initial: 'half',
+        names: { heightVar: '--me-sheet-h', stateAttr: 'data-me-sheet', peekVar: '--me-peek-h', draggingClass: 'is-me-sheet-dragging', headerSel: '.me-sheet-grip' },
+      });
+      cleanups.push(() => sheet.teardown());
+    }
+  }
 
   // Declared ahead of everything: runtime.subscribe emits synchronously, so
   // scheduleSidebar (hoisted fn) runs before the sidebar block below is reached.
@@ -342,6 +375,13 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
     }
   }
 
+  // The ONE singleInstance cell currently LIVE (real interactive canvas), or null (all
+  // still previews). They share window globals + the WebGL context cap, so at most one
+  // holds live tool DOM at a time; every other cell is an id-free <img> still, which is
+  // what lets an activated cell's getElementById find only its own freshly-painted DOM.
+  let activeSingle: number | null = null;
+  const retireThumb = (m: Member) => (): void => { m.thumbEl?.remove(); m.thumbEl = null; };
+
   // paint(m,i): rewrite this cell to its runtime's latest hydrated output.
   const paint = (m: Member, i: number): void => {
     m.paintRaf = 0;
@@ -364,7 +404,10 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
       // silently paints the first cell's gradient (or blanks). A per-cell prefix (mc0,
       // mc1, …) makes each cell self-contained. After the template script, so a script's
       // own getElementById still sees originals.
-      if (dupToolIds.has(m.tool.manifest.id)) namespaceInlinedSvgIds(m.canvasEl, `mc${i}`);
+      // …but NOT a singleInstance tool: it only ever paints as the SOLE live cell (all
+      // its siblings are id-free stills), so there is no collision to fix, and renaming
+      // its ids would break a script that re-queries by id in a pointer handler.
+      if (dupToolIds.has(m.tool.manifest.id) && !m.tool.manifest.singleInstance) namespaceInlinedSvgIds(m.canvasEl, `mc${i}`);
       void hydrateEmbeds(m.canvasEl, { host, isCurrent: () => gen === m.renderGen });
       m.fit();   // re-fit to the freshly-rendered aspect (width/height may have changed)
       m.lastPainted = hydrated;
@@ -379,7 +422,62 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   const schedulePaint = (m: Member, i: number): void => {
     if (!m.runtime) return;
     if (!m.near) { m.needsPaint = true; return; }
+    // singleInstance tools: the ACTIVE cell live-paints (interactive canvas); every other
+    // is a still. A non-active cell's still auto-updates ONLY while nothing is live -
+    // rendering one otherwise (renderRowToBlob mounts an instance) would dispose the live
+    // cell through the shared window globals, so it just marks itself stale and refreshes
+    // when it is next activated or the live cell is released.
+    if (m.tool.manifest.singleInstance) {
+      if (activeSingle === i) { if (!m.paintRaf) m.paintRaf = requestAnimationFrame(() => paint(m, i)); return; }
+      if (activeSingle === null) { previewer.schedule(m.slot, m.tool.manifest.id, memberSaveValues(m, modelValues), m.canvasEl, retireThumb(m)); return; }
+      m.needsPaint = true;
+      return;
+    }
     if (!m.paintRaf) m.paintRaf = requestAnimationFrame(() => paint(m, i));
+  };
+
+  // ── singleInstance live activation ──────────────────────────────────────────
+  // Snapshot cell i's live canvas to an id-free <img> still (so the next activated cell's
+  // getElementById can't grab it). Synchronous: a WebGL canvas is captured in-place via
+  // toDataURL after forcing one frame (the tool's own export-frame hook); a non-canvas
+  // tool (or a capture failure) falls back to the last still we rendered, else blank.
+  const freezeSingle = (i: number): void => {
+    const m = members[i];
+    if (!m) return;
+    if (m.paintRaf) { cancelAnimationFrame(m.paintRaf); m.paintRaf = 0; }
+    const canvas = m.canvasEl.querySelector<HTMLCanvasElement>('canvas');
+    let url: string | null = null;
+    if (canvas) {
+      try {
+        (canvas as { __lollyFrameRender?: (t: number) => void }).__lollyFrameRender?.(0);
+        url = canvas.toDataURL('image/png');
+      } catch { url = null; }
+    }
+    if (!url) url = previewer.lastUrl(m.slot);
+    m.canvasEl.textContent = '';   // drop the live tool DOM + its ids NOW
+    m.lastPainted = null;
+    if (url) {
+      const img = document.createElement('img');
+      img.className = 'me-preview'; img.alt = ''; img.src = url;
+      m.canvasEl.appendChild(img);
+    }
+  };
+  // Make cell i the sole live singleInstance cell: freeze the outgoing one, then live-paint i.
+  const activateSingle = (i: number): void => {
+    if (activeSingle === i) return;
+    const m = members[i];
+    if (!m) return;
+    if (activeSingle !== null) freezeSingle(activeSingle);
+    activeSingle = i;
+    void ensureRuntime(m, i).then(() => { if (activeSingle === i) paint(m, i); });
+  };
+  // Release the live cell back to a still, and let any stale siblings refresh now that
+  // nothing is live (a shared edit made while a cell was live left them frozen).
+  const deactivateSingle = (): void => {
+    if (activeSingle === null) return;
+    freezeSingle(activeSingle);
+    activeSingle = null;
+    members.forEach((m, j) => { if (m.tool.manifest.singleInstance && m.needsPaint && m.near) schedulePaint(m, j); });
   };
 
   // Build one cell's runtime on demand (dedupes concurrent calls), wire its live
@@ -560,10 +658,15 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
   });
 
   // ── Grid → sidebar: click a canvas, open + scroll to its card ──────────────
+  // For a singleInstance cell the click also brings it LIVE (the still becomes an
+  // interactive canvas - rotate a 3D model, pan a flythrough); re-clicking the live cell
+  // (e.g. the click that ends a rotate-drag) is a no-op and must not re-scroll/flash.
   const activateCell = (i: number): void => {
+    const wasActive = !!viewEl.querySelector(`.me-cell[data-me-cell="${i}"]`)?.classList.contains('is-active');
     viewEl.querySelectorAll('.me-cell').forEach((c, ci) => c.classList.toggle('is-active', ci === i));
+    if (members[i]?.tool.manifest.singleInstance) activateSingle(i);
     const card = viewEl.querySelector<HTMLDetailsElement>(`details[data-me-card="${i}"]`);
-    if (!card) return;
+    if (!card || wasActive) return;
     card.open = true;
     scheduleSidebar();
     card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -574,6 +677,11 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
     cell.addEventListener('click', () => activateCell(i));
     cell.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activateCell(i); } });
   });
+  // Escape releases a live singleInstance cell back to a still (and lets stale siblings
+  // catch up on any shared edit made while it was live). [[escape-to-close-overlays]]
+  const onEsc = (e: KeyboardEvent): void => { if (e.key === 'Escape' && activeSingle !== null) deactivateSingle(); };
+  document.addEventListener('keydown', onEsc);
+  cleanups.push(() => document.removeEventListener('keydown', onEsc));
 
   // ── Preview zoom: scale every card up (scroll to inspect) or down (fit more on
   //    screen). One --me-card-w on the grid drives an auto-fill layout; each cell's
@@ -760,6 +868,17 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
     navigateTo('#/tool/print-sheet');
   }
 
+  // "Batch grid": persist every design's current edits to its slot, then open them all in
+  // the batch sheet - one editable row per session (#/batch?s=…, the same selection route
+  // Projects' "Edit as sheet" uses). Saving first is what carries the edits: the batch view
+  // reads the SAVED sessions. The origin folder rides along so a save there returns home.
+  async function toBatch(): Promise<void> {
+    try { await saveAll(); }
+    catch (err) { console.warn('multi-edit → batch save failed:', err); announce(t("Couldn't save your edits.")); return; }
+    const s = slots.map(encodeURIComponent).join(',');
+    navigateTo(`#/batch?s=${s}${originFolderId ? `&from=${encodeURIComponent(originFolderId)}` : ''}`);
+  }
+
   // "Save all" opens the shared Save dialog's "Add to a project" picker (the same one
   // the tool view uses), so the sessions LAND somewhere the user can find them - the
   // fix for "Save all does nothing" when multi-edit was reached from the Tools gallery
@@ -773,7 +892,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
     ]);
     const store = createFolderStore(host as unknown as Parameters<typeof createFolderStore>[0]);
     const folders = await store.list().catch(() => []);
-    // Preselect where a re-save should land: our origin folder, else the one folder these
+    // Preselect where a re-save should go: our origin folder, else the one folder these
     // sessions already share (null when they're loose or spread across folders).
     const shared = new Set(members.map(m => store.folderOfRef(folders, m.slot)));
     const common = shared.size === 1 ? [...shared][0]! : null;
@@ -810,6 +929,7 @@ export async function mountMultiEdit(viewEl: ViewElement, host: WebToolHost, par
     // Send to Print Sheet navigates away with an in-memory seed - no render, no async
     // work, so it sits before the export busy-guard below.
     if (target.closest<HTMLElement>('[data-me-tosheet]')) { toSheet(); return; }
+    if (target.closest<HTMLElement>('[data-me-tobatch]')) { void toBatch(); return; }
     const one = target.closest<HTMLElement>('[data-me-download]');
     const all = target.closest<HTMLElement>('[data-me-downloadall]');
     const save = target.closest<HTMLElement>('[data-me-saveall]');

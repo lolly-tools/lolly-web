@@ -51,6 +51,8 @@ const ICON = {
   raster: icon('image'),
   audio: icon('music'),
   lottie: icon('filmStrip'),
+  model: icon('box'),
+  lut: icon('sliders'),
   palette: icon('palette'),
   tokens: icon('tokens'),
   assetOther: icon('document'),
@@ -60,7 +62,7 @@ const categoryIcon = (k: string): string => ICON[k as keyof typeof ICON] ?? ICON
 const statusIcon = (k: string): string =>
   k === 'official' || k === 'experimental' || k === 'community' ? ICON[k] : ICON.statusOther;
 const assetIcon = (k: string): string =>
-  ({ vector: ICON.vector, raster: ICON.raster, audio: ICON.audio, lottie: ICON.lottie, palette: ICON.palette, tokens: ICON.tokens })[k] ??
+  ({ vector: ICON.vector, raster: ICON.raster, audio: ICON.audio, lottie: ICON.lottie, model: ICON.model, lut: ICON.lut, palette: ICON.palette, tokens: ICON.tokens })[k] ??
   ICON.assetOther;
 
 // Friendlier display labels where the raw index key is terse/techy; everything
@@ -68,7 +70,7 @@ const assetIcon = (k: string): string =>
 const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 const LABEL: Record<string, string> = {
   everyone: 'For everyone', utility: 'Utilities', product: 'Products', event: 'Events',
-  raster: 'Raster', vector: 'Vector', lottie: 'Lottie', palette: 'Palettes', tokens: 'Tokens',
+  raster: 'Raster', vector: 'Vector', lottie: 'Lottie', model: '3D', lut: 'LUTs', palette: 'Palettes', tokens: 'Tokens',
 };
 const label = (k: string): string => LABEL[k] ?? cap(k);
 

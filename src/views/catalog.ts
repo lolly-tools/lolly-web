@@ -184,6 +184,8 @@ const CAT_ICONS = {
   vector:   catIco('<path d="M15.707 21.293a1 1 0 0 1-1.414 0l-1.586-1.586a1 1 0 0 1 0-1.414l5.586-5.586a1 1 0 0 1 1.414 0l1.586 1.586a1 1 0 0 1 0 1.414z"/><path d="m18 13-1.375-6.874a1 1 0 0 0-.746-.776L3.235 2.028a1 1 0 0 0-1.207 1.207L5.35 15.879a1 1 0 0 0 .776.746L13 18"/><path d="m2.3 2.3 7.286 7.286"/><circle cx="11" cy="11" r="2"/>'),
   motion:   catIco('<circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/>'),
   audio:    catIco('<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>'),
+  model:    catIco('<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>'),
+  lut:      catIco('<circle cx="9" cy="9" r="7"/><circle cx="15" cy="15" r="7"/>'),
   text:     catIco('<path d="M17 6.1H3"/><path d="M21 12.1H3"/><path d="M15.1 18H3"/>'),
   collapse: catIco('<path d="m7 20 5-5 5 5"/><path d="m7 4 5 5 5-5"/>'),
   expand:   catIco('<path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>'),
@@ -208,6 +210,8 @@ const TYPE_FILTERS: { key: TypeFilter; label: string; icon: string; sfx?: string
   { key: 'image', label: 'Image', icon: CAT_ICONS.image, sfx: 'aperture' },
   { key: 'vector', label: 'Vector', icon: CAT_ICONS.vector, sfx: 'scribble' },
   { key: 'motion', label: 'Motion', icon: CAT_ICONS.motion, sfx: 'reel' },
+  { key: '3d', label: '3D', icon: CAT_ICONS.model },
+  { key: 'lut', label: 'LUTs', icon: CAT_ICONS.lut },
   { key: 'audio', label: 'Audio', icon: CAT_ICONS.audio, sfx: 'waveform' },
   { key: 'text', label: 'Text', icon: CAT_ICONS.text },
 ];
@@ -1308,6 +1312,17 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         return `<${tag} class="cat-thumb cat-thumb-stub" data-pdf-thumb="${escape(ref.id)}" aria-hidden="true">▦</${tag}>`;
       }
       return `<${tag} class="cat-thumb cat-thumb-stub" aria-hidden="true">▦</${tag}>`;
+    }
+    // A 3-D model (GLB) or a LUT (.cube colour grade): the tile can't render the mesh
+    // or run the grade live, so it shows a rendered still poster (a companion PNG that
+    // query() surfaces on meta.posterUrl), exactly as a lottie/video tiles from its
+    // poster - a LUT's poster is the grade applied to a reference chart. Same still in
+    // the details modal.
+    if (ref.type === 'model' || ref.type === 'lut') {
+      const poster = typeof ref.meta?.posterUrl === 'string' ? ref.meta.posterUrl : '';
+      return poster
+        ? `<img class="cat-thumb" src="${escape(poster)}" alt="" loading="lazy" decoding="async">`
+        : `<${tag} class="cat-thumb cat-thumb-stub" aria-hidden="true">◈</${tag}>`;
     }
     // Grid tiles show the small `thumb` derivative (query() puts its url on meta.thumbUrl);
     // the details/zoom modal passes full=true to keep the original for close inspection.
@@ -2506,7 +2521,9 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       && ref.type !== 'palette'   // a scrollable swatch card, not a zoom stage
       && !(ref.type === 'lottie' && !isMotionLottie);
     // Crop only makes sense on a static raster/vector - never a live motion preview or a video.
-    const croppable = zoomable && !isMotionLottie && ref.type !== 'video';
+    // model (a 3-D mesh) and lut (a colour grade) tile from a still poster, but the
+    // poster is a preview - cropping it would crop the picture, not the asset - so no crop.
+    const croppable = zoomable && !isMotionLottie && ref.type !== 'video' && ref.type !== 'model' && ref.type !== 'lut';
     // On-device AI edits for a raster, brought over from the asset picker: Upscale
     // (host.upscale, v1.101) and Remove background (host.matte, v1.103) - same gates the
     // picker uses. Both route through their dialogs, which PRESERVE the source's
@@ -2595,6 +2612,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           // edit row collapses behind an "Edit…" expander under 860px (the
           // toggle-edit act below); every button and gate is unchanged.
           const pinned = [
+            // A 3-D model opens in the 3D tool; a LUT opens in the Darkroom - the
+            // primary "edit" verb for these types (they have no in-place crop/grade).
+            ref.type === 'model' ? `<button type="button" class="btn cat-act-open-3d" data-act="open-3d">${icon('box', { size: 14 })}<span>${t('Open in 3D')}</span></button>` : '',
+            ref.type === 'lut' ? `<button type="button" class="btn cat-act-open-lut" data-act="open-lut">${icon('camera', { size: 14 })}<span>${t('Open in Darkroom')}</span></button>` : '',
             `<button type="button" class="btn cat-act-fav${fav ? ' is-fav' : ''}" data-act="fav" data-sfx="twinkle" aria-pressed="${fav}">${STAR_ICON}<span>${fav ? t('Favourited') : t('Favourite')}</span></button>`,
             `<button type="button" class="btn cat-act-download" data-act="download">${DOWNLOAD_ICON}<span>${configurable ? t('Download…') : t('Download')}</span></button>`,
             isTextAsset ? `<button type="button" class="btn cat-act-dl-as" data-act="dl-as" aria-haspopup="menu" aria-expanded="false">${DOWNLOAD_ICON}<span>${t('Download as')}</span></button>` : '',
@@ -2651,6 +2672,15 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
           <div><dt>${t('Source')}</dt><dd>${isUser ? t('Your upload') : t('SUSE catalog')}</dd></div>
           <div><dt>${t('Category')}</dt><dd>${escape(t(categoryLabel(libCategory(ref, overrides))))}</dd></div>
           <div><dt>${t('Format')}</dt><dd>${escape(String(ref.format ?? ref.type).toUpperCase())}</dd></div>
+          ${(() => {
+            // Licence + credit for a catalog asset that carries them (e.g. the SUSE7
+            // LUT, CC BY 4.0, © SUSE / Peter Chamalian). The SPDX id prettifies
+            // in place (cc-by-4.0 → CC BY 4.0); the credit is the required attribution.
+            const lic = (ref.meta as { license?: string } | undefined)?.license;
+            const cred = (ref.meta as { attribution?: string } | undefined)?.attribution;
+            return (lic ? `<div><dt>${t('Licence')}</dt><dd>${escape(String(lic).replace(/-/g, ' ').toUpperCase())}</dd></div>` : '')
+              + (cred ? `<div><dt>${t('Credit')}</dt><dd>${escape(String(cred))}</dd></div>` : '');
+          })()}
           <div class="cat-details-origins-row"><dt>${t('Origins')}</dt><dd class="cat-details-ai" data-origins></dd></div>
           ${(() => {
             // Added/Modified (plans/132 WP-A): uploads always have a date (the id
@@ -4178,6 +4208,17 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       }
       // The remaining actions leave this asset's detail context, so close first.
       closeDetails();
+      // A 3-D model opens in the 3D tool; a LUT opens in the Darkroom, preselected.
+      // Each maps the asset id's tail to the tool's own preset key (lolly/3d/duck →
+      // model=duck; lolly/luts/suse7-slog3-heavy → lutPreset=suse7-slog3-heavy).
+      if (act === 'open-3d') {
+        window.location.hash = `#/tool/3d?model=${encodeURIComponent(ref.id.split('/').pop() ?? '')}`;
+        return;
+      }
+      if (act === 'open-lut') {
+        window.location.hash = `#/tool/darkroom?lutSource=preset&lutPreset=${encodeURIComponent(ref.id.split('/').pop() ?? '')}&lutIntensity=100`;
+        return;
+      }
       if (act === 'download') {
         if (isVector(ref) || isThemable(ref)) await openDownloadDialog(ref, dTheme);
         else if (treatable) await openPhotoDownloadDialog(ref, dTreatment);

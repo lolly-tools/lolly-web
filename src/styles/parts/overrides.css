@@ -124,6 +124,8 @@ body > svg:not([style]) {
    views' copy of the lang rule is in topbar.css; docs' is in docs.css.) */
 .gallery-topright:has(.profile-fab, .profile-link) .lang-fab,
 .gallery-topright:has(.profile-fab, .profile-link) .theme-fab { display: none; }
+/* Multi-edit carries its cluster inside the header actions, not a .gallery-topright. */
+.me-head-actions:has(.profile-fab) .lang-fab { display: none; }
 
 /* The same Home FAB beside the tool sidebar's back pill (mountBackPill →
    addHomeEscape). That row holds the pill at one end and undo/redo at the other

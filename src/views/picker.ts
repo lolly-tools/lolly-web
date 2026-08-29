@@ -220,6 +220,8 @@ interface PickerOpts {
     | 'video'
     | 'audio'
     | 'lottie'
+    | 'model'
+    | 'lut'
     | 'palette'
     | 'tokens'
     | 'font'
