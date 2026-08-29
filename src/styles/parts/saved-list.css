@@ -23,8 +23,8 @@
   padding: 3px 10px;
   min-height: 0;
   border-bottom: 0;
-  font-size: calc(13px * var(--a11y-fs));
-  transition: background 0.12s;
+  font-size: var(--fs-md);
+  transition: background var(--dur-1);
   display: flex !important;
   border-radius: 1.05em;
 }
@@ -95,7 +95,7 @@
 }
 
 .session-size {
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   color: hsl(var(--muted-foreground));
   margin-left: auto;
   margin-right: 8px;
@@ -145,10 +145,10 @@
   background: transparent;
   color: hsl(var(--muted-foreground));
   border: 1px solid transparent;
-  border-radius: 50%;
-  font-size: calc(11px * var(--a11y-fs));
+  border-radius: var(--radius-round);
+  font-size: var(--fs-xs);
   cursor: pointer;
-  transition: color 0.12s, border-color 0.12s, background 0.12s;
+  transition: color var(--dur-1), border-color var(--dur-1), background var(--dur-1);
 }
 
 .saved-delete:hover {

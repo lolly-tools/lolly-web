@@ -70,11 +70,11 @@
 .lab-chrome {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--sp-1);
   padding: 3px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: hsl(var(--card) / 0.85);
-  box-shadow: inset 0 0 0 1px hsl(var(--border));
+  box-shadow: var(--edge);
 }
 .lab-chrome-btn {
   display: flex;
@@ -89,10 +89,10 @@
   cursor: pointer;
   font: inherit;
   color: hsl(var(--foreground));
-  border-radius: 999px;
-  transition: background 0.12s, color 0.12s;
+  border-radius: var(--radius-pill);
+  transition: background var(--dur-1), color var(--dur-1);
 }
-.lab-chrome-btn svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
+.lab-chrome-btn svg { width: var(--fs-xl); height: var(--fs-xl); }
 .lab-chrome-btn:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
 .lab-chrome-btn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
 
@@ -130,10 +130,10 @@
   place-items: center;
   width: 1.55rem;
   height: 1.55rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: hsl(var(--primary) / 0.14);
   color: hsl(var(--primary));
-  font-size: calc(0.8rem * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -153,7 +153,7 @@
 .lab-section-note {
   margin: -0.35rem 0 0;
   max-width: 52rem;
-  font-size: calc(0.85rem * var(--a11y-fs));
+  font-size: var(--fs-lg);
   line-height: 1.5;
   color: hsl(var(--muted-foreground));
 }
@@ -254,7 +254,7 @@
 .lab-sw-alt code { font-family: 'SUSE Mono', ui-monospace, monospace; }
 .lab-swatch { container-type: inline-size; }
 .lab-sw-space {
-  font-size: calc(0.75rem * var(--a11y-fs));
+  font-size: var(--fs-sm);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   opacity: 0.8;
@@ -301,7 +301,7 @@
 .lab-entry { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
 .lab-field { display: flex; flex-direction: column; gap: 0.3rem; }
 .lab-field-label {
-  font-size: calc(0.7rem * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -309,11 +309,11 @@
 }
 .lab-raw {
   font-family: 'SUSE Mono', ui-monospace, monospace;
-  font-size: calc(0.85rem * var(--a11y-fs));
+  font-size: var(--fs-lg);
 }
 .lab-hint, .lab-err {
   margin: 0;
-  font-size: calc(0.78rem * var(--a11y-fs));
+  font-size: var(--fs-sm);
   line-height: 1.45;
 }
 .lab-hint { color: hsl(var(--muted-foreground)); }
@@ -338,7 +338,7 @@
   background: var(--sw-real, var(--sw));
   box-shadow:  0 1px 3px hsl(0 0% 0% / 0.15);
   cursor: pointer;
-  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  transition: transform var(--dur-1) ease, box-shadow var(--dur-1) ease;
 }
 .lab-brand-sw:hover, .lab-brand-sw:focus-visible {
   transform: scale(1.12);
@@ -357,7 +357,7 @@
   right: -3px;
   width: 0.55rem;
   height: 0.55rem;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: hsl(38 92% 50%);
   box-shadow: 0 0 0 2px hsl(var(--card)), inset 0 0 0 1px hsl(0 0% 0% / 0.4);
   pointer-events: none;
@@ -373,14 +373,14 @@
   padding: 1rem 1.1rem;
   border-radius: var(--radius);
   background: hsl(var(--card));
-  box-shadow: inset 0 0 0 1px hsl(var(--border));
+  box-shadow: var(--edge);
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
 }
 .lab-card-label {
   margin: 0;
-  font-size: calc(0.7rem * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -395,7 +395,7 @@
 }
 .lab-card-note {
   margin: 0;
-  font-size: calc(0.8rem * var(--a11y-fs));
+  font-size: var(--fs-md);
   line-height: 1.45;
   color: hsl(var(--muted-foreground));
 }
@@ -436,12 +436,12 @@
   display: flex;
   justify-content: space-between;
   gap: 0.75rem;
-  font-size: calc(0.85rem * var(--a11y-fs));
+  font-size: var(--fs-lg);
   font-variant-numeric: tabular-nums;
 }
 .lab-ceil-name { color: hsl(var(--muted-foreground)); }
 .lab-ceil-val { font-weight: 600; }
-.lab-ceil-gain { font-weight: 400; color: hsl(var(--muted-foreground)); font-size: calc(0.78rem * var(--a11y-fs)); }
+.lab-ceil-gain { font-weight: 400; color: hsl(var(--muted-foreground)); font-size: var(--fs-sm); }
 /* A ceiling this colour is already beyond - struck through so the bound is
    unmistakable at a glance. It marks a boundary crossed, not a value rejected. */
 .lab-ceil.is-past .lab-ceil-val { text-decoration: line-through; opacity: 0.55; }
@@ -453,7 +453,7 @@
 .lab-press[data-state="out"] { box-shadow: 0 0 0 2px oklch(0.72 0.16 85); }
 .lab-press-name {
   margin: 0;
-  font-size: calc(0.82rem * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 600;
   color: hsl(var(--muted-foreground));
   overflow-wrap: anywhere;
@@ -464,7 +464,7 @@
   display: flex;
   justify-content: space-between;
   gap: 0.75rem;
-  font-size: calc(0.85rem * var(--a11y-fs));
+  font-size: var(--fs-lg);
   font-variant-numeric: tabular-nums;
 }
 .lab-press-k { color: hsl(var(--muted-foreground)); }
@@ -473,8 +473,8 @@
 .lab-press-chip {
   width: 0.85rem;
   height: 0.85rem;
-  border-radius: 3px;
-  box-shadow: inset 0 0 0 1px hsl(var(--border));
+  border-radius: var(--radius-xs);
+  box-shadow: var(--edge);
 }
 
 /* ── The print-profile panel (components/profiles-manager.ts) ─────────────── */
@@ -493,7 +493,7 @@
 .labp-close:hover { color: hsl(var(--foreground)); }
 .labp-intro, .labp-hint, .labp-msg {
   margin: 0;
-  font-size: calc(0.8rem * var(--a11y-fs));
+  font-size: var(--fs-md);
   line-height: 1.45;
   color: hsl(var(--muted-foreground));
 }
@@ -503,7 +503,7 @@
 /* Prompt over hint, not run together on one line: `.updz` is a row by default and
    only its `--empty` modifier stacks, which is a layout this panel does not want
    (it is not the whole section). */
-.labp-drop .updz-copy { display: grid; gap: 2px; }
+.labp-drop .updz-copy { display: grid; gap: var(--sp-1); }
 .labp-msg[hidden] { display: none; }
 
 /* Where a real press profile already lives on this machine. Below the drop zone
@@ -511,12 +511,12 @@
    lines taller and read as instructions rather than as an aside. */
 .labp-where {
   margin: 0.4rem 0 0;
-  font-size: calc(0.72rem * var(--a11y-fs));
+  font-size: var(--fs-xs);
   color: hsl(var(--muted-foreground));
 }
 .labp-where code {
   font-family: 'SUSE Mono', ui-monospace, monospace;
-  font-size: calc(0.7rem * var(--a11y-fs));
+  font-size: var(--fs-xs);
   overflow-wrap: anywhere;
 }
 
@@ -528,7 +528,7 @@
 .labp-conds { margin-top: 1rem; }
 .labp-conds-h {
   margin: 0 0 0.4rem;
-  font-size: calc(0.72rem * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -553,7 +553,7 @@
   font: inherit;
   text-align: start;
   cursor: pointer;
-  transition: background-color 0.12s ease;
+  transition: background-color var(--dur-1) ease;
 }
 .labp-cond-btn:hover { background: hsl(var(--muted) / 0.85); }
 .labp-cond-btn:focus-visible {
@@ -567,10 +567,10 @@
   font-size: calc(0.76rem * var(--a11y-fs));
   font-weight: 600;
 }
-.labp-cond-name { font-size: calc(0.78rem * var(--a11y-fs)); }
+.labp-cond-name { font-size: var(--fs-sm); }
 .labp-cond-note {
   grid-column: 2;
-  font-size: calc(0.72rem * var(--a11y-fs));
+  font-size: var(--fs-xs);
   color: hsl(var(--muted-foreground));
 }
 /* A loaded condition is the stronger state, so it gets the mark and the full-strength
@@ -583,26 +583,26 @@
 }
 .labp-cond:not([data-state="loaded"]) .labp-cond-id { opacity: 0.75; }
 .labp-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.5rem; }
-.labp-empty { font-size: calc(0.85rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.labp-empty { font-size: var(--fs-lg); color: hsl(var(--muted-foreground)); }
 .labp-row {
   display: grid;
   gap: 0.45rem;
   padding: 0.7rem 0.8rem;
   border-radius: var(--radius);
   background: hsl(var(--card));
-  box-shadow: inset 0 0 0 1px hsl(var(--border));
+  box-shadow: var(--edge);
 }
 .labp-row.is-active { box-shadow: inset 0 0 0 2px hsl(var(--primary) / 0.6); }
 .labp-row-head { display: flex; align-items: start; justify-content: space-between; gap: 0.75rem; }
 .labp-row-id { display: grid; gap: 0.1rem; min-width: 0; }
 .labp-row-name { font-size: calc(0.92rem * var(--a11y-fs)); overflow-wrap: anywhere; }
-.labp-row-meta { font-size: calc(0.75rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.labp-row-meta { font-size: var(--fs-sm); color: hsl(var(--muted-foreground)); }
 .labp-remove {
   flex: 0 0 auto;
   border: 0;
   background: none;
   padding: 0;
-  font-size: calc(0.78rem * var(--a11y-fs));
+  font-size: var(--fs-sm);
   color: hsl(var(--muted-foreground));
   text-decoration: underline;
   cursor: pointer;
@@ -621,7 +621,7 @@
 .labp-intents .view-seg-btn {
   flex: 1 1 5.5rem;
   min-width: 0;
-  font-size: calc(0.78rem * var(--a11y-fs));
+  font-size: var(--fs-sm);
   padding-inline: 0.4rem;
 }
 @media (max-width: 30rem) {
@@ -646,7 +646,7 @@
 .lab-contrast-card.is-best { box-shadow: inset 0 0 0 2px currentColor; }
 .lab-contrast-sample { margin: 0; font-size: calc(1.05rem * var(--a11y-fs)); font-weight: 600; }
 .lab-best {
-  font-size: calc(0.68rem * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -661,11 +661,11 @@
 }
 .lab-contrast-badges { margin: 0; display: flex; gap: 0.35rem; }
 .lab-wcag {
-  font-size: calc(0.7rem * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: 0.04em;
   padding: 0.15rem 0.45rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   /* Outlined in the card's own ink rather than filled with a fixed colour: the
      card's background IS the subject colour, so the badge has to stay legible
      without knowing what that colour is. */
@@ -676,7 +676,7 @@
 .lab-wcag[data-level="fail"] { opacity: 0.65; text-decoration: line-through; }
 .lab-contrast-note {
   margin: 0;
-  font-size: calc(0.9rem * var(--a11y-fs));
+  font-size: var(--fs-lg);
   line-height: 1.5;
 }
 
@@ -695,7 +695,7 @@
    20px. This rule is left with only what is specific to sitting in the target row. */
 .lab-bounds {
   flex: 0 0 auto;
-  font-size: calc(0.78rem * var(--a11y-fs));
+  font-size: var(--fs-sm);
   white-space: nowrap;
 }
 
@@ -708,7 +708,7 @@
   padding: 0.75rem 0.85rem;
   border-radius: var(--radius);
   background: hsl(var(--muted) / 0.4);
-  box-shadow: inset 0 0 0 1px hsl(var(--border));
+  box-shadow: var(--edge);
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -755,7 +755,7 @@
 .lab-seg {
   display: flex;
   width: 100%;
-  gap: 2px;
+  gap: var(--sp-1);
   padding: 3px;
   border: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius) + 3px);
@@ -764,7 +764,7 @@
 .lab-seg .view-seg-btn {
   flex: 1 1 0;
   min-width: 0;
-  font-size: calc(0.82rem * var(--a11y-fs));
+  font-size: var(--fs-md);
   border-color: transparent;
   border-radius: calc(var(--radius) * 0.8);
 }
@@ -788,7 +788,7 @@
   flex: 1 1 0;
   min-width: 0;
   --jelly-track: transparent;
-  --jelly-segmented-font-size: calc(0.82rem * var(--a11y-fs));
+  --jelly-segmented-font-size: var(--fs-md);
   --jelly-segmented-padding: 0;
   --jelly-segmented-padding-inline: 12px;
 }
@@ -818,7 +818,7 @@
 /* The solid's two embeddings - a compact pair under the figure's own caption,
    not a page-level control: it changes one picture. */
 .lab-embed { display: flex; margin: 0.15rem 0; }
-.lab-embed .view-seg-btn { flex: 1 1 0; font-size: calc(0.75rem * var(--a11y-fs)); padding-block: 0.3rem; }
+.lab-embed .view-seg-btn { flex: 1 1 0; font-size: var(--fs-sm); padding-block: 0.3rem; }
 
 /* As many charts per row as fit at a readable size - 2-up on a laptop, all four
    in a row on a wide display. A 20rem floor is about where a plot stops being
@@ -867,7 +867,7 @@
   padding: 0.2rem 0.35rem;
   font: inherit;
   font-family: 'SUSE Mono', ui-monospace, monospace;
-  font-size: calc(0.78rem * var(--a11y-fs));
+  font-size: var(--fs-sm);
   font-variant-numeric: tabular-nums;
   text-align: right;
   border: 1px solid hsl(var(--border));
@@ -885,7 +885,7 @@
 
 .lab-chart-plane {
   margin: 0;
-  font-size: calc(0.78rem * var(--a11y-fs));
+  font-size: var(--fs-sm);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -905,13 +905,13 @@
 .lab-chart-head h3 { margin: 0; font-size: calc(1rem * var(--a11y-fs)); letter-spacing: -0.01em; }
 .lab-chart-why {
   margin: 0;
-  font-size: calc(0.8rem * var(--a11y-fs));
+  font-size: var(--fs-md);
   line-height: 1.4;
   color: hsl(var(--muted-foreground));
 }
 .lab-chart-at {
   margin: 0;
-  font-size: calc(0.75rem * var(--a11y-fs));
+  font-size: var(--fs-sm);
   color: hsl(var(--muted-foreground));
   font-variant-numeric: tabular-nums;
 }
@@ -928,7 +928,7 @@
   min-height: 11rem;
   border-radius: var(--radius);
   background: hsl(var(--muted) / 0.35);
-  box-shadow: inset 0 0 0 1px hsl(var(--border));
+  box-shadow: var(--edge);
   cursor: grab;
   /* `pan-y`, exactly as the 2D plots do (lib/oklch-slice.css), and for the same
      reason: this canvas takes ~60% of a phone's viewport height, so with
@@ -980,7 +980,7 @@
 .lab-blend-raw {
   width: 13rem;
   font-family: 'SUSE Mono', ui-monospace, monospace;
-  font-size: calc(0.82rem * var(--a11y-fs));
+  font-size: var(--fs-md);
 }
 .lab-blend-raw[aria-invalid="true"] { border-color: hsl(var(--destructive, 0 72% 51%)); }
 
@@ -1027,11 +1027,11 @@
 /* The polarity marker: present only when the text is lighter than its ground,
    which is exactly the case WCAG cannot see. */
 .lab-apca-pol {
-  font-size: calc(0.68rem * var(--a11y-fs));
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   padding: 0.1rem 0.4rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   box-shadow: inset 0 0 0 1px currentColor;
   opacity: 0.7;
 }
@@ -1041,7 +1041,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem;
-  font-size: calc(0.8rem * var(--a11y-fs));
+  font-size: var(--fs-md);
   opacity: 0.85;
 }
 /* The third surface's popover trigger, on the card it scores. Width-capped: the
@@ -1066,7 +1066,7 @@
   align-items: flex-start;
   cursor: pointer;
   box-shadow:  0 1 3px hsl(0 0% 0% / 0.12);
-  transition: transform 0.12s ease;
+  transition: transform var(--dur-1) ease;
 }
 .lab-step:hover, .lab-step:focus-visible { transform: translateY(-2px); outline: none; }
 .lab-step:focus-visible { box-shadow: inset 0 0 0 1px hsl(0 0% 0% / 0.12), 0 0 0 3px hsl(var(--primary) / 0.45); }
@@ -1082,18 +1082,18 @@
   text-decoration: none;
   outline: 2px solid currentColor;
   outline-offset: 2px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
 }
 
 .lab-step-oklch {
   font-family: 'SUSE Mono', ui-monospace, monospace;
-  font-size: calc(0.78rem * var(--a11y-fs));
+  font-size: var(--fs-sm);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 .lab-step-hex {
   font-family: 'SUSE Mono', ui-monospace, monospace;
-  font-size: calc(0.68rem * var(--a11y-fs));
+  font-size: var(--fs-xs);
   opacity: 0.7;
 }
 
@@ -1110,7 +1110,7 @@
   vertical-align: baseline;
 }
 .lab-notations thead th {
-  font-size: calc(0.68rem * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -1123,21 +1123,21 @@
 }
 .lab-notations code {
   font-family: 'SUSE Mono', ui-monospace, monospace;
-  font-size: calc(0.85rem * var(--a11y-fs));
+  font-size: var(--fs-lg);
   word-break: break-all;
 }
 /* A space too narrow to hold the colour: shown, but never as if it were the value. */
 .lab-notations tr.is-inexact code { opacity: 0.62; }
 .lab-note-fit {
-  font-size: calc(0.72rem * var(--a11y-fs));
+  font-size: var(--fs-xs);
   color: oklch(0.58 0.16 40);
   white-space: nowrap;
 }
 .lab-copy {
   font: inherit;
-  font-size: calc(0.75rem * var(--a11y-fs));
+  font-size: var(--fs-sm);
   padding: 0.2rem 0.55rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid hsl(var(--border));
   background: hsl(var(--card));
   color: inherit;
@@ -1183,7 +1183,7 @@
   .lab-notations tbody th {
     grid-area: space;
     font-family: inherit;
-    font-size: calc(0.68rem * var(--a11y-fs));
+    font-size: var(--fs-xs);
     font-weight: 600;
     letter-spacing: 0.07em;
     text-transform: uppercase;
@@ -1220,13 +1220,13 @@
   border-right: 2px solid hsl(var(--muted-foreground));
   border-bottom: 2px solid hsl(var(--muted-foreground));
   transform: rotate(-45deg);        /* points right when closed */
-  transition: transform 0.15s ease;
+  transition: transform var(--dur-1) ease;
 }
 .lab-diag[open] > .lab-diag-summary::before { transform: rotate(45deg); }
 .lab-diag-summary .lab-h3 { margin: 0; }
-.lab-diag-summary:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 3px; border-radius: 4px; }
+.lab-diag-summary:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 3px; border-radius: var(--radius-xs); }
 .lab-diag-hint {
-  font-size: calc(0.75rem * var(--a11y-fs));
+  font-size: var(--fs-sm);
   color: hsl(var(--muted-foreground));
 }
 .lab-diag-body { margin-top: 0.6rem; }
@@ -1246,7 +1246,7 @@
 .lab-cvd-sev-out {
   min-width: 2.6rem;
   font-variant-numeric: tabular-nums;
-  font-size: calc(0.78rem * var(--a11y-fs));
+  font-size: var(--fs-sm);
   color: hsl(var(--muted-foreground));
 }
 
@@ -1261,7 +1261,7 @@
 /* Axis headers: a swatch chip over a short name. */
 .lab-mx-h {
   font-weight: 600;
-  font-size: calc(0.68rem * var(--a11y-fs));
+  font-size: var(--fs-xs);
   color: hsl(var(--muted-foreground));
   text-align: center;
   padding: 0.15rem 0.25rem;
@@ -1279,7 +1279,7 @@ tbody .lab-mx-h .lab-mx-name { display: inline-block; vertical-align: middle; }
 .lab-mx-chip {
   display: inline-block;
   width: 0.9rem; height: 0.9rem;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   box-shadow: inset 0 0 0 1px hsl(0 0% 0% / 0.15);
   vertical-align: middle;
   margin: 0 0.2rem;
@@ -1295,8 +1295,8 @@ tbody .lab-mx-h .lab-mx-name { display: inline-block; vertical-align: middle; }
   padding: 0 0.25rem 0.2rem;
   text-align: center;
   vertical-align: middle;
-  border-radius: 4px;
-  font-size: calc(0.72rem * var(--a11y-fs));
+  border-radius: var(--radius-xs);
+  font-size: var(--fs-xs);
   font-weight: 600;
 }
 .lab-mx-cell::after {
@@ -1348,23 +1348,23 @@ tbody .lab-mx-h .lab-mx-name { display: inline-block; vertical-align: middle; }
   background: hsl(var(--primary) / 0.07);
   color: hsl(var(--foreground));
   cursor: pointer;
-  transition: border-color 0.12s, background 0.12s;
+  transition: border-color var(--dur-1), background var(--dur-1);
 }
 .lab-cloud-add-ic {
   flex: 0 0 auto;
   display: grid;
   place-items: center;
   width: 2rem; height: 2rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: hsl(var(--primary) / 0.14);
   color: hsl(var(--primary));
 }
 .lab-cloud-add-ic svg { width: 1.05rem; height: 1.05rem; }
 .lab-cloud-add-txt { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
-.lab-cloud-add-txt strong { font-size: calc(0.85rem * var(--a11y-fs)); font-weight: 650; }
+.lab-cloud-add-txt strong { font-size: var(--fs-lg); font-weight: 650; }
 .lab-cloud-add-txt em {
   font-style: normal;
-  font-size: calc(0.72rem * var(--a11y-fs));
+  font-size: var(--fs-xs);
   line-height: 1.35;
   color: hsl(var(--muted-foreground));
 }
@@ -1374,15 +1374,15 @@ tbody .lab-mx-h .lab-mx-name { display: inline-block; vertical-align: middle; }
 .lab-cloud-clear {
   flex: 0 0 auto;
   font: inherit;
-  font-size: calc(0.75rem * var(--a11y-fs));
+  font-size: var(--fs-sm);
   font-weight: 600;
   padding: 0.3rem 0.8rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid hsl(var(--border));
   background: hsl(var(--card));
   color: hsl(var(--foreground));
   cursor: pointer;
-  transition: border-color 0.12s, background 0.12s;
+  transition: border-color var(--dur-1), background var(--dur-1);
 }
 .lab-cloud-clear:hover { border-color: hsl(var(--primary) / 0.5); background: hsl(var(--accent)); }
 .lab-cloud-add:focus-within { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
@@ -1393,10 +1393,10 @@ tbody .lab-mx-h .lab-mx-name { display: inline-block; vertical-align: middle; }
   width: 1.9rem; height: 1.9rem;
   display: inline-flex; align-items: center; justify-content: center;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: none;
   color: hsl(var(--muted-foreground));
-  font: inherit; font-size: calc(0.9rem * var(--a11y-fs)); line-height: 1;
+  font: inherit; font-size: var(--fs-lg); line-height: 1;
   cursor: pointer;
 }
 .lab-pop-btn:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
@@ -1412,7 +1412,7 @@ tbody .lab-mx-h .lab-mx-name { display: inline-block; vertical-align: middle; }
 .lab-chart--solid .lab-chart-bar .lab-chart-title { flex: 1 1 auto; margin: 0; }
 .lab-cloud-stats {
   margin: 0.35rem 0 0;
-  font-size: calc(0.72rem * var(--a11y-fs));
+  font-size: var(--fs-xs);
   line-height: 1.45;
   color: hsl(var(--muted-foreground));
 }
@@ -1446,13 +1446,13 @@ tbody .lab-mx-h .lab-mx-name { display: inline-block; vertical-align: middle; }
 /* A quiet text link, not a button: this is a way OUT of the page for someone who
    wants the rest of the snapshot, not an action the report is asking for. */
 .lab-device-link {
-  font-size: calc(0.8rem * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 600;
   color: hsl(var(--muted-foreground));
   text-decoration: none;
 }
 .lab-device-link:hover { color: hsl(var(--foreground)); text-decoration: underline; }
-.lab-device-link:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; border-radius: 3px; }
+.lab-device-link:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; border-radius: var(--radius-xs); }
 
 /* ── Vector (SVG) stills: the single-solid snapshot and the gamut comparison ──
    Diagnostics that fold away. The live turntable is the canvas above; these are
@@ -1468,7 +1468,7 @@ tbody .lab-mx-h .lab-mx-name { display: inline-block; vertical-align: middle; }
 .lab-vecsnap > summary,
 .lab-compare > summary {
   cursor: pointer;
-  font-size: calc(0.85rem * var(--a11y-fs));
+  font-size: var(--fs-lg);
   font-weight: 600;
   color: hsl(var(--muted-foreground));
 }
@@ -1476,7 +1476,7 @@ tbody .lab-mx-h .lab-mx-name { display: inline-block; vertical-align: middle; }
 .lab-compare > summary:focus-visible {
   outline: 2px solid hsl(var(--primary));
   outline-offset: 2px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
 }
 .lab-vecsnap-body { margin-top: 0.5rem; }
 /* The engine's SVG carries its own square viewBox; let it scale to the column. */
@@ -1487,7 +1487,7 @@ tbody .lab-mx-h .lab-mx-name { display: inline-block; vertical-align: middle; }
   height: auto;
   max-width: 100%;
 }
-.lab-vecsnap-note { margin: 0.4rem 0 0; font-size: calc(0.78rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.lab-vecsnap-note { margin: 0.4rem 0 0; font-size: var(--fs-sm); color: hsl(var(--muted-foreground)); }
 .lab-compare-grid {
   margin-top: 0.7rem;
   display: grid;
@@ -1499,7 +1499,7 @@ tbody .lab-mx-h .lab-mx-name { display: inline-block; vertical-align: middle; }
 }
 .lab-compare-cell { margin: 0; display: flex; flex-direction: column; gap: 0.35rem; }
 .lab-compare-cap {
-  font-size: calc(0.85rem * var(--a11y-fs));
+  font-size: var(--fs-lg);
   font-weight: 600;
   color: hsl(var(--foreground));
   text-align: center;

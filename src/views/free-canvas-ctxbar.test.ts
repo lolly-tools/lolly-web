@@ -150,7 +150,9 @@ test('the ctx bar reveals instantly and fades out on a delay; the rail never aut
   // the ctx bar keeps the anti-flicker hysteresis.
   const base = css.match(/^\.fc-ctxbar\s*\{[^}]*\}/m);
   assert.ok(base, 'editor.css declares .fc-ctxbar');
-  assert.match(base![0], /transition:\s*opacity[^;]*0\.\d+s\s*ease\s+0\.\d+s/,
+  // The duration may be a literal or a motion token (plans/172: .18s is var(--dur-2));
+  // the DELAY stays literal here - it is this bar's own hysteresis, not a shared speed.
+  assert.match(base![0], /transition:\s*opacity[^;]*(?:0?\.\d+s|var\(--dur-\d\))\s*ease\s+0\.\d+s/,
     '.fc-ctxbar hides on a delay');
   assert.match(css, /\.tool-stage:hover \.fc-ctxbar,[\s\S]{0,120}?transition-delay:\s*0s/,
     'the ctx bar\'s reveal cancels the delay');

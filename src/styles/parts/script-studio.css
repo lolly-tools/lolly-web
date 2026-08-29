@@ -39,7 +39,7 @@
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
 }
 .scriptst-sheet-label {
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -62,7 +62,7 @@
 .scriptst-meter {
   margin: 0;
   align-self: flex-end;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   color: hsl(var(--muted-foreground));
   font-variant-numeric: tabular-nums;
 }
@@ -84,7 +84,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: hsl(var(--muted-foreground));
 }
@@ -97,8 +97,8 @@
 }
 .scriptst-audition-icon { display: inline-flex; }
 .scriptst-audition-icon svg {
-  width: calc(14px * var(--a11y-fs));
-  height: calc(14px * var(--a11y-fs));
+  width: var(--fs-lg);
+  height: var(--fs-lg);
 }
 .scriptst-consent {
   margin: 0;
@@ -106,7 +106,7 @@
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   background: hsl(var(--accent) / 0.4);
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   color: hsl(var(--muted-foreground));
 }
 .scriptst-kbd {

@@ -69,7 +69,7 @@
 .lamp-dot {
   width: calc(9px * var(--a11y-fs));
   height: calc(9px * var(--a11y-fs));
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   flex-shrink: 0;
   background: hsl(var(--muted-foreground) / 0.35);
 }

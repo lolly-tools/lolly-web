@@ -1502,3 +1502,63 @@ test('R14: _updateUserAssetMeta runs neither pin-preserver nor quota check, and 
   assert.ok(hitLines(catalog, /host\.assets\._updateUserAssetMeta\(/).length >= 2,
     'views/catalog.ts: persistAiSignals and declare-ai-origins both annotate via _updateUserAssetMeta, never a whole-record re-upload');
 });
+
+// ── R12 (plans/172 P0): chrome-scale token ratchets ──────────────────────────
+// The 2026-08-29 audit measured the style sprawl (346 distinct box-shadows, 216
+// font sizes, 112 radii); plans/172 minted tokens for the recipes underneath
+// (tokens.css @generated-chrome-tokens, fed by shells/web/design/
+// chrome-tokens.json) and migrated the worst sheets. These counts pin what
+// REMAINS. Both directions fail on purpose: above the pin means a new literal
+// went in where a token exists (use var(--shadow-*)/var(--edge*)/var(--fs-*)/
+// var(--radius-*) - or add a token to chrome-tokens.json if a genuine new
+// recipe emerged); below the pin means someone migrated more - good - and the
+// pin ratchets DOWN with the commit, so the debt can never quietly regrow.
+//
+// Exclusions mirror the migration's own scope: docs.css + docs-landing.css are
+// inlined into the static /info site where tokens.css never loads;
+// vendor-flatpickr.css is vendored; perf-ui.css strips effects wholesale;
+// tokens.css declares the tokens themselves.
+const R12_EXCLUDE = new Set([
+  'styles/docs-landing.css', 'styles/parts/docs-landing.css', 'styles/parts/docs.css',
+  'styles/vendor-flatpickr.css', 'styles/parts/perf-ui.css', 'styles/tokens.css',
+]);
+const R12_CSS = CSS.filter(f => f.rel.startsWith('styles/') && !R12_EXCLUDE.has(f.rel));
+
+const R12_RATCHETS: Array<{ what: string; pin: number; count: (text: string) => number; fix: string }> = [
+  {
+    what: 'box-shadow declarations with no chrome token in them',
+    pin: 349,
+    count: (t) => [...t.matchAll(/box-shadow:\s*([^;}]+)/g)]
+      .map(m => m[1]!.trim())
+      .filter(v => v !== 'none' && !/var\(--(?:shadow|edge|ring-focus|bevel)/.test(v)).length,
+    fix: 'compose var(--edge*) + var(--shadow-1..5) (see styles/parts/surfaces.css), or add a real new recipe to shells/web/design/chrome-tokens.json',
+  },
+  {
+    what: 'whole-value px border-radius literals',
+    pin: 123,
+    count: (t) => (t.match(/border-radius:\s*\d+(?:\.\d+)?px\s*[;}!]/g) ?? []).length,
+    fix: 'use var(--radius-xs|sm|md|lg) (3/6/10/14px) or var(--radius) for the 1rem panel size',
+  },
+  {
+    what: 'font-size calc(<len> * var(--a11y-fs)) boilerplate',
+    pin: 445,
+    count: (t) => (t.match(/font-size:\s*calc\(\s*[\d.]+(?:px|rem)\s*\*\s*var\(--a11y-fs\)\s*\)/g) ?? []).length,
+    fix: 'use var(--fs-2xs..xl) - the multiplier is inside the token, so the largeText contract holds by construction',
+  },
+  {
+    what: 'whole-value 999px / 50% border-radius literals',
+    pin: 0,
+    count: (t) => (t.match(/border-radius:\s*(?:999px|50%)\s*[;}!]/g) ?? []).length,
+    fix: 'use var(--radius-pill) / var(--radius-round)',
+  },
+];
+
+test('R12 (plans/172): chrome-token literals only ever ratchet down', () => {
+  for (const r of R12_RATCHETS) {
+    const n = R12_CSS.reduce((sum, f) => sum + r.count(f.text), 0);
+    assert.ok(n <= r.pin,
+      `${r.what}: ${n} found, pin is ${r.pin} - a new literal appeared where a token exists. ${r.fix}`);
+    assert.ok(n >= r.pin,
+      `${r.what}: ${n} found, pin is ${r.pin} - migration progressed; ratchet the pin DOWN to ${n} in this test so the win is locked in`);
+  }
+});

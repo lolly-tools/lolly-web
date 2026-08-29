@@ -49,8 +49,8 @@
   border-radius: var(--radius);
   text-decoration: none;
   font-weight: 500;
-  font-size: calc(14px * var(--a11y-fs));
-  transition: opacity 0.12s;
+  font-size: var(--fs-lg);
+  transition: opacity var(--dur-1);
 }
 
 .not-found-home:hover {
@@ -62,7 +62,7 @@
   display: block;
   margin-top: 16px;
   color: hsl(var(--muted-foreground));
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   text-decoration: none;
 }
 .not-found-back:hover {
@@ -108,7 +108,7 @@ button {
 .asset-clear,
 .block-add,
 .block-remove {
-  transition: border-color 0.12s, background 0.12s, color 0.12s, transform 0.08s ease;
+  transition: border-color var(--dur-1), background var(--dur-1), color var(--dur-1), transform 0.08s ease;
 }
 
 @media (pointer: coarse) {
@@ -123,7 +123,7 @@ button {
   input:not([type="checkbox"]):not([type="color"]):not([type="range"]):not([type="radio"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="image"]),
   textarea,
   select {
-    font-size: calc(16px * var(--a11y-fs)) !important;
+    font-size: var(--fs-xl) !important;
   }
   .pro-zip input { font-size: calc(1.5rem * var(--a11y-fs)) !important; }
 

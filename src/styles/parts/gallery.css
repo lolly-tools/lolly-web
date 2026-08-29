@@ -75,11 +75,11 @@
 }
 .privacy-notice-text {
   margin: 0;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   color: hsl(var(--muted-foreground, var(--foreground)));
 }
 .privacy-notice-link { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
-.privacy-notice-dismiss { padding: 3px 12px; font-size: calc(12px * var(--a11y-fs)); }
+.privacy-notice-dismiss { padding: 3px 12px; font-size: var(--fs-sm); }
 /* Extra bottom clearance so the last card row isn't hidden behind both bars. */
 .app-view.gallery-view.has-privacy-notice { padding-bottom: calc(8.5rem + var(--safe-bottom)); }
 
@@ -103,7 +103,7 @@
   padding: 15px 16px 14px;
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 12px;
+  gap: var(--sp-6);
   background: hsl(var(--card));
   color: hsl(var(--card-foreground));
   border: 1px solid hsl(var(--border));
@@ -111,7 +111,7 @@
   box-shadow: 0 14px 36px hsl(0 0% 0% / 0.26);
 }
 @media (prefers-reduced-motion: no-preference) {
-  .personalize-nudge { animation: personalize-nudge-in .22s ease both; transform-origin: top right; }
+  .personalize-nudge { animation: personalize-nudge-in var(--dur-2) ease both; transform-origin: top right; }
 }
 @keyframes personalize-nudge-in {
   from { opacity: 0; transform: translateY(-8px) scale(.97); }
@@ -124,7 +124,7 @@
   /* Badge + glyph ride --a11y-fs with the title beside them, so the icon stays the
      same optical weight as the heading rather than shrinking against it. */
   width: calc(34px * var(--a11y-fs)); height: calc(34px * var(--a11y-fs)); flex: none;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   color: hsl(var(--primary));
   background: hsl(var(--primary) / 0.12);
 }
@@ -133,28 +133,28 @@
 .personalize-nudge-body { min-width: 0; }
 .personalize-nudge-title {
   margin: 0 0 4px; padding-right: 20px; /* clear the × in the corner */
-  font-size: calc(14px * var(--a11y-fs)); font-weight: 650; line-height: 1.3;
+  font-size: var(--fs-lg); font-weight: 650; line-height: 1.3;
   color: hsl(var(--foreground));
 }
 .personalize-nudge-text {
-  margin: 0; font-size: calc(12.5px * var(--a11y-fs)); line-height: 1.45;
+  margin: 0; font-size: var(--fs-md); line-height: 1.45;
   color: hsl(var(--muted-foreground, var(--foreground)));
 }
 .personalize-nudge-actions {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4); margin-top: 12px;
 }
 .personalize-nudge-cta {
-  padding: 6px 14px; font-size: calc(12.5px * var(--a11y-fs)); font-weight: 600; line-height: 1.3;
+  padding: 6px 14px; font-size: var(--fs-md); font-weight: 600; line-height: 1.3;
   background: hsl(var(--primary)); color: hsl(var(--primary-foreground));
-  border: 0; border-radius: 999px; text-decoration: none; cursor: pointer;
-  transition: background .12s;
+  border: 0; border-radius: var(--radius-pill); text-decoration: none; cursor: pointer;
+  transition: background var(--dur-1);
 }
 .personalize-nudge-cta:hover { background: hsl(var(--primary) / .9); }
 .personalize-nudge-dismiss {
-  padding: 6px 10px; font-size: calc(12.5px * var(--a11y-fs)); font-weight: 500; line-height: 1.3;
+  padding: var(--sp-3) var(--sp-5); font-size: var(--fs-md); font-weight: 500; line-height: 1.3;
   background: transparent; color: hsl(var(--muted-foreground)); border: 0;
-  border-radius: 999px; cursor: pointer;
-  transition: background .12s, color .12s;
+  border-radius: var(--radius-pill); cursor: pointer;
+  transition: background var(--dur-1), color var(--dur-1);
 }
 .personalize-nudge-dismiss:hover { color: hsl(var(--foreground)); background: hsl(var(--muted) / .6); }
 
@@ -167,7 +167,7 @@
   font-size: calc(18px * var(--a11y-fs)); line-height: 1;
   color: hsl(var(--muted-foreground));
   background: transparent; border: 0; border-radius: 8px; cursor: pointer;
-  transition: background .12s, color .12s;
+  transition: background var(--dur-1), color var(--dur-1);
 }
 .personalize-nudge-close:hover { color: hsl(var(--foreground)); background: hsl(var(--muted) / .6); }
 
@@ -203,7 +203,7 @@
   .gallery-view {
     display: grid;
         grid-template-columns: 1.5fr 4fr;
-        gap: 12px;
+        gap: var(--sp-6);
   
         align-items: start;
   }
@@ -237,7 +237,7 @@
   color: hsl(var(--muted-foreground));
   pointer-events: none;
 }
-.gallery-search-icon svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
+.gallery-search-icon svg { width: var(--fs-xl); height: var(--fs-xl); }
 /* Jelly effects mode (lib/jelly.ts): the field is a <jelly-input>; the search
    icon and ✕ overlay its canvas, so they need stacking above it, and the inner
    field needs matching inline padding so text clears the icon. The native field
@@ -269,13 +269,13 @@
      global token for one field or weakening a guard that has caught real bugs. */
   padding: 8px 34px;
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   background: hsl(var(--background));
   color: hsl(var(--foreground));
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   outline: none;
-  transition: border-color 0.12s;
+  transition: border-color var(--dur-1);
 }
 
 .gallery-search:focus {
@@ -288,9 +288,9 @@
 .gallery-search-clear {
   position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
   width: calc(24px * var(--a11y-fs)); height: calc(24px * var(--a11y-fs)); display: inline-flex; align-items: center; justify-content: center;
-  border: 0; border-radius: 50%; background: transparent; color: hsl(var(--muted-foreground));
-  font-size: calc(13px * var(--a11y-fs)); line-height: 1; cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  border: 0; border-radius: var(--radius-round); background: transparent; color: hsl(var(--muted-foreground));
+  font-size: var(--fs-md); line-height: 1; cursor: pointer;
+  transition: background var(--dur-1), color var(--dur-1);
 }
 .gallery-search-clear[hidden] { display: none; }
 .gallery-search-clear:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
@@ -309,7 +309,7 @@
   transform: translateY(-50%);
   padding: 1px 6px;
   font-family: inherit;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   line-height: 1.5;
   color: hsl(var(--muted-foreground));
   background: hsl(var(--muted) / 0.55);
@@ -326,7 +326,7 @@
 }
 
 .gallery-no-results {
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   color: hsl(var(--muted-foreground));
   padding: 8px 0;
 }
@@ -343,7 +343,7 @@
 .gallery-footer a.gallery-nav-link--verify {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
   background: hsl(151 57% 42%);
   color: #fff;
   border-color: transparent;
@@ -359,7 +359,7 @@
 /* Icons scale on --a11y-fs: below 640px .gallery-nav-label is hidden (see the media
    query below) and these buttons are icon-only, so a fixed 15px would leave the
    footer nav untouched by largeText on exactly the screen it matters most. */
-.gallery-footer > .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.gallery-footer > .btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-3); }
 .gallery-footer > .btn svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); flex-shrink: 0; }
 
 /* Jelly footer nav items (flag): the <jelly-button> paints its own capsule, so it
@@ -426,7 +426,7 @@
   font-weight: 600;
   color: hsl(var(--foreground));
 }
-.gallery-empty-hint { margin: 0; font-size: calc(.9rem * var(--a11y-fs)); }
+.gallery-empty-hint { margin: 0; font-size: var(--fs-lg); }
 .gallery-empty-hint a,
 .gallery-retry { color: hsl(var(--primary)); font-weight: 600; }
 .gallery-retry {
@@ -440,7 +440,7 @@
 .gallery-retry:disabled { opacity: .6; cursor: default; text-decoration: none; }
 
 .saved-row h4{font-weight: 600;
-    font-size: calc(12px * var(--a11y-fs));
+    font-size: var(--fs-sm);
     margin: 0;}
 
 /* One entrance language. Every mount-time reveal in the app (gallery cards,
@@ -481,7 +481,7 @@
 .is-navigating {
   opacity: 0.45;
   pointer-events: none;
-  transition: opacity 0.15s;
+  transition: opacity var(--dur-1);
 }
 /* Per-tool icon (tools/<id>/icon.svg, inlined into the catalog index) - sits to
    the LEFT of the name + description. Brand accent; inherits currentColor so it
@@ -507,8 +507,8 @@ stroke-width:.81;
   bottom: 10px;
   right: 10px;
   padding: 2px 7px;
-  border-radius: 999px;
-  font-size: calc(10px * var(--a11y-fs));
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-2xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -527,7 +527,7 @@ stroke-width:.81;
   right: 12px;                 /* line up with .gtile-continue's gutter, not the 8px inset */
   bottom: 8px;
   font-family: inherit;        /* the Open chip uses the UI font, not SUSE Mono */
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: 0;
   text-transform: capitalize;  /* "Experimental", echoing the Open chip's case */
@@ -612,8 +612,8 @@ stroke-width:.81;
      the smallest mark in the row - it scales too, or largeText makes it relatively
      smaller against a button that grew. The 2px ring stays put: it is a separation
      stroke against the background, not type. */
-  width: calc(10px * var(--a11y-fs)); height: calc(10px * var(--a11y-fs));
-  border-radius: 50%;
+  width: var(--fs-2xs); height: var(--fs-2xs);
+  border-radius: var(--radius-round);
   background: hsl(var(--primary));
   border: 2px solid hsl(var(--background));
 }
@@ -626,7 +626,7 @@ stroke-width:.81;
   right: 0;
   z-index: 100;
   width: min(280px, calc(100vw - 3em));
-  padding: 12px;
+  padding: var(--sp-6);
   background: hsl(var(--card));
   color: hsl(var(--card-foreground));
   border: 1px solid hsl(var(--border));
@@ -634,27 +634,27 @@ stroke-width:.81;
   box-shadow: 0 10px 28px hsl(0 0% 0% / 0.2);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--sp-6);
   text-align: left;
 }
 .filter-popover[hidden] { display: none; }
 .filter-pop-head {
   margin: 0;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .06em;
   color: hsl(var(--muted-foreground));
 }
-.filter-pop-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.filter-pop-pills { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
 .filter-pop-check {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-5);
   margin: 0;
   padding-top: 12px;
   border-top: 1px solid hsl(var(--border));
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 600;
   cursor: pointer;
 }
@@ -665,20 +665,20 @@ stroke-width:.81;
 
 /* Sort control at the top of the popover - a native <select> for familiarity and
    free keyboard/AT support, styled to match the search field. */
-.filter-pop-sort { display: flex; flex-direction: column; gap: 6px; }
+.filter-pop-sort { display: flex; flex-direction: column; gap: var(--sp-3); }
 
 /* Featured view-mode segmented control (Gallery | Cover Flow). */
-.view-seg { display: flex; gap: 6px; }
+.view-seg { display: flex; gap: var(--sp-3); }
 .view-seg-btn {
   flex: 1;
   padding: 7px 10px;
   font: inherit;
-  font-size: calc(12.5px * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 600;
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   cursor: pointer;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  transition: background var(--dur-1), color var(--dur-1), border-color var(--dur-1);
 }
 /* Neutral fill scoped to the UNPRESSED state. The pressed segment's fill comes
    from buttons.css's `.btn--primary` alias (the `primitives` layer). Under cascade
@@ -699,7 +699,7 @@ stroke-width:.81;
   border-color: hsl(var(--primary));
 }
 /* Sort key select + a direction toggle on one row. */
-.gallery-sort-row { display: flex; gap: 6px; align-items: stretch; }
+.gallery-sort-row { display: flex; gap: var(--sp-3); align-items: stretch; }
 /* Box, chevron, hover-lift and focus halo come from `.field-select`
    (parts/fields.css) - only the row geometry and the heavier weight that
    matches `.filter-pop-head` above it are local. */
@@ -721,7 +721,7 @@ stroke-width:.81;
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   cursor: pointer;
-  transition: color 0.14s ease, border-color 0.14s ease, background-color 0.14s ease;
+  transition: color var(--dur-1) ease, border-color var(--dur-1) ease, background-color var(--dur-1) ease;
 }
 .gallery-sort-dir svg { width: calc(19px * var(--a11y-fs)); height: calc(19px * var(--a11y-fs)); }
 .gallery-sort-dir:hover { border-color: hsl(var(--ring)); }
@@ -747,7 +747,7 @@ stroke-width:.81;
     border-radius: 18px 18px 0 0;
     padding: 16px 16px calc(16px + var(--safe-bottom));
     box-shadow: 0 -10px 32px hsl(0 0% 0% / 0.32);
-    animation: filter-sheet-up 0.18s ease both;
+    animation: filter-sheet-up var(--dur-2) ease both;
   }
   .filter-backdrop:not([hidden]) {
     display: block;
@@ -764,10 +764,10 @@ stroke-width:.81;
   border-radius: calc(var(--radius)*1.5);
   padding: 7px 14px;
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition: background var(--dur-1), color var(--dur-1), border-color var(--dur-1);
 }
 .gallery-pill:hover { border-color: hsl(var(--primary) / 0.5); }
 .gallery-pill .ct { opacity: 0.5; margin-left: 5px; font-weight: 600; }
@@ -854,7 +854,7 @@ html[data-a11y-previews="hidden"] .tool-masonry .gtile-hero:not(.gtile-hero--pre
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  padding: 8px 12px;
+  padding: var(--sp-4) var(--sp-6);
   aspect-ratio: auto;      /* drop the square - this is a slim Continue bar, not a preview */
   background: none;        /* drop the checkerboard placeholder */
   line-height: normal;     /* was 0 (for the image) - let the chip size the bar */
@@ -916,7 +916,7 @@ html[data-a11y-previews="hidden"] .gallery .ftile-iconfill svg { max-width: 52px
   border: none;
   border-radius: calc(var(--radius) * 1.1);
   overflow: hidden;
-  transition: border-color 0.14s;
+  transition: border-color var(--dur-1);
       box-shadow: 0 .1rem .4rem #0002;
   /* Skip the expensive work - parsing/rasterising the preview SVG (some carry
      feGaussianBlur shadows or thousands of dots), layout and paint - for tiles
@@ -969,7 +969,7 @@ html[data-a11y-previews="hidden"] .gallery .ftile-iconfill svg { max-width: 52px
   min-height: 84px; height: auto; padding: 14px;
   border: none; border-radius: calc(var(--radius) * 1.1);
   background: hsl(var(--muted) / 0.5); color: hsl(var(--muted-foreground));
-  font-size: calc(13px * var(--a11y-fs)); font-weight: 600; text-align: center;
+  font-size: var(--fs-md); font-weight: 600; text-align: center;
   cursor: pointer; box-shadow: none;
 }
 .tool-masonry .gtile--hiddenbox:hover { background: hsl(var(--muted) / 0.75); color: hsl(var(--foreground)); }
@@ -1201,7 +1201,7 @@ html[data-a11y-previews="hidden"] .gallery .ftile-iconfill svg { max-width: 52px
   background: hsl(var(--foreground) / .06);
 }
 .gcar-slide--ex:not(.is-loaded) .gcar-img { opacity: 0; }
-.gcar-slide--ex.is-loaded .gcar-img { animation: gcar-fade .3s ease both; }
+.gcar-slide--ex.is-loaded .gcar-img { animation: gcar-fade var(--dur-3) ease both; }
 @keyframes gcar-fade { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .gcar-slide--ex.is-loaded .gcar-img { animation: none; }
@@ -1247,7 +1247,7 @@ html[data-a11y-previews="hidden"] .gallery .ftile-iconfill svg { max-width: 52px
   height: 100%;
   margin: auto;
   object-fit: contain;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   /* Drop shadow lifts the deck on light backgrounds; the hairline rim defines each card's
      edge on dark ones, where the dark shadow can't (mirrors the featured card.svg). 
   box-shadow: 0 6px 18px rgba(0, 0, 0, .28), 0 0 0 1px hsl(var(--foreground) / .10);*/
@@ -1269,14 +1269,14 @@ html[data-a11y-previews="hidden"] .gallery .ftile-iconfill svg { max-width: 52px
   height: calc(26px * var(--a11y-fs));
   padding: 0;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   display: grid;
   place-items: center;
   color: #fff;
   background: rgba(0, 0, 0, .42);
   cursor: pointer;
   opacity: 0;
-  transition: opacity .15s, background .15s;
+  transition: opacity var(--dur-1), background var(--dur-1);
 }
 .gcar-nav svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
 .gcar-prev { left: 6px; }
@@ -1302,12 +1302,12 @@ html[data-a11y-previews="hidden"] .gallery .ftile-iconfill svg { max-width: 52px
   height: 6px;
   padding: 0;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: rgba(255, 255, 255, .55);
   box-shadow: 0 0 2px rgba(0, 0, 0, .45);
   cursor: pointer;
   pointer-events: auto;
-  transition: background .15s, transform .15s;
+  transition: background var(--dur-1), transform var(--dur-1);
 }
 .gcar-dot.is-active { background: #fff; transform: scale(1.25); }
 /* Touch: a 6px dot is too small to reliably tap. Grow the TAP AREA only, via a
@@ -1331,11 +1331,11 @@ html[data-a11y-previews="hidden"] .tool-masonry .gcar { display: none; }
   /* Top-left so the action overlay can sit just "after" it on the top-right. */
   left: 8px;
   line-height: 1;
-  font-size: calc(10px * var(--a11y-fs));
+  font-size: var(--fs-2xs);
   font-weight: 700;
   color: #fff;
   background: #000a;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 3px 8px;
 }
 .gtile-continue {
@@ -1345,15 +1345,15 @@ html[data-a11y-previews="hidden"] .tool-masonry .gcar { display: none; }
   right: 12px;
   bottom: 8px;
   line-height: 1;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 600;
   /* Theme tokens, not hard-coded #fff - keeps contrast in dark / suse themes. */
   color: hsl(var(--primary-foreground));
   background: hsl(var(--primary));
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 4px 9px;
   opacity: 0;
-  transition: opacity 0.14s;
+  transition: opacity var(--dur-1);
 }
 /* Continue belongs to the saved-session preview - reveal it only when the hero
    is hovered/focused, not the lower body. It's right-anchored to line up with
@@ -1393,8 +1393,8 @@ html[data-a11y-previews="hidden"] .tool-masonry .gcar { display: none; }
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 16px;
+  gap: var(--sp-6);
+  padding: var(--sp-7);
   text-decoration: none;
   color: inherit;
   border-bottom: 1px dashed hsl(var(--border));
@@ -1403,10 +1403,10 @@ html[data-a11y-previews="hidden"] .tool-masonry .gcar { display: none; }
 /* Icon-led empty tile - the tool's icon beside the "Open to start" note, so even a
    tool with no preview or examples reads as a real card. Column layout to give the
    icon presence. */
-.gtile-tile--iconled { flex-direction: column; gap: 8px; padding: 20px 16px; }
+.gtile-tile--iconled { flex-direction: column; gap: var(--sp-4); padding: 20px 16px; }
 .gtile-tile-icon { display: flex; color: hsl(var(--muted-foreground) / .45); line-height: 0; }
 .gtile-tile-icon svg { width: 40px; height: 40px; }
-.gtile-tile-txt { font-size: calc(12px * var(--a11y-fs)); line-height: 1.35; color: hsl(var(--muted-foreground) / .5);; font-weight: 400; font-style: italic; }
+.gtile-tile-txt { font-size: var(--fs-sm); line-height: 1.35; color: hsl(var(--muted-foreground) / .5);; font-weight: 400; font-style: italic; }
 /* A saved session whose preview failed to capture - still resumable, so it reads
    as an action (not the italic "no sessions" note). */
 .gtile-tile--resume { width: 100%; border: 0; cursor: pointer; text-align: left; background: transparent; }
@@ -1436,13 +1436,13 @@ html[data-a11y-previews="hidden"] .tool-masonry .gcar { display: none; }
 .gtile-cap {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: var(--sp-5);
   padding: 11px 12px 12px;
 }
 .gtile-cap .tool-card-icon svg { width: 36px; height: 36px; }
 .gtile-meta { min-width: 0; flex: 1; display: flex; flex-direction: column; }
 .gtile-name {
-  font-size: calc(14px * var(--a11y-fs));
+  font-size: var(--fs-lg);
   font-weight: 600;
   line-height: 1.2;
   color: inherit;
@@ -1470,15 +1470,15 @@ a.gtile-name:focus-visible::after {
   flex: none;
   position: relative;
   z-index: 2;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 700;
   line-height: 1;
   color: hsl(var(--primary));
   border: 1px solid hsl(var(--primary) / 0.5);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 4px 9px;
   text-decoration: none;
-  transition: background 0.14s;
+  transition: background var(--dur-1);
 }
 .gtile-new:hover { background: hsl(var(--primary) / 0.12); }
 
@@ -1494,11 +1494,11 @@ a.gtile-name:focus-visible::after {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-4);
   margin: 2px 14px 12px;
 }
 .yours-shelf-label {
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -1509,15 +1509,15 @@ a.gtile-name:focus-visible::after {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 6px 12px;
+  padding: var(--sp-3) var(--sp-6);
   border: 1px solid hsl(var(--border));
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: hsl(var(--card));
   color: hsl(var(--foreground));
-  font-size: calc(12.5px * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 600;
   text-decoration: none;
-  transition: border-color 0.12s, background 0.12s;
+  transition: border-color var(--dur-1), background var(--dur-1);
 }
 .yours-chip:hover, .yours-chip:focus-visible { border-color: hsl(var(--primary) / 0.55); background: hsl(var(--muted) / 0.5); }
 .yours-chip-icon { display: inline-flex; color: hsl(var(--muted-foreground)); }
@@ -1531,7 +1531,7 @@ a.gtile-name:focus-visible::after {
 }
 
 .gtile-sub {
-  font-size: calc(11.5px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   color: hsl(var(--muted-foreground));
   margin-top: 2px;
   white-space: nowrap;
@@ -1543,14 +1543,14 @@ a.gtile-name:focus-visible::after {
    the fresh open presents the chooser, so the count itself is the affordance. */
 .gtile-tpl {
   margin-top: 3px;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   color: hsl(var(--muted-foreground) / 0.85);
 }
 /* Description lives in the meta column, directly under the title - no horizontal
    padding of its own (the column already starts past the icon). */
 .gtile-desc {
   margin: 5px 0 0;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   line-height: 1.45;
   color: hsl(var(--muted-foreground));
   /* Clamp to two lines so the caption block is a predictable height across every
@@ -1567,13 +1567,13 @@ a.gtile-name:focus-visible::after {
    .meta-fmts-row so the dt sits above a full-width, wrapping chip block. */
 .meta-dialog-facts > div.meta-fmts-row {
   grid-template-columns: 1fr;   /* stack the dt over the chips (they need the full width) */
-  gap: 6px;
+  gap: var(--sp-3);
 }
 .meta-fmt-groups { display: flex; flex-direction: column; gap: 7px; }
-.meta-fmt-grp { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.meta-fmt-grp { display: flex; align-items: baseline; gap: var(--sp-5); flex-wrap: wrap; }
 .meta-fmt-kind {
   flex: 0 0 3.6em;
-  font-size: calc(10px * var(--a11y-fs));
+  font-size: var(--fs-2xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -1588,12 +1588,12 @@ a.gtile-name:focus-visible::after {
   gap: 5px;
 }
 .meta-fmt {
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 500;
   letter-spacing: 0.02em;
   line-height: 1;
   padding: 3px 7px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   white-space: nowrap;
   color: hsl(var(--muted-foreground));
   background: hsl(var(--muted) / 0.4);
@@ -1625,9 +1625,9 @@ a.gtile-name:focus-visible::after {
   background: transparent;
   color: hsl(var(--muted-foreground) / .5);
   border: none;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   cursor: pointer;
-  transition: color 0.12s, border-color 0.12s, background 0.12s;
+  transition: color var(--dur-1), border-color var(--dur-1), background var(--dur-1);
 }
 .gtile-iconbtn:hover {
   color: hsl(var(--primary));
@@ -1654,7 +1654,7 @@ a.gtile-name:focus-visible::after {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 12px;
+  gap: var(--sp-6);
   padding: 18px 16px;
 }
 .gtile--utility .tool-card-icon { place-self: center; }
@@ -1685,7 +1685,7 @@ a.gtile-name:focus-visible::after {
   width: 92vw;
   max-height: 90vh;
   overflow: auto;
-  box-shadow: 0 8px 32px hsl(0 0% 0% / 0.2);
+  box-shadow: var(--shadow-3);
 }
 /* A tool with templates / presets gets the wide spec sheet: the facts stay in the
    left column, templates + presets + defaults fill the right. Below 720px the
@@ -1712,17 +1712,17 @@ a.gtile-name:focus-visible::after {
 /* (`.tool-meta-dialog::backdrop` aliases the shared dimmed-blur backdrop in
    parts/dialogs.css.) */
 .meta-dialog-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
-.meta-dialog-head { display: flex; align-items: center; gap: 12px; }
+.meta-dialog-head { display: flex; align-items: center; gap: var(--sp-6); }
 .meta-dialog-icon { flex: none; }
 .meta-dialog-icon svg { width: calc(40px * var(--a11y-fs)); height: calc(40px * var(--a11y-fs)); opacity: 0.6 !important; }
-.meta-dialog-head h2 { margin: 0; font-size: calc(16px * var(--a11y-fs)); }
-.meta-dialog-sub { margin: 2px 0 0; font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
-.meta-dialog-desc { margin: 0; font-size: calc(13px * var(--a11y-fs)); line-height: 1.5; color: hsl(var(--foreground)); }
-.meta-dialog-facts { margin: 0; display: flex; flex-direction: column; gap: 8px; }
-.meta-dialog-facts > div { display: grid; grid-template-columns: 5.5em 1fr; gap: 8px; font-size: calc(12.5px * var(--a11y-fs)); }
+.meta-dialog-head h2 { margin: 0; font-size: var(--fs-xl); }
+.meta-dialog-sub { margin: 2px 0 0; font-size: var(--fs-sm); color: hsl(var(--muted-foreground)); }
+.meta-dialog-desc { margin: 0; font-size: var(--fs-md); line-height: 1.5; color: hsl(var(--foreground)); }
+.meta-dialog-facts { margin: 0; display: flex; flex-direction: column; gap: var(--sp-4); }
+.meta-dialog-facts > div { display: grid; grid-template-columns: 5.5em 1fr; gap: var(--sp-4); font-size: var(--fs-md); }
 .meta-dialog-facts dt { color: hsl(var(--muted-foreground)); font-weight: 600; }
 .meta-dialog-facts dd { margin: 0; }
-.meta-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; }
+.meta-dialog-actions { display: flex; justify-content: flex-end; gap: var(--sp-4); margin-top: 2px; }
 
 /* Info dialog: the tool preview - the same media the tile shows (img or the
    sandboxed card.html iframe), framed like a card. aspect-ratio comes inline
@@ -1752,7 +1752,7 @@ a.gtile-name:focus-visible::after {
 /* Info dialog: shared section heading (Templates / Presets / Defaults). */
 .meta-sec-title {
   margin: 0 0 6px;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1773,12 +1773,12 @@ a.gtile-name:focus-visible::after {
   padding: 0;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-  gap: 8px;
+  gap: var(--sp-4);
 }
 .meta-look {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-2);
   height: 100%;
   padding: 7px;
   border: 1px solid hsl(var(--border) / 0.7);
@@ -1803,9 +1803,9 @@ a.gtile-name:focus-visible::after {
    the glyph when it arrives. Harmless for single-child thumbs. */
 .meta-look-thumb > * { grid-area: 1 / 1; }
 .meta-look-thumb:has(.meta-look-img[src]) .meta-look-glyph { visibility: hidden; }
-.meta-look-name { font-size: calc(12px * var(--a11y-fs)); font-weight: 600; line-height: 1.25; }
+.meta-look-name { font-size: var(--fs-sm); font-weight: 600; line-height: 1.25; }
 .meta-look-desc {
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   line-height: 1.4;
   color: hsl(var(--muted-foreground));
   display: -webkit-box;
@@ -1834,9 +1834,9 @@ html[data-a11y-previews="hidden"] .tool-meta-dialog .meta-look-thumb { display: 
 .meta-default-row {
   display: grid;
   grid-template-columns: minmax(7em, auto) 1fr;
-  gap: 8px;
+  gap: var(--sp-4);
   align-items: baseline;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   line-height: 1.6;
 }
 .meta-default-row dt {
@@ -1849,12 +1849,12 @@ html[data-a11y-previews="hidden"] .tool-meta-dialog .meta-look-thumb { display: 
   margin: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
   min-width: 0;
 }
 .meta-default-value {
   font-family: var(--font-mono);
-  font-size: calc(11.5px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1862,21 +1862,21 @@ html[data-a11y-previews="hidden"] .tool-meta-dialog .meta-look-thumb { display: 
 .meta-default-swatch {
   /* Sized off the value text it sits beside, so the dot doesn't shrink away as
      the row's type grows. */
-  width: calc(12px * var(--a11y-fs));
-  height: calc(12px * var(--a11y-fs));
-  border-radius: 50%;
+  width: var(--fs-sm);
+  height: var(--fs-sm);
+  border-radius: var(--radius-round);
   flex: none;
-  box-shadow: inset 0 0 0 1px hsl(var(--border));
+  box-shadow: var(--edge);
 }
 .meta-default-note {
-  font-size: calc(10.5px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   color: hsl(var(--muted-foreground));
   border: 1px solid hsl(var(--border));
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0 6px;
   flex: none;
 }
-.meta-default-more dd { color: hsl(var(--muted-foreground)); font-size: calc(11.5px * var(--a11y-fs)); }
+.meta-default-more dd { color: hsl(var(--muted-foreground)); font-size: var(--fs-sm); }
 .history-list { max-height: 50vh; overflow: auto; margin: 0; padding: 0; }
 
 /* Top-right cluster: history button sits to the LEFT of the profile pill. */
@@ -1892,7 +1892,7 @@ html[data-a11y-previews="hidden"] .tool-meta-dialog .meta-look-thumb { display: 
   margin-inline-end: var(--dock-w, 0px);
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-5);
 }
 /* Neutralise the profile pill's own fixed positioning when it lives in the cluster. */
 .gallery-topright .profile-link { position: static; right: auto; top: auto; }
@@ -1913,7 +1913,7 @@ html[data-a11y-previews="hidden"] .tool-meta-dialog .meta-look-thumb { display: 
   transform: translateX(-50%) translateY(6px);
   padding: 10px 20px;
   border: 1px solid hsl(var(--primary) / 0.5);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: hsl(var(--card));
   color: hsl(var(--foreground));
   font-size: calc(13.5px * var(--a11y-fs));
@@ -1921,7 +1921,7 @@ html[data-a11y-previews="hidden"] .tool-meta-dialog .meta-look-thumb { display: 
   box-shadow: 0 10px 30px hsl(var(--foreground) / 0.25);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition: opacity var(--dur-1) ease, transform var(--dur-1) ease;
   z-index: 90;
 }
 .is-file-drag .drop-hint { opacity: 1; transform: translateX(-50%); }
@@ -1950,20 +1950,20 @@ html[data-a11y-previews="hidden"] .tool-meta-dialog .meta-look-thumb { display: 
      the RIGHT half of the viewport, so shrink-to-fit capped the bar at ~50vw and
      wrapped its actions early. Size to the content; wrap only at the real edge. */
   width: max-content; max-width: calc(100vw - 24px);
-  padding: 8px 8px 8px 16px; border-radius: 999px;
+  padding: 8px 8px 8px 16px; border-radius: var(--radius-pill);
   background: hsl(var(--popover)); color: hsl(var(--popover-foreground));
   border: 1px solid hsl(var(--border)); box-shadow: 0 .6rem 2rem #0006;
 }
 .gallery-bulkbar[hidden] { display: none; }
-.gallery-bulkbar-count { font-size: calc(.9rem * var(--a11y-fs)); font-weight: 700; white-space: nowrap; }
-.gallery-bulkbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.gallery-bulkbar-actions .btn { display: inline-flex; align-items: center; gap: 6px; }
+.gallery-bulkbar-count { font-size: var(--fs-lg); font-weight: 700; white-space: nowrap; }
+.gallery-bulkbar-actions { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
+.gallery-bulkbar-actions .btn { display: inline-flex; align-items: center; gap: var(--sp-3); }
 .gallery-bulkbar-actions .btn svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
 .gallery-bulkbar-clear {
   display: inline-flex; align-items: center; justify-content: center;
   width: calc(30px * var(--a11y-fs)); height: calc(30px * var(--a11y-fs)); flex: none;
-  border-radius: 999px; cursor: pointer;
-  font-size: calc(16px * var(--a11y-fs)); line-height: 1; color: hsl(var(--muted-foreground));
+  border-radius: var(--radius-pill); cursor: pointer;
+  font-size: var(--fs-xl); line-height: 1; color: hsl(var(--muted-foreground));
   background: hsl(var(--muted) / .6); border: none;
 }
 .gallery-bulkbar-clear:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }

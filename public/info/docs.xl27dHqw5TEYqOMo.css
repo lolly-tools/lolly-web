@@ -75,6 +75,48 @@
   --track-tier-2: 26%;
   --track-tier-3: 15%;
 }
+:root {
+  --edge: inset 0 0 0 1px hsl(var(--border));
+  --edge-faint: inset 0 0 0 1px hsl(var(--foreground) / .1);
+  --edge-strong: inset 0 0 0 1px hsl(var(--foreground) / .18);
+  --shadow-1: 0 1px 3px hsl(0 0% 0% / .13);
+  --shadow-2: 0 4px 14px hsl(0 0% 0% / .18);
+  --shadow-3: 0 8px 28px hsl(0 0% 0% / .22);
+  --shadow-4: 0 12px 36px hsl(0 0% 0% / .26);
+  --shadow-5: 0 24px 60px hsl(0 0% 0% / .32);
+  --bevel: inset 0 1px hsl(0 0% 100% / .1);
+  --ring-focus: 0 0 0 3px hsl(var(--ring) / .15);
+  --ring-focus-strong: 0 0 0 2px hsl(var(--primary) / .35);
+  --radius-xs: 3px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+  --radius-round: 50%;
+  --fs-2xs: calc(10px * var(--a11y-fs));
+  --fs-xs: calc(11px * var(--a11y-fs));
+  --fs-sm: calc(12px * var(--a11y-fs));
+  --fs-md: calc(13px * var(--a11y-fs));
+  --fs-lg: calc(14px * var(--a11y-fs));
+  --fs-xl: calc(16px * var(--a11y-fs));
+  --sp-1: 2px;
+  --sp-2: 4px;
+  --sp-3: 6px;
+  --sp-4: 8px;
+  --sp-5: 10px;
+  --sp-6: 12px;
+  --sp-7: 16px;
+  --sp-8: 24px;
+  --dur-1: .12s;
+  --dur-2: .18s;
+  --dur-3: .3s;
+  --ease-out: cubic-bezier(.32, .72, 0, 1);
+  --ease-spring: cubic-bezier(.34, 1.56, .64, 1);
+  --z-chrome: 20;
+  --z-overlay: 50;
+  --z-toast: 90;
+  --z-max: 100;
+}
 :root,
 [data-theme="light"] {
   color-scheme: light;
@@ -440,10 +482,13 @@ html[data-theme="dark"] .quicknav{background:rgba(9,26,21,.9)}
 .hero-logo:hover{filter: hue-rotate(-25deg) saturate(1.5) brightness(1.01)}
 /* The mark idles STILL until hover (Andy, 2026-08-17). The swirl animation lives
    INSIDE the signed icon.svg, which an <img> embeds as its own document - page CSS
-   cannot pause it and the signed file is never edited. So the derived raster of the
-   same mark (icon-512.png, from `npm run icons`) sits on top and lifts on hover/
-   focus to let the swirl run. Under reduced motion - the OS preference or the app's
-   a11y switch - the still never lifts. */
+   cannot pause it and the signed file is never edited. So a static raster sits on
+   top and lifts on hover/focus to let the swirl run. That raster is hero-still.png
+   (`npm run icons`), derived from the 3-D icon-primary.svg - its OWN derivative,
+   never one of the PWA rasters: the hero regressed to the flat mark the day
+   icon-512.png switched sources (2026-08-28), which is what this decoupling fixes.
+   Under reduced motion - the OS preference or the app's a11y switch - the still
+   never lifts. */
 .hero-logo-link{position:relative}
 .hero-logo-still{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;filter:hue-rotate(-15deg);transition:opacity .25s ease;pointer-events:none}
 .hero-logo-link:hover .hero-logo-still,.hero-logo-link:focus-visible .hero-logo-still{opacity:0}

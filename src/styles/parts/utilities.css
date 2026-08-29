@@ -28,7 +28,7 @@
 .fc-panel-head,
 .fc-panel-sub,
 .projects-rail-hint {
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;

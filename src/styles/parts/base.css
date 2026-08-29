@@ -27,7 +27,7 @@
   /* Fill (background/color) comes from buttons.css's .btn--primary alias list -
      it imports after this sheet, so its single declaration wins. */
   z-index: 9999;
-  font-size: calc(14px * var(--a11y-fs));
+  font-size: var(--fs-lg);
   font-weight: 600;
   border-end-end-radius: var(--radius); /* logical: hugs the start corner in LTR and RTL alike */
   overflow: visible;
@@ -207,8 +207,8 @@ em, i, cite { font-family: var(--font-italic, var(--font-brand)); }
   border-radius: var(--radius);
   cursor: pointer;
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
-  transition: background 0.12s, color 0.12s;
+  font-size: var(--fs-md);
+  transition: background var(--dur-1), color var(--dur-1);
   white-space: nowrap;
 }
 

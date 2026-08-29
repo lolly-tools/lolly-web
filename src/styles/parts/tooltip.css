@@ -27,15 +27,15 @@
   padding: 4px 8px;
   background: hsl(var(--foreground));
   color: hsl(var(--background));
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 600;
   line-height: 1;
   white-space: nowrap;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.12s ease, transform 0.12s ease;
+  transition: opacity var(--dur-1) ease, transform var(--dur-1) ease;
   z-index: 6;
 }
 [data-tip]::before {
@@ -48,7 +48,7 @@
   border-top-color: hsl(var(--foreground));
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.12s ease;
+  transition: opacity var(--dur-1) ease;
   z-index: 6;
 }
 [data-tip]:hover::after,

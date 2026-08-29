@@ -58,7 +58,7 @@
   line-height: 1;
   cursor: pointer;
   opacity: 0;
-  transition: opacity .12s;
+  transition: opacity var(--dur-1);
 }
 .dg-head-cell:hover .dg-del-col,
 .dg-del-col:focus-visible { opacity: 1; }
@@ -77,7 +77,7 @@
   line-height: 1;
   cursor: pointer;
   opacity: 0;
-  transition: opacity .12s;
+  transition: opacity var(--dur-1);
 }
 .dg-rowctl-head { background: hsl(var(--muted)); cursor: default; opacity: 1; }
 .dg-row:hover .dg-rowctl,
@@ -112,7 +112,7 @@
   box-sizing: border-box;
   padding: 4px 7px;
   border: 2px solid hsl(var(--ring));
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   background: hsl(var(--background));
   color: hsl(var(--foreground));
   font: inherit;

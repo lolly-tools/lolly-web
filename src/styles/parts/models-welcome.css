@@ -112,7 +112,7 @@
   color: hsl(var(--muted-foreground));
 }
 /* Reuse the job toast's candy bar. Slightly taller here for the hero. */
-.mw-progress .job-bar { height: 12px; border-radius: 999px; }
+.mw-progress .job-bar { height: 12px; border-radius: var(--radius-pill); }
 
 .mw-done {
   display: flex;

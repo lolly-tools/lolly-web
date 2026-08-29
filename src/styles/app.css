@@ -41,6 +41,7 @@
 @import './parts/fields.css'       layer(primitives); /* .field-input/.field-select/.field-check/.field-radio/.field-range - the ONE form-control recipe */
 @import './parts/disclosure.css'   layer(primitives); /* .section-card fold primitive (rec 7) */
 @import './parts/tooltip.css'      layer(primitives); /* [data-tip] - the ONE styled tooltip */
+@import './parts/surfaces.css'     layer(primitives); /* .surface elevation levels + .u-focus-ring (plans/172 P3) - the composable form of the edge+shadow token recipes */
 @import './parts/gallery.css'      layer(chrome);
 @import './parts/spotlight.css'    layer(chrome); /* the search overlay above the footer bar (plans/99 M2) - chrome, like the bar it docks to */
 @import './parts/featured.css'     layer(chrome);

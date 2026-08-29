@@ -56,7 +56,7 @@
        oval: `height` is floored by the base `min-height: var(--chrome-h)`, so a
        narrower `width` (the old 2.9em) left the headshot centred in a taller-
        than-wide egg. One token for both dimensions keeps it round. */
-    width: var(--chrome-h); height: var(--chrome-h); padding: 0; border-radius: 50%;
+    width: var(--chrome-h); height: var(--chrome-h); padding: 0; border-radius: var(--radius-round);
     display: inline-flex; flex: none;
   }
   /* Re-centre the avatar dot/image now the pill padding is gone. */
@@ -132,19 +132,19 @@
 
 .profile-menu-theme {
   display: flex; gap: 2px; padding: 3px; margin-bottom: 4px;
-  border: 1px solid hsl(var(--border)); border-radius: 999px; background: hsl(var(--muted) / 0.5);
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius-pill); background: hsl(var(--muted) / 0.5);
 }
 .profile-menu-seg {
   flex: 1; display: flex; align-items: center; justify-content: center;
-  padding: 8px 6px; border: 0; border-radius: 999px;
+  padding: 8px 6px; border: 0; border-radius: var(--radius-pill);
   background: transparent; color: hsl(var(--muted-foreground));
   font: inherit; line-height: 1.2; cursor: pointer;
-  transition: background .12s, color .12s;
+  transition: background var(--dur-1), color var(--dur-1);
 }
 .profile-menu-seg svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
 .profile-menu-seg:hover { color: hsl(var(--foreground)); }
 .profile-menu-seg[aria-checked="true"] {
-  background: hsl(var(--card)); color: hsl(var(--foreground)); box-shadow: 0 1px 3px hsl(0 0% 0% / 0.12);
+  background: hsl(var(--card)); color: hsl(var(--foreground)); box-shadow: var(--shadow-1);
 }
 .profile-menu-seg:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 
@@ -160,7 +160,7 @@
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   width: 100%; padding: 11px 12px; border: 0; border-radius: var(--radius);
   background: transparent; color: hsl(var(--foreground));
-  font: inherit; font-size: calc(14px * var(--a11y-fs)); font-weight: 500; text-align: left; text-decoration: none;
+  font: inherit; font-size: var(--fs-lg); font-weight: 500; text-align: left; text-decoration: none;
   cursor: pointer;
 }
 .profile-menu-item:hover { background: hsl(var(--accent)); }
@@ -170,7 +170,7 @@
   /* Box scales with the numeral inside it - see .history-fab-count. */
   min-width: calc(20px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); padding: 0 6px;
   display: inline-flex; align-items: center; justify-content: center;
-  font-size: calc(11px * var(--a11y-fs)); font-weight: 700; line-height: 1;
+  font-size: var(--fs-xs); font-weight: 700; line-height: 1;
   color: hsl(var(--primary-foreground)); background: hsl(var(--primary)); border-radius: var(--radius);
 }
 /* box shape (utilities.css) stays as-is; background/color/backdrop-filter/
@@ -187,10 +187,10 @@
   right: -4px;
   /* The badge box scales with its own digits - a fixed 16px round at a 20% larger
      numeral stops being round and starts cropping the descender of a "9". */
-  min-width: calc(16px * var(--a11y-fs));
-  height: calc(16px * var(--a11y-fs));
+  min-width: var(--fs-xl);
+  height: var(--fs-xl);
   padding: 0 4px;
-  font-size: calc(10px * var(--a11y-fs));
+  font-size: var(--fs-2xs);
   font-weight: 700;
   line-height: 1;
   color: hsl(var(--primary-foreground));
@@ -308,7 +308,7 @@
   flex: 0 0 auto;
   display: inline-flex; align-items: center;     place-content: flex-end; gap: 3px;
   min-width: 4em;
-  font-size: calc(16px * var(--a11y-fs)); line-height: 1;
+  font-size: var(--fs-xl); line-height: 1;
   filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.35));
 }
 .lang-menu-name { flex: 1 1 auto; min-width: 0; }
@@ -324,7 +324,7 @@
    components.css); the menu's own padding/gap handles spacing beyond the 4px. */
 .lang-sort-tabs {
   display: flex; gap: 2px; padding: 3px; margin-bottom: 4px; flex: none;
-  background: hsl(var(--muted) / .5); border-radius: 999px;
+  background: hsl(var(--muted) / .5); border-radius: var(--radius-pill);
 }
 /* nowrap + auto basis (vs the colour tabs' 1 1 0) so a long translated
    "Speakers" widens its pill instead of wrapping or clipping. */
@@ -332,7 +332,7 @@
   flex: 1 1 auto; white-space: nowrap; padding: 4px 8px; border: 0; cursor: pointer;
   background: transparent; color: hsl(var(--muted-foreground));
   font-family: var(--font-mono); font-size: calc(10.5px * var(--a11y-fs)); letter-spacing: .04em;
-  border-radius: 999px; transition: background .12s, color .12s;
+  border-radius: var(--radius-pill); transition: background var(--dur-1), color var(--dur-1);
 }
 .lang-sort-tab:hover { color: hsl(var(--foreground)); }
 .lang-sort-tab[aria-selected="true"] {

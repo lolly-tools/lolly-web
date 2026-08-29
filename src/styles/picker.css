@@ -48,9 +48,9 @@
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   outline: none;
-  transition: border-color 0.12s;
+  transition: border-color var(--dur-1);
 }
 .asset-picker-search:focus { border-color: hsl(var(--primary)); }
 .asset-picker-search::placeholder { color: hsl(var(--muted-foreground)); }
@@ -64,7 +64,7 @@
   color: hsl(var(--muted-foreground));
   padding: 2px 6px;
   border-radius: var(--radius);
-  transition: color 0.12s, background 0.12s;
+  transition: color var(--dur-1), background var(--dur-1);
 }
 .asset-picker-close:hover {
   color: hsl(var(--foreground));
@@ -92,11 +92,11 @@
   margin-bottom: -1px;
   color: hsl(var(--muted-foreground));
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 600;
   cursor: pointer;
   border-radius: var(--radius) var(--radius) 0 0;
-  transition: color 0.12s, background 0.12s, border-color 0.12s;
+  transition: color var(--dur-1), background var(--dur-1), border-color var(--dur-1);
 }
 .asset-picker-tab:hover { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
 .asset-picker-tab.is-active {
@@ -122,7 +122,7 @@
 .asset-picker-current-label {
   flex: 1;
   min-width: 0;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   color: hsl(var(--muted-foreground));
   white-space: nowrap;
   overflow: hidden;
@@ -139,9 +139,9 @@
   border-radius: var(--radius);
   cursor: pointer;
   font: inherit;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   font-weight: 600;
-  transition: border-color 0.12s, color 0.12s;
+  transition: border-color var(--dur-1), color var(--dur-1);
 }
 .asset-picker-current-edit:hover { border-color: hsl(var(--primary)); color: hsl(var(--primary)); }
 
@@ -170,7 +170,7 @@
 }
 .asset-picker-themes[hidden] { display: none; }
 .asset-picker-themes-label {
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: hsl(var(--muted-foreground));
   margin-right: 4px;
@@ -183,11 +183,11 @@
   background: hsl(var(--background));
   color: hsl(var(--foreground));
   border: 1px solid hsl(var(--input));
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   font: inherit;
-  font-size: calc(12px * var(--a11y-fs));
-  transition: border-color 0.12s, box-shadow 0.12s;
+  font-size: var(--fs-sm);
+  transition: border-color var(--dur-1), box-shadow var(--dur-1);
 }
 .asset-picker-theme:hover { border-color: hsl(var(--primary)); }
 .asset-picker-theme.is-active {
@@ -202,7 +202,7 @@
   gap: 2px;
   width: 30px;
   height: 20px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid hsl(var(--border));
   overflow: hidden;
 }
@@ -210,7 +210,7 @@
   display: block;
   width: 9px;
   height: 9px;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
 }
 /* Photo treatment swatch - a single filled chip previewing the greyscale ramp or
    the duotone's shadow→highlight gradient. 'None' shows an empty chip with a
@@ -257,7 +257,7 @@
   font: inherit;
 }
 .asset-picker-group-title {
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -287,7 +287,7 @@
 .asset-picker-group .asset-picker-group .asset-picker-group-title {
   text-transform: none;
   letter-spacing: 0;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
 }
 /* ── Category filter row ─────────────────────────────────────────────────────
    One icon per present library category, pinned to the top of the library pane.
@@ -324,7 +324,7 @@
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   cursor: pointer;
-  transition: color 0.12s, border-color 0.12s, background 0.12s;
+  transition: color var(--dur-1), border-color var(--dur-1), background var(--dur-1);
 }
 .asset-picker-catbtn:hover { color: hsl(var(--foreground)); border-color: hsl(var(--primary)); }
 .asset-picker-catbtn.is-active {
@@ -358,7 +358,7 @@
   cursor: pointer;
   gap: 4px;
   font: inherit;
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition: border-color var(--dur-1), box-shadow var(--dur-1);
 }
 .asset-picker-card:hover {
   border-color: hsl(var(--primary));
@@ -381,7 +381,7 @@
   position: absolute;
   right: 7px;
   bottom: 7px;
-  font-size: calc(10px * var(--a11y-fs));
+  font-size: var(--fs-2xs);
   font-weight: 700;
   letter-spacing: 0.04em;
   line-height: 1;
@@ -389,7 +389,7 @@
      line rather than wrapping upward over the thumbnail on a narrow tile. */
   white-space: nowrap;
   padding: 2px 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: hsl(var(--muted));
   color: hsl(var(--muted-foreground));
   pointer-events: none;
@@ -425,7 +425,7 @@
   justify-content: center;
   color: hsl(var(--muted-foreground));
   text-transform: uppercase;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   letter-spacing: 0.06em;
 }
 /* Looping Lottie thumbnail: the still poster (inline background-image) rests behind the
@@ -447,7 +447,7 @@
 .asset-picker-thumb-motion.is-lottie-live { background-image: none !important; color: transparent; }
 
 .asset-picker-name {
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   font-weight: 600;
   /* One line, ellipsis on overflow. Full name shows via the title tooltip on
      hover (min-width:0 lets the flex item shrink below its content width). */
@@ -476,7 +476,7 @@
   text-align: center;
   color: hsl(var(--muted-foreground));
   padding: 28px 0;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
 }
 
 /* ── Paste-a-Lolly-link render card ────────────────────────────────────────
@@ -498,7 +498,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   color: hsl(var(--card-foreground));
 }
 .asset-picker-toolcard-head strong { font-weight: 700; }
@@ -513,7 +513,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   color: hsl(var(--muted-foreground));
 }
 /* The controls themselves are the shared field primitive (parts/fields.css); all
@@ -560,7 +560,7 @@
   gap: 8px;
   padding: 9px 18px;
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 600;
   color: hsl(var(--primary-foreground));
   background: hsl(var(--primary));
@@ -578,7 +578,7 @@
   height: 14px;
   border: 2px solid hsl(var(--primary-foreground) / 0.35);
   border-top-color: hsl(var(--primary-foreground));
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   animation: tc-render-spin 0.8s linear infinite;
 }
 .tc-render.is-rendering::after,
@@ -616,7 +616,7 @@
      help line starts exactly under the label text. Was 20px, tuned against the UA
      checkbox this row used before the primitive landed. */
   margin: -10px 0 0 22px;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   color: hsl(var(--muted-foreground));
 }
 
@@ -657,14 +657,14 @@
   align-self: stretch;
   padding: 6px 10px;
   font: inherit;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: hsl(var(--primary));
   background: hsl(var(--primary) / 0.08);
   border: 1px solid hsl(var(--primary) / 0.35);
   border-radius: var(--radius);
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
+  transition: background var(--dur-1), border-color var(--dur-1);
 }
 .asset-picker-toolquick:hover { background: hsl(var(--primary) / 0.16); }
 .asset-picker-toolquick:focus-visible { outline: 2px solid hsl(var(--primary) / 0.5); outline-offset: 1px; }
@@ -680,7 +680,7 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   font-weight: 700;
   color: #fff;
   background: hsl(var(--primary) / 0.86);
@@ -697,15 +697,15 @@
   bottom: 16px;
   transform: translate(-50%, 12px);
   padding: 8px 16px;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 600;
   color: #fff;
   background: hsl(var(--primary));
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   box-shadow: 0 6px 20px hsl(var(--foreground) / 0.18);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.18s, transform 0.18s;
+  transition: opacity var(--dur-2), transform var(--dur-2);
   z-index: 5;
 }
 .asset-picker-toast.is-shown { opacity: 1; transform: translate(-50%, 0); }
@@ -713,7 +713,7 @@
 
 /* Saved-creation tiles reuse the asset card; just the relative-time line is new. */
 .asset-picker-sessitem-when {
-  font-size: calc(10px * var(--a11y-fs));
+  font-size: var(--fs-2xs);
   color: hsl(var(--muted-foreground));
 }
 /* A session/tool with no rendered thumb falls back to its tool icon. */
@@ -730,7 +730,7 @@
   align-items: center;
   gap: 4px;
   margin-bottom: 14px;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
 }
 .asset-picker-crumb {
   padding: 2px 6px;
@@ -739,10 +739,10 @@
   border-radius: var(--radius);
   color: hsl(var(--muted-foreground));
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 600;
   cursor: pointer;
-  transition: color 0.12s, background 0.12s;
+  transition: color var(--dur-1), background var(--dur-1);
 }
 .asset-picker-crumb:hover { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
 .asset-picker-crumb:focus-visible { outline: 2px solid hsl(var(--primary) / 0.5); outline-offset: -1px; }
@@ -773,7 +773,7 @@
   font-size: calc(15px * var(--a11y-fs));
   cursor: pointer;
   color: hsl(var(--muted-foreground));
-  transition: color 0.12s, border-color 0.12s, background 0.12s;
+  transition: color var(--dur-1), border-color var(--dur-1), background var(--dur-1);
 }
 .asset-picker-toolcard-back:hover { color: hsl(var(--foreground)); border-color: hsl(var(--primary)); background: hsl(var(--accent)); }
 
@@ -791,10 +791,10 @@
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 600;
   cursor: pointer;
-  transition: border-color 0.12s, background 0.12s;
+  transition: border-color var(--dur-1), background var(--dur-1);
 }
 .asset-picker-toolcard-actions .tc-edit:hover,
 .asset-picker-toolcard-actions .tc-back:hover { border-color: hsl(var(--primary)); background: hsl(var(--accent)); }
@@ -805,10 +805,10 @@
   border: none;
   border-radius: var(--radius);
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.12s;
+  transition: opacity var(--dur-1);
 }
 .asset-picker-toolcard-actions .tc-use:hover { opacity: 0.9; }
 .asset-picker-toolcard-actions .tc-use:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -830,8 +830,8 @@
   border-radius: var(--radius);
   cursor: pointer;
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
-  transition: border-color 0.12s, background 0.12s;
+  font-size: var(--fs-md);
+  transition: border-color var(--dur-1), background var(--dur-1);
 }
 .asset-picker-upload:hover,
 .asset-picker-upload:focus-within {
@@ -866,8 +866,8 @@
   border-radius: var(--radius);
   cursor: pointer;
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
-  transition: border-color 0.12s, background 0.12s;
+  font-size: var(--fs-md);
+  transition: border-color var(--dur-1), background var(--dur-1);
 }
 .asset-picker-webcam:hover,
 .asset-picker-screencap:hover,
@@ -922,7 +922,7 @@
   justify-content: space-between;
   padding: 12px 16px;
   border-bottom: 1px solid hsl(var(--border));
-  font-size: calc(14px * var(--a11y-fs));
+  font-size: var(--fs-lg);
   font-weight: 600;
 }
 .webcam-capture-close {
@@ -960,7 +960,7 @@
   text-align: center;
   padding: 24px;
   color: hsl(var(--muted-foreground));
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
 }
 .webcam-capture-status[hidden] { display: none; }
 .webcam-capture-status.webcam-capture-error { color: hsl(var(--destructive)); }
@@ -978,7 +978,7 @@
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 600;
   cursor: pointer;
 }
@@ -989,7 +989,7 @@
   border: none;
   border-radius: var(--radius);
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 600;
   cursor: pointer;
 }
@@ -1030,7 +1030,7 @@
   gap: 12px;
   padding: 12px 16px;
   border-bottom: 1px solid hsl(var(--border));
-  font-size: calc(14px * var(--a11y-fs));
+  font-size: var(--fs-lg);
   font-weight: 600;
 }
 .pdfpick-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1064,7 +1064,7 @@
   cursor: pointer;
   font: inherit;
   color: inherit;
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition: border-color var(--dur-1), box-shadow var(--dur-1);
 }
 .pdfpick-page:hover { border-color: hsl(var(--primary) / 0.55); }
 .pdfpick-page.is-on { border-color: hsl(var(--primary)); box-shadow: 0 0 0 1px hsl(var(--primary)); }
@@ -1082,11 +1082,11 @@
   border-radius: calc(var(--radius) - 2px);
   overflow: hidden;
   color: hsl(var(--muted-foreground));
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
 }
 .pdfpick-thumb:empty::before { content: '…'; }
 .pdfpick-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
-.pdfpick-cap { font-size: calc(12px * var(--a11y-fs)); text-align: center; color: hsl(var(--muted-foreground)); }
+.pdfpick-cap { font-size: var(--fs-sm); text-align: center; color: hsl(var(--muted-foreground)); }
 .pdfpick-page.is-on .pdfpick-cap { color: hsl(var(--foreground)); font-weight: 600; }
 .pdfpick-actions {
   display: flex;
@@ -1095,7 +1095,7 @@
   padding: 12px 16px;
   border-top: 1px solid hsl(var(--border));
 }
-.pdfpick-note { margin-right: auto; font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.pdfpick-note { margin-right: auto; font-size: var(--fs-sm); color: hsl(var(--muted-foreground)); }
 .pdfpick-btn {
   padding: 7px 14px;
   background: hsl(var(--background));
@@ -1103,7 +1103,7 @@
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 600;
   cursor: pointer;
 }
@@ -1123,7 +1123,7 @@
   align-items: center;
   gap: 8px;
   margin-bottom: 10px;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -1131,10 +1131,10 @@
 }
 .asset-picker-count {
   padding: 1px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: hsl(var(--muted));
   color: hsl(var(--muted-foreground));
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 500;
   letter-spacing: 0;
 }
@@ -1145,13 +1145,13 @@
   align-items: center;
   gap: 6px;
   margin: 12px 0 8px;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: hsl(var(--foreground));
 }
 .asset-picker-folder-head::before {
   content: "📁";
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   opacity: 0.8;
 }
 
@@ -1187,14 +1187,14 @@
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: hsl(var(--background) / 0.85);
   color: hsl(var(--muted-foreground));
-  font-size: calc(16px * var(--a11y-fs));
+  font-size: var(--fs-xl);
   line-height: 1;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.12s, color 0.12s, background 0.12s;
+  transition: opacity var(--dur-1), color var(--dur-1), background var(--dur-1);
 }
 .asset-picker-card-user:hover .asset-picker-card-delete,
 .asset-picker-card-delete:focus-visible { opacity: 1; }
@@ -1223,12 +1223,12 @@
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: hsl(var(--background) / 0.85);
   color: hsl(var(--muted-foreground));
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.12s, color 0.12s, background 0.12s;
+  transition: opacity var(--dur-1), color var(--dur-1), background var(--dur-1);
 }
 /* When both are present, the cut-out sits to the right of Upscale so they don't
    stack. A card with only one shows it at the left edge. */
@@ -1252,11 +1252,11 @@
 .asset-picker-typebar { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 0; }
 .asset-picker-typebar[hidden] { display: none; }
 .asset-picker-typepill {
-  border: 1px solid hsl(var(--border)); border-radius: 999px;
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius-pill);
   background: hsl(var(--background)); color: hsl(var(--muted-foreground));
-  font: inherit; font-size: calc(12px * var(--a11y-fs)); font-weight: 600;
+  font: inherit; font-size: var(--fs-sm); font-weight: 600;
   padding: 4px 12px; cursor: pointer;
-  transition: background .12s, color .12s, border-color .12s;
+  transition: background var(--dur-1), color var(--dur-1), border-color var(--dur-1);
 }
 .asset-picker-typepill:hover { color: hsl(var(--foreground)); border-color: hsl(var(--ring)); }
 .asset-picker-typepill.is-on { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
@@ -1269,9 +1269,9 @@
   position: absolute; left: 6px; bottom: 34px;
   width: calc(26px * var(--a11y-fs)); height: calc(26px * var(--a11y-fs));
   display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid hsl(var(--border)); border-radius: 50%;
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius-round);
   background: hsl(var(--card)); color: hsl(var(--foreground));
-  font-size: calc(12px * var(--a11y-fs)); line-height: 1; cursor: pointer;
+  font-size: var(--fs-sm); line-height: 1; cursor: pointer;
   box-shadow: 0 2px 8px hsl(0 0% 0% / .18);
 }
 .asset-picker-audition:hover { border-color: hsl(var(--ring)); }
@@ -1281,7 +1281,7 @@
 .asset-picker-panel.is-dropping { outline: 2px dashed hsl(var(--primary)); outline-offset: -6px; }
 
 /* Visible upload failure (P6). */
-.asset-picker-footer-error { font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--destructive)); }
+.asset-picker-footer-error { font-size: var(--fs-sm); color: hsl(var(--destructive)); }
 .asset-picker-footer-error[hidden] { display: none; }
 
 /* Mobile pass (P8): a full-screen sheet, and per-tile actions that touch can see. */
@@ -1305,9 +1305,9 @@
 /* Cross-tab match counts while searching (P3). */
 .asset-picker-tabcount {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs));
+  min-width: var(--fs-xl); height: var(--fs-xl);
   margin-inline-start: 6px; padding: 0 4px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: hsl(var(--muted)); color: hsl(var(--muted-foreground));
   font-size: calc(10.5px * var(--a11y-fs)); font-weight: 700;
 }
@@ -1336,7 +1336,7 @@
   border: 1px solid hsl(var(--border));
   background: hsl(var(--muted) / 0.4);
   color: hsl(var(--muted-foreground));
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 4px 12px;
   font-size: 12px;
   cursor: pointer;

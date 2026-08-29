@@ -27,7 +27,7 @@
         (`1px solid hsl(var(--border))`) survives in older sheets and is not
         propagated here.
       - 13px control text, `font: inherit` for the family, `var(--radius)` corner.
-      - 0.12s transitions on colour-ish properties; no easing keyword (house).
+      - var(--dur-1) transitions on colour-ish properties; no easing keyword (house).
       - Disabled is opacity + cursor, never a colour swap (buttons.css:49).
       - Hover LIFTS (highlight brightens, drop deepens); :active PRESSES IN
         (the drop inverts to an inset). Fields read as physical objects here -
@@ -65,8 +65,8 @@
   border-radius: var(--radius);
   box-shadow: inset 0 1px #fff1, 0 .1rem .3rem #0002;
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
-  transition: box-shadow 0.12s, background-color 0.12s, background-position 0.12s;
+  font-size: var(--fs-md);
+  transition: box-shadow var(--dur-1), background-color var(--dur-1), background-position var(--dur-1);
 }
 
 /* Width is the one thing a boxed field argues about most often - a toolbar cell
@@ -79,7 +79,7 @@
 .field-input--sm,
 .field-select--sm {
   padding: 5px 8px;
-  font-size: calc(12.5px * var(--a11y-fs));
+  font-size: var(--fs-md);
   border-radius: calc(var(--radius) * .5);
 }
 /* (`.field-select--sm`'s own chevron gutter is set AFTER the `.field-select`
@@ -89,7 +89,7 @@
    `.field-input` alias list in components.css already carries. */
 .field-input--mono {
   font-family: var(--font-mono);
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   background-color: hsl(var(--muted) / .4);
 }
 
@@ -108,7 +108,7 @@
      The 32px gutter is NOT scaled: at every factor the painted caret still
      ends inside it (10px inset + 14 × factor), and a padding that grows with
      the type is the whole-UI zoom this mechanism exists to avoid. */
-  background-size: calc(14px * var(--a11y-fs));
+  background-size: var(--fs-lg);
   /* appearance:none drops the native menulist widget. The old appearance:auto +
      transition combo made Chrome re-lay-out the native control on every hover
      frame, producing a ~1px baseline jitter (tool.css records the same finding).
@@ -119,7 +119,7 @@
 }
 /* Must follow the block above, not the other `--sm` declarations - equal
    specificity, so source order is the whole argument. */
-.field-select--sm { padding-inline-end: 24px; background-size: calc(12px * var(--a11y-fs)); }
+.field-select--sm { padding-inline-end: 24px; background-size: var(--fs-sm); }
 
 /* Hover LIFTS. The chevron drifts a hair down the moment the control is live -
    a one-pixel promise that the thing opens downward. */
@@ -134,7 +134,7 @@
 .field-input:focus,
 .field-select:focus {
   outline: none;
-  box-shadow: inset 0 1px #fff2, 0 0 0 3px hsl(var(--ring) / .15);
+  box-shadow: inset 0 1px #fff2, var(--ring-focus);
 }
 .field-select:focus { background-position: right 10px calc(50% + 1px); }
 
@@ -173,7 +173,7 @@
    muted. Same values as `.input-label` (tool.css) and `.section-card-head`. */
 .field-label {
   display: block;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: .06em;
@@ -185,13 +185,13 @@
 .field-row {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-2);
   min-width: 0;
 }
 .field-row--inline {
   flex-direction: row;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-4);
 }
 .field-row--inline .field-label { flex: none; }
 
@@ -209,8 +209,8 @@
      beside a 15.6px label under `largeText`, i.e. the one control on the row
      that ignored the preference. The 1.5px hairline below is NOT scaled: it is
      a boundary, not a glyph. */
-  width: calc(16px * var(--a11y-fs));
-  height: calc(16px * var(--a11y-fs));
+  width: var(--fs-xl);
+  height: var(--fs-xl);
   /* The radio's dot radius, scaled HERE rather than inside the gradient that
      paints it: the multiplier belongs on a length, not buried in a paint value
      where nothing can see it. Inherited by :checked below. */
@@ -231,10 +231,10 @@
   background-repeat: no-repeat;
   background-position: center;
   cursor: pointer;
-  transition: background-color 0.12s, border-color 0.12s, box-shadow 0.12s;
+  transition: background-color var(--dur-1), border-color var(--dur-1), box-shadow var(--dur-1);
 }
 .field-check { border-radius: calc(var(--radius) * .25); }
-.field-radio { border-radius: 50%; }
+.field-radio { border-radius: var(--radius-round); }
 
 .field-check:hover:not(:disabled),
 .field-radio:hover:not(:disabled) { border-color: hsl(var(--primary) / .55); }
@@ -250,7 +250,7 @@
    as they grow. */
 .field-check:checked {
   background-image: var(--field-tick);
-  background-size: calc(11px * var(--a11y-fs));
+  background-size: var(--fs-xs);
 }
 /* The radio dot is drawn, not fetched - a radial-gradient can read the token
    directly, so the dot is theme-correct with no second asset. */
@@ -286,7 +286,7 @@
 .field-toggle {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-4);
   cursor: pointer;
   min-width: 0;
 }
@@ -299,9 +299,9 @@
 .field-toggle:has(.field-radio:disabled) {
   opacity: .55;
   cursor: not-allowed;
-  transition: opacity 0.12s 0.3s;
+  transition: opacity var(--dur-1) var(--dur-3);
 }
-.field-toggle { transition: opacity 0.12s; }
+.field-toggle { transition: opacity var(--dur-1); }
 
 /* ─── Range ──────────────────────────────────────────────────────────────── */
 
@@ -374,7 +374,7 @@
   border-radius: var(--radius);
   background: hsl(var(--primary));
   box-shadow: 0 1px 4px hsl(0 0% 0% / .25);
-  transition: transform 0.12s ease, box-shadow 0.12s;
+  transition: transform var(--dur-1) ease, box-shadow var(--dur-1);
 }
 .field-range::-moz-range-thumb {
   width: 14px;
@@ -462,7 +462,7 @@ input.field-range.is-upgraded { display: none; }
   pointer-events: none;
   /* Glide for keyboard / programmatic changes; suppressed while dragging below
      so a finger/pointer drag stays 1:1 with no lag. */
-  transition: width 0.12s ease;
+  transition: width var(--dur-1) ease;
 }
 
 .cs-thumb {
@@ -475,7 +475,7 @@ input.field-range.is-upgraded { display: none; }
   background: hsl(var(--primary));
   box-shadow: 0 1px 4px hsl(0 0% 0% / 0.25);
   pointer-events: none;
-  transition: box-shadow 0.12s, transform 0.12s ease, left 0.12s ease;
+  transition: box-shadow var(--dur-1), transform var(--dur-1) ease, left var(--dur-1) ease;
 }
 
 .custom-slider:focus-visible .cs-thumb {
@@ -493,7 +493,7 @@ input.field-range.is-upgraded { display: none; }
 
 .custom-slider.dragging .cs-fill,
 .custom-slider.dragging .cs-thumb {
-  transition: box-shadow 0.12s, transform 0.12s ease;
+  transition: box-shadow var(--dur-1), transform var(--dur-1) ease;
 }
 
 /* Jelly slider (flag-gated via .cs-jelly, added by mountCustomSlider). The
@@ -503,17 +503,17 @@ input.field-range.is-upgraded { display: none; }
    only smoother; a second .12s ease would smear the trail) and disable the
    plain grab-swell rule (the spring drives the swell instead). */
 .cs-jelly .cs-thumb {
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   transform-origin: center;
   will-change: transform;
   /* JS owns transform (the rAF spring) - keep box-shadow/left transitions,
      drop the transform one so nothing smears the egg. left still glides on
      keyboard steps; the drag rule below drops it for a 1:1 pointer follow. */
-  transition: box-shadow 0.12s, left 0.12s ease;
+  transition: box-shadow var(--dur-1), left var(--dur-1) ease;
 }
 .cs-jelly.dragging .cs-thumb,
 .cs-jelly:active .cs-thumb {
-  transition: box-shadow 0.12s;
+  transition: box-shadow var(--dur-1);
 }
 
 /* The trailing tail - a CSS-border triangle whose colored (left) border is the
@@ -590,7 +590,7 @@ input.field-range.is-upgraded { display: none; }
 }
 :where(optgroup) {
   font-weight: 700;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   color: hsl(var(--muted-foreground));
 }
 
@@ -621,7 +621,7 @@ input.field-range.is-upgraded { display: none; }
      pointer, so the preference can never scale a finger target away. */
   .field-check,
   .field-radio { width: calc(20px * var(--a11y-fs)); height: calc(20px * var(--a11y-fs)); }
-  .field-check:checked { background-size: calc(13px * var(--a11y-fs)); }
+  .field-check:checked { background-size: var(--fs-md); }
 }
 
 /* ─── prefers-contrast: more ─────────────────────────────────────────────── */

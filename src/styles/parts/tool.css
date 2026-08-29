@@ -48,11 +48,11 @@
   font-weight: 700;
   padding: 13px 22px;
   cursor: pointer;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition: background-color var(--dur-1) ease, color var(--dur-1) ease;
 }
 .render-pill-btn:hover { background: rgba(255, 255, 255, 0.14); }
 .render-pill-btn:active { background: rgba(0, 0, 0, 0.12); }
-.render-pill-btn:focus-visible { outline: 2px solid hsl(var(--primary-foreground)); outline-offset: -4px; border-radius: 999px; }
+.render-pill-btn:focus-visible { outline: 2px solid hsl(var(--primary-foreground)); outline-offset: -4px; border-radius: var(--radius-pill); }
 /* The arrow/check rides the same multiplier as the "Export"/"Save" word beside
    it - an icon paired with a growing label has to grow with it, or the pill
    reads as a big word next to a stale mark. The pill has no fixed height, so
@@ -107,11 +107,11 @@
    queries. Only the surrounding .export-popup-head/-body spacing is genuinely
    per-breakpoint and stays in the two blocks. */
 .export-popup-title {
-  font-size: calc(13px * var(--a11y-fs)); font-weight: 700; text-transform: uppercase;
+  font-size: var(--fs-md); font-weight: 700; text-transform: uppercase;
   letter-spacing: 0.06em; color: hsl(var(--muted-foreground));
 }
 .export-popup-close {
-  border: none; background: none; cursor: pointer; padding: 4px 8px;
+  border: none; background: none; cursor: pointer; padding: var(--sp-2) var(--sp-4);
   font-size: calc(18px * var(--a11y-fs)); line-height: 1; color: hsl(var(--muted-foreground));
 }
 
@@ -159,7 +159,7 @@
     box-shadow: 0 .2rem .5rem 1px #0004, 0 -10px 36px #0002;
     pointer-events: auto;
     transform: translateY(110%);              /* tucked below the viewport when closed */
-    transition: transform 0.22s ease;
+    transition: transform var(--dur-2) ease;
   }
   .tool-layout.export-open .export-popup { transform: translateY(0); }
   .export-popup-head {
@@ -191,14 +191,14 @@
      pointerdowns that land on a button). */
   .export-popup-head { cursor: grab; touch-action: none; }
   .export-popup.is-dragging .export-popup-head { cursor: grabbing; }
-  .export-popup-tools { display: inline-flex; align-items: center; gap: 2px; }
+  .export-popup-tools { display: inline-flex; align-items: center; gap: var(--sp-1); }
   .export-popup-tool {
     display: inline-flex; align-items: center; justify-content: center;
-    border: none; background: none; cursor: pointer; padding: 4px;
-    border-radius: 6px; color: hsl(var(--muted-foreground));
+    border: none; background: none; cursor: pointer; padding: var(--sp-2);
+    border-radius: var(--radius-sm); color: hsl(var(--muted-foreground));
   }
   .export-popup-tool:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
-  .export-popup-tool svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); display: block; }
+  .export-popup-tool svg { width: var(--fs-xl); height: var(--fs-xl); display: block; }
 
   /* Lifted off the dock into an explicitly-placed, resizable floating window. The
      box is driven by inline left/top/width/height; visibility follows .export-open
@@ -232,7 +232,7 @@
   background: hsl(var(--card) / .8);
   backdrop-filter: blur(5px);
   border-right: 1px solid hsl(var(--border));
-  transition: width 0.2s ease;
+  transition: width var(--dur-2) ease;
   /* overflow-x hidden so the contents (frozen at the open width via --sb-open-w,
      see .sidebar-body) CLIP rather than reflow as the panel width-collapses - a
      smooth glide with no scrollbar flash. overflow-y auto for tall input lists. */
@@ -270,10 +270,10 @@
   margin-block: auto;
   width: 4px;
   height: 44px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: hsl(var(--primary));
   opacity: 0;
-  transition: opacity 0.12s, box-shadow 0.12s;
+  transition: opacity var(--dur-1), box-shadow var(--dur-1);
 }
 .resize-grip:hover::before,
 .resize-grip:active::before,
@@ -289,7 +289,7 @@
     padding: 8px 8px 10px;
     border-bottom: 0;
     flex-shrink: 0;
-    gap: 8px;
+    gap: var(--sp-4);
 
     /* Sticky - pins to the top of the scrolling sidebar so the Tools /
        fullscreen controls are always reachable, even after scrolling the inputs. */
@@ -312,7 +312,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--sp-4);
 }
 
 /* ─── Icon-only controls and the type scale ──────────────────────────────────
@@ -331,13 +331,13 @@
    - a CSS rule outranks a presentational attribute, which is why sizing here
    works - and templating the factor into that markup would put it somewhere
    other code measures and clones. */
-.history-btn svg { flex: none; width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
+.history-btn svg { flex: none; width: var(--fs-xl); height: var(--fs-xl); }
 
 /* Undo / redo buttons in the sidebar header - compact icon buttons centred
    between Tools (left) and the theme toggle (right). The tappable counterpart to
    Cmd+Z/Cmd+Y and the primary history trigger on touch. Dimmed + non-interactive
    at the ends of history (disabled reflects empty undo/redo stacks). */
-.history-controls { display: inline-flex; align-items: center; gap: 2px; }
+.history-controls { display: inline-flex; align-items: center; gap: var(--sp-1); }
 .history-btn {
   flex: none;
   display: inline-flex;
@@ -351,7 +351,7 @@
   background: none;
   color: hsl(var(--foreground));
   cursor: pointer;
-  transition: background 0.12s, color 0.12s, opacity 0.12s;
+  transition: background var(--dur-1), color var(--dur-1), opacity var(--dur-1);
 }
 .history-btn:hover:not(:disabled) { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
 .history-btn:disabled { opacity: 0.3; cursor: default; }
@@ -392,7 +392,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--sp-4);
 }
 
 /* Title + the multi-edit trigger hug each other on the left; the wrap owns the
@@ -401,14 +401,14 @@
 .sidebar-title-wrap {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--sp-1);
   min-width: 0;
   flex: 1;
-  transition: opacity 0.15s;
+  transition: opacity var(--dur-1);
 }
 
 .sidebar-title {
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 600;
   color: hsl(var(--foreground));
   white-space: nowrap;
@@ -441,7 +441,7 @@
   border-radius: var(--radius);
   cursor: pointer;
   color: hsl(var(--muted-foreground));
-  transition: background 0.12s, color 0.12s;
+  transition: background var(--dur-1), color var(--dur-1);
 }
 .multi-edit-btn:hover,
 .tool-guide-btn:hover { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
@@ -457,21 +457,21 @@
 .multi-edit-menu {
   position: fixed;
   z-index: 100000;
-  padding: 8px;
+  padding: var(--sp-4);
   background: hsl(var(--card));
   color: hsl(var(--card-foreground));
   border: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius) * 1.4);
-  box-shadow: 0 12px 32px hsl(0 0% 0% / 0.24);
+  box-shadow: var(--shadow-4);
 }
 .multi-edit-menu-head {
   padding: 2px 4px 8px;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 600;
   color: hsl(var(--muted-foreground));
   white-space: nowrap;
 }
-.multi-edit-menu-counts { display: flex; gap: 4px; }
+.multi-edit-menu-counts { display: flex; gap: var(--sp-2); }
 .multi-edit-count {
   width: 30px;
   height: 30px;
@@ -481,10 +481,10 @@
   background: transparent;
   color: hsl(var(--foreground));
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
+  transition: background var(--dur-1), border-color var(--dur-1);
 }
 .multi-edit-count:hover { background: hsl(var(--accent)); border-color: hsl(var(--primary)); }
 .multi-edit-count:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
@@ -500,9 +500,9 @@
   border-radius: var(--radius);
   cursor: pointer;
   color: hsl(var(--muted-foreground));
-  font-size: calc(16px * var(--a11y-fs));
+  font-size: var(--fs-xl);
   line-height: 1;
-  transition: background 0.12s, color 0.12s;
+  transition: background var(--dur-1), color var(--dur-1);
 }
 
 .fullscreen-toggle::before {
@@ -514,7 +514,7 @@
 .fullscreen-toggle[open]::before {
   content: "";
   /* One affordance drawn two ways: the expanded state is a "→" text glyph (which
-     already grows, off the button's calc(16px * var(--a11y-fs))), the collapsed
+     already grows, off the button's var(--fs-xl)), the collapsed
      state this masked panel mark (which did not). The mark takes the same
      factor so the control doesn't change size when it changes state. The 28px
      button keeps its length - 20.4px inside 28px still clears. */
@@ -546,7 +546,7 @@
   content: "";
   width: 44px;
   height: 8px;            /* was 5px - ~0.2em taller, easier to spot & grab */
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: hsl(var(--primary));
   border: 1px solid #fff5;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.22);
@@ -579,12 +579,12 @@
 /* Inline, FULL-WIDTH two-step confirm for "Clear changes" (replaces the centred modal).
    The grid is one column, so both buttons span the whole sidebar; place-self:stretch
    overrides the resting button's place-self:end. */
-.sidebar-utils.is-confirming { gap: 8px; }
+.sidebar-utils.is-confirming { gap: var(--sp-4); }
 .clear-inputs-confirm, .clear-inputs-cancel {
   appearance: none; width: 100%; place-self: stretch;
   border: 1px solid hsl(var(--border)); border-radius: var(--radius);
-  padding: 9px 16px; font: inherit; font-size: calc(13px * var(--a11y-fs)); cursor: pointer;
-  transition: background-color 0.12s, border-color 0.12s, color 0.12s;
+  padding: 9px 16px; font: inherit; font-size: var(--fs-md); cursor: pointer;
+  transition: background-color var(--dur-1), border-color var(--dur-1), color var(--dur-1);
 }
 .clear-inputs-confirm { border-color: hsl(var(--destructive)); color: #fff; background: hsl(var(--destructive)); font-weight: 600; }
 .clear-inputs-confirm:hover { filter: brightness(0.94); }
@@ -630,7 +630,7 @@
   gap: 14px;
   scrollbar-width: thin;
   scrollbar-color: hsl(var(--border)) transparent;
-  transition: opacity 0.12s;
+  transition: opacity var(--dur-1);
 }
 
 .tool-layout[data-sidebar="closed"] .sidebar-body {
@@ -643,16 +643,16 @@
 /* 16px between top-level rows - the same rhythm the sections use, one notch
    tighter than the 18px it was, so an unsectioned tool reads at the density of
    a sectioned one. */
-.tool-inputs{display:grid; grid-template-columns:minmax(0,1fr); gap: 16px}
+.tool-inputs{display:grid; grid-template-columns:minmax(0,1fr); gap: var(--sp-7)}
 
 /* Notice shown when a saved design referenced an image that's since been deleted. */
 .tool-notice {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--sp-4);
   margin: 0 0 12px;
   padding: 9px 10px;
-  font-size: calc(12.5px * var(--a11y-fs));
+  font-size: var(--fs-md);
   line-height: 1.4;
   color: hsl(var(--foreground));
   background: hsl(var(--destructive) / 0.08);
@@ -667,10 +667,10 @@
   background: none;
   color: hsl(var(--foreground) / 0.55);
   cursor: pointer;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   line-height: 1;
   padding: 2px 5px;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
 }
 .tool-notice-close:hover,
 .embed-editor-close:hover{ color: hsl(var(--foreground)); background: hsl(var(--accent)); }
@@ -689,12 +689,12 @@
   border-radius: var(--radius);
   cursor: pointer;
   color: hsl(var(--muted-foreground));
-  font-size: calc(16px * var(--a11y-fs));
+  font-size: var(--fs-xl);
   line-height: 1;
   display: none;
   align-items: center;
   justify-content: center;
-  transition: background 0.12s, color 0.12s;
+  transition: background var(--dur-1), color var(--dur-1);
 }
 
 .fullscreen-toggle-float::before {
@@ -745,7 +745,7 @@
 .input-row {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-2);
   position: relative;
   min-width: 0; /* shrink below content (grid/flex item) so children can truncate */
 }
@@ -779,7 +779,7 @@
    stay keyboard- and screen-reader-reachable. The selectors deliberately never dim
    two nested elements at once (which would multiply opacities and over-darken): a
    non-focused section dims as a whole; its rows are not dimmed again. */
-.input-row, .input-section, .block-item, .block-control { transition: opacity 0.15s ease; }
+.input-row, .input-section, .block-item, .block-control { transition: opacity var(--dur-1) ease; }
 .tool-inputs:focus-within > .input-row:not(:focus-within),
 .tool-inputs:focus-within .input-section:not(:focus-within) { opacity: 0.7; }
 .input-section:focus-within .input-row:not(:focus-within) { opacity: 0.7; }
@@ -827,21 +827,21 @@
   display: inline-flex; align-items: center; justify-content: center;
   vertical-align: middle; margin-left: 4px;
   width: 16px; height: 16px; padding: 0;
-  border: none; border-radius: 50%; background: transparent;
+  border: none; border-radius: var(--radius-round); background: transparent;
   color: hsl(var(--muted-foreground)); cursor: help;
-  opacity: 0.55; transition: opacity 0.12s ease, color 0.12s ease;
+  opacity: 0.55; transition: opacity var(--dur-1) ease, color var(--dur-1) ease;
 }
 .help-tip-btn:hover, .help-tip-btn:focus-visible { opacity: 1; color: var(--primary); }
-.help-tip-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; border-radius: 50%; }
+.help-tip-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; border-radius: var(--radius-round); }
 /* Unified "Add data" affordance (plan 87) - a text/longtext input's dataSource button,
    styled like the help-tip button so it reads as label chrome, not a primary control. */
 .input-data-src {
   display: inline-flex; align-items: center; justify-content: center;
   vertical-align: middle; margin-left: 4px;
   width: 16px; height: 16px; padding: 0;
-  border: none; border-radius: 4px; background: transparent;
+  border: none; border-radius: var(--radius-xs); background: transparent;
   color: hsl(var(--muted-foreground)); cursor: pointer;
-  opacity: 0.55; transition: opacity 0.12s ease, color 0.12s ease;
+  opacity: 0.55; transition: opacity var(--dur-1) ease, color var(--dur-1) ease;
 }
 .input-data-src:hover, .input-data-src:focus-visible { opacity: 1; color: var(--primary); }
 .input-data-src:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
@@ -850,7 +850,7 @@
    the label text) in the flow, so no input row grows or reflows on every tool. */
 @media (pointer: coarse) {
   .help-tip-btn, .input-data-src {
-    padding: 8px;
+    padding: var(--sp-4);
     margin: -8px -8px -8px -4px;
   }
 }
@@ -872,7 +872,7 @@
    the large-text factor, and growing the box would nudge the label's baseline
    on every row that has help text). 13px matches the inline attributes the
    icon ships with (components/help-tip.ts); a CSS rule outranks them. */
-.help-tip-btn svg { display: block; width: calc(13px * var(--a11y-fs)); height: calc(13px * var(--a11y-fs)); }
+.help-tip-btn svg { display: block; width: var(--fs-md); height: var(--fs-md); }
 .block-control { position: relative; }
 /* Generic tip host (outside the sidebar - e.g. the export dialog's C2PA card):
    anchor the drop-down pop to it, same as a .block-control. */
@@ -883,7 +883,7 @@
   background: hsl(var(--popover)); color: hsl(var(--popover-foreground));
   border: 1px solid hsl(var(--border));
   box-shadow: 0 8px 22px hsl(var(--foreground) / 0.16);
-  font-size: calc(11px * var(--a11y-fs)); font-weight: 400; line-height: 1.4;
+  font-size: var(--fs-xs); font-weight: 400; line-height: 1.4;
   letter-spacing: 0; text-transform: none; white-space: normal;
 }
 /* Block sub-field cells are narrow - let their tip take its own width, capped so a long
@@ -921,7 +921,7 @@
 
 /* Base label - used for selects, checkboxes, asset-pickers, etc. */
 .input-label {
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -936,7 +936,7 @@
 .input-row:has(.custom-slider) > .input-label { line-height: 1.25; }
 
 .input-value {
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 400;
   text-transform: none;
   letter-spacing: 0;
@@ -951,7 +951,7 @@
    the floating-label offset math above. */
 .input-notice {
   display: block;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   line-height: 1.45;
   font-weight: 400;
   text-transform: none;
@@ -971,7 +971,7 @@
   left: 10px;
   /* The vertical offset FOLLOWS THE TYPE instead of being a frozen number.
      The field below is `1px border + 16px padding + one line box` and its line
-     box is `line-height 1.5 × calc(13px * var(--a11y-fs))` - the very same
+     box is `line-height 1.5 × var(--fs-md)` - the very same
      font-size this label carries - so as the type grows the box grows with it
      and a hardcoded `top` slides out of position (it drifted from 3.75px above
      the field's centre to 5.7px at the large-text factor, and kept going).
@@ -996,7 +996,7 @@
   line-height: 1.5;
   top: calc(23px + (0.75em - 9.75px));
   transform: translateY(-50%);
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 400;
   text-transform: none;
   letter-spacing: 0;
@@ -1037,7 +1037,7 @@
      label out through the field's top border. */
   top: max(2px, 7px - (1.5em - 15px));
   transform: translateY(0);
-  font-size: calc(10px * var(--a11y-fs));
+  font-size: var(--fs-2xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -1055,7 +1055,7 @@
 .input-row:not(.input-row--static-label) input:not([type="checkbox"]):not([type="color"]):not([type="range"])::placeholder,
 .input-row:not(.input-row--static-label) textarea::placeholder {
   color: transparent;
-  transition: color 0.15s;
+  transition: color var(--dur-1);
 }
 
 .input-row:not(.input-row--static-label) input:not([type="checkbox"]):not([type="color"]):not([type="range"]):focus::placeholder,
@@ -1077,8 +1077,8 @@
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
-  transition: border-color 0.12s;
+  font-size: var(--fs-md);
+  transition: border-color var(--dur-1);
   appearance: auto;
   padding: 16px 14px 16px;
 }
@@ -1103,14 +1103,14 @@
      chevron beside 15.6px text reads as a shrunken select. It is a CSS-painted
      mark, so the multiplier rides background-size. The 32px right padding still
      clears it - 10px inset + 16.8px at the large-text factor. */
-  background-size: calc(14px * var(--a11y-fs));
+  background-size: var(--fs-lg);
   color: hsl(var(--foreground));
   border: 0;
   box-shadow: inset 0 1px #fff1, 0 .1rem .3rem #0002;
   border-radius: var(--radius);
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
-  transition: border-color 0.12s;
+  font-size: var(--fs-md);
+  transition: border-color var(--dur-1);
   /* appearance:none drops the native menulist widget. The old appearance:auto +
      transition combo made Chrome re-lay-out the native control on every hover
      frame, producing a ~1px baseline jitter. A plain box transitions cleanly. */
@@ -1152,13 +1152,13 @@
 .input-row--checkbox {
   flex-direction: row;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-4);
   padding: 7px 10px;
   border: 0;
   border-radius: var(--radius);
   background: hsl(var(--background));
   cursor: pointer;
-  transition: border-color 0.12s, background 0.12s;
+  transition: border-color var(--dur-1), background var(--dur-1);
     box-shadow: inset 0 1px #fff1,inset 0 .06rem .3rem #0002;
   user-select: none;
 }
@@ -1184,7 +1184,7 @@
 }
 
 .input-row--checkbox .input-label {
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 400;
   text-transform: none;
   letter-spacing: 0;
@@ -1210,22 +1210,22 @@
 .input-pillbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--sp-3);
 }
 .input-row--pill {
   width: auto;
   padding: 5px 11px;
-  border-radius: 999px;
-  gap: 6px;
+  border-radius: var(--radius-pill);
+  gap: var(--sp-3);
 }
 .input-row--pill .input-label {
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   font-weight: 500;
 }
 .input-row--pill input[type="checkbox"] {
   /* Same as the full-size row above, at the pill's tighter length. */
-  width: calc(13px * var(--a11y-fs));
-  height: calc(13px * var(--a11y-fs));
+  width: var(--fs-md);
+  height: var(--fs-md);
 }
 /* Active chip reads as filled (the base .input-row--checkbox:has(:checked) only
    tints faintly - a pill wants a clearer on-state). */
@@ -1244,14 +1244,14 @@
 .badge-select {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--sp-3);
   width: 100%;
 }
 .badge-select-opt {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--sp-4);
   width: 100%;
   padding: 8px 11px;
   border: 1px solid hsl(var(--border));
@@ -1259,7 +1259,7 @@
   background: hsl(var(--background));
   color: hsl(var(--foreground));
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   cursor: pointer;
   text-align: start;
 }
@@ -1275,12 +1275,12 @@
 }
 .badge-select-pill {
   flex: none;
-  font-size: calc(10px * var(--a11y-fs));
+  font-size: var(--fs-2xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   padding: 2px 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: hsl(var(--foreground) / 0.08);
   color: hsl(var(--muted-foreground));
 }
@@ -1299,8 +1299,8 @@
 }
 .badge-select-pill--icon svg {
   display: block;
-  width: calc(12px * var(--a11y-fs));
-  height: calc(12px * var(--a11y-fs));
+  width: var(--fs-sm);
+  height: var(--fs-sm);
 }
 
 /* Compact option grid (>4 options, all short labels - see compactOptionGrid in
@@ -1310,7 +1310,7 @@
 .badge-select--compact {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  gap: var(--sp-3);
 }
 .badge-select--compact .badge-select-opt {
   min-width: 0;   /* grid item: let the label truncate instead of widening the cell */
@@ -1334,16 +1334,16 @@ html[data-a11y-text="large"] .badge-select--compact {
    equal-width tabs for a small mode switch (e.g. Hue / Saturation / Luminance). */
 .badge-select--segmented {
   flex-direction: row;
-  gap: 4px;
+  gap: var(--sp-2);
 }
 .badge-select--segmented .badge-select-opt {
   flex: 1 1 0;
   min-width: 0;
   justify-content: center;
-  padding: 6px 4px;
+  padding: var(--sp-3) var(--sp-2);
   /* Slightly smaller than the 13px stacked pills so 2–4 full words (Saturation,
      Luminance) fit a narrow sidebar without truncating. Keeps the a11y multiplier. */
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
 }
 .badge-select--segmented .badge-select-label {
   overflow: hidden;
@@ -1363,7 +1363,7 @@ html[data-a11y-text="large"] .badge-select--compact {
 .input-row:has(.blocks-input) .input-label{
   position: static;
   transform: none;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -1381,8 +1381,8 @@ html[data-a11y-text="large"] .badge-select--compact {
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
-  transition: border-color 0.12s;
+  font-size: var(--fs-md);
+  transition: border-color var(--dur-1);
   color-scheme: light dark;
 }
 .time-input-wrap input[type="time"]:hover { border-color: hsl(var(--ring) / 0.4); }
@@ -1412,7 +1412,7 @@ input.fp-datetime {
   border-radius: 0.75rem;
   box-shadow:    0 8px 32px hsl(var(--foreground) / 0.12);
   font-family:   SUSE, ui-sans-serif, system-ui, sans-serif;
-  font-size:     calc(13px * var(--a11y-fs));
+  font-size:     var(--fs-md);
   color:         hsl(var(--popover-foreground));
 }
 
@@ -1449,7 +1449,7 @@ input.fp-datetime {
 span.flatpickr-weekday {
   background: transparent;
   color:      hsl(var(--muted-foreground));
-  font-size:  calc(11px * var(--a11y-fs));
+  font-size:  var(--fs-xs);
   font-weight: 600;
   letter-spacing: .04em;
 }
@@ -1551,11 +1551,11 @@ span.flatpickr-weekday {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
+  padding: var(--sp-5) var(--sp-6);
   /* Match a sidebar <select>'s height (39.5px) so a collapsed section lines up
      with the dropdowns in the input list - minus the section's 2px border. */
   min-height: 32px;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 600;
   text-transform: uppercase; 
   letter-spacing: 0.06em;
@@ -1577,7 +1577,7 @@ background-color:hsl(var(--background) / 1);
 .input-section-summary:focus-visible { outline: none; }
 .input-section:has(.input-section-summary:focus-visible) {
   border-color: hsl(var(--ring));
-  box-shadow: 0 0 0 3px hsl(var(--ring) / 0.15);
+  box-shadow: var(--ring-focus);
 }
 
 .input-section-summary::-webkit-details-marker { display: none; }
@@ -1594,7 +1594,7 @@ background-color:hsl(var(--background) / 1);
   border-right: 1.5px solid currentColor;
   border-bottom: 1.5px solid currentColor;
   transform: rotate(-45deg);
-  transition: transform 0.15s ease;
+  transition: transform var(--dur-1) ease;
   flex-shrink: 0;
 }
 
@@ -1605,7 +1605,7 @@ background-color:hsl(var(--background) / 1);
 .input-section-body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-4);
   padding: 18px 10px 10px;
   border-top: 1px solid hsl(var(--border));
 }
@@ -1638,8 +1638,8 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   grid-template-columns: 1fr;
 }
 
-.blocks-input {margin-top: 2em; display: flex; flex-direction: column; gap: 6px; }
-.blocks-list  { display: flex; flex-direction: column; gap: 4px;     margin: 0 -12px;}
+.blocks-input {margin-top: 2em; display: flex; flex-direction: column; gap: var(--sp-3); }
+.blocks-list  { display: flex; flex-direction: column; gap: var(--sp-2);     margin: 0 -12px;}
 
 .block-item {
   display: grid;
@@ -1661,14 +1661,14 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .blocks-list .block-field{padding:4px  4px 4px  14px !important; }
 .block-field {
   width: 100%;
-  padding: 6px 8px;
+  padding: var(--sp-3) var(--sp-4);
   background: hsl(var(--background));
   color: hsl(var(--foreground));
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   font: inherit;
-  font-size: calc(12px * var(--a11y-fs));
-  transition: border-color 0.12s;
+  font-size: var(--fs-sm);
+  transition: border-color var(--dur-1);
 }
 .block-field:hover { border-color: hsl(var(--ring) / 0.4); }
 /* :focus ring - the one shared recipe at the foot of this sheet. */
@@ -1678,7 +1678,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   display: inline-flex; align-items: center; justify-content: center;
   background: none; border: none; cursor: pointer;
   color: hsl(var(--muted-foreground)); border-radius: var(--radius);
-  font-size: calc(12px * var(--a11y-fs)); transition: color 0.12s, background 0.12s;
+  font-size: var(--fs-sm); transition: color var(--dur-1), background var(--dur-1);
 }
 .block-remove:hover,
 .block-asset-clear:hover{ color: hsl(var(--destructive, 0 72% 51%)); background: hsl(var(--destructive, 0 72% 51%) / 0.08); }
@@ -1690,8 +1690,8 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   border: 1px dashed hsl(var(--border));
   border-radius: var(--radius);
   color: hsl(var(--muted-foreground));
-  font: inherit; font-size: calc(12px * var(--a11y-fs)); cursor: pointer;
-  transition: border-color 0.12s, color 0.12s;
+  font: inherit; font-size: var(--fs-sm); cursor: pointer;
+  transition: border-color var(--dur-1), color var(--dur-1);
 }
 .block-add:hover,
 .blocks-drop-hint:hover,
@@ -1703,7 +1703,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
    the real batch editor is the user's spreadsheet - this is the paste target
    and touch-up surface. The grid scrolls horizontally inside its own box so a
    wide table never widens the sidebar. */
-.table-input { display: flex; flex-direction: column; gap: 6px; }
+.table-input { display: flex; flex-direction: column; gap: var(--sp-3); }
 .table-scroll { overflow-x: auto; max-width: 100%; border: 1px solid hsl(var(--border)); border-radius: var(--radius); }
 /* A big table renders the virtualized data-grid (plan 89) here; give its viewport a
    sidebar-appropriate height. In a popped-out float panel it can breathe taller. */
@@ -1720,10 +1720,10 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
    their paragraph (field-sizing: content where supported). */
 .table-cell {
   width: 100%; min-width: 72px; box-sizing: border-box; display: block;
-  padding: 4px 6px;
+  padding: var(--sp-2) var(--sp-3);
   background: none; border: none; border-radius: 0; box-shadow: none;
   color: hsl(var(--foreground));
-  font: inherit; font-size: calc(12px * var(--a11y-fs)); line-height: 1.4;
+  font: inherit; font-size: var(--fs-sm); line-height: 1.4;
   resize: none;
   field-sizing: content;
 }
@@ -1740,15 +1740,15 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   font-size: calc(18px * var(--a11y-fs)); line-height: 1.2;
 }
 .table-cell--emoji:hover, .table-cell--emoji:focus-visible { background: hsl(var(--ring) / 0.08); }
-.table-emoji-empty { color: hsl(var(--muted-foreground)); font-size: calc(11px * var(--a11y-fs)); }
+.table-emoji-empty { color: hsl(var(--muted-foreground)); font-size: var(--fs-xs); }
 /* A fingertip needs the whole cell to be the target, not an 18px glyph. */
 @media (pointer: coarse) { .table-cell--emoji { min-height: 40px; } }
 .table-del-col {
   position: absolute; top: 50%; right: 2px; transform: translateY(-50%);
   width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center;
   background: none; border: none; cursor: pointer; border-radius: var(--radius);
-  color: hsl(var(--muted-foreground)); font-size: calc(10px * var(--a11y-fs)); opacity: 0;
-  transition: opacity 0.12s, color 0.12s;
+  color: hsl(var(--muted-foreground)); font-size: var(--fs-2xs); opacity: 0;
+  transition: opacity var(--dur-1), color var(--dur-1);
 }
 .table-grid th:hover .table-del-col, .table-del-col:focus-visible { opacity: 1; }
 /* No hover to reveal it on touch, so keep it visible at a calmer resting opacity. */
@@ -1777,8 +1777,8 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   position: relative;
   width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center;
   background: none; border: none; cursor: pointer; border-radius: var(--radius);
-  color: hsl(var(--muted-foreground)); font-size: calc(10px * var(--a11y-fs)); opacity: 0;
-  transition: opacity 0.12s, color 0.12s;
+  color: hsl(var(--muted-foreground)); font-size: var(--fs-2xs); opacity: 0;
+  transition: opacity var(--dur-1), color var(--dur-1);
 }
 .table-grid tbody tr:hover .table-del-row, .table-del-row:focus-visible { opacity: 1; }
 /* No hover to reveal it on touch, so keep it visible at a calmer resting opacity. */
@@ -1809,15 +1809,15 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   color: hsl(var(--muted-foreground));
-  font: inherit; font-size: calc(13px * var(--a11y-fs)); line-height: 1; cursor: pointer;
-  transition: border-color 0.12s, color 0.12s;
+  font: inherit; font-size: var(--fs-md); line-height: 1; cursor: pointer;
+  transition: border-color var(--dur-1), color var(--dur-1);
 }
 .table-pop:hover { border-color: hsl(var(--ring)); color: hsl(var(--foreground)); }
 /* Already floating: the panel's own bar owns close/fullscreen, so the trigger
    would be a second, differently-worded way to do the same thing. */
 .floatp .table-headbar { display: none; }
 
-.table-toolbar { display: flex; gap: 6px; align-items: center; }
+.table-toolbar { display: flex; gap: var(--sp-3); align-items: center; }
 .table-toolbar-gap { flex: 1; }
 .table-btn {
   padding: 5px 10px;
@@ -1825,17 +1825,17 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   color: hsl(var(--muted-foreground));
-  font: inherit; font-size: calc(12px * var(--a11y-fs)); cursor: pointer;
-  transition: border-color 0.12s, color 0.12s;
+  font: inherit; font-size: var(--fs-sm); cursor: pointer;
+  transition: border-color var(--dur-1), color var(--dur-1);
 }
 .table-btn:hover:not(:disabled) { border-color: hsl(var(--ring)); color: hsl(var(--foreground)); }
 .table-btn:disabled { opacity: 0.45; cursor: default; }
 .table-empty-hint {
   margin: 0; padding: 14px 12px;
   border: 1px solid hsl(var(--border)); border-radius: var(--radius);
-  color: hsl(var(--muted-foreground)); font-size: calc(12px * var(--a11y-fs)); text-align: center;
+  color: hsl(var(--muted-foreground)); font-size: var(--fs-sm); text-align: center;
 }
-.table-count { margin: 0; color: hsl(var(--muted-foreground)); font-size: calc(11px * var(--a11y-fs)); }
+.table-count { margin: 0; color: hsl(var(--muted-foreground)); font-size: var(--fs-xs); }
 
 /* Drop-to-add: a blocks input that declares `dropToAdd` (e.g. logo-wall) becomes
    a drop zone. The empty-state prompt doubles as a "choose files" button; the
@@ -1848,24 +1848,24 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   border: 1.5px dashed hsl(var(--border));
   border-radius: var(--radius);
   color: hsl(var(--muted-foreground));
-  font: inherit; font-size: calc(13px * var(--a11y-fs)); text-align: center; cursor: pointer;
-  transition: border-color 0.12s, color 0.12s;
+  font: inherit; font-size: var(--fs-md); text-align: center; cursor: pointer;
+  transition: border-color var(--dur-1), color var(--dur-1);
 }
 /* Quick-start group - "Paste Markdown" + "Import CSV/JSON" paired at the TOP of a
    blocks list: the fastest ways to fill the whole deck, so they lead as the first,
    most prominent offer before hand-adding blocks. Both share the prominent .blocks-quick
    look; the group is pushed left so the quiet "Collapse all" pill stays right. */
-.blocks-quick-group { display: flex; align-items: center; gap: 8px; margin-right: auto; flex-wrap: wrap; }
+.blocks-quick-group { display: flex; align-items: center; gap: var(--sp-4); margin-right: auto; flex-wrap: wrap; }
 .blocks-quick {
   display: inline-flex; align-items: center; gap: 7px;
   padding: 7px 14px;
   background: hsl(var(--primary) / 0.1);
   border: 1px solid hsl(var(--primary) / 0.35);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   color: hsl(var(--primary));
-  font: inherit; font-size: calc(13px * var(--a11y-fs)); font-weight: 600; line-height: 1;
+  font: inherit; font-size: var(--fs-md); font-weight: 600; line-height: 1;
   cursor: pointer;
-  transition: border-color 0.12s, color 0.12s, background 0.12s, box-shadow 0.12s;
+  transition: border-color var(--dur-1), color var(--dur-1), background var(--dur-1), box-shadow var(--dur-1);
 }
 .blocks-quick:hover { background: hsl(var(--primary) / 0.18); box-shadow: 0 1px 3px hsl(var(--primary) / 0.18); }
 .blocks-quick-ic { font-size: 1.1em; opacity: 0.85; }
@@ -1879,17 +1879,17 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 /* "Collapse all / Expand all" - a small pill above a multi-block list so a long
    stack of opened blocks folds back in one tap. Right-aligned, deliberately quiet
    (it's a tidy-up affordance, not a primary action like the brand-fill Add pill). */
-.blocks-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin-bottom: 6px; }
+.blocks-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-3); margin-bottom: 6px; }
 .blocks-toolbar--quick { margin-bottom: 10px; }
 .blocks-collapse-all {
   padding: 3px 10px;
   background: hsl(var(--muted));
   border: 1px solid hsl(var(--border));
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   color: hsl(var(--muted-foreground));
-  font: inherit; font-size: calc(11px * var(--a11y-fs)); font-weight: 500;
+  font: inherit; font-size: var(--fs-xs); font-weight: 500;
   cursor: pointer;
-  transition: border-color 0.12s, color 0.12s, background 0.12s;
+  transition: border-color var(--dur-1), color var(--dur-1), background var(--dur-1);
 }
 /* Paste / Upload flash states - the base look is .blocks-quick; these tint the clicked
    button green (ok) / amber (nothing usable) briefly after a click. */
@@ -1900,7 +1900,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
    Each block is a self-contained card with a type label + remove in its head and
    a two-column field grid below. Opts out of the legacy fixed 3-column row grid
    used by name/value blocks (meeting-planner, chart-creator). */
-.blocks-input--cards .blocks-list { margin: 0; gap: 8px; }
+.blocks-input--cards .blocks-list { margin: 0; gap: var(--sp-4); }
 /* Untyped (compact name/value) blocks reuse the card chrome but have no variant
    label - the header is a bare drag/collapse handle whose empty `.block-type-label`
    acts as a flex spacer, and the collapsed pill (preview + swatch) is the identity. */
@@ -1915,7 +1915,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 /* The header doubles as a drag handle (grip + label); the remove button sits at
    the far end, pushed there by the label's flex-grow. */
 .block-item.is-typed .block-head {
-  display: flex; align-items: center; gap: 8px;   /* more separation between grip/label/actions (was 6) */
+  display: flex; align-items: center; gap: var(--sp-4);   /* more separation between grip/label/actions (was 6) */
   margin-bottom: 8px;
   cursor: grab;
   user-select: none;
@@ -1925,11 +1925,11 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
    reorder, click to fold). Both take the multiplier so they stay findable
    alongside the type label between them; both keep their aspect (10×16, 12×12)
    and both sit well inside their boxes at the large-text factor. */
-.block-grip { flex: none; fill: hsl(var(--muted-foreground)); opacity: 0.45; width: calc(10px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
+.block-grip { flex: none; fill: hsl(var(--muted-foreground)); opacity: 0.45; width: var(--fs-2xs); height: var(--fs-xl); }
 .block-item.is-typed .block-head:hover .block-grip { opacity: 0.8; }
 .block-type-label {
   flex: 1; min-width: 0;
-  font-size: calc(11px * var(--a11y-fs)); font-weight: 600; text-transform: uppercase;
+  font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase;
   letter-spacing: 0.06em; color: hsl(var(--muted-foreground));
 }
 /* Drag-reorder feedback */
@@ -1943,7 +1943,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .blocks-input--tree .block-item.is-nestable {
   position: relative;
   margin-left: calc(var(--block-depth, 0) * 16px);
-  transition: margin-left 0.12s ease;
+  transition: margin-left var(--dur-1) ease;
 }
 /* Elbow connector tying a child card back up toward its parent's indent. */
 .blocks-input--tree .block-item.is-child::before {
@@ -1963,7 +1963,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .block-remove.is-confirming {
   width: auto; height: 22px; padding: 0 9px;
   background: hsl(var(--destructive, 0 72% 51%)); color: #fff;
-  font-size: calc(10px * var(--a11y-fs)); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  font-size: var(--fs-2xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
 }
 .block-remove.is-confirming:hover { background: hsl(var(--destructive, 0 72% 51%)); color: #fff; }
 .block-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 8px; align-items: end; }
@@ -2020,7 +2020,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
    The icon doubles as the help-tip trigger, so these rules also OVERRIDE the .help-tip-btn
    button chrome (16px round / 0.55 opacity / 13px svg) back to the block icon's look -
    higher specificity than the .help-tip-btn base, matched source order below it. */
-.block-control--ico { flex-direction: row; align-items: center; gap: 6px; }
+.block-control--ico { flex-direction: row; align-items: center; gap: var(--sp-3); }
 .block-control--ico > .block-control-ico {
   flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
   width: calc(15px * var(--a11y-fs)); height: auto; margin: 0; padding: 0;
@@ -2036,15 +2036,15 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
    sliders read as separate (the default 8px is too tight once each has an icon). */
 .block-fields:has(> .block-control--ico) { column-gap: 18px; }
 .block-control-label {
-  font-size: calc(10px * var(--a11y-fs)); font-weight: 600; letter-spacing: 0.04em;
+  font-size: var(--fs-2xs); font-weight: 600; letter-spacing: 0.04em;
   text-transform: uppercase; color: hsl(var(--muted-foreground));
 }
 .block-fields .block-field--full { grid-column: 1 / -1; }
 /* Checkbox sub-field (e.g. logo-wall's per-logo "Tune this logo" / "Invert"):
    a checkbox + inline label on its own full-width row. */
-.block-control--checkbox { flex-direction: row; align-items: center; gap: 8px; flex-wrap: wrap; cursor: pointer; }
+.block-control--checkbox { flex-direction: row; align-items: center; gap: var(--sp-4); flex-wrap: wrap; cursor: pointer; }
 .block-control--checkbox .block-control-label {
-  text-transform: none; letter-spacing: 0; font-size: calc(12px * var(--a11y-fs)); font-weight: 600; color: hsl(var(--foreground));
+  text-transform: none; letter-spacing: 0; font-size: var(--fs-sm); font-weight: 600; color: hsl(var(--foreground));
 }
 .block-field--checkbox { width: auto; flex: none; margin: 0; cursor: pointer; }
 .block-item.is-typed .block-field--checkbox { padding: 0 !important; }
@@ -2064,11 +2064,11 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .block-collapse {
   flex: none; display: inline-flex; align-items: center; justify-content: center;
   width: 28px; height: 28px; padding: 0;   /* larger tap target (was 22) */
-  border: none; border-radius: 6px; background: transparent;
+  border: none; border-radius: var(--radius-sm); background: transparent;
   color: hsl(var(--muted-foreground)); cursor: pointer;
 }
 .block-collapse:hover { background: hsl(var(--muted-foreground) / 0.12); color: hsl(var(--foreground)); }
-.block-collapse svg { transition: transform 0.15s ease; width: calc(12px * var(--a11y-fs)); height: calc(12px * var(--a11y-fs)); }
+.block-collapse svg { transition: transform var(--dur-1) ease; width: var(--fs-sm); height: var(--fs-sm); }
 .block-item.is-collapsed .block-collapse svg { transform: rotate(-90deg); }
 
 /* Per-row copy / paste / clear buttons (rowActions) - same icon-button chrome as collapse,
@@ -2076,20 +2076,20 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .block-act {
   flex: none; display: inline-flex; align-items: center; justify-content: center;
   width: 26px; height: 26px; padding: 0;
-  border: none; border-radius: 6px; background: transparent;
+  border: none; border-radius: var(--radius-sm); background: transparent;
   color: hsl(var(--muted-foreground)); cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: background var(--dur-1) ease, color var(--dur-1) ease;
 }
 .block-act:hover { background: hsl(var(--muted-foreground) / 0.12); color: hsl(var(--foreground)); }
-.block-act svg { width: calc(12px * var(--a11y-fs)); height: calc(12px * var(--a11y-fs)); }
+.block-act svg { width: var(--fs-sm); height: var(--fs-sm); }
 .block-act.is-done { color: hsl(var(--primary)); }   /* brief tick after Copy */
 .block-item.is-collapsed .block-act { display: none; }
 
-.block-item.is-collapsed { padding: 0; border-radius: 999px; background: hsl(var(--muted) / 0.5); }
+.block-item.is-collapsed { padding: 0; border-radius: var(--radius-pill); background: hsl(var(--muted) / 0.5); }
 /* The whole collapsed pill is clickable to expand (JS handler), so the header reads as
    a button rather than a drag handle while folded. */
 .block-item.is-collapsed .block-head { margin-bottom: 0; padding:9px 6px 9px 10px; cursor: pointer; }
-.block-item.is-collapsed .block-head:hover { background: hsl(var(--muted-foreground) / 0.07); border-radius: 999px; }
+.block-item.is-collapsed .block-head:hover { background: hsl(var(--muted-foreground) / 0.07); border-radius: var(--radius-pill); }
 .block-item.is-collapsed .block-fields { display: none; }
 
 /* Pill summary bits - only shown while collapsed. */
@@ -2097,32 +2097,32 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .block-item.is-collapsed .block-type-label { flex: none; }
 .block-item.is-collapsed .block-head-swatch {
   display: block; flex: none; width: 12px; height: 12px;
-  border-radius: 50%; border: 1px solid hsl(var(--border));
+  border-radius: var(--radius-round); border: 1px solid hsl(var(--border));
 }
 .block-item.is-collapsed .block-head-preview {
   display: block; flex: 1; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: calc(12px * var(--a11y-fs)); font-weight: 400; text-transform: none; letter-spacing: 0;
+  font-size: var(--fs-sm); font-weight: 400; text-transform: none; letter-spacing: 0;
   color: hsl(var(--foreground)); opacity: 0.7;
 }
 
 /* Per-block image picker */
-.block-asset { display: flex; gap: 4px; align-items: stretch; }
+.block-asset { display: flex; gap: var(--sp-2); align-items: stretch; }
 .block-asset-trigger {
   flex: 1; min-width: 0; height: 34px;
   padding: 0; overflow: hidden;
   border: 1px dashed hsl(var(--border)); border-radius: var(--radius);
   background: hsl(var(--background)); cursor: pointer;
-  font: inherit; font-size: calc(11px * var(--a11y-fs)); color: hsl(var(--muted-foreground));
-  transition: border-color 0.12s, color 0.12s;
+  font: inherit; font-size: var(--fs-xs); color: hsl(var(--muted-foreground));
+  transition: border-color var(--dur-1), color var(--dur-1);
 }
 .block-asset-trigger img { width: 100%; height: 100%; object-fit: cover; display: block; }
 /* Picked Lottie animation: play glyph + name (the ref URL is JSON, not an image). */
 .block-asset-lottie {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: calc(12px * var(--a11y-fs));
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2130,13 +2130,13 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .block-asset-clear {
   flex-shrink: 0; width: 24px; border: none; border-radius: var(--radius);
   background: none; cursor: pointer; color: hsl(var(--muted-foreground));
-  font-size: calc(11px * var(--a11y-fs)); transition: color 0.12s, background 0.12s;
+  font-size: var(--fs-xs); transition: color var(--dur-1), background var(--dur-1);
 }
 /* ✦ Edit - shown only for a block image that came from a Lolly link. */
 .block-asset-edit {
   flex-shrink: 0; width: 24px; border: none; border-radius: var(--radius);
   background: none; cursor: pointer; color: hsl(var(--primary));
-  font-size: calc(12px * var(--a11y-fs)); transition: background 0.12s, filter 0.12s;
+  font-size: var(--fs-sm); transition: background var(--dur-1), filter var(--dur-1);
 }
 .block-asset-edit:hover { background: hsl(var(--primary) / 0.1); filter: brightness(1.1); }
 /* ❄ Edit / ↻ Re-bake - a block image that's a baked (frozen) tool render.
@@ -2158,23 +2158,23 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .block-add-menu { position: relative; align-self: stretch; }
 /* Prominent primary call-to-action for adding a block - full width, brand fill. */
 .block-add--prominent {
-  display: flex; align-items: center; justify-content: center; gap: 4px;
+  display: flex; align-items: center; justify-content: center; gap: var(--sp-2);
   width: 100%; padding: 9px 12px;
   background: hsl(var(--primary)); color: hsl(var(--primary-foreground));
   border: 1px solid transparent; border-radius: var(--radius);
-  font-weight: 600; font-size: calc(12.5px * var(--a11y-fs));
-  transition: filter 0.12s;
+  font-weight: 600; font-size: var(--fs-md);
+  transition: filter var(--dur-1);
 }
 .block-add--prominent:hover { filter: brightness(1.08); border-color: transparent; color: hsl(var(--primary-foreground)); }
 .block-add-options {
   position: absolute; z-index: 6; top: calc(100% + 4px); left: 0; right: 0;
-  display: flex; flex-direction: column; min-width: 150px; padding: 4px;
+  display: flex; flex-direction: column; min-width: 150px; padding: var(--sp-2);
   background: hsl(var(--background)); border: 1px solid hsl(var(--border));
   border-radius: var(--radius); box-shadow: 0 6px 20px rgb(0 0 0 / 0.14);
 }
 .block-add-option {
   text-align: left; padding: 7px 9px; border: none; border-radius: calc(var(--radius) - 2px);
-  background: none; cursor: pointer; font: inherit; font-size: calc(12px * var(--a11y-fs));
+  background: none; cursor: pointer; font: inherit; font-size: var(--fs-sm);
   color: hsl(var(--foreground)); transition: background 0.1s;
 }
 .block-add-option:hover:not(:disabled) { background: hsl(var(--muted)); }
@@ -2224,7 +2224,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
     align-items: center;
     justify-content: flex-start;
     padding-left: 4px;
-    font-size: calc(10px * var(--a11y-fs));
+    font-size: var(--fs-2xs);
     font-weight: 600;
     line-height: 1;
     color: hsl(var(--muted-foreground));
@@ -2236,7 +2236,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
        below. Drag-to-scrub still works: that listener is on .vec-field and gets
        pointer events bubbling up from the input. */
     pointer-events: none;
-    transition: color 0.12s;
+    transition: color var(--dur-1);
 }
 .vec-field:hover .vec-scrub { color: hsl(var(--foreground)); }
 .vec-field:focus-within .vec-scrub { color: hsl(var(--ring)); }
@@ -2254,7 +2254,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   border-radius: 0;
   border-right-width: 0;           /* collapse internal dividers */
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-variant-numeric: tabular-nums;
   text-align: left;
   -moz-appearance: textfield;
@@ -2302,30 +2302,30 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
      min-width:0 lets a long asset name ellipsise instead of widening the sidebar. */
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-4);
   min-width: 0;
   max-width: 100%;
 }
 
 /* ── Source tab row: how the slot is filled. The "Use image" pick tab leads;
    live-controls.ts appends Use camera / Play (as .slot-act.slot-live) beside it. */
-.asset-slot-source { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.asset-slot-source { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); min-width: 0; }
 .asset-slot-tab {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
   flex: 0 1 auto;
   min-width: 0;
-  padding: 6px 12px;
-  font-size: calc(12px * var(--a11y-fs));
+  padding: var(--sp-3) var(--sp-6);
+  font-size: var(--fs-sm);
   font-weight: 600;
   line-height: 1;
   border: 1px solid hsl(var(--input));
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: hsl(var(--muted) / 0.5);
   color: hsl(var(--foreground));
   cursor: pointer;
-  transition: border-color 0.12s, background-color 0.12s, color 0.12s;
+  transition: border-color var(--dur-1), background-color var(--dur-1), color var(--dur-1);
 }
 .asset-slot-tab svg { flex: none; width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
 .asset-slot-tab-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2334,7 +2334,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .asset-slot-tab.is-active { border-color: hsl(var(--primary) / 0.55); background: hsl(var(--primary) / 0.12); color: hsl(var(--primary)); }
 /* Empty slot: the pick tab is the primary call to action - a full-width dashed drop
    target (it accepts a dragged catalog tile), matching the app's drop-area language. */
-.asset-slot:not(.has-value) .asset-slot-tab { flex: 1 1 auto; justify-content: center; border-style: dashed; padding: 12px; }
+.asset-slot:not(.has-value) .asset-slot-tab { flex: 1 1 auto; justify-content: center; border-style: dashed; padding: var(--sp-6); }
 .asset-picker-row.is-dragover .asset-slot-tab { border-color: hsl(var(--primary)); background: hsl(var(--primary) / 0.12); }
 
 /* ── Preview area: the hero. A stable, generous box that holds any media type -
@@ -2362,19 +2362,19 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 /* ── Caption: names the loaded asset (the pick tab names the SOURCE, not the file). */
 .asset-slot-caption {
   min-width: 0;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   color: hsl(var(--muted-foreground));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 /* ── Settings row: the fit/cover toggle (attachTo) + Fit canvas / Match / Preview. */
-.asset-slot-settings { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.asset-slot-settings { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); }
 .asset-slot-settings .slot-actions { margin-top: 0; }
 .saved-row{font-weight:600;text-transform:capitalize;}
 
 .saved-row small{    display: grid;
-    padding: 2px 4px;
+    padding: var(--sp-1) var(--sp-2);
     border-radius: var(--radius);
     color: hsl(var(--primary));
     font-size: calc(9px * var(--a11y-fs));
@@ -2392,7 +2392,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .input-attached {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
   min-width: 0;
   max-width: 100%;
 }
@@ -2413,7 +2413,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   background: hsl(var(--muted));
   color: hsl(var(--muted-foreground));
   cursor: pointer;
-  transition: color .12s, border-color .12s, background-color .12s;
+  transition: color var(--dur-1), border-color var(--dur-1), background-color var(--dur-1);
 }
 .icon-toggle:hover {
   color: hsl(var(--foreground));
@@ -2425,7 +2425,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
    Scoped to svg on purpose: the same button falls back to a TEXT label when the
    chosen option has no icon, and that path already scales through font-size.
    The 32px box is unchanged - 19.2px inside it at the large-text factor. */
-.icon-toggle svg { display: block; width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
+.icon-toggle svg { display: block; width: var(--fs-xl); height: var(--fs-xl); }
 
 /* One media-agnostic preview tile at a STABLE size, whatever the asset is. An
    image or video sits object-fit:contain; the audio waveform (a square 64-viewBox
@@ -2465,8 +2465,8 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   background: hsl(var(--background));
   cursor: pointer;
   color: hsl(var(--muted-foreground));
-  font-size: calc(13px * var(--a11y-fs));
-  transition: color 0.12s, border-color 0.12s;
+  font-size: var(--fs-md);
+  transition: color var(--dur-1), border-color var(--dur-1);
 }
 
 .asset-clear:hover {
@@ -2480,13 +2480,13 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .asset-from-tool {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
   margin-top: 5px;
 }
 .asset-from-tool-label {
   flex: 1;
   min-width: 0;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   color: hsl(var(--muted-foreground));
   white-space: nowrap;
   overflow: hidden;
@@ -2503,17 +2503,17 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .live-actions-standalone { margin: 0 0 12px; }
 .live-actions-standalone .slot-act.slot-live { flex: 1 1 auto; justify-content: center; }
 .slot-act {
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 600;
   line-height: 1;
-  padding: 4px 8px;
+  padding: var(--sp-2) var(--sp-4);
   border: 1px solid hsl(var(--border));
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   background: hsl(var(--muted) / 0.45);
   color: hsl(var(--muted-foreground));
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  transition: background var(--dur-1), color var(--dur-1), border-color var(--dur-1);
 }
 .slot-act:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
 .slot-act:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 1px; }
@@ -2523,7 +2523,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
    Same .slot-act chip language as Fit/Match/Preview; the red dot + pulse reuse
    the stage toggle's .canvas-live-dot pieces below. */
 .slot-live-cluster { display: contents; }
-.slot-act.slot-live { display: inline-flex; align-items: center; gap: 6px; }
+.slot-act.slot-live { display: inline-flex; align-items: center; gap: var(--sp-3); }
 .slot-act.slot-live[hidden] { display: none; }
 .slot-act.slot-live:disabled { opacity: 0.6; cursor: progress; }
 .slot-act.slot-live .canvas-live-dot { width: 7px; height: 7px; }
@@ -2556,7 +2556,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
    image is a static copy, not a live render. */
 .asset-from-tool--baked .asset-from-tool-spark { color: hsl(var(--muted-foreground)); }
 /* Inline re-bake failure (shares the picker's .asset-picker-error colour). */
-.asset-rebake-error { margin: 4px 0 0; font-size: calc(11px * var(--a11y-fs)); }
+.asset-rebake-error { margin: 4px 0 0; font-size: var(--fs-xs); }
 
 /* A slot holding a live Lolly render (AssetRef carries meta.toolUrl) is marked
    is-lolly: brand-tinted border + ✦ spark on the trigger, so "this is a live
@@ -2573,8 +2573,8 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   flex: none;
   padding: 3px 10px;
   cursor: pointer;
-  font-size: calc(12px * var(--a11y-fs));
-  transition: border-color 0.12s, color 0.12s;
+  font-size: var(--fs-sm);
+  transition: border-color var(--dur-1), color var(--dur-1);
 }
 .asset-edit:hover { border-color: hsl(var(--primary)); color: hsl(var(--primary)); }
 
@@ -2595,23 +2595,23 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   color: hsl(var(--popover-foreground));
   border: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius) * 2);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-5);
   overflow: hidden;
 }
 .embed-editor-head {
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: center; gap: var(--sp-5);
   padding: 14px 20px;
   border-bottom: 1px solid hsl(var(--border));
 }
-.embed-editor-spark { color: hsl(var(--primary)); font-size: calc(16px * var(--a11y-fs)); flex: none; }
+.embed-editor-spark { color: hsl(var(--primary)); font-size: var(--fs-xl); flex: none; }
 .embed-editor-title { margin: 0; font-size: calc(15px * var(--a11y-fs)); font-weight: 600; flex: 1; min-width: 0; }
 .embed-editor-from { color: hsl(var(--muted-foreground)); font-weight: 400; }
 .embed-editor-close {
   flex: none; background: none; border: none;
   font-size: calc(22px * var(--a11y-fs)); line-height: 1; cursor: pointer;
   color: hsl(var(--muted-foreground));
-  padding: 2px 6px; border-radius: var(--radius);
-  transition: color 0.12s, background 0.12s;
+  padding: var(--sp-1) var(--sp-3); border-radius: var(--radius);
+  transition: color var(--dur-1), background var(--dur-1);
 }
 .embed-editor-body {
   flex: 1; min-height: 0;
@@ -2633,15 +2633,15 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 }
 .embed-editor-side .asset-picker-toolcard-preview { flex: 1; }
 .embed-editor-actions {
-  display: flex; justify-content: flex-end; gap: 10px;
+  display: flex; justify-content: flex-end; gap: var(--sp-5);
 }
 .embed-editor-actions .ee-cancel,
 .embed-editor-actions .ee-apply {
   padding: 7px 16px;
   border-radius: var(--radius);
-  font: inherit; font-size: calc(13px * var(--a11y-fs)); font-weight: 600;
+  font: inherit; font-size: var(--fs-md); font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.12s, border-color 0.12s;
+  transition: opacity var(--dur-1), border-color var(--dur-1);
 }
 .embed-editor-actions .ee-cancel {
   background: hsl(var(--background)); color: hsl(var(--foreground));
@@ -2665,7 +2665,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 
 .file-picker {
   display: grid;
-  gap: 6px;
+  gap: var(--sp-3);
   min-width: 0;
   max-width: 100%;
 }
@@ -2679,8 +2679,8 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   border-radius: var(--radius);
   cursor: pointer;
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
-  transition: border-color 0.12s, color 0.12s;
+  font-size: var(--fs-md);
+  transition: border-color var(--dur-1), color var(--dur-1);
 }
 
 .file-trigger:hover {
@@ -2699,7 +2699,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .file-chosen {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-2);
   min-width: 0;
 }
 
@@ -2709,7 +2709,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   font-family: var(--font-mono);
   color: hsl(var(--muted-foreground));
 }
@@ -2723,8 +2723,8 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   background: hsl(var(--background));
   cursor: pointer;
   color: hsl(var(--muted-foreground));
-  font-size: calc(12px * var(--a11y-fs));
-  transition: color 0.12s, border-color 0.12s;
+  font-size: var(--fs-sm);
+  transition: color var(--dur-1), border-color var(--dur-1);
 }
 
 .file-clear:hover {
@@ -2737,14 +2737,14 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .on-device-badge {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-4);
   margin-bottom: 14px;
-  padding: 8px 10px;
+  padding: var(--sp-4) var(--sp-5);
   border: 1px solid hsl(var(--primary) / 0.3);
   border-radius: var(--radius);
   background: hsl(var(--primary) / 0.06);
   color: hsl(var(--primary));
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   font-weight: 600;
   line-height: 1.3;
 }
@@ -2800,18 +2800,18 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 6px 12px;
+  padding: var(--sp-3) var(--sp-6);
   background: hsl(var(--card) / 0.92);
   color: hsl(var(--card-foreground));
   border: 1px solid hsl(var(--border));
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font: inherit;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   font-weight: 600;
   cursor: pointer;
   backdrop-filter: blur(4px);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-  transition: border-color 0.12s, background 0.12s, color 0.12s;
+  transition: border-color var(--dur-1), background var(--dur-1), color var(--dur-1);
 }
 .canvas-live-toggle:hover { border-color: hsl(var(--primary)); }
 .canvas-live-toggle:disabled { opacity: 0.6; cursor: progress; }
@@ -2822,7 +2822,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .canvas-live-dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: hsl(var(--muted-foreground));
   flex-shrink: 0;
 }
@@ -2849,8 +2849,8 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
    (components.css) so the two read as siblings when they appear side by side. */
 .canvas-input-popover {
   display: grid;
-  gap: 2px;
-  padding: 6px;
+  gap: var(--sp-1);
+  padding: var(--sp-3);
   max-width: min(320px, calc(100vw - 16px));
   max-height: min(360px, calc(100vh - 16px));
   overflow: auto;
@@ -2862,7 +2862,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .canvas-input-popover-opt {
   display: block;
   width: 100%;
-  padding: 6px 10px;
+  padding: var(--sp-3) var(--sp-5);
   border: 0;
   border-radius: calc(var(--radius) - 4px);
   background: none;
@@ -2888,19 +2888,19 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   z-index: 6;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-4);
   padding: 9px 18px;
   background: hsl(var(--card) / 0.95);
   color: hsl(var(--card-foreground));
   border: 1px solid hsl(var(--border));
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 700;
   cursor: pointer;
   backdrop-filter: blur(6px);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
-  transition: border-color 0.12s, background 0.12s, color 0.12s;
+  box-shadow: var(--shadow-2);
+  transition: border-color var(--dur-1), background var(--dur-1), color var(--dur-1);
 }
 .canvas-record-btn:hover { border-color: hsl(var(--destructive)); }
 .canvas-record-btn:disabled { opacity: 0.6; cursor: progress; }
@@ -2916,15 +2916,15 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   z-index: 6;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--sp-2);
   width: 460px;
   max-width: min(560px, calc(100% - 28px));
   padding: 6px 12px 6px 6px;
   background: hsl(var(--card) / 0.95);
   border: 1px solid hsl(var(--border));
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   backdrop-filter: blur(6px);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow-2);
 }
 .anim-transport[hidden] { display: none; }
 .anim-transport-btn {
@@ -2936,11 +2936,11 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   height: calc(30px * var(--a11y-fs));
   padding: 0;
   border: none;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: hsl(var(--card-foreground));
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background var(--dur-1);
 }
 .anim-transport-btn:hover { background: hsl(var(--muted)); }
 .anim-transport-btn svg { width: 62%; height: 62%; fill: currentColor; }
@@ -2967,7 +2967,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   height: 4px;
   transform: translateY(-50%);
   background: hsl(var(--muted));
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 .anim-transport-fill {
   position: absolute;
@@ -2977,7 +2977,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   height: 4px;
   transform: translateY(-50%);
   background: hsl(var(--primary));
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   pointer-events: none;
 }
 .anim-transport-ticks {
@@ -3003,7 +3003,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   transform: translate(-50%, -50%);
   background: hsl(var(--primary));
   border: 2px solid hsl(var(--card));
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   pointer-events: none;
 }
@@ -3011,7 +3011,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   flex: none;
   min-width: 2.5em;
   padding-left: 2px;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   font-weight: 700;
   color: hsl(var(--card-foreground));
   text-align: center;
@@ -3032,11 +3032,11 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   background: hsl(var(--card) / 0.95);
   color: hsl(var(--card-foreground));
   border: 1px solid hsl(var(--border));
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   backdrop-filter: blur(6px);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
-  transition: border-color 0.12s, background 0.12s;
+  box-shadow: var(--shadow-2);
+  transition: border-color var(--dur-1), background var(--dur-1);
 }
 .canvas-record-flip:hover { border-color: hsl(var(--primary)); }
 .canvas-record-flip[hidden] { display: none; }
@@ -3057,17 +3057,17 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   background: hsl(var(--card) / 0.95);
   color: hsl(var(--card-foreground));
   border: 1px solid hsl(var(--border));
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   backdrop-filter: blur(6px);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
-  transition: border-color 0.12s, background 0.12s;
+  box-shadow: var(--shadow-2);
+  transition: border-color var(--dur-1), background var(--dur-1);
 }
 .canvas-record-mic:hover { border-color: hsl(var(--primary)); }
 .canvas-record-mic[hidden] { display: none; }
 .canvas-record-dot {
   width: 12px; height: 12px;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: hsl(var(--destructive));
   flex-shrink: 0;
 }
@@ -3092,11 +3092,11 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   transform: translateX(-50%);
   z-index: 6;
   padding: 3px 10px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: hsl(var(--destructive));
   color: hsl(var(--destructive-foreground, 0 0% 100%));
   font-variant-numeric: tabular-nums;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   font-weight: 700;
   letter-spacing: 0.04em;
 }
@@ -3126,7 +3126,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   z-index: 7;
   display: flex;
   flex-direction: column;       /* audio row above the exposure row */
-  gap: 6px;
+  gap: var(--sp-3);
   max-width: min(92%, 460px);
   padding: 7px 12px;
   border-radius: 16px;
@@ -3134,14 +3134,14 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   color: #fff;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   font-weight: 600;
   pointer-events: none;
 }
 .canvas-record-coach .crc-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-5);
   --crc-tone: #30ba78;
 }
 .canvas-record-coach .crc-row[data-tone="low"] { --crc-tone: #f5b301; }
@@ -3157,7 +3157,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   position: relative;
   flex: 0 0 92px;
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: rgba(255, 255, 255, 0.16);
   overflow: hidden;
 }
@@ -3165,7 +3165,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   position: absolute;
   inset: 0 auto 0 0;
   width: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--crc-tone);
   transition: width 60ms linear;
 }
@@ -3209,14 +3209,14 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   display: inline-flex; align-items: center; justify-content: center;
   padding: 0;
   border: 1px solid hsl(var(--border));
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: hsl(var(--card) / 0.95);
   color: hsl(var(--muted-foreground));
   font: inherit; font-size: calc(17px * var(--a11y-fs)); font-weight: 700; line-height: 1;
   cursor: pointer;
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
-  transition: color 0.12s, border-color 0.12s;
+  box-shadow: var(--shadow-2);
+  transition: color var(--dur-1), border-color var(--dur-1);
 }
 .canvas-record-help .crh-btn:hover,
 .canvas-record-help.is-open .crh-btn { color: hsl(var(--primary)); border-color: hsl(var(--primary) / 0.55); }
@@ -3240,7 +3240,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   margin: 0 0 8px; font-size: clamp(10.5px, 1.4cqi, 14px); font-weight: 700; letter-spacing: 0.02em;
   text-transform: uppercase; color: hsl(var(--muted-foreground));
 }
-.canvas-record-help .crt-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.canvas-record-help .crt-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-4); }
 .canvas-record-help .crt-item {
   display: flex; gap: 9px; align-items: flex-start;
   font-size: clamp(13.5px, 1.9cqi, 19px); line-height: 1.4;
@@ -3266,7 +3266,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
    condition holds. Anchored under the "?" (mutually exclusive with the panel). */
 .canvas-record-help .crh-nudge {
   position: absolute; top: 34px; left: 0;
-  display: flex; gap: 10px; align-items: flex-start;
+  display: flex; gap: var(--sp-5); align-items: flex-start;
   width: clamp(260px, 52cqi, 520px);
   padding: clamp(10px, 1.4cqi, 16px) clamp(12px, 1.6cqi, 18px);
   border: 1px solid hsl(var(--primary) / 0.6);
@@ -3278,7 +3278,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
   opacity: 0; transform: translateY(-6px);
   pointer-events: none;
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity var(--dur-2) ease, transform var(--dur-2) ease;
 }
 .canvas-record-help .crh-nudge:empty { display: none; }
 .canvas-record-help .crh-nudge.is-shown { opacity: 1; transform: none; }
@@ -3289,7 +3289,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 /* A short pulse on the "?" when a nudge fires, drawing the eye to the tips affordance. */
 .canvas-record-help.is-nudging .crh-btn { animation: crh-pulse 1s ease-out 2; }
 @keyframes crh-pulse {
-  0%, 100% { box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18); }
+  0%, 100% { box-shadow: var(--shadow-2); }
   40% { box-shadow: 0 0 0 4px hsl(var(--primary) / 0.35); }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -3322,19 +3322,19 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   background: rgba(0, 0, 0, 0.68);
   backdrop-filter: blur(3px);
   color: #fff;
-  animation: canvas-proc-fade 0.2s ease-out;
+  animation: canvas-proc-fade var(--dur-2) ease-out;
 }
-.canvas-processing-card { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; padding: 24px; }
+.canvas-processing-card { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; padding: var(--sp-8); }
 .canvas-processing-spinner {
   width: 52px;
   height: 52px;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   border: 4px solid rgba(255, 255, 255, 0.25);
   border-top-color: #30ba78;
   animation: canvas-proc-spin 0.9s linear infinite;
 }
 .canvas-processing-text { font-size: calc(18px * var(--a11y-fs)); font-weight: 700; letter-spacing: -0.01em; }
-.canvas-processing-sub { font-size: calc(13px * var(--a11y-fs)); opacity: 0.82; }
+.canvas-processing-sub { font-size: var(--fs-md); opacity: 0.82; }
 @keyframes canvas-proc-spin { to { transform: rotate(360deg); } }
 @keyframes canvas-proc-fade { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
@@ -3350,25 +3350,25 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   z-index: 7;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px;
+  gap: var(--sp-4);
+  padding: var(--sp-5);
   max-width: min(92%, 360px);
   background: hsl(var(--card) / 0.97);
   border: 1px solid hsl(var(--border));
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
   backdrop-filter: blur(6px);
 }
 .canvas-audio-dl audio { width: 100%; height: 34px; }
-.canvas-audio-dl-actions { display: flex; gap: 6px; align-items: center; }
+.canvas-audio-dl-actions { display: flex; gap: var(--sp-3); align-items: center; }
 .canvas-audio-dl-actions button {
-  padding: 6px 12px;
-  border-radius: 999px;
+  padding: var(--sp-3) var(--sp-6);
+  border-radius: var(--radius-pill);
   border: 1px solid hsl(var(--border));
   background: hsl(var(--card));
   color: hsl(var(--card-foreground));
   font: inherit;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   font-weight: 600;
   cursor: pointer;
 }
@@ -3393,7 +3393,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   z-index: 6;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-5);
 }
 /* Return the two pills to normal flow inside the bar - the shared .canvas-record-btn
    base absolutely-centres a lone button, which would stack them on top of each other. */
@@ -3461,7 +3461,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   margin-left: -10px;
   padding: 0;
   border: 1px solid hsl(var(--border));
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: hsl(var(--background));
   cursor: grab;
   touch-action: none;
@@ -3491,7 +3491,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   top: 100%;
   transform: translate(-50%, 6px);
   display: flex;
-  gap: 4px;
+  gap: var(--sp-2);
   padding: 3px;
   border-radius: 8px;
   background: hsl(var(--background) / 0.92);
@@ -3500,10 +3500,10 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 }
 .framing-btn {
   font: inherit;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   padding: 3px 8px;
   border: 1px solid hsl(var(--border));
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: hsl(var(--background));
   color: inherit;
   cursor: pointer;
@@ -3632,7 +3632,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 #tool-stage { --pagestrip-w: 172px; --pagestrip-h: 138px; }
 .pagestrip { display: none; }
 #tool-stage.has-pagestrip .pagestrip {
-  display: flex; flex-direction: column; gap: 10px;
+  display: flex; flex-direction: column; gap: var(--sp-5);
   position: absolute; left: 0; top: 0; bottom: 0; width: var(--pagestrip-w);
   box-sizing: border-box; padding: 14px 12px;
   overflow-y: auto; overflow-x: hidden;
@@ -3647,7 +3647,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 
 .pagestrip-thumb { position: relative; width: 100%; }
 .pagestrip-open {
-  display: flex; flex-direction: column; gap: 4px;
+  display: flex; flex-direction: column; gap: var(--sp-2);
   padding: 0; border: 0; background: none; cursor: pointer;
   width: 100%; text-align: left;
 }
@@ -3656,28 +3656,28 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   position: absolute; top: 4px; right: 4px;
   width: 20px; height: 20px; padding: 0;
   display: flex; align-items: center; justify-content: center;
-  border: 0; border-radius: 50%;
+  border: 0; border-radius: var(--radius-round);
   background: rgba(0, 0, 0, 0.55); color: #fff;
   font-size: calc(15px * var(--a11y-fs)); line-height: 1; cursor: pointer;
-  opacity: 0; transition: opacity 0.12s, background 0.12s;
+  opacity: 0; transition: opacity var(--dur-1), background var(--dur-1);
 }
 .pagestrip-thumb:hover .pagestrip-del,
 .pagestrip-del:focus-visible { opacity: 1; }
 .pagestrip-del:hover { background: hsl(0 72% 48%); }
 .pagestrip-frame {
   position: relative; width: 100%; display: block;
-  border-radius: 5px; overflow: hidden;
+  border-radius: var(--radius-sm); overflow: hidden;
   border: 2px solid transparent;
   background: #fff;                        /* shows through if a page has no bg of its own */
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16);
-  transition: border-color 0.12s, box-shadow 0.12s, transform 0.08s;
+  transition: border-color var(--dur-1), box-shadow var(--dur-1), transform 0.08s;
 }
 /* The cloned page inside is a decorative mini-render - never interactive. */
 .pagestrip-frame > * { pointer-events: none; }
 .pagestrip-thumb:hover .pagestrip-frame { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.22); }
-.pagestrip-thumb.is-active .pagestrip-frame { border-color: hsl(var(--primary)); box-shadow: 0 0 0 2px hsl(var(--primary) / 0.35); }
+.pagestrip-thumb.is-active .pagestrip-frame { border-color: hsl(var(--primary)); box-shadow: var(--ring-focus-strong); }
 .pagestrip-num {
-  font-size: calc(10px * var(--a11y-fs)); font-weight: 600; color: hsl(var(--muted-foreground));
+  font-size: var(--fs-2xs); font-weight: 600; color: hsl(var(--muted-foreground));
   padding-left: 2px;
 }
 .pagestrip-thumb.is-active .pagestrip-num { color: hsl(var(--primary)); }
@@ -3842,7 +3842,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-4);
   padding: 14px 16px;
   border-radius: var(--radius);
   border: 1px solid hsl(var(--border));
@@ -3854,7 +3854,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   pointer-events: auto;
   opacity: 0;
   visibility: hidden;
-  transition: opacity 0.2s ease;
+  transition: opacity var(--dur-2) ease;
 }
 .export-shutter__status.is-visible { opacity: 1; visibility: visible; }
 .export-shutter__status-label {
@@ -3865,7 +3865,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 }
 .export-shutter__status-meta {
   margin: 0;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   color: hsl(var(--muted-foreground));
   /* The clock ticks every second - tabular digits keep the line from jittering. */
   font-variant-numeric: tabular-nums;
@@ -3873,7 +3873,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .export-shutter__status-bar {
   width: 100%;
   height: 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   overflow: hidden;
   background: hsl(var(--muted));
 }
@@ -3882,7 +3882,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   width: 0;
   height: 100%;
   background: hsl(var(--primary));
-  transition: width 0.2s linear;
+  transition: width var(--dur-2) linear;
 }
 .export-shutter__status-hide {
   min-height: 44px;          /* touch target - this is the phone's only way out */
@@ -3893,7 +3893,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   background: hsl(var(--background));
   color: hsl(var(--foreground));
   font: inherit;
-  font-size: calc(14px * var(--a11y-fs));
+  font-size: var(--fs-lg);
   font-weight: 600;
   cursor: pointer;
 }
@@ -3916,7 +3916,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
      on the card, which is low-contrast on the SUSE dark-teal card). */
   background: hsl(var(--destructive));
   color: hsl(var(--destructive-foreground));
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 500;
   text-align: center;
   box-shadow: 0 6px 20px hsl(0 0% 0% / 0.2);
@@ -3974,7 +3974,7 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
 .tool-actions select:not(.field-select):focus {   /* tool-chrome.css */
   border-color: hsl(var(--ring));
   outline: none;
-  box-shadow: 0 0 0 3px hsl(var(--ring) / 0.15);
+  box-shadow: var(--ring-focus);
 }
 
 /* ── Entrance settle (plans/142) - the tool view mounts as one brief fade

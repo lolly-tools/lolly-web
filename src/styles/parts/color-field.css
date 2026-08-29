@@ -25,14 +25,14 @@
 .color-trigger {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-4);
   width: 100%;
-  padding: 8px 10px;
-  font-size: calc(13px * var(--a11y-fs));
+  padding: var(--sp-4) var(--sp-5);
+  font-size: var(--fs-md);
   cursor: pointer;
   text-align: left;
   box-shadow: 0 .2rem .3rem #0001;
-  transition: all 0.12s;
+  transition: all var(--dur-1);
   justify-content: end;
   /* Query container: the trigger collapses to just the swatch circle when squeezed
      next to other controls, and shows the colour name (+ hex) when there's room. Named
@@ -49,7 +49,7 @@
 .color-trigger-preview {
   width: 18px;
   height: 18px;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   box-shadow: 0 .1rem .2rem -.05rem #0004;
 
   flex-shrink: 0;
@@ -59,7 +59,7 @@
    NOT shown here; it lives only inside the popover picker. */
 .color-trigger-name {
   font-family: var(--font-mono);
-  font-size: calc(10px * var(--a11y-fs));
+  font-size: var(--fs-2xs);
   letter-spacing: .01em;
   color: hsl(var(--muted-foreground));
   white-space: nowrap;
@@ -114,14 +114,14 @@
   left: 0;
   right: 0;
   z-index: 100;
-  padding: 10px;
+  padding: var(--sp-5);
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   box-shadow: 0 4px 12px hsl(0 0% 0% / 0.15);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--sp-5);
 }
 
 /* The Fine-tune fold. `display: contents` keeps the section's children laid out
@@ -133,14 +133,14 @@
 .color-fine-toggle {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
   background: none;
   border: none;
   border-top: 1px solid hsl(var(--border));
   color: hsl(var(--muted-foreground));
   font: inherit;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   cursor: pointer;
 }
 .color-fine-toggle:hover { color: hsl(var(--foreground)); }
@@ -163,7 +163,7 @@
   border: 0;
   background: none;
   box-shadow: none;
-  gap: 12px;
+  gap: var(--sp-6);
 }
 /* The dials share the row's width by SLOT, not by sibling count: --dial-slots is the
    widest space's channel count + the output disc (color-field.ts dialsHtml), so a
@@ -173,7 +173,7 @@
    FLOAT popover it stays near the old fixed 3.25em, because a click-to-open popover
    that opted into dials must not grow 7rem rings under the tab strip. */
 .color-dials {
-  --dial-gap: 10px;
+  --dial-gap: var(--sp-5);
   --dial-cap: 3.25rem;
 }
 .color-dials .color-dial,
@@ -187,7 +187,7 @@
 /* Scale the dial furniture up with the dial - the inline panel is the host with
    room to spend on rings that restate the sliders under them. */
 .color-field--inline .color-dials { --dial-gap: 0.9rem; --dial-cap: 7rem; }
-.color-field--inline .color-dial-hub { font-size: calc(12px * var(--a11y-fs)); }
+.color-field--inline .color-dial-hub { font-size: var(--fs-sm); }
 .color-field--inline .color-dial-act svg { width: 1.6em; height: 1.6em; }
 
 /* ── Colour-space modes: grouped tab strip + per-space slider groups ─────────
@@ -203,13 +203,13 @@
    pills onto three ragged lines whose wrapped rows sit under the heading with no
    indent. Three headings cost ~42px of height; they are 9.5px, tight-leaded, and
    that is the trade. */
-.color-modes { display: flex; flex-direction: column; gap: 10px; }
+.color-modes { display: flex; flex-direction: column; gap: var(--sp-5); }
 /* The trough is now one box around all three rows, not a 999px pill around one -
    a full box, never a single divider line between families (spacing separates
    them). */
 .color-mode-tabs {
-  display: flex; flex-direction: column; gap: 8px;
-  padding: 6px; border-radius: calc(var(--radius) * 1.25);
+  display: flex; flex-direction: column; gap: var(--sp-4);
+  padding: var(--sp-3); border-radius: calc(var(--radius) * 1.25);
   background: hsl(var(--muted) / .5);
 }
 /* One family. `align-items: stretch` so every pill on a line matches the tallest
@@ -252,8 +252,8 @@
 .color-mode-tab {
   flex: 0 0 auto; min-width: 0; padding: 5px 8px; border: 0; cursor: pointer;
   background: transparent; color: hsl(var(--muted-foreground));
-  font-family: var(--font-mono); font-size: calc(10.5px * var(--a11y-fs)); letter-spacing: .04em;
-  border-radius: 999px; transition: background .12s, color .12s;
+  font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: .04em;
+  border-radius: var(--radius-pill); transition: background var(--dur-1), color var(--dur-1);
   /* A column so a sublabel stacks under the glyph, centred so a one-line pill
      sits level with a two-line neighbour instead of riding up against its top. */
   display: flex; flex-direction: column; justify-content: center; align-items: center;
@@ -321,7 +321,7 @@
 /* One panel per registered space. `.color-space` replaces `.color-modegroup`;
    the alias stays for one release so the two files can land in either order. */
 .color-space,
-.color-modegroup { display: flex; flex-direction: column; gap: 8px; }
+.color-modegroup { display: flex; flex-direction: column; gap: var(--sp-4); }
 /* An author-origin display:flex beats the UA [hidden] rule, so hiding the
    inactive panels needs saying explicitly. */
 .color-space[hidden],
@@ -354,7 +354,7 @@
   margin: 0;
   min-height: 1.25em;
   font-family: var(--font-mono);
-  font-size: calc(10px * var(--a11y-fs));
+  font-size: var(--fs-2xs);
   line-height: 1.25;
   color: hsl(var(--muted-foreground));
 }
@@ -393,7 +393,7 @@
   padding: 16px 44px;   /* symmetric so the centred value clears the eyedropper */
   outline: none;
   text-overflow: ellipsis;
-  transition: background-color .12s, color .12s, border-color .12s, font-size .12s;
+  transition: background-color var(--dur-1), color var(--dur-1), border-color var(--dur-1), font-size var(--dur-1);
 }
 /* A full CSS colour at machine precision ('oklch(61.374% 0.13585 260.14)') does not
    fit the narrow hosts - a 316px swatch editor cut it off at the hue, with an input's
@@ -403,7 +403,7 @@
    height. Wide hosts keep the full 17px - they have the room. */
 @container (max-width: 460px) {
   .color-input--long {
-    font-size: calc(13px * var(--a11y-fs));
+    font-size: var(--fs-md);
     letter-spacing: -.01em;
   }
 }
@@ -426,7 +426,7 @@
   background: transparent; cursor: pointer;
   color: var(--color-input-fg, hsl(var(--foreground)));
   opacity: .7;
-  transition: opacity .12s, background .12s;
+  transition: opacity var(--dur-1), background var(--dur-1);
 }
 .color-eyedropper:hover { opacity: 1; background: hsl(0 0% 50% / .22); }
 .color-eyedropper:focus-visible { opacity: 1; outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
@@ -436,7 +436,7 @@
 @media (hover: none) {
   .color-eyedropper { opacity: 1; }
 }
-.color-eyedropper svg { display: block; width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
+.color-eyedropper svg { display: block; width: var(--fs-xl); height: var(--fs-xl); }
 .color-input--painted {
   background-image:
     linear-gradient(var(--color-input-bg), var(--color-input-bg)),
@@ -455,10 +455,10 @@
 .color-alpha-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-4);
 }
 .color-alpha-label {
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   color: hsl(var(--muted-foreground));
   width: 12px;
   flex-shrink: 0;
@@ -484,7 +484,7 @@
      `var(--font-mono)` resolves to SUSE Mono, which HAS a file, so the same numbers
      now come out as paths. Same visual family, one that can be vectorised. */
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   color: hsl(var(--muted-foreground));
   /* 40px, matching .color-lch-val - the readouts must form a column. */
   min-width: 40px;
@@ -515,7 +515,7 @@
   width: 3.25em;
   height: 3.25em;
   border: 0;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   box-shadow: 0 0 0 0px hsl(var(--border)), 0 1px 3px hsl(0 0% 0% / 0.18);
 }
 .color-dial {
@@ -528,7 +528,7 @@
 .color-dial-needle {
   position: absolute;
   inset: 0;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   pointer-events: none;
   transition: transform 0.08s linear;
 }
@@ -581,7 +581,7 @@
 .color-dial-edge {
   position: absolute;
   inset: 0;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   pointer-events: none;
 }
 .color-dial-edge::before {
@@ -604,10 +604,10 @@
   place-items: center;
   width: 46%;
   height: 46%;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: hsl(var(--card));
   box-shadow: 0 0 0 0px hsl(var(--border));
-  font-size: calc(10px * var(--a11y-fs));
+  font-size: var(--fs-2xs);
   font-weight: 700;
   line-height: 1;
   color: hsl(var(--muted-foreground));
@@ -633,7 +633,7 @@
   color: inherit;
   cursor: pointer;
   opacity: 0.7;
-  transition: opacity 0.12s ease, background 0.12s ease;
+  transition: opacity var(--dur-1) ease, background var(--dur-1) ease;
 }
 .color-dial-act svg {
   width: 1.25em;
@@ -658,15 +658,15 @@
 .color-lch {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-4);
 }
 .color-lch-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-4);
 }
 .color-lch-label {
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   color: hsl(var(--muted-foreground));
   width: 12px;
   flex-shrink: 0;
@@ -675,7 +675,7 @@
 .color-lch-val {
   /* var(--font-mono), not a bare generic - see .color-alpha-pct above. */
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   color: hsl(var(--muted-foreground));
   min-width: 40px;
   text-align: right;
@@ -691,7 +691,7 @@
 .color-nearest {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
   margin: 4px 6px 0;
   padding: 3px 8px;
   /* Solid and quiet: it is a button offering a snap, not a drop target. */
@@ -699,7 +699,7 @@
   border-radius: var(--radius);
   background: none;
   color: hsl(var(--muted-foreground));
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   cursor: pointer;
   transition: color 0.1s, border-color 0.1s;
 }
@@ -710,7 +710,7 @@
 .color-nearest-chip {
   width: 1em;
   height: 1em;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   flex-shrink: 0;
   box-shadow: inset 0 0 0 1px #0003;
 }
@@ -790,7 +790,7 @@
   appearance: none;
   width: 18px;
   height: 18px;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: transparent;          /* the track colour shows through the ring */
   border: 3px solid #fff;
   box-shadow: 0 0 0 1px #0006, inset 0 0 0 1px #0006, 0 1px 3px #0004;
@@ -800,7 +800,7 @@
 .color-alpha-slider::-moz-range-thumb {
   width: 12px;
   height: 12px;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: transparent;
   border: 3px solid #fff;
   box-shadow: 0 0 0 1px #0006, inset 0 0 0 1px #0006, 0 1px 3px #0004;
@@ -830,12 +830,12 @@
   display: flex;
   flex-flow:wrap;
 
-  gap: 2px;
+  gap: var(--sp-1);
   max-height: 240px;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: hsl(var(--border));
-  padding:6px; 
+  padding:var(--sp-3); 
 }
 
 /* The result disc's swatch context menu (inline pickers) - a floating card of the
@@ -900,9 +900,9 @@
    outside that. Padding and gap only: the type stays 10.5px, because a pill row
    that grows its text stops fitting the popover it lives in. */
 @media (pointer: coarse) {
-  .color-mode-tab { padding: 12px 10px; }
-  .color-mode-tab--wide { padding: 12px 10px; }
-  .color-mode-fam { gap: 6px; }
+  .color-mode-tab { padding: var(--sp-6) var(--sp-5); }
+  .color-mode-tab--wide { padding: var(--sp-6) var(--sp-5); }
+  .color-mode-fam { gap: var(--sp-3); }
   .color-eyedropper { width: 36px; height: 36px; }
   /* The 18px/12px thumbs are a fingertip miss - grow them to the same ~22px floor
      parts/fields.css's native `.field-range` recipe uses, so a JS slider and a plain

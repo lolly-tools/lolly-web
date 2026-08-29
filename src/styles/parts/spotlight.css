@@ -52,7 +52,7 @@ html[data-a11y-motion="reduce"] .spotlight-anim { animation: none; }
 
 .spotlight-group-label {
   padding: 8px 10px 4px;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 650;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -79,7 +79,7 @@ html[data-a11y-motion="reduce"] .spotlight-anim { animation: none; }
   flex: none;
   color: hsl(var(--muted-foreground));
 }
-.spotlight-opt-icon svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
+.spotlight-opt-icon svg { width: var(--fs-xl); height: var(--fs-xl); }
 
 .spotlight-opt-text {
   display: flex;
@@ -87,7 +87,7 @@ html[data-a11y-motion="reduce"] .spotlight-anim { animation: none; }
   min-width: 0;
 }
 .spotlight-opt-title {
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   color: hsl(var(--foreground));
   white-space: nowrap;
   overflow: hidden;
@@ -135,7 +135,7 @@ html[data-a11y-motion="reduce"] .spotlight-anim { animation: none; }
 
 .spotlight-empty {
   padding: 14px 12px;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   color: hsl(var(--muted-foreground));
 }
 

@@ -30,15 +30,15 @@
   display: flex; align-items: flex-start; gap: 12px; text-align: left;
   padding: 14px 16px; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * 1.2);
   background: hsl(var(--background)); color: hsl(var(--foreground)); font: inherit; cursor: pointer;
-  transition: border-color 0.12s, background 0.12s, transform 0.12s;
+  transition: border-color var(--dur-1), background var(--dur-1), transform var(--dur-1);
 }
 .instance-choice:hover { border-color: hsl(var(--primary) / 0.55); transform: translateY(-1px); }
 .instance-choice-icon { flex: none; display: inline-flex; color: hsl(var(--muted-foreground)); margin-top: 1px; }
-.instance-choice-title { font-size: calc(14px * var(--a11y-fs)); font-weight: 650; display: block; }
-.instance-choice-sub { font-size: calc(12px * var(--a11y-fs)); line-height: 1.45; color: hsl(var(--muted-foreground)); display: block; margin-top: 2px; }
+.instance-choice-title { font-size: var(--fs-lg); font-weight: 650; display: block; }
+.instance-choice-sub { font-size: var(--fs-sm); line-height: 1.45; color: hsl(var(--muted-foreground)); display: block; margin-top: 2px; }
 
 .instance-field-row { display: flex; gap: 8px; margin: 4px 0 12px; }
-.instance-field-row .field-input { flex: 1 1 auto; min-width: 0; padding: 8px 10px; font-size: calc(13px * var(--a11y-fs)); }
+.instance-field-row .field-input { flex: 1 1 auto; min-width: 0; padding: 8px 10px; font-size: var(--fs-md); }
 
 .instance-probe { margin: -4px 0 14px; font-size: calc(12.5px * var(--a11y-fs)); line-height: 1.5; }
 .instance-probe--ok { color: hsl(150 55% 30%); }
@@ -46,10 +46,10 @@
 
 .instance-import-or {
   display: flex; align-items: center; gap: 10px; margin: 4px 0 14px;
-  font-size: calc(11px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); text-transform: uppercase; letter-spacing: 0.04em;
+  font-size: var(--fs-xs); color: hsl(var(--muted-foreground)); text-transform: uppercase; letter-spacing: 0.04em;
 }
 .instance-import-or::before, .instance-import-or::after { content: ''; flex: 1; height: 1px; background: hsl(var(--border)); }
 
-.instance-summary { margin: 0 0 14px; font-size: calc(13px * var(--a11y-fs)); color: hsl(var(--foreground)); }
+.instance-summary { margin: 0 0 14px; font-size: var(--fs-md); color: hsl(var(--foreground)); }
 
 }

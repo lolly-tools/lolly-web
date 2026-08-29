@@ -459,9 +459,10 @@ test('onion.css: layered, pointer-transparent, non-dashed, and colour-blind safe
   assert.match(css, /html\[data-a11y-contrast="high"\] \.onion-ghost/);
   assert.match(css, /html\[data-a11y-previews="hidden"\]/);
   // Ghost outlines are GEOMETRY and must not ride the type multiplier; the chip is
-  // chrome type and must.
+  // chrome type and must - via var(--fs-2xs), the token that carries the multiplier
+  // inside its declaration (plans/172; a11y-prefs-contract sanctions exactly that home).
   assert.equal(/outline[^:]*:\s*calc\([^)]*--a11y-fs/.test(css), false);
-  assert.match(css, /font-size:\s*calc\(10px \* var\(--a11y-fs\)\)/);
+  assert.match(css, /font-size:\s*(?:var\(--fs-2xs\)|calc\(10px \* var\(--a11y-fs\)\))/);
 });
 
 test('onion.css: no custom property is defined in terms of ITSELF', () => {

@@ -66,7 +66,7 @@
   background: hsl(var(--card) / 0.96);
   border-top: 1px solid hsl(var(--border));
   box-shadow: 0 -10px 30px rgb(0 0 0 / 0.18);
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   user-select: none;
   touch-action: none;         /* the panel owns its own pointer gestures */
 }
@@ -140,7 +140,7 @@
    hole plus the .tl-tools gap. The panel hides the `+` for a timed tool that declares
    no addKinds, so restate it, exactly as `.tl-scenery[hidden]` does further down. */
 .tl-btn[hidden] { display: none; }
-.tl-btn svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
+.tl-btn svg { width: var(--fs-xl); height: var(--fs-xl); }
 .tl-btn:hover:not(:disabled):not([aria-disabled="true"]) { background: hsl(var(--muted)); }
 .tl-btn:active:not(:disabled):not([aria-disabled="true"]) { filter: brightness(0.92); }
 .tl-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
@@ -185,14 +185,14 @@
   gap: 7px;
   flex: 0 0 auto;
   padding: 3px 9px 3px 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: hsl(var(--muted));
   color: hsl(var(--foreground));
 }
 .tl-rec[hidden] { display: none; }
 .tl-rec-dot {
   width: 8px; height: 8px;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: hsl(var(--destructive));
   animation: tl-rec-pulse 1.4s ease-in-out infinite;
 }
@@ -205,12 +205,12 @@
   text-align: center;
   white-space: nowrap;
 }
-.tl-rec.is-countin .tl-rec-time { font-size: calc(14px * var(--a11y-fs)); font-weight: 700; }
+.tl-rec.is-countin .tl-rec-time { font-size: var(--fs-lg); font-weight: 700; }
 /* The level meter: a fill inside a track, width driven from dBFS in paintLevel. */
 .tl-rec-meter {
   position: relative;
   width: 64px; height: 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   background: hsl(var(--border));
   overflow: hidden;
 }
@@ -256,7 +256,7 @@
 .tl-menu-sub {
   max-width: 26ch;
   color: hsl(var(--muted-foreground));
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   line-height: 1.35;
   white-space: normal;
 }
@@ -278,7 +278,7 @@
   margin: 0 0 2px;
   max-width: 30ch;
   color: hsl(var(--muted-foreground));
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   line-height: 1.4;
   text-wrap: pretty;
 }
@@ -346,8 +346,8 @@
   color: hsl(var(--muted-foreground));
   white-space: nowrap;
 }
-.tl-num  { width: 68px; font-size: calc(12px * var(--a11y-fs)); padding: 5px 7px; font-variant-numeric: tabular-nums; }
-.tl-select { width: auto; font-size: calc(12px * var(--a11y-fs)); padding: 5px 24px 5px 7px; }
+.tl-num  { width: 68px; font-size: var(--fs-sm); padding: 5px 7px; font-variant-numeric: tabular-nums; }
+.tl-select { width: auto; font-size: var(--fs-sm); padding: 5px 24px 5px 7px; }
 /* The easing picker carries a `cubic-bezier(…)` option when one is authored, which is
    ~24 characters and would push every field after it off the fold on a phone. Cap the
    BOX, not the option text: the menu the browser opens is unaffected, so the full value
@@ -420,8 +420,8 @@
   color: hsl(var(--muted-foreground));
 }
 .tl-group-icon svg {
-  width: calc(14px * var(--a11y-fs));
-  height: calc(14px * var(--a11y-fs));
+  width: var(--fs-lg);
+  height: var(--fs-lg);
 }
 .tl-group-label {
   font-size: calc(10.5px * var(--a11y-fs));
@@ -451,8 +451,8 @@
   color: hsl(var(--muted-foreground));
 }
 .tl-group-caret svg {
-  width: calc(12px * var(--a11y-fs));
-  height: calc(12px * var(--a11y-fs));
+  width: var(--fs-sm);
+  height: var(--fs-sm);
 }
 /* Shut, the chevron points along the reading direction; open, it points down at the
    fields it revealed. One glyph, rotated - a second registry entry for the same arrow
@@ -572,7 +572,7 @@
   align-items: center;
   gap: 4px;
   padding: 1px 3px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 /* The row the playhead is parked on. A tinted BACKGROUND, not an edge stripe. */
 .tl-kf-row.is-current { background: hsl(var(--primary) / 0.14); }
@@ -776,7 +776,7 @@
   float: inline-start;           /* sticky needs in-flow; the bars are absolute over it */
   margin-block-start: 2px;
   padding: 0 4px;
-  font-size: calc(10px * var(--a11y-fs));
+  font-size: var(--fs-2xs);
   line-height: 1.4;
   color: hsl(var(--muted-foreground) / 0.8);
   pointer-events: none;
@@ -816,7 +816,7 @@
   box-shadow: inset 0 0 0 1px hsl(var(--tl-hue) / 0.6);
   color: hsl(var(--foreground));
   cursor: grab;
-  transition: box-shadow 0.12s ease, background-color 0.12s ease;
+  transition: box-shadow var(--dur-1) ease, background-color var(--dur-1) ease;
 }
 .tl-clip[data-kind="clip"]    { --tl-hue: var(--store-1); }
 .tl-clip[data-kind="video"]   { --tl-hue: var(--store-2); }
@@ -1000,7 +1000,7 @@
   padding: 1px 5px;
   border-radius: 4px;
   font-family: var(--font-mono);
-  font-size: calc(10px * var(--a11y-fs));
+  font-size: var(--fs-2xs);
   line-height: 1.5;
   white-space: pre;
   color: hsl(var(--background));
@@ -1023,7 +1023,7 @@
   display: flex; align-items: center; justify-content: center;
   padding: 0;
   border: 1px solid hsl(var(--border));
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: hsl(var(--card));
   color: hsl(var(--muted-foreground));
   cursor: pointer;
@@ -1074,7 +1074,7 @@
   position: absolute;
   top: -4px; left: -4px;
   width: 10px; height: 10px;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: inherit;
 }
 .tl-snapline {
@@ -1100,7 +1100,7 @@
 }
 .tl-scenery[hidden] { display: none; }
 .tl-scenery-label {
-  font-size: calc(10px * var(--a11y-fs));
+  font-size: var(--fs-2xs);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: hsl(var(--muted-foreground));
@@ -1120,7 +1120,7 @@
   align-items: stretch;
   max-width: 210px;
   border: 1px solid hsl(var(--border));
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: hsl(var(--muted) / 0.6);
 }
 .tl-chip-group:hover { border-color: hsl(var(--muted-foreground)); }
@@ -1136,7 +1136,7 @@
   background: transparent;
   color: hsl(var(--foreground));
   font: inherit;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1169,7 +1169,7 @@
   color: hsl(var(--muted-foreground));
   cursor: pointer;
 }
-.tl-chip-add svg { width: calc(11px * var(--a11y-fs)); height: calc(11px * var(--a11y-fs)); }
+.tl-chip-add svg { width: var(--fs-xs); height: var(--fs-xs); }
 .tl-chip-add:hover {
   background: var(--brand-primary, hsl(var(--primary)));
   color: var(--brand-on-primary, hsl(var(--primary-foreground)));
@@ -1184,11 +1184,11 @@
   flex: 0 0 auto;
   padding: 5px 10px;
   border: 1px solid hsl(var(--border));
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: hsl(var(--muted-foreground));
   font: inherit;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   white-space: nowrap;
   cursor: pointer;
   transition: background-color 0.14s ease, color 0.14s ease, border-color 0.14s ease;
@@ -1257,7 +1257,7 @@
 .tl-keys-table td {
   padding: 5px 0;
   vertical-align: baseline;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
 }
 .tl-keys-keys { width: 1%; white-space: nowrap; padding-inline-end: 14px; }
 .tl-keys-keys kbd {
@@ -1267,7 +1267,7 @@
   border: 1px solid hsl(var(--border));
   background: hsl(var(--muted) / 0.6);
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   line-height: 1.5;
   white-space: nowrap;
 }
@@ -1277,7 +1277,7 @@
 .tl-keys-hint {
   display: block;
   color: hsl(var(--muted-foreground));
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
 }
 .tl-keys-actions { display: flex; justify-content: flex-end; gap: 8px; }
 

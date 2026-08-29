@@ -38,7 +38,7 @@
   justify-content: center;
   width: calc(38px * var(--a11y-fs));
   height: calc(38px * var(--a11y-fs));
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid hsl(var(--border));
   background: hsl(var(--background) / 0.85);
   color: hsl(var(--foreground));
@@ -73,7 +73,7 @@
   color: hsl(var(--primary-foreground));
   border-radius: calc(var(--radius) * 1.5);
   border-bottom-right-radius: calc(var(--radius) * 0.4);
-  font-size: calc(14px * var(--a11y-fs));
+  font-size: var(--fs-lg);
   line-height: 1.45;
 }
 
@@ -88,12 +88,12 @@
   flex-direction: column;
   gap: 0.85rem;
 }
-.ask-thinking { color: hsl(var(--muted-foreground)); font-size: calc(14px * var(--a11y-fs)); font-style: italic; }
+.ask-thinking { color: hsl(var(--muted-foreground)); font-size: var(--fs-lg); font-style: italic; }
 
 /* ─── the extracted documentation section ─────────────────────────────────────── */
 .ask-answer-body { display: flex; flex-direction: column; gap: 0.5rem; }
 .ask-section {
-  font-size: calc(14px * var(--a11y-fs));
+  font-size: var(--fs-lg);
   line-height: 1.6;
   max-height: 20rem;
   overflow: hidden;
@@ -130,7 +130,7 @@
 .ask-section a { color: hsl(var(--primary)); text-decoration: underline; text-underline-offset: 2px; }
 
 .ask-table-wrap { overflow-x: auto; margin: 0 0 0.7rem; }
-.ask-table { border-collapse: collapse; font-size: calc(13px * var(--a11y-fs)); width: 100%; }
+.ask-table { border-collapse: collapse; font-size: var(--fs-md); width: 100%; }
 .ask-table th, .ask-table td {
   border: 1px solid hsl(var(--border));
   padding: 0.35rem 0.6rem;
@@ -144,14 +144,14 @@
   background: none;
   border: none;
   color: hsl(var(--primary));
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 600;
   cursor: pointer;
   padding: 0.1rem 0;
 }
 .ask-cite {
   margin: 0;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   color: hsl(var(--muted-foreground));
 }
 .ask-cite-link { color: hsl(var(--primary)); }
@@ -159,7 +159,7 @@
 /* ─── related sections + in-app hits ──────────────────────────────────────────── */
 .ask-group-label {
   margin: 0 0 0.4rem;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -170,7 +170,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   color: hsl(var(--foreground));
 }
 .ask-related-icon { display: inline-flex; flex: none; color: hsl(var(--muted-foreground)); }
@@ -187,16 +187,16 @@
   border-radius: var(--radius);
   color: hsl(var(--foreground));
   text-decoration: none;
-  transition: background 0.12s;
+  transition: background var(--dur-1);
 }
 .ask-hit:hover { background: hsl(var(--accent)); }
 .ask-hit-icon { display: inline-flex; flex: none; color: hsl(var(--muted-foreground)); }
 .ask-hit-icon svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
 .ask-hit-text { display: flex; flex-direction: column; min-width: 0; }
-.ask-hit-title { font-size: calc(14px * var(--a11y-fs)); font-weight: 500; }
-.ask-hit-sub { font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.ask-hit-title { font-size: var(--fs-lg); font-weight: 500; }
+.ask-hit-sub { font-size: var(--fs-sm); color: hsl(var(--muted-foreground)); }
 
-.ask-empty { margin: 0; font-size: calc(14px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.ask-empty { margin: 0; font-size: var(--fs-lg); color: hsl(var(--muted-foreground)); }
 
 /* ─── composer - the "talking to Lolly" hero ─────────────────────────────────────
    A big pill input and a candy Ask button carrying the Lolly mark. Its swirl
@@ -214,9 +214,9 @@
 }
 .ask-input {
   flex: 1 1 auto;
-  font-size: calc(16px * var(--a11y-fs));
+  font-size: var(--fs-xl);
   padding: 0.7rem 1.05rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .ask-send {
@@ -226,15 +226,15 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.45rem 1.2rem 0.45rem 0.55rem;
-  font-size: calc(16px * var(--a11y-fs));
+  font-size: var(--fs-xl);
   font-weight: 650;
   color: hsl(var(--primary));
   background: hsl(var(--background));
   border: 1.5px solid hsl(var(--primary) / 0.35);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   box-shadow: 0 2px 10px -4px hsl(var(--primary) / 0.4);
-  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  transition: transform var(--dur-2) var(--ease-spring), box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
 }
 .ask-send:hover {
   border-color: hsl(var(--primary) / 0.75);
@@ -311,9 +311,9 @@ html[data-a11y-motion="reduce"] .ask-send .ask-send-mark .lolly-mark__spin-3 { a
   flex-wrap: wrap;
   margin: 4px 0 8px;
   padding: 8px 12px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--surface-2, color-mix(in oklab, var(--fg, #0f172a) 5%, transparent));
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
 }
 .ask-consent[hidden] { display: none; }
 .ask-consent-text { flex: 1 1 24ch; min-width: 0; }

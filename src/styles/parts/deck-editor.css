@@ -50,7 +50,7 @@
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
-.deck-strip__load svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
+.deck-strip__load svg { width: var(--fs-xl); height: var(--fs-xl); }
 .deck-strip__load:hover {
   background: color-mix(in oklab, hsl(var(--primary, 231 60% 55%)) 8%, hsl(var(--background, 0 0% 100%)));
   border-color: color-mix(in oklab, hsl(var(--primary, 231 60% 55%)) 40%, transparent);
@@ -100,7 +100,7 @@
   background: #141b2d;
   cursor: pointer;
   overflow: hidden;
-  transition: border-color 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
+  transition: border-color var(--dur-1) ease, box-shadow var(--dur-1) ease, transform var(--dur-1) ease;
 }
 /* Active slide: a prominent ring + slight lift so the current thumbnail clearly stands out -
    border/ring only, never a tint over the face, so the mini-render stays colour-accurate. */
@@ -205,13 +205,13 @@
   height: calc(15px * var(--a11y-fs));
   display: grid;
   place-items: center;
-  border-radius: 50%;
-  font-size: calc(12px * var(--a11y-fs));
+  border-radius: var(--radius-round);
+  font-size: var(--fs-sm);
   line-height: 1;
   color: #fff;
   background: rgba(0, 0, 0, 0.5);
   opacity: 0;
-  transition: opacity 0.12s ease;
+  transition: opacity var(--dur-1) ease;
 }
 .deck-thumb:hover .deck-thumb__del,
 .deck-thumb:focus-within .deck-thumb__del { opacity: 1; }
@@ -253,7 +253,7 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.9em;
   padding: 0 3px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   background: hsl(var(--muted, 220 14% 96%));
 }
 .deck-load__ta {
@@ -340,12 +340,12 @@
   display: inline-flex;
   color: hsl(var(--muted-foreground, 220 10% 45%));
 }
-.deck-bar__ico svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); display: block; }
+.deck-bar__ico svg { width: var(--fs-xl); height: var(--fs-xl); display: block; }
 .deck-bar__sel {
   font: inherit;
   font-size: calc(0.78rem * var(--a11y-fs));
   padding: 3px 4px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   border: 1px solid transparent;
   background: transparent;
   color: hsl(var(--foreground, 220 20% 15%));
@@ -370,7 +370,7 @@
   cursor: pointer;
 }
 .deck-bar__btn:hover { background: color-mix(in oklab, hsl(var(--primary, 231 60% 55%)) 14%, transparent); }
-.deck-bar__btn svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); display: block; }
+.deck-bar__btn svg { width: var(--fs-xl); height: var(--fs-xl); display: block; }
 
 /* ── Inline layout-slide text editing (step 5) ──────────────────────────────────
    The REAL rendered `.sl-head` / `.sl-body` in the tool canvas become contenteditable -
@@ -381,7 +381,7 @@
 .sl-body.is-editing {
   outline: 2px solid color-mix(in oklab, hsl(var(--primary, 231 60% 55%)) 70%, transparent);
   outline-offset: 3px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   cursor: text;
 }
 .sl-head.is-editing { outline-offset: 6px; }
@@ -409,7 +409,7 @@
   min-width: calc(26px * var(--a11y-fs));
   height: calc(26px * var(--a11y-fs));
   padding: 0 7px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   border: 1px solid transparent;
   background: transparent;
   color: hsl(var(--foreground, 220 20% 15%));
@@ -516,13 +516,13 @@
   color: hsl(var(--foreground, 220 20% 15%));
   background: hsl(var(--background, 0 0% 100%) / 0.7);
   border: 1px solid color-mix(in oklab, hsl(var(--foreground, 220 20% 15%)) 16%, transparent);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 3px 4px;
   cursor: pointer;
 }
 .deck-free__num { width: 3.6em; text-align: right; cursor: text; }
 .deck-free__num::placeholder { opacity: 0.5; font-weight: 500; }
-.deck-free__check { width: calc(14px * var(--a11y-fs)); height: calc(14px * var(--a11y-fs)); accent-color: hsl(var(--primary, 231 60% 55%)); cursor: pointer; }
+.deck-free__check { width: var(--fs-lg); height: var(--fs-lg); accent-color: hsl(var(--primary, 231 60% 55%)); cursor: pointer; }
 /* Colour picker (the app's OKLCH float field) + its clear button. An unset colour means
    "inherit the slide's ink / no fill" - a state the picker can't show - so the trigger is
    dimmed when unset, and the clear button sets it back to inherit. */
@@ -572,7 +572,7 @@
   width: 12px;
   height: 12px;
   margin-left: -6px;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: hsl(var(--background, 0 0% 100%));
   border: 1.5px solid hsl(var(--primary, 231 60% 55%));
   cursor: grab;

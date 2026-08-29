@@ -96,7 +96,7 @@
 .start-eyebrow {
   margin: 0;
   padding: 4px 11px;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   letter-spacing: 0.08em;
 }
 .start-title {
@@ -178,11 +178,11 @@
   background: transparent;
   color: hsl(var(--muted-foreground));
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 600;
   text-align: start;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition: background var(--dur-1), color var(--dur-1);
 }
 .ds-room:hover { background: hsl(var(--muted) / 0.7); color: hsl(var(--foreground)); }
 /* The current room reads as a TINTED FILL, never a coloured outline - the house
@@ -199,7 +199,7 @@
 .ds-room-ic svg { width: 100%; height: 100%; }
 .ds-room-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 899px) {
-  .ds-room { width: auto; border-radius: 999px; padding: 8px 14px; }
+  .ds-room { width: auto; border-radius: var(--radius-pill); padding: 8px 14px; }
 }
 
 /* Foot: the whole-system actions and the transient note. */
@@ -242,7 +242,7 @@
   background: none;
   color: hsl(var(--muted-foreground));
   font: inherit;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   text-align: start;
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -256,7 +256,7 @@
      be a height). */
   width: 100%;
   flex: none;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   color: hsl(var(--muted-foreground));
   overflow-wrap: anywhere;
 }
@@ -267,9 +267,9 @@
 
 /* ── The Overview room - counts and doors, no progress ─────────────────────── */
 .ds-ov { display: flex; flex-direction: column; gap: 14px; }
-.ds-ov-loading { margin: 0; font-size: calc(13px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.ds-ov-loading { margin: 0; font-size: var(--fs-md); color: hsl(var(--muted-foreground)); }
 .ds-ov-title { margin: 0; font-size: calc(17px * var(--a11y-fs)); font-weight: 800; letter-spacing: -0.01em; }
-.ds-ov-sub { margin: 0; font-size: calc(13px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); max-width: 62ch; }
+.ds-ov-sub { margin: 0; font-size: var(--fs-md); color: hsl(var(--muted-foreground)); max-width: 62ch; }
 
 .ds-ov-doors {
   display: grid;
@@ -290,7 +290,7 @@
   color: hsl(var(--foreground));
   font: inherit;
   cursor: pointer;
-  transition: background 0.12s, box-shadow 0.12s;
+  transition: background var(--dur-1), box-shadow var(--dur-1);
 }
 .ds-ov-door:hover,
 .ds-ov-card:hover { background: hsl(var(--muted) / 0.5); box-shadow: 0 2px 10px -6px hsl(var(--foreground) / 0.4); }
@@ -302,7 +302,7 @@
   color: hsl(var(--primary));
 }
 .ds-ov-door-ic svg { width: 100%; height: 100%; }
-.ds-ov-door-name { font-size: calc(14px * var(--a11y-fs)); font-weight: 700; }
+.ds-ov-door-name { font-size: var(--fs-lg); font-weight: 700; }
 .ds-ov-door-note { font-size: calc(12.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 
 .ds-ov-cards {
@@ -310,8 +310,8 @@
   gap: 10px;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr));
 }
-.ds-ov-card-label { font-size: calc(11px * var(--a11y-fs)); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
-.ds-ov-card-value { font-size: calc(14px * var(--a11y-fs)); font-weight: 700; overflow-wrap: anywhere; }
+.ds-ov-card-label { font-size: var(--fs-xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.ds-ov-card-value { font-size: var(--fs-lg); font-weight: 700; overflow-wrap: anywhere; }
 .ds-ov-strip { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .ds-ov-chip {
   width: 16px;
@@ -408,7 +408,7 @@
   background: hsl(var(--card) / 0.6);
   cursor: pointer;
   text-align: center;
-  transition: border-color 0.12s, background 0.12s;
+  transition: border-color var(--dur-1), background var(--dur-1);
 }
 .start-import-drop:hover { border-color: hsl(var(--primary) / 0.55); }
 .start-import-drop.is-dragover {
@@ -445,15 +445,15 @@
   height: calc(30px * var(--a11y-fs));
   color: hsl(var(--foreground) / 0.8); /* the mono marks; the Lolly tile's img keeps its own colour */
 }
-.start-import-fmt-icon img { display: block; border-radius: 6px; }
+.start-import-fmt-icon img { display: block; border-radius: var(--radius-sm); }
 .start-import-fmt-name { font-size: calc(12.5px * var(--a11y-fs)); font-weight: 700; color: hsl(var(--foreground)); }
 .start-import-fmt-ext {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   color: hsl(var(--muted-foreground));
 }
 .start-import-btn { cursor: pointer; }
-.start-import-drophint { font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); margin-top: -8px; }
+.start-import-drophint { font-size: var(--fs-sm); color: hsl(var(--muted-foreground)); margin-top: -8px; }
 .start-import-result {
   display: flex;
   flex-direction: column;
@@ -464,11 +464,11 @@
   border-radius: var(--radius);
   background: hsl(var(--background));
 }
-.start-import-name { margin: 0; font-size: calc(13px * var(--a11y-fs)); font-weight: 700; overflow-wrap: anywhere; }
+.start-import-name { margin: 0; font-size: var(--fs-md); font-weight: 700; overflow-wrap: anywhere; }
 .start-import-source {
   margin-left: 8px;
   padding: 2px 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: hsl(var(--muted));
   color: hsl(var(--muted-foreground));
   font-size: calc(10.5px * var(--a11y-fs));
@@ -478,7 +478,7 @@
   vertical-align: middle;
 }
 .start-import-stats { margin: 0; font-size: calc(12.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
-.start-import-warn { margin: 0; font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); font-style: italic; }
+.start-import-warn { margin: 0; font-size: var(--fs-sm); color: hsl(var(--muted-foreground)); font-style: italic; }
 .start-import-err { margin: 0; font-size: calc(12.5px * var(--a11y-fs)); font-weight: 600; color: hsl(var(--destructive)); }
 .start-cta--import { align-self: flex-start; }
 
@@ -489,7 +489,7 @@
    still scroll beneath. */
 .start-editor-wrap { display: flex; flex-direction: column; gap: 22px; z-index: auto; }
 .start-editor-mount { display: block; }
-.start-editor-loading { margin: 0; font-size: calc(13px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.start-editor-loading { margin: 0; font-size: var(--fs-md); color: hsl(var(--muted-foreground)); }
 /* The studio's own panels already gap themselves (.be gap); match that rhythm
    so the whole page reads as one column of evenly-spaced cards. */
 .start-editor-mount .be { gap: 22px; }
@@ -571,7 +571,7 @@
 }
 .start-color-hex {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   color: hsl(var(--muted-foreground));
   overflow: hidden;
   text-overflow: ellipsis;
@@ -607,7 +607,7 @@
   color: hsl(var(--foreground));
   font: inherit;
   cursor: pointer;
-  transition: background 0.12s, box-shadow 0.12s;
+  transition: background var(--dur-1), box-shadow var(--dur-1);
 }
 .ds-src-tile:hover { background: hsl(var(--muted) / 0.5); box-shadow: 0 2px 10px -6px hsl(var(--foreground) / 0.4); }
 .ds-src-tile:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
@@ -619,7 +619,7 @@
   color: hsl(var(--primary));
 }
 .ds-src-tile-ic svg { width: 100%; height: 100%; }
-.ds-src-tile-name { font-size: calc(14px * var(--a11y-fs)); font-weight: 700; }
+.ds-src-tile-name { font-size: var(--fs-lg); font-weight: 700; }
 .ds-src-tile-note { font-size: calc(12.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 
 .ds-src-stage { display: flex; flex-direction: column; gap: 12px; }
@@ -703,11 +703,11 @@
   border: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius) * 0.6);
 }
-.ds-pdf-font-name { font-size: calc(13px * var(--a11y-fs)); font-weight: 700; overflow-wrap: anywhere; }
+.ds-pdf-font-name { font-size: var(--fs-md); font-weight: 700; overflow-wrap: anywhere; }
 .ds-pdf-font-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .ds-pdf-chip {
   padding: 2px 7px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: hsl(var(--muted));
   color: hsl(var(--muted-foreground));
   font-size: calc(10.5px * var(--a11y-fs));
@@ -724,7 +724,7 @@
 .ds-pdf-chip--warn { background: hsl(var(--destructive) / 0.18); color: hsl(var(--foreground)); }
 .ds-pdf-font-note {
   flex: 1 1 12rem;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   color: hsl(var(--muted-foreground));
 }
 /* 44px on every width, the same floor .ds-src-tile and .ds-roles-chip hold to. */
@@ -815,13 +815,13 @@
   min-height: 44px;
   padding: 6px 10px;
   border: 1px solid hsl(var(--border));
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: hsl(var(--card));
   color: hsl(var(--foreground));
   font: inherit;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background var(--dur-1);
 }
 .ds-roles-chip:hover { background: hsl(var(--muted) / 0.7); }
 /* Chosen reads as a tinted fill, never a coloured edge on a rounded control. */
@@ -839,17 +839,17 @@
 .ds-tray-toggle-ic {
   display: grid;
   place-items: center;
-  width: calc(16px * var(--a11y-fs));
-  height: calc(16px * var(--a11y-fs));
+  width: var(--fs-xl);
+  height: var(--fs-xl);
 }
 .ds-tray-toggle-ic svg { width: 100%; height: 100%; }
 .ds-tray-toggle-n {
   min-width: calc(18px * var(--a11y-fs));
   padding: 0 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: hsl(var(--primary) / 0.16);
   color: hsl(var(--foreground));
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 700;
   line-height: calc(18px * var(--a11y-fs));
   text-align: center;
@@ -875,13 +875,13 @@
 .ds-versions-toggle-ic {
   display: grid;
   place-items: center;
-  width: calc(16px * var(--a11y-fs));
-  height: calc(16px * var(--a11y-fs));
+  width: var(--fs-xl);
+  height: var(--fs-xl);
 }
 .ds-versions-toggle-ic svg { width: 100%; height: 100%; }
 
 .ds-versions { display: flex; flex-direction: column; gap: 14px; }
-.ds-v-loading { margin: 0; font-size: calc(13px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.ds-v-loading { margin: 0; font-size: var(--fs-md); color: hsl(var(--muted-foreground)); }
 .ds-v-title { margin: 0; font-size: calc(17px * var(--a11y-fs)); font-weight: 800; letter-spacing: -0.01em; }
 /* The heading is the landing spot after an action removes the control that was
    pressed, so it takes focus programmatically - and must show a ring when it
@@ -899,7 +899,7 @@
   color: hsl(var(--muted-foreground));
   max-width: 62ch;
 }
-.ds-v-h3 { margin: 0; font-size: calc(13px * var(--a11y-fs)); font-weight: 700; }
+.ds-v-h3 { margin: 0; font-size: var(--fs-md); font-weight: 700; }
 
 /* Every control in the panel is a real touch target on every width. */
 .ds-versions .be-btn {
@@ -955,7 +955,7 @@
 }
 .ds-v-slugline {
   margin: 0;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   color: hsl(var(--muted-foreground));
   overflow-wrap: anywhere;
 }
@@ -971,7 +971,7 @@
 .ds-v-compat-sub,
 .ds-v-compat-none {
   margin: 0;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   color: hsl(var(--muted-foreground));
 }
 .ds-v-compat-head { font-weight: 700; color: hsl(var(--foreground)); }
@@ -1019,7 +1019,7 @@ html[data-a11y-motion="reduce"] .ds-v-diff-sum::before { transition: none; }
   padding-inline-start: 14px;
   max-height: 12rem;
   overflow-y: auto;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   color: hsl(var(--muted-foreground));
   overflow-wrap: anywhere;
 }
@@ -1038,7 +1038,7 @@ html[data-a11y-motion="reduce"] .ds-v-diff-sum::before { transition: none; }
 }
 .ds-v-row.is-active { background: hsl(var(--primary) / 0.1); }
 .ds-v-row-main { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
-.ds-v-row-label { font-size: calc(14px * var(--a11y-fs)); font-weight: 700; overflow-wrap: anywhere; }
+.ds-v-row-label { font-size: var(--fs-lg); font-weight: 700; overflow-wrap: anywhere; }
 .ds-v-row-slug,
 .ds-v-row-date,
 .ds-v-row-pins {
@@ -1050,17 +1050,17 @@ html[data-a11y-motion="reduce"] .ds-v-diff-sum::before { transition: none; }
 .ds-v-row-note { margin: 0; font-size: calc(12.5px * var(--a11y-fs)); overflow-wrap: anywhere; }
 .ds-v-pill {
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: hsl(var(--primary) / 0.18);
   color: hsl(var(--foreground));
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 700;
 }
 .ds-v-row-acts { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .ds-v-storage {
   margin: 0;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   color: hsl(var(--muted-foreground));
   overflow-wrap: anywhere;
 }

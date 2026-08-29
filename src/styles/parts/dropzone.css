@@ -20,7 +20,7 @@
   border: 2px dashed hsl(var(--border)); border-radius: var(--radius);
   color: hsl(var(--muted-foreground)); font-size: calc(.9rem * var(--a11y-fs)); text-align: center;
   cursor: pointer;
-  transition: border-color .12s, background .12s, color .12s;
+  transition: border-color var(--dur-1), background var(--dur-1), color var(--dur-1);
 }
 .updz-icon { display: inline-flex; flex: none; color: hsl(var(--muted-foreground)); }
 .updz-icon svg { width: calc(24px * var(--a11y-fs)); height: calc(24px * var(--a11y-fs)); }
@@ -42,7 +42,7 @@
 /* Supported formats as subtle, glanceable chips (exact formats in each chip's title). */
 .updz-hint { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; }
 .updz-chip {
-  padding: 2px 9px; border-radius: 999px;
+  padding: 2px 9px; border-radius: var(--radius-pill);
   border: 1px solid hsl(var(--border));
   background: hsl(var(--muted) / .4);
   color: hsl(var(--muted-foreground));
@@ -89,7 +89,7 @@
 }
 .trimo-head { display: flex; align-items: center; gap: 8px; }
 .trimo-glyph { display: inline-flex; flex: none; color: hsl(var(--muted-foreground)); }
-.trimo-glyph svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
+.trimo-glyph svg { width: var(--fs-xl); height: var(--fs-xl); }
 .trimo-title { font-weight: 600; font-size: calc(.95rem * var(--a11y-fs)); }
 /* Pushed to the end rather than given a colour of its own: the number is the finding,
    not a status. */
@@ -100,7 +100,7 @@
 .trimo-x {
   flex: none; display: grid; place-items: center;
   width: calc(28px * var(--a11y-fs)); height: calc(28px * var(--a11y-fs));
-  border: 0; border-radius: 6px; background: transparent; cursor: pointer; line-height: 1;
+  border: 0; border-radius: var(--radius-sm); background: transparent; cursor: pointer; line-height: 1;
   color: hsl(var(--muted-foreground)); font-size: calc(.8rem * var(--a11y-fs));
 }
 .trimo-x:hover { color: hsl(var(--foreground)); background: hsl(var(--muted)); }

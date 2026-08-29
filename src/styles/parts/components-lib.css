@@ -28,7 +28,7 @@
 .cl-jump { display: flex; flex-wrap: wrap; gap: .4rem; }
 .cl-head .cl-jump { flex-basis: 100%; }
 .cl-jump a {
-  font-size: calc(.72rem * var(--a11y-fs)); padding: .28rem .6rem; border-radius: 999px; text-decoration: none;
+  font-size: calc(.72rem * var(--a11y-fs)); padding: .28rem .6rem; border-radius: var(--radius-pill); text-decoration: none;
   border: 1px solid hsl(var(--border)); color: hsl(var(--muted-foreground)); background: hsl(var(--card));
 }
 .cl-jump a:hover { border-color: hsl(var(--ring) / .6); color: hsl(var(--foreground)); }
@@ -102,7 +102,7 @@
 .cl-meta { padding: .6rem .75rem; border-top: 1px solid hsl(var(--border)); }
 .cl-name { font-weight: 650; font-size: calc(.82rem * var(--a11y-fs)); display: flex; align-items: center; gap: .4rem; }
 /* Render-kind tag: live (green) / CSS-only (neutral) / host-bound (amber). */
-.cl-kind { flex: 0 0 auto; font-size: calc(.58rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: .08rem .34rem; border-radius: 999px; }
+.cl-kind { flex: 0 0 auto; font-size: calc(.58rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: .08rem .34rem; border-radius: var(--radius-pill); }
 .cl-kind--live { background: hsl(150 60% 45% / .16); color: hsl(158 64% 32%); }
 .cl-kind--css { background: hsl(var(--muted) / .8); color: hsl(var(--muted-foreground)); }
 .cl-kind--host { background: hsl(38 92% 50% / .18); color: hsl(32 80% 40%); }
@@ -110,7 +110,7 @@
 .cl-src { margin: .35rem 0 0; font-family: var(--font-mono, ui-monospace, monospace); font-size: calc(.64rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); word-break: break-all; }
 .cl-eg { margin: .3rem 0 0; display: flex; flex-wrap: wrap; gap: .3rem; }
 .cl-eg span {
-  font-size: calc(.62rem * var(--a11y-fs)); padding: .08rem .38rem; border-radius: 999px;
+  font-size: calc(.62rem * var(--a11y-fs)); padding: .08rem .38rem; border-radius: var(--radius-pill);
   background: hsl(var(--muted) / .7); color: hsl(var(--muted-foreground));
 }
 /* Flag a sample whose render threw, rather than showing a silent empty stage. */

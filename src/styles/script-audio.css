@@ -34,7 +34,7 @@
   justify-content: space-between;
   padding: 12px 16px;
   border-bottom: 1px solid hsl(var(--border));
-  font-size: calc(14px * var(--a11y-fs));
+  font-size: var(--fs-lg);
   font-weight: 600;
 }
 .script-audio-close {
@@ -56,7 +56,7 @@
   overflow-y: auto;
 }
 .script-audio-label {
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: hsl(var(--muted-foreground));
 }
@@ -64,7 +64,7 @@
   resize: vertical;
   min-height: 120px;
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
 }
 .script-audio-count {
   font-size: calc(11.5px * var(--a11y-fs));
@@ -81,7 +81,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: hsl(var(--muted-foreground));
 }
@@ -91,21 +91,21 @@
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   background: hsl(var(--accent) / 0.4);
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   color: hsl(var(--muted-foreground));
 }
 /* Same recipe as the /verify deep-scan bar (parts/valid.css): a thin track, a
    primary fill whose width JS drives from onProgress. */
 .script-audio-progress {
   height: 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   background: hsl(var(--border));
   overflow: hidden;
 }
 .script-audio-progress-fill {
   height: 100%;
   width: 0;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   background: hsl(var(--primary));
   transition: width 0.15s;
 }
@@ -152,7 +152,7 @@ html[data-a11y-motion="reduce"] .script-audio-progress-indeterminate .script-aud
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 600;
   cursor: pointer;
 }
@@ -164,7 +164,7 @@ html[data-a11y-motion="reduce"] .script-audio-progress-indeterminate .script-aud
   border: none;
   border-radius: var(--radius);
   font: inherit;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   font-weight: 600;
   cursor: pointer;
 }

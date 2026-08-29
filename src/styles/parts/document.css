@@ -31,10 +31,10 @@
   flex-wrap: wrap;
   max-width: min(94vw, 720px);
   padding: 5px 7px;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   background: hsl(var(--card) / 0.72);
   isolation: isolate;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22), 0 0 0 1px hsl(var(--border));
+  box-shadow: var(--shadow-3), 0 0 0 1px hsl(var(--border));
 }
 /* Frosted backing (same technique as the editor bars - blur on a ::before behind
    content, never on the element, so hosted popovers keep position:fixed). */
@@ -78,7 +78,7 @@
   opacity: 0; cursor: pointer; border: none; padding: 0; margin: 0;
 }
 .doc-color::after {
-  content: "A"; font-weight: 800; font-size: calc(13px * var(--a11y-fs)); line-height: 1;
+  content: "A"; font-weight: 800; font-size: var(--fs-md); line-height: 1;
   border-bottom: 3px solid var(--sw, #30ba78); padding-bottom: 1px;
 }
 
@@ -90,7 +90,7 @@
 /* Hover hint: a soft rule down the left of the block the pointer is over. */
 .tool-layout.is-document #tool-canvas .doc-block:hover::before {
   content: ""; position: absolute; left: -14px; top: 0; bottom: 0; width: 3px;
-  border-radius: 3px; background: hsl(var(--primary) / 0.28);
+  border-radius: var(--radius-xs); background: hsl(var(--primary) / 0.28);
 }
 .doc-rt.doc-editing {
   outline: 2px solid #2d7ff9; outline-offset: 4px;
@@ -99,7 +99,7 @@
 }
 .doc-block.doc-block-active::before {
   content: ""; position: absolute; left: -14px; top: 0; bottom: 0; width: 3px;
-  border-radius: 3px; background: hsl(var(--primary));
+  border-radius: var(--radius-xs); background: hsl(var(--primary));
 }
 /* Empty editable paragraph / cell shows a gentle prompt while focused. */
 .doc-rt.doc-editing:empty::before {
@@ -177,13 +177,13 @@
 .doc-tt-holder ul, .doc-tt-holder ol { font-size: 15px; line-height: 1.5; margin: .3em 0 .6em; padding-left: 1.5em; }
 .doc-tt-holder ul { list-style: none; }
 .doc-tt-holder ul > li { position: relative; }
-.doc-tt-holder ul > li::before { content: ""; position: absolute; left: -1em; top: .62em; width: .34em; height: .34em; border-radius: 50%; background: hsl(var(--primary)); }
+.doc-tt-holder ul > li::before { content: ""; position: absolute; left: -1em; top: .62em; width: .34em; height: .34em; border-radius: var(--radius-round); background: hsl(var(--primary)); }
 .doc-tt-holder ol { list-style: decimal; }
 .doc-tt-holder ol > li::marker { color: hsl(var(--primary)); font-weight: 700; }
 .doc-tt-holder li { margin: 0 0 .2em; }
 .doc-tt-holder li > p { margin: 0; }
 .doc-tt-holder blockquote { margin: .5em 0; padding-left: .9em; border-left: 3px solid hsl(var(--primary)); color: #5b6b66; }
-.doc-tt-holder pre { font-family: var(--font-mono); font-size: 13.5px; background: hsl(var(--primary) / .08); padding: .7em .9em; border-radius: 6px; overflow-x: auto; }
+.doc-tt-holder pre { font-family: var(--font-mono); font-size: 13.5px; background: hsl(var(--primary) / .08); padding: .7em .9em; border-radius: var(--radius-sm); overflow-x: auto; }
 .doc-tt-holder code { font-family: var(--font-mono); }
 .doc-tt-holder hr { border: none; border-top: 1px solid rgba(16, 35, 31, .18); margin: 1em 0; }
 .doc-tt-holder img { max-width: 100%; height: auto; border-radius: 4px; display: block; }
@@ -194,9 +194,9 @@
 .doc-tt-holder .doc-img-wrap img { width: 100%; height: auto; display: block; }
 .doc-tt-holder .doc-img-handle {
   position: absolute; right: -6px; bottom: -6px; width: 14px; height: 14px;
-  border-radius: 3px; background: hsl(var(--primary)); border: 2px solid #fff;
+  border-radius: var(--radius-xs); background: hsl(var(--primary)); border: 2px solid #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, .3); cursor: nwse-resize;
-  opacity: 0; transition: opacity .12s;
+  opacity: 0; transition: opacity var(--dur-1);
 }
 .doc-tt-holder .doc-img-wrap:hover .doc-img-handle,
 .doc-tt-holder .ProseMirror-selectednode .doc-img-handle { opacity: 1; }
@@ -237,7 +237,7 @@
 .doc-tt-guide-lbl {
   position: absolute; right: 6px; top: 2px;
   font-family: var(--font-mono); font-size: calc(9.5px * var(--a11y-fs)); letter-spacing: .04em;
-  color: hsl(var(--primary)); background: #fff; padding: 0 5px; border-radius: 999px;
+  color: hsl(var(--primary)); background: #fff; padding: 0 5px; border-radius: var(--radius-pill);
   box-shadow: 0 0 0 1px hsl(var(--primary) / .3);
 }
 /* Explicit hard page break rendered inside the editor content. */
@@ -249,7 +249,7 @@
 .doc-tt-holder .doc-pagebreak.ProseMirror-selectednode { border-top-color: #2d7ff9; }
 .doc-pagebreak-label {
   position: absolute; left: 50%; top: -.75em; transform: translateX(-50%);
-  background: #fff; padding: 0 .6em; font-size: calc(11px * var(--a11y-fs)); font-weight: 700; letter-spacing: .04em;
+  background: #fff; padding: 0 .6em; font-size: var(--fs-xs); font-weight: 700; letter-spacing: .04em;
   color: hsl(var(--primary)); text-transform: uppercase;
 }
 
@@ -261,5 +261,5 @@
   position: absolute; z-index: 18; transform: translateX(-50%);
   flex-wrap: nowrap; max-width: none;
 }
-.doc-imgbar-lbl { font-size: calc(11px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); padding: 0 2px; align-self: center; }
+.doc-imgbar-lbl { font-size: var(--fs-xs); color: hsl(var(--muted-foreground)); padding: 0 2px; align-self: center; }
 }

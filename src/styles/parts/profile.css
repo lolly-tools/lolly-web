@@ -67,7 +67,7 @@
   width: 100%;
   padding: .5rem .6rem .5rem 2rem;
   font: inherit;
-  font-size: calc(.85rem * var(--a11y-fs));
+  font-size: var(--fs-lg);
   color: hsl(var(--foreground));
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
@@ -101,7 +101,7 @@
   width: 100%;
   padding: .5rem .65rem;
   font: inherit;
-  font-size: calc(.85rem * var(--a11y-fs));
+  font-size: var(--fs-lg);
   font-weight: 600;
   text-align: start;
   color: hsl(var(--muted-foreground));
@@ -109,7 +109,7 @@
   border: 0;
   border-radius: calc(var(--radius) * 1.1);
   cursor: pointer;
-  transition: background .12s ease, color .12s ease;
+  transition: background var(--dur-1) ease, color var(--dur-1) ease;
 }
 .profile-view .profile-nav-item:hover { background: hsl(var(--accent)); color: hsl(var(--foreground)); }
 .profile-view .profile-nav-item:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: -1px; }
@@ -117,11 +117,11 @@
   background: hsl(var(--primary) / .12);
   color: hsl(var(--primary));
 }
-.profile-view .profile-nav-ic { flex: 0 0 auto; width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
+.profile-view .profile-nav-ic { flex: 0 0 auto; width: var(--fs-xl); height: var(--fs-xl); }
 .profile-view .profile-nav-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profile-view .profile-nav-empty {
   margin: .25rem .65rem;
-  font-size: calc(.8rem * var(--a11y-fs));
+  font-size: var(--fs-md);
   color: hsl(var(--muted-foreground));
 }
 @media (prefers-reduced-motion: reduce) {
@@ -177,7 +177,7 @@
 }
 .profile-view .profile-card h2 {
   margin: 0 0 1rem;
-  font-size: calc(.72rem * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .07em;
@@ -214,7 +214,7 @@
    "render everything" export it can lose to the flex layout and the chevron balloons to
    fill the summary (caught at 913px). An author size rule is authoritative + definite,
    so no transient can stretch it. Matches how every other icon SVG is sized. */
-.profile-view .profile-collapse-chev { flex: none; width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); transition: transform .15s ease; }
+.profile-view .profile-collapse-chev { flex: none; width: var(--fs-xl); height: var(--fs-xl); color: hsl(var(--muted-foreground)); transition: transform var(--dur-1) ease; }
 .profile-view .profile-collapse[open] > summary .profile-collapse-chev { transform: rotate(90deg); }
 .profile-view .profile-collapse-body { padding: 0 1.4rem 1.25rem; }
 /* Identity in the "Your details" summary: every card starts folded now, so the
@@ -222,7 +222,7 @@
    someone's profile. Quiet (it is a value, not a heading); it sits inside the
    shared value slot below, which is what truncates the row. */
 .profile-view .profile-summary-name {
-  font-size: calc(.9rem * var(--a11y-fs)); font-weight: 600;
+  font-size: var(--fs-lg); font-weight: 600;
   color: hsl(var(--foreground));
 }
 /* The right-hand value preview every folded summary carries (plans/163 4.1):
@@ -234,7 +234,7 @@
   flex: 0 1 auto; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   text-align: end;
-  font-size: calc(.8rem * var(--a11y-fs));
+  font-size: var(--fs-md);
   color: hsl(var(--muted-foreground));
 }
 /* Stand-in for a lazy section's body until its load lands - it replaced the word
@@ -269,12 +269,12 @@
 }
 .profile-view .profile-field { display: flex; flex-direction: column; gap: .3rem; min-width: 0; }
 .profile-view .profile-field-label {
-  font-size: calc(.68rem * var(--a11y-fs)); font-weight: 600; text-transform: uppercase;
+  font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase;
   letter-spacing: .04em; color: hsl(var(--muted-foreground));
 }
 .profile-view .profile-field input {
   width: 100%; box-sizing: border-box;
-  padding: .5rem .65rem; font-size: calc(.9rem * var(--a11y-fs));
+  padding: .5rem .65rem; font-size: var(--fs-lg);
 }
 .profile-view .profile-field input:focus {
   outline: none; border-color: hsl(var(--ring));
@@ -300,7 +300,7 @@
 .profile-view .profile-optin .profile-check { margin: 0; }
 .profile-view .profile-optin-note {
   margin: .5rem 0 0;
-  font-size: calc(.78rem * var(--a11y-fs));
+  font-size: var(--fs-sm);
   color: hsl(var(--muted-foreground));
 }
 
@@ -312,8 +312,8 @@
   display: inline-flex; align-items: center; gap: .55rem;
   margin: 0 auto 0 0; padding: .4rem .8rem; /* margin-right:auto keeps the buttons on the right */
   border: 1px solid hsl(var(--border)); border-radius: var(--radius);
-  font-size: calc(.85rem * var(--a11y-fs)); cursor: pointer;
-  transition: border-color .12s, background .12s;
+  font-size: var(--fs-lg); cursor: pointer;
+  transition: border-color var(--dur-1), background var(--dur-1);
 }
 .profile-view .profile-check:hover { background: hsl(var(--accent)); }
 .profile-view .profile-check:has(input:checked),
@@ -323,10 +323,10 @@
   width: 1rem; height: 1rem; margin: 0;
   appearance: none; -webkit-appearance: none;
   border: 1.5px solid hsl(var(--border));   /* off → outlined box */
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: transparent;
   cursor: pointer;
-  transition: background .12s, border-color .12s;
+  transition: background var(--dur-1), border-color var(--dur-1);
 }
 .profile-view .profile-check input:checked {
   background: hsl(var(--primary));          /* on → filled box */
@@ -371,8 +371,8 @@
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
   padding: .55rem .9rem;
   border: 1px solid hsl(var(--border)); border-radius: var(--radius);
-  font-size: calc(.9rem * var(--a11y-fs)); cursor: pointer;
-  transition: border-color .12s, background .12s;
+  font-size: var(--fs-lg); cursor: pointer;
+  transition: border-color var(--dur-1), background var(--dur-1);
 }
 .profile-view .feature-flag:hover { background: hsl(var(--accent)); }
 .profile-view .feature-flag:has(input:checked),
@@ -391,10 +391,10 @@
 .profile-view .feature-flag-pill {
   display: inline-block; vertical-align: middle;
   margin-left: .5rem; padding: .1rem .5rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: hsl(var(--primary) / .12);
   color: hsl(var(--primary));
-  font-size: calc(.7rem * var(--a11y-fs)); font-weight: 600; letter-spacing: .02em;
+  font-size: var(--fs-xs); font-weight: 600; letter-spacing: .02em;
 }
 /* Small (i) explainer beside a flag label - the shared help-tip button now
    (component audit rec 13); .feature-flag-info stays as its positioning host
@@ -403,16 +403,16 @@
 .profile-view .feature-flag-input { position: absolute; opacity: 0; width: 0; height: 0; }
 .profile-view .feature-flag-switch {
   flex: none; position: relative;
-  width: 2.4rem; height: 1.35rem; border-radius: 999px;
+  width: 2.4rem; height: 1.35rem; border-radius: var(--radius-pill);
   background: hsl(var(--border));
-  transition: background .15s;
+  transition: background var(--dur-1);
 }
 .profile-view .feature-flag-switch::after {
   content: ""; position: absolute; top: 2px; left: 2px;
   width: calc(1.35rem - 4px); height: calc(1.35rem - 4px);
-  border-radius: 50%; background: #fff;
+  border-radius: var(--radius-round); background: #fff;
   box-shadow: 0 1px 2px rgba(0, 0, 0, .25);
-  transition: transform .15s;
+  transition: transform var(--dur-1);
 }
 /* A named cluster heading inside the flag list (Connectors) - a label row, not a
    toggle, so it carries the card-heading treatment plus one line of scope text. */
@@ -420,12 +420,12 @@
   list-style: none;
   display: flex; flex-direction: column; gap: .2rem;
   margin: .1rem .25rem;
-  font-size: calc(.72rem * var(--a11y-fs)); font-weight: 700;
+  font-size: var(--fs-xs); font-weight: 700;
   text-transform: uppercase; letter-spacing: .07em;
   color: hsl(var(--muted-foreground));
 }
 .profile-view .feature-flag-group-note {
-  font-size: calc(.82rem * var(--a11y-fs)); font-weight: 400;
+  font-size: var(--fs-md); font-weight: 400;
   text-transform: none; letter-spacing: 0; line-height: 1.45; max-width: 74ch;
 }
 /* Separates the category flags from the Pro (batch) mode flag. */
@@ -441,7 +441,7 @@
 /* Sits at the bottom-left of the details column; margin-top:auto fills the gap. */
 .profile-view .profile-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem; margin-top: auto; padding-top: 1.25rem; }
 .profile-view .profile-btn-primary {
-  padding: .5rem 1.15rem; font: inherit; font-size: calc(.85rem * var(--a11y-fs)); font-weight: 600;
+  padding: .5rem 1.15rem; font: inherit; font-size: var(--fs-lg); font-weight: 600;
   border-radius: var(--radius); border: 1px solid hsl(var(--border));
   cursor: pointer; text-decoration: none; text-align: center; line-height: 1.4;
 }
@@ -457,7 +457,7 @@
    profile-scoped names. Same full-border card chrome as every .profile-card. */
 .profile-view .profile-appearance-sub {
   margin: -.4rem 0 1rem; max-width: 74ch;
-  font-size: calc(.9rem * var(--a11y-fs)); line-height: 1.5; color: hsl(var(--muted-foreground));
+  font-size: var(--fs-lg); line-height: 1.5; color: hsl(var(--muted-foreground));
 }
 .profile-view .profile-theme-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: .85rem;
@@ -467,24 +467,24 @@
   padding: 1rem; border-radius: var(--radius);
   background: hsl(var(--background)); color: hsl(var(--foreground));
   border: 1px solid hsl(var(--border));
-  transition: border-color .15s ease, box-shadow .15s ease, transform .1s ease;
+  transition: border-color var(--dur-1) ease, box-shadow var(--dur-1) ease, transform .1s ease;
 }
 .profile-view .profile-theme:hover { border-color: hsl(var(--primary) / .55); transform: translateY(-2px); box-shadow: 0 6px 16px hsl(0 0% 0% / .1); }
 .profile-view .profile-theme:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 .profile-view .profile-theme.is-active { border-color: hsl(var(--primary)); box-shadow: inset 0 0 0 1px hsl(var(--primary)); }
 .profile-view .profile-theme-name { display: flex; align-items: center; gap: .4rem; font-weight: 600; }
 .profile-view .profile-theme-ic { display: inline-flex; }
-.profile-view .profile-theme-ic svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
+.profile-view .profile-theme-ic svg { width: var(--fs-xl); height: var(--fs-xl); }
 .profile-view .profile-theme.is-active .profile-theme-name::after { content: '✓'; margin-inline-start: auto; color: hsl(var(--primary)); font-weight: 800; }
 /* Tiny "default" pill on the Light preview. */
 .profile-view .profile-theme-pill {
   display: inline-block; font-size: calc(.58rem * var(--a11y-fs)); font-weight: 700;
   text-transform: uppercase; letter-spacing: .04em;
-  padding: .12rem .38rem; border-radius: 999px;
+  padding: .12rem .38rem; border-radius: var(--radius-pill);
   background: hsl(var(--primary)); color: hsl(var(--primary-foreground));
 }
 .profile-view .profile-theme-dots { display: flex; gap: .35rem; margin: .85rem 0; }
-.profile-view .profile-theme-dots span { width: 22px; aspect-ratio: 1; min-width: 0; border-radius: var(--radius); box-shadow: inset 0 0 0 1px hsl(var(--border)); }
+.profile-view .profile-theme-dots span { width: 22px; aspect-ratio: 1; min-width: 0; border-radius: var(--radius); box-shadow: var(--edge); }
 .profile-view .profile-theme-sample { font-size: calc(1.6rem * var(--a11y-fs)); font-weight: 600; }
 @media (prefers-reduced-motion: reduce) { .profile-view .profile-theme { transition: none; } }
 
@@ -526,22 +526,22 @@
   border: 1px solid hsl(var(--border) / .6);
 }
 .profile-view .activity-num { font-size: calc(1.75rem * var(--a11y-fs)); }
-.profile-view .activity-label { font-size: calc(.64rem * var(--a11y-fs)); }
+.profile-view .activity-label { font-size: var(--fs-2xs); }
 
 .profile-view .activity-block { margin: 0 0 1.1rem; }
-.profile-view .activity-h3 { margin: 0 0 .55rem; font-size: calc(.64rem * var(--a11y-fs)); }
-.profile-view .fmt-row { grid-template-columns: 5rem 1fr 2.75rem; text-align: right; gap: .65rem; font-size: calc(.8rem * var(--a11y-fs)); }
+.profile-view .activity-h3 { margin: 0 0 .55rem; font-size: var(--fs-2xs); }
+.profile-view .fmt-row { grid-template-columns: 5rem 1fr 2.75rem; text-align: right; gap: .65rem; font-size: var(--fs-md); }
 .profile-view .fmt-track { height: .55rem; border-radius: var(--radius); }
 .profile-view .fmt-fill { border-radius: var(--radius); }
 
-.profile-view .activity-meta { font-size: calc(.82rem * var(--a11y-fs)); margin: 0; }
+.profile-view .activity-meta { font-size: var(--fs-md); margin: 0; }
 /* Favourite tool: a pill button in the meta line that opens that tool. */
 .profile-view .activity-meta .activity-fav {
   display: inline-flex; align-items: center; gap: .25rem;
   padding: .05rem .5rem;
   border: 1px solid hsl(var(--border)); border-radius: var(--radius);
   color: hsl(var(--foreground)); font-weight: 700;
-  transition: background .12s, border-color .12s, color .12s;
+  transition: background var(--dur-1), border-color var(--dur-1), color var(--dur-1);
 }
 .profile-view .activity-meta .activity-fav::after { content: "→"; font-weight: 600; opacity: .55; }
 .profile-view .activity-meta .activity-fav:hover {
@@ -570,14 +570,14 @@
   margin: 0; font-size: clamp(2.2rem, 7vw, 3.2rem); font-weight: 700; line-height: 1;
   font-variant-numeric: tabular-nums; color: hsl(var(--foreground));
 }
-.profile-view .store-hero-cap { margin: .4rem 0 0; font-size: calc(13px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
-.profile-view .store-headroom { margin: .1rem 0 0; font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.profile-view .store-hero-cap { margin: .4rem 0 0; font-size: var(--fs-md); color: hsl(var(--muted-foreground)); }
+.profile-view .store-headroom { margin: .1rem 0 0; font-size: var(--fs-sm); color: hsl(var(--muted-foreground)); }
 
 /* (B) Breakdown bar - whole width == usage; flex-grow carries each slice's bytes
    (zero percent math; segments auto-proportion). Solid = measured exactly,
    hatch + "~" = derived by subtraction. */
 .profile-view .store-bar {
-  display: flex; gap: 1px; height: 22px; border-radius: 999px; overflow: hidden;
+  display: flex; gap: 1px; height: 22px; border-radius: var(--radius-pill); overflow: hidden;
   background: hsl(var(--border)); position: relative;
 }
 .profile-view .store-bar::after {
@@ -588,7 +588,7 @@
   border: 0; padding: 0; flex-basis: 0; min-width: 2px; cursor: pointer;
   /* min-width keeps sub-pixel slices a visible hairline; the EXACT bytes live in
      the legend + the seg title + the aria sentence, so width never misleads. */
-  transition: flex-grow .45s ease, opacity .15s ease;
+  transition: flex-grow .45s ease, opacity var(--dur-1) ease;
 }
 .profile-view .store-bar .seg[data-cat="sessions"] { background: hsl(var(--store-1)); }
 .profile-view .store-bar .seg[data-cat="images"]   { background: hsl(var(--store-2)); }
@@ -609,36 +609,36 @@
 .profile-view .store-legend > li { display: inline-flex; }
 .profile-view .store-chip {
   display: inline-flex; align-items: center; gap: .4rem; border: 0; background: none;
-  cursor: pointer; font: inherit; padding: 2px 5px; border-radius: 7px;
+  cursor: pointer; font: inherit; padding: 2px 5px; border-radius: var(--radius-sm);
 }
 .profile-view .store-chip:hover, .profile-view .store-chip.is-active { background: hsl(var(--muted)); }
 .profile-view .store-chip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
 .profile-view .store-chip--other, .profile-view .store-chip--other:hover { cursor: default; background: none; }
-.profile-view .store-chip-sw { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+.profile-view .store-chip-sw { width: 11px; height: 11px; border-radius: var(--radius-xs); flex: none; }
 .profile-view .store-chip-sw[data-cat="sessions"] { background: hsl(var(--store-1)); }
 .profile-view .store-chip-sw[data-cat="images"]   { background: hsl(var(--store-2)); }
 .profile-view .store-chip-sw[data-cat="cache"]    { background: hsl(var(--store-3)); }
 .profile-view .store-chip-sw[data-cat="previews"] { background: hsl(var(--store-4)); }
 .profile-view .store-chip-sw[data-cat="pins"]     { background: hsl(var(--store-5)); }
-.profile-view .store-chip-name { font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--foreground)); }
-.profile-view .store-chip-val { font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
+.profile-view .store-chip-name { font-size: var(--fs-sm); color: hsl(var(--foreground)); }
+.profile-view .store-chip-val { font-size: var(--fs-sm); color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
 
 /* (D) Quota gauge + reclaim line - the quiet used-of-budget truth. */
-.profile-view .store-quota { display: flex; align-items: center; gap: 8px; margin: 0; flex-wrap: wrap; }
-.profile-view .store-quota-text, .profile-view .store-reclaim { font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); margin: 0; }
+.profile-view .store-quota { display: flex; align-items: center; gap: var(--sp-4); margin: 0; flex-wrap: wrap; }
+.profile-view .store-quota-text, .profile-view .store-reclaim { font-size: var(--fs-sm); color: hsl(var(--muted-foreground)); margin: 0; }
 .profile-view .store-quota-text strong, .profile-view .store-reclaim strong { color: hsl(var(--foreground)); }
-.profile-view .store-footnote { font-size: calc(11px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); opacity: .8; margin: .1rem 0 0; }
+.profile-view .store-footnote { font-size: var(--fs-xs); color: hsl(var(--muted-foreground)); opacity: .8; margin: .1rem 0 0; }
 
 /* Manage panels - one per measured category. */
 .profile-view .store-manages { display: flex; flex-direction: column; margin-top: .3rem; }
 .profile-view .store-manage { border-top: 1px solid hsl(var(--border)); }
 .profile-view .store-manage-sum {
   display: flex; align-items: center; gap: .5rem; min-height: 44px; cursor: pointer;
-  list-style: none; font-size: calc(13px * var(--a11y-fs)); color: hsl(var(--foreground));
+  list-style: none; font-size: var(--fs-md); color: hsl(var(--foreground));
 }
 .profile-view .store-manage-sum::-webkit-details-marker { display: none; }
 .profile-view .store-manage-sum:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -3px; border-radius: var(--radius); }
-.profile-view .store-manage-sum .profile-collapse-chev { flex: none; color: hsl(var(--muted-foreground)); transition: transform .15s ease; }
+.profile-view .store-manage-sum .profile-collapse-chev { flex: none; color: hsl(var(--muted-foreground)); transition: transform var(--dur-1) ease; }
 .profile-view .store-manage[open] > .store-manage-sum .profile-collapse-chev { transform: rotate(90deg); }
 .profile-view .store-manage-sum .storage-hint { margin-left: auto; }
 .profile-view .store-manage-body { padding: .25rem 0 .75rem; }
@@ -646,32 +646,32 @@
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
   min-height: 44px; border-top: 1px solid hsl(var(--border));
 }
-.profile-view .store-manage-name { font-size: calc(13px * var(--a11y-fs)); color: hsl(var(--foreground)); display: inline-flex; align-items: center; }
-.profile-view .store-manage-link { font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); text-decoration: none; display: inline-block; margin-top: .55rem; }
+.profile-view .store-manage-name { font-size: var(--fs-md); color: hsl(var(--foreground)); display: inline-flex; align-items: center; }
+.profile-view .store-manage-link { font-size: var(--fs-sm); color: hsl(var(--muted-foreground)); text-decoration: none; display: inline-block; margin-top: .55rem; }
 .profile-view .store-manage-link:hover { color: hsl(var(--foreground)); }
 
 /* Session list - independently scrollable, selectable rows. */
 .profile-view .store-sess-tools { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .4rem; }
-.profile-view .store-selall { display: inline-flex; align-items: center; gap: .4rem; font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); cursor: pointer; }
-.profile-view .store-sort { border: 0; background: none; font: inherit; font-size: calc(12px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); cursor: pointer; padding: 2px 6px; border-radius: 6px; }
+.profile-view .store-selall { display: inline-flex; align-items: center; gap: .4rem; font-size: var(--fs-sm); color: hsl(var(--muted-foreground)); cursor: pointer; }
+.profile-view .store-sort { border: 0; background: none; font: inherit; font-size: var(--fs-sm); color: hsl(var(--muted-foreground)); cursor: pointer; padding: var(--sp-1) var(--sp-3); border-radius: var(--radius-sm); }
 .profile-view .store-sort:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
 .profile-view .store-sess-list { list-style: none; margin: 0; padding: 0; max-height: 50vh; overflow: auto; }
 .profile-view .store-sess { display: flex; align-items: center; gap: .6rem; padding: .45rem 0; scroll-margin-block: 8px; }
 .profile-view .store-sess + .store-sess { border-top: 1px solid hsl(var(--border) / .6); }
-.profile-view .store-sess-check { flex: none; width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); cursor: pointer; }
+.profile-view .store-sess-check { flex: none; width: var(--fs-xl); height: var(--fs-xl); cursor: pointer; }
 .profile-view .store-sess-thumb { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; flex: none; background: hsl(var(--muted)); }
 .profile-view .store-sess-thumb.is-placeholder { display: inline-flex; align-items: center; justify-content: center; color: hsl(var(--primary)); }
 .profile-view .store-sess-thumb.is-placeholder svg { width: calc(20px * var(--a11y-fs)); height: calc(20px * var(--a11y-fs)); }
 .profile-view .store-sess-meta { display: flex; flex-direction: column; min-width: 0; flex: 1; }
-.profile-view .store-sess-label { font-size: calc(13px * var(--a11y-fs)); color: hsl(var(--foreground)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.profile-view .store-sess-tag { font-size: calc(10px * var(--a11y-fs)); padding: 0 5px; margin-left: .35rem; border-radius: 99px; background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
-.profile-view .store-sess-sub { font-size: calc(11px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.profile-view .store-sess-label { font-size: var(--fs-md); color: hsl(var(--foreground)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.profile-view .store-sess-tag { font-size: var(--fs-2xs); padding: 0 5px; margin-left: .35rem; border-radius: 99px; background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
+.profile-view .store-sess-sub { font-size: var(--fs-xs); color: hsl(var(--muted-foreground)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .profile-view .store-sess .session-size { margin: 0; flex: none; }
 .profile-view .store-sess-del {
   flex: none; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid hsl(var(--border)); border-radius: 50%; background: hsl(var(--background));
-  color: hsl(var(--muted-foreground)); cursor: pointer; font-size: calc(12px * var(--a11y-fs)); line-height: 1; opacity: .6;
-  transition: opacity .12s, color .12s, border-color .12s;
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius-round); background: hsl(var(--background));
+  color: hsl(var(--muted-foreground)); cursor: pointer; font-size: var(--fs-sm); line-height: 1; opacity: .6;
+  transition: opacity var(--dur-1), color var(--dur-1), border-color var(--dur-1);
 }
 .profile-view .store-sess:hover .store-sess-del, .profile-view .store-sess-del:focus-visible { opacity: 1; }
 /* No hover on touch, so the delete icon needs to be reachable without it. */
@@ -688,12 +688,12 @@
      a phone's home-indicator/gesture strip instead of sitting under it. */
   position: fixed; left: 50%; bottom: calc(4.5rem + var(--safe-bottom) + var(--vv-bottom, 0px)); transform: translateX(-50%);
   display: flex; align-items: center; gap: .8rem; padding: .5rem .5rem .5rem .95rem;
-  border-radius: 999px; background: hsl(var(--popover)); color: hsl(var(--popover-foreground));
+  border-radius: var(--radius-pill); background: hsl(var(--popover)); color: hsl(var(--popover-foreground));
   border: 1px solid hsl(var(--border)); box-shadow: 0 10px 30px hsl(0 0% 0% / .25); z-index: 60;
 }
 .store-selbar[hidden] { display: none; }
-.store-selbar-count { font-size: calc(13px * var(--a11y-fs)); font-variant-numeric: tabular-nums; }
-.store-selbar .btn { padding: 4px 12px; }
+.store-selbar-count { font-size: var(--fs-md); font-variant-numeric: tabular-nums; }
+.store-selbar .btn { padding: var(--sp-2) var(--sp-6); }
 /* While the fixed selection bar is up, reserve space so it never covers the section's
    own bottom controls (Export / Clear all) on short/mobile viewports. */
 .profile-view .store-meter.has-selbar { padding-bottom: 76px; }
@@ -721,9 +721,9 @@
 .profile-view .headshot-edit {
   position: absolute; inset: 0; border: none; border-radius: calc(var(--radius) * 7); cursor: pointer;
   display: flex; align-items: flex-end; justify-content: center; padding-bottom: 16px;
-  font: inherit; font-size: calc(.78rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .03em; color: #fff;
+  font: inherit; font-size: var(--fs-sm); font-weight: 700; letter-spacing: .03em; color: #fff;
   background: linear-gradient(to top, rgba(0, 0, 0, .55), rgba(0, 0, 0, 0) 55%);
-  opacity: 0; transition: opacity .15s;
+  opacity: 0; transition: opacity var(--dur-1);
 }
 .profile-view .headshot-preview:hover .headshot-edit,
 .profile-view .headshot-edit:focus-visible { opacity: 1; }
@@ -731,7 +731,7 @@
 .profile-view .headshot-preview.is-empty .headshot-edit {
   opacity: 1; align-items: center; padding: 0; background: none;
   color: hsl(var(--muted-foreground)); font-weight: 600;
-  font-size: calc(.7rem * var(--a11y-fs)); text-transform: uppercase; letter-spacing: .05em;
+  font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .05em;
 }
 /* Jelly variant (flag): the soft-body button is a content-sized capsule, so
    centre it in the circle rather than letting it sit at the top-left inline
@@ -741,16 +741,16 @@
    shown while the circle is empty (the "Upload" prompt) or the button is focused. */
 .profile-view .headshot-edit-jelly {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  z-index: 1; opacity: 0; transition: opacity .15s;
+  z-index: 1; opacity: 0; transition: opacity var(--dur-1);
 }
 .profile-view .headshot-preview:hover .headshot-edit-jelly,
 .profile-view .headshot-preview.is-empty .headshot-edit-jelly,
 .profile-view .headshot-edit-jelly:focus-within { opacity: 1; }
 .profile-view .headshot-remove {
   position: absolute; top: 4px; right: 4px; z-index: 2;
-  width: 24px; height: 24px; border-radius: 50%;
+  width: 24px; height: 24px; border-radius: var(--radius-round);
   border: 1px solid hsl(var(--border)); background: hsl(var(--background));
-  color: hsl(var(--muted-foreground)); font-size: calc(16px * var(--a11y-fs)); line-height: 1; cursor: pointer;
+  color: hsl(var(--muted-foreground)); font-size: var(--fs-xl); line-height: 1; cursor: pointer;
   box-shadow: 0 1px 4px rgba(0, 0, 0, .18);
 }
 .profile-view .headshot-remove[hidden] { display: none; }
@@ -822,15 +822,15 @@
 .cropper-stage:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
 .cropper-img { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
 .cropper-mask {
-  position: absolute; inset: 0; pointer-events: none; border-radius: 50%;
+  position: absolute; inset: 0; pointer-events: none; border-radius: var(--radius-round);
   box-shadow: 0 0 0 9999px rgba(0, 0, 0, .45);
   outline: 0; outline-offset: -1px;
 }
-.cropper-zoom { display: flex; align-items: center; gap: .7rem; margin: 1rem 0 .25rem; font-size: calc(.8rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.cropper-zoom { display: flex; align-items: center; gap: .7rem; margin: 1rem 0 .25rem; font-size: var(--fs-md); color: hsl(var(--muted-foreground)); }
 .cropper-zoom input { flex: 1; }
 .cropper-actions { display: flex; justify-content: flex-end; gap: .6rem; margin-top: 1rem; }
 .cropper-btn {
-  padding: .5rem 1.15rem; font: inherit; font-size: calc(.85rem * var(--a11y-fs)); font-weight: 600;
+  padding: .5rem 1.15rem; font: inherit; font-size: var(--fs-lg); font-weight: 600;
   border-radius: var(--radius); border: 1px solid hsl(var(--border)); cursor: pointer;
 }
 .cropper-btn--secondary { background: hsl(var(--card)); color: hsl(var(--foreground)); }
@@ -843,7 +843,7 @@
 .identity-verify-link {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
   margin-top: 12px;
   background: hsl(151 57% 42%);
   color: #fff;
@@ -862,19 +862,19 @@
 .profile-view .pconn-row .store-manage-name,
 .profile-view .pconn-cred summary .store-manage-name { display: block; }
 .profile-view .pconn-account { display: block; font-weight: 600; margin-top: 2px; }
-.profile-view .pconn-note { display: block; opacity: .75; font-size: calc(12px * var(--a11y-fs)); margin-top: 2px; }
-.profile-view .pconn-persist { display: flex; align-items: center; gap: .4rem; margin-top: .45rem; font-size: calc(12.5px * var(--a11y-fs)); opacity: .9; }
+.profile-view .pconn-note { display: block; opacity: .75; font-size: var(--fs-sm); margin-top: 2px; }
+.profile-view .pconn-persist { display: flex; align-items: center; gap: .4rem; margin-top: .45rem; font-size: var(--fs-md); opacity: .9; }
 /* "Make this my export home" (plans/138 A1): the same inline-check idiom as
    the persist toggle, tinted with the brand accent when it is the live choice. */
-.profile-view .pconn-home { display: flex; align-items: center; gap: .4rem; margin-top: .45rem; font-size: calc(12.5px * var(--a11y-fs)); opacity: .9; }
+.profile-view .pconn-home { display: flex; align-items: center; gap: .4rem; margin-top: .45rem; font-size: var(--fs-md); opacity: .9; }
 .profile-view .pconn-home:has(input:checked) { opacity: 1; font-weight: 600; color: hsl(var(--brand-c1, var(--ring))); }
-.profile-view .pconn-cred { border: 1px solid hsl(var(--border) / .6); border-radius: 10px; padding: .55rem .8rem; margin-top: .6rem; }
+.profile-view .pconn-cred { border: 1px solid hsl(var(--border) / .6); border-radius: var(--radius-md); padding: .55rem .8rem; margin-top: .6rem; }
 .profile-view .pconn-cred summary { cursor: pointer; list-style: none; }
 .profile-view .pconn-cred summary::-webkit-details-marker { display: none; }
 .profile-view .pconn-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: .6rem .8rem; margin-top: .7rem; }
-.profile-view .pconn-field { display: flex; flex-direction: column; gap: .25rem; font-size: calc(12.5px * var(--a11y-fs)); }
+.profile-view .pconn-field { display: flex; flex-direction: column; gap: .25rem; font-size: var(--fs-md); }
 .profile-view .pconn-form > .pconn-note, .profile-view .pconn-form > .pconn-actions { grid-column: 1 / -1; }
 .profile-view .pconn-actions { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
-.profile-view .pconn-status { font-size: calc(12.5px * var(--a11y-fs)); opacity: .85; }
+.profile-view .pconn-status { font-size: var(--fs-md); opacity: .85; }
 
 }

@@ -99,9 +99,9 @@
   content: '';
   width: 8px;
   height: 8px;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: hsl(var(--muted-foreground) / 0.4);
-  transition: background 0.12s;
+  transition: background var(--dur-1);
 }
 .welcome-dot:hover::before { background: hsl(var(--muted-foreground) / 0.7); }
 .welcome-dot.is-active::before { background: hsl(var(--primary)); }
@@ -116,15 +116,15 @@
   align-items: center;
   gap: 5px;
   font: inherit;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: hsl(var(--muted-foreground));
   background: hsl(var(--muted) / 0.6);
   border: none;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 5px 12px;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition: background var(--dur-1), color var(--dur-1);
 }
 /* Native emoji flags, lifted with a soft shadow - matches the language menu's
    flag garnish. Decorative (aria-hidden); the native name is the label. */
@@ -132,7 +132,7 @@
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  font-size: calc(14px * var(--a11y-fs));
+  font-size: var(--fs-lg);
   line-height: 1;
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.3));
 }
@@ -168,7 +168,7 @@
    painted the same, so the two read as one affordance. */
 .welcome-privacy {
   margin: 14px 0 0;
-  font-size: calc(12px * var(--a11y-fs));
+  font-size: var(--fs-sm);
   line-height: 1.5;
   color: hsl(var(--muted-foreground));
 }
@@ -190,7 +190,7 @@
   gap: 9px;
   margin: 0;
   padding-left: 18px;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
   line-height: 1.55;
   color: hsl(var(--muted-foreground));
 }
@@ -198,7 +198,7 @@
 
 .welcome-eyebrow {
   margin: 0 0 6px;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -234,7 +234,7 @@
   color: hsl(var(--foreground));
   font: inherit;
   cursor: pointer;
-  transition: border-color 0.12s, background 0.12s, transform 0.12s;
+  transition: border-color var(--dur-1), background var(--dur-1), transform var(--dur-1);
 }
 .welcome-card:hover { border-color: hsl(var(--primary) / 0.55); transform: translateY(-1px); }
 .welcome-card--brand {
@@ -262,7 +262,7 @@
   margin: 0 auto 14px;
   padding: 7px 8px 7px 14px;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: hsl(var(--card));
   color: hsl(var(--muted-foreground));
   font-size: calc(12.5px * var(--a11y-fs));
@@ -287,11 +287,11 @@
   width: 22px;
   height: 22px;
   border: 0;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: transparent;
   color: inherit;
   font: inherit;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   line-height: 1;
   cursor: pointer;
 }

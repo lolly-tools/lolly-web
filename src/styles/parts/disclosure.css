@@ -115,7 +115,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -125,15 +125,15 @@
 .cmyk-icon, .audio-icon, .pdfpass-icon, .c2pa-icon, .print-icon, .protection-icon, .hdr-icon {   /* tool-chrome.css */
   /* Chrome icon scale (tokens.css) - the mark grows with the 11px uppercase
      head it sits beside, for all eight of the families that share this block. */
-  width: calc(14px * var(--a11y-fs));
-  height: calc(14px * var(--a11y-fs));
+  width: var(--fs-lg);
+  height: var(--fs-lg);
   flex: 0 0 auto;
   color: hsl(var(--primary));
 }
 .section-card__hint,
 .cmyk-hint, .pdfpass-hint, .c2pa-hint, .print-hint {   /* tool-chrome.css */
   margin: 0;
-  font-size: calc(11px * var(--a11y-fs));
+  font-size: var(--fs-xs);
   line-height: 1.45;
   color: hsl(var(--muted-foreground));
 }

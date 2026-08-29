@@ -29,7 +29,7 @@
   border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .8);
   text-decoration: none; color: inherit;
 }
-.me-back svg { display: block; width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
+.me-back svg { display: block; width: var(--fs-xl); height: var(--fs-xl); }
 .me-back:hover { border-color: hsl(var(--primary) / .55); }
 .me-title { margin: 0; font-size: calc(1.02rem * var(--a11y-fs)); font-weight: 700; }
 .me-count { margin-inline-start: .5rem; font-size: calc(.78rem * var(--a11y-fs)); font-weight: 600; color: hsl(var(--muted-foreground)); }
@@ -138,9 +138,9 @@
   display: grid; place-items: center; width: 1.95rem; height: 1.95rem;
   border: 0; border-radius: calc(var(--radius) * .6);
   background: transparent; color: hsl(var(--foreground)); cursor: pointer;
-  transition: background .12s ease;
+  transition: background var(--dur-1) ease;
 }
-.me-zoom-btn svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); }
+.me-zoom-btn svg { width: var(--fs-xl); height: var(--fs-xl); }
 .me-zoom-btn:hover:not(:disabled) { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
 .me-zoom-btn:disabled { opacity: .38; cursor: default; }
 .me-zoom-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }

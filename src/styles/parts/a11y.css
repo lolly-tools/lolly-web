@@ -136,7 +136,7 @@
    (lib/a11y-prefs.ts). It is ONE custom property: `--a11y-fs`, a multiplier
    every chrome font-size is written through -
 
-     font-size: calc(13px * var(--a11y-fs));
+     font-size: var(--fs-md);
 
    - which is 1 with the attribute absent, so every one of those calc()s
    computes byte-for-byte what it computed before the preference existed. The

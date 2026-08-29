@@ -31,7 +31,7 @@
   color: hsl(var(--foreground));
   cursor: pointer;
   text-align: center;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
+  transition: border-color var(--dur-1) ease, background-color var(--dur-1) ease;
 }
 .valid-drop:hover,
 .valid-drop:focus-visible,
@@ -43,20 +43,20 @@
 /* The CTA below is excepted: it wears .btn--primary and must keep that fill's own
    colour and size rather than the muted supporting-copy treatment. */
 .valid-drop span:not(.valid-drop-icon):not(.valid-drop-cta):not(.valid-drop-chip),
-.identity-via{ color: hsl(var(--muted-foreground)); font-size: calc(0.85rem * var(--a11y-fs)); }
+.identity-via{ color: hsl(var(--muted-foreground)); font-size: var(--fs-lg); }
 .valid-drop-icon svg { width: calc(34px * var(--a11y-fs)); height: calc(34px * var(--a11y-fs)); opacity: 0.7; }
 /* The prompt is the headline: larger and in the foreground tone, so the formats
    below read as fine print rather than a competing line. */
 .valid-drop-lead { font-size: calc(1.05rem * var(--a11y-fs)); font-weight: 500; color: hsl(var(--foreground)); }
 /* Supported inputs as subtle, glanceable chips (exact formats in each chip's title),
    matching the catalogue drop area's .updz-chip treatment. */
-.valid-drop-hint { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; margin: 0.15rem 0; }
+.valid-drop-hint { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--sp-3); margin: 0.15rem 0; }
 .valid-drop-chip {
-  padding: 2px 9px; border-radius: 999px;
+  padding: 2px 9px; border-radius: var(--radius-pill);
   border: 1px solid hsl(var(--border));
   background: hsl(var(--muted) / .4);
   color: hsl(var(--muted-foreground));
-  font-size: calc(.72rem * var(--a11y-fs)); line-height: 1.6; white-space: nowrap;
+  font-size: var(--fs-xs); line-height: 1.6; white-space: nowrap;
 }
 
 /* Drop is a pointer gesture: on a phone the zone read as a paragraph with no tap
@@ -94,7 +94,7 @@
   margin: 0 0 1rem; padding: 0.7rem 0.9rem;
   border: 1px solid hsl(var(--vf-ai-1) / 0.5); border-radius: var(--radius);
   background: hsl(var(--vf-ai-1) / 0.1); color: hsl(var(--foreground));
-  font-size: calc(0.85rem * var(--a11y-fs)); line-height: 1.45;
+  font-size: var(--fs-lg); line-height: 1.45;
 }
 
 .valid-result {
@@ -129,7 +129,7 @@
    accent colour (see the .is-lolly/.is-trusted/.is-delivered rules below). */
 .valid-hero-filename { color: hsl(var(--foreground)); font-weight: 600; overflow-wrap: anywhere; }
 .valid-hero-verdict { color: inherit; }
-.valid-hero p { margin: 0; color: hsl(var(--muted-foreground)); font-size: calc(0.9rem * var(--a11y-fs)); max-width: 60ch; }
+.valid-hero p { margin: 0; color: hsl(var(--muted-foreground)); font-size: var(--fs-lg); max-width: 60ch; }
 
 /* The verdict pill - "Made with Lolly" / "Verified", struck as a small glossy
    badge (mirrors .valid-item-badge.is-good) rather than plain coloured text, so
@@ -139,7 +139,7 @@
   display: inline-flex; align-items: center; gap: 0.32rem;
   vertical-align: middle;
   font-size: calc(0.76rem * var(--a11y-fs)); font-weight: 800; letter-spacing: 0.01em;
-  padding: 0.24rem 0.75rem 0.26rem; border-radius: 999px;
+  padding: 0.24rem 0.75rem 0.26rem; border-radius: var(--radius-pill);
   color: hsl(0 0% 100%);
   border: 1px solid hsl(0 0% 100% / 0.3);
   white-space: nowrap;
@@ -173,11 +173,11 @@
   border: 1px solid hsl(var(--vf-pass) / 0.3);
   background: hsl(var(--vf-pass) / 0.09);
   color: hsl(var(--foreground));
-  font-size: calc(0.85rem * var(--a11y-fs)); font-weight: 600;
+  font-size: var(--fs-lg); font-weight: 600;
 }
 .valid-vbadge-ic {
   flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
-  width: 1.9rem; height: 1.9rem; border-radius: 50%;
+  width: 1.9rem; height: 1.9rem; border-radius: var(--radius-round);
   background: hsl(var(--vf-pass) / 0.18); color: hsl(var(--vf-pass));
 }
 .valid-vbadge-ic svg { width: 1.05rem; height: 1.05rem; }
@@ -235,7 +235,7 @@
   text-align: center;
 }
 .valid-preview-ic svg { width: 2.2rem; height: 2.2rem; opacity: 0.7; }
-.valid-preview.is-placeholder figcaption { font-size: calc(0.8rem * var(--a11y-fs)); }
+.valid-preview.is-placeholder figcaption { font-size: var(--fs-md); }
 
 /* ── The medallion - the page's signature. A struck, glossy seal that floats
    off the card. Green states get the full crown-jewel treatment (idle bob +
@@ -245,7 +245,7 @@
   position: relative;
   flex: 0 0 auto;
   width: 4.6rem; height: 4.6rem;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   overflow: hidden;
   display: grid; place-items: center;
   isolation: isolate;
@@ -264,14 +264,14 @@
 .valid-hero-logo {
   position: relative; z-index: 1;
   width: 100%; height: 100%;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: var(--lolly-logo, url("/icons/icon-192.png")) center / cover no-repeat;
   box-shadow: 0 0 0 2px hsl(0 0% 100% / 0.55), 0 3px 7px hsl(0 0% 0% / 0.4);
 }
 /* Wet-glass crown highlight over the top third of every medallion. */
 .valid-hero-icon::before {
   content: ''; position: absolute; z-index: 1; inset: 7% 12% 46% 12%;
-  border-radius: 50%;
+  border-radius: var(--radius-round);
   background: linear-gradient(hsl(0 0% 100% / 0.6), hsl(0 0% 100% / 0));
   pointer-events: none;
 }
@@ -356,7 +356,7 @@
 .valid-result.is-trusted .valid-hero-icon::after,
 .valid-result.is-lolly .valid-hero-icon::after,
 .valid-result.is-delivered .valid-hero-icon::after {
-  content: ''; position: absolute; z-index: 5; inset: -1px; border-radius: 50%;
+  content: ''; position: absolute; z-index: 5; inset: -1px; border-radius: var(--radius-round);
   background:conic-gradient(from 0deg, transparent 0 64%, #fff5 75%, #fff 80%, transparent 80%);
       mix-blend-mode: overlay;pointer-events: none;
   animation: valid-medallion-sheen 4.5s linear infinite;
@@ -378,19 +378,19 @@
 /* "Signed by <email> - …" under the hero sub; rendered whenever the chain
    verified (trusted, or anchored-but-expired). Scoped under .valid-hero to
    out-specify the `.valid-hero p` margin reset above. */
-.valid-hero .valid-identity-line { margin: 0.35rem 0 0; font-size: calc(0.8rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.valid-hero .valid-identity-line { margin: 0.35rem 0 0; font-size: var(--fs-md); color: hsl(var(--muted-foreground)); }
 .valid-hero .valid-identity-line strong {
   font-family: var(--font-mono);
   font-size: 0.92em; font-weight: 600; color: hsl(var(--foreground));
 }
 
-.valid-file { margin: 0; font-size: calc(0.85rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); overflow-wrap: anywhere; }
+.valid-file { margin: 0; font-size: var(--fs-lg); color: hsl(var(--muted-foreground)); overflow-wrap: anywhere; }
 .valid-file strong { color: hsl(var(--foreground)); }
 /* Voice comes from the composed .guide-absent (parts/guide.css); only spacing is its own. */
-.valid-selfnote { margin: 0 0 -0.35rem; font-size: calc(0.75rem * var(--a11y-fs)); }
+.valid-selfnote { margin: 0 0 -0.35rem; font-size: var(--fs-sm); }
 .valid-fmt {
   font-family: var(--font-mono);
-  font-size: calc(0.72rem * var(--a11y-fs));
+  font-size: var(--fs-xs);
   padding: 0.05rem 0.4rem;
   border: 1px solid hsl(var(--border));
   border-radius: 0.3rem;
@@ -419,17 +419,17 @@
   border: 1px solid hsl(215 15% 80%);
   background: linear-gradient(165deg, hsl(210 20% 94%), hsl(215 13% 79%));
   box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.6), 0 1px 2px hsl(0 0% 0% / 0.12), 0 8px 18px -14px hsl(0 0% 0% / 0.15);
-  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  transition: transform var(--dur-2) ease, box-shadow var(--dur-2) ease, border-color var(--dur-2) ease;
 }
 .valid-fact:hover {
   transform: scale(1.03);
   border-color: hsl(215 20% 50%);
   box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.7), 0 14px 26px -16px hsl(0 0% 0% / 0.5);
 }
-.valid-fact dt { display: flex; align-items: center; gap: 0.4rem; font-size: calc(0.66rem * var(--a11y-fs)); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: hsl(0 0% 8%); }
+.valid-fact dt { display: flex; align-items: center; gap: 0.4rem; font-size: var(--fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: hsl(0 0% 8%); }
 .valid-fact-ic { display: inline-flex; flex: 0 0 auto; color: hsl(215 22% 32%); }
 .valid-fact-ic svg { width: 0.95rem; height: 0.95rem; }
-.valid-fact dd { margin: 0.4rem 0 0; font-size: calc(0.75rem * var(--a11y-fs)); font-weight: 500; font-family: var(--font-mono); color: hsl(215 12% 40%); overflow-wrap: anywhere; }
+.valid-fact dd { margin: 0.4rem 0 0; font-size: var(--fs-sm); font-weight: 500; font-family: var(--font-mono); color: hsl(215 12% 40%); overflow-wrap: anywhere; }
 
 /* ─── Embedded-metadata reveal ───────────────────────────────────────────────
    A clinical readout of everything the file discloses (EXIF/XMP/GPS/…). Hierarchy
@@ -451,17 +451,17 @@
 .valid-meta-head h3 svg { width: 2rem; height: 2rem; color: hsl(var(--muted-foreground)); }
 .valid-meta-count {
   margin-left: auto;
-  font-family: var(--font-mono); font-size: calc(0.68rem * var(--a11y-fs));
+  font-family: var(--font-mono); font-size: var(--fs-xs);
   color: hsl(var(--muted-foreground)); letter-spacing: 0.02em;
 }
-.valid-meta-note { margin: 0.45rem 0 0; font-size: calc(0.78rem * var(--a11y-fs)); line-height: 1.5; color: hsl(var(--muted-foreground)); max-width: 68ch; }
+.valid-meta-note { margin: 0.45rem 0 0; font-size: var(--fs-sm); line-height: 1.5; color: hsl(var(--muted-foreground)); max-width: 68ch; }
 .valid-meta-note a { color: hsl(var(--primary)); text-underline-offset: 2px; }
 /* The "download a cleaned copy" action - deliberately just another inline text
    link beside the Hidden Data tool link, not a CTA button, so a fast lossless
    clean-up path sits quietly where a viewer just saw what the file discloses. */
 .valid-clean-link {
   appearance: none; background: none; border: 0; padding: 0; margin: 0;
-  font: inherit; font-size: calc(0.78rem * var(--a11y-fs)); color: hsl(var(--primary));
+  font: inherit; font-size: var(--fs-sm); color: hsl(var(--primary));
   text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
 }
 .valid-clean-link:hover { opacity: 0.8; }
@@ -496,11 +496,11 @@
 }
 .valid-meta-row { display: contents; }
 .valid-meta-row dt {
-  font-size: calc(0.72rem * var(--a11y-fs)); line-height: 1.35; color: hsl(var(--muted-foreground));
+  font-size: var(--fs-xs); line-height: 1.35; color: hsl(var(--muted-foreground));
   white-space: nowrap;
 }
 .valid-meta-row dd {
-  margin: 0; font-size: calc(0.72rem * var(--a11y-fs)); line-height: 1.35; font-weight: 500;
+  margin: 0; font-size: var(--fs-xs); line-height: 1.35; font-weight: 500;
   font-family: var(--font-mono);
   color: hsl(var(--foreground)); overflow-wrap: anywhere; word-break: break-word;
 }
@@ -529,8 +529,8 @@
 }
 .valid-meta-loc-item { display: inline-flex; align-items: baseline; gap: 0.5rem; }
 .valid-meta-loc-item .k { font-size: calc(0.62rem * var(--a11y-fs)); text-transform: uppercase; letter-spacing: 0.07em; color: hsl(var(--muted-foreground)); }
-.valid-meta-loc-item .v { font-family: var(--font-mono); font-size: calc(0.75rem * var(--a11y-fs)); color: hsl(var(--vf-fail)); }
-.valid-meta-map { font-size: calc(0.7rem * var(--a11y-fs)); color: hsl(var(--primary)); text-underline-offset: 2px; white-space: nowrap; }
+.valid-meta-loc-item .v { font-family: var(--font-mono); font-size: var(--fs-sm); color: hsl(var(--vf-fail)); }
+.valid-meta-map { font-size: var(--fs-xs); color: hsl(var(--primary)); text-underline-offset: 2px; white-space: nowrap; }
 
 /* Hero scorecard - eight canonical checks at a glance. Each pip is a struck
    status chip: pass = glossy pine glass, fail = persimmon/rust glass (equal
@@ -550,11 +550,11 @@
 .valid-score-pip > * { position: relative; z-index: 1; }
 .valid-score-ic { display: inline-flex; flex: 0 0 auto; color: currentColor; }
 .valid-score-pip svg { stroke-width: 1.6; }
-.valid-score-label { font-size: calc(0.66rem * var(--a11y-fs)); line-height: 1.2; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.valid-score-label { font-size: var(--fs-xs); line-height: 1.2; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
 .valid-score-status {
   margin-top: auto;
   font-size: calc(0.58rem * var(--a11y-fs)); font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
-  padding: 0.08rem 0.5rem; border-radius: 999px;
+  padding: 0.08rem 0.5rem; border-radius: var(--radius-pill);
   border: 0; color: var(--ink);
   overflow-wrap: anywhere;
 }
@@ -607,9 +607,9 @@
     inset 0 -10px 18px -8px hsl(0 0% 0% / 0.35),
     0 15px 28px -10px hsl(var(--glow)),
     0 6px 14px -6px hsl(0 0% 0% / 0.35);
-  transition: scale 0.3s cubic-bezier(.2,.2,.1,1.2), box-shadow 0.18s ease;
+  transition: scale var(--dur-3) cubic-bezier(.2,.2,.1,1.2), box-shadow var(--dur-2) ease;
 }
- .valid-score:not(.valid-score--mini) .valid-score-pip.is-ash  {  transition: scale 0.3s cubic-bezier(.2,.2,.1,1.2), box-shadow 0.18s ease;}
+ .valid-score:not(.valid-score--mini) .valid-score-pip.is-ash  {  transition: scale var(--dur-3) cubic-bezier(.2,.2,.1,1.2), box-shadow var(--dur-2) ease;}
 
 .valid-score:not(.valid-score--mini) .valid-score-pip.is-pass::before,
 .valid-score:not(.valid-score--mini) .valid-score-pip.is-fail::before,
@@ -660,10 +660,10 @@
 .valid-deepscan-banner-ic svg { width: 1.4rem; height: 1.4rem; }
 .valid-deepscan-banner-text { display: grid; gap: 0.15rem; min-width: 0; }
 .valid-deepscan-banner-text strong { font-size: calc(0.92rem * var(--a11y-fs)); }
-.valid-deepscan-banner-text span { font-size: calc(0.8rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.valid-deepscan-banner-text span { font-size: var(--fs-md); color: hsl(var(--muted-foreground)); }
 .valid-deepscan-enable {
   flex: 0 0 auto; margin-left: auto;
-  font-size: calc(0.82rem * var(--a11y-fs)); padding: 0.45rem 1.1rem; border-radius: 999px;
+  font-size: var(--fs-md); padding: 0.45rem 1.1rem; border-radius: var(--radius-pill);
   background: hsl(var(--foreground)); color: hsl(var(--background)); border: 0; font-weight: 600;
 }
 .valid-deepscan-enable:hover:not(:disabled) { opacity: 0.9; }
@@ -677,13 +677,13 @@
    rather than a fabricated percentage. */
 .valid-deepscan-progress {
   margin-top: 0.35rem; width: 100%; max-width: 22rem;
-  height: 5px; border-radius: 3px; overflow: hidden;
+  height: 5px; border-radius: var(--radius-xs); overflow: hidden;
   background: hsl(var(--border));
 }
 .valid-deepscan-progress-fill {
   display: block; height: 100%; width: 0%;
-  border-radius: 3px; background: hsl(var(--foreground));
-  transition: width 0.2s ease-out;
+  border-radius: var(--radius-xs); background: hsl(var(--foreground));
+  transition: width var(--dur-2) ease-out;
 }
 .valid-deepscan-progress.is-indeterminate .valid-deepscan-progress-fill {
   width: 40% !important; transition: none;
@@ -727,11 +727,11 @@
 }
 .valid-ai-flag-text { display: grid; gap: 0.15rem; min-width: 0; }
 .valid-ai-flag-text strong { font-size: calc(1.02rem * var(--a11y-fs)); letter-spacing: -0.01em; }
-.valid-ai-flag-text span { font-size: calc(0.82rem * var(--a11y-fs)); color: hsl(0 0% 100% / 0.9); }
+.valid-ai-flag-text span { font-size: var(--fs-md); color: hsl(0 0% 100% / 0.9); }
 .valid-ai-flag-tag {
   flex: 0 0 auto; margin-left: auto; align-self: flex-start;
-  font-size: calc(0.72rem * var(--a11y-fs)); font-weight: 800; letter-spacing: 0.09em;
-  padding: 0.2rem 0.55rem; border-radius: 999px;
+  font-size: var(--fs-xs); font-weight: 800; letter-spacing: 0.09em;
+  padding: 0.2rem 0.55rem; border-radius: var(--radius-pill);
   background: hsl(0 0% 100% / 0.22); border: 1px solid hsl(0 0% 100% / 0.45);
 }
 @keyframes valid-ai-pulse {
@@ -750,7 +750,7 @@
 .valid-ai-flag--likely .valid-ai-flag-ic svg { animation: none; }
 /* Credit line ("Made with Google AI") + the invisible-watermark note inside the
    AI banner - the note reads as a quieter footnote under the main claim. */
-.valid-ai-flag-credit { font-size: calc(0.82rem * var(--a11y-fs)); font-style: italic; color: hsl(0 0% 100% / 0.95); }
+.valid-ai-flag-credit { font-size: var(--fs-md); font-style: italic; color: hsl(0 0% 100% / 0.95); }
 .valid-ai-flag-note { margin-top: 0.35rem; font-size: calc(0.76rem * var(--a11y-fs)); color: hsl(0 0% 100% / 0.82); }
 .valid-ai-flag-note strong { color: hsl(0 0% 100%); }
 .valid-ai-flag-note a { color: inherit; font-weight: 700; text-decoration: underline; }
@@ -778,8 +778,8 @@
 }
 .valid-wm-ic svg { width: 1.15rem; height: 1.15rem; }
 .valid-wm-text { display: grid; gap: 0.15rem; min-width: 0; }
-.valid-wm-text strong { font-size: calc(0.9rem * var(--a11y-fs)); font-weight: 650; color: hsl(var(--foreground)); }
-.valid-wm-text span { font-size: calc(0.8rem * var(--a11y-fs)); line-height: 1.5; color: hsl(var(--muted-foreground)); max-width: 72ch; }
+.valid-wm-text strong { font-size: var(--fs-lg); font-weight: 650; color: hsl(var(--foreground)); }
+.valid-wm-text span { font-size: var(--fs-md); line-height: 1.5; color: hsl(var(--muted-foreground)); max-width: 72ch; }
 
 /* Warn-toned variant - the appended-payload callout (views/valid.ts,
    appendedPayloadHtml). A smuggled zip/exe is worth the amber --vf-warn hue;
@@ -794,7 +794,7 @@
 .valid-wm--action { border-color: hsl(var(--border)); background: hsl(var(--muted) / 0.4); align-items: center; }
 .valid-wm--action .valid-wm-ic { background: hsl(var(--muted-foreground) / 0.16); color: hsl(var(--muted-foreground)); }
 .valid-wm-rescan { flex: 0 0 auto; align-self: center; white-space: nowrap; }
-.valid-wm-rescan-miss { display: block; margin-top: 0.35rem; font-size: calc(0.78rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.valid-wm-rescan-miss { display: block; margin-top: 0.35rem; font-size: var(--fs-sm); color: hsl(var(--muted-foreground)); }
 
 /* Appended-payload View/Download actions - reuses .valid-clean-link's quiet
    inline-text-button styling rather than adding a new button treatment, and
@@ -806,7 +806,7 @@
   background: hsl(var(--background) / 0.6); border: 1px solid hsl(var(--border));
 }
 .valid-payload-dump {
-  margin: 0; font-family: var(--font-mono); font-size: calc(0.68rem * var(--a11y-fs)); line-height: 1.5;
+  margin: 0; font-family: var(--font-mono); font-size: var(--fs-xs); line-height: 1.5;
   white-space: pre-wrap; word-break: break-all; color: hsl(var(--foreground));
 }
 
@@ -859,7 +859,7 @@
 .valid-input-list { margin: 0; display: grid; gap: 0.3rem; }
 .valid-input-row {
   display: grid; grid-template-columns: minmax(4rem, 8rem) 1fr; gap: 0.6rem;
-  align-items: baseline; font-size: calc(0.75rem * var(--a11y-fs));
+  align-items: baseline; font-size: var(--fs-sm);
 }
 .valid-input-row dt { margin: 0; font-weight: 600; color: hsl(var(--muted-foreground)); overflow-wrap: anywhere; }
 .valid-input-row dd {
@@ -874,11 +874,11 @@
    credential's parameters.script), shown with its voice/model/lang recipe.
    Long scripts start clamped to ~6 lines; [data-script-expand] lifts the
    clamp (valid.ts's delegated handler) and hides itself. */
-.valid-script-note { margin: 0; font-size: calc(0.78rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.valid-script-note { margin: 0; font-size: var(--fs-sm); color: hsl(var(--muted-foreground)); }
 .valid-script-text {
   margin: 0; padding: 0.6rem 0.75rem; border-radius: 0.5rem;
   background: hsl(var(--background) / 0.6); border: 1px solid hsl(var(--border));
-  font-family: var(--font-mono); font-size: calc(0.72rem * var(--a11y-fs)); line-height: 1.5;
+  font-family: var(--font-mono); font-size: var(--fs-xs); line-height: 1.5;
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .valid-script-text.is-clamped {
@@ -939,8 +939,8 @@
   grid-row: 1 / span 2; align-self: start; justify-self: center;
   position: relative; z-index: 1; max-width: 100%;
   display: inline-flex; align-items: center; justify-content: center;
-  padding: 0.24rem 0.55rem; border-radius: 999px;
-  font-size: calc(0.66rem * var(--a11y-fs)); font-weight: 600; letter-spacing: 0.02em; line-height: 1.1;
+  padding: 0.24rem 0.55rem; border-radius: var(--radius-pill);
+  font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.02em; line-height: 1.1;
   text-align: center; white-space: normal;
   background: hsl(var(--muted)); color: hsl(var(--foreground));
   border: 1px solid hsl(var(--border));
@@ -961,7 +961,7 @@
    row ever gets too tight, rather than crushing the text. */
 .valid-step-label {
   display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem;
-  min-height: 1.4rem; font-weight: 650; font-size: calc(0.9rem * var(--a11y-fs));
+  min-height: 1.4rem; font-weight: 650; font-size: var(--fs-lg);
 }
 .valid-step-ic { display: inline-flex; flex: 0 0 auto; color: hsl(var(--muted-foreground)); }
 .valid-step-ic svg { width: var(--step-ic); height: var(--step-ic); }
@@ -975,7 +975,7 @@
    date/description reads as data, not prose. */
 .valid-step-meta {
   display: flex; flex-wrap: wrap; gap: 0.1rem 0.4rem; align-items: center;
-  font-size: calc(0.72rem * var(--a11y-fs)); font-family: var(--font-mono);
+  font-size: var(--fs-xs); font-family: var(--font-mono);
   color: hsl(var(--muted-foreground));
 }
 .valid-step-dot { opacity: 0.5; }
@@ -986,8 +986,8 @@
 /* Compact AI chip in the collapsed multi-file summary row. */
 .valid-item-ai {
   flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.25rem;
-  font-size: calc(0.64rem * var(--a11y-fs)); font-weight: 800; letter-spacing: 0.06em;
-  padding: 0.14rem 0.44rem; border-radius: 999px; color: hsl(0 0% 100%);
+  font-size: var(--fs-2xs); font-weight: 800; letter-spacing: 0.06em;
+  padding: 0.14rem 0.44rem; border-radius: var(--radius-pill); color: hsl(0 0% 100%);
   background: linear-gradient(120deg, hsl(var(--vf-ai-1)), hsl(var(--vf-ai-2)));
   box-shadow: 0 2px 8px -3px hsl(var(--vf-ai) / 0.7);
 }
@@ -1006,24 +1006,24 @@
   border-radius: var(--radius);
   background: hsl(var(--background) / .5);
   box-shadow: inset 0 .061rem .35rem #0001, 0 1px #fff1, 0 -1px #0001;
-  font-size: calc(0.85rem * var(--a11y-fs));
+  font-size: var(--fs-lg);
   opacity: 0;
   animation: valid-check-in 0.45s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
-  animation-delay: calc(var(--i, 0) * 55ms + 0.2s);
+  animation-delay: calc(var(--i, 0) * 55ms + var(--dur-2));
 }
 .valid-check::after {
   content: ''; position: absolute; inset: 0; pointer-events: none;
   background: linear-gradient(100deg, transparent 20%, hsl(var(--vf-pass) / 0.22) 50%, transparent 80%);
   translate: -110% 0;
   animation: valid-check-sweep 0.7s ease-out forwards;
-  animation-delay: calc(var(--i, 0) * 55ms + 0.2s);
+  animation-delay: calc(var(--i, 0) * 55ms + var(--dur-2));
 }
 .valid-check--bad { background: hsl(var(--vf-fail) / 0.09); }
 .valid-check-mark {
   flex: 0 0 auto;
   display: inline-flex; align-items: center; justify-content: center;
-  width: 1.4rem; height: 1.4rem; border-radius: 50%;
-  font-size: calc(0.78rem * var(--a11y-fs)); font-weight: 700; line-height: 1;
+  width: 1.4rem; height: 1.4rem; border-radius: var(--radius-round);
+  font-size: var(--fs-sm); font-weight: 700; line-height: 1;
 box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 1px #fff1;
 }
 .valid-check--ok .valid-check-mark { color: hsl(var(--vf-pass)); background: hsl(var(--vf-pass) / 0.3);  }
@@ -1031,7 +1031,7 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
 .valid-check--bad .valid-check-mark { color: hsl(var(--vf-fail)); background: hsl(var(--vf-fail) / 0.16); }
 .valid-check--info .valid-check-mark { color: hsl(var(--muted-foreground)); background: hsl(var(--muted-foreground) / 0.14); }
 .valid-check-text { display: flex; flex-wrap: wrap; gap: 0.15rem 0.6rem; align-items: baseline; }
-.valid-check-text code {     font-weight: 700;;font-size: calc(0.78rem * var(--a11y-fs)); font-family: var(--font-mono); background: hsl(var(--muted)); padding: 0.05rem 0.4rem; border-radius: 0.3rem; }
+.valid-check-text code {     font-weight: 700;;font-size: var(--fs-sm); font-family: var(--font-mono); background: hsl(var(--muted)); padding: 0.05rem 0.4rem; border-radius: 0.3rem; }
 .valid-check-text > span { color: hsl(var(--muted-foreground)); }
 .valid-check--bad .valid-check-text > span { color: hsl(var(--foreground)); }
 
@@ -1057,7 +1057,7 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
   background: hsl(var(--vf-pass) / 0.14); color: hsl(var(--vf-pass));
 }
 .valid-note-ic svg { width: 1.1rem; height: 1.1rem; }
-.valid-note-body { margin: 0; font-size: calc(0.8rem * var(--a11y-fs)); line-height: 1.55; color: hsl(var(--muted-foreground)); max-width: 72ch; }
+.valid-note-body { margin: 0; font-size: var(--fs-md); line-height: 1.55; color: hsl(var(--muted-foreground)); max-width: 72ch; }
 .valid-note-body strong { color: hsl(var(--foreground)); font-weight: 600; }
 .valid-note-body a { color: hsl(var(--vf-pass)); text-decoration: underline; text-underline-offset: 2px; }
 .valid-note-body code { font-family: var(--font-mono); font-size: 0.92em; }
@@ -1072,9 +1072,9 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
   display: flex; align-items: center; justify-content: space-between;
   gap: 0.75rem; margin-bottom: 0.85rem;
 }
-.valid-reports-count { font-size: calc(0.85rem * var(--a11y-fs)); font-weight: 600; color: hsl(var(--muted-foreground)); }
+.valid-reports-count { font-size: var(--fs-lg); font-weight: 600; color: hsl(var(--muted-foreground)); }
 .valid-reports-actions { display: flex; gap: 0.4rem; }
-.valid-reports-toggle { font-size: calc(0.78rem * var(--a11y-fs)); padding: 3px 10px; }
+.valid-reports-toggle { font-size: var(--fs-sm); padding: 3px 10px; }
 
 .valid-item {
   border: 1px solid hsl(var(--border));
@@ -1103,7 +1103,7 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
 .valid-item-badge {
   flex: 0 0 auto;
   font-size: calc(0.74rem * var(--a11y-fs)); font-weight: 700; white-space: nowrap;
-  padding: 0.15rem 0.6rem; border-radius: 999px;
+  padding: 0.15rem 0.6rem; border-radius: var(--radius-pill);
   border: 1px solid currentColor;
 }
 /* The "good" summary badge echoes the hero chips: a glossy green fill that lifts
@@ -1124,7 +1124,7 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
 .valid-item-maker {
   flex: 0 0 auto; white-space: nowrap;
   font-size: calc(0.74rem * var(--a11y-fs)); font-weight: 700;
-  padding: 0.15rem 0.6rem; border-radius: 999px;
+  padding: 0.15rem 0.6rem; border-radius: var(--radius-pill);
   border: 1px solid hsl(var(--border));
   background: hsl(var(--muted)); color: hsl(var(--foreground));
 }
@@ -1137,17 +1137,17 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
 .valid-item-name {
   flex: 1 1 8rem; min-width: 0;
   display: flex; align-items: center; gap: 0.4rem;
-  font-size: calc(0.9rem * var(--a11y-fs)); font-weight: 600; color: hsl(var(--foreground));
+  font-size: var(--fs-lg); font-weight: 600; color: hsl(var(--foreground));
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .valid-item-signer {
   flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.3rem;
-  max-width: 15rem; font-size: calc(0.78rem * var(--a11y-fs)); color: hsl(var(--muted-foreground));
+  max-width: 15rem; font-size: var(--fs-sm); color: hsl(var(--muted-foreground));
 }
-.valid-item-signer svg { width: calc(14px * var(--a11y-fs)); height: calc(14px * var(--a11y-fs)); flex: 0 0 auto; }
+.valid-item-signer svg { width: var(--fs-lg); height: var(--fs-lg); flex: 0 0 auto; }
 .valid-item-signer span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.valid-item-chev { flex: 0 0 auto; display: inline-flex; color: hsl(var(--muted-foreground)); transition: transform 0.15s ease; }
+.valid-item-chev { flex: 0 0 auto; display: inline-flex; color: hsl(var(--muted-foreground)); transition: transform var(--dur-1) ease; }
 .valid-item-chev svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
 .valid-item[open] .valid-item-chev { transform: rotate(180deg); }
 
@@ -1173,7 +1173,7 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
 /* ─── Content Credentials identity (profile) ────────────────────────────────
    Enrollment UI in the profile's Content Credentials section. Buttons reuse
    the global .btn outline style; only layout + status colouring live here. */
-.identity-blurb { margin: 0 0 0.85rem; font-size: calc(0.85rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); max-width: 62ch; }
+.identity-blurb { margin: 0 0 0.85rem; font-size: var(--fs-lg); color: hsl(var(--muted-foreground)); max-width: 62ch; }
 .identity-blurb a { color: inherit; }
 
 .identity-providers { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.85rem; }
@@ -1183,29 +1183,29 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
   flex: 1 1 220px;
   min-width: 0;
   padding: 5px 10px;
-  font-size: calc(13px * var(--a11y-fs));
+  font-size: var(--fs-md);
 }
 .identity-email-row .identity-email-input:disabled { opacity: 0.5; }
 
 .identity-status { display: grid; gap: 0.45rem; justify-items: start; }
 .identity-signing { margin: 0; font-size: calc(0.95rem * var(--a11y-fs)); }
-.identity-life { margin: 0; font-size: calc(0.8rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.identity-life { margin: 0; font-size: var(--fs-md); color: hsl(var(--muted-foreground)); }
 .identity-status.is-expired .identity-life { color: hsl(var(--destructive)); font-weight: 600; }
 .identity-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.2rem; }
 /* Armed "Really forget?" state - two-class so it beats the generic .btn colour. */
 .identity-actions .btn.is-confirm { color: hsl(var(--destructive)); border-color: hsl(var(--destructive) / 0.55); }
 
-.identity-error { margin: 0.6rem 0 0; font-size: calc(13px * var(--a11y-fs)); color: hsl(var(--destructive)); }
-.identity-pending { margin: 0; font-size: calc(0.9rem * var(--a11y-fs)); }
+.identity-error { margin: 0.6rem 0 0; font-size: var(--fs-md); color: hsl(var(--destructive)); }
+.identity-pending { margin: 0; font-size: var(--fs-lg); }
 
 /* Lifetime pick (7/30/90/365) shown on the enrol form only - the cert window
    is fixed at issuance, so the status card shows the outcome, not a picker. */
-.identity-days-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 0.85rem; font-size: calc(0.85rem * var(--a11y-fs)); }
+.identity-days-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 0.85rem; font-size: var(--fs-lg); }
 .identity-days-row .identity-days-select {
-  padding: 4px 8px;
-  font-size: calc(13px * var(--a11y-fs));
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--fs-md);
 }
-.identity-days-hint { flex-basis: 100%; font-size: calc(0.75rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); max-width: 62ch; }
+.identity-days-hint { flex-basis: 100%; font-size: var(--fs-sm); color: hsl(var(--muted-foreground)); max-width: 62ch; }
 
 /* ─── Reduced motion ─────────────────────────────────────────────────────────
    Honour the OS preference: no entrance cascade, no medallion float or sheen,
@@ -1244,27 +1244,27 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
 .valid-claim-ic { display: inline-flex; color: hsl(var(--primary)); }
 .valid-claim-ic svg { width: calc(1.05em * var(--a11y-fs)); height: calc(1.05em * var(--a11y-fs)); }
 .valid-claim-title { flex: 1 1 auto; }
-.valid-claim-chev { display: inline-flex; color: hsl(var(--muted-foreground)); transition: transform 0.18s ease; }
+.valid-claim-chev { display: inline-flex; color: hsl(var(--muted-foreground)); transition: transform var(--dur-2) ease; }
 .valid-claim-chev svg { width: 1.1em; height: 1.1em; }
 .valid-claim[open] .valid-claim-chev { transform: rotate(180deg); }
 .valid-claim-body { display: grid; gap: 0.7rem; margin-top: 0.85rem; }
-.valid-claim-note { margin: 0; font-size: calc(0.8rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.valid-claim-note { margin: 0; font-size: var(--fs-md); color: hsl(var(--muted-foreground)); }
 .valid-claim-field { display: grid; gap: 0.3rem; }
-.valid-claim-field > span { font-size: calc(0.75rem * var(--a11y-fs)); font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: hsl(var(--muted-foreground)); }
+.valid-claim-field > span { font-size: var(--fs-sm); font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: hsl(var(--muted-foreground)); }
 .valid-claim-hint { font-weight: 500; text-transform: none; letter-spacing: 0; opacity: 0.75; }
 .valid-claim-input, .valid-claim-select {
-  width: 100%; padding: 0.5rem 0.65rem; font: inherit; font-size: calc(0.9rem * var(--a11y-fs));
+  width: 100%; padding: 0.5rem 0.65rem; font: inherit; font-size: var(--fs-lg);
   color: hsl(var(--foreground)); background: hsl(var(--background));
   border: 1px solid hsl(var(--border)); border-radius: var(--radius);
 }
 .valid-claim-input:focus, .valid-claim-select:focus { outline: none; border-color: hsl(var(--primary) / 0.6); box-shadow: 0 0 0 3px hsl(var(--primary) / 0.15); }
-.valid-claim-check { display: flex; align-items: flex-start; gap: 0.5rem; font-size: calc(0.85rem * var(--a11y-fs)); cursor: pointer; }
+.valid-claim-check { display: flex; align-items: flex-start; gap: 0.5rem; font-size: var(--fs-lg); cursor: pointer; }
 .valid-claim-check input { margin-top: 0.15rem; accent-color: hsl(var(--primary)); }
 .valid-claim-actions { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; margin-top: 0.2rem; }
 .valid-claim-sign { flex: 0 0 auto; }
-.valid-claim-status { font-size: calc(0.82rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.valid-claim-status { font-size: var(--fs-md); color: hsl(var(--muted-foreground)); }
 .valid-claim-status.is-err { color: hsl(var(--destructive)); }
-.valid-claim-foot { margin: 0; font-size: calc(0.72rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); opacity: 0.85; }
+.valid-claim-foot { margin: 0; font-size: var(--fs-xs); color: hsl(var(--muted-foreground)); opacity: 0.85; }
 /* The in-place confirmation banner shown at the top of a re-verified file. */
 .valid-claim-done {
   display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.9rem;
@@ -1272,7 +1272,7 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
   font-size: calc(0.88rem * var(--a11y-fs)); font-weight: 600;
   color: hsl(var(--foreground)); background: hsl(140 60% 45% / 0.16); border: 1px solid hsl(140 55% 45% / 0.4);
 }
-.valid-claim-done-ic { display: inline-flex; width: 1.3em; height: 1.3em; align-items: center; justify-content: center; border-radius: 999px; background: hsl(140 55% 40%); color: #fff; font-size: 0.85em; flex: 0 0 auto; }
+.valid-claim-done-ic { display: inline-flex; width: 1.3em; height: 1.3em; align-items: center; justify-content: center; border-radius: var(--radius-pill); background: hsl(140 55% 40%); color: #fff; font-size: 0.85em; flex: 0 0 auto; }
 
 /* ── C2PA 2.4 text bindings: the paste affordance, the carrier notes, the
    AI-disclosure panel and the text preview (plans/105 M2) ────────────────────
@@ -1289,16 +1289,16 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
   padding: 0.9rem 1rem; border: 1px solid hsl(var(--border)); border-radius: var(--radius);
   background: hsl(var(--card));
 }
-.valid-paste-label { font-size: calc(0.75rem * var(--a11y-fs)); font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: hsl(var(--muted-foreground)); }
+.valid-paste-label { font-size: var(--fs-sm); font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: hsl(var(--muted-foreground)); }
 .valid-paste-text {
   width: 100%; resize: vertical; min-height: 8rem;
-  padding: 0.6rem 0.7rem; font-family: var(--font-mono); font-size: calc(0.8rem * var(--a11y-fs)); line-height: 1.5;
+  padding: 0.6rem 0.7rem; font-family: var(--font-mono); font-size: var(--fs-md); line-height: 1.5;
   color: hsl(var(--foreground)); background: hsl(var(--background));
   border: 1px solid hsl(var(--border)); border-radius: var(--radius);
 }
 .valid-paste-text:focus { outline: none; border-color: hsl(var(--primary) / 0.6); box-shadow: 0 0 0 3px hsl(var(--primary) / 0.15); }
 .valid-paste-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
-.valid-paste-foot { margin: 0; font-size: calc(0.72rem * var(--a11y-fs)); line-height: 1.5; color: hsl(var(--muted-foreground)); max-width: 72ch; }
+.valid-paste-foot { margin: 0; font-size: var(--fs-xs); line-height: 1.5; color: hsl(var(--muted-foreground)); max-width: 72ch; }
 /* Touch: the chip and the two panel buttons are real 44px targets (the chip measured
    30px). Height only - .btn keeps its own padding and label width. */
 @media (pointer: coarse) {
@@ -1325,8 +1325,8 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
 }
 .valid-note-ic svg { width: 1.15rem; height: 1.15rem; }
 .valid-note-text { display: grid; gap: 0.2rem; min-width: 0; }
-.valid-note-text strong { font-size: calc(0.9rem * var(--a11y-fs)); font-weight: 650; color: hsl(var(--foreground)); }
-.valid-note-text > span { font-size: calc(0.8rem * var(--a11y-fs)); line-height: 1.5; color: hsl(var(--muted-foreground)); max-width: 72ch; }
+.valid-note-text strong { font-size: var(--fs-lg); font-weight: 650; color: hsl(var(--foreground)); }
+.valid-note-text > span { font-size: var(--fs-md); line-height: 1.5; color: hsl(var(--muted-foreground)); max-width: 72ch; }
 /* The credential's own reference, shown as inert monospace text - never a link.
    It is a claim made by an unverified document about where its credential
    lives; overflow-wrap keeps a hostile 2 KB URL inside the card. */
@@ -1336,7 +1336,7 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
   border: 1px solid hsl(var(--border)); border-radius: 0.4rem;
   padding: 0.15rem 0.4rem; overflow-wrap: anywhere; justify-self: start; max-width: 100%;
 }
-.valid-note-detail { font-size: calc(0.75rem * var(--a11y-fs)); line-height: 1.5; color: hsl(var(--muted-foreground)); opacity: 0.9; overflow-wrap: anywhere; }
+.valid-note-detail { font-size: var(--fs-sm); line-height: 1.5; color: hsl(var(--muted-foreground)); opacity: 0.9; overflow-wrap: anywhere; }
 .valid-note-action { flex: 0 0 auto; align-self: center; white-space: nowrap; }
 .valid-note--warn { border-color: hsl(var(--vf-warn) / 0.4); background: hsl(var(--vf-warn) / 0.08); }
 .valid-note--warn .valid-note-ic { background: hsl(var(--vf-warn) / 0.22); color: hsl(30 75% 30%); }
@@ -1359,19 +1359,19 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
 }
 .valid-aidecl-ic svg { width: 1.15rem; height: 1.15rem; }
 .valid-aidecl-text { display: grid; gap: 0.3rem; min-width: 0; }
-.valid-aidecl-text > strong { font-size: calc(0.9rem * var(--a11y-fs)); font-weight: 650; color: hsl(var(--foreground)); }
+.valid-aidecl-text > strong { font-size: var(--fs-lg); font-weight: 650; color: hsl(var(--foreground)); }
 .valid-aidecl-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
 .valid-aidecl-row { display: grid; gap: 0.1rem; }
 .valid-aidecl-model { font-size: calc(0.84rem * var(--a11y-fs)); color: hsl(var(--foreground)); overflow-wrap: anywhere; }
 .valid-aidecl-fact { font-size: calc(0.76rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); overflow-wrap: anywhere; }
 /* Muted only when it carries no grammar voice - valid.css loads lazily AFTER
    guide.css, so an unguarded color here would out-cascade the composed voice. */
-.valid-aidecl-note { font-size: calc(0.75rem * var(--a11y-fs)); line-height: 1.5; max-width: 72ch; }
+.valid-aidecl-note { font-size: var(--fs-sm); line-height: 1.5; max-width: 72ch; }
 .valid-aidecl-note:not(.guide-hint):not(.guide-warn) { color: hsl(var(--muted-foreground)); }
 .valid-aidecl-tag {
   flex: 0 0 auto; align-self: flex-start;
-  font-size: calc(0.66rem * var(--a11y-fs)); font-weight: 800; letter-spacing: 0.06em;
-  padding: 0.18rem 0.5rem; border-radius: 999px; color: hsl(0 0% 100%);
+  font-size: var(--fs-xs); font-weight: 800; letter-spacing: 0.06em;
+  padding: 0.18rem 0.5rem; border-radius: var(--radius-pill); color: hsl(0 0% 100%);
   background: linear-gradient(120deg, hsl(var(--vf-ai-1)), hsl(var(--vf-ai-2)));
 }
 
@@ -1382,10 +1382,10 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
 .valid-preview.is-text { display: block; max-height: 22rem; overflow: auto; border-radius: var(--radius); border: 1px solid hsl(var(--border)); background: hsl(var(--background) / 0.6); }
 .valid-preview-text {
   margin: 0; padding: 0.7rem 0.85rem;
-  font-family: var(--font-mono); font-size: calc(0.7rem * var(--a11y-fs)); line-height: 1.55;
+  font-family: var(--font-mono); font-size: var(--fs-xs); line-height: 1.55;
   white-space: pre-wrap; overflow-wrap: anywhere; color: hsl(var(--foreground));
 }
-.valid-preview.is-text figcaption { padding: 0 0.85rem 0.6rem; font-size: calc(0.72rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.valid-preview.is-text figcaption { padding: 0 0.85rem 0.6rem; font-size: var(--fs-xs); color: hsl(var(--muted-foreground)); }
 
 /* Text AI-likelihood: the extracted text shown for inspection with its genAI
    tells highlighted, graded by confidence - a soft amber for a stylistic
@@ -1394,7 +1394,7 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
   margin: 0.5rem 0; max-height: 30vh; overflow: auto;
   white-space: pre-wrap; overflow-wrap: anywhere; text-align: left;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: calc(0.78rem * var(--a11y-fs)); line-height: 1.5;
+  font-size: var(--fs-sm); line-height: 1.5;
   background: hsl(var(--muted) / 0.3); padding: 0.6rem 0.7rem;
   border-radius: calc(var(--radius) * 0.6); color: hsl(var(--foreground));
 }
@@ -1407,7 +1407,7 @@ mark.valid-hl { color: inherit; border-radius: 2px; padding: 0 0.06em; }
   display: inline-block;
   padding: 0 3px;
   margin: 0 1px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: hsl(275 65% 55% / .18);
   color: hsl(275 45% 45%);
   font-size: 0.72em;
@@ -1429,19 +1429,19 @@ mark.valid-hl { color: inherit; border-radius: 2px; padding: 0 0.06em; }
   border-radius: var(--radius);
   background: hsl(var(--muted) / 0.3);
 }
-.valid-receipt-list { margin-top: 6px; font-size: calc(0.78rem * var(--a11y-fs)); }
+.valid-receipt-list { margin-top: 6px; font-size: var(--fs-sm); }
 .valid-receipt-list > summary { cursor: pointer; color: hsl(var(--muted-foreground)); font-weight: 600; user-select: none; }
 .valid-receipt-list ul { margin: 6px 0 0; padding-left: 1.2em; }
 .valid-receipt-list li { margin: 3px 0; }
 .valid-receipt-ran::marker { content: '✓  '; color: hsl(145 55% 42%); }
 .valid-receipt-not::marker { content: '–  '; color: hsl(var(--muted-foreground)); }
-.valid-receipt-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.valid-askcred { margin-top: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.valid-receipt-actions { display: flex; flex-wrap: wrap; gap: var(--sp-4); margin-top: 10px; }
+.valid-askcred { margin-top: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-5); }
 .valid-askcred .guide-absent { margin: 0; }
 /* svgIcon() emits no width/height (the giant-sparkle trap) - size the glyphs. */
 .valid-askcred .btn svg, .valid-receipt-actions .btn svg {
-  width: calc(16px * var(--a11y-fs));
-  height: calc(16px * var(--a11y-fs));
+  width: var(--fs-xl);
+  height: var(--fs-xl);
   flex-shrink: 0;
 }
 .valid-askcred .btn, .valid-receipt-actions .btn { display: inline-flex; align-items: center; gap: 7px; }
@@ -1456,17 +1456,17 @@ mark.valid-hl--t4 { background: hsl(15 86% 55% / 0.42); }
 mark.valid-hl--t5 { background: hsl(0 82% 55% / 0.48); }
 /* The heat-bar minimap: one flex cell per rolling window, its --h (0-1) driving
    both hue (amber → red) and opacity, so a cold cell fades to near-nothing. */
-.valid-tsig-heatbar { display: flex; gap: 1px; height: 8px; margin: 0.45rem 0 0.15rem; border-radius: 4px; overflow: hidden; }
+.valid-tsig-heatbar { display: flex; gap: 1px; height: 8px; margin: 0.45rem 0 0.15rem; border-radius: var(--radius-xs); overflow: hidden; }
 .valid-tsig-heatbar i { flex: 1 1 0; background: hsl(calc(45 - var(--h, 0) * 45) 90% 52% / max(0.10, calc(var(--h, 0) * 0.85))); }
-.valid-tsig-heatbar-cap { display: block; font-size: calc(0.68rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); margin-bottom: 0.2rem; }
+.valid-tsig-heatbar-cap { display: block; font-size: var(--fs-xs); color: hsl(var(--muted-foreground)); margin-bottom: 0.2rem; }
 .valid-tsig-band {
-  font-size: calc(0.72rem * var(--a11y-fs)); padding: 0.05rem 0.45rem;
-  border-radius: 999px; background: hsl(var(--muted) / 0.6); vertical-align: middle;
+  font-size: var(--fs-xs); padding: 0.05rem 0.45rem;
+  border-radius: var(--radius-pill); background: hsl(var(--muted) / 0.6); vertical-align: middle;
 }
 .valid-tsig[data-tsig-band="strong"] .valid-tsig-band { background: hsl(0 70% 55% / 0.3); }
-.valid-tsig-guess { margin: 0.4rem 0 0; font-size: calc(0.82rem * var(--a11y-fs)); opacity: 0.92; }
-.valid-tsig-cands { margin: 0.25rem 0 0; font-size: calc(0.75rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
-.valid-tsig-legend { display: block; font-size: calc(0.68rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); margin: 0.15rem 0 0.2rem; }
+.valid-tsig-guess { margin: 0.4rem 0 0; font-size: var(--fs-md); opacity: 0.92; }
+.valid-tsig-cands { margin: 0.25rem 0 0; font-size: var(--fs-sm); color: hsl(var(--muted-foreground)); }
+.valid-tsig-legend { display: block; font-size: var(--fs-xs); color: hsl(var(--muted-foreground)); margin: 0.15rem 0 0.2rem; }
 
 /* The score donut: a centred hero gauge with the rating inside the ring. Colour
    follows the band; the number wears text tokens, never the series colour. */
@@ -1491,7 +1491,7 @@ mark.valid-hl--t5 { background: hsl(0 82% 55% / 0.48); }
 /* The read button's icon: svgIcon() emits no width/height attributes, so an
    unsized rule here would let the sparkle blow up to the SVG default size. */
 .valid-ocr-read { display: inline-flex; align-items: center; gap: 0.45em; }
-.valid-ocr-read svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); flex: none; }
+.valid-ocr-read svg { width: var(--fs-xl); height: var(--fs-xl); flex: none; }
 .valid-ocr-result { margin-top: 0.5rem; }
 
 /* On-image OCR overlay: box every read line, colour the flagged ones by the same

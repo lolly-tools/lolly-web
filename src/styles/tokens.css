@@ -265,6 +265,81 @@
   --track-tier-3: 15%;
 }
 
+/* ─── Chrome scale tokens (plans/172) ───────────────────────────────────────
+   The non-colour axes the 2026-08-29 audit found sprawling: 346 distinct
+   box-shadows, 112 radii, 216 font sizes, 561 paddings - each cluster below is
+   that population's mode, so adopting a token is a rename, not a redesign.
+
+   GENERATED between the markers by scripts/gen-chrome-tokens.ts from
+   shells/web/design/chrome-tokens.json (the DTCG source Penpot edits). Hand-edit
+   the JSON, then `npm run gen:chrome-tokens`; tests/chrome-tokens.test.ts fails
+   CI on drift. Everything outside the markers stays hand-authored.
+
+   Composition is the aesthetic: the app's signature look is a hairline ring
+   plus a soft drop, so surfaces write `box-shadow: var(--edge), var(--shadow-2)`
+   and the glass variants add var(--bevel). Shadows are theme-invariant blacks
+   today (faithful to the audited state); --edge* follow --border/--foreground,
+   so they already re-resolve per theme. Theming the drop alphas is a deliberate
+   later step (plan 172 P3+), never a side effect of migration.
+
+   --fs-* carry var(--a11y-fs) INSIDE the token - the sanctioned home for the
+   multiplier (a11y-prefs-contract: "scaled ONCE, at its declaration") - so a
+   `font-size: var(--fs-md)` call site keeps the largeText contract by
+   construction instead of restating the calc() 1,500 times. */
+/* @generated-chrome-tokens start */
+:root {
+  /* edges - the hairline-ring-instead-of-border move (82 audited sites) */
+  --edge: inset 0 0 0 1px hsl(var(--border));
+  --edge-faint: inset 0 0 0 1px hsl(var(--foreground) / .1);
+  --edge-strong: inset 0 0 0 1px hsl(var(--foreground) / .18);
+  /* elevation - control / raised / floating / drawer / modal */
+  --shadow-1: 0 1px 3px hsl(0 0% 0% / .13);
+  --shadow-2: 0 4px 14px hsl(0 0% 0% / .18);
+  --shadow-3: 0 8px 28px hsl(0 0% 0% / .22);
+  --shadow-4: 0 12px 36px hsl(0 0% 0% / .26);
+  --shadow-5: 0 24px 60px hsl(0 0% 0% / .32);
+  /* glass top-light */
+  --bevel: inset 0 1px hsl(0 0% 100% / .1);
+  /* focus rings */
+  --ring-focus: 0 0 0 3px hsl(var(--ring) / .15);
+  --ring-focus-strong: 0 0 0 2px hsl(var(--primary) / .35);
+  /* radius sub-scale - --radius (1rem) stays the card/panel size above this */
+  --radius-xs: 3px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+  --radius-round: 50%;
+  /* chrome type scale - pre-multiplied by --a11y-fs (the sanctioned home for the largeText multiplier: scaled once, at declaration) */
+  --fs-2xs: calc(10px * var(--a11y-fs));
+  --fs-xs: calc(11px * var(--a11y-fs));
+  --fs-sm: calc(12px * var(--a11y-fs));
+  --fs-md: calc(13px * var(--a11y-fs));
+  --fs-lg: calc(14px * var(--a11y-fs));
+  --fs-xl: calc(16px * var(--a11y-fs));
+  /* space - the 2px grid the gap population already sits on */
+  --sp-1: 2px;
+  --sp-2: 4px;
+  --sp-3: 6px;
+  --sp-4: 8px;
+  --sp-5: 10px;
+  --sp-6: 12px;
+  --sp-7: 16px;
+  --sp-8: 24px;
+  /* motion */
+  --dur-1: .12s;
+  --dur-2: .18s;
+  --dur-3: .3s;
+  --ease-out: cubic-bezier(.32, .72, 0, 1);
+  --ease-spring: cubic-bezier(.34, 1.56, .64, 1);
+  /* stacking - names for what were magic numbers (99999/100000) */
+  --z-chrome: 20;
+  --z-overlay: 50;
+  --z-toast: 90;
+  --z-max: 100;
+}
+/* @generated-chrome-tokens end */
+
 /* ─── Light ─────────────────────────────────────────────────────────────── */
 :root,
 [data-theme="light"] {

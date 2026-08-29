@@ -7,7 +7,7 @@
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px; margin-bottom: 14px; flex-wrap: wrap;
 }
-.folder-overlay-head h2 { margin: 0; font-size: calc(16px * var(--a11y-fs)); }
+.folder-overlay-head h2 { margin: 0; font-size: var(--fs-xl); }
 .folder-overlay-head-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .folder-overlay-crumb { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .folder-crumb-icon svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); opacity: 0.6; }
@@ -17,7 +17,7 @@
   width: 28px; height: 28px; cursor: pointer; font-size: calc(15px * var(--a11y-fs)); line-height: 1;
 }
 .folder-back:hover { background: hsl(var(--muted)); }
-.folder-overlay-empty { padding: 28px 12px; text-align: center; color: hsl(var(--muted-foreground)); font-size: calc(13px * var(--a11y-fs)); }
+.folder-overlay-empty { padding: 28px 12px; text-align: center; color: hsl(var(--muted-foreground)); font-size: var(--fs-md); }
 
 .folder-grid {
   display: grid; gap: 12px; margin: 0 0 14px;
@@ -54,14 +54,14 @@
 .recents-dialog-empty { margin: 0; color: hsl(var(--muted-foreground)); font-size: calc(.85rem * var(--a11y-fs)); }
 .recents-dialog-go { align-self: flex-start; }
 .folder-exports-title {
-  margin: 0 0 6px; font-size: calc(11px * var(--a11y-fs)); font-weight: 600;
+  margin: 0 0 6px; font-size: var(--fs-xs); font-weight: 600;
   color: hsl(var(--muted-foreground)); text-transform: uppercase; letter-spacing: 0.04em;
 }
 .folder-exports-rail { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
 .folder-export-tile {
   flex: 0 0 auto; display: block; line-height: 0; overflow: hidden;
   border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) / 1.5);
-  background: hsl(var(--muted)); transition: border-color 0.12s, box-shadow 0.12s;
+  background: hsl(var(--muted)); transition: border-color var(--dur-1), box-shadow var(--dur-1);
 }
 .folder-export-tile:hover { border-color: hsl(var(--primary) / 0.6); box-shadow: 0 3px 14px hsl(0 0% 0% / 0.08); }
 .folder-export-tile img { height: 56px; width: auto; max-width: 120px; object-fit: cover; display: block; }
@@ -76,7 +76,7 @@
 .folder-tile {
   position: relative; border: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius) * 1.1); background: hsl(var(--card));
-  overflow: hidden; transition: border-color 0.12s, box-shadow 0.12s;
+  overflow: hidden; transition: border-color var(--dur-1), box-shadow var(--dur-1);
 }
 .folder-tile:hover { border-color: hsl(var(--primary) / 0.6); box-shadow: 0 3px 14px hsl(0 0% 0% / 0.08); }
 .tile-primary {
@@ -116,11 +116,11 @@
 .tile-title {
   font-size: calc(12.5px * var(--a11y-fs)); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.tile-sub { font-size: calc(11px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.tile-sub { font-size: var(--fs-xs); color: hsl(var(--muted-foreground)); }
 .tile-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
 .tile-badge {
-  font-size: calc(10px * var(--a11y-fs)); font-weight: 600; line-height: 1; padding: 3px 5px;
-  border-radius: 999px; background: hsl(var(--muted)); color: hsl(var(--muted-foreground));
+  font-size: var(--fs-2xs); font-weight: 600; line-height: 1; padding: 3px 5px;
+  border-radius: var(--radius-pill); background: hsl(var(--muted)); color: hsl(var(--muted-foreground));
 }
 .tile-badge--type { background: hsl(var(--primary) / 0.14); color: hsl(var(--primary)); }
 .tile-badge--rows { background: hsl(var(--primary) / 0.1); color: hsl(var(--primary)); }
@@ -130,9 +130,9 @@
      to 18 inside a fixed 26px circle would swallow the ring it sits in. */
   position: absolute; top: 6px; right: 6px; width: calc(26px * var(--a11y-fs)); height: calc(26px * var(--a11y-fs));
   display: inline-flex; align-items: center; justify-content: center; padding: 0;
-  border: 1px solid hsl(var(--border)); border-radius: 50%;
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius-round);
   background: hsl(var(--background) / 0.85); color: hsl(var(--foreground));
-  cursor: pointer; opacity: 0; transition: opacity 0.12s, background 0.12s;
+  cursor: pointer; opacity: 0; transition: opacity var(--dur-1), background var(--dur-1);
 }
 .folder-tile:hover .tile-menu-btn, .tile-menu-btn:focus-visible { opacity: 1; }
 /* Touch has no hover: a hover-revealed control is an invisible control
@@ -151,18 +151,18 @@
   /* Box on the icon scale with its tick, as .tile-menu-btn above. */
   position: absolute; top: 6px; left: 6px; z-index: 2; width: calc(22px * var(--a11y-fs)); height: calc(22px * var(--a11y-fs));
   display: inline-flex; align-items: center; justify-content: center; padding: 0;
-  border: 2px solid hsl(var(--border)); border-radius: 50%;
+  border: 2px solid hsl(var(--border)); border-radius: var(--radius-round);
   background: hsl(var(--background) / 0.85); color: hsl(var(--primary-foreground));
-  cursor: pointer; opacity: 0; transition: opacity 0.12s, background 0.12s, border-color 0.12s;
+  cursor: pointer; opacity: 0; transition: opacity var(--dur-1), background var(--dur-1), border-color var(--dur-1);
 }
 .folder-tile:hover .tile-check, .tile-check:focus-visible,
 .folder-tile.is-selected .tile-check { opacity: 1; }
-.tile-check svg { width: calc(13px * var(--a11y-fs)); height: calc(13px * var(--a11y-fs)); opacity: 0; }
+.tile-check svg { width: var(--fs-md); height: var(--fs-md); opacity: 0; }
 .tile-check[aria-pressed="true"] {
   background: hsl(var(--primary)); border-color: hsl(var(--primary)); opacity: 1;
 }
 .tile-check[aria-pressed="true"] svg { opacity: 1; }
-.folder-tile.is-selected { border-color: hsl(var(--primary)); box-shadow: 0 0 0 2px hsl(var(--primary) / 0.35); }
+.folder-tile.is-selected { border-color: hsl(var(--primary)); box-shadow: var(--ring-focus-strong); }
 /* Touch devices have no hover - keep the toggle visible so selection is discoverable. */
 @media (pointer: coarse) {
   .tile-check { opacity: 1; }
@@ -182,7 +182,7 @@
 .folder-menu {
   position: absolute; z-index: 100001; min-width: 180px; padding: 5px;
   border: 1px solid hsl(var(--border)); border-radius: var(--radius);
-  background: hsl(var(--card)); box-shadow: 0 8px 28px hsl(0 0% 0% / 0.22);
+  background: hsl(var(--card)); box-shadow: var(--shadow-3);
   display: flex; flex-direction: column; gap: 1px;
 }
 .folder-menu-item {
@@ -219,10 +219,10 @@
   border: 1px solid hsl(var(--border)); border-radius: var(--radius);
   background: hsl(var(--card)); box-shadow: 0 10px 30px hsl(0 0% 0% / 0.25);
 }
-.folder-ask-label { font-size: calc(13px * var(--a11y-fs)); font-weight: 600; }
+.folder-ask-label { font-size: var(--fs-md); font-weight: 600; }
 .folder-ask-input {
   padding: 8px 10px; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) / 1.5);
-  background: hsl(var(--background)); color: hsl(var(--foreground)); font-size: calc(13px * var(--a11y-fs));
+  background: hsl(var(--background)); color: hsl(var(--foreground)); font-size: var(--fs-md);
 }
 .folder-ask-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
@@ -285,27 +285,27 @@ html[data-a11y-previews="hidden"] .folder-export-tile img {
 .folder-star {
   position: absolute; top: 3px; right: 6px; z-index: 1;
   color: var(--brand-primary, hsl(var(--primary)));
-  font-size: calc(12px * var(--a11y-fs)); line-height: 1;
+  font-size: var(--fs-sm); line-height: 1;
 }
 
 /* ── Trash dialog + folder style dialog (plans/133 WP-4 / WP-1) ─────────────*/
 .trash-dialog, .folder-style-dialog { border: 0; border-radius: calc(var(--radius) * 1.2); padding: 0; background: hsl(var(--card)); color: hsl(var(--foreground)); width: min(440px, calc(100vw - 32px)); box-shadow: 0 1.5rem 4rem #0007; }
 .trash-dialog::backdrop, .folder-style-dialog::backdrop { background: #0008; }
 .trash-dialog-body, .folder-style-body { padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
-.trash-dialog h2, .folder-style-body h2 { margin: 0; font-size: calc(16px * var(--a11y-fs)); }
+.trash-dialog h2, .folder-style-body h2 { margin: 0; font-size: var(--fs-xl); }
 .trash-note { margin: 0; font-size: calc(12.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 .trash-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 50vh; overflow-y: auto; }
 .trash-row { display: flex; align-items: center; gap: 10px; padding: 6px 4px; }
 .trash-row-icon { display: inline-flex; color: hsl(var(--muted-foreground)); }
 .trash-row-icon svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
 .trash-row-meta { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
-.trash-row-name { font-size: calc(13px * var(--a11y-fs)); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.trash-row-sub { font-size: calc(11px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.trash-row-name { font-size: var(--fs-md); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trash-row-sub { font-size: var(--fs-xs); color: hsl(var(--muted-foreground)); }
 .trash-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .folder-style-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.folder-color-dot { width: calc(24px * var(--a11y-fs)); height: calc(24px * var(--a11y-fs)); border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
+.folder-color-dot { width: calc(24px * var(--a11y-fs)); height: calc(24px * var(--a11y-fs)); border-radius: var(--radius-round); border: 2px solid transparent; cursor: pointer; padding: 0; }
 .folder-color-dot[aria-pressed="true"] { border-color: hsl(var(--foreground)); box-shadow: 0 0 0 2px hsl(var(--card)) inset; }
-.folder-style-emoji span { font-size: calc(13px * var(--a11y-fs)); }
+.folder-style-emoji span { font-size: var(--fs-md); }
 .folder-style-emoji input { width: 4em; font: inherit; padding: 4px 8px; border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--background)); color: inherit; }
 
 /* ── Folder count pill (2026-08-20) ── replaces the "N items" subline: a dot
@@ -317,7 +317,7 @@ html[data-a11y-previews="hidden"] .folder-export-tile img {
   min-width: calc(18px * var(--a11y-fs));
   height: calc(18px * var(--a11y-fs));
   padding: 0 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: hsl(var(--muted));
   color: hsl(var(--muted-foreground));
   font-size: calc(10.5px * var(--a11y-fs));

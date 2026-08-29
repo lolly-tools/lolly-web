@@ -64,7 +64,7 @@
 
 .css-ed {
   position: relative;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--cssed-bg);
   border: 1px solid var(--cssed-hair);
