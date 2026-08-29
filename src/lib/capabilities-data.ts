@@ -210,6 +210,13 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
       { icon: ICONS.desktop, title: 'Desktop', keywords: 'mac macos linux windows tauri native app', features: [
         { name: 'macOS & Linux', desc: 'Native packages via Tauri - the same engine in a desktop shell.' },
       ] },
+      { icon: ICONS.desktop, title: 'At home on the Linux desktop', keywords: 'gnome kde plasma flatpak rpm tray eyedropper wallpaper search hot folder lolly file dbus portal', features: [
+        { name: 'Pick colours from any window', desc: 'The eyedropper in every colour control reaches the whole screen through the desktop portal - grab a colour from a photo in another app.' },
+        { name: '.lolly files open like documents', desc: 'Double-click a shared .lolly in your file manager and it lands in the right tool; saved shares even show thumbnails in GNOME Files.' },
+        { name: 'Set a render as your wallpaper', desc: 'One entry in the send menu; your desktop previews and confirms before anything changes.' },
+        { name: 'Search from the desktop', desc: 'Type a tool name in GNOME Activities or KRunner and Lolly answers, using the same vocabulary as in-app search.' },
+        { name: 'Clipboard tray & hot folder', desc: 'A tray click turns a copied link into a QR code; a watched folder pulls new files straight into your uploads. The clipboard is read only when you click - never watched.' },
+      ] },
       { icon: ICONS.phone, title: 'Mobile', shot: 'incl-utility-card', keywords: 'ios android tauri app store native', features: [
         { name: 'iOS & Android', desc: 'Installable mobile packages via Tauri, with the touch-first UI.' },
       ] },

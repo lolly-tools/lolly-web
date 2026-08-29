@@ -49,7 +49,7 @@ export function ensureBuiltinSendTargets(): Promise<void> {
 }
 
 export async function registerBuiltinSendTargets(): Promise<void> {
-  const [gdrive, dropbox, onedrive, s3, nextcloud, penpot, mastodon, bluesky, discord] = await Promise.all([
+  const [gdrive, dropbox, onedrive, s3, nextcloud, penpot, mastodon, bluesky, discord, wallpaper] = await Promise.all([
     import('./google-drive.ts'),
     import('./dropbox-send.ts'),
     import('./onedrive-send.ts'),
@@ -62,6 +62,9 @@ export async function registerBuiltinSendTargets(): Promise<void> {
     import('./mastodon-send.ts'),
     import('./bluesky-send.ts'),
     import('./discord-send.ts'),
+    // Desktop-shell wallpaper (plans/174): no connection, no network - the XDG
+    // portal previews and the user confirms.
+    import('./wallpaper-send.ts'),
   ]);
   registerSendTarget(gdrive.googleDriveSendTarget());
   registerSendTarget(dropbox.dropboxSendTarget());
@@ -72,6 +75,7 @@ export async function registerBuiltinSendTargets(): Promise<void> {
   registerSendTarget(mastodon.mastodonSendTarget());
   registerSendTarget(bluesky.blueskySendTarget());
   registerSendTarget(discord.discordSendTarget());
+  registerSendTarget(wallpaper.wallpaperSendTarget());
   // Connection-gated kinds (s3, webdav, mastodon, bluesky, discord) gate on
   // hasConnection(), a SYNC read of the in-memory cache, so a saved connection only
   // surfaces in the export panel (without a /profile visit first) once that cache is

@@ -287,6 +287,9 @@ export const NAV_SECTIONS: ReadonlyArray<ProfileNavSection> = [
   { id: 'renders-section', icon: 'image', label: 'Your renders', keywords: 'renders downloads library save copy export tag auto-save' },
   { id: 'storage-section', icon: 'package', label: 'Storage', keywords: 'storage data space sessions images clear export delete' },
   { id: 'offline-section', icon: 'download', label: 'Available offline', keywords: 'offline download pwa install cache' },
+  // Desktop shells only (plans/174) - the row hides itself elsewhere, but the
+  // search keywords stay registered so a "hot folder" query still finds it.
+  { id: 'hotfolder-section', icon: 'download', label: 'Hot folder', keywords: 'hot folder watch auto import ingest desktop drop directory' },
   { id: 'activity-section', icon: 'history', label: 'Your activity', keywords: 'activity usage metrics stats history recent' },
   { id: 'feature-flags-section', icon: 'flask', label: 'Feature flags', keywords: 'features experimental beta jelly neurospicy flags toggles' },
   { id: 'instance-section', icon: 'globe', label: 'Lolly instance', keywords: 'instance server source tools catalogue connect disconnect' },
@@ -812,6 +815,22 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         ${summaryRow('offline-section', t('Available offline'))}
         <div class="profile-collapse-body section-card-body" id="offline-body">${skeletonRow()}</div>
       </details>
+
+      ${isTauriShell() ? `
+      <details class="profile-card profile-collapse" id="hotfolder-section"${startOpen('hotfolder-section')}>
+        ${summaryRow('hotfolder-section', t('Hot folder'), '')}
+        <div class="profile-collapse-body section-card-body" id="hotfolder-body">
+          <p class="profile-hint">${t('Watch one folder on this computer. Anything dropped into it is pulled into Lolly through the same chooser a drag-and-drop gets - nothing leaves the device.')}</p>
+          <label class="field-row"><span>${t('Folder path')}</span>
+            <input type="text" class="field-input" id="hotfolder-path" placeholder="${escape(t('e.g. /home/you/Lolly-inbox'))}" autocomplete="off" spellcheck="false">
+          </label>
+          <div class="profile-actions-row">
+            <button type="button" class="btn" id="hotfolder-enable">${t('Watch this folder')}</button>
+            <button type="button" class="btn" id="hotfolder-disable" hidden>${t('Stop watching')}</button>
+          </div>
+          <p class="be-err" id="hotfolder-err" hidden></p>
+        </div>
+      </details>` : ''}
 
       <details class="profile-card profile-collapse profile-activity" id="activity-section"${startOpen('activity-section')}>
         ${summaryRow('activity-section', t('Your activity'), t('{n} renders', { n: metrics.filesRendered }))}
@@ -2966,6 +2985,37 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   }
   offlineDetails?.addEventListener('toggle', () => { if (offlineDetails!.open) loadOffline(); });
   if (offlineDetails?.open) loadOffline();
+
+  // Hot folder (plans/174 #9) - desktop shells only; the boot module owns the
+  // key and the invoke, this block is pure form wiring.
+  if (isTauriShell()) {
+    void import('../lib/linux-desktop-boot.ts').then((hf) => {
+      const pathEl = viewEl.querySelector<HTMLInputElement>('#hotfolder-path');
+      const onBtn = viewEl.querySelector<HTMLButtonElement>('#hotfolder-enable');
+      const offBtn = viewEl.querySelector<HTMLButtonElement>('#hotfolder-disable');
+      const errEl = viewEl.querySelector<HTMLElement>('#hotfolder-err');
+      const summary = viewEl.querySelector<HTMLElement>('[data-summary="hotfolder-section"]');
+      if (!pathEl || !onBtn || !offBtn) return;
+      const paint = (active: string | null): void => {
+        if (active) pathEl.value = active;
+        onBtn.hidden = !!active;
+        offBtn.hidden = !active;
+        if (summary) summary.textContent = active ? t('watching') : '';
+      };
+      paint(hf.hotFolderPath());
+      const showErr = (m: string): void => { if (errEl) { errEl.textContent = m; errEl.hidden = !m; } };
+      onBtn.addEventListener('click', () => {
+        showErr('');
+        const path = pathEl.value.trim();
+        if (!path) { showErr(t('Enter a folder path first')); return; }
+        hf.setHotFolder(path).then(() => paint(path)).catch((e: Error) => showErr(e.message));
+      });
+      offBtn.addEventListener('click', () => {
+        showErr('');
+        hf.setHotFolder(null).then(() => paint(null)).catch((e: Error) => showErr(e.message));
+      });
+    });
+  }
 
   // Connected services (plans/129) - same lazy-mount idiom; the module owns
   // its own re-rendering after connect/disconnect/save.

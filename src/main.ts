@@ -907,6 +907,12 @@ async function boot(): Promise<void> {
   if ('__TAURI_INTERNALS__' in window) {
     void import('./lib/app-menu.ts').then(m =>
       m.initAppMenu(host as unknown as Parameters<typeof m.initAppMenu>[0]));
+    // Desktop integration poll loop (plans/174): drains the native event queue -
+    // double-clicked .lolly files, lolly:// links, tray/search activations, hot
+    // folder arrivals. Same dynamic-import shape as app-menu: web builds never
+    // load it, boot never waits on it.
+    void import('./lib/linux-desktop-boot.ts').then(m =>
+      m.installLinuxDesktopBoot(host as unknown as Parameters<typeof m.installLinuxDesktopBoot>[0]));
     // Tauri shells never send a Referer: the app origin (http://tauri.localhost)
     // is worthless to any external host and trips anti-localhost hotlink rules -
     // SomaFM's icecast 403s media requests carrying it, which silently killed

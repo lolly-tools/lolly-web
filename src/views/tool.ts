@@ -4813,8 +4813,25 @@ function makeLollyVehicle(host: WebToolHost, toolId: string, manifest: ToolManif
     // Carry the tool's own files only on request - resolving them fetches every file.
     // A resolve failure (missing core files) degrades to a tool-less .lolly, never an error.
     const tool = includeTool ? (await resolveToolBundle(toolId, manifest).catch(() => null)) : null;
+    // A raster thumbnail rides in the manifest so an importer - and the desktop
+    // file managers' thumbnailer (plans/174 #3) - has a tile without rendering.
+    // This closure has no canvas access, so the tile is the newest SAVED slot's
+    // thumb for this tool (the same dataURL projects.ts ships) - best-effort,
+    // and an unsaved-only session simply ships thumb-less, exactly as before.
+    const thumb = session
+      ? await host.state
+          .list()
+          .then((rows) => {
+            const mine = (rows as unknown as { toolId: string; thumb: string | null; updatedAt?: string }[])
+              .filter((r) => r.toolId === toolId && typeof r.thumb === 'string')
+              .sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')));
+            return mine[0]?.thumb ?? null;
+          })
+          .catch(() => null)
+      : null;
     const { blob, filename, summary } = await buildLollyFile({
       session, toolId,
+      ...(typeof thumb === 'string' && thumb.startsWith('data:image/') ? { thumb } : {}),
       toolVersion: manifest.version != null ? String(manifest.version) : undefined,
       name: String((manifest as { name?: unknown }).name ?? toolId),
       userAssets, resolveLibrary, includeLicensed, creator,

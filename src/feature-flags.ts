@@ -61,6 +61,7 @@ export const CONNECTOR_FLAGS: readonly FeatureFlag[] = [
   { id: 'conn-s3',       label: 'S3 bucket',           connector: 's3'       },
   { id: 'conn-webdav',   label: 'Nextcloud / WebDAV',  connector: 'webdav'   },
   { id: 'conn-penpot',   label: 'Penpot',              connector: 'penpot'   },
+  { id: 'conn-wallpaper', label: 'Wallpaper',           connector: 'wallpaper' },
   { id: 'conn-mastodon', label: 'Mastodon',            connector: 'mastodon' },
   { id: 'conn-bluesky',  label: 'Bluesky',             connector: 'bluesky'  },
   { id: 'conn-discord',  label: 'Discord',             connector: 'discord'  },
