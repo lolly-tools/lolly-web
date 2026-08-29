@@ -62,6 +62,19 @@ export function createComposeAPI(host: HostV1) {
   // is LRU order; a hit is re-inserted to mark it most-recently-used.
   const cache = new Map<string, { assetRef: AssetRef; blobUrl: string }>();
 
+  // Renders of a `singleInstance` tool must NEVER overlap: it parks a mutable handle
+  // on `window` and disposes the previous instance when a new one mounts, and/or holds
+  // a WebGL context - so two concurrent renders dispose each other. resolveAssetRefs
+  // fires renderUrl for every cell of a blocks input via Promise.all, so a print sheet
+  // of N 3D/flythrough cells came back blank. This chain runs those renders one at a
+  // time (like Download-all); ordinary tools stay concurrent.
+  let singleChain: Promise<unknown> = Promise.resolve();
+  const serializeSingle = <T>(job: () => Promise<T>): Promise<T> => {
+    const run = singleChain.then(job, job);
+    singleChain = run.then(() => {}, () => {});
+    return run;
+  };
+
   async function render(spec: ComposeSpec): Promise<AssetRef> {
     const { toolId, inputs = {}, format, width, height, unit, dpi, transient, settleMs, _stack = [] } = spec ?? {};
     if (typeof toolId !== 'string' || !toolId) throw new Error('compose: missing toolId');
@@ -80,11 +93,13 @@ export function createComposeAPI(host: HostV1) {
     // Thread the ANCESTOR stack (_stack), not `path`: the child's own runtime
     // re-appends its id in resolveNestedRenders, so passing `path` (which already
     // ends with toolId) would double-count and trip the depth guard a level early.
-    const { blob, format: fmt } = await renderRowToBlob(
+    const isSingle = await getTool(toolId).then(t => !!t.manifest.singleInstance).catch(() => false);
+    const doRender = () => renderRowToBlob(
       { toolId, values: inputs as Record<string, InputValue> },
       host,
       { format, width, height, unit: unit as Unit | undefined, dpi, composeStack: _stack, watermark: false, embedMeta: false, thumbnail: true, settleMs },
     );
+    const { blob, format: fmt } = isSingle ? await serializeSingle(doRender) : await doRender();
 
     const url = URL.createObjectURL(blob);
     const assetRef: AssetRef = {
