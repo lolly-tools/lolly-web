@@ -142,6 +142,27 @@ export interface LollyBundledTool {
   files: LollyBundledToolFile[];
 }
 
+/**
+ * One font face the session's render depended on, as IDENTITY - never bytes.
+ *
+ * `sha256` is the SRI digest (`sha256-<base64>`, same spelling as `manifest.integrity`)
+ * of the WHOLE source file, so a rebuild on another machine can say "same face" or "a
+ * different file claiming that name". Font subsetting is planned, and a subset is a
+ * function of the text, so the embedded bytes are deliberately not what is hashed.
+ *
+ * `source: 'platform'` with no `file`/`sha256` is the honest record of a run that drew in
+ * whatever the machine happened to have installed. See lib/session-fonts.ts.
+ */
+export interface LollyFontEntry {
+  family: string;
+  /** '400', or a variable face's declared range ('100 900'). */
+  weight: string;
+  style: string;
+  source: 'catalog' | 'user' | 'platform';
+  file?: string;
+  sha256?: string;
+}
+
 export interface LollyManifest {
   format: typeof LOLLY_FILE_FORMAT;
   formatVersion: number;
@@ -158,6 +179,9 @@ export interface LollyManifest {
   counts: { assets: number; byReference: number; bytes: number };
   creator: LollyCreator | null;
   assets: LollyAssetEntry[];
+  /** The font faces the render used, by identity. Absent on files written before the
+   *  receipt existed, and on a session with no text. */
+  fonts?: LollyFontEntry[];
   /** The tool's own files, when the sender chose to carry it (Wave 7 / plans 114). */
   bundledTool?: LollyBundledTool;
   integrity?: Record<string, string> | null;
@@ -214,6 +238,9 @@ export interface LollyBuildInput {
    *  writes them under `tool/` and records them. Omit ⇒ the tool travels by reference. */
   tool?: LollyToolBundle;
   creator?: LollyCreator | null;
+  /** The font faces the rendered canvas used, collected by the shell (lib/session-fonts.ts).
+   *  Identity only - no font bytes ever travel in a `.lolly`. */
+  fonts?: readonly LollyFontEntry[];
   /** "Lolly x.y.z". */
   appVersion?: string;
   engineVersion?: string;
@@ -434,6 +461,7 @@ export async function buildLollyFile(input: LollyBuildInput): Promise<LollyBuild
     counts: { assets: summary.assetCount, byReference: byReferenceCount, bytes: totalBytes },
     creator: input.creator ?? null,
     assets,
+    ...(input.fonts?.length ? { fonts: [...input.fonts] } : {}),
     ...(bundledTool ? { bundledTool } : {}),
     ...(integrity ? { integrity } : {}),
   };

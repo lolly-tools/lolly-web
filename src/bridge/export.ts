@@ -5607,6 +5607,11 @@ function c2paEnvironment(format: string, opts: ExportOpts, dimensions?: string):
   const inputs = opts.c2paInputs && Object.keys(opts.c2paInputs).length ? opts.c2paInputs : undefined;
   return {
     ...(opts.meta?.tool ? { tool: opts.meta.tool } : {}),
+    // The manifest id + version beside the display name: the name is what a
+    // person reads, the id is what /verify reopens (names collide across brands
+    // and locales) and the version is what a rebuild has to fetch.
+    ...(opts.meta?.toolId ? { toolId: opts.meta.toolId } : {}),
+    ...(opts.meta?.toolVersion ? { toolVersion: opts.meta.toolVersion } : {}),
     format: String(format),
     surface: 'web',
     engine,

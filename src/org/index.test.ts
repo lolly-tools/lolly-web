@@ -239,6 +239,42 @@ test('applyOrgToolPolicies maps the per-tool contract onto the input-policy regi
   assert.equal(getInputPolicy('event-badge', 'logo'), undefined, 'previous tool policy cleared on mount');
 });
 
+test('applyOrgToolPolicies carries the policy attribution through to the registry', async () => {
+  reset();
+  controlPlane({
+    mode: 'open',
+    session: 'member',
+    orgConfig: {
+      instance: { name: 'Acme' },
+      inboxUnread: 0,
+      tools: {
+        'event-badge': {
+          inputs: [
+            { id: 'logo', access: { level: 'locked', value: 'acme/logo', by: 'Brand guardrails', reason: 'One mark per campaign' } },
+            { id: 'accent', access: { level: 'choice', allow: ['#0c322c'], by: 'Brand guardrails' } },
+            { id: 'headline', access: { level: 'locked', value: 'Hi' } },
+          ],
+        },
+      },
+    },
+  });
+  await initOrg();
+  applyOrgToolPolicies('event-badge');
+
+  // WHICH policy locked it, and why, is what turns a dead control into an answer.
+  assert.equal(getInputPolicy('event-badge', 'logo')?.by, 'Brand guardrails');
+  assert.equal(getInputPolicy('event-badge', 'logo')?.reason, 'One mark per campaign');
+  // A narrowed select is attributed the same way; no reason means no reason.
+  assert.equal(getInputPolicy('event-badge', 'accent')?.by, 'Brand guardrails');
+  assert.equal(getInputPolicy('event-badge', 'accent')?.reason, undefined);
+  // An input the instance governs but does not attribute keeps the exact object
+  // shape it had before this field existed - absent keys, not undefined ones.
+  assert.deepEqual(
+    getInputPolicy('event-badge', 'headline'),
+    { mode: 'locked', note: 'Managed by Acme', value: 'Hi' },
+  );
+});
+
 test('applyOrgToolPolicies is a dormant no-op with no control plane', async () => {
   reset();
   await initOrg(); // dormant

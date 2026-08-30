@@ -269,10 +269,19 @@ export function scriptHtml(report: VerifyReport): string {
 // resolve it back to a live tool id against the loaded tool index by matching id,
 // name, and every i18n sidecar name, case-insensitively. No index yet, or no match
 // (a retired or foreign tool) → undefined and the CTA simply isn't offered.
-function resolveRecreateTool(recorded: unknown): { toolId: string; toolName: string } | undefined {
+function resolveRecreateTool(recorded: unknown, recordedId?: unknown): { toolId: string; toolName: string } | undefined {
+  const tools = window.__toolIndex?.tools ?? [];
+  // Engine 1.157+ records the manifest id beside the name: an exact id match wins
+  // outright, so two tools sharing a display name (or a renamed tool) reopen the
+  // one that actually made the file. Older records fall through to the name match.
+  const id = typeof recordedId === 'string' ? recordedId.trim() : '';
+  if (id) {
+    const hit = tools.find((tool) => tool.id === id);
+    if (hit) return { toolId: hit.id, toolName: typeof hit.name === 'string' && hit.name ? hit.name : hit.id };
+  }
   const wanted = typeof recorded === 'string' ? recorded.trim().toLowerCase() : '';
   if (!wanted) return undefined;
-  for (const tool of window.__toolIndex?.tools ?? []) {
+  for (const tool of tools) {
     const i18nNames = Object.values((tool.i18n ?? {}) as Record<string, { name?: unknown } | undefined>).map((o) => o?.name);
     const names = [tool.id, tool.name, ...i18nNames];
     if (names.some((n) => typeof n === 'string' && n.trim().toLowerCase() === wanted)) {
@@ -1665,7 +1674,7 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
   // The recreate CTA rides the digest panel only when the claim's own content is
   // trustworthy (made / likely-made with Lolly - the digest IS a Lolly assertion)
   // AND the recorded tool name resolves against this build's tool index.
-  const recreate = (report.madeWithLolly || report.likelyMadeWithLolly) ? resolveRecreateTool(env.tool) : undefined;
+  const recreate = (report.madeWithLolly || report.likelyMadeWithLolly) ? resolveRecreateTool(env.tool, env.toolId) : undefined;
   // The recorded tool name when it exists but is not in this catalogue - e.g. a
   // brand-pack file verified on the public instance (plans/143 V1). The digest
   // then offers the gallery instead of nothing.
@@ -1684,7 +1693,7 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
   const factsBlock = report.found && report.claim ? `
         <dl class="valid-facts">
           ${fact(t('Title'), claim.title, 'tag')}
-          ${fact(t('Tool'), env.tool, 'tool')}
+          ${fact(t('Tool'), env.tool && env.toolVersion ? `${env.tool} ${env.toolVersion}` : env.tool, 'tool')}
           ${fact(t('Produced by'), report.author ? `${report.author.name}${report.author.email ? ` <${report.author.email}>` : ''}` : null, 'user')}
           ${fact(t('Contact'), report.author?.url ?? null, 'link')}
           ${fact(t('Rights / licence'), report.rights ?? null, 'badgeCheck')}

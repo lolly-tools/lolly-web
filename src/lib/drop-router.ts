@@ -11,6 +11,7 @@
  *   PDF / .ai   → edit as a design · pages → SVG library assets · compress ·
  *                 the Design System studio (a guidelines PDF's colours, marks
  *                 and embedded faces - plan 97 section 8)
+ *   zipped tool folder → install it on this device and open it
  *   PowerPoint  → slides → SVG library assets · content → Markdown
  *   Word (.docx) → content → Markdown
  *   image/video/audio → the asset library · /verify (Content Credentials)
@@ -47,6 +48,7 @@ import { playSfx } from './sfx.ts';
 import { choiceDialog, confirmDialog, closeConfirmDialogs } from '../components/confirm-dialog.ts';
 import type { DialogChoice } from '../components/confirm-dialog.ts';
 import type { ToolManifest } from '../../../../engine/src/loader.ts';
+import type { InstalledToolTrust } from './installed-tools.ts';
 import { setPendingVerify } from './verify-handoff.ts';
 import type { PickerHost } from '../views/picker.ts';
 import type { BeamPackHost } from './beam-pack.ts';
@@ -85,6 +87,10 @@ const CONTAINER_DOC_EXT_RE = /\.(xlsx|docx|pptx|epub|odt)$/i;
 // document; the zip/JSON cases need evidence, below.
 const PENPOT_EXT_RE = /\.penpot$/i;
 const JSON_EXT_RE = /\.json$/i;
+// A zipped tool folder: `tool.json` named in a local file header, at the archive root
+// or one folder down (the "zip the folder" shape). Entry names sit in the clear even
+// when bodies deflate, so this rides the same 64 KB head read as the other zip sniffs.
+const TOOL_ZIP_HEAD_RE = /(?:^|[^\w./-])(?:[\w.-]+\/)?tool\.json/;
 /** How much of a JSON drop the router is willing to parse just to decide which
  *  routes to OFFER. Bigger token documents still import fine through the
  *  studio's own source picker; they just don't get the shortcut here. */
@@ -180,6 +186,11 @@ export interface Sniff {
   /** A Word (.docx) document (plans/139): its route is content extraction. Optional,
    *  and an absent flag reads as false. */
   docx?: boolean;
+  /** A plain `.zip` of a tool folder (`tool.json` + template + hooks): the sideload
+   *  route, so an author can zip a folder and run it here without a monorepo clone.
+   *  A head-read heuristic like `designSystem`; `readToolZip` is the authoritative
+   *  read, run when the user picks the route. Optional, absent reads as false. */
+  tool?: boolean;
 }
 
 const isMediaFile = (f: File): boolean =>
@@ -311,6 +322,14 @@ async function sniffFile(file: File, deep: boolean, picker: PickerModule): Promi
       : zipMagic || /\.zip$/i.test(file.name)
         ? zipListsDesignSystemParts(text)
         : await looksLikeTokensFile(file, text));
+  // A zipped tool folder. Deep (single-file) path only, like the design-system sniff,
+  // and never for a container the office/OCF readers own. A zip whose tool.json sits
+  // past the head read simply doesn't get the route offered - the cost of a miss is
+  // one route, and no real tool folder is 64 KB of headers deep.
+  const tool = deep && !lolly && !pdf && !pptx && !docx && !layers
+    && !CONTAINER_DOC_EXT_RE.test(file.name)
+    && (zipMagic || /\.zip$/i.test(file.name))
+    && TOOL_ZIP_HEAD_RE.test(text);
   // A plain-text document (prose/markdown/code) that no richer route claimed - it
   // ingests to the library as a type:'text' asset, so the "Add to your library" route
   // must be offered for it too, not only for media.
@@ -318,7 +337,7 @@ async function sniffFile(file: File, deep: boolean, picker: PickerModule): Promi
     && (TEXT_DROP_RE.test(file.name) || /^text\//i.test(file.type));
   // A PSD/XCF often carries an image/* MIME - the layered routes own it, not
   // the plain media ones (the library route still exists, as a flatten).
-  return { design, pdf, pptx, docx, media: isMediaFile(file) && !layers, c2pa, layers, archive, designSystem, lolly, textDoc };
+  return { design, pdf, pptx, docx, media: isMediaFile(file) && !layers, c2pa, layers, archive, designSystem, lolly, textDoc, tool };
 }
 
 const toolExists = (id: string): boolean =>
@@ -355,6 +374,14 @@ export function dropChooserChoices(s: Sniff, ctx: ChooserContext): DialogChoice[
   const { single, allIngestable, has } = ctx;
   const choices: DialogChoice[] = [];
   const packZip = single && s.archive && s.designSystem;
+  // A zipped tool folder: installing it is the only route that treats the zip as
+  // what it is. Unpacking one scatters a template and a hooks file into the asset
+  // library, so the install door leads and unpack stays underneath - the same rule
+  // the design-system pack follows.
+  const toolZip = single && !!s.tool;
+  if (toolZip) {
+    choices.push({ id: 'install-tool', label: t('Install this tool'), primary: true });
+  }
   if (single && s.layers && has('darkroom')) {
     choices.push({ id: 'layers', label: t('Open as layers'), primary: true });
   }
@@ -365,13 +392,13 @@ export function dropChooserChoices(s: Sniff, ctx: ChooserContext): DialogChoice[
     choices.push({ id: 'flatten', label: t('Add the flattened image to your library') });
   }
   if (packZip) {
-    choices.push({ id: 'design-system', label: t('Use as the design system'), primary: true });
+    choices.push({ id: 'design-system', label: t('Use as the design system'), primary: !toolZip });
   }
   // A plain archive leads with "unpack": a dropped .zip/.tar explodes into member
   // assets, each re-imported through the normal library path. Kept above the design
   // route so a data zip isn't primarily offered to Design (where it errors).
   if (single && s.archive) {
-    choices.push({ id: 'unpack', label: t('Unpack archive to your library'), primary: !packZip });
+    choices.push({ id: 'unpack', label: t('Unpack archive to your library'), primary: !packZip && !toolZip });
   }
   if (single && (s.design || s.pdf) && has('design')) {
     choices.push({ id: 'design', label: t('Edit in Design'), primary: !s.archive });
@@ -456,6 +483,7 @@ export function dropChooserMessage(s: Sniff, name: string, ctx: ChooserContext):
     return tRaw('“{name}” can open in Design or install as the design system.', { name });
   }
   if (s.designSystem) return tRaw('“{name}” looks like a design system.', { name });
+  if (s.tool) return tRaw('“{name}” looks like a Lolly tool folder.', { name });
   if (s.archive) return tRaw('“{name}” is an archive.', { name });
   if (s.design) return tRaw('“{name}” looks like a design file.', { name });
   if (s.media) return tRaw('“{name}” is ready to import.', { name });
@@ -596,23 +624,43 @@ async function provisionLollyTool(bytes: Uint8Array, lp: typeof import('./lolly-
   if (inCatalog || (await it.isToolInstalled(tool.id))) return true;   // already have it
 
   const manifest = JSON.parse(new TextDecoder().decode(tool.files['tool.json'] ?? new Uint8Array())) as ToolManifest;
-  const name = (manifest as { name?: string }).name || tool.id;
   const by = parsed.manifest.creator?.name || parsed.manifest.creator?.org;
-  const trusted = await confirmDialog({
+  if (!await confirmToolTrust(manifest, by)) return false;
+  return installSideloadedTool(manifest, tool.files, tool.trust, {
+    ...(tool.version ? { version: tool.version } : {}),
+    ...(parsed.manifest.engineVersion ? { engineVersion: parsed.manifest.engineVersion } : {}),
+  });
+}
+
+/**
+ * The consent gate every sideload shares: name the tool, name its author when the file
+ * says who that is, and say plainly that installing it runs the tool's own code here.
+ * A dropped tool zip carries no signature and no author block, so it asks with exactly
+ * this wording and an empty `by` - one dialog, one sentence, whatever the source.
+ */
+async function confirmToolTrust(manifest: ToolManifest, by?: string): Promise<boolean> {
+  const name = (manifest as { name?: string }).name || manifest.id;
+  return confirmDialog({
     title: tRaw('Trust this tool?'),
     message: tRaw('This file includes a tool - “{name}”{by} - that isn’t installed here. Opening it runs the tool’s own code on your device. Only install it if you trust where this file came from.',
       { name, by: by ? tRaw(' by {who}', { who: by }) : '' }),
     confirmLabel: tRaw('Trust & install'),
     danger: true,
   });
-  if (!trusted) return false;
+}
 
+/** Write an already-consented-to tool into the device-local install store and surface it
+ *  in the tool index. Returns whether it is now installed; a refusal (module hooks, no
+ *  Cache Storage) is announced with its own message, never thrown. */
+async function installSideloadedTool(
+  manifest: ToolManifest,
+  files: Record<string, Uint8Array>,
+  trust: InstalledToolTrust,
+  extra: { version?: string; engineVersion?: string } = {},
+): Promise<boolean> {
+  const it = await import('./installed-tools.ts');
   try {
-    await it.installTool({
-      manifest, files: tool.files, trust: tool.trust,
-      ...(tool.version ? { version: tool.version } : {}),
-      ...(parsed.manifest.engineVersion ? { engineVersion: parsed.manifest.engineVersion } : {}),
-    });
+    await it.installTool({ manifest, files, trust, ...extra });
     await it.mergeInstalledToolsIntoIndex();
     return true;
   } catch (err) {
@@ -622,6 +670,135 @@ async function provisionLollyTool(bytes: Uint8Array, lp: typeof import('./lolly-
     announce(msg, { assertive: true });
     return false;
   }
+}
+
+// ── a zipped tool folder (the drive-by author's loop) ─────────────────────────
+
+/** A tool folder read out of a dropped zip: the parsed manifest plus every file keyed
+ *  tool-dir-relative, exactly the shape `installTool` (and the loader) expect. */
+export interface ToolZipContents {
+  manifest: ToolManifest;
+  files: Record<string, Uint8Array>;
+}
+
+/**
+ * The tool-dir prefix inside a dropped zip: `''` when `tool.json` sits at the archive
+ * root, `'<folder>/'` when the archive holds exactly ONE top-level folder and the
+ * manifest is inside it (what every OS produces from "compress this folder"), and null
+ * when neither - two top-level folders is ambiguous, and no tool.json is not a tool.
+ * Pure; `names` must already have the OS junk filtered out, or a macOS zip's `__MACOSX`
+ * tree reads as a second top-level folder.
+ */
+export function toolZipRoot(names: string[]): string | null {
+  if (names.includes('tool.json')) return '';
+  const tops = new Set(names.map((n) => n.split('/')[0]!));
+  if (tops.size !== 1) return null;
+  const top = [...tops][0]!;
+  return names.includes(`${top}/tool.json`) ? `${top}/` : null;
+}
+
+/**
+ * Read a dropped `.zip` of a tool folder, refusing anything the running engine would
+ * refuse anyway. `unzipAsync`'s guard rejects a bomb before a single entry inflates
+ * (its default caps are already the strictest policy in the shell, and a tool folder is
+ * kilobytes). Then the two gates `loadTool` applies, in ITS order and with its wording:
+ * the engine-compatibility floor first, because a tool built for a newer engine usually
+ * also carries manifest vocabulary this build's schema has never heard of, and the
+ * schema error would read as a broken tool rather than an engine it needs.
+ *
+ * Every refusal throws a user-ready Error. Exported for the co-located test.
+ */
+export async function readToolZip(bytes: Uint8Array): Promise<ToolZipContents> {
+  const [{ unzipAsync }, { isIgnoredUploadName }, { safeToolRelPath }] = await Promise.all([
+    import('./zip.ts'), import('./archive-ingest.ts'), import('./installed-tools.ts'),
+  ]);
+  const entries = await unzipAsync(bytes);
+  const names = Object.keys(entries).filter((n) => !n.endsWith('/') && !isIgnoredUploadName(n));
+  // `safeToolRelPath` SILENTLY rewrites an absolute path and drops a traversing one,
+  // which is right for bytes a `.lolly`'s integrity map already vouched for. A zip off
+  // the internet gets no such benefit of the doubt: refuse the archive whole.
+  for (const n of names) {
+    if (n.startsWith('/') || /^[a-z]:/i.test(n) || n.split(/[\\/]/).includes('..')) {
+      throw new Error(`This zip has an unsafe file path (${n}).`);
+    }
+  }
+  const root = toolZipRoot(names);
+  if (root === null) {
+    throw new Error('This zip isn’t a tool folder. It needs a tool.json at the top level, or inside a single folder.');
+  }
+  const files: Record<string, Uint8Array> = {};
+  for (const n of names) {
+    if (!n.startsWith(root)) continue;   // a sibling of the tool folder, not part of it
+    const rel = safeToolRelPath(n.slice(root.length));
+    if (rel) files[rel] = entries[n]!;
+  }
+  let manifest: ToolManifest;
+  try {
+    manifest = JSON.parse(new TextDecoder().decode(files['tool.json']!)) as ToolManifest;
+  } catch (err) {
+    throw new Error(`This tool’s tool.json isn’t valid JSON: ${(err as Error).message}`);
+  }
+  const { validateManifest, satisfiesRange, ENGINE_VERSION } = await import('@lolly/engine');
+  const id = typeof manifest?.id === 'string' ? manifest.id : 'tool';
+  const range = typeof (manifest as { engineVersion?: unknown })?.engineVersion === 'string'
+    ? manifest.engineVersion : null;
+  if (range !== null && !satisfiesRange(ENGINE_VERSION, range)) {
+    throw new Error(`"${id}" requires engine ${range}, but this build implements ${ENGINE_VERSION} - refusing to load`);
+  }
+  const { valid, errors } = validateManifest(manifest);
+  if (!valid) {
+    throw new Error(`Manifest for "${id}" failed validation: ${errors.slice(0, 3).map((e) => `${e.path} ${e.message}`).join('; ')}`);
+  }
+  return { manifest, files };
+}
+
+/**
+ * The "Install this tool" route: a zipped tool folder becomes an installed tool on THIS
+ * device and opens. Nothing is uploaded - the zip is read in the page, and the files go
+ * to the same device-local store a `.lolly`'s carried tool uses, through the same
+ * consent gate and the same installer.
+ *
+ * A reinstall (the author's edit-zip-drop loop) asks to replace instead of asking to
+ * trust: they accepted that dialog for this tool id already, and two dialogs in a row
+ * where the second says the tool "isn't installed here" would be false as well as slow.
+ */
+async function installToolZipDrop(file: File): Promise<void> {
+  let parsed: ToolZipContents;
+  try {
+    parsed = await readToolZip(new Uint8Array(await file.arrayBuffer()));
+  } catch (err) {
+    announce(tRaw('Could not install this tool: {message}', { message: (err as Error).message }), { assertive: true });
+    return;
+  }
+  const { manifest } = parsed;
+  const id = manifest.id;
+  const it = await import('./installed-tools.ts');
+  const idx = (window as unknown as { __toolIndex?: { tools?: Array<{ id: string; _installed?: boolean }> } }).__toolIndex;
+  if (idx?.tools?.some((t) => t.id === id && t._installed !== true)) {
+    // mergeInstalledEntries lets the catalog copy win on a shared id, so installing this
+    // one would leave no trace anywhere. Say that, rather than appear to do nothing.
+    announce(tRaw('“{id}” is already a catalogue tool here, and an installed tool never replaces one. Give yours its own id.', { id }), { assertive: true });
+    return;
+  }
+  if (await it.isToolInstalled(id)) {
+    const ok = await confirmDialog({
+      title: t('Replace the installed copy?'),
+      message: tRaw('“{id}” is already installed on this device. Installing this zip replaces it, and runs the new code.', { id }),
+      confirmLabel: t('Replace'),
+      danger: true,
+    });
+    if (!ok) return;
+  } else if (!await confirmToolTrust(manifest)) {
+    return;
+  }
+  const engineVersion = (manifest as { engineVersion?: string }).engineVersion;
+  if (!await installSideloadedTool(manifest, parsed.files, 'custom', {
+    ...(manifest.version ? { version: manifest.version } : {}),
+    ...(engineVersion ? { engineVersion } : {}),
+  })) return;
+  playSfx('drop');
+  announce(tRaw('Installed “{name}”.', { name: (manifest as { name?: string }).name || id }));
+  routeToConsumer(`#/tool/${id}`, onToolRoute(id));
 }
 
 /** Hooks a view can hang on the chooser (plans/133 WP-6): `onStored` receives the
@@ -754,6 +931,9 @@ export async function openDropChooser(
     }
     case 'exports':
       await ingestExportsToLibrary(first, host);
+      break;
+    case 'install-tool':
+      await installToolZipDrop(first);
       break;
   }
 }

@@ -55,8 +55,10 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(bin);
 }
 
-/** SRI-style `sha256-<base64>` digest of one part's bytes. */
-async function sha256(bytes: Uint8Array): Promise<string> {
+/** SRI-style `sha256-<base64>` digest of one part's bytes. Exported so anything that
+ *  records a digest ALONGSIDE a bundle (the `.lolly` font receipt, whose faces travel as
+ *  identity rather than bytes) spells one the same way `manifest.integrity` does. */
+export async function sha256(bytes: Uint8Array): Promise<string> {
   const digest = await SUBTLE!.digest('SHA-256', bytes as unknown as BufferSource);
   return 'sha256-' + bytesToBase64(new Uint8Array(digest));
 }

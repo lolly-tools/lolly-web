@@ -31,6 +31,15 @@ export interface InputPolicy {
   mode: InputMode;
   /** A short, already-localised note for a locked/choice input (e.g. "Managed by Acme"). */
   note?: string;
+  /** The policy source's display name - WHICH rule did this, in the words of
+   *  whoever wrote it. Data, not a sentence: the sidebar composes and localises
+   *  the line it shows. Absent means "no attribution available", and the control
+   *  then renders exactly as it did before this field existed. */
+  by?: string;
+  /** The policy author's free-text reason, when they wrote one. Shown with `by`;
+   *  meaningless on its own, so a policy carrying a reason and no `by` attributes
+   *  nothing. */
+  reason?: string;
   /** For a locked input, the value the sidebar should display (and keep) instead of
    *  the model's stored value. Also carried on a `choice` for a pre-selected value. */
   value?: unknown;

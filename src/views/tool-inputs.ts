@@ -15,6 +15,7 @@ import type { TableValue } from '@lolly/engine';
 import { tableBodyCellHtml, tableColumnEditor, wantsGhostRow } from './table-cells.ts';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
 import { escape, NAV_EVENTS } from '../utils.js';
+import { t } from '../i18n.ts';
 import { mountModal } from '../components/modal.ts';
 import { announce } from '../a11y.js';
 import { colorFieldHtml, wireColorField } from '../components/color-field.js';
@@ -331,6 +332,26 @@ export function policyLocksControl(control: InputModelItem['control'], policy: I
   return false;
 }
 
+/**
+ * The fine-print line naming the policy that governs a control - "why is this
+ * locked?", answered where the question is asked. `''` whenever there is nothing
+ * to attribute: an ungoverned control, a governed one whose policy names no
+ * source, or a `hidden` one (hidden is hidden, and those rows never render at
+ * all). Empty is the whole point of the guard, not an edge case: it is what keeps
+ * a shell with no control plane byte-identical to one that never had this field.
+ *
+ * `managed` is the caller's own "is this control governed" decision, passed in
+ * rather than recomputed, so the attribution and the lock chip can never disagree
+ * about which controls are governed. t() escapes its params, so the result is an
+ * HTML-safe fragment and must NOT be escape()d again. Pure - exported for tests.
+ */
+export function policyAttribution(policy: InputPolicy | undefined, managed: boolean): string {
+  if (!managed || !policy?.by || policy.mode === 'hidden') return '';
+  return policy.reason
+    ? t('Set by {policy}: {reason}', { policy: policy.by, reason: policy.reason })
+    : t('Set by {policy}', { policy: policy.by });
+}
+
 // Serialises drop-to-add commits per blocks-input id across re-renders (see the
 // dropToAdd wiring below): each multi-file drop waits for the previous one to
 // commit before reading the live array, so two quick drops can't both read the
@@ -525,6 +546,19 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
 
   const renderOneInput = (input: InputModelItem, prev: InputModelItem | null): string => {
     const isCheckbox = input.control === 'checkbox';
+    // Control-plane policy for this input (empty/no-op by default). Read up here
+    // because the attribution line below feeds isStaticLabel the same way an
+    // authored notice does.
+    const pol = policyFor(input.id);
+    const locks = policyLocksControl(input.control, pol);
+    const managed = locks || (pol?.mode === 'choice' && input.control === 'select');
+    // "Why is this locked?" answered in place: a governed control names the policy
+    // that governs it (and its author's reason, when one was written) in the same
+    // fine print an authored notice uses. `hidden` never reaches here - those rows
+    // are dropped from panelModel entirely. With no `by` this is '', and the row's
+    // markup is byte-identical to a shell with no control plane at all.
+    // t() escapes its params, so this fragment is already HTML-safe (do NOT escape() it).
+    const policyNote = policyAttribution(pol, managed);
     // `display: 'pill'` on a boolean → an inline chip toggle. Still a checkbox row
     // (control-before-label <label>), so the existing checkbox change wiring fires
     // unchanged; the CSS reshapes it, and consecutive pills are flowed into one
@@ -543,7 +577,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // floating-label :has() chain (tool.css), which paints the label OVER the trigger.
     // A notice row is static too: the notice sits between label and field, which
     // the floating-label offset math (tool.css) cannot account for.
-    const isStaticLabel = input.control === 'datetime-local-input' || input.control === 'table' || input.control === 'file-picker' || isJellyField || Boolean(input.notice);
+    const isStaticLabel = input.control === 'datetime-local-input' || input.control === 'table' || input.control === 'file-picker' || isJellyField || Boolean(input.notice) || Boolean(policyNote);
     // Composite controls hold MANY interactive elements. A wrapping <label> makes the
     // browser forward any dead-space click to the label's first labelable descendant - 
     // so a `blocks` input forwards gap / pill-body / near-miss clicks to block #0's
@@ -564,14 +598,18 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // Help moves behind an info button (see help-tip.js). The label id rides on the
     // text span only, so a composite's aria-labelledby never absorbs "More info".
     const ht = input.help ? helpTip(input.help) : null;
-    // Control-plane policy for this input (empty/no-op by default). A locked or
-    // restricted input gets a small lock chip beside its label whose tooltip names
-    // the managing instance (the note is supplied already-localised by src/org/).
-    const pol = policyFor(input.id);
-    const locks = policyLocksControl(input.control, pol);
-    const managed = locks || (pol?.mode === 'choice' && input.control === 'select');
+    // A locked or restricted input gets a small lock chip beside its label whose
+    // tooltip names the managing instance (the note is supplied already-localised
+    // by src/org/); the fine print under the label names the policy itself.
+    // A LOCKED control is `inert`, so its aria-describedby (the fine print below)
+    // never reaches assistive tech. The chip is outside that wrapper and already
+    // focusable, so the attribution rides its accessible name too - otherwise the
+    // answer to "why is this locked?" would be sighted-only. Both halves are
+    // already escaped (escape() / t()), and both escape quotes, so the join is
+    // safe in this attribute and must not be escaped twice.
+    const chipLabel = [escape(pol?.note ?? ''), policyNote].filter(Boolean).join('. ');
     const lockChip = managed && pol?.note
-      ? `<span class="input-lock-chip" data-tip="${escape(pol.note)}" aria-label="${escape(pol.note)}" tabindex="0" style="display:inline-flex;align-items:center;margin-inline-start:.35rem;vertical-align:middle;color:hsl(var(--muted-foreground))">${icon('lock', { size: 12, strokeWidth: 2 })}</span>`
+      ? `<span class="input-lock-chip" data-tip="${escape(pol.note)}" aria-label="${chipLabel}" tabindex="0" style="display:inline-flex;align-items:center;margin-inline-start:.35rem;vertical-align:middle;color:hsl(var(--muted-foreground))">${icon('lock', { size: 12, strokeWidth: 2 })}</span>`
       : '';
     const labelText = `<span class="input-label-text"${isComposite ? ` id="${labelId}"` : ''}>${escape(input.label ?? input.id)}${valueTag}</span>`;
     // Unified "Add data" affordance (plan 87): a text/longtext input that declares
@@ -586,8 +624,9 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // aria-hidden keeps it out of the wrapping <label>'s accessible NAME;
     // linkHelpDescriptions points the control's aria-describedby at it, so
     // assistive tech reads it as a description instead.
-    const notice = input.notice
-      ? `<span class="input-notice" id="inotice-${escape(input.id)}" aria-hidden="true">${escape(input.notice)}</span>`
+    const noticeText = [input.notice ? escape(input.notice) : '', policyNote].filter(Boolean).join(' ');
+    const notice = noticeText
+      ? `<span class="input-notice" id="inotice-${escape(input.id)}" aria-hidden="true">${noticeText}</span>`
       : '';
     // A locked input displays the policy VALUE (when one is given) in place of the
     // model's stored value - a render-only substitution, so the model is untouched.

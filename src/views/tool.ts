@@ -2729,7 +2729,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         reassure: t("It's okay - keep going. You can always share the whole thing as a .lolly file."),
       },
       prefersReducedMotion,
-      () => showShareDialog(runtime, actionsEl, tool.manifest, makeLollyVehicle(host, toolId, tool.manifest, actionsApi?.sessionState)),
+      () => showShareDialog(runtime, actionsEl, tool.manifest, makeLollyVehicle(host, toolId, tool.manifest, actionsApi?.sessionState, contentEl)),
     );
     // Render once now so the bar shows on mount - not only after the first syncUrl (a
     // free-canvas tool may not write the URL on load, which would leave it hidden).
@@ -2805,7 +2805,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // buttons - its format/filename/dimension inputs are in the same element. The Share
   // dialog also offers a `.lolly` download (plans/114) when the tool has a session.
   if (actionsEl) {
-    const lolly = makeLollyVehicle(host, toolId, tool.manifest, actionsApi?.sessionState);
+    const lolly = makeLollyVehicle(host, toolId, tool.manifest, actionsApi?.sessionState, contentEl);
     wireUpCopyUrl(actionsEl, runtime, actionsEl, tool.manifest, lolly);
   }
 
@@ -2887,7 +2887,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           await userToolStore.save({ title, description, icon, formats, baseToolId: toolId, values: plainValues() });
         },
         shareLolly: () => {
-          const lolly = makeLollyVehicle(host, toolId, tool.manifest, actionsApi?.sessionState);
+          const lolly = makeLollyVehicle(host, toolId, tool.manifest, actionsApi?.sessionState, contentEl);
           showShareDialog(runtime, actionsEl, tool.manifest, lolly);
         },
         announce: (m) => announce(m),
@@ -4787,7 +4787,7 @@ async function resolveToolBundle(toolId: string, manifest: ToolManifest): Promis
   return { id: toolId, ...(manifest.version != null ? { version: String(manifest.version) } : {}), trust, files };
 }
 
-function makeLollyVehicle(host: WebToolHost, toolId: string, manifest: ToolManifest, sessionState: (() => unknown) | undefined): ShareDialogLolly | undefined {
+function makeLollyVehicle(host: WebToolHost, toolId: string, manifest: ToolManifest, sessionState: (() => unknown) | undefined, canvasEl?: Element | null): ShareDialogLolly | undefined {
   if (typeof sessionState !== 'function') return undefined;
   const assets = host.assets as unknown as LollyAssetsSlice;
   const appVersion = `Lolly ${ENGINE_VERSION}`;
@@ -4834,8 +4834,15 @@ function makeLollyVehicle(host: WebToolHost, toolId: string, manifest: ToolManif
           })
           .catch(() => null)
       : null;
+    // Which font faces this render depended on, by identity (lib/session-fonts.ts) - the
+    // font half of the reproducibility receipt. Strictly best-effort: no font bytes travel,
+    // and a walk that fails costs the receipt its font list, never the share.
+    const fonts = await import('../lib/session-fonts.ts')
+      .then(m => m.collectSessionFonts(canvasEl))
+      .catch(() => []);
     const { blob, filename, summary } = await buildLollyFile({
       session, toolId,
+      ...(fonts.length ? { fonts } : {}),
       ...(typeof thumb === 'string' && thumb.startsWith('data:image/') ? { thumb } : {}),
       toolVersion: manifest.version != null ? String(manifest.version) : undefined,
       name: String((manifest as { name?: unknown }).name ?? toolId),

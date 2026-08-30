@@ -1144,14 +1144,18 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     await mountProfile(viewEl, host); // re-read getInstanceBase() into the row
   });
   viewEl.querySelector('#instance-disconnect-btn')?.addEventListener('click', async () => {
+    const { leaveInstance, countSessionsUsingInstanceTools } = await import('../lib/instance-leave.ts');
+    // Sessions saved here against a tool the instance installed stay (they are the
+    // person's) but go inert once the tool leaves - say so before, not after.
+    const inert = await countSessionsUsingInstanceTools(host as unknown as Parameters<typeof countSessionsUsingInstanceTools>[0]).catch(() => 0);
     const ok = await confirmDialog({
       title: t('Leave this instance?'),
-      message: t('Your work stays on this device - sessions, images, profile, and anything you installed yourself. What the organisation supplied leaves with it: its brand, its tools, its catalogue, and this device’s standing with it. Anything you saved to the instance stays there. You can reconnect any time.'),
+      message: t('Your work stays on this device - sessions, images, profile, and anything you installed yourself. What the organisation supplied leaves with it: its brand, its tools, its catalogue, and this device’s standing with it. Anything you saved to the instance stays there. You can reconnect any time.')
+        + (inert ? ' ' + t('Saved sessions that use this instance’s tools: {n}. They stay, but will not open until you reconnect.', { n: inert }) : ''),
       confirmLabel: t('Leave'),
       danger: false,
     });
     if (!ok) return;
-    const { leaveInstance } = await import('../lib/instance-leave.ts');
     await leaveInstance();
     await syncCatalog(host as unknown as Parameters<typeof syncCatalog>[0]).catch(() => { /* offline - falls back to cache */ });
     window.dispatchEvent(new Event('lolly:remount')); // re-navigates the current route with the fresh (bundled) catalogue

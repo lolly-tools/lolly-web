@@ -93,6 +93,12 @@ export interface InputAccessSpec {
   level: 'locked' | 'choice';
   value?: unknown;
   allow?: string[];
+  /** Display name of the policy that set this rule, and the optional free-text
+   *  reason its author wrote. Passed straight through to the generic input-policy
+   *  seam, which is what lets the sidebar say WHICH policy locked a control
+   *  instead of only that something did. Absent on an instance that names none. */
+  by?: string;
+  reason?: string;
 }
 
 /** One tool's policy as the control plane declares it (mapped to generic
@@ -417,10 +423,19 @@ export function applyOrgToolPolicies(toolId: string): void {
   for (const inp of spec.inputs ?? []) {
     const access = inp?.access;
     if (!inp?.id || !access) continue;
+    // `by`/`reason` are pass-through DATA, not a sentence composed here: the
+    // sidebar owns the wording, so a policy source that is not this control plane
+    // can attribute itself the same way. Spread rather than assigned, so an
+    // instance that names no policy produces the exact object shape it always
+    // did - the key absent, not present and undefined, which is what the JSON
+    // the resilient cache round-trips depends on.
+    const by = typeof access.by === 'string' && access.by ? access.by : undefined;
+    const reason = by && typeof access.reason === 'string' && access.reason ? access.reason : undefined;
+    const why = { ...(by ? { by } : {}), ...(reason ? { reason } : {}) };
     if (access.level === 'locked') {
-      out[inp.id] = { mode: 'locked', note: managedNote, value: access.value };
+      out[inp.id] = { mode: 'locked', note: managedNote, value: access.value, ...why };
     } else if (access.level === 'choice') {
-      out[inp.id] = { mode: 'choice', note: managedNote, value: access.value, allow: access.allow };
+      out[inp.id] = { mode: 'choice', note: managedNote, value: access.value, allow: access.allow, ...why };
     }
   }
   // `hidden` (must-not-see) wins over any access rule for the same input.

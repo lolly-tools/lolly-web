@@ -35,6 +35,24 @@ test('locked / choice / hidden round-trip, keyed per tool', () => {
   assert.equal(getInputPolicy('event-badge', 'headline'), undefined, 'undeclared input has no policy');
 });
 
+test('attribution rides a policy as data, and is absent by default', () => {
+  _clearInputPoliciesForTests();
+  setToolInputPolicies('event-badge', {
+    logo: { mode: 'locked', note: 'Managed by Acme', by: 'Brand guardrails', reason: 'One mark per campaign' },
+    accent: { mode: 'choice', note: 'Managed by Acme', by: 'Brand guardrails', allow: ['#0c322c'] },
+    headline: { mode: 'locked', note: 'Managed by Acme' },
+  });
+  // Structured, not a composed sentence: the registry stays product-neutral and
+  // needs no i18n, and the view owns the wording it shows.
+  assert.equal(getInputPolicy('event-badge', 'logo')?.by, 'Brand guardrails');
+  assert.equal(getInputPolicy('event-badge', 'logo')?.reason, 'One mark per campaign');
+  assert.equal(getInputPolicy('event-badge', 'accent')?.by, 'Brand guardrails');
+  assert.equal(getInputPolicy('event-badge', 'accent')?.reason, undefined);
+  // A policy that attributes nothing is the same object it was before the field
+  // existed - which is what keeps an unattributed control rendering unchanged.
+  assert.deepEqual(getInputPolicy('event-badge', 'headline'), { mode: 'locked', note: 'Managed by Acme' });
+});
+
 test('namespacing: a policy for one tool never bleeds into another', () => {
   _clearInputPoliciesForTests();
   setToolInputPolicies('tool-a', { logo: { mode: 'locked' } });

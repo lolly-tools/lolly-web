@@ -20,7 +20,23 @@
  * the pack store's catalog paths) is cleared before the base itself moves.
  */
 import { getInstanceBase, setInstanceBase, clearInstallId, setInstanceSession } from './instance.ts';
-import { clearInstancePack } from './pack-store.ts';
+import { clearInstancePack, getPackMeta } from './pack-store.ts';
+
+/**
+ * How many locally saved sessions belong to a tool THIS pack installed. They
+ * stay - they are the person's - but with the tool gone they will not open until
+ * the device reconnects, and the Leave dialog should say so rather than let the
+ * person find out in Projects. Best-effort: any failure reads as zero, never as
+ * a reason to block leaving.
+ */
+export async function countSessionsUsingInstanceTools(
+  host: { state: { list(): Promise<Array<{ toolId?: string }>> } },
+): Promise<number> {
+  const ids = new Set(getPackMeta()?.toolIds ?? []);
+  if (!ids.size) return 0;
+  const rows = await host.state.list().catch(() => [] as Array<{ toolId?: string }>);
+  return rows.filter((r) => typeof r.toolId === 'string' && ids.has(r.toolId)).length;
+}
 
 /** Remove the org's ingredients and point the shell back at what is bundled.
  *  Callers re-sync the catalog and remount afterwards (same contract as

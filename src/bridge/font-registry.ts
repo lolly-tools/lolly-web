@@ -44,6 +44,28 @@ import { resolveSuseFontUrl } from './text-svg.ts';
 import type { FontStyleSlice } from './text-svg.ts';
 import { discoverFontFaces } from './fontface-discovery.ts';
 
+/**
+ * WHICH source face a run resolved to, as identity rather than bytes.
+ *
+ * `VectorFont.url` is the thing HarfBuzz shapes: for a user face that is an object URL
+ * holding the DECOMPRESSED sfnt, and subsetting (planned) will narrow it further - so it
+ * is the wrong handle for "which font did this design depend on". This is the right one:
+ * the family/weight/style as declared plus the SOURCE file the registry read, which is
+ * what a `.lolly` reproducibility receipt records and what another machine has to be
+ * able to find again.
+ */
+export interface VectorFontFace {
+  family: string;
+  /** '400', or a variable face's range ('100 900') - the face's own declaration. */
+  weight: string;
+  style: string;
+  source: 'catalog' | 'user' | 'platform';
+  /** The source file's URL, when it has one (a user face's bytes live in IndexedDB). */
+  file?: string;
+  /** IndexedDB asset id for a user face. */
+  assetId?: string;
+}
+
 /** A face resolved for one run: the sfnt to shape with, plus its axis settings. */
 export interface VectorFont {
   url: string;
@@ -52,6 +74,9 @@ export interface VectorFont {
   /** Sibling subsets of the same family, for characters `url` doesn't cover
    *  (Google's `latin` file has no `Ł`; its `latin-ext` file has no ASCII). */
   fallbacks?: Array<{ fontUrl: string; variations?: string[] }>;
+  /** The SOURCE face behind `url` - see VectorFontFace. Identity only; nothing in the
+   *  outlining path reads it. */
+  face?: VectorFontFace;
 }
 
 /** One stored face as the registry models it. */
@@ -304,6 +329,49 @@ async function fontUrlUsable(url: string): Promise<boolean> {
   return p;
 }
 
+/**
+ * A registry face as IDENTITY (see VectorFontFace). `family` is the name the run's CSS
+ * asked for - the registry keys by lowercased family, and the receipt should read as the
+ * design wrote it.
+ *
+ * ponytail: the CHAIN's leader only. A run split across disjoint Google subsets genuinely
+ * uses its siblings too; record them as separate entries if a receipt ever has to prove a
+ * mixed-script line, which needs the fallbacks to carry faces as well.
+ */
+function describeFace(family: string, face: RegistryFace): VectorFontFace {
+  const file = face.staticUrl || face.srcUrl || '';
+  return {
+    family,
+    weight: face.weight,
+    style: face.style,
+    source: face.assetId ? 'user' : file.includes('/catalog/') ? 'catalog' : 'platform',
+    ...(file ? { file } : {}),
+    ...(face.assetId ? { assetId: face.assetId } : {}),
+  };
+}
+
+/**
+ * The SOURCE font file's bytes for a resolved face, or null when there are none to read.
+ *
+ * Deliberately NOT `VectorFont.url`: that is the decompressed (and, once subsetting
+ * ships, narrowed) sfnt HarfBuzz shapes. A dependency is identified by the face as
+ * shipped, so a user font is read back from IndexedDB as the woff2/ttf that was stored
+ * and a platform/catalog face is fetched as the file on disk.
+ */
+export async function faceSourceBytes(face: VectorFontFace): Promise<Uint8Array | null> {
+  try {
+    if (face.assetId) {
+      const db = await openDB();
+      const rec = await db.get('user-assets', face.assetId) as { blob?: Blob } | undefined;
+      return rec?.blob ? new Uint8Array(await rec.blob.arrayBuffer()) : null;
+    }
+    if (!face.file) return null;
+    const resp = await fetch(face.file);
+    if (!resp.ok) return null;
+    return new Uint8Array(await resp.arrayBuffer());
+  } catch { return null; }
+}
+
 /** Drop the cached registry (and every decoded face) after an install/removal. */
 export function bustFontRegistry(): void {
   registryPromise = null;
@@ -391,7 +459,9 @@ export async function resolveVectorFont(style: FontStyleSlice, text: string): Pr
       // otherwise fall THROUGH to the registry (the shell-served SUSEMono woff2
       // discovered from fonts.css outlines fine once decompressed).
       const url = resolveSuseFontUrl({ ...style, fontFamily: family });
-      if (url && await fontUrlUsable(url)) return { url };
+      if (url && await fontUrlUsable(url)) {
+        return { url, face: { family, weight: style.fontWeight ?? '400', style: style.fontStyle ?? 'normal', source: 'catalog', file: url } };
+      }
     }
     const list = faces.get(key);
     if (!list?.length) return null;
@@ -406,6 +476,7 @@ export async function resolveVectorFont(style: FontStyleSlice, text: string): Pr
         url: primary!.fontUrl,
         ...(primary!.variations ? { variations: primary!.variations } : {}),
         ...(rest.length ? { fallbacks: rest } : {}),
+        face: describeFace(family, chain[0]!.face),
       };
     } catch {
       return null; // this family's bytes are unreadable - try the next family
