@@ -339,10 +339,11 @@ function brandChrome() {
   if (!profile) profile = 'suse';
   const isSuse = profile === 'suse';
   // Canonical host for the origin guard baked into index.html. index.html hardcodes
-  // the SUSE default ('lolly.tools'); a non-SUSE brand gets its own host here, and an
-  // unknown brand gets '' so the guard no-ops rather than force-redirecting somewhere
-  // wrong. (The lolly.art/start split folds into lolly.tools on 2026-08-29.)
-  const CANON_BY_PROFILE = { suse: 'lolly.tools', 'lolly-start': 'lolly.art' };
+  // the SUSE default ('lolly.tools'); an unknown brand gets '' so the guard no-ops
+  // rather than force-redirecting somewhere wrong. As of 2026-08-30 lolly-start also
+  // canonicalises to lolly.tools (the lolly.art/start split folded in), so lolly.tools
+  // no longer bounces and lolly.art redirects TO lolly.tools.
+  const CANON_BY_PROFILE = { suse: 'lolly.tools', 'lolly-start': 'lolly.tools' };
   return {
     name: 'lolly-brand-chrome',
     transformIndexHtml(html) {
