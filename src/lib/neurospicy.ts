@@ -194,6 +194,10 @@ function startAnalyserWatchdog(): void {
       lastWave = buf;
     }
   }, WATCHDOG_MS);
+  // In a browser setInterval returns a number and this is a no-op; under node (the test
+  // runner imports this module for real) it returns a Timeout whose open handle would
+  // hold the child process alive forever - a watchdog must never keep the lights on.
+  (watchdog as unknown as { unref?: () => void }).unref?.();
 }
 
 /** The analyser on the focus-loop graph, for a level meter. Null until audio starts. */

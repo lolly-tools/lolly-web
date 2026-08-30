@@ -1528,7 +1528,7 @@ button.fc-readout:empty { display: none; }
 .stage-nav.is-collapsed > :not(.profile-link) { display: none; }
 .stage-nav.is-collapsed { opacity: 1; padding: 3px; }
 /* A hint that the anchor holds more: a soft ring while collapsed. */
-.stage-nav.is-collapsed .profile-link { box-shadow: 0 0 0 2px hsl(var(--primary) / 0.35); }
+.stage-nav.is-collapsed .profile-link { box-shadow: var(--ring-focus-strong); }
 
 /* On touch the HUD is the primary zoom control; the canvas also keeps pinch/drag. */
 }
