@@ -132,19 +132,30 @@ export function installLinuxDesktopBoot(host: PickerHost, env?: Partial<LinuxDes
       }
     })
     .catch(() => {});
+  let handle: unknown;
   let draining = false;
+  let dead = false;
   const tick = (): void => {
-    if (draining) return; // a slow file read must not stack drains
+    if (draining || dead) return; // a slow file read must not stack drains
     draining = true;
     void invoke('desktop_poll_events')
       .then((raw) => routeEvents(raw, full))
-      .catch(() => {})
+      .catch((e: unknown) => {
+        // The MOBILE shells carry __TAURI_INTERNALS__ too, but not these
+        // commands - Tauri rejects an unregistered command by name. One such
+        // rejection means this whole surface is absent on this shell, so the
+        // loop retires itself instead of knocking every 1200ms forever.
+        if (/desktop_poll_events/.test(String((e as Error)?.message ?? e))) {
+          dead = true;
+          full.clearInterval!(handle);
+        }
+      })
       .finally(() => { draining = false; });
   };
   // Re-arm a remembered hot folder - the Rust watcher dies with the process.
   const saved = hotFolderPath();
   if (saved) void invoke('desktop_hotfolder_set', { path: saved }).catch(() => {});
-  const handle = full.setInterval!(tick, POLL_MS);
+  handle = full.setInterval!(tick, POLL_MS);
   tick();
   return () => full.clearInterval!(handle);
 }
