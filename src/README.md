@@ -5,20 +5,20 @@ This file exists so you can find the code for a feature without reading all of i
 The counts below are GENERATED - `npm run build:web-src-readme`, checked in CI by `npm run check:web-src-readme`, so they cannot rot the way the hand-measured ones did. They convey proportion; don't cite them as an API.
 
 <!-- web-src-dirs:start -->
-Roughly 427,000 lines of TypeScript, tests included, and 41,000 lines of CSS.
+Roughly 428,000 lines of TypeScript, tests included, and 41,000 lines of CSS.
 
 | Directory | Source | Tests | CSS |
 |---|---|---|---|
-| `views/` | 97 files, 103,287 lines | 93 files, 35,378 lines | none |
-| `lib/` | 362 files, 93,985 lines | 223 files, 48,153 lines | 7 files, 1,098 lines |
-| `bridge/` | 89 files, 40,425 lines | 72 files, 17,552 lines | none |
+| `views/` | 97 files, 103,346 lines | 94 files, 35,518 lines | none |
+| `lib/` | 363 files, 94,326 lines | 224 files, 48,346 lines | 7 files, 1,098 lines |
+| `bridge/` | 89 files, 40,574 lines | 72 files, 17,607 lines | none |
 | `components/` | 44 files, 19,647 lines | 25 files, 8,338 lines | 2 files, 221 lines |
 | `collab/` | 18 files, 12,959 lines | 20 files, 13,682 lines | none |
 | `pro/` | 20 files, 7,906 lines | 10 files, 1,666 lines | 2 files, 1,210 lines |
-| `org/` | 16 files, 5,604 lines | 12 files, 3,642 lines | none |
+| `org/` | 16 files, 5,619 lines | 12 files, 3,678 lines | none |
 | `catalog/` | 2 files, 785 lines | 1 file, 86 lines | none |
 | `ext/` | 2 files, 136 lines | 1 file, 86 lines | none |
-| `styles/` | none | 3 files, 761 lines | 75 files, 38,261 lines |
+| `styles/` | none | 3 files, 761 lines | 75 files, 38,273 lines |
 
 Plus 41 `.ts`/`.js` files at the top level of `src/`, 13,367 lines all told, of which 16 are tests and 3 are ambient declarations. `main.ts` is 1,941 of that.
 <!-- web-src-dirs:end -->
@@ -58,20 +58,20 @@ Do not be ambushed by these. The largest source files, by line count:
 <!-- web-src-largest:start -->
 | Lines | File | Direct test coverage |
 |---|---|---|
-| 11,247 | `bridge/export.ts` | yes, but mostly gated. `export-audio-bed.test.ts` imports `bedStartOffset` and `connectMusic` directly and always runs; the SVG and PDF emission is covered by ten `chromiumOrSkip()` suites (`export-m3`, `export-paint-order`, `export-stroke-paint`, `export-shadow-fidelity`, `export-pdf-shadow-fidelity`, `export-emf-eps-shadow`, `export-atomic-inline`, `export-backdrop-blur`, `export-form-controls`, `export-text-emission`) that esbuild-bundle the real `renderSvgFromHtml` and drive it in Chromium, and which **self-skip** when no Chromium is installed. `export-text-emission` is the newest and covers the `<path>`-vs-`<text>` decision layer specifically; unlike the SUSE-gated golden suite it is brand-independent, so it runs on `lolly-start` too. |
+| 11,267 | `bridge/export.ts` | yes, but mostly gated. `export-audio-bed.test.ts` imports `bedStartOffset` and `connectMusic` directly and always runs; the SVG and PDF emission is covered by ten `chromiumOrSkip()` suites (`export-m3`, `export-paint-order`, `export-stroke-paint`, `export-shadow-fidelity`, `export-pdf-shadow-fidelity`, `export-emf-eps-shadow`, `export-atomic-inline`, `export-backdrop-blur`, `export-form-controls`, `export-text-emission`) that esbuild-bundle the real `renderSvgFromHtml` and drive it in Chromium, and which **self-skip** when no Chromium is installed. `export-text-emission` is the newest and covers the `<path>`-vs-`<text>` decision layer specifically; unlike the SUSE-gated golden suite it is brand-independent, so it runs on `lolly-start` too. |
 | 10,989 | `views/free-canvas.ts` | yes, nine `free-canvas-*.test.ts` files |
 | 7,875 | `views/timeline-panel.ts` | yes |
 | 6,691 | `views/catalog.ts` | partial - the selection model (visibility, filetype filter, search, favourites dedupe, selectable ids, prune) is extracted to `catalog-filter.ts` and covered by `catalog-filter.test.ts`; the 3,000-line `mountCatalog` body around it is not. |
 | 5,161 | `lib/brand-editor.ts` | none |
-| 5,105 | `views/tool.ts` | partial - the undo/redo model (coalescing, the byte-carrying filter, the cap, the redo chain) is extracted to `tool-history.ts` and covered by `tool-history.test.ts`; the rest of `mountTool` is not. |
+| 5,112 | `views/tool.ts` | partial - the undo/redo model (coalescing, the byte-carrying filter, the cap, the redo chain) is extracted to `tool-history.ts` and covered by `tool-history.test.ts`; the rest of `mountTool` is not. |
 | 4,211 | `views/picker.ts` | partial - the format and embeddability rules are extracted to `picker-formats.ts` and covered by `picker-formats.test.ts`, plus `picker-initial-tab.test.ts`; the 3,000-line panel body is not. |
 | 3,986 | `views/tool-actions.ts` | yes |
-| 3,951 | `views/valid.ts` | `valid-verdict.test.ts` only |
+| 3,960 | `views/valid.ts` | `valid-verdict.test.ts` only |
 | 3,656 | `views/color-lab.ts` | yes |
-| 3,387 | `views/profile.ts` | none |
+| 3,391 | `views/profile.ts` | none |
+| 3,282 | `views/tool-inputs.ts` | none |
 | 3,281 | `views/projects.ts` | none |
 | 3,249 | `views/gallery.ts` | none |
-| 3,243 | `views/tool-inputs.ts` | none |
 | 2,929 | `views/start.ts` | yes |
 | 2,775 | `bridge/sequence-render.ts` | yes |
 | 2,675 | `views/deck-editor.ts` | yes |
