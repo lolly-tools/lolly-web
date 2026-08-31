@@ -88,7 +88,7 @@ function ensureRuntime(id: number): Promise<AsrPipeline> {
 
     // Model weights load from `${MODELS_BASE}/models/`. On the web build MODELS_BASE
     // is '' → '/models/' (same-origin, byte-identical to before); the desktop shell
-    // bakes VITE_MODELS_BASE=https://lolly.tools so it pulls the weights from there
+    // bakes VITE_MODELS_BASE=https://lolli.li so it pulls the weights from there
     // once, caches them, then runs offline. The privacy story is unchanged:
     // allowRemoteModels stays false (nothing hits the HF hub), and no audio ever
     // leaves the device - the only fetch is the static model file. The privacy

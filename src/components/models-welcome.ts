@@ -4,7 +4,7 @@
  *
  * The desktop shell ships a SMALL bundle: the ~1.7 GB of on-device ML models
  * (background removal, upscaling, OCR, TTS, …) are NOT embedded - they are
- * fetched on demand from the model host (VITE_MODELS_BASE = https://lolly.tools,
+ * fetched on demand from the model host (VITE_MODELS_BASE = https://lolli.li,
  * see lib/models-base.ts). So the very first thing a fresh desktop install
  * should offer is: pull the heavy image models down once, up front, so
  * background removal and upscaling work instantly (and offline) rather than
