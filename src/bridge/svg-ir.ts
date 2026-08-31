@@ -122,7 +122,7 @@ function pointsPath(str: string | null, close: boolean): string {
 /** A 2-D affine matrix [[a c e][b d f]] mapping user coords → group space:
  *  x' = a·x + c·y + e,  y' = b·x + d·y + f. Carried down the walk as the CTM.
  *  A full matrix (not a translate+scale accumulator) so rotation/skew survive. */
-interface Mat {
+export interface Mat {
   a: number; b: number; c: number; d: number; e: number; f: number;
 }
 const IDENTITY: Mat = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
@@ -144,7 +144,7 @@ function matMul(m: Mat, n: Mat): Mat {
 // the rotate(θ cx cy) pivot form - matrix, and skew are now honoured too, so
 // rotated text (angled axis labels, word-cloud verticals) and tilted groups
 // survive to EMF/WMF/EPS/DXF instead of flattening. Unknown functions are skipped.
-function parseTransformList(str: string): Mat {
+export function parseTransformList(str: string): Mat {
   let m = IDENTITY;
   const re = /(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)/gi;
   let hit: RegExpExecArray | null;
@@ -168,6 +168,25 @@ function parseTransformList(str: string): Mat {
     if (local) m = matMul(m, local);
   }
   return m;
+}
+
+/**
+ * Split an affine matrix into translate, rotation (degrees) and scale: the only form
+ * a sink that can just translate/scale/rotate (the PDF nested-SVG walker in export.ts)
+ * consumes. Exact for any non-skewing affine, as M = T(e,f) * R(theta) * S(sx,sy), with
+ * the rotation pivot at the local origin AFTER the translate. A mirror (negative x scale
+ * with no rotation) stays a negative scale instead of turning into a 180-degree rotation,
+ * so the sink's reflection-handedness rule keeps working.
+ * ponytail: skew is dropped (a translate/scale/rotate sink cannot draw it); give the
+ * PDF sink a full-matrix CTM if a skewed nested SVG is ever added to the audit fixtures.
+ */
+export function decomposeAffine(m: Mat): { tx: number; ty: number; sx: number; sy: number; rotDeg: number } {
+  let sx = Math.hypot(m.a, m.b);
+  if (sx === 0) return { tx: m.e, ty: m.f, sx: 0, sy: 0, rotDeg: 0 };
+  let rad = Math.atan2(m.b, m.a);
+  if (m.b === 0 && m.a < 0) { sx = -sx; rad = 0; }
+  const sy = (m.a * m.d - m.b * m.c) / sx;
+  return { tx: m.e, ty: m.f, sx, sy, rotDeg: rad * 180 / Math.PI };
 }
 
 // Compose an element's own `transform` onto the inherited CTM. Applies to

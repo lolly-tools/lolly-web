@@ -13,8 +13,9 @@ import assert from 'node:assert/strict';
 import {
   suseWeightName, suseFontFile, SUSE_FONT_DIR,
   resolveSuseFontUrl, canVectoriseText, textBaselineY,
-  featureSettingsToHb, letterSpacingPx,
+  featureSettingsToHb, letterSpacingPx, textStrokeAttrs,
 } from './text-svg.ts';
+import { parseCssColorFull } from './export-css.ts';
 import type { FontStyleSlice } from './text-svg.ts';
 
 test('suseWeightName snaps to the nearest defined weight', () => {
@@ -101,4 +102,23 @@ test('textBaselineY splits leading evenly above/below the font box', () => {
   assert.equal(textBaselineY(0, 20, 16, 4), 16);
   // Negative leading (line-height < font box) pulls the baseline up slightly.
   assert.equal(textBaselineY(0, 18, 16, 4), -1 + 16);
+});
+
+test('textStrokeAttrs: -webkit-text-stroke on HTML text wins, with paint-order and linejoin', () => {
+  const attrs = textStrokeAttrs({
+    webkitTextStrokeWidth: '2px', webkitTextStrokeColor: 'rgba(255, 0, 0, 0.5)',
+    paintOrder: 'stroke', strokeLinejoin: 'round', stroke: 'none', strokeWidth: '1px',
+  }, parseCssColorFull);
+  assert.deepEqual(attrs, [
+    ['stroke', 'rgb(255,0,0)'], ['stroke-width', '2px'], ['stroke-opacity', '0.5'],
+    ['paint-order', 'stroke'], ['stroke-linejoin', 'round'],
+  ]);
+});
+
+test('textStrokeAttrs: SVG stroke passes through when text-stroke is 0; nothing when both absent', () => {
+  assert.deepEqual(
+    textStrokeAttrs({ webkitTextStrokeWidth: '0px', stroke: 'rgb(0, 0, 255)', strokeWidth: '1px', paintOrder: 'normal', strokeLinejoin: 'miter' }, parseCssColorFull),
+    [['stroke', 'rgb(0,0,255)'], ['stroke-width', '1px']]);
+  assert.deepEqual(textStrokeAttrs({ webkitTextStrokeWidth: '0px', stroke: 'none' }, parseCssColorFull), []);
+  assert.deepEqual(textStrokeAttrs({}, parseCssColorFull), []);
 });

@@ -14,7 +14,8 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { svgDomToIr } from './svg-ir.ts';
+import { svgDomToIr, parseTransformList, decomposeAffine } from './svg-ir.ts';
+import type { Mat } from './svg-ir.ts';
 
 async function irFromSvg(inner: string): Promise<{ minX: number; minY: number; maxX: number; maxY: number }> {
   const { JSDOM } = await import('jsdom');
@@ -75,4 +76,38 @@ test('rotation composes through a parent <g> transform', async () => {
     `<g transform="translate(50,0)"><rect x="0" y="0" width="10" height="10" transform="rotate(90 0 0)" fill="#000"/></g>`);
   assert.ok(near(b.minX, 40) && near(b.maxX, 50) && near(b.minY, 0) && near(b.maxY, 10),
     `box ${JSON.stringify(b)} should be ~[40,0,50,10] (g translate ∘ child rotate)`);
+});
+
+// decomposeAffine feeds the PDF nested-SVG walker (export.ts), whose sink can only
+// translate/scale/rotate. It must be EXACT for every non-skew affine, so recompose
+// T(tx,ty)·R(θ)·S(sx,sy) and compare with the input; the pinned cases are the ones
+// the old three-regex reader got wrong (transform lists, matrix(), the pivot form).
+function recompose(d: ReturnType<typeof decomposeAffine>): Mat {
+  const r = d.rotDeg * Math.PI / 180, c = Math.cos(r), s = Math.sin(r);
+  return { a: d.sx * c, b: d.sx * s, c: -d.sy * s, d: d.sy * c, e: d.tx, f: d.ty };
+}
+function matNear(m: Mat, n: Mat, msg: string): void {
+  for (const k of ['a', 'b', 'c', 'd', 'e', 'f'] as const) assert.ok(Math.abs(m[k] - n[k]) < 1e-9, `${msg}: ${k} ${m[k]} vs ${n[k]}`);
+}
+
+test('decomposeAffine: translate+scale lists, rotate, matrix() and the pivot form round-trip exactly', () => {
+  for (const t of [
+    'translate(10 20) scale(2 3)', 'scale(2) translate(5,-4)', 'rotate(30)', 'rotate(-90)',
+    'translate(7 9) rotate(45)', 'rotate(60 50 50)', 'matrix(0 1 -1 0 5 6)',
+    'translate(3 4) rotate(20) scale(1.5 0.5)', 'scale(-1 1)', 'scale(-2 -3)',
+  ]) {
+    const m = parseTransformList(t);
+    matNear(recompose(decomposeAffine(m)), m, t);
+  }
+  const d = decomposeAffine(parseTransformList('translate(10 20) scale(2 3)'));
+  assert.deepEqual([d.tx, d.ty, d.sx, d.sy, d.rotDeg], [10, 20, 2, 3, 0]);
+  const r = decomposeAffine(parseTransformList('matrix(0 1 -1 0 5 6)'));
+  assert.ok(Math.abs(r.rotDeg - 90) < 1e-9 && Math.abs(r.sx - 1) < 1e-9 && Math.abs(r.sy - 1) < 1e-9 && r.tx === 5 && r.ty === 6);
+});
+
+test('decomposeAffine: a mirror stays a negative scale, not a 180° rotation', () => {
+  const m = decomposeAffine(parseTransformList('scale(-1 1)'));
+  assert.deepEqual([m.sx, m.sy, m.rotDeg], [-1, 1, 0]);
+  const z = decomposeAffine({ a: 0, b: 0, c: 0, d: 0, e: 1, f: 2 });
+  assert.deepEqual(z, { tx: 1, ty: 2, sx: 0, sy: 0, rotDeg: 0 });
 });

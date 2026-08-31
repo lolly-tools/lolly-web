@@ -35,13 +35,14 @@ import {
   suseFontFile, SUSE_FONT_DIR,
   canVectoriseText, textBaselineY,
   featureSettingsToHb, letterSpacingPx,
+  textStrokeAttrs,
 } from './text-svg.ts';
 import { resolveVectorFont } from './font-registry.ts';
 import { namespaceInlinedSvgIds } from './svg-inline-ids.ts';
 // The walkers' transform neutralise + re-entry guard (plans/104 section 9 P3.1).
 import { neutraliseTransform, newNeutraliseGuard } from './transform-neutralise.ts';
 import type { VectorFont } from './font-registry.ts';
-import { svgDomToIr } from './svg-ir.ts';
+import { svgDomToIr, parseTransformList, decomposeAffine } from './svg-ir.ts';
 import { placeBackground } from './bg-layout.ts';
 import { parseCssFilter, isDropShadowOnly, type FilterPrimitive } from './css-filter.ts';
 import { describeControl, controlText, isWidgetControl, rangeFraction, type ControlDesc } from './form-controls.ts';
@@ -4557,10 +4558,9 @@ async function emitInlineTextSvg(
       const col = parseCssColorFull(nodeStyle.color);
       const fillAttr  = col ? `rgb(${col[0]},${col[1]},${col[2]})` : null;
       const alphaAttr = col && col[3] < 1 ? String(col[3]) : null;
-      const strokeCol = parseCssColorFull(nodeStyle.stroke);
-      const strokeAttr = strokeCol ? `rgb(${strokeCol[0]},${strokeCol[1]},${strokeCol[2]})` : null;
-      const strokeOpacityAttr = strokeCol && strokeCol[3] < 1 ? String(strokeCol[3]) : null;
-      const strokeWidthAttr = nodeStyle.strokeWidth ? nodeStyle.strokeWidth : null;
+      // Text stroke: CSS -webkit-text-stroke on HTML text, or SVG stroke inside inline
+      // SVG, plus paint-order/linejoin so an outer stroke exports as painted.
+      const strokeAttrs = textStrokeAttrs(nodeStyle, parseCssColorFull);
       const fontSizePx = parseFloat(nodeStyle.fontSize) || 16;
       // SUSE statics, a user's Google font (decompressed on demand) or the
       // platform face - whichever the family stack resolves to first.
@@ -4639,10 +4639,7 @@ async function emitInlineTextSvg(
               p.setAttribute('transform', `translate(${n2(x)},${n2(by)})`);
               if (fillAttr)  p.setAttribute('fill', fillAttr);
               if (alphaAttr) p.setAttribute('fill-opacity', alphaAttr);
-              // Preserve text stroke in vector export
-              if (strokeAttr) p.setAttribute('stroke', strokeAttr);
-              if (strokeWidthAttr) p.setAttribute('stroke-width', strokeWidthAttr);
-              if (strokeOpacityAttr) p.setAttribute('stroke-opacity', strokeOpacityAttr);
+              for (const [k, v] of strokeAttrs) p.setAttribute(k, v);
               appendWithShadows(p);
               return;
             }
@@ -4663,10 +4660,7 @@ async function emitInlineTextSvg(
         }
         if (fillAttr)  t.setAttribute('fill',         fillAttr);
         if (alphaAttr) t.setAttribute('fill-opacity', alphaAttr);
-        // Preserve text stroke in fallback <text> element
-        if (strokeAttr) t.setAttribute('stroke', strokeAttr);
-        if (strokeWidthAttr) t.setAttribute('stroke-width', strokeWidthAttr);
-        if (strokeOpacityAttr) t.setAttribute('stroke-opacity', strokeOpacityAttr);
+        for (const [k, v] of strokeAttrs) t.setAttribute(k, v);
         t.textContent = lineText;
         appendWithShadows(t);
       };
@@ -5009,6 +5003,7 @@ async function svgPseudoContent(
     const fillAttr  = col ? `rgb(${col[0]},${col[1]},${col[2]})` : null;
     const alphaAttr = col && col[3] < 1 ? String(col[3]) : null;
     const lineH = parseFloat(ds.ps.lineHeight) || fontSizePx * 1.2;
+    const strokeAttrs = textStrokeAttrs(ds.ps, parseCssColorFull);
     let placed = false;
     if (vectorText && canVectoriseText(ds.ps, fontUrl, Boolean(_host?.text))) {
       try {
@@ -5021,6 +5016,7 @@ async function svgPseudoContent(
           p.setAttribute('transform', `translate(${n2(x)},${n2(by)})`);
           if (fillAttr)  p.setAttribute('fill', fillAttr);
           if (alphaAttr) p.setAttribute('fill-opacity', alphaAttr);
+          for (const [k, v] of strokeAttrs) p.setAttribute(k, v);
           parentG_.appendChild(p);
           placed = true;
         }
@@ -5037,6 +5033,7 @@ async function svgPseudoContent(
       t.setAttribute('font-family',       ds.ps.fontFamily);
       if (fillAttr)  t.setAttribute('fill',         fillAttr);
       if (alphaAttr) t.setAttribute('fill-opacity', alphaAttr);
+      for (const [k, v] of strokeAttrs) t.setAttribute(k, v);
       t.textContent = ds.text;
       parentG_.appendChild(t);
     }
@@ -6262,19 +6259,20 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
     // the parent (e.g. Design) exports PDF. Mirrors the EMF/EPS/DXF walker's
     // applyElementTransform (svg-ir.ts), which already maps per-leaf transforms.
     const tx0 = tx, ty0 = ty, sX0 = sX, sY0 = sY;
-    let rotDeg = 0, rotCx = 0, rotCy = 0;
+    let rotDeg = 0;
     {
       const t = el.getAttribute('transform') ?? '';
       if (t) {
-        const tm = t.match(/translate\(\s*([+-]?\d*\.?\d+)[,\s]\s*([+-]?\d*\.?\d+)\s*\)/) ??
-                   t.match(/translate\(\s*([+-]?\d*\.?\d+)\s*\)/);
-        const sm = t.match(/scale\(\s*([+-]?\d*\.?\d+)(?:[,\s]\s*([+-]?\d*\.?\d+))?\s*\)/);
-        const rm = t.match(/rotate\(\s*([+-]?\d*\.?\d+)(?:[,\s]+([+-]?\d*\.?\d+)[,\s]+([+-]?\d*\.?\d+))?\s*\)/);
-        // SVG order is translate-then-scale, so the local translate is taken in the
-        // PARENT's scale (sX0/sY0) and the scales multiply; rotation is applied last.
-        if (tm) { tx = tx0 + sX0 * parseFloat(tm[1]); ty = ty0 + sY0 * parseFloat(tm[2] ?? '0'); }
-        if (sm) { sX = sX0 * parseFloat(sm[1]); sY = sY0 * parseFloat(sm[2] ?? sm[1]); }
-        if (rm) { rotDeg = parseFloat(rm[1]); rotCx = rm[2] != null ? parseFloat(rm[2]) : 0; rotCy = rm[3] != null ? parseFloat(rm[3]) : 0; }
+        // The whole transform LIST (any order or multiplicity, matrix(), rotate(θ cx cy)),
+        // through the same parser the EMF/EPS/DXF walker uses, then split into the
+        // translate/scale/rotate this sink consumes. The local translate is taken in the
+        // PARENT's scale, the scales multiply, and the rotation pivots on the local origin
+        // after the translate, which is what a T·R·S decomposition yields. Skew is not
+        // representable here and is dropped (decomposeAffine).
+        const d = decomposeAffine(parseTransformList(t));
+        tx = tx0 + sX0 * d.tx; ty = ty0 + sY0 * d.ty;
+        sX = sX0 * d.sx; sY = sY0 * d.sy;
+        rotDeg = d.rotDeg;
       }
     }
 
@@ -6633,8 +6631,8 @@ async function drawSvgVectorsInRegion(pdf: any, svgEl: Element, ox: number, oy: 
       // Rotate pivot mapped to PDF pt through this element's composed diagonal
       // transform. A reflection (negative determinant, e.g. a scale(-1) mirror
       // ancestor) reverses rotation handedness, so negate to match the SVG.
-      const rotPx = ox + ((tx + sX * rotCx) - vbX) * sx;
-      const rotPy = oy + ((ty + sY * rotCy) - vbY) * sy;
+      const rotPx = ox + (tx - vbX) * sx;
+      const rotPy = oy + (ty - vbY) * sy;
       const deg = (sX * sY * sx * sy) < 0 ? -rotDeg : rotDeg;
       await withPdfRotation(pdf, deg, rotPx, rotPy, drawSelf);
     } else {
@@ -7901,11 +7899,28 @@ async function renderInlineContent(
                 // to pdf.text, which at least renders through an embedded/base font.
                 const { d, notdef } = await _host!.text!.toPath({ text: shown, fontUrl: fontUrl!, fontSize: fontSizePx, features: features as string[], letterSpacing, variations: vf!.variations, fallbackFonts: vf!.fallbacks });
                 if (d && !notdef) {
+                  const mapX = (sx: number) => x + sx * cssToPt;
+                  const mapY = (sy: number) => baselinePt + sy * cssToPt;
+                  // -webkit-text-stroke / SVG stroke on the outlined run: a centred stroke,
+                  // width CSS px -> pt. `paint-order: stroke` wants the stroke UNDER the fill,
+                  // which PDF's B operator (fill then stroke) cannot express, so the path is
+                  // issued twice in that one case. ponytail: stroke-opacity is not applied
+                  // here (fill and stroke would need separate alpha states); add withPdfAlpha
+                  // around the stroke pass if a translucent text stroke shows up in a fixture.
+                  const ts = textStrokeAttrs(nodeStyle, parseCssColorFull);
+                  const tsCol = ts.length ? parseCssColorFull(ts[0]![1]) : null;
+                  const under = ts.some(([k, v]) => k === 'paint-order' && v.indexOf('stroke') === 0);
+                  const lj = ts.find(([k]) => k === 'stroke-linejoin')?.[1];
                   pdf.setFillColor(textRgb[0], textRgb[1], textRgb[2]);
-                  drawSvgPathToPdf(pdf, d,
-                    (sx: number) => x + sx * cssToPt,
-                    (sy: number) => baselinePt + sy * cssToPt);
-                  pdf.fill();
+                  if (tsCol) {
+                    pdf.setDrawColor(tsCol[0], tsCol[1], tsCol[2]);
+                    pdf.setLineWidth(Math.max(0.1, parseFloat(ts.find(([k]) => k === 'stroke-width')?.[1] ?? '1') * cssToPt));
+                    if (lj) pdf.setLineJoin(lj);
+                  }
+                  if (tsCol && under) { drawSvgPathToPdf(pdf, d, mapX, mapY); pdf.stroke(); }
+                  drawSvgPathToPdf(pdf, d, mapX, mapY);
+                  if (tsCol && !under) pdf.fillStroke(); else pdf.fill();
+                  if (lj) pdf.setLineJoin('miter');
                   drawn = true;
                 }
               } catch (e) {

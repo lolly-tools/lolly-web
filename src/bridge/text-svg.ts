@@ -9,6 +9,45 @@
  * *where* to place the resulting baseline-relative path.
  */
 
+/** The slice of a computed style the text-stroke emission reads. */
+export interface TextStrokeSlice {
+  stroke?: string;
+  strokeWidth?: string;
+  strokeLinejoin?: string;
+  paintOrder?: string;
+  webkitTextStrokeWidth?: string;
+  webkitTextStrokeColor?: string;
+}
+
+/**
+ * SVG paint attributes for a text run's stroke, read off the computed style the
+ * caller already holds (no second getComputedStyle). CSS `-webkit-text-stroke` on
+ * HTML text wins when its width is > 0; otherwise the SVG `stroke` properties (text
+ * inside inline SVG) pass through. Both are centred strokes, which is SVG's own
+ * model, so no geometry changes hands. `paint-order` (Chromium applies it to HTML
+ * text since M123) and `stroke-linejoin` ride along, so an "outer stroke"
+ * (`paint-order: stroke`) and round joins export exactly as painted. The colour
+ * parser is injected to keep this module DOM-free and cycle-free. [] = no stroke.
+ */
+export function textStrokeAttrs(
+  style: TextStrokeSlice,
+  parseColor: (css: string | null | undefined) => readonly number[] | null,
+): Array<[string, string]> {
+  const tsw = parseFloat(style.webkitTextStrokeWidth ?? '');
+  let colorCss: string | undefined;
+  let width: string | null = null;
+  if (tsw > 0) { colorCss = style.webkitTextStrokeColor; width = `${tsw}px`; }
+  else if (style.stroke && style.stroke !== 'none') { colorCss = style.stroke; width = style.strokeWidth || null; }
+  const col = colorCss ? parseColor(colorCss) : null;
+  if (!col || (col[3] ?? 1) <= 0) return [];
+  const out: Array<[string, string]> = [['stroke', `rgb(${col[0]},${col[1]},${col[2]})`]];
+  if (width) out.push(['stroke-width', width]);
+  if ((col[3] ?? 1) < 1) out.push(['stroke-opacity', String(col[3])]);
+  if (style.paintOrder && style.paintOrder !== 'normal') out.push(['paint-order', style.paintOrder]);
+  if (style.strokeLinejoin && style.strokeLinejoin !== 'miter') out.push(['stroke-linejoin', style.strokeLinejoin]);
+  return out;
+}
+
 /** The slice of a computed style the font resolution reads. */
 export interface FontStyleSlice {
   fontFamily?: string;
