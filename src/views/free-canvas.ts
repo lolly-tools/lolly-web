@@ -359,11 +359,28 @@ interface HistoryApi {
   register(cb: (canUndo: boolean, canRedo: boolean) => void): void;
 }
 
+/**
+ * One-shot EDITOR state a link can carry (docs/url-mode.md "On a tool route"): the
+ * `_sel` / `_t` / `_panel` params, read once at mount. Editor state, never document
+ * state - nothing here is written back to the model, and syncUrl drops the params on
+ * the first edit. What it buys: a link that opens on a picture (a docs screenshot, a
+ * bug report, "look at this frame") without a script of clicks to get there.
+ */
+export interface DeepLinkState {
+  /** Box ids to select; unknown ids are ignored. */
+  select?: string[];
+  /** Playhead position in seconds - opens the timeline and parks the playhead there. */
+  playhead?: number;
+  /** A panel to open over the selection: `choreograph` today. */
+  panel?: string;
+}
+
 interface InitFreeCanvasOpts {
   viewEl: HTMLElement;
   stageEl: HTMLElement;
   canvasEl: HTMLElement;
   runtime: RuntimeApi;
+  deepLink?: DeepLinkState;
   host: HostApi;
   input: { id: string; canvas?: CanvasCfg; fields?: BlockFieldDef[] };
   nativeW: number;
@@ -1586,6 +1603,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // chunk fetch, no stage reserve, no listener.
   let timelinePanel: TimelinePanel | null = null;
   let timelineLoading = false;
+  /** The in-flight chunk load, so a second `ensureTimeline(true)` waits for the first. */
+  let timelineLoad: Promise<void> | null = null;
   let timelineWantOpen = false;
   let timelineBtn: HTMLButtonElement | null = null;
 
@@ -1751,8 +1770,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (open) maybePromptSequenceFrames(); else hideSeqPrompt();
       return;
     }
-    if (!open || timelineLoading) return;
+    if (!open) return;
+    // A caller that arrives while the chunk is in flight (the `_t` deep link, one tick
+    // after the mount-time auto-open) waits for THAT load rather than returning to a
+    // panel that does not exist yet.
+    if (timelineLoading) { await timelineLoad; return; }
     timelineLoading = true;
+    timelineLoad = (async () => {
     try {
       // Lazy for the picker.ts reason: timeline-panel.ts imports its own CSS chunk and
       // the sequence clock, so a static import would ship both to every editor tool.
@@ -1799,6 +1823,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       timelineLoading = false;
       syncTimelineBtn();
     }
+    })();
+    await timelineLoad;
   }
 
   /**
@@ -11188,6 +11214,48 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // A composition that already has timing opens with its timeline showing; an empty
   // (or untimed) one leaves the stage whole until the user asks for it from the rail.
   if (timeCfg && anyTimed(getBoxes())) { timelineAutoOpened = true; openTimeline(); }
+
+  // The link's one-shot editor state (`_sel`, `_t`, `_panel`). On a board with a
+  // timeline (already timed, or `_t` asks for one) everything waits for the lazy panel
+  // chunk: the panel's mount owns the selection adapter and the clock, so a selection
+  // made before it is up is not the one it shows, and a seek before it is up seeks
+  // nothing. Selection first, because the panel opens over it. All of it is dropped if
+  // the editor is torn down meanwhile.
+  {
+    const dl = opts.deepLink;
+    const wantSeek = !!dl && typeof dl.playhead === 'number' && Number.isFinite(dl.playhead) && !!timeCfg;
+    const applyLink = (): void => {
+      if (!dl || disposed) return;
+      if (dl.select?.length) {
+        const rows = getBoxes();
+        const known = new Set(rows.map((b, i) => idOf(b, i)));
+        const ids = dl.select.filter((id) => known.has(id));
+        if (ids.length) { selection = new Set(ids); renderChrome(); }
+      }
+      if (wantSeek) timelinePanel?.seek(Math.max(0, dl.playhead as number));
+      if (dl.panel === 'choreograph' && selection.size) {
+        // Anchor the picker just right of the selection, as a click on the More panel's
+        // row would - the panel clamps itself into the stage from there.
+        const rows = getBoxes();
+        const cr = canvasEl.getBoundingClientRect();
+        const k = cr.width / Math.max(1, canvasWH().w);
+        let right = 0, top = Number.POSITIVE_INFINITY;
+        for (const i of selIndices(rows)) {
+          const r = boxRect(rows[i], cfg);
+          right = Math.max(right, r.x + r.w);
+          top = Math.min(top, r.y);
+        }
+        lastMenuAt = { x: cr.left + right * k + 16, y: cr.top + (Number.isFinite(top) ? top : 0) * k };
+        askChoreograph();
+      }
+    };
+    if (dl && (wantSeek || timelineAutoOpened)) {
+      timelineAutoOpened = true;
+      void ensureTimeline(true).then(applyLink);
+    } else {
+      applyLink();
+    }
+  }
 
   // Universal drop front door (lib/drop-router.ts): a design file dropped on the
   // gallery/dashboard was stashed one-shot and is consumed here on mount, through

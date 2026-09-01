@@ -344,6 +344,11 @@ export interface TimelinePanel {
    * Pure: no writes, no DOM mutation, no announce.
    */
   keyframableIds(ids: readonly string[]): string[];
+  /**
+   * Park the playhead at an AUTHORED time in seconds - the `_t` deep link's door, and
+   * the same seek the ruler makes. A non-finite or negative time parks at 0.
+   */
+  seek(sec: number): void;
 }
 
 // ── tunables ──────────────────────────────────────────────────────────────────
@@ -8187,6 +8192,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   return {
     destroy, setOpen, isOpen: () => open, promote, demote, kfPoseIds, kfPoseWrite,
     cameraModeId, cameraWrite, cameraTiltPreview,
+    seek: (sec) => seekAuthored((Number.isFinite(sec) ? Math.max(0, sec) : 0) * 1000),
     addKeyframe: () => addKeyframeAction({ speak: true }),
     keyframableIds: (ids) => {
       const rows = getBoxes();

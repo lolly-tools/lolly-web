@@ -97,7 +97,7 @@ interface Fixture {
   destroy(): void;
 }
 
-function mount(seed: Box[], cfg: Record<string, unknown> = canvasCfg()): Fixture {
+function mount(seed: Box[], cfg: Record<string, unknown> = canvasCfg(), extra: Record<string, unknown> = {}): Fixture {
   const doc = dom.window.document;
   const viewEl = doc.createElement('div');
   const stageEl = doc.createElement('div');
@@ -132,6 +132,7 @@ function mount(seed: Box[], cfg: Record<string, unknown> = canvasCfg()): Fixture
     host: {} as never,
     input: { id: 'boxes', canvas: cfg as never, fields: [] },
     nativeW: NATIVE, nativeH: NATIVE,
+    ...extra,
   });
   return {
     stageEl, canvasEl,
@@ -357,4 +358,43 @@ test('the picker\'s showcase table still matches the generator\'s', () => {
   for (const s of CHOREO_SHOWCASES) {
     assert.ok(s.label && s.sub, `${s.id} has a name and a line of copy`);
   }
+});
+
+// ── the deep links (docs/url-mode.md "On a tool route": _sel / _t / _panel) ──────────
+
+test('a link can land on the picker: _sel selects the boxes and _panel=choreograph opens it over them', async () => {
+  const f = mount(STACK(), canvasCfg(), { deepLink: { select: ['a', 'b', 'nope'], panel: 'choreograph' } });
+  try {
+    const p = f.stageEl.querySelector<HTMLElement>('.fc-choreo-panel');
+    assert.ok(p, 'the picker is open at mount, with no click');
+    assert.match(p!.querySelector('.fc-num-hint')!.textContent || '', /^2 boxes\./, 'over the two known ids - the unknown one is ignored');
+    assert.equal(f.writes(), 0, 'landing on a picture writes nothing');
+  } finally { f.destroy(); }
+});
+
+test('_panel without a selection opens nothing, and _sel alone only selects', () => {
+  const none = mount(STACK(), canvasCfg(), { deepLink: { panel: 'choreograph' } });
+  try {
+    assert.equal(none.stageEl.querySelector('.fc-choreo-panel'), null, 'no selection, no picker');
+  } finally { none.destroy(); }
+  const sel = mount(STACK(), canvasCfg(), { deepLink: { select: ['b'] } });
+  try {
+    assert.equal(sel.stageEl.querySelector('.fc-choreo-panel'), null);
+    const pressed = Array.from(sel.canvasEl.querySelectorAll<HTMLElement>('.lolly-box[aria-pressed="true"]')).map((el) => el.dataset.boxId);
+    assert.deepEqual(pressed, ['b'], 'the selection is reflected onto the cards');
+    assert.equal(sel.writes(), 0);
+  } finally { sel.destroy(); }
+});
+
+test('_t opens the timeline and parks the playhead there', async () => {
+  const f = mount(STACK(), canvasCfg(), { deepLink: { playhead: 1.2 } });
+  try {
+    await settle();
+    await settle();
+    const ruler = f.stageEl.querySelector('.tl-ruler') ?? document.querySelector('.tl-ruler');
+    assert.ok(ruler, 'the lazy timeline chunk was fetched and mounted by the link alone');
+    const readout = Array.from(document.querySelectorAll<HTMLElement>('[class*="tl-"]')).map((e) => e.textContent || '').find((s) => /^\d:\d\d\.\d \/ \d:\d\d\.\d$/.test(s.trim()));
+    assert.ok(readout && readout.trim().startsWith('0:01.2'), `the transport reads the parked time, got ${JSON.stringify(readout)}`);
+    assert.equal(f.writes(), 0, 'parking the playhead is not an edit');
+  } finally { f.destroy(); }
 });

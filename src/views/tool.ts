@@ -3168,6 +3168,15 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         // Frame-primitive mode (plan 93 F1b): frame field names so the overlay renders
         // frame-local + re-buckets on drop. Absent unless the canvas declares frameField.
         frame: frameCfg,
+        // One-shot EDITOR state off the link (docs/url-mode.md "On a tool route"): which
+        // boxes are selected, where the playhead is parked, which panel is open. All in
+        // the `_` namespace the engine reserves outright (parseUrlState skips it), so
+        // none can ever shadow a tool input; syncUrl drops them on the first edit.
+        deepLink: {
+          select: (urlFlags.get('_sel') || '').split(',').map((s) => s.trim()).filter(Boolean),
+          playhead: urlFlags.has('_t') ? Number(urlFlags.get('_t')) : undefined,
+          panel: urlFlags.get('_panel') || undefined,
+        },
         // Document-info panel: read/write the export/save name, plus at-a-glance
         // details. Name binds to the export bar's filename field (the canonical
         // save name); last-edited reads the resumed session's timestamp if any.
