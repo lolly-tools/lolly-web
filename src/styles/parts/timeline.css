@@ -1378,3 +1378,20 @@ html[data-a11y-motion="reduce"] .tl-inspector.is-entering { animation-name: tl-i
 }
 
 }
+
+/* Stagger-starts card (plans/175 WP-C): one labelled gap input + apply, anchored at
+   the right-click point exactly like the context menu it opens from. */
+.tl-stagger-pop {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px 12px;
+}
+.tl-stagger-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: hsl(var(--muted-foreground));
+  font-size: var(--fs-xs);
+}
+.tl-stagger-label .tl-num { width: 9ch; }

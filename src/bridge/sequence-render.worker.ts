@@ -209,6 +209,22 @@ export interface SeqJobLayer {
   /** The authored geometry curves, carried verbatim - the planner is the validator. */
   enterEase: string;
   exitEase: string;
+  /**
+   * Split text animation (plans/175 WP-A), carried so the worker's own
+   * `sequenceDrawPlan` suppresses the whole-box transition on exactly the frames
+   * the main thread's does. `splitUnits`/`splitSeed` are DOM facts captured at
+   * parse (the worker has no element to count spans on). Absent from an older
+   * job they read as '' / 0 - not split, the pre-existing behaviour.
+   */
+  split?: SeqLayer['split'];
+  splitStaggerMs?: number;
+  splitOrder?: SeqLayer['splitOrder'];
+  splitUnits?: number;
+  splitSeed?: number;
+  /** Hold effect (plans/175 WP-B) - carried so the worker's planner composes the
+   *  same looping pose the main thread's does. Absent from an older job = still. */
+  hold?: SeqLayer['hold'];
+  holdRate?: number;
   lane: SeqLayer['lane'];
   kind: SeqLayer['kind'];
   rect: { x: number; y: number; w: number; h: number; rot: number };
@@ -280,6 +296,9 @@ export function toJobLayer(
     idx: L.idx, startMs: L.startMs, durMs: L.durMs, clipInMs: L.clipInMs, speed: L.speed,
     mute: L.mute, ignored: L.ignored, gain: L.gain, enter: L.enter, enterMs: L.enterMs, exit: L.exit, exitMs: L.exitMs,
     enterEase: L.enterEase, exitEase: L.exitEase,
+    split: L.split, splitStaggerMs: L.splitStaggerMs, splitOrder: L.splitOrder,
+    splitUnits: L.splitUnits, splitSeed: L.splitSeed,
+    hold: L.hold, holdRate: L.holdRate,
     lane: L.lane, kind: L.kind,
     rect: { x: L.rect.x, y: L.rect.y, w: L.rect.w, h: L.rect.h, rot: L.rect.rot },
     opacity: L.opacity, blend: L.blend, radius: L.radius, clipPath: L.clipPath,
@@ -310,6 +329,10 @@ export function hydrateJobLayer(w: SeqJobLayer): SeqLayer {
     idx: w.idx, startMs: w.startMs, durMs: w.durMs, clipInMs: w.clipInMs, speed: w.speed,
     mute: w.mute, ignored: !!w.ignored, gain: Number.isFinite(w.gain as number) ? (w.gain as number) : 1, enter: w.enter, enterMs: w.enterMs, exit: w.exit, exitMs: w.exitMs,
     enterEase: w.enterEase || '', exitEase: w.exitEase || '',
+    split: w.split || '', splitStaggerMs: Number.isFinite(w.splitStaggerMs as number) ? (w.splitStaggerMs as number) : 0,
+    splitOrder: w.splitOrder || '', splitUnits: Number.isFinite(w.splitUnits as number) ? (w.splitUnits as number) : 0,
+    splitSeed: Number.isFinite(w.splitSeed as number) ? (w.splitSeed as number) : 0,
+    hold: w.hold || '', holdRate: Number.isFinite(w.holdRate as number) ? (w.holdRate as number) : 1,
     lane: w.lane, kind: w.kind, rect: { ...w.rect }, opacity: w.opacity, blend: w.blend,
     radius: w.radius, clipPath: w.clipPath, openEnded: w.openEnded,
     frameScene: w.frameScene ?? false,

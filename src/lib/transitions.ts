@@ -242,3 +242,202 @@ function recTransition(kind: string, p: number, w: number, h: number, ease?: unk
 }
 
 export { easeOutCubic, easeOutBack, recTransition, geometryEase };
+
+/* ── Split text animation (plans/175 WP-A) ───────────────────────────────────
+   A text box whose `split` field names a tier animates its enter/exit PER UNIT
+   (word, authored line, or letter) instead of as one block: each unit runs the
+   box's own transition kind for the box's own enterMs/exitMs, offset by its
+   rank × stagger. The maths lives here - beside the transition vocabulary it
+   composes with - because three evaluators consume it (the DOM applier, the
+   export planner via the live-raster tier, and the worker through the wire)
+   and they must agree to the millisecond.
+
+   Like the kind keys and the ease strings, the tier and order values are wire
+   contracts: add members, never rename or reuse one. */
+
+/** The split tiers, in the order the inspector offers them. '' (whole text) is the absence. */
+export const SPLIT_TIERS = Object.freeze({
+  word: 'Word',
+  line: 'Line',
+  letter: 'Letter',
+} as const);
+
+export type SplitTier = keyof typeof SPLIT_TIERS;
+
+export function isSplitTier(v: unknown): v is SplitTier {
+  return typeof v === 'string' && Object.prototype.hasOwnProperty.call(SPLIT_TIERS, v);
+}
+
+/** Unit orderings. '' - the default - is first-to-last. */
+export const SPLIT_ORDERS = Object.freeze({
+  '': 'First to last',
+  reverse: 'Last to first',
+  center: 'From the centre',
+  random: 'Random',
+} as const);
+
+export type SplitOrder = keyof typeof SPLIT_ORDERS;
+
+export function isSplitOrder(v: unknown): v is SplitOrder {
+  return typeof v === 'string' && Object.prototype.hasOwnProperty.call(SPLIT_ORDERS, v);
+}
+
+/** Wire clamp on the per-unit gap - matches the manifest field's max. */
+export const MAX_SPLIT_STAGGER_MS = 2000;
+
+/**
+ * The most units one box may animate. The hook stops wrapping past this count
+ * (the remainder of the text becomes one final unit), so a pasted novel cannot
+ * schedule ten thousand spans - the untrusted-input posture, applied to markup.
+ * Mirrored as a literal in design/hooks.js (tool data imports nothing).
+ */
+export const MAX_SPLIT_UNITS = 240;
+
+/**
+ * Deterministic seed for the `random` order - FNV-1a over the box's id string,
+ * folded with the unit count so an edited text reshuffles. Both DOM evaluators
+ * hash the SAME `data-box-id`; the worker receives the result on the wire.
+ * Never Math.random: preview, export and CLI must deal the same shuffle.
+ */
+export function splitSeedOf(boxId: string, n: number): number {
+  let h = 0x811c9dc5;
+  const s = String(boxId ?? '');
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h ^ n) >>> 0;
+}
+
+/** mulberry32 - tiny, seeded, good enough to shuffle a caption. */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Each unit's delay RANK (0..n-1) in DOM order: unit i starts `ranks[i] × stagger`
+ * into the phase. Pure function of (order, n, seed) so every evaluator deals the
+ * same permutation; callers may cache the array per box.
+ */
+export function splitRanks(order: SplitOrder | string, n: number, seed = 0): number[] {
+  const count = Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  const ranks = new Array<number>(count);
+  if (count === 0) return ranks;
+  if (order === 'reverse') {
+    for (let i = 0; i < count; i++) ranks[i] = count - 1 - i;
+  } else if (order === 'center') {
+    // Units nearest the centre lead; ties break toward the earlier unit.
+    const byCloseness = Array.from({ length: count }, (_, i) => i)
+      .sort((a, b) => Math.abs(a - (count - 1) / 2) - Math.abs(b - (count - 1) / 2) || a - b);
+    byCloseness.forEach((unit, rank) => { ranks[unit] = rank; });
+  } else if (order === 'random') {
+    const perm = Array.from({ length: count }, (_, i) => i);
+    const rnd = mulberry32(seed);
+    for (let i = count - 1; i > 0; i--) {
+      const j = Math.floor(rnd() * (i + 1));
+      const t = perm[i] as number; perm[i] = perm[j] as number; perm[j] = t;
+    }
+    perm.forEach((unit, rank) => { ranks[unit] = rank; });
+  } else {
+    for (let i = 0; i < count; i++) ranks[i] = i;
+  }
+  return ranks;
+}
+
+/**
+ * How long a split phase runs, ms: the stagger span plus one unit's own
+ * animation. `phaseMs` is 0 when the phase has no authored kind - the cut-in
+ * case, where each unit simply appears at its offset (typewriter).
+ */
+export function splitPhaseWindowMs(staggerMs: number, n: number, phaseMs: number): number {
+  const stag = clampNum(staggerMs, 0, MAX_SPLIT_STAGGER_MS);
+  const units = Number.isFinite(n) && n > 1 ? Math.floor(n) : 1;
+  const phase = Number.isFinite(phaseMs) && phaseMs > 0 ? phaseMs : 0;
+  return stag * (units - 1) + phase;
+}
+
+/**
+ * One unit's progress toward rest during a phase. `localMs` is time into the
+ * phase window (enter: t − start; exit: end − t, both in box-local ms), `rank`
+ * the unit's dealt delay rank. 0 = fully out, 1 = at rest - recTransition's own
+ * convention. A zero `phaseMs` is a step: out until the unit's offset passes.
+ */
+export function splitUnitP(localMs: number, rank: number, staggerMs: number, phaseMs: number): number {
+  const at = localMs - rank * clampNum(staggerMs, 0, MAX_SPLIT_STAGGER_MS);
+  if (!(phaseMs > 0)) return at > 0 ? 1 : 0;
+  return clampNum(at / phaseMs, 0, 1);
+}
+
+function clampNum(v: number, lo: number, hi: number): number {
+  return Number.isFinite(v) ? (v < lo ? lo : v > hi ? hi : v) : lo;
+}
+
+/* ── Hold effects (plans/175 WP-B) ────────────────────────────────────────────
+   The third bucket every benchmarked tool ships beside In and Out - CapCut calls
+   it Loop, PowerPoint Emphasis, animate.css "attention seekers": a small looping
+   motion while the box is ON screen. A deterministic sinusoid of box-local time,
+   composed with the transition offset (`withHold`) in BOTH evaluators, so preview
+   and export read identical numbers - no RNG, no keyframes, no plate re-shots
+   (the compositor's per-frame transform animates a static plate).
+
+   Every pose is AT REST at t = 0 and periodic, so a hold is continuous with the
+   enter it follows whatever the timing. Amplitudes are fixed house values - the
+   one authored knob is the RATE, exactly as the plan scoped it. Like the kinds
+   and tiers above, the names are wire contracts: add members, never rename. */
+
+/** The hold kinds, in the order the inspector offers them. '' (none) is the absence. */
+export const HOLD_FX = Object.freeze({
+  pulse: 'Pulse',
+  bob: 'Bob',
+  sway: 'Sway',
+  flicker: 'Flicker',
+} as const);
+
+export type HoldFx = keyof typeof HOLD_FX;
+
+export function isHoldFx(v: unknown): v is HoldFx {
+  return typeof v === 'string' && Object.prototype.hasOwnProperty.call(HOLD_FX, v);
+}
+
+/** Rate clamps, cycles per second. Sub-0.2 reads as stuck; past 4 reads as a bug. */
+export const MIN_HOLD_RATE = 0.2;
+export const MAX_HOLD_RATE = 4;
+export const DEFAULT_HOLD_RATE = 1;
+
+/**
+ * One box's hold pose at `localMs` into its life. recTransition's own offset
+ * convention ({dx, dy, sc, alpha, rot}), so the two compose without adapters.
+ */
+export function holdPose(kind: HoldFx | string, localMs: number, rateHz: number, w: number, h: number): TransitionOffset {
+  const f = clampNum(rateHz, MIN_HOLD_RATE, MAX_HOLD_RATE);
+  const t = (Number.isFinite(localMs) ? Math.max(0, localMs) : 0) / 1000;
+  const wave = Math.sin(2 * Math.PI * f * t);
+  switch (kind) {
+    case 'pulse': return { dx: 0, dy: 0, sc: 1 + 0.04 * wave, alpha: 1, rot: 0 };
+    // Drift scales with the box so a small sticker bobs a small way (the
+    // recTransition distance rule), with a floor so a tiny chip still moves.
+    case 'bob': return { dx: 0, dy: (Math.max(0, h) * 0.02 + 4) * wave, sc: 1, alpha: 1, rot: 0 };
+    case 'sway': return { dx: 0, dy: 0, sc: 1, alpha: 1, rot: 2.5 * wave };
+    // |sin(π·f·t)| keeps the period at 1/f and the dips shallow (0.7 floor) -
+    // a fast shimmer, never a slow alpha ramp that muddies under video compression.
+    case 'flicker': return { dx: 0, dy: 0, sc: 1, alpha: 1 - 0.3 * Math.abs(Math.sin(Math.PI * f * t)), rot: 0 };
+    default: return { dx: 0, dy: 0, sc: 1, alpha: 1, rot: 0 };
+  }
+}
+
+/** Compose a transition offset with a hold pose: displacements add, factors multiply. */
+export function withHold(off: TransitionOffset, hold: TransitionOffset): TransitionOffset {
+  return {
+    dx: off.dx + hold.dx,
+    dy: off.dy + hold.dy,
+    sc: off.sc * hold.sc,
+    alpha: clampNum(off.alpha * hold.alpha, 0, 1),
+    rot: off.rot + hold.rot,
+  };
+}

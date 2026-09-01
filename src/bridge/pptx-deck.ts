@@ -29,7 +29,7 @@
  * DOM-breakout hole in the tool's OWN render, so it is mandatory on the emit side.
  */
 import { EMU_PER_PX, MAX_TABLE_COLS, MAX_TABLE_ROWS } from "../../../../engine/src/pptx.ts";
-import type { PptxFill, PptxPara, PptxRun, PptxShape, PptxTable, PptxTableCell, PptxLine, PptxPic, PptxTheme, PptxPhType, PptxPlaceholder } from "../../../../engine/src/pptx.ts";
+import type { PptxAnim, PptxEffect, PptxFill, PptxPara, PptxRun, PptxShape, PptxTable, PptxTableCell, PptxLine, PptxPic, PptxTheme, PptxPhType, PptxPlaceholder } from "../../../../engine/src/pptx.ts";
 
 export type DeckBox = { x: number; y: number; cx: number; cy: number };
 
@@ -178,16 +178,134 @@ export function deckPlaceholder(p: unknown): PptxPlaceholder | null {
   return out;
 }
 
+// ── native animation (plans/175 WP-E) ─────────────────────────────────────────
+//
+// Maps Lolly's animation vocabulary (the design tool's enter/exit kinds + split
+// text fields, carried raw on a deck element's `anim`) onto the engine's SUPPORTED
+// OOXML subset. Everything Lolly can say that PowerPoint cannot degrades to the
+// nearest listed preset with a note pushed into `notes` - one logged substitution
+// line, never a silent difference, never a refusal of the export.
+
+const ANIM_KIND_MAP: Record<string, { preset: PptxEffect['preset']; dir?: PptxEffect['dir']; note?: string }> = {
+  fade: { preset: 'fade' },
+  pop: { preset: 'zoom', note: 'pop → Zoom' },
+  grow: { preset: 'zoom', note: 'grow → Zoom' },
+  rise: { preset: 'fly', dir: 'b', note: 'rise → Fly In from bottom' },
+  drop: { preset: 'fly', dir: 't', note: 'drop → Fly In from top' },
+  'slide-left': { preset: 'fly', dir: 'r' },
+  'slide-right': { preset: 'fly', dir: 'l' },
+  'slide-up': { preset: 'fly', dir: 'b' },
+  'slide-down': { preset: 'fly', dir: 't' },
+  'zoom-in': { preset: 'zoom' },
+  'zoom-out': { preset: 'zoomOut' },
+  tilt: { preset: 'fly', dir: 'b', note: 'tilt → Fly In from bottom' },
+  swoop: { preset: 'fly', dir: 'r', note: 'swoop → Fly In from right' },
+  spin: { preset: 'zoom', note: 'spin → Zoom' },
+  drift: { preset: 'fade', note: 'drift → Fade' },
+};
+
+// Named easing → (accel, decel) in 1000ths of a percent of the duration. The default -
+// unauthored, or a custom bezier PPTX cannot carry - is the ease-out every kind was
+// born with (lib/transitions.ts easeOutCubic).
+const EASE_TO_ACCEL: Record<string, readonly [number, number]> = {
+  linear: [0, 0],
+  'ease-out': [0, 80000],
+  'ease-in': [80000, 0],
+  'ease-in-out': [50000, 50000],
+  smooth: [50000, 50000],
+  snappy: [30000, 10000],
+  overshoot: [0, 60000],
+  anticipate: [30000, 30000],
+};
+const DEFAULT_EASE: readonly [number, number] = [0, 80000];
+
+const finiteMs = (v: unknown, lo: number, hi: number, d: number): number => {
+  const n = typeof v === 'number' && Number.isFinite(v) ? v : d;
+  return Math.max(lo, Math.min(hi, Math.round(n)));
+};
+
+/**
+ * One deck element's `anim` (untrusted tool JSON, Lolly vocabulary) → the engine's
+ * PptxAnim, or undefined when nothing animates. Degrades are pushed into `notes`.
+ */
+export function deckAnim(v: unknown, notes?: string[]): PptxAnim | undefined {
+  if (!v || typeof v !== 'object') return undefined;
+  const a = v as Record<string, unknown>;
+  const note = (s: string): void => { if (notes && !notes.includes(s)) notes.push(s); };
+
+  // Split text: letter/word ride OOXML's own iterate; line has no per-line iterate on
+  // a single-paragraph text box (our deck text is one paragraph by construction).
+  let by: 'letter' | 'word' | '' = a.split === 'letter' || a.split === 'word' ? a.split : '';
+  if (a.split === 'line') { by = 'word'; note('split by line → by word (PPTX iterates letters or words)'); }
+  const order = typeof a.order === 'string' ? a.order : '';
+  if (order === 'center' || order === 'random') note(`text order ${order} → first-to-last (no OOXML form)`);
+  // The hold/loop bucket (plans/175 WP-B) has no OOXML form at all - the shape
+  // exports still, and the export log says why it is not moving.
+  if (typeof a.hold === 'string' && a.hold) note(`hold effect ${a.hold} → not exported (no PowerPoint form)`);
+  const iterate: PptxEffect['iterate'] = by
+    ? { by, staggerMs: finiteMs(a.stagger, 1, 2000, 60), ...(order === 'reverse' ? { backwards: true } : {}) }
+    : undefined;
+
+  const click = finiteMs(a.click, 0, 999, 0);
+
+  const effect = (kindRaw: unknown, msRaw: unknown, easeRaw: unknown, delayRaw: unknown, entering: boolean): PptxEffect | undefined => {
+    const kind = typeof kindRaw === 'string' ? kindRaw : '';
+    let mapped = Object.prototype.hasOwnProperty.call(ANIM_KIND_MAP, kind) ? ANIM_KIND_MAP[kind] : undefined;
+    if (!mapped) {
+      // 'none' (the Cut) is an effect worth exporting only when something needs a
+      // trigger to hang off: split units (the typewriter) or a click build (a
+      // fragment must Appear on its click). A bare cut with neither is no animation.
+      if (!entering || (!iterate && click < 1)) return undefined;
+      if (kind !== '' && kind !== 'none') return undefined; // junk kind - not an effect
+      mapped = { preset: 'appear' };
+    }
+    if (mapped.note) note(mapped.note);
+    const ease = typeof easeRaw === 'string' && Object.prototype.hasOwnProperty.call(EASE_TO_ACCEL, easeRaw)
+      ? EASE_TO_ACCEL[easeRaw] as readonly [number, number] : DEFAULT_EASE;
+    const fx: PptxEffect = {
+      preset: mapped.preset,
+      ms: finiteMs(msRaw, 100, 3000, 400),
+      delayMs: finiteMs(delayRaw, 0, 600_000, 0),
+    };
+    if (mapped.dir) fx.dir = mapped.dir;
+    if (iterate) fx.iterate = iterate;
+    if (mapped.preset !== 'appear') {
+      if (ease[0] > 0) fx.accel = ease[0];
+      if (ease[1] > 0) fx.decel = ease[1];
+    }
+    return fx;
+  };
+
+  const enter = effect(a.enter, a.enterMs, a.enterEase, a.delayMs, true);
+  // Exits are exported ONLY with a derived delay (the hook computes one from a timed
+  // box's own end). An exit firing at t=0 would hide content the moment it appeared.
+  const exit = a.exitDelayMs != null && typeof a.exitDelayMs === 'number' && Number.isFinite(a.exitDelayMs)
+    ? effect(a.exit, a.exitMs, a.exitEase, a.exitDelayMs, false)
+    : (typeof a.exit === 'string' && a.exit && a.exit !== 'none'
+      ? (note('exit without timing → not exported (needs a timed box)'), undefined)
+      : undefined);
+
+  if (!enter && !exit) return undefined;
+  const out: PptxAnim = {};
+  if (enter) out.enter = enter;
+  if (exit) out.exit = exit;
+  if (click > 0) out.click = click;
+  return out;
+}
+
 // The synchronous shapes (rect / text / table). Returns null for 'image' (the caller
-// resolves those async) and for any unknown/malformed element.
-export function deckSyncShape(el: Record<string, unknown>): PptxShape | null {
+// resolves those async) and for any unknown/malformed element. `animNotes`, when
+// given, collects the animation mapping's degrade notes (plans/175 WP-E).
+export function deckSyncShape(el: Record<string, unknown>, animNotes?: string[]): PptxShape | null {
   if (!el || typeof el !== 'object') return null;
   const box = deckBox(el);
+  const anim = deckAnim(el.anim, animNotes);
+  const withAnim = <T extends PptxShape>(s: T): T => (anim ? { ...s, anim } : s);
   switch (el.t) {
     case 'rect':
-      return { kind: 'rect', ...box, fill: deckFill(el.fill), line: deckLine(el.line), radius: el.radius != null ? emuOf(el.radius) : undefined };
+      return withAnim({ kind: 'rect', ...box, fill: deckFill(el.fill), line: deckLine(el.line), radius: el.radius != null ? emuOf(el.radius) : undefined });
     case 'text':
-      return { kind: 'text', ...box, anchor: oneOf(el.anchor, ['t', 'ctr', 'b'] as const), paras: (Array.isArray(el.paras) ? el.paras : []).map(deckPara), ph: deckPh(el.ph) };
+      return withAnim({ kind: 'text', ...box, anchor: oneOf(el.anchor, ['t', 'ctr', 'b'] as const), paras: (Array.isArray(el.paras) ? el.paras : []).map(deckPara), ph: deckPh(el.ph) });
     case 'table': {
       // Cap rows/cols at the engine's own limits (the engine slices too, but doing it
       // here avoids building a huge intermediate - a 5000×200 table is 1e6 cell objects).
@@ -196,7 +314,7 @@ export function deckSyncShape(el: Record<string, unknown>): PptxShape | null {
         h: row?.h != null ? emuOf(row.h) : undefined,
         cells: (Array.isArray(row?.cells) ? row.cells : []).slice(0, MAX_TABLE_COLS).map(deckCell),
       }));
-      return { kind: 'table', ...box, cols, rows, firstRow: asBool(el.firstRow) } as PptxTable;
+      return withAnim({ kind: 'table', ...box, cols, rows, firstRow: asBool(el.firstRow) } as PptxTable);
     }
     default:
       return null; // 'image' → caller; unknown → dropped

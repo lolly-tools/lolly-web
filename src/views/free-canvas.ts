@@ -233,6 +233,12 @@ interface CanvasCfg {
   /** OPTIONAL time sub-fields: the authored geometry curve for each preset. Absent
    *  leaves every preset on its built-in curve, so they sit outside that same check. */
   enterEaseField?: string; exitEaseField?: string;
+  /** OPTIONAL, same terms (plans/175 WP-A): split-text animation - tier, unit gap
+   *  (ms) and dealt order. Absent means no text-animation rows anywhere. */
+  splitField?: string; staggerField?: string; splitOrderField?: string;
+  /** OPTIONAL, same terms (plans/175 WP-B): the while-on-screen hold effect and
+   *  its rate. Absent means no hold rows anywhere. */
+  holdField?: string; holdRateField?: string;
   /** OPTIONAL, same terms: the box's KEYFRAME TRACK (plans/104 section 5.1). Absent means the
    *  tool is not keyframable - and, in `timeline-math`, that a split/trim/join has no
    *  track to rebase. */
@@ -1212,6 +1218,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // no ease sub-fields keeps every preset on its built-in curve.
       enterEaseField: cv.enterEaseField || '',
       exitEaseField: cv.exitEaseField || '',
+      // Same again: split-text animation (plans/175 WP-A) - a manifest without the
+      // three sub-fields simply never grows the "Animate text by" rows.
+      splitField: cv.splitField || '',
+      staggerField: cv.staggerField || '',
+      splitOrderField: cv.splitOrderField || '',
+      holdField: cv.holdField || '',
+      holdRateField: cv.holdRateField || '',
+      textField: cv.textField || '',
       // Same again: a shared group collapses overlays onto one panel lane row
       // (generated captions), and a tool without a group field never groups.
       groupField: cv.groupField || '',

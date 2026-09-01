@@ -65,7 +65,12 @@
  * A document with no `data-t-z` and no `data-t-kf` never reaches any of it.
  */
 
-import { recTransition, isTransitionKind, type TransitionKind } from '../lib/transitions.ts';
+import {
+  recTransition, isTransitionKind, isSplitTier, isSplitOrder, splitRanks, splitSeedOf,
+  splitPhaseWindowMs, splitUnitP, MAX_SPLIT_STAGGER_MS,
+  holdPose, isHoldFx, withHold, DEFAULT_HOLD_RATE, MIN_HOLD_RATE, MAX_HOLD_RATE,
+  type TransitionKind, type SplitTier, type SplitOrder, type HoldFx,
+} from '../lib/transitions.ts';
 // The clamps are the bridge-side declarations in sequence-plan.ts (themselves
 // mirroring the tool hook + timeline-math). Importing them rather than restating
 // them is the point of this module existing - and the same goes for the depth
@@ -108,6 +113,23 @@ export interface Timing {
    */
   enterEase: string;
   exitEase: string;
+  /**
+   * Split text animation (plans/175 WP-A): the tier the enter/exit runs per unit at
+   * ('' = whole box, the pre-existing behaviour), the start-to-start gap between
+   * units, and the order units are dealt in. Only ever non-empty on a box whose hook
+   * stamped `data-t-split`, which it does for timed text boxes alone.
+   */
+  split: SplitTier | '';
+  stagger: number;
+  splitOrder: SplitOrder;
+  /**
+   * Hold effect (plans/175 WP-B): a small looping motion while the box is on
+   * screen ('' = still, the pre-existing behaviour) and its rate in cycles/sec.
+   * Composed with the transition offset via `withHold` - the same fold the
+   * planner applies, so preview and export read identical numbers.
+   */
+  hold: HoldFx | '';
+  holdRate: number;
   /** True when the box declared `data-t-mute="1"` (its audio stays silent). */
   mute: boolean;
   /**
@@ -172,6 +194,20 @@ export function readTiming(el: Element): Timing {
     exitMs: clamp(attrNum(el, 'data-t-exit-ms', 400), MIN_TRANSITION_MS, MAX_TRANSITION_MS),
     enterEase: el.getAttribute('data-t-enter-ease') || '',
     exitEase: el.getAttribute('data-t-exit-ease') || '',
+    split: ((): SplitTier | '' => {
+      const v = el.getAttribute('data-t-split');
+      return isSplitTier(v) ? v : '';
+    })(),
+    stagger: clamp(attrNum(el, 'data-t-stagger', 60), 0, MAX_SPLIT_STAGGER_MS),
+    splitOrder: ((): SplitOrder => {
+      const v = el.getAttribute('data-t-split-order');
+      return isSplitOrder(v) && v !== '' ? v : '';
+    })(),
+    hold: ((): HoldFx | '' => {
+      const v = el.getAttribute('data-t-hold');
+      return isHoldFx(v) ? v : '';
+    })(),
+    holdRate: clamp(attrNum(el, 'data-t-hold-rate', DEFAULT_HOLD_RATE), MIN_HOLD_RATE, MAX_HOLD_RATE),
     mute: el.getAttribute('data-t-mute') === '1',
     ignored: el.getAttribute('data-t-ignored') === '1',
     gain: clamp(attrNum(el, 'data-t-gain', 1), 0, 2),
@@ -247,6 +283,138 @@ export function transitionAt(timing: Timing, tMs: number, seqMs: number): Transi
   return enterP <= exitP
     ? { kind: timing.enter as TransitionKind, p: enterP, ease: timing.enterEase }
     : { kind: timing.exit as TransitionKind, p: exitP, ease: timing.exitEase };
+}
+
+// ── split text units (plans/175 WP-A) ───────────────────────────────────────
+//
+// A box whose hook stamped `data-t-split` animates its enter/exit PER UNIT - the
+// `.lly-u` spans the hook wrapped its text in - instead of as one block. The box
+// itself stays at rest (the apply loop suppresses its whole-box transition); each
+// unit runs the box's own kind for the box's own enterMs/exitMs, offset by its
+// dealt rank × stagger. All the arithmetic is lib/transitions.ts's split helpers,
+// shared verbatim with the export planner, so preview, export and worker agree.
+//
+// A null enter kind is the CUT tier: each unit simply appears at its offset -
+// split + stagger + "Cut (no animation)" IS the typewriter.
+
+interface SplitUnitsRec {
+  /** Invalidation key: order|stagger-independent - ranks depend on order and n only. */
+  key: string;
+  spans: HTMLElement[];
+  ranks: number[];
+  /** Each unit's untransformed layout box, measured once (recTransition's w/h). */
+  sizes: { w: number; h: number }[];
+}
+
+const SPLIT_UNITS = new WeakMap<Element, SplitUnitsRec>();
+/** Boxes whose unit spans currently carry our transform/opacity writes. */
+const SPLIT_DIRTY = new WeakSet<Element>();
+
+function splitUnitsOf(el: HTMLElement, timing: Timing): SplitUnitsRec | null {
+  const spans = el.querySelectorAll?.('.lly-u');
+  const n = spans ? spans.length : 0;
+  // One unit animates exactly like the whole box - fall back to the block path.
+  if (n < 2) return null;
+  const key = `${timing.splitOrder}|${n}`;
+  let rec = SPLIT_UNITS.get(el);
+  if (!rec || rec.key !== key || rec.spans.length !== n || rec.spans[0] !== spans[0]) {
+    const list = Array.from(spans) as HTMLElement[];
+    rec = {
+      key,
+      spans: list,
+      ranks: splitRanks(timing.splitOrder, n,
+        splitSeedOf(el.getAttribute?.('data-box-id') ?? '', n)),
+      sizes: list.map((s) => ({
+        w: s.offsetWidth || 0,
+        h: s.offsetHeight || 0,
+      })),
+    };
+    SPLIT_UNITS.set(el, rec);
+  }
+  return rec;
+}
+
+/** Remove every unit-span write this module made under `el`. Cheap when it made none. */
+export function clearSplitUnits(el: Element): void {
+  if (!SPLIT_DIRTY.has(el)) return;
+  SPLIT_DIRTY.delete(el);
+  const rec = SPLIT_UNITS.get(el);
+  const spans = rec ? rec.spans : Array.from(el.querySelectorAll?.('.lly-u') ?? []) as HTMLElement[];
+  for (const s of spans) {
+    s.style.removeProperty('transform');
+    s.style.removeProperty('opacity');
+  }
+}
+
+/**
+ * Drive one split box's unit spans at `tMs`. Returns 'animating' while a phase
+ * window is open, 'rest' when every unit is at rest (writes cleared), and null
+ * when the box carries no usable units - the caller then falls back to the
+ * whole-box transition exactly as if no tier were authored.
+ */
+export function applySplitUnits(el: HTMLElement, timing: Timing, tMs: number, seqMs: number): 'animating' | 'rest' | null {
+  const units = splitUnitsOf(el, timing);
+  if (!units) return null;
+  const n = units.spans.length;
+  const local = tMs - timing.start;
+  const endLocal = endOf(timing, seqMs) - timing.start;
+  const enterPhaseMs = timing.enter && timing.enter !== 'none' ? timing.enterMs : 0;
+  const enterWin = timing.stagger > 0 || enterPhaseMs > 0
+    ? splitPhaseWindowMs(timing.stagger, n, enterPhaseMs) : 0;
+  // Exits only apply to a bounded box (transitionAt's own rule).
+  const exitKind = timing.exit && timing.exit !== 'none' && timing.dur != null ? timing.exit : null;
+  const exitWin = exitKind ? splitPhaseWindowMs(timing.stagger, n, timing.exitMs) : 0;
+  const entering = local < enterWin;
+  const exiting = exitWin > 0 && endLocal - local < exitWin;
+  if (!entering && !exiting) {
+    clearSplitUnits(el);
+    return 'rest';
+  }
+  const localIntoExit = local - (endLocal - exitWin);
+  for (let i = 0; i < n; i++) {
+    const rank = units.ranks[i] as number;
+    const size = units.sizes[i] as { w: number; h: number };
+    // Progress toward rest for each phase this unit is inside; the one further
+    // from rest wins, mirroring transitionAt on the whole box.
+    const pEnter = entering ? splitUnitP(local, rank, timing.stagger, enterPhaseMs) : 1;
+    const pExit = exiting ? 1 - splitUnitP(localIntoExit, rank, timing.stagger, timing.exitMs) : 1;
+    const p = Math.min(pEnter, pExit);
+    const kind = pEnter <= pExit ? timing.enter : exitKind;
+    const ease = pEnter <= pExit ? timing.enterEase : timing.exitEase;
+    const span = units.spans[i] as HTMLElement;
+    if (p >= 1) {
+      span.style.removeProperty('transform');
+      span.style.removeProperty('opacity');
+      continue;
+    }
+    if (!kind || kind === 'none') {
+      // The cut tier: out until the unit's offset passes, then simply there.
+      span.style.removeProperty('transform');
+      span.style.opacity = p > 0 ? '1' : '0';
+      continue;
+    }
+    const off = recTransition(kind, p, size.w, size.h, ease);
+    const parts: string[] = [];
+    if (off.dx || off.dy) parts.push(`translate(${n3(off.dx)}px, ${n3(off.dy)}px)`);
+    if (off.rot) parts.push(`rotate(${n3(off.rot)}deg)`);
+    if (off.sc !== 1) parts.push(`scale(${n3(off.sc)})`);
+    if (parts.length) span.style.transform = parts.join(' ');
+    else span.style.removeProperty('transform');
+    span.style.opacity = String(Math.round(clamp(off.alpha, 0, 1) * 10000) / 10000);
+  }
+  SPLIT_DIRTY.add(el);
+  return 'animating';
+}
+
+/**
+ * The render-side entry (the live-raster tier): read the box's own attributes and
+ * drive its units at `tMs`. Returns applySplitUnits' answer so the caller can key
+ * its plate memo on "animating" vs "at rest".
+ */
+export function applySplitAt(el: HTMLElement, tMs: number, seqMs: number): 'animating' | 'rest' | null {
+  const timing = readTiming(el);
+  if (!timing.split) return null;
+  return applySplitUnits(el, timing, tMs, seqMs);
 }
 
 // ── style composition (pure) ────────────────────────────────────────────────
@@ -530,6 +698,9 @@ export function createAuthoredStore(): AuthoredStore {
     // down for an export (see `withAuthoredDom`) cannot leave an editor drawing chrome
     // at a pose the DOM no longer holds.
     LIVE_POSE.delete(el);
+    // The unit spans come clean with the box (plans/175): a plate photographed
+    // through `withAuthoredDom` must show the text at rest, not mid-typewriter.
+    clearSplitUnits(el);
   };
   return {
     get(el) {
@@ -1020,7 +1191,22 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
     // An audio bed and a camera marker are timeline citizens with no picture: no
     // transition, no projection, no style write of any kind (section 5.4).
     const silent = rec.audio || rec.camera;
-    const tr = active && !silent ? transitionAt(timing, tMs, ctx.seqMs) : null;
+    // Split text (plans/175 WP-A): the units carry the transition, the box stays at
+    // rest - so a non-null split state suppresses the whole-box transition below.
+    // No usable units (a single word, a rebuilt DOM) → null → the block path, exactly
+    // as if no tier were authored.
+    let splitState: 'animating' | 'rest' | null = null;
+    if (timing.split && !silent) {
+      if (active) splitState = applySplitUnits(el, timing, tMs, ctx.seqMs);
+      else clearSplitUnits(el);
+    }
+    const tr = active && !silent && splitState === null ? transitionAt(timing, tMs, ctx.seqMs) : null;
+    // Hold effect (plans/175 WP-B): a looping pose of box-local time, composed with
+    // the transition offset below. Whole-box always - a split box's units carry the
+    // enter/exit while the box itself pulses, on both evaluators identically.
+    const hold = active && !silent && timing.hold
+      ? holdPose(timing.hold, tMs - timing.start, timing.holdRate, rec.w, rec.h)
+      : null;
     // The section 5.4 exclusions, asked through the SAME predicate the planner asks - an
     // audio bed, a camera marker, and a `[data-pdf-page]` frame page (which keeps its
     // ordinary transitions, but v1's camera and keyframes reach only boxes on a
@@ -1042,8 +1228,9 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
     // rank (see `Authored.plane` and the rank pass below).
     const projecting = view !== null && active && projectable
       && (moving || timing.z !== 0 || timing.kf.length > 0);
-    if (tr || projecting) {
-      const off = tr ? recTransition(tr.kind, tr.p, rec.w, rec.h, tr.ease) : REST_TRANSITION;
+    if (tr || projecting || hold) {
+      const off0 = tr ? recTransition(tr.kind, tr.p, rec.w, rec.h, tr.ease) : REST_TRANSITION;
+      const off = hold ? withHold(off0, hold) : off0;
       // ONE fold, shared with the canvas planner - see foldKfPose. `t` is the
       // sequence clock; a keyframe track runs on LOCAL box time, unscaled (section 5.1).
       const fold = projecting && view

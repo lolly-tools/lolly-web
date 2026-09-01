@@ -58,7 +58,11 @@ import {
   escXml, n3, parseSvgRoot, rectBody, stillTilePx, svgDoc, tileBody, waveformPathD,
   type VectorTwin, type VectorTwinCanvas,
 } from '../lib/vector-paint.ts';
-import { TRANSITIONS, TRANSITION_KINDS, DEFAULT_TRANSITION, isTransitionKind, EASINGS, easingToWire } from '../lib/transitions.ts';
+import {
+  TRANSITIONS, TRANSITION_KINDS, DEFAULT_TRANSITION, isTransitionKind, EASINGS, easingToWire,
+  SPLIT_TIERS, SPLIT_ORDERS, isSplitTier, isSplitOrder, MAX_SPLIT_STAGGER_MS,
+  HOLD_FX, isHoldFx, MIN_HOLD_RATE, MAX_HOLD_RATE,
+} from '../lib/transitions.ts';
 // The keyframe wire's own vocabulary. The panel does EDITING GLUE only - every keyframe
 // NUMBER comes from the engine module or from timeline-math's kf* primitives, and what
 // is imported here is exactly the vocabulary a control has to speak to offer a choice:
@@ -82,7 +86,7 @@ import {
   onionNeighbours,
   dropIndexAt, moveOverlay, moveSeqClip, packSeq, removeAndRipple, rippleOverlays, seqBoxes,
   // Marquee/multi-drag batch movers (plans/54 timeline; drag-select + move-many).
-  groupDropIndex, moveOverlays, moveSeqClips,
+  groupDropIndex, moveOverlays, moveSeqClips, staggerOverlays,
   setClipIn, setDuration, setSpeed,
   detachAudio, isThroughEdit, joinClips, reattachAudio, restackOverlay, splitAll,
   snapTime, trimClip,
@@ -2454,11 +2458,70 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (onionMenu.isOpen()) onionMenu.close(true); else onionMenu.open();
   });
 
+  // ── stagger starts (plans/175 WP-C - Jitter's right-click Stagger) ──────────
+  //
+  // One small anchored card: a gap in ms, Enter/Stagger applies. The maths is
+  // timeline-math's staggerOverlays - this card is a door, never an implementation.
+
+  /** The selection members a Stagger can act on: timed OVERLAY boxes (a seq clip's
+   *  start is pack-derived, so the magnetic row is never dealt). */
+  function staggerableIds(rows: Box[], ids: readonly string[]): string[] {
+    return ids.filter((id) => {
+      const i = indexOfId(rows, cfg, id);
+      return i >= 0 && isTimed(rows[i]!, cfg) && boxTiming(rows[i]!, cfg).lane !== 'seq';
+    });
+  }
+
+  const staggerPoint = pointAnchor();
+  let staggerIds: string[] = [];
+  let lastStaggerMs = 200;
+  const staggerPop = mountBodyPopover(staggerPoint, (el) => {
+    el.textContent = '';
+    const label = document.createElement('label');
+    label.className = 'tl-stagger-label';
+    const caption = document.createElement('span');
+    caption.textContent = t('Gap between starts (ms)');
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.className = 'field-input tl-num';
+    input.min = '0';
+    input.step = '50';
+    input.value = String(lastStaggerMs);
+    label.append(caption, input);
+    const apply = document.createElement('button');
+    apply.type = 'button';
+    apply.className = 'btn tl-stagger-apply';
+    apply.textContent = t('Stagger');
+    const go = (): void => {
+      const ms = Math.max(0, Math.round(finite(input.value, lastStaggerMs)));
+      lastStaggerMs = ms;
+      write(staggerOverlays(getBoxes(), cfg, staggerIds, ms / 1000));
+      staggerPop.close();
+    };
+    apply.addEventListener('click', go);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+    el.append(label, apply);
+    return input;
+  }, { className: 'folder-menu tl-menu tl-stagger-pop', ariaLabel: t('Stagger starts'), position: menuPosition });
+
+  function openStaggerPop(ids: string[]): void {
+    staggerIds = ids;
+    staggerPoint.x = ctxPoint.x;
+    staggerPoint.y = ctxPoint.y;
+    staggerPoint.delegate = ctxPoint.delegate;
+    staggerPop.close();
+    staggerPop.open();
+  }
+
   // ── the bar / chip context menu ─────────────────────────────────────────────
 
   /** A virtual anchor at the right-click point; `delegate` carries the keyboard route. */
   const ctxPoint = pointAnchor();
   let ctxId = '';
+  /** Non-null while the menu is acting on a KEPT multi-selection (plans/175 WP-C):
+   *  the staggerable members, decided once in openCtxMenu so the open decision and
+   *  the render can never disagree. */
+  let ctxMulti: string[] | null = null;
 
   const ctxMenu = mountBodyPopover(ctxPoint, (el, pop) => {
     const rows = getBoxes();
@@ -2475,6 +2538,15 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const timed = isTimed(rows[i]!, cfg);
     el.textContent = '';
     const act = (fn: () => void) => () => { pop.close(); fn(); };
+    // A KEPT multi-selection (plans/175 WP-C) gets the selection-wide actions and
+    // nothing else: mixing per-box rows in would act on one bar while several stay
+    // painted selected - the exact state the collapse rule below exists to prevent.
+    if (ctxMulti && ctxMulti.length >= 2) {
+      const n = ctxMulti.length;
+      el.appendChild(menuItem(t('Stagger starts…'), 'layers', act(() => openStaggerPop(ctxMulti ?? [])),
+        { sub: t('Deals the {n} selected clips an even gap, each starting after the one before.', { n: String(n) }) }));
+      return el.querySelector<HTMLElement>('.folder-menu-item');
+    }
     if (timed) {
       // Exactly the writers that already exist - the context menu is a second DOOR onto
       // them, never a second implementation (see promote/demote above).
@@ -2540,19 +2612,28 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * contextMenuAt does the same), so whatever the menu acts on is also what the
    * inspector and the canvas chrome are showing.
    *
-   * The selection COLLAPSES to the clicked box, even when it was already part of a
-   * multi-selection: every item in this menu is per-box and acts on `ctxId` alone, so
-   * leaving three bars painted as selected while "Make always on" demotes one of them
-   * shows the user a state that never existed - and the next act is an undo of
-   * something they did not think they did. Free-canvas's sibling menu resolves the
-   * same tension the other way (it disables per-box items on a multi-selection); here
-   * collapsing is better, because the box under the pointer is unambiguous.
+   * The selection COLLAPSES to the clicked box when it was already part of a
+   * multi-selection the menu cannot act on as one: the per-box items act on `ctxId`
+   * alone, so leaving three bars painted as selected while "Make always on" demotes
+   * one of them shows the user a state that never existed - and the next act is an
+   * undo of something they did not think they did. Free-canvas's sibling menu
+   * resolves the same tension the other way (it disables per-box items on a
+   * multi-selection); here collapsing is better, because the box under the pointer
+   * is unambiguous. The ONE exception (plans/175 WP-C): a selection of two or more
+   * staggerable overlays is kept, and the menu offers only the selection-wide
+   * actions - the painted bars and the acted-on set stay the same set.
    */
   function openCtxMenu(id: string, x: number, y: number, delegate: HTMLElement | null): void {
     if (!id || indexOfId(getBoxes(), cfg, id) < 0) return;
     ctxId = id;
     const sel = selection.get();
-    if (sel.length !== 1 || sel[0] !== id) selectAndReveal([id]);
+    // ONE exception to the collapse (plans/175 WP-C): a multi-selection that
+    // contains the clicked box AND can act as one (two or more staggerable
+    // overlays) is kept, and the menu offers the selection-wide actions instead
+    // of the per-box ones. Everything else collapses, for the reason above.
+    const multi = sel.length >= 2 && sel.includes(id) ? staggerableIds(getBoxes(), sel) : [];
+    ctxMulti = multi.length >= 2 ? multi : null;
+    if (!ctxMulti && (sel.length !== 1 || sel[0] !== id)) selectAndReveal([id]);
     if (bars.has(id)) { focusedId = id; updateRovingTabindex(); }
     ctxPoint.x = x;
     ctxPoint.y = y;
@@ -4188,7 +4269,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // did: the pose row shows the box's depth wherever no keyframe overrides it (section 5.2),
     // so a depth edit made anywhere else must repaint this row or it prints a stale
     // number. `mute` is what flips the speaker toggle's glyph and `aria-pressed`.
-    const key = box ? `${id}|${JSON.stringify([box[cfg.startField], box[cfg.durField], box[cfg.clipInField], box[cfg.speedField], box[cfg.enterField], box[cfg.exitField], box[cfg.enterMsField], box[cfg.exitMsField], box[cfg.muteField], cfg.enterEaseField ? box[cfg.enterEaseField] : '', cfg.exitEaseField ? box[cfg.exitEaseField] : '', cfg.kfField ? box[cfg.kfField] : '', cfg.zField ? box[cfg.zField] : '', cfg.linkField ? box[cfg.linkField] : '', box.kind, cfg.gainField ? box[cfg.gainField] : ''])}` : '';
+    const key = box ? `${id}|${JSON.stringify([box[cfg.startField], box[cfg.durField], box[cfg.clipInField], box[cfg.speedField], box[cfg.enterField], box[cfg.exitField], box[cfg.enterMsField], box[cfg.exitMsField], box[cfg.muteField], cfg.enterEaseField ? box[cfg.enterEaseField] : '', cfg.exitEaseField ? box[cfg.exitEaseField] : '', cfg.kfField ? box[cfg.kfField] : '', cfg.zField ? box[cfg.zField] : '', cfg.linkField ? box[cfg.linkField] : '', box.kind, cfg.gainField ? box[cfg.gainField] : '', cfg.splitField ? box[cfg.splitField] : '', cfg.staggerField ? box[cfg.staggerField] : '', cfg.splitOrderField ? box[cfg.splitOrderField] : '', cfg.holdField ? box[cfg.holdField] : '', cfg.holdRateField ? box[cfg.holdRateField] : ''])}` : '';
     if (key === inspectorKey) return;
     inspectorKey = key;
     inspectorId = id;
@@ -4465,6 +4546,79 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       animG.body.appendChild(row(t('Animate out'), kindSelect(box[cfg.exitField], (v) => write(patchBox(getBoxes(), id, { [cfg.exitField]: v })))));
       animG.body.appendChild(row(t('Out (ms)'), numField(finite(box[cfg.exitMsField], 400), 50, 100, (v) => write(patchBox(getBoxes(), id, { [cfg.exitMsField]: Math.round(clamp(v, MIN_TRANSITION_MS, MAX_TRANSITION_MS)) })))));
       if (cfg.exitEaseField) animG.body.appendChild(row(t('Out curve'), easeSelect(cfg.exitEaseField, box[cfg.exitEaseField])));
+      // ── Split text (plans/175 WP-A): tier × stagger × order over the presets above ──
+      // Manifest-gated like the ease rows, and only on a box that actually holds text.
+      // '' (whole text) is the absence: an untouched box writes nothing, and the
+      // stagger/order rows only appear once a tier is chosen (disclosure, not clutter).
+      if (cfg.splitField && cfg.staggerField && cfg.textField
+        && String(box[cfg.textField] ?? '').trim() !== '' && String(box.kind ?? '') !== 'frame') {
+        const enumSelect = (
+          entries: readonly (readonly [string, string])[], cur: string, onCommit: (v: string) => void,
+        ): HTMLSelectElement => {
+          const el = document.createElement('select');
+          el.className = 'field-select tl-select';
+          for (const [v, label] of entries) {
+            const o = document.createElement('option');
+            o.value = v;
+            o.textContent = label;
+            el.appendChild(o);
+          }
+          el.value = cur;
+          el.addEventListener('change', () => onCommit(el.value));
+          return el;
+        };
+        const tierRaw = String(box[cfg.splitField] ?? '');
+        const tier = isSplitTier(tierRaw) ? tierRaw : '';
+        animG.body.appendChild(row(t('Animate text by'), enumSelect(
+          [['', t('Whole text')], ...Object.entries(SPLIT_TIERS).map(([v, label]) => [v, t(label)] as const)],
+          tier,
+          (v) => write(patchBox(getBoxes(), id, { [cfg.splitField as string]: v })),
+        )));
+        if (tier) {
+          animG.body.appendChild(row(t('Stagger (ms)'), numField(finite(box[cfg.staggerField], 60), 10, 0, (v) =>
+            write(patchBox(getBoxes(), id, { [cfg.staggerField as string]: Math.round(clamp(v, 0, MAX_SPLIT_STAGGER_MS)) })))));
+          if (cfg.splitOrderField) {
+            const ordRaw = String(box[cfg.splitOrderField] ?? '');
+            animG.body.appendChild(row(t('Text order'), enumSelect(
+              Object.entries(SPLIT_ORDERS).map(([v, label]) => [v, t(label)] as const),
+              isSplitOrder(ordRaw) ? ordRaw : '',
+              (v) => write(patchBox(getBoxes(), id, { [cfg.splitOrderField as string]: v })),
+            )));
+          }
+        }
+      }
+      // ── Hold effect (plans/175 WP-B): the Loop/Emphasis bucket beside In/Out ──
+      // Manifest-gated like every optional row; any box kind can pulse - a CTA
+      // sticker is the same feature as a heading. Frames are excluded, exactly as
+      // the hook excludes them from the attribute.
+      if (cfg.holdField && cfg.holdRateField && String(box.kind ?? '') !== 'frame') {
+        const enumSelect = (
+          entries: readonly (readonly [string, string])[], cur: string, onCommit: (v: string) => void,
+        ): HTMLSelectElement => {
+          const el = document.createElement('select');
+          el.className = 'field-select tl-select';
+          for (const [v, label] of entries) {
+            const o = document.createElement('option');
+            o.value = v;
+            o.textContent = label;
+            el.appendChild(o);
+          }
+          el.value = cur;
+          el.addEventListener('change', () => onCommit(el.value));
+          return el;
+        };
+        const holdRaw = String(box[cfg.holdField] ?? '');
+        const holdCur = isHoldFx(holdRaw) ? holdRaw : '';
+        animG.body.appendChild(row(t('While on screen'), enumSelect(
+          [['', t('Still')], ...Object.entries(HOLD_FX).map(([v, label]) => [v, t(label)] as const)],
+          holdCur,
+          (v) => write(patchBox(getBoxes(), id, { [cfg.holdField as string]: v })),
+        )));
+        if (holdCur) {
+          animG.body.appendChild(row(t('Hold speed (cycles/sec)'), numField(finite(box[cfg.holdRateField], 1), 0.1, MIN_HOLD_RATE, (v) =>
+            write(patchBox(getBoxes(), id, { [cfg.holdRateField as string]: Math.round(clamp(v, MIN_HOLD_RATE, MAX_HOLD_RATE) * 100) / 100 })))));
+        }
+      }
       animG.setSummary(animateSummary(box[cfg.enterField], box[cfg.exitField]));
       // A rebuild mints a new <select>, so an editor that is still open is anchored to a
       // detached node - its focus restore on Escape would land nowhere. Re-point the

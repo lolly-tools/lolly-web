@@ -6,6 +6,9 @@ import {
   isTransitionKind, transitionLabel,
   easeOutCubic, easeOutBack, recTransition,
   EASINGS, easingPoints, easingToWire, cubicBezierAt,
+  SPLIT_TIERS, SPLIT_ORDERS, isSplitTier, isSplitOrder,
+  splitRanks, splitSeedOf, splitPhaseWindowMs, splitUnitP, MAX_SPLIT_STAGGER_MS,
+  HOLD_FX, isHoldFx, holdPose, withHold, MIN_HOLD_RATE, MAX_HOLD_RATE,
 } from './transitions.ts';
 
 const W = 320, H = 180;
@@ -231,4 +234,97 @@ test('the wire format round-trips and canonicalises', () => {
   assert.equal(easingToWire('ease-out'), 'ease-out', 'a preset stays its own name');
   assert.equal(easingToWire('cubic-bezier( 0.1 , 0.2 , 0.3 , 0.4 )'), 'cubic-bezier(0.1,0.2,0.3,0.4)');
   assert.equal(easingToWire('nonsense'), '', 'unparseable means unauthored, not an exception');
+});
+
+// ── split text animation (plans/175 WP-A) ────────────────────────────────────
+
+test('the split vocabulary is prototype-safe and rejects junk', () => {
+  assert.deepEqual(Object.keys(SPLIT_TIERS), ['word', 'line', 'letter']);
+  assert.deepEqual(Object.keys(SPLIT_ORDERS), ['', 'reverse', 'center', 'random']);
+  assert.ok(isSplitTier('letter'));
+  assert.ok(!isSplitTier('constructor'), 'inherited keys are not tiers');
+  assert.ok(!isSplitTier(''));
+  assert.ok(isSplitOrder(''));
+  assert.ok(!isSplitOrder('toString'));
+});
+
+test('splitRanks deals every order as a permutation, deterministically', () => {
+  assert.deepEqual(splitRanks('', 4), [0, 1, 2, 3]);
+  assert.deepEqual(splitRanks('reverse', 4), [3, 2, 1, 0]);
+  // From the centre of 5 units (centre index 2): 2 leads, ties break earlier-first.
+  assert.deepEqual(splitRanks('center', 5), [3, 1, 0, 2, 4]);
+  const seed = splitSeedOf('box-7', 6);
+  const a = splitRanks('random', 6, seed);
+  const b = splitRanks('random', 6, seed);
+  assert.deepEqual(a, b, 'the same seed deals the same shuffle - preview, export and CLI agree');
+  assert.deepEqual([...a].sort((x, y) => x - y), [0, 1, 2, 3, 4, 5], 'still a permutation');
+  assert.notDeepEqual(splitRanks('random', 6, splitSeedOf('box-8', 6)), a,
+    'a different box deals a different shuffle (with overwhelming likelihood)');
+});
+
+test('splitPhaseWindowMs: stagger span plus one unit, clamped against junk', () => {
+  assert.equal(splitPhaseWindowMs(100, 5, 400), 800);
+  assert.equal(splitPhaseWindowMs(100, 1, 400), 400, 'one unit has no stagger span');
+  assert.equal(splitPhaseWindowMs(0, 5, 0), 0, 'no gap, no kind - no window');
+  assert.equal(splitPhaseWindowMs(1e9, 3, 0), MAX_SPLIT_STAGGER_MS * 2, 'the wire ceiling holds');
+  assert.equal(splitPhaseWindowMs(Number.NaN, 3, Number.NaN), 0);
+});
+
+test('splitUnitP: a ramp offset by rank, and a hard step when the phase has no kind', () => {
+  // rank 2 at 100ms gap: its 400ms ramp runs over [200, 600].
+  assert.equal(splitUnitP(200, 2, 100, 400), 0);
+  assert.equal(splitUnitP(400, 2, 100, 400), 0.5);
+  assert.equal(splitUnitP(600, 2, 100, 400), 1);
+  assert.equal(splitUnitP(0, 0, 100, 400), 0);
+  // The cut tier (phaseMs 0): out until the offset passes, then simply there.
+  assert.equal(splitUnitP(199, 2, 100, 0), 0);
+  assert.equal(splitUnitP(201, 2, 100, 0), 1);
+});
+
+// ── hold effects (plans/175 WP-B) ────────────────────────────────────────────
+
+test('every hold kind is AT REST at t = 0 and periodic at its rate', () => {
+  for (const kind of Object.keys(HOLD_FX)) {
+    const zero = holdPose(kind, 0, 1, 320, 180);
+    assert.deepEqual(zero, { dx: 0, dy: 0, sc: 1, alpha: 1, rot: 0 }, `${kind} starts at rest`);
+    // One full cycle at 1 Hz returns to rest (within float noise).
+    const cycle = holdPose(kind, 1000, 1, 320, 180);
+    for (const [k, v] of Object.entries(cycle)) {
+      const rest = (zero as unknown as Record<string, number>)[k]!;
+      assert.ok(Math.abs((v as number) - rest) < 1e-9, `${kind} ${k} returns to rest after a cycle: ${v}`);
+    }
+    // Mid-cycle it is genuinely away from rest.
+    const mid = holdPose(kind, 250, 1, 320, 180);
+    assert.notDeepEqual(mid, zero, `${kind} actually moves`);
+  }
+});
+
+test('holdPose clamps its rate and answers junk kinds with rest', () => {
+  assert.deepEqual(holdPose('constructor', 250, 1, 320, 180), { dx: 0, dy: 0, sc: 1, alpha: 1, rot: 0 });
+  // A NaN/hostile rate reads as the minimum, never NaN in a pose.
+  const hostile = holdPose('pulse', 250, Number.NaN, 320, 180);
+  for (const v of Object.values(hostile)) assert.ok(Number.isFinite(v));
+  // The rate clamps: 1e9 Hz behaves as MAX_HOLD_RATE exactly.
+  assert.deepEqual(holdPose('sway', 333, 1e9, 320, 180), holdPose('sway', 333, MAX_HOLD_RATE, 320, 180));
+  assert.deepEqual(holdPose('sway', 333, 0, 320, 180), holdPose('sway', 333, MIN_HOLD_RATE, 320, 180));
+  assert.ok(isHoldFx('bob'));
+  assert.ok(!isHoldFx('valueOf'), 'prototype keys are not hold kinds');
+});
+
+test('flicker only dips alpha (never past its floor); bob scales with the box height', () => {
+  for (let ms = 0; ms <= 2000; ms += 50) {
+    const a = holdPose('flicker', ms, 2, 320, 180).alpha;
+    assert.ok(a >= 0.7 - 1e-9 && a <= 1 + 1e-9, `alpha in range at ${ms}ms: ${a}`);
+  }
+  const small = holdPose('bob', 250, 1, 100, 40).dy;
+  const big = holdPose('bob', 250, 1, 100, 400).dy;
+  assert.ok(Math.abs(big) > Math.abs(small), 'a taller box bobs further');
+});
+
+test('withHold composes: displacements add, factors multiply, alpha stays clamped', () => {
+  const off = { dx: 10, dy: -20, sc: 0.8, alpha: 0.5, rot: 5 };
+  const hold = { dx: 0, dy: 6, sc: 1.04, alpha: 0.9, rot: -2 };
+  assert.deepEqual(withHold(off, hold), { dx: 10, dy: -14, sc: 0.8 * 1.04, alpha: 0.45, rot: 3 });
+  const rest = { dx: 0, dy: 0, sc: 1, alpha: 1, rot: 0 };
+  assert.deepEqual(withHold(off, rest), off, 'a rest hold is the identity');
 });

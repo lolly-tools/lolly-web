@@ -167,6 +167,8 @@ function demandLayer(over: Partial<SeqLayer> = {}): SeqLayer {
     idx: 0,
     startMs: 0, durMs: 1000, clipInMs: 0, speed: 1, mute: false, gain: 1,
     enter: null, enterMs: 0, exit: null, exitMs: 0, enterEase: '', exitEase: '',
+    split: '', splitStaggerMs: 0, splitOrder: '', splitUnits: 0, splitSeed: 0,
+    hold: '', holdRate: 1,
     lane: 'seq', kind: 'static',
     rect: { x: 0, y: 0, w: 200, h: 120, rot: 0 },
     opacity: 1, blend: '', radius: '', clipPath: '', openEnded: false, frameScene: false,
@@ -284,8 +286,9 @@ test('contract: every PLANNED layer is photographed clean, and the stage backgro
   // The `over` slot is the transparent half of that pair, framed identically.
   assert.match(src, /slot === 'over' \? \{ transparentBg: true \} : \{\}/,
     'a video layer\'s second live plate is the transparent one, as its static twin is');
-  assert.match(src, /makeLiveRaster\(\s*liveBoxes, plateScaleOf, padOf, neutralOf, clipNeutralOf, sizeAt,\s*\)/,
-    'and is handed the same per-layer pad, scale and ownership the static plates were shot at');
+  assert.match(src, /makeLiveRaster\(\s*liveBoxes, plateScaleOf, padOf, neutralOf, clipNeutralOf, sizeAt, splitShotAt, stage\.totalMs,\s*\)/,
+    'and is handed the same per-layer pad, scale and ownership the static plates were shot at'
+    + ' (plus the split-text window predicate, plans/175 WP-A)');
   // section 5.4: a camera is a pose over time. `drawItem` already refuses to draw one; the
   // plates loop must refuse to photograph its marker div in the first place.
   assert.match(src, /L\.kind !== 'audio' && L\.kind !== 'camera'/,
@@ -298,7 +301,10 @@ test('contract: the whole render runs inside the authored-DOM scope (plans/104 s
   // the parse AND the plates AND the frame loop (the hybrid lottie path re-photographs
   // its box from inside it), which is why the body is a second function.
   const src = strip(read('./sequence-render.ts'));
-  assert.match(src, /import \{ OFF_CLASS, createSequenceTime, withAuthoredDom \} from '\.\/sequence-dom\.ts'/,
+  // `applySplitAt`/`clearSplitUnits` joined at plans/175 WP-A: the live split shots
+  // drive unit spans through the SAME applier module, and the render's finally hands
+  // them back at rest - a private split writer would be the drift this test prevents.
+  assert.match(src, /import \{ OFF_CLASS, applySplitAt, clearSplitUnits, createSequenceTime, withAuthoredDom \} from '\.\/sequence-dom\.ts'/,
     'the scope comes from the applier that owns the writes, never a local restore');
   // `createSequenceTime` joined that import at P2: the tilt capture tier poses the live
   // artboard frame by frame through the SAME session the contact sheet uses, from

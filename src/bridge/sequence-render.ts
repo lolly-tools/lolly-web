@@ -82,6 +82,8 @@ import {
   sequenceError,
   toCodedError,
   SequenceError,
+  splitActive,
+  splitAnimatingAt,
   type SeqLayer,
   type SeqErrorCode,
   type SeqPlanEnv,
@@ -188,7 +190,7 @@ import type { HdrBoostOptions } from '@lolly/engine';
 // the clock APPLIES, and the four inline properties it COMPOSES (transform, opacity,
 // filter, z-index) have to come off the stage for exactly as long - see the wrapper on
 // `renderSequence` below, and plans/104 section 6 point 0.
-import { OFF_CLASS, createSequenceTime, withAuthoredDom } from './sequence-dom.ts';
+import { OFF_CLASS, applySplitAt, clearSplitUnits, createSequenceTime, withAuthoredDom } from './sequence-dom.ts';
 // bridge → views. Phase 3 already has this edge (sequence-providers.ts reuses the
 // clock's seek semantics); reusing the LIVE Lottie player instance is the only way
 // a Lottie box can be exported at all - re-mounting a second player would double
@@ -1728,6 +1730,14 @@ async function renderSequenceAuthored(
             liveBoxes.set(L.idx, { marker: null, box: el, hide: plateHide });
             needsLiveRaster = true;
           }
+          // Split text (plans/175 WP-A): the units' mid-animation state is DOM state,
+          // so the layer is re-photographed live during its enter/exit windows (the
+          // live raster drives applySplitAt before each shot) and served one at-rest
+          // shot everywhere else - the memo collapses the steady middle to one key.
+          if (splitActive(L) && !liveBoxes.has(L.idx)) {
+            liveBoxes.set(L.idx, { marker: null, box: el, hide: plateHide });
+            needsLiveRaster = true;
+          }
         }
         plates.push({ idx: L.idx, under, over });
         // Re-anchor a timed frame-page scene to the output viewport so a side-by-side
@@ -1799,8 +1809,18 @@ async function renderSequenceAuthored(
       }
       return sizeCache.byIdx.get(idx) ?? null;
     };
+    // Which layers animate text units, and whether a given output frame falls inside
+    // one of their windows - the live raster keys its memo on the answer, so the
+    // steady middle of a split clip is one shot, not nine hundred.
+    const splitLayerByIdx = new Map(stage.layers.filter((L) => splitActive(L)).map((L) => [L.idx, L]));
+    const splitShotAt = (idx: number, frameIndex: number): { t: number; animating: boolean } | null => {
+      const L = splitLayerByIdx.get(idx);
+      if (!L) return null;
+      const t = usedGrid[frameIndex] ?? 0;
+      return { t, animating: splitAnimatingAt(L, t, stage.totalMs) };
+    };
     const liveRaster = makeLiveRaster(
-      liveBoxes, plateScaleOf, padOf, neutralOf, clipNeutralOf, sizeAt,
+      liveBoxes, plateScaleOf, padOf, neutralOf, clipNeutralOf, sizeAt, splitShotAt, stage.totalMs,
     );
     const hybrid = liveBoxes.size > 0;
 
@@ -1860,6 +1880,9 @@ async function renderSequenceAuthored(
     throw err;
   } finally {
     resumeThumbRasters();
+    // The live split shots wrote unit-span styles outside the authored store's
+    // sight (plans/175); hand the text back at rest whatever way the render ended.
+    for (const entry of liveBoxes.values()) clearSplitUnits(entry.box);
   }
 
   // ── inner helpers (closures over the render's state) ──────────────────────
@@ -2299,6 +2322,10 @@ function makeLiveRaster(
   clipNeutralOf: (idx: number) => boolean,
   /** The layer's DRAW size at that output frame, or null when it keyframes no size. */
   sizeAt: (idx: number, frameIndex: number) => { w: number; h: number } | null,
+  /** Split-text state at that frame (plans/175), or null when the layer splits nothing. */
+  splitAt?: (idx: number, frameIndex: number) => { t: number; animating: boolean } | null,
+  /** The sequence's total ms - applySplitAt's open-ended-box authority. */
+  seqMs = 0,
 ): SeqJobIO['lottieAt'] {
   if (!boxes.size) return undefined;
   // Keyed by layer AND slot: a video layer's two plates are two different pictures of
@@ -2326,10 +2353,18 @@ function makeLiveRaster(
     } else {
       // Size-only: the frame index IS the key, quantised through the size so a track
       // that holds a value for a second is photographed once rather than thirty times.
-      if (!size) return null;
-      key = Math.round(size.w * 100) + Math.round(size.h * 100) * 65537;
+      // A split-text layer (plans/175) joins the same memo: inside an animation window
+      // every frame is its own key; at rest every frame collapses onto one.
+      const split = splitAt?.(layerIdx, frameIndex) ?? null;
+      if (!size && !split) return null;
+      key = size ? Math.round(size.w * 100) + Math.round(size.h * 100) * 65537 : 0;
+      if (split) key = Math.imul(key, 31) + (split.animating ? Math.round(split.t) + 2 : 1);
       const prev = memo.get(memoKey);
       if (prev && prev.key === key) return prev.shot;
+      // Drive the unit spans to this frame's state BEFORE the shot - the box's own
+      // whole-box transition is suppressed by the planner, so this write is the whole
+      // difference between frames inside the window.
+      if (split) applySplitAt(entry.box, split.t, seqMs);
     }
     // The SAME shot the static plate for THIS SLOT takes - same hide list, same
     // filter/clip neutralisation, identically padded, at the identical scale, and

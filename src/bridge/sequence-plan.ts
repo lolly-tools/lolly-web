@@ -36,7 +36,12 @@
  * attribute reading, and the test file pins the two implementations together.
  */
 
-import { recTransition, isTransitionKind, type TransitionKind } from '../lib/transitions.ts';
+import {
+  recTransition, isTransitionKind, isSplitTier, isSplitOrder, splitSeedOf,
+  splitPhaseWindowMs, MAX_SPLIT_STAGGER_MS,
+  holdPose, isHoldFx, withHold, DEFAULT_HOLD_RATE, MIN_HOLD_RATE, MAX_HOLD_RATE,
+  type TransitionKind, type SplitTier, type SplitOrder, type HoldFx,
+} from '../lib/transitions.ts';
 // THE PARITY LAW, extended to depth (plans/104 section 4): every keyframe and projection
 // FORMULA lives in the engine and is imported. Never restate it here, and never restate it in
 // sequence-dom.ts. The two evaluators share this module's adapters, and those adapters
@@ -199,6 +204,26 @@ export interface SeqLayer {
    */
   enterEase: string;
   exitEase: string;
+  /**
+   * Split text animation (plans/175 WP-A): the tier ('' = whole box), the
+   * start-to-start unit gap (ms), the dealt order, the number of `.lly-u` unit
+   * spans the hook wrapped (counted at parse - the worker has no DOM), and the
+   * deterministic shuffle seed (hashed off `data-box-id`). While `splitActive`,
+   * the whole-box transition is suppressed and the layer's picture is a live
+   * per-frame raster of the DOM units - see makeLiveRaster's split branch.
+   */
+  split: SplitTier | '';
+  splitStaggerMs: number;
+  splitOrder: SplitOrder;
+  splitUnits: number;
+  splitSeed: number;
+  /**
+   * Hold effect (plans/175 WP-B): the looping while-on-screen pose ('' = still)
+   * and its rate, cycles/sec. Composed with the transition offset via `withHold`
+   * before the fold - the DOM applier's own combine, so the two never disagree.
+   */
+  hold: HoldFx | '';
+  holdRate: number;
   lane: '' | 'seq';
   /**
    * `camera` is the plan-104 section 5.4 non-visual marker: a timeline citizen with no
@@ -327,6 +352,57 @@ export function layerKind(el: HTMLElement): SeqLayer['kind'] {
 }
 
 /**
+ * The split-text half of a layer read (plans/175 WP-A): tier, gap, order, and the
+ * live unit count plus the deterministic shuffle seed - both DOM facts, captured
+ * here because the worker's hydrated layers have no element to count spans on.
+ */
+function readSplit(el: HTMLElement): Pick<SeqLayer, 'split' | 'splitStaggerMs' | 'splitOrder' | 'splitUnits' | 'splitSeed'> {
+  const tierRaw = el.getAttribute?.('data-t-split') ?? null;
+  const tier = isSplitTier(tierRaw) ? tierRaw : '';
+  const n = tier ? (el.querySelectorAll?.('.lly-u')?.length ?? 0) : 0;
+  const orderRaw = el.getAttribute?.('data-t-split-order') ?? null;
+  return {
+    split: tier,
+    splitStaggerMs: clamp(num(el.getAttribute?.('data-t-stagger') ?? null, 60), 0, MAX_SPLIT_STAGGER_MS),
+    splitOrder: isSplitOrder(orderRaw) && orderRaw !== '' ? orderRaw : '',
+    splitUnits: n,
+    splitSeed: splitSeedOf(el.getAttribute?.('data-box-id') ?? '', n),
+  };
+}
+
+/**
+ * Does this layer's transition run per text unit (plans/175 WP-A)? Static picture
+ * boxes only - media kinds keep their whole-box transitions - and a box that split
+ * into fewer than two units animates as a block, exactly as if no tier were authored.
+ */
+export function splitActive(layer: Pick<SeqLayer, 'split' | 'splitUnits' | 'kind'>): boolean {
+  return layer.split !== '' && layer.splitUnits > 1 && layer.kind === 'static';
+}
+
+/**
+ * Is a split layer's per-unit animation MID-FLIGHT at `tMs`? The live-raster memo
+ * keys on this: inside a window every frame is a fresh shot, outside them one
+ * at-rest shot serves the whole clip. Windows mirror the DOM applier's exactly -
+ * enter runs even with no authored kind (the cut/typewriter tier), exits need an
+ * authored kind and a bounded box.
+ */
+export function splitAnimatingAt(layer: SeqLayer, tMs: number, totalMs: number): boolean {
+  if (!splitActive(layer)) return false;
+  const total = Number.isFinite(totalMs) && totalMs > 0 ? totalMs : 0;
+  const durMs = layer.openEnded && total > 0 ? Math.max(0, total - layer.startMs) : layer.durMs;
+  const local = tMs - layer.startMs;
+  const enterPhase = layer.enter && layer.enter !== 'none' ? layer.enterMs : 0;
+  const enterWin = layer.splitStaggerMs > 0 || enterPhase > 0
+    ? splitPhaseWindowMs(layer.splitStaggerMs, layer.splitUnits, enterPhase) : 0;
+  if (local >= 0 && local < enterWin) return true;
+  if (layer.exit && layer.exit !== 'none' && !layer.openEnded) {
+    const exitWin = splitPhaseWindowMs(layer.splitStaggerMs, layer.splitUnits, layer.exitMs);
+    if (local <= durMs && durMs - local < exitWin) return true;
+  }
+  return false;
+}
+
+/**
  * Read one `.lolly-box` into a SeqLayer.
  *
  * Tolerant of EVERYTHING. A hand-authored URL can set any of these attributes,
@@ -363,6 +439,12 @@ export function readLayer(el: HTMLElement, idx: number, totalMs: number): SeqLay
     exitMs: clamp(num(el.getAttribute?.('data-t-exit-ms') ?? null, DEFAULT_TRANSITION_MS), MIN_TRANSITION_MS, MAX_TRANSITION_MS),
     enterEase: el.getAttribute?.('data-t-enter-ease') || '',
     exitEase: el.getAttribute?.('data-t-exit-ease') || '',
+    ...readSplit(el),
+    hold: ((): HoldFx | '' => {
+      const v = el.getAttribute?.('data-t-hold') ?? null;
+      return isHoldFx(v) ? v : '';
+    })(),
+    holdRate: clamp(num(el.getAttribute?.('data-t-hold-rate') ?? null, DEFAULT_HOLD_RATE), MIN_HOLD_RATE, MAX_HOLD_RATE),
     lane: (el.getAttribute?.('data-t-lane') ?? null) === 'seq' ? 'seq' : '',
     kind: layerKind(el),
     rect: {
@@ -961,6 +1043,10 @@ export function crossfadeJunctions(layers: SeqLayer[]): { aIdx: number; bIdx: nu
     const b = seq[i + 1] as SeqLayer;
     if (a.exit !== 'fade' || b.enter !== 'fade') continue;
     if (a.openEnded) continue;                      // no stable tail to hand over from
+    // A split layer never forms a junction crossfade (plans/175): its fade runs per
+    // unit inside its own window, which is also what the preview shows - so the two
+    // sides simply cut, rather than export-only handover logic disagreeing with it.
+    if (splitActive(a) || splitActive(b)) continue;
     if (Math.abs(endOf(a) - b.startMs) > 1) continue;
     const ms = Math.min(a.exitMs, b.enterMs, b.durMs);
     if (ms > 0) out.push({ aIdx: a.idx, bIdx: b.idx, ms });
@@ -988,6 +1074,12 @@ function liveEndOf(layer: SeqLayer, extendMs: number): number {
  * B's enter is shortened to the handover length so the two alphas cross.
  */
 function transitionOf(layer: SeqLayer, tMs: number, extendMs: number, xfadeEnterMs: number | null): { kind: TransitionKind; p: number; ease: string } | null {
+  // Split text (plans/175 WP-A): the UNITS carry the transition - the live-raster
+  // tier photographs them mid-animation off the DOM - so the whole box is at rest
+  // for the compositor's own transform/alpha. Suppressed here, at the one place a
+  // whole-box transition is derived, so every executor (in-thread, worker, GL)
+  // agrees without carrying its own rule.
+  if (splitActive(layer)) return null;
   const local = tMs - layer.startMs;
   const enterMs = xfadeEnterMs ?? layer.enterMs;
   let enterP = 1;
@@ -1066,9 +1158,15 @@ export function sequenceDrawPlan(
     if (layer.durMs <= 0 && extendMs <= 0) continue;
     if (t < layer.startMs || t >= liveEndOf(layer, extendMs)) continue;
     const silent = layer.kind === 'audio' || layer.kind === 'camera';
-    const tr = silent ? null : transitionOf(layer, t, extendMs, xfadeEnter.get(layer.idx) ?? null);
-    const off = tr ? recTransition(tr.kind, tr.p, layer.rect.w, layer.rect.h, tr.ease) : IDENTITY;
     const local = Math.max(0, t - layer.startMs);
+    const tr = silent ? null : transitionOf(layer, t, extendMs, xfadeEnter.get(layer.idx) ?? null);
+    const off0 = tr ? recTransition(tr.kind, tr.p, layer.rect.w, layer.rect.h, tr.ease) : IDENTITY;
+    // Hold effect (plans/175 WP-B): composed exactly as the DOM applier composes it,
+    // so preview and export read the same pose at every t. Whole-box, plate-free -
+    // the executor's per-frame transform animates a static plate.
+    const off = !silent && layer.hold
+      ? withHold(off0, holdPose(layer.hold, local, layer.holdRate, layer.rect.w, layer.rect.h))
+      : off0;
     // A box projects when it authored depth of its own, or when the camera is
     // somewhere that moves even a flat layer. Nothing else touches the fold, so a
     // stage with neither takes the pre-104 path exactly.

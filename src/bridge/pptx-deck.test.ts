@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { deckColor, deckFill, deckPara, deckPh, deckPlaceholder, deckSyncShape, deckTheme, parseDeckModel, emuOf, asStr } from './pptx-deck.ts';
+import { deckAnim, deckColor, deckFill, deckPara, deckPh, deckPlaceholder, deckSyncShape, deckTheme, parseDeckModel, emuOf, asStr } from './pptx-deck.ts';
 import { buildPptxParts, EMU_PER_PX } from '../../../../engine/src/pptx.ts';
 import type { PptxTable, PptxText, PptxRect, PptxSlide } from '../../../../engine/src/pptx.ts';
 
@@ -186,4 +186,87 @@ test('a text element with ph lowers to a bound PptxText and round-trips into <p:
   // Hostile ph on the element is dropped at the boundary, not carried.
   const loose = deckSyncShape({ t: 'text', x: 0, y: 0, w: 10, h: 10, paras: [], ph: { type: '<script>' } }) as PptxText;
   assert.equal(loose.ph, undefined);
+});
+
+// ── native animation mapping (plans/175 WP-E) ────────────────────────────────
+
+test('deckAnim maps the Lolly kinds onto the PPTX subset, noting each degrade once', () => {
+  const notes: string[] = [];
+  assert.equal(deckAnim({ enter: 'fade', enterMs: 500 }, notes)!.enter!.preset, 'fade');
+  assert.deepEqual(
+    (({ preset, dir }) => ({ preset, dir }))(deckAnim({ enter: 'slide-left', enterMs: 400 })!.enter!),
+    { preset: 'fly', dir: 'r' }, 'slide-left enters from the right');
+  assert.deepEqual(
+    (({ preset, dir }) => ({ preset, dir }))(deckAnim({ enter: 'rise', enterMs: 400 }, notes)!.enter!),
+    { preset: 'fly', dir: 'b' });
+  assert.equal(deckAnim({ enter: 'zoom-out', enterMs: 400 })!.enter!.preset, 'zoomOut');
+  assert.equal(deckAnim({ enter: 'drift', enterMs: 400 }, notes)!.enter!.preset, 'fade');
+  assert.ok(notes.includes('rise → Fly In from bottom'), `degrades are named: ${notes}`);
+  assert.ok(notes.includes('drift → Fade'));
+  // The same note never stacks twice.
+  deckAnim({ enter: 'rise', enterMs: 400 }, notes);
+  assert.equal(notes.filter((n) => n.startsWith('rise')).length, 1);
+});
+
+test('deckAnim: the typewriter - a bare cut with split becomes appear + iterate', () => {
+  const a = deckAnim({ enter: 'none', enterMs: 400, split: 'letter', stagger: 80 })!;
+  assert.equal(a.enter!.preset, 'appear');
+  assert.deepEqual(a.enter!.iterate, { by: 'letter', staggerMs: 80 });
+  // …while a bare cut with NOTHING to trigger is no animation at all.
+  assert.equal(deckAnim({ enter: 'none', enterMs: 400 }), undefined);
+  // reverse order rides backwards; line degrades to word with a note.
+  const notes: string[] = [];
+  const rev = deckAnim({ enter: 'fade', enterMs: 400, split: 'line', stagger: 100, order: 'reverse' }, notes)!;
+  assert.deepEqual(rev.enter!.iterate, { by: 'word', staggerMs: 100, backwards: true });
+  assert.ok(notes.some((n) => n.includes('split by line')));
+  const notes2: string[] = [];
+  deckAnim({ enter: 'fade', enterMs: 400, split: 'word', stagger: 100, order: 'random' }, notes2);
+  assert.ok(notes2.some((n) => n.includes('random')), 'unmappable order is named');
+});
+
+test('deckAnim: exits need a derived moment; clicks and junk are clamped or dropped', () => {
+  const notes: string[] = [];
+  // An exit WITHOUT exitDelayMs is skipped, and says so.
+  assert.equal(deckAnim({ exit: 'fade', exitMs: 400 }, notes), undefined);
+  assert.ok(notes.some((n) => n.includes('exit without timing')));
+  // With one, it maps - delayed to its own moment.
+  const a = deckAnim({ exit: 'fade', exitMs: 400, exitDelayMs: 2600 })!;
+  assert.equal(a.exit!.preset, 'fade');
+  assert.equal(a.exit!.delayMs, 2600);
+  // A click fragment with no kind still Appears on its click.
+  const frag = deckAnim({ enter: 'none', enterMs: 400, click: 2 })!;
+  assert.equal(frag.enter!.preset, 'appear');
+  assert.equal(frag.click, 2);
+  // Junk kinds and junk shapes are not effects.
+  assert.equal(deckAnim({ enter: 'constructor', enterMs: 400 }), undefined);
+  assert.equal(deckAnim('nonsense'), undefined);
+  assert.equal(deckAnim(null), undefined);
+});
+
+test('deckAnim: named easing approximates through accel/decel; a bezier takes the born curve', () => {
+  const eased = deckAnim({ enter: 'fade', enterMs: 400, enterEase: 'ease-in' })!.enter!;
+  assert.equal(eased.accel, 80000);
+  assert.equal(eased.decel, undefined);
+  const born = deckAnim({ enter: 'fade', enterMs: 400, enterEase: 'cubic-bezier(0.2,1.4,0.6,1)' })!.enter!;
+  assert.equal(born.decel, 80000, 'unknown curve falls back to the kind\'s own ease-out');
+  const linear = deckAnim({ enter: 'fade', enterMs: 400, enterEase: 'linear' })!.enter!;
+  assert.equal(linear.accel, undefined);
+  assert.equal(linear.decel, undefined);
+});
+
+test('deckSyncShape attaches the mapped anim to rect and text alike', () => {
+  const notes: string[] = [];
+  const text = deckSyncShape({
+    t: 'text', x: 0, y: 0, w: 100, h: 50,
+    paras: [{ runs: [{ text: 'Hi', sizePt: 24 }] }],
+    anim: { enter: 'fade', enterMs: 500, delayMs: 1200, split: 'word', stagger: 60 },
+  }, notes) as PptxText;
+  assert.equal(text.anim!.enter!.preset, 'fade');
+  assert.equal(text.anim!.enter!.delayMs, 1200);
+  assert.deepEqual(text.anim!.enter!.iterate, { by: 'word', staggerMs: 60 });
+  const rect = deckSyncShape({ t: 'rect', x: 0, y: 0, w: 100, h: 50, anim: { enter: 'pop', enterMs: 300 } }, notes) as PptxRect;
+  assert.equal(rect.anim!.enter!.preset, 'zoom');
+  // …and a shape with no anim carries none (byte-identity of the lowered model).
+  const still = deckSyncShape({ t: 'rect', x: 0, y: 0, w: 100, h: 50 }) as PptxRect;
+  assert.ok(!('anim' in still));
 });

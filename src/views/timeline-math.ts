@@ -96,6 +96,30 @@ export interface TimeCfg {
   enterEaseField?: string;
   exitEaseField?: string;
   /**
+   * OPTIONAL, same progressive terms (plans/175 WP-A): the split-text sub-fields -
+   * the tier the enter/exit runs per unit at ('' whole box / word / line / letter),
+   * the start-to-start unit gap in ms, and the dealt order. A tool that declares
+   * none simply never offers the text-animation rows; nothing in this module reads
+   * them, but every writer of a box names its fields through a TimeCfg.
+   */
+  splitField?: string;
+  staggerField?: string;
+  splitOrderField?: string;
+  /**
+   * OPTIONAL, same terms (plans/175 WP-B): the hold-effect sub-fields - the
+   * while-on-screen looping motion ('' still / pulse / bob / sway / flicker)
+   * and its rate in cycles/sec. A tool that declares neither never offers the
+   * "While on screen" rows.
+   */
+  holdField?: string;
+  holdRateField?: string;
+  /**
+   * OPTIONAL: the canvas's own text sub-field. Carried for ONE ui gate - the
+   * text-animation rows only appear on a box that actually holds text - never
+   * read by the maths here.
+   */
+  textField?: string;
+  /**
    * OPTIONAL, same terms again: the sub-field carrying the canvas's own box
    * GROUP (free-canvas's `groupField`, e.g. sequence-studio's `group`). Nothing
    * in this module reads it - grouping is canvas semantics - but the panel's
@@ -1436,6 +1460,38 @@ export function moveOverlays(boxes: Box[], cfg: TimeCfg, ids: readonly string[],
     if (!set.has(String(b?.[cfg.idField] ?? '')) || !isOverlayRow(b, cfg)) return b;
     const t = boxTiming(b, cfg);
     return withFields(b!, { [cfg.startField]: clamp(r3((t.start ?? 0) + eff), 0, MAX_TIME_S) });
+  });
+}
+
+/**
+ * Deal the selected OVERLAY boxes a uniform start-to-start gap (plans/175 WP-C -
+ * Jitter's right-click Stagger, "a uniform duration of time between the start of
+ * each animation"): sorted by their CURRENT starts (row order breaks ties), the
+ * earliest keeps its start as the anchor and each later one begins `gapSec` after
+ * the one before it. The user's own ordering is respected, only the spacing is
+ * dealt - a re-rank would undo whatever they staged by dragging. Seq-lane and
+ * untimed members in `ids` are ignored, exactly as {@link moveOverlays} ignores
+ * them (a seq clip's start is pack-derived). Fewer than two eligible boxes is a
+ * no-op, and identity is preserved per unchanged box so a dealt board that
+ * already matches costs no undo step.
+ */
+export function staggerOverlays(boxes: Box[], cfg: TimeCfg, ids: readonly string[], gapSec: number): Box[] {
+  const rows = Array.isArray(boxes) ? boxes : [];
+  const set = new Set(Array.from(ids, String));
+  const eligible = rows
+    .map((b, i) => ({ b, i }))
+    .filter(({ b }) => set.has(String(b?.[cfg.idField] ?? '')) && isOverlayRow(b, cfg));
+  if (eligible.length < 2) return rows.map((b) => b);
+  const gap = clamp(r3(num(gapSec, 0)), 0, MAX_TIME_S);
+  const dealt = [...eligible].sort((a, z) =>
+    (boxTiming(a.b, cfg).start ?? 0) - (boxTiming(z.b, cfg).start ?? 0) || a.i - z.i);
+  const base = boxTiming(dealt[0]!.b, cfg).start ?? 0;
+  const starts = new Map<number, number>();
+  dealt.forEach(({ i }, rank) => starts.set(i, clamp(r3(base + rank * gap), 0, MAX_TIME_S)));
+  return rows.map((b, i) => {
+    const at = starts.get(i);
+    if (at == null || (boxTiming(b, cfg).start ?? 0) === at) return b;
+    return withFields(b!, { [cfg.startField]: at });
   });
 }
 

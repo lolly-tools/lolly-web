@@ -12,7 +12,7 @@
 import { buildPptxParts, EMU_PER_PX, parseGradientAngle, parseGradientStop, splitCssArgs, svgToNativePptx } from "@lolly/engine";
 import type { PptxSlide, PptxShape, PptxFill, PptxMedia, PptxLayout } from "../../../../engine/src/pptx.ts";
 import { parseCssColorFull, objectPositionFractions } from "./export-css.ts";
-import { asStr, deckBox, deckFill, deckPlaceholder, deckSrcRect, deckSyncShape, deckTheme, emuOf, parseDeckModel, type DeckBox } from "./pptx-deck.ts";
+import { asStr, deckAnim, deckBox, deckFill, deckPlaceholder, deckSrcRect, deckSyncShape, deckTheme, emuOf, parseDeckModel, type DeckBox } from "./pptx-deck.ts";
 import { pureRotationDeg, detectUnsupportedCss, inlineBlobUrlsInEl, rasterizeNodeToDataUrl, imprintEmbedCanvas, stripCommentNodes, _host, type ExportOpts, type ImprintState } from "./export.ts";
 
 type Rgba = [number, number, number, number];
@@ -505,27 +505,29 @@ const MAX_DECK_IMG_BYTES = 32 * 1024 * 1024; // 32 MB per embedded image (`src` 
 // An image element - the sole async lowering (it fetches bytes). SVG rides in as a real
 // vector (svgBlip + PNG fallback); raster embeds its original bytes; an unreachable/oversized
 // asset drops the element but keeps the deck.
-async function deckImageShape(el: Record<string, unknown>, box: DeckBox, addMedia: (b: Uint8Array, e: PptxMedia['ext']) => number): Promise<PptxShape | null> {
+async function deckImageShape(el: Record<string, unknown>, box: DeckBox, addMedia: (b: Uint8Array, e: PptxMedia['ext']) => number, animNotes?: string[]): Promise<PptxShape | null> {
   const src = asStr(el?.src); if (!src) return null;
+  // Native animation rides pictures exactly as it rides the sync shapes (plans/175 WP-E).
+  const anim = deckAnim(el?.anim, animNotes);
   try {
     const res = await fetch(src);
     if (!res.ok) return null;
     const buf = new Uint8Array(await res.arrayBuffer());
     if (buf.byteLength > MAX_DECK_IMG_BYTES) return null;
     const ext = sniffImgExt(buf, src);
-    if (ext === 'png' || ext === 'jpeg') return { kind: 'pic', ...box, media: addMedia(buf, ext), srcRect: deckSrcRect(el?.srcRect) };
+    if (ext === 'png' || ext === 'jpeg') return { kind: 'pic', ...box, media: addMedia(buf, ext), srcRect: deckSrcRect(el?.srcRect), ...(anim ? { anim } : {}) };
     if (ext === 'svg') {
       const png = await svgBytesToPng(buf, (box.cx / EMU_PER_PX) * 2, (box.cy / EMU_PER_PX) * 2);
-      if (png) return { kind: 'pic', ...box, media: addMedia(png, 'png'), svg: addMedia(buf, 'svg') };
+      if (png) return { kind: 'pic', ...box, media: addMedia(png, 'png'), svg: addMedia(buf, 'svg'), ...(anim ? { anim } : {}) };
     }
   } catch { /* asset unreachable - drop the element, keep the deck */ }
   return null;
 }
 
-async function deckElementToShape(el: Record<string, unknown>, addMedia: (b: Uint8Array, e: PptxMedia['ext']) => number): Promise<PptxShape | null> {
+async function deckElementToShape(el: Record<string, unknown>, addMedia: (b: Uint8Array, e: PptxMedia['ext']) => number, animNotes?: string[]): Promise<PptxShape | null> {
   if (!el || typeof el !== 'object') return null;
-  if (el.t === 'image') return await deckImageShape(el, deckBox(el), addMedia);
-  return deckSyncShape(el); // rect / text / table (pure)
+  if (el.t === 'image') return await deckImageShape(el, deckBox(el), addMedia, animNotes);
+  return deckSyncShape(el, animNotes); // rect / text / table (pure)
 }
 
 // Read + validate a tool-authored deck model off the export node, or null to DOM-walk.
@@ -568,6 +570,9 @@ async function renderPptxFromDeck(deck: Record<string, unknown>, opts: ExportOpt
   const layouts = await deckLayoutsFrom(deck.layouts);
   const slidesIn = (deck.slides as Array<Record<string, unknown>>).slice(0, MAX_DECK_SLIDES);
   const slides: PptxSlide[] = [];
+  // Animation degrade notes (plans/175 WP-E), deduped across the whole deck and
+  // logged ONCE - a substitution is worth one line, not one per slide it recurs on.
+  const animNotes: string[] = [];
   for (const s of slidesIn) {
     const shapes: PptxShape[] = [];
     const media: PptxMedia[] = [];
@@ -579,7 +584,7 @@ async function renderPptxFromDeck(deck: Record<string, unknown>, opts: ExportOpt
     const els = (Array.isArray(s?.elements) ? s.elements : []).slice(0, MAX_DECK_ELEMENTS);
     for (const el of els) {
       if (shapes.length >= MAX_PPTX_SHAPES) { _host?.log?.('warn', `pptx: slide hit the ${MAX_PPTX_SHAPES}-object cap; some elements were dropped.`); break; }
-      const shape = await deckElementToShape(el, addMedia);
+      const shape = await deckElementToShape(el, addMedia, animNotes);
       if (shape) shapes.push(shape);
     }
     const slide: PptxSlide = { shapes, media };
@@ -589,6 +594,9 @@ async function renderPptxFromDeck(deck: Record<string, unknown>, opts: ExportOpt
     if (layouts && typeof s?.layout === 'number' && Number.isFinite(s.layout)) slide.layout = s.layout;
     slides.push(slide);
     opts.onProgress?.(slides.length, slidesIn.length);
+  }
+  if (animNotes.length) {
+    _host?.log?.('info', `pptx: animation mapped to PowerPoint's own presets - ${animNotes.join('; ')}.`);
   }
   const parts = buildPptxParts(slides, { emuW, emuH, theme: deckTheme(deck.theme), layouts, meta: pptxMeta(opts, sourceAuthor), now: new Date().toISOString() });
   return zipPptxParts(parts);
