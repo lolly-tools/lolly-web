@@ -1479,6 +1479,14 @@ export function sequenceTimeElements(stage: HTMLElement | null): HTMLElement[] {
     for (const child of [...stage.children]) {
       if (isBackgroundPlane(child as HTMLElement)) push(child as HTMLElement);
     }
+    // ...and every FLAT box. The planner projects every `.lolly-box` the moment the
+    // view moves (`sequenceDrawPlan`: `viewMoves(view) || z || kf`), while this set
+    // used to hold only the posed ones - so an untimed, unlifted, trackless box was
+    // moved by the export and frozen in the preview, the exact divergence the union
+    // above exists to prevent. Gated on a camera for the same reason the background
+    // plane is: without one nothing can move a flat box, so a camera-less document
+    // walks not one extra element and stays byte-identical.
+    for (const el of stage.querySelectorAll<HTMLElement>('.lolly-box')) push(el);
   }
   return out;
 }

@@ -409,3 +409,45 @@ test('an untimed (spatial) frame page is never gated', () => {
   assert.equal(off(pageAt(root, 0)), false, 'a page with no data-t-start is never selected or hidden');
   restoreSequenceTime(root);
 });
+
+test('a FLAT box is projected the moment a camera moves - and walked not at all without one', () => {
+  // The planner projects every .lolly-box once the view moves; the applier's element
+  // set must agree, or the export pans a box the preview leaves frozen (found via
+  // Choreograph, which mints exactly this state in one click).
+  const root = dom.window.document.createElement('div');
+  root.innerHTML = `
+    <div class="artboard" data-sequence data-seq-ms="2000">
+      <div class="lolly-box" data-box-id="flat"
+           style="left:10px;top:10px;width:100px;height:50px"></div>
+      <div class="lolly-box" data-box-id="cam" data-t-kf="t0_x-120*t2000_x120">
+        <div data-cam="1"></div>
+      </div>
+    </div>`;
+  const flat = box(root, 'flat');
+  // t = 500, not 1000: the pan crosses x = 0 exactly at the midpoint, where a resting
+  // view would honestly not move anything.
+  applySequenceTime(root, 500);
+  try {
+    assert.ok(flat.style.transform, 'the camera pan reaches the flat box in the preview');
+    assert.match(flat.style.transform, /translate/, 'as a projected translate');
+  } finally { restoreSequenceTime(root); }
+  // Declaration-identical, per the module's own contract (the harness header says why
+  // the raw attribute string is not the thing to compare).
+  assert.equal(flat.style.transform, '', 'restore removes the projected transform');
+  assert.equal(flat.style.left, '10px');
+  assert.equal(flat.style.width, '100px');
+
+  // Without a camera the flat box is not even walked: no writes, byte-identity.
+  const still = dom.window.document.createElement('div');
+  still.innerHTML = `
+    <div class="artboard" data-sequence data-seq-ms="2000">
+      <div class="lolly-box" data-box-id="flat" style="left:10px;top:10px;width:100px;height:50px"></div>
+      <div class="lolly-box" data-box-id="a" data-t-start="0" data-t-dur="1000" data-t-lane="seq"
+           style="left:0px;top:0px;width:100px;height:50px"></div>
+    </div>`;
+  const flat2 = box(still, 'flat');
+  applySequenceTime(still, 500);
+  try {
+    assert.equal(flat2.style.transform, '', 'no camera, no write to a flat box');
+  } finally { restoreSequenceTime(still); }
+});
