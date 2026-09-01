@@ -110,6 +110,7 @@ import { modUrlToWavBlobUrl, isModuleFormat } from '../lib/mod-render.ts';
 import { attachAudioMeter } from '../lib/audio-meter.ts';
 import { exportSwatches, paletteEntriesToSwatches, type SwatchExportFormat } from '../lib/swatch-export.ts';
 import { groupPalette, isTransparent, swatch } from '../lib/swatches.ts';
+import '../styles/parts/platform.css'; // .plat-swatch* card/chip styles for the Swatches panel - catalog reuses swatch() but doesn't otherwise load platform.css, so a cold land-on-catalog (e.g. iOS) left the chips unstyled
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import { perfUiOn } from '../feature-flags.ts';
 import { offsetToUv, halfWindow, type Loupe } from '../lib/loupe-gl.ts';
