@@ -89,6 +89,20 @@ let srcOffset = 0;
 // element and its node are created and dropped together.
 let radioEl: HTMLAudioElement | null = null;
 let radioSource: MediaElementAudioSourceNode | null = null;
+// ── Apple-mobile radio VISUALISER tap (plans/146 upgrade) ─────────────────────────
+// On Apple mobile the audible radio element (radioEl) is deliberately BARE so it survives
+// backgrounding (iOS suspends Web Audio). That leaves the visualiser with no signal. So a
+// SECOND element plays the same stream tapped into its own analyser through a zero-gain sink
+// - silent, purely to drive the viz in the FOREGROUND (where it's the only place a viz is
+// seen), paused when the app is hidden to spare the extra stream. The audible element is
+// never touched, so background playback is provably unaffected; a station that refuses the
+// CORS tap, or an iOS that won't grant a 2nd stream, simply yields no viz.
+let vizEl: HTMLAudioElement | null = null;
+let vizSource: MediaElementAudioSourceNode | null = null;
+let vizAnalyser: AnalyserNode | null = null;
+let vizSilent: GainNode | null = null;
+let vizUrl = '';           // the stream URL the viz element is (re)connected to
+let vizVisWired = false;   // the visibilitychange listener is installed once
 /** Stream hosts that refused a tapped load. Keyed by HOST, not a session-wide flag: the
  *  header is a property of the server, so one station without it must not cost every other
  *  station its meter for the rest of the session. */
@@ -132,6 +146,13 @@ function armSourceEnd(s: AudioBufferSourceNode, host: NeurospicyHost | null): vo
   };
 }
 
+function makeAnalyser(c: AudioContext): AnalyserNode {
+  const a = c.createAnalyser();
+  a.fftSize = 128;
+  a.smoothingTimeConstant = 0.8;
+  return a;
+}
+
 function audio(): { ctx: AudioContext; gain: GainNode } | null {
   if (typeof window === 'undefined') return null;
   const AC = window.AudioContext ?? (window as WinAudio).webkitAudioContext;
@@ -140,9 +161,7 @@ function audio(): { ctx: AudioContext; gain: GainNode } | null {
     ctx = new AC();
     gain = ctx.createGain();
     gain.gain.value = state.volume;
-    analyser = ctx.createAnalyser();
-    analyser.fftSize = 128;
-    analyser.smoothingTimeConstant = 0.8;
+    analyser = makeAnalyser(ctx);
     gain.connect(analyser);
     analyser.connect(ctx.destination);
     startAnalyserWatchdog();
@@ -170,25 +189,42 @@ function reviveAnalyser(): void {
   if (!ctx || !gain) return;
   try { gain.disconnect(analyser!); } catch { /* wasn't connected */ }
   try { analyser?.disconnect(); } catch { /* wasn't connected */ }
-  const a = ctx.createAnalyser();
-  a.fftSize = 128;
-  a.smoothingTimeConstant = 0.8;
+  const a = makeAnalyser(ctx);
   gain.connect(a);
   a.connect(ctx.destination);
   analyser = a;
 }
 
+// The iOS-radio parallel viz tap (plans/146 upgrade path) is subject to the SAME analyser
+// stall, so the watchdog can revive it too - rewiring vizSource → new analyser → the silent
+// sink, leaving the audible bare element (radioEl) untouched.
+function reviveVizAnalyser(): void {
+  if (!ctx || !vizSource || !vizSilent) return;
+  try { vizSource.disconnect(); } catch { /* wasn't connected */ }
+  try { vizAnalyser?.disconnect(); } catch { /* wasn't connected */ }
+  const a = makeAnalyser(ctx);
+  vizSource.connect(a);
+  a.connect(vizSilent);
+  vizAnalyser = a;
+}
+
 function startAnalyserWatchdog(): void {
   if (watchdog != null || typeof setInterval === 'undefined') return;
   watchdog = setInterval(() => {
+    // Watch whichever analyser is actually carrying the signal - the main one, or the iOS
+    // parallel viz tap (getNeurospicyAnalyser prefers vizAnalyser when it exists).
+    const active = getNeurospicyAnalyser();
     // Only judge while a signal is actually live: the raw time-domain waveform changes every
     // read when audio flows, so byte-equality across STALL_TICKS reads means the node froze.
-    if (!analyser || neurospicySignalState() !== 'live') { stallTicks = 0; lastWave = null; return; }
-    const buf = new Uint8Array(analyser.fftSize);
-    analyser.getByteTimeDomainData(buf);
+    if (!active || neurospicySignalState() !== 'live') { stallTicks = 0; lastWave = null; return; }
+    const buf = new Uint8Array(active.fftSize);
+    active.getByteTimeDomainData(buf);
     const same = lastWave != null && lastWave.length === buf.length && buf.every((v, i) => v === lastWave![i]);
     if (same) {
-      if (++stallTicks >= STALL_TICKS) { reviveAnalyser(); stallTicks = 0; lastWave = null; }
+      if (++stallTicks >= STALL_TICKS) {
+        if (vizAnalyser && active === vizAnalyser) reviveVizAnalyser(); else reviveAnalyser();
+        stallTicks = 0; lastWave = null;
+      }
     } else {
       stallTicks = 0;
       lastWave = buf;
@@ -200,8 +236,10 @@ function startAnalyserWatchdog(): void {
   (watchdog as unknown as { unref?: () => void }).unref?.();
 }
 
-/** The analyser on the focus-loop graph, for a level meter. Null until audio starts. */
-export function getNeurospicyAnalyser(): AnalyserNode | null { return analyser; }
+/** The analyser the meter + visualiser read each frame. Normally the focus-loop graph's,
+ *  but the iOS parallel viz tap (see startVizTap) has its OWN analyser fed by the silent
+ *  second element - prefer it when present so radio reacts on iOS too. Null until audio starts. */
+export function getNeurospicyAnalyser(): AnalyserNode | null { return vizAnalyser ?? analyser; }
 
 /**
  * The shared focus-audio context, built and resumed on demand - for the Atmosphere
@@ -234,9 +272,15 @@ export type NeuroSignalState = 'live' | 'idle' | 'connecting' | 'unanalysable';
 export function neurospicySignalState(): NeuroSignalState {
   if (src?.buffer) return 'live';
   if (radioSource && radioEl && !radioEl.paused && radioEl.readyState >= 2) return 'live';
+  // The iOS parallel viz tap: the audible radioEl is bare, but the silent vizEl is feeding
+  // the analyser, so there IS a signal to draw (foreground only - it's paused when hidden).
+  if (vizEl && !vizEl.paused && vizEl.readyState >= 2) return 'live';
   if (!isNeurospicyPlaying()) return 'idle';
-  // An untapped element on a radio selection can never produce samples, however well it's
-  // playing - say so rather than leaving the UI on "connecting" forever.
+  // A viz tap that exists but isn't producing yet is buffering (or paused-because-hidden),
+  // not unanalysable - keep the UI on "connecting" rather than flashing "can't visualise".
+  if (vizEl) return 'connecting';
+  // An untapped element on a radio selection with no viz tap can never produce samples,
+  // however well it's playing - say so rather than leaving the UI on "connecting" forever.
   if (isNeurospicyRadio() && radioEl && !radioSource) return 'unanalysable';
   return 'connecting';
 }
@@ -280,6 +324,7 @@ function stopSource(): void {
     try { radioEl.pause(); } catch { /* ignore */ }
     radioEl.removeAttribute('src');
   }
+  dropVizTap();   // stop the silent iOS viz stream too (no-op off Apple mobile / when never started)
   playingId = '';
 }
 
@@ -367,6 +412,75 @@ function dropRadioEl(): void {
   }
 }
 
+/** Start (or re-point) the silent viz element for the current stream. No-op when Web Audio
+ *  is unavailable or the stream can't be CORS-tapped; the audible bare element is untouched
+ *  in every case, so the worst outcome is simply no viz. Skips streaming while the app is
+ *  hidden (the viz isn't seen then, and the extra stream is wasted). */
+function startVizTap(url: string): void {
+  const a = audio();
+  if (!a) return;
+  wireVizVisibility();
+  vizUrl = url;
+  if (!vizEl) {
+    const el = new Audio();
+    el.preload = 'none';
+    el.setAttribute('referrerpolicy', 'no-referrer');
+    el.crossOrigin = 'anonymous';   // required for the analyser tap; do NOT set el.muted (Safari
+                                    // mutes the graph path too, which would starve the analyser)
+    try {
+      vizSource = a.ctx.createMediaElementSource(el);
+      vizAnalyser = makeAnalyser(a.ctx);
+      vizSilent = a.ctx.createGain();
+      vizSilent.gain.value = 0;      // inaudible, but keeps a live path to destination so the
+                                     // element's samples actually flow into the analyser
+      vizSource.connect(vizAnalyser);
+      vizAnalyser.connect(vizSilent);
+      vizSilent.connect(a.ctx.destination);
+    } catch {
+      dropVizTap();   // no tap possible on this browser → no viz, audible path unaffected
+      return;
+    }
+    // A CORS refusal or a drop on the viz element is viz-only: give up quietly, never touch radioEl.
+    el.onerror = (): void => { dropVizTap(); };
+    vizEl = el;
+  }
+  if (typeof document !== 'undefined' && document.hidden) return; // don't open the 2nd stream unseen
+  vizEl.src = url;
+  void vizEl.play().catch(() => { /* needs the connection / a gesture; retried on next radio start */ });
+}
+
+/** Tear down the viz tap and its element+nodes together (an element that has produced a
+ *  MediaElementSource can never produce another). */
+function dropVizTap(): void {
+  if (vizSource) { try { vizSource.disconnect(); } catch { /* gone */ } vizSource = null; }
+  if (vizAnalyser) { try { vizAnalyser.disconnect(); } catch { /* gone */ } vizAnalyser = null; }
+  if (vizSilent) { try { vizSilent.disconnect(); } catch { /* gone */ } vizSilent = null; }
+  if (vizEl) {
+    vizEl.onerror = null;
+    try { vizEl.pause(); } catch { /* ignore */ }
+    vizEl.removeAttribute('src');
+    try { vizEl.load(); } catch { /* ignore */ }
+    vizEl = null;
+  }
+  vizUrl = '';
+}
+
+/** Pause the silent viz stream while the app is hidden (nothing to see, don't waste the
+ *  second connection); resume it on return if a station is still playing. Installed once. */
+function wireVizVisibility(): void {
+  if (vizVisWired || typeof document === 'undefined') return;
+  vizVisWired = true;
+  document.addEventListener('visibilitychange', () => {
+    if (!vizEl) return;
+    if (document.hidden) {
+      try { vizEl.pause(); } catch { /* ignore */ }
+    } else if (vizUrl && isNeurospicyPlaying() && isNeurospicyRadio()) {
+      if (!vizEl.getAttribute('src')) vizEl.src = vizUrl;
+      void vizEl.play().catch(() => { /* transient - next start retries */ });
+    }
+  });
+}
+
 /** Volume lives on the graph's gain when the stream is tapped, and on the element itself
  *  when it isn't - otherwise the slider would move nothing in one of the two paths. */
 function applyRadioVolume(): void {
@@ -408,6 +522,10 @@ function startRadioStream(url: string, id: string): void {
   applyRadioVolume();
   void el.play().catch(() => { /* needs a gesture or a live connection */ });
   playingId = id;
+  // Apple mobile only: the audible element above is bare (untapped) for background survival,
+  // so light up the visualiser with a separate silent tap on the same stream. Everywhere else
+  // the audible element is itself tapped into the main analyser, so the viz already works.
+  if (!radioSource && isAppleMobile()) startVizTap(url);
   notifyPlaying();
 }
 
