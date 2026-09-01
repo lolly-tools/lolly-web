@@ -105,6 +105,9 @@ import type { PathPaintFields } from './free-canvas-pen.ts';
 // costs no chunk, and timeline-panel.ts pulls in styles/parts/timeline.css.
 import type { TimeCfg } from './timeline-math.ts';
 import type { TimelinePanel } from './timeline-panel.ts';
+// Type-only, same terms: the showcase generator is a LAZY chunk too (it pulls
+// timeline-math and the engine's keyframe module), so only its vocabulary is named here.
+import type { ChoreoOrder, ShowcaseId } from './choreograph.ts';
 // Type-only: the ghost layer is a lazy chunk that only an editor with onion skin turned
 // ON ever fetches, so its runtime import lives inside onionFrom's dynamic `import()`.
 import type { OnionPaintState, OnionSkinHandle } from './onion-skin.ts';
@@ -681,6 +684,10 @@ const SVG = {
   // raised", which is exactly what the action does. The plates are the same isometric
   // diamond the `group`/`ungroup` pair already uses, so the family reads as one set.
   liftLayers: '<path d="m12 2 8 4.5-8 4.5-8-4.5z"/><path d="m4 13 8 4.5 8-4.5"/><path d="m4 17 8 4.5 8-4.5"/>',
+  // Choreograph (plans/104 P4) - the lifted stack, now MOVING: three plates stepping up
+  // the frame with the arc they travel drawn over them. Deliberately the same rounded
+  // plate `boxKind` draws, so "these layers" and "these layers, in motion" read as a pair.
+  choreo: '<rect x="2.5" y="15" width="6" height="5.5" rx="1.3"/><rect x="9" y="12" width="6" height="5.5" rx="1.3"/><rect x="15.5" y="9" width="6" height="5.5" rx="1.3"/><path d="M3 11c3.5-6 10.5-8.5 17-6.5"/><polyline points="17.6 2.4 20.5 4.6 18.6 7.2"/>',
   // Pointer - the arrow cursor itself, outlined to sit with the rest of the line-art rail.
   // The one glyph in here that names a TOOL by drawing the cursor it gives you.
   pointer: '<path d="M5 2.8l10.9 10.9h-4.8l2.8 6-2.5 1.1-2.8-6L5 18.3z"/>',
@@ -943,6 +950,25 @@ const ROUTE_CHOICES: Array<[string, string]> = [
   ['curved', 'Curved, auto S'], ['curved-v', 'Curved, vertical S'], ['curved-h', 'Curved, horizontal S'],
   ['arc', 'Arc, bow'], ['arc-wide', 'Arc, wide bow'],
   ['arc-flip', 'Arc, reverse bow'], ['arc-flip-wide', 'Arc, wide reverse bow'],
+];
+/**
+ * The Choreograph showcases (plans/104 P4), in the generator's own `SHOWCASE_IDS` order.
+ *
+ * The names and the lengths sit at MODULE SCOPE for the reason `KF_CAMERA_PRESETS`' table
+ * does (timeline-panel.ts): scripts/translate.ts extracts literal `t('…')` call sites, so
+ * a `t(showcase.label)` built at render time would need every name hand-listed in
+ * extra-keys.spa.json. `ms` restates `SHOWCASE_MS` rather than importing it, because
+ * ./choreograph.ts is a lazy chunk this picker must not pull in merely to draw itself -
+ * tests/choreograph.test.ts and the co-located UI test pin the two id lists and these six
+ * lengths equal, so the copy cannot drift.
+ */
+export const CHOREO_SHOWCASES: ReadonlyArray<{ id: ShowcaseId; label: string; sub: string; ms: number; icon: string }> = [
+  { id: 'buildup', label: t('Buildup'), sub: t('Assemble from nothing'), ms: 3000, icon: SVG.front },
+  { id: 'deconstruct', label: t('Deconstruct'), sub: t('Fly apart at the end'), ms: 2500, icon: SVG.ungroup },
+  { id: 'loop', label: t('The Loop'), sub: t('Assemble, hold, fly apart - cycles as a GIF'), ms: 6000, icon: SVG.rotate },
+  { id: 'hero', label: t('Hero arc'), sub: t('Explode, fly through, come home'), ms: 6000, icon: SVG.choreo },
+  { id: 'trench', label: t('Trench run'), sub: t('A small lift, the camera flies between'), ms: 5000, icon: SVG.camera },
+  { id: 'scan', label: t('Map-scan'), sub: t('Hardly raised, the camera scans the page'), ms: 8000, icon: SVG.move },
 ];
 
 /** Is a dash pattern relevant to this box? A dash keyword is on, OR an array is already
@@ -3439,6 +3465,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         disabled: liftTargetIndex(getBoxes()) < 0,
       });
     }
+    // ── choreograph (plans/104 P4) ────────────────────────────────────────────────────
+    // Lift's own section, and its posture verbatim: present for any tool that can hold
+    // keyframes at all, absent otherwise, and WITHIN the section disabled rather than
+    // hidden so the menu keeps a constant height. The separator is Lift's when Lift is
+    // here; a keyframe-capable tool with no image field opens the section itself.
+    if (canChoreograph()) {
+      if (!canLift()) items.push({ sep: true });
+      items.push({
+        label: t('Choreograph…'), icon: icon(SVG.choreo),
+        run: () => askChoreograph(),
+        disabled: !canChoreographNow(),
+      });
+    }
     lastMenuAt = { x: clientX, y: clientY };
     popover = document.createElement('div');
     popover.className = 'fc-popover fc-context-menu';
@@ -4398,6 +4437,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // which disables to keep its height constant - a panel is rebuilt per open and has
     // no such promise to keep, and a dead row among live controls reads as broken).
     const showLift = liftTargetIndex(boxes) === idx[0]!;
+    // "Choreograph" (plans/104 P4) sits beside it on the same terms - and hides, rather
+    // than disables, for the same reason: this panel is rebuilt per open, so a row that
+    // could do nothing is simply not drawn.
+    const showChoreo = canChoreograph() && idx.filter((i) => isPosable(boxes[i])).length >= 2;
     const isFrame = !!frameCfg && idx.length === 1 && String(b[cfg.kindField]) === frameCfg.frameKind;
     const showClip = isFrame && !!frameCfg!.clipChildrenField;
     const clipCur = showClip ? boolOf(b[frameCfg!.clipChildrenField!], true) : true;
@@ -4435,7 +4478,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         <label class="fc-row"><span class="fc-row-lbl">${t('X')}</span><input type="range" class="field-range" data-mp="shx" min="-300" max="300" value="${shX}"><b data-mp-val="shx">${shX}</b></label>
         <label class="fc-row"><span class="fc-row-lbl">${t('Y')}</span><input type="range" class="field-range" data-mp="shy" min="-300" max="300" value="${shY}"><b data-mp-val="shy">${shY}</b></label>
         <label class="fc-row"><span class="fc-row-lbl">${t('Blur')}</span><input type="range" class="field-range" data-mp="shblur" min="0" max="300" value="${shBlur}"><b data-mp-val="shblur">${shBlur}</b></label>` : ''}
-      ${showLift ? `<div class="fc-row"><button type="button" class="fc-cbtn fc-mp-lift" data-mp-lift>${icon(SVG.liftLayers)}<span>${escape(t('Lift layers'))}</span></button></div>` : ''}`;
+      ${showLift ? `<div class="fc-row"><button type="button" class="fc-cbtn fc-mp-lift" data-mp-lift>${icon(SVG.liftLayers)}<span>${escape(t('Lift layers'))}</span></button></div>` : ''}
+      ${showChoreo ? `<div class="fc-row"><button type="button" class="fc-cbtn fc-mp-choreo" data-mp-choreo>${icon(SVG.choreo)}<span>${escape(t('Choreograph…'))}</span></button></div>` : ''}`;
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
     // Shape is special-cased: switching to "circle" also squares the box (w = h),
     // since a circle is only an ellipse the geometry keeps 1:1. Everything else writes
@@ -4458,6 +4502,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
       lastMenuAt = { x: r.left, y: r.bottom };
       askLiftLayers();
+    });
+    p.querySelector<HTMLButtonElement>('[data-mp-choreo]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      lastMenuAt = { x: r.left, y: r.bottom };
+      askChoreograph();
     });
     stageEl.appendChild(p);
     morePanel = p;
@@ -5321,6 +5371,226 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // good, dismissable only by clicking outside. Idempotent - on the happy path
       // the panel is already gone and `stillOpen()` is false.
       if (stillOpen()) closeMorePanel();
+    }
+  }
+
+  // ── Choreograph (plans/104 P4) ──────────────────────────────────────────────────────
+  //
+  // One click over a stack of boxes writes EXPANDED per-box keyframe tracks plus a camera
+  // track - the camera presets' posture exactly: nothing is stored by name, so what a
+  // showcase writes is ordinary keyframes the user can retime, split or delete afterwards.
+  // All of the maths and the model write live in ./choreograph.ts, which is a LAZY chunk
+  // (it pulls timeline-math and the engine's keyframe module); everything below is picker.
+
+  /** Is "Choreograph" available on this tool at all? (Somewhere to write the tracks.) */
+  const canChoreograph = (): boolean => !!timeCfg?.kfField;
+
+  /**
+   * A box a showcase may pose. Mirrors `choreographable` in ./choreograph.ts, which stays
+   * the authority at write time - this copy exists only so the menu can gate itself
+   * without fetching the chunk. (`cfg.kindField` is 'kind', the literal key the camera
+   * readers use, so the two ask the same question of the same field.)
+   */
+  const isPosable = (b: Box | undefined): boolean =>
+    !!b && !['camera', 'frame', 'audio'].includes(String(b[cfg.kindField] ?? ''));
+
+  /** The selected boxes a showcase would pose, in array order. */
+  function choreoIds(boxes: Box[]): string[] {
+    return selIndices(boxes).filter((i) => isPosable(boxes[i])).map((i) => idOf(boxes[i], i));
+  }
+
+  /** A showcase over one box is just a keyframe, so two is the floor - and it is the same
+   *  floor `applyChoreograph` refuses under, rather than a second opinion about it. */
+  const canChoreographNow = (): boolean => choreoIds(getBoxes()).length >= 2;
+
+  /**
+   * The picker: six showcases, four settings, one button.
+   *
+   * The same `fc-panel` recipe as `askLiftLayers` - it rides `morePanel`, so an outside
+   * click or Escape dismisses it and that dismissal means "no" - minus the reading state,
+   * because there is nothing to fetch before it can draw itself: the plan is generated at
+   * commit time out of boxes already on the canvas.
+   */
+  function askChoreograph(): void {
+    if (!canChoreograph()) return;
+    closePopover();
+    closeMorePanel();
+    let showcase: ShowcaseId = 'buildup';
+    // The length follows the chosen showcase until the user types one. After that it is
+    // theirs, and switching cards must not quietly overwrite it.
+    let secDirty = false;
+    const n = choreoIds(getBoxes()).length;
+    const secOf = (id: ShowcaseId): string => String((CHOREO_SHOWCASES.find((s) => s.id === id)?.ms ?? 3000) / 1000);
+    const orderOpt = (v: string, label: string): string => `<option value="${v}">${escape(label)}</option>`;
+
+    const p = document.createElement('div');
+    p.className = 'fc-panel fc-num-panel fc-choreo-panel';
+    p.tabIndex = -1;
+    p.setAttribute('role', 'dialog');
+    p.setAttribute('aria-label', t('Choreograph'));
+    // The count sentence is written once and never re-worded, so a live region would
+    // announce nothing (only a mutation fires one). It is the dialog's DESCRIPTION instead,
+    // read after the name when focus arrives.
+    p.setAttribute('aria-describedby', 'fc-choreo-desc');
+    p.addEventListener('pointerdown', (e) => e.stopPropagation());
+    p.innerHTML = `<div class="fc-panel-head">${escape(t('Choreograph'))}</div>`
+      + `<p class="fc-num-hint" id="fc-choreo-desc">${escape(t('{n} boxes. One click writes a full motion arc - every keyframe stays editable afterwards.', { n }))}</p>`
+      + `<div class="fc-choreo-grid" role="radiogroup" aria-label="${escape(t('Showcase'))}">`
+        + CHOREO_SHOWCASES.map((s) =>
+          // Roving tabindex: the checked card is the group's one Tab stop, the arrows walk the rest.
+          `<button type="button" class="fc-choreo-card" role="radio" data-choreo="${s.id}" aria-checked="${s.id === showcase ? 'true' : 'false'}" tabindex="${s.id === showcase ? 0 : -1}">`
+          + `${icon(s.icon)}<span class="fc-choreo-name">${escape(s.label)}</span>`
+          + `<span class="fc-choreo-sub">${escape(s.sub)}</span></button>`).join('')
+      + '</div>'
+      + '<div class="fc-num-row">'
+        // `step="any"`, the size panel's own choice for a fractional field above: the step
+        // base is `min`, so a `step="0.5"` measured from 0.8 makes 3, 2.5, 6, 5 and 8 - the
+        // six authored lengths this field is prefilled with - each a step MISMATCH, and the
+        // spinner walks 3 to 3.3 rather than to 3.5. `min` is CHOREO_MIN_MS in seconds.
+        + `<label class="field-label fc-choreo-lab" for="fc-choreo-sec">${escape(t('Length in seconds'))}</label>`
+        + `<input type="number" class="field-input fc-choreo-num" id="fc-choreo-sec" data-choreo-sec min="0.8" step="any" value="${secOf(showcase)}">`
+      + '</div>'
+      + '<div class="fc-num-row">'
+        // 90 ms is the generator's own DEFAULT_STAGGER_MS, restated here for the same
+        // reason the six lengths are: the chunk must not be fetched to draw the picker.
+        + `<label class="field-label fc-choreo-lab" for="fc-choreo-stagger">${escape(t('Stagger ms'))}</label>`
+        + '<input type="number" class="field-input fc-choreo-num" id="fc-choreo-stagger" data-choreo-stagger min="0" step="10" value="90">'
+      + '</div>'
+      + '<div class="fc-num-row">'
+        + `<label class="field-label fc-choreo-lab" for="fc-choreo-order">${escape(t('Order'))}</label>`
+        + '<select class="field-select field-select--sm fc-choreo-order" id="fc-choreo-order" data-choreo-order>'
+          + orderOpt('', t('First to last'))
+          + orderOpt('reverse', t('Last to first'))
+          + orderOpt('center', t('From the centre'))
+          + orderOpt('depth', t('By depth'))
+          + orderOpt('random', t('Random'))
+        + '</select>'
+      + '</div>'
+      + `<label class="fc-row fc-row-toggle field-toggle"><span>${escape(t('Camera move'))}</span>`
+        + '<input type="checkbox" class="field-check" data-choreo-camera checked></label>'
+      + `<label class="fc-row fc-row-toggle field-toggle"><span>${escape(t('Float - a breath of scale'))}</span>`
+        + '<input type="checkbox" class="field-check" data-choreo-float checked></label>'
+      + '<div class="fc-num-row fc-confirm-row">'
+        + `<button type="button" class="btn btn--sm" data-choreo-no>${escape(t('Cancel'))}</button>`
+        + `<button type="button" class="btn btn--primary btn--sm" data-choreo-yes>${escape(t('Choreograph'))}</button>`
+      + '</div>';
+    stageEl.appendChild(p);
+    morePanel = p;
+    const sr = stageEl.getBoundingClientRect();
+    p.style.left = Math.max(6, Math.min(lastMenuAt.x - sr.left, Math.max(6, sr.width - p.offsetWidth - 6))) + 'px';
+    p.style.top = Math.max(6, Math.min(lastMenuAt.y - sr.top, Math.max(6, sr.height - p.offsetHeight - 6))) + 'px';
+    // At OPEN, synchronously, on the gesture that asked for it - askLiftLayers' rule, and
+    // the reason the dialog's own name is what a screen reader is given first.
+    p.focus();
+
+    /** Still the panel on screen? The one await below re-asks before touching anything. */
+    const live = (): boolean => !disposed && morePanel === p && p.isConnected;
+
+    const cards = Array.from(p.querySelectorAll<HTMLButtonElement>('[data-choreo]'));
+    const secIn = p.querySelector<HTMLInputElement>('[data-choreo-sec]')!;
+    const staggerIn = p.querySelector<HTMLInputElement>('[data-choreo-stagger]')!;
+    const orderSel = p.querySelector<HTMLSelectElement>('[data-choreo-order]')!;
+    const camIn = p.querySelector<HTMLInputElement>('[data-choreo-camera]')!;
+    const floatIn = p.querySelector<HTMLInputElement>('[data-choreo-float]')!;
+    const yes = p.querySelector<HTMLButtonElement>('[data-choreo-yes]')!;
+
+    const pick = (id: ShowcaseId): void => {
+      showcase = id;
+      for (const c of cards) {
+        const on = c.dataset.choreo === id;
+        c.setAttribute('aria-checked', on ? 'true' : 'false');
+        c.tabIndex = on ? 0 : -1;
+      }
+      if (!secDirty) secIn.value = secOf(id);
+    };
+    for (const c of cards) {
+      c.addEventListener('click', (e) => { e.stopPropagation(); pick(c.dataset.choreo as ShowcaseId); });
+    }
+    // Arrows walk the group, which is what calling it a radiogroup owes its keyboard users.
+    p.querySelector('.fc-choreo-grid')?.addEventListener('keydown', (ev) => {
+      const key = (ev as KeyboardEvent).key;
+      const step = key === 'ArrowRight' || key === 'ArrowDown' ? 1 : (key === 'ArrowLeft' || key === 'ArrowUp' ? -1 : 0);
+      if (!step) return;
+      ev.preventDefault();
+      const at = cards.findIndex((c) => c.getAttribute('aria-checked') === 'true');
+      const next = cards[(Math.max(0, at) + step + cards.length) % cards.length];
+      if (next) { pick(next.dataset.choreo as ShowcaseId); next.focus(); }
+    });
+    secIn.addEventListener('input', () => { secDirty = true; });
+    // Enter in either number field commits, exactly as askNumber's does.
+    for (const inp of [secIn, staggerIn]) {
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); void run(); } });
+    }
+    p.querySelector<HTMLButtonElement>('[data-choreo-no]')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeMorePanel();
+    });
+    yes.addEventListener('click', (e) => { e.stopPropagation(); void run(); });
+
+    /**
+     * Read the panel, generate, commit ONCE - the tracks, any clip promotions and the
+     * camera in a single undo step, which is `applyChoreograph`'s whole contract.
+     */
+    async function run(): Promise<void> {
+      if (yes.disabled || !timeCfg) return;
+      // The generator floors the arc at 0.8 s; say so in the field rather than let it read
+      // 0.1 while a 0.8 s arc is made.
+      let sec = parseFloat(secIn.value);
+      if (secDirty && Number.isFinite(sec) && sec < 0.8) { sec = 0.8; secIn.value = '0.8'; }
+      const opts = {
+        showcase,
+        staggerMs: Math.max(0, Math.round(parseFloat(staggerIn.value) || 0)),
+        order: orderSel.value as ChoreoOrder,
+        camera: camIn.checked,
+        float: floatIn.checked,
+        // Left alone, the generator picks: a timed board's own clip span, and the
+        // showcase's authored length on a board with no sequence yet.
+        durationMs: secDirty && Number.isFinite(sec) ? Math.round(sec * 1000) : undefined,
+      };
+      yes.disabled = true;
+      yes.textContent = t('Choreographing…');
+      // Busy for the reason the lift's confirm is: the chunk fetch and the commit are work
+      // in flight. The pressed button is now disabled, so park focus on the panel rather
+      // than let the browser drop it on <body> and out of the dialog.
+      p.setAttribute('aria-busy', 'true');
+      p.focus();
+      try {
+        // LAZY, and this is why: choreograph.ts pulls timeline-math and with it the
+        // engine's keyframe module - the same reason DEFAULT_CLIP_S is read through a
+        // dynamic import rather than named at the top of this file.
+        const { applyChoreograph, whyNotChoreograph } = await import('./choreograph.ts');
+        if (!live()) return;
+        const boxes = getBoxes();
+        const ids = choreoIds(boxes);
+        // A frames document opts out of depth and keyframe projection wholesale, so a
+        // showcase written there would render as nothing: refuse, and say which.
+        if (whyNotChoreograph(boxes, ids, timeCfg) === 'frames') {
+          flash(t('Choreograph works on a single artboard - a document with frames cannot be projected.'));
+          return;
+        }
+        const res = applyChoreograph(boxes, ids, opts, {
+          cfg: timeCfg,
+          rect: (b) => boxRect(b, cfg),
+          stage: canvasWH(),
+          // The manifest's own camera seed, exactly as ensureSceneCameraRows mints one.
+          cameraSeed: addKinds.find((k) => k.id === 'camera')?.seed,
+          mint: (rows) => freshId(rows),
+        });
+        if (!res) { flash(t('Select at least two boxes to choreograph.')); return; }
+        closeMorePanel();
+        selection = new Set(res.ids);
+        commit(res.rows);
+        // A hundred new keyframes are invisible until the timeline is up, so open it
+        // rather than leave the user to go looking for what just happened.
+        openTimeline();
+        flash(t('Choreographed {n} boxes.', { n: res.ids.length }));
+      } catch (e) {
+        console.error(e);
+        if (!disposed) flash(t('That showcase could not be written, so nothing was changed.'));
+      } finally {
+        // Idempotent: on the happy path the panel is already gone and `live()` is false.
+        if (live()) closeMorePanel();
+      }
     }
   }
 

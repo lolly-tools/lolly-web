@@ -1078,7 +1078,12 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // 50 → 51, 2026-08-19 (plan 112 M4, per-box `cls`): the CSS class panel is a FOURTH render
   //   of that same shape - one `p.innerHTML` whose only document-sourced value is the box's
   //   current class string, escapeHtml()d, beside two t() strings and a static placeholder.
-  'views/free-canvas.ts': 51,
+  // 51 → 52, 2026-09-01 (plans/104 P4, "Choreograph"): the showcase picker's ONE
+  //   `p.innerHTML`. Nothing from the document reaches it - the six card labels, subs and
+  //   ids come from the module-scope CHOREO_SHOWCASES table, the glyphs are icon(SVG.*)
+  //   constants, and the only computed value is the selected-box COUNT, an integer
+  //   formatted by t(). Every string interpolation is escape()d anyway.
+  'views/free-canvas.ts': 52,
   // present-mode.ts (plan 112): the presenter's three chrome sinks - the pause button and
   //   the two nav-button builders - are each `el.innerHTML = icon(name, opts)`, a static
   //   glyph string from lib/icons' PATHS registry with NO interpolated value. Nothing from a

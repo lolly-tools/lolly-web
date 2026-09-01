@@ -802,7 +802,48 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
    block }` used to sit here and never applied, because `.fc-row` below is the same
    specificity and comes later in the same layer, so flex won every time. The whole
    look is the button's, which is where it now says so. */
-.fc-mp-lift { width: 100%; justify-content: flex-start; gap: 7px; }
+.fc-mp-lift, .fc-mp-choreo { width: 100%; justify-content: flex-start; gap: 7px; }
+
+/* ── Choreograph (plans/104 P4) ───────────────────────────────────────────────────────
+   The showcase picker is the same `fc-panel fc-num-panel` recipe again; the only new
+   furniture is the grid of showcase cards between the sentence and the settings rows. */
+/* The height cap is not decoration. `.tool-stage` is `overflow: hidden` at 100dvh, so a
+   panel taller than the stage is CUT, and this one is the tallest in the file: six wrapping
+   cards, three labelled rows, two toggles and the confirm row. Measured past 640px on a
+   short window and further again under `largeText`, which put the Choreograph button below
+   the cut and out of reach. The cap keeps the whole dialog inside the stage; the card grid
+   below is what gives way, exactly as `.fc-lift-list` does in the dialog above. */
+.fc-choreo-panel { min-width: 300px; max-width: 360px; max-height: calc(100% - 12px); }
+/* Pinned for exactly the reason .fc-lift-panel pins it above: `aria-busy` here is a STATE
+   for assistive tech while the chunk loads and the commit runs, and parts/multi-edit.css
+   declares an UNSCOPED `[aria-busy="true"] { opacity: .6; pointer-events: none }` whose
+   presence depends on whether the session has been through /multi. Without this the panel
+   would fade on some routes and not others, and would stop swallowing its own presses
+   mid-run (the pointerdown guard needs the event), so an idle click would dismiss it
+   there and do nothing here. Two classes beat one attribute. */
+.fc-choreo-panel[aria-busy="true"] { opacity: 1; pointer-events: auto; }
+/* `min-height: 0` + a scroll are what make this the one child of the flex column that
+   gives way under the panel's cap: every other row keeps its automatic minimum size, so
+   the settings and the confirm row stay whole and the cards scroll instead. */
+.fc-choreo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; min-height: 0; overflow-y: auto; }
+/* A card, not a row: glyph over name over sub, bordered on all four sides. Deliberately
+   the canvas-size presets' recipe and their picked state, so the two grids of choices in
+   this editor read as one thing rather than two designers' answers to the same problem. */
+.fc-choreo-card {
+  display: flex; flex-direction: column; gap: 1px; align-items: flex-start;
+  padding: 7px 9px; border-radius: var(--radius-md); cursor: pointer;
+  border: 1px solid hsl(var(--border)); background: hsl(var(--background)); color: inherit;
+  font: inherit; text-align: left;
+}
+.fc-choreo-card svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); margin-bottom: 2px; }
+.fc-choreo-card:hover { border-color: hsl(var(--ring) / 0.5); }
+.fc-choreo-card[aria-checked="true"] { border-color: hsl(var(--primary)); background: hsl(var(--primary) / 0.08); }
+.fc-choreo-name { font-size: var(--fs-sm); font-weight: 600; }
+.fc-choreo-sub { font-size: var(--fs-xs); color: hsl(var(--muted-foreground)); line-height: 1.3; }
+/* Label left, the control taking the rest of the row - the Lift dialog's strength row. */
+.fc-choreo-grid + .fc-num-row { margin-top: 10px; }
+.fc-choreo-lab { flex: none; }
+.fc-choreo-num, .fc-choreo-order { flex: 1 1 auto; min-width: 0; }
 body.fc-manipulating { user-select: none; -webkit-user-select: none; }
 
 /* Hide the editor chrome while the export shutter is closing (belt-and-braces -
