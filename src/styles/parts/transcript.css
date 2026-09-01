@@ -1,0 +1,81 @@
+/* SPDX-License-Identifier: MPL-2.0
+ * Transcript panel - the right-docked surface for transcript-driven editing
+ * (plans/174). On desktop the panel is re-parented into the shared right-edge
+ * column (lib/edge-dock.ts), which NUDGES #view (and the timeline inside it) in;
+ * these .tr-panel rules are the fixed full-width overlay it falls back to below the
+ * mobile breakpoint, where edge docking is inert. Themes off the popover tokens.
+ * views/transcript-panel.ts does `import '../styles/parts/transcript.css'`. */
+
+.tr-panel {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 10000;
+  width: clamp(300px, 30vw, 420px);
+  display: flex; flex-direction: column;
+  /* Full-height STRETCH like .pro-blocks-panel, so the surface reaches the screen
+     edge; the padding lifts the footer out of the iOS home-indicator strip
+     (0px where there is no inset - the stu-sheet idiom). */
+  padding-bottom: var(--safe-bottom, 0px);
+  background: hsl(var(--popover)); color: hsl(var(--popover-foreground));
+  border-left: 1px solid hsl(var(--border));
+  /* No drop shadow declared here: when docked, .edge-dock casts its own; the mobile
+     fallback is a full-width overlay that needs none. (Chrome-token ratchet, R12.) */
+  animation: tr-slide .18s ease;
+}
+@keyframes tr-slide { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@media (max-width: 640px) { .tr-panel { width: 100%; } }
+@media (prefers-reduced-motion: reduce), (prefers-reduced-motion) { .tr-panel { animation: none; } }
+html[data-a11y-motion="reduce"] .tr-panel { animation: none; }
+
+.tr-head, .tr-toolbar, .tr-foot {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .6rem .85rem; flex: 0 0 auto;
+}
+.tr-head { justify-content: space-between; border-bottom: 1px solid hsl(var(--border)); }
+.tr-title { font-weight: 600; font-size: var(--fs-sm); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tr-toolbar { border-bottom: 1px solid hsl(var(--border) / .6); flex-wrap: wrap; }
+.tr-foot { border-top: 1px solid hsl(var(--border) / .6); color: hsl(var(--muted-foreground)); font-size: calc(11px * var(--a11y-fs, 1)); }
+
+.tr-chk { display: inline-flex; align-items: center; gap: .35rem; font-size: calc(12px * var(--a11y-fs, 1)); cursor: pointer; }
+.tr-spacer { flex: 1 1 auto; }
+
+/* Spelled-out actions: no shortcut knowledge required. Enabled once words are selected. */
+.tr-act {
+  display: inline-flex; align-items: center; gap: .35rem;
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius-sm);
+  background: hsl(var(--card)); color: hsl(var(--foreground));
+  font: inherit; font-size: calc(12px * var(--a11y-fs, 1)); padding: .25rem .6rem;
+  cursor: pointer;
+}
+.tr-act:hover:not(:disabled) { background: hsl(var(--muted)); }
+.tr-act:disabled { opacity: .45; cursor: default; }
+.tr-act[data-danger]:hover:not(:disabled) { color: hsl(var(--destructive, 0 72% 51%)); border-color: hsl(var(--destructive, 0 72% 51%) / .5); }
+.tr-act-ico { display: inline-flex; }
+.tr-act-ico svg { width: calc(14px * var(--a11y-fs, 1)); height: calc(14px * var(--a11y-fs, 1)); }
+
+.tr-close { display: inline-flex; align-items: center; justify-content: center; width: calc(28px * var(--a11y-fs, 1)); height: calc(28px * var(--a11y-fs, 1)); border: 0; background: transparent; color: inherit; border-radius: var(--radius-sm); cursor: pointer; }
+.tr-close:hover { background: hsl(var(--muted)); }
+.tr-close svg { width: calc(18px * var(--a11y-fs, 1)); height: calc(18px * var(--a11y-fs, 1)); }
+
+/* The flowing transcript: one paragraph of selectable words - edit like a document. */
+.tr-list { flex: 1 1 auto; overflow-y: auto; }
+.tr-empty { padding: 2rem 1rem; text-align: center; color: hsl(var(--muted-foreground)); font-size: var(--fs-sm); }
+.tr-flow {
+  padding: .75rem .95rem;
+  font-size: calc(15px * var(--a11y-fs, 1));
+  line-height: 1.9;
+  overflow-wrap: anywhere;
+  user-select: text;
+  cursor: text;                 /* I-beam - this is text you select, not buttons you click */
+  caret-color: hsl(var(--foreground));
+  outline: none;                /* it's a read-only contenteditable; no focus box */
+}
+/* A word: the seek/selection unit. The flow is a read-only contenteditable, so the browser
+   gives a blinking caret, arrow-key navigation, drag-select and double-click-to-select free. */
+.tr-word { cursor: text; border-radius: var(--radius-xs); padding: 0 .05em; }
+.tr-word:hover { background: hsl(var(--muted) / .7); }
+.tr-word.is-ignored { text-decoration: line-through; color: hsl(var(--muted-foreground)); }
+/* Read-along: the word under the playhead. Uses the brand accent, matching the timeline. */
+.tr-word.is-now { background: var(--brand-secondary, var(--brand-primary, hsl(var(--accent)))); color: hsl(var(--accent-foreground)); }
+.tr-flow ::selection { background: hsl(var(--ring) / .35); }
+
+/* Hide struck words when "Show skipped" is off. */
+.tr-panel[data-hide-ignored="1"] .tr-word.is-ignored { display: none; }

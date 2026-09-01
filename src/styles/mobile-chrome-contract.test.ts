@@ -406,6 +406,10 @@ const BOTTOM_ANCHOR_ALLOW: Array<{ file: string; selector: string; why: string }
     file: 'pro/pro.css', selector: '.pro-blocks-panel',
     why: 'a right-docked full-height rail: top: 0 + bottom: 0 is a vertical STRETCH, not a bottom anchor, and its own head/foot rows hold the controls away from the edge.',
   },
+  {
+    file: 'styles/parts/transcript.css', selector: '.tr-panel',
+    why: 'the transcript rail, same STRETCH idiom as .pro-blocks-panel; its own padding-bottom: var(--safe-bottom) lifts the footer out of the gesture strip, and the panel has no text input for the keyboard to bury.',
+  },
 ];
 
 test('no NEW fixed bottom anchor skips both the safe-area inset and the keyboard lift', () => {

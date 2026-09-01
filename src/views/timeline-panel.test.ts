@@ -4821,7 +4821,7 @@ test('+Keyframe sits at the END of the transport cluster, and says when it can d
     const cluster = Array.from(h.root.querySelectorAll<HTMLElement>('.tl-tools > .tl-btn'))
       .map((x) => x.classList[1]);
     assert.deepEqual(cluster, [
-      'tl-add', 'tl-mic', 'tl-script', 'tl-split', 'tl-snap', 'tl-onion',
+      'tl-add', 'tl-mic', 'tl-script', 'tl-transcript', 'tl-split', 'tl-snap', 'tl-onion',
       'tl-zoom-out', 'tl-zoom-in', 'tl-fit', 'tl-keys', 'tl-kf-btn',
     ], 'the diamond is LAST - never back among +, mic and script');
     assert.equal(cluster.at(-1), 'tl-kf-btn', 'and nothing may be appended after it');

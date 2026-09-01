@@ -181,6 +181,10 @@ export interface SeqLayer {
   /** Playback-rate multiplier, 0.25–4. */
   speed: number;
   mute: boolean;
+  /** Struck-through / ignored (plans/174): dropped from the drawn frames and the audio
+   *  mix. The hook has already compressed the surviving clips' startMs, so this layer
+   *  just falls out - no picture, no sound, no gap. Absent = not ignored. */
+  ignored?: boolean;
   /** Clip volume 0..2 (1 = as recorded) - the audio mix's flat gain. */
   gain: number;
   enter: TransitionKind | null;
@@ -351,6 +355,7 @@ export function readLayer(el: HTMLElement, idx: number, totalMs: number): SeqLay
     clipInMs: clamp(num(el.getAttribute?.('data-clip-in') ?? null, 0), 0, MAX_TIME_MS),
     speed: clamp(num(el.getAttribute?.('data-t-speed') ?? null, 1), MIN_SPEED, MAX_SPEED),
     mute: (el.getAttribute?.('data-t-mute') ?? null) === '1',
+    ignored: (el.getAttribute?.('data-t-ignored') ?? null) === '1',
     gain: clamp(num(el.getAttribute?.('data-t-gain') ?? null, 1), 0, 2),
     enter: isTransitionKind(enter) ? enter : null,
     enterMs: clamp(num(el.getAttribute?.('data-t-enter-ms') ?? null, DEFAULT_TRANSITION_MS), MIN_TRANSITION_MS, MAX_TRANSITION_MS),
@@ -1054,6 +1059,7 @@ export function sequenceDrawPlan(
   const xfadeEnter = new Map(junctions.map((j) => [j.bIdx, j.ms]));
   const out: PlanItem[] = [];
   for (const layer of spans) {
+    if (layer.ignored) continue;   // struck-through: never drawn (plans/174)
     const extendMs = ext.get(layer.idx) ?? 0;
     // A zero-length window is empty - an open-ended box in an untimed composition
     // (totalMs 0), or a clip trimmed to nothing, is never on screen.

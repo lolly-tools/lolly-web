@@ -71,6 +71,17 @@ export interface TimeCfg {
   /** OPTIONAL: the user's own clip name (timeline rename); '' or absent = derived label. */
   labelField?: string;
   /**
+   * OPTIONAL, progressive like linkField/gainField (plans/174 section 5.5): the
+   * reversible-cut sub-field (design's `ignored`). An `ignored` box keeps its media
+   * and its place in the RULER (greyed/struck in the transcript) but is treated as
+   * zero-duration by playback and export - the Descript "ignore" gesture, the dual of
+   * a hard delete. A tool that declares none simply never offers strikethrough, and
+   * every reader treats an absent value as not-ignored. Distinct from `muteField`:
+   * mute silences audio yet keeps picture AND time; ignore drops picture+audio AND
+   * removes the time. Named through the cfg because every box-field reader must be.
+   */
+  ignoredField?: string;
+  /**
    * OPTIONAL, on the same progressive-capability terms as `linkField`. The sub-fields
    * carrying each preset's authored GEOMETRY curve - a preset name or a CSS
    * cubic-bezier, '' when unauthored, in which case the preset keeps the built-in
@@ -1402,6 +1413,73 @@ export function moveOverlay(boxes: Box[], cfg: TimeCfg, id: string, atSec: numbe
   if (boxTiming(rows[i], cfg).lane === 'seq') return rows.map((b) => b);
   const at = clamp(r3(num(atSec, 0)), 0, MAX_TIME_S);
   return rows.map((b, k) => (k === i ? withFields(b!, { [cfg.startField]: at }) : b));
+}
+
+/**
+ * Shift EVERY selected OVERLAY box by the same `deltaSec` (a marquee/multi drag on the
+ * overlay lanes). Relative offsets are preserved: the group's delta is clamped once so
+ * the EARLIEST moved box's start stays >= 0, rather than each box clamping independently
+ * (which would crush the shape against the left wall). Seq-lane and untimed members in
+ * `ids` are ignored - a seq clip's start is pack-derived, so it moves via {@link moveSeqClips}.
+ * Identity per box when nothing changes, so a no-op group drag costs no undo step.
+ */
+export function moveOverlays(boxes: Box[], cfg: TimeCfg, ids: readonly string[], deltaSec: number): Box[] {
+  const rows = Array.isArray(boxes) ? boxes : [];
+  const set = new Set(Array.from(ids, String));
+  const moving = rows.filter((b) => set.has(String(b?.[cfg.idField] ?? '')) && isOverlayRow(b, cfg));
+  if (!moving.length) return rows.map((b) => b);
+  let minStart = Number.POSITIVE_INFINITY;
+  for (const b of moving) minStart = Math.min(minStart, boxTiming(b, cfg).start ?? 0);
+  const eff = Math.max(num(deltaSec, 0), -minStart);   // never push the earliest below 0
+  if (eff === 0) return rows.map((b) => b);
+  return rows.map((b) => {
+    if (!set.has(String(b?.[cfg.idField] ?? '')) || !isOverlayRow(b, cfg)) return b;
+    const t = boxTiming(b, cfg);
+    return withFields(b!, { [cfg.startField]: clamp(r3((t.start ?? 0) + eff), 0, MAX_TIME_S) });
+  });
+}
+
+/**
+ * Where a GROUP of dragged seq clips would insert in the row order - {@link dropIndexAt}
+ * generalised to skip EVERY moving id, not just one. The result indexes the row WITHOUT
+ * the moving clips (the range is [0, remainder length]), which is exactly what
+ * {@link moveSeqClips} re-inserts against. Preview and commit read the same index.
+ */
+export function groupDropIndex(boxes: Box[], cfg: TimeCfg, tSec: number, movingIds: readonly string[]): number {
+  const order = seqBoxes(Array.isArray(boxes) ? boxes : [], cfg);
+  const set = new Set(Array.from(movingIds, String));
+  const at = num(tSec, 0);
+  let idx = 0;
+  let movingCount = 0;
+  for (const b of order) {
+    if (set.has(String(b?.[cfg.idField] ?? ''))) { movingCount++; continue; }
+    const t = boxTiming(b, cfg);
+    if (at >= (t.start ?? 0) + (t.dur ?? 0) / 2) idx++;
+  }
+  return clamp(idx, 0, order.length - movingCount);
+}
+
+/**
+ * Move SEVERAL seq clips to `newIndex` as one contiguous block, preserving their internal
+ * order, then repack + ripple - the magnetic-row multi-drag. A non-contiguous selection
+ * is gathered into a block at the drop point (standard NLE behaviour). `newIndex` is
+ * measured against the row WITHOUT the moving clips ({@link groupDropIndex}), range
+ * [0, remainder length]. Fewer than two moving seq clips defers to the single-clip
+ * {@link moveSeqClip} (or is a no-op), so callers can route every seq multi-drag here.
+ */
+export function moveSeqClips(boxes: Box[], cfg: TimeCfg, ids: readonly string[], newIndex: number, mediaDur?: MediaDurFn): Box[] {
+  const rows = Array.isArray(boxes) ? boxes : [];
+  const order = seqIndices(rows, cfg);   // row indices, in seq order
+  const set = new Set(Array.from(ids, String));
+  const moving = order.filter((idx) => set.has(String(rows[idx]?.[cfg.idField] ?? '')));
+  if (moving.length < 2) {
+    if (moving.length === 1) return moveSeqClip(rows, cfg, String(rows[moving[0]!]?.[cfg.idField] ?? ''), newIndex, mediaDur);
+    return rows.map((b) => b);
+  }
+  const remainder = order.filter((idx) => !set.has(String(rows[idx]?.[cfg.idField] ?? '')));
+  const to = clamp(Math.round(num(newIndex, 0)), 0, remainder.length);
+  const nextOrder = [...remainder.slice(0, to), ...moving, ...remainder.slice(to)];
+  return rippleOverlays(rows, packOrder(rows, cfg, nextOrder, mediaDur), cfg);
 }
 
 /**

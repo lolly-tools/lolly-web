@@ -110,6 +110,12 @@ export interface Timing {
   exitEase: string;
   /** True when the box declared `data-t-mute="1"` (its audio stays silent). */
   mute: boolean;
+  /**
+   * True when the box declared `data-t-ignored="1"` (transcript strikethrough, plans/174):
+   * skipped by playback and export - never on screen, never mixed. The hook has already
+   * compressed the surviving clips' `data-t-start`, so a marked box simply drops out.
+   */
+  ignored: boolean;
   /** Clip volume 0..2 (`data-t-gain`; absent = 1 = as recorded). */
   gain: number;
   lane: 'seq' | '';
@@ -167,6 +173,7 @@ export function readTiming(el: Element): Timing {
     enterEase: el.getAttribute('data-t-enter-ease') || '',
     exitEase: el.getAttribute('data-t-exit-ease') || '',
     mute: el.getAttribute('data-t-mute') === '1',
+    ignored: el.getAttribute('data-t-ignored') === '1',
     gain: clamp(attrNum(el, 'data-t-gain', 1), 0, 2),
     lane: el.getAttribute('data-t-lane') === 'seq' ? 'seq' : '',
     z: readDepthZ(el.getAttribute('data-t-z')),
@@ -190,6 +197,9 @@ export function endOf(timing: Timing, seqMs: number): number {
  * gapless seq row cut cleanly instead of flashing both clips for one frame.
  */
 export function isActiveAt(timing: Timing, tMs: number, seqMs: number): boolean {
+  // An ignored (struck-through) box is never on screen - plans/174. It is the one gate
+  // for the visual side; the audio scheduler and the export planner carry their own.
+  if (timing.ignored) return false;
   const end = endOf(timing, seqMs);
   // A zero-length box is never on screen (its half-open span is empty), except the
   // degenerate open-ended-at-the-very-end case, which `end > start` already excludes.

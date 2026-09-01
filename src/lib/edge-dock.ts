@@ -42,8 +42,8 @@ const DROP_BAND = 52;
 // Column order is fixed, top-to-bottom: the zoom HUD (a COMPACT bar), then the
 // player, then the export panel. The player/export are full panels and share the
 // resizable split; the zoom bar is fixed-height and sits above them, out of it.
-type PanelId = 'zoom' | 'neuro' | 'export';
-const ORDER: readonly PanelId[] = ['zoom', 'neuro', 'export'];
+type PanelId = 'zoom' | 'neuro' | 'export' | 'transcript';
+const ORDER: readonly PanelId[] = ['zoom', 'neuro', 'export', 'transcript'];
 
 interface Occupant {
   el: HTMLElement;

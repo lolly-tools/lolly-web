@@ -234,6 +234,9 @@ const PATHS = {
   // (Utilities card + #/script writing view): words in, a spoken voice out.
   // Deliberately NOT `mic` (that claims live capture) or `music` (a tune).
   speech: '<path d="M8.8 20v-4.1l1.9.2a2.3 2.3 0 0 0 2.164-2.1V8.3A5.37 5.37 0 0 0 2 8.25c0 2.8.656 3.95 1 4.8a.2.2 0 0 1 .2.2v3.5"/><path d="M19.8 17.8a7.5 7.5 0 0 0 .003-10.603"/><path d="M17 15a3.5 3.5 0 0 0-.025-4.975"/>',
+  // Two overlapping chat bubbles (Lucide messages-square) - a spoken exchange as
+  // text: the Transcript panel (plans/174), edit-video-by-editing-the-words.
+  transcript: '<path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2Z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/>',
   // A screen on a stand - "captured from the screen" (IPTC screenCapture). Deliberately
   // NOT the camera glyph: a screenshot is a different claim from a photograph.
   monitor: '<rect x="2" y="3" width="20" height="13" rx="2"/><path d="M8 21h8M12 16v5"/>',

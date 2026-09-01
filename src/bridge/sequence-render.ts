@@ -1006,6 +1006,7 @@ async function mixSequenceAudio(
   for (const L of layers) {
     if (L.kind !== 'video' && L.kind !== 'audio') continue;
     if (L.mute) continue;
+    if (L.ignored) continue;   // struck-through: dropped from the mix (plans/174)
     if (L.durMs <= 0) continue;
     if (L.speed !== 1) {
       log('warn', `sequence audio: a clip at ${Math.round(L.startMs)}ms plays at ${L.speed}× - muted (v1 does not time-stretch audio).`);

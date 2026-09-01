@@ -687,6 +687,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
   /** Everything that decides WHETHER and WHERE a box sounds. */
   function audioKey(url: string, timing: Timing): string {
     return `${url}|${timing.start}|${timing.dur}|${timing.clipIn}|${timing.speed}|${timing.mute ? 1 : 0}`
+      + `|${timing.ignored ? 1 : 0}`
       + `|${timing.gain}|${timing.enter ?? ''}:${timing.enterMs}|${timing.exit ?? ''}:${timing.exitMs}`;
   }
 
@@ -900,7 +901,9 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
     if (!audioCtx()) return;                        // no output device: picture only
     const seq = seqMs();
     if (tMs / 1000 >= audioEndSec(timing, seq)) return;   // already past it
-    if (timing.mute) { audios.set(el, { key, node: null, gainNode: null }); return; }
+    // Muted or ignored (strikethrough, plans/174): reserve the slot so the box is not
+    // re-placed every frame, but schedule no source - it stays silent.
+    if (timing.mute || timing.ignored) { audios.set(el, { key, node: null, gainNode: null }); return; }
     if (timing.speed !== 1) {
       audios.set(el, { key, node: null, gainNode: null });
       if (!speedWarned) {
@@ -967,7 +970,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
         // looping element wraps to 0 inside a window trimmed past its media - the
         // export holds the last frame there, and the preview must show the same.
         if (rec.loopWas == null) { rec.loopWas = video.loop; try { video.loop = false; } catch { /* detached */ } }
-        const wantMuted = !!timing.mute;
+        const wantMuted = !!timing.mute || !!timing.ignored;
         if (video.muted !== wantMuted) video.muted = wantMuted;   // no per-frame write
         // Clip volume + fades on the element (plans/165 WP-1/2): the closed form of
         // the exact envelope the export mixes with. The element caps at 1, so a

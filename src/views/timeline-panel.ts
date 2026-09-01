@@ -81,6 +81,8 @@ import {
   boxTiming, deriveDuration, edgeZonePx, fmtDelta, fmtDur, fmtTime, indexOfId, isTimed,
   onionNeighbours,
   dropIndexAt, moveOverlay, moveSeqClip, packSeq, removeAndRipple, rippleOverlays, seqBoxes,
+  // Marquee/multi-drag batch movers (plans/54 timeline; drag-select + move-many).
+  groupDropIndex, moveOverlays, moveSeqClips,
   setClipIn, setDuration, setSpeed,
   detachAudio, isThroughEdit, joinClips, reattachAudio, restackOverlay, splitAll,
   snapTime, trimClip,
@@ -98,6 +100,11 @@ import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 // break at the same words a headless render would break at.
 import { groupWordsToCues } from '../../../../engine/src/captions.ts';
 import { captionGroup, cueSpansOnTimeline, isCaptionGroup, transcriptWordsOf, ttsWordsOf } from './timeline-captions.ts';
+// Transcript-driven editing (plans/174): delete a row cuts that media, strike a
+// row greys it. All arithmetic lives in the pure transcript-edit.ts; this panel
+// is opened from here so it can reuse this module's getBoxes/write/clock/cfg.
+import { openTranscriptPanel } from './transcript-panel.ts';
+import { removedSpansTimeline, originalToEdited, editedToOriginal } from './transcript-edit.ts';
 // The transcription rung as a background job (plans/124 section 9, WP-F): the
 // consent sheet enqueues and closes, the global toast owns progress and cancel,
 // and a finished transcript outlives the panel.
@@ -855,7 +862,7 @@ export function edgeBase(pointerType: string | undefined): number {
 
 // ── the controller ────────────────────────────────────────────────────────────
 
-type GestureKind = 'trim' | 'move' | 'reorder' | 'seek' | 'resize' | 'kf';
+type GestureKind = 'trim' | 'move' | 'reorder' | 'seek' | 'resize' | 'kf' | 'marquee';
 
 interface Gesture {
   kind: GestureKind;
@@ -898,6 +905,15 @@ interface Gesture {
   /** Panel resize only. */
   h0: number;
   moved: boolean;
+  /** Marquee only: the drag ADDS to the current selection (Shift/Cmd held). */
+  additive?: boolean;
+  /** move/reorder only: when >1, drag the whole selection as a batch (one undo step).
+   *  moveOverlays/moveSeqClips each act on the same-lane members and ignore the rest. */
+  groupIds?: string[];
+  /** move/reorder only: a plain press on an already-multi-selected clip keeps the set
+   *  for a possible group drag; if it turns out to be a click (no move), collapse to this
+   *  one clip on release (the standard "click one of a selection" behaviour). */
+  collapseOnClick?: boolean;
 }
 
 const cssEscape = (v: string): string => (
@@ -1302,6 +1318,13 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   const kfBtn = btn('tl-kf-btn', t('+Keyframe'), icon('keyframe'));
   kfBtn.hidden = !cfg.kfField;
 
+  // Transcript-driven editing (plans/174). Same progressive gate as the rest: a
+  // tool that declares no `ignored` sub-field never grows the button. Clicking
+  // opens the right-docked Transcript panel for the selected clip (or, if it has
+  // no timings yet, offers the same on-device transcription the captions use).
+  const transcriptBtn = btn('tl-transcript', t('Edit transcript'), icon('transcript'));
+  transcriptBtn.hidden = !cfg.ignoredField;
+
   /** The take HUD: a live level meter and the elapsed clock, shown only during a take. */
   const rec = document.createElement('div');
   rec.className = 'tl-rec';
@@ -1333,7 +1356,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   const tools = document.createElement('div');
   tools.className = 'tl-tools';
   // `kfBtn` LAST - the end of the left cluster, after the keyboard sheet (section 8's M2.6).
-  tools.append(addBtn, micBtn, scriptBtn, splitBtn, snapBtn, onionBtn, zoomOutBtn, zoomInBtn, fitBtn, keysBtn, kfBtn);
+  tools.append(addBtn, micBtn, scriptBtn, transcriptBtn, splitBtn, snapBtn, onionBtn, zoomOutBtn, zoomInBtn, fitBtn, keysBtn, kfBtn);
   const inspector = document.createElement('div');
   inspector.className = 'tl-inspector';
   bar.append(transport, tools, rec, recNote, inspector);
@@ -1391,7 +1414,13 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   trimBadge.className = 'tl-trim-badge';
   trimBadge.hidden = true;
   trimBadge.setAttribute('aria-hidden', 'true');
-  inner.append(laneWrap, scenery, extent, playhead, snapline, trimBadge);
+  /** The rubber-band selection rectangle (drag-select on empty lane space). Positioned
+   *  in timeline-content pixels inside `inner`, so it scrolls with the bars. */
+  const marquee = document.createElement('div');
+  marquee.className = 'tl-marquee';
+  marquee.hidden = true;
+  marquee.setAttribute('aria-hidden', 'true');
+  inner.append(laneWrap, scenery, extent, playhead, snapline, trimBadge, marquee);
   tracks.appendChild(inner);
 
   root.append(handle, bar, ruler, tracks);
@@ -1446,6 +1475,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const d = Number(video?.duration);
     return Number.isFinite(d) && d > 0 ? d : null;
   }
+
+  /** Struck-through / ignored (plans/174) - kept in the ruler, skipped everywhere else. */
+  const boxIgnored = (b: Box | undefined): boolean =>
+    !!b && !!cfg.ignoredField && (b[cfg.ignoredField] === true || b[cfg.ignoredField] === 'true');
 
   /**
    * A box's media, read from the LIVE CANVAS rather than the model: the hook has already
@@ -1624,9 +1657,9 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const i = indexOfId(rows, cfg, id);
     if (i < 0 || !isTimed(rows[i]!, cfg)) return;      // scenery is always on screen
     const { start, dur } = span(rows[i]!, durationSec());
-    const at = clock.t() / 1000;
+    const at = toAuthoredMs(clock.t()) / 1000;
     if (at >= start && at < start + dur) return;
-    clock.seek(start * 1000);
+    seekAuthored(start * 1000);
     announce(t('Moved the playhead to this clip'));
   }
 
@@ -1894,6 +1927,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
   /** Cheap pass: geometry, labels, selection state. No node churn. */
   function restyle(boxes: Box[], total = durationSec(), seqIds?: Set<string>): void {
+    refreshRemoved(boxes);   // keep the ignored-span map current for the playhead/seek maps
     const sel = new Set(selection.get());
     const seqSet = seqIds ?? new Set(seqBoxes(boxes, cfg).map((b) => String(b[cfg.idField] ?? '')));
     for (const b of boxes) {
@@ -1912,6 +1946,9 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       el.classList.toggle('is-selected', isSel);
       const muted = b[cfg.muteField] === true || b[cfg.muteField] === 'true';
       el.classList.toggle('is-muted', muted);
+      // Struck-through / ignored (plans/174): the RULER keeps it (unlike a delete), greyed
+      // and struck, while playback and export skip it. The bar stays draggable/restorable.
+      el.classList.toggle('is-ignored', boxIgnored(b));
       // A/V link. The muted side is the picture (its sound is elsewhere); the other side
       // is the sound itself. The `is-muted` hatch already reads as "silenced" on the
       // video, so this adds the one thing the hatch cannot say: WHERE the sound went.
@@ -2041,6 +2078,27 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     ruler.setAttribute('aria-valuenow', String(tenth));
     ruler.setAttribute('aria-valuetext', fmtTime(tMs / 1000));
   }
+
+  // ── ignored-clip time mapping (plans/174) ───────────────────────────────────
+  // The hook compresses ignored SEQ clips out of the CANVAS/clock timebase (their
+  // data-t-start/data-seq-ms drop the gap), but the RULER keeps them in place, greyed.
+  // So the clock's compressed ("edited") time and the ruler's authored time need mapping.
+  // INERT when nothing is struck: `removedMs` is empty, and both maps are the identity -
+  // so a document with no strikes is byte-for-byte unchanged. The list is cached and
+  // refreshed on every model sync (restyle), never recomputed per playhead tick.
+  let removedMs: { start: number; end: number }[] = [];
+  function refreshRemoved(boxes: Box[]): void {
+    removedMs = cfg.ignoredField
+      ? removedSpansTimeline(boxes, cfg).map((s) => ({ start: s.start * 1000, end: s.end * 1000 }))
+      : [];
+  }
+  /** Clock (compressed/edited) ms → ruler (authored) ms. */
+  const toAuthoredMs = (clockMs: number): number => editedToOriginal(removedMs, clockMs);
+  /** Ruler (authored) ms → clock (compressed/edited) ms. */
+  const toClockMs = (authoredMs: number): number => originalToEdited(removedMs, authoredMs);
+  /** Seek the clock to an AUTHORED-time position (the ruler/model's own time). */
+  const seekAuthored = (authoredMs: number, opts?: { scrubbing?: boolean }): void =>
+    clock.seek(toClockMs(Math.max(0, authoredMs)), opts);
 
   function updatePlayhead(tMs: number): void {
     // Read first, write after: reading scrollLeft between style writes forces a
@@ -2825,7 +2883,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
           : dir > 0 ? t('Last keyframe') : t('First keyframe'));
       return;
     }
-    clock.seek(to * 1000);
+    seekAuthored(to * 1000);
     announce(t('Keyframe @ {t}', { t: fmtTime(to) }));
   }
 
@@ -2846,7 +2904,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const i = indexOfId(rows, cfg, id);
     if (i < 0 || !cfg.kfField) return;
     if (!selection.get().includes(id)) selectAndReveal([id]);
-    clock.seek(kfTimelineSec(rows[i]!, cfg, atMs) * 1000);
+    seekAuthored(kfTimelineSec(rows[i]!, cfg, atMs) * 1000);
     // The row is rebuilt by the selection change above (restyle → renderInspector), so
     // the segment this points at is the live one. On a box whose row offers no
     // Keyframes group (there is none - a diamond only exists where the group does)
@@ -5437,22 +5495,39 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (target.closest('.tl-ruler')) {
       e.preventDefault();
       const at = maybeSnap(timeAt(e.clientX), e.altKey, undefined, undefined, true);
-      clock.seek(at * 1000, { scrubbing: true });
+      seekAuthored(at * 1000, { scrubbing: true });
       beginGesture(e, { kind: 'seek', id: '', el: ruler, x0: e.clientX, y0: e.clientY, start0: 0, dur0: 0, index0: 0, index: 0, h0: panelH });
       return;
     }
 
     const barEl = target.closest<HTMLElement>('.tl-clip');
-    if (!barEl) return;
+    if (!barEl) {
+      // Empty lane space inside the tracks scroller → rubber-band select. The ruler,
+      // handle and chrome were all handled above, so this is genuinely empty timeline.
+      if (target.closest('.tl-tracks')) {
+        e.preventDefault();
+        const additive = e.shiftKey || e.metaKey || e.ctrlKey;
+        if (!additive) selectAndReveal([], { reveal: false });
+        marquee.hidden = false;
+        drawMarquee(e.clientX, e.clientY, e.clientX, e.clientY);
+        beginGesture(e, { kind: 'marquee', id: '', el: tracks, x0: e.clientX, y0: e.clientY, start0: 0, dur0: 0, index0: 0, index: 0, h0: panelH, additive });
+      }
+      return;
+    }
     const id = barEl.dataset.id || '';
     if (!id) return;
     e.preventDefault();
 
     // Selection follows the press (Shift toggles), so the canvas chrome tracks the bar.
     const cur = selection.get();
+    // A plain press on a clip that is ALREADY part of a multi-selection keeps the whole
+    // set, so the press can drag the group; a click that never moves collapses to this
+    // one clip on release (collapseOnClick), the standard NLE behaviour.
+    const inMulti = cur.length > 1 && cur.includes(id);
     // Shift-extend never reveals: with two clips selected there is no single one to
     // put the picture on, and moving it out from under the first is a worse answer.
     if (e.shiftKey) selectAndReveal(cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id], { reveal: false });
+    else if (inMulti) { /* keep the multi-selection; group-drag or collapse-on-click below */ }
     else {
       // A/V-linked pair: pressing either half selects both, so a move or a delete keeps
       // picture and sound together. Alt selects just the one - the shell's established
@@ -5461,6 +5536,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const partner = e.altKey ? '' : partnerOf(id);
       selectAndReveal(partner ? [id, partner] : [id]);
     }
+    const groupIds = selection.get();
     focusedId = id;
     updateRovingTabindex();
     barEl.focus?.();
@@ -5504,10 +5580,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (lane === 'seq') {
       const order = seqBoxes(boxes, cfg).map((b) => String(b[cfg.idField] ?? ''));
       const idx = order.indexOf(id);
-      beginGesture(e, { ...base, kind: 'reorder', index0: idx, index: idx });
+      beginGesture(e, { ...base, kind: 'reorder', index0: idx, index: idx, groupIds, collapseOnClick: inMulti });
       return;
     }
-    beginGesture(e, { ...base, kind: 'move', index0: 0, index: 0 });
+    beginGesture(e, { ...base, kind: 'move', index0: 0, index: 0, groupIds, collapseOnClick: inMulti });
   }
 
   function onPointerMove(e: PointerEvent): void {
@@ -5551,8 +5627,34 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     trimBadge.style.left = `${timeToPx(edgeTime, pxPerSec)}px`;
   }
 
+  /** Position the rubber band in timeline-content pixels (it lives inside `inner`, so
+   *  it scrolls with the bars). Client coords in, content coords out. */
+  function drawMarquee(x0: number, y0: number, x1: number, y1: number): void {
+    const rect = tracks.getBoundingClientRect();
+    marquee.style.left = `${Math.min(x0, x1) - rect.left + tracks.scrollLeft}px`;
+    marquee.style.top = `${Math.min(y0, y1) - rect.top + tracks.scrollTop}px`;
+    marquee.style.width = `${Math.abs(x1 - x0)}px`;
+    marquee.style.height = `${Math.abs(y1 - y0)}px`;
+  }
+
+  /** Select every clip bar whose box intersects the marquee (client-rect test - the
+   *  same viewport coords the drag captured). Additive drags union with the selection. */
+  function commitMarquee(g: Gesture): void {
+    const rx0 = Math.min(g.x0, g.x), rx1 = Math.max(g.x0, g.x);
+    const ry0 = Math.min(g.y0, g.y), ry1 = Math.max(g.y0, g.y);
+    const hits: string[] = [];
+    for (const [id, node] of bars) {
+      const r = node.getBoundingClientRect();
+      if (r.right >= rx0 && r.left <= rx1 && r.bottom >= ry0 && r.top <= ry1) hits.push(id);
+    }
+    const base = g.additive ? selection.get() : [];
+    selectAndReveal(Array.from(new Set([...base, ...hits])), { reveal: false });
+    if (hits.length) announce(t('{count} clips selected', { count: hits.length }));
+  }
+
   /** Live preview - PANEL DOM ONLY. The model is untouched until pointerup. */
   function paintGesture(g: Gesture): void {
+    if (g.kind === 'marquee') { drawMarquee(g.x0, g.y0, g.x, g.y); return; }
     if (g.kind === 'resize') {
       const stageH = stageEl.getBoundingClientRect().height || 0;
       panelH = clampPanelH(g.h0 + (g.y0 - g.y), stageH, chromeH());
@@ -5562,7 +5664,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     }
     if (g.kind === 'seek') {
       const at = maybeSnap(timeAt(g.x), g.alt, undefined, undefined, true);
-      clock.seek(at * 1000, { scrubbing: true });
+      seekAuthored(at * 1000, { scrubbing: true });
       return;
     }
     const el = g.el;
@@ -5605,6 +5707,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       return;
     }
     if (g.kind === 'move') {
+      if (g.groupIds && g.groupIds.length > 1) { previewRows(moveOverlays(getBoxes(), cfg, g.groupIds, deltaSec)); return; }
       previewRows(moveOverlay(getBoxes(), cfg, g.id, maybeSnap(g.start0 + deltaSec, g.alt, g.id)));
       resolveLaneDrop(g);
       return;
@@ -5643,6 +5746,14 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       return;
     }
     if (g.kind === 'reorder') {
+      if (g.groupIds && g.groupIds.length > 1) {
+        // A group of seq clips: preview the whole block repacking into place (the same
+        // "downstream bars move with the drag" style as move/trim), rather than lifting
+        // one bar. The index is measured against the row WITHOUT any moving clip.
+        g.index = groupDropIndex(getBoxes(), cfg, timeAt(g.x), g.groupIds);
+        previewRows(moveSeqClips(getBoxes(), cfg, g.groupIds, g.index, mediaDur));
+        return;
+      }
       // Lift the bar and let the row show where it would land. The drop index comes from
       // the pointer's time position against the CURRENT starts.
       el.classList.add('is-dragging');
@@ -5694,6 +5805,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     }
     trimBadge.hidden = true;
     extent.hidden = true;
+    marquee.hidden = true;
     // The KEYBOARD trim focus is a persistent state, not a gesture transient; the sweep
     // above cannot tell the two apart, so re-assert it rather than leaving the user's
     // chosen edge unmarked after an unrelated drag.
@@ -5707,20 +5819,26 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (!g) return;
     endGesture(g);
 
+    // Rubber-band select: hit-test the bars against the final rect. A drag that never
+    // moved (a click on empty space) already cleared the selection at pointerdown.
+    if (g.kind === 'marquee') { marquee.hidden = true; if (g.moved) commitMarquee(g); sync(); scheduleThumbs(); return; }
+
     // These two branches write nothing to the model, so they must run the sync a
     // mid-gesture model change (a sidebar edit made while scrubbing) never got.
     if (g.kind === 'resize') { reserve(panelH + RESERVE_PAD); sync(); scheduleThumbs(); return; }
     // `gesture` is already null (endGesture, above), so every maybeSnap below has to be
     // told what kind of pointer this was - see maybeSnap's own note.
     const coarse = isCoarsePointer(g.pointerType);
-    if (g.kind === 'seek') { const at = maybeSnap(timeAt(g.x), g.alt, undefined, coarse, true); clock.seek(at * 1000); sync(); scheduleThumbs(); return; }
+    if (g.kind === 'seek') { const at = maybeSnap(timeAt(g.x), g.alt, undefined, coarse, true); seekAuthored(at * 1000); sync(); scheduleThumbs(); return; }
     // A diamond PRESSED and released without moving is a click, and a click on a
     // keyframe opens the Keyframes popup ON it (section 8's M2.7 (a): "selection + popup in
     // one gesture"). Before the `!g.moved` return below, because that one is the
     // "nothing happened" path and this is the one gesture where nothing MOVING is
     // itself the intent.
     if (g.kind === 'kf' && !g.moved) { openKeyframeAt(g.id, g.kfT0 ?? 0); sync(); scheduleThumbs(); return; }
-    if (!g.moved) { sync(); scheduleThumbs(); return; }
+    // A plain click (no move) on a clip that was part of a multi-selection collapses to
+    // just that clip - the standard "click one of a selection" behaviour.
+    if (!g.moved) { if (g.collapseOnClick) selectAndReveal([g.id]); sync(); scheduleThumbs(); return; }
 
     // ── the ONE model write of the gesture ────────────────────────────────────
     const boxes = getBoxes();
@@ -5746,6 +5864,15 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       return;
     }
     if (g.kind === 'move') {
+      if (g.groupIds && g.groupIds.length > 1) {
+        // Batch overlay move: one write, one undo step. moveOverlays shifts every
+        // selected overlay by the same clamped delta and ignores seq/unselected members.
+        write(moveOverlays(boxes, cfg, g.groupIds, deltaSec));
+        announce(t('{count} clips moved', { count: g.groupIds.length }));
+        clearLaneDropPaint();
+        showSnapline(null); scheduleThumbs();
+        return;
+      }
       // moveOverlay owns the clamp AND the ms rounding, so a drag and the inspector's
       // Start field land on exactly the same value for the same time.
       let next = moveOverlay(boxes, cfg, g.id, maybeSnap(g.start0 + deltaSec, alt, g.id, coarse));
@@ -5784,9 +5911,15 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       // is written by paintGesture, which is rAF-coalesced, so the last pointermove of a
       // fast drag may never have painted. Same discipline as move/trim above - pointerup
       // never depends on whether a frame ran.
-      const index = dropIndexAt(boxes, cfg, timeAt(g.x), g.id);
-      if (index !== g.index0) write(moveSeqClip(boxes, cfg, g.id, index, mediaDur));
-      else sync();
+      if (g.groupIds && g.groupIds.length > 1) {
+        const index = groupDropIndex(boxes, cfg, timeAt(g.x), g.groupIds);
+        write(moveSeqClips(boxes, cfg, g.groupIds, index, mediaDur));
+        announce(t('{count} clips moved', { count: g.groupIds.length }));
+      } else {
+        const index = dropIndexAt(boxes, cfg, timeAt(g.x), g.id);
+        if (index !== g.index0) write(moveSeqClip(boxes, cfg, g.id, index, mediaDur));
+        else sync();
+      }
     }
     showSnapline(null);
     scheduleThumbs();
@@ -6767,7 +6900,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const rows = getBoxes();
       const i = indexOfId(rows, cfg, takeReplaceId);
       const at = i >= 0 ? boxTiming(rows[i]!, cfg).start : null;
-      if (at != null) clock.seek(at * 1000);
+      if (at != null) seekAuthored(at * 1000);
     }
     announce(t('Microphone live. Counting in.'));
     await countIn();
@@ -6835,7 +6968,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (!disposed) {
       clock.pause();
       syncPlayBtn();
-      clock.seek(takeStartSec * 1000);   // rewind to the top of the take, ready to hear it
+      seekAuthored(takeStartSec * 1000);   // rewind to the top of the take, ready to hear it
     }
 
     try { await finishTake(blob, takeMs, seq); }
@@ -6920,7 +7053,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * the manifest's audio seed, placed by `moveOverlay`, sized by `setDuration`,
    * one commit, one undo step.
    */
-  function insertAudioBoxAt(ref: AssetRef, durSec: number, atSec: number): void {
+  function insertAudioBoxAt(ref: AssetRef, durSec: number, atSec: number): string {
     const rows = getBoxes();
     const id = mintId();
     const box: Box = {
@@ -6933,6 +7066,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     focusedId = id;
     selectAndReveal([id]);
     announce(t('Voiceover added to the timeline'));
+    return id;
   }
 
   // ── scripted voiceover (typed, not performed) ───────────────────────────────
@@ -6960,7 +7094,11 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       // stamps `meta.durationMs`) - the same field a mic take stores, and for the
       // same reason: it is what a trim can clamp against.
       const ms = Number((ref.meta as Record<string, unknown> | undefined)?.durationMs);
-      insertAudioBoxAt(ref, Number.isFinite(ms) && ms > 0 ? ms / 1000 : DEFAULT_CLIP_S, atSec);
+      const clipId = insertAudioBoxAt(ref, Number.isFinite(ms) && ms > 0 ? ms / 1000 : DEFAULT_CLIP_S, atSec);
+      // The scripted clip carries its own exact word timings (meta.tts.words), so
+      // the transcript panel opens instantly - "TTS in, text editor out" is the
+      // plans/174 entry point, and Esc dismisses it for anyone who just wanted audio.
+      if (!transcriptBtn.hidden) void openTranscript(clipId);
     } catch (err) {
       host.log?.('warn', `timeline scripted voiceover failed - ${String(err)}`);
     } finally {
@@ -7012,6 +7150,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    */
   function canGenerateSubtitles(id: string): boolean {
     if (!cfg.groupField || !opts.textField || !textKind()) return false;
+    // A struck box's window IS the cut media - captioning it would place exactly
+    // the words the user removed (plan 174 section 5.5 export-leak guard).
+    const rows = getBoxes();
+    if (boxIgnored(rows[indexOfId(rows, cfg, id)])) return false;
     const media = mediaOf(id);
     if (media.kind !== 'audio' && media.kind !== 'video') return false;
     const ref = refOf(id);
@@ -7048,6 +7190,29 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // else the URL the canvas is already playing. All three are AudioSources.
     const src: AssetRef | string | null = live ?? (ref as AssetRef | null) ?? (url || null);
     return { words: null, src, assetId: refId };
+  }
+
+  /**
+   * Open the right-docked Transcript panel for a clip (plans/174). Reuses the
+   * subtitle timing ladder: stored TTS/Whisper words open the panel directly; a
+   * clip with none is offered the same on-device transcription the captions use,
+   * after which the user re-opens the panel. The panel edits through THIS module's
+   * own `write`/`getBoxes`/`clock`, so its cuts are ordinary undo-aware box writes.
+   */
+  async function openTranscript(id?: string): Promise<void> {
+    const clipId = id || selection.get()[0] || '';
+    if (!clipId) return;
+    const { words, src, assetId } = await subtitleSource(clipId);
+    if (!words) { if (src) openTranscribeSheet(clipId, src, assetId); return; }
+    openTranscriptPanel({
+      cfg, words, assetId, sourceId: clipId, assetField: assetFieldName(),
+      getBoxes, write,
+      // The panel's rows are in AUTHORED time (mapped off the box starts), so its seek and
+      // its read-along tick go through the same authored<->clock map as the ruler.
+      seek: (ms) => seekAuthored(ms),
+      subscribeTick: (cb) => clock.onTick((raw) => cb(toAuthoredMs(raw))),
+      subscribeModel: (cb) => { const off = runtime.subscribe(cb); return () => { off?.(); }; },
+    });
   }
 
   /**
@@ -7137,6 +7302,9 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const rows = getBoxes();
     const i = indexOfId(rows, cfg, id);
     if (i < 0) return false;
+    // Struck while the transcription ran: not consumed, so the job files the
+    // transcript on the record instead of captioning the cut span (plan 174 section 5.5).
+    if (boxIgnored(rows[i]!)) return false;
     const timing = boxTiming(rows[i]!, cfg);
     const spans = words.length
       ? cueSpansOnTimeline(groupWordsToCues(words), {
@@ -7405,7 +7573,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         return;
       }
       case 'Home': e.preventDefault(); e.stopPropagation(); clock.seek(0); return;
-      case 'End': e.preventDefault(); e.stopPropagation(); clock.seek(total * 1000); return;
+      case 'End': e.preventDefault(); e.stopPropagation(); seekAuthored(total * 1000); return;
       // Split: `s` cuts what is in scope (selection, else the clip under the playhead);
       // Shift+S cuts EVERY timed clip the playhead is inside, on every lane, ignoring
       // the selection. Both are one write, so both are one undo.
@@ -7496,6 +7664,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         }
         if (focusedEdge) { focusedEdge = null; paintFocusedEdge(); return; }
         if (takePhase !== 'idle') { cancelTake(); return; }
+        // Clear a MULTI-selection before closing, so Escape means "deselect" first after
+        // a marquee (matching the canvas). A single selected clip is the normal state and
+        // does NOT swallow the close press - the ladder's last rung stays the panel.
+        if (selection.get().length > 1) { selectAndReveal([], { reveal: false }); return; }
         setOpen(false); return;
       default:
     }
@@ -7518,6 +7690,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   syncMicBtn();
   scriptBtn.addEventListener('click', () => { void openScriptVoiceover(); });
   scriptBtn.hidden = !canScriptVoiceover();
+  transcriptBtn.addEventListener('click', () => { void openTranscript(); });
   if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility);
   // Shift-click the blade is the pointer twin of Shift+S: cut everything the playhead
   // is inside. Same one write, same one undo step.
@@ -7633,7 +7806,11 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       detail: { atMs: tMs, activeIds, playing, mode, opacity, past: ghosts.past, future: ghosts.future },
     }));
   }
-  const unsubTick = clock.onTick((tMs) => {
+  const unsubTick = clock.onTick((rawMs) => {
+    // The clock runs compressed (ignored spans removed); the ruler, the readout and the
+    // read-along rows are all in authored time, so map once here. Identity when nothing
+    // is struck. The effect during playback is the playhead SKIPPING a struck clip.
+    const tMs = toAuthoredMs(rawMs);
     updatePlayhead(tMs);
     syncPlayBtn();
     emitTime(tMs);

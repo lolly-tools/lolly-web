@@ -682,6 +682,11 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // interpolations are a clamped integer score, toFixed() arc lengths and the
   // analyser's closed band union (escape()d anyway); its label is an aria attribute.
   'views/docs.ts': 5,
+  // The Transcript panel (right dock, plans/174). Two sinks, both TRUSTED lib/icons
+  // constants: the close-button glyph and makeActBtn's toolbar-button glyph. The flowing
+  // transcript words, the title and every label are set via textContent - no user/model
+  // string reaches a sink.
+  'views/transcript-panel.ts': 2,
   // The in-app docs "Try it" hydration (M3). One insertAdjacentHTML sink: a TRUSTED
   // static icon (lib/icons.ts glyph string) appended to the pill; the label beside it is
   // set via textContent, never interpolated as HTML. No user/manifest string reaches a sink.

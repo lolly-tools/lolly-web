@@ -224,6 +224,9 @@ interface CanvasCfg {
    *  not offer detach - the ten-field time check below does NOT include it. */
   linkField?: string;
   gainField?: string;
+  /** OPTIONAL: the reversible-cut / strikethrough flag (plans/174). Machine-written
+   *  by the Transcript panel; a tool without it never offers strikethrough. */
+  ignoredField?: string;
   /** OPTIONAL: the user's own clip name (timeline rename). Editor metadata only -
    *  nothing renders it; the panel's labelFor prefers it over the derived label. */
   labelField?: string;
@@ -1199,6 +1202,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       linkField: cv.linkField || '',
       // Same optional terms: the clip-volume sub-field (plans/165 WP-1).
       gainField: cv.gainField || '',
+      // And the reversible-cut / strikethrough flag (plans/174, transcript-driven
+      // editing). A tool that declares no `ignored` sub-field never offers the
+      // Transcript panel's strike gesture - the same progressive gate as the rest.
+      ignoredField: cv.ignoredField || '',
       labelField: cv.labelField || '',
       // Also optional, for the same reason: the authored easing curves are additive on
       // top of a time model that was complete without them, so a manifest that declares
