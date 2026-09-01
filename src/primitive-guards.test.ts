@@ -1334,6 +1334,15 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // untrusted SVG is exactly why the sanitiser is on the fetch rather than the mount:
   // there is no path to this sink that skips it.
   'views/anim-svg-mount.ts': 1,
+  // 1 as of 2026-09-01 (new file: the shaped-glyph enhancer behind split text's letter
+  // tier, plans/175 WP-D). Its one sink is `word.insertAdjacentHTML('beforeend',
+  // glyphSvgMarkup(...))`, and every interpolated value in that markup is a NUMBER or
+  // HarfBuzz output: `d` is SVG path data the shaping engine emitted from a font file
+  // (digits, spaces, `MLCQZ,.-`), `start`/`end` are integers, the box and baseline
+  // are rounded floats. The word's TEXT never reaches the sink - it is shaped, not
+  // interpolated; the text stays in its (hidden) spans. A font file is the only
+  // external input, and it is fetched from the registry, not from the document.
+  'views/glyph-split-mount.ts': 1,
 };
 
 test('R10: raw-HTML sinks are a pinned inventory, not a growing one', () => {

@@ -2254,6 +2254,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // And for animated SVGs - a still/first export must inline the <svg> first, or
     // it captures an empty [data-anim-src] marker.
     await animSvgPending;
+    // And for shaped glyphs (plans/175 WP-D) - an export mid-enhancement would shoot
+    // a word half span-tier, half glyph-tier.
+    await glyphPending;
     // And for video: snapshotMotion (export.js) needs a decoded frame or it skips
     // the <video> and exports blank - videoPending resolves once frames are ready.
     await videoPending;
@@ -3829,6 +3832,12 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // animates in the preview and exports frame-accurately (parallel to Lottie).
   let animSvgPending: Promise<unknown> = Promise.resolve();
   let animSvgModule: AnimSvgModule | null = null;
+  // Same contract for the shaped-glyph enhancer (glyph-split-mount.ts, plans/175
+  // WP-D): loaded the first paint that emits a letter-tier split box, awaited before
+  // export so a still or the compositor's live shots read shaped glyphs, not the
+  // half-replaced span tier.
+  let glyphPending: Promise<unknown> = Promise.resolve();
+  let glyphModule: typeof import('./glyph-split-mount.ts') | null = null;
   // Same contract again for the MilkDrop enhancer (lib/viz-tool-mount.js): the tool
   // renders a placeholder and the shell owns the WebGL canvas inside it, across paints.
   let vizPending: Promise<unknown> = Promise.resolve();
@@ -3959,6 +3968,17 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
             : import('./lottie-mount.ts').then(m => (lottieModule = m)))
             .then(m => m.mountLottiePlayers(contentEl, { isCurrent: () => gen === renderGen }))
             .catch(err => console.warn('lottie mount failed:', err));
+        }
+        // Split text's glyph tier (plans/175 WP-D): shape each letter-tier word through
+        // host.text and replace its letter spans with per-cluster glyph groups, so the
+        // animation keeps kerning, ligatures and Arabic joining. Progressive - a box
+        // whose font resolves to no file keeps the span tier.
+        if (contentEl.querySelector('.lolly-box[data-t-split="letter"] .lly-w, .lolly-box[data-t-split-want="letter"] .lly-u')) {
+          glyphPending = (glyphModule
+            ? Promise.resolve(glyphModule)
+            : import('./glyph-split-mount.ts').then(m => (glyphModule = m)))
+            .then(m => m.mountGlyphSplits(contentEl, { isCurrent: () => gen === renderGen, textApi: host.text }))
+            .catch(err => console.warn('glyph split mount failed:', err));
         }
         // Animated-SVG markers, mounted by the shell like Lottie: inline a live,
         // seekable <svg> so a catalog or uploaded animation actually plays in the

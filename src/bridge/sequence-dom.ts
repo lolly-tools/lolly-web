@@ -324,10 +324,12 @@ function splitUnitsOf(el: HTMLElement, timing: Timing): SplitUnitsRec | null {
       spans: list,
       ranks: splitRanks(timing.splitOrder, n,
         splitSeedOf(el.getAttribute?.('data-box-id') ?? '', n)),
-      sizes: list.map((s) => ({
-        w: s.offsetWidth || 0,
-        h: s.offsetHeight || 0,
-      })),
+      // A unit is an HTML span (offsetWidth) or, on the shaped glyph tier (plans/175
+      // WP-D), an SVG <g> - which has no offset box, so its own bbox stands in.
+      sizes: list.map((s) => {
+        const bb = (s as unknown as { getBBox?: () => { width: number; height: number } }).getBBox?.();
+        return bb ? { w: bb.width || 0, h: bb.height || 0 } : { w: s.offsetWidth || 0, h: s.offsetHeight || 0 };
+      }),
     };
     SPLIT_UNITS.set(el, rec);
   }

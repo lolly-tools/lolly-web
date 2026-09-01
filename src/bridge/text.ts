@@ -7,7 +7,7 @@
  * The WASM loads on first call; subsequent calls are synchronous from cache.
  */
 
-import type { TextAPI } from '@lolly-tools/core/host-v1';
+import type { TextAPI, TextPathCluster } from '@lolly-tools/core/host-v1';
 import type { Blob as HbBlob, Face as HbFace, Font as HbFont, Feature as HbFeature } from 'harfbuzzjs';
 
 type HarfBuzzModule = typeof import('harfbuzzjs');
@@ -131,6 +131,22 @@ function transformPath(pathStr: string, offsetX: number, offsetY: number, scale:
   });
 }
 
+/**
+ * Order the accumulated per-cluster pieces into the `TextPathCluster[]` contract
+ * (plans/175 WP-D): logical order by start offset, each piece's `end` being the
+ * next piece's start (so a ligature that swallowed its neighbours spans them) and
+ * the last running to the text's end. Shared verbatim by the Node-shell port.
+ */
+export function clustersFrom(
+  pieces: Map<number, { d: string; x: number; advance: number }>, textLength: number,
+): TextPathCluster[] {
+  const starts = [...pieces.keys()].sort((a, b) => a - b);
+  return starts.map((start, i) => {
+    const p = pieces.get(start)!;
+    return { start, end: i + 1 < starts.length ? starts[i + 1]! : textLength, d: p.d, x: fmt(p.x), advance: fmt(p.advance) };
+  });
+}
+
 export function createTextAPI(): TextAPI {
   return {
     /**
@@ -152,9 +168,9 @@ export function createTextAPI(): TextAPI {
      * comparable between them. Shaping per segment means no kerning across a
      * face boundary, exactly as in a browser.
      */
-    async toPath({ text, fontUrl, fontSize, features, letterSpacing = 0, variations, fallbackFonts }) {
+    async toPath({ text, fontUrl, fontSize, features, letterSpacing = 0, variations, fallbackFonts, clusters: wantClusters }) {
       if (!text || !text.trim()) {
-        return { d: '', advanceWidth: 0, bbox: null, notdef: 0 };
+        return { d: '', advanceWidth: 0, bbox: null, notdef: 0, ...(wantClusters ? { clusters: [] } : {}) };
       }
 
       const chain = [
@@ -174,6 +190,10 @@ export function createTextAPI(): TextAPI {
       let d = '';
       let notdef = 0;
       let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+      // Per-cluster accumulation (plans/175 WP-D), keyed by the cluster's ABSOLUTE
+      // UTF-16 start in `text` (HarfBuzz cluster values are segment-relative).
+      const pieces = wantClusters ? new Map<number, { d: string; x: number; advance: number }>() : null;
+      let segStart = 0;
 
       for (const seg of segmentByFace(text, chain)) {
         const { font, upem } = chain[seg.face]!;
@@ -192,6 +212,7 @@ export function createTextAPI(): TextAPI {
         for (const g of buf.getGlyphInfosAndPositions()) {
           const {
             codepoint: glyphId,
+            cluster = 0,
             xAdvance = 0,
             xOffset  = 0,
             yOffset  = 0,
@@ -206,7 +227,16 @@ export function createTextAPI(): TextAPI {
           const oy = yOffset;
 
           const rawPath = font.glyphToPath(glyphId);
-          if (rawPath) d += transformPath(rawPath, ox, oy, scale);
+          const glyphD = rawPath ? transformPath(rawPath, ox, oy, scale) : '';
+          if (glyphD) d += glyphD;
+          if (pieces) {
+            const key = segStart + cluster;
+            const piece = pieces.get(key);
+            const penPxHere = (originUnits + penX) * scale;
+            const advPx = (xAdvance + lsUnits) * scale;
+            if (piece) { piece.d += glyphD; piece.advance += advPx; if (penPxHere < piece.x) piece.x = penPxHere; }
+            else pieces.set(key, { d: glyphD, x: penPxHere, advance: advPx });
+          }
 
           // Bbox from glyph extents (cheaper than parsing the transformed path).
           const ext = font.glyphExtents(glyphId);
@@ -225,6 +255,7 @@ export function createTextAPI(): TextAPI {
           penX += xAdvance + lsUnits;   // uniform tracking after every glyph (CSS-style)
         }
         penPx += penX * scale;
+        segStart += seg.text.length;
       }
 
       return {
@@ -232,6 +263,7 @@ export function createTextAPI(): TextAPI {
         advanceWidth: penPx,
         bbox: x1 !== Infinity ? { x1, y1, x2, y2 } : null,
         notdef,
+        ...(pieces ? { clusters: clustersFrom(pieces, text.length) } : {}),
       };
     },
 
