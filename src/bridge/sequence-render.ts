@@ -70,6 +70,7 @@ import {
   parseSequenceStage,
   applyDurationOverride,
   camerasMove,
+  boxesTilt,
   camerasTilt,
   frameTimestamps,
   activeFrameWindow,
@@ -1516,7 +1517,13 @@ async function renderSequenceAuthored(
   // `matrix3d`, so the live artboard IS the composite, and every frame is a photograph
   // of it. Slower by an order of magnitude and correct, which is the trade section 6.4 makes
   // explicitly ("that's the price of correct-first").
-  const tilt = camerasTilt(cameras);
+  //
+  // AND A BOX CAN TILT ON ITS OWN (P2.1), which reaches the compositor the same way: a
+  // box-sourced homography arrives in the very same `PlanItem.m3` slot, so the gate has
+  // to ask both questions or a box-tilt-only document takes the canvas tier and draws
+  // the affine approximation with nothing said. `??` rather than `||` because the
+  // answer is the logged TRIGGER, and the camera's is the one to name when both tilt.
+  const tilt = camerasTilt(cameras) ?? boxesTilt(stage.layers);
   // P2b (plans/104 section 6.4, plan 98 section 9.1 Phase C): with the opt-in GPU compositor flag on
   // AND WebGL2 present, a tilted export takes the GL quad-compositor path - ONE clean
   // plate texture per layer, resampled coherently through each per-quad homography,
@@ -1529,7 +1536,7 @@ async function renderSequenceAuthored(
   // ran above, one container-level C2PA over its results) is identical.
   const useGl = !!tilt && glSequenceRenderEnabled() && supportsGlSequenceRender();
   if (tilt && !useGl) {
-    log('info', `sequence: TILT export - the camera authors ${tilt.ch} ${Math.round(tilt.deg * 10) / 10}°${tilt.atMs == null ? ' as its scene pose' : ` at ${Math.round(tilt.atMs)}ms`}, which is a homography the canvas compositor cannot draw. Every frame is captured off the live artboard instead (slower, and pixel-for-pixel what the preview shows).`);
+    log('info', `sequence: TILT export - the scene authors ${tilt.ch} ${Math.round(tilt.deg * 10) / 10}°${tilt.atMs == null ? ' as its scene pose' : ` at ${Math.round(tilt.atMs)}ms`}, which is a homography the canvas compositor cannot draw. Every frame is captured off the live artboard instead (slower, and pixel-for-pixel what the preview shows).`);
     return await renderTiltCapture(tilt);
   }
   if (useGl) {
@@ -1541,7 +1548,7 @@ async function renderSequenceAuthored(
     if (videos.length > 0) {
       throw sequenceError(
         'SEQ_TILT_UNSUPPORTED',
-        `tilt export of video needs the GPU compositor's video path, which is a follow-up. This scene tilts the camera (${tilt.ch} ${Math.round(tilt.deg * 10) / 10}°) and holds ${videos.length} video clip${videos.length === 1 ? '' : 's'}. Remove the tilt to export it now, or replace the video clip with a still.`,
+        `tilt export of video needs the GPU compositor's video path, which is a follow-up. This scene tilts (${tilt.ch} ${Math.round(tilt.deg * 10) / 10}°) and holds ${videos.length} video clip${videos.length === 1 ? '' : 's'}. Remove the tilt to export it now, or replace the video clip with a still.`,
       );
     }
   }
@@ -2193,7 +2200,7 @@ async function renderSequenceAuthored(
     if (videos.length > 0) {
       throw sequenceError(
         'SEQ_TILT_UNSUPPORTED',
-        `tilt export of video needs the GPU compositor. This scene tilts the camera (${trigger.ch} ${Math.round(trigger.deg * 10) / 10}°) and holds ${videos.length} video clip${videos.length === 1 ? '' : 's'}, and a tilted frame is captured off the live page - which cannot photograph a playing video. Remove the tilt to export it now, or replace the video clip with a still.`,
+        `tilt export of video needs the GPU compositor. This scene tilts (${trigger.ch} ${Math.round(trigger.deg * 10) / 10}°) and holds ${videos.length} video clip${videos.length === 1 ? '' : 's'}, and a tilted frame is captured off the live page - which cannot photograph a playing video. Remove the tilt to export it now, or replace the video clip with a still.`,
       );
     }
     const resumeThumbs = suspendNodeRasters();

@@ -172,7 +172,7 @@ function demandLayer(over: Partial<SeqLayer> = {}): SeqLayer {
     lane: 'seq', kind: 'static',
     rect: { x: 0, y: 0, w: 200, h: 120, rot: 0 },
     opacity: 1, blend: '', radius: '', clipPath: '', openEnded: false, frameScene: false,
-    z: 0, kf: EMPTY_KF_TRACK, blur: 0, shadowFilter: '',
+    z: 0, rx: 0, ry: 0, kf: EMPTY_KF_TRACK, blur: 0, shadowFilter: '',
     ...over,
   };
 }

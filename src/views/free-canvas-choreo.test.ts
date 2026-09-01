@@ -56,8 +56,9 @@ globalThis.cancelAnimationFrame = ((h: number) => dom.window.cancelAnimationFram
   ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} });
 (globalThis as Record<string, unknown>).ResizeObserver = class { observe() {} disconnect() {} };
 
-const { initFreeCanvas, CHOREO_SHOWCASES } = await import('./free-canvas.ts');
+const { initFreeCanvas, CHOREO_SHOWCASES, FC_TILT } = await import('./free-canvas.ts');
 const { DEFAULT_STAGGER_MS, SHOWCASE_IDS, SHOWCASE_MS } = await import('./choreograph.ts');
+const { KF_TILT_CONTROL } = await import('./timeline-panel.ts');
 const { parseKf } = await import('../../../../engine/src/keyframes.ts');
 
 const NATIVE = 1000;
@@ -75,7 +76,7 @@ function canvasCfg(): Record<string, unknown> {
     startField: 'start', durField: 'dur', clipInField: 'clipIn', speedField: 'speed',
     enterField: 'enter', exitField: 'exit', enterMsField: 'enterMs', exitMsField: 'exitMs',
     muteField: 'mute', laneField: 'lane',
-    kfField: 'kf', zField: 'z',
+    kfField: 'kf', zField: 'z', rxField: 'rx', ryField: 'ry',
     addKinds: [
       { id: 'box', label: 'Box', seed: {} },
       { id: 'camera', label: 'Camera', seed: { kind: 'camera' } },
@@ -230,6 +231,71 @@ test('the More panel carries it too - and only when this selection can be posed'
   } finally { f.destroy(); }
 });
 
+// ══ the More panel's "Perspective tilt" rows (plans/104 P2.1) ═════════════════
+
+/** Open the More panel over whatever is selected and hand back its rows. */
+function openMore(f: Fixture): HTMLElement {
+  const btn = f.stageEl.querySelector<HTMLButtonElement>('[data-cx="more"]');
+  assert.ok(btn, 'the selection chrome carries a More button');
+  click(btn!);
+  const p = f.stageEl.querySelector<HTMLElement>('.fc-more-panel');
+  assert.ok(p, 'the More panel opened');
+  return p!;
+}
+const tiltRows = (p: HTMLElement): string[] =>
+  Array.from(p.querySelectorAll<HTMLInputElement>('input[data-mp="rx"], input[data-mp="ry"]')).map((el) => el.dataset.mp!);
+
+test('the tilt rows are drawn for ONE plain box, and one slider move is exactly one model write', () => {
+  const f = mount(STACK());
+  try {
+    selectOne(f, 200, 200);
+    const p = openMore(f);
+    assert.deepEqual(tiltRows(p), ['rx', 'ry'], 'pitch and yaw, in that order');
+    const rx = p.querySelector<HTMLInputElement>('input[data-mp="rx"]')!;
+    assert.equal(rx.min, String(FC_TILT[0]));
+    assert.equal(rx.max, String(FC_TILT[1]));
+
+    const before = f.writes();
+    rx.value = '30';
+    rx.dispatchEvent(new W.Event('input', { bubbles: true }));
+    assert.equal(f.writes() - before, 1, 'one input event, one commit - the sibling sliders\' deal');
+    assert.equal(f.boxes().find((b) => (b as unknown as { id: string }).id === 'a')!.rx, 30);
+    assert.equal(p.querySelector('[data-mp-val="rx"]')!.textContent, '30', 'and the readout follows');
+  } finally { f.destroy(); }
+});
+
+test('no tilt rows on a camera, on a multi-selection, or on a tool that declares no tilt fields', () => {
+  const withCam = [...STACK(), { id: 'cam', kind: 'camera', x: 100, y: 500, w: 200, h: 120, rot: 0 }] as Box[];
+  const cam = mount(withCam, canvasCfg(), { deepLink: { select: ['cam'] } });
+  try {
+    // The camera has its own Tilt X/Y in the timeline's Camera group; two doors onto one
+    // channel with different ranges is the failure this hiding exists to avoid.
+    assert.deepEqual(tiltRows(openMore(cam)), []);
+  } finally { cam.destroy(); }
+
+  const many = mount(STACK());
+  try {
+    selectBoth(many);
+    // The panel READS the first box and WRITES the whole selection, so a mixed selection
+    // would stamp one box's angle onto every other.
+    assert.deepEqual(tiltRows(openMore(many)), []);
+  } finally { many.destroy(); }
+
+  const cfg = canvasCfg();
+  delete cfg.rxField; delete cfg.ryField;
+  const bare = mount(STACK(), cfg);
+  try {
+    selectOne(bare, 200, 200);
+    assert.deepEqual(tiltRows(openMore(bare)), [], 'progressive capability: no field, no row');
+  } finally { bare.destroy(); }
+});
+
+test('the More panel\'s tilt range still matches the timeline\'s KF_TILT_CONTROL', () => {
+  // free-canvas reaches timeline-panel only through a dynamic import, so FC_TILT is a
+  // hand-copied constant - the CHOREO_SHOWCASES deal, and this is what holds it.
+  assert.deepEqual([...FC_TILT], [...KF_TILT_CONTROL]);
+});
+
 // ══ the picker ════════════════════════════════════════════════════════════════
 
 /** Marquee both plates, right-click one of them, and press Choreograph. */
@@ -261,6 +327,9 @@ test('the picker offers the six showcases, checks the first, and states the coun
     // below cannot reach: it lives in the markup, not in CHOREO_SHOWCASES.
     assert.equal(p.querySelector<HTMLInputElement>('[data-choreo-stagger]')!.value, String(DEFAULT_STAGGER_MS),
       'and the generator\'s own default gap, so the picker is not a second opinion');
+    const tumble = p.querySelector<HTMLInputElement>('[data-choreo-tumble]')!;
+    assert.ok(tumble, 'the Tumble toggle is offered');
+    assert.equal(tumble.checked, false, 'and ships OFF - one tilt key changes the export tier');
     // The sentence is the dialog's DESCRIPTION (read after its name when focus arrives),
     // not a live region: it is written once and never re-worded, so a live region here
     // would announce nothing.

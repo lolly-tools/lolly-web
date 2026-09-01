@@ -238,6 +238,12 @@ export interface SeqJobLayer {
   /** The box's depth, px above the surface - see SeqLayer.z. */
   z: number;
   /**
+   * The box's own tilt in degrees - see SeqLayer.rx/ry (P2.1). OPTIONAL so a job
+   * posted by an older build reads as absent, which hydrates to 0, which is flat.
+   */
+  rx?: number;
+  ry?: number;
+  /**
    * The PARSED keyframe track, as plain data.
    *
    * A `KfTrack` is arrays of records of numbers and strings and nothing else, which
@@ -304,7 +310,7 @@ export function toJobLayer(
     opacity: L.opacity, blend: L.blend, radius: L.radius, clipPath: L.clipPath,
     openEnded: L.openEnded,
     frameScene: L.frameScene,
-    z: L.z, kf: L.kf, blur: L.blur, shadowFilter: L.shadowFilter,
+    z: L.z, rx: L.rx, ry: L.ry, kf: L.kf, blur: L.blur, shadowFilter: L.shadowFilter,
     platePad: extra.platePad ?? 0,
     plateEff: Number.isFinite(extra.plateEff) && (extra.plateEff as number) > 0 ? extra.plateEff as number : 1,
     objectFit: extra.objectFit ?? '',
@@ -341,6 +347,8 @@ export function hydrateJobLayer(w: SeqJobLayer): SeqLayer {
     // trusted to be an array. Nothing mutates it after this point, which is the one
     // thing the engine's memoised channel index asks of a track.
     z: Number.isFinite(w.z) ? w.z : 0,
+    rx: Number.isFinite(w.rx) ? (w.rx as number) : 0,
+    ry: Number.isFinite(w.ry) ? (w.ry as number) : 0,
     kf: Array.isArray(w.kf) ? w.kf : EMPTY_KF_TRACK,
     blur: Number.isFinite(w.blur) ? w.blur : 0,
     shadowFilter: w.shadowFilter ?? '',

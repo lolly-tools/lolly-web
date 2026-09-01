@@ -149,6 +149,15 @@ export interface TimeCfg {
    * to 0 - which is exactly what the default camera projects at eff = 1.
    */
   zField?: string;
+  /**
+   * OPTIONAL, same terms again: the box's own TILT fields in degrees (P2.1 -
+   * `canvas.rxField` / `canvas.ryField`). Named here for `zField`'s reason exactly: a
+   * keyframe's `rx`/`ry` channel REPLACES the field for its segment, so the pose writer
+   * has to know the unkeyed value before it can write an honest full pose. Absent means
+   * the box has no authored tilt and `rx`/`ry` resolve to 0 - the flat card.
+   */
+  rxField?: string;
+  ryField?: string;
 }
 
 /** A box's timing, resolved. `start`/`dur` stay null when unauthored (scenery / open-ended). */
@@ -585,10 +594,11 @@ export function kfTrackJoin(a: KfTrack, b: KfTrack, offsetMs: number): KfKey[] {
  * one, read off `foldKfPose` (sequence-plan.ts), which is the single function both
  * evaluators fold a pose through:
  *
- *   dx += pose.x ?? 0            → x, y, b, rx, ry neutral at 0
+ *   dx += pose.x ?? 0            → x, y, b neutral at 0
  *   scale *= pose.s (if present) → s, o neutral at 1
  *   rot  += pose.r (if present)  → r neutral at 0
  *   z     = pose.z ?? zField     → z neutral is the BOX's own field (see kfPoseAt)
+ *   rx    = pose.rx ?? rxField   → and so are rx/ry (P2.1), on z's rule verbatim
  *
  * Camera channels take the engine's own documented defaults (`DEFAULT_CAMERA`).
  * Pinned by a test against `foldKfPose`'s behaviour rather than restated in prose:
@@ -722,20 +732,28 @@ export function kfKeyAt(track: KfTrack, atMs: number): KfKey | null {
  *
  * A channel the track already mentions is evaluated (so an existing curve is
  * preserved through the diamond being written); one it does not is the neutral value
- * - except `z`, whose neutral is the box's own depth field, because a keyed `z`
- * REPLACES that field for its segment (section 5.2) and a full pose that wrote 0 over an
- * authored 140 would drop the box to the floor the moment it was keyed.
+ * - except the three channels that HAVE a field of their own. `z`, `rx` and `ry` are
+ * box PROPERTIES that a keyed value REPLACES for its segment (section 5.2, P2.1), so
+ * their unkeyed value is the field, not the table's 0: a full pose that wrote 0 over an
+ * authored depth of 140 would drop the box to the floor the moment it was keyed, and
+ * one that wrote 0 over an authored tilt would flatten a card the user had posed.
  */
 export function kfPoseAt(
   box: Box | undefined, cfg: TimeCfg, localMs: number, channels: readonly KfChannel[],
 ): KfPose {
   const track = boxTrack(box, cfg);
   const at = evaluateKf(track, Math.round(num(localMs, 0)), channels);
+  // The three channels whose unkeyed value is a FIELD on the box rather than the
+  // neutral. A table, not a chain of `ch === '…'` tests, so a fourth one is a line.
+  const fields: Partial<Record<KfChannel, string | undefined>> = {
+    z: cfg.zField, rx: cfg.rxField, ry: cfg.ryField,
+  };
   const out: KfPose = {};
   for (const ch of channels) {
     const v = at[ch];
     if (typeof v === 'number') { out[ch] = v; continue; }
-    out[ch] = ch === 'z' && cfg.zField && box ? num(box[cfg.zField], 0) : KF_NEUTRAL[ch];
+    const field = fields[ch];
+    out[ch] = field && box ? num(box[field], 0) : KF_NEUTRAL[ch];
   }
   return out;
 }

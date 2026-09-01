@@ -79,7 +79,7 @@ import {
 import {
   MIN_SPEED, MAX_SPEED, MIN_TRANSITION_MS, MAX_TRANSITION_MS,
   REST_TRANSITION, composeFilter, foldKfPose, isProjectable, kfTrackOf,
-  planCameraView, readDepthZ, splitFilterBlur, viewMoves,
+  planCameraView, readDepthZ, readTiltDeg, splitFilterBlur, viewMoves,
   type SeqPlanEnv,
 } from './sequence-plan.ts';
 import {
@@ -148,6 +148,15 @@ export interface Timing {
    */
   z: number;
   /**
+   * The box's own TILT in degrees (`data-t-rx` / `data-t-ry`), held to the same field
+   * clamp the planner's reader applies - one `readTiltDeg`, imported, so a
+   * hand-authored angle cannot mean two different things to the two evaluators (P2.1).
+   * 0 is the flat card, and an `rx`/`ry` token in the track REPLACES the field for its
+   * segment, exactly as `z` does.
+   */
+  rx: number;
+  ry: number;
+  /**
    * The parsed keyframe track (`data-t-kf`), empty when the box is not keyframed.
    * Parsed through the SHARED cache in sequence-plan.ts, so this reader and the
    * canvas planner get the same frozen array for the same wire string - one parse,
@@ -213,6 +222,8 @@ export function readTiming(el: Element): Timing {
     gain: clamp(attrNum(el, 'data-t-gain', 1), 0, 2),
     lane: el.getAttribute('data-t-lane') === 'seq' ? 'seq' : '',
     z: readDepthZ(el.getAttribute('data-t-z')),
+    rx: readTiltDeg(el.getAttribute('data-t-rx')),
+    ry: readTiltDeg(el.getAttribute('data-t-ry')),
     kf: kfTrackOf(el.getAttribute('data-t-kf')),
     frame: el.getAttribute('data-pdf-page') != null,
   };
@@ -236,6 +247,12 @@ export function isActiveAt(timing: Timing, tMs: number, seqMs: number): boolean 
   // An ignored (struck-through) box is never on screen - plans/174. It is the one gate
   // for the visual side; the audio scheduler and the export planner carry their own.
   if (timing.ignored) return false;
+  // A stage with NO derived sequence has no window for an open-ended box to be outside
+  // of, so it is simply on screen. Without this, opening the timeline on an untimed
+  // board hid every open-ended box the applier walks: endOf collapses to the start at
+  // seqMs 0, the half-open span is empty, and a scenery box that is lifted or tilted
+  // (which is what put it in the applier's set) vanished the moment the clock existed.
+  if (timing.dur == null && !(Number.isFinite(seqMs) && seqMs > 0)) return true;
   const end = endOf(timing, seqMs);
   // A zero-length box is never on screen (its half-open span is empty), except the
   // degenerate open-ended-at-the-very-end case, which `end > start` already excludes.
@@ -453,9 +470,18 @@ export function composeTransform(
   m3: KfMatrix3 | null = null,
 ): string {
   const parts: string[] = [];
-  if (m3) parts.push(kfMatrix3dCss(m3));
-  else if (tr.dx || tr.dy) parts.push(`translate(${n3(tr.dx)}px, ${n3(tr.dy)}px)`);
-  const auth = (authored || '').trim();
+  let auth = (authored || '').trim();
+  if (m3) {
+    parts.push(kfMatrix3dCss(m3));
+    // P2.1 - the box's own tilt is already INSIDE the matrix (the fold composed it from
+    // data-t-rx/-ry), and the hook bakes the same tilt into the authored string so an
+    // untimed board and a still export render it with no engine at all. Re-emitting that
+    // baked group here would apply the tilt twice, so the hook's one canonical prefix is
+    // stripped. Anchored (^) and shaped exactly as boxCss writes it - a user cannot
+    // author it (box transforms are hook-generated), and any m3 implies the fold ran
+    // over this element's own attributes, so the prefix is stale by construction.
+    auth = auth.replace(/^perspective\(\d+(?:\.\d+)?px\)(?:\s+rotate[XY]\(-?[\d.]+deg\))+\s*/, '');
+  } else if (tr.dx || tr.dy) parts.push(`translate(${n3(tr.dx)}px, ${n3(tr.dy)}px)`);
   if (auth && auth !== 'none') parts.push(auth);
   if (tr.rot) parts.push(`rotate(${n3(tr.rot)}deg)`);
   if (tr.sc !== 1) parts.push(`scale(${n3(tr.sc)})`);
@@ -640,7 +666,8 @@ export interface SequencePose {
   /** True when `w`/`h` are a KEYED size, i.e. the applier wrote the layout box too. */
   sized: boolean;
   /**
-   * True when the pose rides a TILTED camera's homography (P2), so `dx`/`dy`/`sc`
+   * True when the pose rides a homography - a TILTED camera's (P2) or the box's own
+   * tilt (P2.1) - so `dx`/`dy`/`sc`
    * describe the projected CENTRE and its magnification but NOT the quad the element
    * paints. A caller drawing geometry from this gets the projected-AABB approximation
    * section 6.5 allows for tilt, not the trapezoid.
@@ -1132,19 +1159,25 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
         base: timing.z !== 0 ? { z: timing.z } : null,
         track: timing.kf.length > 0 ? timing.kf : null,
       });
-    } else if (timing.z !== 0 || timing.kf.length > 0) {
+    } else if (timing.z !== 0 || timing.rx !== 0 || timing.ry !== 0 || timing.kf.length > 0) {
       // A CAMERA's own z/kf are the camera pose, not a lifted layer - counting them
       // here would make an otherwise flat stage measure itself and project every box
       // through a camera that has not moved.
+      //
+      // The TILT term (P2.1) is what lets a box carrying nothing but an `rx` field be
+      // seen at all: with no depth, no track and no camera on the stage this latch is
+      // the only thing that measures the stage and builds a view, and without it the
+      // field would be inert here while the planner projected it.
       anyBoxDepth = true;
     }
     if (timing.frame) framesDoc = true;
   }
   const cameras = ctx.cameras ?? (derived.length > 0 ? derived : null);
-  // The gate, and it is the byte-identity floor: with no box carrying depth and no
-  // camera on the stage, `view` stays null, the stage is never measured, `foldKfPose`
-  // is never called, and `filter`/`z-index` are never written. The condition is the
-  // planner's own (`sequenceDrawPlan` projects when `viewMoves(view) || z || kf`), so
+  // The gate, and it is the byte-identity floor: with no box carrying depth or a tilt
+  // and no camera on the stage, `view` stays null, the stage is never measured,
+  // `foldKfPose` is never called, and `filter`/`z-index` are never written. The
+  // condition is the planner's own (`sequenceDrawPlan` projects when
+  // `viewMoves(view) || z || rx || ry || kf`), so
   // the moment P1 hands cameras in, both evaluators start projecting on the same
   // frame rather than one of them lagging.
   const hasCamera = !!cameras && cameras.length > 0;
@@ -1229,7 +1262,7 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
     // ever moved by a camera, never by timing, so it needs no transition and takes no
     // rank (see `Authored.plane` and the rank pass below).
     const projecting = view !== null && active && projectable
-      && (moving || timing.z !== 0 || timing.kf.length > 0);
+      && (moving || timing.z !== 0 || timing.rx !== 0 || timing.ry !== 0 || timing.kf.length > 0);
     if (tr || projecting || hold) {
       const off0 = tr ? recTransition(tr.kind, tr.p, rec.w, rec.h, tr.ease) : REST_TRANSITION;
       const off = hold ? withHold(off0, hold) : off0;
@@ -1243,6 +1276,8 @@ export function applyTimeToElements(els: HTMLElement[], tMs: number, ctx: ApplyC
           tr: off,
           pose: evaluateKf(timing.kf, tMs - timing.start),
           zField: timing.z,
+          rxField: timing.rx,
+          ryField: timing.ry,
           authoredBlur: rec.filterBlur,
           boxW: rec.w,
           boxH: rec.h,
@@ -1491,8 +1526,8 @@ export function sequenceTimeElements(stage: HTMLElement | null): HTMLElement[] {
   return out;
 }
 
-/** Elements carrying timing, depth, a keyframe track, or a camera marker. */
-const POSED_SEL = '[data-t-start], [data-t-z], [data-t-kf], [data-cam]';
+/** Elements carrying timing, depth, a tilt, a keyframe track, or a camera marker. */
+const POSED_SEL = '[data-t-start], [data-t-z], [data-t-rx], [data-t-ry], [data-t-kf], [data-cam]';
 
 /** Tags that paint nothing, so photographing or projecting them means nothing. */
 const UNPAINTED = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'LINK', 'META', 'TITLE', 'NOSCRIPT']);

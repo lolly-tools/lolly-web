@@ -4507,8 +4507,12 @@ test('the groups work right-to-left', () => {
 
 const { parseKf: parse } = await import('../../../../engine/src/keyframes.ts');
 
-/** sequence-studio's cfg plus the keyframe + depth sub-fields a keyframable tool declares. */
-const KF_CFG = { cfgPatch: { kfField: 'kf', zField: 'z' } };
+/**
+ * sequence-studio's cfg plus the keyframe, depth and tilt sub-fields a keyframable tool
+ * declares - the design tool's own set (`canvas.zField` / `rxField` / `ryField`), so the
+ * pose row here is the six controls that ship rather than a subset.
+ */
+const KF_CFG = { cfgPatch: { kfField: 'kf', zField: 'z', rxField: 'rx', ryField: 'ry' } };
 
 /**
  * One animated clip plus a plain second one, so the timeline is 5s long and the
@@ -4600,17 +4604,17 @@ test('the latch header flips No keyframe here ⇄ Keyframe @ …, and the pose f
 
     await seek(h, 2000);
     assert.equal(state(), 'No keyframe here', 'parked between diamonds');
-    // DEPTH IS THE EXCEPTION, and it is the P1 depth slider that makes it one (section 5.3):
-    // `z` is the one pose channel with a base field of its own, so off a diamond an
+    // DEPTH AND THE TILT PAIR ARE THE EXCEPTION (section 5.3's depth slider, P2.1's tilt
+    // rows): each is a pose channel with a base field of its own, so off a diamond an
     // edit there writes the BASE - section 8's own rule - rather than inventing a keyframe.
     // The other three have nothing to write and stay inert.
-    assert.deepEqual(poseDisabled(), [false, true, true, true],
-      'no keyframe to pose: everything but Depth is inert (they still READ, see below)');
+    assert.deepEqual(poseDisabled(), [false, false, false, true, true, true],
+      'no keyframe to pose: everything but Depth and the tilts is inert (they still READ, see below)');
     assert.deepEqual(dots(h, 'a').map((n) => n.classList.contains('is-selected')), [false, false]);
 
     await seek(h, 1500);
     assert.equal(state(), 'Keyframe @ 0:01.5', 'parked ON one');
-    assert.deepEqual(poseDisabled(), [false, false, false, false]);
+    assert.deepEqual(poseDisabled(), [false, false, false, false, false, false]);
     assert.deepEqual(dots(h, 'a').map((n) => n.classList.contains('is-selected')), [false, true],
       'and the diamond under the playhead draws large');
     assert.deepEqual(
@@ -4625,7 +4629,9 @@ test('an on-diamond pose edit rewrites exactly ONE keyframe, as a full pose, in 
     h.select(['a']);
     setGroup(h.root, 'keyframes', true);
     await seek(h, 1500);
-    const opacity = inspAll<HTMLInputElement>('.tl-kf-pose-num')[2]!;
+    // By CHANNEL, not by position: P2.1 put two tilt rows between Depth and Scale, and an
+    // index here would have silently started driving a different control.
+    const opacity = inspEl<HTMLInputElement>('.tl-kf-pose-num[data-ch="o"]')!;
     opacity.value = '0.5';
     opacity.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 
@@ -4652,7 +4658,9 @@ test('parked OFF a diamond, nothing can write the track - the base is what an ed
 
     // The pose fields are inert, and driving one anyway (a change event on a disabled
     // control is not something a browser sends, but a test can) must still write nothing.
-    const opacity = inspAll<HTMLInputElement>('.tl-kf-pose-num')[2]!;
+    // By CHANNEL, not by position: P2.1 put two tilt rows between Depth and Scale, and an
+    // index here would have silently started driving a different control.
+    const opacity = inspEl<HTMLInputElement>('.tl-kf-pose-num[data-ch="o"]')!;
     assert.equal(opacity.disabled, true);
     opacity.value = '0.25';
     opacity.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
@@ -4667,7 +4675,7 @@ test('parked OFF a diamond, nothing can write the track - the base is what an ed
     // field, disabling a FOCUSED input blurs it, and the browser fires the pending
     // `change` on that blur - with the playhead now somewhere else entirely.
     await seek(h, 1500);
-    const late = inspAll<HTMLInputElement>('.tl-kf-pose-num')[2]!;
+    const late = inspEl<HTMLInputElement>('.tl-kf-pose-num[data-ch="o"]')!;
     assert.equal(late.disabled, false, 'on the diamond it takes the typing');
     await seek(h, 2200);
     assert.equal(late.disabled, true, 'and the tick pulls the floor out from under the edit');
@@ -4714,7 +4722,8 @@ test('the pose fields print at the channel quantum, EVALUATE off a diamond, and 
     const values = (): string[] => pose().map((n) => n.value);
 
     await seek(h, 1500);
-    assert.deepEqual(values(), ['300', '1', '1', '0'], 'on a diamond, the pose it holds');
+    // Depth, Tilt X, Tilt Y, Scale, Opacity, Blur - the row order KF_POSE_FIELDS pins.
+    assert.deepEqual(values(), ['300', '0', '0', '1', '1', '0'], 'on a diamond, the pose it holds');
 
     // OFF a diamond they are inert but NOT blank (section 8's M2.5 revision, point 3: blanking
     // was honest and read as broken). They print what the box is actually striking at
@@ -4724,12 +4733,13 @@ test('the pose fields print at the channel quantum, EVALUATE off a diamond, and 
     // is exactly why this number has to come from the engine and not from the panel.
     await seek(h, 750);
     const mid = values();
-    assert.deepEqual(pose().map((n) => n.disabled), [false, true, true, true],
-      'still inert - except Depth, which has a base field to write (section 5.3)');
-    assert.notDeepEqual(mid, ['', '', '', ''], 'and no longer blank');
+    assert.deepEqual(pose().map((n) => n.disabled), [false, false, false, true, true, true],
+      'still inert - except Depth and the tilts, which have a base field to write (section 5.3)');
+    assert.notDeepEqual(mid, ['', '', '', '', '', ''], 'and no longer blank');
     const z = Number(mid[0]);
     assert.ok(z > 0 && z < 300, `depth reads between its two diamonds (got ${mid[0]})`);
-    assert.deepEqual(mid.slice(1), ['1', '1', '0'], 'the channels the track never mentions read neutral');
+    assert.deepEqual(mid.slice(1), ['0', '0', '1', '1', '0'],
+      'the channels the track never mentions read neutral - and an unauthored tilt is the flat card');
 
     // …and it TRACKS. The memo is keyed on the playhead's own millisecond, not on the
     // latch answer, which is the bug the blanking was covering for: keyed on the answer,
@@ -4765,7 +4775,7 @@ test('the "size is not keyframable" claim is GONE - w/h are channels now (sectio
     const wrap = inspEl<HTMLElement>('.tl-kf-pose');
     assert.ok(wrap, 'the pose fields are one block');
     assert.equal(wrap!.title, '', 'and the tooltip that claimed size could never tween went with it');
-    assert.equal(inspAll('.tl-kf-pose .tl-kf-pose-num').length, 4, 'all four channels are inside it');
+    assert.equal(inspAll('.tl-kf-pose .tl-kf-pose-num').length, 6, 'all six channels are inside it');
     // The depth slider is the fifth control on that block - the section 5.3 scrub band, beside
     // the number that still takes the whole field range.
     const slider = inspEl<HTMLInputElement>('.tl-kf-pose .tl-kf-slider');
@@ -5306,6 +5316,99 @@ test('the depth slider scrubs the tasteful band and the number takes the whole f
     depth.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
     assert.equal(kfOf(h, 'a'), 't0_z0*t1500_z-300', 'clamped to the field range, negative end');
     assert.equal(inspAll<HTMLInputElement>('.tl-kf-pose-num')[0]!.value, '-300');
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+/** The pose row's tilt control, by channel - never by position (P2.1 moved the indices). */
+const poseNum = (ch: string): HTMLInputElement =>
+  inspEl<HTMLInputElement>(`.tl-kf-pose-num[data-ch="${ch}"]`)!;
+
+test('the pose row TILTS a box: off a diamond it writes the BASE field, on one it keys (P2.1)', async () => {
+  // The `z` rule verbatim on two more channels. A box tilt is a property of the BOX
+  // (`canvas.rxField` / `canvas.ryField`) that a keyed `rx`/`ry` REPLACES for its segment,
+  // so off every diamond the row writes the field and on one it writes the keyframe and
+  // leaves the field alone. It is the BOX's tilt, not the camera's: the two tip the
+  // picture in opposite directions and each has its own door.
+  const { KF_TILT_CONTROL } = await import('./timeline-panel.ts');
+  const [lo, hi] = KF_TILT_CONTROL;
+  const h = mount(kfScene({ ...clip('a', 0, 3), kf: 't0_x0*t1500_x40' } as Box), 40, CAM_KINDS, KF_CFG);
+  try {
+    h.select(['a']);
+    setGroup(h.root, 'keyframes', true);
+    assert.deepEqual([poseNum('rx').min, poseNum('rx').max], [String(lo), String(hi)],
+      'the control band, never the ±180 wire clamp - the same narrowing the camera rows take');
+    assert.equal(inspEl('.tl-kf-pose .tl-kf-slider[data-ch="rx"]'), null,
+      'and no slider: depth is still the one channel with a scrub band beside its number');
+
+    await seek(h, 2000);                                  // off every diamond
+    assert.equal(poseNum('ry').disabled, false, 'live off a diamond - it has a base field of its own');
+    poseNum('ry').value = '30';
+    poseNum('ry').dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    assert.equal(h.commits.length, 1, 'ONE commit, therefore one undo step');
+    assert.equal(h.boxes.find((b) => b.id === 'a')!.ry, 30, 'the box\'s own tilt field, not the track');
+    assert.equal(kfOf(h, 'a'), 't0_x0*t1500_x40', 'and the keyframes are untouched');
+    assert.ok(cameraOf(h), 'posing a box in space mints the scene camera, exactly as depth does');
+
+    // `min`/`max` are the spinner's range, not a validator: the COMMIT is what holds a
+    // hand-typed angle to the band, so a 500° tilt can never reach the wire.
+    poseNum('rx').value = '-500';
+    poseNum('rx').dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    assert.equal(h.boxes.find((b) => b.id === 'a')!.rx, lo, 'clamped to the control band, negative end');
+    assert.equal(poseNum('rx').value, String(lo), 'and reflected back, so the field cannot disagree');
+
+    // ON a diamond the same control writes the KEYFRAME - and the base tilt it replaces
+    // for that segment is left exactly where it was.
+    h.notify();
+    await frames(3);
+    h.select(['a']);
+    setGroup(h.root, 'keyframes', true);
+    await seek(h, 1500);
+    poseNum('rx').value = '20';
+    poseNum('rx').dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    const track = parse(kfOf(h, 'a'));
+    assert.equal(track.length, 2, 'no keyframe was added');
+    assert.equal(track[1]!.v.rx, 20, 'the diamond under the playhead carries the tilt');
+    assert.equal(h.boxes.find((b) => b.id === 'a')!.rx, lo,
+      'the base tilt is what a keyed rx REPLACES, not what it edits');
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+test('a tool that declares no tilt fields gets inert tilt rows, not a control that snaps back', async () => {
+  // The progressive gate `zField` already had, now read off `cfg` for all three base
+  // channels: with no field to write, an off-diamond edit has nothing to land in, so the
+  // row is disabled and says why rather than taking a number and reverting it.
+  const noTilt = { cfgPatch: { kfField: 'kf', zField: 'z' } };
+  const h = mount(kfScene({ ...clip('a', 0, 3), kf: 't0_x0*t1500_x40' } as Box), 40, CAM_KINDS, noTilt);
+  try {
+    h.select(['a']);
+    setGroup(h.root, 'keyframes', true);
+    await seek(h, 2000);
+    assert.equal(poseNum('z').disabled, false, 'depth still has its field');
+    assert.equal(poseNum('rx').disabled, true, 'no rxField declared, nothing an edit could write');
+    poseNum('rx').value = '30';
+    poseNum('rx').dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    assert.equal(h.commits.length, 0, 'and driving it anyway writes nothing');
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+test('a CAMERA keeps its OWN Tilt rows, and the box tilt pair adds no second door to them', async () => {
+  // Two tilts, two doors, and they must not collide: the camera's live in the Camera
+  // group (`.tl-cam-num`, ±75, shift-drag), the box's in the pose row - and a camera has
+  // no pose row at all, because scale/opacity/blur on a camera would control nothing.
+  const h = mount([{ id: 'cam', kind: 'camera', start: '', dur: '' } as Box, clip('z', 0, 5)], 40, CAM_KINDS, KF_CFG);
+  try {
+    h.select(['cam']);
+    await frames(3);
+    setGroup(h.root, 'camera', true);
+    setGroup(h.root, 'keyframes', true);
+    assert.equal(inspEl('.tl-kf-pose'), null, 'no pose row on a camera, tilt pair or not');
+    assert.deepEqual(inspAll<HTMLInputElement>('.tl-cam-num').map((n) => n.dataset.ch),
+      ['x', 'y', 'rx', 'ry', 'z', 'f', 'a', 'p'], 'the camera channels are the ones they always were');
+    await seek(h, 0);
+    const camRx = inspAll<HTMLInputElement>('.tl-cam-num')[2]!;
+    camRx.value = '-30';
+    camRx.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    assert.equal(kfOf(h, 'cam'), 't0_rx-30', 'and it still writes the CAMERA track, not a box field');
   } finally { closeOverlays(); h.teardown(); }
 });
 

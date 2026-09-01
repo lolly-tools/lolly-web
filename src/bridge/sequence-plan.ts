@@ -141,6 +141,38 @@ export function readDepthZ(raw: string | null | undefined): number {
 }
 
 /**
+ * The per-box tilt FIELD's range, degrees (P2.1). The same ±75 the camera's own tilt
+ * control uses (`KF_TILT_CONTROL`, views/timeline-panel.ts) for a different reason:
+ * a box tilt changes no depth and cannot break the paint-order sort, but the box's own
+ * perspective divide has a near plane - `W > 0` over the whole box needs
+ * `hw·|sin(ry)| + hh·|cos(ry)·sin(rx)| < P` (the `R` of `boxTiltMatrix`, engine
+ * keyframes.ts). That condition depends on the BOX SIZE, so ±75 does not guarantee it:
+ * measured at P = 1200, a 400x240 card is safe over the whole band (worst corner
+ * W = 0.81) and 1920x1080 still clears it (0.09), but 2560x1440 goes negative at the
+ * far corner of rx −75 / ry −60 and paints garbage there. The clamp buys the ordinary
+ * board, not every board; a near-plane guard sized to the box is the follow-on if a
+ * full-wall canvas ever meets an extreme tilt. Deliberately NOT the ±180 kf WIRE clamp: the field and
+ * the wire are different numbers, exactly as z's are. The same 75 is typed in three
+ * more places (the manifest's min/max, the hook's own `TILT_MAX`, `KF_TILT_CONTROL`) -
+ * importing timeline-panel.ts here for a two-number tuple would pull a whole view into
+ * the planner, so this is a hand-copied constant with its siblings named.
+ */
+const KF_TILT_FIELD_CLAMP: readonly [number, number] = [-75, 75];
+
+/**
+ * A `data-t-rx` / `data-t-ry` attribute → the box's own tilt in degrees.
+ *
+ * `readDepthZ`'s twin, and it exists once so BOTH readers (this file's `readLayer`, the
+ * applier's `readTiming`) hold a hand-authored angle to the same band. Junk, an absent
+ * attribute and an infinity all read as 0, which is the flat board.
+ */
+export function readTiltDeg(raw: string | null | undefined): number {
+  const v = parseFloat(raw ?? '');
+  if (!Number.isFinite(v)) return 0;
+  return clamp(v, KF_TILT_FIELD_CLAMP[0], KF_TILT_FIELD_CLAMP[1]);
+}
+
+/**
  * Split an authored inline `filter` into its blur radius and everything else.
  *
  * The tool hook writes ONE declaration - `filter: blur(4.5px) drop-shadow(...)`,
@@ -247,6 +279,13 @@ export interface SeqLayer {
    * a `z` token in the keyframe track REPLACES it for that segment (section 5.2).
    */
   z: number;
+  /**
+   * The box's own TILT in degrees (`data-t-rx` / `data-t-ry`), held to the field clamp
+   * (P2.1). 0 is the flat card, and an `rx`/`ry` token in the keyframe track REPLACES
+   * the field for that segment, exactly as `z` does.
+   */
+  rx: number;
+  ry: number;
   /** The parsed keyframe track (`data-t-kf`), empty when the box is not keyframed. */
   kf: KfTrack;
   /**
@@ -461,6 +500,8 @@ export function readLayer(el: HTMLElement, idx: number, totalMs: number): SeqLay
     openEnded,
     frameScene: el.getAttribute?.('data-pdf-page') != null,
     z: readDepthZ(el.getAttribute?.('data-t-z') ?? null),
+    rx: readTiltDeg(el.getAttribute?.('data-t-rx') ?? null),
+    ry: readTiltDeg(el.getAttribute?.('data-t-ry') ?? null),
     kf: kfTrackOf(el.getAttribute?.('data-t-kf') ?? null),
     blur: fx.blur,
     shadowFilter: fx.rest,
@@ -711,6 +752,49 @@ export function camerasTilt(
   return null;
 }
 
+/**
+ * Does any BOX on this stage author a tilt of its own, and if so which channel and how
+ * much (P2.1)?
+ *
+ * `camerasTilt`'s sibling, in the same shape and for the same reason: `renderSequence`
+ * asks both once per render and takes the homography tier if either answers. Without
+ * it a box-tilt-only document walks into the canvas compositor, whose transform is
+ * affine by definition, and exports the centre-magnified approximation of a trapezoid -
+ * a silently wrong picture, in the export only, with the preview correct.
+ *
+ * COARSE on purpose, and it is an exact NON-ZERO VALUE test rather than "has an rx/ry
+ * track": gating on the track alone would move every existing tumble onto the slower
+ * tier for the frames where its angle is zero, and the untilted floor has to stay
+ * untouched by construction. Skips the layers the projection excludes (audio beds,
+ * camera markers, frame pages) - a camera's own tilt is `camerasTilt`'s answer.
+ */
+export function boxesTilt(
+  layers: readonly SeqLayer[] | null | undefined,
+): { ch: 'rx' | 'ry'; deg: number; atMs: number | null } | null {
+  if (!Array.isArray(layers)) return null;
+  // A frames DOCUMENT is out of depth scope wholesale (the planner short-circuits
+  // `projecting` on the same condition), so a tilt there renders as nothing - reporting
+  // it would only send the export to the slow capture tier for a picture it cannot change.
+  if (layers.some((l) => l?.frameScene)) return null;
+  for (const layer of layers) {
+    if (!layer || !isProjectable(layer)) continue;
+    for (const ch of ['rx', 'ry'] as const) {
+      const v = layer[ch];
+      if (typeof v === 'number' && Number.isFinite(v) && v !== 0) return { ch, deg: v, atMs: null };
+    }
+    if (!Array.isArray(layer.kf)) continue;
+    for (const key of layer.kf) {
+      for (const ch of ['rx', 'ry'] as const) {
+        const v = key?.v?.[ch];
+        if (typeof v === 'number' && Number.isFinite(v) && v !== 0) {
+          return { ch, deg: v, atMs: (Number.isFinite(layer.startMs) ? layer.startMs : 0) + key.t };
+        }
+      }
+    }
+  }
+  return null;
+}
+
 /** The camera + stage `t` is projected through. One resolution per frame, shared by every layer. */
 export function planCameraView(env: SeqPlanEnv | null | undefined, tMs: number): KfCameraView {
   const w = Number(env?.stageW);
@@ -752,6 +836,14 @@ export interface KfFoldInput {
   pose: KfPose;
   /** The box's `z` FIELD. A `z` token in the pose replaces it (section 5.2). */
   zField: number;
+  /**
+   * The box's own TILT fields, degrees (P2.1). An `rx`/`ry` token in the pose replaces
+   * the field for its segment, which is `z`'s rule verbatim. Optional so every
+   * pre-P2.1 call site is byte-identical: absent means "no tilt authored", the engine's
+   * exact-zero gate answers false, and the fold hands back the numbers it always did.
+   */
+  rxField?: number;
+  ryField?: number;
   /** The box's authored blur radius, px. */
   authoredBlur: number;
   /**
@@ -828,6 +920,13 @@ export interface KfFold {
 export function foldKfPose(inp: KfFoldInput): KfFold {
   const { pose, tr, view } = inp;
   const z = typeof pose.z === 'number' ? pose.z : inp.zField;
+  // The box's own tilt, on `z`'s rule exactly: the FIELD is the base, and a keyed
+  // rx/ry REPLACES it for that segment - so a tumble whose last key omits the channel
+  // settles back onto whatever the box authored, which is flat on a box that authored
+  // nothing (P2.1).
+  const rx = typeof pose.rx === 'number' ? pose.rx : (inp.rxField ?? 0);
+  const ry = typeof pose.ry === 'number' ? pose.ry : (inp.ryField ?? 0);
+  const boxTilted = cameraTilted({ rx, ry });
   const dxK = pose.x ?? 0;
   const dyK = pose.y ?? 0;
   // SIZE, and it moves the anchor (section 5.2, P1). `w`/`h` are ABSOLUTE px that replace the
@@ -855,6 +954,7 @@ export function foldKfPose(inp: KfFoldInput): KfFold {
     by: inp.cy + (h - boxH) / 2,
     dxT: tr.dx, dyT: tr.dy, dxK, dyK, z,
     w: w * layerScale, h: h * layerScale,
+    rx, ry,
   });
   // `!cameraTilted` FIRST, and it is not redundant. The rest of this test was written
   // for the affine tier, where `eff === 1` and a parked camera really do imply
@@ -866,7 +966,12 @@ export function foldKfPose(inp: KfFoldInput): KfFold {
   // (handles, motion path) a centre the render does not use. The clause is an exact
   // zero test on rx/ry, so the untilted byte-identity floor is untouched by
   // construction: with no angle authored, `flat` is the expression that shipped.
-  const flat = !cameraTilted(view) && proj.scale === 1 && view.x === 0 && view.y === 0;
+  // …and `!boxTilted` for the same reason one step in (P2.1). A box tilt under a parked
+  // camera leaves `proj.scale` at exactly 1 and the camera at the origin, so `flat`
+  // would be true and the transition offset taken straight through - while the matrix
+  // handed to the consumers embeds `proj.dx`. Identical in ℝ, ~2e-14 px apart in
+  // IEEE-754, and the "one number, both consumers" law is broken either way round.
+  const flat = !cameraTilted(view) && !boxTilted && proj.scale === 1 && view.x === 0 && view.y === 0;
   // DOF IS A SCREEN-SPACE NUMBER; THE OTHER TWO ARE LAYER-SPACE ONES. `dofBlur`
   // already carries `eff(z)·eff(f)` (section 4.4) and is documented as "px at stage-native
   // scale" - i.e. what the viewer sees. But BOTH executors apply `PlanItem.blur` in
@@ -1167,11 +1272,13 @@ export function sequenceDrawPlan(
     const off = !silent && layer.hold
       ? withHold(off0, holdPose(layer.hold, local, layer.holdRate, layer.rect.w, layer.rect.h))
       : off0;
-    // A box projects when it authored depth of its own, or when the camera is
+    // A box projects when it authored depth or a tilt of its own, or when the camera is
     // somewhere that moves even a flat layer. Nothing else touches the fold, so a
-    // stage with neither takes the pre-104 path exactly.
+    // stage with none of them takes the pre-104 path exactly. The tilt term is not
+    // optional: a box carrying only an `rx` field has no depth and no track, so
+    // without it the field is inert here and the preview and the export disagree.
     const projecting = !framesDoc && isProjectable(layer)
-      && (moving || layer.z !== 0 || layer.kf.length > 0);
+      && (moving || layer.z !== 0 || layer.rx !== 0 || layer.ry !== 0 || layer.kf.length > 0);
     // `t` is the SEQUENCE clock; a keyframe track runs on LOCAL box time, unscaled - 
     // the same timebase as enterMs (section 5.1). Speed remaps media, never keyframes.
     const fold = projecting
@@ -1182,6 +1289,8 @@ export function sequenceDrawPlan(
         tr: off,
         pose: evaluateKf(layer.kf, t - layer.startMs),
         zField: layer.z,
+        rxField: layer.rx,
+        ryField: layer.ry,
         authoredBlur: layer.blur,
         boxW: layer.rect.w,
         boxH: layer.rect.h,

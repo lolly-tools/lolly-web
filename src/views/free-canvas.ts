@@ -250,6 +250,13 @@ interface CanvasCfg {
    *  Not a timing field - named alongside them because a keyframe's `z` channel
    *  replaces it for its segment, so every writer that carries one carries the other. */
   zField?: string;
+  /** OPTIONAL, same terms: the box's own TILT in degrees - pitch and yaw about its own
+   *  centre (plans/104 P2.1). Named here beside `zField` rather than on FieldCfg for
+   *  `zField`'s stated reason, and for its second reason too: a keyframe's `rx`/`ry`
+   *  channel replaces the field for its segment, so a writer that carries one carries
+   *  all three. Absent means the tool has no tilt to offer, and the More panel's
+   *  "Perspective tilt" rows are simply not drawn. */
+  rxField?: string; ryField?: string;
   minSize?: number;
   addKinds?: AddKind[];
   import?: unknown;
@@ -988,6 +995,18 @@ export const CHOREO_SHOWCASES: ReadonlyArray<{ id: ShowcaseId; label: string; su
   { id: 'scan', label: t('Map-scan'), sub: t('Hardly raised, the camera scans the page'), ms: 8000, icon: SVG.move },
 ];
 
+/**
+ * The per-box tilt CONTROL range, degrees (plans/104 P2.1) - what the More panel's
+ * "Perspective tilt" sliders span.
+ *
+ * A hand-copied `KF_TILT_CONTROL` (views/timeline-panel.ts), on `CHOREO_SHOWCASES`'
+ * terms: this module reaches that chunk only through a dynamic import, so a static
+ * import for a two-number tuple would pull a whole view into the canvas bundle. The two
+ * are held equal by a drift test in free-canvas-choreo.test.ts, which is the only thing
+ * that can hold them equal.
+ */
+export const FC_TILT: readonly [number, number] = Object.freeze([-75, 75] as const);
+
 /** Is a dash pattern relevant to this box? A dash keyword is on, OR an array is already
  *  authored - the second half is what stops a stored pattern becoming unreachable the
  *  moment someone flips the keyword back to Solid. */
@@ -1280,6 +1299,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // keyframe REPLACES it for its segment (section 5.2), so writing an honest full pose
       // means knowing what the unkeyed value is.
       zField: cv.zField || '',
+      // And the two tilt fields on the same terms, for the same one thing (P2.1): an
+      // `rx`/`ry` keyframe REPLACES the field for its segment, so a full pose written
+      // without knowing the unkeyed angle would flatten a board the user had posed.
+      rxField: cv.rxField || '',
+      ryField: cv.ryField || '',
     } : null;
   // Can this tool import a design AS timed scenes (frames → timeline clips) at all?
   // Time-capable + import-capable. Design qualifies (it declares the time model), so it
@@ -4482,6 +4506,20 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const shX = Math.round(clampN(parseFloat(String(b[cfg.shadowXField])), 0, -300, 300));
     const shY = Math.round(clampN(parseFloat(String(b[cfg.shadowYField])), 0, -300, 300));
     const shBlur = Math.round(clampN(parseFloat(String(b[cfg.shadowBlurField])), 10, 0, 300));
+    // "Perspective tilt" (plans/104 P2.1) - the box's own pitch and yaw, and the canvas's
+    // door onto them; the timeline's pose rows are the other one, for a keyed value.
+    // ONE box only: this panel READS boxes[idx[0]] and WRITES the whole selection, so on
+    // a mixed selection it would stamp the first box's angle onto every other. And never
+    // on a camera - the camera has its own Tilt X/Y in the timeline's Camera group, and
+    // two doors onto one channel with different ranges is the failure `holdTilt` names.
+    // (`isPosable` also rules out a frame page and an audio clip, which is right for the
+    // same reason a showcase will not pose them: neither paints a card to tilt.)
+    const tiltRx = cv.rxField || '', tiltRy = cv.ryField || '';
+    const showTilt = idx.length === 1 && !!(tiltRx || tiltRy) && isPosable(b);
+    const rxCur = showTilt ? Math.round(clampN(parseFloat(String(b[tiltRx])), 0, FC_TILT[0], FC_TILT[1])) : 0;
+    const ryCur = showTilt ? Math.round(clampN(parseFloat(String(b[tiltRy])), 0, FC_TILT[0], FC_TILT[1])) : 0;
+    const tiltRow = (key: string, lbl: string, cur: number): string =>
+      `<label class="fc-row"><span class="fc-row-lbl">${lbl}</span><input type="range" class="field-range" data-mp="${key}" min="${FC_TILT[0]}" max="${FC_TILT[1]}" value="${cur}"><b data-mp-val="${key}">${cur}</b></label>`;
     // Row with a leading icon label (keeps the "clean up + use icons" intent while
     // staying legible). segRow hosts a segmented control; iconRow a slider/select.
     const iconRow = (ic: string, lbl: string, ctrl: string): string => `<label class="fc-row"><span class="fc-row-lbl" data-tip="${escape(lbl)}">${icon(ic)}<span>${lbl}</span></span>${ctrl}</label>`;
@@ -4504,6 +4542,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         <label class="fc-row"><span class="fc-row-lbl">${t('X')}</span><input type="range" class="field-range" data-mp="shx" min="-300" max="300" value="${shX}"><b data-mp-val="shx">${shX}</b></label>
         <label class="fc-row"><span class="fc-row-lbl">${t('Y')}</span><input type="range" class="field-range" data-mp="shy" min="-300" max="300" value="${shY}"><b data-mp-val="shy">${shY}</b></label>
         <label class="fc-row"><span class="fc-row-lbl">${t('Blur')}</span><input type="range" class="field-range" data-mp="shblur" min="0" max="300" value="${shBlur}"><b data-mp-val="shblur">${shBlur}</b></label>` : ''}
+      ${showTilt ? `<div class="fc-panel-sub">${t('Perspective tilt')}</div>
+        ${tiltRx ? tiltRow('rx', t('Tilt X'), rxCur) : ''}
+        ${tiltRy ? tiltRow('ry', t('Tilt Y'), ryCur) : ''}` : ''}
       ${showLift ? `<div class="fc-row"><button type="button" class="fc-cbtn fc-mp-lift" data-mp-lift>${icon(SVG.liftLayers)}<span>${escape(t('Lift layers'))}</span></button></div>` : ''}
       ${showChoreo ? `<div class="fc-row"><button type="button" class="fc-cbtn fc-mp-choreo" data-mp-choreo>${icon(SVG.choreo)}<span>${escape(t('Choreograph…'))}</span></button></div>` : ''}`;
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -4511,7 +4552,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // since a circle is only an ellipse the geometry keeps 1:1. Everything else writes
     // its field straight through.
     wireSegs(p, (field, v) => { if (field === cfg.shapeField) setShape(v); else setField(field, v); });
-    const MP_FIELD: Record<string, string> = { radius: cfg.radiusField, opacity: cfg.opacityField, shx: cfg.shadowXField, shy: cfg.shadowYField, shblur: cfg.shadowBlurField };
+    // `rx`/`ry` come off the CANVAS block, not the resolved FieldCfg - the tilt fields
+    // live beside `zField` for the reason stated there. A falsy name makes `setField`
+    // return, which is the same progressive-capability gate every other row uses.
+    const MP_FIELD: Record<string, string> = { radius: cfg.radiusField, opacity: cfg.opacityField, shx: cfg.shadowXField, shy: cfg.shadowYField, shblur: cfg.shadowBlurField, rx: tiltRx, ry: tiltRy };
     p.querySelectorAll<HTMLSelectElement>('select[data-mp]').forEach((sel) => sel.addEventListener('change', () => setField(cfg.blendField, sel.value)));
     p.querySelectorAll<HTMLInputElement>('input[data-mp]').forEach((rng) => rng.addEventListener('input', () => {
       const valEl = p.querySelector<HTMLElement>(`[data-mp-val="${rng.dataset.mp}"]`);
@@ -5496,6 +5540,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         + '<input type="checkbox" class="field-check" data-choreo-camera checked></label>'
       + `<label class="fc-row fc-row-toggle field-toggle"><span>${escape(t('Float - a breath of scale'))}</span>`
         + '<input type="checkbox" class="field-check" data-choreo-float checked></label>'
+      // Unchecked on purpose: one tilt key moves the whole export onto the slower
+      // capture tier and refuses a board holding video, so 3D is a choice, not a default.
+      + `<label class="fc-row fc-row-toggle field-toggle"><span>${escape(t('Tumble - a 3D wobble (slower to export)'))}</span>`
+        + '<input type="checkbox" class="field-check" data-choreo-tumble></label>'
       + '<div class="fc-num-row fc-confirm-row">'
         + `<button type="button" class="btn btn--sm" data-choreo-no>${escape(t('Cancel'))}</button>`
         + `<button type="button" class="btn btn--primary btn--sm" data-choreo-yes>${escape(t('Choreograph'))}</button>`
@@ -5518,6 +5566,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const orderSel = p.querySelector<HTMLSelectElement>('[data-choreo-order]')!;
     const camIn = p.querySelector<HTMLInputElement>('[data-choreo-camera]')!;
     const floatIn = p.querySelector<HTMLInputElement>('[data-choreo-float]')!;
+    const tumbleIn = p.querySelector<HTMLInputElement>('[data-choreo-tumble]')!;
     const yes = p.querySelector<HTMLButtonElement>('[data-choreo-yes]')!;
 
     const pick = (id: ShowcaseId): void => {
@@ -5569,6 +5618,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         order: orderSel.value as ChoreoOrder,
         camera: camIn.checked,
         float: floatIn.checked,
+        tumble: tumbleIn.checked,
         // Left alone, the generator picks: a timed board's own clip span, and the
         // showcase's authored length on a board with no sequence yet.
         durationMs: secDirty && Number.isFinite(sec) ? Math.round(sec * 1000) : undefined,

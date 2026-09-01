@@ -25,11 +25,20 @@
  * Channel semantics the generator leans on (engine/src/keyframes.ts, section 5.2):
  * x/y are px OFFSETS from the authored position, s multiplies, o multiplies (and always
  * fades linearly whatever the ease), b adds, z REPLACES the box's z field for the
- * segment - which is why a rest key carries the box's own z and never 0. A key's ease
- * governs the segment LEAVING it. Per-box rx/ry are not read by a box's fold yet
- * (only the camera tilts), so the plan's perspective tumble is not written here; the
- * FLOAT quality ships as the scale breath (s 1 -> 1.02 -> 1) plus seeded per-element
- * timing variance, all resolving to exactly 1 at rest.
+ * segment - which is why a rest key carries the box's own z and never 0. rx/ry are the
+ * box's own pitch and yaw and follow z's rule exactly (P2.1), so a rest key carries the
+ * box's OWN tilt and never 0. A key's ease governs the segment LEAVING it. The FLOAT
+ * quality is therefore two things resolving together: the scale breath (s 1 -> 1.02 -> 1)
+ * and the perspective TUMBLE (a few degrees on each axis, carried by the exploded pose),
+ * both landing back on the authored composition, plus seeded per-element timing variance.
+ *
+ * The tumble is OPT-IN (`tumble: true`, and only with `float`): a single tilt key sends
+ * the export to the slower capture tier and refuses video, so the default arc must not
+ * write one. A TRACK that never mentions rx/ry leaves the fold on the box's own tilt
+ * FIELD - note "track", not "key": once any key mentions the channel, the last mention
+ * clamp-holds forever, which is why a tumbling track must carry the rest tilt
+ * explicitly. A board that never tumbles carries no rx/ry token at all, and a box with
+ * an authored tilt still renders that tilt without a single key.
  *
  * Everything is deterministic from `seed` (mulberry32, the transitions.ts precedent):
  * the same stack, options and seed always produce the same wire.
@@ -45,8 +54,12 @@ export type ChoreoArc = 'intro' | 'feature' | 'outro' | 'loop';
 /** The stagger order - the text split order's vocabulary, plus the stack's own depth. */
 export type ChoreoOrder = '' | 'reverse' | 'center' | 'random' | 'depth';
 
-/** One box of the stack, in stage-native px: its authored rect centre and its rest depth. */
-export interface ChoreoBox { id: string; z: number; cx: number; cy: number; w: number; h: number }
+/**
+ * One box of the stack, in stage-native px: its authored rect centre and its rest depth -
+ * plus, optionally, its own authored TILT in degrees (P2.1). Optional because absent IS
+ * flat: a caller on a tool that declares no tilt fields hands over what it always did.
+ */
+export interface ChoreoBox { id: string; z: number; cx: number; cy: number; w: number; h: number; rx?: number; ry?: number }
 export interface ChoreoStage { w: number; h: number }
 
 export interface ChoreoOptions {
@@ -61,6 +74,14 @@ export interface ChoreoOptions {
   camera?: boolean;
   /** The scale breath and the seeded timing variance (default true). */
   float?: boolean;
+  /**
+   * The perspective TUMBLE - a few seeded degrees of rx/ry on the exploded pose,
+   * resolving to the box's own tilt. OPT-IN, never a default: one tilt key routes the
+   * whole export onto the slower capture tier and refuses a board that holds a video
+   * clip (boxesTilt feeds the same gate the tilted camera does), so the default Float
+   * must not change how a board exports. Requires `float`.
+   */
+  tumble?: boolean;
 }
 
 export interface ChoreoPlan {
@@ -89,6 +110,18 @@ const INERTIA = 'eb(0.16)(1)(0.3)(1)';
 const LIFT_PX = 120;
 /** The tilt window a generated camera may use - well inside KF_TILT_CONTROL's +/-75. */
 const TILT_MAX = 30;
+/**
+ * The window a BOX tilt may use: the tilt FIELD's own range (P2.1). Wider than the
+ * camera's, because a box tumble is added ON TOP of whatever the box authored - a card
+ * already posed at 70 degrees still has to come home to 70. The other three copies of
+ * this number are the design manifest's min/max, the hook's `TILT_MAX` and
+ * `KF_TILT_CONTROL`; the planner's `KF_TILT_FIELD_CLAMP` is the fifth.
+ */
+const TILT_BOX_MAX = 75;
+/** How far a box tumbles off its own tilt while exploded, degrees, either way. Big
+ *  enough to read as a card catching the light, small enough that a box near the field
+ *  ceiling only meets the clamp rather than folding through its own near plane. */
+const TUMBLE_MIN = 3, TUMBLE_MAX = 8;
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 const fin = (v: unknown, d: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -204,18 +237,33 @@ function dealWindow(
   });
 }
 
-type Pose = Partial<Record<'x' | 'y' | 'z' | 's' | 'o' | 'b', number>>;
+type Pose = Partial<Record<'x' | 'y' | 'z' | 's' | 'o' | 'b' | 'rx' | 'ry', number>>;
 
-/** Every box's rest pose: its OWN depth, no offset, scale 1, opaque, no blur. */
-const restOf = (b: ChoreoBox): Pose => ({ x: 0, y: 0, z: clamp(b.z, KF_Z_FIELD_CLAMP[0], KF_Z_FIELD_CLAMP[1]), s: 1, o: 1, b: 0 });
+/** A seeded tumble, degrees on each axis - or null for a box that does not tumble. */
+type Tumble = { rx: number; ry: number } | null;
+
+/** The box's own authored tilt, held to the field range. Absent is flat. */
+const baseTilt = (v: unknown): number => clamp(fin(v, 0), -TILT_BOX_MAX, TILT_BOX_MAX);
+
+/**
+ * Every box's rest pose: its OWN depth, no offset, scale 1, opaque, no blur - and, when
+ * `tumble` is on, its OWN tilt. The tilt is conditional for the reason spelled at the
+ * top of the file: a key that omits rx/ry leaves the fold on the box's tilt field, so
+ * writing `rx0` into a board that never tumbles would add a wire token for nothing.
+ */
+const restOf = (b: ChoreoBox, tumble: Tumble = null): Pose => ({
+  x: 0, y: 0, z: clamp(b.z, KF_Z_FIELD_CLAMP[0], KF_Z_FIELD_CLAMP[1]),
+  ...(tumble ? { rx: baseTilt(b.rx), ry: baseTilt(b.ry) } : {}),
+  s: 1, o: 1, b: 0,
+});
 
 /**
  * The exploded pose: lifted `lift` px above its own depth and pushed away from the
  * stack's centroid by `spread` of its distance (plus a floor, so the centre box of a
  * grid still moves). `visible` keeps it opaque (a fly-through) or fades it out with a
- * touch of blur (a build).
+ * touch of blur (a build). `tumble` adds the float tilt on top of the box's own.
  */
-function explodedOf(b: ChoreoBox, c: { x: number; y: number }, lift: number, spread: number, visible: boolean): Pose {
+function explodedOf(b: ChoreoBox, c: { x: number; y: number }, lift: number, spread: number, visible: boolean, tumble: Tumble = null): Pose {
   const dx = b.cx - c.x, dy = b.cy - c.y;
   const dist = Math.hypot(dx, dy);
   const ux = dist > 0.5 ? dx / dist : 0, uy = dist > 0.5 ? dy / dist : -1;
@@ -223,8 +271,23 @@ function explodedOf(b: ChoreoBox, c: { x: number; y: number }, lift: number, spr
   return {
     x: r2(ux * mag), y: r2(uy * mag),
     z: clamp(r2(b.z + lift), KF_Z_FIELD_CLAMP[0], KF_Z_FIELD_CLAMP[1]),
+    ...(tumble ? { rx: r2(baseTilt(b.rx) + tumble.rx), ry: r2(baseTilt(b.ry) + tumble.ry) } : {}),
     s: 1, o: visible ? 1 : 0, b: visible ? 0 : 6,
   };
+}
+
+/** One tumble amplitude from one draw: 3-8 degrees, signed. */
+const tumbleDeg = (r: number): number => r2((r < 0.5 ? -1 : 1) * (TUMBLE_MIN + Math.abs(r * 2 - 1) * (TUMBLE_MAX - TUMBLE_MIN)));
+
+/** Hold every rx/ry a track carries inside `max`, in place. */
+function clampTilt(keys: readonly KfKeyInput[] | null | undefined, max: number): void {
+  if (!keys) return;
+  for (const k of keys) {
+    const v = k.v as Record<string, number> | null | undefined;
+    if (!v) continue;
+    if (typeof v.rx === 'number') v.rx = clamp(v.rx, -max, max);
+    if (typeof v.ry === 'number') v.ry = clamp(v.ry, -max, max);
+  }
 }
 
 const r2 = (v: number): number => Math.round(v * 100) / 100;
@@ -298,6 +361,11 @@ export function choreograph(stack: readonly ChoreoBox[], stage: ChoreoStage, opt
   // Drawn AFTER the ranks so a 'random' order and the nudges come from one stream.
   const nudge = boxes.map(() => (float ? rnd() * 2 - 1 : 0));
   const breath = boxes.map(() => (float ? r3(0.015 + rnd() * 0.015) : 0));
+  // And the tumble AFTER those, for the same reason read the other way (P2.1): a draw
+  // APPENDED to the stream leaves every number already drawn from it untouched, so a
+  // float-off wire and a pre-tumble seeded output are byte for byte what they were.
+  const wantTumble = float && opts.tumble === true;
+  const tumble: Tumble[] = boxes.map(() => (wantTumble ? { rx: tumbleDeg(rnd()), ry: tumbleDeg(rnd()) } : null));
   const c = centroid(boxes);
   const zTop = Math.max(...boxes.map((b) => b.z));
   const zLo = Math.min(...boxes.map((b) => b.z));
@@ -310,7 +378,7 @@ export function choreograph(stack: readonly ChoreoBox[], stage: ChoreoStage, opt
       const win = dealWindow(0, sec(0.85), ranks, stagger, nudge);
       plan.boxes = boxes.map((b, i) => ({
         id: b.id,
-        keys: settleKeys(win[i]!.from, win[i]!.to, explodedOf(b, c, LIFT_PX, 0.35, false), restOf(b), breath[i]!),
+        keys: settleKeys(win[i]!.from, win[i]!.to, explodedOf(b, c, LIFT_PX, 0.35, false, tumble[i]!), restOf(b, tumble[i]!), breath[i]!),
       }));
       if (opts.camera !== false) {
         // Drift: a shallow push that settles as the last box does - the camera never sits still.
@@ -322,7 +390,7 @@ export function choreograph(stack: readonly ChoreoBox[], stage: ChoreoStage, opt
       const win = dealWindow(sec(0.15), T, ranks, stagger, nudge);
       plan.boxes = boxes.map((b, i) => ({
         id: b.id,
-        keys: departKeys(win[i]!.from, win[i]!.to, restOf(b), explodedOf(b, c, LIFT_PX, 0.35, false)),
+        keys: departKeys(win[i]!.from, win[i]!.to, restOf(b, tumble[i]!), explodedOf(b, c, LIFT_PX, 0.35, false, tumble[i]!)),
       }));
       if (opts.camera !== false) {
         plan.camera = [{ t: 0, ease: 'ei', v: { ...CAM_REST } }, { t: T, v: { ...CAM_REST, z: -60 } }];
@@ -333,7 +401,7 @@ export function choreograph(stack: readonly ChoreoBox[], stage: ChoreoStage, opt
       const inWin = dealWindow(0, sec(0.42), ranks, stagger, nudge);
       const outWin = dealWindow(sec(0.58), T, ranks, stagger, nudge);
       plan.boxes = boxes.map((b, i) => {
-        const ex = explodedOf(b, c, LIFT_PX, 0.35, false), rest = restOf(b);
+        const ex = explodedOf(b, c, LIFT_PX, 0.35, false, tumble[i]!), rest = restOf(b, tumble[i]!);
         return {
           id: b.id,
           keys: [
@@ -356,7 +424,7 @@ export function choreograph(stack: readonly ChoreoBox[], stage: ChoreoStage, opt
       const outWin = dealWindow(sec(0.06), sec(0.34), ranks, stagger, nudge);
       const backWin = dealWindow(sec(0.66), sec(0.96), ranks, stagger, nudge);
       plan.boxes = boxes.map((b, i) => {
-        const ex = explodedOf(b, c, LIFT_PX, 0.3, true), rest = restOf(b);
+        const ex = explodedOf(b, c, LIFT_PX, 0.3, true, tumble[i]!), rest = restOf(b, tumble[i]!);
         return {
           id: b.id,
           keys: [
@@ -389,7 +457,7 @@ export function choreograph(stack: readonly ChoreoBox[], stage: ChoreoStage, opt
       const outWin = dealWindow(sec(0.04), sec(0.24), ranks, stagger, nudge);
       const backWin = dealWindow(sec(0.76), sec(0.96), ranks, stagger, nudge);
       plan.boxes = boxes.map((b, i) => {
-        const ex = explodedOf(b, c, LIFT_PX * 0.4, 0.12, true), rest = restOf(b);
+        const ex = explodedOf(b, c, LIFT_PX * 0.4, 0.12, true, tumble[i]!), rest = restOf(b, tumble[i]!);
         return {
           id: b.id,
           keys: [
@@ -443,15 +511,12 @@ export function choreograph(stack: readonly ChoreoBox[], stage: ChoreoStage, opt
       break;
     }
   }
-  // Every tilt a showcase writes stays inside the window the inspector can show.
-  if (plan.camera) {
-    for (const k of plan.camera) {
-      const v = k.v as Record<string, number> | null | undefined;
-      if (!v) continue;
-      if (typeof v.rx === 'number') v.rx = clamp(v.rx, -TILT_MAX, TILT_MAX);
-      if (typeof v.ry === 'number') v.ry = clamp(v.ry, -TILT_MAX, TILT_MAX);
-    }
-  }
+  // Every tilt a showcase writes stays inside the window its own inspector can show:
+  // the camera's drift window, and for a box the tilt FIELD's range. Done here rather
+  // than inline because a box tumble is a SUM (its authored tilt plus the amplitude),
+  // so it can only be held once both halves are in the key.
+  clampTilt(plan.camera, TILT_MAX);
+  for (const e of plan.boxes) clampTilt(e.keys, TILT_BOX_MAX);
   return plan;
 }
 
@@ -559,6 +624,10 @@ export function applyChoreograph(
     return {
       id: String(b[cfg.idField]),
       z: cfg.zField ? num(b[cfg.zField], 0) : 0,
+      // The box's own tilt, on the depth field's terms exactly (P2.1): a tool that
+      // declares no tilt fields hands over 0, which is the flat card.
+      rx: cfg.rxField ? num(b[cfg.rxField], 0) : 0,
+      ry: cfg.ryField ? num(b[cfg.ryField], 0) : 0,
       cx: r.x + r.w / 2, cy: r.y + r.h / 2, w: r.w, h: r.h,
     };
   });

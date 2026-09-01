@@ -3235,14 +3235,19 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     el: HTMLInputElement;
     /** The range beside the number, on the one channel that has one (`z`). */
     slider?: HTMLInputElement | null;
-    /** True when this channel writes the box's own field off a diamond (`z`). */
-    base?: boolean;
+    /**
+     * The base channel this control writes off a diamond, when the tool actually
+     * declares the field it falls back to. Absent means "nothing to write here" - which
+     * is what `syncKfLatch` turns into an inert control, so a tool with no `zField` /
+     * `rxField` / `ryField` never shows a live number that the commit would refuse.
+     */
+    base?: KfBaseChannel;
   }
   interface KfLatchRefs {
     id: string;
     /** "Scene pose" ⇄ "Keyframe @ 0:01.8". */
     state: HTMLElement;
-    /** The pose controls - enabled only ON a diamond (except `z`, which has a base). */
+    /** The pose controls - enabled only ON a diamond (except the ones with a `base`). */
     pose: KfPoseField[];
     /** The CRUD list, whose rows carry `data-t`. */
     list: HTMLElement;
@@ -3262,9 +3267,18 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   let kfPoseKey = '\u0000';
 
   /**
+   * The three pose channels that have a BASE FIELD on the box, and the `cfg` key naming
+   * it. A keyed value REPLACES the field for its segment (section 5.2 for `z`, P2.1 for
+   * the tilt pair), which is what makes an off-diamond edit here an edit of the base
+   * rather than an invented keyframe.
+   */
+  type KfBaseChannel = 'z' | 'rx' | 'ry';
+  const kfBaseField = (ch: KfBaseChannel): string | undefined => cfg[`${ch}Field`];
+
+  /**
    * The pose channels the inspector offers, and the form of each control.
    *
-   * Four, and the reason they are these four: `x`/`y`/`r`/`w`/`h` are authored ON THE
+   * Six, and the reason they are these six: `x`/`y`/`r`/`w`/`h` are authored ON THE
    * CANVAS (drag, rotate and resize, redirected at free-canvas's single pointerup
    * commit), so duplicating them as number fields here would be a second, worse door
    * onto a gesture that already works. These are the ones with no canvas handle.
@@ -3272,22 +3286,31 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * `z` clamps to the FIELD range (`KF_Z_FIELD_CLAMP`), not the wider wire range: the
    * wire has to carry a camera dolly, a control does not, and a depth a user can
    * scrub to should stay inside the band the guard never has to rescue (section 5.1). It is
-   * also the only one with a SLIDER, and the only one that stays live off a diamond - 
-   * both because it is the one channel with a base field of its own (see `base`).
+   * also the only one with a SLIDER.
+   *
+   * P2.1 put TILT X / TILT Y beside it, and they sit beside it deliberately: depth and
+   * the two tilt angles are the three channels that describe where the card is in
+   * space, and scale/opacity/blur are what it looks like once it is there. They take
+   * `KF_TILT_CONTROL` (±75) for the camera rows' reason exactly - past a quarter turn
+   * `κ` changes sign and the depth sort inverts - and they are BOX angles, so their
+   * sense is CSS's own `rotateY(ry) rotateX(rx)`: a box `rx` and a camera `rx` tip the
+   * picture in OPPOSITE directions (moving the camera down is moving the world up).
    */
   const KF_POSE_FIELDS: ReadonlyArray<{
     ch: KfChannel; label: string; step: number; range: readonly [number, number];
-    /** Present on the ONE channel that also has a base field of its own (see `base`). */
+    /** Present on the ONE channel that also has a slider beside the number (`z`). */
     slider?: readonly [number, number];
     /**
      * The box sub-field this channel falls back to when the playhead is OFF every
-     * diamond - section 8's "edits write the base". Only `z` has one: a depth is a property
-     * of the box (the `z` field) that a keyframe may override for a segment (section 5.2),
-     * while scale/opacity/blur have no per-box base the pose row could write.
+     * diamond - section 8's "edits write the base". Three channels have one - depth and
+     * the two tilt angles are properties of the BOX that a keyframe may override for a
+     * segment - while scale/opacity/blur have no per-box base the pose row could write.
      */
-    base?: 'z';
+    base?: KfBaseChannel;
   }> = [
     { ch: 'z', label: t('Depth'), step: 10, range: KF_Z_FIELD_CLAMP, slider: KF_Z_SLIDER, base: 'z' },
+    { ch: 'rx', label: t('Tilt X'), step: 5, range: KF_TILT_CONTROL, base: 'rx' },
+    { ch: 'ry', label: t('Tilt Y'), step: 5, range: KF_TILT_CONTROL, base: 'ry' },
     { ch: 's', label: t('Scale'), step: 0.05, range: KF_CLAMPS.s },
     { ch: 'o', label: t('Opacity'), step: 0.05, range: KF_CLAMPS.o },
     { ch: 'b', label: t('Blur'), step: 0.5, range: KF_CLAMPS.b },
@@ -3488,22 +3511,26 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
           const v = clamp(raw, f.range[0], f.range[1]);
           el.value = kfFormatChannel(f.ch, v);
           if (!on) {
-            // OFF a diamond, section 8's rule is "edits write the BASE" - and depth is the
-            // one channel here that HAS one: a keyed `z` REPLACES the box's `z` field
-            // for its segment (section 5.2), so the field is exactly what it replaces. Every
-            // other channel is refused as before - there is no keyframe to pose and
-            // nothing else to write, and minting one would be the accident section 8 forbids.
-            if (f.base !== 'z' || !cfg.zField) {
+            // OFF a diamond, section 8's rule is "edits write the BASE" - and depth and the
+            // two tilt angles are the channels here that HAVE one: a keyed `z`/`rx`/`ry`
+            // REPLACES the box's own field for its segment (section 5.2, P2.1), so the field
+            // is exactly what it replaces. Every other channel is refused as before -
+            // there is no keyframe to pose and nothing else to write, and minting one
+            // would be the accident section 8 forbids. The field NAME comes off `cfg`
+            // rather than being spelled here, so a tool that declares no `rxField` is the
+            // same refusal as a tool that declares no `zField`.
+            const field = f.base ? kfBaseField(f.base) : undefined;
+            if (!field) {
               kfPoseKey = '\u0000';   // the memo would otherwise call the stale value current
               syncKfLatch();
               return;
             }
-            // THE FIRST DEPTH INTERACTION (section 5.4): lifting a box mints the scene camera
-            // in the SAME array, so one gesture stays one commit and one ⌘Z. Depth
-            // already projects correctly without it (no camera box resolves to the
-            // DEFAULT camera, never an identity) - the box is what makes the camera
-            // panel reachable, not what makes depth work.
-            const seeded = ensureSceneCameraRows(patchBox(rows, id, { [cfg.zField]: v }));
+            // THE FIRST DEPTH OR TILT INTERACTION (section 5.4): posing a box in space mints
+            // the scene camera in the SAME array, so one gesture stays one commit and one
+            // ⌘Z. Both already project correctly without it (no camera box resolves to
+            // the DEFAULT camera, never an identity) - the box is what makes the camera
+            // panel reachable, not what makes depth or tilt work.
+            const seeded = ensureSceneCameraRows(patchBox(rows, id, { [field]: v }));
             write(seeded.rows);
             return;
           }
@@ -3547,7 +3574,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
           wrap.insertBefore(live, el);
         }
         poseWrap.appendChild(wrap);
-        pose.push({ ch: f.ch, el, slider, base: f.base === 'z' });
+        // `base` only where the tool actually declares the field to fall back to: the
+        // commit refuses on a missing `cfg` name, so a control that stayed live off a
+        // diamond would be one the user can type into and watch snap back.
+        pose.push({ ch: f.ch, el, slider, base: f.base && kfBaseField(f.base) ? f.base : undefined });
       }
     }
 
@@ -3806,8 +3836,13 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // off-diamond number is the value the box is actually striking at this instant - 
     // the same number the preview shows and the export writes.
     const readMs = on ?? kfLocalMs(box, cfg, at);
+    // Every BASE field is in the memo, not just depth: off a diamond those rows read the
+    // box's own field, so a tilt written from the canvas has to repaint the row the same
+    // way a depth does.
     const poseKey = `${refs.id}|${on ?? ''}|${readMs}|${String(box[cfg.kfField] ?? '')}|${
-      cfg.zField ? String(box[cfg.zField] ?? '') : ''}`;
+      cfg.zField ? String(box[cfg.zField] ?? '') : ''}|${
+      cfg.rxField ? String(box[cfg.rxField] ?? '') : ''}|${
+      cfg.ryField ? String(box[cfg.ryField] ?? '') : ''}`;
     if (poseKey === kfPoseKey) return;
     kfPoseKey = poseKey;
     for (const f of refs.pose) {
@@ -3824,10 +3859,11 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       // would have to invent one silently. "+Keyframe" is the one press that changes
       // that, and the title says so rather than leaving a dead control unexplained.
       //
-      // EXCEPT DEPTH (section 5.3, P1): it has a base field of its own, so off a diamond an
-      // edit there is not an invention - it is section 8's "edits write the base", which is
-      // the whole reason the depth slider is usable on a box that has never been
-      // keyframed at all. `base` is set on exactly the channels that have one.
+      // EXCEPT DEPTH AND THE TWO TILT ANGLES (section 5.3, P1; P2.1): each has a base field
+      // of its own, so off a diamond an edit there is not an invention - it is section 8's
+      // "edits write the base", which is the whole reason the depth slider is usable on a
+      // box that has never been keyframed at all. `base` is set on exactly the channels
+      // that have one AND whose field this tool declares.
       const inert = on === null && !f.base;
       f.el.disabled = inert;
       f.el.title = inert ? t('Move the playhead onto a keyframe, or add one.') : '';

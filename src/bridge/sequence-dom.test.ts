@@ -451,3 +451,50 @@ test('a FLAT box is projected the moment a camera moves - and walked not at all 
     assert.equal(flat2.style.transform, '', 'no camera, no write to a flat box');
   } finally { restoreSequenceTime(still); }
 });
+
+test('an authored BASE tilt is applied ONCE when posed - the baked prefix is stripped, everything after it survives', () => {
+  // The hook bakes `perspective(1200px) rotateY() rotateX()` for the untimed board and
+  // the stills, AND stamps data-t-rx/-ry for the fold. Without the strip the applier
+  // wrote both and a 12 degree card rendered at ~24 (review blocker, 2026-09-02).
+  const root = dom.window.document.createElement('div');
+  root.innerHTML = `
+    <div class="artboard" data-sequence data-seq-ms="2000">
+      <div class="lolly-box" data-box-id="t" data-t-rx="-40" data-t-ry="25"
+           style="left:0px;top:0px;width:100px;height:50px;transform:perspective(1200px) rotateY(25deg) rotateX(-40deg) rotate(15deg)"></div>
+      <div class="lolly-box" data-box-id="flat" data-t-start="0" data-t-dur="2000" data-t-lane="seq"
+           style="left:0px;top:0px;width:100px;height:50px;transform:rotate(-4deg)"></div>
+    </div>`;
+  const tilted = box(root, 't');
+  const plain = box(root, 'flat');
+  applySequenceTime(root, 1000);
+  try {
+    const tf = tilted.style.transform;
+    assert.match(tf, /^matrix3d\(/, 'the fold owns the tilt');
+    assert.ok(!tf.includes('perspective('), 'the baked prefix is stripped, not doubled');
+    assert.ok(tf.includes('rotate(15deg)'), 'the in-plane rotation after the prefix survives');
+    assert.ok(plain.style.transform.includes('rotate(-4deg)'), 'an untilted authored transform is untouched');
+  } finally { restoreSequenceTime(root); }
+  assert.ok(tilted.getAttribute('style')!.includes('perspective(1200px) rotateY(25deg) rotateX(-40deg) rotate(15deg)'),
+    'restore hands the baked string back for the stills');
+});
+
+test('a TILTED scenery box on an UNTIMED board survives the clock - visible, posed once', () => {
+  // Opening the timeline on a board where nothing is timed runs the applier with
+  // seqMs = 0. A tilt (or a lift) is what puts the box in the applier's set, and the
+  // open-ended window used to collapse to nothing there - the box vanished the moment
+  // the clock existed (caught live, 2026-09-02).
+  const root = dom.window.document.createElement('div');
+  root.innerHTML = `
+    <div class="artboard">
+      <div class="lolly-box" data-box-id="t" data-t-rx="-18" data-t-ry="25"
+           style="left:0px;top:0px;width:320px;height:240px;transform:perspective(1200px) rotateY(25deg) rotateX(-18deg)"></div>
+    </div>`;
+  const el = box(root, 't');
+  applySequenceTime(root, 500);
+  try {
+    assert.ok(!off(el), 'no window to be outside of, so the box stays on screen');
+    const tf = el.style.transform;
+    assert.match(tf, /^matrix3d\(/, 'posed through the fold');
+    assert.ok(!tf.includes('perspective('), 'and the baked prefix is stripped - one tilt, not two');
+  } finally { restoreSequenceTime(root); }
+});
