@@ -14,6 +14,7 @@ import {
   walkNext,
   walkPrev,
   stackStep,
+  seedStacks,
   clampIndex,
   matchMorphBoxes,
   type FrameSpec,
@@ -272,4 +273,41 @@ test('stackStep: walks within a column, stops at column edges (no spill)', () =>
   assert.equal(stackStep(deck, b3, 'down'), b3); // bottom edge: stay
   assert.equal(stackStep(deck, b, 'up'), b);      // top edge: stay (no spill to prev column)
   assert.equal(stackStep(deck, b2, 'up'), b);
+});
+
+// ── seedStacks (plan 112 M5): geometry proposes, structure disposes ───────────
+
+test('seedStacks: same-x columns become stacks, head topmost, sub-slides in y order', () => {
+  const seeded = seedStacks([
+    { id: 'a', order: 0, x: 0, y: 0, w: 1920, h: 1080 },
+    { id: 'a2', order: 1, x: 0, y: 1200, w: 1920, h: 1080 },
+    { id: 'b', order: 2, x: 2000, y: 0, w: 1920, h: 1080 },
+    { id: 'a3', order: 3, x: 60, y: 2400, w: 1800, h: 1080 },  // x-centre inside a's span
+  ]);
+  const deck = buildDeck(seeded);
+  assert.equal(deck.columnCount, 2, 'two columns');
+  assert.deepEqual(deck.columns[0]!.map((p) => p.id), ['a', 'a2', 'a3'], 'the a column stacks in y order');
+  assert.deepEqual(deck.columns[1]!.map((p) => p.id), ['b']);
+  // The linear walk goes head, its stack, next head - reveal's own advance.
+  assert.deepEqual(deck.positions.map((p) => p.id), ['a', 'a2', 'a3', 'b']);
+});
+
+test('seedStacks abstains: authored stackOf anywhere, a single column, or nothing to stack', () => {
+  // Authored structure disposes - even one stackOf turns the inference off.
+  const authored = [
+    { id: 'a', order: 0, x: 0, y: 0, w: 1920, h: 1080 },
+    { id: 'a2', order: 1, x: 0, y: 1200, w: 1920, h: 1080, stackOf: 'a' },
+    { id: 'c', order: 2, x: 0, y: 2400, w: 1920, h: 1080 },
+  ];
+  assert.deepEqual(seedStacks(authored), authored, 'authored decks pass through verbatim');
+  // A vertical strip (ALL one column) stays linear: collapsing it would break
+  // every numeric s= link and read 1/1 on an N-frame deck.
+  const strip: FrameSpec[] = [
+    { id: 'a', order: 0, x: 0, y: 0, w: 1920, h: 1080 },
+    { id: 'b', order: 1, x: 0, y: 1200, w: 1920, h: 1080 },
+  ];
+  assert.equal(buildDeck(seedStacks(strip)).columnCount, 2, 'the strip stays two columns of one');
+  // Pure side-by-side has nothing to stack.
+  const flat = linear();
+  assert.deepEqual(seedStacks(flat), flat);
 });

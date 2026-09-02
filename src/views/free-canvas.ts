@@ -3456,6 +3456,37 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           label: t('Speaker notes…'), icon: icon(SVG.notes),
           run: () => openSpeakerNotesPanel(viewEl, si[0]!),
         });
+        // Sub-slide stacks (plan 112 M5): structure disposes. Stacking writes the
+        // previous COLUMN HEAD's id into stackOf; unstacking clears it. Present
+        // order is the hook's own (order asc, x asc), so "previous" here is
+        // exactly the slide to this one's left in the deck.
+        {
+          const bs2 = getBoxes();
+          const fbs = bs2
+            .map((b, i2) => ({ b, i2 }))
+            .filter((e) => String(e.b[cfg.kindField]) === frameCfg?.frameKind)
+            .sort((p, q) => (Number(p.b['order']) || 0) - (Number(q.b['order']) || 0)
+              || (Number(p.b['x']) || 0) - (Number(q.b['x']) || 0));
+          const at = fbs.findIndex((e) => e.i2 === si[0]);
+          const stacked = String(bs2[si[0]!]?.['stackOf'] ?? '') !== '';
+          const prevHead = at > 0
+            ? fbs.slice(0, at).reverse().find((e) => String(e.b['stackOf'] ?? '') === '')
+            : undefined;
+          if (stacked) {
+            items.push({
+              label: t('Unstack this slide'), icon: icon(SVG.present),
+              run: () => setField('stackOf', ''),
+            });
+          } else if (prevHead) {
+            const headId = String(prevHead.b['id'] ?? '');
+            if (headId) {
+              items.push({
+                label: t('Stack under the previous slide'), icon: icon(SVG.present),
+                run: () => setField('stackOf', headId),
+              });
+            }
+          }
+        }
       }
       // Per-box CSS class names (plan 112 M4) - the companion to doc-level Custom CSS,
       // for ANY single box, frame included: a rule can then say `.callout { … }` instead

@@ -29,6 +29,7 @@ import {
   stackStep,
   clampIndex,
   matchMorphBoxes,
+  seedStacks,
   type Deck,
   type FrameSpec,
   type MorphBox,
@@ -98,9 +99,12 @@ function readFrames(source: HTMLElement): { specs: FrameSpec[]; pages: HTMLEleme
       w: px(page, 'width') || 1,
       h: px(page, 'height') || 1,
       dur: Number.isFinite(d) && d > 0 ? d : null,
+      stackOf: page.getAttribute('data-frame-stack') || null,
     };
   });
-  return { specs, pages };
+  // Sub-slide stacks (plan 112 M5): authored stackOf wins outright; with none
+  // authored, same-x columns become stacks (seedStacks documents its abstentions).
+  return { specs: seedStacks(specs), pages };
 }
 
 export function openPresentMode(opts: OpenPresentOptions): PresentController | null {

@@ -148,6 +148,46 @@ export function buildDeck(frames: readonly FrameSpec[]): Deck {
   return { positions, byId, columns, count: positions.length, columnCount: columns.length };
 }
 
+/**
+ * Geometry proposes, structure disposes (plan 112 M5): when NO frame authors a
+ * `stackOf`, frames sharing an x-column become that column's vertical stack -
+ * the head is the topmost, sub-slides follow in y order (their `order` values
+ * take fractional nudges so buildDeck's canonical sort walks head-then-stack).
+ * Any authored `stackOf` anywhere disables the whole derivation.
+ *
+ * Two abstentions keep existing decks byte-stable: a single-column doc (a plain
+ * vertical strip) stays LINEAR - collapsing it to one column would break every
+ * numeric `s=` link and read "1/1" on an N-frame deck - and a doc with no
+ * vertical overlap at all has nothing to stack.
+ */
+export function seedStacks(frames: readonly FrameSpec[]): FrameSpec[] {
+  if (frames.length < 2) return [...frames];
+  if (frames.some((f) => f.stackOf != null && f.stackOf !== '')) return [...frames];
+  const sorted = [...frames].sort(
+    (a, b) => a.order - b.order || a.x - b.x || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  );
+  // Columns by x-interval: a frame joins the first column whose FOUNDER's x-span
+  // contains its x-centre; otherwise it founds a new column.
+  const cols: FrameSpec[][] = [];
+  for (const f of sorted) {
+    const cx = f.x + f.w / 2;
+    const hit = cols.find((c) => cx >= c[0]!.x && cx < c[0]!.x + c[0]!.w);
+    if (hit) hit.push(f);
+    else cols.push([f]);
+  }
+  if (cols.length < 2 || !cols.some((c) => c.length > 1)) return [...frames];
+  const out: FrameSpec[] = [];
+  for (const c of cols) {
+    const byY = [...c].sort((a, b) => a.y - b.y || a.order - b.order);
+    const head = byY[0]!;
+    out.push({ ...head, stackOf: null });
+    byY.slice(1).forEach((m, i) => {
+      out.push({ ...m, stackOf: head.id, order: head.order + (i + 1) / (byY.length + 1) });
+    });
+  }
+  return out;
+}
+
 /** Resolve an `s=` address against a deck. Digits count COLUMN HEADS (1-based, plan section 6);
  *  anything else is a frame id (matches any frame, head or sub-slide, regardless of
  *  position - reorder-proof). An `.N` suffix is a 1-based build step, returned 0-based.
