@@ -317,6 +317,15 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
   border: 1px solid hsl(var(--border)); border-radius: 12px;
   box-shadow: 0 12px 34px rgba(0, 0, 0, 0.28);
   padding: 5px; display: flex; flex-direction: column;
+  /* The frame menu is ~36 rows; uncapped, the stage clipped its tail INVISIBLY -
+     with the timeline open everything after "Add to the timeline" (the whole
+     present section included) was simply unreachable. Cap to the stage and
+     scroll; spawnPopover measures AFTER append, so placePopover clamps the
+     capped height and the box always fits. */
+  max-height: min(76vh, 100%);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 
 /* Import a design (openImportPanel) - the chrome that used to live in `style=` attributes
