@@ -90,7 +90,6 @@ import {
   type SeqPlanEnv,
   volumeKeysOf,
   audioCrossfades,
-  duckSpansFor,
 } from './sequence-plan.ts';
 // The plate budget (plans/104 section 5.5) and the spill geometry it prices. Both pure; the
 // budget is what turns "shoot the flown-past layer sharper" into a bounded promise.
@@ -183,7 +182,7 @@ import {
   hdrBoostToPQ,
 } from '@lolly/engine';
 import type { HdrBoostOptions } from '@lolly/engine';
-import { createTruePeakLimiter } from '@lolly/engine';
+import { activitySpans, createTruePeakLimiter } from '@lolly/engine';
 // The compositor photographs the LIVE artboard, and the phase-2 clock has been
 // writing `.seq-off` (display:none) onto every box that is not under the playhead.
 // Without clearing it, every clip except the one being scrubbed rasterises blank.
@@ -1042,6 +1041,7 @@ async function mixSequenceAudio(
   const clips: MixClip[] = [];
   const spans: { from: number; to: number }[] = [];
   const xfade = audioCrossfades(layers);
+  const pushed: { L: SeqLayer; mixClip: MixClip; placedSec: number; fadeInSec: number; fadeOutSec: number }[] = [];
 
   for (const L of layers) {
     if (L.kind !== 'video' && L.kind !== 'audio') continue;
@@ -1127,26 +1127,50 @@ async function mixSequenceAudio(
       const events = clipGainEvents({
         spanSec: placedSec, gain: L.gain, fadeInSec, fadeOutSec,
         volumeKeys: volumeKeysOf(L.kf) ?? undefined,
-        // Clip-presence ducking (plans/165 WP-6 v1): an audio box asked to sit
-        // under other audio drops to its duck-to level wherever another audible
-        // clip's window overlaps its own. Spans come from the pure layer walk so
-        // the preview computes the identical set from the DOM.
-        duck: L.kind === 'audio' && L.duck < 1
-          ? { level: L.duck, spans: duckSpansFor(layers, L) }
-          : undefined,
       });
       const pan = Math.max(-1, Math.min(1, L.pan ?? 0));
-      clips.push({
+      const mixClip: MixClip = {
         pcm: channels, startMs: Math.max(0, L.startMs),
         ...(isTrivialGain(events) ? {} : { events }),
         ...(pan !== 0 ? { pan } : {}),
-      });
+      };
+      clips.push(mixClip);
+      // Retained for the post-loop duck pass (plans/165 WP-6 v2): ducking needs to
+      // know where every OTHER clip actually makes sound, which is only knowable
+      // once all of them are decoded.
+      pushed.push({ L, mixClip, placedSec, fadeInSec, fadeOutSec });
       spans.push({ from: L.startMs / 1000, to: L.startMs / 1000 + frames / MIX_RATE });
     } catch (err) {
       log('warn', `sequence audio: ${toCodedError(err).message} - clip will be silent`);
     } finally {
       await clip.dispose().catch(() => { /* already released */ });
     }
+  }
+
+  // Signal-derived ducking (plans/165 WP-6 v2): a box asked to sit under other
+  // audio ducks where the other clips actually MAKE SOUND - activitySpans over the
+  // PCM already decoded into the mix - not across their whole windows. An
+  // undecoded clip is silent in the file, so it correctly ducks nothing. The
+  // preview keeps the presence-based DOM walk (sequence-clock's duckSpansOf), a
+  // conservative superset - the same accepted-divergence class as the junction
+  // crossfade the preview cannot show.
+  for (const p of pushed) {
+    if (p.L.kind !== 'audio' || !(p.L.duck < 1)) continue;
+    const duckSpans: { from: number; to: number }[] = [];
+    for (const o of pushed) {
+      if (o === p) continue;
+      const offSec = (o.mixClip.startMs - p.mixClip.startMs) / 1000;
+      for (const s of activitySpans(o.mixClip.pcm, { rate: MIX_RATE })) {
+        duckSpans.push({ from: s.from + offSec, to: s.to + offSec });
+      }
+    }
+    const events = clipGainEvents({
+      spanSec: p.placedSec, gain: p.L.gain, fadeInSec: p.fadeInSec, fadeOutSec: p.fadeOutSec,
+      volumeKeys: volumeKeysOf(p.L.kf) ?? undefined,
+      duck: duckSpans.length ? { level: p.L.duck, spans: duckSpans } : undefined,
+    });
+    if (isTrivialGain(events)) delete p.mixClip.events;
+    else p.mixClip.events = events;
   }
 
   const beds: MixBed[] = [];

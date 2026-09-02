@@ -1191,8 +1191,11 @@ export function audioCrossfades(layers: SeqLayer[]): Map<number, { tailSec?: num
  * Clip-presence duck spans for one layer (plans/165 WP-6 v1): the windows, in the
  * layer's OWN clip-local seconds, where any OTHER audible clip plays. The envelope
  * folds these in at the layer's duck-to level (clipGainEvents' `duck`); merging and
- * ramping happen there, exactly as the bed's envelope does it. v2 (signal-derived
- * spans over the decoded PCM) replaces only this function.
+ * ramping happen there, exactly as the bed's envelope does it. The EXPORT upgraded
+ * to signal-derived spans (WP-6 v2: activitySpans over the decoded PCM, in
+ * sequence-render's post-loop duck pass); this presence form remains the reference
+ * the preview's DOM walk (sequence-clock's duckSpansOf) mirrors - a conservative
+ * superset of where the neighbours actually make sound.
  */
 export function duckSpansFor(layers: SeqLayer[], self: SeqLayer): { from: number; to: number }[] {
   const a0 = self.startMs;
