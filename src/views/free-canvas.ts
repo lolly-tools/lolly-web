@@ -1848,6 +1848,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           onChange: (cb: () => void) => { selListeners.add(cb); return () => { selListeners.delete(cb); }; },
         },
         reserve: reserveBottom,
+        // The export frame for a camera take (RecordOpts.frame): the active artboard's
+        // size, else the canvas - the same answer the size panel gives.
+        frameSize: () => {
+          const b = getBoxes();
+          const fi = activeFrameIndex(b);
+          return fi >= 0 ? { w: num(b[fi]![cfg.wField]), h: num(b[fi]![cfg.hField]) } : canvasWH();
+        },
       });
       timelinePanel.setOpen(timelineWantOpen);   // the intent may have flipped mid-load
       // The contextual bar's "+Keyframe" asks the panel for its enabled state and had to
@@ -1886,17 +1893,53 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   let pendingAddAtMs: number | null = null;
   function onTlAdd(e: Event): void {
     if (!timeCfg || disposed) return;
-    const d = (e as CustomEvent).detail as { kind?: unknown; atMs?: unknown } | null | undefined;
+    const d = (e as CustomEvent).detail as { kind?: unknown; atMs?: unknown; asset?: unknown; durSec?: unknown } | null | undefined;
     const kind = addKinds.find((k) => k.id === (typeof d?.kind === 'string' ? d.kind : ''));
     if (!kind) return;
     const atMs = typeof d?.atMs === 'number' ? d.atMs : Number.NaN;
     if (!Number.isFinite(atMs) || atMs < 0 || atMs > MAX_ADD_AT_MS) return;
+    // A finished camera take arrives WITH its asset (the panel's Record a video): no
+    // create gesture and no picker - the clip lands full-frame at the playhead now.
+    // Untrusted detail: the asset must at least be an object with a string id.
+    const asset = d?.asset;
+    if (asset && typeof asset === 'object' && typeof (asset as { id?: unknown }).id === 'string') {
+      const durSec = typeof d?.durSec === 'number' && Number.isFinite(d.durSec) && d.durSec > 0 ? d.durSec : null;
+      addRecordedClip(kind, asset as Box[string], atMs, durSec);
+      return;
+    }
     // AFTER setMode, never before: enterCreate clears the pending time so that an arm
     // from anywhere else cannot inherit one. This is the single place that sets it.
     setMode('create', { kind });
     pendingAddAtMs = atMs;
   }
   if (timeCfg) stageEl.addEventListener('tl-add', onTlAdd);
+
+  /**
+   * The recorded clip: born from the manifest's clip kind, sized to the ACTIVE
+   * artboard (else the canvas) in that frame's own coordinates, cover-fit so the
+   * take - already cropped to the export frame by the recorder - fills the picture
+   * edge to edge, and committed once. The panel's promote() then times it at the
+   * playhead with the take's MEASURED length, the same write a plus-menu add gets.
+   */
+  function addRecordedClip(kind: AddKind, asset: Box[string], atMs: number, durSec: number | null): void {
+    const boxes = getBoxes();
+    const fi = activeFrameIndex(boxes);
+    const fr = fi >= 0 ? boxes[fi]! : null;
+    const rect = fr
+      ? { x: num(fr[cfg.xField]), y: num(fr[cfg.yField]), w: num(fr[cfg.wField]), h: num(fr[cfg.hField]) }
+      : { x: 0, y: 0, ...canvasWH() };
+    const id = freshId(boxes);
+    const box: Box = {
+      ...(kind.seed as Box | undefined),
+      [cfg.idField]: id,
+      [cfg.xField]: rect.x, [cfg.yField]: rect.y, [cfg.wField]: rect.w, [cfg.hField]: rect.h,
+      ...(cfg.imageField ? { [cfg.imageField]: asset } : {}),
+      ...(cfg.fitField ? { [cfg.fitField]: 'cover' } : {}),
+    };
+    commit(assignFrames([...boxes, box], new Set([boxes.length])));
+    timelinePanel?.promote(id, { start: atMs / 1000, dur: durSec });
+    openTimeline();
+  }
 
   /**
    * The other half of the cross-module seam (same CustomEvent pattern as `tl-add` /
@@ -3304,6 +3347,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // (vectorCfg = pathField declared) AND host.text is present.
     const canOutlineText = Boolean(vectorCfg && cfg.textField && (host as unknown as HostV1).text);
     const outlinableCount = canOutlineText ? countSelected(isOutlinableTextBox) : 0;
+    // SLIDE actions for a selected frame (Frame state / Speaker notes / Stack),
+    // collected here and spliced in right under Delete - the Outline-text
+    // precedent: a frame IS a slide, so its slide verbs are the primary actions,
+    // not row 23 of a menu that scrolls (Andy, 2026-09-02, after finding the
+    // stack item below the fold).
+    const slideItems: PopItem[] = [];
     const items: PopItem[] = [
       { label: t('Duplicate'), icon: icon(SVG.dup), run: () => duplicateSelection(), disabled: !has },
       { label: t('Delete'), icon: icon(SVG.trash), run: () => deleteSelection(), disabled: !has, danger: true },
@@ -3447,12 +3496,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       } else if (one && isFrame) {
         // A selected FRAME: set its present-mode `state` tokens (per-slide theming) and
         // its speaker `notes` (shown only in the speaker view, never on the slide).
-        items.push({ sep: true });
-        items.push({
+        // These go into slideItems, which the tail splices in under Delete.
+        slideItems.push({
           label: t('Frame state (present)…'), icon: icon(SVG.present),
           run: () => openFrameStatePanel(viewEl, si[0]!),
         });
-        items.push({
+        slideItems.push({
           label: t('Speaker notes…'), icon: icon(SVG.notes),
           run: () => openSpeakerNotesPanel(viewEl, si[0]!),
         });
@@ -3473,14 +3522,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
             ? fbs.slice(0, at).reverse().find((e) => String(e.b['stackOf'] ?? '') === '')
             : undefined;
           if (stacked) {
-            items.push({
+            slideItems.push({
               label: t('Unstack this slide'), icon: icon(SVG.present),
               run: () => setField('stackOf', ''),
             });
           } else if (prevHead) {
             const headId = String(prevHead.b['id'] ?? '');
             if (headId) {
-              items.push({
+              slideItems.push({
                 label: t('Stack under the previous slide'), icon: icon(SVG.present),
                 run: () => setField('stackOf', headId),
               });
@@ -3583,6 +3632,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       });
     }
     lastMenuAt = { x: clientX, y: clientY };
+    // The slide splice: index 3 is the slot right after Duplicate, Delete and
+    // their separator - where Outline text already sits for a text selection
+    // (a frame selection never has one, so the two can't collide).
+    if (slideItems.length) items.splice(3, 0, ...slideItems, { sep: true });
     popover = document.createElement('div');
     popover.className = 'fc-popover fc-context-menu';
     fillPopover(popover, items);
