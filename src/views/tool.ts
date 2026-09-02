@@ -51,6 +51,7 @@ import {
 import { consumeTeamSessionOrigin, releaseTeamSessionOrigin } from '../org/team-session-origin.ts';
 import type { ToolCollab } from './tool-collab.ts';
 import { migrateBlockRowIds, stripHiddenRowIds } from '../lib/row-id.ts';
+import { parseEditorState, coerceUiState } from '../lib/editor-state.ts';
 import { fpsTick, startFrameFps, stopFrameFps } from '../lib/frame-fps.ts';
 import { getToolIntegrity } from '../catalog/integrity.ts';
 import { isToolInstalled, installedFetchFile } from '../lib/installed-tools.ts';
@@ -3168,15 +3169,12 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         // Frame-primitive mode (plan 93 F1b): frame field names so the overlay renders
         // frame-local + re-buckets on drop. Absent unless the canvas declares frameField.
         frame: frameCfg,
-        // One-shot EDITOR state off the link (docs/url-mode.md "On a tool route"): which
-        // boxes are selected, where the playhead is parked, which panel is open. All in
-        // the `_` namespace the engine reserves outright (parseUrlState skips it), so
-        // none can ever shadow a tool input; syncUrl drops them on the first edit.
-        deepLink: {
-          select: (urlFlags.get('_sel') || '').split(',').map((s) => s.trim()).filter(Boolean),
-          playhead: urlFlags.has('_t') ? Number(urlFlags.get('_t')) : undefined,
-          panel: urlFlags.get('_panel') || undefined,
-        },
+        // One-shot EDITOR state off the link (docs/url-mode.md "On a tool route"): the
+        // `_ui` object param plus the `_sel`/`_t`/`_panel` shorthands, which win on
+        // conflict. All in the `_` namespace the engine reserves outright (parseUrlState
+        // skips it), so none can ever shadow a tool input; syncUrl drops them on the
+        // first edit.
+        deepLink: parseEditorState(urlFlags),
         // Document-info panel: read/write the export/save name, plus at-a-glance
         // details. Name binds to the export bar's filename field (the canonical
         // save name); last-edited reads the resumed session's timestamp if any.
@@ -3255,8 +3253,29 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           dirtyRef: renderSaveBtn,
         },
       } as Parameters<typeof initFreeCanvas>[0]);
+      // The runtime half of the editor-state API (plans/176 v1): the same wire object
+      // a link's `_ui` carries, readable and writable while a canvas editor is mounted.
+      // `apply` routes through the exact DeepLinkState routine the mount-time deep link
+      // runs, and the message listener gives /embed pages the same door with zero new
+      // semantics. Editor state only - selection, playhead, an open panel - so an
+      // unvetted sender can wiggle the view but never touch the document.
+      const ui = {
+        getState: () => ({ v: 1 as const, ...fc.uiState() }),
+        apply: (state: unknown) => { const s = coerceUiState(state); if (s) fc.applyUi(s); },
+      };
+      const w = window as unknown as { lolly?: { ui?: typeof ui } };
+      w.lolly = { ...w.lolly, ui };
+      const onUiMessage = (e: MessageEvent): void => {
+        const d = e.data as { type?: unknown; state?: unknown } | null;
+        if (d && d.type === 'lolly:ui') ui.apply(d.state);
+      };
+      window.addEventListener('message', onUiMessage);
       const prevCleanup = viewEl._cleanup;
-      viewEl._cleanup = () => { try { fc.destroy(); } catch (e) { console.error(e); } prevCleanup?.(); };
+      viewEl._cleanup = () => {
+        window.removeEventListener('message', onUiMessage);
+        if (w.lolly?.ui === ui) delete w.lolly.ui;
+        try { fc.destroy(); } catch (e) { console.error(e); } prevCleanup?.();
+      };
     }).catch((err: unknown) => console.error('[design] editor overlay failed to load:', err));
 
     // `?present` auto-entry: open the deck once the canvas has rendered its frame pages

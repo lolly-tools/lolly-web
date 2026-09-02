@@ -368,7 +368,8 @@ interface HistoryApi {
 
 /**
  * One-shot EDITOR state a link can carry (docs/url-mode.md "On a tool route"): the
- * `_sel` / `_t` / `_panel` params, read once at mount. Editor state, never document
+ * `_ui` object param and its `_sel` / `_t` / `_panel` shorthands (lib/editor-state.ts),
+ * read once at mount and reapplied at runtime through the handle's `applyUi`. Editor state, never document
  * state - nothing here is written back to the model, and syncUrl drops the params on
  * the first edit. What it buys: a link that opens on a picture (a docs screenshot, a
  * bug report, "look at this frame") without a script of clicks to get there.
@@ -449,7 +450,13 @@ interface ToolbarActions {
   dirtyRef?: HTMLElement | null;     // element whose `is-unsaved` class the Save icon mirrors
 }
 
-interface FreeCanvasHandle { destroy(): void }
+interface FreeCanvasHandle {
+  destroy(): void;
+  /** The live editor state in the `_ui` wire field names: what a link here would carry. */
+  uiState(): { sel: string[]; t?: number; panel?: string };
+  /** Apply editor state at runtime - the same routine the mount-time deep link runs. */
+  applyUi(state: DeepLinkState): void;
+}
 
 interface EditingState {
   id: string;
@@ -11265,22 +11272,30 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // (or untimed) one leaves the stage whole until the user asks for it from the rail.
   if (timeCfg && anyTimed(getBoxes())) { timelineAutoOpened = true; openTimeline(); }
 
-  // The link's one-shot editor state (`_sel`, `_t`, `_panel`). On a board with a
-  // timeline (already timed, or `_t` asks for one) everything waits for the lazy panel
-  // chunk: the panel's mount owns the selection adapter and the clock, so a selection
-  // made before it is up is not the one it shows, and a seek before it is up seeks
-  // nothing. Selection first, because the panel opens over it. All of it is dropped if
-  // the editor is torn down meanwhile.
-  {
-    const dl = opts.deepLink;
-    const wantSeek = !!dl && typeof dl.playhead === 'number' && Number.isFinite(dl.playhead) && !!timeCfg;
-    const applyLink = (): void => {
-      if (!dl || disposed) return;
+  // The link's one-shot editor state (`_ui` + the `_sel`/`_t`/`_panel` shorthands,
+  // lib/editor-state.ts) - and, the SAME routine, the runtime `applyUi` the handle
+  // exposes (plans/176 v1). On a board with a timeline (already timed, or a playhead
+  // asks for one) everything waits for the lazy panel chunk: the panel's mount owns
+  // the selection adapter and the clock, so a selection made before it is up is not
+  // the one it shows, and a seek before it is up seeks nothing. Selection first,
+  // because the panel opens over it. All of it is dropped if the editor is torn down
+  // meanwhile.
+  const applyEditorState = (dl: DeepLinkState | undefined): void => {
+    if (!dl || disposed) return;
+    const wantSeek = typeof dl.playhead === 'number' && Number.isFinite(dl.playhead) && !!timeCfg;
+    const run = (): void => {
+      if (disposed) return;
       if (dl.select?.length) {
         const rows = getBoxes();
         const known = new Set(rows.map((b, i) => idOf(b, i)));
         const ids = dl.select.filter((id) => known.has(id));
-        if (ids.length) { selection = new Set(ids); renderChrome(); }
+        if (ids.length) {
+          selection = new Set(ids); renderChrome();
+          // And through the panel when it is up: its selection adapter is the one it
+          // shows, and a camera id - no canvas footprint - only reaches the Camera
+          // inspector group via the panel's own selection path.
+          timelinePanel?.selectAndReveal(ids);
+        }
       }
       if (wantSeek) timelinePanel?.seek(Math.max(0, dl.playhead as number));
       if (dl.panel === 'choreograph' && selection.size) {
@@ -11299,13 +11314,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         askChoreograph();
       }
     };
-    if (dl && (wantSeek || timelineAutoOpened)) {
+    if (wantSeek || timelineAutoOpened) {
       timelineAutoOpened = true;
-      void ensureTimeline(true).then(applyLink);
+      void ensureTimeline(true).then(run);
     } else {
-      applyLink();
+      run();
     }
-  }
+  };
+  applyEditorState(opts.deepLink);
 
   // Universal drop front door (lib/drop-router.ts): a design file dropped on the
   // gallery/dashboard was stashed one-shot and is consumed here on mount, through
@@ -11393,5 +11409,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       overlay.remove(); toolbarDock.remove(); closePopover(); closeMorePanel(); closeEdgePanel();
       document.body.classList.remove('fc-manipulating');
     },
+    uiState() {
+      // The wire field names (docs/url-mode.md `_ui`): what a link to this exact view
+      // would carry. Panel detection is the picker's own root class - no second flag
+      // to keep in step with askChoreograph's open/close.
+      const st: { sel: string[]; t?: number; panel?: string } = { sel: [...selection] };
+      if (timelinePanel?.isOpen()) st.t = timelinePanel.time();
+      if (document.querySelector('.fc-choreo-panel')) st.panel = 'choreograph';
+      return st;
+    },
+    applyUi(state: DeepLinkState) { applyEditorState(state); },
   };
 }

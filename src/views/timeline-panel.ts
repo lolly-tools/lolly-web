@@ -256,6 +256,15 @@ export interface TimelinePanel {
   setOpen(open: boolean): void;
   isOpen(): boolean;
   /**
+   * Panel-owned selection (the adapter mirrors it to the canvas), revealing the first
+   * id's clip. The editor-state path (plans/176 v1) routes ids here when the panel is
+   * up, so a camera id - no canvas footprint - still reaches the Camera inspector
+   * group the way a click on its Always-on chip does.
+   */
+  selectAndReveal(ids: string[], opts?: { reveal?: boolean }): void;
+  /** The playhead in authored seconds - the read half of `seek`. */
+  time(): number;
+  /**
    * The scenery ⇄ timed writers, exposed so the CANVAS context menu (and free-canvas's
    * timeline-initiated create path) drive the SAME two functions the panel's own
    * inspector, chip and context menu use. There is exactly one implementation of each;
@@ -8229,6 +8238,8 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     destroy, setOpen, isOpen: () => open, promote, demote, kfPoseIds, kfPoseWrite,
     cameraModeId, cameraWrite, cameraTiltPreview,
     seek: (sec) => seekAuthored((Number.isFinite(sec) ? Math.max(0, sec) : 0) * 1000),
+    selectAndReveal,
+    time: () => playheadSec(),
     addKeyframe: () => addKeyframeAction({ speak: true }),
     keyframableIds: (ids) => {
       const rows = getBoxes();
