@@ -105,6 +105,7 @@ import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import { groupWordsToCues } from '../../../../engine/src/captions.ts';
 import { integratedLoudness } from '../../../../engine/src/audio-loudness.ts';
 import { FX_PRESETS, parseFxChain, serializeFxChain } from '../../../../engine/src/audio-fx.ts';
+import { clipGainValueAt, type VolumeKey } from '../bridge/audio-envelope.ts';
 import { captionGroup, cueSpansOnTimeline, isCaptionGroup, transcriptWordsOf, ttsWordsOf } from './timeline-captions.ts';
 // Transcript-driven editing (plans/174): delete a row cuts that media, strike a
 // row greys it. All arithmetic lives in the pure transcript-edit.ts; this panel
@@ -5598,6 +5599,24 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
     if (mode === 'waveform') {
       const buckets = Math.max(8, Math.min(600, Math.round(w / 2)));
+      // Clip-warning tint (plans/101 "clip-warning waveforms"): the bars that will
+      // play HOT are painted amber (within 1 dB of full scale) or red (over it),
+      // POST-envelope - source peak x the same closed form the preview drives a
+      // video's volume with (gain, fades, volume keys; duck only ever lowers, so
+      // skipping it errs safe). Level feedback across the whole timeline with no
+      // meter-watching; the master limiter still guards the exported file - red
+      // here means "the limiter will be working", not "the file will clip".
+      const gain0 = clamp(finite(box0?.[cfg.gainField ?? ''], 1), 0, 2);
+      const enterK0 = box0?.[cfg.enterField];
+      const exitK0 = box0?.[cfg.exitField];
+      const audio0 = media.kind === 'audio';
+      const fadeInSec0 = ((audio0 && enterK0) || enterK0 === 'fade') ? clamp(finite(box0?.[cfg.enterMsField], 400), 100, 3000) / 1000 : 0;
+      const fadeOutSec0 = ((audio0 && exitK0) || exitK0 === 'fade') ? clamp(finite(box0?.[cfg.exitMsField], 400), 100, 3000) / 1000 : 0;
+      const vKeys0: VolumeKey[] = cfg.kfField && box0
+        ? kfBoxTrack(box0, cfg).filter((k) => typeof k.v.v === 'number').map((k) => ({ tSec: k.t / 1000, value: k.v.v as number }))
+        : [];
+      const spanSec0 = eff0?.dur ?? 0;
+      const speed0 = timing0?.speed ?? 1;
       peaks(media.url, buckets, signal, { fromSec: clipIn0, toSec: out0 }).then((data) => {
         if (signal.aborted || !data.length) return;
         // Synchronous draw on receipt - the array is cache-owned, never mutated or kept.
@@ -5605,13 +5624,32 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         // Canvas 2D has no `currentColor` - assigning it is silently IGNORED and the
         // waveform paints default black, invisible on a dark clip. `ink` is that cascade
         // resolved to a real colour (in the read pass), so the bars follow the theme.
-        ctx.fillStyle = job.ink;
         const bw = w / data.length;
-        for (let i = 0; i < data.length; i++) {
-          const amp = Math.max(0.02, Math.min(1, data[i]!));
-          const bh = amp * (h - 4);
-          ctx.fillRect(i * bw, (h - bh) / 2, Math.max(1, bw - 0.5), bh);
-        }
+        // Three passes batched by colour, not a per-bar fillStyle flip: style writes
+        // are the expensive part of this loop, and hot bars are the rare case.
+        const HOT = 10 ** (-1 / 20);   // -1 dBTP, the master limiter's own ceiling
+        const tintOf = (i: number): 0 | 1 | 2 => {
+          const amp = Math.min(1, data[i]!);
+          const srcT = clipIn0 + ((i + 0.5) / data.length) * Math.max(0, out0 - clipIn0);
+          const post = amp * clipGainValueAt({
+            spanSec: spanSec0, gain: gain0, fadeInSec: fadeInSec0, fadeOutSec: fadeOutSec0,
+            ...(vKeys0.length ? { volumeKeys: vKeys0 } : {}),
+            tSec: (srcT - clipIn0) / speed0,
+          });
+          return post >= 1 ? 2 : post >= HOT ? 1 : 0;
+        };
+        const paintPass = (want: 0 | 1 | 2, style: string): void => {
+          ctx.fillStyle = style;
+          for (let i = 0; i < data.length; i++) {
+            if (tintOf(i) !== want) continue;
+            const amp = Math.max(0.02, Math.min(1, data[i]!));
+            const bh = amp * (h - 4);
+            ctx.fillRect(i * bw, (h - bh) / 2, Math.max(1, bw - 0.5), bh);
+          }
+        };
+        paintPass(0, job.ink);
+        paintPass(1, '#d97706');
+        paintPass(2, '#dc2626');
         // Same bars, as one <path> of subpaths. Built SYNCHRONOUSLY, here, for the same
         // ownership reason the draw is: `data` is cache-owned, so the twin closes over
         // the finished `d` string and never over the Float32Array.
@@ -7730,7 +7768,16 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const clipId = id || selection.get()[0] || '';
     if (!clipId) return;
     const { words, src, assetId } = await subtitleSource(clipId);
-    if (!words) { if (src) openTranscribeSheet(clipId, src, assetId); return; }
+    // No transcript yet: the SAME consent sheet + background job as Generate
+    // subtitles, but carrying the caller's INTENT - its completion must land in
+    // the editor the user asked for, not drop caption boxes they did not.
+    if (!words) { if (src) openTranscribeSheet(clipId, src, assetId, 'transcript'); return; }
+    showTranscript(clipId, words, assetId);
+  }
+
+  /** Mount the flowing-text editor over these words - openTranscript's tail, and
+   *  where a transcript-intent transcription delivers its result. */
+  function showTranscript(clipId: string, words: SpeechWordTiming[], assetId: string): void {
     openTranscriptPanel({
       cfg, words, assetId, sourceId: clipId, assetField: assetFieldName(),
       getBoxes, write,
@@ -7753,15 +7800,21 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * click - destroyed a ~77 MB one-time model download and every minute of
    * inference behind it.
    */
-  function openTranscribeSheet(id: string, src: AssetRef | string, assetId: string): void {
+  function openTranscribeSheet(id: string, src: AssetRef | string, assetId: string, intent: 'subtitles' | 'transcript' = 'subtitles'): void {
     const sp = host.speech;
     if (!sp) { endSubtitles(id); return; }
     let enqueued = false;
     let bytes = 0;
     try { bytes = sp.transcribeModelBytes(); } catch { /* consent line just omits the size */ }
+    // The sheet says what the RUN will do for the intent that opened it: the
+    // Edit-transcript door promises the editor, not caption boxes.
+    const title = intent === 'transcript' ? t('Edit transcript') : t('Generate subtitles');
+    const note = intent === 'transcript'
+      ? t('Listens to this clip on this device and opens its transcript for editing. Nothing is uploaded.')
+      : t('Listens to this clip on this device and writes timed captions. Nothing is uploaded.');
     const html = `<form method="dialog" class="tl-junction tl-stt">
-      <h2 class="tl-junction-title">${t('Generate subtitles')}</h2>
-      <p class="tl-stt-note">${t('Listens to this clip on this device and writes timed captions. Nothing is uploaded.')}</p>
+      <h2 class="tl-junction-title">${title}</h2>
+      <p class="tl-stt-note">${note}</p>
       <p class="tl-stt-note tl-stt-note-dl" data-stt-dl hidden></p>
       <p class="tl-stt-note">${t('It runs in the background, so you can close this and keep working.')}</p>
       <div class="tl-junction-actions">
@@ -7771,7 +7824,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     </form>`;
     const modal = mountModal<void>(html, {
       className: 'modal tl-junction-modal',
-      ariaLabel: t('Generate subtitles'),
+      ariaLabel: title,
       initialFocus: (el) => el.querySelector<HTMLElement>('[data-act="go"]'),
       // Only the not-yet-enqueued close releases the guard; once the job exists it
       // owns the release, through onSettled.
@@ -7795,16 +7848,26 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       startTranscribeJob(host, {
         src,
         ...(assetId ? { assetId } : {}),
-        title: t('Generating subtitles'),
+        title: intent === 'transcript' ? t('Transcribing…') : t('Generating subtitles'),
       }, {
-        // The panel places the captions when it is still here; the job announces
-        // where the transcript went when it is not (applySubtitles says which).
-        onComplete: (words) => applySubtitles(id, words),
+        // The completion goes where the INTENT pointed: the Edit-transcript door
+        // opens the flowing-text editor (the bug this fixes - it used to drop
+        // caption boxes and never show the editor); the subtitles door places
+        // captions as ever. Either way the job already stashed the words, so a
+        // torn-down panel just means the next click opens instantly.
+        onComplete: (words) => {
+          if (intent !== 'transcript') return applySubtitles(id, words);
+          if (disposed || !words.length) return;
+          showTranscript(id, [...words], assetId);
+          return true;   // handled here - the job's own announce would say "captions"
+        },
         onError: (err) => { host.log?.('warn', `timeline subtitles: transcription failed - ${String(err)}`); },
         onSettled: () => endSubtitles(id),
       });
       modal.close();
-      announce(t('Generating subtitles in the background. You can keep working.'));
+      announce(intent === 'transcript'
+        ? t('Transcribing in the background. The editor opens when it finishes.')
+        : t('Generating subtitles in the background. You can keep working.'));
     });
     modal.el.querySelector<HTMLElement>('[data-act="cancel"]')?.addEventListener('click', () => modal.close());
   }
