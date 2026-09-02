@@ -4774,20 +4774,57 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       s.setAttribute('aria-label', label);
       return s;
     };
+    // A FADER BUTTON (Andy's second-round call, off a zoomed screenshot): the
+    // inline vertical mini-fader had a thumb bigger than its own travel - no
+    // articulation at all. The icon is now a button; pressing it pops a TALL
+    // fader over the sequence frame below, where there is room to be precise,
+    // and the inline number stays for typed entry. One popover per button,
+    // the EQ door's exact pattern.
+    const faderBtn = (
+      glyph: Parameters<typeof icon>[0], label: string,
+      opts2: { min: number; max: number; step: number; horizontal?: boolean; read: () => number; commit: (v: number) => void; format?: (v: number) => string },
+    ): HTMLButtonElement => {
+      const b = btn('tl-alab tl-fader-btn', label, icon(glyph));
+      b.removeAttribute('data-tip');
+      b.title = label;
+      const pop = mountBodyPopover(b, (el) => {
+        el.textContent = '';
+        const col = document.createElement('div');
+        col.className = 'tl-fader-pop';
+        const s = document.createElement('input');
+        s.type = 'range';
+        s.min = String(opts2.min);
+        s.max = String(opts2.max);
+        s.step = String(opts2.step);
+        s.className = `tl-kf-slider ${opts2.horizontal ? 'tl-hfader' : 'tl-vfader'}`;
+        s.value = String(opts2.read());
+        s.setAttribute('aria-label', label);
+        const readout = document.createElement('span');
+        readout.className = 'tl-eq-db';
+        const paint = (): void => { readout.textContent = (opts2.format ?? String)(Number(s.value)); };
+        paint();
+        s.addEventListener('input', paint);
+        s.addEventListener('change', () => opts2.commit(Number(s.value)));
+        col.append(s, readout);
+        el.appendChild(col);
+        return s;
+      }, {
+        className: 'folder-menu tl-menu tl-fader-popover',
+        role: 'dialog',
+        ariaLabel: label,
+        position: menuPosition,
+      });
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (pop.isOpen()) pop.close(true); else pop.open();
+      });
+      return b;
+    };
     if (timed && cfg.gainField && (mediaKind === 'audio' || mediaKind === 'video')) {
       const gf = cfg.gainField;
       const cur = clamp(finite(box[gf], 1), 0, 2);
       const wrap = document.createElement('label');
       wrap.className = 'field-row field-row--inline tl-field tl-afield tl-volume-row';
-      const lab = alab('volumeOn', t('Volume'));
-      const slider = document.createElement('input');
-      slider.className = 'tl-kf-slider tl-vslider tl-volume-slider';
-      slider.type = 'range';
-      slider.min = '0';
-      slider.max = '200';
-      slider.step = '5';
-      slider.setAttribute('aria-label', t('Volume'));
-      slider.value = String(Math.round(cur * 100));
       const num = document.createElement('input');
       num.className = 'field-input tl-num tl-anum tl-volume-num';
       num.type = 'number';
@@ -4802,13 +4839,16 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const commit = (raw: number): void => {
         const pct = Math.round(clamp(raw, 0, 200));
         num.value = String(pct);
-        slider.value = String(pct);
         write(patchBox(getBoxes(), id, { [gf]: pct === 100 ? '' : pct / 100 }));
       };
-      slider.addEventListener('input', () => { num.value = slider.value; });
-      slider.addEventListener('change', () => commit(finite(slider.value, 100)));
+      const lab = faderBtn('volumeOn', t('Volume'), {
+        min: 0, max: 200, step: 5,
+        read: () => Math.round(clamp(finite(num.value, 100), 0, 200)),
+        commit,
+        format: (v) => `${v}%`,
+      });
       num.addEventListener('change', () => commit(finite(num.value, 100)));
-      wrap.append(lab, slider, num);
+      wrap.append(lab, num);
       // VOLUME KEYFRAMES (plans/165 WP-3): the diamond keys the row's current value
       // at the playhead, riding the SAME kf grammar as pose keys (`v` channel), so
       // split/trim/join rebase volume automation with zero extra code. Deliberately
@@ -4921,15 +4961,6 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const cur = clamp(finite(box[pf], 0), -1, 1);
       const wrap = document.createElement('label');
       wrap.className = 'field-row field-row--inline tl-field tl-afield tl-pan-row';
-      const lab = alab('arrowsH', t('Pan'));
-      const slider = document.createElement('input');
-      slider.className = 'tl-kf-slider tl-vslider tl-pan-slider';
-      slider.type = 'range';
-      slider.min = '-100';
-      slider.max = '100';
-      slider.step = '5';
-      slider.setAttribute('aria-label', t('Pan'));
-      slider.value = String(Math.round(cur * 100));
       const num = document.createElement('input');
       num.className = 'field-input tl-num tl-anum tl-pan-num';
       num.type = 'number';
@@ -4943,13 +4974,18 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const commit = (raw: number): void => {
         const pct = Math.round(clamp(raw, -100, 100));
         num.value = String(pct);
-        slider.value = String(pct);
         write(patchBox(getBoxes(), id, { [pf]: pct === 0 ? '' : pct / 100 }));
       };
-      slider.addEventListener('input', () => { num.value = slider.value; });
-      slider.addEventListener('change', () => commit(finite(slider.value, 0)));
+      // Pan's pop-over fader is HORIZONTAL: balance reads left-to-right (a level
+      // reads bottom-to-top), and the label format says which side is which.
+      const lab = faderBtn('arrowsH', t('Pan'), {
+        min: -100, max: 100, step: 5, horizontal: true,
+        read: () => Math.round(clamp(finite(num.value, 0), -100, 100)),
+        commit,
+        format: (v) => (v === 0 ? 'C' : v < 0 ? `L${-v}` : `R${v}`),
+      });
       num.addEventListener('change', () => commit(finite(num.value, 0)));
-      wrap.append(lab, slider, num);
+      wrap.append(lab, num);
       inspector.appendChild(wrap);
     }
     // DUCKING (plans/165 WP-6 v1): drop this track while any other clip's audio

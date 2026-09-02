@@ -626,6 +626,34 @@
   flex: 0 0 auto;
   min-width: 0;
 }
+/* The fader popovers (Andy's second-round call): the icon is a BUTTON, and the
+   fader it pops over the sequence frame gets real travel - the inline mini-fader
+   had a thumb bigger than its track. Volume is vertical (a level reads
+   bottom-to-top); pan is horizontal (balance reads left-to-right). */
+.tl-fader-btn { flex: 0 0 auto; }
+.tl-fader-pop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 10px 8px;
+}
+.tl-vfader {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 22px;
+  height: 150px;
+  min-width: 0;
+  accent-color: var(--brand-primary, hsl(var(--primary)));
+}
+.tl-hfader {
+  width: 150px;
+  height: 22px;
+  min-width: 0;
+  /* .tl-kf-slider's flex-basis is 90px, which a COLUMN container reads as height. */
+  flex: 0 0 auto;
+  accent-color: var(--brand-primary, hsl(var(--primary)));
+}
 /* 8ch, not a tighter fit: a number input reserves spinner space inside its box,
    so 6ch showed "100" as "10" - the worst possible clip on a level control. */
 .tl-anum { width: 8ch; }
@@ -639,7 +667,7 @@
   align-items: center;
   gap: 4px;
 }
-.tl-eq-band .tl-vslider { height: 72px; }
+.tl-eq-band .tl-vslider { height: 110px; }
 .tl-eq-db {
   font-size: var(--fs-2xs);
   font-variant-numeric: tabular-nums;
