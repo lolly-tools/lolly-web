@@ -1215,7 +1215,7 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // label, the summary chips) goes through textContent, deliberately: the chips
   // carry model-derived strings, and an authored `cubic-bezier(…)` curve is user
   // text arriving from a share URL.
-  'views/timeline-panel.ts': 7,
+  'views/timeline-panel.ts': 8,   // +1 2026-09-02: alab (the compact audio strip's icon labels - registry glyph only, title/aria carry the string)
   // 8 as of 2026-08-07: +1 for the badged/per-option-formats export-picker work
   // (schemas' badge/formats option fields); confirmed safe by the author.
   // 8 → 9 on 2026-08-11: the deterministic live-drive export path paints the exact

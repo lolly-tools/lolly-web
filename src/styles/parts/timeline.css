@@ -600,6 +600,51 @@
   accent-color: var(--brand-primary, hsl(var(--primary)));
 }
 .tl-kf-slider:disabled { opacity: 0.5; }
+
+/* ─── The compact audio strip (Andy, 2026-09-02) ────────────────────────────────
+   The sound fields (Volume / Pan / duck / Effect / Pitch / Preserve pitch) had
+   all-caps text labels and ~165px horizontal sliders, and together overflowed the
+   inspector on any laptop. Labels become icons carrying the SAME string as title
+   + aria-label, and the level faders go VERTICAL - a fader is read by thumb
+   position, not track length, so the vertical form loses nothing and returns
+   ~100px per slider. Vertical ranges use the modern writing-mode form (Chromium,
+   Firefox, Safari 18+); an engine without it renders the same input horizontal,
+   ugly but fully functional. */
+.tl-afield { gap: 4px; }
+.tl-alab {
+  display: inline-flex;
+  align-items: center;
+  color: hsl(var(--muted-foreground));
+  flex: 0 0 auto;
+}
+.tl-alab svg { width: calc(14px * var(--a11y-fs)); height: calc(14px * var(--a11y-fs)); }
+.tl-vslider {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 18px;
+  height: 40px;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+/* 8ch, not a tighter fit: a number input reserves spinner space inside its box,
+   so 6ch showed "100" as "10" - the worst possible clip on a level control. */
+.tl-anum { width: 8ch; }
+
+/* The EQ popover (the plans/101 three-band rack): Low / Mid / High as vertical
+   dB faders with a live readout. Rides the folder-menu shell for its chrome. */
+.tl-eq-pop { display: flex; gap: 14px; padding: 10px 12px 8px; }
+.tl-eq-band {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.tl-eq-band .tl-vslider { height: 72px; }
+.tl-eq-db {
+  font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+  color: hsl(var(--muted-foreground));
+}
 .tl-group-pop .tl-kf-pose-row .tl-kf-pose-num { flex: 0 0 auto; }
 
 /* ─── The docked curve editor (plans/104 section 8, M2.7) ───────────────────────────

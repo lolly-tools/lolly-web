@@ -104,7 +104,7 @@ import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 // break at the same words a headless render would break at.
 import { groupWordsToCues } from '../../../../engine/src/captions.ts';
 import { integratedLoudness } from '../../../../engine/src/audio-loudness.ts';
-import { FX_PRESETS } from '../../../../engine/src/audio-fx.ts';
+import { FX_PRESETS, parseFxChain, serializeFxChain } from '../../../../engine/src/audio-fx.ts';
 import { captionGroup, cueSpansOnTimeline, isCaptionGroup, transcriptWordsOf, ttsWordsOf } from './timeline-captions.ts';
 // Transcript-driven editing (plans/174): delete a row cuts that media, strike a
 // row greys it. All arithmetic lives in the pure transcript-edit.ts; this panel
@@ -4759,16 +4759,29 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // and the box actually carries sound. 100% = as recorded; up to 200% boosts the
     // RENDERED file - the preview element caps at 100%, which the title states so
     // the difference is a documented behaviour, not a surprise.
+    //
+    // THE COMPACT AUDIO STRIP (Andy, 2026-09-02, off a screenshot of the row
+    // overflowing the panel): every audio control drops its all-caps text label
+    // for an icon carrying the SAME string as title + aria-label, and the level
+    // faders go vertical - a fader is read by position, not by track length, so
+    // the vertical form costs nothing and returns ~100px per slider.
+    const alab = (glyph: Parameters<typeof icon>[0], label: string): HTMLElement => {
+      const s = document.createElement('span');
+      s.className = 'tl-alab';
+      s.innerHTML = icon(glyph);
+      s.title = label;
+      s.setAttribute('role', 'img');
+      s.setAttribute('aria-label', label);
+      return s;
+    };
     if (timed && cfg.gainField && (mediaKind === 'audio' || mediaKind === 'video')) {
       const gf = cfg.gainField;
       const cur = clamp(finite(box[gf], 1), 0, 2);
       const wrap = document.createElement('label');
-      wrap.className = 'field-row field-row--inline tl-field tl-volume-row';
-      const lab = document.createElement('span');
-      lab.className = 'field-label';
-      lab.textContent = t('Volume');
+      wrap.className = 'field-row field-row--inline tl-field tl-afield tl-volume-row';
+      const lab = alab('volumeOn', t('Volume'));
       const slider = document.createElement('input');
-      slider.className = 'tl-kf-slider tl-volume-slider';
+      slider.className = 'tl-kf-slider tl-vslider tl-volume-slider';
       slider.type = 'range';
       slider.min = '0';
       slider.max = '200';
@@ -4776,7 +4789,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       slider.setAttribute('aria-label', t('Volume'));
       slider.value = String(Math.round(cur * 100));
       const num = document.createElement('input');
-      num.className = 'field-input tl-num tl-volume-num';
+      num.className = 'field-input tl-num tl-anum tl-volume-num';
       num.type = 'number';
       num.min = '0';
       num.max = '200';
@@ -4857,7 +4870,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       // BS.1770 integrated loudness and set Volume so the clip hits a -16 LUFS
       // reference, clamped to the row's own 0..200% range. One decode, one
       // commit; a decode is a click away, never per frame.
-      const normBtn = btn('tl-volume-normalize', t('Normalize volume'), icon('sliders'));
+      const normBtn = btn('tl-volume-normalize', t('Normalize volume'), icon('zap'));
       normBtn.removeAttribute('data-tip');
       normBtn.title = t('Measure this clip and set Volume so it plays at -16 LUFS.');
       normBtn.addEventListener('click', () => {
@@ -4907,12 +4920,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const pf = cfg.panField;
       const cur = clamp(finite(box[pf], 0), -1, 1);
       const wrap = document.createElement('label');
-      wrap.className = 'field-row field-row--inline tl-field tl-pan-row';
-      const lab = document.createElement('span');
-      lab.className = 'field-label';
-      lab.textContent = t('Pan');
+      wrap.className = 'field-row field-row--inline tl-field tl-afield tl-pan-row';
+      const lab = alab('arrowsH', t('Pan'));
       const slider = document.createElement('input');
-      slider.className = 'tl-kf-slider tl-pan-slider';
+      slider.className = 'tl-kf-slider tl-vslider tl-pan-slider';
       slider.type = 'range';
       slider.min = '-100';
       slider.max = '100';
@@ -4920,7 +4931,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       slider.setAttribute('aria-label', t('Pan'));
       slider.value = String(Math.round(cur * 100));
       const num = document.createElement('input');
-      num.className = 'field-input tl-num tl-pan-num';
+      num.className = 'field-input tl-num tl-anum tl-pan-num';
       num.type = 'number';
       num.min = '-100';
       num.max = '100';
@@ -4949,10 +4960,8 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const df = cfg.duckField;
       const cur = finite(box[df], 1);
       const wrap = document.createElement('label');
-      wrap.className = 'field-row field-row--inline tl-field tl-duck-row';
-      const lab = document.createElement('span');
-      lab.className = 'field-label';
-      lab.textContent = t('Under other audio');
+      wrap.className = 'field-row field-row--inline tl-field tl-afield tl-duck-row';
+      const lab = alab('speech', t('Under other audio'));
       const sel = document.createElement('select');
       sel.className = 'field-select field-select--sm tl-duck-select';
       sel.setAttribute('aria-label', t('Under other audio'));
@@ -4982,10 +4991,8 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const ff = cfg.fxField;
       const cur = String(box[ff] ?? '');
       const wrap = document.createElement('label');
-      wrap.className = 'field-row field-row--inline tl-field tl-fx-row';
-      const lab = document.createElement('span');
-      lab.className = 'field-label';
-      lab.textContent = t('Effect');
+      wrap.className = 'field-row field-row--inline tl-field tl-afield tl-fx-row';
+      const lab = alab('sparkle', t('Effect'));
       const sel = document.createElement('select');
       sel.className = 'field-select field-select--sm tl-fx-select';
       sel.setAttribute('aria-label', t('Effect'));
@@ -5018,7 +5025,69 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         if (sel.value === '__custom') return;   // reselecting the label is a no-op
         write(patchBox(getBoxes(), id, { [ff]: sel.value ? FX_PRESETS[sel.value] : '' }));
       });
-      wrap.append(lab, sel);
+      // The EQ door (the plans/101 "custom 3-band" rack): three vertical dB
+      // faders in a popover, editing the chain's eq() entry directly - tone is
+      // reachable without a preset, and composes WITH one (the preset writes the
+      // chain, the faders then edit the eq entry inside it; the select honestly
+      // reads Custom from then on).
+      const eqBtn = btn('tl-eq-btn', t('EQ'), icon('sliders'));
+      eqBtn.removeAttribute('data-tip');
+      eqBtn.title = t('EQ');
+      const eqPop = mountBodyPopover(eqBtn, (el) => {
+        el.textContent = '';
+        const row = document.createElement('div');
+        row.className = 'tl-eq-pop';
+        const rows0 = getBoxes();
+        const chain0 = parseFxChain(String(rows0[indexOfId(rows0, cfg, id)]?.[ff] ?? ''));
+        const eq0 = chain0.entries.find((x) => x.name === 'eq');
+        const db0 = eq0 ? eq0.params.map((p) => (p - 240) / 10) : [0, 0, 0];
+        const sliders: HTMLInputElement[] = [];
+        const commitEq = (): void => {
+          const dbs = sliders.map((s) => Math.max(-12, Math.min(12, Number(s.value) || 0)));
+          const rows = getBoxes();
+          const chain = parseFxChain(String(rows[indexOfId(rows, cfg, id)]?.[ff] ?? ''));
+          const at = chain.entries.findIndex((x) => x.name === 'eq');
+          const entries = chain.entries.filter((x) => x.name !== 'eq');
+          if (dbs.some((d) => d !== 0)) {
+            const entry = { name: 'eq', params: dbs.map((d) => Math.round(d * 10) + 240) };
+            entries.splice(at >= 0 ? Math.min(at, entries.length) : entries.length, 0, entry);
+          }
+          write(patchBox(rows, id, { [ff]: serializeFxChain(entries) }));
+        };
+        for (const [bi, label] of [t('Low'), t('Mid'), t('High')].entries()) {
+          const band = document.createElement('div');
+          band.className = 'tl-eq-band';
+          const s = document.createElement('input');
+          s.type = 'range';
+          s.min = '-12';
+          s.max = '12';
+          s.step = '0.5';
+          s.className = 'tl-kf-slider tl-vslider';
+          s.value = String(db0[bi] ?? 0);
+          s.setAttribute('aria-label', label);
+          const db = document.createElement('span');
+          db.className = 'tl-eq-db';
+          const paint = (): void => { db.textContent = `${Number(s.value) > 0 ? '+' : ''}${Number(s.value)}`; };
+          paint();
+          s.addEventListener('input', paint);
+          s.addEventListener('change', commitEq);
+          const bandLab = document.createElement('span');
+          bandLab.className = 'field-label';
+          bandLab.textContent = label;
+          band.append(s, db, bandLab);
+          sliders.push(s);
+          row.appendChild(band);
+        }
+        el.appendChild(row);
+        return sliders[0] ?? null;
+      }, {
+        className: 'folder-menu tl-menu tl-eq-popover',
+        role: 'dialog',
+        ariaLabel: t('EQ'),
+        position: menuPosition,
+      });
+      eqBtn.addEventListener('click', () => { if (eqPop.isOpen()) eqPop.close(true); else eqPop.open(); });
+      wrap.append(lab, sel, eqBtn);
       inspector.appendChild(wrap);
     }
     // PITCH (plans/165 WP-7b): transpose in semitones, formants preserved, at any
@@ -5027,12 +5096,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const ptf = cfg.pitchField;
       const cur = Math.round(clamp(finite(box[ptf], 0), -12, 12));
       const wrap = document.createElement('label');
-      wrap.className = 'field-row field-row--inline tl-field tl-pitch-row';
-      const lab = document.createElement('span');
-      lab.className = 'field-label';
-      lab.textContent = t('Pitch');
+      wrap.className = 'field-row field-row--inline tl-field tl-afield tl-pitch-row';
+      const lab = alab('music', t('Pitch'));
       const num = document.createElement('input');
-      num.className = 'field-input tl-num tl-pitch-num';
+      num.className = 'field-input tl-num tl-anum tl-pitch-num';
       num.type = 'number';
       num.min = '-12';
       num.max = '12';
@@ -5059,10 +5126,8 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const vf = cfg.varispeedField;
       const vari = box[vf] === true || box[vf] === 'true';
       const wrap = document.createElement('label');
-      wrap.className = 'field-row field-row--inline tl-field tl-varispeed-row field-toggle';
-      const lab = document.createElement('span');
-      lab.className = 'field-label';
-      lab.textContent = t('Preserve pitch');
+      wrap.className = 'field-row field-row--inline tl-field tl-afield tl-varispeed-row field-toggle';
+      const lab = alab('waves', t('Preserve pitch'));
       const check = document.createElement('input');
       check.className = 'field-check';
       check.type = 'checkbox';

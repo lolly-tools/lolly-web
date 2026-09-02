@@ -753,7 +753,10 @@ function field(root: HTMLElement, label: string): HTMLInputElement {
   // revision), which is not a descendant of the panel at all.
   const rows = Array.from(root.ownerDocument!.querySelectorAll<HTMLElement>(
     '.tl-inspector .tl-field, .tl-group-pop .tl-field'));
-  const r = rows.find((x) => x.querySelector('.field-label')?.textContent === label);
+  // Text labels for the timing rows; the compact audio strip's icon labels carry
+  // the same string as aria-label instead (the 2026-09-02 compaction).
+  const r = rows.find((x) => x.querySelector('.field-label')?.textContent === label
+    || x.querySelector('.tl-alab')?.getAttribute('aria-label') === label);
   assert.ok(r, `the inspector has a "${label}" field (got ${JSON.stringify(rows.map((x) => x.querySelector('.field-label')?.textContent))})`);
   return r!.querySelector('.field-input, .field-select') as HTMLInputElement;
 }
@@ -6082,7 +6085,7 @@ test('Preserve pitch on a sped clip: unticking writes varispeed, re-ticking clea
     fakeCanvasAudio(h, 'a');
     h.select(['a']);
     const rows = Array.from(h.root.ownerDocument!.querySelectorAll<HTMLElement>('.tl-inspector .tl-field'));
-    const row = rows.find((x) => x.querySelector('.field-label')?.textContent === 'Preserve pitch');
+    const row = rows.find((x) => x.querySelector('.tl-alab')?.getAttribute('aria-label') === 'Preserve pitch');
     assert.ok(row, 'the toggle shows on a sped clip');
     const check = row!.querySelector('.field-check') as HTMLInputElement;
     assert.equal(check.checked, true, 'preserve pitch is the default');
@@ -6127,7 +6130,7 @@ test('the Pan row stays out of a tool that never declared panField', () => {
     fakeCanvasAudio(h, 'a');
     h.select(['a']);
     assert.ok(field(h.root, 'Volume'), 'precondition: the audio rows are otherwise live');
-    const labels = Array.from(h.root.ownerDocument!.querySelectorAll('.tl-inspector .field-label')).map((x) => x.textContent);
-    assert.equal(labels.includes('Pan'), false, 'no manifest sub-field, no row');
+    assert.equal(h.root.ownerDocument!.querySelector('.tl-inspector .tl-alab[aria-label="Pan"]'), null,
+      'no manifest sub-field, no row');
   } finally { h.teardown(); }
 });
