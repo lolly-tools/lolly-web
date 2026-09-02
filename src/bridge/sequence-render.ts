@@ -183,6 +183,7 @@ import {
   hdrBoostToPQ,
 } from '@lolly/engine';
 import type { HdrBoostOptions } from '@lolly/engine';
+import { createTruePeakLimiter } from '@lolly/engine';
 // The compositor photographs the LIVE artboard, and the phase-2 clock has been
 // writing `.seq-off` (display:none) onto every box that is not under the playhead.
 // Without clearing it, every clip except the one being scrubbed rasterises blank.
@@ -339,19 +340,31 @@ function windowedAudioFeeder(
   mux: StreamingMux, spec: MixSpec, total: number, numberOfChannels: number,
 ): WindowedAudioFeeder {
   let off = 0;
+  // The master pass (plans/165 Slice E, plans/101 section 2.5): every window runs
+  // through ONE streaming -1 dBTP limiter before the mux. Transparent (a literal
+  // copy) while the mix stays under the ceiling, and chunk-invariant by
+  // construction, so this stream is byte-identical to the worker's limited
+  // whole-range call. Emission lags production by the lookahead (~2.5 ms); the
+  // mux's position-based clock never notices, only the moment bytes arrive moves.
+  const limiter = createTruePeakLimiter({ rate: MIX_RATE });
+  const emit = async (l: Float32Array, r: Float32Array): Promise<void> => {
+    if (!l.length) return;
+    await mux.addAudio({
+      length: l.length,
+      numberOfChannels,
+      getChannelData: (ch: number) => (ch === 0 ? l : r),
+    });
+  };
   const feedOne = async (): Promise<void> => {
     const from = off;
     const end = Math.min(off + AUDIO_WINDOW, total);
     off = end;
     // The window is evaluated here and nowhere retained: mixWindow returns a fresh
-    // stereo pair of length `end - from`, addAudio copies it into the encoder, and it
-    // is collected before the next frame.
+    // stereo pair of length `end - from`, the limiter hands back what is emittable,
+    // addAudio copies it into the encoder, and it is collected before the next frame.
     const planes = mixWindow(spec, from, end);
-    await mux.addAudio({
-      length: end - from,
-      numberOfChannels,
-      getChannelData: (ch: number) => planes[Math.min(ch, planes.length - 1)]!,
-    });
+    const [lL, lR] = limiter.process(planes[0], planes[1]);
+    await emit(lL, lR);
   };
   const startUsOf = (sample: number): number => Math.round((sample / MIX_RATE) * 1e6);
   return {
@@ -360,6 +373,8 @@ function windowedAudioFeeder(
     },
     async flush(): Promise<void> {
       while (off < total) await feedOne();
+      const [tL, tR] = limiter.flush();
+      await emit(tL, tR);
     },
   };
 }
@@ -973,12 +988,31 @@ const EMPTY_MIX: MixResult = { spec: null, totalSamples: 0, hasClipAudio: false,
  * feeder uses, so both threads stay byte-identical (the worker-SHA golden).
  */
 function wholeMixPcm(spec: MixSpec, total: number): PcmSource {
-  const planes = mixWindow(spec, 0, total);
+  const [left, right] = limitPlanes(mixWindow(spec, 0, total));
   return {
     length: total,
     numberOfChannels: MIX_CHANNELS,
-    getChannelData: (ch: number): Float32Array => planes[Math.min(ch, planes.length - 1)]!,
+    getChannelData: (ch: number): Float32Array => (ch === 0 ? left : right),
   };
+}
+
+/**
+ * The master pass over an already-materialised mix (plans/165 Slice E): the same
+ * -1 dBTP limiter the windowed feeder streams through, run whole-range. The limiter
+ * is chunk-invariant, so this and the feeder produce byte-identical streams from
+ * the same spec - the worker-SHA golden's precondition.
+ */
+function limitPlanes(planes: [Float32Array, Float32Array]): [Float32Array, Float32Array] {
+  const lim = createTruePeakLimiter({ rate: MIX_RATE });
+  const [aL, aR] = lim.process(planes[0], planes[1]);
+  const [bL, bR] = lim.flush();
+  const left = new Float32Array(planes[0].length);
+  const right = new Float32Array(planes[1].length);
+  left.set(aL, 0);
+  left.set(bL, aL.length);
+  right.set(aR, 0);
+  right.set(bR, aR.length);
+  return [left, right];
 }
 
 /**
@@ -1296,10 +1330,11 @@ export async function sequenceAudioPcm(
   const mix = await mixSequenceAudio(stage.layers, grid.length / fps, opts, host);
   if (!mix.spec || (!mix.hasClipAudio && !mix.hasBed)) return null;
   // The WHOLE buffer, produced by the SAME mixWindow the streaming path feeds in 0.1 s
-  // windows (plans/156 B2) - one range call over the full length. So the audio-only
-  // export (wav/mp3/m4a/opus) is, sample-for-sample, the soundtrack the mp4/webm path
-  // muxes: not a second mixer that could drift, but the identical closed form.
-  const [left, right] = mixWindow(mix.spec, 0, mix.totalSamples);
+  // windows (plans/156 B2) - one range call over the full length, through the SAME
+  // master limiter. So the audio-only export (wav/mp3/m4a/opus) is, sample-for-sample,
+  // the soundtrack the mp4/webm path muxes: not a second mixer that could drift, but
+  // the identical closed form.
+  const [left, right] = limitPlanes(mixWindow(mix.spec, 0, mix.totalSamples));
   return { channels: [left, right], sampleRate: MIX_RATE };
 }
 
