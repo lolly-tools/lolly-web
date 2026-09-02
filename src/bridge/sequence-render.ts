@@ -182,7 +182,7 @@ import {
   hdrBoostToPQ,
 } from '@lolly/engine';
 import type { HdrBoostOptions } from '@lolly/engine';
-import { activitySpans, createTruePeakLimiter } from '@lolly/engine';
+import { activitySpans, createTruePeakLimiter, createLoudnessMeter, normalizeGain } from '@lolly/engine';
 // The compositor photographs the LIVE artboard, and the phase-2 clock has been
 // writing `.seq-off` (display:none) onto every box that is not under the playhead.
 // Without clearing it, every clip except the one being scrubbed rasterises blank.
@@ -307,6 +307,28 @@ export const MIX_CHANNELS = 2;
  *  internal chunk grid, integer-sample aligned and independent of fps. */
 export const AUDIO_WINDOW = 4800;
 
+/** Multiply both planes in place - the normalize master gain. */
+function scalePlanes(planes: [Float32Array, Float32Array], g: number): void {
+  for (const ch of planes) for (let i = 0; i < ch.length; i++) ch[i] = (ch[i] as number) * g;
+}
+
+/**
+ * The normalize pre-gain for a mix (plans/101 section 2.5): ONE measurement pass
+ * over the analytic mix - the BS.1770 meter keeps block energies, never PCM, so
+ * this costs an evaluation, not a buffer. 1 when normalize is off or the mix has
+ * no meterable loudness (silence).
+ */
+export function normalizeMixGain(spec: MixSpec, total: number, target?: number): number {
+  if (!Number.isFinite(target as number)) return 1;
+  const meter = createLoudnessMeter(MIX_RATE);
+  for (let o = 0; o < total; o += AUDIO_WINDOW) {
+    const planes = mixWindow(spec, o, Math.min(o + AUDIO_WINDOW, total));
+    meter.push(planes[0]!, planes[1]!);
+  }
+  const lkfs = meter.integrated();
+  return lkfs == null ? 1 : normalizeGain(lkfs, target as number);
+}
+
 /** A stateful windowed-audio feeder: hand it the current frame timestamp inside the
  *  frame loop and it feeds every audio window whose START time has been reached,
  *  INTERLEAVED with the frames (WP-A step A2), so the mux advances its bounded
@@ -337,8 +359,13 @@ interface WindowedAudioFeeder {
  */
 function windowedAudioFeeder(
   mux: StreamingMux, spec: MixSpec, total: number, numberOfChannels: number,
+  normalizeTarget?: number,
 ): WindowedAudioFeeder {
   let off = 0;
+  // Normalize-to-target BEFORE the limiter (plans/101 section 2.5): one master
+  // gain from one measurement pass; the limiter then catches any peak the lift
+  // pushes toward the ceiling.
+  const preGain = normalizeMixGain(spec, total, normalizeTarget);
   // The master pass (plans/165 Slice E, plans/101 section 2.5): every window runs
   // through ONE streaming -1 dBTP limiter before the mux. Transparent (a literal
   // copy) while the mix stays under the ceiling, and chunk-invariant by
@@ -362,6 +389,7 @@ function windowedAudioFeeder(
     // stereo pair of length `end - from`, the limiter hands back what is emittable,
     // addAudio copies it into the encoder, and it is collected before the next frame.
     const planes = mixWindow(spec, from, end);
+    if (preGain !== 1) scalePlanes(planes, preGain);
     const [lL, lR] = limiter.process(planes[0], planes[1]);
     await emit(lL, lR);
   };
@@ -986,8 +1014,8 @@ const EMPTY_MIX: MixResult = { spec: null, totalSamples: 0, hasClipAudio: false,
  * worker then feeds this via `addAudio`, chunked on the SAME 4800 grid the in-thread
  * feeder uses, so both threads stay byte-identical (the worker-SHA golden).
  */
-function wholeMixPcm(spec: MixSpec, total: number): PcmSource {
-  const [left, right] = limitPlanes(mixWindow(spec, 0, total));
+function wholeMixPcm(spec: MixSpec, total: number, normalizeTarget?: number): PcmSource {
+  const [left, right] = limitPlanes(mixWindow(spec, 0, total), normalizeTarget);
   return {
     length: total,
     numberOfChannels: MIX_CHANNELS,
@@ -1001,7 +1029,13 @@ function wholeMixPcm(spec: MixSpec, total: number): PcmSource {
  * is chunk-invariant, so this and the feeder produce byte-identical streams from
  * the same spec - the worker-SHA golden's precondition.
  */
-function limitPlanes(planes: [Float32Array, Float32Array]): [Float32Array, Float32Array] {
+function limitPlanes(planes: [Float32Array, Float32Array], normalizeTarget?: number): [Float32Array, Float32Array] {
+  if (Number.isFinite(normalizeTarget as number)) {
+    const meter = createLoudnessMeter(MIX_RATE);
+    meter.push(planes[0], planes[1]);
+    const lkfs = meter.integrated();
+    if (lkfs != null) scalePlanes(planes, normalizeGain(lkfs, normalizeTarget as number));
+  }
   const lim = createTruePeakLimiter({ rate: MIX_RATE });
   const [aL, aR] = lim.process(planes[0], planes[1]);
   const [bL, bR] = lim.flush();
@@ -1371,7 +1405,7 @@ export async function sequenceAudioPcm(
   // master limiter. So the audio-only export (wav/mp3/m4a/opus) is, sample-for-sample,
   // the soundtrack the mp4/webm path muxes: not a second mixer that could drift, but
   // the identical closed form.
-  const [left, right] = limitPlanes(mixWindow(mix.spec, 0, mix.totalSamples));
+  const [left, right] = limitPlanes(mixWindow(mix.spec, 0, mix.totalSamples), opts.normalize);
   return { channels: [left, right], sampleRate: MIX_RATE };
 }
 
@@ -1944,7 +1978,7 @@ async function renderSequenceAuthored(
         : 'fully worker-side (decode, composite, encode and mux all off the main thread)'}`);
       try {
         const blob = await renderSequenceInWorker(job, pick, bitrate, audioPick,
-          mix.spec && audioPick ? wholeMixPcm(mix.spec, mix.totalSamples) : null, {
+          mix.spec && audioPick ? wholeMixPcm(mix.spec, mix.totalSamples, opts.normalize) : null, {
           log,
           // Every progress message is a frame boundary, which is where a cancel can be
           // acted on: the abort posts to the worker so it unwinds its own loop, then
@@ -2025,7 +2059,7 @@ async function renderSequenceAuthored(
       }
       // The audio mix is ready before the loop; feed its windows INTERLEAVED with
       // the frames (A2) so the mux's bounded merge advances as the render proceeds.
-      const feeder = mux && mix.spec && audioPick ? windowedAudioFeeder(mux, mix.spec, mix.totalSamples, MIX_CHANNELS) : null;
+      const feeder = mux && mix.spec && audioPick ? windowedAudioFeeder(mux, mix.spec, mix.totalSamples, MIX_CHANNELS, opts.normalize) : null;
 
       await runSequenceJob(job, canvas, ctx, {
         log,
@@ -2127,7 +2161,7 @@ async function renderSequenceAuthored(
         log('info', `sequence: TILT export via the GPU compositor (plans/104 P2b) - ${job.frameCount} frames of ${outW}×${targetH}, one clean plate texture per layer resampled on the GPU.`);
       }
       // Audio windows fed INTERLEAVED with the frames (A2), same as the in-thread path.
-      const feeder = mux && mix.spec && audioPick ? windowedAudioFeeder(mux, mix.spec, mix.totalSamples, MIX_CHANNELS) : null;
+      const feeder = mux && mix.spec && audioPick ? windowedAudioFeeder(mux, mix.spec, mix.totalSamples, MIX_CHANNELS, opts.normalize) : null;
 
       for (let i = 0; i < job.frameCount; i++) {
         // Cancel at the frame boundary; the finally aborts the mux and disposes the
@@ -2340,7 +2374,7 @@ async function renderSequenceAuthored(
         }
         log('info', `sequence: tilt capture${hdrActive ? ' HDR' : ''} - ${frameCount} frames of ${outW}×${targetH}, one dom-to-image shot each.`);
         // Audio windows fed INTERLEAVED with the frames (A2), same as the other tiers.
-        const feeder = mux && mix.spec && audioPick ? windowedAudioFeeder(mux, mix.spec, mix.totalSamples, MIX_CHANNELS) : null;
+        const feeder = mux && mix.spec && audioPick ? windowedAudioFeeder(mux, mix.spec, mix.totalSamples, MIX_CHANNELS, opts.normalize) : null;
         for (let i = 0; i < frameCount; i++) {
           // Cancel at the frame boundary; the finally restores the artboard (the pose,
           // the background, the blob URLs) the same way a failed shot does.

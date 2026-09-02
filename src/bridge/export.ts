@@ -154,6 +154,12 @@ export interface ExportOpts {
   colorProfile?: string;
   thumbnail?: boolean;
   audio?: ExportAudio;
+  /** Normalize the whole exported mix to a target integrated loudness, LKFS
+   *  (plans/101 section 2.5: -14 streaming / -16 podcast / -23 broadcast).
+   *  Undefined = off, today's levels untouched. Applied as one master gain
+   *  BEFORE the always-on true-peak limiter, which then catches any peak the
+   *  lift pushes toward the ceiling. */
+  normalize?: number;
   c2pa?: boolean;
   c2paDays?: number | string;
   /** Generator-metadata toggle (URL `meta`, default-on). false ⇒ strip the source

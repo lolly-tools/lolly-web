@@ -16,7 +16,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { bgOverscanPad, radiiOf, fitRect, plateShotFrame, plateWindowDemands } from './sequence-render.ts';
+import { bgOverscanPad, radiiOf, fitRect, plateShotFrame, plateWindowDemands, normalizeMixGain } from './sequence-render.ts';
 import { blurScratchNeedBytes, planPlateBudget } from './plate-budget.ts';
 import { EMPTY_KF_TRACK, kfTrackOf, sequenceDrawPlan, type SeqLayer } from './sequence-plan.ts';
 import { parseDropShadows, spillPad } from '../lib/canvas-blur.ts';
@@ -528,4 +528,20 @@ test('contract: renderFormat folds the sink into the stamp after the render retu
   const foldAt = exp.indexOf('opts._ingredientSink.filter((i) => !have.has(i.activeLabel))');
   assert.ok(dispatchAt > 0 && foldAt > dispatchAt, 'the sink is read after the render, not before');
   assert.match(exp, /if \(opts\.c2pa\) opts\._ingredientSink \?\?= \[\];/, 'and created before it, under c2pa only');
+});
+
+// ── Normalize loudness (plans/101 section 2.5): the mix-level pre-gain ─────────
+
+test('normalizeMixGain: a -20 LKFS mix lifted to -14 is ~+6 dB; off and silence are 1', () => {
+  const n = 48_000 * 3;
+  const tone = new Float32Array(n);
+  for (let i = 0; i < n; i++) tone[i] = 0.1 * Math.sin((2 * Math.PI * 997 * i) / 48_000);
+  const spec = { clips: [{ pcm: [tone, tone], startMs: 0 }], beds: [] } as never;
+  const g = normalizeMixGain(spec, n, -14);
+  // The 997 Hz calibration: amp 0.1 in both channels reads -20 LKFS, so the
+  // -14 target asks for +6 dB (block-boundary tolerance, same as the meter's).
+  assert.ok(Math.abs(20 * Math.log10(g) - 6) < 0.3, `expected ~+6 dB, got ${(20 * Math.log10(g)).toFixed(2)}`);
+  assert.equal(normalizeMixGain(spec, n, undefined), 1, 'off is exactly 1');
+  const silent = { clips: [{ pcm: [new Float32Array(n), new Float32Array(n)], startMs: 0 }], beds: [] } as never;
+  assert.equal(normalizeMixGain(silent, n, -14), 1, 'an unmeterable mix is left alone');
 });

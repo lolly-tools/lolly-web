@@ -1078,6 +1078,23 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           <label title="When your clip has its own sound, the music dips to this level under it (100% = no ducking).">Duck to <input type="number" data-action="audio-duck" min="0" max="100" step="5" value="35"><span>%</span></label>
         </div>
       </div>`;
+  // Normalize loudness (plans/101 section 2.5): a master target for the WHOLE
+  // exported mix - clips and bed together - measured to BS.1770 and applied as
+  // one gain before the always-on true-peak limiter. Off by default so existing
+  // projects keep their levels; the labels state real platform targets in the
+  // correct unit, which almost nobody shipping does.
+  const loudnessRow = !hasVideo ? '' : `
+      <div class="export-audio export-loudness" data-video-only style="display:${isVideoFmt(initialFmt) ? 'flex' : 'none'}">
+        <label>${escape(t('Loudness'))}
+          <select class="field-select" data-action="audio-normalize" aria-label="${escape(t('Loudness'))}"
+                  title="${escape(t('Normalize the exported mix to a platform loudness target. Off keeps your levels as authored.'))}">
+            <option value="off" selected>${escape(t('Off'))}</option>
+            <option value="-14">${escape(t('Streaming'))} (−14 LUFS)</option>
+            <option value="-16">${escape(t('Podcast'))} (−16 LUFS)</option>
+            <option value="-23">${escape(t('Broadcast'))} (−23 LUFS)</option>
+          </select>
+        </label>
+      </div>`;
 
   // WP-B: video quality select (Smaller / Balanced / Best) plus a default-collapsed
   // "Pro settings" disclosure (explicit codec, frame rate, rate mode, encoder hint).
@@ -1348,7 +1365,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       ${downloadRow}
       ${actions.includes('download') ? `<p class="export-degraded-note" data-export-degraded role="status" hidden style="margin:.2rem 0 0;color:hsl(var(--muted-foreground));font-size:12px;text-align:center"></p>` : ''}
     </div>
-    ${actions.includes('download') ? `${recordingRow}${filenameRow}${dimsRow}${timingRow}${aspectWarnRow}${fidelityWarnRow}${hdrRow}${cmykRow}${printRow}${protectionRow}<div class="export-ingredient-note" data-ingredient-note hidden></div>${audioRow}${settingsRow}${videoQualityRow}${sendRow}${preflightRow}${costRow}` : ''}
+    ${actions.includes('download') ? `${recordingRow}${filenameRow}${dimsRow}${timingRow}${aspectWarnRow}${fidelityWarnRow}${hdrRow}${cmykRow}${printRow}${protectionRow}<div class="export-ingredient-note" data-ingredient-note hidden></div>${audioRow}${loudnessRow}${settingsRow}${videoQualityRow}${sendRow}${preflightRow}${costRow}` : ''}
   `;
   void fillIngredientNote();
 
@@ -3237,6 +3254,12 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         // fall back to the link default.
         ...((el!.querySelector<HTMLInputElement>('[data-action="imprint"]')?.checked ?? exportDefaults.imprint) ? { imprint: true } : {}),
         ...((el!.querySelector<HTMLInputElement>('[data-action="durable"]')?.checked ?? exportDefaults.durable) ? { durable: true } : {}),
+        // Normalize loudness: the select's target LKFS, absent when Off.
+        ...((): { normalize?: number } => {
+          const v = el!.querySelector<HTMLSelectElement>('[data-action="audio-normalize"]')?.value;
+          const n = v && v !== 'off' ? Number(v) : Number.NaN;
+          return Number.isFinite(n) ? { normalize: n } : {};
+        })(),
         // HDR (Rec.2100 PQ) - opt-in; passes the live brand palette as the colours
         // to boost + the author's slider dials. The bridge applies it to raster
         // (png/jpeg/avif/tiff) and the 10-bit video containers (mp4/webm, plan 154 WP-2);

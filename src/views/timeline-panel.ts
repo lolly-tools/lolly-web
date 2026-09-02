@@ -103,6 +103,7 @@ import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 // Engine-owned cue grouping (the analysePcm precedent): captions grouped here
 // break at the same words a headless render would break at.
 import { groupWordsToCues } from '../../../../engine/src/captions.ts';
+import { integratedLoudness } from '../../../../engine/src/audio-loudness.ts';
 import { captionGroup, cueSpansOnTimeline, isCaptionGroup, transcriptWordsOf, ttsWordsOf } from './timeline-captions.ts';
 // Transcript-driven editing (plans/174): delete a row cuts that media, strike a
 // row greys it. All arithmetic lives in the pure transcript-edit.ts; this panel
@@ -4851,6 +4852,49 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
           wrap.append(meta, clearBtn);
         }
       }
+      // PER-CLIP NORMALIZE (plans/101 section 2.5): measure the trimmed window's
+      // BS.1770 integrated loudness and set Volume so the clip hits a -16 LUFS
+      // reference, clamped to the row's own 0..200% range. One decode, one
+      // commit; a decode is a click away, never per frame.
+      const normBtn = btn('tl-volume-normalize', t('Normalize volume'), icon('sliders'));
+      normBtn.removeAttribute('data-tip');
+      normBtn.title = t('Measure this clip and set Volume so it plays at -16 LUFS.');
+      normBtn.addEventListener('click', () => {
+        void (async () => {
+          const media = mediaOf(id);
+          if (!media.url) { announce(t('Nothing to measure on this clip.'), { assertive: true }); return; }
+          normBtn.disabled = true;
+          try {
+            const bytes = await (await fetch(media.url)).arrayBuffer();
+            // Decode AT the mix rate: an OfflineAudioContext resamples to its own
+            // rate, and the meter's K-weighting coefficients are 48 kHz-only.
+            const octx = new OfflineAudioContext(2, 1, 48_000);
+            const buf = await octx.decodeAudioData(bytes);
+            const rows0 = getBoxes();
+            const bx = rows0[indexOfId(rows0, cfg, id)] ?? box;
+            const clipInSec = finite(bx[cfg.clipInField], 0);
+            const durSec = finite(bx[cfg.durField], Number.NaN);
+            const speed = finite(bx[cfg.speedField], 1);
+            const from = Math.max(0, Math.min(buf.length, Math.round(clipInSec * 48_000)));
+            const srcSpan = Number.isFinite(durSec) ? durSec * speed : buf.duration - clipInSec;
+            const n = Math.max(0, Math.min(buf.length - from, Math.round(srcSpan * 48_000)));
+            const chs: Float32Array[] = [];
+            for (let c = 0; c < 2; c++) {
+              chs.push(buf.getChannelData(Math.min(c, buf.numberOfChannels - 1)).subarray(from, from + n));
+            }
+            const lkfs = integratedLoudness(chs);
+            if (lkfs == null) { announce(t('This clip is silent - nothing to normalize.'), { assertive: true }); return; }
+            const g = Math.max(0, Math.min(2, 10 ** ((-16 - lkfs) / 20)));
+            write(patchBox(getBoxes(), id, { [gf]: Math.abs(g - 1) < 0.005 ? '' : Math.round(g * 100) / 100 }));
+            announce(t('Volume normalized.'));
+          } catch {
+            announce(t('Could not measure this clip.'), { assertive: true });
+          } finally {
+            normBtn.disabled = false;
+          }
+        })();
+      });
+      wrap.appendChild(normBtn);
       inspector.appendChild(wrap);
     }
     // PAN (plans/165 WP-5): left/right balance, writing the manifest's pan sub-field.

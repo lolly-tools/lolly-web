@@ -349,6 +349,9 @@ export interface RunExportOpts {
    *  text-as-paths. Other formats ignore it. */
   text?: 'outline' | 'live';
   durableId?: number;
+  /** Normalize the exported mix to a target integrated loudness, LKFS (the export
+   *  bar's Off / -14 / -16 / -23 select). Undefined = off. */
+  normalize?: number;
   /** Opt-in HDR (Rec.2100 PQ) raster export from ?hdr=1. Raster (png/jpeg/avif/tiff) only. */
   hdr?: boolean;
   /** HDR author dials (export-panel sliders): white peak (nits) + 0–100 reach/lift/richness. */
