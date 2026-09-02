@@ -226,6 +226,8 @@ export interface SeqLayer {
   gain: number;
   /** Stereo pan -1..1 (0 = centred) - equal-power in the export mix (plans/165 WP-5). */
   pan: number;
+  /** Duck-to level 0..1 while other audio plays (1 = no duck) - plans/165 WP-6 v1. */
+  duck: number;
   enter: TransitionKind | null;
   enterMs: number;
   exit: TransitionKind | null;
@@ -475,6 +477,7 @@ export function readLayer(el: HTMLElement, idx: number, totalMs: number): SeqLay
     ignored: (el.getAttribute?.('data-t-ignored') ?? null) === '1',
     gain: clamp(num(el.getAttribute?.('data-t-gain') ?? null, 1), 0, 2),
     pan: clamp(num(el.getAttribute?.('data-t-pan') ?? null, 0), -1, 1),
+    duck: clamp(num(el.getAttribute?.('data-t-duck') ?? null, 1), 0, 1),
     enter: isTransitionKind(enter) ? enter : null,
     enterMs: clamp(num(el.getAttribute?.('data-t-enter-ms') ?? null, DEFAULT_TRANSITION_MS), MIN_TRANSITION_MS, MAX_TRANSITION_MS),
     exit: isTransitionKind(exit) ? exit : null,
@@ -1180,6 +1183,29 @@ export function audioCrossfades(layers: SeqLayer[]): Map<number, { tailSec?: num
   for (const j of crossfadeJunctions(layers)) {
     out.set(j.aIdx, { ...out.get(j.aIdx), tailSec: j.ms / 1000 });
     out.set(j.bIdx, { ...out.get(j.bIdx), headSec: j.ms / 1000 });
+  }
+  return out;
+}
+
+/**
+ * Clip-presence duck spans for one layer (plans/165 WP-6 v1): the windows, in the
+ * layer's OWN clip-local seconds, where any OTHER audible clip plays. The envelope
+ * folds these in at the layer's duck-to level (clipGainEvents' `duck`); merging and
+ * ramping happen there, exactly as the bed's envelope does it. v2 (signal-derived
+ * spans over the decoded PCM) replaces only this function.
+ */
+export function duckSpansFor(layers: SeqLayer[], self: SeqLayer): { from: number; to: number }[] {
+  const a0 = self.startMs;
+  const a1 = self.startMs + self.durMs;
+  const out: { from: number; to: number }[] = [];
+  for (const l of layers) {
+    if (l === self || l.idx === self.idx) continue;
+    if (l.kind !== 'video' && l.kind !== 'audio') continue;
+    if (l.mute || l.ignored || l.durMs <= 0) continue;
+    if (l.speed !== 1) continue;   // silent in the v1 mix, so it ducks nothing
+    const from = Math.max(l.startMs, a0);
+    const to = Math.min(l.startMs + l.durMs, a1);
+    if (to - from > 50) out.push({ from: (from - a0) / 1000, to: (to - a0) / 1000 });
   }
   return out;
 }

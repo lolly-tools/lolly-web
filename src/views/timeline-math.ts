@@ -69,6 +69,7 @@ export interface TimeCfg {
    */
   gainField?: string;
   panField?: string;
+  duckField?: string;
   /** OPTIONAL: the user's own clip name (timeline rename); '' or absent = derived label. */
   labelField?: string;
   /**

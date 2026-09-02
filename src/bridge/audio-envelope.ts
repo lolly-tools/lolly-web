@@ -18,6 +18,10 @@
 /** A window (seconds, clip time) over which the primary audio is playing. */
 export interface DuckSpan { from: number; to: number }
 
+/** A clip's own duck request (plans/165 WP-6 v1): drop to `level` while any of the
+ *  CLIP-LOCAL `spans` (other audible clips' windows) plays. level 1 = no duck. */
+export interface ClipDuck { level: number; spans: readonly DuckSpan[] }
+
 /** The optional mix-in track riding a primary export audio selection. */
 export interface ExportAudioMixIn {
   id?: string;
@@ -186,11 +190,15 @@ interface ClipGainShape {
   fi: number;
   fo: number;
   keys: VolumeKey[] | null;
+  /** Duck-to level 0..1 while a duck span plays (1 = no duck). */
+  dl: number;
+  /** Merged, clamped duck spans with their per-span ramp, or null when no duck applies. */
+  dspans: { from: number; to: number; r: number }[] | null;
 }
 
 function clipGainShape(o: {
   spanSec: number; gain?: number; fadeInSec?: number; fadeOutSec?: number;
-  volumeKeys?: readonly VolumeKey[];
+  volumeKeys?: readonly VolumeKey[]; duck?: ClipDuck;
 }): ClipGainShape {
   const span = Math.max(0, o.spanSec);
   const g = Math.min(2, Math.max(0, Number.isFinite(o.gain as number) ? (o.gain as number) : 1));
@@ -203,7 +211,29 @@ function clipGainShape(o: {
     fi *= k;
     fo *= k;
   }
-  return { span, g, fi, fo, keys: cleanVolumeKeys(o.volumeKeys) };
+  // The duck factor (plans/165 WP-6 v1), sanitised the way bedDuckEnvelope sanitises
+  // its spans: clamped into the clip, merged when the gap is too short for the sound
+  // to meaningfully come back up, ramps shortened on spans too short for the pair.
+  let dl = 1;
+  let dspans: { from: number; to: number; r: number }[] | null = null;
+  const duckLevel = clamp01(o.duck?.level ?? 1);
+  if (duckLevel < 1 && o.duck?.spans?.length && span > 0) {
+    const sorted = o.duck.spans
+      .map((s) => ({ from: Math.min(Math.max(0, s.from), span), to: Math.min(Math.max(0, s.to), span) }))
+      .filter((s) => s.to - s.from > 0.05)
+      .sort((x, y) => x.from - y.from);
+    const merged: DuckSpan[] = [];
+    for (const s of sorted) {
+      const last = merged[merged.length - 1];
+      if (last && s.from - last.to < MIX_RAMP_SEC * 2) last.to = Math.max(last.to, s.to);
+      else merged.push({ ...s });
+    }
+    const rs = merged
+      .filter((s) => s.to - s.from > 0.1)
+      .map((s) => ({ from: s.from, to: s.to, r: Math.min(MIX_RAMP_SEC, (s.to - s.from) / 2) }));
+    if (rs.length) { dl = duckLevel; dspans = rs; }
+  }
+  return { span, g, fi, fo, keys: cleanVolumeKeys(o.volumeKeys), dl, dspans };
 }
 
 /** The 0..1 fade factor at t for a resolved shape. */
@@ -214,10 +244,23 @@ function fadeFactorAt(sh: ClipGainShape, t: number): number {
   return Math.min(1, Math.max(0, f));
 }
 
-/** The full clip-gain value at t: flat gain × fade factor × keyed multiplier. */
+/** The 0..1 duck factor at t: 1 outside every span, `dl` inside, linear edge ramps. */
+function duckFactorAt(sh: ClipGainShape, t: number): number {
+  if (!sh.dspans) return 1;
+  let f = 1;
+  for (const s of sh.dspans) {
+    if (t <= s.from || t >= s.to) continue;
+    if (t < s.from + s.r) f = Math.min(f, 1 - (1 - sh.dl) * ((t - s.from) / s.r));
+    else if (t > s.to - s.r) f = Math.min(f, 1 - (1 - sh.dl) * ((s.to - t) / s.r));
+    else f = Math.min(f, sh.dl);
+  }
+  return f;
+}
+
+/** The full clip-gain value at t: flat gain × fade factor × keyed multiplier × duck. */
 function shapeValueAt(sh: ClipGainShape, t: number): number {
   const v = sh.keys ? volumeKeyValueAt(sh.keys, t) : 1;
-  return sh.g * fadeFactorAt(sh, t) * v;
+  return sh.g * fadeFactorAt(sh, t) * v * duckFactorAt(sh, t);
 }
 
 /** Is the fade factor non-constant anywhere strictly inside (a, b)? */
@@ -236,6 +279,16 @@ function keysRampIn(sh: ClipGainShape, a: number, b: number): boolean {
   return false;
 }
 
+/** Is the duck factor non-constant anywhere strictly inside (a, b)? */
+function duckRampsIn(sh: ClipGainShape, a: number, b: number): boolean {
+  if (!sh.dspans) return false;
+  for (const s of sh.dspans) {
+    if (a < s.from + s.r && b > s.from) return true;
+    if (a < s.to && b > s.to - s.r) return true;
+  }
+  return false;
+}
+
 export function clipGainEvents(o: {
   /** The clip's placed length on the timeline, seconds. */
   spanSec: number;
@@ -247,11 +300,14 @@ export function clipGainEvents(o: {
    *  keys, held beyond the ends - the DAW convention; ease tokens on a key move
    *  the POSE and deliberately not the volume. */
   volumeKeys?: readonly VolumeKey[];
+  /** Clip-presence ducking (plans/165 WP-6 v1): drop to `level` while any of the
+   *  clip-local `spans` plays. Folds in as a third factor beside fades and keys. */
+  duck?: ClipDuck;
 }): GainEvent[] {
   const sh = clipGainShape(o);
-  // The classic shapes stay EXACT and small: no keys means every segment is a
-  // pure linear ramp of a single factor.
-  if (!sh.keys) {
+  // The classic shapes stay EXACT and small: no keys and no duck means every
+  // segment is a pure linear ramp of a single factor.
+  if (!sh.keys && !sh.dspans) {
     const events: GainEvent[] = [];
     if (sh.fi > 0.001) events.push({ t: 0, v: 0, ramp: false }, { t: sh.fi, v: sh.g, ramp: true });
     else events.push({ t: 0, v: sh.g, ramp: false });
@@ -264,13 +320,17 @@ export function clipGainEvents(o: {
   const marks = new Set<number>([0, sh.span]);
   if (sh.fi > 0.001) marks.add(Math.min(sh.fi, sh.span));
   if (sh.fo > 0.001 && sh.span > 0) marks.add(Math.max(0, sh.span - sh.fo));
-  for (const k of sh.keys) if (k.tSec > 0 && k.tSec < sh.span) marks.add(k.tSec);
+  for (const k of sh.keys ?? []) if (k.tSec > 0 && k.tSec < sh.span) marks.add(k.tSec);
+  for (const s of sh.dspans ?? []) {
+    for (const t of [s.from, s.from + s.r, s.to - s.r, s.to]) if (t > 0 && t < sh.span) marks.add(t);
+  }
   const sorted = [...marks].sort((a, b) => a - b);
   const events: GainEvent[] = [{ t: 0, v: shapeValueAt(sh, 0), ramp: false }];
   for (let i = 1; i < sorted.length; i++) {
     const a = sorted[i - 1]!;
     const b = sorted[i]!;
-    if (fadeRampsIn(sh, a, b) && keysRampIn(sh, a, b)) {
+    const ramping = (fadeRampsIn(sh, a, b) ? 1 : 0) + (keysRampIn(sh, a, b) ? 1 : 0) + (duckRampsIn(sh, a, b) ? 1 : 0);
+    if (ramping >= 2) {
       const steps = Math.max(1, Math.ceil((b - a) / GAIN_SUBDIVIDE_SEC));
       for (let n = 1; n <= steps; n++) {
         const t = a + ((b - a) * n) / steps;
@@ -296,7 +356,7 @@ export const MAX_CLIP_FADE_SEC = 15;
  */
 export function clipGainValueAt(o: {
   spanSec: number; gain?: number; fadeInSec?: number; fadeOutSec?: number;
-  volumeKeys?: readonly VolumeKey[]; tSec: number;
+  volumeKeys?: readonly VolumeKey[]; duck?: ClipDuck; tSec: number;
 }): number {
   const sh = clipGainShape(o);
   return shapeValueAt(sh, Math.min(Math.max(0, o.tSec), sh.span));

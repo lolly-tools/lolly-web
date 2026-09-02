@@ -90,6 +90,7 @@ import {
   type SeqPlanEnv,
   volumeKeysOf,
   audioCrossfades,
+  duckSpansFor,
 } from './sequence-plan.ts';
 // The plate budget (plans/104 section 5.5) and the spill geometry it prices. Both pure; the
 // budget is what turns "shoot the flown-past layer sharper" into a bounded promise.
@@ -1092,6 +1093,13 @@ async function mixSequenceAudio(
       const events = clipGainEvents({
         spanSec: placedSec, gain: L.gain, fadeInSec, fadeOutSec,
         volumeKeys: volumeKeysOf(L.kf) ?? undefined,
+        // Clip-presence ducking (plans/165 WP-6 v1): an audio box asked to sit
+        // under other audio drops to its duck-to level wherever another audible
+        // clip's window overlaps its own. Spans come from the pure layer walk so
+        // the preview computes the identical set from the DOM.
+        duck: L.kind === 'audio' && L.duck < 1
+          ? { level: L.duck, spans: duckSpansFor(layers, L) }
+          : undefined,
       });
       const pan = Math.max(-1, Math.min(1, L.pan ?? 0));
       clips.push({

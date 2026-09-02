@@ -142,6 +142,8 @@ export interface Timing {
   gain: number;
   /** Stereo pan -1..1 (`data-t-pan`; absent = 0 = centred). Plans/165 WP-5. */
   pan: number;
+  /** Duck-to level 0..1 under other audio (`data-t-duck`; absent = 1 = no duck). Plans/165 WP-6. */
+  duck: number;
   lane: 'seq' | '';
   /**
    * The box's DEPTH in px above the surface (`data-t-z`), held to the engine's own
@@ -223,6 +225,7 @@ export function readTiming(el: Element): Timing {
     ignored: el.getAttribute('data-t-ignored') === '1',
     gain: clamp(attrNum(el, 'data-t-gain', 1), 0, 2),
     pan: clamp(attrNum(el, 'data-t-pan', 0), -1, 1),
+    duck: clamp(attrNum(el, 'data-t-duck', 1), 0, 1),
     lane: el.getAttribute('data-t-lane') === 'seq' ? 'seq' : '',
     z: readDepthZ(el.getAttribute('data-t-z')),
     rx: readTiltDeg(el.getAttribute('data-t-rx')),

@@ -689,7 +689,33 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
   function audioKey(url: string, timing: Timing): string {
     return `${url}|${timing.start}|${timing.dur}|${timing.clipIn}|${timing.speed}|${timing.mute ? 1 : 0}`
       + `|${timing.ignored ? 1 : 0}`
-      + `|${timing.gain}|${timing.pan}|${timing.enter ?? ''}:${timing.enterMs}|${timing.exit ?? ''}:${timing.exitMs}`;
+      + `|${timing.gain}|${timing.pan}|${timing.duck}|${timing.enter ?? ''}:${timing.enterMs}|${timing.exit ?? ''}:${timing.exitMs}`;
+  }
+
+  /**
+   * Other audible clips' windows, CLIP-LOCAL to `selfEl` (plans/165 WP-6 preview
+   * parity): the DOM read of the same set duckSpansFor derives from the layer walk
+   * on export. Computed when a box is PLACED, not per frame - a neighbour edited
+   * mid-play re-ducks on the next placement, and the export is always exact.
+   */
+  function duckSpansOf(selfEl: HTMLElement, timing: Timing): { from: number; to: number }[] {
+    const seq = seqMs();
+    const a0 = timing.start;
+    const a1 = audioEndSec(timing, seq) * 1000;
+    const hosts = new Set<HTMLElement>();
+    for (const m of canvasEl.querySelectorAll<HTMLElement>('[data-audio-src], video')) {
+      const w = m.closest<HTMLElement>('[data-t-start]');
+      if (w && w !== selfEl) hosts.add(w);
+    }
+    const out: { from: number; to: number }[] = [];
+    for (const w of hosts) {
+      const t = readTiming(w);
+      if (t.mute || t.ignored || t.speed !== 1) continue;
+      const from = Math.max(t.start, a0);
+      const to = Math.min(endOf(t, seq), a1);
+      if (to - from > 50) out.push({ from: (from - a0) / 1000, to: (to - a0) / 1000 });
+    }
+    return out;
   }
 
   function stopAudioNode(node: AudioBufferSourceNode, gainNode?: GainNode | null, panNode?: StereoPannerNode | null): void {
@@ -854,6 +880,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
       fadeInSec: timing.enter ? timing.enterMs / 1000 : 0,
       fadeOutSec: timing.exit ? timing.exitMs / 1000 : 0,
       volumeKeys: volumeKeysOf(timing.kf) ?? undefined,
+      duck: timing.duck < 1 ? { level: timing.duck, spans: duckSpansOf(el, timing) } : undefined,
     });
     let node: AudioBufferSourceNode;
     let gainNode: GainNode | null = null;

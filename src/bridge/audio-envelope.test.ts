@@ -222,3 +222,48 @@ test('clipGainValueAt matches the keyed event list, subdivided overlap regions i
     }
   }
 });
+
+// ── clip-presence ducking (plans/165 WP-6 v1): the third factor ────────────────
+
+test('clipGainEvents: a duck span drops to its level with edge ramps, and holds full outside', () => {
+  const ev = clipGainEvents({ spanSec: 10, duck: { level: 0.2, spans: [{ from: 2, to: 6 }] } });
+  near(envelopeGainAt(ev, 0.5), 1);                       // before the span
+  near(envelopeGainAt(ev, 4), 0.2);                       // parked inside it
+  near(envelopeGainAt(ev, 9), 1);                         // back to full after
+  near(envelopeGainAt(ev, 2 + MIX_RAMP_SEC / 2), 0.6);    // halfway down the ramp
+  near(envelopeGainAt(ev, 6 - MIX_RAMP_SEC / 2), 0.6);    // halfway back up
+});
+
+test('clipGainEvents: duck spans merge across gaps too short to come back up', () => {
+  const ev = clipGainEvents({
+    spanSec: 10,
+    duck: { level: 0.2, spans: [{ from: 2, to: 4 }, { from: 4.5, to: 7 }] },
+  });
+  // The 0.5s gap is shorter than a down+up ramp pair, so the sound never returns
+  // to full between the two - exactly bedDuckEnvelope's merge rule.
+  near(envelopeGainAt(ev, 4.25), 0.2);
+});
+
+test('a no-op duck (level 1, or no spans) is byte-identical to the un-ducked envelope', () => {
+  const base = clipGainEvents({ spanSec: 5, gain: 0.7, fadeInSec: 1 });
+  assert.deepEqual(clipGainEvents({ spanSec: 5, gain: 0.7, fadeInSec: 1, duck: { level: 1, spans: [{ from: 1, to: 2 }] } }), base);
+  assert.deepEqual(clipGainEvents({ spanSec: 5, gain: 0.7, fadeInSec: 1, duck: { level: 0.2, spans: [] } }), base);
+});
+
+test('clipGainValueAt matches the ducked event list, fade and key overlaps included', () => {
+  const shapes = [
+    { spanSec: 10, gain: 1, duck: { level: 0.2, spans: [{ from: 2, to: 6 }] } },
+    // The duck ramp inside a fade-in: two factors ramping, the subdivided region.
+    { spanSec: 8, gain: 0.9, fadeInSec: 3, duck: { level: 0.3, spans: [{ from: 1, to: 4 }] } },
+    // All three factors at once: fade-out, a key ramp and a duck edge.
+    { spanSec: 6, gain: 1.2, fadeOutSec: 3, volumeKeys: [{ tSec: 1, value: 0.5 }, { tSec: 5, value: 1.5 }], duck: { level: 0.4, spans: [{ from: 2.5, to: 5.5 }] } },
+  ];
+  for (const o of shapes) {
+    const ev = clipGainEvents(o);
+    for (let t = 0; t <= o.spanSec + 0.001; t += o.spanSec / 80) {
+      const a = envelopeGainAt(ev, Math.min(t, o.spanSec));
+      const b = clipGainValueAt({ ...o, tSec: t });
+      assert.ok(Math.abs(a - b) < 0.005, `${JSON.stringify(o)} @${t.toFixed(2)}: events=${a} closed=${b}`);
+    }
+  }
+});

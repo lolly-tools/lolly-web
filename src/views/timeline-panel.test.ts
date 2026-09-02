@@ -6044,6 +6044,22 @@ test('the Pan row: audio boxes get it, it writes once, and centred clears the fi
   } finally { h.teardown(); }
 });
 
+test('the ducking select: audio boxes get it, choices write the level, no-duck clears', () => {
+  const h = mount([clip('a', 0, 3)], 40, ADD_KINDS, { cfgPatch: { gainField: 'gain', duckField: 'duck' } });
+  try {
+    fakeCanvasAudio(h, 'a');
+    h.select(['a']);
+    const sel = field(h.root, 'Under other audio');
+    assert.equal(sel.value, '', 'an unauthored box reads no-change');
+    sel.value = '0.2';
+    sel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    assert.equal((h.boxes.find((b) => b.id === 'a') as Record<string, unknown>).duck, 0.2, 'Quieter writes the duck-to level');
+    sel.value = '';
+    sel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    assert.equal((h.boxes.find((b) => b.id === 'a') as Record<string, unknown>).duck, '', 'No change clears, not a stored 1');
+  } finally { h.teardown(); }
+});
+
 test('the Pan row stays out of a tool that never declared panField', () => {
   const h = mount([clip('a', 0, 3)], 40, ADD_KINDS, { cfgPatch: { gainField: 'gain' } });
   try {

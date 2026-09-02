@@ -4319,7 +4319,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // did: the pose row shows the box's depth wherever no keyframe overrides it (section 5.2),
     // so a depth edit made anywhere else must repaint this row or it prints a stale
     // number. `mute` is what flips the speaker toggle's glyph and `aria-pressed`.
-    const key = box ? `${id}|${JSON.stringify([box[cfg.startField], box[cfg.durField], box[cfg.clipInField], box[cfg.speedField], box[cfg.enterField], box[cfg.exitField], box[cfg.enterMsField], box[cfg.exitMsField], box[cfg.muteField], cfg.enterEaseField ? box[cfg.enterEaseField] : '', cfg.exitEaseField ? box[cfg.exitEaseField] : '', cfg.kfField ? box[cfg.kfField] : '', cfg.zField ? box[cfg.zField] : '', cfg.linkField ? box[cfg.linkField] : '', box.kind, cfg.gainField ? box[cfg.gainField] : '', cfg.splitField ? box[cfg.splitField] : '', cfg.staggerField ? box[cfg.staggerField] : '', cfg.splitOrderField ? box[cfg.splitOrderField] : '', cfg.holdField ? box[cfg.holdField] : '', cfg.holdRateField ? box[cfg.holdRateField] : '', cfg.panField ? box[cfg.panField] : ''])}` : '';
+    const key = box ? `${id}|${JSON.stringify([box[cfg.startField], box[cfg.durField], box[cfg.clipInField], box[cfg.speedField], box[cfg.enterField], box[cfg.exitField], box[cfg.enterMsField], box[cfg.exitMsField], box[cfg.muteField], cfg.enterEaseField ? box[cfg.enterEaseField] : '', cfg.exitEaseField ? box[cfg.exitEaseField] : '', cfg.kfField ? box[cfg.kfField] : '', cfg.zField ? box[cfg.zField] : '', cfg.linkField ? box[cfg.linkField] : '', box.kind, cfg.gainField ? box[cfg.gainField] : '', cfg.splitField ? box[cfg.splitField] : '', cfg.staggerField ? box[cfg.staggerField] : '', cfg.splitOrderField ? box[cfg.splitOrderField] : '', cfg.holdField ? box[cfg.holdField] : '', cfg.holdRateField ? box[cfg.holdRateField] : '', cfg.panField ? box[cfg.panField] : '', cfg.duckField ? box[cfg.duckField] : ''])}` : '';
     if (key === inspectorKey) return;
     inspectorKey = key;
     inspectorId = id;
@@ -4894,6 +4894,38 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       slider.addEventListener('change', () => commit(finite(slider.value, 0)));
       num.addEventListener('change', () => commit(finite(num.value, 0)));
       wrap.append(lab, slider, num);
+      inspector.appendChild(wrap);
+    }
+    // DUCKING (plans/165 WP-6 v1): drop this track while any other clip's audio
+    // plays - the export bed's own off/low behaviour, offered per audio box. A
+    // select, not a slider: three honest levels beat a percent nobody can hear.
+    // One write per change; the no-duck choice clears the field.
+    if (timed && cfg.duckField && mediaKind === 'audio') {
+      const df = cfg.duckField;
+      const cur = finite(box[df], 1);
+      const wrap = document.createElement('label');
+      wrap.className = 'field-row field-row--inline tl-field tl-duck-row';
+      const lab = document.createElement('span');
+      lab.className = 'field-label';
+      lab.textContent = t('Under other audio');
+      const sel = document.createElement('select');
+      sel.className = 'field-select field-select--sm tl-duck-select';
+      sel.setAttribute('aria-label', t('Under other audio'));
+      sel.title = t("Lower this track while any other clip's audio plays.");
+      const opt = (v: string, label: string): void => {
+        const o = document.createElement('option');
+        o.value = v;
+        o.textContent = label;
+        sel.appendChild(o);
+      };
+      opt('', t('No change'));
+      opt('0.2', t('Quieter'));
+      opt('0', t('Silent'));
+      sel.value = cur >= 1 ? '' : cur <= 0 ? '0' : '0.2';
+      sel.addEventListener('change', () => {
+        write(patchBox(getBoxes(), id, { [df]: sel.value === '' ? '' : Number(sel.value) }));
+      });
+      wrap.append(lab, sel);
       inspector.appendChild(wrap);
     }
     if (timed) {
