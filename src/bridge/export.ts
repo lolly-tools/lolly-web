@@ -39,6 +39,7 @@ import {
 } from './text-svg.ts';
 import { resolveVectorFont } from './font-registry.ts';
 import { namespaceInlinedSvgIds } from './svg-inline-ids.ts';
+import { bakeWebKitBoxShadows } from './webkit-shadow-bake.ts';
 // The walkers' transform neutralise + re-entry guard (plans/104 section 9 P3.1).
 import { neutraliseTransform, newNeutraliseGuard } from './transform-neutralise.ts';
 import type { VectorFont } from './font-registry.ts';
@@ -1210,6 +1211,12 @@ async function renderRaster(node: Element, format: string, opts: ExportOpts): Pr
   // the canvas stays clean. The live node MUST be passed (not a clone) so that
   // dom-to-image reads computed styles from elements that are in the document.
   const restore = await swapBlobUrls(node);
+  // WebKit's dom-to-image capture paints an offset box-shadow as a CENTRED halo
+  // (measured IoU 0.715), untransformed elements included - so Safari raster
+  // exports of offset shadows were simply wrong. drop-shadow() captures
+  // correctly there, so the offsets are baked into filters for the capture's
+  // duration, on WebKit only, and restored with everything else below.
+  const restoreShadows = bakeWebKitBoxShadows(node);
   // Deterministic base frame (t=0) for a frame-clock tool, so a still of an
   // animating canvas captures the configured pose, not a random rAF moment.
   const fc = beginFrameClock(node); renderFrameAt(fc, 0);
@@ -1288,6 +1295,7 @@ async function renderRaster(node: Element, format: string, opts: ExportOpts): Pr
     }
     return blob;
   } finally {
+    restoreShadows();
     restore();
     endFrameClock(fc);
   }
