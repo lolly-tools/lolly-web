@@ -1100,14 +1100,20 @@ async function mixSequenceAudio(
       const to = srcDur > 0 ? Math.min(from + srcSpan, srcDur) : from + srcSpan;
       if (!(to > from)) continue;
       let { channels } = await clip.pcm(from, to, MIX_RATE);
-      if (L.speed !== 1 && channels[0]?.length) {
-        // Pitch-preserving time-stretch (plans/165 WP-7): the vendored Signalsmith
-        // engine, loaded as its own lazy chunk the first time a sped clip renders.
-        // The source window collapses/expands to the clip's timeline span, and
-        // everything downstream - fades, keys, duck, the master limiter - reads
-        // the placed length exactly as for any other clip.
+      const pitchSt = Math.max(-12, Math.min(12, L.pitch ?? 0));
+      if ((L.speed !== 1 || pitchSt !== 0) && channels[0]?.length) {
+        // The pitch pair (plans/165 WP-7/WP-7b) through ONE engine, loaded as its
+        // own lazy chunk: preserve-pitch stretch by default; varispeed folds the
+        // clip's speed into the transpose factor (tape-style, formants riding
+        // along, an authored pitch composing on top); an explicit pitch at any
+        // speed transposes with formants preserved. The source window
+        // collapses/expands to the clip's timeline span, and everything
+        // downstream - fades, keys, duck, the master limiter - reads the placed
+        // length exactly as for any other clip.
         const { stretchPcm } = await import('../lib/audio-stretch-core.ts');
-        channels = await stretchPcm(channels, { speed: L.speed, rate: MIX_RATE });
+        channels = await stretchPcm(channels, L.varispeed && L.speed !== 1
+          ? { speed: L.speed, factor: L.speed * 2 ** (pitchSt / 12), rate: MIX_RATE }
+          : { speed: L.speed, semitones: pitchSt, rate: MIX_RATE });
       }
       const frames = channels[0]?.length ?? 0;
       if (!frames) continue;

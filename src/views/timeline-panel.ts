@@ -4319,7 +4319,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // did: the pose row shows the box's depth wherever no keyframe overrides it (section 5.2),
     // so a depth edit made anywhere else must repaint this row or it prints a stale
     // number. `mute` is what flips the speaker toggle's glyph and `aria-pressed`.
-    const key = box ? `${id}|${JSON.stringify([box[cfg.startField], box[cfg.durField], box[cfg.clipInField], box[cfg.speedField], box[cfg.enterField], box[cfg.exitField], box[cfg.enterMsField], box[cfg.exitMsField], box[cfg.muteField], cfg.enterEaseField ? box[cfg.enterEaseField] : '', cfg.exitEaseField ? box[cfg.exitEaseField] : '', cfg.kfField ? box[cfg.kfField] : '', cfg.zField ? box[cfg.zField] : '', cfg.linkField ? box[cfg.linkField] : '', box.kind, cfg.gainField ? box[cfg.gainField] : '', cfg.splitField ? box[cfg.splitField] : '', cfg.staggerField ? box[cfg.staggerField] : '', cfg.splitOrderField ? box[cfg.splitOrderField] : '', cfg.holdField ? box[cfg.holdField] : '', cfg.holdRateField ? box[cfg.holdRateField] : '', cfg.panField ? box[cfg.panField] : '', cfg.duckField ? box[cfg.duckField] : ''])}` : '';
+    const key = box ? `${id}|${JSON.stringify([box[cfg.startField], box[cfg.durField], box[cfg.clipInField], box[cfg.speedField], box[cfg.enterField], box[cfg.exitField], box[cfg.enterMsField], box[cfg.exitMsField], box[cfg.muteField], cfg.enterEaseField ? box[cfg.enterEaseField] : '', cfg.exitEaseField ? box[cfg.exitEaseField] : '', cfg.kfField ? box[cfg.kfField] : '', cfg.zField ? box[cfg.zField] : '', cfg.linkField ? box[cfg.linkField] : '', box.kind, cfg.gainField ? box[cfg.gainField] : '', cfg.splitField ? box[cfg.splitField] : '', cfg.staggerField ? box[cfg.staggerField] : '', cfg.splitOrderField ? box[cfg.splitOrderField] : '', cfg.holdField ? box[cfg.holdField] : '', cfg.holdRateField ? box[cfg.holdRateField] : '', cfg.panField ? box[cfg.panField] : '', cfg.duckField ? box[cfg.duckField] : '', cfg.pitchField ? box[cfg.pitchField] : '', cfg.varispeedField ? box[cfg.varispeedField] : ''])}` : '';
     if (key === inspectorKey) return;
     inspectorKey = key;
     inspectorId = id;
@@ -4926,6 +4926,60 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         write(patchBox(getBoxes(), id, { [df]: sel.value === '' ? '' : Number(sel.value) }));
       });
       wrap.append(lab, sel);
+      inspector.appendChild(wrap);
+    }
+    // PITCH (plans/165 WP-7b): transpose in semitones, formants preserved, at any
+    // speed. Same one-commit discipline; 0 clears the field.
+    if (timed && cfg.pitchField && (mediaKind === 'audio' || mediaKind === 'video')) {
+      const ptf = cfg.pitchField;
+      const cur = Math.round(clamp(finite(box[ptf], 0), -12, 12));
+      const wrap = document.createElement('label');
+      wrap.className = 'field-row field-row--inline tl-field tl-pitch-row';
+      const lab = document.createElement('span');
+      lab.className = 'field-label';
+      lab.textContent = t('Pitch');
+      const num = document.createElement('input');
+      num.className = 'field-input tl-num tl-pitch-num';
+      num.type = 'number';
+      num.min = '-12';
+      num.max = '12';
+      num.step = '1';
+      num.value = String(cur);
+      num.setAttribute('aria-label', t('Pitch'));
+      num.title = mediaKind === 'audio'
+        ? t('Semitones up or down: 12 is an octave. 0 plays as recorded.')
+        : t("Semitones up or down: 12 is an octave. A video clip's sound transposes in the exported file; the preview plays as recorded.");
+      num.addEventListener('change', () => {
+        const st = Math.round(clamp(finite(num.value, 0), -12, 12));
+        num.value = String(st);
+        write(patchBox(getBoxes(), id, { [ptf]: st === 0 ? '' : st }));
+      });
+      wrap.append(lab, num);
+      inspector.appendChild(wrap);
+    }
+    // PRESERVE PITCH (plans/165 WP-7b): only meaningful on a speed-changed clip.
+    // Checked - the editor default - keeps the recorded pitch through the stretch;
+    // unchecked plays tape-style (pitch follows speed). The default choice clears
+    // the field so an untouched box stays byte-identical.
+    if (timed && cfg.varispeedField && (mediaKind === 'audio' || mediaKind === 'video')
+      && finite(box[cfg.speedField], 1) !== 1) {
+      const vf = cfg.varispeedField;
+      const vari = box[vf] === true || box[vf] === 'true';
+      const wrap = document.createElement('label');
+      wrap.className = 'field-row field-row--inline tl-field tl-varispeed-row field-toggle';
+      const lab = document.createElement('span');
+      lab.className = 'field-label';
+      lab.textContent = t('Preserve pitch');
+      const check = document.createElement('input');
+      check.className = 'field-check';
+      check.type = 'checkbox';
+      check.checked = !vari;
+      check.setAttribute('aria-label', t('Preserve pitch'));
+      check.title = t('On keeps the recorded pitch when the clip plays faster or slower. Off plays it tape-style: pitch follows speed.');
+      check.addEventListener('change', () => {
+        write(patchBox(getBoxes(), id, { [vf]: check.checked ? '' : 'true' }));
+      });
+      wrap.append(lab, check);
       inspector.appendChild(wrap);
     }
     if (timed) {

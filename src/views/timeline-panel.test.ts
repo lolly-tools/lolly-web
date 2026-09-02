@@ -6060,6 +6060,41 @@ test('the ducking select: audio boxes get it, choices write the level, no-duck c
   } finally { h.teardown(); }
 });
 
+test('the Pitch row transposes in semitones, 0 clears; no Preserve-pitch toggle at speed 1', () => {
+  const h = mount([clip('a', 0, 3)], 40, ADD_KINDS, { cfgPatch: { gainField: 'gain', pitchField: 'pitch', varispeedField: 'varispeed' } });
+  try {
+    fakeCanvasAudio(h, 'a');
+    h.select(['a']);
+    const pitch = field(h.root, 'Pitch');
+    assert.equal(pitch.value, '0', 'an unauthored box reads as recorded');
+    type(pitch, '7');
+    assert.equal((h.boxes.find((b) => b.id === 'a') as Record<string, unknown>).pitch, 7, 'semitones written raw');
+    type(pitch, '0');
+    assert.equal((h.boxes.find((b) => b.id === 'a') as Record<string, unknown>).pitch, '', '0 clears, not a stored 0');
+    const labels = Array.from(h.root.ownerDocument!.querySelectorAll('.tl-inspector .field-label')).map((x) => x.textContent);
+    assert.equal(labels.includes('Preserve pitch'), false, 'the toggle is meaningless at speed 1');
+  } finally { h.teardown(); }
+});
+
+test('Preserve pitch on a sped clip: unticking writes varispeed, re-ticking clears it', () => {
+  const h = mount([{ ...clip('a', 0, 3), speed: 2 }], 40, ADD_KINDS, { cfgPatch: { gainField: 'gain', varispeedField: 'varispeed' } });
+  try {
+    fakeCanvasAudio(h, 'a');
+    h.select(['a']);
+    const rows = Array.from(h.root.ownerDocument!.querySelectorAll<HTMLElement>('.tl-inspector .tl-field'));
+    const row = rows.find((x) => x.querySelector('.field-label')?.textContent === 'Preserve pitch');
+    assert.ok(row, 'the toggle shows on a sped clip');
+    const check = row!.querySelector('.field-check') as HTMLInputElement;
+    assert.equal(check.checked, true, 'preserve pitch is the default');
+    check.checked = false;
+    check.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    assert.equal((h.boxes.find((b) => b.id === 'a') as Record<string, unknown>).varispeed, 'true', 'tape-style is the authored exception');
+    check.checked = true;
+    check.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    assert.equal((h.boxes.find((b) => b.id === 'a') as Record<string, unknown>).varispeed, '', 'the default clears the field');
+  } finally { h.teardown(); }
+});
+
 test('the Pan row stays out of a tool that never declared panField', () => {
   const h = mount([clip('a', 0, 3)], 40, ADD_KINDS, { cfgPatch: { gainField: 'gain' } });
   try {

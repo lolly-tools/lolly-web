@@ -206,6 +206,10 @@ export interface SeqJobLayer {
   pan?: number;
   /** Duck-to level 0..1; absent from an older job reads as 1 (no duck). */
   duck?: number;
+  /** Pitch transpose in semitones; absent from an older job reads as 0. */
+  pitch?: number;
+  /** Tape-style varispeed; absent from an older job reads as false (preserve pitch). */
+  varispeed?: boolean;
   enter: SeqLayer['enter'];
   enterMs: number;
   exit: SeqLayer['exit'];
@@ -304,7 +308,7 @@ export function toJobLayer(
 ): SeqJobLayer {
   return {
     idx: L.idx, startMs: L.startMs, durMs: L.durMs, clipInMs: L.clipInMs, speed: L.speed,
-    mute: L.mute, ignored: L.ignored, gain: L.gain, pan: L.pan, duck: L.duck, enter: L.enter, enterMs: L.enterMs, exit: L.exit, exitMs: L.exitMs,
+    mute: L.mute, ignored: L.ignored, gain: L.gain, pan: L.pan, duck: L.duck, pitch: L.pitch, varispeed: L.varispeed, enter: L.enter, enterMs: L.enterMs, exit: L.exit, exitMs: L.exitMs,
     enterEase: L.enterEase, exitEase: L.exitEase,
     split: L.split, splitStaggerMs: L.splitStaggerMs, splitOrder: L.splitOrder,
     splitUnits: L.splitUnits, splitSeed: L.splitSeed,
@@ -337,7 +341,7 @@ export function hydrateJobLayer(w: SeqJobLayer): SeqLayer {
   return {
     el: NO_EL,
     idx: w.idx, startMs: w.startMs, durMs: w.durMs, clipInMs: w.clipInMs, speed: w.speed,
-    mute: w.mute, ignored: !!w.ignored, gain: Number.isFinite(w.gain as number) ? (w.gain as number) : 1, pan: Number.isFinite(w.pan as number) ? (w.pan as number) : 0, duck: Number.isFinite(w.duck as number) ? (w.duck as number) : 1, enter: w.enter, enterMs: w.enterMs, exit: w.exit, exitMs: w.exitMs,
+    mute: w.mute, ignored: !!w.ignored, gain: Number.isFinite(w.gain as number) ? (w.gain as number) : 1, pan: Number.isFinite(w.pan as number) ? (w.pan as number) : 0, duck: Number.isFinite(w.duck as number) ? (w.duck as number) : 1, pitch: Number.isFinite(w.pitch as number) ? (w.pitch as number) : 0, varispeed: !!w.varispeed, enter: w.enter, enterMs: w.enterMs, exit: w.exit, exitMs: w.exitMs,
     enterEase: w.enterEase || '', exitEase: w.exitEase || '',
     split: w.split || '', splitStaggerMs: Number.isFinite(w.splitStaggerMs as number) ? (w.splitStaggerMs as number) : 0,
     splitOrder: w.splitOrder || '', splitUnits: Number.isFinite(w.splitUnits as number) ? (w.splitUnits as number) : 0,

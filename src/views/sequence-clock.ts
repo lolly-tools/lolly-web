@@ -688,7 +688,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
   function audioKey(url: string, timing: Timing): string {
     return `${url}|${timing.start}|${timing.dur}|${timing.clipIn}|${timing.speed}|${timing.mute ? 1 : 0}`
       + `|${timing.ignored ? 1 : 0}`
-      + `|${timing.gain}|${timing.pan}|${timing.duck}|${timing.enter ?? ''}:${timing.enterMs}|${timing.exit ?? ''}:${timing.exitMs}`;
+      + `|${timing.gain}|${timing.pan}|${timing.duck}|${timing.pitch}|${timing.varispeed ? 1 : 0}|${timing.enter ?? ''}:${timing.enterMs}|${timing.exit ?? ''}:${timing.exitMs}`;
   }
 
   /**
@@ -955,7 +955,10 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
         chs.push(all.subarray(from, from + srcN).slice());
       }
       const { stretchPcm } = await import('../lib/audio-stretch-core.ts');
-      const out = await stretchPcm(chs, { speed: timing.speed, rate: srcRate });
+      const pitchSt = Math.max(-12, Math.min(12, timing.pitch ?? 0));
+      const out = await stretchPcm(chs, timing.varispeed && timing.speed !== 1
+        ? { speed: timing.speed, factor: timing.speed * 2 ** (pitchSt / 12), rate: srcRate }
+        : { speed: timing.speed, semitones: pitchSt, rate: srcRate });
       const bounced = new AudioBuffer({ length: out[0]!.length, numberOfChannels: out.length, sampleRate: srcRate });
       for (let c = 0; c < out.length; c++) bounced.copyToChannel(out[c] as Float32Array<ArrayBuffer>, c);
       return bounced;
@@ -983,8 +986,8 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
     if (timing.mute || timing.ignored) { audios.set(el, { key, node: null, gainNode: null }); return; }
     if (!url) return;
     audios.set(el, { key, node: null, gainNode: null });
-    if (timing.speed !== 1) {
-      // Pitch-preserving stretch bounce (plans/165 WP-7): the box's window is
+    if (timing.speed !== 1 || timing.pitch !== 0) {
+      // Pitch/stretch bounce (plans/165 WP-7/WP-7b): the box's window is
       // rendered once by the SAME headless stretcher the export mix runs, cached
       // by the placement key (which carries speed, trim and window), and the
       // bounced buffer schedules exactly like any decoded track - so scrubbing
@@ -995,7 +998,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
         const bounced = await bounceStretch(buf, timing, key);
         const cur2 = audios.get(el);
         if (!bounced || !cur2 || cur2.key !== key || cur2.node) return;
-        startAudio(el, { ...timing, clipIn: 0, speed: 1 }, bounced);
+        startAudio(el, { ...timing, clipIn: 0, speed: 1, pitch: 0 }, bounced);
       });
       return;
     }
@@ -1055,6 +1058,10 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
         // looping element wraps to 0 inside a window trimmed past its media - the
         // export holds the last frame there, and the preview must show the same.
         if (rec.loopWas == null) { rec.loopWas = video.loop; try { video.loop = false; } catch { /* detached */ } }
+        // Preserve-pitch parity for the element path (plans/165 WP-7b): the browser
+        // holds a sped element's pitch by default, exactly like the export's
+        // stretch; a varispeed clip flips the element to tape-style too.
+        try { if (video.preservesPitch !== !timing.varispeed) video.preservesPitch = !timing.varispeed; } catch { /* older engine */ }
         const wantMuted = !!timing.mute || !!timing.ignored;
         if (video.muted !== wantMuted) video.muted = wantMuted;   // no per-frame write
         // Clip volume + fades on the element (plans/165 WP-1/2): the closed form of

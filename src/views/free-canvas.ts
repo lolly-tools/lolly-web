@@ -229,6 +229,8 @@ interface CanvasCfg {
   gainField?: string;
   panField?: string;
   duckField?: string;
+  pitchField?: string;
+  varispeedField?: string;
   /** OPTIONAL: the reversible-cut / strikethrough flag (plans/174). Machine-written
    *  by the Transcript panel; a tool without it never offers strikethrough. */
   ignoredField?: string;
@@ -1281,6 +1283,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       gainField: cv.gainField || '',
       panField: cv.panField || '',
       duckField: cv.duckField || '',
+      pitchField: cv.pitchField || '',
+      varispeedField: cv.varispeedField || '',
       // And the reversible-cut / strikethrough flag (plans/174, transcript-driven
       // editing). A tool that declares no `ignored` sub-field never offers the
       // Transcript panel's strike gesture - the same progressive gate as the rest.

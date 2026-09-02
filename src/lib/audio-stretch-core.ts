@@ -28,6 +28,9 @@ export interface StretchOpts {
   speed: number;
   /** Extra transpose in semitones (-12..12), on top of the pitch-preserve. 0 = none. */
   semitones?: number;
+  /** Transpose as a raw frequency MULTIPLIER (varispeed: pass the clip's speed so
+   *  pitch follows it tape-style). Takes precedence over `semitones`. */
+  factor?: number;
   /** Sample rate, Hz. Default 48000. */
   rate?: number;
 }
@@ -44,7 +47,7 @@ export async function stretchPcm(channels: readonly Float32Array[], opts: Stretc
   const ch = Math.max(1, channels.length);
   const total = channels[0]?.length ?? 0;
   const expected = Math.round(total / speed);
-  if (!total || speed === 1 && !(opts.semitones ?? 0)) {
+  if (!total || (speed === 1 && !(opts.semitones ?? 0) && !(opts.factor && opts.factor !== 1))) {
     return channels.map((c) => Float32Array.from(c));
   }
 
@@ -54,7 +57,18 @@ export async function stretchPcm(channels: readonly Float32Array[], opts: Stretc
   const inLat = m._inputLatency();
   const outLat = m._outputLatency();
   // The tonality limit Signalsmith's own worklet wrapper uses: 8 kHz scaled to rate.
-  m._setTransposeSemitones(opts.semitones ?? 0, 8000 / rate);
+  const tonality = 8000 / rate;
+  if (opts.factor && opts.factor !== 1) {
+    // Varispeed: pitch as a raw multiplier (the clip's speed), formants riding
+    // along - the tape sound is the point when preserve-pitch is switched off.
+    m._setTransposeFactor(opts.factor, tonality);
+  } else {
+    m._setTransposeSemitones(opts.semitones ?? 0, tonality);
+    // Formant preservation on an explicit transpose (plans/165 WP-7b): hold the
+    // formants at their recorded place while the pitch moves - the engine's own
+    // compensation flag, the same pair the upstream worklet wrapper passes.
+    if (opts.semitones) m._setFormantSemitones(0, 1);
+  }
 
   const bufLen = Math.max(Math.ceil(BLOCK * Math.max(1, speed)) + 16, inLat + outLat, BLOCK + 16);
   const ptr = m._setBuffers(ch, bufLen);

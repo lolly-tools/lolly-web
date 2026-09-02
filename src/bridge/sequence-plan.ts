@@ -228,6 +228,10 @@ export interface SeqLayer {
   pan: number;
   /** Duck-to level 0..1 while other audio plays (1 = no duck) - plans/165 WP-6 v1. */
   duck: number;
+  /** Pitch transpose in semitones (-12..12, 0 = as recorded) - plans/165 WP-7b. */
+  pitch: number;
+  /** Tape-style varispeed: pitch follows speed instead of being preserved - plans/165 WP-7b. */
+  varispeed: boolean;
   enter: TransitionKind | null;
   enterMs: number;
   exit: TransitionKind | null;
@@ -478,6 +482,8 @@ export function readLayer(el: HTMLElement, idx: number, totalMs: number): SeqLay
     gain: clamp(num(el.getAttribute?.('data-t-gain') ?? null, 1), 0, 2),
     pan: clamp(num(el.getAttribute?.('data-t-pan') ?? null, 0), -1, 1),
     duck: clamp(num(el.getAttribute?.('data-t-duck') ?? null, 1), 0, 1),
+    pitch: clamp(num(el.getAttribute?.('data-t-pitch') ?? null, 0), -12, 12),
+    varispeed: (el.getAttribute?.('data-t-varispeed') ?? null) === '1',
     enter: isTransitionKind(enter) ? enter : null,
     enterMs: clamp(num(el.getAttribute?.('data-t-enter-ms') ?? null, DEFAULT_TRANSITION_MS), MIN_TRANSITION_MS, MAX_TRANSITION_MS),
     exit: isTransitionKind(exit) ? exit : null,

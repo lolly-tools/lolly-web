@@ -13,6 +13,9 @@ export interface SignalsmithStretchModule {
   _seek(samples: number, playbackRate: number): void;
   _setTransposeSemitones(semitones: number, tonalityLimit: number): void;
   _setTransposeFactor(factor: number, tonalityLimit: number): void;
+  _setFormantSemitones(semitones: number, compensate: number): void;
+  _setFormantFactor(factor: number, compensate: number): void;
+  _setFormantBase(baseFreq: number): void;
   HEAP8: { buffer: ArrayBufferLike };
 }
 declare const factory: () => Promise<SignalsmithStretchModule>;
