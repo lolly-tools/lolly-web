@@ -21,18 +21,19 @@
  * both are imported lazily inside ingestPptxAsSvgAssets.
  */
 
-import { EMU_PER_PX, isPptx, readPptx } from '@lolly/engine';
+import { EMU_PER_PX, finalizeBoxes, isPptx, readPptx } from '@lolly/engine';
 import type { PageText, TextBlock } from '@lolly/engine';
+import type { DesignMapOptions } from '../../../../engine/src/design-map.ts';
 import { inflatePptx } from '../bridge/pptx.ts';
 import { rasterSize } from './svg-unpack.ts';
 import { parseFontMetadata, detectFontFormat, readFontEmbedding } from '../lib/font-utils.ts';
 import type {
-  PptxReadColor, PptxReadSlide, PptxReadTheme,
+  PptxDeckRead, PptxParts, PptxReadColor, PptxReadPara, PptxReadSlide, PptxReadTheme,
   PptxPicNode, PptxShapeNode, PptxTableNode, PptxTextNode,
 } from '../../../../engine/src/pptx-read.ts';
 import type { AssetRef, HostV1 } from '@lolly-tools/core/host-v1';
 // Type-only - erased at runtime, so this does NOT load the pdf-lib chunk.
-import type { PdfHandle, PdfPageSvg, EmbeddedImage, EmbeddedImageScan, EmbeddedFont } from './pdf-import.ts';
+import type { PdfHandle, PdfPageSvg, PdfPageFrame, PickPagesIntent, EmbeddedImage, EmbeddedImageScan, EmbeddedFont } from './pdf-import.ts';
 
 // ── rendering constants ────────────────────────────────────────────────────────
 
@@ -101,7 +102,8 @@ interface RenderCtx {
 export function pptxSlideToSvg(slide: PptxReadSlide, opts: PptxSlideRenderOpts): PdfPageSvg {
   const width = Math.max(1, Math.round(px(opts.widthEmu)));
   const height = Math.max(1, Math.round(px(opts.heightEmu)));
-  const bg = opts.theme.colors.lt1 ? `#${opts.theme.colors.lt1}` : '#ffffff';
+  // The slide's own ground (engine 1.166: slide → layout → master), else the theme's lt1.
+  const bg = hexAttr(slide.background?.color) ?? (opts.theme.colors.lt1 ? `#${opts.theme.colors.lt1}` : '#ffffff');
   const ctx: RenderCtx = {
     ink: opts.theme.colors.dk1 ? `#${opts.theme.colors.dk1}` : '#000000',
     bodyFont: opts.theme.minorFont || 'sans-serif',
@@ -110,7 +112,14 @@ export function pptxSlideToSvg(slide: PptxReadSlide, opts: PptxSlideRenderOpts):
 
   let elementCount = 0;
   const body: string[] = [];
-  for (const node of slide.nodes) {
+  // A picture ground paints over the colour and under everything else.
+  const bgMedia = slide.background?.media ? opts.getMedia(slide.background.media) : null;
+  if (bgMedia) {
+    body.push(`<image x="0" y="0" width="${width}" height="${height}" preserveAspectRatio="xMidYMid slice" href="${xmlEsc(bgMedia.dataUrl)}"/>`);
+    elementCount++;
+  }
+  // Inherited furniture (the layout's and master's shapes) first, then the slide's own.
+  for (const node of [...(slide.inherited ?? []), ...slide.nodes]) {
     const x = px(node.xEmu), y = px(node.yEmu);
     const w = Math.max(0, px(node.cxEmu)), h = Math.max(0, px(node.cyEmu));
     let markup = '';
@@ -227,8 +236,10 @@ function placeholder(x: number, y: number, w: number, h: number, label: string):
 
 /** Open a .pptx for slide-level conversion - the same handle shape as openPdfFile,
  *  so pickPdfPages and the ingest loop work over either document kind. */
-export async function openPptxFile(file: File | Blob): Promise<PdfHandle> {
-  const parts = await inflatePptx(new Uint8Array(await file.arrayBuffer()));
+export async function openPptxFile(file: File | Blob, inflated?: PptxParts): Promise<PdfHandle> {
+  // A caller that has already unzipped the package (design-import routes by the
+  // zip's contents) hands the parts in, so a 12 MB deck is not inflated twice.
+  const parts = inflated ?? await inflatePptx(new Uint8Array(await file.arrayBuffer()));
   if (!isPptx(parts)) throw new Error('Not a PowerPoint (.pptx) file.');
   // The parser is constructed here, not at module scope - node shells have no
   // DOMParser global (same rule as bridge/pptx.ts's createPptxAPI).
@@ -244,7 +255,7 @@ export async function openPptxFile(file: File | Blob): Promise<PdfHandle> {
     let out: { dataUrl: string } | null = null;
     const ext = /\.(png|jpe?g)$/i.exec(path)?.[1]?.toLowerCase();
     const part = parts[path];
-    if (ext && part && part.length > 0 && part.length <= MAX_MEDIA_BYTES) {
+    if (ext && part instanceof Uint8Array && part.length > 0 && part.length <= MAX_MEDIA_BYTES) {
       out = { dataUrl: `data:image/${ext === 'png' ? 'png' : 'jpeg'};base64,${bytesToBase64(part)}` };
     }
     mediaCache.set(path, out);
@@ -431,12 +442,16 @@ async function downloadDeckMarkdown(host: HostV1, file: File | Blob, name: strin
 export async function ingestPptxAsSvgAssets(
   host: HostV1,
   file: File | Blob,
-  { mode = 'multi', warn = () => {}, chooser = true }: {
+  { mode = 'multi', warn = () => {}, chooser = true, parts, intent = 'library' }: {
     mode?: 'single' | 'multi';
     warn?: (msg: string) => void;
     /** False when the CALLER already asked what to take from the deck (the drop
      *  router offers both routes in its own sheet), so no second dialog opens. */
     chooser?: boolean;
+    /** The package already unzipped (see openPptxFile) - skips a second inflate. */
+    parts?: PptxParts;
+    /** What the picker says the slides will become (library / artboards / scenes). */
+    intent?: PickPagesIntent;
   } = {},
 ): Promise<AssetRef[]> {
   const name = (file as File).name || 'deck.pptx';
@@ -460,7 +475,7 @@ export async function ingestPptxAsSvgAssets(
     if (!pick) return [];
     if (pick === 'markdown') { await downloadDeckMarkdown(host, file, name); return []; }
   }
-  const handle = await openPptxFile(file);
+  const handle = await openPptxFile(file, parts);
   if (!handle.pageCount) throw new Error('This deck has no slides.');
 
   let pages: number[];
@@ -471,7 +486,7 @@ export async function ingestPptxAsSvgAssets(
     // pulls pdf-lib in at MODULE scope, so a value import here would load the pdf
     // chunk for every deck (and break this module's node-side purity).
     const { pickPdfPages } = await import('./pdf-import.ts');
-    const picked = await pickPdfPages(handle, { mode, fileName: name });
+    const picked = await pickPdfPages(handle, { mode, fileName: name, intent });
     if (!picked?.length) return [];
     pages = picked;
   }
@@ -495,4 +510,327 @@ export async function ingestPptxAsSvgAssets(
   }
   if (!refs.length && handle.pageCount === 1) throw new Error('Couldn’t find any importable content in this deck.');
   return refs;
+}
+
+// ── slides as EDITABLE boxes (Design import) ───────────────────────────────────
+//
+// The other thing a deck can become: not a picture of each slide but the slide's
+// own parts as Design boxes - text you can retype, shapes you can recolour, the
+// pictures as image boxes - one artboard per slide, or one slide replacing the board.
+// The mapping is deliberately the SAME approximation `pptxSlideToSvg` draws (that is
+// what the thumbnails in the slide picker show), expressed as the engine's
+// DesignNodes and finalized through the same `finalizeBoxes` every other design
+// import uses, so a slide's boxes are indistinguishable from a Figma frame's.
+
+/** A stored ref for a media part, or null when it cannot be an image box. */
+export type PptxMediaResolver = (path: string) => AssetRef | null;
+
+export interface PptxNodeMapOpts {
+  widthEmu: number;
+  heightEmu: number;
+  theme: PptxReadTheme;
+  /** A media part path → an already-STORED asset ref (the caller owns the store). */
+  resolveMedia: PptxMediaResolver;
+}
+
+/** A design node as this module builds it - the engine's DesignNode, loosely. */
+export type PptxDesignNode = Record<string, unknown>;
+
+/** Boxes a slide may map to before the tail is dropped - a text-heavy table alone
+ *  can want hundreds, and Design is an editor, not a spreadsheet. */
+export const MAX_SLIDE_NODES = 160;
+
+/** Paragraph runs → the box's markdown-subset text: `**bold**`, `*italic*`, one
+ *  line per paragraph (an empty paragraph keeps its blank line, as on the slide). */
+export function pptxParasToText(paras: PptxReadPara[]): string {
+  return paras.map((p) => p.runs.map((r) => {
+    let m = r.text || '';
+    if (!m.trim()) return m;
+    if (r.bold) m = `**${m}**`;
+    if (r.italic) m = `*${m}*`;
+    return m;
+  }).join('')).join('\n').replace(/\n+$/, '');
+}
+
+/**
+ * ONE read-model slide → DesignNodes in slide px, paint order. Pure - no DOM, no
+ * store: pictures come in through `resolveMedia`, so the test suite runs it on a
+ * fixture and the importer runs it on a real deck with the refs it stored first.
+ *
+ *   text  → a text box: the paragraphs as markdown, size/face/ink/weight from the
+ *           first sized run (the slide's own ink and body face when it says nothing),
+ *           and the shape's fill (a coloured title bar) as the box's own background;
+ *   shape → a box with the fill, the outline and the geometry (ellipse / rounded /
+ *           rect - every other preset geometry is drawn as its bounding rect, the
+ *           renderer's own approximation); an invisible shape is skipped;
+ *   pic   → an image box stretched to its frame (`fit: fill`, what a placed picture
+ *           is), or a labelled placeholder when the part could not be stored;
+ *   table → an outlined box and one text box per cell, so every cell stays editable;
+ *   other → a labelled placeholder (charts, SmartArt, OLE) - the slide keeps its
+ *           layout instead of a hole, and the label says what was there.
+ */
+export function pptxSlideToNodes(slide: PptxReadSlide, opts: PptxNodeMapOpts): PptxDesignNode[] {
+  const ink = opts.theme.colors.dk1 ? `#${opts.theme.colors.dk1}` : '#000000';
+  const bodyFont = opts.theme.minorFont || '';
+  const out: PptxDesignNode[] = [];
+  const geo = (n: { xEmu: number; yEmu: number; cxEmu: number; cyEmu: number; rot?: number }) => ({
+    x: r(px(n.xEmu)), y: r(px(n.yEmu)), w: r(Math.max(1, px(n.cxEmu))), h: r(Math.max(1, px(n.cyEmu))),
+    ...(n.rot ? { rot: r(n.rot) } : {}),
+  });
+  // Light card + a small label naming the loss, so what did not survive is visible
+  // on the slide rather than a hole in it.
+  const placeholder = (g: ReturnType<typeof geo>, label: string): void => {
+    out.push({ kind: 'box', ...g, fill: PLACEHOLDER_FILL, shape: 'rect' });
+    const pad = Math.max(8, Math.round(Math.min(g.w, g.h) * 0.08));
+    out.push({
+      kind: 'text', x: g.x + pad, y: g.y + pad, w: Math.max(1, g.w - 2 * pad), h: Math.max(1, g.h - 2 * pad),
+      ...(g.rot ? { rot: g.rot } : {}),
+      text: label, fontSize: r(12 * PX_PER_PT), fg: PLACEHOLDER_INK, textAlign: 'center',
+    });
+  };
+
+  // A picture ground: one image box under everything, cropped to the slide.
+  const bgRef = slide.background?.media ? opts.resolveMedia(slide.background.media) : null;
+  if (bgRef) {
+    out.push({ kind: 'image', x: 0, y: 0, w: Math.max(1, Math.round(px(opts.widthEmu))), h: Math.max(1, Math.round(px(opts.heightEmu))), image: bgRef, fit: 'cover', fill: '' });
+  }
+  // Inherited furniture (engine 1.166) paints behind the slide's own nodes; the slide's
+  // placeholders are the slots the furniture was designed around.
+  for (const node of [...(slide.inherited ?? []), ...slide.nodes]) {
+    if (out.length >= MAX_SLIDE_NODES) break;
+    const g = geo(node);
+    switch (node.type) {
+      case 'text': {
+        const runs = node.paras.flatMap((p) => p.runs).filter((run) => run.text && run.text.trim());
+        const first = runs[0];
+        const sized = runs.find((run) => typeof run.sizePt === 'number' && run.sizePt > 0);
+        const pt = sized?.sizePt ?? DEFAULT_SIZE_PT;
+        // A slide-number field arrives as its `‹#›` token; on a board the number itself
+        // is what was on the page.
+        const text = node.ph?.type === 'sldNum'
+          ? pptxParasToText(node.paras).replace(/‹#›/g, String(slide.index + 1))
+          : pptxParasToText(node.paras);
+        const fill = hexAttr(node.fill);
+        // Nothing to read AND nothing to see: skip. A filled but empty text shape is
+        // still a shape (a colour bar drawn with the text tool), so it stays as a box.
+        if (!text.trim() && !fill) break;
+        out.push({
+          kind: text.trim() ? 'text' : 'box', ...g,
+          text,
+          fontSize: r(pt * PX_PER_PT),
+          fontFamily: first?.font || bodyFont,
+          fontWeight: first?.bold ? 700 : 400,
+          fg: hexAttr(first?.color) ?? ink,
+          lineHeight: LINE_HEIGHT,
+          ...(fill ? { fill } : { fill: '' }),
+          shape: node.geom === 'ellipse' ? 'ellipse' : node.geom === 'roundRect' ? 'rounded' : 'rect',
+        });
+        break;
+      }
+      case 'shape': {
+        const fill = hexAttr(node.fill);
+        const line = hexAttr(node.line);
+        if (!fill && !line) {
+          // An EMPTY content placeholder (a template's title / body slot, no fill, no
+          // outline, nothing typed) becomes an empty text box where the slot is - so a
+          // template imported as artboards keeps its slots to type into. Furniture
+          // slots (slide number, footer, date) and undecorated non-placeholder shapes
+          // stay invisible, as they are on the slide.
+          const kind = phKind(node.ph?.type);
+          if (node.ph && (kind === 'title' || kind === 'body' || kind === 'subTitle')) {
+            out.push({
+              kind: 'text', ...g, text: '', fill: '',
+              fontSize: r((kind === 'title' ? 28 : DEFAULT_SIZE_PT) * PX_PER_PT),
+              fontFamily: kind === 'title' ? (opts.theme.majorFont || bodyFont) : bodyFont,
+              fontWeight: kind === 'title' ? 700 : 400,
+              fg: ink, lineHeight: LINE_HEIGHT,
+            });
+          }
+          break;
+        }
+        out.push({
+          kind: 'box', ...g,
+          fill: fill ?? '',
+          shape: node.geom === 'ellipse' ? 'ellipse' : node.geom === 'roundRect' ? 'rounded' : 'rect',
+          ...(line ? { stroke: line, strokeW: r(Math.max(0.75, node.lineWidthPt ?? 1) * PX_PER_PT) } : {}),
+        });
+        break;
+      }
+      case 'pic': {
+        const ref = node.media ? opts.resolveMedia(node.media) : null;
+        if (ref) out.push({ kind: 'image', ...g, image: ref, fit: 'fill', fill: '' });
+        else placeholder(g, 'Image');
+        break;
+      }
+      case 'table': {
+        const rows = node.rows.slice(0, MAX_TABLE_ROWS);
+        if (!rows.length) break;
+        const cols = Math.min(MAX_TABLE_COLS, Math.max(1, ...rows.map((row) => row.length)));
+        const rowH = g.h / Math.max(1, rows.length), colW = g.w / cols;
+        out.push({ kind: 'box', ...g, fill: '', shape: 'rect', stroke: ink, strokeW: 1 });
+        rows.forEach((row, i) => {
+          row.slice(0, cols).forEach((cell, j) => {
+            if (!cell || out.length >= MAX_SLIDE_NODES) return;
+            out.push({
+              kind: 'text',
+              x: r(g.x + colW * j + 4), y: r(g.y + rowH * i), w: r(Math.max(1, colW - 8)), h: r(Math.max(1, rowH)),
+              text: cell, fontSize: r(TABLE_TEXT_PT * PX_PER_PT), fontFamily: bodyFont, fg: ink, fill: '',
+            });
+          });
+        });
+        break;
+      }
+      default:
+        placeholder(g, 'Chart / SmartArt');
+    }
+  }
+  return out;
+}
+
+/** `title`/`ctrTitle` are one slot; an absent type is `body` (ECMA-376's untyped `ph`). */
+function phKind(type: string | undefined): string {
+  if (!type) return 'body';
+  return type === 'ctrTitle' ? 'title' : type;
+}
+
+/** The slide size in px and the deck's ground (the theme's lt1, as the renderer paints it). */
+export function pptxDeckPage(deck: PptxDeckRead): { width: number; height: number; background: string } {
+  return {
+    width: Math.max(1, Math.round(px(deck.widthEmu))),
+    height: Math.max(1, Math.round(px(deck.heightEmu))),
+    background: deck.theme.colors.lt1 ? `#${deck.theme.colors.lt1}` : '#ffffff',
+  };
+}
+
+/** ONE slide's ground colour: its own (slide → layout → master, engine 1.166), else the deck's. */
+export function pptxSlideBackground(slide: PptxReadSlide, deck: PptxDeckRead): string {
+  return hexAttr(slide.background?.color) ?? pptxDeckPage(deck).background;
+}
+
+/** Media extension → MIME for the parts an image box can hold. Anything else (emf,
+ *  wmf, tiff, video…) stays a placeholder rather than an unreadable asset. */
+const MEDIA_MIME: Record<string, string> = {
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+  webp: 'image/webp', svg: 'image/svg+xml', bmp: 'image/bmp',
+};
+
+/**
+ * A media resolver that STORES each part once through the picker's ingest funnel
+ * (DOMPurify for an SVG part, metadata + checksum for a raster) and memoises the
+ * ref - the same logo on forty slides is one asset. Async on the outside (the
+ * store is), synchronous inside the mapper: `prime` stores every path the picked
+ * slides reference BEFORE `pptxSlideToNodes` runs.
+ */
+async function primeMedia(
+  host: HostV1, parts: PptxParts, slides: PptxReadSlide[], warn: (msg: string) => void,
+): Promise<PptxMediaResolver> {
+  const { storeUserUpload } = await import('./picker.ts');
+  const refs = new Map<string, AssetRef | null>();
+  const paths: string[] = [];
+  for (const slide of slides) {
+    if (slide.background?.media) paths.push(slide.background.media);
+    for (const node of [...(slide.inherited ?? []), ...slide.nodes]) if (node.type === 'pic' && node.media) paths.push(node.media);
+  }
+  {
+    for (const path of paths) {
+      if (refs.has(path)) continue;
+      const part = parts[path];
+      const ext = (/\.([a-z0-9]+)$/i.exec(path)?.[1] ?? '').toLowerCase();
+      const mime = MEDIA_MIME[ext];
+      if (!(part instanceof Uint8Array) || !part.length || part.length > MAX_MEDIA_BYTES || !mime) { refs.set(path, null); continue; }
+      try {
+        const file = new File([part as BlobPart], path.split('/').pop() || `image.${ext}`, { type: mime });
+        // `batch`: a deck re-imported, or two decks sharing a logo, must not ask per picture.
+        refs.set(path, await storeUserUpload(host as Parameters<typeof storeUserUpload>[0], file, { batch: true }));
+      } catch (err) {
+        warn(`Couldn’t store an image from the deck (${msg(err)}).`);
+        refs.set(path, null);
+      }
+    }
+  }
+  return (path) => refs.get(path) ?? null;
+}
+
+function readDeck(parts: PptxParts): PptxDeckRead {
+  if (!isPptx(parts)) throw new Error('Not a PowerPoint (.pptx) file.');
+  return readPptx(parts, (xml) => new DOMParser().parseFromString(xml, 'application/xml'));
+}
+
+/**
+ * ONE slide of a deck as Design boxes replacing the board - the .pptx twin of
+ * `parsePdfFile`. A multi-slide deck asks which slide through the shared page picker
+ * when `interactive`, else takes the first with a warning; `page` (0-based) wins.
+ */
+export async function parsePptxFile(
+  file: File | Blob,
+  parts: PptxParts,
+  { host, warn = () => {}, page, interactive, map }: {
+    host: HostV1; warn?: (msg: string) => void; page?: number; interactive?: boolean; map?: DesignMapOptions;
+  },
+): Promise<{ boxes: unknown[]; width: number; height: number; background: string }> {
+  const deck = readDeck(parts);
+  const count = deck.slides.length;
+  if (!count) throw new Error('This deck has no slides.');
+  let index = Math.min(Math.max(Math.floor(page ?? 0), 0), count - 1);
+  if (count > 1 && page == null) {
+    if (interactive) {
+      const [{ pickPdfPages }, handle] = await Promise.all([import('./pdf-import.ts'), openPptxFile(file, parts)]);
+      const picked = await pickPdfPages(handle, { mode: 'single', fileName: (file as File).name || '' });
+      if (!picked?.length) throw new Error('Import cancelled.');
+      index = picked[0]!;
+    } else {
+      warn(`Imported the first of ${count} slides.`);
+    }
+  }
+  const slide = deck.slides[index]!;
+  const resolveMedia = await primeMedia(host, parts, [slide], warn);
+  const { width, height } = pptxDeckPage(deck);
+  const boxes = finalizeBoxes(pptxSlideToNodes(slide, { widthEmu: deck.widthEmu, heightEmu: deck.heightEmu, theme: deck.theme, resolveMedia }) as never, { prefix: 's', ...map });
+  if (!boxes.length) throw new Error('Couldn’t find any importable content on that slide.');
+  return { boxes, width, height, background: pptxSlideBackground(slide, deck) };
+}
+
+/**
+ * SEVERAL slides as editable frames - the artboards import, `parsePdfPages`' twin.
+ * `pages` (0-based) names the slides; without it an interactive caller gets the
+ * shared picker with every slide pre-selected, a headless one takes them all (to
+ * the picker's own ceiling). A slide that maps to nothing is warned about and
+ * skipped; the frame keeps the slide's number as its name.
+ */
+export async function parsePptxPages(
+  file: File | Blob,
+  parts: PptxParts,
+  { host, warn = () => {}, pages, interactive, map }: {
+    host: HostV1; warn?: (msg: string) => void; pages?: number[]; interactive?: boolean; map?: DesignMapOptions;
+  },
+): Promise<{ frames: PdfPageFrame[]; background: string }> {
+  const deck = readDeck(parts);
+  const count = deck.slides.length;
+  if (!count) throw new Error('This deck has no slides.');
+  const { MAX_PAGE_FRAMES } = await import('./pdf-import.ts');
+  let picked: number[];
+  if (Array.isArray(pages) && pages.length) {
+    picked = pages.map((p) => Math.floor(p)).filter((p) => p >= 0 && p < count);
+  } else if (count > 1 && interactive) {
+    const [{ pickPdfPages }, handle] = await Promise.all([import('./pdf-import.ts'), openPptxFile(file, parts)]);
+    const chosen = await pickPdfPages(handle, { mode: 'multi', fileName: (file as File).name || '', intent: 'artboards' });
+    if (!chosen?.length) throw new Error('Import cancelled.');
+    picked = chosen;
+  } else {
+    picked = Array.from({ length: Math.min(count, MAX_PAGE_FRAMES) }, (_, i) => i);
+    if (count > MAX_PAGE_FRAMES) warn(`This deck has ${count} slides - only the first ${MAX_PAGE_FRAMES} were imported.`);
+  }
+  const slides = picked.map((i) => deck.slides[i]!).filter(Boolean);
+  const resolveMedia = await primeMedia(host, parts, slides, warn);
+  const { width, height, background } = pptxDeckPage(deck);
+  const frames: PdfPageFrame[] = [];
+  for (const i of picked) {
+    const slide = deck.slides[i];
+    if (!slide) continue;
+    const boxes = finalizeBoxes(pptxSlideToNodes(slide, { widthEmu: deck.widthEmu, heightEmu: deck.heightEmu, theme: deck.theme, resolveMedia }) as never, { prefix: 's', ...map });
+    if (!boxes.length) { warn(`Slide ${i + 1} has no importable content - skipped.`); continue; }
+    frames.push({ name: `Slide ${i + 1}`, width, height, boxes, background: pptxSlideBackground(slide, deck) });
+  }
+  if (!frames.length) throw new Error('Couldn’t find any importable content in this deck.');
+  return { frames, background };
 }

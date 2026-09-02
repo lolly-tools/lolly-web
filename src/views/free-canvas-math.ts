@@ -579,6 +579,13 @@ export interface LiftOptions {
   /** How the source box renders the image: `contain` (default), `cover`, `fill`. */
   fit?: string;
   /**
+   * An UNGROUP, not a lift: the rows keep the source's own depth and shadow, so nothing
+   * changes but the layering - an imported SVG comes apart into the parts it was drawn
+   * from, each an ordinary box where the ink was. Off (the default) the rows climb the
+   * depth ladder with `shadow: depth`, plans/104 section 7's stack.
+   */
+  flat?: boolean;
+  /**
    * Depth-intensity multiplier for the derived stack (audit A5#2) - one of
    * {@link LIFT_STRENGTH}. Absent / 1 is the shipped taste ceiling, so a lift with no
    * strength chosen is byte-identical to every lift before the control existed.
@@ -913,7 +920,9 @@ export function liftSlots(crops: ReadonlyArray<LiftLayerSource['crop'] | undefin
  * Note on `shadow: depth` at z = 0: the derivation is a pure function of z
  * (section 12.5), and at z = 0 it is still a 10 px ground shadow - the bottom layer is
  * lifted off the surface too, which is the look section 7 asks for. Pass `shadow: ''`
- * for a lift that changes nothing but the layering.
+ * for a lift that changes nothing but the layering - or `flat: true`, which is that
+ * plus "keep the source's own depth": the Ungroup of an imported SVG, where a depth
+ * ladder would be a surprise on a board that has no camera.
  */
 export function liftRows(
   source: Box,
@@ -922,7 +931,8 @@ export function liftRows(
   opts: LiftOptions = {},
 ): Box[] {
   if (!Array.isArray(layers) || !layers.length) return [];
-  const shadow = opts.shadow === undefined ? 'depth' : opts.shadow;
+  const flat = opts.flat === true;
+  const shadow = opts.shadow === undefined ? (flat ? '' : 'depth') : opts.shadow;
   const last = layers.length - 1;
 
   const src = boxRect(source, cfg);
@@ -938,7 +948,7 @@ export function liftRows(
     row[cfg.imageField] = layer.src;
     if (cfg.kindField && opts.kind) row[cfg.kindField] = opts.kind;
     if (cfg.groupField && opts.group) row[cfg.groupField] = opts.group;
-    if (cfg.zField) row[cfg.zField] = depths[i]!;
+    if (cfg.zField && !flat) row[cfg.zField] = depths[i]!;
     if (cfg.shadowField && shadow) row[cfg.shadowField] = shadow;
     const crop = crops[i];
     if (crop && content) {
@@ -1106,6 +1116,107 @@ export function isSvgImageRef(v: unknown): boolean {
   // Extension test on the PATH only - a `?v=2` cache-buster or a `#frag` must not
   // hide a `.svg`, and a `?x=.svg` query must not promote a PNG.
   return /\.svg$/i.test(url.split(/[?#]/)[0] || '');
+}
+
+/** One page of an imported document, in its own coordinates, ready to become an artboard. */
+export interface ArtboardFrameSource {
+  name: string;
+  width: number;
+  height: number;
+  boxes: Box[];
+  /** This page's own ground, painted as the frame's fill; else the document's. */
+  background?: string;
+}
+
+export interface ArtboardLayoutOpts {
+  cfg: BoxFieldConfig & {
+    kindField: string;
+    groupField?: string;
+    clipField?: string;
+    labelField?: string;
+    fillField?: string;
+  };
+  /** The frame primitive's field names (canvas.frameField / frameKind / orderField). */
+  frameField: string;
+  frameKind: string;
+  orderField?: string;
+  /** The Artboard add-kind's seed - the frame box's declared look (kind, bg, …). */
+  frameSeed?: Box | null;
+  /** Mint an id unused by `used` - the shell's ULID minter. */
+  mintId: (used: Box[]) => string;
+  /** Page ground painted onto every frame that has no fill of its own. */
+  background?: string;
+  /** Horizontal gap between artboards, px. Default 8 % of the widest page (min 40). */
+  gap?: number;
+}
+
+/**
+ * Lay imported pages out as ARTBOARDS: one frame box per page, left to right along
+ * y = 0 with a gap between them, each page's boxes inside it as members. Pure - ids
+ * come from `mintId`, field names from the caller - so the deck import and its test
+ * share one layout.
+ *
+ * What a member needs to be a member: its rect shifted by the frame's origin (frames
+ * store their children at ABSOLUTE canvas coordinates plus a `frame` field naming the
+ * page - `frameLocalXY` is what the hook subtracts back out), a fresh id (every page
+ * arrives from `finalizeBoxes` as `p0, p1, …`, so two pages collide on every id), and
+ * the references that point at those ids re-pointed: a clip's mask id, and the group
+ * tags, which are compared for equality across the WHOLE document and would otherwise
+ * merge page 3's "g2" with page 7's. The frame boxes carry `order` = page index, the
+ * hook's play order, and the page's own name where the tool has a label field.
+ *
+ * The first artboard sits at the origin so it coincides with the export frame - the
+ * same rule `addArtboard` follows - and the pages keep their own sizes: a deck of
+ * 16:9 slides with one portrait handout stays a deck with one portrait handout.
+ */
+export function layoutArtboards(frames: ArtboardFrameSource[], opts: ArtboardLayoutOpts): Box[] {
+  const { cfg, frameField, frameKind, orderField, mintId } = opts;
+  const list = Array.isArray(frames) ? frames.filter((f) => f && f.width > 0 && f.height > 0) : [];
+  if (!list.length) return [];
+  const widest = list.reduce((m, f) => Math.max(m, f.width), 0);
+  const gap = Number.isFinite(opts.gap) && (opts.gap as number) >= 0 ? (opts.gap as number) : Math.max(40, Math.round(widest * 0.08));
+
+  const out: Box[] = [];
+  let x = 0;
+  list.forEach((frame, index) => {
+    const fid = mintId(out);
+    const seed = { ...(opts.frameSeed || {}) } as Box;
+    const fb: Box = seedBox(cfg, {}, seed, { x, y: 0, w: frame.width, h: frame.height, rot: 0 }, fid);
+    fb[cfg.kindField] = frameKind;
+    if (orderField) fb[orderField] = index;
+    if (cfg.labelField && frame.name) fb[cfg.labelField] = frame.name;
+    const ground = frame.background || opts.background;
+    if (cfg.fillField && ground) fb[cfg.fillField] = ground;
+    fb[frameField] = '';   // a frame never nests
+    out.push(fb);
+
+    // Members: fresh ids first (minted against the growing array), then every
+    // reference rewritten through the same map.
+    const idMap = new Map<string, string>();
+    const members = (Array.isArray(frame.boxes) ? frame.boxes : []).filter((b): b is Box => !!b && typeof b === 'object');
+    for (const b of members) {
+      const old = b[cfg.idField] == null ? '' : String(b[cfg.idField]);
+      const id = mintId(out);
+      if (old) idMap.set(old, id);
+      out.push({ [cfg.idField]: id } as Box);   // reserve the id; replaced below
+    }
+    const base = out.length - members.length;
+    members.forEach((b, i) => {
+      const row: Box = { ...b };
+      row[cfg.idField] = out[base + i]![cfg.idField];
+      row[cfg.xField] = num(b[cfg.xField]) + x;
+      row[cfg.yField] = num(b[cfg.yField]);
+      row[frameField] = fid;
+      if (cfg.clipField && row[cfg.clipField]) {
+        const to = idMap.get(String(row[cfg.clipField]));
+        row[cfg.clipField] = to ?? '';
+      }
+      if (cfg.groupField && row[cfg.groupField]) row[cfg.groupField] = `${index}.${String(row[cfg.groupField])}`;
+      out[base + i] = row;
+    });
+    x += frame.width + gap;
+  });
+  return out;
 }
 
 /**

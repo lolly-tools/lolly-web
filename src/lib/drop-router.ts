@@ -100,6 +100,15 @@ export const TOKENS_SNIFF_MAX_BYTES = 4 * 1024 * 1024;
 
 let pendingDesign: { file: File; scenes: boolean } | null = null;
 
+/** Is a design file waiting for Design to consume it? A PEEK, not a take: the tool
+ *  view asks this before opening its launch-time template chooser, because a file
+ *  arriving through the drop door already IS the document - a "pick a template" modal
+ *  over it is the wrong question, and a template applied under a running import
+ *  re-mounts the canvas and orphans the import (measured 2026-09-02). */
+export function hasPendingDesignImport(): boolean {
+  return pendingDesign !== null;
+}
+
 /** Consume the design file stashed by a drop route into Design - single use,
  *  cleared on read. free-canvas checks this on mount. `scenes` carries the
  *  "as timed scenes vs replace the board" choice the drop door offered
@@ -400,7 +409,9 @@ export function dropChooserChoices(s: Sniff, ctx: ChooserContext): DialogChoice[
   if (single && s.archive) {
     choices.push({ id: 'unpack', label: t('Unpack archive to your library'), primary: !packZip && !toolZip });
   }
-  if (single && (s.design || s.pdf) && has('design')) {
+  // A deck (.pptx) is a design document too: its slides come in as editable
+  // artboards or as timed scenes, the same doors a PDF gets (Andy, 2026-09-02).
+  if (single && (s.design || s.pdf || s.pptx) && has('design')) {
     choices.push({ id: 'design', label: t('Edit in Design'), primary: !s.archive });
   }
   // The Design System studio door, next to the Design one so the two
@@ -416,7 +427,7 @@ export function dropChooserChoices(s: Sniff, ctx: ChooserContext): DialogChoice[
   // Frames → timed scenes: the same design/PDF sniff can open in Design as a video
   // sequence, each frame a timed scene (free-canvas's scene-mode import consumes the
   // stash on mount). The other half of the section 337 "as scenes vs replace the board" choice.
-  if (single && (s.design || s.pdf) && has('design')) {
+  if (single && (s.design || s.pdf || s.pptx) && has('design')) {
     choices.push({ id: 'sequence', label: t('Make a video from its frames') });
   }
   // A .penpot can carry per-shape export marks; the ingest bakes them through an
@@ -445,7 +456,8 @@ export function dropChooserChoices(s: Sniff, ctx: ChooserContext): DialogChoice[
   // ONE sheet: the deck ingest's own chooser is skipped when this one already asked
   // (ingestPptxAsSvgAssets's `chooser: false`), so no route shows two dialogs.
   if (single && s.pptx) {
-    choices.push({ id: 'library', label: t('Add slides to your library'), primary: true });
+    // Leads only when Design is not here to lead (a build without the tool).
+    choices.push({ id: 'library', label: t('Add slides to your library'), primary: !choices.some((c) => c.primary) });
     choices.push({ id: 'extract', label: t('Extract content (Markdown)') });
   }
   // A Word document has no picture route - its content IS the file.

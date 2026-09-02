@@ -35,7 +35,8 @@
  * on purpose - its rules can only match inside a `.docs-landing`, so it costs nothing
  * once the reader has moved on.
  */
-import { toAppHref } from './docs-nav.ts';
+import { toAppHref, toReaderHref } from './docs-nav.ts';
+import { mountCoverFlow } from './covers-flow.ts';
 import landingCss from '../styles/parts/docs-landing.css?raw';
 
 /** Marks the singleton <style> so a second landing mount reuses it. */
@@ -117,6 +118,63 @@ export function adaptLandingLinks(root: ParentNode): void {
   root.querySelectorAll<HTMLAnchorElement>('a[href]').forEach((a) => {
     const app = toAppHref(a.getAttribute('href') || '');
     if (app) a.setAttribute('href', app);
+    // The static build's liquid-glass script bakes a `backdrop-filter: url(#lg…)`
+    // INLINE onto every primary/secondary button; the SVG filter it references is
+    // built by a page script the reader strips, and Chromium paints an element
+    // whose filter reference is unresolvable as BLANK. Strip the baked style so
+    // the fragment's buttons keep their ordinary fill in-app.
+    if (a.style.backdropFilter) {
+      a.style.removeProperty('backdrop-filter');
+      a.style.removeProperty('-webkit-backdrop-filter');
+    }
   });
+}
+
+/**
+ * The hero's "Lolly is …" cycle, rehosted (plans/177). The static page runs
+ * HERO_CYCLE_JS (docs/build.ts); the reader strips scripts, so this is the same
+ * behaviour in module form - the deliberate duplication the landing rehost
+ * already lives with (see the file header). Word list and receipt hrefs ride
+ * the element's own data-cycle attribute, so copy edits never touch this file;
+ * hrefs are mapped through toReaderHref so a click stays in the SPA. The
+ * interval dies with the element: it self-clears when the node leaves the
+ * document, so unmount needs no teardown hook.
+ */
+/**
+ * The covers Cover Flow, rehosted (plans/177; Andy 2026-09-02: the fan belongs
+ * in-app too). ONE implementation for both surfaces: lib/covers-flow.ts is what
+ * docs/build.ts bundles into the static page's inline script and what this
+ * import mounts on the rehosted fragment - no twin to keep in step. The
+ * module's listeners live on fragment nodes and its timers self-clear when the
+ * root leaves the document, so unmount needs no teardown.
+ */
+export function hydrateLandingCovers(root: ParentNode): void {
+  mountCoverFlow(root);
+}
+
+export function hydrateLandingCycle(root: ParentNode): void {
+  const a = root.querySelector<HTMLAnchorElement>('#heroCycle');
+  if (!a) return;
+  let data: Array<{ w: string; h: string }>;
+  try { data = JSON.parse(a.getAttribute('data-cycle') || ''); } catch { return; }
+  if (!Array.isArray(data) || data.length < 2) return;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return; // the first word stands
+  const word = a.querySelector('span') ?? a;
+  let i = 0;
+  let hold = 0;
+  const seat = (href: string): string => toReaderHref(href) ?? href;
+  a.addEventListener('mouseenter', () => { hold = Math.max(hold, Date.now() + 6000); });
+  a.addEventListener('focus', () => { hold = Math.max(hold, Date.now() + 6000); });
+  const timer = setInterval(() => {
+    if (!a.isConnected) { clearInterval(timer); return; }
+    if (Date.now() < hold || document.hidden) return;
+    i = (i + 1) % data.length;
+    a.classList.add('is-swapping');
+    setTimeout(() => {
+      word.textContent = data[i]!.w;
+      a.setAttribute('href', seat(data[i]!.h));
+      a.classList.remove('is-swapping');
+    }, 240);
+  }, 2800);
 }
 

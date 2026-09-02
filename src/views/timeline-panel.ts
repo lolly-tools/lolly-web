@@ -8,7 +8,7 @@
  *
  *  1. NO EDITING ARITHMETIC LIVES HERE. Every model mutation goes through
  *     ./timeline-math.ts (packSeq / moveSeqClip / removeAndRipple / trimClip /
- *     splitAll / joinClips / detachAudio / reattachAudio / snapTime / deriveDuration /
+ *     trimClips / splitAll / joinClips / detachAudio / reattachAudio / snapTime / deriveDuration /
  *     fmtTime). The panel converts pixels to
  *     seconds and hands seconds to that module. If a gesture needs a new clamp, the
  *     clamp belongs in timeline-math beside the one it must agree with - never
@@ -89,7 +89,7 @@ import {
   groupDropIndex, moveOverlays, moveSeqClips, staggerOverlays,
   setClipIn, setDuration, setSpeed,
   detachAudio, isThroughEdit, joinClips, reattachAudio, restackOverlay, splitAll,
-  snapTime, trimClip,
+  snapTime, trimClip, trimClips,
   // The keyframe surface's arithmetic (plans/104 section 8). EVERY number the diamonds, the
   // latch and the CRUD list need is one of these - the panel converts a pointer to an
   // intent and hands the intent over.
@@ -117,6 +117,7 @@ import { removedSpansTimeline, originalToEdited, editedToOriginal } from './tran
 // and a finished transcript outlives the panel.
 import { startTranscribeJob, stashedTranscript } from '../lib/stt-job.ts';
 import { fmtBytes } from '../lib/format.ts';
+import { subscribeRecordPreview } from '../lib/record-preview.ts';
 import type { AssetRef, AudioLevel, HostV1, RecorderAPI, RecordSession, SpeechAPI, SpeechWordTiming } from '@lolly-tools/core/host-v1';
 import type { VideoJobHost } from '../lib/video-jobs.ts';
 import { isTypingTarget } from '../lib/typing-target.ts';
@@ -217,11 +218,26 @@ export interface TimelineAddDetail {
   kind: string;
   /** Playhead time, ms - where the created box must START. */
   atMs: number;
+  /**
+   * A finished camera take (the panel's "Record a video"): the durable user asset the
+   * recording became, so the canvas creates the clip WITH its media - no create
+   * gesture, no picker - full-frame at `atMs`. Absent for the plus menu's adds.
+   */
+  asset?: AssetRef;
+  /** The take's MEASURED length, seconds - the box's authored duration. */
+  durSec?: number;
 }
 
 export interface TimelinePanelOpts {
   stageEl: HTMLElement;
   canvasEl: HTMLElement;
+  /**
+   * The size a render of this document exports at - the active artboard, else the
+   * canvas - in px. The camera button records a take cover-cropped to exactly this
+   * frame (RecordOpts.frame), so a colleague's clip already fits the picture. Absent
+   * (or null) → the camera records at its own size.
+   */
+  frameSize?: () => { w: number; h: number } | null;
   runtime: TimelineRuntime;
   host: TimelineHost;
   blockId: string;
@@ -427,7 +443,7 @@ const MIN_FRAME_PX = 40;
  * MUTABLE on purpose, like the engine's HOOK_BUDGET_MS: a jsdom test drives the whole
  * take through in one tick by zeroing the count-in, rather than sleeping 1.8 s.
  */
-export const TAKE_TIMING = { countInMs: 600, maxMs: 10 * 60 * 1000, warnMs: 5000 };
+export const TAKE_TIMING = { countInMs: 600, maxMs: 10 * 60 * 1000, videoMaxMs: 2 * 60 * 1000, warnMs: 5000 };
 
 /**
  * The depth SLIDER's travel (plans/104 section 5.3). NOT a clamp: `KF_Z_FIELD_CLAMP` is the
@@ -928,8 +944,10 @@ interface Gesture {
   moved: boolean;
   /** Marquee only: the drag ADDS to the current selection (Shift/Cmd held). */
   additive?: boolean;
-  /** move/reorder only: when >1, drag the whole selection as a batch (one undo step).
-   *  moveOverlays/moveSeqClips each act on the same-lane members and ignore the rest. */
+  /** move/reorder/trim: when >1, the gesture acts on the whole selection as a batch
+   *  (one undo step). moveOverlays/moveSeqClips each act on the same-lane members and
+   *  ignore the rest; trimClips trims the SAME edge of every selected clip by the same
+   *  delta, each clamped to its own source - "drag one edge, resize the group". */
   groupIds?: string[];
   /** move/reorder only: a plain press on an already-multi-selected clip keeps the set
    *  for a possible group drag; if it turns out to be a click (no move), collapse to this
@@ -1315,6 +1333,14 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   // the same progressive-capability terms as the mic (see canRecordVoiceover).
   const scriptBtn = btn('tl-script', t('Script a voiceover'), icon('speech'));
   scriptBtn.hidden = true;   // decided below, beside the mic's check
+  // Record a VIDEO (Andy, 2026-09-02: a colleague opens the shared link, presses this,
+  // and their clip joins the sequence already cut to the export frame). The mic's
+  // twin on the camera: same count-in, HUD and teardown, but the take is recorded
+  // cover-cropped to `frameSize()` (RecordOpts.frame) and handed to the canvas as a
+  // full-frame `clip` through the tl-add seam. Shown on the same progressive terms as
+  // the mic (canRecordVideo).
+  const camBtn = btn('tl-cam', t('Record a video'), icon('camera'));
+  camBtn.hidden = true;
 
   /**
    * "+Keyframe" - one of its TWO homes (plans/104 section 8's M2.5 revision).
@@ -1377,7 +1403,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   const tools = document.createElement('div');
   tools.className = 'tl-tools';
   // `kfBtn` LAST - the end of the left cluster, after the keyboard sheet (section 8's M2.6).
-  tools.append(addBtn, micBtn, scriptBtn, transcriptBtn, splitBtn, snapBtn, onionBtn, zoomOutBtn, zoomInBtn, fitBtn, keysBtn, kfBtn);
+  tools.append(addBtn, micBtn, camBtn, scriptBtn, transcriptBtn, splitBtn, snapBtn, onionBtn, zoomOutBtn, zoomInBtn, fitBtn, keysBtn, kfBtn);
   const inspector = document.createElement('div');
   inspector.className = 'tl-inspector';
   bar.append(transport, tools, rec, recNote, inspector);
@@ -5908,6 +5934,25 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     return barEl.querySelector<HTMLElement>(`.tl-edge[data-edge="${edge}"]`);
   }
 
+  /** The clips a trim gesture acts on: the whole selection when it was a multi-selection
+   *  at pointerdown, else just the pressed clip. Same set for the preview and the commit. */
+  function trimIdsOf(g: Gesture): string[] {
+    return g.groupIds && g.groupIds.length > 1 && g.groupIds.includes(g.id) ? g.groupIds : [g.id];
+  }
+
+  /**
+   * The ONE trim writer the preview and the commit both run - a throwaway array per
+   * rAF frame, the real thing on pointerup - so the bar under the pointer, the other
+   * selected bars and the rippled row can never disagree with what is written. `ids` is the
+   * batch (trimClips: same edge, same delta, per-clip clamps) or the single clip
+   * (trimClip), each clamped against its own media length.
+   */
+  function trimRows(boxes: Box[], ids: readonly string[], edge: 'in' | 'out', d: number): Box[] {
+    if (ids.length > 1) return trimClips(boxes, cfg, ids, edge, d, (id) => mediaOf(id).dur, mediaDur);
+    const id = ids[0] ?? '';
+    return trimClip(boxes, cfg, id, edge, d, mediaOf(id).dur, mediaDur);
+  }
+
   /** Vertical offset of `el` inside `inner`, walking the offsetParent chain. */
   function offsetIn(el: HTMLElement): number {
     let y = 0;
@@ -6126,7 +6171,12 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
     const base = { id, el: barEl, x0: e.clientX, y0: e.clientY, start0: start, dur0: dur, h0: panelH };
     if (edge) {
-      beginGesture(e, { ...base, kind: 'trim', edge, index0: 0, index: 0 });
+      // The selection rides along: with several clips selected, dragging one edge trims
+      // that edge on ALL of them (Andy, 2026-09-02 - "drag from the edges to shrink or
+      // grow the whole group's duration"). A press on an unselected clip has already
+      // collapsed the selection to it (plus its A/V partner, which trims with it the way
+      // a linked pair does in every NLE), so a lone clip is still a lone trim.
+      beginGesture(e, { ...base, kind: 'trim', edge, index0: 0, index: 0, groupIds });
       return;
     }
 
@@ -6281,7 +6331,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const raw = g.edge === 'in' ? g.start0 + deltaSec : g.start0 + g.dur0 + deltaSec;
       const snapped = maybeSnap(raw, g.alt, g.id);
       const d = g.edge === 'in' ? snapped - g.start0 : snapped - (g.start0 + g.dur0);
-      const rows = trimClip(getBoxes(), cfg, g.id, g.edge ?? 'out', d, mediaOf(g.id).dur, mediaDur);
+      const rows = trimRows(getBoxes(), trimIdsOf(g), g.edge ?? 'out', d);
       previewRows(rows);
       const i = indexOfId(rows, cfg, g.id);
       if (i < 0) return;
@@ -6459,7 +6509,8 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const raw = g.edge === 'in' ? g.start0 + deltaSec : g.start0 + g.dur0 + deltaSec;
       const snapped = maybeSnap(raw, alt, g.id, coarse);
       const d = g.edge === 'in' ? snapped - g.start0 : snapped - (g.start0 + g.dur0);
-      const next = trimClip(boxes, cfg, g.id, g.edge ?? 'out', d, mediaOf(g.id).dur, mediaDur);
+      const ids = trimIdsOf(g);
+      const next = trimRows(boxes, ids, g.edge ?? 'out', d);
       write(next);
       // The badge was aria-hidden throughout (sixty updates a second is not speech);
       // this is its ONE spoken form, and it reports what actually landed, not what was
@@ -6467,9 +6518,14 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const j = indexOfId(next, cfg, g.id);
       if (j >= 0) {
         const now = span(next[j]!, durationSec()).dur;
-        announce(tRaw('{name}: {dur}, trimmed {delta}', {
-          name: labelFor(g.id), dur: fmtDur(now), delta: fmtDelta(now - g.dur0),
-        }));
+        // A batch reads back the pressed clip's own delta with the count: every
+        // selected edge asked for the same move, and the pressed bar is the one the
+        // badge was following, so its number is the one the user was watching.
+        announce(ids.length > 1
+          ? tRaw('{count} clips trimmed {delta}', { count: ids.length, delta: fmtDelta(now - g.dur0) })
+          : tRaw('{name}: {dur}, trimmed {delta}', {
+            name: labelFor(g.id), dur: fmtDur(now), delta: fmtDelta(now - g.dur0),
+          }));
       }
     } else if (g.kind === 'reorder') {
       // Re-derive from the FINAL pointer position rather than trusting g.index: that one
@@ -7087,7 +7143,12 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const i = indexOfId(boxes, cfg, id);
     if (i < 0) return;
     const before = span(boxes[i]!, durationSec()).dur;
-    const next = trimClip(boxes, cfg, id, focusedEdge, deltaSec, mediaOf(id).dur, mediaDur);
+    // The keyboard follows the pointer's rule: a nudge with several clips selected
+    // (the target among them) walks that edge on every one of them, so `,` / `.` and
+    // an edge drag are the same edit at different speeds.
+    const sel = selection.get();
+    const ids = sel.length > 1 && sel.includes(id) ? sel : [id];
+    const next = trimRows(boxes, ids, focusedEdge, deltaSec);
     // A press that hit a wall must not cost an undo entry - the same rule the split blade
     // already follows ("a split at an existing cut writes NOTHING"). Compared on the
     // resolved TIMING of every row, not on raw field equality: trimClip writes clipIn
@@ -7099,9 +7160,11 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (timingSig(next) !== timingSig(boxes)) write(next);
     const j = indexOfId(next, cfg, id);
     const now = j >= 0 ? span(next[j]!, durationSec()).dur : before;
-    const said = tRaw('{name}: {dur}, trimmed {delta}', {
-      name: labelFor(id), dur: fmtDur(now), delta: fmtDelta(now - before),
-    });
+    const said = ids.length > 1
+      ? tRaw('{count} clips trimmed {delta}', { count: ids.length, delta: fmtDelta(now - before) })
+      : tRaw('{name}: {dur}, trimmed {delta}', {
+        name: labelFor(id), dur: fmtDur(now), delta: fmtDelta(now - before),
+      });
     announce(lead ? `${lead} ${said}` : said);
   }
 
@@ -7148,8 +7211,13 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   //     arithmetic lives in this view - see the module header.
 
   type TakePhase = 'idle' | 'countin' | 'recording' | 'saving';
+  /** What the live take captures: the mic alone (a voiceover box) or camera + mic
+   *  (a full-frame clip). Decided by the button pressed; read by every branch below. */
+  type TakeKind = 'audio' | 'video';
 
   let takePhase: TakePhase = 'idle';
+  let takeKind: TakeKind = 'audio';
+  const takeMaxMs = (): number => (takeKind === 'video' ? TAKE_TIMING.videoMaxMs : TAKE_TIMING.maxMs);
   let takeSession: RecordSession | null = null;
   let takeLevelOff: (() => void) | null = null;
   /** Microphone METER references this panel currently holds. A COUNT, not a boolean:
@@ -7223,6 +7291,52 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     try { return sp.isAvailable(); } catch { return false; }
   }
 
+  /** The manifest's sequence-clip add-kind - what a camera take becomes. */
+  const clipKind = (): TimelineAddKind | undefined => addKinds.find((k) => k.id === 'clip');
+
+  /** The camera's two questions: can this shell capture video, and does the tool have
+   *  a clip vocabulary for the take to land in. Same progressive terms as the mic. */
+  function canRecordVideo(): boolean {
+    const r = host.recorder;
+    if (!r || typeof r.isAvailable !== 'function' || !clipKind()) return false;
+    try { return r.isAvailable('video'); } catch { return false; }
+  }
+
+  // ── the camera self-view ──────────────────────────────────────────────────────
+  // While a video take runs, the recorder bridge publishes its (already framed)
+  // capture stream on the shell-internal preview channel; a small <video> in the
+  // stage's corner mirrors it so the person can see how they sit in the frame.
+  // Stage-mounted with data-export-hide, so no export path can ever pick it up.
+  let camView: HTMLElement | null = null;
+  let camPreviewOff: (() => void) | null = null;
+  function showCamView(): void {
+    if (camView) return;
+    const size = opts.frameSize?.() ?? null;
+    const el = document.createElement('div');
+    el.className = 'tl-cam-view';
+    el.setAttribute('data-export-hide', '');
+    el.setAttribute('aria-hidden', 'true');
+    if (size && size.w > 0 && size.h > 0) el.style.aspectRatio = `${size.w} / ${size.h}`;
+    const v = document.createElement('video');
+    v.muted = true;
+    v.autoplay = true;
+    v.playsInline = true;
+    v.setAttribute('playsinline', '');
+    el.appendChild(v);
+    opts.stageEl.appendChild(el);
+    camView = el;
+    camPreviewOff = subscribeRecordPreview((stream) => {
+      v.srcObject = stream;
+      if (stream && typeof v.play === 'function') void v.play().catch(() => { /* muted inline video */ });
+    });
+  }
+  function hideCamView(): void {
+    try { camPreviewOff?.(); } catch { /* already unsubscribed */ }
+    camPreviewOff = null;
+    camView?.remove();
+    camView = null;
+  }
+
   /**
    * The field on a box that carries an asset ref. See TimelinePanelOpts.assetField.
    * Memoised once found: a tool's field vocabulary cannot change under a mount, and
@@ -7291,20 +7405,37 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   function syncMicBtn(): void {
+    syncCamBtn();
     if (micBtn.hidden) return;
-    const live = takePhase === 'recording' || takePhase === 'countin';
+    const mine = takeKind === 'audio';
+    const live = mine && (takePhase === 'recording' || takePhase === 'countin');
     // At rest the label says what the NEXT press will do, which depends on the
     // selection: with one of our own takes selected, recording replaces it.
     const sel = takePhase === 'idle' ? selection.get() : [];
     const overTake = sel.length === 1 && !!sel[0] && isTakeBox(sel[0]);
-    const label = takePhase === 'saving' ? t('Saving the take…')
+    const label = mine && takePhase === 'saving' ? t('Saving the take…')
       : live ? t('Stop recording')
         : overTake ? t('Record over this take') : t('Record a voiceover');
     micBtn.setAttribute('aria-label', label);
     micBtn.setAttribute('data-tip', label);
     micBtn.setAttribute('aria-pressed', live ? 'true' : 'false');
-    micBtn.classList.toggle('is-recording', takePhase === 'recording');
-    micBtn.disabled = takePhase === 'saving';
+    micBtn.classList.toggle('is-recording', mine && takePhase === 'recording');
+    // One take at a time: the other button waits while this kind is in flight.
+    micBtn.disabled = takePhase === 'saving' || (!mine && takePhase !== 'idle');
+  }
+
+  /** The camera button's twin of syncMicBtn: no re-take (a clip is never overwritten). */
+  function syncCamBtn(): void {
+    if (camBtn.hidden) return;
+    const mine = takeKind === 'video';
+    const live = mine && (takePhase === 'recording' || takePhase === 'countin');
+    const label = mine && takePhase === 'saving' ? t('Saving the take…')
+      : live ? t('Stop recording') : t('Record a video');
+    camBtn.setAttribute('aria-label', label);
+    camBtn.setAttribute('data-tip', label);
+    camBtn.setAttribute('aria-pressed', live ? 'true' : 'false');
+    camBtn.classList.toggle('is-recording', mine && takePhase === 'recording');
+    camBtn.disabled = takePhase === 'saving' || (!mine && takePhase !== 'idle');
   }
 
   function paintLevel(level: AudioLevel): void {
@@ -7356,6 +7487,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // Only reachable on an abort path - stopTake() has already consumed its session.
     if (session) { try { session.cancel(); } catch { /* already released */ } }
     restoreComposition();
+    hideCamView();
     takeReplaceId = '';
     takeWarned = false;
     recFill.style.width = '0%';
@@ -7363,6 +7495,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     rec.hidden = true;
     rec.classList.remove('is-countin', 'is-hot');
     setPhase('idle');
+    takeKind = 'audio';
     syncMicBtn();
   }
 
@@ -7378,11 +7511,14 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
   function failTake(err: unknown): void {
     const name = (err as { name?: string } | null)?.name || '';
+    const video = takeKind === 'video';
     endTake();
     const msg = name === 'NotAllowedError' || name === 'SecurityError'
-      ? t('Microphone blocked. Allow microphone access for this site, then try again.')
+      ? (video
+        ? t('Camera blocked. Allow camera and microphone access for this site, then try again.')
+        : t('Microphone blocked. Allow microphone access for this site, then try again.'))
       : name === 'NotFoundError'
-        ? t('No microphone found.')
+        ? (video ? t('No camera found.') : t('No microphone found.'))
         : t('Could not start recording.');
     setNote(msg);
     announce(msg, { assertive: true });
@@ -7412,22 +7548,23 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (phase() !== 'recording' || disposed) return;
     const el = now() - takeStartedAt;
     recTime.textContent = fmtTime(el / 1000);
-    const left = TAKE_TIMING.maxMs - el;
+    const left = takeMaxMs() - el;
     if (!takeWarned && left <= TAKE_TIMING.warnMs) {
       takeWarned = true;
       announce(t('Recording stops in 5 seconds.'), { assertive: true });
     }
-    if (el >= TAKE_TIMING.maxMs) { void stopTake(); return; }
+    if (el >= takeMaxMs()) { void stopTake(); return; }
     // A repaint mid-take mints fresh box elements, which arrive unmuted. Re-silence
     // them a few times a second rather than every frame - this walks the canvas.
     if (el - lastMuteAt > 250) { lastMuteAt = el; muteComposition(); }
     takeTimer = requestAnimationFrame(tickTake);
   }
 
-  async function startTake(): Promise<void> {
+  async function startTake(kind: TakeKind = 'audio'): Promise<void> {
     if (takePhase !== 'idle' || disposed || !open) return;
     const recorder = host.recorder;
     if (!recorder) return;
+    takeKind = kind;
     // This take's identity for the rest of the function. `stale()` is the ONLY correct
     // post-await guard: a continuation that fails it belongs to an abandoned take and
     // must clean up only what IT acquired - never call endTake(), which would tear down
@@ -7437,13 +7574,15 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // A re-take is decided BEFORE anything opens: exactly one selected box, and it must
     // already hold a take of ours. Anything else inserts a new box.
     const sel = selection.get();
-    takeReplaceId = sel.length === 1 && sel[0] && isTakeBox(sel[0]) ? sel[0] : '';
+    // A clip is never overwritten: only a voiceover re-takes over a selected take.
+    takeReplaceId = kind === 'audio' && sel.length === 1 && sel[0] && isTakeBox(sel[0]) ? sel[0] : '';
     setNote('');
     setPhase('countin');
     rec.hidden = false;
     rec.classList.add('is-countin');
     recTime.textContent = '';
     syncMicBtn();
+    if (kind === 'video') showCamView();
 
     // The sound check is where the PERMISSION PROMPT happens, deliberately before the
     // count-in: a denial then costs a click, not a performance. It also gives the user
@@ -7467,14 +7606,24 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const at = i >= 0 ? boxTiming(rows[i]!, cfg).start : null;
       if (at != null) seekAuthored(at * 1000);
     }
-    announce(t('Microphone live. Counting in.'));
+    announce(kind === 'video' ? t('Camera live. Counting in.') : t('Microphone live. Counting in.'));
     await countIn();
     if (stale()) { stopMeter(1); return; }
     if (phase() !== 'countin') { endTake(); return; }
 
     let session: RecordSession;
     try {
-      session = await recorder.record({ audio: true, video: false, maxMs: TAKE_TIMING.maxMs });
+      // A video take asks for the export frame (RecordOpts.frame): the bridge records a
+      // canvas of exactly that size, cover-cropped from the camera, and its self-view
+      // shows the same picture. The front camera by default - a person recording a
+      // message to colleagues faces the screen.
+      const size = kind === 'video' ? (opts.frameSize?.() ?? null) : null;
+      session = await recorder.record(kind === 'video'
+        ? {
+          audio: true, video: true, maxMs: TAKE_TIMING.videoMaxMs, facingMode: 'user',
+          ...(size && size.w > 0 && size.h > 0 ? { frame: { width: Math.round(size.w), height: Math.round(size.h) } } : {}),
+        }
+        : { audio: true, video: false, maxMs: TAKE_TIMING.maxMs });
     } catch (err) {
       if (stale()) { stopMeter(1); return; }
       failTake(err);
@@ -7508,7 +7657,9 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     muteComposition();
     if (!clock.playing()) { clock.play(); syncPlayBtn(); }
     syncMicBtn();
-    announce(t('Recording. Press the microphone button again to stop.'));
+    announce(kind === 'video'
+      ? t('Recording. Press the camera button again to stop.')
+      : t('Recording. Press the microphone button again to stop.'));
     tickTake();
   }
 
@@ -7573,14 +7724,17 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       // points at it. The delete happens below, after the commit has landed.
       blob, ext, undefined, undefined,
       // The measured length, not the blob's - see note 1. This is what becomes
-      // `data-audio-dur` and therefore what a trim can clamp against.
-      { audio: true, durationMs: takeMs },
+      // `data-audio-dur` and therefore what a trim can clamp against. A camera take
+      // is typed VIDEO (the store's default), so the picker's filters and the seq
+      // pack read it as a picture with sound.
+      takeKind === 'video' ? { durationMs: takeMs } : { audio: true, durationMs: takeMs },
     );
     // The take was abandoned while the bytes were being stored (the panel closed, the
     // timeline was toggled off, destroy()). Commit nothing - an audio box arriving in a
     // panel the user has left is an undo step for a take they cancelled - and leave the
     // replaced asset alone. The orphan take is harmless; a deleted one is not.
     if (disposed || seq !== takeSeq) return;
+    if (takeKind === 'video') { emitRecordedClip(ref, takeMs / 1000, takeStartSec); return; }
     insertTake(ref, takeMs / 1000);
     // Committed. Only now is the superseded recording safe to drop.
     if (replaceId && prevId && prevId !== ref.id && prevId.startsWith('user/recording/')) {
@@ -7618,6 +7772,21 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * the manifest's audio seed, placed by `moveOverlay`, sized by `setDuration`,
    * one commit, one undo step.
    */
+  /**
+   * A camera take reaches the canvas through the tl-add seam WITH its asset: the canvas owns box
+   * geometry (the clip fills the active artboard, cover-fit, in the frame's own
+   * coordinates), so the panel names the clip kind, the time and the media and
+   * free-canvas's create pipeline does the rest in one commit. The panel never
+   * invents a box's geometry - the same rule the plus menu keeps.
+   */
+  function emitRecordedClip(ref: AssetRef, durSec: number, atSec: number): void {
+    const kind = clipKind();
+    if (!kind) return;
+    const detail: TimelineAddDetail = { kind: kind.id, atMs: Math.round(atSec * 1000), asset: ref, durSec };
+    root.dispatchEvent(new CustomEvent('tl-add', { bubbles: true, detail }));
+    announce(t('Video added to the timeline'));
+  }
+
   function insertAudioBoxAt(ref: AssetRef, durSec: number, atSec: number): string {
     const rows = getBoxes();
     const id = mintId();
@@ -7962,11 +8131,13 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   }
 
   /** The button: press to start, press again to stop. */
-  function toggleTake(): void {
+  function toggleTake(kind: TakeKind = 'audio'): void {
+    // The other kind's button is disabled while a take runs (syncMicBtn), so a press
+    // that reaches here mid-take belongs to the live kind.
     if (takePhase === 'recording') { void stopTake(); return; }
     if (takePhase === 'countin') { cancelTake(); return; }
     if (takePhase === 'saving') return;
-    void startTake();
+    void startTake(kind);
   }
 
   /**
@@ -8275,8 +8446,11 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   playBtn.addEventListener('click', togglePlay);
   // Re-click closes, the way every other disclosure in the shell behaves.
   addBtn.addEventListener('click', () => { if (addMenu.isOpen()) addMenu.close(true); else addMenu.open(); });
-  micBtn.addEventListener('click', toggleTake);
+  micBtn.addEventListener('click', () => toggleTake('audio'));
   micBtn.hidden = !canRecordVoiceover();
+  camBtn.addEventListener('click', () => toggleTake('video'));
+  camBtn.hidden = !canRecordVideo();
+  syncCamBtn();
   syncMicBtn();
   scriptBtn.addEventListener('click', () => { void openScriptVoiceover(); });
   scriptBtn.hidden = !canScriptVoiceover();

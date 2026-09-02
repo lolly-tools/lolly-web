@@ -40,7 +40,7 @@ const CATEGORY_OF: Record<string, FormatCategory> = {
   png: 'image', jpg: 'image', jpeg: 'image', webp: 'image', avif: 'image',
   svg: 'image', svgz: 'image', bmp: 'image', tiff: 'image', ico: 'image',
   pdf: 'document', 'pdf-cmyk': 'document', 'cmyk-tiff': 'document',
-  pptx: 'document', docx: 'document', odt: 'document', html: 'document',
+  pptx: 'document', penpot: 'document', docx: 'document', odt: 'document', html: 'document',
   md: 'document', txt: 'document', csv: 'document', json: 'document',
   ics: 'document', vcf: 'document', srt: 'document', vtt: 'document',
   mp4: 'motion', webm: 'motion', gif: 'motion', apng: 'motion',
@@ -57,6 +57,7 @@ const FORMAT_ICON: Record<string, IconName> = {
   svg: 'penTool', svgz: 'penTool',                                  // vector art
   'pdf-cmyk': 'stamp', 'cmyk-tiff': 'stamp', 'eps-cmyk': 'stamp',   // press output
   eps: 'shapes', emf: 'shapes', wmf: 'shapes',                      // placeable vector
+  penpot: 'shapes',                                                 // an editable design file, not a page
   dxf: 'scissors',                                                  // cut file
   html: 'globe',
   csv: 'table',

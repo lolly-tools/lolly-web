@@ -45,6 +45,9 @@ export interface SendPayload {
   /** The export format id ('emf', 'png', …), lowercase. */
   format: string;
   mime: string;
+  /** What `prepare` chose, verbatim (a Penpot project + file name, …). Absent
+   *  when the target has no `prepare`, or a surface skipped it. */
+  choice?: Record<string, unknown>;
 }
 
 /** What a completed send gives the UI to show. */
@@ -70,6 +73,18 @@ export interface SendTarget {
   /** Already-localised one-liner about scope/privacy, shown as the card's title
    *  tooltip ("Lolly can only see files it created …"). */
   hint?: string;
+  /** Ask the user where this is going, BEFORE anything renders - every send
+   *  surface awaits it first, so the destination question comes while the
+   *  export is still a choice rather than after a wait the user did not ask
+   *  for. Resolves the chosen values (handed back as `SendPayload.choice`), or
+   *  null when the user cancelled: the surface then shows nothing and sends
+   *  nothing. `ctx.anchor` is the element the send was started from, for a
+   *  target that wants to anchor its picker. Targets without a `prepare`
+   *  behave exactly as before. */
+  prepare?(
+    payload: Omit<SendPayload, 'bytes'> & { bytes?: Uint8Array },
+    ctx?: { anchor?: HTMLElement | null },
+  ): Promise<Record<string, unknown> | null>;
   /** Perform the send. May run an interactive OAuth popup. Rejects with a
    *  user-presentable message on failure (including a cancelled sign-in). */
   send(payload: SendPayload): Promise<SendOutcome>;

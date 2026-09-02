@@ -762,7 +762,7 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'components/tool-guide.ts': 1,
   'components/view-toggle.ts': 2,  // +1 2026-08-20: injectJellyIcons' ic.innerHTML - ICONS registry glyphs only (trusted, never user text), prepended into the jelly pill's open shadow buttons
   'components/viz-overlay.ts': 5,
-  'components/welcome-dialog.ts': 3,  // +1 2026-08-23: mountBrandedIntro's strip.innerHTML (plans/140 S4) - literal copy; the one interpolation is docsAppHref('quickstart'), a constant route string
+  'components/welcome-dialog.ts': 3,  // +1 2026-08-23: mountBrandedIntro's strip.innerHTML (plans/140 S4) - literal copy; the one interpolation is docsAppHref('start/quickstart'), a constant route string
   'components/zoom-hud.ts': 1,
   'folder-overlay.ts': 3,
   'lib/audio-coaching.ts': 1,
@@ -992,7 +992,7 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // template family), no raw user text reaches markup.
   // +1 2026-08-21 (plans/136 W2a): the [data-passport] fill - lampStripHtml
   // escape()s every value, chips are escape()d licence strings/t() constants.
-  'views/catalog.ts': 21,  // +1 2026-08-21 (plans/132 WP-M): the mount-time loading skeleton (viewEl.innerHTML) - static markup, the only interpolation is a repeated constant tile string, no user text; +1 2026-08-20 (WP-G): the [data-usage] Used-in fill - labels escape()d, mirrors the [data-tech] sink; +1 2026-08-20: the Download-as toolbar menu (body-popover render `el.innerHTML`) - format values/labels are constants (plus the escape()d source format), no user text; +1 2026-08-18: interpBtn.innerHTML = INTERP_ICON - a trusted inline SVG constant, no interpolation; +2 2026-08-18 (plans/125): the [data-tsig] box (renderTextPanel, catTextWorkHtml escape()s every value) + read-text - the read-text <pre> is filled via textContent, never markup; +1 2026-08-18 (plans/126 markdown reading view): setTextRenderMode's [data-md-rendered] fill - user markdown through lib/markdown mdToHtml then DOMPurify.sanitize, the same pairing doc-editor's paste path uses; 2026-08-19 (inline-edits UX pass): the analyse-text fill folded into renderTextPanel, and the freed slot is openEditCard's card.innerHTML - sugCardHtml/rwCardHtml escape() every interpolated value
+  'views/catalog.ts': 22,  // +1 2026-09-02 (plans/129 section 2.3): openSendDialog's per-target status line - the remote url is safeHref()-gated and escape()d, the label escape()d; +1 2026-08-21 (plans/132 WP-M): the mount-time loading skeleton (viewEl.innerHTML) - static markup, the only interpolation is a repeated constant tile string, no user text; +1 2026-08-20 (WP-G): the [data-usage] Used-in fill - labels escape()d, mirrors the [data-tech] sink; +1 2026-08-20: the Download-as toolbar menu (body-popover render `el.innerHTML`) - format values/labels are constants (plus the escape()d source format), no user text; +1 2026-08-18: interpBtn.innerHTML = INTERP_ICON - a trusted inline SVG constant, no interpolation; +2 2026-08-18 (plans/125): the [data-tsig] box (renderTextPanel, catTextWorkHtml escape()s every value) + read-text - the read-text <pre> is filled via textContent, never markup; +1 2026-08-18 (plans/126 markdown reading view): setTextRenderMode's [data-md-rendered] fill - user markdown through lib/markdown mdToHtml then DOMPurify.sanitize, the same pairing doc-editor's paste path uses; 2026-08-19 (inline-edits UX pass): the analyse-text fill folded into renderTextPanel, and the freed slot is openEditCard's card.innerHTML - sugCardHtml/rwCardHtml escape() every interpolated value
   'lib/job-toast.ts': 2,   // +2 2026-08-17 (plan 124 WP-F): the pill + panel innerHTML - title/note/id/count all ESC()d
   'lib/perf-hud.ts': 1,    // +1 2026-08-18 (perf-hud flag): root.innerHTML = scaffold() - only icon() glyphs + tRaw() strings, no interpolated values; the live FPS number is written via textContent, not markup
   'views/video-job-dialog.ts': 1, // +1 2026-08-18 (plan 124 WP-G): the Resolution <select> rebuild (resSel.innerHTML) - resOptionHtml() emits a numeric px value + an escapeHtml()d "{px}p" label, no user text
@@ -1083,7 +1083,10 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   //   ids come from the module-scope CHOREO_SHOWCASES table, the glyphs are icon(SVG.*)
   //   constants, and the only computed value is the selected-box COUNT, an integer
   //   formatted by t(). Every string interpolation is escape()d anyway.
-  'views/free-canvas.ts': 53,   // +1 2026-09-02: openMorphMatchPanel (escapeHtml'd value + t() strings, the fstate/notes panel pattern)
+  // 53 → 54, 2026-09-02 (design-import artboards/scenes): askImportPages, the drop door's
+  //   page-mode question. One `p.innerHTML` of escape()d t() strings; the only dynamic
+  //   value is the page COUNT, an integer formatted by t(); class strings are constants.
+  'views/free-canvas.ts': 54,   // +1 2026-09-02: openMorphMatchPanel (escapeHtml'd value + t() strings, the fstate/notes panel pattern)
   // present-mode.ts (plan 112): the presenter's three chrome sinks - the pause button and
   //   the two nav-button builders - are each `el.innerHTML = icon(name, opts)`, a static
   //   glyph string from lib/icons' PATHS registry with NO interpolated value. Nothing from a

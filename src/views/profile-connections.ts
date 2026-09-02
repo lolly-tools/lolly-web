@@ -5,7 +5,9 @@
  * send is client → provider directly; what this section manages is only what
  * is remembered ON THIS DEVICE:
  *
- *   - OAuth providers (Dropbox, OneDrive): Connect runs the popup grant; the
+ *   - OAuth providers (Dropbox, OneDrive, and on the desktop Google Drive and
+ *     LinkedIn): Connect runs the grant - a popup on the web, the person's own
+ *     system browser with a loopback return in the Tauri shells - and the
  *     "stay connected on this device" checkbox decides whether the refresh
  *     token is stored at rest (lib/provider-connections.ts - excluded from
  *     portable backups, wiped by Disconnect and by Clear-all). Unchecked =
@@ -31,7 +33,10 @@ import {
 } from '../lib/google-drive.ts';
 import { isTauriShell } from '../lib/instance-choice.ts';
 import { dropboxAvailable, connectDropbox, disconnectDropbox } from '../lib/dropbox-send.ts';
-import { oneDriveAvailable, connectOneDrive, disconnectOneDrive } from '../lib/onedrive-send.ts';
+import {
+  oneDriveAvailable, oneDriveDesktopAvailable, connectOneDrive, connectOneDriveDesktop, disconnectOneDrive,
+} from '../lib/onedrive-send.ts';
+import { linkedInAvailable, connectLinkedIn, disconnectLinkedIn } from '../lib/linkedin-send.ts';
 import { connectS3, disconnectS3, testS3, type S3Config } from '../lib/s3-send.ts';
 import { connectWebdav, disconnectWebdav, testWebdav, type WebdavConfig } from '../lib/nextcloud-send.ts';
 import { connectPenpot, disconnectPenpot, testPenpot } from '../lib/penpot-send.ts';
@@ -71,25 +76,48 @@ const OAUTH_ROWS: Array<{
     kind: 'dropbox',
     label: () => t('Dropbox'),
     scopesNote: () => t('Can only see the Lolly app folder in your Dropbox.'),
-    // No deploy registration does NOT hide the row (the individuals who rely on
-    // Dropbox get no say in their deploy's env): on web the row falls back to
-    // bring-your-own app key below. Popup OAuth needs a real browser, so Tauri
-    // still requires a deploy id.
-    available: () => dropboxAvailable() || !isTauriShell(),
+    // The row always exists (plans/129 WP4b). No deploy registration does NOT
+    // hide it - the individuals who rely on Dropbox get no say in their deploy's
+    // env - so it falls back to the bring-your-own app key below, on the desktop
+    // as well as the web: Dropbox exempts localhost redirect URIs from
+    // registration, so the desktop's system-browser sign-in needs nothing added
+    // to the app either.
+    available: () => true,
     connect: connectDropbox,
     disconnect: disconnectDropbox,
     setup: () => dropboxAvailable() ? '' : `
       ${field('clientId', t('App key'), '', 'text', '')}
-      <p class="pconn-note">${t('This site ships no Dropbox app, so connect with your own: create an app in the Dropbox App Console (scoped access, App folder type), add {redirect} as a redirect URI, and paste its App key above. It is kept with the connection on this device.', { redirect: `${location.origin}/oauth-return.html` })}</p>
+      <p class="pconn-note">${isTauriShell()
+        ? t('This build ships no Dropbox app, so connect with your own: create an app in the Dropbox App Console (scoped access, App folder type) and paste its App key above. No redirect URI needs registering - Dropbox allows localhost, which is where this app receives the sign-in. The key is kept with the connection on this device.')
+        : t('This site ships no Dropbox app, so connect with your own: create an app in the Dropbox App Console (scoped access, App folder type), add {redirect} as a redirect URI, and paste its App key above. It is kept with the connection on this device.', { redirect: `${location.origin}/oauth-return.html` })}</p>
       <span class="pconn-status" data-pconn-status="dropbox" role="status"></span>`,
   },
   {
     kind: 'o365',
     label: () => t('OneDrive'),
-    scopesNote: () => t('Can only see the Lolly app folder in your OneDrive.'),
-    available: oneDriveAvailable,
-    connect: connectOneDrive,
+    // The desktop signs in through the person's own browser (Entra refuses an
+    // SPA-registered redirect from a native client), so its note says so.
+    scopesNote: () => (isTauriShell()
+      ? t('Signs in through your own browser. Can only see the Lolly app folder in your OneDrive.')
+      : t('Can only see the Lolly app folder in your OneDrive.')),
+    // Two registrations, one row: the SPA client on the web, the mobile-and-
+    // desktop-platform client in Tauri (plans/129 WP4b).
+    available: () => (isTauriShell() ? oneDriveDesktopAvailable() : oneDriveAvailable()),
+    connect: (persist) => (isTauriShell() ? connectOneDriveDesktop(persist) : connectOneDrive(persist)),
     disconnect: disconnectOneDrive,
+  },
+  {
+    // Desktop only (plans/129 WP4b): LinkedIn's token endpoint requires a client
+    // secret and grants PKCE to partner apps only, so there is no honest web
+    // shape - see lib/linkedin-send.ts. No setup form: an individual cannot
+    // bring their own app here the way they can with Dropbox, because the
+    // registration needs LinkedIn's product approvals.
+    kind: 'linkedin',
+    label: () => t('LinkedIn'),
+    scopesNote: () => t('Posts to your own feed as a public post. Signs in through your own browser; Lolly reads nothing else on your LinkedIn.'),
+    available: () => isTauriShell() && linkedInAvailable(),
+    connect: (persist) => connectLinkedIn(persist),
+    disconnect: disconnectLinkedIn,
   },
 ];
 
@@ -185,14 +213,15 @@ function credentialRowsHtml(conns: Map<string, ProviderConnection>, home: string
     ${publishRowsHtml(conns)}`;
 }
 
-/** Penpot (plans/173): a Personal Access Token + a destination project, picked
- *  from a list the token itself fetches - the connect flow is two clicks on one
- *  button (Load projects → Connect), with the picker injected in place by the
- *  handler so the pasted PAT survives (a re-render would drop it). Custody is
- *  the Mastodon shape: session-only by default, at rest only by explicit
- *  choice. The helper text is deliberately honest about the pass-through -
- *  this is the one connector whose bytes cross a Lolly server, because
- *  Penpot's API refuses direct browser calls from other origins. */
+/** Penpot (plans/178): a Personal Access Token, plus an OPTIONAL default
+ *  project picked from a list the token itself fetches - the connect flow is
+ *  two clicks on one button (Load projects → Connect), with the picker
+ *  injected in place by the handler so the pasted PAT survives (a re-render
+ *  would drop it). The real destination is chosen at send time, so this card
+ *  is custody first: session-only by default, at rest only by explicit choice
+ *  (the Mastodon shape). The helper text is deliberately honest about the
+ *  pass-through - this is the one connector whose bytes cross a Lolly server,
+ *  because Penpot's API refuses direct browser calls from other origins. */
 function penpotRowHtml(conns: Map<string, ProviderConnection>): string {
   const pen = conns.get('penpot');
   return gate('penpot', `<details class="pconn-cred" data-pconn="penpot">
@@ -203,7 +232,7 @@ function penpotRowHtml(conns: Map<string, ProviderConnection>): string {
         ${pen ? `
         <span class="pconn-note">${escape(pen.persist ? t('Stays connected on this device') : t('Connected for this session only'))}</span>` : `
         ${field('token', t('Access token'), '', 'password')}
-        <p class="pconn-note">${t('Make a token in Penpot under Settings → Access tokens. Exports are sent to Penpot through lolly.tools’s pass-through, because Penpot’s API does not allow browser calls from other sites - your token is forwarded with each send, not stored server-side. What is remembered on this device is your choice below.')}</p>
+        <p class="pconn-note">${t('Make a token in Penpot under Settings → Access tokens. Each send creates a new Penpot file, on the canvas with your brand tokens inside, in the project you pick at send time. It travels through lolly.tools’s pass-through, because Penpot’s API does not allow browser calls from other sites - your token is forwarded with each send, not stored server-side. What is remembered on this device is your choice below.')}</p>
         <label class="pconn-persist"><input type="checkbox" data-pconn-persist="penpot"> ${t('Stay connected on this device')}</label>`}
         <div class="pconn-actions">
           ${pen
@@ -279,6 +308,7 @@ const kindLabel = (kind: string): string => ({
   gdrive: t('Google Drive'), dropbox: t('Dropbox'), o365: t('OneDrive'),
   s3: t('S3 bucket'), webdav: t('Nextcloud / WebDAV'), penpot: t('Penpot'),
   mastodon: t('Mastodon'), bluesky: t('Bluesky'), discord: t('Discord'),
+  linkedin: t('LinkedIn'),
 } as Record<string, string>)[kind] ?? kind;
 
 /** Fill the section body and wire it. Re-renders itself after every change.
@@ -377,10 +407,16 @@ export async function mountConnectionsBody(body: HTMLElement, host: ConnHost, on
           const label = document.createElement('label');
           label.className = 'pconn-field';
           const caption = document.createElement('span');
-          caption.textContent = t('Project');
+          caption.textContent = t('Default project');
           const select = document.createElement('select');
           select.className = 'field-input';
           select.dataset.penpotProject = '';
+          // The destination is a send-time question now, so no project here is
+          // a complete answer - it just means the picker opens on the first one.
+          const none = document.createElement('option');
+          none.value = '';
+          none.textContent = t('Choose at send time');
+          select.append(none);
           for (const p of res.projects) {
             const opt = document.createElement('option');
             opt.value = p.id;
@@ -395,7 +431,8 @@ export async function mountConnectionsBody(body: HTMLElement, host: ConnHost, on
         }
         const projectName = picker.selectedOptions[0]?.textContent ?? '';
         const persist = body.querySelector<HTMLInputElement>('[data-pconn-persist="penpot"]')?.checked ?? false;
-        await connectPenpot(persist, f.token, { id: picker.value, name: projectName });
+        // An empty value is "Choose at send time": the token alone connects.
+        await connectPenpot(persist, f.token, picker.value ? { id: picker.value, name: projectName } : undefined);
       } else if (saveKind === 'mastodon') {
         const f = readForm('mastodon');
         if (!f.server) {

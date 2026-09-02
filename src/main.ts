@@ -1683,9 +1683,17 @@ function parseRoute(): Route {
     if (parts[0] === 'script') return { name: 'script', params: query || '' }; // Script audio - the TTS writing surface
     if (parts[0] === 'ask') return { name: 'ask', params: query || '' }; // Ask Lolly - in-app help (?q=<question>)
     // In-app docs reader. #/docs/<slug> renders in the app's current locale; the explicit
-    // #/docs/<lang>/<slug> form (three segments) pins a language. A slug is always flat (no
-    // '/'), so two segments after 'docs' can only be lang + slug. `index` is the docs home.
+    // #/docs/<lang>/<slug> form pins a language. Since plans/177 a page slug may carry its
+    // door directory (#/docs/create/using ↔ /info/create/using.html); door names and locale
+    // codes never collide, so the first segment after 'docs' classifies the form.
     if (parts[0] === 'docs' && parts[1]) {
+      const DOORS = new Set(['start', 'create', 'build', 'operate', 'trust']);
+      if (DOORS.has(parts[1]) && parts[2]) {
+        return { name: 'docs', lang: null, slug: `${parts[1]}/${parts[2]}`, params: query || '' };
+      }
+      if (parts[2] && DOORS.has(parts[2]) && parts[3]) {
+        return { name: 'docs', lang: parts[1], slug: `${parts[2]}/${parts[3]}`, params: query || '' };
+      }
       return parts[2]
         ? { name: 'docs', lang: parts[1], slug: parts[2], params: query || '' }
         : { name: 'docs', lang: null, slug: parts[1], params: query || '' };

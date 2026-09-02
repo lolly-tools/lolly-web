@@ -2245,7 +2245,7 @@ async function render(
         : ''}</p>
       ${offerExtension ? `<div class="asset-picker-toolcard-actions" style="justify-content:center">
         ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - docsAppHref() returns a build-time `#/docs/…` route from a literal slug */ ''}
-        <a class="tc-back" href="${escapeHtml(docsAppHref('extension'))}" target="_blank" rel="noopener">${t('Get the extension')}</a>
+        <a class="tc-back" href="${escapeHtml(docsAppHref('create/extension'))}" target="_blank" rel="noopener">${t('Get the extension')}</a>
       </div>` : ''}`);
   }
 
@@ -3412,7 +3412,27 @@ async function findIdenticalUpload(host: PickerHost, file: File): Promise<AssetR
   return null;
 }
 
-export async function storeUserUpload(host: PickerHost, file: File, o: { skipDupCheck?: boolean; sourceHint?: string } = {}): Promise<AssetRef> {
+export async function storeUserUpload(
+  host: PickerHost,
+  file: File,
+  o: {
+    skipDupCheck?: boolean;
+    sourceHint?: string;
+    /**
+     * One store among many in a PROGRAMMATIC import (a deck's pictures, a PDF's
+     * paths and rasters). Two things change, both because a modal opened over a
+     * running import is fatal to it - the Back-button history entry it pushes fires
+     * a popstate on close, the router re-mounts the tool, and the view that was
+     * mid-import is gone (a whole 28-page import dropped on the floor, 2026-09-02):
+     *   • bytes already in the library are REUSED silently instead of raising the
+     *     "Use existing / Keep both" prompt - a deck puts the same logo on every
+     *     slide, so asking would mean one modal per repeat anyway;
+     *   • the library's milestone nudge (20 / 100 / 500 images) is left for the next
+     *     interactive upload to raise.
+     */
+    batch?: boolean;
+  } = {},
+): Promise<AssetRef> {
   // Read the file as a blob, stash it in the user-assets IDB store, return
   // a `user/...` AssetRef. The bridge's assets.get() resolves these via the
   // same lookup path as library assets - uniform from the tool's POV.
@@ -3503,6 +3523,7 @@ export async function storeUserUpload(host: PickerHost, file: File, o: { skipDup
   // flow opts out: replacing an asset with its own bytes is the user's call.
   if (!o.skipDupCheck) {
     const dup = await findIdenticalUpload(host, file).catch(() => null);
+    if (dup && o.batch) return host.assets.get(dup.id);
     if (dup) {
       const picked = await choiceDialog({
         title: t('Already in your library'),
@@ -4026,7 +4047,7 @@ export async function storeUserUpload(host: PickerHost, file: File, o: { skipDup
 
   // Friendly, one-shot nudge as the library crosses a milestone (20/100/500).
   // Fire-and-forget: it must never delay or fail the upload it follows.
-  void maybeNudgeAssetMilestone(host);
+  if (!o.batch) void maybeNudgeAssetMilestone(host);
 
   // Re-resolve via the public API so we get a proper AssetRef with object URL.
   return host.assets.get(id);

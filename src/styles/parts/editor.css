@@ -334,9 +334,11 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
 .fc-import-panel { width: 264px; padding: var(--sp-6); white-space: normal; gap: 0; }
 .fc-import-title { font-weight: 700; margin-bottom: 6px; }
 .fc-import-hint { margin: 0 0 10px; font-size: var(--fs-sm); line-height: 1.45; opacity: 0.82; }
-.fc-import-mode { display: flex; gap: var(--sp-3); margin: 0 0 8px; }
+/* Wraps: with three modes (board / artboards / scenes) the row is wider than the
+   panel, and a clipped third option is an option nobody can pick. */
+.fc-import-mode { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin: 0 0 8px; }
 .fc-import-mode-opt {
-  flex: 1; display: flex; align-items: center; gap: 5px;
+  flex: 1 1 auto; display: flex; align-items: center; gap: 5px; white-space: nowrap;
   padding: var(--sp-3) var(--sp-4); border: 1px solid hsl(var(--border)); border-radius: var(--radius-sm);
   font-size: var(--fs-sm); cursor: pointer;
 }

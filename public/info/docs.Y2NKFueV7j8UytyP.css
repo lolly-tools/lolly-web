@@ -443,7 +443,16 @@ html[data-theme="dark"] .quicknav{background:rgba(9,26,21,.9)}
 /* Hero + pathways share one canvas backdrop: the animated chips drift up through
    both, and a single vertical gradient blends the hero green (#1c4a2e) into the
    pathways dark (--dark) so the two bands read as one continuous surface. */
-.hero-wrap{position:relative;overflow:hidden;background:linear-gradient(180deg,#1c4a2e 0%,hsl(var(--band-dark)) 100%)}
+/* The hero ground derives from the ACTIVE brand primary (Andy, 2026-09-02): a dark
+   oklab blend, so /info wears the Lolly green and #/docs/index recolours with the
+   loaded design system. The fallback pair keeps old engines on the green. */
+/* The wrap holds the hero AND the covers band, so the one chip field (#heroCanvas,
+   absolute inset:0) runs on behind both. Two background layers: the hero's gradient,
+   sized to the hero alone through --hero-h (NAV_SOLID_JS measures it; with scripts
+   stripped, the in-app reader, it spans the wrap), over the flat colour the covers
+   band always had. The gradient's end colour IS that flat colour, so the seam is
+   invisible either way. */
+.hero-wrap{position:relative;overflow:hidden;background:linear-gradient(180deg,#1c4a2e 0%,#0c3226 100%) top/100% var(--hero-h,100%) no-repeat,#0c3226;background:linear-gradient(180deg,color-mix(in oklab,hsl(var(--primary)) 34%,#0b1512) 0%,color-mix(in oklab,hsl(var(--primary)) 15%,#0a120f) 100%) top/100% var(--hero-h,100%) no-repeat,color-mix(in oklab,hsl(var(--primary)) 15%,#0a120f)}
 .hero{background:transparent;color:hsl(var(--on-band-dark));padding:4.5rem 1.5rem 3.5rem;text-align:center;position:relative;z-index:1;min-height:50vh;user-select:none;-webkit-user-select:none}
 /* Double-clicking the hero backdrop shouldn't highlight the heading/subtitle/trust copy; buttons keep normal selection. */
 .hero .btn{user-select:auto;-webkit-user-select:auto}
@@ -459,7 +468,7 @@ html[data-theme="dark"] .quicknav{background:rgba(9,26,21,.9)}
    (0,2,0) only sets the display treatment (and clears that rule's padding-left, written
    for the old logo h1). break-word + hyphens keep a long single-word translation (e.g.
    German Inhaltssouveränität) inside its column. */
-.hero .hero-statement{font-family:'SUSE Mono','SF Mono','Fira Code',monospace;text-transform:uppercase;font-size:clamp(2.5rem,7vw,5.25rem);font-weight:100;letter-spacing:-.025em;max-width:90%; line-height:1.03;padding-left:0;margin:0 0 1.5rem;color:hsl(var(--on-band-dark));text-wrap:balance;overflow-wrap:break-word;hyphens:auto}
+.hero .hero-statement{text-transform:uppercase;font-size:clamp(2.5rem,7vw,5.25rem);font-weight:800;max-width:90%; line-height:1.03;padding-left:0;margin:0 0 1.5rem;color:hsl(var(--on-band-dark));text-wrap:balance;overflow-wrap:break-word;hyphens:auto}
 /* Radius + shadow live on the img itself - on the link they trace its layout box,
    which sits a hair off the rendered image edge and shows as a seam. */
 /* The slot exists so the verify badge can position against the LOGO rather than
@@ -472,11 +481,17 @@ html[data-theme="dark"] .quicknav{background:rgba(9,26,21,.9)}
    metrics on the mark. */
 .hero-logo-slot{position:relative;width:clamp(180px,32vw,340px);margin:0 auto 1.5rem}
 .hero .hero-logo-mark{margin:0;padding:0;line-height:0;position:relative}
-.hero-logo-link{display:block;width:100%;border-radius:50%;cursor:pointer;transition:transform .2s ease}
+.hero-logo-link{display:block;width:100%;aspect-ratio:1/1;border-radius:50%;cursor:pointer;transition:transform .2s ease}
+/* The square is pinned on the BOX, not left to the image: before icon.svg has
+   arrived (it carries a C2PA manifest and is the first thing the hero loads),
+   or if it ever fails, an auto-height <img> collapses to a text line and the
+   absolutely-placed still overlay stretches into a thin streak - the "squashed
+   lolly" (Andy, 2026-09-02). With the aspect on the link the mark stays a
+   circle of the right size from the first paint. */
 .hero-logo-link:hover,.hero-logo-link:focus-visible{ outline:none}
 .hero-logo-link:hover .hero-logo,.hero-logo-link:focus-visible .hero-logo{}
 .hero-logo-link:active{transform:translateY(-1px) scale(1.0)}
-.hero-logo{display:block;width:100%;height:auto;position:relative;border-radius:50%;    filter: hue-rotate(-15deg);transition:box-shadow .2s ease}
+.hero-logo{display:block;width:100%;height:100%;aspect-ratio:1/1;object-fit:contain;position:relative;border-radius:50%;filter:hue-rotate(-15deg);transition:box-shadow .2s ease}
 .hero-logo:hover{filter: hue-rotate(-25deg) saturate(1.5) brightness(1.01)}
 /* The mark idles STILL until hover (Andy, 2026-08-17). The swirl animation lives
    INSIDE the signed icon.svg, which an <img> embeds as its own document - page CSS
@@ -515,7 +530,7 @@ html[data-a11y-motion="reduce"] .hero-logo-link:focus-visible .hero-logo-still{o
 .hero .subtitle{font-size:clamp(.9375rem,1.8vw,1.125rem);max-width:560px;margin:0 auto 2.75rem; margin-left:color:hsl(var(--on-band-dark) / .5);font-weight:300;line-height:1.85;position:relative}
 .hero-cta{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;position:relative;margin-bottom:2.5rem}
 .hero-trust{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:.5rem;position:relative}
-.hero-trust span{font-size:.8rem;line-height:1;color:hsl(var(--on-band-dark) / .5);letter-spacing:.02em}
+.hero-trust span{font-size:.8rem;line-height:1;color:hsl(var(--on-band-dark) / .5);letter-spacing:0}
 .trust-dot{color:hsl(var(--on-band-dark) / .18)!important}
 .btn{display:inline-flex;align-items:center;padding:2rem 3rem;border-radius:1rem;font-weight:700;font-size:1rem;transition:all .18s ease;box-shadow:0 .2em 1em #0002}
 .btn-primary{background:rgba(48,186,120,.72);color:#000;mix-blend-mode:plus-lighter}
@@ -556,14 +571,17 @@ html[data-a11y-motion="reduce"] .hero-logo-link:focus-visible .hero-logo-still{o
    Motion is opt-out, not opt-in: the reduced-motion query at the end drops the
    travel and keeps the colour and border changes, which are the part that
    carries the meaning.                                                         */
-/* Space for the rail, taken from the gaps above it rather than from the rail.
-   The hero's stack (statement, subtitle, CTA pair, rail, trust line) has to clear
-   720px, which is the shortest laptop viewport this page is designed for, and the
-   two gaps below were 2.75rem and 2.5rem - generous when the CTA pair was the last
-   thing in the hero. Nothing here resizes the buttons or the H1. */
+/* The hero's stack (statement, subtitle, CTA pair) clears 720px, the shortest
+   laptop viewport this page is designed for. The download rail closed the hero
+   until 2026-09-02; it now has its own band (.downloads-section, between the
+   persona device and lolly.work), so these gaps are the hero's own. Nothing here
+   resizes the buttons or the H1. */
 .hero .subtitle{margin-bottom:1.9rem}
 .hero-cta{margin-bottom:1.6rem}
-.hero-downloads{position:relative;margin:0 0 1.6rem}
+/* ── beat 4a: get the app - the rail on the hero's dark surface ──────────── */
+.downloads-section{padding:0 1.5rem 3.5rem}
+.downloads-inner{max-width:1120px;margin:0 auto;padding:1.6rem 1.6rem 1.5rem;border-radius:14px;color:hsl(var(--on-band-dark));background:linear-gradient(180deg,color-mix(in oklab,hsl(var(--primary)) 34%,#0b1512) 0%,color-mix(in oklab,hsl(var(--primary)) 15%,#0a120f) 100%)}
+.hero-downloads{position:relative;margin:0}
 .dl-head{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap;margin:0 0 .7rem}
 .dl-label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.14em;
   color:hsl(var(--on-band-dark) / .85)}
@@ -585,11 +603,6 @@ html[data-a11y-motion="reduce"] .hero-logo-link:focus-visible .hero-logo-still{o
 .dl-tile[data-dl="opensuse"]{--dl-accent:#73ba25}
 .dl-tile[data-dl="flatpak"]{--dl-accent:#4a90d9}
 .dl-tile[data-dl="android"]{--dl-accent:#3ddc84}
-
-/* Entrance: the rail arrives after the CTA pair (.52s) and before the trust line
-   (.65s), each tile a beat behind the last, so the eye is walked left to right
-   across the five rather than meeting them as a block. */
-.dl-tile{animation:heroUp .55s ease both calc(.58s + var(--dl-i, 0) * .06s)}
 
 /* The wash: an accent-tinted glow that grows from behind the mark on hover. Sits
    under the content (the tile is an isolation root), so it never touches the
@@ -701,13 +714,13 @@ html[data-a11y-motion="reduce"] .hero-logo-link:focus-visible .hero-logo-still{o
   .hero-cta .btn{flex:1 1 0;min-width:0;justify-content:center;padding:1.05rem .75rem;
     font-size:.9375rem;border-radius:.85rem}
 
-  .dl-head{justify-content:center;margin-bottom:.5rem}
+  .dl-head{margin-bottom:.5rem}
   /* The lead is a grace note, and at this width it wraps to a second line that
      costs more height than the sentence is worth. The label carries the meaning. */
   .dl-lead{display:none}
   .dl-grid{grid-template-columns:repeat(2,1fr);gap:.5rem}
-  /* The hero centres its text at this width; a tile must not. A name centred over
-     a left-hand mark reads as two unrelated things sharing a box. */
+  /* A tile is never centred: a name centred over a left-hand mark reads as two
+     unrelated things sharing a box. */
   .dl-tile{text-align:start}
   /* The name gets BOTH text columns and the badge drops to the line below it. At
      two columns of ~167px, a badge beside the name leaves it ~80px, which is not
@@ -727,11 +740,11 @@ html[data-a11y-motion="reduce"] .hero-logo-link:focus-visible .hero-logo-still{o
   .dl-meta{grid-area:meta;align-self:start;font-size:.62rem}
   .dl-note{display:none}
   .dl-os::after{content:none}
-  .dl-more{align-self:center;margin-top:.4rem}
+  .dl-more{margin-top:.4rem}
 }
 @media(prefers-reduced-motion:reduce){
   /* Colour and border still change - that is the affordance. Only travel goes. */
-  .dl-tile{animation:none;transition:border-color .22s ease,background-color .22s ease}
+  .dl-tile{transition:border-color .22s ease,background-color .22s ease}
   .dl-tile:hover,.dl-tile:focus-visible,.dl-tile:active{transform:none}
   .dl-tile::after{display:none}
   .dl-tile::before{transition:opacity .2s ease;transform:scale(1)}
@@ -950,6 +963,8 @@ html[data-theme="dark"] .ai-point strong{color:hsl(var(--foreground))}
 .behind-para strong{color:var(--dark);font-weight:700}
 html[data-theme="dark"] .behind-para strong{color:hsl(var(--foreground))}
 .behind-assure{margin-top:0}
+/* One paragraph since 2026-09-02: a readable measure, left-aligned like the columns were. */
+.behind-para--solo{max-width:70ch}
 /* The refusal band (plan 122 block 11): the trio + the visible vote, reusing the
    tool-feature card grid so the beats read as one set. */
 .refusal-section{padding:3rem 1.5rem;background:var(--page)}
@@ -1303,6 +1318,11 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 .mascot-cred .shot-cred{max-width:calc(100% - 1rem)}
 .mascot-cred .shot-cred-line{max-width:100%}
 .mascot-cred .shot-cred-row{flex-wrap:wrap}
+/* Narrow columns stack the line and its glyph (the docs stylesheet's max-width:640px
+   rule). Keep the glyph at the BOTTOM and stack the collapsed line above it - the
+   line keeps its height while hidden, and with the glyph on top it was pushed clear
+   off a small floated mascot into whatever sat above. */
+@media(max-width:640px){.mascot-cred .shot-cred{flex-direction:column-reverse}}
 .audience-header{display:flex;align-items:center;justify-content:center;gap:2rem;padding:2.75rem 3rem 1.5rem}
 .audience-header-text{text-align:start}
 .audience-mascot{width:clamp(200px,26vw,430px);flex-shrink:0;filter:drop-shadow(0 6px 20px rgba(12,50,44,.18))}
@@ -1366,7 +1386,18 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 .hero-inner{display:flex;align-items:center;gap:4rem;max-width:1400px;margin:0 auto;width:100%}
 .hero-heading{margin-bottom:1.5rem;position:relative}
 .hero h1{margin-bottom:0;text-align:start;letter-spacing:0;font-weight:100}
-.hero-details{flex:1;text-align:start}
+.hero-details{flex:1 1 0;min-width:0;text-align:start}
+/* Tablet: the H1 steps down so the longest claim ("sovereignty", "inclusive") fits
+   the column whole instead of hyphenating; the <=600px block below re-sizes it
+   again for the stacked layout. */
+@media(max-width:1000px){.hero .hero-statement{font-size:clamp(2rem,6vw,4rem)}}
+/* min-width:0 is load-bearing: a flex item's default minimum is its min-content
+   width, and the cycling H1 word (.cycle-word is width:max-content) made that the
+   unwrapped width of whichever claim was showing - so at tablet widths the column
+   grew past the viewport on "available offline", the CTAs and download tiles
+   reflowed on every swap, and the rail was cut off at the edge (Andy, 2026-09-02).
+   With the minimum released the column is the space that is left, and the word
+   wraps inside it. */
 .hero .subtitle{margin-left:.5rem;max-width:none}
 .hero-cta{justify-content:flex-start}
 .hero-trust{justify-content:flex-start}
@@ -1453,6 +1484,226 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 [data-theme="dark"] .why-frustration strong{color:var(--text)}
 [data-theme="dark"] .matrix-cell--old{background:hsl(var(--card))}
 [data-theme="dark"] .matrix-cell--new{background:hsl(var(--card))}
+
+/* ═══ plans/177: the five-beat door ═══════════════════════════════════════════
+   New bands: the hero cycle, the covers carousel, what/why, the persona device.
+   Colours come only from the token set (--green, --text, --band-dark, …), which
+   the static /info page pins to the Lolly green and the in-app reader resolves
+   from the ACTIVE DESIGN SYSTEM's brand vars - Andy's 2026-09-02 directive: the
+   #/docs landing inherits the brand fully; /info stays green. */
+
+/* ── beat 1: the cycling H1 ─────────────────────────────────────────────── */
+.hero-statement--cycle{display:block}
+.hero-statement--cycle .cycle-lead{display:block;font-weight:900}
+.hero-statement--cycle .cycle-word{display:block;max-width:100%;color:hsl(var(--band-accent));text-decoration:none;font-weight:500;overflow-wrap:break-word;line-height:1.15}
+.hero .hero-statement--cycle .cycle-word:hover{text-decoration:none}
+.hero-statement--cycle .cycle-word span{display:block;overflow-wrap:break-word;hyphens:auto;text-transform:none; font-style:italic;transition: transform .24s ease,opacity .24s ease}
+/* block, not inline-block: an inline-block is an atomic box whose content never
+   breaks with the parent's overflow-wrap, so "SOVEREIGNTY" ran past a tablet-width
+   column. A block span wraps inside the anchor's max-width and still transforms. */
+.hero-statement--cycle .cycle-word.is-swapping span{transform:translateY(.5em);opacity:0}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media (prefers-reduced-motion: reduce){.hero-statement--cycle .cycle-word span{transition:none}}
+
+/* ── beat 2: the covers ─────────────────────────────────────────────────────
+   Base form is a scroll-snap FILMSTRIP: native swipe and drag on touch, wheel
+   and scrollbar elsewhere, and fully working with scripts stripped (the in-app
+   reader). COVERS_JS upgrades it to the 3-D fan from 720px up and adds pointer
+   drag, dots, arrows and the slow autoplay. */
+/* No background of its own: the band sits inside .hero-wrap, which paints the
+   surface, and the chip field lies between that surface and this content
+   (position + z-index lift the covers above the canvas, as .hero does). */
+.covers-section{position:relative;z-index:1;color:hsl(var(--on-band-dark));padding:2.5rem 1.5rem 2rem;overflow:hidden}
+.covers-inner{max-width:1180px;margin:0 auto}
+.covers{outline:none;border-radius:10px}
+.covers:focus-visible{outline:2px solid hsl(var(--primary));outline-offset:6px}
+/* The strip is a scroll box, so it clips its own overflow: the card shadow reaches
+   ~52px below the card (0 24px 48px -20px) and was cut at the strip's bottom edge as a
+   hard line. Pad past the shadow and pull the flow back with a negative margin, so
+   the nav below sits where it did. Both strip forms (filmstrip, fan) carry it. */
+.covers-strip{display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;padding:1rem 2px 4rem;margin-bottom:-2.75rem;-webkit-overflow-scrolling:touch}
+.cover-card{position:relative;flex:0 0 min(520px,82vw);aspect-ratio:16/10;scroll-snap-align:center;border-radius:12px;overflow:hidden;background-color:transparent;box-shadow:0 24px 48px -20px rgba(0,0,0,.55);text-decoration:none;color:inherit}
+.cover-card img,.cover-card video{width:100%;height:100%;object-fit:cover;object-position:left top;display:block}
+.cover-cap{position:absolute;left:0;right:0;bottom:0;display:flex;flex-direction:column;gap:2px;padding:1.6rem .85rem .65rem;background:linear-gradient(transparent,rgba(0,0,0,.72));color:#fff}
+.cover-cap b{font-size:.95rem;font-weight:700}
+.cover-cap i{font-style:normal;font-size:.78rem;opacity:.85}
+/* fan mode (script-applied, from 720px): the app gallery's Cover Flow - a real
+   horizontal scroller whose covers are transformed per frame from scroll
+   position by lib/covers-flow.ts, which OWNS the horizontal axis (drag, flick,
+   wheel spin, settle). Native scroll-snap is off here on purpose: a snap area
+   is the transformed box, so native snap chased the tuck and fought the settle.
+   touch-action pan-y leaves vertical to the page. */
+.covers--fan .covers-strip{gap:0;overflow-y:hidden;perspective:1500px;perspective-origin:50% 45%;padding:2.25rem calc(50% - min(520px,58vw)/2) 4rem;margin-bottom:-2.75rem;scroll-snap-type:none;scroll-behavior:auto;touch-action:pan-y;overscroll-behavior-x:contain;scrollbar-width:none}
+.covers--fan .covers-strip::-webkit-scrollbar{display:none}
+.covers--fan .cover-card{flex:0 0 min(520px,58vw);width:min(520px,58vw);will-change:transform;backface-visibility:hidden;pointer-events:none;user-select:none;-webkit-user-select:none}
+.covers--fan .covers-strip{cursor:grab}
+.cover-card img,.cover-card video{user-select:none;-webkit-user-select:none;-webkit-user-drag:none;pointer-events:none}
+.covers--fan .cover-card .cover-cap{opacity:0;transition:opacity .3s ease}
+.covers--fan .cover-card.is-cur .cover-cap{opacity:1}
+.covers--fan .cover-card.is-cur{box-shadow:0 34px 70px -24px rgba(0,0,0,.7),0 0 0 1px hsl(var(--primary) / .4) inset}
+.covers--dragging .covers-strip{cursor:grabbing}
+/* The one Open button: OUTSIDE the fan's 3D context (a z-translated cover is
+   not hit-testable - the app's featured-go precedent), floating over the
+   centred cover and appearing once it has rested there for a moment. */
+.covers{position:relative}
+/* In flow BELOW the cards (Andy, 2026-09-02: over the card it sat on the
+   caption), between the strip and the dots; it reserves its row so the fan
+   never jumps when it fades in. Fan-only - the filmstrip cards are their own
+   links. */
+.covers-open-btn{display:none;width:max-content;margin:.4rem auto 0;opacity:0;transform:translateY(6px);transition:opacity .25s ease,transform .25s ease;pointer-events:none;background:hsl(var(--primary));color:hsl(var(--primary-foreground,0 0% 100%));border-radius:999px;padding:.55rem 1.1rem;font-weight:700;font-size:.875rem;white-space:nowrap;box-shadow:0 10px 28px rgba(0,0,0,.35);text-decoration:none}
+.covers--fan .covers-open-btn{display:flex;align-items:center;gap:.35em}
+.covers-open-btn.is-on{opacity:1;transform:none;pointer-events:auto}
+.covers-open-btn:hover{text-decoration:none;filter:brightness(1.07)}
+@media (prefers-reduced-motion: reduce){.covers-open-btn{transition:none}}
+.covers-nav{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:.5rem}
+.covers-btn{width:36px;height:36px;border-radius:50%;border:1px solid hsl(var(--on-band-dark) / .3);background:transparent;color:hsl(var(--on-band-dark));cursor:pointer;font-size:1.1rem;line-height:1}
+.covers-btn:hover{border-color:hsl(var(--primary))}
+.covers-dots{display:flex;gap:6px}
+.covers-dot{width:8px;height:8px;border-radius:50%;background:hsl(var(--on-band-dark) / .3);border:0;padding:0;cursor:pointer;transition:all .2s ease}
+.covers-dot[aria-current="true"]{background:hsl(var(--primary));width:22px;border-radius:4px}
+@media (prefers-reduced-motion: reduce){.covers--fan .cover-card{transition:none}}
+
+/* ── beat 3: what / why ─────────────────────────────────────────────────── */
+.whatwhy-section{padding:4rem 1.5rem 2.5rem}
+.whatwhy-inner{max-width:1120px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:2.5rem 3.5rem}
+.whatwhy-eyebrow{font-size:.6875rem;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:700}
+.whatwhy-big{font-size:1.6rem;letter-spacing:0;text-transform:none;font-weight:800;margin:.5rem 0 .75rem;text-wrap:balance}
+.whatwhy-body{color:var(--muted);max-width:52ch;margin:0 0 1rem}
+.whatwhy-maxim{margin:0 0 1rem;max-width:52ch}
+.whatwhy-stats{display:flex;gap:1.6rem;flex-wrap:wrap;margin:.5rem 0 1rem}
+.whatwhy-stat{display:flex;flex-direction:column;gap:2px;text-decoration:none;color:inherit}
+.whatwhy-stat b{font-family:'SUSE Mono','SF Mono',monospace;font-size:1.7rem;font-weight:600;line-height:1;font-variant-numeric:tabular-nums;color:var(--text)}
+.whatwhy-stat span{font-size:.6875rem;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+.whatwhy-stat:hover b{color:color-mix(in oklab,hsl(var(--primary)) 70%,var(--text))}
+.whatwhy-receipts{font-size:.875rem;margin-bottom:1rem}
+.whatwhy-receipts a{color:var(--muted);text-decoration:underline}
+.whatwhy-receipts a:hover{color:var(--green)}
+.whatwhy-more{font-weight:700;color:color-mix(in oklab,hsl(var(--primary)) 70%,var(--text));text-decoration:none}
+.whatwhy-more:hover{text-decoration:underline}
+
+/* ── beat 4: the persona device (CSS-only: radios + nth-matched pairing) ── */
+.persona-section{padding:1.5rem 1.5rem 4rem}
+.persona-inner{max-width:1120px;margin:0 auto;position:relative}
+.persona-title{margin-bottom:1.25rem}
+.persona-radio,.lane-radio{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px}
+.persona-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.persona-tab{display:flex;flex-direction:column;gap:4px;padding:1rem 1.15rem;border:1px solid var(--border);border-radius:12px;background:var(--page);cursor:pointer;position:relative;transition:border-color .2s ease,transform .2s ease;padding-right:4.4rem}
+.persona-mascot{position:absolute;right:.7rem;top:50%;transform:translateY(-50%);width:8.5em;height:8.5em;object-fit:contain;pointer-events:none}
+.persona-tab:hover{border-color:var(--muted);transform:translateY(-2px)}
+.persona-name{font-family:'SUSE Mono',monospace;font-weight:600;font-size:1.1rem}
+.persona-sub{font-size:.8125rem;color:var(--muted)}
+#door-creators:checked ~ .persona-tabs label[for="door-creators"],
+#door-builders:checked ~ .persona-tabs label[for="door-builders"],
+#door-operators:checked ~ .persona-tabs label[for="door-operators"]{border-color:var(--green);background:hsl(var(--band-accent) / .33)}
+.persona-tabs img{transition: all .5s ease; filter:drop-shadow( 0 3px 4px hsl(var(--band-accent) /.5))}
+#door-creators:not(:checked) ~ .persona-tabs label[for="door-creators"] img,
+#door-builders:not(:checked) ~ .persona-tabs label[for="door-builders"] img,
+#door-operators:not(:checked) ~ .persona-tabs label[for="door-operators"] img{filter:grayscale(.6) brightness(1.3) contrast(1.16) ; opacity:.2; transition: all .5s ease; transform:scale(.8) translate(2em, -5em)}
+#door-creators:checked ~ .persona-tabs label[for="door-creators"] .persona-sub,
+#door-builders:checked ~ .persona-tabs label[for="door-builders"] .persona-sub,
+#door-operators:checked ~ .persona-tabs label[for="door-operators"] .persona-sub{color:var(--text)}
+#door-creators:focus-visible ~ .persona-tabs label[for="door-creators"],
+#door-builders:focus-visible ~ .persona-tabs label[for="door-builders"],
+#door-operators:focus-visible ~ .persona-tabs label[for="door-operators"]{outline:2px solid var(--green);outline-offset:3px}
+.persona-pane{display:none;margin-top:1.5rem;padding:1.5rem;border:1px solid var(--green);border-radius:12px;background:var(--page);position:relative}
+#door-creators:checked ~ .persona-panes .persona-pane:nth-child(1),
+#door-builders:checked ~ .persona-panes .persona-pane:nth-child(2),
+#door-operators:checked ~ .persona-panes .persona-pane:nth-child(3){display:block}
+.lane-cols{display:grid;grid-template-columns:200px minmax(0,1fr);gap:.5rem 1.8rem;align-items:start}
+.lane-tabs{display:flex;flex-direction:column;gap:2px}
+.lane-tab{text-align:start;padding:.65rem .85rem;border-inline-start:2px solid var(--border);cursor:pointer;font-size:.9rem;font-weight:600;color:var(--muted);transition:color .15s ease,border-color .15s ease,background .15s ease}
+.lane-tab:hover{color:var(--text)}
+/* A lane's mascot (persona.json `mascot`) sits figure-sized beside the copy at
+   the inline end - the import band's kookaburra treatment, not a tab glyph. It
+   comes FIRST in the markup so the phone rule below can float it and wrap the
+   copy around it; `order` moves it to the end of the desktop flex row. Wide art
+   (the eagle) and tall art (the possum) share one width, so their heights differ
+   and the row centres either against the copy. */
+.lane-pane{display:none;min-height:150px;gap:1rem 2rem;align-items:center}
+.lane-copy{flex:1 1 auto;min-width:0}
+.lane-mascot{width:clamp(150px,22vw,240px);flex-shrink:0;order:1}
+/* The eagle is a wingspan: at the shared width it is a third the height of the
+   others and reads as an ornament, so it gets a third more room. */
+.lane-mascot[data-shot$="wedge-tailed-eagle.webp"]{width:clamp(200px,28vw,320px)}
+.lane-pane h3{font-family:'SUSE Mono',monospace;font-size:1.05rem;font-weight:600;text-transform:none;letter-spacing:.02em;margin-bottom:.4rem}
+.lane-pitch{color:var(--muted);max-width:56ch;margin:0 0 .9rem;font-size:.95rem}
+.lane-links{list-style:none;margin:0 0 1rem;padding:0;display:flex;flex-direction:column;gap:6px;max-width:520px}
+.lane-links a{display:flex;justify-content:space-between;gap:10px;text-decoration:none;padding:.6rem .75rem;border-radius:9px;background:var(--pale);border:1px solid var(--border);font-size:.875rem;color:var(--text)}
+.lane-links a:hover{border-color:var(--green);text-decoration:none}
+.lane-links code{font-family:'SUSE Mono',monospace;font-size:.75rem;color:var(--muted);background:none;padding:0}
+.lane-cta{display:flex;gap:1rem;align-items:center;flex-wrap:wrap}
+/* Self-contained button styling: the lane CTAs must not depend on the docs
+   template's .btn (absent in the in-app reader) or the app chrome's .btn
+   (whose light-theme pairing painted them blank - Andy, 2026-09-02). The
+   brand token PAIR (--primary + --primary-foreground) keeps the label
+   legible whatever design system is loaded. */
+.lane-cta .btn{display:inline-flex;align-items:center;gap:.4em;background:hsl(var(--primary));color:hsl(var(--primary-foreground,0 0% 100%));border:1px solid transparent;border-radius:999px;padding:.55rem 1.1rem;font-size:.875rem;font-weight:700;text-decoration:none;backdrop-filter:none;-webkit-backdrop-filter:none;mix-blend-mode:normal;box-shadow:none}
+.lane-cta .btn:hover{background:hsl(var(--primary));filter:brightness(1.07);text-decoration:none;transform:none;box-shadow:none}
+.btn-compact{padding:.55rem 1.1rem;font-size:.875rem}
+.lane-doc{font-weight:700;color:color-mix(in oklab,hsl(var(--primary)) 70%,var(--text));text-decoration:none;font-size:.875rem}
+.lane-doc:hover{text-decoration:underline}
+/* nth-matched lane pairing, up to the six operator lanes */
+.lane-radio:nth-of-type(1):checked ~ .lane-cols .lane-panes .lane-pane:nth-child(1),
+.lane-radio:nth-of-type(2):checked ~ .lane-cols .lane-panes .lane-pane:nth-child(2),
+.lane-radio:nth-of-type(3):checked ~ .lane-cols .lane-panes .lane-pane:nth-child(3),
+.lane-radio:nth-of-type(4):checked ~ .lane-cols .lane-panes .lane-pane:nth-child(4),
+.lane-radio:nth-of-type(5):checked ~ .lane-cols .lane-panes .lane-pane:nth-child(5),
+.lane-radio:nth-of-type(6):checked ~ .lane-cols .lane-panes .lane-pane:nth-child(6){display:flex}
+.lane-radio:nth-of-type(1):checked ~ .lane-cols .lane-tabs .lane-tab:nth-child(1),
+.lane-radio:nth-of-type(2):checked ~ .lane-cols .lane-tabs .lane-tab:nth-child(2),
+.lane-radio:nth-of-type(3):checked ~ .lane-cols .lane-tabs .lane-tab:nth-child(3),
+.lane-radio:nth-of-type(4):checked ~ .lane-cols .lane-tabs .lane-tab:nth-child(4),
+.lane-radio:nth-of-type(5):checked ~ .lane-cols .lane-tabs .lane-tab:nth-child(5),
+.lane-radio:nth-of-type(6):checked ~ .lane-cols .lane-tabs .lane-tab:nth-child(6){color:var(--text);border-inline-start-color:var(--green);background:hsl(var(--primary) / .08)}
+.lane-radio:nth-of-type(1):focus-visible ~ .lane-cols .lane-tabs .lane-tab:nth-child(1),
+.lane-radio:nth-of-type(2):focus-visible ~ .lane-cols .lane-tabs .lane-tab:nth-child(2),
+.lane-radio:nth-of-type(3):focus-visible ~ .lane-cols .lane-tabs .lane-tab:nth-child(3),
+.lane-radio:nth-of-type(4):focus-visible ~ .lane-cols .lane-tabs .lane-tab:nth-child(4),
+.lane-radio:nth-of-type(5):focus-visible ~ .lane-cols .lane-tabs .lane-tab:nth-child(5),
+.lane-radio:nth-of-type(6):focus-visible ~ .lane-cols .lane-tabs .lane-tab:nth-child(6){outline:2px solid var(--green);outline-offset:2px}
+@media (max-width:719px){
+  .persona-tabs{grid-template-columns:1fr}
+  .lane-cols{grid-template-columns:1fr}
+  .lane-tabs{flex-direction:row;overflow-x:auto;padding-bottom:4px}
+  .lane-tab{border-inline-start:0;border-bottom:2px solid var(--border);white-space:nowrap}
+  .lane-radio:nth-of-type(1):checked ~ .lane-cols .lane-tabs .lane-tab:nth-child(1),
+  .lane-radio:nth-of-type(2):checked ~ .lane-cols .lane-tabs .lane-tab:nth-child(2),
+  .lane-radio:nth-of-type(3):checked ~ .lane-cols .lane-tabs .lane-tab:nth-child(3),
+  .lane-radio:nth-of-type(4):checked ~ .lane-cols .lane-tabs .lane-tab:nth-child(4),
+  .lane-radio:nth-of-type(5):checked ~ .lane-cols .lane-tabs .lane-tab:nth-child(5),
+  .lane-radio:nth-of-type(6):checked ~ .lane-cols .lane-tabs .lane-tab:nth-child(6){border-inline-start:0;border-bottom-color:var(--green)}
+  /* Phones: the active pane goes back to flow, so the mascot floats at the
+     inline end with the heading and first lines beside it, and the copy takes
+     the full width once past it. */
+  .lane-radio:nth-of-type(1):checked ~ .lane-cols .lane-panes .lane-pane:nth-child(1),
+  .lane-radio:nth-of-type(2):checked ~ .lane-cols .lane-panes .lane-pane:nth-child(2),
+  .lane-radio:nth-of-type(3):checked ~ .lane-cols .lane-panes .lane-pane:nth-child(3),
+  .lane-radio:nth-of-type(4):checked ~ .lane-cols .lane-panes .lane-pane:nth-child(4),
+  .lane-radio:nth-of-type(5):checked ~ .lane-cols .lane-panes .lane-pane:nth-child(5),
+  .lane-radio:nth-of-type(6):checked ~ .lane-cols .lane-panes .lane-pane:nth-child(6){display:block}
+  .lane-mascot{float:inline-end;width:6.5rem;margin-inline-start:1rem;margin-block-end:.5rem}
+  .lane-mascot[data-shot$="wedge-tailed-eagle.webp"]{width:9.5rem}
+}
+
+/* ── beat 4b: the lolly.work band ───────────────────────────────────────── */
+.work-section{padding:0 1.5rem 3.5rem}
+.work-inner{max-width:1120px;margin:0 auto;padding:1.5rem 1.6rem;border:1px solid var(--border);border-radius:14px;background:color-mix(in oklab,hsl(var(--primary)) 6%,var(--page))}
+.work-eyebrow{display:block;font-family:'SUSE Mono',monospace;font-size:.75rem;letter-spacing:.08em;color:color-mix(in oklab,hsl(var(--primary)) 70%,var(--text));margin-bottom:.35rem}
+.work-cols{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1rem 2rem;align-items:center}
+.work-heading{font-size:1.25rem;font-weight:800;text-transform:none;letter-spacing:0;margin:0 0 .4rem;text-wrap:balance}
+.work-body{margin:0;color:var(--muted);max-width:62ch;font-size:.95rem}
+.work-links{display:flex;flex-direction:column;gap:.6rem;align-items:flex-start}
+.work-links .btn{display:inline-flex;align-items:center;gap:.4em;background:hsl(var(--primary));color:hsl(var(--primary-foreground,0 0% 100%));border:1px solid transparent;border-radius:999px;padding:.55rem 1.1rem;font-size:.875rem;font-weight:700;text-decoration:none;white-space:nowrap;backdrop-filter:none;-webkit-backdrop-filter:none;mix-blend-mode:normal}
+.work-links .btn:hover{filter:brightness(1.07);text-decoration:none;transform:none;box-shadow:none}
+.work-link{font-weight:700;font-size:.875rem;color:color-mix(in oklab,hsl(var(--primary)) 70%,var(--text));text-decoration:none;white-space:nowrap}
+.work-link:hover{text-decoration:underline}
+@media(max-width:719px){.work-cols{grid-template-columns:1fr}.work-links{flex-direction:row;flex-wrap:wrap}}
+
+/* ── beat 5: behind, additions ──────────────────────────────────────────── */
+.behind-quiet{margin:1rem 0 0;font-size:.8125rem;color:var(--muted);text-align:center}
+
+/* ── faq as its own page ────────────────────────────────────────────────── */
+.faq-page{padding-top:1rem}
 
 
 /* Docs layout */

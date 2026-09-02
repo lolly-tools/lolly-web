@@ -44,6 +44,7 @@ import {
   penpotFlowOrder,
   figmaNodesToNodes,
   figmaNodesToScenes,
+  isPptx,
   readingOrder,
   type DesignFrameScene,
   type DesignMapOptions,
@@ -187,6 +188,12 @@ export async function parseDesignFile(
       maxTotalBytes: MAX_ZIP_TOTAL_BYTES,
       tooLarge: name => `This archive expands too large to import (${name}).`,
     });
+    // A PowerPoint deck is a zip too. One slide replaces the board (the picker asks
+    // which); its parts arrive as editable boxes through pptx-import's mapper.
+    if (isPptx(files)) {
+      const { parsePptxFile } = await import('./pptx-import.ts');
+      return parsePptxFile(file, files, { host: host as HostV1, warn, interactive, map });
+    }
     if (isIdml(files)) {
       const { parseIdmlZip } = await import('./idml-import.ts');
       return parseIdmlZip(files, { host, warn, map });
@@ -202,6 +209,135 @@ export async function parseDesignFile(
 
   const { nodes, width, height } = await svgToNodes(svgEl, { host, warn });
   return { boxes: finalizeBoxes(nodes, map), width, height, background: '#ffffff' };
+}
+
+// ---------------------------------------------------------------------------
+// Pages → artboards (the deck import)
+// ---------------------------------------------------------------------------
+
+/** One page / slide / board / frame of a design file as an editable frame. */
+export interface DesignImportFrame {
+  name: string;
+  width: number;
+  height: number;
+  boxes: unknown[];
+  /** This page's own ground where the source declares one (a slide's background). */
+  background?: string;
+  /** A prototype-flow entrance (Penpot), on `parseDesignScenes`' terms. */
+  enter?: string;
+  enterMs?: number;
+}
+export interface DesignArtboardsResult {
+  frames: DesignImportFrame[];
+  /** The page ground the source paints under every frame (a deck's theme colour). */
+  background: string;
+  map?: DesignMapOptions;
+}
+
+/**
+ * Parse a design file into per-page EDITABLE frames - every page of a PDF, every
+ * slide of a deck, every board of a Penpot file, every frame of a .fig - so the
+ * caller can lay them out as artboards (Andy, 2026-09-02: "decide if they want
+ * artboards for slides or frames for animation"). The boxes of each frame are in
+ * that frame's own coordinates, exactly what `parseDesignFile` would have returned
+ * for that page alone; `parseDesignScenes` is the same walk with a bake at the end.
+ *
+ * Same contract as parseDesignFile: `interactive` opens the shared page picker
+ * (every page pre-selected) for a multi-page PDF or deck and installs a Penpot
+ * file's fonts; headless callers take every page. Per-page failures warn and skip.
+ */
+export async function parseDesignArtboards(
+  file: File | Blob,
+  { host, log, interactive, map }: {
+    host?: HostV1; log?: (msg: string) => void; interactive?: boolean; map?: DesignMapOptions;
+  } = {},
+): Promise<DesignArtboardsResult> {
+  const warn: (msg: string) => void = typeof log === 'function' ? log : () => {};
+  if (file.size > MAX_IMPORT_BYTES) {
+    throw new Error(`This file is too large to import (over ${Math.round(MAX_IMPORT_BYTES / 1024 / 1024)} MB).`);
+  }
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const one = (res: DesignImportResult, name: string): DesignArtboardsResult => ({
+    frames: [{ name, width: res.width, height: res.height, boxes: res.boxes }],
+    background: res.background || '#ffffff',
+    ...(res.map ? { map: res.map } : {}),
+  });
+
+  if ((buf.length >= 4 && buf[0] === 0x38 && buf[1] === 0x42 && buf[2] === 0x50 && buf[3] === 0x53)
+    || (buf.length >= 9 && String.fromCharCode(...buf.subarray(0, 9)) === 'gimp xcf ')) {
+    const { parseLayeredAsDesign } = await import('./psd-import.ts');
+    const res = await parseLayeredAsDesign(file, {
+      host: host as unknown as Parameters<typeof parseLayeredAsDesign>[1]['host'],
+      warn,
+    }) as unknown as DesignImportResult;
+    return one(res, baseName((file as File).name, 'Layers'));
+  }
+
+  if (isPdf(buf)) {
+    const { parsePdfPages } = await import('./pdf-import.ts');
+    const frames = await parsePdfPages(file, { host: host as HostV1, warn, interactive, map });
+    return { frames, background: '#ffffff' };
+  }
+
+  if (isIndd(buf, file && (file as File).name)) {
+    throw new Error('A raw .indd file can’t be read directly. In InDesign choose File → Export → InDesign Markup (.idml) and import the .idml.');
+  }
+
+  const isZip = buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04;
+  if (isZip) {
+    const files = await unzipAsync(buf, {
+      maxEntryBytes: MAX_ZIP_ENTRY_BYTES,
+      maxTotalBytes: MAX_ZIP_TOTAL_BYTES,
+      tooLarge: name => `This archive expands too large to import (${name}).`,
+    });
+    if (isPptx(files)) {
+      const { parsePptxPages } = await import('./pptx-import.ts');
+      const { frames, background } = await parsePptxPages(file, files, { host: host as HostV1, warn, interactive, map });
+      return { frames, background };
+    }
+    if (isIdml(files)) {
+      // The IDML reader imports the first spread (and says so); one artboard.
+      const { parseIdmlZip } = await import('./idml-import.ts');
+      return one(await parseIdmlZip(files, { host, warn, map }), 'Spread 1');
+    }
+    if (files['canvas.fig']) return { frames: await collectFigFrames(files, { host, warn, map }), background: '#ffffff' };
+    return collectPenpotZipFrames(files, { host, warn, interactive, map });
+  }
+
+  const svgText = new TextDecoder('utf-8').decode(buf);
+  const svgEl = sanitizeSvg(svgText);
+  if (!svgEl) throw new Error('This file isn’t a readable SVG. Export your design as SVG and try again.');
+  const { nodes, width, height } = await svgToNodes(svgEl, { host, warn });
+  return { frames: [{ name: baseName((file as File).name, 'design'), width, height, boxes: finalizeBoxes(nodes, map) }], background: '#ffffff' };
+}
+
+/**
+ * How many pages a design file would come in as - or null when knowing costs the
+ * whole parse (a Penpot / Figma / IDML bundle). Cheap by construction: a PDF's page
+ * count comes off its page tree, a deck's off its slide part names, and a single
+ * SVG or layered bitmap is one page. Used by the drop door to decide whether a
+ * "pages as artboards / as scenes / just one" question is worth asking.
+ */
+export async function countDesignPages(file: File | Blob): Promise<number | null> {
+  if (file.size > MAX_IMPORT_BYTES) return null;
+  const head = new Uint8Array(await file.slice(0, 1024).arrayBuffer());
+  if (isPdf(head)) {
+    try {
+      const { openPdfFile } = await import('./pdf-import.ts');
+      return (await openPdfFile(file)).pageCount;
+    } catch { return null; }
+  }
+  const isZip = head.length >= 4 && head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04;
+  if (!isZip) return 1;
+  try {
+    const files = await unzipAsync(new Uint8Array(await file.arrayBuffer()), {
+      maxEntryBytes: MAX_ZIP_ENTRY_BYTES,
+      maxTotalBytes: MAX_ZIP_TOTAL_BYTES,
+      tooLarge: name => `This archive expands too large to import (${name}).`,
+    });
+    if (isPptx(files)) return Object.keys(files).filter((p) => /^ppt\/slides\/slide\d+\.xml$/i.test(p)).length || null;
+  } catch { return null; }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1491,7 +1627,7 @@ export async function parseDesignScenes(
   // vector asset per picked page (all pre-selected in 'multi' mode).
   if (isPdf(buf)) {
     const { ingestPdfAsSvgAssets } = await import('./pdf-import.ts');
-    const refs = await ingestPdfAsSvgAssets(host as HostV1, file, { mode: interactive ? 'multi' : 'single', warn });
+    const refs = await ingestPdfAsSvgAssets(host as HostV1, file, { mode: interactive ? 'multi' : 'single', warn, intent: 'scenes' });
     return { scenes: refs.map((asset, i) => ({ name: sceneName(asset, i), asset })) };
   }
 
@@ -1506,6 +1642,13 @@ export async function parseDesignScenes(
       maxTotalBytes: MAX_ZIP_TOTAL_BYTES,
       tooLarge: name => `This archive expands too large to import (${name}).`,
     });
+    if (isPptx(files)) {
+      // A deck: the slide→SVG ingest already does exactly this, one stored vector
+      // asset per picked slide. No chooser - the caller has already chosen scenes.
+      const { ingestPptxAsSvgAssets } = await import('./pptx-import.ts');
+      const refs = await ingestPptxAsSvgAssets(host as HostV1, file, { mode: interactive ? 'multi' : 'single', warn, chooser: false, parts: files, intent: 'scenes' });
+      return { scenes: refs.map((asset, i) => ({ name: sceneName(asset, i), asset })) };
+    }
     if (isIdml(files)) {
       // IDML: parse the first spread into boxes and bake it as a single scene.
       const { parseIdmlZip } = await import('./idml-import.ts');
@@ -1701,7 +1844,7 @@ async function bakeFrames(
 
 // Figma .fig → per-frame scenes: engine walk splits top-level frames, then each
 // frame's media resolves and bakes independently (one shared image cache).
-async function parseFigScenes(files: Record<string, Uint8Array>, { host, warn, map }: { host: HostV1 | undefined; warn: (msg: string) => void; map?: DesignMapOptions }): Promise<DesignScenesResult> {
+async function collectFigFrames(files: Record<string, Uint8Array>, { host, warn, map }: { host: HostV1 | undefined; warn: (msg: string) => void; map?: DesignMapOptions }): Promise<DesignImportFrame[]> {
   const canvasFig = files['canvas.fig'];
   if (!canvasFig || !canvasFig.length) throw new Error('This .fig has no canvas data.');
   let doc: any;
@@ -1713,13 +1856,16 @@ async function parseFigScenes(files: Record<string, Uint8Array>, { host, warn, m
   if (!sceneDefs.length) throw new Error('This .fig has no importable frames.');
 
   const imageCache = new Map<string, AssetRef>();
-  const frames: Array<{ name: string; width: number; height: number; boxes: unknown[] }> = [];
+  const frames: DesignImportFrame[] = [];
   for (const sc of sceneDefs) {
     await resolveFigMedia(host, files, sc.nodes as any[], imageCache, warn);
     const boxes = finalizeBoxes(sc.nodes as any[], { prefix: 'f', ...map });
     if (boxes.length) frames.push({ name: sc.name, width: sc.width, height: sc.height, boxes });
   }
-  return { scenes: await bakeFrames(host, warn, frames) };
+  return frames;
+}
+async function parseFigScenes(files: Record<string, Uint8Array>, ctx: { host: HostV1 | undefined; warn: (msg: string) => void; map?: DesignMapOptions }): Promise<DesignScenesResult> {
+  return { scenes: await bakeFrames(ctx.host, ctx.warn, await collectFigFrames(files, ctx)) };
 }
 
 // Penpot ZIP → per-board scenes. Binfile-v3 walks every page's top-level boards;
@@ -1765,11 +1911,40 @@ async function parsePenpotZipScenes(files: Record<string, Uint8Array>, { host, w
   throw new Error('Could not read this Penpot file. In Penpot use “Export as .penpot” (or export the board as SVG) and import that.');
 }
 
+// Penpot ZIP → per-board editable frames (the artboards import). Binfile-v3 walks
+// every page's boards exactly as the scenes walk does, minus the bake; the legacy
+// SVG export parses each page SVG into boxes the way a single-SVG import does.
+async function collectPenpotZipFrames(files: Record<string, Uint8Array>, { host, warn, interactive, map }: { host: HostV1 | undefined; warn: (msg: string) => void; interactive?: boolean; map?: DesignMapOptions }): Promise<DesignArtboardsResult> {
+  const manifest = files['manifest.json'] ? safeJsonParse(strFromU8(files['manifest.json'])) : null;
+  const isExportFiles = manifest && typeof manifest.type === 'string' && /export-files/.test(manifest.type);
+  const hasShapeJson = Object.keys(files).some((p) => /\/pages\/[^/]+\/[^/]+\.json$/i.test(p));
+  if (isExportFiles && hasShapeJson) {
+    return { frames: await collectPenpotBinfileFrames(files, manifest, { host, warn, interactive, map }), background: '#ffffff' };
+  }
+  const svgPaths = Object.keys(files).filter((p) => /\.svg$/i.test(p) && !/[/\\]$/.test(p));
+  if (!svgPaths.length) throw new Error('Could not read this Penpot file. In Penpot use “Export as .penpot” (or export the board as SVG) and import that.');
+  const frames: DesignImportFrame[] = [];
+  for (const path of svgPaths.sort().slice(0, MAX_SCENES)) {
+    let svgText: string;
+    try { svgText = strFromU8(files[path]!); }
+    catch { warn(`Skipped a Penpot page that wasn’t text (${path}).`); continue; }
+    const svgEl = sanitizeSvg(svgText);
+    if (!svgEl) { warn(`Skipped an unreadable Penpot page (${path}).`); continue; }
+    const name = baseName(path.split('/').pop(), `Page ${frames.length + 1}`);
+    const { nodes, width, height } = await svgToNodes(svgEl, { host, warn, penpot: true, zipFiles: files });
+    const boxes = finalizeBoxes(nodes, map);
+    if (boxes.length) frames.push({ name, width, height, boxes });
+  }
+  if (svgPaths.length > MAX_SCENES) warn(`This file has ${svgPaths.length} pages - only the first ${MAX_SCENES} were imported.`);
+  if (!frames.length) throw new Error('This Penpot file didn’t contain any importable pages.');
+  return { frames, background: '#ffffff' };
+}
+
 // Penpot binfile-v3 → scenes: every page's top-level boards (type 'frame') become
 // one scene each, cropped to the board; loose top-level shapes collect into one
 // extra scene per page. Same shape→node mapping + media loading as the single-page
 // import (parsePenpotBinfile), so the two paths can't drift visually.
-async function parsePenpotBinfileScenes(files: Record<string, Uint8Array>, manifest: any, { host, warn, interactive, map }: { host: HostV1 | undefined; warn: (msg: string) => void; interactive?: boolean; map?: DesignMapOptions }): Promise<DesignScenesResult> {
+async function collectPenpotBinfileFrames(files: Record<string, Uint8Array>, manifest: any, { host, warn, interactive, map }: { host: HostV1 | undefined; warn: (msg: string) => void; interactive?: boolean; map?: DesignMapOptions }): Promise<DesignImportFrame[]> {
   const fileId = Array.isArray(manifest.files) && manifest.files[0] ? manifest.files[0].id : null;
   if (!fileId) throw new Error('This Penpot file has no importable file.');
 
@@ -1794,7 +1969,7 @@ async function parsePenpotBinfileScenes(files: Record<string, Uint8Array>, manif
 
   const ROOT = '00000000-0000-0000-0000-000000000000';
   const imageCache = new Map<string, AssetRef>();
-  const frames: Array<{ name: string; width: number; height: number; boxes: unknown[] }> = [];
+  const frames: DesignImportFrame[] = [];
 
   // Map an ordered walk (shapes + flatten markers) to nodes - the shared resolver,
   // so this path and the single-page import can't drift.
@@ -1895,7 +2070,10 @@ async function parsePenpotBinfileScenes(files: Record<string, Uint8Array>, manif
     }
   }
   if (!frames.length) throw new Error('This Penpot file has no importable boards.');
-  return { scenes: await bakeFrames(host, warn, frames) };
+  return frames;
+}
+async function parsePenpotBinfileScenes(files: Record<string, Uint8Array>, manifest: any, ctx: { host: HostV1 | undefined; warn: (msg: string) => void; interactive?: boolean; map?: DesignMapOptions }): Promise<DesignScenesResult> {
+  return { scenes: await bakeFrames(ctx.host, ctx.warn, await collectPenpotBinfileFrames(files, manifest, ctx)) };
 }
 
 // ---------------------------------------------------------------------------

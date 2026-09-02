@@ -1683,6 +1683,42 @@ export function trimClip(
 }
 
 /**
+ * Trim the SAME edge of several clips by the SAME `deltaSec` - a drag on one edge of a
+ * multi-selection, or a keyboard nudge with several clips selected. Each clip clamps
+ * against its OWN source (`mediaDurOf(id)`) and the MIN_DUR floor, so a clip that runs
+ * out of file stops where it must while the others keep going - Premiere's and
+ * Resolve's "trim selected edges" rule, and the only one that never invents source.
+ *
+ * Applied one clip at a time through {@link trimClip}, in row order, so every clamp,
+ * the keyframe rebase and the magnetic repack are the single-clip ones: a seq clip's
+ * trim ripples the row after each step and an overlay anchored to a moved clip travels
+ * with it, exactly as it would have if the user had trimmed the clips one by one. Ids
+ * that name no timed row (scenery, an unknown id) are skipped; a single eligible id is
+ * simply `trimClip`, so callers can route every trim here.
+ */
+export function trimClips(
+  boxes: Box[],
+  cfg: TimeCfg,
+  ids: readonly string[],
+  edge: 'in' | 'out',
+  deltaSec: number,
+  mediaDurOf: (id: string) => number | null | undefined,
+  mediaDur?: MediaDurFn,
+): Box[] {
+  const rows = Array.isArray(boxes) ? boxes : [];
+  const set = new Set(Array.from(ids, String));
+  const targets: string[] = [];
+  for (const b of rows) {
+    const id = String(b?.[cfg.idField] ?? '');
+    if (id && set.has(id) && isTimed(b, cfg)) targets.push(id);
+  }
+  if (!targets.length) return rows.map((b) => b);
+  let out = rows;
+  for (const id of targets) out = trimClip(out, cfg, id, edge, deltaSec, mediaDurOf(id) ?? null, mediaDur);
+  return out;
+}
+
+/**
  * Set a clip's in-point (Trim in) or its playback rate, holding the media invariant.
  *
  * These exist because the two inspector fields USED to write raw values straight

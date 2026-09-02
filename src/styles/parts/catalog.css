@@ -1138,6 +1138,13 @@ button.cat-download { font: inherit; cursor: pointer; }
 .cat-dl-hint { color: hsl(var(--muted-foreground)); font-size: var(--fs-sm); }
 .cat-dl-actions { display: flex; justify-content: flex-end; gap: var(--sp-4); margin-top: 4px; }
 
+/* "Send to…" dialog (stored-asset sends, plans/129): provider buttons + one status line. */
+.cat-send-row { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+.cat-send-row .btn { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.cat-send-status { min-height: 1.2em; margin: var(--sp-3) 0 0; font-size: var(--fs-sm); color: hsl(var(--muted-foreground)); }
+.cat-send-status a { color: hsl(var(--primary)); }
+.cat-send-empty { color: hsl(var(--muted-foreground)); font-size: var(--fs-lg); max-width: 40ch; }
+
 /* Crop dialog - the asset fitted into an aspect-matched stage with a drag/resize crop
    box (dialogs mount on document.body, so these are NOT scoped under .catalog). The stage
    matches the asset aspect so the image fills it edge-to-edge; the box is then a straight

@@ -175,8 +175,94 @@ export async function parsePdfFile(
     }
   }
 
+  const { boxes, width, height } = await pageToBoxes(doc, pageIndex, host, warn, map, newImportCaches());
+  return { boxes, width, height, background: '#ffffff' };
+}
+
+/**
+ * What one import remembers across its pages: the stored ref for every vector
+ * path (keyed by the SVG it became) and for every image XObject (keyed by the
+ * pdf-lib stream object, which pdf-lib hands back by identity for one /XObject
+ * ref). A deck puts the same logo and the same colour bar on every page; without
+ * this a 28-page import decoded, soft-masked and stored the same picture 28 times.
+ */
+interface ImportCaches {
+  vectors: Map<string, unknown>;
+  images: Map<unknown, unknown>;
+}
+const newImportCaches = (): ImportCaches => ({ vectors: new Map(), images: new Map() });
+
+/** One page of a document as an editable frame: its boxes in page coordinates. */
+export interface PdfPageFrame {
+  name: string;
+  width: number;
+  height: number;
+  boxes: unknown[];
+  /** This page's own ground where the source declares one (a slide's background). */
+  background?: string;
+}
+
+/** Pages beyond this are skipped with a warning on a headless (no picker) import -
+ *  the page picker's own ceiling, so both routes agree on what "all pages" means. */
+export const MAX_PAGE_FRAMES = 60;
+
+/**
+ * SEVERAL pages of a PDF/.ai as editable frames - the artboards import. `pages`
+ * names the 0-based indices to take; without it an interactive caller gets the
+ * shared multi-page picker (every page pre-selected, cancelling throws
+ * 'Import cancelled.') and a headless one takes every page up to
+ * {@link MAX_PAGE_FRAMES}. Each page runs the SAME interpret → resolve → finalize
+ * pass `parsePdfFile` runs on one, so an artboard is exactly what "replace the
+ * board" would have imported for that page. A page that fails to interpret is
+ * warned about and skipped rather than failing the whole document.
+ */
+export async function parsePdfPages(
+  file: File | Blob,
+  { host, warn = () => {}, pages, interactive, map }: {
+    host: HostV1; warn?: (msg: string) => void; pages?: number[]; interactive?: boolean; map?: DesignMapOptions;
+  },
+): Promise<PdfPageFrame[]> {
+  const doc = await loadDoc(file);
+  const pageCount = doc.getPageCount();
+  if (!pageCount) throw new Error('This PDF has no pages.');
+
+  let picked: number[];
+  if (Array.isArray(pages) && pages.length) {
+    picked = pages.map((p) => Math.floor(p)).filter((p) => p >= 0 && p < pageCount);
+  } else if (pageCount > 1 && interactive) {
+    const chosen = await pickPdfPages(makeHandle(doc), { mode: 'multi', fileName: (file as File).name || '', intent: 'artboards' });
+    if (!chosen?.length) throw new Error('Import cancelled.');
+    picked = chosen;
+  } else {
+    picked = Array.from({ length: Math.min(pageCount, MAX_PAGE_FRAMES) }, (_, i) => i);
+    if (pageCount > MAX_PAGE_FRAMES) warn(`This document has ${pageCount} pages - only the first ${MAX_PAGE_FRAMES} were imported.`);
+  }
+
+  const frames: PdfPageFrame[] = [];
+  const caches = newImportCaches();
+  for (const p of picked) {
+    if (picked.length > 1) warn(`Reading page ${p + 1} of ${pageCount}…`);
+    try {
+      const { boxes, width, height } = await pageToBoxes(doc, p, host, warn, map, caches);
+      frames.push({ name: `Page ${p + 1}`, width, height, boxes });
+    } catch (err) {
+      warn(`Skipped page ${p + 1} (${msg(err)}).`);
+    }
+  }
+  if (!frames.length) throw new Error('Couldn’t find any importable artwork in that document.');
+  return frames;
+}
+
+/**
+ * One page → Design boxes: interpret the content stream, resolve every placeholder
+ * (vector paths and image XObjects) to a stored asset, then finalize. Shared by the
+ * single-page and the per-page (artboards) imports so the two cannot drift.
+ */
+async function pageToBoxes(
+  doc: PDFDocument, pageIndex: number, host: HostV1, warn: (msg: string) => void, map: DesignMapOptions | undefined, caches: ImportCaches,
+): Promise<{ boxes: unknown[]; width: number; height: number }> {
   // Diagnostics are collected, not forwarded: one line per approximated paint would
-  // be dozens of toasts. Summarised below, and only for the genuinely lossy rungs - 
+  // be dozens of toasts. Summarised below, and only for the genuinely lossy rungs -
   // a tiling pattern that collapsed to its inner paint lost nothing.
   const diagnostics: string[] = [];
   const { nodes, width, height, imageStreams } = interpretPage(doc, pageIndex, (m) => diagnostics.push(m));
@@ -192,7 +278,7 @@ export async function parsePdfFile(
   // heuristic used to do for EVERY surface - now scoped to the one surface that
   // genuinely cannot render a mask.)
   const drawable = nodes.filter((n) => !isShadowPlate(n));
-  const vecCache = new Map<string, unknown>();
+  const vecCache = caches.vectors;
   for (const n of drawable) {
     delete n._clips;
     delete n._softMask;
@@ -203,7 +289,15 @@ export async function parsePdfFile(
         clearVector(n);
       } else if (n._imageXObject) {
         const desc = imageStreams.get(n._imageXObject);
-        const ref = desc ? await resolveImage(host, desc, warn) : null;
+        // One decode + one store per XObject for the whole import, however many
+        // pages place it. `null` is remembered too: an undecodable image stays
+        // undecodable on page 27.
+        const key = desc?.stream ?? null;
+        let ref: unknown = null;
+        if (desc) {
+          if (key && caches.images.has(key)) ref = caches.images.get(key) ?? null;
+          else { ref = await resolveImage(host, desc, warn); if (key) caches.images.set(key, ref); }
+        }
         if (ref) { n.image = ref; } else { n.kind = 'box'; n.fill = ''; }
         delete n._imageXObject;
       }
@@ -215,7 +309,7 @@ export async function parsePdfFile(
 
   const boxes = finalizeBoxes(drawable, { prefix: 'p', ...map });
   if (!boxes.length) throw new Error('Couldn’t find any importable artwork on that page.');
-  return { boxes, width: Math.max(1, Math.round(width)), height: Math.max(1, Math.round(height)), background: '#ffffff' };
+  return { boxes, width: Math.max(1, Math.round(width)), height: Math.max(1, Math.round(height)) };
 }
 
 // ── pdf-lib access helpers ─────────────────────────────────────────────────────
@@ -665,8 +759,10 @@ async function flateImageToPng(desc: ImageDesc): Promise<Uint8Array | null> {
 async function storeBytes(host: HostV1, bytes: Uint8Array, type: string, ext: string): Promise<unknown> {
   const file = new File([bytes as BlobPart], `pdf-${Date.now()}-${Math.round(bytes.length)}.${ext}`, { type });
   // storeUserUpload's param is a shell-internal PickerHost superset of HostV1; the real
-  // host satisfies it at runtime (same object the picker uses).
-  return storeUserUpload(host as Parameters<typeof storeUserUpload>[0], file);
+  // host satisfies it at runtime (same object the picker uses). `batch`: a picture the
+  // library already holds byte-for-byte is that asset - an import never asks, and
+  // never raises the library's milestone notice mid-run.
+  return storeUserUpload(host as Parameters<typeof storeUserUpload>[0], file, { batch: true });
 }
 
 // ── vector path resolution ──────────────────────────────────────────────────
@@ -685,7 +781,7 @@ async function storeVector(host: HostV1, n: ImportNode, cache: Map<string, unkno
     `<path d="${d}" fill="${fill}"${strokeAttr}/></svg>`;
   if (cache.has(svg)) return cache.get(svg);
   const file = new File([svg], `pdf-vec-${cache.size}.svg`, { type: 'image/svg+xml' });
-  const ref = await storeUserUpload(host as Parameters<typeof storeUserUpload>[0], file);
+  const ref = await storeUserUpload(host as Parameters<typeof storeUserUpload>[0], file, { batch: true });
   cache.set(svg, ref);
   return ref;
 }
@@ -1272,9 +1368,21 @@ function makeHandle(doc: PDFDocument): PdfHandle {
       const total = doc.getPageCount();
       const pages = Math.max(0, Math.min(total, maxPages ?? total));
       const out: ExtractedVector[] = [];
+      // A deck repeats its logo on every page. Listed once: a repeat is the same
+      // asset, and with MAX_VECTORS marks in the whole document, twenty-eight copies
+      // of one logo would crowd out the diagram on page 15. The key is the mark's
+      // own geometry + shape count + palette; the SVG text differs per mark (ids).
+      const seen = new Set<string>();
       for (let p = 0; p < pages && out.length < MAX_VECTORS; p++) {
-        try { out.push(...await vectorsOnPage(this as PdfHandle, doc, p, out.length)); }
-        catch { /* one bad page must not cost the rest of the document */ }
+        try {
+          for (const v of await vectorsOnPage(this as PdfHandle, doc, p, out.length)) {
+            const key = `${v.width}x${v.height}|${v.shapes}|${v.fills.join(',')}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            out.push(v);
+            if (out.length >= MAX_VECTORS) break;
+          }
+        } catch { /* one bad page must not cost the rest of the document */ }
       }
       return out;
     },
@@ -1506,15 +1614,35 @@ const MAX_PICK_PAGES = 60;
  * them" is the one-click default - and the Add button resolves the selection.
  * Cancel / Escape / backdrop resolve null.
  */
+export type PickPagesIntent = 'library' | 'artboards' | 'scenes';
+
+/** What the dialog says the pages will become, per intent - the sub line and the
+ *  Add button. The library ingest is the default and reads exactly as it always did. */
+const PICK_COPY: Record<PickPagesIntent, { sub: string; add: (n: number) => string }> = {
+  library: {
+    sub: 'Each selected page is added to your library as an SVG.',
+    add: (n) => (n === 1 ? 'Add 1 page' : `Add ${n} pages`),
+  },
+  artboards: {
+    sub: 'Each selected page becomes its own artboard, with its parts editable.',
+    add: (n) => (n === 1 ? 'Import 1 page as an artboard' : `Import ${n} pages as artboards`),
+  },
+  scenes: {
+    sub: 'Each selected page becomes a timed scene on the timeline.',
+    add: (n) => (n === 1 ? 'Add 1 scene' : `Add ${n} scenes`),
+  },
+};
+
 export function pickPdfPages(
   handle: PdfHandle,
-  { mode, fileName = '' }: { mode: 'single' | 'multi'; fileName?: string },
+  { mode, fileName = '', intent = 'library' }: { mode: 'single' | 'multi'; fileName?: string; intent?: PickPagesIntent },
 ): Promise<number[] | null> {
   return new Promise((resolve) => {
     const total = handle.pageCount;
     const shown = Math.min(total, MAX_PICK_PAGES);
     const usable = new Set<number>(Array.from({ length: shown }, (_, i) => i));
     const selected = new Set<number>(mode === 'multi' ? usable : []);
+    const copy = PICK_COPY[intent] ?? PICK_COPY.library;
 
     let trap: FocusTrap | undefined;
     const overlay = document.createElement('div');
@@ -1526,9 +1654,7 @@ export function pickPdfPages(
           <span class="pdfpick-title">${mode === 'single' ? 'Choose a page' : 'Choose pages'}${fileName ? ` - ${xmlEsc(fileName)}` : ''}</span>
           <button type="button" class="pdfpick-close" aria-label="Close">&times;</button>
         </header>
-        <p class="pdfpick-sub">${mode === 'single'
-          ? 'Pick the page to import.'
-          : 'Each selected page is added to your library as an SVG.'}</p>
+        <p class="pdfpick-sub">${mode === 'single' ? 'Pick the page to import.' : copy.sub}</p>
         <div class="pdfpick-grid">
           ${Array.from({ length: shown }, (_, i) => `
             <button type="button" class="pdfpick-page${mode === 'multi' ? ' is-on' : ''}" data-page="${i}" aria-pressed="${mode === 'multi'}">
@@ -1570,7 +1696,7 @@ export function pickPdfPages(
     const sync = (): void => {
       if (addBtn) {
         addBtn.disabled = selected.size === 0;
-        addBtn.textContent = selected.size === 1 ? 'Add 1 page' : `Add ${selected.size} pages`;
+        addBtn.textContent = copy.add(selected.size);
       }
       if (allBtn) allBtn.textContent = (usable.size > 0 && selected.size === usable.size) ? 'Select none' : 'Select all';
     };
@@ -1641,7 +1767,7 @@ export function pickPdfPages(
 export async function ingestPdfAsSvgAssets(
   host: HostV1,
   file: File | Blob,
-  { mode = 'multi', warn = () => {} }: { mode?: 'single' | 'multi'; warn?: (msg: string) => void } = {},
+  { mode = 'multi', warn = () => {}, intent = 'library' }: { mode?: 'single' | 'multi'; warn?: (msg: string) => void; intent?: PickPagesIntent } = {},
 ): Promise<AssetRef[]> {
   const name = (file as File).name || 'document.pdf';
   const handle = await openPdfFile(file);
@@ -1651,7 +1777,7 @@ export async function ingestPdfAsSvgAssets(
   if (handle.pageCount === 1) {
     pages = [0];
   } else {
-    const picked = await pickPdfPages(handle, { mode, fileName: name });
+    const picked = await pickPdfPages(handle, { mode, fileName: name, intent });
     if (!picked?.length) return [];
     pages = picked;
   }

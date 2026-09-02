@@ -35,10 +35,18 @@ import { t } from '../i18n.ts';
  * `/#/…` links, external URLs) - the caller then leaves the href untouched.
  */
 export function toReaderHref(href: string): string | null {
-  const m = /^\/info\/(?:[a-z][a-z-]*\/)?([^/]+?)\.html(?:\?[^#]*)?(?:#(.*))?$/.exec(href);
+  const m = /^\/info\/((?:[a-z][a-z0-9-]*\/)*)([^/]+?)\.html(?:\?[^#]*)?(?:#(.*))?$/.exec(href);
   if (!m) return null;
-  const anchor = m[2] ? m[2].trim() : '';
-  return anchor ? `#/docs/${m[1]}?h=${encodeURIComponent(anchor)}` : `#/docs/${m[1]}`;
+  // Prefix segments are a locale (dropped - the reader runs in the app's own),
+  // a door directory (kept - since plans/177 it is part of the page's slug:
+  // /info/create/using.html ↔ #/docs/create/using), or both, in that order.
+  const DOORS = new Set(['start', 'create', 'build', 'operate', 'trust']);
+  const segs = m[1] ? m[1].split('/').filter(Boolean) : [];
+  const door = segs.length && DOORS.has(segs[segs.length - 1]!) ? segs[segs.length - 1]! : null;
+  if ((door ? segs.length - 1 : segs.length) > 1) return null; // deeper than lang+door - not a doc page
+  const slug = door ? `${door}/${m[2]}` : m[2];
+  const anchor = m[3] ? m[3].trim() : '';
+  return anchor ? `#/docs/${slug}?h=${encodeURIComponent(anchor)}` : `#/docs/${slug}`;
 }
 
 /**

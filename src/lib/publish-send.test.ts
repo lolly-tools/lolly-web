@@ -60,6 +60,27 @@ test('loopbackVia: binds first, opens the system browser, hands back the query',
   assert.equal(invokes[1]!.args?.path, 'https://provider.example/authorize?x=1');
 });
 
+test('loopbackVia: the host and port options reach the Rust contract (WP4b)', async () => {
+  const invokes: Array<{ cmd: string; args?: Record<string, unknown> }> = [];
+  const transport = {
+    async invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+      invokes.push({ cmd, args });
+      if (cmd === 'oauth_listen') return ((args?.ports as number[] | undefined)?.[0] ?? 49152) as T;
+      if (cmd === 'oauth_wait') return 'code=abc&state=xyz' as T;
+      return undefined as T;
+    },
+  };
+  // Dropbox/Microsoft shape: the literal host `localhost` (neither documents
+  // 127.0.0.1 as acceptable), still an ephemeral port.
+  const localhost = await loopbackVia(transport, { host: 'localhost' });
+  assert.equal(localhost.redirectUri, 'http://localhost:49152/oauth-return');
+  assert.equal(invokes[0]!.args, undefined, 'no list = the Rust side binds :0, exactly as before');
+  // LinkedIn shape: a fixed list, because the redirect is matched exactly.
+  const pinned = await loopbackVia(transport, { host: 'localhost', ports: [47811, 47812, 47813] });
+  assert.equal(pinned.redirectUri, 'http://localhost:47811/oauth-return');
+  assert.deepEqual(invokes[1]!.args, { ports: [47811, 47812, 47813] });
+});
+
 test('codeGrant through a via: redirect + PKCE + client_secret land in the exchange', async () => {
   let authorizeUrl = '';
   let exchangeBody: URLSearchParams | null = null;
@@ -94,6 +115,42 @@ test('codeGrant through a via: redirect + PKCE + client_secret land in the excha
   assert.equal(body.get('redirect_uri'), 'http://127.0.0.1:5000/oauth-return');
   // The verifier must actually match the challenge the authorize URL carried.
   assert.equal(await pkceChallenge(body.get('code_verifier')!), auth.searchParams.get('code_challenge'));
+});
+
+test('codeGrant with pkce:false sends no challenge and no verifier, but keeps the secret', async () => {
+  // LinkedIn's shape: PKCE is partner-only there and the exchange is refused if
+  // a verifier rides along, so the option must remove BOTH halves of it.
+  let authorizeUrl = '';
+  let exchangeBody: URLSearchParams | null = null;
+  globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+    exchangeBody = new URLSearchParams(String(init?.body));
+    return new Response(JSON.stringify({ access_token: 'tok', expires_in: 5_184_000 }), {
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as typeof fetch;
+  const set = await codeGrant({
+    authorizeUrl: 'https://www.linkedin.com/oauth/v2/authorization',
+    tokenUrl: 'https://www.linkedin.com/oauth/v2/accessToken',
+    clientId: 'cid',
+    clientSecret: 'org-owned-secret',
+    scopes: 'openid profile w_member_social',
+    pkce: false,
+  }, undefined, {
+    redirectUri: 'http://localhost:47811/oauth-return',
+    async run(url: string) {
+      authorizeUrl = url;
+      const state = new URL(url).searchParams.get('state')!;
+      return { hash: '', search: `code=thecode&state=${state}` };
+    },
+  });
+  assert.equal(set.accessToken, 'tok');
+  const auth = new URL(authorizeUrl);
+  assert.equal(auth.searchParams.get('code_challenge'), null, 'no challenge on the authorize URL');
+  assert.equal(auth.searchParams.get('code_challenge_method'), null);
+  const body = exchangeBody!;
+  assert.equal(body.get('code_verifier'), null, 'and none in the exchange');
+  assert.equal(body.get('client_secret'), 'org-owned-secret', 'which is what makes the secret necessary');
+  assert.equal(body.get('redirect_uri'), 'http://localhost:47811/oauth-return');
 });
 
 // ── Discord ──────────────────────────────────────────────────────────────────

@@ -474,7 +474,7 @@ function mount(
   initial: Box[],
   pxPerSecHint = 40,
   addKinds: Array<{ id: string; label?: string; seed?: Record<string, unknown> }> = ADD_KINDS,
-  extra: { host?: unknown; capabilities?: string[]; assetField?: string; linkField?: string; cfgPatch?: Record<string, unknown> } = {},
+  extra: { host?: unknown; capabilities?: string[]; assetField?: string; linkField?: string; cfgPatch?: Record<string, unknown>; frameSize?: () => { w: number; h: number } | null } = {},
 ): Harness {
   const doc = dom.window.document;
   const stageEl = doc.createElement('div');
@@ -511,6 +511,7 @@ function mount(
       onChange: (cb: () => void) => { selListeners.add(cb); return () => { selListeners.delete(cb); }; },
     },
     reserve: (px: number) => { reserves.push(px); },
+    ...(extra.frameSize ? { frameSize: extra.frameSize } : {}),
     addKinds,
     ...(extra.assetField ? { assetField: extra.assetField } : {}),
   } as never);
@@ -1405,6 +1406,8 @@ interface FakeRecorder {
   grant(): void;
   /** Let a held (`holdUpload`) asset write finish. */
   finishUpload(): void;
+  /** What the last `record()` was asked for (video/frame/maxMs), or null. */
+  lastRecordOpts(): Record<string, unknown> | null;
 }
 
 /**
@@ -1425,6 +1428,7 @@ function fakeHost(opts: { deny?: boolean; bytes?: number; gateMeter?: boolean; h
   let grant = (): void => { /* replaced when a gated start is in flight */ };
   let finishUpload = (): void => { /* replaced when a held upload is in flight */ };
   const uploads = new Map<string, { type?: string; meta?: Record<string, unknown> }>();
+  let lastRecordOpts: Record<string, unknown> | null = null;
   const host = {
     log: () => { /* quiet */ },
     recorder: {
@@ -1442,8 +1446,9 @@ function fakeHost(opts: { deny?: boolean; bytes?: number; gateMeter?: boolean; h
         stop: () => { refs = Math.max(0, refs - 1); if (refs === 0) open = false; },
         subscribe: () => () => { /* no levels in jsdom */ },
       },
-      record: async () => {
+      record: async (o?: Record<string, unknown>) => {
         sessions++;
+        lastRecordOpts = o ?? null;
         return {
           subscribe: () => () => { /* no levels in jsdom */ },
           stop: async () => new Blob([new Uint8Array(opts.bytes ?? 2048)], { type: 'audio/webm;codecs=opus' }),
@@ -1466,7 +1471,7 @@ function fakeHost(opts: { deny?: boolean; bytes?: number; gateMeter?: boolean; h
   };
   return {
     host, meterRefs: () => refs, sessions: () => sessions, cancels: () => cancels, uploads: () => uploads,
-    grant: () => grant(), finishUpload: () => finishUpload(),
+    grant: () => grant(), finishUpload: () => finishUpload(), lastRecordOpts: () => lastRecordOpts,
   };
 }
 
@@ -1578,6 +1583,91 @@ test('a completed take inserts ONE audio box at the playhead, with the MEASURED 
     assert.ok(painted.every((el) => !el.hasAttribute('data-t-mute')), 'the composition is audible again');
     assert.equal((h.root.querySelector('.tl-rec') as HTMLElement).hidden, true, 'the HUD is gone');
     assert.equal(mic.getAttribute('aria-pressed'), 'false');
+  } finally { h.teardown(); TAKE_TIMING.countInMs = countIn; clock.restore(); }
+});
+
+/** The sequence vocabulary a camera take needs: a clip kind (what it becomes) beside the
+ *  audio kind the mic uses. Seeds mirror community/design's manifest. */
+const RECORD_KINDS = [
+  { id: 'clip', label: 'Clip', seed: { kind: 'image', lane: 'seq', fit: 'cover' } },
+  { id: 'audio', label: 'Audio', seed: { kind: 'audio' } },
+];
+
+test('the camera button needs a video-capable recorder and a clip add-kind', () => {
+  // A shell whose recorder captures audio only (isAvailable('video') false).
+  const audioOnly = fakeHost();
+  const base = audioOnly.host as { recorder: { isAvailable: (k?: string) => boolean } };
+  const onlyMic = { ...base, recorder: { ...base.recorder, isAvailable: (k?: string) => k !== 'video' } };
+  const noVideo = mount([clip('a', 0, 3)], 40, RECORD_KINDS, { host: onlyMic });
+  try {
+    assert.equal((noVideo.root.querySelector('.tl-cam') as HTMLElement).hidden, true, 'no video capture → no button');
+    assert.equal((noVideo.root.querySelector('.tl-mic') as HTMLElement).hidden, false, 'the mic is unaffected');
+  } finally { noVideo.teardown(); }
+
+  // A capable shell but no clip kind: the take would have no box to become.
+  const noClip = mount([clip('a', 0, 3)], 40, AUDIO_KINDS.filter((k) => k.id !== 'clip'), { host: fakeHost().host });
+  try {
+    assert.equal((noClip.root.querySelector('.tl-cam') as HTMLElement).hidden, true, 'no clip add-kind → no button');
+  } finally { noClip.teardown(); }
+
+  const ready = mount([clip('a', 0, 3)], 40, RECORD_KINDS, { host: fakeHost().host });
+  try {
+    const cam = ready.root.querySelector('.tl-cam') as HTMLElement;
+    assert.equal(cam.hidden, false, 'host + clip kind → the button is offered');
+    assert.equal(cam.getAttribute('aria-label'), 'Record a video');
+    assert.equal(cam.getAttribute('aria-pressed'), 'false');
+  } finally { ready.teardown(); }
+});
+
+test('a completed video take records the EXPORT frame and hands the clip to the canvas at the playhead', async () => {
+  const fake = fakeHost();
+  const clock = fakeClock();
+  const countIn = TAKE_TIMING.countInMs;
+  TAKE_TIMING.countInMs = 0;
+  const h = mount([clip('a', 0, 5)], 40, RECORD_KINDS, { host: fake.host, frameSize: () => ({ w: 1080, h: 1920 }) });
+  const painted = paintCanvasBoxes(h);
+  const adds: Array<Record<string, unknown>> = [];
+  h.root.addEventListener('tl-add', (e) => { adds.push((e as CustomEvent).detail as Record<string, unknown>); });
+  try {
+    seekTo(h, 2);
+    const cam = h.root.querySelector('.tl-cam') as HTMLButtonElement;
+    const mic = h.root.querySelector('.tl-mic') as HTMLButtonElement;
+
+    const live = takeReaches(h.root, 'recording');
+    click(cam);
+    await live;
+
+    assert.equal(cam.getAttribute('aria-pressed'), 'true', 'the camera button reads as live');
+    assert.equal(mic.disabled, true, 'one take at a time: the mic waits');
+    assert.ok(h.stageEl.querySelector('.tl-cam-view video'), 'the self-view is up on the stage');
+    assert.equal((h.stageEl.querySelector('.tl-cam-view') as HTMLElement).style.aspectRatio, '1080 / 1920',
+      'the self-view box wears the export aspect');
+    const asked = fake.lastRecordOpts()!;
+    assert.equal(asked.video, true, 'camera + mic');
+    assert.deepEqual(asked.frame, { width: 1080, height: 1920 }, 'the take is cropped to the export frame');
+    assert.ok(painted.every((el) => el.getAttribute('data-t-mute') === '1'), 'the composition is silenced while recording');
+
+    clock.set(104200);                   // 4.2 s of take
+    const done = takeReaches(h.root, 'idle');
+    click(cam);
+    await done;
+
+    assert.equal(h.commits.length, 0, 'the PANEL writes nothing - the canvas owns clip geometry');
+    assert.equal(adds.length, 1, 'one tl-add carried the take to the canvas');
+    const add = adds[0]!;
+    assert.equal(add.kind, 'clip', 'born as the sequence clip kind');
+    assert.equal(add.atMs, 2000, 'placed where the playhead was when the take began');
+    assert.equal(add.durSec, 4.2, 'the MEASURED length rides along');
+    const ref = add.asset as { id: string };
+    assert.match(ref.id, /^user\/recording\/\d+\.webm$/, 'stored as a durable user asset');
+    const stored = fake.uploads().get(ref.id)!;
+    assert.equal(stored.type, 'video', 'typed VIDEO, not an audio take');
+    assert.equal(stored.meta?.durationMs, 4200);
+
+    assert.equal(h.stageEl.querySelector('.tl-cam-view'), null, 'the self-view is gone');
+    assert.equal(cam.getAttribute('aria-pressed'), 'false');
+    assert.equal(mic.disabled, false, 'the mic is back');
+    assert.equal(fake.meterRefs(), 0, 'the sound-check microphone reference was released');
   } finally { h.teardown(); TAKE_TIMING.countInMs = countIn; clock.restore(); }
 });
 
@@ -2601,6 +2691,59 @@ test('a seq trim RIPPLES live: the downstream bar moves during the drag, not on 
   } finally { h.teardown(); }
 });
 
+test('a trim drag on one edge of a MULTI-selection trims every selected clip - one write', async () => {
+  // Everything ends by 5s so the fitted zoom is the 40px/s the bar rects are laid out at.
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2), overlay('o', 1, 2), overlay('p', 3.5, 1)]);
+  try {
+    // Marquee-style selection of three clips, then a press on a's out edge (3s = 120px).
+    // A plain press on a member of a multi-selection keeps the set, so the trim is the
+    // group's - "drag from the edges to shrink or grow the whole group's duration".
+    h.select(['a', 'b', 'o']);
+    const a = h.bar('a');
+    const b = h.bar('b');
+    const o = h.bar('o');
+    a.dispatchEvent(pointer('pointerdown', 118));
+    assert.ok(a.classList.contains('is-trimming'), 'the pressed bar carries the trim chrome');
+    assert.equal(b.classList.contains('is-trimming'), false, 'the others do not - one badge, one ghost');
+    h.root.dispatchEvent(pointer('pointermove', 78, { altKey: true }));   // -40px = -1s
+    await frames(3);
+    assert.equal(a.style.width, '80px', 'a previews 1s shorter');
+    assert.equal(b.style.width, '40px', 'b too - same edge, same delta');
+    assert.equal(o.style.width, '40px', 'and the selected overlay');
+    assert.equal(b.style.left, '80px', 'the row repacked behind a mid-drag');
+    assert.equal(h.commits.length, 0, 'a preview is not a write');
+
+    h.root.dispatchEvent(pointer('pointerup', 78, { altKey: true }));
+    assert.equal(h.commits.length, 1, 'EXACTLY one write for the whole batch');
+    const rows = h.commits[0]!;
+    const dur = (id: string): number => Number(rows.find((x) => x.id === id)!.dur);
+    assert.equal(dur('a'), 2);
+    assert.equal(dur('b'), 1);
+    assert.equal(dur('o'), 1);
+    assert.equal(dur('p'), 1, 'not selected, so untouched');
+    assert.equal(Number(rows.find((x) => x.id === 'b')!.start), 2, 'the commit agrees with the preview');
+    assert.equal(a.classList.contains('is-trimming'), false, 'every trim state comes off on release');
+  } finally { h.teardown(); }
+});
+
+test('a batch trim clamps PER CLIP - the one that hits its source stops, the rest continue', async () => {
+  const h = mount([clip('a', 0, 5), overlay('o', 0, 2), overlay('p', 3, 1)]);
+  try {
+    // o has exactly 1s of headroom (a 3s source); p is a card with no source.
+    paintMediaBoxes(h, { o: '<div class="lolly-box-audio" data-audio-src="vo.mp3" data-audio-dur="3000"></div>' });
+    h.select(['o', 'p']);
+    const o = h.bar('o');
+    o.dispatchEvent(pointer('pointerdown', 78));                          // o's out edge (2s = 80px)
+    h.root.dispatchEvent(pointer('pointermove', 158, { altKey: true }));  // +80px = +2s
+    await frames(3);
+    h.root.dispatchEvent(pointer('pointerup', 158, { altKey: true }));
+    assert.equal(h.commits.length, 1);
+    const rows = h.commits[0]!;
+    assert.equal(Number(rows.find((x) => x.id === 'o')!.dur), 3, 'held at the end of its file');
+    assert.equal(Number(rows.find((x) => x.id === 'p')!.dur), 3, 'took the whole +2s');
+  } finally { h.teardown(); }
+});
+
 /** Arm the panel's keyboard the way a pointer would: hover the panel, focus a bar. */
 function armKeys(h: Harness, id: string, atPx: number): HTMLElement {
   h.root.dispatchEvent(new dom.window.Event('pointerenter'));
@@ -2645,6 +2788,22 @@ test('keyboard trim: `[` / `]` arm an edge and `,` / `.` walk it ONE frame, one 
     press(el, '.', { shiftKey: true });
     assert.equal(h.commits.length, 3, 'Shift is ten frames - still one write');
     assert.equal(Number(h.commits[2]!.find((x) => x.id === 'a')!.dur), 3.267);
+  } finally { h.teardown(); }
+});
+
+test('keyboard trim with several clips selected walks that edge on all of them', () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2), overlay('o', 1, 2)]);
+  try {
+    const el = armKeys(h, 'a', 60);
+    h.select(['a', 'b', 'o']);
+    press(el, ']');
+    press(el, ',');                                            // one frame earlier on every out edge
+    assert.equal(h.commits.length, 1, 'one write for the batch');
+    const rows = h.commits[0]!;
+    for (const id of ['a', 'b', 'o']) {
+      const before = id === 'b' || id === 'o' ? 2 : 3;
+      assert.equal(Number(rows.find((x) => x.id === id)!.dur), Math.round((before - 1 / 30) * 1000) / 1000, `${id} lost a frame`);
+    }
   } finally { h.teardown(); }
 });
 
@@ -4834,9 +4993,9 @@ test('+Keyframe sits at the END of the transport cluster, and says when it can d
     const cluster = Array.from(h.root.querySelectorAll<HTMLElement>('.tl-tools > .tl-btn'))
       .map((x) => x.classList[1]);
     assert.deepEqual(cluster, [
-      'tl-add', 'tl-mic', 'tl-script', 'tl-transcript', 'tl-split', 'tl-snap', 'tl-onion',
+      'tl-add', 'tl-mic', 'tl-cam', 'tl-script', 'tl-transcript', 'tl-split', 'tl-snap', 'tl-onion',
       'tl-zoom-out', 'tl-zoom-in', 'tl-fit', 'tl-keys', 'tl-kf-btn',
-    ], 'the diamond is LAST - never back among +, mic and script');
+    ], 'the diamond is LAST - never back among +, mic, camera and script');
     assert.equal(cluster.at(-1), 'tl-kf-btn', 'and nothing may be appended after it');
     assert.ok(b.querySelector('svg'), 'it is the diamond glyph');
 

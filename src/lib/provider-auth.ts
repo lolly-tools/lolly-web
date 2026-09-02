@@ -11,7 +11,10 @@
  *     parse what comes back.
  *   - `codeGrant()` / `refreshGrant()` - authorization-code + PKCE for public
  *     clients (Dropbox, Microsoft SPA): S256 challenge, state validation, the
- *     token exchange over CORS. No client secret anywhere, ever.
+ *     token exchange over CORS. No client secret for any provider that lets a
+ *     public client work; `pkce: false` + `clientSecret` is the one concession,
+ *     for a provider that offers PKCE to partner apps only (LinkedIn), and it
+ *     is why that driver is desktop-only.
  *
  * Google's web clients still demand a secret for code exchange, so the gdrive
  * driver keeps its implicit token grant and reuses only popupOAuth from here.
@@ -134,6 +137,13 @@ export interface CodeGrantConfig {
   /** Extra authorize-URL params (e.g. Dropbox token_access_type=offline). */
   extraAuthParams?: Record<string, string>;
   windowName?: string;
+  /** PKCE is on by default, and stays on for every provider that supports it -
+   *  which is nearly all of them. Set false ONLY for one that refuses the extra
+   *  params. LinkedIn is the case that forced the option: it offers PKCE to
+   *  partner apps only, and its ordinary token endpoint rejects an exchange
+   *  carrying a code_verifier. Such a provider demands a client_secret instead,
+   *  which is why the two travel together on that driver and nowhere else. */
+  pkce?: boolean;
 }
 
 /** The return page - the SAME registered redirect the token grant uses. */
@@ -165,17 +175,40 @@ function tauriTransport(): LoopbackTransport {
   return internals;
 }
 
+/** How the loopback redirect must be SHAPED for one provider - the two things
+ *  their registration policies disagree about (plans/129 WP4b). */
+export interface LoopbackOptions {
+  /** The literal host in the redirect URI. RFC 8252 treats `127.0.0.1` and
+   *  `localhost` as the same loopback, but registration policies do not:
+   *  Google's Desktop clients take the IP form (the default here, unchanged),
+   *  while Dropbox exempts "localhost URIs" by name and Microsoft cannot even
+   *  add an `http://127.0.0.1` reply URL through the portal UI. The bind is
+   *  always 127.0.0.1; only the text of the URI changes. */
+  host?: '127.0.0.1' | 'localhost';
+  /** Preferred ports, tried in order, for a provider that matches the redirect
+   *  URI EXACTLY and offers no port wildcard (LinkedIn) - every one of them has
+   *  to be registered up front, so the list stays short and fixed. Omitted =
+   *  an ephemeral port, which is what RFC 8252 assumes and what every other
+   *  provider here accepts. */
+  ports?: number[];
+}
+
 /**
  * The desktop authorize leg: bind the loopback port FIRST (the redirect URI
  * needs it), open the provider page in the system browser, then wait for the
  * one redirect. The port listener is single-shot; a cancelled sign-in simply
  * times out and the next attempt binds fresh.
  */
-export async function loopbackVia(transport?: LoopbackTransport): Promise<AuthorizeVia> {
+export async function loopbackVia(
+  transport?: LoopbackTransport, opts: LoopbackOptions = {},
+): Promise<AuthorizeVia> {
   const inv = transport ?? tauriTransport();
-  const port = await inv.invoke<number>('oauth_listen');
+  // No list = the Rust side binds :0 exactly as before; a list makes it try
+  // each in order and FAIL rather than fall back, because an unregistered port
+  // would be refused by the provider anyway.
+  const port = await inv.invoke<number>('oauth_listen', opts.ports ? { ports: opts.ports } : undefined);
   return {
-    redirectUri: `http://127.0.0.1:${port}/oauth-return`,
+    redirectUri: `http://${opts.host ?? '127.0.0.1'}:${port}/oauth-return`,
     async run(url: string): Promise<OAuthReturn> {
       await inv.invoke('plugin:shell|open', { path: url });
       const search = await inv.invoke<string>('oauth_wait', { port, timeoutMs: AUTH_TIMEOUT_MS });
@@ -222,7 +255,7 @@ export async function codeGrant(
   cfg: CodeGrantConfig, fetchFn: typeof fetch = fetch, via?: AuthorizeVia,
 ): Promise<TokenSet> {
   const state = randomState();
-  const { verifier, challenge } = await makePkce();
+  const pkce = cfg.pkce === false ? null : await makePkce();
   const leg = via ?? popupVia(cfg.windowName ?? 'lolly-oauth');
   const url = `${cfg.authorizeUrl}?${new URLSearchParams({
     client_id: cfg.clientId,
@@ -230,8 +263,7 @@ export async function codeGrant(
     response_type: 'code',
     scope: cfg.scopes,
     state,
-    code_challenge: challenge,
-    code_challenge_method: 'S256',
+    ...(pkce ? { code_challenge: pkce.challenge, code_challenge_method: 'S256' } : {}),
     ...cfg.extraAuthParams,
   })}`;
   const ret = await leg.run(url);
@@ -244,7 +276,7 @@ export async function codeGrant(
       code,
       client_id: cfg.clientId,
       ...(cfg.clientSecret ? { client_secret: cfg.clientSecret } : {}),
-      code_verifier: verifier,
+      ...(pkce ? { code_verifier: pkce.verifier } : {}),
       redirect_uri: leg.redirectUri,
       ...(cfg.scopes && cfg.tokenUrl.includes('microsoftonline') ? { scope: cfg.scopes } : {}),
     }),

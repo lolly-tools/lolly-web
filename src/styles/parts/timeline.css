@@ -178,6 +178,35 @@
   color: hsl(var(--primary-foreground));
 }
 .tl-mic.is-recording:hover:not(:disabled) { background: hsl(var(--destructive) / 0.85); }
+.tl-cam.is-recording {
+  background: hsl(var(--destructive));
+  color: hsl(var(--primary-foreground));
+}
+.tl-cam.is-recording:hover:not(:disabled) { background: hsl(var(--destructive) / 0.85); }
+/* The camera self-view during a video take: a small mirror in the stage's corner, its
+   box in the EXPORT frame's aspect (set inline from frameSize), showing the recorder's
+   already-cropped stream - what you see is what the file gets. Mirrored like a
+   mirror, because a person framing themselves expects one; the recording is not. */
+.tl-cam-view {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  width: min(240px, 34%);
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-md, 10px);
+  overflow: hidden;
+  background: #000;
+  box-shadow: var(--shadow-4), 0 0 0 2px hsl(var(--destructive) / 0.8);
+  z-index: 30;
+  pointer-events: none;
+}
+.tl-cam-view video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
 
 .tl-rec {
   display: flex;

@@ -6,7 +6,7 @@ window.__lollyChipField=function(canvas,opt){
   // every format the catalog says Lolly can WRITE. Not a hand list: the last one was
   // written when Lolly exported 27 formats and was still claiming 27 long after the
   // real answer had passed 40, because nothing failed when it fell behind.
-  var exts=[".SVG",".PDF",".PNG",".JPG",".WEBP",".GIF",".TIFF",".AVIF",".PSD",".MP4",".WEBM",".MP3",".M4A",".PPTX",".CSV",".JSON",".WAV",".OPUS",".EPS",".EMF",".DXF",".EXR",".ICO",".APNG",".HTML",".MD",".TXT",".ICS",".VCF",".DTCG",".ASE",".GPL",".SCSS",".ZIP",".SVGZ",".BMP",".WMF",".WOFF",".TTF",".OTF",".EPUB",".DOCX",".ODT",".GZ",".TAR"];
+  var exts=[".SVG",".PDF",".PNG",".JPG",".WEBP",".GIF",".TIFF",".AVIF",".PSD",".MP4",".WEBM",".MP3",".M4A",".PPTX",".CSV",".JSON",".PENPOT",".WAV",".OPUS",".EPS",".EMF",".DXF",".EXR",".ICO",".APNG",".HTML",".MD",".TXT",".ICS",".VCF",".DTCG",".ASE",".GPL",".SCSS",".ZIP",".SVGZ",".BMP",".WMF",".WOFF",".TTF",".OTF",".EPUB",".DOCX",".ODT",".GZ",".TAR"];
   // Headline formats appear ~2x as often as the rest: listing them again weights
   // them double in the pick pool (each favored ext is in the pool twice).
   var extPool=exts.concat(['.PDF','.SVG','.PNG','.MP4','.PPTX']);
@@ -16,8 +16,10 @@ window.__lollyChipField=function(canvas,opt){
   var palette=opt.palette||defaultPal;
   var pal=palette();
   // Ambient chip population scales with canvas width so wide heroes aren't sparse
-  // and narrow/mobile ones aren't crowded.
-  function targetFloaters(){ return Math.max(5, Math.min(14, Math.round(cw/100))); }
+  // and narrow/mobile ones aren't crowded - and with height past a hero's worth,
+  // since the landing's field runs on behind the covers band: twice the height at
+  // the same count would be half the density. Short mastheads are unaffected.
+  function targetFloaters(){ return Math.max(5, Math.min(22, Math.round(cw/100*Math.max(1, ch/600)))); }
   // Logical (CSS-pixel) canvas size. The backing store is scaled by devicePixelRatio
   // so the animation stays crisp on HiDPI/Retina displays instead of being a 1x
   // bitmap the browser upscales; all motion math below stays in these logical units.
@@ -557,7 +559,11 @@ window.__lollyChipField=function(canvas,opt){
     // Clear any filters from a previous pass so a re-run (e.g. after webfonts change
     // the button size) rebuilds cleanly instead of stacking duplicate-id filters.
     document.querySelectorAll('svg.lg-svg').forEach(function(s){ s.remove(); });
-    document.querySelectorAll('.btn-primary,.btn-secondary').forEach(function(btn,i){
+    // .btn-compact (the persona lanes, plans/177) opts OUT: over the pane's flat
+    // ground the displacement backdrop paints the button blank in some renderers,
+    // and the glass reads as hero jewellery anyway - small utility buttons keep
+    // their plain fill.
+    document.querySelectorAll('.btn-primary:not(.btn-compact),.btn-secondary:not(.btn-compact)').forEach(function(btn,i){
       try{ buildGlass(btn,i); }catch(e){ if(window.console)console.warn('liquid-glass failed',e); }
     });
   }

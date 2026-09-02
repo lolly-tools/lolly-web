@@ -52,6 +52,17 @@ export async function autoSendToExportHome(host: HomeHost, exp: HomeExport): Pro
   if (!isExportHomeKind(home)) return;
   const target = sendTargetsFor(exp.format).find((tg) => tg.kind === home);
   if (!target) return;   // not connected on this device, or doesn't take this format
+  // A target that asks where the file goes gets asked here too, BEFORE the job
+  // toast opens - an auto-send is the user's standing choice, so a cancelled
+  // picker is simply nothing happening, with no failure to report.
+  let choice: Record<string, unknown> | undefined;
+  if (target.prepare) {
+    try {
+      const picked = await target.prepare({ name: exp.name, format: exp.format, mime: exp.blob.type });
+      if (!picked) return;
+      choice = picked;
+    } catch { return; }
+  }
   const job = startJob({ title: t('Saving to {name}', { name: target.label }), heavy: false });
   await job.started;
   if (job.cancelled) return;
@@ -61,6 +72,7 @@ export async function autoSendToExportHome(host: HomeHost, exp: HomeExport): Pro
       name: exp.name,
       format: exp.format,
       mime: exp.blob.type,
+      choice,
     });
     job.finish(out);   // { url?, label } - the toast renders the label + link
   } catch (err) {

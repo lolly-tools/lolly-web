@@ -6,7 +6,7 @@
  * gdrive needs a Google OAuth client id), so registering all of them costs nothing
  * on a plain build: the panel consults sendTargetsFor() and renders exactly nothing.
  *
- * Which is why the nine driver modules are `await import()`ed here rather than
+ * Which is why the driver modules are `await import()`ed here rather than
  * imported statically, and why nothing calls this from boot any more (plans/155
  * Task 3.3): as static imports they welded ~59 KB of OAuth/upload code (nextcloud-send
  * alone is 25 KB) onto the boot graph for a capability that first matters when an
@@ -49,7 +49,7 @@ export function ensureBuiltinSendTargets(): Promise<void> {
 }
 
 export async function registerBuiltinSendTargets(): Promise<void> {
-  const [gdrive, dropbox, onedrive, s3, nextcloud, penpot, mastodon, bluesky, discord, wallpaper] = await Promise.all([
+  const [gdrive, dropbox, onedrive, s3, nextcloud, penpot, mastodon, bluesky, discord, linkedin, wallpaper] = await Promise.all([
     import('./google-drive.ts'),
     import('./dropbox-send.ts'),
     import('./onedrive-send.ts'),
@@ -62,6 +62,9 @@ export async function registerBuiltinSendTargets(): Promise<void> {
     import('./mastodon-send.ts'),
     import('./bluesky-send.ts'),
     import('./discord-send.ts'),
+    // Desktop-only (plans/129 WP4b): LinkedIn's token endpoint demands a client
+    // secret and offers PKCE to partner apps only, so its gate is the shell.
+    import('./linkedin-send.ts'),
     // Desktop-shell wallpaper (plans/174): no connection, no network - the XDG
     // portal previews and the user confirms.
     import('./wallpaper-send.ts'),
@@ -75,8 +78,9 @@ export async function registerBuiltinSendTargets(): Promise<void> {
   registerSendTarget(mastodon.mastodonSendTarget());
   registerSendTarget(bluesky.blueskySendTarget());
   registerSendTarget(discord.discordSendTarget());
+  registerSendTarget(linkedin.linkedinSendTarget());
   registerSendTarget(wallpaper.wallpaperSendTarget());
-  // Connection-gated kinds (s3, webdav, mastodon, bluesky, discord) gate on
+  // Connection-gated kinds (s3, webdav, mastodon, bluesky, discord, linkedin) gate on
   // hasConnection(), a SYNC read of the in-memory cache, so a saved connection only
   // surfaces in the export panel (without a /profile visit first) once that cache is
   // warm. AWAIT the warm-up rather than firing provider-connections' fire-and-forget

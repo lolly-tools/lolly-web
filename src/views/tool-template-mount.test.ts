@@ -207,8 +207,9 @@ test('the chooser gate opens on built-in OR user templates', () => {
     'the user templates are counted from the store list()');
   assert.match(CODE, /createUserTemplateStore\([\s\S]{0,200}?\)\.list\(toolId\)/,
     'the count comes from the user-template store scoped to this tool id');
-  assert.match(CODE, /if \(hasTemplates \|\| hasUserTemplates\) \{/,
-    'the chooser opens for built-in OR user templates - for neither, this guard leaves templatePick null');
+  assert.match(CODE, /if \(\(hasTemplates \|\| hasUserTemplates\) && !hasPendingDesignImport\(\)\) \{/,
+    'the chooser opens for built-in OR user templates - for neither, this guard leaves templatePick null -'
+    + ' and never over a pending design import, whose drop front door owns this mount (2026-09-02)');
 });
 
 test('the built-in fast path skips the user-template store read before mount', () => {

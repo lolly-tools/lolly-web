@@ -14,6 +14,15 @@
  * DORMANT without a client id (VITE_DROPBOX_CLIENT_ID, or an instance's
  * runtime override) - the gdrive precedent: no id, no button, byte-identical.
  *
+ * DESKTOP (plans/129 WP4b): the SAME app key, no second registration. Dropbox
+ * documents localhost redirect URIs as allowed without pre-registration, over
+ * http or https - so the Tauri shells run the same code+PKCE grant through the
+ * system browser with a `http://localhost:<port>/oauth-return` loopback leg
+ * (provider-auth's loopbackVia with host 'localhost'; the IP form 127.0.0.1 is
+ * NOT documented as exempt, so it stays unused here). API calls ride
+ * providerFetch, which is the CORS-free Tauri client on desktop and plain
+ * fetch on the web.
+ *
  * GOTCHA the test pins: the Dropbox-API-Arg header must be ASCII - a filename
  * with any non-ASCII character must be \uXXXX-escaped into the JSON header or
  * the request is refused at the HTTP layer.
@@ -21,7 +30,10 @@
 
 import { t } from '../i18n.ts';
 import { isTauriShell } from './instance-choice.ts';
-import { codeGrant, refreshGrant, type TokenSet } from './provider-auth.ts';
+import {
+  codeGrant, loopbackVia, popupVia, providerFetch, refreshGrant,
+  type AuthorizeVia, type TokenSet,
+} from './provider-auth.ts';
 import {
   getConnection, saveConnection, removeConnection,
   cachedToken, cacheToken, dropToken, cachedConnection,
@@ -65,12 +77,20 @@ const grantCfg = () => ({
   windowName: 'lolly-dropbox-auth',
 });
 
+/** The authorize leg for this shell: the browser popup on the web, the system
+ *  browser + a localhost loopback listener on the desktop. */
+async function authorizeVia(): Promise<AuthorizeVia> {
+  return isTauriShell()
+    ? await loopbackVia(undefined, { host: 'localhost' })
+    : popupVia('lolly-dropbox-auth');
+}
+
 function remember(set: TokenSet): void {
   cacheToken(KIND, set.accessToken, set.expiresAt);
 }
 
 /** A valid access token: cache → refresh (stored connection) → interactive. */
-async function token(fetchFn: typeof fetch = fetch): Promise<string> {
+async function token(fetchFn: typeof fetch = providerFetch): Promise<string> {
   const held = cachedToken(KIND);
   if (held) return held;
   const conn = await getConnection(KIND);
@@ -84,7 +104,7 @@ async function token(fetchFn: typeof fetch = fetch): Promise<string> {
       return set.accessToken;
     } catch { /* refresh revoked/expired - fall through to interactive */ }
   }
-  const set = await codeGrant(grantCfg(), fetchFn);
+  const set = await codeGrant(grantCfg(), fetchFn, await authorizeVia());
   remember(set);
   // A send-time sign-in without a /profile connection stays session-only.
   if (conn) await saveConnection({ ...conn, ...(conn.persist && set.refreshToken ? { refreshToken: set.refreshToken } : {}) });
@@ -92,7 +112,7 @@ async function token(fetchFn: typeof fetch = fetch): Promise<string> {
 }
 
 /** POST an RPC endpoint with one 401 retry through a fresh token. */
-async function rpc(path: string, body: unknown, fetchFn: typeof fetch = fetch): Promise<Record<string, unknown>> {
+async function rpc(path: string, body: unknown, fetchFn: typeof fetch = providerFetch): Promise<Record<string, unknown>> {
   const doPost = async (tok: string) => fetchFn(`${API}/${path}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
@@ -115,8 +135,8 @@ async function rpc(path: string, body: unknown, fetchFn: typeof fetch = fetch): 
 /** Interactive connect from /profile: grant, identity, custody. `appKey` is the
  *  bring-your-own client id for deploys with no Dropbox registration - it rides
  *  the connection record's config so later sends and refreshes find it. */
-export async function connectDropbox(persist: boolean, fetchFn: typeof fetch = fetch, appKey?: string): Promise<string> {
-  const set = await codeGrant(appKey ? { ...grantCfg(), clientId: appKey } : grantCfg(), fetchFn);
+export async function connectDropbox(persist: boolean, fetchFn: typeof fetch = providerFetch, appKey?: string): Promise<string> {
+  const set = await codeGrant(appKey ? { ...grantCfg(), clientId: appKey } : grantCfg(), fetchFn, await authorizeVia());
   remember(set);
   const who = await rpc('users/get_current_account', null, fetchFn);
   const account = (who.email as string) || ((who.name as { display_name?: string })?.display_name ?? t('Dropbox account'));
@@ -133,7 +153,7 @@ export async function connectDropbox(persist: boolean, fetchFn: typeof fetch = f
 }
 
 /** Disconnect: best-effort provider-side revocation, then wipe locally. */
-export async function disconnectDropbox(fetchFn: typeof fetch = fetch): Promise<void> {
+export async function disconnectDropbox(fetchFn: typeof fetch = providerFetch): Promise<void> {
   const held = cachedToken(KIND);
   if (held) {
     try {
@@ -154,7 +174,7 @@ export function dropboxApiArg(value: unknown): string {
 
 interface DropboxFile { path_display?: string; path_lower?: string; name?: string }
 
-export async function dropboxUpload(bytes: Uint8Array, path: string, fetchFn: typeof fetch = fetch): Promise<DropboxFile> {
+export async function dropboxUpload(bytes: Uint8Array, path: string, fetchFn: typeof fetch = providerFetch): Promise<DropboxFile> {
   const doPost = async (tok: string) => fetchFn(`${CONTENT}/files/upload`, {
     method: 'POST',
     headers: {
@@ -183,7 +203,7 @@ export function dropboxSendTarget(): SendTarget {
     kind: KIND,
     label: t('Dropbox'),
     // No formats list: every export format Lolly makes is welcome.
-    available: () => dropboxAvailable() && !isTauriShell(),
+    available: () => dropboxAvailable(),
     hint: t('Uploads this file to the Lolly app folder in your Dropbox. Lolly can only see that folder, and whether your sign-in is remembered on this device is your choice in Profile.'),
     send: async ({ bytes, name, format }) => {
       const filename = name.toLowerCase().endsWith(`.${format}`) ? name : `${name}.${format}`;
@@ -219,7 +239,7 @@ const dbxMeta = (m: DropboxMeta, fallbackSize: number): SnapshotMeta => ({
 /** A Dropbox-backed SyncRemote over the user's app folder. `path` defaults to the
  *  device-sync snapshot; the collab rendezvous (plans/138 Tier C) points it at
  *  signalling paths. `fetchFn` is injectable for tests; production uses global fetch. */
-export function dropboxSyncRemote(fetchFn: typeof fetch = fetch, path: string = SYNC_PATH): SyncRemote {
+export function dropboxSyncRemote(fetchFn: typeof fetch = providerFetch, path: string = SYNC_PATH): SyncRemote {
   // One 401 retry through a fresh token, like rpc()/dropboxUpload().
   const withToken = async (call: (tok: string) => Promise<Response>): Promise<Response> => {
     let res = await call(await token(fetchFn));

@@ -620,9 +620,18 @@ export default defineConfig({
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'credentialless',
     },
-    // dev-only: the standalone CA service - node services/ca/server.mjs
-    // (string shorthand preserves the /api/ca path prefix, which the handler routes on).
-    proxy: { '/api/ca': 'http://localhost:8787' },
+    proxy: {
+      // dev-only: the standalone CA service - node services/ca/server.mjs
+      // (string shorthand preserves the /api/ca path prefix, which the handler routes on).
+      '/api/ca': 'http://localhost:8787',
+      // dev-only: the Penpot RPC pass-through (services/penpot/vercel-entry.ts)
+      // only exists as a Vercel function, so a dev origin has nothing at
+      // /api/penpot and the profile card's "Load projects" 404s. Bounce it to
+      // the deployed function - same allowlist, same token custody, and the
+      // card's "sent through lolly.tools" copy stays true in dev. changeOrigin
+      // rewrites Host so Vercel routes it to the right project.
+      '/api/penpot': { target: 'https://lolly.tools', changeOrigin: true },
+    },
   },
   build: {
     outDir: 'dist',

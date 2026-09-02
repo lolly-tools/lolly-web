@@ -233,6 +233,44 @@ test('a seq clip added from the timeline keeps its length UNAUTHORED, so the pac
 
 // ── the one-shot flag cannot leak ─────────────────────────────────────────────
 
+test('a recorded take (tl-add WITH an asset) joins the sequence row full-frame, cover-fit, after the end', async () => {
+  const f = mount();
+  try {
+    await openPanel(f);
+    // Something already on the row, so "after the end" has a meaning.
+    tlAdd(f, { kind: 'card', atMs: 0 });
+    draw(f, 100, 100);
+    await settle();
+    assert.equal(f.boxes().length, 1, 'precondition: the card is on the row');
+
+    const asset = { source: 'user', id: 'user/recording/1.mp4', type: 'video', url: 'blob:x' };
+    tlAdd(f, { kind: 'clip', atMs: 0, asset, durSec: 4.2 });
+    await settle();
+    assert.equal(f.armed(), false, 'no create gesture: the clip is committed at once, no picker');
+    const boxes = f.boxes();
+    assert.equal(boxes.length, 2, 'one box was added');
+    const b = boxes[1]! as Record<string, unknown>;
+    assert.equal(b.kind, 'image', 'born from the clip seed');
+    assert.equal(b.lane, 'seq', 'on the magnetic row, like an imported scene');
+    assert.equal(b.fit, 'cover', 'fills the frame edge to edge');
+    assert.deepEqual(b.image, asset, 'carries the recording');
+    assert.deepEqual([b.x, b.y, b.w, b.h], [0, 0, NATIVE, NATIVE], 'sized to the whole canvas when no artboard is active');
+    assert.equal(b.dur, 4.2, 'the MEASURED length is authored - the media cannot be read before it renders');
+    assert.ok(typeof b.start === 'number' && b.start >= 0, 'a finite start: the row repacks from array order');
+  } finally { f.destroy(); }
+});
+
+test('a tl-add whose asset has no string id is an ordinary arm, never a box', async () => {
+  const f = mount();
+  try {
+    await openPanel(f);
+    tlAdd(f, { kind: 'clip', atMs: 0, asset: { url: 'blob:x' }, durSec: 1 });
+    await settle();
+    assert.equal(f.boxes().length, 0, 'nothing was committed');
+    assert.equal(f.armed(), true, 'the hostile detail degraded to the plain arm');
+  } finally { f.destroy(); }
+});
+
 test('re-arming from the RAIL after a timeline arm draws SCENERY, not a timed box', async () => {
   const f = mount();
   try {

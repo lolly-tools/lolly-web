@@ -106,7 +106,7 @@ type MediaFrameLike = { width: number; height: number; data: Uint8ClampedArray; 
 
 // from their raw string (e.g. "pdf-cmyk" → "Print PDF" / ".pdf").
 const FMT_LABEL: Record<string, string> = { 'pdf-cmyk': 'Print PDF', 'cmyk-tiff': 'Print TIFF', tiff: 'TIFF', 'jpeg': 'JPG', 'webm': 'WebM', 'mp4': 'MP4', apng: 'aPNG', 'webp-anim': 'Animated WebP', 'svg-anim': 'Animated SVG',
-  emf: 'EMF (old)', eps: 'EPS', 'eps-cmyk': 'EPS (CMYK)', dxf: 'DXF (cut file)', pptx: 'PowerPoint', docx: 'Word', odt: 'OpenDocument', ics: 'Calendar', vcf: 'vCard', ico: 'Icon', zip: 'ZIP', csv: 'CSV', json: 'JSON',
+  emf: 'EMF (old)', eps: 'EPS', 'eps-cmyk': 'EPS (CMYK)', dxf: 'DXF (cut file)', pptx: 'PowerPoint', penpot: 'Penpot', docx: 'Word', odt: 'OpenDocument', ics: 'Calendar', vcf: 'vCard', ico: 'Icon', zip: 'ZIP', csv: 'CSV', json: 'JSON',
   // Palette exchange (color-palette): a design-tokens JSON, CSS/SCSS variable
   // blocks, a GIMP palette, and a binary Adobe swatch file. extFor falls back to
   // the format id for each (blob MIME isn't mp4/webm/zip), so no FMT_EXT entry.
@@ -114,7 +114,10 @@ const FMT_LABEL: Record<string, string> = { 'pdf-cmyk': 'Print PDF', 'cmyk-tiff'
   // Audio only. Opus ships in a WebM container, so the label says so rather than
   // leaving a download named .webm looking like a video.
   wav: 'WAV', mp3: 'MP3', m4a: 'M4A (AAC)', opus: 'Opus (WebM)' };
-const FMT_EXT: Record<string, string>   = { 'pdf-cmyk': 'pdf', 'cmyk-tiff': 'tiff', 'jpeg': 'jpg', 'eps-cmyk': 'eps', 'webp-anim': 'webp', 'svg-anim': 'svg' };
+// `penpot` is spelled out rather than left to extFor's fallback: the archive IS a
+// zip, and only its `application/x-penpot` blob type keeps the MIME sniff below from
+// renaming the download to .zip - which Penpot's own Import will not take.
+const FMT_EXT: Record<string, string>   = { 'pdf-cmyk': 'pdf', 'cmyk-tiff': 'tiff', 'jpeg': 'jpg', 'eps-cmyk': 'eps', 'webp-anim': 'webp', 'svg-anim': 'svg', penpot: 'penpot' };
 // Animated WebP is credentialed via the still-'webp' path (renderFormat maps
 // webp-anim→webp before stamping), but the engine's C2PA_FORMATS lists only 'webp' - 
 // so treat webp-anim as stampable in the UI gating too, else the toggle/card would be
@@ -3341,7 +3344,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         ? selectFramePage(pageEls.map((p) => p.getAttribute('data-frame-id')), exportDefaults.slide)
         : ({ kind: 'none' } as const);
       const framePages = framePick.kind === 'page' ? [pageEls[framePick.index]!] : pageEls;
-      if (pageEls.length >= 1 && !isAnimated && fmt !== 'pdf' && fmt !== 'zip' && fmt !== 'html' && fmt !== 'pptx') {
+      if (pageEls.length >= 1 && !isAnimated && fmt !== 'pdf' && fmt !== 'zip' && fmt !== 'html' && fmt !== 'pptx' && fmt !== 'penpot') {
         if (framePick.kind === 'unmatched') {
           const why = tRaw('No slide matches ?s={s}. Exporting every slide.', { s: framePick.address.raw });
           console.warn(`[export] ${why}`);
@@ -3666,6 +3669,21 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     btn.toggleAttribute('disabled', true);
     btn.setAttribute('aria-busy', 'true');
     try {
+      const name = el!.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() || autoFilename();
+      // Destination first, bytes second: a target with a `prepare` (Penpot's
+      // project + file-name picker) asks BEFORE anything renders, so the
+      // question arrives while this is still a choice rather than after a wait
+      // nobody asked for. Cancelling sends nothing. The mime is unknown until
+      // the render, so it goes empty here.
+      let choice: Record<string, unknown> | undefined;
+      if (target.prepare) {
+        const picked = await target.prepare({ name, format: fmt, mime: '' }, { anchor: btn });
+        if (!picked) {
+          if (status) status.textContent = t('Cancelled');
+          return;
+        }
+        choice = picked;
+      }
       label.textContent = t('Rendering…');
       const opts = {
         ...exportDims(),
@@ -3673,12 +3691,11 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       };
       // Multi-page/animated sends keep the whole canvas (their walkers need every
       // [data-pdf-page]); flat single-image sends target the active artboard.
-      const multiPage = fmt === 'pdf' || fmt === 'pdf-cmyk' || fmt === 'pptx' || fmt === 'docx' || fmt === 'odt' || isAnimatedFmt(fmt);
+      const multiPage = fmt === 'pdf' || fmt === 'pdf-cmyk' || fmt === 'pptx' || fmt === 'penpot' || fmt === 'docx' || fmt === 'odt' || isAnimatedFmt(fmt);
       const sendNode = multiPage ? exportTargetNode(canvasEl) : flatExportNode(canvasEl);
       const blob = await exportUnscaled(() => runtime.export(sendNode, fmt, opts), { shutter: true });
       label.textContent = t('Sending…');
-      const name = el!.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() || autoFilename();
-      const out = await target.send({ bytes: new Uint8Array(await blob.arrayBuffer()), name, format: fmt, mime: blob.type });
+      const out = await target.send({ bytes: new Uint8Array(await blob.arrayBuffer()), name, format: fmt, mime: blob.type, choice });
       if (status) {
         // The driver's url is REMOTE-SOURCED (an upload service's response), so it
         // must pass the scheme gate before it renders as a link - a bad one

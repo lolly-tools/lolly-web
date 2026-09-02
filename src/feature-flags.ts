@@ -65,6 +65,7 @@ export const CONNECTOR_FLAGS: readonly FeatureFlag[] = [
   { id: 'conn-mastodon', label: 'Mastodon',            connector: 'mastodon' },
   { id: 'conn-bluesky',  label: 'Bluesky',             connector: 'bluesky'  },
   { id: 'conn-discord',  label: 'Discord',             connector: 'discord'  },
+  { id: 'conn-linkedin', label: 'LinkedIn',            connector: 'linkedin' },
 ];
 
 const CONNECTOR_BY_KIND = new Map(CONNECTOR_FLAGS.map(f => [f.connector!, f]));

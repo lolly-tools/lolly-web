@@ -17,6 +17,7 @@
  *                it taps its own AnalyserNode so levels keep flowing during the take.
  */
 
+import { coverCrop, validFrame } from './frame-crop.ts';
 import type {
   RecorderAPI, MeterAPI, RecordOpts, RecordSession, AudioLevel, StillOpts,
 } from '@lolly-tools/core/host-v1';
@@ -389,18 +390,81 @@ async function openDeviceSource(opts: RecordOpts): Promise<OpenSource> {
   // one the sound-check meter opened (MeterAPI.start({deviceId})).
   const audio: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
   if (opts.audioDeviceId) audio.deviceId = { exact: opts.audioDeviceId };
+  // A target FRAME (v1.165): ask the camera for that size and aspect so the crop below
+  // stays small, then record a canvas of exactly that size (see frameStream).
+  const frame = wantVideo ? validFrame(opts.frame) : null;
   const constraints: MediaStreamConstraints = {
     audio: wantAudio ? audio : false,
     video: wantVideo
-      ? { facingMode: opts.facingMode ?? 'user', width: { ideal: edge }, height: { ideal: edge } }
+      ? (frame
+        ? { facingMode: opts.facingMode ?? 'user', width: { ideal: frame.width }, height: { ideal: frame.height }, aspectRatio: { ideal: frame.width / frame.height } }
+        : { facingMode: opts.facingMode ?? 'user', width: { ideal: edge }, height: { ideal: edge } })
       : false,
   };
   const stream = await navigator.mediaDevices.getUserMedia(constraints);
   // getUserMedia is all-or-nothing: a denied mic rejects the whole call, so a resolved
   // stream that asked for audio genuinely has a mic track.
+  if (frame) {
+    const framed = frameStream(stream, frame);
+    return {
+      stream: framed.stream, micActive: wantAudio,
+      release: () => {
+        framed.release();
+        stream.getTracks().forEach(t => { try { t.stop(); } catch { /* ignore */ } });
+      },
+    };
+  }
   return {
     stream, micActive: wantAudio,
     release: () => stream.getTracks().forEach(t => { try { t.stop(); } catch { /* ignore */ } }),
+  };
+}
+
+/**
+ * The camera, cover-cropped into a canvas of exactly `frame` and re-captured as a
+ * stream (v1.165 RecordOpts.frame). The camera's own track keeps its native size and
+ * aspect; every frame is drawn through coverCrop() into the canvas, whose
+ * captureStream() track is what the encoder (and the self-view) sees, so the file is
+ * the frame the caller asked for - a 4:3 webcam into a 9:16 story, cropped, never
+ * stretched. Audio tracks pass through untouched. requestVideoFrameCallback paces the
+ * draw to the camera where the browser has it; a rAF loop elsewhere.
+ */
+function frameStream(source: MediaStream, frame: { width: number; height: number }): { stream: MediaStream; release(): void } {
+  const video = document.createElement('video');
+  video.muted = true;
+  video.playsInline = true;
+  video.srcObject = source;
+  const canvas = document.createElement('canvas');
+  canvas.width = frame.width;
+  canvas.height = frame.height;
+  const ctx = canvas.getContext('2d');
+  const fps = Math.round(source.getVideoTracks()[0]?.getSettings?.().frameRate ?? 30) || 30;
+  let live = true;
+  let raf = 0;
+  type RVFC = HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number };
+  const rvfc = (video as RVFC).requestVideoFrameCallback?.bind(video);
+  const draw = (): void => {
+    if (!live) return;
+    const sw = video.videoWidth, sh = video.videoHeight;
+    if (ctx && sw > 0 && sh > 0) {
+      const c = coverCrop(sw, sh, frame.width, frame.height);
+      ctx.drawImage(video, c.sx, c.sy, c.sw, c.sh, 0, 0, frame.width, frame.height);
+    }
+    if (rvfc) rvfc(draw); else raf = requestAnimationFrame(draw);
+  };
+  void video.play().catch(() => { /* a muted inline video should always play */ });
+  draw();
+  const out = canvas.captureStream(fps);
+  const merged = new MediaStream([...out.getVideoTracks(), ...source.getAudioTracks()]);
+  return {
+    stream: merged,
+    release: () => {
+      live = false;
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      out.getTracks().forEach(t => { try { t.stop(); } catch { /* ignore */ } });
+      try { video.pause(); } catch { /* ignore */ }
+      video.srcObject = null;
+    },
   };
 }
 

@@ -66,7 +66,7 @@ test('page 2 is the privacy page, and only its "Got it" acknowledges the notice'
   assert.equal(document.querySelectorAll('.welcome-dialog').length, 1);
   assert.equal(dialog(), shell, 'a page change re-paints the dialog, it never re-opens one');
   assert.equal(shell.querySelectorAll('.welcome-card').length, 0, 'the doors are page 1 only');
-  assert.equal(shell.querySelector('.welcome-privacy-link')?.getAttribute('href'), '#/docs/privacy');
+  assert.equal(shell.querySelector('.welcome-privacy-link')?.getAttribute('href'), '#/docs/trust/privacy'); // doored route (plans/177 P1)
   assert.ok(shell.querySelector('.welcome-skip'), 'the footer rides every page');
   assert.equal(shell.querySelectorAll('.welcome-dot').length, 2);
   assert.equal(localStorage.getItem('lolly-privacy-ack'), null, 'reading page 2 acknowledges nothing');

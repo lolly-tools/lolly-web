@@ -24,7 +24,8 @@
  * deleting it would orphan profile.headshot).
  */
 
-import { escape } from '../utils.ts';
+import { escape, safeHref } from '../utils.ts';
+import { sendTargetsFor } from '../lib/send-target.ts';
 import { isHiddenSlot } from '../lib/batch-slots.ts';
 import {
   matchesType as matchesTypeRule,
@@ -852,6 +853,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       menuItemHtml('open', icon('externalLink'), t('Details')),
       menuItemHtml('fav', icon('star'), favSet.has(base) ? t('Remove from favourites') : t('Add to favourites')),
       menuItemHtml('download', icon('download'), t('Download…')),
+      menuItemHtml('send', icon('upload'), t('Send to…')),
       menuItemHtml('share', icon('link'), t('Copy link')),
       menuItemHtml('select', icon('check'), selected.has(id) ? t('Deselect') : t('Select')),
       menuItemHtml('add-to-project', icon('folder'), t('Add to project…')),
@@ -881,6 +883,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     if (act === 'open') { openDetails(ref); return; }
     if (act === 'fav') { await toggleFavourite(id); return; }
     if (act === 'download') { await openDownloadDialog(ref); return; }
+    if (act === 'send') { await openSendDialog(ref); return; }
     if (act === 'share') {
       try { await navigator.clipboard.writeText(assetLink(ref)); announce(t('Link copied')); }
       catch { announce(t('Couldn’t copy the link'), { assertive: true }); }
@@ -2620,6 +2623,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
             `<button type="button" class="btn cat-act-fav${fav ? ' is-fav' : ''}" data-act="fav" data-sfx="twinkle" aria-pressed="${fav}">${STAR_ICON}<span>${fav ? t('Favourited') : t('Favourite')}</span></button>`,
             `<button type="button" class="btn cat-act-download" data-act="download">${DOWNLOAD_ICON}<span>${configurable ? t('Download…') : t('Download')}</span></button>`,
             isTextAsset ? `<button type="button" class="btn cat-act-dl-as" data-act="dl-as" aria-haspopup="menu" aria-expanded="false">${DOWNLOAD_ICON}<span>${t('Download as')}</span></button>` : '',
+            `<button type="button" class="btn cat-act-send" data-act="send">${icon('upload', { size: 14 })}<span>${t('Send to…')}</span></button>`,
             `<button type="button" class="btn cat-act-share" data-act="share">${SHARE_ICON}<span>${t('Copy link')}</span></button>`,
           ];
           const edit = [
@@ -4225,6 +4229,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         else if (treatable) await openPhotoDownloadDialog(ref, dTreatment);
         else await directDownload(ref);
       }
+      else if (act === 'send') { await openSendDialog(ref); }
       else if (act === 'darkroom') {
         // Refined edits happen in the Darkroom tool, seeded with THIS image. The
         // asset input takes the library id straight off the URL; every other input
@@ -5664,25 +5669,110 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   async function directDownload(ref: AssetRef): Promise<void> {
     const format = String(ref.format || 'bin');
     const filename = downloadName(ref, format);
-    if (ref.id.startsWith('user/') && STAMPABLE.has(format)) {
-      try {
-        const ingredients = await sourceIngredients(ref);
-        if (ingredients) {
-          const blob = await (await fetch(ref.url)).blob();
-          const { stampDerivedC2pa } = await import('../bridge/export.ts');
-          const out = await stampDerivedC2pa(host, blob, format, {
-            title: String(ref.meta?.name ?? ref.id),
-            actions: [{ action: 'c2pa.converted', description: `Re-encoded to ${format.toUpperCase()} when added to the device library` }],
-            ingredients,
-            inputs: { asset: ref.id },
-            ...(ref.width && ref.height ? { dimensions: `${ref.width}×${ref.height}` } : {}),
-          });
-          await host.export.download(out, filename);
-          return;
-        }
-      } catch { /* fall through to the plain byte-exact save */ }
-    }
+    // credentialedBytes IS this save's byte rule (it was extracted for the bulk
+    // zip and the send dialog; the three delivery surfaces share one path now).
+    try { await host.export.download(await credentialedBytes(ref), filename); return; }
+    catch { /* fetch blocked (opaque/data URL edge) - anchor fallback below */ }
     await saveUrl(ref.url, filename);
+  }
+
+  // "Send to…" for a STORED asset (plans/129 section 2.3): the same connected
+  // destinations the export panel offers, fed the same byte-exact bytes a
+  // download of this asset delivers (credentialedBytes - credential intact,
+  // re-stamped where ingest captured one). As-is bytes only: recolour and
+  // format conversion stay download-dialog features.
+  // ponytail: no per-provider format conversion here - add if a social target's
+  // format gap (svg → png) ever comes up in practice.
+  async function openSendDialog(ref: AssetRef): Promise<void> {
+    const format = String(ref.format || 'bin').toLowerCase();
+    const name = String(ref.meta?.name ?? ref.id);
+    try {
+      const { ensureBuiltinSendTargets } = await import('../lib/send-targets-builtin.ts');
+      await ensureBuiltinSendTargets();
+    } catch (err) { console.error('Send destinations unavailable:', err); }
+    if (!mounted) return;
+    const offered = sendTargetsFor(format);
+
+    closeDownloadDialog();
+    const content = `
+      <h2 class="cat-dl-title">${t('Send {name}', { name })}</h2>
+      ${offered.length ? `
+      <div class="cat-dl-section">
+        <span class="cat-dl-label">${t('Send to')}</span>
+        <div class="cat-send-row">
+          ${offered.map(tg => `<button type="button" class="btn" data-send-kind="${escape(tg.kind)}"${tg.hint ? ` title="${escape(tg.hint)}"` : ''}>${icon('upload', { size: 14 })}<span>${escape(tg.label)}</span></button>`).join('')}
+        </div>
+        <p class="cat-send-status" role="status"></p>
+      </div>` : `
+      <p class="cat-send-empty">${t('Nothing connected can take this file type yet. Connect a service under Profile → Connected services.')}</p>`}
+      <div class="cat-dl-actions">
+        <button type="button" class="btn cat-dl-cancel">${t('Close')}</button>
+      </div>`;
+    const modal = mountModal(content, {
+      className: 'cat-dl',
+      initialFocus: (el) => el.querySelector<HTMLElement>('[data-send-kind]') ?? el.querySelector<HTMLElement>('.cat-dl-cancel'),
+      onClose: () => { dlDialog = null; dlModal = null; },
+    });
+    const dlg = modal.el;
+    dlDialog = dlg;
+    dlModal = modal;
+
+    dlg.addEventListener('click', async (e) => {
+      const el = e.target as HTMLElement;
+      if (el.closest('.cat-dl-cancel')) { closeDownloadDialog(); return; }
+      const btn = el.closest<HTMLButtonElement>('[data-send-kind]');
+      if (!btn || btn.hasAttribute('disabled')) return;
+      const target = sendTargetsFor(format).find(tg => tg.kind === btn.dataset.sendKind);
+      if (!target) return;
+      const status = dlg.querySelector<HTMLElement>('.cat-send-status');
+      // Swap the label span, not the button - it also holds the glyph.
+      const label = btn.querySelector<HTMLElement>('span') ?? btn;
+      const prev = label.textContent;
+      btn.toggleAttribute('disabled', true);
+      btn.setAttribute('aria-busy', 'true');
+      try {
+        const name = downloadName(ref, format);
+        // Destination first, bytes second - a target with a picker (Penpot's
+        // project + file name) asks before anything is fetched or rendered.
+        // Cancelling sends nothing.
+        let choice: Record<string, unknown> | undefined;
+        if (target.prepare) {
+          const picked = await target.prepare({ name, format, mime: '' }, { anchor: btn });
+          if (!picked) {
+            if (status && dlDialog === dlg) status.textContent = t('Cancelled');
+            return;
+          }
+          choice = picked;
+        }
+        label.textContent = t('Sending…');
+        const blob = await credentialedBytes(ref);
+        const out = await target.send({
+          bytes: new Uint8Array(await blob.arrayBuffer()),
+          name,
+          format,
+          mime: blob.type || 'application/octet-stream',
+          choice,
+        });
+        if (status && dlDialog === dlg) {
+          // The driver's url is REMOTE-SOURCED (the upload service's response) -
+          // scheme-gate it before it renders as a link.
+          status.innerHTML = out.url && safeHref(out.url)
+            // nosemgrep: lolly-href-escape-is-not-scheme-validation - safeHref()-gated in the guard above
+            ? `<a href="${escape(out.url)}" target="_blank" rel="noopener">${escape(out.label)}</a>`
+            : escape(out.label);
+        }
+        announce(`Sent to ${target.label}`);
+      } catch (err) {
+        console.error(`Send to ${target.kind} failed:`, err);
+        const msg = String((err as Error)?.message || '');
+        if (status && dlDialog === dlg) status.textContent = msg && msg.length <= 120 ? msg : t('Send failed - try again');
+        announce('Send failed', { assertive: true });
+      } finally {
+        btn.removeAttribute('aria-busy');
+        btn.removeAttribute('disabled');
+        label.textContent = prev;
+      }
+    });
   }
 
   function closeDownloadDialog(): void {

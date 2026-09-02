@@ -51,7 +51,7 @@ import { createDocsTtsHost, type DocsTtsHost } from '../../../../docs/player/tts
 import { hydrateDocsTryIt } from '../lib/docs-tryit.ts';
 import { icon } from '../lib/icons.ts';
 import { enhanceDocsFormats } from '../lib/docs-formats.ts';
-import { ensureLandingStyles, adaptLandingLinks } from '../lib/docs-landing.ts';
+import { ensureLandingStyles, adaptLandingLinks, hydrateLandingCycle, hydrateLandingCovers } from '../lib/docs-landing.ts';
 import {
   rewriteDocLinks,
   extractSidebar,
@@ -204,6 +204,15 @@ export async function mountDocs(
       return;
     }
     html = await res.text();
+    // A flat pre-177 URL now serves a tiny meta-refresh stub pointing at the
+    // page's doored home (/info/<door>/<slug>.html). Follow it once, in place,
+    // so old in-app links and bookmarked #/docs routes keep resolving.
+    const stub = /<meta http-equiv="refresh" content="0; url=(\/info\/[\w/-]+\.html)">/.exec(html);
+    if (stub) {
+      const res2 = await fetch(stub[1]!, { credentials: 'same-origin' });
+      if (!viewEl.isConnected) return;
+      if (res2.ok) html = await res2.text();
+    }
   } catch {
     if (!viewEl.isConnected) return;
     showStatus(
@@ -410,7 +419,7 @@ export async function mountDocs(
   // (lib/docs-landing.ts). The audience strip needs no hydration since plan 123 D1 -
   // its pills are plain #id jump links the anchor handler above already intercepts,
   // and every card is open on both surfaces.
-  if (isLanding) adaptLandingLinks(node);
+  if (isLanding) { adaptLandingLinks(node); hydrateLandingCycle(node); hydrateLandingCovers(node); }
 
   // Deep-link: a spotlight/Ask docs result routes here as #/docs/<slug>?h=<anchor>
   // (the section heading rides a ?h= query param, since a second '#' can't ride the

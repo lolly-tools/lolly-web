@@ -141,7 +141,7 @@ function welcomePrivacy(): string {
       <li>${t('Nothing is sent anywhere unless you start something that needs the internet, such as adding a Google Font.')}</li>
     </ul>
     <p class="welcome-privacy">
-      <a href="${docsAppHref('privacy')}" class="welcome-privacy-link">${t('What we store')}</a>
+      <a href="${docsAppHref('trust/privacy')}" class="welcome-privacy-link">${t('What we store')}</a>
     </p>
     <button type="button" class="welcome-gotit btn btn--primary" data-ack>${t('Got it')}</button>`;
 }
@@ -367,7 +367,7 @@ export async function mountBrandedIntro(
   strip.setAttribute('role', 'note');
   strip.setAttribute('aria-label', 'Getting started');
   strip.innerHTML = `
-    <p class="brand-tips-text">Your brand is loaded <span class="brand-tips-dot" aria-hidden="true">&middot;</span> pick a template, make it yours, export on brand <span class="brand-tips-dot" aria-hidden="true">&middot;</span> <a href="${docsAppHref('quickstart')}">Quickstart</a></p>
+    <p class="brand-tips-text">Your brand is loaded <span class="brand-tips-dot" aria-hidden="true">&middot;</span> pick a template, make it yours, export on brand <span class="brand-tips-dot" aria-hidden="true">&middot;</span> <a href="${docsAppHref('start/quickstart')}">Quickstart</a></p>
     <button type="button" class="brand-tips-dismiss" aria-label="Dismiss">&#x2715;</button>`;
   const onNav = (): void => {
     // Opening a tool is the strip's own advice taken - settle without requiring the ✕.

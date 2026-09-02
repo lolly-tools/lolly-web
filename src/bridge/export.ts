@@ -923,6 +923,11 @@ async function renderFormatDispatch(node: Element, format: string, opts: ExportO
       return await renderZip(node, opts);
     case 'pptx':
       return await renderPptx(node, opts);
+    // A Penpot design file (plans/178). Dynamically imported, unlike its pptx
+    // neighbour: the writer + both producers are only ever reached by a `penpot`
+    // export, so they stay off the main export chunk.
+    case 'penpot':
+      return await (await import('./export-penpot.ts')).renderPenpot(node, opts);
     case 'docx': {
       // Editable Word document - headings, styled runs, links, lists, tables and
       // pictures read off the rendered node, NOT a rasterised page. The office MIME

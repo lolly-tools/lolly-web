@@ -403,10 +403,10 @@
       "token": "Penpot",
       "name": "Penpot",
       "category": "Vector",
-      "dir": "in",
+      "dir": "both",
       "reads": true,
-      "writes": false,
-      "roundTrips": false,
+      "writes": true,
+      "roundTrips": true,
       "features": [
         "vector",
         "editable-text",
@@ -415,7 +415,8 @@
       "metadata": {
         "reads": [],
         "writes": [],
-        "preserves": "n/a"
+        "preserves": "none",
+        "note": "A .penpot archive carries no document-metadata block: the boards, shapes, colours, typographies and tokens are the payload. An imported file's own metadata is not re-exported."
       }
     },
     {

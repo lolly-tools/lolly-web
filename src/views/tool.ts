@@ -797,7 +797,12 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
         hasUserTemplates = mine.length > 0;
       } catch { /* user templates are best-effort - fall through to a blank open */ }
     }
-    if (hasTemplates || hasUserTemplates) {
+    // A design file dropped on the front door is the document: the drop route stashed
+    // it and free-canvas imports it on mount, so the chooser must not open over it - a
+    // template picked (or merely clicked through) under a running import replaces the
+    // board and re-mounts the canvas, and the import finishes in a view that is gone.
+    const { hasPendingDesignImport } = await import('../lib/drop-router.ts');
+    if ((hasTemplates || hasUserTemplates) && !hasPendingDesignImport()) {
       // NOT AWAITED - and that is the whole point. This chooser used to sit between the
       // user and `createRuntime` below: the tool could not begin to mount until a human
       // clicked a tile, and the chooser's own live tile previews (a real off-screen tool
@@ -1318,7 +1323,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   const captureNotice = captureHint ? `
     <div class="tool-notice" role="status" id="capture-hint-notice">
       ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - docsAppHref() over a build-time slug constant, always '#/docs/…' */ ''}
-      <span class="tool-notice-text">${t('Compose a shot and copy its recipe here. Saving it to a file needs the desktop app or browser extension.')} <a href="${escape(docsAppHref('extension'))}" target="_blank" rel="noopener">${t('Get the extension')}</a></span>
+      <span class="tool-notice-text">${t('Compose a shot and copy its recipe here. Saving it to a file needs the desktop app or browser extension.')} <a href="${escape(docsAppHref('create/extension'))}" target="_blank" rel="noopener">${t('Get the extension')}</a></span>
       <button type="button" class="tool-notice-close" id="capture-hint-dismiss" aria-label="${escape(t('Dismiss this message'))}">✕</button>
     </div>` : '';
 
@@ -4608,7 +4613,7 @@ function mountInstallPrompt(viewEl: HTMLElement, manifest: ToolManifest): void {
         <h1 class="not-found-title">${t('Enable {name} in your browser', { name: manifest.name })}</h1>
         <p class="not-found-desc">${t('Add the free Lolly screenshot extension and this tool captures pages right here - no desktop app needed. Install it, then reload this page.')}</p>
         ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - docsAppHref() over a build-time slug constant, always '#/docs/…' */ ''}
-        <a href="${escape(docsAppHref('extension'))}" class="not-found-home" target="_blank" rel="noopener">${t('Get the extension')}</a>
+        <a href="${escape(docsAppHref('create/extension'))}" class="not-found-home" target="_blank" rel="noopener">${t('Get the extension')}</a>
         <a href="/#/" class="not-found-back">${t('Back to all tools')}</a>
       </div>
     </div>

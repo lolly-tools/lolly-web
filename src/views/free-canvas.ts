@@ -70,6 +70,7 @@ import {
   // engine's (`enumerateSvgLayers`) and is fetched lazily with the dialog, because a
   // tag scanner has no business in the chunk of every editor that never lifts.
   isSvgImageRef, liftRows, applyLift, liftCanCrop, liftCropScale, LIFT_STRENGTH,
+  layoutArtboards,
   // plans/104 section 6.5 - the chrome's half of "the canvas edits what the canvas shows":
   // a box the playhead has posed gets its outline and handles placed at the POSE.
   posedRect,
@@ -1332,6 +1333,21 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // Design defaults to replacing the board and asks per-import.
   const importScenesMode: boolean = importSceneCapable
     && (importCfg as { mode?: unknown }).mode === 'scenes';
+  // Can this tool lay a document's pages out as ARTBOARDS - one frame per page, slide
+  // or board, each page's parts editable inside it? Import-capable + the frame
+  // primitive. Design qualifies; like scenes, it is offered per import, never assumed.
+  const importArtboardCapable: boolean = !!(importCfg && frameCfg);
+  type ImportMode = 'board' | 'artboards' | 'scenes';
+  /** What each import mode does, in one line under the choice. */
+  const importHint = (mode: ImportMode): string => mode === 'scenes'
+    ? t('Every frame becomes its own scene on the timeline, ready for timing tweaks, music and voiceover.')
+    : mode === 'artboards'
+      ? t('Every page or slide becomes its own artboard, side by side, with its parts still editable.')
+      : t('One page replaces the board. A multi-page document asks which page.');
+  // A function, not a literal: TypeScript narrows `let m: ImportMode = cond ? 'a' : 'b'`
+  // to those two members, which makes the panel's third radio unreachable at the type
+  // level even though the user can pick it.
+  const defaultImportMode = (): ImportMode => (importScenesMode ? 'scenes' : 'board');
 
   // Opt-in snap-to-grid. gridOn is toggled from the rail; gridSize is native px.
   const gridSize = Math.max(2, Math.round(cv.grid?.size ?? 20));
@@ -1899,12 +1915,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const atMs = typeof d?.atMs === 'number' ? d.atMs : Number.NaN;
     if (!Number.isFinite(atMs) || atMs < 0 || atMs > MAX_ADD_AT_MS) return;
     // A finished camera take arrives WITH its asset (the panel's Record a video): no
-    // create gesture and no picker - the clip is placed full-frame at the playhead now.
+    // create gesture and no picker - the clip is committed onto the sequence row now.
     // Untrusted detail: the asset must at least be an object with a string id.
     const asset = d?.asset;
     if (asset && typeof asset === 'object' && typeof (asset as { id?: unknown }).id === 'string') {
       const durSec = typeof d?.durSec === 'number' && Number.isFinite(d.durSec) && d.durSec > 0 ? d.durSec : null;
-      addRecordedClip(kind, asset as Box[string], atMs, durSec);
+      addRecordedClip(kind, asset as Box[string], durSec);
       return;
     }
     // AFTER setMode, never before: enterCreate clears the pending time so that an arm
@@ -1915,19 +1931,32 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   if (timeCfg) stageEl.addEventListener('tl-add', onTlAdd);
 
   /**
-   * The recorded clip: born from the manifest's clip kind, sized to the ACTIVE
-   * artboard (else the canvas) in that frame's own coordinates, cover-fit so the
-   * take - already cropped to the export frame by the recorder - fills the picture
-   * edge to edge, and committed once. The panel's promote() then times it at the
-   * playhead with the take's MEASURED length, the same write a plus-menu add gets.
+   * The recorded clip joins the SEQUENCE ROW the way imported scenes do: born from the
+   * manifest's clip kind, sized to the ACTIVE artboard (else the canvas) in that
+   * frame's own coordinates, cover-fit so the take - already cropped to the export
+   * frame by the recorder - fills the picture edge to edge, appended after the current
+   * end of the row with its MEASURED length, one commit. Not "at the playhead": a seq
+   * clip's start is owned by the magnetic pack (moveOverlay refuses it, by design), and
+   * a colleague's clip belongs after what the template already plays. The row repacks
+   * from array order, so appending IS the placement.
    */
-  function addRecordedClip(kind: AddKind, asset: Box[string], atMs: number, durSec: number | null): void {
+  function addRecordedClip(kind: AddKind, asset: Box[string], durSec: number | null): void {
+    const tc = timeCfg!;
     const boxes = getBoxes();
     const fi = activeFrameIndex(boxes);
     const fr = fi >= 0 ? boxes[fi]! : null;
     const rect = fr
       ? { x: num(fr[cfg.xField]), y: num(fr[cfg.yField]), w: num(fr[cfg.wField]), h: num(fr[cfg.hField]) }
       : { x: 0, y: 0, ...canvasWH() };
+    // After the current sequence's end - never disturb existing timing (importAsScenes).
+    let at = 0;
+    for (const b of boxes) {
+      if (String(b[tc.laneField] ?? '') !== 'seq') continue;
+      const s = num(b[tc.startField], NaN);
+      if (!Number.isFinite(s)) continue;
+      const d = num(b[tc.durField], NaN);
+      at = Math.max(at, s + (Number.isFinite(d) && d > 0 ? d : 3));
+    }
     const id = freshId(boxes);
     const box: Box = {
       ...(kind.seed as Box | undefined),
@@ -1935,10 +1964,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       [cfg.xField]: rect.x, [cfg.yField]: rect.y, [cfg.wField]: rect.w, [cfg.hField]: rect.h,
       ...(cfg.imageField ? { [cfg.imageField]: asset } : {}),
       ...(cfg.fitField ? { [cfg.fitField]: 'cover' } : {}),
+      [tc.laneField]: 'seq', [tc.startField]: at,
+      ...(durSec != null ? { [tc.durField]: durSec } : {}),
     };
     commit(assignFrames([...boxes, box], new Set([boxes.length])));
-    timelinePanel?.promote(id, { start: atMs / 1000, dur: durSec });
     openTimeline();
+    timelinePanel?.selectAndReveal([id]);
   }
 
   /**
@@ -3177,6 +3208,42 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     openTimeline();
     return scenes.length;
   }
+  /**
+   * Import a document's pages as ARTBOARDS: one frame per page / slide / board, laid
+   * out left to right, every page's parts inside it as editable boxes - the deck
+   * import (Andy, 2026-09-02: "artboards for slides or frames for animation"). It
+   * replaces the board (as a single-page import does), sizes the export frame to the
+   * first page, and leaves the pages UNTIMED on purpose: the "play these in order"
+   * prompt that follows any fresh set of artboards is how they become a slideshow, so
+   * deck-or-animation stays the user's call after the import as well as before it.
+   * Returns the number of artboards laid down.
+   */
+  async function importAsArtboards(f: File | Blob, setStatus: (m: string) => void): Promise<number> {
+    if (!frameCfg) throw new Error(t('This tool has no artboards.'));
+    const { parseDesignArtboards } = await import('./design-import.ts');
+    const res = await parseDesignArtboards(f, { host: host as any, log: setStatus, interactive: true, map: importMap });
+    if (!res.frames.length) throw new Error(t('Nothing importable was found in that file.'));
+    const fk = frameCfg.frameKind;
+    const frameAddKind = addKinds.find((k) => k.id === 'frame' || (k.seed != null && String(k.seed[cfg.kindField]) === fk));
+    const rows = layoutArtboards(
+      res.frames.map((fr) => ({ name: fr.name, width: fr.width, height: fr.height, boxes: fr.boxes as Box[], ...(fr.background ? { background: fr.background } : {}) })),
+      {
+        cfg,
+        frameField: frameCfg.frameField,
+        frameKind: fk,
+        orderField: frameCfg.orderField,
+        frameSeed: (frameAddKind?.seed || {}) as Box,
+        mintId: (used) => freshId(used),
+        background: res.background,
+      },
+    );
+    if (disposed) return 0;
+    selection = new Set<string>();
+    commit(rows);
+    const first = res.frames[0]!;
+    if (setCanvasSize && first.width > 0 && first.height > 0) setCanvasSize(first.width, first.height, 'px');
+    return res.frames.length;
+  }
   // Import a design file (Figma SVG / Penpot). The heavy DOM parser is lazy-loaded so it
   // only ships to sessions that actually import. On success we REPLACE the whole boxes
   // array (through the normal commit path) and resize the artboard to the file's frame.
@@ -3188,7 +3255,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // The section 337 choice, per-import: scenes-capable tools (Design) let the user pick
     // between replacing the board and laying the frames out as timed scenes. Default
     // follows the manifest (importScenesMode) - false for Design, so it replaces.
-    let chooseScenes = importScenesMode;
+    let importMode: ImportMode = defaultImportMode();
     // Class-styled, not inline: this panel used to carry its whole look in `style=`
     // attributes (and a HARD-CODED brand green on the choose button, which never themed
     // or respected dark mode). The chrome now lives in `.fc-import-*` in editor.css and
@@ -3196,16 +3263,23 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     panel.innerHTML =
       `<div class="fc-import-title">${t('Import a design')}</div>` +
       '<p class="fc-import-hint">' +
-      t('Drop a Figma <b>.fig</b> / SVG, a Penpot <b>.penpot</b>, an Illustrator <b>.ai</b> or <b>.pdf</b>, or an InDesign <b>.idml</b> (File → Export → InDesign Markup). (For editable text from a Figma <b>SVG</b>, uncheck “Outline text” on export.)') +
+      t('Drop a Figma <b>.fig</b> / SVG, a Penpot <b>.penpot</b>, an Illustrator <b>.ai</b> or <b>.pdf</b>, a PowerPoint <b>.pptx</b>, or an InDesign <b>.idml</b> (File → Export → InDesign Markup). (For editable text from a Figma <b>SVG</b>, uncheck “Outline text” on export.)') +
       '</p>' +
-      (importSceneCapable
+      // The per-import choice (plans/104 section 337, widened 2026-09-02): one page onto
+      // the board, every page as an artboard, or every frame as a timed scene. Each
+      // option is present only where the tool can honour it; a tool with neither
+      // capability gets no radiogroup at all.
+      (importSceneCapable || importArtboardCapable
         ? `<div class="fc-import-mode" role="radiogroup" aria-label="${t('Import as')}">` +
-          `<label class="fc-import-mode-opt"><input type="radio" name="fc-imp-mode" value="board"${chooseScenes ? '' : ' checked'}>${t('Replace the board')}</label>` +
-          `<label class="fc-import-mode-opt"><input type="radio" name="fc-imp-mode" value="scenes"${chooseScenes ? ' checked' : ''}>${t('As timed scenes')}</label>` +
+          `<label class="fc-import-mode-opt"><input type="radio" name="fc-imp-mode" value="board"${importMode === 'board' ? ' checked' : ''}>${t('Replace the board')}</label>` +
+          (importArtboardCapable
+            ? `<label class="fc-import-mode-opt"><input type="radio" name="fc-imp-mode" value="artboards"${importMode === 'artboards' ? ' checked' : ''}>${t('As artboards')}</label>`
+            : '') +
+          (importSceneCapable
+            ? `<label class="fc-import-mode-opt"><input type="radio" name="fc-imp-mode" value="scenes"${importMode === 'scenes' ? ' checked' : ''}>${t('As timed scenes')}</label>`
+            : '') +
           '</div>' +
-          `<p class="fc-import-scenes-hint"${chooseScenes ? '' : ' hidden'}>` +
-          t('Every frame becomes its own scene on the timeline, ready for timing tweaks, music and voiceover.') +
-          '</p>'
+          `<p class="fc-import-scenes-hint" data-import-hint>${escape(importHint(importMode))}</p>`
         : '') +
       `<button type="button" class="btn btn--primary fc-import-choose">${t('Choose file…')}</button>` +
       // Components-as-templates: revealed once the chosen file turns out to
@@ -3227,17 +3301,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const tplRow = panel.querySelector<HTMLElement>('.fc-import-templates')!;
     const tplBox = tplRow.querySelector<HTMLInputElement>('input')!;
     const tplLabel = tplRow.querySelector<HTMLElement>('span')!;
-    // Wire the scenes/board choice (present only for scene-capable tools).
-    const scenesHint = panel.querySelector<HTMLElement>('.fc-import-scenes-hint');
+    // Wire the board / artboards / scenes choice (present only where a mode is offered).
+    const modeHint = panel.querySelector<HTMLElement>('[data-import-hint]');
     panel.querySelectorAll<HTMLInputElement>('.fc-import-mode input[name="fc-imp-mode"]').forEach((r) => {
       r.addEventListener('change', () => {
-        chooseScenes = r.value === 'scenes' && r.checked;
-        if (scenesHint) scenesHint.hidden = !chooseScenes;
+        if (!r.checked) return;
+        importMode = r.value === 'scenes' ? 'scenes' : r.value === 'artboards' ? 'artboards' : 'board';
+        if (modeHint) modeHint.textContent = importHint(importMode);
       });
     });
     const fileEl = document.createElement('input');
     fileEl.type = 'file';
-    fileEl.accept = '.fig,.svg,.penpot,.zip,.ai,.pdf,.idml,.indd,image/svg+xml,application/zip,application/pdf,application/illustrator';
+    fileEl.accept = '.fig,.svg,.penpot,.zip,.ai,.pdf,.pptx,.idml,.indd,image/svg+xml,application/zip,application/pdf,application/illustrator,application/vnd.openxmlformats-officedocument.presentationml.presentation';
     fileEl.style.display = 'none';
     panel.appendChild(fileEl);
     chooseBtn.addEventListener('click', (e) => { e.stopPropagation(); fileEl.click(); });
@@ -3257,11 +3332,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       tplBox.checked = true;
       chooseBtn.disabled = true;
       try {
-        if (chooseScenes) {
+        if (importMode === 'scenes') {
           // The user chose "As timed scenes": frames become timed scenes (importAsScenes above).
           const n = await importAsScenes(f, (m: string) => { status.textContent = m; });
           status.classList.add('is-ok');
           status.textContent = n === 1 ? t('Added 1 scene.') : t('Added {n} scenes.', { n });
+        } else if (importMode === 'artboards') {
+          // "As artboards": one frame per page, the parts editable (importAsArtboards above).
+          const n = await importAsArtboards(f, (m: string) => { status.textContent = m; });
+          status.classList.add('is-ok');
+          status.textContent = n === 1 ? t('Added 1 artboard.') : t('Added {n} artboards.', { n });
         } else {
           const { parseDesignFile, countPenpotComponents, parseDesignTemplates } = await import('./design-import.ts');
           // A design system's component masters can also be saved as reusable
@@ -3394,7 +3474,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       ], cols: 2 },
       { sep: true },
       { label: t('Group'), icon: icon(SVG.group), run: () => groupSelection(), disabled: !multi },
-      { label: t('Ungroup'), icon: icon(SVG.ungroup), run: () => ungroupSelection(), disabled: !selHasGroup() },
+      { label: t('Ungroup'), icon: icon(SVG.ungroup), run: () => ungroupSelection(), disabled: !canUngroup() },
       { label: t('Clip to bottom shape'), icon: icon(SVG.clip), run: () => clipSelection(), disabled: !multi },
       { label: t('Release clip'), icon: icon(SVG.unclip), run: () => releaseClip(), disabled: !selHasClip() },
     ];
@@ -5173,6 +5253,63 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     p.querySelector<HTMLButtonElement>('[data-confirm-yes]')!.focus();
   }
 
+  /**
+   * The drop door's question for a document of several pages: artboards, timed scenes,
+   * or just one page. The SAME `fc-panel` recipe as askConfirm, centred on the stage,
+   * and deliberately NOT the shared `choiceDialog`: that modal rides the phantom
+   * history entry the Back button needs, and popping it on close fires a popstate the
+   * router answers by re-mounting the tool - which tore down the very view that was
+   * mid-import and dropped the result on the floor (measured 2026-09-02). A stage panel
+   * touches no history. Resolves null on Escape / an outside click.
+   */
+  function askImportPages(pages: number | null): Promise<ImportMode | null> {
+    return new Promise((resolve) => {
+      closePopover();
+      closeMorePanel();
+      const p = document.createElement('div');
+      p.className = 'fc-panel fc-num-panel fc-confirm-panel fc-import-pages-panel';
+      p.setAttribute('role', 'dialog');
+      p.setAttribute('aria-label', t('Import pages'));
+      p.tabIndex = -1;
+      const hint = pages
+        ? t('This document has {n} pages. How should they come in?', { n: pages })
+        : t('How should this document’s pages come in?');
+      p.innerHTML =
+        `<div class="fc-panel-head">${escape(t('Import pages'))}</div>` +
+        `<p class="fc-num-hint">${escape(hint)}</p>` +
+        '<div class="fc-num-row fc-confirm-row">' +
+          `<button type="button" class="btn btn--sm" data-import-mode="">${escape(t('Cancel'))}</button>` +
+          (importArtboardCapable ? `<button type="button" class="btn btn--primary btn--sm" data-import-mode="artboards">${escape(t('As artboards'))}</button>` : '') +
+          (importSceneCapable ? `<button type="button" class="btn ${importArtboardCapable ? '' : 'btn--primary '}btn--sm" data-import-mode="scenes">${escape(t('As timed scenes'))}</button>` : '') +
+          `<button type="button" class="btn btn--sm" data-import-mode="board">${escape(t('Just one page'))}</button>` +
+        '</div>';
+      p.addEventListener('pointerdown', (e) => e.stopPropagation());
+      let settled = false;
+      const settle = (mode: ImportMode | null): void => {
+        if (settled) return;
+        settled = true;
+        observer.disconnect();
+        resolve(mode);
+      };
+      const observer = new MutationObserver(() => { if (!p.isConnected) settle(null); });
+      p.querySelectorAll<HTMLButtonElement>('[data-import-mode]').forEach((b) => {
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const v = b.dataset.importMode;
+          closeMorePanel();
+          settle(v === 'artboards' ? 'artboards' : v === 'scenes' ? 'scenes' : v === 'board' ? 'board' : null);
+        });
+      });
+      stageEl.appendChild(p);
+      observer.observe(stageEl, { childList: true });
+      morePanel = p;
+      const sr = stageEl.getBoundingClientRect();
+      p.style.left = Math.max(6, Math.round((sr.width - p.offsetWidth) / 2)) + 'px';
+      p.style.top = Math.max(6, Math.round((sr.height - p.offsetHeight) / 2)) + 'px';
+      (p.querySelector<HTMLButtonElement>('.btn--primary') ?? p).focus();
+    });
+  }
+
   // ── Lift layers (plans/104 section 7) ───────────────────────────────────────────────
   //
   // "The feature that makes this especially for vectors": one box holding a flat SVG
@@ -6541,8 +6678,132 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!cfg.groupField) return;
     const boxes = getBoxes();
     const set = new Set(selIndices(boxes));
-    if (!boxes.some((b, i) => set.has(i) && groupOf(b))) return;
-    commit(boxes.map((b, i) => (set.has(i) && groupOf(b) ? { ...b, [cfg.groupField]: '' } : b)));
+    if (boxes.some((b, i) => set.has(i) && groupOf(b))) {
+      commit(boxes.map((b, i) => (set.has(i) && groupOf(b) ? { ...b, [cfg.groupField]: '' } : b)));
+      return;
+    }
+    // Nothing tagged: an imported vector is the other kind of group (below).
+    const targets = unpackTargetIds(boxes);
+    if (targets.length) void unpackSvgBoxes(targets);
+  }
+
+  /**
+   * The selected boxes an Ungroup would take APART rather than untag: each holds an SVG
+   * and carries no group of its own. An imported vector is a group in every sense but
+   * the field - it was drawn as parts and arrives as one picture - so Ungroup on it does
+   * what Ungroup does everywhere else and separates the parts: one box per layer of the
+   * drawing, cropped to its ink, sharing a fresh group so the whole still selects and
+   * moves as one until the next Ungroup peels that too (Andy, 2026-09-02: "importing
+   * vectors as images into design should allow groups to be ungrouped"). Every derived
+   * part is itself a standalone SVG, so the peel repeats down to the leaves.
+   *
+   * Lift layers is the same enumeration with a different intent - a depth ladder and a
+   * shadow for a camera move, behind a confirm - so the two share `liftRows` and differ
+   * only in `flat` (and in the hero heuristic, see `unpackSvgBoxes`).
+   */
+  function unpackTargetIds(boxes: Box[]): string[] {
+    if (!cfg.imageField || !cfg.groupField) return [];
+    return selIndices(boxes)
+      .filter((i) => !groupOf(boxes[i]) && isSvgImageRef(boxes[i]?.[cfg.imageField]))
+      .map((i) => idOf(boxes[i], i));
+  }
+  /** Is Ungroup live for this selection - a group to dissolve, or a vector to take apart? */
+  const canUngroup = (): boolean => selHasGroup() || unpackTargetIds(getBoxes()).length > 0;
+
+  /**
+   * Take the SVG boxes `ids` apart into their layers - ONE commit for all of them, so one
+   * ⌘Z puts every picture back. Every read and every asset store happens BEFORE the
+   * commit (runLift's rule): a failure part-way leaves the board exactly as it was.
+   * The model is re-read after the awaits and each source found by ID, never by the
+   * index the action started with.
+   */
+  async function unpackSvgBoxes(ids: string[]): Promise<void> {
+    if (!cfg.imageField || !cfg.groupField) return;
+    announce(t('Ungrouping…'));
+    try {
+      const [{ fetchAnimSvg }, { enumerateSvgLayers, svgRootViewBox }, { storeUserUpload }, { KF_Z_FIELD_CLAMP }] = await Promise.all([
+        import('./anim-svg-mount.ts'),
+        import('../../../../engine/src/svg-layers.ts'),
+        import('./picker.ts'),
+        import('../../../../engine/src/keyframes.ts'),
+      ]);
+      interface Part { layers: SvgLayerPlan[]; refs: InputValue[]; viewBox: SvgSourceBox }
+      const parts = new Map<string, Part>();
+      let single = 0;
+      for (const id of ids) {
+        const boxes = getBoxes();
+        const src = boxes[indexOfId(boxes, id)];
+        const ref = src?.[cfg.imageField] as { url?: unknown } | undefined;
+        const url = typeof ref?.url === 'string' ? ref.url : '';
+        if (!src || !url) continue;
+        const markup = await fetchAnimSvg(url);
+        if (disposed) return;
+        const place = { viewBox: svgRootViewBox(markup), fit: String(src[cfg.fitField] ?? 'contain') };
+        const cropToInk = liftCanCrop(src, cfg, place);
+        const cropScale = liftCropScale(src, cfg, place) || undefined;
+        // `heroDescent: false`: an Ungroup peels ONE level of the drawing's own structure,
+        // the way every vector editor's does, so it is predictable and it repeats. The
+        // hero heuristic belongs to the Lift dialog, where one big layer means a
+        // flythrough over a picture; here it would be a second, unasked-for peel.
+        const { layers, viewBox } = enumerateSvgLayers(markup, { heroDescent: false, cropToInk, cropScale });
+        if (layers.length < 2) { single++; continue; }
+        const base = liftBaseName(ref);
+        const refs: InputValue[] = [];
+        for (let i = 0; i < layers.length; i++) {
+          const file = new File([layers[i]!.markup], `${base}-part-${i + 1}.svg`, { type: 'image/svg+xml' });
+          refs.push(await storeUserUpload(host as unknown as Parameters<typeof storeUserUpload>[0], file) as unknown as InputValue);
+        }
+        if (disposed) return;
+        parts.set(id, { layers, refs, viewBox });
+      }
+      if (!parts.size) {
+        flash(single ? t('This artwork is a single shape, so there is nothing to ungroup.') : t('That artwork could not be read.'));
+        return;
+      }
+      let scratch = getBoxes();
+      const newIds: string[] = [];
+      for (const [id, part] of parts) {
+        const at = indexOfId(scratch, id);
+        if (at < 0) continue;   // gone while it was being read - the others still apply
+        const source = scratch[at]!;
+        // Ids are minted against a GROWING array, so no two rows can collide.
+        const rowIds: string[] = [];
+        let minted = scratch;
+        for (let i = 0; i < part.layers.length; i++) {
+          const rid = freshId(minted);
+          rowIds.push(rid);
+          minted = [...minted, { [cfg.idField]: rid } as Box];
+        }
+        const rows = liftRows(
+          source,
+          part.layers.map((L, i) => ({
+            src: String((part.refs[i] as { url?: unknown } | null)?.url ?? ''),
+            id: rowIds[i]!,
+            crop: L.viewBox ?? null,
+            bbox: L.bbox ?? null,
+          })),
+          { ...cfg, zField: cv.zField || '' },
+          {
+            zClamp: KF_Z_FIELD_CLAMP,
+            group: freshGroupId(scratch),
+            viewBox: part.viewBox,
+            fit: String(source[cfg.fitField] ?? 'contain'),
+            flat: true,
+          },
+        // The whole ref, not the URL string - the same reason runLift gives: the engine
+        // resolves a block's asset sub-field by `.id` and the hook reads `image.url`.
+        ).map((row, i) => ({ ...row, [cfg.imageField]: part.refs[i] }));
+        scratch = applyLift(scratch, at, rows);
+        newIds.push(...rowIds);
+      }
+      if (!newIds.length) { flash(t('That artwork is no longer on the canvas, so nothing was changed.')); return; }
+      selection = new Set(newIds);
+      commit(scratch);
+      flash(t('Ungrouped into {n} parts.', { n: newIds.length }));
+    } catch (e) {
+      console.error(e);
+      if (!disposed) flash(t('Those parts could not be separated, so nothing was changed.'));
+    }
   }
   // Clip: the LOWEST selected box (bottom of the stack) is the mask; every higher
   // selected box is clipped to its shape. They're grouped so the mask + content
@@ -11455,12 +11716,35 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     void (async () => {
       announce(t('Importing…'));
       try {
-        if (pendingImport.scenes && importSceneCapable) {
+        let mode: ImportMode = pendingImport.scenes && importSceneCapable ? 'scenes' : 'board';
+        if (mode === 'board' && (importArtboardCapable || importSceneCapable)) {
+          // The "Edit in Design" door with a document of several pages: ask how they
+          // should come in, the way the Import panel's radios do - artboards (the deck
+          // the file already is), timed scenes, or just one page. A single-page file
+          // never asks; a bundle whose page count costs a full parse asks without the
+          // number. Cancelling the question cancels the import, nothing changed.
+          const { countDesignPages } = await import('./design-import.ts');
+          const n = await countDesignPages(pendingImport.file);
+          if (disposed) return;
+          if (n !== 1) {
+            const pick = await askImportPages(n);
+            if (disposed) return;
+            if (!pick) { announce(t('Import cancelled.')); return; }
+            mode = pick;
+          }
+        }
+        if (mode === 'scenes') {
           // The "Make a video from its frames" drop door: the dropped design's frames
           // become timed scenes on the timeline (plans/104 section 337).
           const n = await importAsScenes(pendingImport.file, (m: string) => announce(m));
           if (disposed) return;
           announce(n === 1 ? t('Added 1 scene.') : t('Added {n} scenes.', { n }));
+          return;
+        }
+        if (mode === 'artboards') {
+          const n = await importAsArtboards(pendingImport.file, (m: string) => announce(m));
+          if (disposed) return;
+          announce(n === 1 ? t('Added 1 artboard.') : t('Added {n} artboards.', { n }));
           return;
         }
         const { parseDesignFile } = await import('./design-import.ts');

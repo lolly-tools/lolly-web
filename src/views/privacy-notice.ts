@@ -53,7 +53,7 @@ export function privacyNoticeMarkup(): string {
     <aside class="privacy-notice" role="note" aria-label="${t('Privacy')}">
       <p class="privacy-notice-text">
         ${t('Your designs and files stay on this device - no tracking, no analytics.')}
-        <a href="${docsAppHref('privacy')}" class="privacy-notice-link">${t('What we store')}</a>
+        <a href="${docsAppHref('trust/privacy')}" class="privacy-notice-link">${t('What we store')}</a>
       </p>
       <button type="button" class="privacy-notice-dismiss btn">${t('Got it')}</button>
     </aside>
