@@ -1581,6 +1581,8 @@
   "Leave this instance?": "Rời khỏi phiên bản này?",
   "Leave without saving": "Rời đi mà không lưu",
   "Left this device unchanged.": "Đã giữ nguyên thiết bị này.",
+  "Left/right balance: -100 is hard left, 100 is hard right.": "Cân bằng trái/phải: -100 là hoàn toàn trái, 100 là hoàn toàn phải.",
+  "Left/right balance: -100 is hard left, 100 is hard right. A video clip's sound pans in the exported file; the preview plays centred.": "Cân bằng trái/phải: -100 là hoàn toàn trái, 100 là hoàn toàn phải. Âm thanh của đoạn video được pan trong tệp xuất; bản xem trước phát ở giữa.",
   "Length": "Độ dài",
   "Length (ms)": "Độ dài (ms)",
   "Length in seconds": "Thời lượng tính bằng giây",

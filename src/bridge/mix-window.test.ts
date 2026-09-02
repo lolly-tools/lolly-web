@@ -157,3 +157,61 @@ test('mixWindow: identity holds with a single bed only (no clips)', () => {
   assertSampleForSample(wholeL, concatL, 'bed-only left');
   assertSampleForSample(wholeR, concatR, 'bed-only right');
 });
+
+// ── plans/165 WP-5: equal-power pan ──────────────────────────────────────────────
+
+/** One placed clip, no beds. */
+function clipSpec(pcm: Float32Array[], pan?: number): MixSpec {
+  return { clips: [{ pcm, startMs: 0, ...(pan === undefined ? {} : { pan }) }], beds: [] } as MixSpec;
+}
+
+test('pan 0 and pan absent are byte-identical to the historical read', () => {
+  const st = synthStereo(4800, 7);
+  const [l0, r0] = mixWindow(clipSpec(st), 0, 4800);
+  const [l1, r1] = mixWindow(clipSpec(st, 0), 0, 4800);
+  assertSampleForSample(l0, l1, 'pan-0 left');
+  assertSampleForSample(r0, r1, 'pan-0 right');
+});
+
+test('a mono source panned hard right leaves the left channel silent', () => {
+  const mono = [synthStereo(4800, 3)[0] as Float32Array];
+  const [l, r] = mixWindow(clipSpec(mono, 1), 0, 4800);
+  for (let i = 0; i < 4800; i++) {
+    // Math.cos(pi/2) is 6.1e-17, not 0 - the far channel is silent to within a
+    // rounding dust well below one 24-bit LSB, exactly as a StereoPannerNode is.
+    assert.ok(Math.abs(l[i] as number) < 1e-9, `left sample ${i} should be silent`);
+    // Math.sin(pi/2) IS exactly 1, so the near channel carries the source verbatim.
+    assert.equal(r[i], (mono[0] as Float32Array)[i], `right sample ${i}`);
+  }
+});
+
+test('the mono law is the StereoPannerNode spec: cos/sin of ((pan+1)/2)·(pi/2)', () => {
+  const src = synthStereo(1200, 11)[0] as Float32Array;
+  const pan = -0.5;
+  const x = ((pan + 1) / 2) * (Math.PI / 2);
+  const [l, r] = mixWindow(clipSpec([src], pan), 0, 1200);
+  for (let i = 0; i < 1200; i++) {
+    assert.ok(Math.abs((l[i] as number) - Math.cos(x) * (src[i] as number)) < 1e-7, `left ${i}`);
+    assert.ok(Math.abs((r[i] as number) - Math.sin(x) * (src[i] as number)) < 1e-7, `right ${i}`);
+  }
+});
+
+test('a stereo source panned hard left folds the right channel in and silences the right', () => {
+  const st = synthStereo(1200, 5);
+  const [l, r] = mixWindow(clipSpec(st, -1), 0, 1200);
+  for (let i = 0; i < 1200; i++) {
+    const want = (((st[0] as Float32Array)[i] as number) + ((st[1] as Float32Array)[i] as number));
+    assert.ok(Math.abs((l[i] as number) - want) < 1e-7, `left ${i}`);
+    assert.equal(r[i], 0, `right ${i} should be silent`);
+  }
+});
+
+test('the window seam stays invisible under pan', () => {
+  const total = RATE * 2;
+  const st = synthStereo(total, 9);
+  const spec = clipSpec(st, 0.33);
+  const [wholeL, wholeR] = mixWindow(spec, 0, total);
+  const [concatL, concatR] = concatOverGrid(spec, total);
+  assertSampleForSample(wholeL, concatL, 'panned left');
+  assertSampleForSample(wholeR, concatR, 'panned right');
+});

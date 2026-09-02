@@ -224,6 +224,8 @@ export interface SeqLayer {
   ignored?: boolean;
   /** Clip volume 0..2 (1 = as recorded) - the audio mix's flat gain. */
   gain: number;
+  /** Stereo pan -1..1 (0 = centred) - equal-power in the export mix (plans/165 WP-5). */
+  pan: number;
   enter: TransitionKind | null;
   enterMs: number;
   exit: TransitionKind | null;
@@ -472,6 +474,7 @@ export function readLayer(el: HTMLElement, idx: number, totalMs: number): SeqLay
     mute: (el.getAttribute?.('data-t-mute') ?? null) === '1',
     ignored: (el.getAttribute?.('data-t-ignored') ?? null) === '1',
     gain: clamp(num(el.getAttribute?.('data-t-gain') ?? null, 1), 0, 2),
+    pan: clamp(num(el.getAttribute?.('data-t-pan') ?? null, 0), -1, 1),
     enter: isTransitionKind(enter) ? enter : null,
     enterMs: clamp(num(el.getAttribute?.('data-t-enter-ms') ?? null, DEFAULT_TRANSITION_MS), MIN_TRANSITION_MS, MAX_TRANSITION_MS),
     exit: isTransitionKind(exit) ? exit : null,
@@ -1162,6 +1165,23 @@ export function crossfadeJunctions(layers: SeqLayer[]): { aIdx: number; bIdx: nu
 /** The outgoing side of every junction crossfade: `layer.idx → extra ms of life`. */
 export function crossfadeExtensions(layers: SeqLayer[]): Map<number, number> {
   return new Map(crossfadeJunctions(layers).map((j) => [j.aIdx, j.ms]));
+}
+
+/**
+ * The AUDIO half of every junction crossfade (plans/165 WP-4): per layer idx, the
+ * seconds its sound keeps playing past the cut (`tailSec`, the A side) and the
+ * handover length its fade-in shortens to (`headSec`, the B side). Derived from the
+ * SAME junctions the picture uses, so sound and picture can never disagree about
+ * where a handover is or how long it lasts. A middle clip in a chain of fades
+ * carries both sides at once.
+ */
+export function audioCrossfades(layers: SeqLayer[]): Map<number, { tailSec?: number; headSec?: number }> {
+  const out = new Map<number, { tailSec?: number; headSec?: number }>();
+  for (const j of crossfadeJunctions(layers)) {
+    out.set(j.aIdx, { ...out.get(j.aIdx), tailSec: j.ms / 1000 });
+    out.set(j.bIdx, { ...out.get(j.bIdx), headSec: j.ms / 1000 });
+  }
+  return out;
 }
 
 /** Where a layer's picture actually stops, ms - its end plus any crossfade tail. */

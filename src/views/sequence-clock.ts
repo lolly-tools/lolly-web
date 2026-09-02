@@ -554,6 +554,7 @@ interface AudioRec {
   node: AudioBufferSourceNode | null;
   /** The per-box gain stage (volume, fades, volume keyframes), torn down with the source. */
   gainNode: GainNode | null;
+  panNode?: StereoPannerNode | null;
 }
 
 type AudioCtxCtor = new () => AudioContext;
@@ -688,10 +689,10 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
   function audioKey(url: string, timing: Timing): string {
     return `${url}|${timing.start}|${timing.dur}|${timing.clipIn}|${timing.speed}|${timing.mute ? 1 : 0}`
       + `|${timing.ignored ? 1 : 0}`
-      + `|${timing.gain}|${timing.enter ?? ''}:${timing.enterMs}|${timing.exit ?? ''}:${timing.exitMs}`;
+      + `|${timing.gain}|${timing.pan}|${timing.enter ?? ''}:${timing.enterMs}|${timing.exit ?? ''}:${timing.exitMs}`;
   }
 
-  function stopAudioNode(node: AudioBufferSourceNode, gainNode?: GainNode | null): void {
+  function stopAudioNode(node: AudioBufferSourceNode, gainNode?: GainNode | null, panNode?: StereoPannerNode | null): void {
     try { node.onended = null; } catch { /* fake/detached node */ }
     try { node.stop(); } catch { /* never started, or already ended */ }
     try { node.disconnect(); } catch { /* already torn down */ }
@@ -703,12 +704,12 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
     const rec = audios.get(el);
     if (!rec) return;
     audios.delete(el);
-    if (rec.node) stopAudioNode(rec.node, rec.gainNode);
+    if (rec.node) stopAudioNode(rec.node, rec.gainNode, rec.panNode);
   }
 
   /** Silence the whole preview mix. Every exit from playback goes through here. */
   function stopAllAudio(): void {
-    for (const [, rec] of audios) if (rec.node) stopAudioNode(rec.node, rec.gainNode);
+    for (const [, rec] of audios) if (rec.node) stopAudioNode(rec.node, rec.gainNode, rec.panNode);
     audios.clear();
   }
 
@@ -856,16 +857,28 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
     });
     let node: AudioBufferSourceNode;
     let gainNode: GainNode | null = null;
+    let panNode: StereoPannerNode | null = null;
+    // The box's pan (plans/165 WP-5): a real StereoPannerNode, the same law the
+    // export mix applies analytically, so the preview's stereo image matches the
+    // file's. Only audio boxes reach this graph - a video element's sound cannot
+    // pan in preview, which the inspector's Pan row states.
+    const pan = Math.max(-1, Math.min(1, timing.pan ?? 0));
     try {
       node = c.createBufferSource();
       node.buffer = buf;
+      if (pan !== 0 && typeof c.createStereoPanner === 'function') {
+        panNode = c.createStereoPanner();
+        panNode.pan.value = pan;
+        panNode.connect(c.destination);
+      }
+      const sink: AudioNode = panNode ?? c.destination;
       if (isTrivialGain(events)) {
-        node.connect(c.destination);
+        node.connect(sink);
       } else {
         gainNode = c.createGain();
         scheduleGainEvents(gainNode.gain, events, t0 + startSec);
         node.connect(gainNode);
-        gainNode.connect(c.destination);
+        gainNode.connect(sink);
       }
     } catch (err) {
       log('warn', `sequence audio: could not connect a source - ${err instanceof Error ? err.message : String(err)}`);
@@ -873,20 +886,22 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
     }
     rec.node = node;
     rec.gainNode = gainNode;
+    rec.panNode = panNode;
     node.onended = (): void => {
       // Keep the RECORD (the box has been dealt with at this playhead) but drop the
       // node, so the per-frame pass neither restarts it nor stops a dead node.
       const cur = audios.get(el);
-      if (cur === rec && cur.node === node) { cur.node = null; cur.gainNode = null; }
+      if (cur === rec && cur.node === node) { cur.node = null; cur.gainNode = null; cur.panNode = null; }
       try { node.disconnect(); } catch { /* already torn down */ }
       if (gainNode) { try { gainNode.disconnect(); } catch { /* already torn down */ } }
+      if (panNode) { try { panNode.disconnect(); } catch { /* already torn down */ } }
     };
     try {
       node.start(Math.max(t0 + from, c.currentTime), offset, dur);
     } catch (err) {
       rec.node = null;
       rec.gainNode = null;
-      stopAudioNode(node, gainNode);
+      stopAudioNode(node, gainNode, panNode);
       log('warn', `sequence audio: start refused - ${err instanceof Error ? err.message : String(err)}`);
     }
   }

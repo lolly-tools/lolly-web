@@ -1581,6 +1581,8 @@
   "Leave this instance?": "要離開此執行個體嗎?",
   "Leave without saving": "不儲存並離開",
   "Left this device unchanged.": "此裝置保持未變。",
+  "Left/right balance: -100 is hard left, 100 is hard right.": "左右平衡：-100 為最左，100 為最右。",
+  "Left/right balance: -100 is hard left, 100 is hard right. A video clip's sound pans in the exported file; the preview plays centred.": "左右平衡：-100 為最左，100 為最右。影片片段的聲音會在匯出的檔案中平移聲相；預覽一律置中播放。",
   "Length": "長度",
   "Length (ms)": "長度（毫秒）",
   "Length in seconds": "長度（秒）",

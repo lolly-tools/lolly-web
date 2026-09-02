@@ -1581,6 +1581,8 @@
   "Leave this instance?": "Lämna den här instansen?",
   "Leave without saving": "Lämna utan att spara",
   "Left this device unchanged.": "Lämnade den här enheten oförändrad.",
+  "Left/right balance: -100 is hard left, 100 is hard right.": "Vänster/höger-balans: -100 är helt vänster, 100 är helt höger.",
+  "Left/right balance: -100 is hard left, 100 is hard right. A video clip's sound pans in the exported file; the preview plays centred.": "Vänster/höger-balans: -100 är helt vänster, 100 är helt höger. Ljudet i ett videoklipp panoreras i den exporterade filen; förhandsgranskningen spelas upp centrerad.",
   "Length": "Längd",
   "Length (ms)": "Längd (ms)",
   "Length in seconds": "Längd i sekunder",

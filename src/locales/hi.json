@@ -1581,6 +1581,8 @@
   "Leave this instance?": "इस इंस्टेंस को छोड़ें?",
   "Leave without saving": "बिना सहेजे छोड़ें",
   "Left this device unchanged.": "इस डिवाइस में कोई बदलाव नहीं किया गया।",
+  "Left/right balance: -100 is hard left, 100 is hard right.": "बाएं/दाएं संतुलन: -100 बिल्कुल बाएं है, 100 बिल्कुल दाएं है।",
+  "Left/right balance: -100 is hard left, 100 is hard right. A video clip's sound pans in the exported file; the preview plays centred.": "बाएं/दाएं संतुलन: -100 बिल्कुल बाएं है, 100 बिल्कुल दाएं है। एक्सपोर्ट की गई फ़ाइल में वीडियो क्लिप की ध्वनि पैन होती है; प्रीव्यू बीच में चलता है।",
   "Length": "लंबाई",
   "Length (ms)": "लंबाई (ms)",
   "Length in seconds": "सेकंड में अवधि",

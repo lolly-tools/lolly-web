@@ -1581,6 +1581,8 @@
   "Leave this instance?": "এই ইনস্ট্যান্স ছেড়ে যাবেন?",
   "Leave without saving": "সেভ না করে চলে যান",
   "Left this device unchanged.": "এই ডিভাইস অপরিবর্তিত রাখা হয়েছে।",
+  "Left/right balance: -100 is hard left, 100 is hard right.": "বাম/ডান ব্যালেন্স: -100 হলো সম্পূর্ণ বাম, 100 হলো সম্পূর্ণ ডান।",
+  "Left/right balance: -100 is hard left, 100 is hard right. A video clip's sound pans in the exported file; the preview plays centred.": "বাম/ডান ব্যালেন্স: -100 হলো সম্পূর্ণ বাম, 100 হলো সম্পূর্ণ ডান। ভিডিও ক্লিপের সাউন্ড এক্সপোর্ট করা ফাইলে প্যান হয়; প্রিভিউ মাঝখান থেকে চলে।",
   "Length": "দৈর্ঘ্য",
   "Length (ms)": "দৈর্ঘ্য (ms)",
   "Length in seconds": "দৈর্ঘ্য (সেকেন্ড)",

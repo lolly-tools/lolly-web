@@ -1581,6 +1581,8 @@
   "Leave this instance?": "Deze instantie verlaten?",
   "Leave without saving": "Verlaten zonder op te slaan",
   "Left this device unchanged.": "Dit apparaat is ongewijzigd gebleven.",
+  "Left/right balance: -100 is hard left, 100 is hard right.": "Links/rechts-balans: -100 is helemaal links, 100 is helemaal rechts.",
+  "Left/right balance: -100 is hard left, 100 is hard right. A video clip's sound pans in the exported file; the preview plays centred.": "Links/rechts-balans: -100 is helemaal links, 100 is helemaal rechts. Het geluid van een videoclip wordt in het geëxporteerde bestand gepand; de preview speelt gecentreerd af.",
   "Length": "Lengte",
   "Length (ms)": "Lengte (ms)",
   "Length in seconds": "Lengte in seconden",

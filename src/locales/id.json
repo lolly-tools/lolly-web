@@ -1581,6 +1581,8 @@
   "Leave this instance?": "Keluar dari instance ini?",
   "Leave without saving": "Keluar tanpa menyimpan",
   "Left this device unchanged.": "Perangkat ini tidak diubah.",
+  "Left/right balance: -100 is hard left, 100 is hard right.": "Keseimbangan kiri/kanan: -100 adalah kiri penuh, 100 adalah kanan penuh.",
+  "Left/right balance: -100 is hard left, 100 is hard right. A video clip's sound pans in the exported file; the preview plays centred.": "Keseimbangan kiri/kanan: -100 adalah kiri penuh, 100 adalah kanan penuh. Suara pada klip video di-pan dalam file yang diekspor; pratinjau diputar di tengah.",
   "Length": "Panjang",
   "Length (ms)": "Panjang (ms)",
   "Length in seconds": "Durasi dalam detik",

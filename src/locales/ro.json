@@ -1581,6 +1581,8 @@
   "Leave this instance?": "Părăsești această instanță?",
   "Leave without saving": "Ieși fără să salvezi",
   "Left this device unchanged.": "Acest dispozitiv a rămas neschimbat.",
+  "Left/right balance: -100 is hard left, 100 is hard right.": "Balans stânga/dreapta: -100 este complet la stânga, 100 este complet la dreapta.",
+  "Left/right balance: -100 is hard left, 100 is hard right. A video clip's sound pans in the exported file; the preview plays centred.": "Balans stânga/dreapta: -100 este complet la stânga, 100 este complet la dreapta. Sunetul unui clip video este panoramat în fișierul exportat; previzualizarea se redă centrat.",
   "Length": "Lungime",
   "Length (ms)": "Lungime (ms)",
   "Length in seconds": "Durată în secunde",

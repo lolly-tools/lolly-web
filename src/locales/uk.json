@@ -1581,6 +1581,8 @@
   "Leave this instance?": "Вийти з цього інстансу?",
   "Leave without saving": "Вийти без збереження",
   "Left this device unchanged.": "Цей пристрій залишено без змін.",
+  "Left/right balance: -100 is hard left, 100 is hard right.": "Баланс лівого/правого каналу: -100 — крайній лівий, 100 — крайній правий.",
+  "Left/right balance: -100 is hard left, 100 is hard right. A video clip's sound pans in the exported file; the preview plays centred.": "Баланс лівого/правого каналу: -100 — крайній лівий, 100 — крайній правий. Звук відеокліпу панорамується в експортованому файлі; попередній перегляд відтворюється по центру.",
   "Length": "Довжина",
   "Length (ms)": "Довжина (мс)",
   "Length in seconds": "Тривалість у секундах",

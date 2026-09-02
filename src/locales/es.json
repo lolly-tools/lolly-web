@@ -1581,6 +1581,8 @@
   "Leave this instance?": "¿Salir de esta instancia?",
   "Leave without saving": "Salir sin guardar",
   "Left this device unchanged.": "Este dispositivo no sufrió cambios.",
+  "Left/right balance: -100 is hard left, 100 is hard right.": "Balance izquierda/derecha: -100 es todo a la izquierda, 100 es todo a la derecha.",
+  "Left/right balance: -100 is hard left, 100 is hard right. A video clip's sound pans in the exported file; the preview plays centred.": "Balance izquierda/derecha: -100 es todo a la izquierda, 100 es todo a la derecha. El sonido de un videoclip se panea en el archivo exportado; la vista previa se reproduce centrada.",
   "Length": "Duración",
   "Length (ms)": "Duración (ms)",
   "Length in seconds": "Duración en segundos",

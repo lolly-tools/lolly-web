@@ -1581,6 +1581,8 @@
   "Leave this instance?": "このインスタンスから退出しますか?",
   "Leave without saving": "保存せずに離れる",
   "Left this device unchanged.": "このデバイスは変更されていません。",
+  "Left/right balance: -100 is hard left, 100 is hard right.": "左右バランス: -100は完全に左、100は完全に右です。",
+  "Left/right balance: -100 is hard left, 100 is hard right. A video clip's sound pans in the exported file; the preview plays centred.": "左右バランス: -100は完全に左、100は完全に右です。書き出したファイルではビデオクリップの音がパンしますが、プレビューでは中央のまま再生されます。",
   "Length": "長さ",
   "Length (ms)": "長さ（ミリ秒）",
   "Length in seconds": "長さ（秒）",

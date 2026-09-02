@@ -1581,6 +1581,8 @@
   "Leave this instance?": "离开此实例?",
   "Leave without saving": "不保存并离开",
   "Left this device unchanged.": "此设备保持未变。",
+  "Left/right balance: -100 is hard left, 100 is hard right.": "左右平衡：-100 为最左，100 为最右。",
+  "Left/right balance: -100 is hard left, 100 is hard right. A video clip's sound pans in the exported file; the preview plays centred.": "左右平衡：-100 为最左，100 为最右。视频片段的声音会在导出文件中进行声像平移；预览始终居中播放。",
   "Length": "时长",
   "Length (ms)": "时长（毫秒）",
   "Length in seconds": "时长（秒）",

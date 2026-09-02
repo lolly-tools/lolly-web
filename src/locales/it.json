@@ -1581,6 +1581,8 @@
   "Leave this instance?": "Uscire da questa istanza?",
   "Leave without saving": "Esci senza salvare",
   "Left this device unchanged.": "Questo dispositivo non è stato modificato.",
+  "Left/right balance: -100 is hard left, 100 is hard right.": "Bilanciamento sinistra/destra: -100 è tutto a sinistra, 100 è tutto a destra.",
+  "Left/right balance: -100 is hard left, 100 is hard right. A video clip's sound pans in the exported file; the preview plays centred.": "Bilanciamento sinistra/destra: -100 è tutto a sinistra, 100 è tutto a destra. L'audio della clip video subisce un panning nel file esportato; l'anteprima viene riprodotta centrata.",
   "Length": "Lunghezza",
   "Length (ms)": "Durata (ms)",
   "Length in seconds": "Durata in secondi",

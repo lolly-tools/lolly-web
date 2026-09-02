@@ -1581,6 +1581,8 @@
   "Leave this instance?": "Opustit tuto instanci?",
   "Leave without saving": "Odejít bez uložení",
   "Left this device unchanged.": "Toto zařízení zůstalo beze změny.",
+  "Left/right balance: -100 is hard left, 100 is hard right.": "Vyvážení vlevo/vpravo: -100 znamená úplně vlevo, 100 úplně vpravo.",
+  "Left/right balance: -100 is hard left, 100 is hard right. A video clip's sound pans in the exported file; the preview plays centred.": "Vyvážení vlevo/vpravo: -100 znamená úplně vlevo, 100 úplně vpravo. Zvuk video klipu se v exportovaném souboru panoruje; náhled se přehrává vystředěně.",
   "Length": "Délka",
   "Length (ms)": "Délka (ms)",
   "Length in seconds": "Délka (s)",

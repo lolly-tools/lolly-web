@@ -1581,6 +1581,8 @@
   "Leave this instance?": "مغادرة هذا المثيل؟",
   "Leave without saving": "مغادرة دون حفظ",
   "Left this device unchanged.": "تُرك هذا الجهاز دون تغيير.",
+  "Left/right balance: -100 is hard left, 100 is hard right.": "توازن اليسار/اليمين: -100 أقصى اليسار، 100 أقصى اليمين.",
+  "Left/right balance: -100 is hard left, 100 is hard right. A video clip's sound pans in the exported file; the preview plays centred.": "توازن اليسار/اليمين: -100 أقصى اليسار، 100 أقصى اليمين. صوت مقطع الفيديو يتوزع في الملف المُصدَّر؛ المعاينة تُشغَّل من المنتصف.",
   "Length": "الطول",
   "Length (ms)": "الطول (مللي ثانية)",
   "Length in seconds": "المدة بالثواني",

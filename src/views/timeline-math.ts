@@ -68,6 +68,7 @@ export interface TimeCfg {
    * every reader treats an absent value as 1 (as recorded).
    */
   gainField?: string;
+  panField?: string;
   /** OPTIONAL: the user's own clip name (timeline rename); '' or absent = derived label. */
   labelField?: string;
   /**

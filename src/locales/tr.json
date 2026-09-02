@@ -1581,6 +1581,8 @@
   "Leave this instance?": "Bu örnekten ayrılmak istiyor musun?",
   "Leave without saving": "Kaydetmeden çık",
   "Left this device unchanged.": "Bu cihaz değiştirilmeden bırakıldı.",
+  "Left/right balance: -100 is hard left, 100 is hard right.": "Sol/sağ dengesi: -100 tamamen sol, 100 tamamen sağ.",
+  "Left/right balance: -100 is hard left, 100 is hard right. A video clip's sound pans in the exported file; the preview plays centred.": "Sol/sağ dengesi: -100 tamamen sol, 100 tamamen sağ. Video klibinin sesi dışa aktarılan dosyada pan'lanır; önizleme ortalanmış şekilde oynatılır.",
   "Length": "Uzunluk",
   "Length (ms)": "Uzunluk (ms)",
   "Length in seconds": "Saniye cinsinden süre",

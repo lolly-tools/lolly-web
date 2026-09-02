@@ -89,6 +89,7 @@ import {
   type SeqErrorCode,
   type SeqPlanEnv,
   volumeKeysOf,
+  audioCrossfades,
 } from './sequence-plan.ts';
 // The plate budget (plans/104 section 5.5) and the spill geometry it prices. Both pure; the
 // budget is what turns "shoot the flown-past layer sharper" into a bounded promise.
@@ -1005,6 +1006,7 @@ async function mixSequenceAudio(
   const totalSamples = Math.max(1, Math.ceil(totalSec * MIX_RATE));
   const clips: MixClip[] = [];
   const spans: { from: number; to: number }[] = [];
+  const xfade = audioCrossfades(layers);
 
   for (const L of layers) {
     if (L.kind !== 'video' && L.kind !== 'audio') continue;
@@ -1056,7 +1058,12 @@ async function mixSequenceAudio(
       // at all: an audio box left at the parser's ceiling (MAX_TIME_MS = 1 hour)
       // would allocate ~1.4 GB of Float32 for a five-second render, twice over.
       const room = Math.max(0, totalSec - L.startMs / 1000);
-      const span = Math.min(L.durMs / 1000, room);
+      // plans/165 WP-4: at a seq-lane fade|fade cut the sound hands over exactly as
+      // the picture does - the A side keeps playing past the cut for the straddle
+      // (audioCrossfades' tailSec) while B fades in over the same window - so the
+      // mix pulls that much extra source material when the file has it.
+      const shape = xfade.get(L.idx);
+      const span = Math.min(L.durMs / 1000 + (shape?.tailSec ?? 0), room);
       const to = srcDur > 0 ? Math.min(from + span, srcDur) : from + span;
       if (!(to > from)) continue;
       const { channels } = await clip.pcm(from, to, MIX_RATE);
@@ -1076,15 +1083,21 @@ async function mixSequenceAudio(
       // audio length, so a window trimmed past its media fades on audible material.
       const placedSec = frames / MIX_RATE;
       const audioBox = L.kind === 'audio';
-      const fadeInSec = ((audioBox && L.enter) || L.enter === 'fade') ? L.enterMs / 1000 : 0;
-      const fadeOutSec = ((audioBox && L.exit) || L.exit === 'fade') ? L.exitMs / 1000 : 0;
+      // A junction side overrides its own authored fade length with the handover's
+      // (min of the two, the junction law): B's fade-in shortens to it, and A's
+      // fade-out becomes it, anchored - via the placed length - at the extended
+      // end, so the two gains cross at the cut's midpoint like the two alphas do.
+      const fadeInSec = shape?.headSec ?? (((audioBox && L.enter) || L.enter === 'fade') ? L.enterMs / 1000 : 0);
+      const fadeOutSec = shape?.tailSec ?? (((audioBox && L.exit) || L.exit === 'fade') ? L.exitMs / 1000 : 0);
       const events = clipGainEvents({
         spanSec: placedSec, gain: L.gain, fadeInSec, fadeOutSec,
         volumeKeys: volumeKeysOf(L.kf) ?? undefined,
       });
+      const pan = Math.max(-1, Math.min(1, L.pan ?? 0));
       clips.push({
         pcm: channels, startMs: Math.max(0, L.startMs),
         ...(isTrivialGain(events) ? {} : { events }),
+        ...(pan !== 0 ? { pan } : {}),
       });
       spans.push({ from: L.startMs / 1000, to: L.startMs / 1000 + frames / MIX_RATE });
     } catch (err) {

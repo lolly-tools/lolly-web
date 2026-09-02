@@ -6008,3 +6008,49 @@ test('Export frame is offered only for a video clip - absent, never greyed, on a
     assert.equal(ctxLabels(h, 'card').includes('Export frame'), false);
   } finally { h.teardown(); }
 });
+
+// ── the Pan row (plans/165 WP-5) ──────────────────────────────────────────────
+//
+// Same contract as the Volume row it sits under: shown only where the manifest
+// declares the sub-field AND the box carries sound, one model write per commit,
+// and the centred value clears the field so an untouched box stays byte-identical.
+
+/** Give a box a live-canvas audio footprint, the thing mediaOf() classifies on. */
+function fakeCanvasAudio(h: Harness, id: string): void {
+  const el = h.canvasEl.ownerDocument!.createElement('div');
+  el.className = 'lolly-box';
+  el.setAttribute('data-box-id', id);
+  const au = h.canvasEl.ownerDocument!.createElement('div');
+  au.className = 'lolly-box-audio';
+  au.setAttribute('data-audio-src', 'blob:song');
+  au.setAttribute('data-audio-dur', '4000');
+  el.appendChild(au);
+  h.canvasEl.appendChild(el);
+}
+
+test('the Pan row: audio boxes get it, it writes once, and centred clears the field', () => {
+  const h = mount([clip('a', 0, 3)], 40, ADD_KINDS, { cfgPatch: { gainField: 'gain', panField: 'pan' } });
+  try {
+    fakeCanvasAudio(h, 'a');
+    h.select(['a']);
+    const pan = field(h.root, 'Pan');
+    assert.equal(pan.value, '0', 'an unauthored box reads centred');
+    const before = h.commits.length;
+    type(pan, '-50');
+    assert.equal(h.commits.length, before + 1, 'one commit per edit');
+    assert.equal((h.boxes.find((b) => b.id === 'a') as Record<string, unknown>).pan, -0.5, 'percent maps to the -1..1 field');
+    type(pan, '0');
+    assert.equal((h.boxes.find((b) => b.id === 'a') as Record<string, unknown>).pan, '', 'centred clears, not a stored 0');
+  } finally { h.teardown(); }
+});
+
+test('the Pan row stays out of a tool that never declared panField', () => {
+  const h = mount([clip('a', 0, 3)], 40, ADD_KINDS, { cfgPatch: { gainField: 'gain' } });
+  try {
+    fakeCanvasAudio(h, 'a');
+    h.select(['a']);
+    assert.ok(field(h.root, 'Volume'), 'precondition: the audio rows are otherwise live');
+    const labels = Array.from(h.root.ownerDocument!.querySelectorAll('.tl-inspector .field-label')).map((x) => x.textContent);
+    assert.equal(labels.includes('Pan'), false, 'no manifest sub-field, no row');
+  } finally { h.teardown(); }
+});

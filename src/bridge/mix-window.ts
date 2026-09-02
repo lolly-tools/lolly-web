@@ -57,6 +57,13 @@ export interface MixClip {
    * is. Absent or trivial = the historical unity-gain read, byte-identical.
    */
   events?: GainEvent[];
+  /**
+   * Stereo pan -1..1 (plans/165 WP-5), the SAME equal-power law StereoPannerNode
+   * implements so preview and file agree: a mono source takes the mono law, a
+   * stereo source attenuates and cross-mixes the far channel. Absent or 0 keeps
+   * the historical fan-out path multiply-free and byte-identical.
+   */
+  pan?: number;
 }
 
 /**
@@ -128,12 +135,42 @@ export function mixWindow(spec: MixSpec, w0: number, w1: number): [Float32Array,
     // per sample like the beds' envelope below, skipped entirely for the plain
     // unity clip so the historical path stays multiply-free.
     const ev = !isTrivialGain(clip.events) ? (clip.events as GainEvent[]) : null;
-    for (let n = lo; n < hi; n++) {
-      const i = n - start;
-      const o = n - w0;
-      const g = ev ? envelopeGainAt(ev, i / rate) : 1;
-      left[o] = (left[o] as number) + (srcL[i] as number) * g;
-      right[o] = (right[o] as number) + (srcR[i] as number) * g;
+    const pan = Math.max(-1, Math.min(1, clip.pan ?? 0));
+    if (pan === 0) {
+      // The historical un-panned loop, kept verbatim so a centred clip stays
+      // byte-identical (a 2x2 identity matrix would still flip -0 samples).
+      for (let n = lo; n < hi; n++) {
+        const i = n - start;
+        const o = n - w0;
+        const g = ev ? envelopeGainAt(ev, i / rate) : 1;
+        left[o] = (left[o] as number) + (srcL[i] as number) * g;
+        right[o] = (right[o] as number) + (srcR[i] as number) * g;
+      }
+    } else {
+      // Equal-power pan (plans/165 WP-5) as a 2x2 sample matrix, coefficients
+      // exactly the StereoPannerNode spec: the mono law when the source has one
+      // channel (the fan-out above made srcR === srcL), attenuate-and-cross-mix
+      // toward the near side for stereo.
+      //   left  += (a·srcL + b·srcR) · g
+      //   right += (c·srcR + d·srcL) · g
+      let a = 1, b = 0, c = 1, d = 0;
+      if (!chans[1]) {
+        const x = ((pan + 1) / 2) * (Math.PI / 2);
+        a = Math.cos(x); c = Math.sin(x);
+      } else if (pan < 0) {
+        const x = (pan + 1) * (Math.PI / 2);
+        b = Math.cos(x); c = Math.sin(x);
+      } else {
+        const x = pan * (Math.PI / 2);
+        a = Math.cos(x); d = Math.sin(x);
+      }
+      for (let n = lo; n < hi; n++) {
+        const i = n - start;
+        const o = n - w0;
+        const g = ev ? envelopeGainAt(ev, i / rate) : 1;
+        left[o] = (left[o] as number) + (a * (srcL[i] as number) + b * (srcR[i] as number)) * g;
+        right[o] = (right[o] as number) + (c * (srcR[i] as number) + d * (srcL[i] as number)) * g;
+      }
     }
   }
 

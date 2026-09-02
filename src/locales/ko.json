@@ -1581,6 +1581,8 @@
   "Leave this instance?": "이 인스턴스에서 나가시겠어요?",
   "Leave without saving": "저장하지 않고 나가기",
   "Left this device unchanged.": "이 기기는 변경되지 않았어요.",
+  "Left/right balance: -100 is hard left, 100 is hard right.": "좌우 밸런스: -100은 완전히 왼쪽이고 100은 완전히 오른쪽이에요.",
+  "Left/right balance: -100 is hard left, 100 is hard right. A video clip's sound pans in the exported file; the preview plays centred.": "좌우 밸런스: -100은 완전히 왼쪽이고 100은 완전히 오른쪽이에요. 내보낸 파일에서는 비디오 클립의 소리가 패닝되지만, 미리보기는 가운데에서 재생돼요.",
   "Length": "길이",
   "Length (ms)": "길이 (ms)",
   "Length in seconds": "길이(초)",

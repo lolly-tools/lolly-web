@@ -1581,6 +1581,8 @@
   "Leave this instance?": "Umalis sa instance na ito?",
   "Leave without saving": "Umalis nang hindi nagse-save",
   "Left this device unchanged.": "Hindi nabago ang device na ito.",
+  "Left/right balance: -100 is hard left, 100 is hard right.": "Left/right balance: -100 ang pinaka-kaliwa, 100 ang pinaka-kanan.",
+  "Left/right balance: -100 is hard left, 100 is hard right. A video clip's sound pans in the exported file; the preview plays centred.": "Left/right balance: -100 ang pinaka-kaliwa, 100 ang pinaka-kanan. Pumapan ang tunog ng video clip sa na-export na file; naka-center ang preview.",
   "Length": "Haba",
   "Length (ms)": "Haba (ms)",
   "Length in seconds": "Haba sa segundo",

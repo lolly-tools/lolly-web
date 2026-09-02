@@ -4319,7 +4319,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // did: the pose row shows the box's depth wherever no keyframe overrides it (section 5.2),
     // so a depth edit made anywhere else must repaint this row or it prints a stale
     // number. `mute` is what flips the speaker toggle's glyph and `aria-pressed`.
-    const key = box ? `${id}|${JSON.stringify([box[cfg.startField], box[cfg.durField], box[cfg.clipInField], box[cfg.speedField], box[cfg.enterField], box[cfg.exitField], box[cfg.enterMsField], box[cfg.exitMsField], box[cfg.muteField], cfg.enterEaseField ? box[cfg.enterEaseField] : '', cfg.exitEaseField ? box[cfg.exitEaseField] : '', cfg.kfField ? box[cfg.kfField] : '', cfg.zField ? box[cfg.zField] : '', cfg.linkField ? box[cfg.linkField] : '', box.kind, cfg.gainField ? box[cfg.gainField] : '', cfg.splitField ? box[cfg.splitField] : '', cfg.staggerField ? box[cfg.staggerField] : '', cfg.splitOrderField ? box[cfg.splitOrderField] : '', cfg.holdField ? box[cfg.holdField] : '', cfg.holdRateField ? box[cfg.holdRateField] : ''])}` : '';
+    const key = box ? `${id}|${JSON.stringify([box[cfg.startField], box[cfg.durField], box[cfg.clipInField], box[cfg.speedField], box[cfg.enterField], box[cfg.exitField], box[cfg.enterMsField], box[cfg.exitMsField], box[cfg.muteField], cfg.enterEaseField ? box[cfg.enterEaseField] : '', cfg.exitEaseField ? box[cfg.exitEaseField] : '', cfg.kfField ? box[cfg.kfField] : '', cfg.zField ? box[cfg.zField] : '', cfg.linkField ? box[cfg.linkField] : '', box.kind, cfg.gainField ? box[cfg.gainField] : '', cfg.splitField ? box[cfg.splitField] : '', cfg.staggerField ? box[cfg.staggerField] : '', cfg.splitOrderField ? box[cfg.splitOrderField] : '', cfg.holdField ? box[cfg.holdField] : '', cfg.holdRateField ? box[cfg.holdRateField] : '', cfg.panField ? box[cfg.panField] : ''])}` : '';
     if (key === inspectorKey) return;
     inspectorKey = key;
     inspectorId = id;
@@ -4851,6 +4851,49 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
           wrap.append(meta, clearBtn);
         }
       }
+      inspector.appendChild(wrap);
+    }
+    // PAN (plans/165 WP-5): left/right balance, writing the manifest's pan sub-field.
+    // Same one-commit discipline as the Volume row above; 0 clears the field so an
+    // untouched box stays byte-identical. An audio box pans live through a real
+    // StereoPannerNode; a video element cannot pan in preview, so its title says
+    // where the pan applies.
+    if (timed && cfg.panField && (mediaKind === 'audio' || mediaKind === 'video')) {
+      const pf = cfg.panField;
+      const cur = clamp(finite(box[pf], 0), -1, 1);
+      const wrap = document.createElement('label');
+      wrap.className = 'field-row field-row--inline tl-field tl-pan-row';
+      const lab = document.createElement('span');
+      lab.className = 'field-label';
+      lab.textContent = t('Pan');
+      const slider = document.createElement('input');
+      slider.className = 'tl-kf-slider tl-pan-slider';
+      slider.type = 'range';
+      slider.min = '-100';
+      slider.max = '100';
+      slider.step = '5';
+      slider.setAttribute('aria-label', t('Pan'));
+      slider.value = String(Math.round(cur * 100));
+      const num = document.createElement('input');
+      num.className = 'field-input tl-num tl-pan-num';
+      num.type = 'number';
+      num.min = '-100';
+      num.max = '100';
+      num.step = '5';
+      num.value = String(Math.round(cur * 100));
+      num.title = mediaKind === 'audio'
+        ? t('Left/right balance: -100 is hard left, 100 is hard right.')
+        : t("Left/right balance: -100 is hard left, 100 is hard right. A video clip's sound pans in the exported file; the preview plays centred.");
+      const commit = (raw: number): void => {
+        const pct = Math.round(clamp(raw, -100, 100));
+        num.value = String(pct);
+        slider.value = String(pct);
+        write(patchBox(getBoxes(), id, { [pf]: pct === 0 ? '' : pct / 100 }));
+      };
+      slider.addEventListener('input', () => { num.value = slider.value; });
+      slider.addEventListener('change', () => commit(finite(slider.value, 0)));
+      num.addEventListener('change', () => commit(finite(num.value, 0)));
+      wrap.append(lab, slider, num);
       inspector.appendChild(wrap);
     }
     if (timed) {

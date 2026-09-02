@@ -1581,6 +1581,8 @@
   "Leave this instance?": "Да напуснеш тази инстанция?",
   "Leave without saving": "Излез без запазване",
   "Left this device unchanged.": "Това устройство остана непроменено.",
+  "Left/right balance: -100 is hard left, 100 is hard right.": "Баланс ляво/дясно: -100 е максимално ляво, 100 е максимално дясно.",
+  "Left/right balance: -100 is hard left, 100 is hard right. A video clip's sound pans in the exported file; the preview plays centred.": "Баланс ляво/дясно: -100 е максимално ляво, 100 е максимално дясно. Звукът на видеоклипа се панорамира в експортирания файл; прегледът се възпроизвежда центрирано.",
   "Length": "Дължина",
   "Length (ms)": "Дължина (ms)",
   "Length in seconds": "Продължителност в секунди",

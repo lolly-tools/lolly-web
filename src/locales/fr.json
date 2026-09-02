@@ -1581,6 +1581,8 @@
   "Leave this instance?": "Quitter cette instance ?",
   "Leave without saving": "Quitter sans enregistrer",
   "Left this device unchanged.": "Cet appareil n’a pas été modifié.",
+  "Left/right balance: -100 is hard left, 100 is hard right.": "Balance gauche/droite : -100 correspond à l'extrême gauche, 100 à l'extrême droite.",
+  "Left/right balance: -100 is hard left, 100 is hard right. A video clip's sound pans in the exported file; the preview plays centred.": "Balance gauche/droite : -100 correspond à l'extrême gauche, 100 à l'extrême droite. Le son d'un clip vidéo est panoramisé dans le fichier exporté ; l'aperçu se lit centré.",
   "Length": "Longueur",
   "Length (ms)": "Durée (ms)",
   "Length in seconds": "Durée en secondes",
