@@ -1899,7 +1899,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const atMs = typeof d?.atMs === 'number' ? d.atMs : Number.NaN;
     if (!Number.isFinite(atMs) || atMs < 0 || atMs > MAX_ADD_AT_MS) return;
     // A finished camera take arrives WITH its asset (the panel's Record a video): no
-    // create gesture and no picker - the clip lands full-frame at the playhead now.
+    // create gesture and no picker - the clip is placed full-frame at the playhead now.
     // Untrusted detail: the asset must at least be an object with a string id.
     const asset = d?.asset;
     if (asset && typeof asset === 'object' && typeof (asset as { id?: unknown }).id === 'string') {
@@ -3633,7 +3633,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
     lastMenuAt = { x: clientX, y: clientY };
     // The slide splice: index 3 is the slot right after Duplicate, Delete and
-    // their separator - where Outline text already sits for a text selection
+    // their separator - the same slot Outline text takes for a text selection
     // (a frame selection never has one, so the two can't collide).
     if (slideItems.length) items.splice(3, 0, ...slideItems, { sep: true });
     popover = document.createElement('div');
