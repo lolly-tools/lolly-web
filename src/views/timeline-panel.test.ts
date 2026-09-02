@@ -6095,6 +6095,32 @@ test('Preserve pitch on a sped clip: unticking writes varispeed, re-ticking clea
   } finally { h.teardown(); }
 });
 
+test('the Effect rack: presets write the EXPANDED chain, a foreign chain reads Custom and survives', () => {
+  const h = mount([clip('a', 0, 3)], 40, ADD_KINDS, { cfgPatch: { gainField: 'gain', fxField: 'fx' } });
+  try {
+    fakeCanvasAudio(h, 'a');
+    h.select(['a']);
+    const sel = field(h.root, 'Effect');
+    assert.equal(sel.value, '', 'an unauthored box reads No effect');
+    sel.value = 'room';
+    sel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    assert.equal((h.boxes.find((b) => b.id === 'a') as Record<string, unknown>).fx, 'rv(20-35)',
+      'the preset stores its expanded chain, never its name');
+    sel.value = '';
+    sel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    assert.equal((h.boxes.find((b) => b.id === 'a') as Record<string, unknown>).fx, '', 'No effect clears');
+    // A hand-authored chain: reads back as Custom, and reselecting Custom writes nothing.
+    h.select([]);
+    (h.boxes.find((b) => b.id === 'a') as Record<string, unknown>).fx = 'hp(120).crush(6)';
+    h.select(['a']);
+    const sel2 = field(h.root, 'Effect');
+    assert.equal(sel2.value, '__custom', 'a foreign chain shows as Custom');
+    const before = h.commits.length;
+    sel2.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    assert.equal(h.commits.length, before, 'reselecting Custom commits nothing');
+  } finally { h.teardown(); }
+});
+
 test('the Pan row stays out of a tool that never declared panField', () => {
   const h = mount([clip('a', 0, 3)], 40, ADD_KINDS, { cfgPatch: { gainField: 'gain' } });
   try {

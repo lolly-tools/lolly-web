@@ -72,6 +72,7 @@ export interface TimeCfg {
   duckField?: string;
   pitchField?: string;
   varispeedField?: string;
+  fxField?: string;
   /** OPTIONAL: the user's own clip name (timeline rename); '' or absent = derived label. */
   labelField?: string;
   /**

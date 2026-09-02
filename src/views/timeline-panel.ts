@@ -104,6 +104,7 @@ import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 // break at the same words a headless render would break at.
 import { groupWordsToCues } from '../../../../engine/src/captions.ts';
 import { integratedLoudness } from '../../../../engine/src/audio-loudness.ts';
+import { FX_PRESETS } from '../../../../engine/src/audio-fx.ts';
 import { captionGroup, cueSpansOnTimeline, isCaptionGroup, transcriptWordsOf, ttsWordsOf } from './timeline-captions.ts';
 // Transcript-driven editing (plans/174): delete a row cuts that media, strike a
 // row greys it. All arithmetic lives in the pure transcript-edit.ts; this panel
@@ -4320,7 +4321,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // did: the pose row shows the box's depth wherever no keyframe overrides it (section 5.2),
     // so a depth edit made anywhere else must repaint this row or it prints a stale
     // number. `mute` is what flips the speaker toggle's glyph and `aria-pressed`.
-    const key = box ? `${id}|${JSON.stringify([box[cfg.startField], box[cfg.durField], box[cfg.clipInField], box[cfg.speedField], box[cfg.enterField], box[cfg.exitField], box[cfg.enterMsField], box[cfg.exitMsField], box[cfg.muteField], cfg.enterEaseField ? box[cfg.enterEaseField] : '', cfg.exitEaseField ? box[cfg.exitEaseField] : '', cfg.kfField ? box[cfg.kfField] : '', cfg.zField ? box[cfg.zField] : '', cfg.linkField ? box[cfg.linkField] : '', box.kind, cfg.gainField ? box[cfg.gainField] : '', cfg.splitField ? box[cfg.splitField] : '', cfg.staggerField ? box[cfg.staggerField] : '', cfg.splitOrderField ? box[cfg.splitOrderField] : '', cfg.holdField ? box[cfg.holdField] : '', cfg.holdRateField ? box[cfg.holdRateField] : '', cfg.panField ? box[cfg.panField] : '', cfg.duckField ? box[cfg.duckField] : '', cfg.pitchField ? box[cfg.pitchField] : '', cfg.varispeedField ? box[cfg.varispeedField] : ''])}` : '';
+    const key = box ? `${id}|${JSON.stringify([box[cfg.startField], box[cfg.durField], box[cfg.clipInField], box[cfg.speedField], box[cfg.enterField], box[cfg.exitField], box[cfg.enterMsField], box[cfg.exitMsField], box[cfg.muteField], cfg.enterEaseField ? box[cfg.enterEaseField] : '', cfg.exitEaseField ? box[cfg.exitEaseField] : '', cfg.kfField ? box[cfg.kfField] : '', cfg.zField ? box[cfg.zField] : '', cfg.linkField ? box[cfg.linkField] : '', box.kind, cfg.gainField ? box[cfg.gainField] : '', cfg.splitField ? box[cfg.splitField] : '', cfg.staggerField ? box[cfg.staggerField] : '', cfg.splitOrderField ? box[cfg.splitOrderField] : '', cfg.holdField ? box[cfg.holdField] : '', cfg.holdRateField ? box[cfg.holdRateField] : '', cfg.panField ? box[cfg.panField] : '', cfg.duckField ? box[cfg.duckField] : '', cfg.pitchField ? box[cfg.pitchField] : '', cfg.varispeedField ? box[cfg.varispeedField] : '', cfg.fxField ? box[cfg.fxField] : ''])}` : '';
     if (key === inspectorKey) return;
     inspectorKey = key;
     inspectorId = id;
@@ -4968,6 +4969,54 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       sel.value = cur >= 1 ? '' : cur <= 0 ? '0' : '0.2';
       sel.addEventListener('change', () => {
         write(patchBox(getBoxes(), id, { [df]: sel.value === '' ? '' : Number(sel.value) }));
+      });
+      wrap.append(lab, sel);
+      inspector.appendChild(wrap);
+    }
+    // EFFECT (plans/101 section 3.4): the preset rack. Each choice WRITES the
+    // expanded chain (never the preset name), so a later preset re-tune can
+    // never change what an already-shared link sounds like. A chain that no
+    // preset produced reads back as Custom and is left alone until the user
+    // picks something else - hand-authored grammar survives the round-trip.
+    if (timed && cfg.fxField && (mediaKind === 'audio' || mediaKind === 'video')) {
+      const ff = cfg.fxField;
+      const cur = String(box[ff] ?? '');
+      const wrap = document.createElement('label');
+      wrap.className = 'field-row field-row--inline tl-field tl-fx-row';
+      const lab = document.createElement('span');
+      lab.className = 'field-label';
+      lab.textContent = t('Effect');
+      const sel = document.createElement('select');
+      sel.className = 'field-select field-select--sm tl-fx-select';
+      sel.setAttribute('aria-label', t('Effect'));
+      sel.title = mediaKind === 'audio'
+        ? t("How this clip's sound is treated in the mix.")
+        : t("How this clip's sound is treated in the mix. A video clip's effect applies in the exported file; the preview plays it untreated.");
+      const PRESET_LABELS: [string, string][] = [
+        ['voice-cleanup', t('Voice cleanup')],
+        ['voice-clarity', t('Voice clarity')], ['warm', t('Warm')], ['bright', t('Bright')],
+        ['telephone', t('Telephone')], ['muffled', t('Muffled')], ['radio', t('Radio')],
+        ['lo-fi', t('Lo-fi')], ['echo', t('Echo')], ['room', t('Room')], ['hall', t('Hall')],
+        ['plate', t('Plate')], ['de-hum', t('De-hum')], ['gate', t('Noise gate')],
+      ];
+      const opt = (v: string, label: string): void => {
+        const o = document.createElement('option');
+        o.value = v;
+        o.textContent = label;
+        sel.appendChild(o);
+      };
+      opt('', t('No effect'));
+      for (const [key, label] of PRESET_LABELS) opt(key, label);
+      const match = PRESET_LABELS.find(([key]) => FX_PRESETS[key] === cur)?.[0] ?? '';
+      if (cur && !match) {
+        opt('__custom', t('Custom'));
+        sel.value = '__custom';
+      } else {
+        sel.value = match;
+      }
+      sel.addEventListener('change', () => {
+        if (sel.value === '__custom') return;   // reselecting the label is a no-op
+        write(patchBox(getBoxes(), id, { [ff]: sel.value ? FX_PRESETS[sel.value] : '' }));
       });
       wrap.append(lab, sel);
       inspector.appendChild(wrap);

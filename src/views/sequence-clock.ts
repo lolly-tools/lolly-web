@@ -688,7 +688,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
   function audioKey(url: string, timing: Timing): string {
     return `${url}|${timing.start}|${timing.dur}|${timing.clipIn}|${timing.speed}|${timing.mute ? 1 : 0}`
       + `|${timing.ignored ? 1 : 0}`
-      + `|${timing.gain}|${timing.pan}|${timing.duck}|${timing.pitch}|${timing.varispeed ? 1 : 0}|${timing.enter ?? ''}:${timing.enterMs}|${timing.exit ?? ''}:${timing.exitMs}`;
+      + `|${timing.gain}|${timing.pan}|${timing.duck}|${timing.pitch}|${timing.varispeed ? 1 : 0}|${timing.fx}|${timing.enter ?? ''}:${timing.enterMs}|${timing.exit ?? ''}:${timing.exitMs}`;
   }
 
   /**
@@ -959,6 +959,29 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
       const out = await stretchPcm(chs, timing.varispeed && timing.speed !== 1
         ? { speed: timing.speed, factor: timing.speed * 2 ** (pitchSt / 12), rate: srcRate }
         : { speed: timing.speed, semitones: pitchSt, rate: srcRate });
+      // The fx chain, after the stretch - the same order the export applies
+      // (effects process the remapped output, so echo times read in timeline
+      // seconds), with the shell's cleanup driver spliced in at each clean()
+      // token exactly as the export does. The engine parser drops unknown
+      // tokens silently here; the export path is where the skip warning lives.
+      // clean() runs only at 48 kHz (the model's native mix-rate path) - at any
+      // other decode rate it degrades to the rest of the chain.
+      if (timing.fx) {
+        const { parseFxChain: parse, processFxPcm: apply } = await import('../../../../engine/src/audio-fx.ts');
+        const parsed = parse(timing.fx);
+        let planes: Float32Array[] = out;
+        let seg: typeof parsed.entries = [];
+        for (const entry of parsed.entries) {
+          if (entry.name !== 'clean') { seg.push(entry); continue; }
+          if (seg.length) { apply(planes, srcRate, seg); seg = []; }
+          if (srcRate === 48_000) {
+            const { cleanPcm } = await import('../lib/audio-clean-core.ts');
+            planes = await cleanPcm(planes, srcRate);
+          }
+        }
+        if (seg.length) apply(planes, srcRate, seg);
+        for (let c = 0; c < out.length; c++) out[c] = planes[c]!;
+      }
       const bounced = new AudioBuffer({ length: out[0]!.length, numberOfChannels: out.length, sampleRate: srcRate });
       for (let c = 0; c < out.length; c++) bounced.copyToChannel(out[c] as Float32Array<ArrayBuffer>, c);
       return bounced;
@@ -986,8 +1009,8 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
     if (timing.mute || timing.ignored) { audios.set(el, { key, node: null, gainNode: null }); return; }
     if (!url) return;
     audios.set(el, { key, node: null, gainNode: null });
-    if (timing.speed !== 1 || timing.pitch !== 0) {
-      // Pitch/stretch bounce (plans/165 WP-7/WP-7b): the box's window is
+    if (timing.speed !== 1 || timing.pitch !== 0 || timing.fx !== '') {
+      // Pitch/stretch/fx bounce (plans/165 WP-7/7b, plans/101 fx): the box's window is
       // rendered once by the SAME headless stretcher the export mix runs, cached
       // by the placement key (which carries speed, trim and window), and the
       // bounced buffer schedules exactly like any decoded track - so scrubbing
@@ -998,7 +1021,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
         const bounced = await bounceStretch(buf, timing, key);
         const cur2 = audios.get(el);
         if (!bounced || !cur2 || cur2.key !== key || cur2.node) return;
-        startAudio(el, { ...timing, clipIn: 0, speed: 1, pitch: 0 }, bounced);
+        startAudio(el, { ...timing, clipIn: 0, speed: 1, pitch: 0, fx: '' }, bounced);
       });
       return;
     }

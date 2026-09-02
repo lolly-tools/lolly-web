@@ -182,7 +182,7 @@ import {
   hdrBoostToPQ,
 } from '@lolly/engine';
 import type { HdrBoostOptions } from '@lolly/engine';
-import { activitySpans, createTruePeakLimiter, createLoudnessMeter, normalizeGain } from '@lolly/engine';
+import { activitySpans, createTruePeakLimiter, createLoudnessMeter, normalizeGain, parseFxChain, processFxPcm } from '@lolly/engine';
 // The compositor photographs the LIVE artboard, and the phase-2 clock has been
 // writing `.seq-off` (display:none) onto every box that is not under the playhead.
 // Without clearing it, every clip except the one being scrubbed rasterises blank.
@@ -1148,6 +1148,25 @@ async function mixSequenceAudio(
         channels = await stretchPcm(channels, L.varispeed && L.speed !== 1
           ? { speed: L.speed, factor: L.speed * 2 ** (pitchSt / 12), rate: MIX_RATE }
           : { speed: L.speed, semitones: pitchSt, rate: MIX_RATE });
+      }
+      // The fx chain (plans/101 section 3.4), applied AFTER the stretch - the DAW
+      // convention: speed remaps the clip, inserts process the remapped output,
+      // so an echo(250) rings 250 ms apart on the TIMELINE at any speed. In
+      // place over the mix's own copies; unknown tokens already fell out in the
+      // parse, so an older chain never throws here. `clean()` entries are the
+      // SHELL's (the GTCRN model cannot live in the engine): the chain runs in
+      // segments with the cleanup driver spliced in at each token's position.
+      if (L.fx && channels[0]?.length) {
+        const parsed = parseFxChain(L.fx);
+        if (parsed.skipped.length) log('warn', `sequence audio: unknown fx entr${parsed.skipped.length === 1 ? 'y' : 'ies'} skipped (${parsed.skipped.join(', ')})`);
+        let seg: typeof parsed.entries = [];
+        for (const entry of parsed.entries) {
+          if (entry.name !== 'clean') { seg.push(entry); continue; }
+          if (seg.length) { processFxPcm(channels as Float32Array[], MIX_RATE, seg); seg = []; }
+          const { cleanPcm } = await import('../lib/audio-clean-core.ts');
+          channels = await cleanPcm(channels, MIX_RATE);
+        }
+        if (seg.length) processFxPcm(channels as Float32Array[], MIX_RATE, seg);
       }
       const frames = channels[0]?.length ?? 0;
       if (!frames) continue;

@@ -165,7 +165,7 @@ function demandLayer(over: Partial<SeqLayer> = {}): SeqLayer {
   return {
     el: null as never,
     idx: 0,
-    startMs: 0, durMs: 1000, clipInMs: 0, speed: 1, mute: false, gain: 1, pan: 0, duck: 1, pitch: 0, varispeed: false,
+    startMs: 0, durMs: 1000, clipInMs: 0, speed: 1, mute: false, gain: 1, pan: 0, duck: 1, pitch: 0, varispeed: false, fx: '',
     enter: null, enterMs: 0, exit: null, exitMs: 0, enterEase: '', exitEase: '',
     split: '', splitStaggerMs: 0, splitOrder: '', splitUnits: 0, splitSeed: 0,
     hold: '', holdRate: 1,

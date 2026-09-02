@@ -148,6 +148,8 @@ export interface Timing {
   pitch: number;
   /** Tape-style varispeed (`data-t-varispeed`; absent = pitch preserved). Plans/165 WP-7b. */
   varispeed: boolean;
+  /** Audio effect chain (`data-t-fx`, the engine fx grammar; '' = none). Plans/101 section 3.4. */
+  fx: string;
   lane: 'seq' | '';
   /**
    * The box's DEPTH in px above the surface (`data-t-z`), held to the engine's own
@@ -232,6 +234,7 @@ export function readTiming(el: Element): Timing {
     duck: clamp(attrNum(el, 'data-t-duck', 1), 0, 1),
     pitch: clamp(attrNum(el, 'data-t-pitch', 0), -12, 12),
     varispeed: (el.getAttribute?.('data-t-varispeed') ?? null) === '1',
+    fx: (el.getAttribute?.('data-t-fx') ?? '').slice(0, 200),
     lane: el.getAttribute('data-t-lane') === 'seq' ? 'seq' : '',
     z: readDepthZ(el.getAttribute('data-t-z')),
     rx: readTiltDeg(el.getAttribute('data-t-rx')),

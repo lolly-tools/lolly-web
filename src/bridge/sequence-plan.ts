@@ -232,6 +232,8 @@ export interface SeqLayer {
   pitch: number;
   /** Tape-style varispeed: pitch follows speed instead of being preserved - plans/165 WP-7b. */
   varispeed: boolean;
+  /** Audio effect chain (the engine fx grammar; '' = none) - plans/101 section 3.4. */
+  fx: string;
   enter: TransitionKind | null;
   enterMs: number;
   exit: TransitionKind | null;
@@ -484,6 +486,7 @@ export function readLayer(el: HTMLElement, idx: number, totalMs: number): SeqLay
     duck: clamp(num(el.getAttribute?.('data-t-duck') ?? null, 1), 0, 1),
     pitch: clamp(num(el.getAttribute?.('data-t-pitch') ?? null, 0), -12, 12),
     varispeed: (el.getAttribute?.('data-t-varispeed') ?? null) === '1',
+    fx: (el.getAttribute?.('data-t-fx') ?? '').slice(0, 200),
     enter: isTransitionKind(enter) ? enter : null,
     enterMs: clamp(num(el.getAttribute?.('data-t-enter-ms') ?? null, DEFAULT_TRANSITION_MS), MIN_TRANSITION_MS, MAX_TRANSITION_MS),
     exit: isTransitionKind(exit) ? exit : null,
