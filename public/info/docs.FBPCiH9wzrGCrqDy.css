@@ -1595,7 +1595,7 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 #door-creators:checked ~ .persona-tabs label[for="door-creators"],
 #door-builders:checked ~ .persona-tabs label[for="door-builders"],
 #door-operators:checked ~ .persona-tabs label[for="door-operators"]{border-color:var(--green);background:hsl(var(--band-accent) / .33)}
-.persona-tabs img{transition: all .5s ease; filter:drop-shadow( 0 3px 4px hsl(var(--band-accent) /.5))}
+.persona-tabs img{transition: all .5s ease; filter:drop-shadow( 0 1px 4px hsl(var(--band-accent) /.5))}
 #door-creators:not(:checked) ~ .persona-tabs label[for="door-creators"] img,
 #door-builders:not(:checked) ~ .persona-tabs label[for="door-builders"] img,
 #door-operators:not(:checked) ~ .persona-tabs label[for="door-operators"] img{filter:grayscale(.6) brightness(1.3) contrast(1.16) ; opacity:.2; transition: all .5s ease; transform:scale(.8) translate(2em, -5em)}

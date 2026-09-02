@@ -27,22 +27,43 @@ const SW_SRC = fileURLToPath(new URL('../public/sw.js', import.meta.url));
 /** Minimal in-memory stand-in for one Cache instance. */
 class FakeCache {
   entries = new Map<string, string>();
-  async match(req: { url?: string } | string) {
+  /** Keys stored BEFORE the isolation headers shipped: their response carries no
+   *  cross-origin-embedder-policy, the same form as the stale runtime entries the
+   *  worker must refetch (sw.js isolationCompatible, 2026-09-02). */
+  stale = new Set<string>();
+  private key(req: { url?: string } | string): string {
     const key = typeof req === 'string' ? req : (req.url ?? '');
-    const body = this.entries.get(key) ?? this.entries.get(new URL(key, 'https://x').pathname);
-    return body === undefined ? undefined : makeResponse(body);
+    return this.entries.has(key) ? key : new URL(key, 'https://x').pathname;
+  }
+  async match(req: { url?: string } | string) {
+    const key = this.key(req);
+    const body = this.entries.get(key);
+    return body === undefined ? undefined : makeResponse(body, { coep: !this.stale.has(key) });
   }
   async put(req: { url?: string } | string, res: { _body: string }) {
     const key = typeof req === 'string' ? req : (req.url ?? '');
     this.entries.set(key, res._body);
+    this.stale.delete(key);
+  }
+  async delete(req: { url?: string } | string) {
+    const key = this.key(req);
+    this.stale.delete(key);
+    return this.entries.delete(key);
   }
   async addAll(urls: string[]) { for (const u of urls) this.entries.set(u, `precached:${u}`); }
   async add(url: string) { this.entries.set(url, `precached:${url}`); }
 }
 
-function makeResponse(body: string, init: { status?: number } = {}) {
+/** A network response carries today's headers (isolation included); `coep: false`
+ *  models a response stored before those headers existed. */
+function makeResponse(body: string, init: { status?: number; coep?: boolean } = {}) {
   const status = init.status ?? 200;
-  return { _body: body, status, ok: status >= 200 && status < 300, clone() { return this; } };
+  const names = new Set(init.coep === false ? ['content-type'] : ['content-type', 'cross-origin-embedder-policy']);
+  return {
+    _body: body, status, ok: status >= 200 && status < 300,
+    headers: { has: (n: string) => names.has(n.toLowerCase()) },
+    clone() { return this; },
+  };
 }
 
 interface Harness {
@@ -299,6 +320,49 @@ describe('service worker: the offline-download buckets', () => {
     await navigate(h, 'https://lolly.tools/info/using.html');
     assert.ok(!h.caches.get('lolly-info')?.entries.has('/info/using.html'),
       'only the explicit docs download decides what lives in the bucket');
+  });
+
+  test('a runtime entry cached before the isolation headers is refetched, never served (2026-09-02)', async () => {
+    // The persistent buckets pinned pre-COEP responses for good. The threaded runtime
+    // starts its pthread helpers as nested workers from the cached loader URL, and a
+    // cross-origin-isolated page refuses a worker script with no COEP - silently, so
+    // TTS, speech-to-text and the image models sat at 100% forever. A stale hit is
+    // dropped and refetched; the bytes were never the problem, the headers were.
+    const h = loadServiceWorker();
+    const url = 'https://lolly.tools/ort/ort-wasm-simd-threaded.jsep.mjs';
+    const bucket = new FakeCache();
+    h.caches.set('lolly-ort', bucket);
+    bucket.entries.set(url, 'OLD_LOADER');
+    bucket.stale.add(url);
+    h.server.set('/ort/ort-wasm-simd-threaded.jsep.mjs', 'NEW_LOADER');
+    assert.equal(await subresource(h, url), 'NEW_LOADER', 'a COEP-less cached loader must not be served');
+    assert.equal(bucket.entries.get(url), 'NEW_LOADER', 'the bucket now holds the refetched copy');
+    assert.equal(bucket.stale.has(url), false, 'and it is no longer stale');
+    assert.equal(await subresource(h, url), 'NEW_LOADER', 'the healed entry serves cache-first again');
+  });
+
+  test('a stale /ort-hf entry in the legacy bucket is refetched into the speech bucket', async () => {
+    const h = loadServiceWorker();
+    const url = 'https://lolly.tools/ort-hf/1.22.0/ort-wasm-simd-threaded.jsep.mjs';
+    const legacy = new FakeCache();
+    h.caches.set('lolly-ort', legacy);
+    legacy.entries.set(url, 'OLD_HF');
+    legacy.stale.add(url);
+    h.server.set('/ort-hf/1.22.0/ort-wasm-simd-threaded.jsep.mjs', 'NEW_HF');
+    assert.equal(await subresource(h, url), 'NEW_HF');
+    assert.equal(h.caches.get('lolly-ort-hf')?.entries.get(url), 'NEW_HF', 'refetched into the primary bucket');
+    assert.equal(legacy.entries.has(url), false, 'the stale legacy copy is dropped');
+  });
+
+  test('offline, a stale runtime entry is still served rather than a 503', async () => {
+    const h = loadServiceWorker();
+    const url = 'https://lolly.tools/ort/ort-wasm-simd-threaded.wasm';
+    const bucket = new FakeCache();
+    h.caches.set('lolly-ort', bucket);
+    bucket.entries.set(url, 'OLD_WASM');
+    bucket.stale.add(url);
+    h.offline.value = true;
+    assert.equal(await subresource(h, url), 'OLD_WASM', 'whatever worked for an offline user keeps working');
   });
 
   test('/ort is cache-first from lolly-ort and self-populates on first use', async () => {

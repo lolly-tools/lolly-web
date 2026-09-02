@@ -110,7 +110,38 @@ async function penpotAuth(): Promise<{ token: string; projectId?: string; projec
 async function rememberProject(projectId: string, projectName: string): Promise<void> {
   const conn = await getConnection(KIND);
   if (!conn) return;
-  await saveConnection({ ...conn, config: { ...conn.config, projectId, projectName } });
+  // The label names the project too, so a later pick must move it or the /profile
+  // row keeps naming the project the user has stopped sending to.
+  await saveConnection({ ...conn, account: `${PENPOT_HOST} · ${projectName}`, config: { ...conn.config, projectId, projectName } });
+}
+
+/**
+ * A `.penpot` payload was written with the export panel's filename baked into its
+ * manifest and file record, and for a version-3 import that internal name is what
+ * Penpot shows. Rewrite both to the name the picker chose, and leave every other
+ * entry byte-identical.
+ */
+export async function renamePenpotArchive(bytes: Uint8Array, name: string): Promise<Uint8Array> {
+  const { unzipAsync, zipAsync } = await import('./zip.ts');
+  const entries = await unzipAsync(bytes, { maxEntryBytes: 64 * 1024 * 1024, maxTotalBytes: 256 * 1024 * 1024 });
+  const dec = new TextDecoder(), enc = new TextEncoder();
+  const rewrite = (path: string, fn: (o: Record<string, unknown>) => void): void => {
+    const raw = entries[path];
+    if (!raw) return;
+    try {
+      const o = JSON.parse(dec.decode(raw)) as Record<string, unknown>;
+      fn(o);
+      entries[path] = enc.encode(JSON.stringify(o));
+    } catch { /* not ours to fix - the entry stays as it came */ }
+  };
+  rewrite('manifest.json', (m) => {
+    const files = Array.isArray(m.files) ? m.files : [];
+    for (const f of files) if (f && typeof f === 'object') (f as Record<string, unknown>).name = name;
+  });
+  for (const path of Object.keys(entries)) {
+    if (/^files\/[^/]+\.json$/.test(path)) rewrite(path, (f) => { f.name = name; });
+  }
+  return await zipAsync(entries);
 }
 
 /** A 401 anywhere in the flow means the same thing to the user. */
@@ -276,10 +307,12 @@ export function penpotSendTarget(): SendTarget {
       const fileName = picked.name ?? name ?? FALLBACK_FILE_NAME;
       // The brand rides along in every archive: tokens, palette, typographies.
       const brand = await brandForPenpot();
+      // The picked name goes INSIDE the archive too (manifest + file record), which is
+      // what a version-3 import shows; the multipart `name` alone does not rename it.
       const blob = format === 'penpot'
         // A .penpot export IS the archive - send the bytes untouched.
-        ? new Blob([bytes as BlobPart], { type: PENPOT_MIME })
-        : await penpotArchiveForImage(bytes, name, format, mime, brand);
+        ? new Blob([(await renamePenpotArchive(bytes, fileName)) as BlobPart], { type: PENPOT_MIME })
+        : await penpotArchiveForImage(bytes, fileName, format, mime, brand);
       let fileIds: string[];
       try {
         ({ fileIds } = await makePenpotClient({ token: auth.token }).importFile(fileName, projectId, blob));

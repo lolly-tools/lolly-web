@@ -346,6 +346,9 @@ export async function mountConnectionsBody(body: HTMLElement, host: ConnHost, on
     : live.length === 1 ? kindLabel(live[0]!)
     : tRaw('{first} + {n}', { first: kindLabel(live[0]!), n: live.length - 1 }));
 
+  // The Penpot token the last successful probe listed projects for (memory only,
+  // never an attribute): the Connect step compares against it.
+  let probedPenpotToken = '';
   const readForm = (kind: string): Record<string, string> => {
     const out: Record<string, string> = {};
     body.querySelectorAll<HTMLInputElement>(`[data-pconn="${CSS.escape(kind)}"] [data-field]`).forEach((el) => {
@@ -398,12 +401,20 @@ export async function mountConnectionsBody(body: HTMLElement, host: ConnHost, on
           status('penpot', t('Paste your Penpot access token first'));
           return;
         }
-        const picker = body.querySelector<HTMLSelectElement>('[data-penpot-project]');
+        let picker = body.querySelector<HTMLSelectElement>('[data-penpot-project]');
+        // The second click must connect the token that was PROBED. A token edited after
+        // "Load projects" drops the injected picker and probes again, so an unverified
+        // token is never saved on the strength of an earlier one's project list.
+        if (picker && f.token !== probedPenpotToken) {
+          picker.closest('label.pconn-field')?.remove();
+          picker = null;
+        }
         if (!picker) {
           status('penpot', t('Checking…'));
           const res = await testPenpot(f.token);
           status('penpot', res.note);
           if (!res.ok || !res.projects) return;
+          probedPenpotToken = f.token;
           const label = document.createElement('label');
           label.className = 'pconn-field';
           const caption = document.createElement('span');

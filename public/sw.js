@@ -353,18 +353,41 @@ async function networkThenAppCache(event) {
 // Cache-first in a NAMED persistent bucket (the /ort/ runtime): a miss fetches
 // and fills that same bucket, so organic use and the explicit bulk download
 // land in one place and never hold double copies.
+// A cached RUNTIME file (the ORT loader .mjs and its .wasm) is only servable if it
+// carries the cross-origin-embedder-policy header the page now runs under. The
+// threaded runtime starts its pthread helpers as nested workers from that loader
+// URL, and a worker script whose response has no COEP is refused by a
+// cross-origin-isolated document - silently: the session waits for helpers that
+// never start, so TTS, speech-to-text and the image models sat at 100% forever.
+// The persistent buckets pinned responses stored BEFORE the isolation headers
+// shipped (their bytes matched the network exactly; only the headers were stale),
+// and cache-first served them for good (measured 2026-09-02 on lolly.tools).
+// A stale hit is dropped and refetched; if the network is down the stale copy
+// is still better than a 503 (an offline user keeps whatever worked for them).
+function isolationCompatible(response) {
+  return response.headers.has('cross-origin-embedder-policy');
+}
+
+async function refreshRuntime(cache, request, stale) {
+  try {
+    const response = await fetch(request);
+    if (response && response.ok) {
+      await cache.put(request, response.clone());
+      return response;
+    }
+    return stale || response;
+  } catch {
+    return stale || new Response('Offline', { status: 503 });
+  }
+}
+
 async function cacheFirstIn(cacheName, event) {
   const { request } = event;
   const cache = await caches.open(cacheName);
   const cached = await cache.match(request);
-  if (cached) return cached;
-  try {
-    const response = await fetch(request);
-    if (response && response.ok) cache.put(request, response.clone());
-    return response;
-  } catch {
-    return new Response('Offline', { status: 503 });
-  }
+  if (cached && isolationCompatible(cached)) return cached;
+  if (cached) await cache.delete(request);
+  return refreshRuntime(cache, request, cached);
 }
 
 // Like cacheFirstIn, but checks a SECOND (legacy) bucket on a miss before the network -
@@ -376,16 +399,13 @@ async function cacheFirstInEither(primaryCache, fallbackCache, event) {
   const { request } = event;
   const primary = await caches.open(primaryCache);
   const hit = await primary.match(request);
-  if (hit) return hit;
-  const legacy = await (await caches.open(fallbackCache)).match(request);
-  if (legacy) return legacy;
-  try {
-    const response = await fetch(request);
-    if (response && response.ok) primary.put(request, response.clone());
-    return response;
-  } catch {
-    return new Response('Offline', { status: 503 });
-  }
+  if (hit && isolationCompatible(hit)) return hit;
+  if (hit) await primary.delete(request);
+  const fallback = await caches.open(fallbackCache);
+  const legacy = await fallback.match(request);
+  if (legacy && isolationCompatible(legacy)) return legacy;
+  if (legacy) await fallback.delete(request);
+  return refreshRuntime(primary, request, hit || legacy);
 }
 
 // Network-first for the /info docs site, keyed strictly PER URL in INFO_CACHE.

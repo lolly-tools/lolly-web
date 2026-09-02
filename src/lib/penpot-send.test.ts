@@ -17,7 +17,8 @@
 
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { unzipSync } from 'fflate';
+import { unzipSync, zipSync } from 'fflate';
+import { buildPenpotEntries, imageToPenpotDoc, penpotUuid } from '../../../../engine/src/penpot-file.ts';
 
 import { connectPenpot, disconnectPenpot, testPenpot, penpotSendTarget } from './penpot-send.ts';
 import { cachedToken, getConnection, hasConnection, resetConnectionsForTests } from './provider-connections.ts';
@@ -189,15 +190,29 @@ test('an image send imports ONE new file: a board, the picture as media, the bra
   assert.equal(out.url, 'https://design.penpot.app/#/workspace?team-id=t1&file-id=40e06342-8830-80d6-8008-93e8caf41d9f');
 });
 
-test('a .penpot send posts the bytes untouched - the export IS the archive', async () => {
+test('a .penpot send is re-labelled inside the archive to the picked name, and nothing else moves', async () => {
   await connectPenpot(false, 'pat', PROJECT);
   const calls = stubFetch([{ match: 'import-binfile', text: IMPORT_SSE }]);
-  const bytes = new Uint8Array([0x50, 0x4b, 3, 4, 9, 9, 9]);
+  // A real archive, as the export panel would hand over - named after the export.
+  const doc = imageToPenpotDoc({ id: penpotUuid(), name: 'shot', mtype: 'image/png', width: 2, height: 2, bytes: fakePng(2, 2) }, { name: 'deck' });
+  const built = buildPenpotEntries(doc).entries;
+  const enc = new TextEncoder();
+  const files: Record<string, Uint8Array> = {};
+  for (const [k, v] of Object.entries(built)) files[k] = typeof v === 'string' ? enc.encode(v) : v;
+  const bytes = zipSync(files);
   await penpotSendTarget().send({ bytes, name: 'deck', format: 'penpot', mime: 'application/x-penpot', choice: CHOICE });
-  const file = (calls[0]!.init?.body as FormData).get('file') as Blob;
-  assert.deepEqual(new Uint8Array(await file.arrayBuffer()), bytes);
+  const entries = await sentArchive(calls[0]!);
+  const dec = new TextDecoder();
+  const manifest = JSON.parse(dec.decode(entries['manifest.json']!)) as { files: Array<{ name: string }> };
+  assert.equal(manifest.files[0]!.name, 'Poster', 'the manifest names the picked file');
+  const filePath = Object.keys(entries).find((n) => /^files\/[^/]+\.json$/.test(n))!;
+  assert.equal((JSON.parse(dec.decode(entries[filePath]!)) as { name: string }).name, 'Poster', 'so does the file record');
+  for (const [k, v] of Object.entries(files)) {
+    if (k === 'manifest.json' || k === filePath) continue;
+    assert.deepEqual(entries[k], v, `${k} is byte-identical`);
+  }
+  assert.equal((calls[0]!.init?.body as FormData).get('name'), 'Poster');
 });
-
 test('with no choice the send falls back to the connection default, and offers no link', async () => {
   await connectPenpot(false, 'pat', PROJECT);
   const calls = stubFetch([{ match: 'import-binfile', text: IMPORT_SSE }]);

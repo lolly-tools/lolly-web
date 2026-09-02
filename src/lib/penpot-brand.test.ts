@@ -10,7 +10,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { brandFromTokens } from './penpot-brand.ts';
+import { brandFromTokens, googleFamiliesFrom } from './penpot-brand.ts';
 
 const DOC = {
   $metadata: { tokenSetOrder: ['base'] },
@@ -43,4 +43,17 @@ test('no surface, or a surface that throws, yields an empty brand', async () => 
   assert.equal(brand.tokens, null);
   assert.deepEqual(brand.palette, []);
   assert.deepEqual(brand.fonts, {});
+});
+
+test('Google-sourced user font families are listed for gfont- ids; uploads and a missing surface are not', async () => {
+  const assets = { list: async () => [
+    { meta: { source: 'google-fonts', family: 'Work Sans' } },
+    { meta: { source: 'google-fonts', family: 'Work Sans' } },
+    { meta: { source: 'upload', family: 'SUSE' } },
+    { meta: null },
+  ] };
+  assert.deepEqual(await googleFamiliesFrom(assets), ['Work Sans']);
+  assert.deepEqual(await googleFamiliesFrom(null), []);
+  const brand = await brandFromTokens({ raw: async () => DOC, colors: async () => SWATCHES }, assets);
+  assert.deepEqual(brand.googleFamilies, ['Work Sans']);
 });

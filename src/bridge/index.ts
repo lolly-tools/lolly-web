@@ -7,6 +7,7 @@
  * the rest.
  */
 
+import { setHostRef } from '../lib/host-ref.ts';
 import type { HostV1, AssetRef, AssetPickerOpts, RecorderAPI } from '@lolly-tools/core/host-v1';
 // Deep engine imports, NOT the `@lolly/engine` barrel: this module is on the
 // boot path, and engine/src/index.ts is one shared facade whose retained export
@@ -569,6 +570,8 @@ export async function createBridge(): Promise<WebHost> {
     return openPicker(host as unknown as Parameters<typeof openPicker>[0], opts) as Promise<AssetRef | null>;
   };
 
+  // The host is reachable to modules that run before any export (lib/host-ref.ts).
+  setHostRef(host);
   return host;
 }
 

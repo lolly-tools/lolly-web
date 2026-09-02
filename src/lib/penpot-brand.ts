@@ -13,6 +13,7 @@
  */
 import type { PenpotIrTypography, PenpotPaletteColor } from '../../../../engine/src/penpot-file.ts';
 import { familyFromTokenValue, fontGroupOf } from '../user-fonts.ts';
+import { getHostRef } from './host-ref.ts';
 
 export interface PenpotBrand {
   /** The effective DTCG / Tokens-Studio document, unresolved (host.tokens.raw()). */
@@ -29,6 +30,29 @@ interface TokensSurfaceLike {
   raw?: () => Promise<unknown>;
   colors?: (opts?: { theme?: string }) => Promise<Array<{ path: string; name: string; group: string | null; value: string; description: string | null }>>;
 }
+/** The slice of the assets API the Google-font read needs: the font assets with their meta. */
+interface FontAssetsLike {
+  list?: (query: { type: 'font' }) => Promise<Array<{ meta?: { source?: unknown; family?: unknown } | null }>>;
+}
+
+/**
+ * Families installed from Google Fonts on this device - the ones Penpot can name
+ * with a `gfont-` id and paint with the real face. Read off the user font assets
+ * (user-fonts.ts stamps `meta.source = 'google-fonts'` on each downloaded face).
+ * Empty when there are none, or when the shell has no assets surface.
+ */
+export async function googleFamiliesFrom(assets: FontAssetsLike | null | undefined): Promise<string[]> {
+  if (!assets?.list) return [];
+  try {
+    const refs = await assets.list({ type: 'font' });
+    const out = new Set<string>();
+    for (const r of refs) {
+      const meta = r?.meta;
+      if (meta && meta.source === 'google-fonts' && typeof meta.family === 'string' && meta.family.trim()) out.add(meta.family.trim());
+    }
+    return Array.from(out);
+  } catch { return []; }
+}
 
 const EMPTY: PenpotBrand = { tokens: null, palette: [], typographies: [], fonts: {}, googleFamilies: [] };
 
@@ -40,9 +64,11 @@ const FONT_ROLES: ReadonlyArray<{ key: string; name: string; weight: number; ita
   { key: 'italic', name: 'Italic', weight: 400, italic: true },
 ];
 
-/** Read the brand through a tokens surface (the web host's, or any object with `raw`/`colors`). */
-export async function brandFromTokens(surface: TokensSurfaceLike | null | undefined): Promise<PenpotBrand> {
-  if (!surface) return { ...EMPTY };
+/** Read the brand through a tokens surface (the web host's, or any object with `raw`/`colors`),
+ *  plus the device's Google-sourced font families when an assets surface is given. */
+export async function brandFromTokens(surface: TokensSurfaceLike | null | undefined, assets?: FontAssetsLike | null): Promise<PenpotBrand> {
+  const googleFamilies = await googleFamiliesFrom(assets);
+  if (!surface) return { ...EMPTY, googleFamilies };
   let tokens: unknown = null;
   try { tokens = surface.raw ? await surface.raw() : null; } catch { tokens = null; }
   let palette: PenpotPaletteColor[] = [];
@@ -66,18 +92,24 @@ export async function brandFromTokens(surface: TokensSurfaceLike | null | undefi
       typographies.push({ name: role.name, path: 'Brand', fontFamily: family, fontWeight: role.weight, italic: role.italic, fontSize: 16, lineHeight: 1.2 });
     }
   }
-  return { tokens, palette, typographies, fonts, googleFamilies: [] };
+  return { tokens, palette, typographies, fonts, googleFamilies };
 }
 
 /**
- * The brand of the running web shell. Lazy on the export bridge, which owns the
- * live host: the send driver stays off the boot graph and the export panel has
- * the bridge loaded already.
+ * The brand of the running web shell. The host is read through lib/host-ref.ts,
+ * which the bridge registers at boot - its tokens and assets surfaces are eager,
+ * so this works before any export happened (the catalog's Send modal never opens
+ * an export panel). The export bridge's own `_host` is the fallback for a shell
+ * that built the bridge without registering the ref (tests, older boot paths).
  */
 export async function brandForPenpot(): Promise<PenpotBrand> {
   try {
-    const { _host } = await import('../bridge/export.ts');
-    return await brandFromTokens((_host as { tokens?: TokensSurfaceLike } | null)?.tokens ?? null);
+    let host = getHostRef() as ({ tokens?: TokensSurfaceLike; assets?: FontAssetsLike } | null);
+    if (!host) {
+      const { _host } = await import('../bridge/export.ts');
+      host = _host as typeof host;
+    }
+    return await brandFromTokens(host?.tokens ?? null, host?.assets ?? null);
   } catch {
     return { ...EMPTY };
   }
