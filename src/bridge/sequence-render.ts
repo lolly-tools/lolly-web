@@ -1048,12 +1048,6 @@ async function mixSequenceAudio(
     if (L.mute) continue;
     if (L.ignored) continue;   // struck-through: dropped from the mix (plans/174)
     if (L.durMs <= 0) continue;
-    if (L.speed !== 1) {
-      log('warn', `sequence audio: a clip at ${Math.round(L.startMs)}ms plays at ${L.speed}× - muted (v1 does not time-stretch audio).`);
-      // The warn above is console-only; also surface it where the user can see it.
-      host?.notice?.(`A sped-up clip's audio was dropped (audio can't change speed here).`);
-      continue;
-    }
     const url = mediaSrc(L);
     if (!url) {
       if (L.kind === 'audio') {
@@ -1099,9 +1093,22 @@ async function mixSequenceAudio(
       // mix pulls that much extra source material when the file has it.
       const shape = xfade.get(L.idx);
       const span = Math.min(L.durMs / 1000 + (shape?.tailSec ?? 0), room);
-      const to = srcDur > 0 ? Math.min(from + span, srcDur) : from + span;
+      // Speed != 1 consumes SOURCE material at the clip's rate: the window is
+      // span*speed source seconds, stretched back to span timeline seconds after
+      // the decode (plans/165 WP-7 - the un-NLE "sped clips are silent" rule ends).
+      const srcSpan = span * L.speed;
+      const to = srcDur > 0 ? Math.min(from + srcSpan, srcDur) : from + srcSpan;
       if (!(to > from)) continue;
-      const { channels } = await clip.pcm(from, to, MIX_RATE);
+      let { channels } = await clip.pcm(from, to, MIX_RATE);
+      if (L.speed !== 1 && channels[0]?.length) {
+        // Pitch-preserving time-stretch (plans/165 WP-7): the vendored Signalsmith
+        // engine, loaded as its own lazy chunk the first time a sped clip renders.
+        // The source window collapses/expands to the clip's timeline span, and
+        // everything downstream - fades, keys, duck, the master limiter - reads
+        // the placed length exactly as for any other clip.
+        const { stretchPcm } = await import('../lib/audio-stretch-core.ts');
+        channels = await stretchPcm(channels, { speed: L.speed, rate: MIX_RATE });
+      }
       const frames = channels[0]?.length ?? 0;
       if (!frames) continue;
       // A buffer read placed at an absolute start. The OAC graph played it

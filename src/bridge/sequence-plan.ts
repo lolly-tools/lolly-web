@@ -1205,7 +1205,6 @@ export function duckSpansFor(layers: SeqLayer[], self: SeqLayer): { from: number
     if (l === self || l.idx === self.idx) continue;
     if (l.kind !== 'video' && l.kind !== 'audio') continue;
     if (l.mute || l.ignored || l.durMs <= 0) continue;
-    if (l.speed !== 1) continue;   // silent in the v1 mix, so it ducks nothing
     const from = Math.max(l.startMs, a0);
     const to = Math.min(l.startMs + l.durMs, a1);
     if (to - from > 50) out.push({ from: (from - a0) / 1000, to: (to - a0) / 1000 });

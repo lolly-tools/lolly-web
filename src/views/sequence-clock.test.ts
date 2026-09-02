@@ -901,7 +901,7 @@ test('audio: un-muting mid-playback places the box; muting again silences it', a
   });
 });
 
-test('audio: a clip at speed !== 1 is silent, with the same warning the export mix gives', async () => {
+test('audio: a clip at speed !== 1 attempts the stretch bounce and degrades to silence gracefully', async () => {
   await withAudioCtx(async (a) => {
     const { canvas } = stage(6000, [{ start: 0, dur: 4000, speed: 2, audio: true }]);
     const q = frameQueue();
@@ -912,8 +912,13 @@ test('audio: a clip at speed !== 1 is silent, with the same warning the export m
     });
     clock.play();
     await settle();
+    // WP-7 (plans/165): sped clips BOUNCE through the pitch-preserving stretcher
+    // instead of going silent. The harness's fake buffer has no channel data to
+    // read, so the bounce fails and the clip degrades to silence with ONE visible
+    // reason - never a rejection into the frame loop. (The real-buffer math is
+    // proven by the stretch goldens; jsdom has no AudioBuffer to bounce into.)
     assert.equal(a.sources.length, 0);
-    assert.ok(L.lines.some((l) => l.includes('time-stretch')), `warned once: ${L.lines.join(' / ')}`);
+    assert.ok(L.lines.some((l) => l.includes('stretch bounce failed')), `warned: ${L.lines.join(' / ')}`);
     clock.destroy();
     canvas.remove();
   });

@@ -604,7 +604,6 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
   let dead = false;
   let pcmBytes = 0;         // decoded PCM currently held, bytes
   let ctxWasRunning = false; // last seen ctx.state, to re-place audio after a resume
-  let speedWarned = false;   // the "no time-stretch" warning is once per clock
 
   const log = (level: string, msg: string): void => { try { host?.log?.(level, msg); } catch { /* logging is never fatal */ } };
 
@@ -674,10 +673,10 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
   // (every box that should be sounding has a record), it never advances the sound.
   //
   // Semantics are the export mix's, deliberately, so a preview and the rendered file
-  // agree: silent when `data-t-mute` is set, silent at speed ≠ 1 (v1 does not
-  // time-stretch, and a chipmunk voiceover is worse than a silent one - the identical
-  // rule bridge/sequence-render.ts states), offset by `data-clip-in`, and clipped both
-  // to the box's own window and to the sequence's end.
+  // agree: silent when `data-t-mute` is set, offset by `data-clip-in`, clipped both
+  // to the box's own window and to the sequence's end - and at speed ≠ 1 the window
+  // is BOUNCED through the same pitch-preserving stretcher the export runs
+  // (plans/165 WP-7), then scheduled like any decoded track.
 
   /** The audio source URL a box carries, or '' when it is not an audio box. */
   function audioSrcOf(el: HTMLElement): string {
@@ -710,7 +709,7 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
     const out: { from: number; to: number }[] = [];
     for (const w of hosts) {
       const t = readTiming(w);
-      if (t.mute || t.ignored || t.speed !== 1) continue;
+      if (t.mute || t.ignored) continue;
       const from = Math.max(t.start, a0);
       const to = Math.min(endOf(t, seq), a1);
       if (to - from > 50) out.push({ from: (from - a0) / 1000, to: (to - a0) / 1000 });
@@ -934,6 +933,42 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
   }
 
   /**
+   * The stretch-bounce cache (plans/165 WP-7): one rendered AudioBuffer per sped
+   * clip placement, keyed by the SAME audioKey that re-places a box when its
+   * timing changes - so a re-trim or speed change simply misses and re-bounces.
+   * Small and FIFO-capped: a bounce is one clip window, not a whole track.
+   */
+  const bounces = new Map<string, Promise<AudioBuffer | null>>();
+  function bounceStretch(buf: AudioBuffer, timing: Timing, key: string): Promise<AudioBuffer | null> {
+    const hit = bounces.get(key);
+    if (hit) return hit;
+    const p = (async (): Promise<AudioBuffer | null> => {
+      const seq = seqMs();
+      const spanSec = Math.max(0, audioEndSec(timing, seq) - timing.start / 1000);
+      const srcRate = buf.sampleRate;
+      const from = Math.round((timing.clipIn / 1000) * srcRate);
+      const srcN = Math.min(Math.max(0, buf.length - from), Math.round(spanSec * timing.speed * srcRate));
+      if (!(srcN > 0) || !(spanSec > 0)) return null;
+      const chs: Float32Array[] = [];
+      for (let c = 0; c < Math.min(2, buf.numberOfChannels); c++) {
+        const all = buf.getChannelData(c);
+        chs.push(all.subarray(from, from + srcN).slice());
+      }
+      const { stretchPcm } = await import('../lib/audio-stretch-core.ts');
+      const out = await stretchPcm(chs, { speed: timing.speed, rate: srcRate });
+      const bounced = new AudioBuffer({ length: out[0]!.length, numberOfChannels: out.length, sampleRate: srcRate });
+      for (let c = 0; c < out.length; c++) bounced.copyToChannel(out[c] as Float32Array<ArrayBuffer>, c);
+      return bounced;
+    })().catch((err: unknown) => {
+      log('warn', `sequence audio: stretch bounce failed (${err instanceof Error ? err.message : String(err)}) - this clip is silent in preview`);
+      return null;
+    });
+    bounces.set(key, p);
+    if (bounces.size > 8) { const oldest = bounces.keys().next().value as string; bounces.delete(oldest); }
+    return p;
+  }
+
+  /**
    * Make sure one audio box is placed for the CURRENT playhead. Idempotent: the record
    * is written before the decode is even requested, so a box that is downloading, or
    * that was refused, costs nothing on the next 59 frames of the second.
@@ -946,16 +981,24 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
     // Muted or ignored (strikethrough, plans/174): reserve the slot so the box is not
     // re-placed every frame, but schedule no source - it stays silent.
     if (timing.mute || timing.ignored) { audios.set(el, { key, node: null, gainNode: null }); return; }
-    if (timing.speed !== 1) {
-      audios.set(el, { key, node: null, gainNode: null });
-      if (!speedWarned) {
-        speedWarned = true;
-        log('warn', `sequence audio: a clip at ${Math.round(timing.start)}ms plays at ${timing.speed}× - silent (v1 does not time-stretch audio), matching the export mix`);
-      }
-      return;
-    }
     if (!url) return;
     audios.set(el, { key, node: null, gainNode: null });
+    if (timing.speed !== 1) {
+      // Pitch-preserving stretch bounce (plans/165 WP-7): the box's window is
+      // rendered once by the SAME headless stretcher the export mix runs, cached
+      // by the placement key (which carries speed, trim and window), and the
+      // bounced buffer schedules exactly like any decoded track - so scrubbing
+      // stays cheap and preview matches the file.
+      void bufferFor(url).then(async (buf) => {
+        const cur = audios.get(el);
+        if (!buf || !cur || cur.key !== key || cur.node) return;
+        const bounced = await bounceStretch(buf, timing, key);
+        const cur2 = audios.get(el);
+        if (!bounced || !cur2 || cur2.key !== key || cur2.node) return;
+        startAudio(el, { ...timing, clipIn: 0, speed: 1 }, bounced);
+      });
+      return;
+    }
     void bufferFor(url).then((buf) => {
       const cur = audios.get(el);
       if (!buf || !cur || cur.key !== key || cur.node) return;
