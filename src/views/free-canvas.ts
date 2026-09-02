@@ -3432,6 +3432,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         for (const n of [1, 2, 3]) {
           items.push({ label: `${t('Reveal at step')} ${n}`, on: curBuild === n, run: () => setField('build', n) });
         }
+        // Morph match (plan 112 M5's last gap): the explicit pairing tag the morph
+        // transition prefers over its implicit text/image matching.
+        items.push({
+          label: t('Morph match…'), icon: icon(SVG.present),
+          run: () => openMorphMatchPanel(viewEl, si[0]!),
+        });
       } else if (one && isFrame) {
         // A selected FRAME: set its present-mode `state` tokens (per-slide theming) and
         // its speaker `notes` (shown only in the speaker view, never on the slide).
@@ -5839,6 +5845,30 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     input?.addEventListener('change', () => {
       const boxes = getBoxes();
       if (frameIdx < boxes.length) commit(boxes.map((b, i) => (i === frameIdx ? { ...b, notes: input.value } : b)));
+    });
+    input?.focus();
+  }
+
+  // Morph match (plan 112 M5): the explicit pairing key for the morph slide
+  // transition. Two boxes on different slides carrying the SAME tag morph into each
+  // other, overriding the implicit matching (identical text, or the same image).
+  function openMorphMatchPanel(anchor: HTMLElement, boxIdx: number): void {
+    closeMorePanel();
+    const cur = String(getBoxes()[boxIdx]?.['matchOf'] ?? '');
+    const p = document.createElement('div');
+    p.className = 'fc-panel fc-fstate-panel';
+    p.innerHTML =
+      `<div class="fc-panel-head">${t('Morph match')}</div>` +
+      `<div class="fc-css-hint">${t('Give this box and its partner on another slide the same tag; the morph slide transition then moves between them. Boxes with identical text or the same image already match on their own - the tag overrides that.')}</div>` +
+      `<input type="text" class="fc-fstate-input field-input" value="${escapeHtml(cur)}" placeholder="hero" spellcheck="false" autocomplete="off" autocapitalize="off">`;
+    p.addEventListener('pointerdown', (e) => e.stopPropagation());
+    stageEl.appendChild(p);
+    morePanel = p;
+    positionPanelBelow(p, anchor);
+    const input = p.querySelector<HTMLInputElement>('.fc-fstate-input');
+    input?.addEventListener('change', () => {
+      const boxes = getBoxes();
+      if (boxIdx < boxes.length) commit(boxes.map((b, i) => (i === boxIdx ? { ...b, matchOf: input.value.trim() } : b)));
     });
     input?.focus();
   }

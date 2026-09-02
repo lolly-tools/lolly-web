@@ -1083,7 +1083,7 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   //   ids come from the module-scope CHOREO_SHOWCASES table, the glyphs are icon(SVG.*)
   //   constants, and the only computed value is the selected-box COUNT, an integer
   //   formatted by t(). Every string interpolation is escape()d anyway.
-  'views/free-canvas.ts': 52,
+  'views/free-canvas.ts': 53,   // +1 2026-09-02: openMorphMatchPanel (escapeHtml'd value + t() strings, the fstate/notes panel pattern)
   // present-mode.ts (plan 112): the presenter's three chrome sinks - the pause button and
   //   the two nav-button builders - are each `el.innerHTML = icon(name, opts)`, a static
   //   glyph string from lib/icons' PATHS registry with NO interpolated value. Nothing from a
