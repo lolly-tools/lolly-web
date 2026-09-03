@@ -1213,7 +1213,7 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 .persona-sub{font-size:.8125rem;color:var(--muted)}
 #door-creators:checked ~ .persona-tabs label[for="door-creators"],
 #door-builders:checked ~ .persona-tabs label[for="door-builders"],
-#door-operators:checked ~ .persona-tabs label[for="door-operators"]{border-color:var(--green);background:hsl(var(--band-accent) / .33)}
+#door-operators:checked ~ .persona-tabs label[for="door-operators"]{border-color:var(--green);background:color-mix(in oklab,var(--green) 56%,var(--page))}
 .persona-tabs img{transition: all .5s ease; filter:drop-shadow( 0 1px 14px hsl(var(--band-accent) /.5))}
 #door-creators:not(:checked) ~ .persona-tabs label[for="door-creators"] img,
 #door-builders:not(:checked) ~ .persona-tabs label[for="door-builders"] img,
@@ -1244,6 +1244,9 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 /* The eagle is a wingspan: at the shared width it is a third the height of the
    others and reads as an ornament, so it gets a third more room. */
 .lane-mascot[data-shot$="wedge-tailed-eagle.webp"]{width:clamp(200px,28vw,320px)}
+/* The lorikeet stands tall on its stick, so it hangs 5em below the pane instead
+   of stretching the row (Andy, 2026-09-03). */
+.lane-mascot[data-shot$="lorikeet.webp"]{margin-bottom:-5em}
 .lane-pane h3{font-family:'SUSE Mono',monospace;font-size:1.05rem;font-weight:600;text-transform:none;letter-spacing:.02em;margin-bottom:.4rem}
 .lane-pitch{color:var(--muted);max-width:56ch;margin:0 0 .9rem;font-size:.95rem}
 .lane-links{list-style:none;margin:0 0 1rem;padding:0;display:flex;flex-direction:column;gap:6px;max-width:520px}
@@ -1302,11 +1305,14 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
   .lane-radio:nth-of-type(6):checked ~ .lane-cols .lane-panes .lane-pane:nth-child(6){display:block}
   .lane-mascot{float:inline-end;width:6.5rem;margin-inline-start:1rem;margin-block-end:.5rem}
   .lane-mascot[data-shot$="wedge-tailed-eagle.webp"]{width:9.5rem}
+  /* The float already clears the copy past the bird here; the desktop hang would
+     run the lorikeet's tail over the first link row. */
+  .lane-mascot[data-shot$="lorikeet.webp"]{margin-bottom:.5rem}
 }
 
 /* ── beat 4b: the lolly.work band ───────────────────────────────────────── */
 .work-section{padding:0 1.5rem 3.5rem}
-.work-inner{max-width:1120px;margin:0 auto;padding:1.5rem 1.6rem;border:1px solid var(--border);border-radius:14px;background:color-mix(in oklab,hsl(var(--band-accent)) 36%,var(--page))}
+.work-inner{max-width:1120px;margin:0 auto;padding:1.5rem 1.6rem;border:1px solid var(--border);border-radius:14px;background:color-mix(in oklab,var(--green) 36%,var(--page))}
 .work-eyebrow{display:block;font-family:'SUSE Mono',monospace;font-size:.75rem;letter-spacing:.08em;color:color-mix(in oklab,hsl(var(--primary)) 70%,var(--text));margin-bottom:.35rem}
 .work-cols{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1rem 2rem;align-items:center}
 .work-heading{font-size:1.25rem;font-weight:800;text-transform:none;letter-spacing:0;margin:0 0 .4rem;text-wrap:balance}

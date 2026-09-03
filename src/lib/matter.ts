@@ -26,6 +26,9 @@ import {
   MATTE_MODEL_CACHE_VERSION, MATTE_MODEL_DIR, MATTE_MODEL_FILES,
   MATTE_MODEL_SPEC, MATTE_MODEL_STORE, resolveMatteModel, type MatteModelSpec,
 } from './matte-models.ts';
+import {
+  activateMask, packNchwNormalized, planLetterbox, type LetterboxPlan,
+} from '../../../../packages/node-shell/src/ml/matte-math.ts';
 
 type OrtModule = typeof import('onnxruntime-web');
 type InferenceSession = Awaited<ReturnType<OrtModule['InferenceSession']['create']>>;
@@ -120,65 +123,14 @@ export async function modelCached(id: MatteModelId): Promise<boolean> {
 }
 
 // ─── PURE math (unit-tested; no DOM, no ORT) ─────────────────────────────────
-
-export interface LetterboxPlan {
-  /** Model input square edge (spec.inputSize is [H,W], H===W for this roster). */
-  edge: number;
-  /** Scale applied to the source content to fit the square. */
-  scale: number;
-  /** Where the content sits inside the square (top-left), in model px. */
-  offsetX: number;
-  offsetY: number;
-  /** Content size inside the square, in model px. */
-  contentW: number;
-  contentH: number;
-}
-
-/** Fit a srcW×srcH image into a square `edge` preserving aspect, centered. */
-export function planLetterbox(srcW: number, srcH: number, edge: number): LetterboxPlan {
-  const scale = Math.min(edge / srcW, edge / srcH);
-  const contentW = Math.max(1, Math.round(srcW * scale));
-  const contentH = Math.max(1, Math.round(srcH * scale));
-  return {
-    edge, scale,
-    offsetX: Math.floor((edge - contentW) / 2),
-    offsetY: Math.floor((edge - contentH) / 2),
-    contentW, contentH,
-  };
-}
-
-/** RGBA (0..255) at `edge`×`edge` → NCHW [1,3,edge,edge] float32, normalized
- *  per the model spec: (pixel/255 − mean)/std, RGB planes, alpha dropped. */
-export function packNchwNormalized(rgba: ArrayLike<number>, edge: number, spec: MatteModelSpec): Float32Array {
-  const total = edge * edge;
-  const out = new Float32Array(total * 3);
-  const [mr, mg, mb] = spec.mean;
-  const [sr, sg, sb] = spec.std;
-  const page = total, twoPage = 2 * total;
-  for (let i = 0; i < total; i++) {
-    const idx = i * 4;
-    out[i] = ((rgba[idx] as number) / 255 - mr) / sr;
-    out[i + page] = ((rgba[idx + 1] as number) / 255 - mg) / sg;
-    out[i + twoPage] = ((rgba[idx + 2] as number) / 255 - mb) / sb;
-  }
-  return out;
-}
-
-/** Single-channel model output → 0..1 mask (edge×edge) via the spec activation. */
-export function activateMask(raw: ArrayLike<number>, count: number, activation: 'minmax' | 'sigmoid'): Float32Array {
-  const out = new Float32Array(count);
-  if (activation === 'sigmoid') {
-    for (let i = 0; i < count; i++) out[i] = 1 / (1 + Math.exp(-(raw[i] as number)));
-    return out;
-  }
-  // minmax: the head is already bounded; stretch to 0..1 (rembg parity).
-  let min = Infinity, max = -Infinity;
-  for (let i = 0; i < count; i++) { const v = raw[i] as number; if (v < min) min = v; if (v > max) max = v; }
-  const span = max - min;
-  if (!(span > 1e-6)) { out.fill(0); return out; }
-  for (let i = 0; i < count; i++) out[i] = ((raw[i] as number) - min) / span;
-  return out;
-}
+//
+// The letterbox geometry, the per-model normalization and the mask activation
+// MOVED to packages/node-shell/src/ml/matte-math.ts (2026-09-03, plans/183 WS2)
+// so the Node matte runner reuses the exact same numbers instead of carrying a
+// second copy. They are re-exported here unchanged: lib/matter.test.ts and every
+// call site below still import them from this module.
+export { activateMask, packNchwNormalized, planLetterbox } from '../../../../packages/node-shell/src/ml/matte-math.ts';
+export type { LetterboxPlan } from '../../../../packages/node-shell/src/ml/matte-math.ts';
 
 // ─── the run ──────────────────────────────────────────────────────────────────
 

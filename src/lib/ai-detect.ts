@@ -15,31 +15,20 @@
 
 import type { AiModelEstimate } from '@lolly/engine';
 import {
-  AI_DETECT_MODELS, AI_DETECT_STAGED, aiDetectModel, aiDetectCacheUrl, type AiDetectModel,
+  AI_DETECT_MODELS, AI_DETECT_STAGED, AI_DETECT_TEXT_CAP, aiDetectEligible, aiDetectModel,
+  aiDetectCacheUrl, type AiDetectModel,
 } from './ai-detect-models.ts';
 import type { AiDetectWorkerReply, AiDetectWorkerRequest } from './ai-detect-worker.ts';
 
 export type AiDetectStatus = 'unstaged' | 'need-download' | 'ready';
 
-/** Minimum words before the model runs - the engine's stylometry floor is 25;
- *  the classifier needs more text than that to say anything defensible. */
-const MIN_WORDS = 50;
-/** Latin-letter share below which the text is not the model's language. */
-const MIN_LATIN = 0.6;
-/** The worker never sees more than this (the model truncates to its own token
- *  budget anyway; this just bounds the postMessage payload). */
-const TEXT_CAP = 65536;
-
-/** Pure: is this text one the detector may honestly be asked about? */
-export function aiDetectEligible(text: string): boolean {
-  const t = text.slice(0, TEXT_CAP);
-  const words = t.split(/\s+/).filter(Boolean).length;
-  if (words < MIN_WORDS) return false;
-  const letters = t.match(/\p{L}/gu)?.length ?? 0;
-  if (letters === 0) return false;
-  const latin = t.match(/\p{Script=Latin}/gu)?.length ?? 0;
-  return latin / letters >= MIN_LATIN;
-}
+// The eligibility gate and its three constants MOVED to
+// packages/node-shell/src/ml/ai-detect-models.ts (plans/183 WS2), so the CLI
+// refuses exactly the texts the app refuses. Re-exported here unchanged:
+// lib/ai-detect.test.ts and the views still import aiDetectEligible from this
+// module.
+const TEXT_CAP = AI_DETECT_TEXT_CAP;
+export { aiDetectEligible };
 
 /** Can this environment even try? (A staged model + Worker + wasm.) */
 export function aiDetectAvailable(): boolean {

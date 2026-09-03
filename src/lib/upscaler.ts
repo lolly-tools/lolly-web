@@ -45,6 +45,14 @@ import {
   GFPGAN_FACE_SIZE, UPSCALE_DEFAULT_MODEL, UPSCALE_FACE_DETECT_FILE, UPSCALE_MODEL_CACHE_VERSION,
   UPSCALE_MODEL_DIR, UPSCALE_MODEL_FILES, UPSCALE_MODEL_STORE, UPSCALE_WDN_FILE, upscaleModel,
 } from './upscale-models.ts';
+// The tiling geometry, the target plan, the denoise blend and the memory estimate
+// MOVED to packages/node-shell/src/ml/upscale-math.ts (2026-09-03, plans/183 WS2)
+// so the Node upscaler tiles identically instead of carrying a second copy. The
+// device RAM figure is passed IN (navigator.deviceMemory here, os.totalmem there).
+import {
+  ABS_MAX_EDGE, ABS_MAX_PIXELS, blendPlanes, clamp255, estimatePeakBytes, hasAlpha,
+  planTarget, planTiles, planesToRgba, tileEdgeFor, type Target,
+} from '../../../../packages/node-shell/src/ml/upscale-math.ts';
 
 // ── Diagnostics (gated; console.debug - host.log isn't in scope in a lazy lib) ─
 const dbg = createDebugLogger({
@@ -193,12 +201,6 @@ function frameToCanvas(data: Uint8ClampedArray, w: number, h: number): AnyCanvas
   return c;
 }
 
-/** True when any pixel is non-opaque (so the RGB-only model needs the alpha split). */
-function hasAlpha(data: Uint8ClampedArray): boolean {
-  for (let i = 3; i < data.length; i += 4) if (data[i] !== 255) return true;
-  return false;
-}
-
 // ── Model inference: one tensor in, a Float32 plane-major output out ──────────
 
 /** Run one session on an NCHW [1,3,H,W] float32 [0,1] tensor; return its output
@@ -226,59 +228,15 @@ async function runModel(
   return { data: raw, w: outW, h: outH };
 }
 
-/** Blend two plane-major float outputs of equal size: base*(1-w) + wdn*w.
- *  Real-ESRGAN's dni convention (net_a=general detail, net_b=wdn denoised) with
- *  the general net's weight = 1-denoise, so our `denoise` in (0,1] slides from
- *  full detail (0) toward full denoise (1). */
-function blendPlanes(base: Float32Array, wdn: Float32Array, denoise: number): Float32Array {
-  const out = new Float32Array(base.length);
-  const a = 1 - denoise;
-  for (let i = 0; i < out.length; i++) out[i] = (base[i] as number) * a + (wdn[i] as number) * denoise;
-  return out;
-}
-
-/** Copy a cropped window of a plane-major float output into an RGBA ImageData
- *  (alpha 255). `srcW/srcH` describe the full plane; the window is
- *  [cropX,cropY]..+[cropW,cropH]. */
+/** The shared crop, wrapped back into the ImageData the canvas path draws with. */
 function planesToImageData(
   planes: Float32Array, srcW: number, srcH: number,
   cropX: number, cropY: number, cropW: number, cropH: number,
 ): ImageData {
-  const page = srcW * srcH;
-  const img = new ImageData(cropW, cropH);
-  const d = img.data;
-  for (let y = 0; y < cropH; y++) {
-    const sy = cropY + y;
-    for (let x = 0; x < cropW; x++) {
-      const sIdx = sy * srcW + (cropX + x);
-      const o = (y * cropW + x) * 4;
-      d[o] = clamp255((planes[sIdx] as number) * 255);
-      d[o + 1] = clamp255((planes[sIdx + page] as number) * 255);
-      d[o + 2] = clamp255((planes[sIdx + 2 * page] as number) * 255);
-      d[o + 3] = 255;
-    }
-  }
-  return img;
-}
-
-function clamp255(v: number): number {
-  return v <= 0 ? 0 : v >= 255 ? 255 : v;
+  return new ImageData(planesToRgba(planes, srcW, srcH, cropX, cropY, cropW, cropH), cropW, cropH);
 }
 
 // ── Tiling ───────────────────────────────────────────────────────────────────
-
-const TILE_OVERLAP = 16; // pre-scale pad per side, cropped back off after ×scale
-
-/** Pre-scale tile edge from a rough device-capability estimate - the memory
- *  lever. A tile allocates ~tile²·3·4 bytes in AND ~(tile·scale)²·3·4 out. */
-function tileEdgeFor(backend: 'webgpu' | 'wasm'): number {
-  const gb = deviceMemoryGb();
-  let edge = gb >= 8 ? 512 : gb >= 4 ? 384 : gb >= 2 ? 256 : 192;
-  // WebGPU keeps intermediates GPU-side; wasm holds them in the heap, so be a
-  // touch more conservative there on low-RAM devices.
-  if (backend === 'wasm' && gb < 4) edge = Math.min(edge, 256);
-  return edge;
-}
 
 /**
  * Tile `src` (an w×h RGB canvas) through the model(s) at native scale into a
@@ -291,73 +249,44 @@ async function tileThroughModel(
   src: AnyCanvas, w: number, h: number, scale: number, ctx: RunContext,
 ): Promise<AnyCanvas> {
   const backend = (await probeBackend()) ?? 'wasm';
-  const T = tileEdgeFor(backend === 'webgpu' ? 'webgpu' : 'wasm');
+  const T = tileEdgeFor(backend === 'webgpu' ? 'webgpu' : 'wasm', deviceMemoryGb());
   const sctx = ctx2d(src);
   const outW = w * scale, outH = h * scale;
   const out = makeCanvas(outW, outH);
   const octx = ctx2d(out);
 
-  const tilesX = Math.max(1, Math.ceil(w / T));
-  const tilesY = Math.max(1, Math.ceil(h / T));
-  const total = tilesX * tilesY;
+  // The tile grid (core rect + padded window per tile) is the shared plan, so the
+  // Node runner cuts the image at exactly the same seams.
+  const tiles = planTiles(w, h, T);
+  const total = tiles.length;
   let idx = 0;
 
-  for (let ty = 0; ty < tilesY; ty++) {
-    for (let tx = 0; tx < tilesX; tx++) {
-      ctx.checkAbort(); // only safe preemption point
-      const cx = tx * T, cy = ty * T;
-      const cw = Math.min(T, w - cx), ch = Math.min(T, h - cy);
-      // Padded (overlapped) source window, clamped to the image.
-      const px0 = Math.max(0, cx - TILE_OVERLAP), py0 = Math.max(0, cy - TILE_OVERLAP);
-      const px1 = Math.min(w, cx + cw + TILE_OVERLAP), py1 = Math.min(h, cy + ch + TILE_OVERLAP);
-      const pw = px1 - px0, ph = py1 - py0;
+  for (const { cx, cy, cw, ch, px0, py0, pw, ph } of tiles) {
+    ctx.checkAbort(); // only safe preemption point
 
-      const inData = sctx.getImageData(px0, py0, pw, ph).data;
-      const input = packNchw01(inData, pw, ph);
-      const base = await runModel(ort, session, input, pw, ph);
-      let planes = base.data;
-      if (wdnSession && denoise > 0) {
-        const wdn = await runModel(ort, wdnSession, input, pw, ph);
-        if (wdn.data.length === base.data.length) planes = blendPlanes(base.data, wdn.data, denoise);
-      }
-
-      // Crop the padded margin (×scale) back off, keep the tile core.
-      const mx = (cx - px0) * scale, my = (cy - py0) * scale;
-      const coreW = cw * scale, coreH = ch * scale;
-      const core = planesToImageData(planes, base.w, base.h, mx, my, coreW, coreH);
-      octx.putImageData(core, cx * scale, cy * scale);
-
-      idx++;
-      ctx.onProgress?.({ phase: 'inference', tile: idx, tiles: total, fraction: idx / total });
+    const inData = sctx.getImageData(px0, py0, pw, ph).data;
+    const input = packNchw01(inData, pw, ph);
+    const base = await runModel(ort, session, input, pw, ph);
+    let planes = base.data;
+    if (wdnSession && denoise > 0) {
+      const wdn = await runModel(ort, wdnSession, input, pw, ph);
+      if (wdn.data.length === base.data.length) planes = blendPlanes(base.data, wdn.data, denoise);
     }
+
+    // Crop the padded margin (×scale) back off, keep the tile core.
+    const mx = (cx - px0) * scale, my = (cy - py0) * scale;
+    const coreW = cw * scale, coreH = ch * scale;
+    const core = planesToImageData(planes, base.w, base.h, mx, my, coreW, coreH);
+    octx.putImageData(core, cx * scale, cy * scale);
+
+    idx++;
+    ctx.onProgress?.({ phase: 'inference', tile: idx, tiles: total, fraction: idx / total });
   }
   dbg('tile', { tiles: total, tile: T, in: [w, h], out: [outW, outH] });
   return out;
 }
 
-// ── Target geometry (scale + targetMaxEdge) ──────────────────────────────────
-
-interface Target { outW: number; outH: number; finalW: number; finalH: number; downscale: boolean }
-
-/** Native output is always w·nativeScale (the models are fixed ×4). The FINAL
- *  size is trimmed to `opts.scale` and `opts.targetMaxEdge`, whichever is
- *  smaller, by a single canvas downscale after inference. */
-function planTarget(w: number, h: number, nativeScale: number, opts: UpscaleOpts): Target {
-  const outW = w * nativeScale, outH = h * nativeScale;
-  const maxSrcEdge = Math.max(w, h);
-  const desiredScale = opts.scale ?? nativeScale;
-  let finalEdge = maxSrcEdge * desiredScale;
-  if (opts.targetMaxEdge && opts.targetMaxEdge > 0) finalEdge = Math.min(finalEdge, opts.targetMaxEdge);
-  const nativeEdge = maxSrcEdge * nativeScale;
-  if (finalEdge >= nativeEdge) return { outW, outH, finalW: outW, finalH: outH, downscale: false };
-  const ratio = finalEdge / nativeEdge;
-  return {
-    outW, outH,
-    finalW: Math.max(1, Math.round(outW * ratio)),
-    finalH: Math.max(1, Math.round(outH * ratio)),
-    downscale: true,
-  };
-}
+// ── Target geometry (scale + targetMaxEdge): planTarget, shared ──────────────
 
 /** Compose the model's RGB output canvas with a bilinear-upscaled alpha plane
  *  (when the source had one), then downscale to the final size if needed, and
@@ -616,24 +545,6 @@ function deviceBudgetBytes(): number {
   return budget;
 }
 
-const ABS_MAX_EDGE = 16384;        // canvas dimension ceiling (browsers cap here)
-const ABS_MAX_PIXELS = 40_000_000; // absurd-ask guard independent of RAM
-
-/** Rough peak working set. The runner ALWAYS builds a native (w·scale × h·scale)
- *  output canvas plus, when the source has alpha, a native alpha canvas and native
- *  ImageData readouts, BEFORE the single downscale to the final size - so peak is
- *  dominated by the NATIVE intermediate, not the trimmed final. */
-function estimatePeakBytes(srcW: number, srcH: number, nativePixels: number, finalPixels: number, model: UpscaleModelInfo, backend: 'webgpu' | 'wasm'): number {
-  const inBytes = srcW * srcH * 4;
-  const nativeBytes = nativePixels * 4;
-  const finalBytes = finalPixels * 4;
-  const T = tileEdgeFor(backend);
-  const tileBytes = (T * T * 3 * 4) + (T * model.scale) * (T * model.scale) * 3 * 4; // in + out float tile
-  // native RGB canvas + native alpha canvas + a native ImageData readout (~3×),
-  // plus the final downscaled copy, resident weights and a couple of tile tensors.
-  return inBytes + nativeBytes * 3 + finalBytes + model.approxBytes + tileBytes * 2;
-}
-
 export async function canRun(src: { width: number; height: number }, opts: UpscaleOpts = {}): Promise<UpscaleFeasibility> {
   try {
     const backend = await probeBackend();
@@ -672,7 +583,7 @@ export async function canRun(src: { width: number; height: number }, opts: Upsca
     const finalPixels = src.width * finalRatio * src.height * finalRatio;
 
     const budget = deviceBudgetBytes();
-    const peak = estimatePeakBytes(src.width, src.height, nativePixels, finalPixels, model, backend);
+    const peak = estimatePeakBytes(src.width, src.height, nativePixels, finalPixels, model, backend, deviceMemoryGb());
     dbg('canRun', { backend, model: model.id, nativePixels, finalPixels: Math.round(finalPixels), peak: Math.round(peak), budget: Math.round(budget) });
     if (peak > budget) {
       // Peak is dominated by the fixed native canvas, so a smaller target edge barely

@@ -543,18 +543,20 @@ html[data-a11y-motion="reduce"] .hero-logo-link:focus-visible .hero-logo-still{o
    nothing and the button and its cut-out label both went out (Andy, 2026-09-03). The
    hairline keeps a dark fill readable as a button on the dark band. */
 /* The static /info page defines no --brand-primary at all (only the app shell's
-   chrome injects it), so the fill falls back to the band's light ink: a white pill
-   under the black default label, which is what the front door painted before the
-   fill followed the brand. An injected primary still wins. */
-.btn-primary{background:var(--brand-primary,hsl(var(--on-band-dark)));color:var(--hero-cta-ink,#000);
+   chrome injects it), so the fill falls back to --green, the site's own primary
+   (docs.css: hsl(var(--primary)), Pine Green on /info): a brand-green pill under the
+   black default label, the same green as the nav's Launch App pill. A white pill
+   here read as a blank (Andy, 2026-09-03). In the app the reader bridges --green to
+   the active brand too, and an injected --brand-primary still wins. */
+.btn-primary{background:var(--brand-primary,var(--green));color:var(--hero-cta-ink,#000);
   box-shadow:0 .2em 1em #0002,inset 0 0 0 1px rgba(255,255,255,.16)}
 /* Hover lightens the BRAND fill rather than painting a fixed lighter Pine Green
    (which turned every other brand's button SUSE mint on hover). An engine without
    color-mix() drops the two declarations and keeps the rest fill; the lift and the
    hairline still say "hover". */
 .btn-primary:hover{text-decoration:none;transform:translateY(-2px);
-  background:color-mix(in oklab,var(--brand-primary,hsl(var(--on-band-dark))) 82%,#fff);
-  box-shadow:0 8px 32px color-mix(in oklab,var(--brand-primary,hsl(var(--on-band-dark))) 45%,transparent),inset 0 0 0 1px rgba(255,255,255,.24)}
+  background:color-mix(in oklab,var(--brand-primary,var(--green)) 82%,#fff);
+  box-shadow:0 8px 32px color-mix(in oklab,var(--brand-primary,var(--green)) 45%,transparent),inset 0 0 0 1px rgba(255,255,255,.24)}
 /* The secondary pill owns its legibility. Its ground is a dark translucency, not
    a near-clear white: white ink over a near-clear fill only reads while the
    backdrop behind it is dark, and a backdrop-filter that fails to paint (seen in
@@ -1645,6 +1647,9 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 /* The eagle is a wingspan: at the shared width it is a third the height of the
    others and reads as an ornament, so it gets a third more room. */
 .lane-mascot[data-shot$="wedge-tailed-eagle.webp"]{width:clamp(200px,28vw,320px)}
+/* The lorikeet stands tall on its stick, so it hangs 5em below the pane instead
+   of stretching the row (Andy, 2026-09-03). */
+.lane-mascot[data-shot$="lorikeet.webp"]{margin-bottom:-5em}
 .lane-pane h3{font-family:'SUSE Mono',monospace;font-size:1.05rem;font-weight:600;text-transform:none;letter-spacing:.02em;margin-bottom:.4rem}
 .lane-pitch{color:var(--muted);max-width:56ch;margin:0 0 .9rem;font-size:.95rem}
 .lane-links{list-style:none;margin:0 0 1rem;padding:0;display:flex;flex-direction:column;gap:6px;max-width:520px}
@@ -1703,6 +1708,9 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
   .lane-radio:nth-of-type(6):checked ~ .lane-cols .lane-panes .lane-pane:nth-child(6){display:block}
   .lane-mascot{float:inline-end;width:6.5rem;margin-inline-start:1rem;margin-block-end:.5rem}
   .lane-mascot[data-shot$="wedge-tailed-eagle.webp"]{width:9.5rem}
+  /* The float already clears the copy past the bird here; the desktop hang would
+     run the lorikeet's tail over the first link row. */
+  .lane-mascot[data-shot$="lorikeet.webp"]{margin-bottom:.5rem}
 }
 
 /* ── beat 4b: the lolly.work band ───────────────────────────────────────── */
