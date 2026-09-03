@@ -25,7 +25,7 @@ globalThis.localStorage = dom.window.localStorage;
 const {
   FOLLOW_DS_KEY, chromeFollowsDesignSystem, setChromeFollowMirror, hydrateChromeFollow, setChromeFollow,
 } = await import('./chrome-follow.ts');
-const { applyChromeBrandVars } = await import('../brand-vars.ts');
+const { applyChromeBrandVars, ACCENT_CACHE_KEY } = await import('../brand-vars.ts');
 
 /** A design system with one resolvable primary per theme. */
 function stubHost(): Parameters<typeof applyChromeBrandVars>[0] {
@@ -57,6 +57,9 @@ test('ON: the chrome accent is injected and the primary is exposed', async () =>
   assert.ok(styleEl(), 'the brand-chrome-vars style is in the head');
   assert.match(styleEl()!.textContent ?? '', /--primary:/);
   assert.equal(brandPrimary(), '#e0452b');
+  // The static /info landing reads the accent from this mirror (lib/covers-flow.ts
+  // opens the Cover Flow on the cover nearest it), so it must carry the same hex.
+  assert.equal(localStorage.getItem(ACCENT_CACHE_KEY), '#e0452b');
 });
 
 test('OFF: the injected style is removed and the app\'s own accent stands', async () => {
@@ -68,6 +71,7 @@ test('OFF: the injected style is removed and the app\'s own accent stands', asyn
   assert.equal(styleEl(), null, 'no chrome override');
   assert.equal(brandPrimary(), '', '--brand-primary is removed, not blanked');
   assert.equal(document.documentElement.style.getPropertyValue('--brand-warn'), '');
+  assert.equal(localStorage.getItem(ACCENT_CACHE_KEY), null, 'the accent mirror goes with it');
 });
 
 test('OFF leaves the brand FONTS alone - a face is not an accent', async () => {

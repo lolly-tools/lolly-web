@@ -1134,6 +1134,13 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
    (position + z-index lift the covers above the canvas, as .hero does). */
 .covers-section{position:relative;z-index:1;color:hsl(var(--on-band-dark));padding:2.5rem 1.5rem 2rem;overflow:hidden}
 .covers-inner{max-width:1180px;margin:0 auto}
+/* The fan is full-bleed (Andy, 2026-09-03: "the full width of the viewport, not
+   cropped"): the filmstrip keeps the 1180px reading column, but once the 3-D fan
+   is on, the strip runs edge to edge so the tucked covers reach the viewport's
+   sides instead of being cut at a column that has nothing to do with them. The
+   section's overflow:hidden still clips at the viewport, never the page. */
+.covers-section.covers--fan{padding-left:0;padding-right:0}
+.covers--fan .covers-inner{max-width:none}
 .covers{outline:none;border-radius:10px}
 .covers:focus-visible{outline:2px solid hsl(var(--primary));outline-offset:6px}
 /* The strip is a scroll box, so it clips its own overflow: the card shadow reaches
@@ -1141,7 +1148,7 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
    hard line. Pad past the shadow and pull the flow back with a negative margin, so
    the nav below sits where it did. Both strip forms (filmstrip, fan) carry it. */
 .covers-strip{display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;padding:1rem 2px 4rem;margin-bottom:-2.75rem;-webkit-overflow-scrolling:touch}
-.cover-card{position:relative;flex:0 0 min(520px,82vw);aspect-ratio:16/10;scroll-snap-align:center;border-radius:12px;overflow:hidden;background-color:transparent;box-shadow:0 24px 48px -20px rgba(0,0,0,.55);text-decoration:none;color:inherit}
+.cover-card{position:relative;flex:0 0 min(520px,82vw);aspect-ratio:4/3;scroll-snap-align:center;border-radius:12px;overflow:hidden;background-color:transparent;box-shadow:0 24px 48px -20px rgba(0,0,0,.55);text-decoration:none;color:inherit}
 .cover-card img,.cover-card video{width:100%;height:100%;object-fit:cover;object-position:left top;display:block}
 .cover-cap{position:absolute;left:0;right:0;bottom:0;display:flex;flex-direction:column;gap:2px;padding:1.6rem .85rem .65rem;background:linear-gradient(transparent,rgba(0,0,0,.72));color:#fff}
 .cover-cap b{font-size:.95rem;font-weight:700}

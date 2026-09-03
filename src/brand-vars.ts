@@ -737,6 +737,19 @@ function applyBrandLogo(dataUrl: string | null): void {
  * app taking the design system's accent is a preference, not a token. Fonts and
  * radius are not - see the note at the gate.
  */
+/** localStorage twin of `--brand-primary` (hex, or removed): the static /info
+ *  landing shares the app's origin but not its runtime, and its Cover Flow
+ *  (lib/covers-flow.ts) opens on the cover nearest the reader's accent - this is
+ *  how it learns that accent. Same FOUC-mirror pattern as brand-fonts/brand-radius
+ *  above: a cached string read by a page that never installs it as markup. */
+export const ACCENT_CACHE_KEY = 'brand-accent';
+function mirrorAccent(hex: string | null): void {
+  try {
+    if (hex) localStorage.setItem(ACCENT_CACHE_KEY, hex);
+    else localStorage.removeItem(ACCENT_CACHE_KEY);
+  } catch { /* storage unavailable - the live chrome is already right */ }
+}
+
 export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
   // Nothing here to do without a document (a DOM-free shell / test bridge) - 
   // and every branch below writes to documentElement, so bail before any of
@@ -770,6 +783,7 @@ export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
   if (!chromeFollowsDesignSystem()) {
     applyChromeAccent({ primary: null, onPrimary: null }, { primary: null, onPrimary: null });
     root.removeProperty('--brand-primary');
+    mirrorAccent(null);
     root.removeProperty('--brand-warn');
     root.removeProperty('--brand-warn-ink');
     applyBrandLogo(null);
@@ -806,6 +820,7 @@ export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
     // fallback stays in charge.
     if (lp) root.setProperty('--brand-primary', lp);
     else root.removeProperty('--brand-primary');
+    mirrorAccent(lp);
     // Recolour the actual Lolly logo bitmap to the brand's MAIN colour (the
     // chosen primary's HSL hue) and use it for the Verify hero + tab favicon.
     // Async (canvas + image load) and fire-and-forget: the chrome accent above

@@ -25,12 +25,22 @@
  * the fan off.
  *
  * Markup contract (docs/build.ts, covers.json): #coversRoot > #coversStrip >
- * a.cover-card[href] with .cover-cap b (the name); .covers-nav with
+ * a.cover-card[href][data-hue] with .cover-cap b (the name); .covers-nav with
  * [data-covers=prev|next] + .covers-dots; .covers-open-btn[data-tpl] whose
  * first child span takes the label. Cards are pointer-events:none in the fan
  * (a z-translated plane is not hit-testable - featured-row.ts's finding), so
  * the ONE clickable control is the Open button outside the 3-D context, and
  * a press on a side cover is mapped by geometry to centre it.
+ *
+ * Where the fan OPENS: the covers are posed a hue apart (scripts/build-covers.ts
+ * - each one is the app wearing a derived design system, so the strip reads as
+ * a rainbow), and `data-hue` carries each pose's OKLCH hue. The first cover
+ * shown is the one nearest the reader's own accent: the loaded design system's
+ * primary (`--brand-primary`, which brand-vars.ts sets on :root in the app and
+ * mirrors to localStorage for the static /info page on the same origin), else
+ * Lolly's own green. A visitor with a violet brand meets the violet cover first;
+ * a fresh visitor (or one on the ink-and-paper starter, which has no hue) meets
+ * the Design cover, posed at Lolly's hue.
  */
 
 const CF_MAX_ANGLE = 50;        // deg a fully side-on cover rotates
@@ -47,6 +57,64 @@ const HOLD_MS = 12000;          // autoplay pause after any hand input
 const AUTOPLAY_MS = 4500;
 
 interface Geom { el: HTMLElement; center: number; w: number; vc: number }
+
+/** localStorage mirror of the loaded design system's light primary (brand-vars.ts
+ *  writes it, hex) - how the static landing, which has no brand of its own, learns
+ *  the reader's accent. Same-origin with the app, so the key is shared. */
+const ACCENT_MIRROR_KEY = 'brand-accent';
+
+/** OKLCH hue (degrees) of an sRGB colour - the same hue space the poses are
+ *  spaced in, so "nearest cover" compares like with like. Ottosson's OKLab. */
+function oklchHue(r: number, g: number, b: number): number | null {
+  const lin = (c: number): number => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const [R, G, B] = [lin(r), lin(g), lin(b)];
+  const l = Math.cbrt(0.4122214708 * R + 0.5363325363 * G + 0.0514459929 * B);
+  const m = Math.cbrt(0.2119034982 * R + 0.6806995451 * G + 0.1073969566 * B);
+  const s = Math.cbrt(0.0883024619 * R + 0.2817188376 * G + 0.6299787005 * B);
+  const a = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s;
+  const bb = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+  if (Math.hypot(a, bb) < 0.02) return null;   // a grey has no hue worth steering by
+  const h = (Math.atan2(bb, a) * 180) / Math.PI;
+  return h < 0 ? h + 360 : h;
+}
+
+function hexHue(hex: string): number | null {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return null;
+  let s = m[1]!;
+  if (s.length === 3) s = s.replace(/./g, (ch) => ch + ch);
+  const n = parseInt(s, 16);
+  return oklchHue(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
+}
+
+/** Lolly's own green (Pine, #30ba78) in OKLCH - where a reader with no chromatic
+ *  brand is sent. The Design cover is posed at 157.5° for exactly this reason. */
+const LOLLY_HUE = 157.2;
+
+/** The reader's accent hue: the loaded design system's primary first (live var,
+ *  then the mirror), else Lolly's own. A grey brand (the starter's ink) has no
+ *  hue to steer by and takes the default too. */
+function readerHue(): number {
+  const brand = getComputedStyle(document.documentElement).getPropertyValue('--brand-primary').trim();
+  if (brand) { const h = hexHue(brand); if (h != null) return h; }
+  let mirror = '';
+  try { mirror = localStorage.getItem(ACCENT_MIRROR_KEY) ?? ''; } catch { /* storage blocked */ }
+  if (mirror) { const h = hexHue(mirror); if (h != null) return h; }
+  return LOLLY_HUE;
+}
+
+/** Index of the cover whose posed hue is nearest `hue` on the circle; 0 without hues. */
+export function nearestCoverIndex(hues: ReadonlyArray<number | null>, hue: number | null): number {
+  if (hue == null) return 0;
+  let best = 0;
+  let bd = Infinity;
+  hues.forEach((h, i) => {
+    if (h == null || !Number.isFinite(h)) return;
+    const d = Math.abs((((h - hue) % 360) + 540) % 360 - 180);
+    if (d < bd) { bd = d; best = i; }
+  });
+  return best;
+}
 
 export function mountCoverFlow(root: ParentNode): void {
   const rootFound = root.querySelector<HTMLElement>('#coversRoot');
@@ -67,6 +135,9 @@ export function mountCoverFlow(root: ParentNode): void {
   const openBtn = rootEl.querySelector<HTMLAnchorElement>('.covers-open-btn');
   const cards = [...strip.querySelectorAll<HTMLElement>('.cover-card')];
   if (cards.length < 3) return;
+  const hues = cards.map((c) => { const n = parseFloat(c.dataset.hue ?? ''); return Number.isFinite(n) ? n : null; });
+  const startIdx = nearestCoverIndex(hues, readerHue());
+  if (startIdx !== 0) cards.forEach((c, i) => c.classList.toggle('is-cur', i === startIdx));
 
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   // The animated covers (audiogram, 3D) are muted looping clips; under reduced
@@ -225,13 +296,18 @@ export function mountCoverFlow(root: ParentNode): void {
     loop();
   }
 
+  let opened = false;
   function enterFan(): void {
+    // Which cover sits centred: the reader's-hue cover the first time the fan
+    // opens; the one already in view when a resize brings the fan back.
+    const keep = opened ? curIndex() : startIdx;
+    opened = true;
     fan = true;
     section.classList.add('covers--fan');
     nav.hidden = false;
     cards.forEach((el) => el.setAttribute('draggable', 'false'));
     measure();
-    strip.scrollLeft = centerOf(0);
+    strip.scrollLeft = centerOf(keep);
     layout();
   }
   function exitFan(): void {
@@ -255,6 +331,12 @@ export function mountCoverFlow(root: ParentNode): void {
   }
   const sync = (): void => { if (wide.matches) enterFan(); else exitFan(); };
   wide.addEventListener('change', sync);
+  // The filmstrip opens on the same cover (snap keeps it centred); only before
+  // the fan has ever run, so a resize down never yanks the strip elsewhere.
+  if (!wide.matches && startIdx > 0) {
+    const el = cards[startIdx]!;
+    strip.scrollLeft = el.offsetLeft + el.offsetWidth / 2 - strip.clientWidth / 2;
+  }
   sync();
 
   addEventListener('resize', () => {

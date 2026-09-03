@@ -314,7 +314,7 @@ a:hover{text-decoration:underline}
    text-sized square; sized contexts (.icon-*, .assure-card-ic, illustrations, …) override
    this with a more specific selector. Keeps a missing/renamed rule from ever ballooning. */
 svg{width:1em;height:1em;flex:none}
-code{font-family:'SUSE Mono','SF Mono','Fira Code',monospace;font-size:.875em;background:hsl(var(--muted));padding:.15em .35em;border-radius:3px}
+code{font-family:var(--brand-font),'SUSE Mono','SF Mono','Fira Code',monospace;font-size:.875em;background:hsl(var(--muted));padding:.15em .35em;border-radius:3px}
 pre{background:hsl(var(--muted));color:hsl(var(--foreground));padding:1.25rem 1.5rem;border-radius:8px;overflow-x:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.875rem;line-height:1.5;margin-bottom:1.25rem; box-shadow: inset 0 .2rem .4rem #0002, 0 1px #fff2}
 pre code{background:none;padding:0;color:inherit;font-size:1em}
 h1,h2,h3,h4{line-height:1.25;font-weight:700}
@@ -1537,6 +1537,13 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
    (position + z-index lift the covers above the canvas, as .hero does). */
 .covers-section{position:relative;z-index:1;color:hsl(var(--on-band-dark));padding:2.5rem 1.5rem 2rem;overflow:hidden}
 .covers-inner{max-width:1180px;margin:0 auto}
+/* The fan is full-bleed (Andy, 2026-09-03: "the full width of the viewport, not
+   cropped"): the filmstrip keeps the 1180px reading column, but once the 3-D fan
+   is on, the strip runs edge to edge so the tucked covers reach the viewport's
+   sides instead of being cut at a column that has nothing to do with them. The
+   section's overflow:hidden still clips at the viewport, never the page. */
+.covers-section.covers--fan{padding-left:0;padding-right:0}
+.covers--fan .covers-inner{max-width:none}
 .covers{outline:none;border-radius:10px}
 .covers:focus-visible{outline:2px solid hsl(var(--primary));outline-offset:6px}
 /* The strip is a scroll box, so it clips its own overflow: the card shadow reaches
@@ -1544,7 +1551,7 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
    hard line. Pad past the shadow and pull the flow back with a negative margin, so
    the nav below sits where it did. Both strip forms (filmstrip, fan) carry it. */
 .covers-strip{display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;padding:1rem 2px 4rem;margin-bottom:-2.75rem;-webkit-overflow-scrolling:touch}
-.cover-card{position:relative;flex:0 0 min(520px,82vw);aspect-ratio:16/10;scroll-snap-align:center;border-radius:12px;overflow:hidden;background-color:transparent;box-shadow:0 24px 48px -20px rgba(0,0,0,.55);text-decoration:none;color:inherit}
+.cover-card{position:relative;flex:0 0 min(520px,82vw);aspect-ratio:4/3;scroll-snap-align:center;border-radius:12px;overflow:hidden;background-color:transparent;box-shadow:0 24px 48px -20px rgba(0,0,0,.55);text-decoration:none;color:inherit}
 .cover-card img,.cover-card video{width:100%;height:100%;object-fit:cover;object-position:left top;display:block}
 .cover-cap{position:absolute;left:0;right:0;bottom:0;display:flex;flex-direction:column;gap:2px;padding:1.6rem .85rem .65rem;background:linear-gradient(transparent,rgba(0,0,0,.72));color:#fff}
 .cover-cap b{font-size:.95rem;font-weight:700}
@@ -1616,8 +1623,8 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 .persona-sub{font-size:.8125rem;color:var(--muted)}
 #door-creators:checked ~ .persona-tabs label[for="door-creators"],
 #door-builders:checked ~ .persona-tabs label[for="door-builders"],
-#door-operators:checked ~ .persona-tabs label[for="door-operators"]{border-color:var(--green);background:hsl(var(--band-accent) / .33)}
-.persona-tabs img{transition: all .5s ease; filter:drop-shadow( 0 1px 14px hsl(var(--band-accent) /.5))}
+#door-operators:checked ~ .persona-tabs label[for="door-operators"]{border-color:var(--green);background:color-mix(in oklab,var(--green) 56%,var(--page))}
+.persona-tabs img{transition: all .5s ease; filter:drop-shadow( 0 1px 14px color-mix(in oklab,var(--green) 86%,var(--page)))}
 #door-creators:not(:checked) ~ .persona-tabs label[for="door-creators"] img,
 #door-builders:not(:checked) ~ .persona-tabs label[for="door-builders"] img,
 #door-operators:not(:checked) ~ .persona-tabs label[for="door-operators"] img{filter:grayscale(.6) brightness(1.3) contrast(1.16) ; opacity:.2; transition: all .5s ease; transform:scale(.8) translate(2em, -5em)}
@@ -1653,7 +1660,7 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 .lane-pane h3{font-family:'SUSE Mono',monospace;font-size:1.05rem;font-weight:600;text-transform:none;letter-spacing:.02em;margin-bottom:.4rem}
 .lane-pitch{color:var(--muted);max-width:56ch;margin:0 0 .9rem;font-size:.95rem}
 .lane-links{list-style:none;margin:0 0 1rem;padding:0;display:flex;flex-direction:column;gap:6px;max-width:520px}
-.lane-links a{display:flex;justify-content:space-between;gap:10px;text-decoration:none;padding:.6rem .75rem;border-radius:9px;background:var(--pale);border:1px solid var(--border);font-size:.875rem;color:var(--text)}
+.lane-links a{display:flex;justify-content:space-between;gap:10px;text-decoration:none;padding:.6rem .75rem;border-radius:var(--radius);background:color-mix(in oklab,var(--green) 20%,var(--page));border:1px solid var(--border);font-size:.875rem;color:var(--text)}
 .lane-links a:hover{border-color:var(--green);text-decoration:none}
 .lane-links code{font-family:'SUSE Mono',monospace;font-size:.75rem;color:var(--muted);background:none;padding:0}
 .lane-cta{display:flex;gap:1rem;align-items:center;flex-wrap:wrap}
@@ -1715,7 +1722,7 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 
 /* ── beat 4b: the lolly.work band ───────────────────────────────────────── */
 .work-section{padding:0 1.5rem 3.5rem}
-.work-inner{max-width:1120px;margin:0 auto;padding:1.5rem 1.6rem;border:1px solid var(--border);border-radius:14px;background:color-mix(in oklab,hsl(var(--band-accent)) 36%,var(--page))}
+.work-inner{max-width:1120px;margin:0 auto;padding:1.5rem 1.6rem;border:1px solid var(--border);border-radius:14px;background:color-mix(in oklab,var(--green) 36%,var(--page))}
 .work-eyebrow{display:block;font-family:'SUSE Mono',monospace;font-size:.75rem;letter-spacing:.08em;color:color-mix(in oklab,hsl(var(--primary)) 70%,var(--text));margin-bottom:.35rem}
 .work-cols{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1rem 2rem;align-items:center}
 .work-heading{font-size:1.25rem;font-weight:800;text-transform:none;letter-spacing:0;margin:0 0 .4rem;text-wrap:balance}

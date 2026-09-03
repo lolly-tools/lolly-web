@@ -54,7 +54,7 @@ const STYLE_MARK = 'data-docs-landing';
  * root itself - so every one of the file's own class rules still wins.
  */
 const ELEMENT_BASELINE = `
-:scope{font-size:16px;line-height:1.65;color:var(--text);font-family:'SUSE',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+:scope{font-size:16px;line-height:1.65;color:var(--text);font-family:var(--brand-font)}
 svg{width:1em;height:1em;flex:none}
 a{color:var(--green);text-decoration:none}
 a:hover{text-decoration:underline}
