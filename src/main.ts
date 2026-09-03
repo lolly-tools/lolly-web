@@ -1010,6 +1010,23 @@ async function boot(): Promise<void> {
         const blob = await host.export.render(node, 'svg', { convertPaths: true, elementScopedRaster: true, stackingOrder: true, backdropBlur: true, layerIds: true, ...o } as Parameters<typeof host.export.render>[2]);
         return { svg: await blob.text(), ms: Math.round(performance.now() - t0) };
       };
+
+    // Third loopback hook, same gate: install a DTCG tokens document as the
+    // user's brand through the #/start wizard's own chokepoint (installUserTokens)
+    // and repaint the chrome from it, so a capture harness can pose the app in
+    // any design system. scripts/build-covers.ts poses the landing's Cover Flow
+    // with it - one derived brand per cover, a hue apart. Lazy imports, so a
+    // normal session pays nothing; the brand lock still applies (a locked pack
+    // refuses the install exactly as it refuses the wizard).
+    (window as unknown as { __lollyInstallBrand?: (doc: unknown, label?: string) => Promise<void> }).__lollyInstallBrand =
+      async (doc: unknown, label = 'Posed brand') => {
+        const [{ installUserTokens }, { applyChromeBrandVars }] = await Promise.all([
+          import('./bridge/tokens.ts'),
+          import('./brand-vars.ts'),
+        ]);
+        await installUserTokens(host as unknown as Parameters<typeof installUserTokens>[0], doc, { label });
+        await applyChromeBrandVars(host);
+      };
   }
 
   // Chrome follows the brand: override the theme accent triples from the active
