@@ -166,6 +166,13 @@ const EAGER_TILES_WITH_HERO = 4;
 // fan; a first visit should read as a curated shelf, not the catalog listed twice. Set to 0 to
 // go back to a flat grid on first run - it is the only switch this behaviour has.
 const FIRST_RUN_FEATURED_MAX = 6;
+/** What the UTILITIES shelf promotes for a visitor who has never starred anything,
+ *  in this order (Andy, 2026-09-03: "if we must have favourites in the utility view,
+ *  they should be verify, jump, sandbox, unpack"). Two are view cards (`view:` keys,
+ *  see utilityViews) and two are tools, so this cannot live in tool data the way the
+ *  main shelf's `featured.order` does; the main shelf is untouched. Derived, never
+ *  written to the profile - the first star replaces it with the user's own list. */
+const UTILITY_FIRST_RUN: readonly string[] = ['view:verify', 'jump', 'sandbox', 'view:pdf-extract'];
 
 // Fit a page of aspect `ar` (width / height) inside the square deck box (hydratePaged),
 // as width/height percentages of that square. A landscape page keeps full width and loses
@@ -737,7 +744,24 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // auto-seed a favourite - its blurb/variants style a tile either way (see toFeaturedEntry).
   // Tools appear in catalog order. Carries the "New" flag through. Recomputed on every star
   // toggle (refreshFeatured).
+  const utilityFirstRun = (): FeaturedEntry[] | null => {
+    if (opts.only !== 'utility' || profile?.favourites !== undefined) return null;
+    const out: FeaturedEntry[] = [];
+    for (const ref of UTILITY_FIRST_RUN) {
+      if (hiddenTools.has(ref)) continue;
+      if (ref.startsWith('view:')) {
+        const v = viewByRef(ref);
+        if (v) out.push({ id: ref, name: v.name, icon: icon(v.icon), href: v.href, featured: { blurb: v.description } });
+      } else {
+        const t = index.tools.find(x => x.id === ref);
+        if (t && !hidden.has(t.category)) out.push(toFeaturedEntry(t));
+      }
+    }
+    return out.length ? out : null;
+  };
   const featuredEntriesNow = (): FeaturedEntry[] => {
+    const seededUtilities = utilityFirstRun();
+    if (seededUtilities) return seededUtilities;
     const seen = new Set<string>();
     const out: FeaturedEntry[] = [];
     const promoted = firstRunFeatured() ?? favourites;
