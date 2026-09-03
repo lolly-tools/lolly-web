@@ -145,7 +145,7 @@ html[data-a11y-motion="reduce"] .hero-logo-link:focus-visible .hero-logo-still{o
    black default label, the same green as the nav's Launch App pill. A white pill
    here read as a blank (Andy, 2026-09-03). In the app the reader bridges --green to
    the active brand too, and an injected --brand-primary still wins. */
-.btn-primary{background:var(--brand-primary,var(--green));color:var(--hero-cta-ink,#000);
+.btn-primary{background:var(--green);color:var(--hero-cta-ink);
   box-shadow:0 .2em 1em #0002,inset 0 0 0 1px rgba(255,255,255,.16)}
 /* Hover lightens the BRAND fill rather than painting a fixed lighter Pine Green
    (which turned every other brand's button SUSE mint on hover). An engine without
@@ -1159,9 +1159,18 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
    wheel spin, settle). Native scroll-snap is off here on purpose: a snap area
    is the transformed box, so native snap chased the tuck and fought the settle.
    touch-action pan-y leaves vertical to the page. */
-.covers--fan .covers-strip{gap:0;overflow-y:hidden;perspective:1500px;perspective-origin:50% 45%;padding:2.25rem calc(50% - min(520px,58vw)/2) 4rem;margin-bottom:-2.75rem;scroll-snap-type:none;scroll-behavior:auto;touch-action:pan-y;overscroll-behavior-x:contain;scrollbar-width:none}
+.covers--fan .covers-strip{gap:0;overflow:hidden;perspective:1500px;perspective-origin:50% 45%;padding:2.25rem calc(50% - min(520px,58vw)/2) 4rem;margin-bottom:-2.75rem;scroll-snap-type:none;scroll-behavior:auto;touch-action:pan-y;overscroll-behavior-x:contain;scrollbar-width:none}
 .covers--fan .covers-strip::-webkit-scrollbar{display:none}
 .covers--fan .cover-card{flex:0 0 min(520px,58vw);width:min(520px,58vw);will-change:transform;backface-visibility:hidden;pointer-events:none;user-select:none;-webkit-user-select:none}
+/* The loop's clones (lib/covers-flow.ts): pixel copies of the edge covers so the
+   fan never shows an end. The filmstrip is finite and hides them. */
+.covers-section:not(.covers--fan) .cover-card.is-clone{display:none}
+/* Fingers: a lighter shadow. The 48px blur under sixteen 3-D layers is what an
+   iPad drops frames on, and at arm's length the difference is invisible. */
+@media (pointer:coarse){
+  .covers--fan .cover-card{box-shadow:0 12px 24px -14px rgba(0,0,0,.5)}
+  .covers--fan .cover-card.is-cur{box-shadow:0 18px 36px -18px rgba(0,0,0,.6),0 0 0 1px hsl(var(--primary) / .4) inset}
+}
 .covers--fan .covers-strip{cursor:grab}
 .cover-card img,.cover-card video{user-select:none;-webkit-user-select:none;-webkit-user-drag:none;pointer-events:none}
 .covers--fan .cover-card .cover-cap{opacity:0;transition:opacity .3s ease}

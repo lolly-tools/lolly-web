@@ -20,12 +20,25 @@
  *                  autoplay, a side click) or, with none chosen, the nearest.
  * CSS scroll-snap is OFF in fan mode. A snap area is the TRANSFORMED border
  * box, so native snap chased the tuck every frame and fought both the settle
- * and the drag (the 2026-09-02 "buggy sideways scroll and drag"). Under 720px
- * the strip stays the plain scroll-snap filmstrip and this module only keeps
- * the fan off.
+ * and the drag (the 2026-09-02 "buggy sideways scroll and drag"). Native
+ * horizontal scrolling is off too (overflow-x: hidden in fan mode): WebKit on an
+ * iPad would otherwise run its own momentum scroll on the same scroller the
+ * pointer handlers are driving, and the two fighting over scrollLeft is what
+ * read as "jerky". A script can still set scrollLeft on a hidden-overflow box,
+ * which is all this model needs. Under 720px the strip stays the plain
+ * scroll-snap filmstrip and this module only keeps the fan off.
+ *
+ * The fan is a LOOP. Sixteen covers are enough to never show an end, so the
+ * module clones the last few covers in front of the strip and the first few
+ * after it (clones carry a poster in place of a video and are hidden from the
+ * accessibility tree), and whenever the centred cover is a clone the scroll
+ * position is re-based by one period - the clone and its original are pixel
+ * identical, so the jump is invisible. Dots, the Open button and autoplay all
+ * work in REAL indices; only the geometry knows about clones.
  *
  * Markup contract (docs/build.ts, covers.json): #coversRoot > #coversStrip >
- * a.cover-card[href][data-hue] with .cover-cap b (the name); .covers-nav with
+ * a.cover-card[href][data-hue] with .cover-cap b (the name) - the module adds
+ * a.cover-card.is-clone siblings around them; .covers-nav with
  * [data-covers=prev|next] + .covers-dots; .covers-open-btn[data-tpl] whose
  * first child span takes the label. Cards are pointer-events:none in the fan
  * (a z-translated plane is not hit-testable - featured-row.ts's finding), so
@@ -55,8 +68,28 @@ const DRAG_SLOP = 8;            // px a press may travel and still count as a cl
 const REST_MS = 900;            // a cover must rest centred this long before Open appears
 const HOLD_MS = 12000;          // autoplay pause after any hand input
 const AUTOPLAY_MS = 4500;
+const LOOP_CLONES = 10;         // covers cloned on each side; 10 × the tucked pitch covers a 4K viewport
+const OFFSCREEN_SLACK = 1.5;    // covers this many tucked pitches past the viewport edge skip the per-frame transform
 
 interface Geom { el: HTMLElement; center: number; w: number; vc: number }
+
+/**
+ * Which way to re-base the loop: the strip holds `clones` copies of the tail,
+ * then the `n` real covers, then `clones` copies of the head. With the centred
+ * cover at absolute index `cur`, +1 means "jump one period forward" (a tail clone
+ * is centred, the real cover a period later must take over), -1 the reverse, 0
+ * when a real cover is centred.
+ */
+export function loopShift(cur: number, clones: number, n: number): -1 | 0 | 1 {
+  if (cur < clones) return 1;
+  if (cur >= clones + n) return -1;
+  return 0;
+}
+
+/** The real cover an absolute strip index shows (a clone maps to its original). */
+export function realIndexOf(cur: number, clones: number, n: number): number {
+  return (((cur - clones) % n) + n) % n;
+}
 
 /** localStorage mirror of the loaded design system's light primary (brand-vars.ts
  *  writes it, hex) - how the static landing, which has no brand of its own, learns
@@ -133,20 +166,63 @@ export function mountCoverFlow(root: ParentNode): void {
   const nav: HTMLElement = navFound;
   const dots: HTMLElement = dotsFound;
   const openBtn = rootEl.querySelector<HTMLAnchorElement>('.covers-open-btn');
-  const cards = [...strip.querySelectorAll<HTMLElement>('.cover-card')];
-  if (cards.length < 3) return;
-  const hues = cards.map((c) => { const n = parseFloat(c.dataset.hue ?? ''); return Number.isFinite(n) ? n : null; });
+  // The REAL covers, in covers.json order. Clones are added below and only the
+  // geometry sees them; everything user-facing indexes this array.
+  const cards = [...strip.querySelectorAll<HTMLElement>('.cover-card:not(.is-clone)')];
+  const n = cards.length;
+  if (n < 3) return;
+  const hues = cards.map((c) => { const v = parseFloat(c.dataset.hue ?? ''); return Number.isFinite(v) ? v : null; });
   const startIdx = nearestCoverIndex(hues, readerHue());
   if (startIdx !== 0) cards.forEach((c, i) => c.classList.toggle('is-cur', i === startIdx));
 
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  // The animated covers (audiogram, 3D) are muted looping clips; under reduced
-  // motion they hold their poster frame instead of playing.
-  if (reduced) cards.forEach((el) => { const v = el.querySelector('video'); if (v) { v.removeAttribute('autoplay'); v.pause(); } });
+  // The animated covers are muted looping clips; under reduced motion they hold
+  // their poster frame instead of playing.
+  const videos = cards.map((el) => el.querySelector('video'));
+  // Playback is this module's to decide from here: in the fan only the centred
+  // clip and its neighbours run (videoPolicy), in the filmstrip every clip does
+  // (exitFan). The autoplay attribute would otherwise restart a clip the policy
+  // just paused as soon as its metadata arrives.
+  videos.forEach((v) => { if (v) { v.removeAttribute('autoplay'); v.autoplay = false; if (reduced) v.pause(); } });
   const wide = matchMedia('(min-width: 720px)');
+
+  // ── The loop: clones of the tail before the strip, clones of the head after ──
+  // A clone is a poster-only copy (three playing videos are plenty for a tablet;
+  // a clone at the edge never needs to move) and is out of the accessibility
+  // tree and the tab order. The filmstrip hides them in CSS.
+  const K = Math.min(n, LOOP_CLONES);
+  const cloneOf = (card: HTMLElement): HTMLElement => {
+    const c = card.cloneNode(true) as HTMLElement;
+    c.classList.add('is-clone');
+    c.classList.remove('is-cur');
+    c.removeAttribute('data-i');
+    c.removeAttribute('id');
+    c.setAttribute('aria-hidden', 'true');
+    c.setAttribute('tabindex', '-1');
+    const v = c.querySelector('video');
+    if (v) {
+      const img = document.createElement('img');
+      const poster = v.getAttribute('poster');
+      if (poster) img.setAttribute('src', poster);
+      img.setAttribute('alt', '');
+      img.setAttribute('loading', 'lazy');
+      img.setAttribute('decoding', 'async');
+      v.replaceWith(img);
+    }
+    return c;
+  };
+  if (!strip.querySelector('.is-clone')) {
+    const head = cards.slice(n - K).map(cloneOf);
+    const tail = cards.slice(0, K).map(cloneOf);
+    head.forEach((c) => strip.insertBefore(c, cards[0]!));
+    tail.forEach((c) => strip.appendChild(c));
+  }
+  const all = [...strip.querySelectorAll<HTMLElement>('.cover-card')];   // K + n + K, strip order
+  const real = (i: number): number => realIndexOf(i, K, n);
 
   let fan = false;
   let geom: Geom[] = [];
+  let period = 0;                 // strip distance between a cover and its clone one loop away
   let raf = 0;
   let lastTs = 0;
   let velocity = 0;
@@ -157,9 +233,10 @@ export function mountCoverFlow(root: ParentNode): void {
   let dragStartX = 0;
   let lastPointerX = 0;
   let lastMoveTs = 0;
+  let pendingDx = 0;              // pointer travel not yet applied - flushed once per frame
   let hold = 0;
   let hov = false;
-  let lastCur = -1;
+  let lastCur = -1;               // REAL index last laid out as current
   let restT: ReturnType<typeof setTimeout> | 0 = 0;
   let wheelSettleT: ReturnType<typeof setTimeout> | 0 = 0;
 
@@ -171,7 +248,7 @@ export function mountCoverFlow(root: ParentNode): void {
       d.className = 'covers-dot';
       d.setAttribute('role', 'tab');
       d.setAttribute('aria-label', c.querySelector('.cover-cap b')?.textContent ?? String(i + 1));
-      d.addEventListener('click', () => go(i));
+      d.addEventListener('click', () => goReal(i));
       dots.appendChild(d);
       dotEls.push(d);
     });
@@ -183,12 +260,14 @@ export function mountCoverFlow(root: ParentNode): void {
 
   /** Snapshot the layout geometry once per (re)layout so the hot loop is write-only. */
   function measure(): void {
-    geom = cards.map((el) => {
+    geom = all.map((el) => {
       const w = el.offsetWidth || 1;
       return { el, w, center: el.offsetLeft + w / 2, vc: el.offsetLeft + w / 2 };
     });
+    period = (geom[K + n]?.center ?? 0) - (geom[K]?.center ?? 0);
   }
 
+  /** Absolute strip index of the cover nearest the viewport centre. */
   function curIndex(): number {
     const focus = strip.scrollLeft + half();
     let best = 0;
@@ -198,6 +277,17 @@ export function mountCoverFlow(root: ParentNode): void {
       if (d < bd) { bd = d; best = i; }
     });
     return best;
+  }
+
+  /** Keep the centred cover a REAL one: when a clone is centred, jump a whole
+   *  period so its original takes over. Pixel-identical, so nothing visible
+   *  moves; the settle target and the drag both ride the same shift. */
+  function rebase(): void {
+    if (!period) return;
+    const shift = loopShift(curIndex(), K, n) * period;
+    if (!shift) return;
+    strip.scrollLeft += shift;
+    if (snapTarget !== null) snapTarget += shift;
   }
 
   function nearestTarget(): number {
@@ -212,9 +302,9 @@ export function mountCoverFlow(root: ParentNode): void {
     return best;
   }
 
-  function showOpen(cur: number): void {
+  function showOpen(r: number): void {
     if (!openBtn) return;
-    const card = cards[cur]!;
+    const card = cards[r]!;
     openBtn.setAttribute('href', card.getAttribute('href') ?? '#');
     const label = openBtn.firstElementChild;
     if (label) {
@@ -224,36 +314,68 @@ export function mountCoverFlow(root: ParentNode): void {
     openBtn.classList.add('is-on');
   }
 
+  /** Only the centred clip and its two neighbours play; the rest hold their
+   *  poster. Three decoding videos inside 3-D layers is what a tablet can
+   *  composite smoothly - sixteen is not. */
+  function videoPolicy(r: number): void {
+    if (reduced) return;
+    videos.forEach((v, i) => {
+      if (!v) return;
+      const d = Math.min(Math.abs(i - r), n - Math.abs(i - r));
+      if (d <= 1) { if (v.paused) void v.play().catch(() => { /* autoplay policy */ }); }
+      else if (!v.paused) v.pause();
+    });
+  }
+
   function layout(): void {
     if (!fan) return;
     const focus = strip.scrollLeft + half();
     const cur = curIndex();   // decided BEFORE the pass, so exactly one cover is current
+    // How many tucked pitches the viewport edge is from the centre, plus slack:
+    // a cover beyond that is not drawn at all - no transform write, no
+    // compositing - which keeps a 36-card loop as cheap as the handful it shows,
+    // and still fills a 4K screen edge to edge.
+    const cutoff = half() / ((geom[0]?.w ?? 1) * CF_TUCK) + OFFSCREEN_SLACK;
     geom.forEach((g, i) => {
       const d = (g.center - focus) / g.w;
       const ad = Math.abs(d);
+      if (ad > cutoff) {
+        if (g.el.style.visibility !== 'hidden') g.el.style.visibility = 'hidden';
+        return;
+      }
+      if (g.el.style.visibility) g.el.style.visibility = '';
       const cd = Math.max(-1.4, Math.min(1.4, d));
       // Tuck keeps pulling the further covers in with its own wider clamp, so the
-      // fan stacks tight to the screen edge instead of gapping past ±1.4.
-      const td = Math.max(-3.2, Math.min(3.2, d));
+      // fan stacks tight to the screen edge instead of gapping past ±1.4. The
+      // clamp reaches six pitches out so a 2560px screen is filled edge to edge;
+      // at laptop widths everything past three is off-screen anyway.
+      const td = Math.max(-6, Math.min(6, d));
       const angle = -cd * CF_MAX_ANGLE;
       const scale = 1 - Math.min(ad, 1) * (1 - CF_MIN_SCALE);
       const tuck = -td * g.w * CF_TUCK;
       // Recede each cover by its own protrusion (+ slack) so a rotated neighbour's
       // near half never crosses the centred cover's plane.
       const back = (g.w / 2) * scale * Math.abs(Math.sin((angle * Math.PI) / 180)) + Math.abs(td) * 8 + 2;
-      g.el.style.transform = `translateX(${tuck.toFixed(1)}px) translateZ(${(-back).toFixed(1)}px) rotateY(${angle.toFixed(1)}deg) scale(${scale.toFixed(3)})`;
+      g.el.style.transform = `translate3d(${tuck.toFixed(1)}px,0,${(-back).toFixed(1)}px) rotateY(${angle.toFixed(1)}deg) scale(${scale.toFixed(3)})`;
       g.el.style.zIndex = String(1000 - Math.round(ad * 20));
       g.vc = g.center + tuck;
-      g.el.classList.toggle('is-cur', i === cur);
-      g.el.setAttribute('aria-hidden', i === cur ? 'false' : 'true');
     });
-    dotEls.forEach((d, i) => d.setAttribute('aria-current', i === cur ? 'true' : 'false'));
-    if (cur !== lastCur) {
-      lastCur = cur;
+    const r = real(cur);
+    if (r !== lastCur) {
+      // Attribute and class writes only when the centred cover actually changes -
+      // a style recalc per frame across every card is what a tablet feels.
+      lastCur = r;
+      all.forEach((el, i) => {
+        const isCur = i === cur;
+        el.classList.toggle('is-cur', isCur);
+        if (!el.classList.contains('is-clone')) el.setAttribute('aria-hidden', isCur ? 'false' : 'true');
+      });
+      dotEls.forEach((d, i) => d.setAttribute('aria-current', i === r ? 'true' : 'false'));
+      videoPolicy(r);
       clearTimeout(restT);
       openBtn?.classList.remove('is-on');
       // Quiet while the fan moves, an invitation once it settles.
-      restT = setTimeout(() => showOpen(cur), REST_MS);
+      restT = setTimeout(() => showOpen(r), REST_MS);
     }
   }
 
@@ -264,11 +386,21 @@ export function mountCoverFlow(root: ParentNode): void {
     if (!fan || !rootEl.isConnected) { lastTs = 0; return; }
     const dt = lastTs ? Math.min(200, ts - lastTs) : 0;
     lastTs = ts;
-    if (dragging) { layout(); loop(); return; }
+    if (dragging) {
+      // Pointer travel is applied HERE, once per frame, however many move events
+      // arrived - a 120 Hz pointer on a 60 Hz screen otherwise writes scrollLeft
+      // twice a frame and WebKit renders the in-between.
+      if (pendingDx) { strip.scrollLeft -= pendingDx; pendingDx = 0; }
+      rebase();
+      layout();
+      loop();
+      return;
+    }
     if (Math.abs(velocity) > INERTIA_MIN_V) {
       strip.scrollLeft += (velocity * dt) / 1000;
       velocity = clampV(velocity * INERTIA_FRICTION ** (dt / 16.67));
       if (Math.abs(velocity) < INERTIA_MIN_V) velocity = 0;
+      rebase();
       layout();
       loop();
       return;
@@ -278,36 +410,49 @@ export function mountCoverFlow(root: ParentNode): void {
     if (Math.abs(diff) < 0.5 || reduced) {
       strip.scrollLeft = target;
       snapTarget = null;
+      rebase();
       layout();
       lastTs = 0;
       return;                                   // at rest: the loop stops here
     }
     strip.scrollLeft += diff * Math.min(1, (dt / 1000) * EASE_PER_SEC);
+    rebase();
     layout();
     loop();
   }
 
+  /** Ease onto an ABSOLUTE strip index (a neighbour of the current one, usually). */
   function go(i: number): void {
     if (!fan) return;
-    i = Math.max(0, Math.min(cards.length - 1, i));
+    i = Math.max(0, Math.min(all.length - 1, i));
     hold = Date.now() + HOLD_MS;
     velocity = 0;
     snapTarget = centerOf(i);
     loop();
+  }
+  /** Ease onto a REAL cover by the shortest way round the loop. */
+  function goReal(r: number): void {
+    const cur = curIndex();
+    let best = K + r;
+    for (const cand of [K + r - n, K + r, K + r + n]) {
+      if (cand >= 0 && cand < all.length && Math.abs(cand - cur) < Math.abs(best - cur)) best = cand;
+    }
+    go(best);
   }
 
   let opened = false;
   function enterFan(): void {
     // Which cover sits centred: the reader's-hue cover the first time the fan
     // opens; the one already in view when a resize brings the fan back.
-    const keep = opened ? curIndex() : startIdx;
+    const keep = opened ? curIndex() : K + startIdx;
     opened = true;
     fan = true;
     section.classList.add('covers--fan');
     nav.hidden = false;
-    cards.forEach((el) => el.setAttribute('draggable', 'false'));
+    all.forEach((el) => el.setAttribute('draggable', 'false'));
     measure();
     strip.scrollLeft = centerOf(keep);
+    lastCur = -1;
     layout();
   }
   function exitFan(): void {
@@ -319,15 +464,19 @@ export function mountCoverFlow(root: ParentNode): void {
     velocity = 0;
     snapTarget = null;
     dragging = false;
+    pendingDx = 0;
     clearTimeout(restT);
     lastCur = -1;
     openBtn?.classList.remove('is-on');
-    cards.forEach((el) => {
+    all.forEach((el) => {
       el.style.transform = '';
       el.style.zIndex = '';
+      el.style.visibility = '';
       el.classList.remove('is-cur');
-      el.removeAttribute('aria-hidden');
+      if (!el.classList.contains('is-clone')) el.removeAttribute('aria-hidden');
     });
+    // The filmstrip plays every clip it scrolls to; leave that to the browser.
+    if (!reduced) videos.forEach((v) => { if (v && v.paused) void v.play().catch(() => { /* autoplay policy */ }); });
   }
   const sync = (): void => { if (wide.matches) enterFan(); else exitFan(); };
   wide.addEventListener('change', sync);
@@ -345,12 +494,12 @@ export function mountCoverFlow(root: ParentNode): void {
     measure();
     strip.scrollLeft = centerOf(cur);
     snapTarget = null;
+    rebase();
     layout();
   }, { passive: true });
-  // A scroll that slips past the model (Chrome's keyboard scrolling of the
-  // scroller under the last click, focus scrolling, a scrollbar) repaints the
-  // fan from the new position and, once it stops, settles onto the nearest
-  // cover - the native snap this mode gave up would have done that.
+  // A scroll that slips past the model (keyboard scrolling of the scroller under
+  // the last click, focus scrolling) repaints the fan from the new position and,
+  // once it stops, settles onto the nearest cover.
   let nativeSettleT: ReturnType<typeof setTimeout> | 0 = 0;
   strip.addEventListener('scroll', () => {
     if (!fan || raf || dragging) return;
@@ -379,6 +528,7 @@ export function mountCoverFlow(root: ParentNode): void {
     if (reduced) {
       // No momentum: move with the hand, then snap once it stops.
       strip.scrollLeft += e.deltaX;
+      rebase();
       layout();
       clearTimeout(wheelSettleT);
       wheelSettleT = setTimeout(() => { snapTarget = nearestTarget(); loop(); }, 150);
@@ -399,10 +549,13 @@ export function mountCoverFlow(root: ParentNode): void {
     dragStartX = e.clientX;
     lastPointerX = e.clientX;
     lastMoveTs = performance.now();
+    pendingDx = 0;
     hold = Date.now() + HOLD_MS;
     section.classList.add('covers--dragging');
     try { strip.setPointerCapture(e.pointerId); } catch { /* best effort */ }
-    e.preventDefault();
+    // Mouse and pen: stop the browser's own drag/select. A touch keeps its default
+    // so touch-action: pan-y can still hand a vertical swipe to the page.
+    if (e.pointerType !== 'touch') e.preventDefault();
     loop();
   });
   // A middle press must pan, not engage the browser's autoscroll.
@@ -412,25 +565,28 @@ export function mountCoverFlow(root: ParentNode): void {
     const now = performance.now();
     const dx = e.clientX - lastPointerX;
     if (Math.abs(e.clientX - dragStartX) > DRAG_SLOP) dragMoved = true;
-    strip.scrollLeft -= dx;
+    pendingDx += dx;
     const dtm = now - lastMoveTs;
     if (dtm > 0) velocity = clampV(velocity * 0.7 + ((-dx / dtm) * 1000) * 0.3);
     lastPointerX = e.clientX;
     lastMoveTs = now;
-    e.preventDefault();
+    if (e.pointerType !== 'touch') e.preventDefault();
   });
   const endDrag = (e: PointerEvent): void => {
     if (!dragging || e.pointerId !== dragPointerId) return;
     dragging = false;
     dragPointerId = -1;
     section.classList.remove('covers--dragging');
+    if (pendingDx) { strip.scrollLeft -= pendingDx; pendingDx = 0; rebase(); }
     // Take focus on RELEASE: Chrome's own press handling still moves focus to
     // the body after a cancelled pointerdown, so a focus() there is undone by
     // the time the keys arrive. After the release it sticks, and the region's
     // arrow-key handler owns the strip from here (no scroll jump).
     if (e.pointerType !== 'touch') rootEl.focus({ preventScroll: true });
-    // A slow release (the hand already at rest) stops dead; only a real throw coasts.
-    if (reduced || performance.now() - lastMoveTs > 80) velocity = 0;
+    // A slow release (the hand already at rest) stops dead; only a real throw
+    // coasts. A cancelled pointer (the page took the gesture for a vertical
+    // scroll) coasts with whatever it had - stopping dead there is the jolt.
+    if (reduced || (e.type === 'pointerup' && performance.now() - lastMoveTs > 80)) velocity = 0;
     if (!dragMoved && e.type === 'pointerup' && e.button === 0) {
       // Cards are pointer-events:none, so map the press to a cover by its DRAWN
       // centre (layout centre + this frame's tuck) and centre that cover.
@@ -457,8 +613,8 @@ export function mountCoverFlow(root: ParentNode): void {
     const timer = setInterval(() => {
       if (!rootEl.isConnected) { clearInterval(timer); return; }
       if (!fan || hov || dragging || Date.now() < hold || document.hidden || Math.abs(velocity) > INERTIA_MIN_V) return;
-      const n = curIndex() + 1;
-      snapTarget = centerOf(n >= cards.length ? 0 : n);
+      // Always one step on: the loop re-bases, so there is no "back to the start".
+      snapTarget = centerOf(curIndex() + 1);
       loop();
     }, AUTOPLAY_MS);
   }
