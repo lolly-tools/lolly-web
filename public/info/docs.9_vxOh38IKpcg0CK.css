@@ -453,7 +453,7 @@ html[data-theme="dark"] .quicknav{background:rgba(9,26,21,.9)}
    band always had. The gradient's end colour IS that flat colour, so the seam is
    invisible either way. */
 .hero-wrap{position:relative;overflow:hidden;background:linear-gradient(180deg,#1c4a2e 0%,#0c3226 100%) top/100% var(--hero-h,100%) no-repeat,#0c3226;background:linear-gradient(180deg,color-mix(in oklab,hsl(var(--primary)) 34%,#0b1512) 0%,color-mix(in oklab,hsl(var(--primary)) 15%,#0a120f) 100%) top/100% var(--hero-h,100%) no-repeat,color-mix(in oklab,hsl(var(--primary)) 15%,#0a120f)}
-.hero{background:transparent;color:hsl(var(--on-band-dark));padding:4.5rem 1.5rem 3.5rem;text-align:center;position:relative;z-index:1;min-height:50vh;user-select:none;-webkit-user-select:none}
+.hero{background:transparent;color:hsl(var(--on-band-dark));padding:4.5rem 1.5rem 3.5rem;text-align:center;position:relative;z-index:1;user-select:none;-webkit-user-select:none}
 /* Double-clicking the hero backdrop shouldn't highlight the heading/subtitle/trust copy; buttons keep normal selection. */
 .hero .btn{user-select:auto;-webkit-user-select:auto; }
 .hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 90% 55% at 50% -5%,rgba(48,186,120,.13) 0%,transparent 65%);pointer-events:none}
@@ -1622,7 +1622,7 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 /* ── beat 4: the persona device (CSS-only: radios + nth-matched pairing) ── */
 .persona-section{padding:1.5rem 1.5rem 4rem}
 .persona-inner{max-width:1120px;margin:0 auto;position:relative}
-.persona-title{margin-bottom:1.25rem}
+.persona-title{margin-bottom:1.25rem;text-align:center;}
 .persona-radio,.lane-radio{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px}
 .persona-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
 .persona-tab{display:flex;flex-direction:column;gap:4px;padding:1rem 1.15rem;border:1px solid var(--border);border-radius:12px;background:var(--page);cursor:pointer;position:relative;transition:border-color .2s ease,transform .2s ease;padding-right:4.4rem}
