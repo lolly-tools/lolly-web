@@ -1127,7 +1127,7 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 /* ── beat 2: the covers ─────────────────────────────────────────────────────
    Base form is a scroll-snap FILMSTRIP: native swipe and drag on touch, wheel
    and scrollbar elsewhere, and fully working with scripts stripped (the in-app
-   reader). COVERS_JS upgrades it to the 3-D fan from 720px up and adds pointer
+   reader). COVERS_JS upgrades it to the 3-D fan at every width and adds pointer
    drag, dots, arrows and the slow autoplay. */
 /* No background of its own: the band sits inside .hero-wrap, which paints the
    surface, and the chip field lies between that surface and this content
@@ -1163,6 +1163,13 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 .covers--fan .covers-strip{gap:0;overflow:hidden;perspective:1500px;perspective-origin:50% 45%;padding:2.25rem calc(50% - min(520px,58vw)/2) 4rem;margin-bottom:-2.75rem;scroll-snap-type:none;scroll-behavior:auto;touch-action:pan-y;overscroll-behavior-x:contain;scrollbar-width:none}
 .covers--fan .covers-strip::-webkit-scrollbar{display:none}
 .covers--fan .cover-card{flex:0 0 min(520px,58vw);width:min(520px,58vw);will-change:transform;backface-visibility:hidden;pointer-events:none;user-select:none;-webkit-user-select:none}
+/* Phones run the fan too (Andy, 2026-09-03). A 58vw card is a thumbnail at 390px, so
+   under 720px the centred cover takes 78vw and the strip's centring pad follows; the
+   tuck still shows the neighbours' edges either side. */
+@media(max-width:719px){
+  .covers--fan .covers-strip{padding-left:calc(50% - 39vw);padding-right:calc(50% - 39vw)}
+  .covers--fan .cover-card{flex-basis:78vw;width:78vw}
+}
 /* The loop's clones (lib/covers-flow.ts): pixel copies of the edge covers so the
    fan never shows an end. The filmstrip is finite and hides them. */
 .covers-section:not(.covers--fan) .cover-card.is-clone{display:none}

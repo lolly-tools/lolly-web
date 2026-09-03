@@ -25,8 +25,10 @@
  * iPad would otherwise run its own momentum scroll on the same scroller the
  * pointer handlers are driving, and the two fighting over scrollLeft is what
  * read as "jerky". A script can still set scrollLeft on a hidden-overflow box,
- * which is all this model needs. Under 720px the strip stays the plain
- * scroll-snap filmstrip and this module only keeps the fan off.
+ * which is all this model needs. The fan runs at every width (Andy, 2026-09-03:
+ * "now that the coverflow effect is stable we can have it on mobile also") -
+ * the scroll-snap filmstrip underneath is what a reader with scripts off gets,
+ * and what the markup means on its own.
  *
  * The fan is a LOOP. Sixteen covers are enough to never show an end, so the
  * module clones the last few covers in front of the strip and the first few
@@ -180,11 +182,9 @@ export function mountCoverFlow(root: ParentNode): void {
   // their poster frame instead of playing.
   const videos = cards.map((el) => el.querySelector('video'));
   // Playback is this module's to decide from here: videoPolicy runs the clips
-  // in the fan (all of them, for now), exitFan every clip in the filmstrip. The
-  // autoplay attribute would otherwise restart a clip the policy just paused
-  // (reduced motion) as soon as its metadata arrives.
+  // (all of them, for now). The autoplay attribute would otherwise restart a
+  // clip the policy just paused (reduced motion) as soon as its metadata arrives.
   videos.forEach((v) => { if (v) { v.removeAttribute('autoplay'); v.autoplay = false; if (reduced) v.pause(); } });
-  const wide = matchMedia('(min-width: 720px)');
 
   // ── The loop: clones of the tail before the strip, clones of the head after ──
   // A clone is a poster-only copy (three playing videos are plenty for a tablet;
@@ -439,12 +439,9 @@ export function mountCoverFlow(root: ParentNode): void {
     go(best);
   }
 
-  let opened = false;
   function enterFan(): void {
-    // Which cover sits centred: the reader's-hue cover the first time the fan
-    // opens; the one already in view when a resize brings the fan back.
-    const keep = opened ? curIndex() : K + startIdx;
-    opened = true;
+    // The reader's-hue cover sits centred when the fan opens.
+    const keep = K + startIdx;
     fan = true;
     section.classList.add('covers--fan');
     nav.hidden = false;
@@ -454,38 +451,7 @@ export function mountCoverFlow(root: ParentNode): void {
     lastCur = -1;
     layout();
   }
-  function exitFan(): void {
-    fan = false;
-    section.classList.remove('covers--fan', 'covers--dragging');
-    nav.hidden = true;
-    if (raf) { cancelAnimationFrame(raf); raf = 0; }
-    lastTs = 0;
-    velocity = 0;
-    snapTarget = null;
-    dragging = false;
-    pendingDx = 0;
-    clearTimeout(restT);
-    lastCur = -1;
-    openBtn?.classList.remove('is-on');
-    all.forEach((el) => {
-      el.style.transform = '';
-      el.style.zIndex = '';
-      el.style.visibility = '';
-      el.classList.remove('is-cur');
-      if (!el.classList.contains('is-clone')) el.removeAttribute('aria-hidden');
-    });
-    // The filmstrip plays every clip it scrolls to; leave that to the browser.
-    if (!reduced) videos.forEach((v) => { if (v && v.paused) void v.play().catch(() => { /* autoplay policy */ }); });
-  }
-  const sync = (): void => { if (wide.matches) enterFan(); else exitFan(); };
-  wide.addEventListener('change', sync);
-  // The filmstrip opens on the same cover (snap keeps it centred); only before
-  // the fan has ever run, so a resize down never yanks the strip elsewhere.
-  if (!wide.matches && startIdx > 0) {
-    const el = cards[startIdx]!;
-    strip.scrollLeft = el.offsetLeft + el.offsetWidth / 2 - strip.clientWidth / 2;
-  }
-  sync();
+  enterFan();
 
   addEventListener('resize', () => {
     if (!fan) return;
