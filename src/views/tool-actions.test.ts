@@ -141,8 +141,9 @@ interface Harness {
 /** Mount the export bar over a canvas that is (or isn't) a timed composition.
  *  `profile` installs a profile store on the host (absent by default, the way a
  *  host without one behaves). */
-function mount({ seqMs, clipMs = null, videoDuration = 12, formats = ['webm', 'mp4', 'png'], profile, model = [], toolId = 'sequence-studio' }:
+function mount({ seqMs, clipMs = null, videoDuration = 12, formats = ['webm', 'mp4', 'png'], profile, model = [], toolId = 'sequence-studio', exportDefaults = {} }:
   { seqMs: number | null; /** A bed's own length stamped as data-clip-ms (the audiogram). */ clipMs?: number | null; videoDuration?: number; formats?: string[]; profile?: Record<string, unknown>;
+    /** The URL-driven defaults tool.ts passes (a link's ?fps=/?seconds=/... arrive as `video`). */ exportDefaults?: Record<string, unknown>;
     /** The runtime's input model - only the tests that read it pass one. */
     model?: Array<Record<string, unknown>>; toolId?: string }): Harness {
   const doc = dom.window.document;
@@ -218,7 +219,7 @@ function mount({ seqMs, clipMs = null, videoDuration = 12, formats = ['webm', 'm
       try { return await fn(); }
       finally { unscaledCalls.push({ ...o, formats: seen.slice(before).map(e => e.format) }); }
     }) as never,
-    {},
+    exportDefaults as never,
   );
 
   return {
@@ -299,6 +300,29 @@ test('clip: a user edit wins over the bed length and reaches the export as durat
   h.stage!.setAttribute('data-clip-ms', '90000');
   await new Promise(r => setTimeout(r, 0));
   assert.equal(h.duration().value, '6', 'the typed value is not re-seeded by a re-stamp');
+});
+
+// ── 1c. a link's video controls (?fps= ?seconds= ?wait= ?codec= ?vq=) ────────
+
+test('video params: a link seeds Duration, Start after and the Pro selects', () => {
+  const h = mount({ seqMs: 6000, videoDuration: 12, exportDefaults: { video: { fps: 60, seconds: 4, wait: 2, codec: 'h264', quality: 'best' } } });
+  assert.equal(h.duration().value, '4', 'seconds= beats the timeline-derived length: it is a deliberate instruction');
+  assert.equal(h.panel.querySelector<HTMLInputElement>('[data-action="video-wait"]')!.value, '2');
+  assert.equal(h.panel.querySelector<HTMLSelectElement>('[data-action="video-fps"]')!.value, '60');
+  assert.equal(h.panel.querySelector<HTMLSelectElement>('[data-action="video-codec"]')!.value, 'avc1.640033');
+  assert.equal(h.panel.querySelector<HTMLSelectElement>('[data-action="video-quality"]')!.value, 'best');
+});
+
+test('video params: a seconds= link counts as user-set, so a re-stamped timeline does not re-seed it', async () => {
+  const h = mount({ seqMs: 6000, exportDefaults: { video: { seconds: 4 } } });
+  h.stage!.setAttribute('data-seq-ms', '9000');
+  await new Promise(r => setTimeout(r, 0));
+  assert.equal(h.duration().value, '4');
+});
+
+test('video params: an fps the select does not offer leaves the select on Auto', () => {
+  const h = mount({ seqMs: null, exportDefaults: { video: { fps: 45 } } });
+  assert.equal(h.panel.querySelector<HTMLSelectElement>('[data-action="video-fps"]')!.value, '');
 });
 
 // ── 2. the ceiling ───────────────────────────────────────────────────────────

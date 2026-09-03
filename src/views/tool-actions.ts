@@ -10,7 +10,7 @@
  * This module never value-imports from ./tool.ts (that would create a runtime
  * cycle) - it only `import type`s the shell-side aliases it needs from there.
  */
-import { serializeUrlState, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS, composeSong, cuesToSrt, cuesToVtt, generatedSongSpec, HDR_DEFAULTS, preflight, PRINT_MARK_FORMATS, SEPARATING_FORMATS, computeCost, parseRateCard, isRateCardError, validateRateCard, isNonAffineTransform, selectFramePage, frameFilterApplies, LEXICON_VERSION, deriveExportFilename } from '@lolly/engine';
+import { serializeUrlState, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS, composeSong, cuesToSrt, cuesToVtt, generatedSongSpec, HDR_DEFAULTS, VIDEO_CODEC_STRINGS, preflight, PRINT_MARK_FORMATS, SEPARATING_FORMATS, computeCost, parseRateCard, isRateCardError, validateRateCard, isNonAffineTransform, selectFramePage, frameFilterApplies, LEXICON_VERSION, deriveExportFilename } from '@lolly/engine';
 import type {
   Fact, PreflightInput, PreflightJob, PreflightManifest, PreflightSwatch, StageFacts, Count, CostWorking,
 } from '@lolly/engine';
@@ -525,7 +525,8 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     ? exportDefaults.format
     : (assetExportFormat() || formats[0]);
   const videoDefaults = (manifest.render.video ?? {}) as { wait?: number; duration?: number };
-  const defaultWait     = videoDefaults.wait     ?? 1;
+  // A link's ?wait= / ?seconds= (exportDefaults.video) seed the fields the way ?format= seeds the picker.
+  const defaultWait     = exportDefaults.video?.wait ?? videoDefaults.wait ?? 1;
 
   // ── Timed compositions (Sequence Studio) ───────────────────────────────────
   // A timed artboard carries [data-sequence] plus data-seq-ms="<derived length>",
@@ -585,7 +586,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   };
   const seqInitialDuration = seqDurationS();
   const animInitialDuration = seqInitialDuration != null ? null : animDurationS();
-  const defaultDuration = seqInitialDuration ?? animInitialDuration ?? videoDefaults.duration ?? 5;
+  const defaultDuration = exportDefaults.video?.seconds ?? seqInitialDuration ?? animInitialDuration ?? videoDefaults.duration ?? 5;
   // A sequence (or a long animation loop) can legitimately run far past the 60s the
   // recording field allows for ordinary "record the animation for a while" tools, so
   // it takes the timeline's own ceiling (1 hour). Non-timed tools keep the 60s cap.
@@ -1521,6 +1522,22 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const fidelityWarnEl = el.querySelector<HTMLElement>('[data-fidelity-warning]');
   const durationEl    = el.querySelector<HTMLInputElement>('[data-action="video-duration"]');
   const liveLabelEl   = el.querySelector<HTMLElement>('[data-live-capture]');
+  // Seed the Pro-settings selects from a link's ?fps= / ?codec= / ?vq= (exportDefaults.video).
+  // Only a value the select actually offers is applied; an odd fps (say 45) still reaches
+  // the auto-export through tool.ts, it just cannot be shown here.
+  {
+    const v = exportDefaults.video;
+    const seed = (sel: string, value: string | null | undefined): void => {
+      if (value == null) return;
+      const s = el.querySelector<HTMLSelectElement>(sel);
+      if (s && [...s.options].some(o => o.value === value)) s.value = value;
+    };
+    if (v) {
+      seed('[data-action="video-fps"]', v.fps != null ? String(v.fps) : null);
+      seed('[data-action="video-codec"]', v.codec ? VIDEO_CODEC_STRINGS[v.codec] : null);
+      seed('[data-action="video-quality"]', v.quality ?? null);
+    }
+  }
 
   // ── Contact sheets: the "Frames" control (plans/fable-timeline-editing section 4.6) ─
   // A still export of a timed composition renders the frame at the playhead
@@ -1577,7 +1594,9 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // .value directly and dispatches nothing, so it can never set it), and it rides
   // out to the export opts as `durationUserSet` - the tool hook keeps a deliberate
   // user value and overwrites everything else with the derived length.
-  let durationUserSet = false;
+  // A `seconds` carried by the link is the same deliberate instruction as a typed
+  // value, so it starts the flag set and the derived-length re-sync never overrides it.
+  let durationUserSet = exportDefaults.video?.seconds != null;
   durationEl?.addEventListener('input',  () => { durationUserSet = true; });
   durationEl?.addEventListener('change', () => { durationUserSet = true; });
 

@@ -25,7 +25,8 @@ import '../styles/parts/deck-editor.css';
 import '../styles/parts/tool-chrome.css';
 import { loadTool, parseUrlState, annotateTemplate, toCssPx, normalizeTableValue, encodeTableCompact, DEFAULT_CMYK_CONDITION, isTokenValue, packQuery, expandQuery, hasPackedState, isPackAvailable, PACK_PARAM, hasEncryptedState, unpackEncrypted, ENC_PARAM, C2PA_FORMATS, DEFAULT_FILE_MAX_BYTES, isBakedRef, assetIdForUrl, blocksForUrl, HDR_DEFAULTS, serializeHdr } from '@lolly/engine';
 import { createInteractiveToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
-import type { HdrSettings, DepthSetting } from '@lolly/engine';
+import type { HdrSettings, DepthSetting, VideoUrlSettings } from '@lolly/engine';
+import { hasVideoParams, VIDEO_CODEC_STRINGS } from '@lolly/engine';
 // The one declaration of the export bar's audio selection shape (mix-in bed
 // incl.) - see bridge/audio-envelope.ts; ExportOpts references it too.
 import type { ExportAudio } from '../bridge/audio-envelope.ts';
@@ -262,6 +263,11 @@ export interface ExportDefaults {
    *  default) is left undefined here - only a real request is carried. A REQUEST,
    *  not a promise: depth follows provenance at the consumer. */
   depth?: DepthSetting;
+  /** Video export controls from ?fps=/?seconds=/?wait=/?codec=/?vq= - the URL form of
+   *  the panel's Frame rate, Duration, Start after, Codec and Quality. A `seconds`
+   *  given here is a deliberate length (the panel treats it as user-set). Undefined
+   *  when the link carried none of the five. */
+  video?: VideoUrlSettings;
   /** The deck state address from ?s= (plan 112): a 1-based slide position, a frame id,
    *  or either with an `.N` build suffix. A STILL export of a framed document renders
    *  only that slide (`?s=2&format=png` is a per-slide image link); the engine's
@@ -336,6 +342,9 @@ type VizModule = typeof import('../lib/viz-tool-mount.ts');
 export interface RunExportOpts {
   width?: number | string;
   height?: number | string;
+  /** The clip length was asked for (a link's ?seconds=, or the panel's typed value):
+   *  a tool hook that lengthens a clip to its material must leave it alone. */
+  durationUserSet?: boolean;
   dpi?: number;
   scale?: number;
   embedMeta?: boolean;
@@ -644,7 +653,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // A no-op for ordinary readable links. Done once so every consumer below agrees.
   urlParams = await expandQuery(urlParams ?? '');
 
-  const { values, format: urlFormat, export: autoExport, copy: autoCopy, slot: routeSlot, filename: urlFilename, width: urlWidth, height: urlHeight, unit: urlUnit, dpi: urlDpi, profile: urlProfile, password: urlPassword, bleed: urlBleed, marks: urlMarks, c2pa: urlC2pa, imprint: urlImprint, metadata: urlMetadata, durable: urlDurable, hdr: urlHdr, depth: urlDepth } = parseUrlState(urlParams, tool.manifest);
+  const { values, format: urlFormat, export: autoExport, copy: autoCopy, slot: routeSlot, filename: urlFilename, width: urlWidth, height: urlHeight, unit: urlUnit, dpi: urlDpi, profile: urlProfile, password: urlPassword, bleed: urlBleed, marks: urlMarks, c2pa: urlC2pa, imprint: urlImprint, metadata: urlMetadata, durable: urlDurable, hdr: urlHdr, depth: urlDepth, video: urlVideo } = parseUrlState(urlParams, tool.manifest);
   // Starting a collab force-remounts this tool, and the route it remounts through is a
   // LOSSY encoder twice over: `buildShareParams` skips `user/` asset ids and anything
   // past 150 chars, `syncUrl` writes only dirty params, skips `file` inputs, and never
@@ -2530,6 +2539,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // Requested export bit depth from ?depth= - 'auto' (the default) carries
     // nothing, so only an explicit 8/16/float request travels.
     depth:    urlDepth !== 'auto' ? urlDepth : undefined,
+    // Video controls from the URL (fps/seconds/wait/codec/vq): seed the panel so a
+    // manual export honours a pasted link the way `format=` does.
+    video:    hasVideoParams(urlVideo) ? urlVideo : undefined,
     // The deck state address from ?s= (plan 112). Read from the BOOT url, like every
     // other export default: presentation mode writes `s=` live while presenting and
     // clears it on exit, so the live query is the wrong thing to photograph. A still
@@ -4744,6 +4756,18 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         // 'auto' is the default and carries nothing. NO consumer logic here: the
         // export bridge decides what the provenance chain can honestly carry.
         if (urlDepth !== 'auto') expOpts.depth = urlDepth;
+        // Video controls (?fps= ?seconds= ?wait= ?codec= ?vq=): the URL form of the export
+        // panel's fields, so `?export=mp4&fps=60&seconds=6` renders the clip the panel
+        // would - and the CLI, which is this path under another transport, gets the same
+        // knobs. `seconds` is a deliberate length (durationUserSet), so a tool hook that
+        // lengthens a clip to its material (the audiogram's analysed bed) stands down.
+        if (['mp4', 'webm', 'gif', 'apng', 'webp-anim'].includes(fmt) && hasVideoParams(urlVideo)) {
+          if (urlVideo.fps != null) expOpts.fps = urlVideo.fps;
+          if (urlVideo.seconds != null) { expOpts.duration = urlVideo.seconds; expOpts.durationUserSet = true; }
+          if (urlVideo.wait != null) expOpts.wait = urlVideo.wait;
+          if (urlVideo.codec) expOpts.videoCodec = VIDEO_CODEC_STRINGS[urlVideo.codec];
+          if (urlVideo.quality) expOpts.videoQuality = urlVideo.quality;
+        }
         // Print prep: honour ?bleed= / ?marks= so a deep link auto-exports a
         // print-ready file. Applied only when the link asks for it (never default).
         if (isPrintFmt(fmt) && (urlBleed || urlMarks)) {
