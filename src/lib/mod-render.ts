@@ -15,6 +15,8 @@ interface WorkerReply {
   right?: Float32Array;
   sampleRate?: number;
   error?: string;
+  /** A probe's answer: the wasm instantiated in the worker. */
+  ok?: boolean;
 }
 
 /** The tracker-module formats libopenmpt decodes for us. An asset's `format` is its
@@ -29,12 +31,38 @@ export function isModuleFormat(format: string | undefined): boolean {
 let worker: Worker | null = null;
 let seq = 0;
 const pending = new Map<number, { resolve: (p: RenderedPcm) => void; reject: (e: unknown) => void }>();
+const probes = new Map<number, (ok: boolean) => void>();
+let availability: Promise<boolean> | null = null;
+
+/**
+ * Can this browser decode tracker modules at all? Spawns the worker and asks it to
+ * instantiate libopenmpt, once per page. Resolves false when there is no Worker or
+ * WebAssembly, when the wasm fails to compile (a corrupted vendored build - it has
+ * happened) or when the worker never answers. The catalog hides module assets on
+ * false: a card that cannot play is worse than no card.
+ */
+export function modDecoderAvailable(): Promise<boolean> {
+  if (availability) return availability;
+  availability = new Promise<boolean>((resolve) => {
+    if (typeof Worker === 'undefined' || typeof WebAssembly === 'undefined') { resolve(false); return; }
+    try {
+      const w = ensureWorker();
+      const id = ++seq;
+      probes.set(id, resolve);
+      w.postMessage({ id, probe: true });
+      setTimeout(() => { if (probes.delete(id)) resolve(false); }, 20_000);
+    } catch { resolve(false); }
+  });
+  return availability;
+}
 
 function ensureWorker(): Worker {
   if (worker) return worker;
   worker = new Worker(new URL('./mod-worker.ts', import.meta.url), { type: 'module' });
   worker.onmessage = (e: MessageEvent<WorkerReply>): void => {
-    const { id, error, left, right, sampleRate } = e.data;
+    const { id, error, left, right, sampleRate, ok } = e.data;
+    const probe = probes.get(id);
+    if (probe) { probes.delete(id); probe(!error && !!ok); return; }
     const p = pending.get(id);
     if (!p) return;
     pending.delete(id);
@@ -47,6 +75,8 @@ function ensureWorker(): Worker {
   worker.onerror = (): void => {
     for (const p of pending.values()) p.reject(new Error('mod worker error'));
     pending.clear();
+    for (const probe of probes.values()) probe(false);
+    probes.clear();
     // Drop the dead worker so the next renderMod() spawns a fresh one.
     if (worker) { worker.onmessage = null; worker.onerror = null; }
     worker = null;

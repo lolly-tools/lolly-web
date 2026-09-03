@@ -5,12 +5,12 @@ This file exists so you can find the code for a feature without reading all of i
 The counts below are GENERATED - `npm run build:web-src-readme`, checked in CI by `npm run check:web-src-readme`, so they cannot rot the way the hand-measured ones did. They convey proportion; don't cite them as an API.
 
 <!-- web-src-dirs:start -->
-Roughly 474,000 lines of TypeScript, tests included, and 44,000 lines of CSS.
+Roughly 475,000 lines of TypeScript, tests included, and 44,000 lines of CSS.
 
 | Directory | Source | Tests | CSS |
 |---|---|---|---|
-| `views/` | 106 files, 119,945 lines | 111 files, 47,574 lines | none |
-| `lib/` | 382 files, 101,340 lines | 242 files, 53,603 lines | 7 files, 1,098 lines |
+| `views/` | 106 files, 119,955 lines | 111 files, 47,574 lines | none |
+| `lib/` | 382 files, 101,377 lines | 243 files, 53,629 lines | 7 files, 1,098 lines |
 | `bridge/` | 93 files, 42,926 lines | 76 files, 18,853 lines | none |
 | `components/` | 45 files, 20,250 lines | 26 files, 8,941 lines | 2 files, 221 lines |
 | `collab/` | 18 files, 12,959 lines | 20 files, 13,682 lines | none |
@@ -61,7 +61,7 @@ Do not be ambushed by these. The largest source files, by line count:
 | 13,580 | `views/free-canvas.ts` | yes, nine `free-canvas-*.test.ts` files |
 | 11,286 | `bridge/export.ts` | yes, but mostly gated. `export-audio-bed.test.ts` imports `bedStartOffset` and `connectMusic` directly and always runs; the SVG and PDF emission is covered by ten `chromiumOrSkip()` suites (`export-m3`, `export-paint-order`, `export-stroke-paint`, `export-shadow-fidelity`, `export-pdf-shadow-fidelity`, `export-emf-eps-shadow`, `export-atomic-inline`, `export-backdrop-blur`, `export-form-controls`, `export-text-emission`) that esbuild-bundle the real `renderSvgFromHtml` and drive it in Chromium, and which **self-skip** when no Chromium is installed. `export-text-emission` is the newest and covers the `<path>`-vs-`<text>` decision layer specifically; unlike the SUSE-gated golden suite it is brand-independent, so it runs on `lolly-start` too. |
 | 9,367 | `views/timeline-panel.ts` | yes |
-| 6,801 | `views/catalog.ts` | partial - the selection model (visibility, filetype filter, search, favourites dedupe, selectable ids, prune) is extracted to `catalog-filter.ts` and covered by `catalog-filter.test.ts`; the 3,000-line `mountCatalog` body around it is not. |
+| 6,811 | `views/catalog.ts` | partial - the selection model (visibility, filetype filter, search, favourites dedupe, selectable ids, prune) is extracted to `catalog-filter.ts` and covered by `catalog-filter.test.ts`; the 3,000-line `mountCatalog` body around it is not. |
 | 6,368 | `lib/brand-editor.ts` | none |
 | 5,744 | `views/tool.ts` | partial - the undo/redo model (coalescing, the byte-carrying filter, the cap, the redo chain) is extracted to `tool-history.ts` and covered by `tool-history.test.ts`; the rest of `mountTool` is not. |
 | 4,312 | `views/tool-actions.ts` | yes |

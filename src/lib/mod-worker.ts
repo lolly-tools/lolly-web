@@ -10,7 +10,7 @@
  */
 import createLibopenmpt, { type LibopenmptModule } from '../vendor/libopenmpt/libopenmpt.mjs';
 
-interface DecodeRequest { id: number; bytes: Uint8Array; sampleRate: number; }
+interface DecodeRequest { id: number; bytes?: Uint8Array; sampleRate?: number; probe?: boolean }
 
 // Defensive runaway guard: repeat_count is set to 0 (play once), so a well-formed
 // module signals end-of-song via a 0-frame read. Still cap total rendered length so a
@@ -76,7 +76,14 @@ async function decode(bytes: Uint8Array, sampleRate: number): Promise<{ left: Fl
 }
 
 addEventListener('message', (e: MessageEvent<DecodeRequest>) => {
-  const { id, bytes, sampleRate } = e.data;
+  const { id, bytes, sampleRate, probe } = e.data;
+  // A probe asks one thing: does the decoder instantiate here at all? The catalog
+  // hides tracker modules when it does not, rather than showing cards that cannot
+  // play (the 2026-08 glyph sweep corrupted the embedded wasm and nothing noticed).
+  if (probe || !bytes || !sampleRate) {
+    lib().then(() => post({ id, ok: true }, []), (err: unknown) => post({ id, error: err instanceof Error ? err.message : String(err) }, []));
+    return;
+  }
   decode(bytes, sampleRate).then(
     (pcm) => post({ id, left: pcm.left, right: pcm.right, sampleRate: pcm.sampleRate }, [pcm.left.buffer, pcm.right.buffer]),
     (err: unknown) => post({ id, error: err instanceof Error ? err.message : String(err) }, []),

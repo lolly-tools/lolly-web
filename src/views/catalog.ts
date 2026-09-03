@@ -107,7 +107,7 @@ import {
   loadAudioCovers, saveAudioCover, resolveAudioLook, vizPresetOf, isVizCover, type AudioCover,
 } from '../lib/audio-covers.ts';
 import { songUrlToWavBlobUrl } from '../lib/zzfxm-render.ts';
-import { modUrlToWavBlobUrl, isModuleFormat } from '../lib/mod-render.ts';
+import { modUrlToWavBlobUrl, isModuleFormat, modDecoderAvailable } from '../lib/mod-render.ts';
 import { attachAudioMeter } from '../lib/audio-meter.ts';
 import { exportSwatches, paletteEntriesToSwatches, type SwatchExportFormat } from '../lib/swatch-export.ts';
 import { groupPalette, isTransparent, swatch } from '../lib/swatches.ts';
@@ -1683,6 +1683,16 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
   // site in mountCatalog reads exactly as it did before the extraction.
   const visibleAssets = (): AssetRef[] => visibleAssetsRule(allAssets, hiddenSet, assetBaseId);
   const matchesType = (a: AssetRef): boolean => matchesTypeRule(a, typeFilter);
+  // Tracker modules (.xm/.it/.mod) are song data the libopenmpt worker renders to PCM.
+  // Where that decoder cannot instantiate there is nothing to play, so the cards go
+  // rather than sit there with a note glyph (Andy, 2026-09-03). Optimistic until the
+  // probe answers - the healthy path never flickers - and a false answer repaints.
+  let modulesPlayable: boolean | null = null;
+  const playableHere = (a: AssetRef): boolean => modulesPlayable !== false || !isModuleFormat(a.format);
+  void modDecoderAvailable().then((ok) => {
+    modulesPlayable = ok;
+    if (!ok) rerender();
+  });
   // The search index, memoised across keystrokes and dropped whenever the asset
   // set or the category overrides change (see setOverrides and the reload path).
   // Built on FIRST SEARCH, never merely on render - indexing every asset for a
@@ -1759,7 +1769,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // every asset with no visible control explaining why. Fall back to All instead.
     if (typeFilter !== 'all' && !allAssets.some(a => matchesTypeRule(a, typeFilter))) typeFilter = 'all';
     // Filter by search first; the count + category buckets both read the matched set.
-    const visible = visibleAssets().filter(matchesQuery).filter(matchesType);
+    const visible = visibleAssets().filter(matchesQuery).filter(matchesType).filter(playableHere);
 
     // A total sync failure (nothing loaded) reads distinctly from a genuinely empty
     // catalogue - a "couldn't load" message with a Retry that re-runs the load (wired in
