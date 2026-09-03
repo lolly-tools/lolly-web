@@ -160,7 +160,7 @@ html[data-a11y-motion="reduce"] .hero-logo-link:focus-visible .hero-logo-still{o
    Chromium: the pill rendered a blank white box at rest and only recovered on the
    hover transform) left white text on white. A dark fill of its own keeps the
    words readable over anything the backdrop turns into. */
-.btn-secondary{background:rgba(6,20,14,.42);color:hsl(var(--on-band-dark));border:1px solid rgba(255,255,255,.22);position:relative}
+.btn-secondary{background:rgba(6,20,14,.42);color:hsl(var(--on-band-dark));border:0;position:relative}
 .btn-secondary:hover{background:rgba(6,20,14,.28);text-decoration:none;transform:translateY(-1px)}
 /* Glass baseline - frosted blur so the buttons read as glass even where the JS
    liquid-displacement filter can't render. The buildGlass script overrides this
@@ -1314,9 +1314,11 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
   .lane-radio:nth-of-type(6):checked ~ .lane-cols .lane-panes .lane-pane:nth-child(6){display:block}
   .lane-mascot{float:inline-end;width:6.5rem;margin-inline-start:1rem;margin-block-end:.5rem}
   .lane-mascot[data-shot$="wedge-tailed-eagle.webp"]{width:9.5rem}
-  /* The float already clears the copy past the bird here; the desktop hang would
-     run the lorikeet's tail over the first link row. */
-  .lane-mascot[data-shot$="lorikeet.webp"]{margin-bottom:.5rem}
+  /* The float already clears the copy past the bird here; the desktop hangs (the
+     lorikeet's, pelican's and ibis's negative margins above) would run a tail over the
+     first link row or pull the bird out of the pane. Same specificity as those rules,
+     later in the file, so every lane mascot sits in flow on a phone. */
+  .lane-mascot[data-shot]{margin:0;margin-inline-start:1rem;margin-block-end:.5rem}
 }
 
 /* ── beat 4b: the lolly.work band ───────────────────────────────────────── */

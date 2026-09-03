@@ -364,6 +364,27 @@
       }
     },
     {
+      "token": "SCORM",
+      "name": "SCORM",
+      "category": "Document",
+      "dir": "out",
+      "reads": false,
+      "writes": true,
+      "roundTrips": false,
+      "features": [
+        "multi-file-bundle",
+        "audio",
+        "animation",
+        "provenance"
+      ],
+      "metadata": {
+        "reads": [],
+        "writes": [],
+        "preserves": "n/a",
+        "note": "The imsmanifest.xml carries the deck's title and the package identifier; the slide images and film inside keep whatever Content Credentials their exports carried."
+      }
+    },
+    {
       "token": "CSV",
       "name": "CSV",
       "category": "Data",
