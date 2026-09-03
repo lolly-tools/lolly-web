@@ -794,13 +794,24 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
       const blend = sel.dataset.docVoice === 'blend';
       const groups = new Map<string, SpeechVoiceInfo[]>();
       for (const v of list) { const k = v.lang || ''; (groups.get(k) ?? groups.set(k, []).get(k)!).push(v); }
-      let html = blend ? `<option value="">${escape(t('None'))}</option>` : '';
+      // Built with DOM calls, not markup: the names come from the bridge and never need
+      // to be a raw-HTML sink (primitive-guards R10).
+      const doc = sel.ownerDocument;
+      const option = (value: string, label: string): HTMLOptionElement => {
+        const o = doc.createElement('option');
+        o.value = value;
+        o.textContent = label;
+        return o;
+      };
+      sel.replaceChildren();
+      if (blend) sel.appendChild(option('', t('None')));
       for (const [lang, vs] of groups) {
-        const inner = vs.map((v) => `<option value="${escape(v.id)}">${escape(v.name)}</option>`).join('');
-        html += lang ? `<optgroup label="${escape(lang)}">${inner}</optgroup>` : inner;
+        const parent: HTMLElement = lang ? doc.createElement('optgroup') : sel;
+        if (lang) (parent as HTMLOptGroupElement).label = lang;
+        for (const v of vs) parent.appendChild(option(v.id, v.name));
+        if (lang) sel.appendChild(parent);
       }
-      if (keep && !list.some((v) => v.id === keep)) html += `<option value="${escape(keep)}">${escape(keep)}</option>`;
-      sel.innerHTML = html;
+      if (keep && !list.some((v) => v.id === keep)) sel.appendChild(option(keep, keep));
       sel.value = keep;
     }
   }

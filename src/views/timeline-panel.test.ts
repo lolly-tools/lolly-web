@@ -6913,3 +6913,31 @@ test('playOnce refuses a SECOND preview while one is running', async () => {
     await third;
   } finally { host.remove(); }
 });
+
+test("right-clicking a clip with a source file offers Download, and it saves the asset bytes under the asset name", async () => {
+  // Andy, 2026-09-03: make it easy to get a clip's audio, video or image out of the sequence.
+  const saved: Array<{ name: string; type: string }> = [];
+  const base = fakeHost().host as unknown as Record<string, unknown>;
+  const download = async (blob: Blob, name: string): Promise<void> => { saved.push({ name, type: blob.type }); };
+  const host = { ...base, export: { download } };
+  const realFetch = globalThis.fetch;
+  (globalThis as { fetch: unknown }).fetch = async () => ({ blob: async () => new Blob(['RIFF'], { type: 'audio/wav' }) });
+  const h = mount([
+    { id: 'a', start: 0, dur: 3, lane: 'seq', image: { id: 'user/tts/1', meta: { name: 'Take one' } } } as never,
+  ], 40, ADD_KINDS, { assetField: 'image', host });
+  try {
+    await frames(2);
+    rightClick(h.root.querySelector('.tl-clip[data-id="a"]')!);
+    const menu = openMenu('.tl-ctx-menu');
+    assert.ok(menu, 'a context menu opened');
+    assert.ok(menuLabels(menu).includes('Download'), 'the clip carries a source file, so Download is offered; got: ' + menuLabels(menu).join(', '));
+    const item = Array.from(menu!.querySelectorAll<HTMLElement>('.tl-menu-label')).find((n) => n.textContent === 'Download')!;
+    click(item.closest('button') ?? item);
+    await frames(4);
+    await new Promise((r) => setTimeout(r, 10));
+    assert.deepEqual(saved, [{ name: 'Take one.wav', type: 'audio/wav' }], "the asset name, the extension from its bytes");
+  } finally {
+    (globalThis as { fetch: unknown }).fetch = realFetch;
+    closeOverlays(); h.teardown();
+  }
+});

@@ -166,9 +166,6 @@ export interface TimelineHost {
    *  "Script a voiceover" button and the transcription arm of Generate subtitles.
    *  Feature-detected like `recorder`, never capability-gated. */
   speech?: SpeechAPI;
-  /** The shell's download door, for the clip menu's "Download" (Andy, 2026-09-03: make it
-   *  easy to get a clip's file out of the sequence). Feature-detected like `speech`. */
-  export?: { download(blob: Blob, filename: string): Promise<void> | void };
   /** The optional on-device background remover (v1.103). Not required to OFFER the clip
    *  context menu's "Remove background…" (the shared video-job dialog also has a model-free
    *  colour-key method), but carried on the host so the dialog can use the model method
@@ -2939,8 +2936,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     }
     // Rename: the second door onto the double-click inline editor. Needs a BAR to
     // anchor the input, so a scenery chip (no bar) does not offer it.
+    // Download: the clip's own source file, wherever the clip carries one - a bar, a
+    // scenery chip, an audio box alike (Andy, 2026-09-03).
+    if (canDownload(ctxId)) el.appendChild(menuItem(t('Download'), 'download', act(() => { void downloadClipAt(ctxId); })));
     if (cfg.labelField && bars.has(ctxId)) {
-      if (canDownload(ctxId)) el.appendChild(menuItem(t('Download'), 'download', act(() => { void downloadClipAt(ctxId); })));
       el.appendChild(menuItem(t('Rename'), 'tag', act(() => renameClip(ctxId))));
     }
     el.appendChild(menuItem(t('Delete'), 'trash', act(() => deleteBox(ctxId)), { danger: true }));
@@ -7361,13 +7360,14 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     if (refId && host.assets?.get) {
       try { live = await host.assets.get(refId); } catch { live = null; }
     }
-    const url = String(live?.url || ref?.url || '').trim();
+    const url = String(live?.url || '').trim();
     if (!url || !host.export?.download) { announce(t('Couldn’t find this clip’s source file')); return; }
     try {
       const blob = await (await fetch(url)).blob();
-      const raw = String(live?.name || ref?.name || refId.split('/').pop() || 'clip');
+      const meta = (live?.meta ?? ref?.meta) as Record<string, unknown> | undefined;
+      const raw = String((typeof meta?.name === 'string' && meta.name) || refId.split('/').pop() || 'clip');
       const base = raw.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'clip';
-      const name = /\.[a-z0-9]{2,5}$/i.test(base) ? base : `${base}.${extOfBlob(blob, live?.format || ref?.format)}`;
+      const name = /\.[a-z0-9]{2,5}$/i.test(base) ? base : `${base}.${extOfBlob(blob, live?.format)}`;
       await host.export.download(blob, name);
     } catch {
       announce(t('Couldn’t download this clip'));
