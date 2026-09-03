@@ -591,8 +591,18 @@ export function parseSequenceStage(node: HTMLElement): SequenceStage | null {
   const frames = stage.querySelectorAll
     ? [...stage.querySelectorAll<HTMLElement>('[data-pdf-page][data-t-start]')]
     : [];
+  // Sound INSIDE a timed page. A narration clip (plans/180) lives in its slide's page,
+  // on the seq lane, and an audio box paints nothing - it only sounds. The walk above
+  // stops at the page, so every narrated export was silent (2026-09-03). Timed audio
+  // boxes under a timed page join the walk as audio layers of their own, read from
+  // their own attributes; the page stays the one still it always was.
+  const soundInPages = frames.length > 0 && stage.querySelectorAll
+    ? [...stage.querySelectorAll<HTMLElement>('[data-pdf-page][data-t-start] .lolly-box[data-t-start]')]
+        .filter((b) => b.getAttribute?.('data-pdf-page') == null
+          && (hasClass(b, 'lolly-box-audio') || !!b.querySelector?.('[data-audio-src]')))
+    : [];
   const els = frames.length > 0
-    ? frames
+    ? [...frames, ...soundInPages]
     : (stage.querySelectorAll ? [...stage.querySelectorAll<HTMLElement>('.lolly-box')] : []);
   return { layers: els.map((el, i) => readLayer(el, i, totalMs)), totalMs };
 }

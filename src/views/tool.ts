@@ -3756,6 +3756,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           // settings. Absent means neither is drawn (plans/180 section 8).
           narration: design.narrationActions,
           fonts: design.fonts,
+          voices: host.speech?.voices ? () => host.speech!.voices() : undefined,
           fields: design.fields,
           // The panel skips its whole render while closed, and it is built DETACHED - so
           // without this it was constructed "open" and rebuilt its full property column on

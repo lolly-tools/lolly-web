@@ -1440,3 +1440,31 @@ test('seam: a clean composition is never written to, so the scope has nothing to
   clock.destroy();
   canvas.remove();
 });
+
+test('audio: a narration box inside a timed slide page sounds ONCE - the page does not place it again', async () => {
+  // Frames document: the slide page is a [data-t-start] host and so is the narration
+  // box it holds. Both are driven; only the box may claim the marker (Andy, 2026-09-03:
+  // every narrated slide spoke in two voices).
+  await withAudioCtx(async (a) => {
+    const { canvas } = stage(8000, []);
+    const art = canvas.querySelector('.artboard')!;
+    const page = dom.window.document.createElement('div');
+    page.className = 'lolly-frame-page';
+    page.setAttribute('data-pdf-page', '');
+    page.setAttribute('data-t-start', '0');
+    page.setAttribute('data-t-dur', '8000');
+    page.appendChild(box({ start: 400, dur: 5000, audio: 'narration.wav', lane: 'seq' }));
+    art.appendChild(page);
+    const q = frameQueue();
+    const clock = createSequenceClock({
+      canvasEl: canvas, raf: q.raf, caf: q.caf, now: () => 0,
+      loadAudio: async () => fakeBuffer(),
+    });
+    clock.play();
+    clock.seek(1000);
+    await settle();
+    assert.equal(a.live().length, 1, 'one voice: the box placed the clip, the page did not');
+    clock.destroy();
+    canvas.remove();
+  });
+});

@@ -678,10 +678,18 @@ export function createSequenceClock(opts: SequenceClockOpts): SequenceClock {
   // is BOUNCED through the same pitch-preserving stretcher the export runs
   // (plans/165 WP-7), then scheduled like any decoded track.
 
-  /** The audio source URL a box carries, or '' when it is not an audio box. */
+  /**
+   * The audio source URL a box carries, or '' when it is not an audio box. A marker
+   * counts only when THIS host is its nearest timed ancestor: in a frames document the
+   * slide page is a timed host too, and a narration box inside it is a timed host of
+   * its own, so the page used to place the same clip a second time and every narrated
+   * slide spoke in two voices (Andy, 2026-09-03). The box sounds; the page stays quiet.
+   */
   function audioSrcOf(el: HTMLElement): string {
     const m = el.matches?.('[data-audio-src]') ? el : el.querySelector?.('[data-audio-src]');
-    return m?.getAttribute('data-audio-src') || '';
+    if (!m) return '';
+    if (m !== el && m.closest('[data-t-start]') !== el) return '';
+    return m.getAttribute('data-audio-src') || '';
   }
 
   /** Everything that decides WHETHER and WHERE a box sounds. */

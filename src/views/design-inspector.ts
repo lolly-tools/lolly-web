@@ -87,6 +87,8 @@
  */
 import { t, tRaw } from '../i18n.ts';
 import { escape } from '../utils.ts';
+import { parseVoiceBlend, KOKORO_DEFAULT_VOICE } from '../../../../engine/src/speech-text.ts';
+import type { SpeechVoiceInfo } from '@lolly-tools/core/host-v1';
 import { icon } from '../lib/icons.ts';
 import type { IconName } from '../lib/icons.ts';
 import { colorFieldHtml, wireColorField, resolveColorVar, colorVarLabel } from '../components/color-field.ts';
@@ -117,7 +119,6 @@ const DOCK_ID = 'inspector';
  * engine decides what an empty setting means - so the id is spelled here rather than
  * pulling the whole speech module into this column's chunk for one string.
  */
-const NARRATION_VOICE_HINT = 'bf_lily';
 
 /**
  * The sections, in the order they are laid out. `reveal()` takes one of these.
@@ -172,6 +173,10 @@ export interface DesignInspectorOpts {
    * offering a button that cannot work.
    */
   narration?: NarrationActions;
+  /** The speech bridge's voice list, for the narration voice picker (Andy, 2026-09-03:
+   *  "the voice should be a select like in the utility and Script audio"). Absent on a
+   *  host with no speech bridge; the picker then holds only the current value. */
+  voices?: () => Promise<SpeechVoiceInfo[]>;
   fonts?: InspectorFonts;
   /** The manifest's `boxes` field declarations - the source of every select's options. */
   fields?: unknown[];
@@ -374,6 +379,7 @@ const unwrapColor = (v: ColorFieldValue): string => (v && typeof v === 'object' 
 
 export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorHandle {
   const { canvasEl, model, selection, artboard, actions, fonts, narration } = opts;
+  let voiceList: SpeechVoiceInfo[] | null = null;   // the bridge's voices, fetched once per column
   const cfg = model.cfg as Cfg;
   const frame = model.frame as InspFrameCfg | null;
   const fieldDefs = (opts.fields || []) as ChoiceField[];
@@ -746,6 +752,59 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
       + '</div>';
   };
 
+  /**
+   * The narration voice as PICKERS (Andy, 2026-09-03: "like the utility and the Script
+   * audio dialog"), not the text field plan 180 first shipped: a voice, an optional
+   * second voice to blend with, and that voice's weight, composed into the one
+   * `narrationVoice` string the engine reads (`a+b:w`, plans/181 section 4). The
+   * options arrive from the speech bridge once the column is built (`fillVoiceOptions`);
+   * until then each picker holds only the value the document has.
+   */
+  function docVoiceRows(): string {
+    const cur = String(model.getInput('narrationVoice') ?? '').trim();
+    const parts = parseVoiceBlend(cur || KOKORO_DEFAULT_VOICE);
+    const main = parts[0]?.id || KOKORO_DEFAULT_VOICE;
+    const other = parts[1]?.id || '';
+    const weight = parts[1] ? Math.round(parts[1].w * 100) : 30;
+    const opt = (id: string): string => `<option value="${escape(id)}" selected>${escape(voiceNameOf(id))}</option>`;
+    return `<div class="fc-row"><span>${t('Voice')}</span><select class="field-select" data-doc-voice="main" aria-label="${escape(t('Voice'))}">${opt(main)}</select></div>`
+      + `<div class="fc-row"><span>${t('Blend with')}</span><select class="field-select" data-doc-voice="blend" aria-label="${escape(t('Blend with'))}">`
+      + `<option value=""${other ? '' : ' selected'}>${escape(t('None'))}</option>${other ? opt(other) : ''}</select></div>`
+      + (other
+        ? `<label class="fc-row fc-insp-text"><span>${t('Second voice weight')}</span><input type="number" class="field-input" data-doc-voice="weight" min="5" max="95" step="5" value="${weight}" aria-label="${escape(t('Second voice weight'))}"></label>`
+        : '');
+  }
+
+  function voiceNameOf(id: string): string {
+    return voiceList?.find((v) => v.id === id)?.name || id;
+  }
+
+  /** Fill the voice pickers from the bridge's list, grouped by language, keeping the
+   *  value each holds. The list is fetched once per column and reused on rebuilds. */
+  async function fillVoiceOptions(sels: NodeListOf<HTMLSelectElement>): Promise<void> {
+    if (!opts.voices) return;
+    if (!voiceList) {
+      try { voiceList = await opts.voices(); } catch { voiceList = []; }
+    }
+    const list = voiceList;
+    if (!list.length) return;
+    for (const sel of sels) {
+      if (!sel.isConnected) continue;
+      const keep = sel.value;
+      const blend = sel.dataset.docVoice === 'blend';
+      const groups = new Map<string, SpeechVoiceInfo[]>();
+      for (const v of list) { const k = v.lang || ''; (groups.get(k) ?? groups.set(k, []).get(k)!).push(v); }
+      let html = blend ? `<option value="">${escape(t('None'))}</option>` : '';
+      for (const [lang, vs] of groups) {
+        const inner = vs.map((v) => `<option value="${escape(v.id)}">${escape(v.name)}</option>`).join('');
+        html += lang ? `<optgroup label="${escape(lang)}">${inner}</optgroup>` : inner;
+      }
+      if (keep && !list.some((v) => v.id === keep)) html += `<option value="${escape(keep)}">${escape(keep)}</option>`;
+      sel.innerHTML = html;
+      sel.value = keep;
+    }
+  }
+
   // ── sections ────────────────────────────────────────────────────────────────
 
   function documentBody(): string {
@@ -774,8 +833,8 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
   function narrationDocRows(): string {
     if (!narration) return '';
     return `<p class="fc-insp-hint">${t('Narration')}</p>`
-      + docTextRow(t('Voice'), 'narrationVoice', NARRATION_VOICE_HINT)
-      + `<p class="fc-insp-hint">${t('English voices only. Blend two with +.')}</p>`
+      + docVoiceRows()
+      + `<p class="fc-insp-hint">${t('English voices only.')}</p>`
       + docNumRow(t('Speed'), 'narrationSpeed', 1, { min: 0.5, max: 2, step: 0.05, precision: 2 })
       // The ranges are the MANIFEST's own (community/design/tool.json), so this column
       // cannot offer a number the runtime would refuse.
@@ -1314,6 +1373,21 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
         model.setInput(id, inp.dataset.kind === 'bool' ? inp.checked : inp.value.trim());
       });
     });
+
+    // The narration voice pickers (docVoiceRows): three controls, one top-level input.
+    const voiceSels = scroll.querySelectorAll<HTMLSelectElement>('select[data-doc-voice]');
+    if (voiceSels.length) {
+      const commitVoice = (): void => {
+        const main = (scroll.querySelector<HTMLSelectElement>('select[data-doc-voice="main"]')?.value || KOKORO_DEFAULT_VOICE).trim();
+        const blend = (scroll.querySelector<HTMLSelectElement>('select[data-doc-voice="blend"]')?.value || '').trim();
+        const wEl = scroll.querySelector<HTMLInputElement>('input[data-doc-voice="weight"]');
+        const w = wEl ? clampN(wEl.value, 30, 5, 95) : 30;
+        model.setInput('narrationVoice', blend && blend !== main ? `${main}+${blend}:${(w / 100).toFixed(2)}` : main);
+      };
+      voiceSels.forEach((sel) => sel.addEventListener('change', commitVoice));
+      scroll.querySelector<HTMLInputElement>('input[data-doc-voice="weight"]')?.addEventListener('change', commitVoice);
+      void fillVoiceOptions(voiceSels);
+    }
 
     scroll.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input[data-fld], textarea[data-fld]').forEach((inp) => {
       const kind = inp.dataset.kind;

@@ -166,6 +166,9 @@ export interface TimelineHost {
    *  "Script a voiceover" button and the transcription arm of Generate subtitles.
    *  Feature-detected like `recorder`, never capability-gated. */
   speech?: SpeechAPI;
+  /** The shell's download door, for the clip menu's "Download" (Andy, 2026-09-03: make it
+   *  easy to get a clip's file out of the sequence). Feature-detected like `speech`. */
+  export?: { download(blob: Blob, filename: string): Promise<void> | void };
   /** The optional on-device background remover (v1.103). Not required to OFFER the clip
    *  context menu's "Remove background…" (the shared video-job dialog also has a model-free
    *  colour-key method), but carried on the host so the dialog can use the model method
@@ -2937,6 +2940,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // Rename: the second door onto the double-click inline editor. Needs a BAR to
     // anchor the input, so a scenery chip (no bar) does not offer it.
     if (cfg.labelField && bars.has(ctxId)) {
+      if (canDownload(ctxId)) el.appendChild(menuItem(t('Download'), 'download', act(() => { void downloadClipAt(ctxId); })));
       el.appendChild(menuItem(t('Rename'), 'tag', act(() => renameClip(ctxId))));
     }
     el.appendChild(menuItem(t('Delete'), 'trash', act(() => deleteBox(ctxId)), { danger: true }));
@@ -7329,6 +7333,47 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * the panel to make blind. Creating the asset (and letting the user swap it in from the
    * asset picker) is the honest, non-destructive half.
    */
+  /** Does this clip carry a source file to download - an audio, video or image ref? */
+  function canDownload(id: string): boolean {
+    const ref = refOf(id);
+    return !!(ref && typeof ref.id === 'string' && ref.id) && !!host.export?.download;
+  }
+
+  /** The file extension a downloaded clip gets, from its bytes' type first. */
+  function extOfBlob(blob: Blob, format: string | undefined): string {
+    const byType: Record<string, string> = {
+      'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/ogg': 'ogg', 'audio/flac': 'flac',
+      'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov',
+      'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif', 'image/svg+xml': 'svg', 'image/avif': 'avif',
+    };
+    return byType[blob.type] || (format && /^[a-z0-9]{2,5}$/i.test(format) ? format.toLowerCase() : 'bin');
+  }
+
+  /**
+   * "Download": the clip's own source bytes, by its permanent asset id - re-resolved
+   * like the subtitle and matte paths, so a stale proxy URL never decides. The name is
+   * the asset's own, with an extension from the bytes (Andy, 2026-09-03).
+   */
+  async function downloadClipAt(id: string): Promise<void> {
+    const ref = refOf(id);
+    const refId = typeof ref?.id === 'string' ? ref.id : '';
+    let live: AssetRef | null = null;
+    if (refId && host.assets?.get) {
+      try { live = await host.assets.get(refId); } catch { live = null; }
+    }
+    const url = String(live?.url || ref?.url || '').trim();
+    if (!url || !host.export?.download) { announce(t('Couldn’t find this clip’s source file')); return; }
+    try {
+      const blob = await (await fetch(url)).blob();
+      const raw = String(live?.name || ref?.name || refId.split('/').pop() || 'clip');
+      const base = raw.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'clip';
+      const name = /\.[a-z0-9]{2,5}$/i.test(base) ? base : `${base}.${extOfBlob(blob, live?.format || ref?.format)}`;
+      await host.export.download(blob, name);
+    } catch {
+      announce(t('Couldn’t download this clip'));
+    }
+  }
+
   async function videoMatteAt(id: string): Promise<void> {
     if (!canVideoMatte(id)) { announce(t('This clip has no video to process')); return; }
     const ref = refOf(id);

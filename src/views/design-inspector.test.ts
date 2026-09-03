@@ -574,7 +574,7 @@ test('with no narration port the Present section keeps the notes and grows no bu
   h.select(['f1']);
   assert.ok(h.el.querySelector('[data-rows="present"] textarea[data-fld="notes"]'));
   assert.equal(h.el.querySelector('[data-act="narrate"]'), null, 'a button that cannot work is not offered');
-  assert.equal(h.el.querySelector('[data-doc="narrationVoice"]'), null, 'and the document settings stay away too');
+  assert.equal(h.el.querySelector('[data-doc-voice], [data-doc="narrationVoice"]'), null, 'and the document settings stay away too');
   h.handle.destroy();
 });
 
@@ -582,11 +582,16 @@ test('the document narration settings write TOP-LEVEL inputs, never the selected
   const n = narrationFake();
   const h = mount(BOXES, { narration: n.port });
   h.select([]);   // the Document section is what an empty selection shows
-  const voice = row(h, 'input[data-doc="narrationVoice"]') as HTMLInputElement;
-  assert.equal(voice.placeholder, 'bf_lily', 'the engine default, as a hint');
-  voice.value = ' af_heart+bf_emma ';
-  fire(voice, 'change');
-  assert.deepEqual(h.setInputs, [['narrationVoice', 'af_heart+bf_emma']], 'trimmed, and a blend is legal');
+  // The voice is a PICKER (Andy, 2026-09-03), holding the engine default until the
+  // bridge's list arrives; a second picker composes a blend into the one input.
+  const voice = row(h, 'select[data-doc-voice="main"]') as HTMLSelectElement;
+  assert.equal(voice.value, 'bf_lily', 'the engine default');
+  const blend = row(h, 'select[data-doc-voice="blend"]') as HTMLSelectElement;
+  assert.equal(blend.value, '', 'no blend to begin with');
+  blend.appendChild(new (h.el.ownerDocument.defaultView as typeof globalThis).Option('Heart', 'af_heart'));
+  blend.value = 'af_heart';
+  fire(blend, 'change');
+  assert.deepEqual(h.setInputs, [['narrationVoice', 'bf_lily+af_heart:0.30']], 'a blend, composed the way the engine reads it');
   assert.deepEqual(h.commits, [], 'no box field was written');
 
   typeNum(h, 'narrationLeadInMs', '250');
