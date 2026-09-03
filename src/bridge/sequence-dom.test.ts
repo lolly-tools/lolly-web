@@ -39,6 +39,9 @@ const {
   sequenceStageOf, sequenceDurationMs, OFF_CLASS, SHOT_CLASS, BORROW_ATTR,
   releaseShotBorrow,
 } = await import('./sequence-dom.ts');
+// The rest pose a still export is taken at (plans/179 M4) - the one definition, shared
+// with the CLI. Read here so the still and the composer are pinned against each other.
+const { restMsOf } = await import('../lib/motion-model.ts');
 
 /**
  * A two-clip magnetic row: `a` [0,1000) with a 400ms "rise" in and an AUTHORED rotation,
@@ -497,4 +500,147 @@ test('a TILTED scenery box on an UNTIMED board survives the clock - visible, pos
     assert.match(tf, /^matrix3d\(/, 'posed through the fold');
     assert.ok(!tf.includes('perspective('), 'and the baked prefix is stripped - one tilt, not two');
   } finally { restoreSequenceTime(root); }
+});
+
+// ── the rest pose: what a per-artboard STILL is photographed at (plans/179 M4) ──
+
+test('a still page composes at its rest pose - every entrance finished, nothing mid-fade', () => {
+  // The bug this pins: a per-artboard export lifted `.seq-off` so each page was on
+  // stage, but never said WHEN to photograph it - so a page whose boxes fade in over
+  // 400 ms exported as a page of half-transparent boxes.
+  const root = dom.window.document.createElement('div');
+  root.innerHTML = `
+    <div class="lolly-frame-page" data-pdf-page data-sequence data-seq-ms="4000">
+      <div class="lolly-box" data-box-id="in" data-t-start="0" data-t-enter="rise" data-t-enter-ms="400"
+           style="left:0px;top:0px;width:100px;height:50px"></div>
+      <div class="lolly-box" data-box-id="late" data-t-start="600" data-t-enter="fade" data-t-enter-ms="500"
+           style="left:0px;top:0px;width:100px;height:50px"></div>
+      <div class="lolly-box" data-box-id="split" data-t-start="0" data-t-enter="fade" data-t-enter-ms="400"
+           data-t-split="word" data-t-stagger="120"
+           style="left:0px;top:0px;width:300px;height:50px"><span class="lly-u">a</span> <span class="lly-u">b</span> <span class="lly-u">c</span></div>
+    </div>`;
+  const page = root.firstElementChild as HTMLElement;
+  const before = snapshot(page);
+
+  // The LAST arrival wins: the late box finishes at 600 + 500, past the split tail
+  // (400 + two 120 ms deals = 640) and past the first box's 400.
+  assert.equal(restMsOf(page), 1100);
+
+  // At t = 0 the page is mid-entrance, which is exactly what a still must not catch.
+  applySequenceTime(page, 0);
+  assert.match(box(page, 'in').style.transform, /translate/, 'the rise is still travelling at t=0');
+  assert.equal(box(page, 'in').style.opacity, '0');
+  assert.ok(off(box(page, 'late')), 'and the late box has not arrived at all');
+  restoreSequenceTime(page);
+
+  applySequenceTime(page, restMsOf(page));
+  try {
+    for (const id of ['in', 'late', 'split']) {
+      const el = box(page, id);
+      assert.ok(!off(el), `${id} is on screen at rest`);
+      assert.equal(el.style.transform, '', `${id} has no entrance transform left`);
+      assert.ok(el.style.opacity === '' || Number(el.style.opacity) >= 0.999, `${id} is opaque: ${el.style.opacity}`);
+    }
+    // The split tail reaches the UNITS, not just the box: the last word of a staggered
+    // line is the thing that arrives last, and it has to be there too.
+    for (const u of [...page.querySelectorAll<HTMLElement>('.lly-u')]) {
+      assert.ok(u.style.opacity === '' || Number(u.style.opacity) >= 0.999, `unit opaque: ${u.style.opacity}`);
+    }
+  } finally { restoreSequenceTime(page); }
+  assert.equal(snapshot(page), before, 'and the page is handed back exactly as it was found');
+});
+
+test('what never settles does NOT drag the still back to its own beginning', () => {
+  // A keyframe track and a hold effect are cyclical or continuous: there is no "after" to
+  // photograph, so they used to be a CEILING on the page - the earliest of their starts
+  // won, and a scenery decoration carries no start at all, i.e. 0. One gently pulsing
+  // shape therefore decided that every other box on the slide was photographed at t = 0,
+  // mid-entrance, and the exported artboard came out blank. One still is one moment, and
+  // the moment belongs to the boxes that do settle.
+  const root = dom.window.document.createElement('div');
+  root.innerHTML = `
+    <div class="lolly-frame-page" data-pdf-page data-sequence data-seq-ms="4000">
+      <div class="lolly-box" data-box-id="in" data-t-start="0" data-t-enter="rise" data-t-enter-ms="400"
+           style="left:0px;top:0px;width:100px;height:50px"></div>
+      <div class="lolly-box" data-box-id="kf" data-t-kf="t0_x0*t2000_x200"
+           style="left:0px;top:0px;width:100px;height:50px"></div>
+      <div class="lolly-box" data-box-id="hold" data-t-start="0" data-t-hold="pulse" data-t-hold-rate="1"
+           style="left:0px;top:0px;width:100px;height:50px"></div>
+    </div>`;
+  const page = root.firstElementChild as HTMLElement;
+  const before = snapshot(page);
+  assert.equal(restMsOf(page), 400, 'the rise still decides the moment; the scenery does not');
+
+  applySequenceTime(page, restMsOf(page));
+  try {
+    const rise = box(page, 'in');
+    assert.equal(rise.style.transform, '', 'the entrance has finished');
+    assert.ok(rise.style.opacity === '' || Number(rise.style.opacity) >= 0.999, 'and is opaque');
+  } finally { restoreSequenceTime(page); }
+
+  // Both of the never-settling boxes ARE moving - the page below is a pose, not an inert
+  // board, which is why one of them must not be allowed to speak for the whole page.
+  applySequenceTime(page, 900);
+  try {
+    assert.match(box(page, 'kf').style.transform, /translate\(7\d(\.\d+)?px/, 'the track is part way along');
+    assert.match(box(page, 'hold').style.transform, /scale\(0\.9\d+\)/, 'and the pulse is part way through');
+  } finally { restoreSequenceTime(page); }
+  assert.equal(snapshot(page), before);
+});
+
+test('the per-artboard still is composed on the DOCUMENT, drawn whole, and refuses depth', () => {
+  // The three rules the still export (views/tool-actions.ts) depends on, pinned against
+  // the real applier because each one was got wrong by composing a single PAGE:
+  //
+  //   1. the frames-as-scenes DEPTH OPT-OUT is latched from the `[data-pdf-page]`
+  //      elements, which are not descendants of any one page - so a page-scoped session
+  //      projected a lifted box through a camera the preview and the compositor refuse;
+  //   2. `data-seq-ms` is stamped on the `.lolly-frames` root, so a page-scoped session
+  //      measured every open-ended box against "no sequence at all";
+  //   3. the applier HIDES whatever is outside its window - inside the page it was asked
+  //      to pose - so a still of a slide with staggered bullets came out showing only the
+  //      last one. The exporter keeps the pose and lifts the hiding again.
+  const root = dom.window.document.createElement('div');
+  root.innerHTML = `
+    <div class="lolly-frames" data-seq-ms="8000">
+      <div class="lolly-frame-page" data-pdf-page data-frame-id="f1" data-t-start="0" data-t-dur="4000"
+           data-t-lane="seq" style="position:absolute;left:0px;top:0px;width:800px;height:600px">
+        <div class="lolly-box" data-box-id="early" data-t-start="0" data-t-dur="1000"
+             data-t-enter="fade" data-t-enter-ms="400" style="left:0px;top:0px;width:100px;height:50px"></div>
+        <div class="lolly-box" data-box-id="late" data-t-start="1000" data-t-dur="1000"
+             data-t-enter="fade" data-t-enter-ms="400" style="left:0px;top:0px;width:100px;height:50px"></div>
+        <div class="lolly-box" data-box-id="lift" data-t-start="0" data-t-z="120"
+             style="left:0px;top:0px;width:100px;height:50px"></div>
+      </div>
+      <div class="lolly-frame-page" data-pdf-page data-frame-id="f2" data-t-start="4000" data-t-dur="4000"
+           data-t-lane="seq" style="position:absolute;left:1000px;top:0px;width:800px;height:600px"></div>
+    </div>`;
+  const page = pageAt(root, 0);
+  const before = snapshot(page);
+
+  assert.equal(sequenceDurationMs(root), 8000, 'the document knows its own length…');
+  assert.equal(sequenceDurationMs(page), 0, '…and a single page does not - rule 2');
+
+  // The three steps the exporter runs, per page.
+  const rest = restMsOf(page);
+  assert.equal(rest, 1400, 'the last enter on this page finishes at 1000 + 400');
+  applySequenceTime(root, rest);
+  for (const o of [...root.querySelectorAll<HTMLElement>(`.${OFF_CLASS}`)]) o.classList.remove(OFF_CLASS);
+  try {
+    for (const id of ['early', 'late', 'lift']) {
+      assert.ok(!off(box(page, id)), `${id} is drawn - a still of an artboard draws all of it`);
+    }
+    assert.equal(box(page, 'lift').style.transform, '',
+      'a frames document opts out of depth, so nothing is projected - rule 1');
+  } finally { restoreSequenceTime(root); }
+  assert.equal(snapshot(page), before, 'and the page is handed back exactly as it was found');
+
+  // The control: hand the SAME composition a single page and the opt-out is bypassed,
+  // because the elements that declare it are outside the subtree.
+  applySequenceTime(page, rest);
+  try {
+    assert.notEqual(box(page, 'lift').style.transform, '',
+      'page-scoped, the lift IS projected - which is the divergence rule 1 exists to stop');
+  } finally { restoreSequenceTime(page); }
+  assert.equal(snapshot(page), before);
 });

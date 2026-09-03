@@ -50,6 +50,17 @@ export const TRANSITION_KINDS = Object.freeze(Object.keys(TRANSITIONS) as Transi
 export const DEFAULT_TRANSITION: TransitionKind = 'none';
 
 /**
+ * How long an enter or exit runs when the box DECLARES a kind but no length, ms.
+ *
+ * Every reader already agreed on 400: the Design hook writes `data-t-enter-ms="400"` for
+ * an unset field, bridge/sequence-dom.ts reads the attribute with the same fallback, and
+ * bridge/sequence-plan.ts re-exports this constant. It lives here because a reader that
+ * defaulted it to 0 instead - the dwell solver did - sizes a narrated slide 400 ms short
+ * and starts its exit under the last words (plans/180 T2, T3).
+ */
+export const DEFAULT_TRANSITION_MS = 400;
+
+/**
  * Prototype-safe membership test: hasOwnProperty, never `TRANSITIONS[v]` - a bare
  * lookup answers truthy for 'constructor'/'toString'/'valueOf' and would let inherited
  * Object.prototype keys through as valid kinds.

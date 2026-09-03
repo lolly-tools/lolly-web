@@ -80,6 +80,19 @@ import {
   authoredStyleOf, borrowAuthoredPose,
   type SequenceClock,
 } from './sequence-clock.ts';
+// The "no clock = every box shows" half of the same contract (plans/179 T2). Taken
+// straight from the applier rather than through sequence-clock's re-export list,
+// because it is not the clock's: it holds down EVERY writer over the canvas, which is
+// what makes an export taken while the panel is shut nest inside the hold.
+// `beginAuthoredDom` / `createSequenceTime` / `DRIVE_FPS` come from the same module for
+// `playOnce` below: a one-shot preview is a second writer over a stage the panel's own
+// clock may already be posing, so it stands that clock down first and composes against
+// the AUTHORED styles - exactly the discipline `driveSequenceTime` follows.
+import { beginAuthoredDom, createSequenceTime, DRIVE_FPS, releaseSequenceDom } from '../bridge/sequence-dom.ts';
+// The ONE motion model (plans/179 M4). How a box appears is DERIVED from fields it
+// already carries, and the patch that changes it is written in ONE place, so the panel,
+// the presenter and the exports can never disagree about what a box means.
+import { appearModeOf, resetAppearMemory, setAppear, type AppearIntent, type AppearMode } from '../lib/motion-model.ts';
 import {
   DEFAULT_CLIP_S, MAX_TIME_S, MIN_DUR, MIN_TRIM_BAR_PX, ONION_MAX_STEPS,
   boxTiming, deriveDuration, edgeZonePx, fmtDelta, fmtDur, fmtTime, indexOfId, isTimed,
@@ -107,10 +120,13 @@ import { integratedLoudness } from '../../../../engine/src/audio-loudness.ts';
 import { FX_PRESETS, parseFxChain, serializeFxChain } from '../../../../engine/src/audio-fx.ts';
 import { clipGainValueAt, type VolumeKey } from '../bridge/audio-envelope.ts';
 import { captionGroup, cueSpansOnTimeline, isCaptionGroup, transcriptWordsOf, ttsWordsOf } from './timeline-captions.ts';
+// The group predicate only (plans/180): a narration clip stores no name of its own, so
+// the row's word is translated at paint time rather than written into the document.
+import { isNarrationGroup } from '../lib/narration.ts';
 // Transcript-driven editing (plans/174): delete a row cuts that media, strike a
 // row greys it. All arithmetic lives in the pure transcript-edit.ts; this panel
 // is opened from here so it can reuse this module's getBoxes/write/clock/cfg.
-import { openTranscriptPanel } from './transcript-panel.ts';
+import { openTranscriptPanel, type TranscriptTtsMeta } from './transcript-panel.ts';
 import { removedSpansTimeline, originalToEdited, editedToOriginal } from './transcript-edit.ts';
 // The transcription rung as a background job (plans/124 section 9, WP-F): the
 // consent sheet enqueues and closes, the global toast owns progress and cancel,
@@ -241,7 +257,17 @@ export interface TimelinePanelOpts {
   runtime: TimelineRuntime;
   host: TimelineHost;
   blockId: string;
-  cfg: TimeCfg;
+  /**
+   * The canvas time model, plus ONE name that is not a timing field at all.
+   *
+   * `frameTransitionField` is `canvas.frameTransitionField` (plans/179 M4): the FRAME
+   * sub-field carrying that slide's own transition to the next one. It is named here on
+   * the same progressive-capability terms as every optional field in `TimeCfg` - present,
+   * and a timeline edit to a frame's enter/exit stamps it 'custom' so nothing derives
+   * over a pair the author has just set by hand; absent (every tool but Design), and the
+   * panel writes no such field, because the manifest never declared one.
+   */
+  cfg: TimeCfg & { frameTransitionField?: string };
   getBoxes(): Box[];
   /** The free-canvas single write path - the ONLY way this module touches the model. */
   commit(next: Box[]): void;
@@ -702,6 +728,175 @@ function animateSummary(enter: unknown, exit: unknown): string[] {
   // ONE chip, not two: `setSummary` draws a separator rule between chips, and a single
   // reading split across two of them would read as two facts.
   return parts.length ? [parts.join(CHIP_SEP)] : [];
+}
+
+/**
+ * The PRESET TOKEN a stored keyframe ease means, or the token itself when it is a curve
+ * of its own (plans/179 M4).
+ *
+ * The keyframe wire has more than one spelling for the same curve: the engine's adapters
+ * accept a preset token, a preset NAME and a raw `cubic-bezier`, and normalise on the way
+ * in - so a track can legitimately carry `eb(0.4)(0)(0.2)(1)`, which is `es`, which is
+ * Smooth. This is the read-side normalisation that makes the ease picker say so. Held to
+ * the engine's own two answers - the preset name, then the CSS curve - so this can never
+ * name a curve the engine would not.
+ *
+ * A token the grammar cannot read at all therefore resolves to the curve the evaluator
+ * will really run it as (`kfEaseCss` falls back to the default ease), rather than to a
+ * "Custom" row naming a curve nothing will draw.
+ */
+function kfEasePreset(ease: string): string {
+  if (!ease || ease === KF_HOLD_EASE) return ease;
+  const name = kfEaseName(ease);
+  const css = name ? '' : kfEaseCss(ease);
+  for (const tok of KF_EASE_TOKENS) {
+    if (name ? kfEaseName(tok) === name : kfEaseCss(tok) === css) return tok;
+  }
+  return ease;
+}
+
+/**
+ * The three PRESENTER-ONLY entrance attributes, paired with the timeline names they
+ * stand in for (plans/179 M4, spec 1b).
+ *
+ * A box that appears "with the slide" or "on click" carries no timing, so the tool's
+ * hook may not stamp `data-t-enter` on it - the video compositor reads that name off
+ * every `.lolly-box` and widening it would change what a render draws. It stamps
+ * `data-pr-*` instead, and present-mode copies them onto the `data-t-*` names per slide
+ * activation. The preview does the same copy for the length of one ramp, so the majority
+ * of a deck's boxes - every untimed one - can be previewed at all.
+ */
+const PR_ENTER_ATTRS: ReadonlyArray<readonly [string, string]> = [
+  ['data-pr-enter', 'data-t-enter'],
+  ['data-pr-enter-ms', 'data-t-enter-ms'],
+  ['data-pr-enter-ease', 'data-t-enter-ease'],
+];
+
+/** The entrance kind this element would play, under either spelling. */
+function enterKindOf(el: HTMLElement | null | undefined): string | null {
+  return el?.getAttribute?.('data-t-enter') ?? el?.getAttribute?.('data-pr-enter') ?? null;
+}
+
+/**
+ * Is there an entrance on this element for {@link playOnce} to play?
+ *
+ * ONE rule, shared by the button that offers the preview and the function that runs it,
+ * so a control can never be drawn for a motion nothing would show. A cut is not an
+ * entrance: there is nothing to watch, which is why 'none' answers no.
+ *
+ * BOTH spellings, because the preview's whole audience is boxes that carry the
+ * presenter-only one (see {@link PR_ENTER_ATTRS}): asking for `data-t-enter` alone hid
+ * the button from every slide-deck box - the majority case, and the one where there is
+ * no other way to see the motion short of entering present mode - and offered it only on
+ * timeline clips.
+ */
+export function canPlayOnce(el: HTMLElement | null | undefined): boolean {
+  const enter = enterKindOf(el);
+  return isTransitionKind(enter) && enter !== 'none';
+}
+
+/**
+ * One preview at a time, across every surface that runs one.
+ *
+ * A second press while a ramp is running opens a SECOND session over the same root; the
+ * newer one suspends the older, and when the older finishes its `restore()` strips
+ * `seq-off` from every box on the stage - so everything that has not started yet flashes
+ * on screen for a frame and is hidden again on the next tick. The navigator's chip
+ * already refused a second press for this reason; the guard belongs here, where both
+ * doors meet.
+ */
+let previewRunning = false;
+
+/**
+ * Play ONE element's own entrance once, over `ms`, and hand the DOM straight back
+ * (plans/179 M4).
+ *
+ * The preview a play button beside Enter runs, and the same one the navigator's slide
+ * transition chip runs - which is why it is exported rather than closed over: two
+ * surfaces previewing motion two ways is how they start disagreeing about what the
+ * motion is. Nothing here decides what the entrance looks like; the applier reads that
+ * off the element's own `data-t-*` attributes, so what plays is what a render plays.
+ *
+ * THREE rules, each taken from `driveSequenceTime` rather than re-derived:
+ *   • the panel's live clock is stood down first (`beginAuthoredDom`), or this session
+ *     would capture the pose the playhead is holding and treat it as authored;
+ *   • setTimeout against a wall clock, never rAF - a backgrounded tab stops rAF dead and
+ *     would strand the element mid-entrance, which is the one state it must never be
+ *     left in;
+ *   • `restore()` runs in a `finally`, so a throw mid-ramp still gives the canvas back.
+ *
+ * The session composes over a ROOT and walks its descendants, so the root has to be an
+ * ancestor of `el` - `el` itself would find nothing to pose. An element with no entrance
+ * (see {@link canPlayOnce}) has nothing to play, and this resolves without touching it.
+ *
+ * ATTRIBUTES are written, and only where they are missing: the applier walks
+ * `[data-t-start]` (and the depth/keyframe attributes), so an element carrying an enter
+ * and no start - a deck's artboard that has never been placed in order, which is what the
+ * navigator's transition chip previews - is not in its set at all. A `data-t-start="0"`
+ * is stamped for the length of the ramp, and so is the `data-t-*` spelling of a
+ * presenter-only entrance ({@link PR_ENTER_ATTRS}), which is the only name the applier
+ * reads. All of them come off again AFTER `restore()`, which needs the element still in
+ * the set to hand it back. Absent stays absent.
+ */
+export function playOnce(
+  el: HTMLElement | null | undefined,
+  ms: number,
+  o: { now?: () => number; schedule?: (fn: () => void, delay: number) => () => void } = {},
+): Promise<void> {
+  const dur = Math.max(0, Math.round(finite(ms, 0)));
+  if (!el || !dur || previewRunning || !canPlayOnce(el)) return Promise.resolve();
+  // The presenter-only names, borrowed onto the timeline ones for the ramp. Only where
+  // the timeline name is absent: a box carrying both is a timed box, and its own timing
+  // is the truth.
+  const borrowed: string[] = [];
+  for (const [from, to] of PR_ENTER_ATTRS) {
+    const v = el.getAttribute(from);
+    if (v == null || el.hasAttribute(to)) continue;
+    el.setAttribute(to, v);
+    borrowed.push(to);
+  }
+  const hadStart = el.hasAttribute('data-t-start');
+  const root = (el.closest?.('[data-sequence]') ?? el.parentElement ?? el) as HTMLElement;
+  // WHERE the entrance is, on the sequence's own clock: a box that starts at 12s plays
+  // its entrance at 12s. Ramping from 0 would show the rest of the slide instead.
+  const start = hadStart ? finite(el.getAttribute('data-t-start'), 0) : 0;
+  if (!hadStart) el.setAttribute('data-t-start', '0');
+  const now = o.now ?? (typeof performance !== 'undefined' && performance.now
+    ? () => performance.now() : () => Date.now());
+  const schedule = o.schedule ?? ((fn: () => void, delay: number) => {
+    const h = setTimeout(fn, delay);
+    return () => clearTimeout(h);
+  });
+  const step = 1000 / DRIVE_FPS;
+  previewRunning = true;
+  const release = beginAuthoredDom(root);
+  const session = createSequenceTime(root);
+  return new Promise<void>((resolve) => {
+    const t0 = now();
+    let cancel: (() => void) | null = null;
+    const finish = (): void => {
+      if (cancel) { cancel(); cancel = null; }
+      try { session.restore(); } finally {
+        // AFTER the restore, never before: the applier finds the element by these
+        // attributes, so removing them first would leave the pose composed on it forever.
+        if (!hadStart) el.removeAttribute('data-t-start');
+        for (const name of borrowed) el.removeAttribute(name);
+        release();
+        previewRunning = false;
+        resolve();
+      }
+    };
+    const tick = (): void => {
+      cancel = null;
+      const t = now() - t0;
+      // One bad frame never strands the element: the ramp keeps going and the finally
+      // below still hands the DOM back.
+      try { session.apply(start + Math.min(t, dur)); } catch { /* keep going */ }
+      if (t >= dur) { finish(); return; }
+      cancel = schedule(tick, step);
+    };
+    tick();
+  });
 }
 
 /** Seconds → panel pixels at the current zoom. */
@@ -1210,9 +1405,19 @@ let groupBodySeq = 0;
 export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   const { stageEl, canvasEl, runtime, host, blockId, cfg, getBoxes, commit, selection, onDirty, reserve } = opts;
   const addKinds: TimelineAddKind[] = Array.isArray(opts.addKinds) ? opts.addKinds.filter((k) => k && k.id) : [];
+  // A new document: the numbers the Appears control remembers are keyed by row id, and an
+  // id is only unique inside one document. See `resetAppearMemory`.
+  resetAppearMemory();
 
   let open = false;
   let disposed = false;
+  /**
+   * The hold taken over the canvas while the panel is CLOSED (plans/179 T2), and the
+   * closure that lifts it. Non-null means "this panel has handed the stage back to its
+   * author": no `.seq-off`, no composed pose, and the clock keeping its own time
+   * without writing a pixel until the panel opens again.
+   */
+  let seqHold: (() => void) | null = null;
   let panelH = DEFAULT_PANEL_H;
   let pxPerSec = 60;
   let fitPending = true;
@@ -1576,30 +1781,108 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     return id == null || id === '' ? null : mediaOf(String(id)).dur;
   };
 
-  /** A bar's human label: the user's own name if one was set (rename), else the box's
-   *  own text if it has any, else its media kind. */
+  /** Trim a label to `max` graphemes-ish, with the ellipsis inside the budget. */
+  function trimLabel(s: string, max: number): string {
+    return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+  }
+
+  /**
+   * The FIRST LINE of a box's own words, trimmed (plans/179 T11).
+   *
+   * First line, because a bar is one line tall and a paragraph's second sentence is
+   * not what identifies it; 24 characters, because that is about what a bar shows
+   * before the ellipsis is doing all the talking anyway.
+   */
+  function textLabel(el: HTMLElement | null): string {
+    const raw = el?.querySelector<HTMLElement>('.lolly-box-text')?.textContent ?? '';
+    for (const line of raw.split('\n')) {
+      const s = line.trim();
+      if (s) return trimLabel(s, 24);
+    }
+    return '';
+  }
+
+  /**
+   * A FRAME's label: the board's own name, else its place in the deck (plans/179 T11).
+   *
+   * Both halves come off the live canvas rather than the model, for `mediaOf`'s reason
+   * and one more of their own. The name is `data-frame-name`, which the tool hook
+   * stamps from the blocks input's `labelField` - so a renamed board says its name on
+   * the timeline for the same reason it says it in the sidebar. The NUMBER is the
+   * page's position among `[data-frame-id]` in DOM order, which is the deck's own page
+   * order (`frameGroupsFor` sorts by `order` then x before it emits) - so the timeline
+   * cannot number a deck differently from the canvas, the presenter or the PDF.
+   */
+  function frameLabel(id: string): string {
+    const pages = Array.from(canvasEl.querySelectorAll<HTMLElement>('[data-frame-id]'));
+    const n = pages.findIndex((p) => p.getAttribute('data-frame-id') === id);
+    const named = pages[n]?.getAttribute('data-frame-name')?.trim() ?? '';
+    if (named) return trimLabel(named, 48);
+    return t('Slide {n}', { n: n >= 0 ? n + 1 : pages.length + 1 });
+  }
+
+  /**
+   * A bar/chip/lane's human label: the user's own name if one was set (rename), else
+   * the box's own first line of text, else what it IS (plans/179 T11).
+   *
+   * "Clip" is the answer of last resort and nothing routine may reach it. It used to be
+   * what the audio bed, every untimed background box and every artboard chip got called -
+   * a timeline whose rows all read "Clip" tells the user nothing at all - so the kind
+   * ladder below answers off the MODEL after the media probe has had its say. Model
+   * last, deliberately: the probe knows a `kind:'image'` box is really a video because
+   * the hook resolved its asset, and the manifest's own add-kinds seed several
+   * different things as `image`.
+   */
   function labelFor(id: string): string {
     const el = boxEl(id);
     const rows = getBoxes();
     const ci = indexOfId(rows, cfg, id);
+    const row = ci >= 0 ? rows[ci]! : undefined;
     // The user's own name wins over everything - that is what a rename is for.
-    if (ci >= 0 && cfg.labelField) {
-      const own = String(rows[ci]![cfg.labelField] ?? '').trim();
-      if (own) return own.length > 48 ? `${own.slice(0, 47)}…` : own;
+    if (row && cfg.labelField) {
+      const own = String(row[cfg.labelField] ?? '').trim();
+      if (own) return trimLabel(own, 48);
     }
+    // A generated NARRATION clip says what it is (plans/180). The row's `group` is the
+    // stable, untranslated token that identifies it, and the word is translated HERE, at
+    // paint time: storing a t() literal in the model would put the author's UI language
+    // into the document, the packed `z=` link and every exported layer name.
+    if (row && cfg.groupField && isNarrationGroup(row[cfg.groupField])) return t('Narration');
     // A CAMERA next, and off the MODEL: it paints nothing, so every probe below reads
     // '' on it and its chip would have said "Clip" - the one thing a camera is not
     // (plans/104 section 5.4). This is the label the "Always on" scenery chip wears, which is
     // the whole affordance the implicit scene camera is discovered through.
-    if (ci >= 0 && isCameraBox(rows[ci]!)) return t('Camera');
-    const txt = el?.querySelector<HTMLElement>('.lolly-box-text')?.textContent?.trim();
-    if (txt) return txt.length > 48 ? `${txt.slice(0, 47)}…` : txt;
+    if (row && isCameraBox(row)) return t('Camera');
+    const txt = textLabel(el);
+    if (txt) return txt;
     const kind = mediaOf(id).kind;
     if (kind === 'video') return t('Video');
     if (kind === 'audio') return t('Audio');
     if (kind === 'image') return t('Image');
     if (kind === 'lottie') return t('Animation');
-    return t('Clip');
+    // No media and no words. The box's OWN kind, read the way `isCameraBox` reads it -
+    // the hooks' rule, one field, no cfg entry to invent (kind is canvas vocabulary,
+    // not timing vocabulary).
+    switch (row ? String(row.kind ?? '') : '') {
+      case 'audio': return t('Audio');
+      case 'video': case 'clip': return t('Video');
+      case 'image': return t('Image');
+      case 'path': return t('Shape');
+      case 'camera': return t('Camera');
+      case 'text': return t('Text');
+      case 'box': return t('Box');
+      case 'frame': return frameLabel(id);
+      default: return t('Clip');
+    }
+  }
+
+  /**
+   * Is this row SOUND? Both sources, for `isKeyframable`'s reason exactly: a box
+   * carrying an audio asset is an audio clip whatever its `kind` says, and a model row
+   * whose media has not painted yet is still one.
+   */
+  function isAudioRow(row: Box | undefined, id: string): boolean {
+    return String(row?.kind ?? '') === 'audio' || mediaOf(id).kind === 'audio';
   }
 
   /**
@@ -1860,19 +2143,27 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         // The row's FRONTMOST member (first placed in reverse order) - what a
         // vertical bar drag restacks against.
         lane.dataset.anchor = String(id);
-        if (group) {
-          groupLanes.set(group, lane);
-          // A generated caption row says what it is. Other groups keep an unlabelled
-          // shared row - their bars already carry their own labels.
-          if (isCaptionGroup(group)) {
-            lane.classList.add('tl-lane-captions');
-            const lab = document.createElement('span');
-            lab.className = 'tl-lane-label';
-            lab.setAttribute('aria-hidden', 'true');   // every bar in it is announced itself
-            lab.textContent = t('Captions');
-            lane.appendChild(lab);
-          }
+        // A row's own title, when the row has one thing to say about itself. Two
+        // cases, both watermarks under the bars (see `.tl-lane-label`): a generated
+        // caption group, and SOUND (plans/179 T11). The audio row earns one because it
+        // is the row you cannot read at a glance - a waveform is a picture of a level,
+        // not of a source, and a music bed has no words of its own to fall back on.
+        // Every other group keeps an unlabelled shared row; their bars carry their own
+        // labels, which now say what they are (see labelFor).
+        const laneTitle = group && isCaptionGroup(group)
+          ? { cls: 'tl-lane-captions', text: t('Captions') }
+          : isAudioRow(b, String(id))
+            ? { cls: 'tl-lane-audio', text: t('Audio') }
+            : null;
+        if (laneTitle) {
+          lane.classList.add(laneTitle.cls);
+          const lab = document.createElement('span');
+          lab.className = 'tl-lane-label';
+          lab.setAttribute('aria-hidden', 'true');   // every bar in it is announced itself
+          lab.textContent = laneTitle.text;
+          lane.appendChild(lab);
         }
+        if (group) groupLanes.set(group, lane);
         laneWrap.appendChild(lane);
       }
       const el = makeBar(String(id), '');
@@ -1917,7 +2208,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       chip.dataset.a = aId;
       chip.dataset.b = bId;
       // Pointer affordance only (see .tl-dropslot): the same transition is authored
-      // from the inspector's Animate in / Animate out fields, which ARE in the tab order.
+      // from the inspector's Enter / Exit fields, which ARE in the tab order.
       chip.setAttribute('aria-hidden', 'true');
       chip.tabIndex = -1;
       chip.setAttribute('data-tip', t('Transition between clips'));
@@ -2503,7 +2794,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
   // ── stagger starts (plans/175 WP-C - Jitter's right-click Stagger) ──────────
   //
-  // One small anchored card: a gap in ms, Enter/Stagger applies. The maths is
+  // One small anchored card: a gap in ms, Enter or the button applies it. The maths is
   // timeline-math's staggerOverlays - this card is a door, never an implementation.
 
   /** The selection members a Stagger can act on: timed OVERLAY boxes (a seq clip's
@@ -2534,7 +2825,9 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     const apply = document.createElement('button');
     apply.type = 'button';
     apply.className = 'btn tl-stagger-apply';
-    apply.textContent = t('Stagger');
+    // "Stagger" was a word for the gesture, not for what it does (plans/179 M4's
+    // vocabulary pass): the card deals each selected clip a later start, so it says so.
+    apply.textContent = t('Offset starts by');
     const go = (): void => {
       const ms = Math.max(0, Math.round(finite(input.value, lastStaggerMs)));
       lastStaggerMs = ms;
@@ -2545,7 +2838,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
     el.append(label, apply);
     return input;
-  }, { className: 'folder-menu tl-menu tl-stagger-pop', ariaLabel: t('Stagger starts'), position: menuPosition });
+  }, { className: 'folder-menu tl-menu tl-stagger-pop', ariaLabel: t('Offset starts by'), position: menuPosition });
 
   function openStaggerPop(ids: string[]): void {
     staggerIds = ids;
@@ -2586,7 +2879,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // painted selected - the exact state the collapse rule below exists to prevent.
     if (ctxMulti && ctxMulti.length >= 2) {
       const n = ctxMulti.length;
-      el.appendChild(menuItem(t('Stagger starts…'), 'layers', act(() => openStaggerPop(ctxMulti ?? [])),
+      el.appendChild(menuItem(t('Offset starts by…'), 'layers', act(() => openStaggerPop(ctxMulti ?? [])),
         { sub: t('Deals the {n} selected clips an even gap, each starting after the one before.', { n: String(n) }) }));
       return el.querySelector<HTMLElement>('.folder-menu-item');
     }
@@ -3695,7 +3988,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // it - never this function, which runs on a model change while the dock has to
     // follow the clock.
     //
-    // The standalone editor is NOT retired: the Animate group's In/Out curves still
+    // The standalone editor is NOT retired: the Motion group's Enter/Exit curves still
     // open it (a field, not a keyframe), and so does the diamond's own context menu,
     // which is a pointer route from a bar with no popup open.
     const dockHost = document.createElement('div');
@@ -3793,8 +4086,17 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // replaced. So a keyframe whose ease is an authored bezier selects an option that
     // says so, and dragging a handle in the dock is what puts it there - the numbers
     // live in the dock's own readout, three lines below, rather than in this label.
-    if (!KF_EASE_TOKENS.includes(ease as (typeof KF_EASE_TOKENS)[number]) && ease !== KF_HOLD_EASE) opt(ease, t('Custom'));
-    el.value = ease;
+    // ONE WIRE, NORMALISED ONE WAY ON READ (plans/179 M4). The kf grammar has more than
+    // one spelling for the same curve - `eb(0.4)(0)(0.2)(1)` IS Smooth - and a seed by
+    // string equality would put a "Custom" row beside the preset it already equals, so
+    // the same curve would read as two answers depending on which control wrote it last.
+    // `parseKf` canonicalises a preset on its way in today, which is why this is a guard
+    // rather than a fix: the read side owes the same answer however the token arrived.
+    // Matched by NAME first (the engine's own vocabulary), by the CSS curve second, never
+    // by comparing token strings here.
+    const seed = kfEasePreset(ease);
+    if (!KF_EASE_TOKENS.includes(seed as (typeof KF_EASE_TOKENS)[number]) && seed !== KF_HOLD_EASE) opt(seed, t('Custom'));
+    el.value = seed;
     el.addEventListener('change', () => {
       writeTrack(id, (track) => kfTrackSetEase(track, atMs, el.value));
     });
@@ -4348,7 +4650,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     // did: the pose row shows the box's depth wherever no keyframe overrides it (section 5.2),
     // so a depth edit made anywhere else must repaint this row or it prints a stale
     // number. `mute` is what flips the speaker toggle's glyph and `aria-pressed`.
-    const key = box ? `${id}|${JSON.stringify([box[cfg.startField], box[cfg.durField], box[cfg.clipInField], box[cfg.speedField], box[cfg.enterField], box[cfg.exitField], box[cfg.enterMsField], box[cfg.exitMsField], box[cfg.muteField], cfg.enterEaseField ? box[cfg.enterEaseField] : '', cfg.exitEaseField ? box[cfg.exitEaseField] : '', cfg.kfField ? box[cfg.kfField] : '', cfg.zField ? box[cfg.zField] : '', cfg.linkField ? box[cfg.linkField] : '', box.kind, cfg.gainField ? box[cfg.gainField] : '', cfg.splitField ? box[cfg.splitField] : '', cfg.staggerField ? box[cfg.staggerField] : '', cfg.splitOrderField ? box[cfg.splitOrderField] : '', cfg.holdField ? box[cfg.holdField] : '', cfg.holdRateField ? box[cfg.holdRateField] : '', cfg.panField ? box[cfg.panField] : '', cfg.duckField ? box[cfg.duckField] : '', cfg.pitchField ? box[cfg.pitchField] : '', cfg.varispeedField ? box[cfg.varispeedField] : '', cfg.fxField ? box[cfg.fxField] : ''])}` : '';
+    // `build` joins them for the Appears row (plans/179 M4): the step is the only one of
+    // the three ways a box can appear that was not already in this list, and a row that
+    // does not repaint after it is written keeps the wrong segment pressed.
+    const key = box ? `${id}|${JSON.stringify([box[cfg.startField], box[cfg.durField], box[cfg.clipInField], box[cfg.speedField], box[cfg.enterField], box[cfg.exitField], box[cfg.enterMsField], box[cfg.exitMsField], box[cfg.muteField], cfg.enterEaseField ? box[cfg.enterEaseField] : '', cfg.exitEaseField ? box[cfg.exitEaseField] : '', cfg.kfField ? box[cfg.kfField] : '', cfg.zField ? box[cfg.zField] : '', cfg.linkField ? box[cfg.linkField] : '', box.kind, cfg.gainField ? box[cfg.gainField] : '', cfg.splitField ? box[cfg.splitField] : '', cfg.staggerField ? box[cfg.staggerField] : '', cfg.splitOrderField ? box[cfg.splitOrderField] : '', cfg.holdField ? box[cfg.holdField] : '', cfg.holdRateField ? box[cfg.holdRateField] : '', cfg.panField ? box[cfg.panField] : '', cfg.duckField ? box[cfg.duckField] : '', cfg.pitchField ? box[cfg.pitchField] : '', cfg.varispeedField ? box[cfg.varispeedField] : '', cfg.fxField ? box[cfg.fxField] : '', box.build])}` : '';
     if (key === inspectorKey) return;
     inspectorKey = key;
     inspectorId = id;
@@ -4398,6 +4703,26 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
     const row = (labelText: string, control: HTMLElement): HTMLElement => {
       const wrap = document.createElement('label');
+      wrap.className = 'field-row field-row--inline tl-field';
+      const lab = document.createElement('span');
+      lab.className = 'field-label';
+      lab.textContent = labelText;
+      wrap.append(lab, control);
+      return wrap;
+    };
+    /**
+     * The same row, as a plain `<div>` - for a control made of BUTTONS.
+     *
+     * A `<button>` is a labelable element, so inside a `<label>` the first one becomes
+     * the labelled control and a click anywhere on the label text (or the padding beside
+     * it) fires it. On the Appears row that meant reading the word "Appears" pressed
+     * "With the slide", and `setAppear`'s exclusive patch cleared the box's start,
+     * length, lane and build in one mis-click with nothing pressed on screen to explain
+     * it. The design inspector builds the same control in a plain div for this reason;
+     * the control carries its own `role="group"` + `aria-label`, so nothing is lost.
+     */
+    const rowPlain = (labelText: string, control: HTMLElement): HTMLElement => {
+      const wrap = document.createElement('div');
       wrap.className = 'field-row field-row--inline tl-field';
       const lab = document.createElement('span');
       lab.className = 'field-label';
@@ -4583,16 +4908,21 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       timeG.setSummary([fmtTime(timing.start ?? 0), fmtDur(shown.dur), `×${timing.speed}`]);
     }
 
-    // ── Animate ───────────────────────────────────────────────────────────────
-    // Enter / exit + their durations. Authorable either side of the timed line: a box
-    // that is always on can still be given the transition it will use once it is timed,
-    // and the fields are plain value writes, so nothing here depends on a bar existing.
+    // ── Motion ────────────────────────────────────────────────────────────────
+    // When the box appears, then enter / exit + their durations. Authorable either side
+    // of the timed line: a box that is always on can still be given the transition it
+    // will use once it is timed, and the fields are plain value writes, so nothing here
+    // depends on a bar existing.
     //
     // Never on a CAMERA: v1 ignores a camera box's enter/exit outright (section 5.4), so these
     // would be four controls writing fields no evaluator reads.
     const mediaKind = id ? mediaOf(id).kind : '';
     const audioFades = mediaKind === 'audio';
-    const animG = isCamera ? null : inspectorGroup('animate', audioFades ? t('Fades') : t('Animate'), 'animate');
+    // MOTION, not "Animate" (plans/179 M4's vocabulary pass): the group now answers
+    // "when does this arrive and how does it move", and "Animate" was already the word
+    // on the Keyframes group's own door. The group ID stays `animate` - it is the
+    // `openTimeline(group)` port's wire value, not a word anybody reads.
+    const animG = isCamera ? null : inspectorGroup('animate', audioFades ? t('Fades') : t('Motion'), 'animate');
     if (animG) inspector.appendChild(animG.root);
     if (animG && audioFades) {
       // A sound has no picture for `rise` or `pop` to move: its in/out ARE fades
@@ -4615,16 +4945,117 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       animG.setSummary([fi > 0 || fo > 0 ? `${fmtDur(fi / 1000)} / ${fmtDur(fo / 1000)}` : t('No fades')]);
     }
     if (animG && !audioFades) {
-      animG.body.appendChild(row(t('Animate in'), kindSelect(box[cfg.enterField], (v) => write(patchBox(getBoxes(), id, { [cfg.enterField]: v })))));
-      animG.body.appendChild(row(t('In (ms)'), numField(finite(box[cfg.enterMsField], 400), 50, 100, (v) => write(patchBox(getBoxes(), id, { [cfg.enterMsField]: Math.round(clamp(v, MIN_TRANSITION_MS, MAX_TRANSITION_MS)) })))));
+      // ── Appears (plans/179 M4): ONE control for WHEN this box arrives ──────────
+      //
+      // There were three ways to appear and no control that knew about all three: a
+      // build step, a start on the timeline, or neither. A box could carry two of them
+      // at once, and each player resolved that differently. `setAppear` returns an
+      // EXCLUSIVE patch - all four fields on every press - so two answers is a state the
+      // UI can no longer produce, and `appearModeOf` is the one reading of what a box
+      // already says.
+      //
+      // Offered only where the manifest names its time fields the way the shared model
+      // writes them: the patch carries Design's own field ids, and Design is also the
+      // only tool that declares a build step at all. Never on a FRAME - a slide does not
+      // arrive on its own slide, and a build step on one would be a number no player
+      // reads - which is the same exclusion the hold and split rows below make.
+      const appearable = cfg.startField === 'start' && cfg.durField === 'dur' && cfg.laneField === 'lane'
+        && String(box.kind ?? '') !== 'frame';
+      const appearMode = appearModeOf(box);
+      const writeAppear = (intent: AppearIntent): void => {
+        write(patchBox(getBoxes(), id, { ...setAppear(box, intent) }));
+      };
+      if (appearable) {
+        // The app's segmented-control primitive (lib/seg.ts), built as NODES because
+        // this panel writes no markup strings: the same classes and the same
+        // `aria-pressed` state, so it reads like every other three-way choice.
+        const seg = document.createElement('div');
+        seg.className = 'view-seg tl-appear-seg';
+        seg.setAttribute('role', 'group');
+        seg.setAttribute('aria-label', t('Appears'));
+        const segBtn = (m: AppearMode, label: string): void => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'view-seg-btn';
+          b.dataset.val = m;
+          b.textContent = label;
+          b.setAttribute('aria-pressed', String(m === appearMode));
+          // The mode alone. `setAppear` keeps whatever step / start / length the box
+          // already has, so switching away and back does not throw the number away.
+          b.addEventListener('click', () => { if (m !== appearMode) writeAppear({ mode: m }); });
+          seg.appendChild(b);
+        };
+        segBtn('slide', t('With the slide'));
+        segBtn('click', t('On click'));
+        segBtn('time', t('At time'));
+        animG.body.appendChild(rowPlain(t('Appears'), seg));
+        if (appearMode === 'click') {
+          animG.body.appendChild(row(t('step'), numField(Math.max(1, Math.round(finite(box.build, 1))), 1, 1,
+            (v) => writeAppear({ mode: 'click', step: v }))));
+        } else if (appearMode === 'time') {
+          animG.body.appendChild(row(t('At time'), numField(timing.start ?? 0, 0.1, 0,
+            (v) => writeAppear({ mode: 'time', startS: v }))));
+          // EMPTY is open-ended, and it is a real state: a box with no length stays up
+          // for the rest of the slide. A 0 would say it arrives and leaves in the same
+          // instant, which is a different (and authored) thing.
+          const durS = finite(box[cfg.durField], Number.NaN);
+          animG.body.appendChild(row(t('for'), numField(Number.isFinite(durS) && durS > 0 ? durS : null, 0.1, MIN_DUR,
+            (v) => writeAppear({ mode: 'time', durS: v }), '-')));
+        }
+      }
+      // A timeline edit to a FRAME's enter/exit is the author overriding the deck (M4
+      // section 1c), so the same patch stamps the frame's own transition field 'custom'
+      // and the deck-level transition stops deriving a pair over the one just set by
+      // hand. Manifest-gated like every optional write here: no field, no stamp.
+      const frameTrans: Record<string, string> = String(box.kind ?? '') === 'frame' && cfg.frameTransitionField
+        ? { [cfg.frameTransitionField]: 'custom' }
+        : {};
+      const enterSel = kindSelect(box[cfg.enterField], (v) => write(patchBox(getBoxes(), id, { [cfg.enterField]: v, ...frameTrans })));
+      // Named DIRECTLY, not by its label. The preview button below sits inside this row's
+      // `<label>`, and a labelled control takes its accessible name from the whole label
+      // subtree - so the select was announced as "Enter Preview this motion, combo box".
+      // An `aria-label` on the control wins over the label text for the name and leaves
+      // the label's click behaviour (focus the select) exactly as it was.
+      enterSel.setAttribute('aria-label', t('Enter'));
+      const enterRow = row(t('Enter'), enterSel);
+      // The one-shot preview, beside the kind it plays: the entrance is the one field in
+      // this group whose value is a MOVEMENT, and a name in a list is a poor description
+      // of one. A button inside the row's <label> is safe - label activation does not run
+      // for a press on an interactive descendant.
+      //
+      // OFFERED ONLY WHERE IT IS REAL, the same rule as Join and Detach in the context
+      // menu: a box with no entrance stamped on it has nothing for the applier to play,
+      // and a button that visibly does nothing teaches the user that the feature is
+      // broken. Absent, never disabled - and the question is asked through the same
+      // predicate the player itself uses.
+      if (canPlayOnce(boxEl(id))) {
+        const play = document.createElement('button');
+        play.type = 'button';
+        play.className = 'tl-btn tl-preview';
+        play.innerHTML = icon('play');
+        play.title = t('Preview this motion');
+        play.setAttribute('aria-label', t('Preview this motion'));
+        // Held down for the length of the ramp. `playOnce` refuses a second session on
+        // its own (one preview at a time, across every surface), so this is the visible
+        // half of that rule: a button that answered nothing would read as broken.
+        play.addEventListener('click', () => {
+          if (play.disabled) return;
+          play.disabled = true;
+          void playOnce(boxEl(id), finite(box[cfg.enterMsField], 400))
+            .finally(() => { play.disabled = false; });
+        });
+        enterRow.appendChild(play);
+      }
+      animG.body.appendChild(enterRow);
+      animG.body.appendChild(row(t('Enter (ms)'), numField(finite(box[cfg.enterMsField], 400), 50, 100, (v) => write(patchBox(getBoxes(), id, { [cfg.enterMsField]: Math.round(clamp(v, MIN_TRANSITION_MS, MAX_TRANSITION_MS)) })))));
       // The curve sits beside its duration, not beside its kind: "how long" and "how it
       // moves over that time" are the pair a user tunes together. Offered only where the
       // manifest declares a field for it - a tool that never asked for authored easing is
       // not given a control that would write a sub-field it does not read.
-      if (cfg.enterEaseField) animG.body.appendChild(row(t('In curve'), easeSelect(cfg.enterEaseField, box[cfg.enterEaseField])));
-      animG.body.appendChild(row(t('Animate out'), kindSelect(box[cfg.exitField], (v) => write(patchBox(getBoxes(), id, { [cfg.exitField]: v })))));
-      animG.body.appendChild(row(t('Out (ms)'), numField(finite(box[cfg.exitMsField], 400), 50, 100, (v) => write(patchBox(getBoxes(), id, { [cfg.exitMsField]: Math.round(clamp(v, MIN_TRANSITION_MS, MAX_TRANSITION_MS)) })))));
-      if (cfg.exitEaseField) animG.body.appendChild(row(t('Out curve'), easeSelect(cfg.exitEaseField, box[cfg.exitEaseField])));
+      if (cfg.enterEaseField) animG.body.appendChild(row(t('Enter curve'), easeSelect(cfg.enterEaseField, box[cfg.enterEaseField])));
+      animG.body.appendChild(row(t('Exit'), kindSelect(box[cfg.exitField], (v) => write(patchBox(getBoxes(), id, { [cfg.exitField]: v, ...frameTrans })))));
+      animG.body.appendChild(row(t('Exit (ms)'), numField(finite(box[cfg.exitMsField], 400), 50, 100, (v) => write(patchBox(getBoxes(), id, { [cfg.exitMsField]: Math.round(clamp(v, MIN_TRANSITION_MS, MAX_TRANSITION_MS)) })))));
+      if (cfg.exitEaseField) animG.body.appendChild(row(t('Exit curve'), easeSelect(cfg.exitEaseField, box[cfg.exitEaseField])));
       // ── Split text (plans/175 WP-A): tier × stagger × order over the presets above ──
       // Manifest-gated like the ease rows, and only on a box that actually holds text.
       // '' (whole text) is the absence: an untouched box writes nothing, and the
@@ -4648,13 +5079,13 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
         };
         const tierRaw = String(box[cfg.splitField] ?? '');
         const tier = isSplitTier(tierRaw) ? tierRaw : '';
-        animG.body.appendChild(row(t('Animate text by'), enumSelect(
+        animG.body.appendChild(row(t('Text'), enumSelect(
           [['', t('Whole text')], ...Object.entries(SPLIT_TIERS).map(([v, label]) => [v, t(label)] as const)],
           tier,
           (v) => write(patchBox(getBoxes(), id, { [cfg.splitField as string]: v })),
         )));
         if (tier) {
-          animG.body.appendChild(row(t('Stagger (ms)'), numField(finite(box[cfg.staggerField], 60), 10, 0, (v) =>
+          animG.body.appendChild(row(t('Offset starts by (ms)'), numField(finite(box[cfg.staggerField], 60), 10, 0, (v) =>
             write(patchBox(getBoxes(), id, { [cfg.staggerField as string]: Math.round(clamp(v, 0, MAX_SPLIT_STAGGER_MS)) })))));
           if (cfg.splitOrderField) {
             const ordRaw = String(box[cfg.splitOrderField] ?? '');
@@ -7944,12 +8375,59 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     showTranscript(clipId, words, assetId);
   }
 
+  /**
+   * Can this clip be spoken again in place? It needs an id of its own to be
+   * rewritten under, the speech bridge that would speak the changed lines, and
+   * the user-asset store's in-place bytes swap. Without all three, Edit script
+   * still edits and Regenerate is simply not offered (the panel's own rule).
+   */
+  function canRegenerateClip(assetId: string): boolean {
+    if (!assetId || !host.speech) return false;
+    const assets = host.assets as { _replaceUserAssetBytes?: unknown } | undefined;
+    return typeof assets?._replaceUserAssetBytes === 'function';
+  }
+
   /** Mount the flowing-text editor over these words - openTranscript's tail, and
    *  where a transcript-intent transcription delivers its result. */
   function showTranscript(clipId: string, words: SpeechWordTiming[], assetId: string): void {
+    const meta = refOf(clipId)?.meta as { tts?: TranscriptTtsMeta } | undefined;
     openTranscriptPanel({
       cfg, words, assetId, sourceId: clipId, assetField: assetFieldName(),
       getBoxes, write,
+      // What Lolly spoke this clip with, so Edit script can diff against the
+      // script it was made from rather than guessing one from the words.
+      tts: meta?.tts,
+      // The synthesis half of Regenerate (plans/181 section 5.2): speak only the
+      // lines that changed, splice them into the clip at the silence between
+      // sentences, and rewrite it under its own id. Lazy for the Script-audio
+      // reason - the whole speech path is a chunk nothing else in the panel needs.
+      ...(canRegenerateClip(assetId)
+        ? {
+          regenerate: async (req) => {
+            const { regenerateTtsClipAsJob } = await import('../lib/tts-regenerate.ts');
+            return regenerateTtsClipAsJob(
+              host as unknown as Parameters<typeof regenerateTtsClipAsJob>[0],
+              {
+                assetId,
+                script: req.script,
+                baseScript: req.baseScript,
+                keepPrevious: req.keepPrevious,
+                onProgress: req.onProgress,
+              },
+            );
+          },
+        }
+        : {}),
+      // A regenerated clip's captions have to follow its new words. Only when
+      // this source ALREADY has caption boxes: applySubtitles replaces the
+      // group, so running it on a document with none would add a set nobody
+      // asked for.
+      reapplySubtitles: (next) => {
+        const groupField = cfg.groupField;
+        const gid = captionGroup(clipId);
+        if (!groupField || !getBoxes().some((b) => String(b?.[groupField] ?? '') === gid)) return;
+        applySubtitles(clipId, next);
+      },
       // The panel's rows are in AUTHORED time (mapped off the box starts), so its seek and
       // its read-along tick go through the same authored<->clock map as the ruler.
       seek: (ms) => seekAuthored(ms),
@@ -8615,7 +9093,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
    * class at all.
    */
   const unsubShot = onNodeShotSettled(() => {
-    if (disposed) return;
+    // …and only while the panel is OPEN. A closed panel has released the canvas
+    // (plans/179 T2), so re-asserting the playhead here would put `.seq-off` straight
+    // back on a stage the user is editing - the exact state the close undid.
+    if (disposed || !open) return;
     try { clock.reapply(); } catch { /* the clock is gone; the panel is going with it */ }
   });
 
@@ -8641,6 +9122,11 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     open = next;
     root.hidden = !open;
     if (open) {
+      // FIRST: lift the hold the last close took, so the clock may write again. The
+      // resume re-asserts it at its OWN retained time, which is what makes reopening
+      // resume at the same playhead rather than at zero (plans/179 T2).
+      seqHold?.();
+      seqHold = null;
       const stageH = stageEl.getBoundingClientRect().height || 0;
       panelH = clampPanelH(panelH, stageH, chromeH());
       root.style.height = `${panelH}px`;
@@ -8685,6 +9171,18 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       abortThumbs();
       cancelIdle?.();
       cancelIdle = null;
+      // CLOSING RELEASES THE CLOCK (plans/179 T2). A paused clock still holds the
+      // canvas at whatever frame it stopped on: three of a deck's four artboards left
+      // `display: none` with only their labels, every box still wearing the composed
+      // transform/opacity of the frame it happened to be mid-way through. There is no
+      // playhead on screen any more, so there is nothing on the canvas that could
+      // explain it - which is the whole argument for the "no clock = every box shows"
+      // contract. `clock.pause()` above has already put every video back the way the
+      // free-run rules leave it (paused where we started it, muted/loop as authored);
+      // this hands back the CLASSES and the POSE, and holds every writer down until
+      // the panel opens again. The clock keeps its time, so the reopen resumes here.
+      seqHold?.();          // never non-null on this path; a close is never nested
+      seqHold = releaseSequenceDom(canvasEl);
       reserve(0);
     }
   }
@@ -8717,6 +9215,11 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     try { keysModal?.close(); } catch { /* never opened */ }
     if (onionHold) { clearTimeout(onionHold); onionHold = 0; }
     try { clock.pause(); } catch { /* already gone */ }
+    // Dropped, never LIFTED: lifting re-asserts the playhead one statement before
+    // `clock.destroy()` undoes it again. The clock's own teardown restores the styles
+    // and the classes whether it is held or not, and deregisters the writer - which is
+    // what takes the hold's bookkeeping with it.
+    seqHold = null;
     abortThumbs();
     cancelIdle?.();
     cancelIdle = null;

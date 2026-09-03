@@ -197,7 +197,7 @@
 
 /* Subtle translucent-black wash so the cards read as raised on every theme. */
 /* Subtle page tint shared by the tools gallery and the Projects view. */
-.gallery-view, .projects-view { background-color: #0001; }
+.gallery-view, .projects-view { background-color: #00151910; }
 
 @media (min-width:756px) {
   .gallery-view {
@@ -917,7 +917,7 @@ html[data-a11y-previews="hidden"] .gallery .ftile-iconfill svg { max-width: 52px
   border-radius: calc(var(--radius) * 1.1);
   overflow: hidden;
   transition: border-color var(--dur-1);
-      box-shadow: 0 .1rem .4rem #0002;
+      box-shadow: 0 .1rem 1rem #0001;
   /* Skip the expensive work - parsing/rasterising the preview SVG (some carry
      feGaussianBlur shadows or thousands of dots), layout and paint - for tiles
      scrolled off-screen; the browser only does it as a tile nears the viewport.
@@ -1005,7 +1005,7 @@ html[data-a11y-previews="hidden"] .gallery .ftile-iconfill svg { max-width: 52px
   position: relative;
   isolation: isolate;                /* contain the .gtile-iconfill backdrop's z-index:-1 */
   width: 100%;
-  aspect-ratio: 16 / 9;              /* 16:9 preview area - the preview contains within it */
+  aspect-ratio: 4 / 3;              /* 16:9 preview area - the preview contains within it */
   padding: 0;
   border: 0;
   margin: 0;
@@ -1020,13 +1020,14 @@ html[data-a11y-previews="hidden"] .gallery .ftile-iconfill svg { max-width: 52px
 /* Every hero image/iframe fills the square and letterboxes within (never cropped, never
    stretched - a safety net too against a Safari SVG-in-<img> reporting a fallback 300×150
    intrinsic). Absolute so it can't push the box off its 1:1 aspect. */
-.gtile-hero-img {
+.gtile-hero-img ,  .gcar-img {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   display: block;
   object-fit: contain;
+  filter:drop-shadow(0 .5px 3px #0001);
 }
 
 /* ── Icon backdrop ────────────────────────────────────────────────────────────
@@ -1147,10 +1148,10 @@ html[data-a11y-previews="hidden"] .gallery .ftile-iconfill svg { max-width: 52px
   position: relative;                /* anchor for nav, dots, badge, Continue chip */
   isolation: isolate;                /* contain the .gtile-iconfill backdrop's z-index:-1 */
   width: 100%;
-  aspect-ratio: 16 / 9;              /* uniform 16:9 preview area (matches .gtile-hero) */
+  aspect-ratio: 4 / 3;              /* uniform 16:9 preview area (matches .gtile-hero) */
   overflow: hidden;
   line-height: 0;
-  background: var(--preview-checker), var(--preview-surface);   /* same shade as .gtile-hero */
+  background: var(--preview-checker);   /* same shade as .gtile-hero */
 }
 .gcar-track {
   display: flex;

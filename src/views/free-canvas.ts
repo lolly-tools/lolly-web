@@ -74,11 +74,39 @@ import {
   // plans/104 section 6.5 - the chrome's half of "the canvas edits what the canvas shows":
   // a box the playhead has posed gets its outline and handles placed at the POSE.
   posedRect,
+  // plans/179 section 5.2 - artboard housekeeping: which board is ACTIVE (A1/A11), what
+  // happens to the children of a deleted one (A7), a deep duplicate (A8), the explicit
+  // page `order` every creating/deleting path now writes (A9), and the marquee's
+  // fully-enclosed rule for pages (A13).
+  activeFrameIdFor, framesInPageOrder, nextFrameOrder, seedFrameOrders, renumberFrameOrder,
+  rehomeChildrenOfDeletedFrames, duplicateFrameWithChildren, filterMarqueeFrames,
 } from './free-canvas-math.ts';
-import type { ZOp, AlignEdge, Axis, AABB as MathAABB, Rect as MathRect, EdgeRect, Box, SeqPose } from './free-canvas-math.ts';
+import type { ZOp, AlignEdge, Axis, AABB as MathAABB, Rect as MathRect, EdgeRect, Box, SeqPose, FrameFields } from './free-canvas-math.ts';
 // Phase-A spatial-index pick: grid-accelerated on large docs, identical result to the
 // linear hitTest/marqueeHit on small ones (plans/98 section 6.1; proven in canvas-scene.test.ts).
 import { pickTopmost, pickMarquee } from './canvas-scene.ts';
+// plans/179 M1-C / M2 / M3: the ports the Design chrome (top bar, navigator, inspector)
+// talks to this overlay through. Type-only - `design-ports.ts` is a contract file with
+// no runtime, so importing it costs nothing in the editor chunk.
+import type {
+  ArtboardPort, CanvasRect, DesignCanvasPorts, DesignChromeOpts, FramePort,
+  InspectorActions, ModelPort, NarrationStatus, NavigatorActions, SelectionPort,
+} from './design-ports.ts';
+// plans/180 M-A: the PURE half of notes-to-voice - the field map, the status read and
+// the frame walk. Everything that downloads a model or writes a clip is behind the
+// lazy import in `narrateDeck` below, so this costs the editor chunk a few hundred bytes.
+import {
+  DESIGN_NARRATION_FIELDS, narrationFrames as narrationFramesOf, narrationStatusFor,
+  reanchorNarration,
+  type NarrationFields, type NarrationTiming,
+} from '../lib/narration.ts';
+// plans/179 M3 (a): the pure row builders these panels used to keep private copies of.
+// One implementation, shared with the inspector column - see the module header for why
+// `wireSegs`'s `onSet` is required rather than defaulted to a `setField` closure.
+import {
+  dimsCell, frameThumb, iconRow, opt, posGridHtml, segHtml, segRow,
+  shadowChoicesFrom, shapeChoicesFrom, tiltRow, wireSegs,
+} from './free-canvas-fields.ts';
 import {
   toCssPx,
   parseColor, colorToHexString, interpolateColor,
@@ -130,12 +158,12 @@ import { mountCssEditor } from '../lib/css-code-editor.ts';
 import { announce } from '../a11y.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import { escape } from '../utils.ts';
-import { isTypingTarget } from '../lib/typing-target.ts';
+import { deepActiveElement, isTypingTarget } from '../lib/typing-target.ts';
 import { BLEND_STYLES, HUE_ROUTES, isPolarSpace } from '../lib/blend-style.ts';
 import { attachWobble } from '../lib/wobble.ts';
 import { t, tRaw } from '../i18n.ts';
 import type { ColorFieldValue } from '../components/color-field.ts';
-import { colorFieldHtml, wireColorField } from '../components/color-field.ts';
+import { colorFieldHtml, wireColorField, resolveColorVar, colorVarLabel } from '../components/color-field.ts';
 // The app-wide "black or white, whichever reads on this" rule (see its own doc comment) -
 // deliberately the same one the chrome accent and every colour surface flip with.
 import { contrastText } from '../brand-vars.ts';
@@ -413,6 +441,14 @@ interface InitFreeCanvasOpts {
    *  control on the rail. Values name the number-input ids the geometry is read
    *  from / written to via runtime. Absent for single-page editors (Design). */
   pages?: PagesCfg;
+  /**
+   * Chrome the TOOL VIEW owns and lends back (plans/179 M1). Its presence is also the
+   * signal that a Design top bar is mounted: the mark menu then drops every row the bar
+   * now carries (Export, Save, Copy, Share, Undo, Redo, Slide transition, Present) and
+   * grows the ones only a menu can hold (Theme, Interface sounds). Absent - Org Chart and
+   * every other editor tool with no top bar - the menu is byte-identical to today's.
+   */
+  chrome?: DesignChromeOpts;
   /** Frame-primitive mode (plan 93 F1b). When present, the box array may include
    *  `kind === frameKind` boxes that render as free-placed `[data-pdf-page]` pages
    *  (the tool's hook emits them at authored x/y). The overlay then (a) drives live
@@ -440,6 +476,17 @@ interface FrameCfg {
   frameKind: string;
   orderField?: string;
   clipChildrenField?: string;
+  /** `canvas.frameTransitionField` - the FRAME sub-field holding this slide's own
+   *  transition to the next one (plans/179 M4). Absent = every slide uses the
+   *  document's, and "Place in order" derives nothing per frame. */
+  transitionField?: string;
+  /** `canvas.hiddenField` - the boolean sub-field marking a layer HIDDEN. The tool's
+   *  hook already leaves a hidden row out of the render; this name is what lets the
+   *  overlay keep it out of the model paths too (nothing to pick, nothing to snap to). */
+  hiddenField?: string;
+  /** `canvas.lockedField` - the boolean sub-field marking a layer LOCKED: it draws
+   *  exactly as before, but no pointer gesture may acquire it. Absent = no lock. */
+  lockedField?: string;
 }
 
 /** Primary tool actions surfaced as prominent icons in the editor rail (chromeless
@@ -449,7 +496,9 @@ interface ToolbarActions {
   save(): void;
   copy(): void;
   share(): void;
-  present?(): void;                  // open the frames as a fullscreen deck (plan 112); absent = not a frame tool
+  /** Open the frames as a fullscreen deck (plan 112); absent = not a frame tool. The
+   *  optional id starts the deck ON that artboard (plans/179 M2's "Present from here"). */
+  present?(atFrameId?: string): void;
   newFromTemplate?(): void;          // re-open the Start template chooser mid-session (plans/142 WP-1); absent = tool has no templates
   bulk?(): void;                     // hand this template to /batch (plans/147 M1); absent = the batch can't run this tool
   canSave?: boolean;                 // omit the Save icon for tools that don't persist a session
@@ -462,6 +511,13 @@ interface FreeCanvasHandle {
   uiState(): { sel: string[]; t?: number; panel?: string };
   /** Apply editor state at runtime - the same routine the mount-time deep link runs. */
   applyUi(state: DeepLinkState): void;
+  /**
+   * The plans/179 side-column ports (see `design-ports.ts`). Present on EVERY mount, not
+   * only Design's: each member answers from this overlay's own live state, and the
+   * frame-shaped ones degrade honestly on a canvas with no frame primitive ('' / null)
+   * rather than being absent and forcing every caller to feature-detect.
+   */
+  design: DesignCanvasPorts;
 }
 
 interface EditingState {
@@ -542,7 +598,11 @@ interface CreateGesture extends GestureBase { type: 'create'; origin: Point; see
 // pen shape, and attaching an end to a box is P3's bind gesture, not a side effect of
 // releasing over one.
 interface LineGesture extends GestureBase { type: 'line'; origin: Point; to?: Point }
-interface MoveGesture extends GestureBase { type: 'move'; start: Map<number, Rect>; sel: number[]; selAABB: AABB | null; others: AABB[]; moveDelta?: { dx: number; dy: number } }
+// `narrow` is plan 179 C4: a plain click on a member of a multi-selection means "just this
+// one", but the very same press also starts the drag of the WHOLE selection - so the answer
+// cannot be given until the pointer comes up without having moved. The ids under the click
+// ride along until then; a real drag drops them untouched.
+interface MoveGesture extends GestureBase { type: 'move'; start: Map<number, Rect>; sel: number[]; selAABB: AABB | null; others: AABB[]; moveDelta?: { dx: number; dy: number }; narrow?: string[] }
 interface ResizeGesture extends GestureBase { type: 'resize'; index: number; handle: HandleName; startRect: Rect; others: AABB[]; liveRect?: Rect }
 interface RotateGesture extends GestureBase { type: 'rotate'; index: number; startRect: Rect; centerClient: Point; pointerStartDeg: number; liveRect?: Rect }
 interface GScaleGesture extends GestureBase { type: 'gscale'; sel: number[]; startBoxes: Box[]; anchor: Point; origDist: number; liveBoxes?: Box[] }
@@ -792,6 +852,12 @@ const SVG = {
   // which is why it is aria-hidden there: the list is a preview of what will happen,
   // not a set of controls, so the mark must not be announced as a checked state.
   check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  // The two rows the Design mark menu grows once the top bar owns the document actions
+  // (plans/179 M1). Contrast for Theme, a speaker for Interface sounds: each row is a
+  // proxy that clicks the toggle the tool view already built, so the glyph is the only
+  // thing this file needs to know about them.
+  theme: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none"/>',
+  sound: '<path d="M4 9.5h3L11 6v12l-4-3.5H4z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6"/><path d="M18 6.7a7.5 7.5 0 0 1 0 10.6"/>',
 };
 
 function icon(paths: string): string {
@@ -808,12 +874,17 @@ function icon(paths: string): string {
  * (the export pill, wherever a host still shows one). It comes off the TRAVEL range,
  * not off the stage, so a rail taller than the room that is left parks at the top
  * edge rather than at a negative offset.
+ *
+ * `reserveLeft` is the same promise on the other axis: the left band a docked column
+ * holds (the Design navigator, plans/179 M2). The rail is `pointer-events: none` but
+ * the toolbar inside it is not, so a rail parked over that column both hides its rows
+ * and eats the clicks meant for them.
  */
 export function clampRailPos(
   want: { left: number; top: number },
   rail: { w: number; h: number },
   stage: { w: number; h: number },
-  o: { pad?: number; reserveBottom?: number } = {},
+  o: { pad?: number; reserveBottom?: number; reserveLeft?: number } = {},
 ): { left: number; top: number } {
   const pad = o.pad ?? 8;
   // An unmeasurable stage (a not-yet-laid-out ResizeObserver delivery, a stage that has
@@ -821,10 +892,11 @@ export function clampRailPos(
   // collapse to `pad` and the remembered position would be silently lost. Hand the
   // wanted position straight back - placePopover guards the same way.
   if (!(stage.w > 0) || !(stage.h > 0)) return { left: Math.round(want.left), top: Math.round(want.top) };
-  const maxLeft = Math.max(pad, stage.w - rail.w - pad);
+  const minLeft = pad + Math.max(0, o.reserveLeft ?? 0);
+  const maxLeft = Math.max(minLeft, stage.w - rail.w - pad);
   const maxTop = Math.max(pad, stage.h - rail.h - pad - Math.max(0, o.reserveBottom ?? 0));
   return {
-    left: Math.round(Math.min(Math.max(want.left, pad), maxLeft)),
+    left: Math.round(Math.min(Math.max(want.left, minLeft), maxLeft)),
     top: Math.round(Math.min(Math.max(want.top, pad), maxTop)),
   };
 }
@@ -892,23 +964,59 @@ export interface CtxTopBand { lo: number; hi: number; top: number }
  * `.fc-ctxbar` overflow), so a bar too wide for the band - a phone - becomes a scrolling
  * strip on the row rather than a bar that drops down over the canvas.
  */
+/**
+ * The chrome elements that are actually in the way, in STAGE coordinates - the input
+ * `ctxTopBand` bounds its band against.
+ *
+ * Two rules, and both of them were bugs:
+ *   • ABOVE the stage is not in the way. In editor layout the back pill moves into the
+ *     Design top bar, which sits over the stage's own reserved top band, so its rect is
+ *     outside the stage box entirely and counting it narrowed the band to nothing on a
+ *     narrow viewport. The bar's height is already handled by `--stage-reserve-top`.
+ *   • an element that cannot be measured (hidden, detached, no layout) is not a blocker,
+ *     because a zero box would otherwise clamp the band to the stage's left edge.
+ *
+ * Pure over the rects the caller hands in, so the left/right split is testable without a
+ * browser - the same bargain `ctxTopBand` and `clampRailPos` make.
+ */
+export function stageBlockers(els: Array<HTMLElement | null | undefined>, sr: DOMRect): StageBox[] {
+  const out: StageBox[] = [];
+  for (const el of els) {
+    if (!el || el.hidden || !el.getClientRects?.().length) continue;
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) continue;
+    if (r.bottom <= sr.top) continue;
+    out.push({ left: r.left - sr.left, top: r.top - sr.top, right: r.right - sr.left, bottom: r.bottom - sr.top });
+  }
+  return out;
+}
+
 export function ctxTopBand(
   stage: { w: number; h: number },
   blockers: StageBox[] = [],
-  o: { pad?: number; gap?: number } = {},
+  o: { pad?: number; gap?: number; reserve?: { top?: number; left?: number; right?: number } } = {},
 ): CtxTopBand {
   const pad = o.pad ?? 6;
   const gap = o.gap ?? 8;
+  // The stage's reserved bands: the Design top bar across the top, the navigator on the
+  // left, a right column. They are the row's EDGES, not chrome to align to - the bar
+  // used to pin to y=6 under the top bar, which covered it whole (Andy, 2026-09-03:
+  // "there is no way to edit the fill / colour of any object").
+  const rt = Math.max(0, o.reserve?.top ?? 0);
+  const rl = Math.max(0, o.reserve?.left ?? 0);
+  const rr = Math.max(0, o.reserve?.right ?? 0);
   // An unmeasurable stage (display:none, a pre-layout ResizeObserver delivery, jsdom)
   // gives nothing to bound against - hand back a padded strip at the top rather than
   // inventing a band from zeroes, exactly as clampRailPos and placePopover do.
-  if (!(stage.w > 0)) return { lo: pad, hi: pad, top: pad };
-  const live = blockers.filter((b) => b.right > b.left && b.bottom > b.top);
-  let lo = pad;
-  let hi = Math.max(pad, stage.w - pad);
+  if (!(stage.w > 0)) return { lo: pad, hi: pad, top: rt + pad };
+  // Chrome standing wholly inside the top reserve (the top bar's own controls) is not
+  // in this row at all.
+  const live = blockers.filter((b) => b.right > b.left && b.bottom > b.top && b.bottom > rt);
+  let lo = rl + pad;
+  let hi = Math.max(lo, stage.w - rr - pad);
   // Align the bar's top with the chrome row (its topmost blocker); with no chrome to
-  // align to, the plain pad.
-  const top = live.length ? Math.max(pad, Math.min(...live.map((b) => b.top))) : pad;
+  // align to, the plain pad below the top reserve.
+  const top = live.length ? Math.max(rt + pad, Math.min(...live.map((b) => b.top))) : rt + pad;
   const cx = stage.w / 2;
   for (const b of live) {
     if ((b.left + b.right) / 2 <= cx) lo = Math.max(lo, b.right + gap);   // back pill, left
@@ -1053,7 +1161,7 @@ const H_JUSTIFY: Record<string, string> = { left: 'flex-start', center: 'center'
 const V_ALIGN: Record<string, string> = { top: 'flex-start', middle: 'center', bottom: 'flex-end' };
 
 export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
-  const { viewEl, stageEl, canvasEl, runtime, host, input, nativeW, nativeH, onDirty, editTool, setCanvasSize, info, history, actions, pages, frame: frameCfg } = opts;
+  const { viewEl, stageEl, canvasEl, runtime, host, input, nativeW, nativeH, onDirty, editTool, setCanvasSize, info, history, actions, pages, chrome: designChrome, frame: frameCfg } = opts;
   let dirtyObserver: MutationObserver | null = null;   // mirrors the Save icon's unsaved cue (see buildToolbar/actions)
   // The artboard is resizable, so read its CURRENT declared size (not the mount-time
   // nativeW/H) everywhere geometry depends on the canvas dimensions.
@@ -1180,12 +1288,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // render (e.g. `circle` is Design only; Carousel/Org-chart/Record don't
   // declare it, so it never shows there and can't produce a broken square). A known
   // value gets its glyph; anything else falls back to its label text.
-  const SHAPE_ICON: Record<string, string> = {
-    rect: SVG.shRect, rounded: SVG.shRounded, pill: SVG.shPill, ellipse: SVG.shEllipse, circle: SVG.shCircle,
-  };
-  const shapeFieldDef = cfg.shapeField ? (input.fields || []).find((f) => f.id === cfg.shapeField) : undefined;
-  const shapeChoices: Array<[string, string, string?]> = (shapeFieldDef?.options || [])
-    .map((o) => [String(o.value ?? ''), t(String(o.label || o.value || '')), SHAPE_ICON[String(o.value ?? '')]]);
+  const shapeChoices: Array<[string, string, string?]> = shapeChoicesFrom(input.fields, cfg.shapeField);
   // ── Manifest-driven SHADOW control, for the same reason ──────────────────────
   // The shadow segments were a fixed four (`none`/`box`/`text`/`content`) while the
   // manifests had moved on: Design and Sequence Studio both declare a fifth,
@@ -1197,10 +1300,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // Reading the tool's own options fixes it everywhere at once and keeps the three
   // manifests that DON'T declare `depth` (carousel-maker, org-chart, record) from
   // offering a target their hooks cannot render.
-  const shadowFieldDef = cfg.shadowField ? (input.fields || []).find((f) => f.id === cfg.shadowField) : undefined;
-  const shadowChoices: Array<[string, string]> = (shadowFieldDef?.options || []).length
-    ? (shadowFieldDef!.options || []).map((o) => [String(o.value ?? ''), t(String(o.label || o.value || ''))])
-    : [['none', t('None')], ['box', t('Box')], ['text', t('Text')], ['content', t('Content')]];
+  const shadowChoices: Array<[string, string]> = shadowChoicesFrom(input.fields, cfg.shadowField);
   const addKinds: AddKind[] = Array.isArray(cv.addKinds) && cv.addKinds.length
     ? cv.addKinds : [{ id: 'box', label: 'Box', seed: {} }];
   // Opt-in design-file import (Figma SVG / Penpot). Falsy for Design, whose
@@ -1360,15 +1460,29 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // renderChromeLive, or via commit → runtime.subscribe → scheduleSync), so the fire
   // lives in exactly one place (top of paintChrome) and is guarded by a signature - 
   // a repaint with an unchanged selection is not a change. No write site is touched.
-  const selListeners = new Set<() => void>();
+  // Listeners take the new ids (design-ports' SelectionPort). The timeline's own port
+  // declares `(cb: () => void)`, which a handler ignoring the argument satisfies, so both
+  // consumers read the SAME notifier.
+  const selListeners = new Set<(ids: string[]) => void>();
   let selNotifyKey: string | null = null;
   function notifySelection(): void {
     if (!selListeners.size) return;
     const k = [...selection].sort().join(',');
     if (k === selNotifyKey) return;
     selNotifyKey = k;
-    for (const f of [...selListeners]) { try { f(); } catch (e) { console.error(e); } }
+    const ids = [...selection];
+    for (const f of [...selListeners]) { try { f(ids); } catch (e) { console.error(e); } }
   }
+  /**
+   * THE selection port (plans/179 M2 (a)). One object, handed to the timeline panel AND
+   * returned on `handle.design`, so a column and the timeline can never end up reading
+   * two different adapters over the same Set.
+   */
+  const selectionPort: SelectionPort = {
+    get: () => [...selection],
+    set: (ids: string[]) => { selection = new Set(ids); renderChrome(); },
+    onChange: (cb: (ids: string[]) => void) => { selListeners.add(cb); return () => { selListeners.delete(cb); }; },
+  };
   let multiTapMode = false;            // touch: taps ADD to the selection (Group/Align need ≥2)
   /**
    * THE tool mode - see `setMode`. Every mode used to be its own boolean, which is exactly
@@ -1463,6 +1577,48 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   };
   const bgInputId = 'background';
   const getBg = (): any => runtime.getModel().find((i) => i.id === bgInputId)?.value ?? '#ffffff';
+
+  /** The frame-primitive field names as the pure artboard helpers want them. Only
+   *  meaningful with `frameCfg`; every caller is gated on it. */
+  const frameFields = (): FrameFields => ({
+    idField: cfg.idField, kindField: cfg.kindField,
+    xField: cfg.xField, yField: cfg.yField, wField: cfg.wField, hField: cfg.hField,
+    frameField: frameCfg?.frameField || 'frame',
+    orderField: frameCfg?.orderField || 'order',
+    frameKind: frameCfg?.frameKind || 'frame',
+  });
+  /** Does this document have artboards at all? Decides between "artboard fill" and
+   *  "canvas background", and gates every housekeeping path below. */
+  const hasFrames = (boxes: Box[]): boolean =>
+    !!frameCfg && boxes.some((b) => b && String(b[cfg.kindField]) === frameCfg.frameKind);
+  /** `canvas.labelField` - a row's own NAME. The timeline uses it for a renamed clip;
+   *  plans/179 A10 uses it for an artboard's tab. Optional: no field, no rename. */
+  const nameField: string = cv.labelField || '';
+  /** The frame field that holds a slide's SPEAKER NOTES. Not a canvas-config key: the
+   *  manifest declares `boxes[].notes` and every reader here (the notes panel, the deck
+   *  model, the artboards import) names the same literal, so it is named once. */
+  const FRAME_NOTES_FIELD = 'notes';
+  /** The DOCUMENT-level slide transition (plans/179 M4). Not a canvas-config key for the
+   *  same reason FRAME_NOTES_FIELD is not: the manifest declares a top-level `transition`
+   *  input and every reader here names that same literal, so it is named once. Read live
+   *  rather than captured - the sidebar can change it between mount and "Place in order". */
+  const DOC_TRANSITION_INPUT = 'transition';
+  const docTransitionValue = (): string => {
+    const v = runtime.getModel().find((i) => i.id === DOC_TRANSITION_INPUT)?.value;
+    return v == null ? '' : String(v);
+  };
+  // The rail's paint swatch and the key of what it currently shows. Declared HERE, not
+  // beside paintBgField below, because buildToolbar runs during mount and a `let` in the
+  // later block would still be in its temporal dead zone.
+  let bgSlot: HTMLElement | null = null;
+  let bgFieldKey = '';
+  /** Which control the mark menu is hanging off (see `anchorEl` in buildToolbar) - out
+   *  here for the same dead-zone reason, and so `openLollyMenu` can claim it. */
+  let lollyAnchor: HTMLElement | null = null;
+  const setLollyAnchor = (el: HTMLElement): void => { lollyAnchor = el; };
+  /** The mark menu's row builder, published out of `buildToolbar` so `openLollyMenu`
+   *  (design-ports) can spawn the SAME menu from the top bar's own mark. */
+  let lollyMenuItems: (() => PopItem[]) | null = null;
 
   // A row's identity is its OWN id, never its array position (plan 100 section 3): an index key
   // silently re-points at a different box the moment anything inserts above it - a peer's
@@ -1664,6 +1820,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   let timelineLoad: Promise<void> | null = null;
   let timelineWantOpen = false;
   let timelineBtn: HTMLButtonElement | null = null;
+  /** Whether the stage currently holds a band for the panel - the open/close EDGE, so
+   *  a resize drag (which writes a new reserve every frame) costs nothing extra. */
+  let timelineReserved = false;
 
   // Reserve a bottom band of the stage for the docked panel, then re-fit the canvas.
   // Mirrors deck-editor's syncFreeReserve exactly: a px STRING ('' releases), an
@@ -1674,9 +1833,28 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (stageEl.style.getPropertyValue('--stage-reserve-bottom') === next) return;
     if (next) stageEl.style.setProperty('--stage-reserve-bottom', next);
     else stageEl.style.removeProperty('--stage-reserve-bottom');
+    // The right edge dock is a body-level fixed column that cannot read the stage's
+    // inline style: publish the band on <html> too, so the column ends above the timeline.
+    if (next) document.documentElement.style.setProperty('--design-timeline-h', next);
+    else document.documentElement.style.removeProperty('--design-timeline-h');
     // The reserve is the timeline panel's open/close/height signal, so this is also
     // where the tool rail auto-docks (open) and returns to floating (close).
     dockRailForTimeline(px > 0);
+    // …and it is the ONLY place free-canvas learns that the panel closed ITSELF
+    // (plans/179 T2). Escape inside the panel calls its own `setOpen(false)` and never
+    // comes back through `ensureTimeline`, so the rail button stayed armed, the chrome
+    // kept the open-panel gate, and `timelineWantOpen` stayed true - which a later
+    // chunk-load would have honoured by re-opening a panel the user had dismissed.
+    // On the EDGE only: a resize drag rewrites the reserve every frame.
+    if ((px > 0) !== timelineReserved) {
+      timelineReserved = px > 0;
+      if (!timelineReserved && timelinePanel && !timelinePanel.isOpen()) {
+        timelineWantOpen = false;
+        hideSeqPrompt();
+        scheduleSync();
+      }
+      syncTimelineBtn();
+    }
     canvasEl.dispatchEvent(new Event('canvas-resize'));
   }
 
@@ -1714,17 +1892,33 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * marquee, hover, drop - runs through this, so a box that must not be grabbed off the
    * canvas is excluded in ONE expression rather than at five call sites.
    *
-   * Two exclusions:
+   * Four exclusions:
    *   • SEQ-HIDDEN - the box is not on screen at the playhead, so a click falls through
    *     it to whatever is (the rule this function was written for).
    *   • CAMERA - a camera has NO canvas footprint at all (plans/104 section 5.4: "excluded
    *     from hit-testing, marquee…; selected via its bar/chip only"). It paints nothing
    *     and is minted with no geometry, so without this a zero-size marker at the origin
    *     is caught by any marquee crossing it and dragged around as if it were artwork.
+   *   • HIDDEN - the layer flag (plans/179 M4). The hook leaves a hidden row out of the
+   *     render entirely, so there is no element to hit - but the pick runs over the MODEL,
+   *     which still holds the row at its geometry. Without this a hidden box is caught by
+   *     a marquee and dragged around while nothing at all is on screen.
+   *   • LOCKED - the other layer flag. It IS drawn, and drawn normally; what it refuses is
+   *     acquisition. A locked frame is still selectable through its label, which is a
+   *     separate element with its own handler and never reaches this pick.
    */
   function seqHiddenSkip(boxes: Box[]): ((i: number) => boolean) | undefined {
-    if (!timeCfg) return undefined;
-    return (i: number) => String(boxes[i]?.[cfg.kindField] ?? '') === 'camera' || seqHiddenId(idOf(boxes[i], i));
+    const hideF = frameCfg?.hiddenField;
+    const lockF = frameCfg?.lockedField;
+    if (!timeCfg && !hideF && !lockF) return undefined;
+    return (i: number) => {
+      const b = boxes[i];
+      if (!b) return false;
+      if (hideF && boolOf(b[hideF], false)) return true;
+      if (lockF && boolOf(b[lockF], false)) return true;
+      if (!timeCfg) return false;
+      return String(b[cfg.kindField] ?? '') === 'camera' || seqHiddenId(idOf(b, i));
+    };
   }
   /**
    * RETENTION, the half `seqHiddenSkip` cannot cover: a selection acquired while its
@@ -1849,7 +2043,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       timelinePanel = initTimelinePanel({
         stageEl, canvasEl, runtime,
         host: host as { log?(level: string, msg: string): void },
-        blockId, cfg: timeCfg, getBoxes, commit, onDirty,
+        blockId,
+        // The FRAME sub-field carrying a slide's own transition rides in on the time
+        // cfg (plans/179 M4). It is not part of the time model - it lives on the canvas
+        // block beside `frameField` - and without it here the panel's "a hand-set
+        // Enter/Exit on an artboard stamps `custom`" branch was unreachable in the app:
+        // the only thing that ever set the name was a test's own cfg patch, so every
+        // hand-set slide transition was still fair game for the next "Place in order".
+        cfg: { ...timeCfg, frameTransitionField: frameCfg?.transitionField || '' },
+        getBoxes, commit, onDirty,
         // The box sub-field carrying rendered text, so the panel's generated
         // caption boxes write cue text where the tool's template reads it.
         textField: cv.textField,
@@ -1857,12 +2059,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // does (audio included) instead of hardcoding a list it cannot know.
         addKinds,
         // The canvas selection, adapted: read/write the same Set the overlay uses, and
-        // subscribe to the single notifier fired from paintChrome.
-        selection: {
-          get: () => [...selection],
-          set: (ids: string[]) => { selection = new Set(ids); renderChrome(); },
-          onChange: (cb: () => void) => { selListeners.add(cb); return () => { selListeners.delete(cb); }; },
-        },
+        // subscribe to the single notifier fired from paintChrome. The SAME object the
+        // Design columns are handed (see `selectionPort`).
+        selection: selectionPort,
         reserve: reserveBottom,
         // The export frame for a camera take (RecordOpts.frame): the active artboard's
         // size, else the canvas - the same answer the size panel gives.
@@ -2271,6 +2470,28 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     selection = new Set(selectionForHit(boxes, idx, true)); // solo the frame
     renderChrome();
   });
+  // Double-click renames it in place (plans/179 A10). The single click above has already
+  // fired and soloed the frame, which is the right selection to be renaming.
+  frameLabels.addEventListener('dblclick', (e) => {
+    const el = (e.target as HTMLElement | null)?.closest<HTMLElement>('.fc-frame-label');
+    if (!el) return;
+    e.stopPropagation();
+    e.preventDefault();
+    startFrameRename(el, el.dataset.frameId || '');
+  });
+  // …and from the keyboard, which a double-click alone left with no way in at all. F2 is
+  // the platform rename key (and what the navigator's rows answer); Enter is the one a
+  // person tries first, and `preventDefault` is what stops the button synthesising the
+  // click that would merely solo the frame. The tab advertises both through
+  // `aria-keyshortcuts` - its `title` can only speak to a mouse.
+  frameLabels.addEventListener('keydown', (e) => {
+    const el = (e.target as HTMLElement | null)?.closest<HTMLElement>('.fc-frame-label');
+    if (!el || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key !== 'F2' && e.key !== 'Enter') return;
+    e.preventDefault();
+    e.stopPropagation();
+    startFrameRename(el, el.dataset.frameId || '');
+  });
 
   // Camera-gesture HUD (audit A2/A4). A camera drag commits on release and previews
   // NOTHING on the stage (section 8's "drags commit on release"), so a shift-drag tilt or an
@@ -2364,13 +2585,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    *  device answers differently depending on what the user last touched. */
   const coarsePointer = (): boolean => matchMedia('(pointer: coarse)').matches;
 
-  // A create arm shows itself as a crosshair cursor plus a lit rail button. On touch there
-  // is no cursor, so choosing Text or Image from the Add menu closed the menu and then
+  // A create arm used to show itself as a crosshair cursor plus a lit rail button, and on
+  // touch not even that: choosing Text or Image from the Add menu closed the menu and then
   // looked like nothing at all - the button read as broken and the tap that would have
-  // placed the box never came. Words are the only channel left, so on a coarse pointer the
-  // arm says what it is waiting for. Pointer-transparent apart from its dismiss button, so
-  // it can never eat the very tap it is asking for; absolutely positioned inside the stage
-  // overlay, so the stage's own insets keep it clear of the safe area.
+  // placed the box never came. A pink `+` is not a sentence on ANY pointer (plan 179 A18:
+  // "Add menu > Artboard / Image / Box arm a draw mode silently"), so the arm now says what
+  // it is waiting for whatever is pointing at it - it only says a different thing, because
+  // a mouse drags to size and a finger taps to place. Pointer-transparent apart from its
+  // dismiss button, so it can never eat the very gesture it is asking for; absolutely
+  // positioned inside the stage overlay, so the stage's own insets keep it clear of the
+  // safe area.
   // Built node-by-node with a WORDED dismiss, the same recipe the off-playhead and
   // frames-in-order chips use: a static-text chip is not worth a raw-HTML sink (R10 in
   // primitive-guards ratchets those), and a bare cross glyph is a small target on the one
@@ -2391,10 +2615,52 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   let armHintOff = false;
   armHintX.addEventListener('click', () => { armHintOff = true; hideArmHint(); });
 
+  /**
+   * Kinds whose gesture ends at an ASSET PICKER rather than at a finished object - the
+   * drag places the frame, then the library opens. Worth saying, because a drag that
+   * ends in a dialog is a different promise from one that ends in a shape.
+   *
+   * The noun is PER KIND, and it is the noun the picker itself will use a moment later
+   * (`pickImage`'s dialog title): one sentence for the lot said "place an image" when the
+   * user had just chosen Video, Animation or Clip - in the very chip whose point is to
+   * say what the armed mode is waiting for. Keyed on the add-kind's `id`, because all
+   * four of these seed the same `kind: 'image'`.
+   */
+  const assetArmHint = (id: string): string | null => {
+    switch (id) {
+      case 'video': case 'clip': return t('Drag on the canvas to place a video, then choose one.');
+      case 'lottie': return t('Drag on the canvas to place an animation, then choose one.');
+      case 'tool': return t('Drag on the canvas to place a tool, then choose one.');
+      case 'image': return t('Drag on the canvas to place an image, then choose one.');
+      default: return null;
+    }
+  };
+
   function showArmHint(kind: AddKind | null | undefined): void {
-    if (armHintOff || !kind || !coarsePointer()) { hideArmHint(); return; }
-    const isText = kind.id === 'text' || (kind.seed != null && kind.seed[cfg.kindField] === 'text');
-    armHintTxt.textContent = isText ? t('Tap the canvas to place text') : t('Tap the canvas to place it');
+    if (armHintOff || !kind) { hideArmHint(); return; }
+    const seedKind = kind.seed != null ? String(kind.seed[cfg.kindField] ?? '') : '';
+    const asset = assetArmHint(kind.id);
+    if (coarsePointer()) {
+      // No cursor and no drag-to-size: a finger TAPS and the box appears at its seed size.
+      const isText = kind.id === 'text' || seedKind === 'text';
+      armHintTxt.textContent = isText ? t('Tap the canvas to place text') : t('Tap the canvas to place it');
+    } else if (kind.id === 'audio' || seedKind === 'audio') {
+      armHintTxt.textContent = t('Drag on the canvas to place a sound, then choose one.');
+    } else if (asset) {
+      armHintTxt.textContent = asset;
+    } else if (seedKind === 'image') {
+      armHintTxt.textContent = t('Drag on the canvas to place an image, then choose one.');
+    } else {
+      // The kind's own label, so the sentence names the thing the user just chose
+      // ("draw: Circle", "draw: Artboard") rather than a generic "shape". No article and
+      // no lowercasing: an article baked into the English source made "draw a artboard"
+      // that no translator could repair, and `toLocaleLowerCase()` both destroyed a
+      // German noun's capital and read the HOST locale rather than the app's.
+      // tRaw, not t: this is a TEXT sink, where an escaped apostrophe in a translated
+      // kind label would be shown literally as `&#39;`.
+      armHintTxt.textContent = tRaw('Drag on the canvas to draw: {kind}. Press Escape to cancel.',
+        { kind: kind.label ? t(kind.label) : kind.id });
+    }
     armHintEl.hidden = false;
   }
   function hideArmHint(): void {
@@ -2514,11 +2780,20 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   seqPromptPlace.addEventListener('click', () => {
     if (!frameCfg || !timeCfg) { hideSeqPrompt(); return; }
-    commit(sequenceFramesInOrder(getBoxes(), {
+    // The transitions come from the DOCUMENT and from each slide's own choice (plans/179
+    // M4), not from a blanket 'fade'/'fade' this button used to impose - laying a deck out
+    // on the timeline had been quietly overwriting the transition the author picked.
+    // Without a transitionField (a tool with no per-frame transition) the flat defaults
+    // stand, which is the behaviour every other frame tool keeps.
+    const tr = frameCfg.transitionField;
+    // commitSequenced, not commit: laying the deck out again moves every frame start, and
+    // a narrated deck's clips/captions/builds have to move with them (plans/180 T7).
+    commitSequenced(sequenceFramesInOrder(getBoxes(), {
       defaultDurMs: 3000,
       lane: 'seq',
-      defaultEnter: 'fade',
-      defaultExit: 'fade',
+      ...(tr
+        ? { transitionField: tr, docTransition: docTransitionValue() }
+        : { defaultEnter: 'fade', defaultExit: 'fade' }),
       startField: timeCfg.startField, durField: timeCfg.durField, laneField: timeCfg.laneField,
       enterField: timeCfg.enterField, exitField: timeCfg.exitField,
       orderField: frameCfg.orderField || 'order',
@@ -2528,6 +2803,149 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     announce(t('Frames placed in order. Scrub the playhead to preview your slideshow.'));
   });
   seqPromptSkip.addEventListener('click', () => { seqPromptDismissed = true; hideSeqPrompt(); });
+
+  // ── Notes to voice (plans/180 M-A) ──────────────────────────────────────────
+  //
+  // ONE door for both verbs: narrateDeck() speaks every slide that carries speaker
+  // notes, narrateDeck(frameId) speaks (or re-speaks) one. The consent sheet, the
+  // serial heavy queue, the toast and every model write belong to lib/narration.ts;
+  // all this function does is say what the deck's fields are called and how to
+  // re-pack it afterwards.
+  //
+  // Re-packing is the T7 half and it has to happen HERE, not in the lib: the pack
+  // options (the per-frame transition field, the document transition, the 3 s
+  // default) are the overlay's, and they are the same ones "Place in order" passes
+  // - narrating a deck must not quietly change how its slides change.
+
+  let narrateBusy = false;
+
+  /** The field map lib/narration.ts writes through, built from THIS tool's canvas
+   *  config so the pure module never has to know Design's names by heart. */
+  function narrationFields(): NarrationFields | null {
+    if (!frameCfg || !timeCfg || !cfg.groupField) return null;
+    return {
+      ...DESIGN_NARRATION_FIELDS,
+      idField: cfg.idField,
+      kindField: cfg.kindField,
+      frameField: frameCfg.frameField,
+      frameKind: frameCfg.frameKind,
+      orderField: frameCfg.orderField || 'order',
+      groupField: cfg.groupField,
+      laneField: timeCfg.laneField,
+      startField: timeCfg.startField,
+      durField: timeCfg.durField,
+      enterField: timeCfg.enterField,
+      exitField: timeCfg.exitField,
+      enterMsField: timeCfg.enterMsField,
+      exitMsField: timeCfg.exitMsField,
+      notesField: FRAME_NOTES_FIELD,
+      ...(timeCfg.duckField ? { duckField: timeCfg.duckField } : {}),
+      ...(cfg.imageField ? { assetField: cfg.imageField } : {}),
+      ...(cfg.textField ? { textField: cfg.textField } : {}),
+    };
+  }
+
+  /** A document-level number input, or `fallback` when it is unset or nonsense. */
+  function docNumInput(id: string, fallback: number): number {
+    const v = runtime.getModel().find((i) => i.id === id)?.value;
+    const n = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
+    return Number.isFinite(n) && n >= 0 ? n : fallback;
+  }
+
+  /** The document's lead-in and tail, with the manifest's own defaults. Read fresh every
+   *  time: both are doc inputs the author can change between two narrate runs. */
+  function narrationTiming(): NarrationTiming {
+    return {
+      leadInMs: docNumInput('narrationLeadInMs', 400),
+      tailMs: docNumInput('narrationTailMs', 600),
+    };
+  }
+
+  /**
+   * Frames re-flowed, and everything anchored to them moved with it (plans/180 T7).
+   *
+   * `sequenceFramesInOrder` writes FRAME rows only - a Design box stores absolute
+   * film-clock seconds, so a re-pack that lengthens slide one leaves slide two's voice,
+   * its captions and its build fragments speaking over slide one. One commit, so the
+   * whole re-flow is a single undo step.
+   */
+  function commitSequenced(placed: Box[]): void {
+    const f = narrationFields();
+    commit(f ? reanchorNarration(placed, f, narrationTiming()) : placed);
+  }
+
+  /** One slide's narration status, for the navigator dot and the inspector button. */
+  function narrationStatusOf(frameId: string): NarrationStatus {
+    const f = narrationFields();
+    return f ? narrationStatusFor(getBoxes(), f, frameId) : 'none';
+  }
+
+  /** How many slides carry speaker notes at all - what greys the deck-wide row. */
+  function framesWithNotes(): number {
+    const f = narrationFields();
+    if (!f) return 0;
+    let n = 0;
+    for (const fr of narrationFramesOf(getBoxes(), f)) if (fr.spoken) n++;
+    return n;
+  }
+
+  async function narrateDeck(frameId?: string): Promise<void> {
+    if (disposed || !frameCfg || !timeCfg || !cfg.groupField) return;
+    // A second press while a run is in flight used to do nothing at all - no toast, no
+    // announcement, no state change - so the button read as broken. Say what is going on.
+    if (narrateBusy) { announce(t('A narration run is already going.')); return; }
+    const speech = (host as unknown as HostV1).speech;
+    if (!speech?.isAvailable()) return;
+    narrateBusy = true;
+    const release = (): void => { narrateBusy = false; };
+    try {
+      // Lazy for the Script-audio reason: the whole speech path is a chunk nothing
+      // else on this canvas needs until somebody asks for a voice.
+      const [{ openNarrateConsent }, { currentLang }] = await Promise.all([
+        import('../lib/narration.ts'),
+        import('../i18n.ts'),
+      ]);
+      const fields = narrationFields();
+      if (!fields) { release(); return; }
+      const docText = (id: string): string => {
+        const v = runtime.getModel().find((i) => i.id === id)?.value;
+        return v == null ? '' : String(v);
+      };
+      const tr = frameCfg.transitionField;
+      await openNarrateConsent(host as unknown as Parameters<typeof openNarrateConsent>[0], {
+        fields,
+        getBoxes,
+        commit,
+        repack: (floors) => {
+          // One commit for both halves: the frames re-flow, then every clip, caption and
+          // build fragment anchored to them follows (plans/180 T7).
+          commitSequenced(sequenceFramesInOrder(getBoxes(), {
+            defaultDurMs: 3000,
+            lane: 'seq',
+            minDurMs: floors,
+            idField: cfg.idField,
+            ...(tr
+              ? { transitionField: tr, docTransition: docTransitionValue() }
+              : { defaultEnter: 'fade', defaultExit: 'fade' }),
+            startField: timeCfg.startField, durField: timeCfg.durField, laneField: timeCfg.laneField,
+            enterField: timeCfg.enterField, exitField: timeCfg.exitField,
+            orderField: frameCfg.orderField || 'order',
+            kindField: cfg.kindField, frameKind: frameCfg.frameKind,
+          }));
+        },
+        voice: docText('narrationVoice'),
+        speed: docNumInput('narrationSpeed', 1),
+        timing: narrationTiming(),
+        // Asking for ONE slide is always a deliberate re-record, so it never waits
+        // for the notes to have changed.
+        ...(frameId ? { frameIds: [frameId], force: true } : {}),
+        lang: currentLang(),
+      }, { onDismiss: release, onSettled: release });
+    } catch (err) {
+      (host as unknown as HostV1).log?.('warn', `narrate failed - ${String(err)}`);
+      release();
+    }
+  }
 
   /**
    * Offer to sequence the frames when the timeline is open - but only when frames exist and
@@ -2671,6 +3089,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   toolbar.className = 'fc-toolbar';
   toolbar.setAttribute('role', 'toolbar');
   toolbar.setAttribute('aria-label', t('Editor tools'));
+  // The rail is CANVAS tooling, not chrome over the canvas, and it moves house: it floats
+  // on the stage, and it sits in the navigator's slot while that column is open. The
+  // column marks itself `data-canvas-keys="off"`, which the rail would inherit - so the
+  // tool letters and Delete would answer from a floating rail and go quiet from a docked
+  // one. The nearest marker wins (chromeKeysOff), so this keeps one meaning in both homes.
+  toolbar.setAttribute('data-canvas-keys', 'on');
   // Grip at the very top - the rail is a floating palette, so it says so and gives a
   // drag target that is not one of the buttons (every button stops pointerdown, which
   // is what keeps a click on a tool from starting a drag).
@@ -2691,8 +3115,105 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   let railDrag: { pointerId: number; dx: number; dy: number; lx: number; ly: number } | null = null;
   let railWant: { left: number; top: number } | null = null;
   let railRaf = 0;
-  /** Whether the open timeline has auto-docked the rail (see dockRailForTimeline). */
-  let railDockedForTl = false;
+  /**
+   * WHERE THE RAIL IS RIGHT NOW. Two panels can ask for it, and they must not both get
+   * it: the open NAVIGATOR takes the buttons into a grid at the top of its own column,
+   * and the open TIMELINE turns the rail into a fixed-width left column of its own.
+   * With two independent mechanisms the rail ended up docked left for the timeline while
+   * the navigator was open beside it, clipping the layer names - so there is one mode,
+   * two standing requests, and one applier (`applyRailMode`).
+   */
+  let railMode: 'float' | 'timeline' | 'navigator' = 'float';
+  /** The timeline's standing request for the rail (see dockRailForTimeline). */
+  let tlWantsRail = false;
+  /** The navigator's, which wins: an open column already IS the left sidebar. */
+  let navWantsRail = false;
+  /** The docked rail column's own width in px, measured on the way in (see the dock). */
+  let railDockW = 0;
+  /**
+   * ── The ONE writer of the stage's side reserves (plans/179 M2-d) ──────────────
+   *
+   * `--stage-reserve-left` was contended: the docked timeline rail wrote it, and the
+   * navigator column wants it too. Two writers over one custom property means the last
+   * one to run wins and the other's band silently disappears - so both go through here,
+   * which is the only place either property is set.
+   *
+   * `--ldock-rail-w` is published beside it because a rail the TIMELINE docked must keep
+   * its OWN width while the reserve also covers the navigator (editor.css's
+   * `.has-tl-reserve .fc-toolbar-dock`); `.tl-panel` reads the full reserve, so the
+   * timeline band starts to the right of the left column rather than under it.
+   */
+  let navReserveLeft = 0;
+  let inspectorReserveRight = 0;
+  function syncStageReserves(): void {
+    // The rail gets a band of its own ONLY while the timeline made it a column. With the
+    // navigator open the buttons sit inside that column, so the navigator's width is the
+    // whole left band and a rail allowance on top of it would double-count the same px.
+    const railBand = railMode === 'timeline' ? railDockW + 12 : 0;
+    const left = Math.max(0, Math.round(navReserveLeft + railBand));
+    // Equality-guarded, like reserveBottom: the stage has a ResizeObserver, and an
+    // unconditional write plus an unconditional `canvas-resize` is a loop.
+    let changed = false;
+    const put = (el: HTMLElement, prop: string, px: number): void => {
+      const next = px > 0 ? `${px}px` : '';
+      if (el.style.getPropertyValue(prop) === next) return;
+      if (next) el.style.setProperty(prop, next); else el.style.removeProperty(prop);
+      changed = true;
+    };
+    put(stageEl, '--stage-reserve-left', left);
+    // The RIGHT band is always zero now: the inspector and every other right-hand panel
+    // ride the app-wide edge dock, which insets `#view` through `--dock-w` instead of
+    // reserving stage width. Written as a removal rather than skipped, so a stage left
+    // with a right reserve by an earlier layout is cleared.
+    put(stageEl, '--stage-reserve-right', 0);
+    put(stageEl, '--ldock-rail-w', railBand);
+    // <html>, not the stage: the fixed back pill insets past the dock with the app-wide
+    // `--dock-w` pattern, and it is not a child of the stage.
+    put(document.documentElement, '--ldock-w', railBand);
+    if (changed) { try { canvasEl.dispatchEvent(new Event('canvas-resize')); } catch { /* stage detached */ } }
+  }
+  /**
+   * The navigator's own slot for the tool rail, present only while that column is open
+   * (design-navigator.ts hides it with the rest of the body when the column collapses to
+   * its dot rail). Read off the DOM rather than handed over: the navigator is mounted by
+   * the tool view as a stage sibling, and neither module imports the other, so the data
+   * attribute is the whole contract - the same shape as this file's `.tl-panel` reads.
+   */
+  function navRailSlot(): HTMLElement | null {
+    const slot = stageEl.querySelector<HTMLElement>('[data-nav-rail-slot]');
+    return slot && !slot.hidden ? slot : null;
+  }
+  /**
+   * The columns' single door onto the reserves (design-ports' `setColumnWidths`), and
+   * with it the moment the rail changes hands: a column reports its width on mount, on
+   * every open/close and on every frame of a resize drag, which is exactly when its rail
+   * slot appears and disappears.
+   */
+  function setColumnWidths(left: number, right: number): void {
+    const l = Number.isFinite(left) ? Math.max(0, left) : 0;
+    const r = Number.isFinite(right) ? Math.max(0, right) : 0;
+    const wantNav = !!navRailSlot();
+    if (l === navReserveLeft && r === inspectorReserveRight && wantNav === navWantsRail) return;
+    navReserveLeft = l;
+    inspectorReserveRight = r;
+    navWantsRail = wantNav;
+    applyRailMode();
+    syncStageReserves();
+    // A rail the user had already dragged carries an inline position that predates the
+    // column: re-clamp it so opening the navigator pushes it clear rather than leaving
+    // it sitting over the rows (the CSS default position follows the band on its own).
+    reclampRail();
+  }
+  /**
+   * WHERE THE RAIL WAS WHEN THE PANEL TOOK IT (plans/179 T2). The auto-dock strips the
+   * dock's `is-detached` + inline left/top to turn it into a fixed-width column, so
+   * without a snapshot the undock has nothing to put back and the rail sits wherever
+   * the last thing to write a position left it - the reported "rail stranded at x=-33,
+   * a third of it off-screen". `null` means it was NOT detached (the CSS edge park),
+   * which is a position too and has to be restored as faithfully as a dragged one.
+   */
+  let railPreDock: { left: number; top: number } | null = null;
+  let railWasDetached = false;
   // Self-gating (no-op unless the flag is on and motion is allowed); wobble owns the
   // transform on the dock (only ever set mid-drag, while the popover is closed).
   const wobble = attachWobble(toolbarDock);
@@ -2726,7 +3247,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const rr = toolbar.getBoundingClientRect();
     const sr = stageEl.getBoundingClientRect();
     const pos = clampRailPos(want, { w: rr.width, h: rr.height }, { w: sr.width, h: sr.height },
-      { reserveBottom: railReserveBottom(sr) });
+      // The navigator's band, never the rail's own share of the reserve (while the
+      // timeline has docked the rail it IS that column and is not draggable anyway).
+      { reserveBottom: railReserveBottom(sr), reserveLeft: navReserveLeft });
     railSession = pos;
     toolbarDock.classList.add('is-detached');
     toolbarDock.style.left = pos.left + 'px';
@@ -2734,49 +3257,119 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
   /** Keep a detached rail inside the stage when the stage itself changes size. */
   function reclampRail(): void {
-    // While the timeline has auto-docked the rail, a stage resize must not re-detach
-    // it - the remembered position comes back when the panel closes.
-    if (railDockedForTl && !toolbarDock.classList.contains('is-detached')) return;
+    // While a panel holds the rail, a stage resize must not re-detach it - the
+    // remembered position comes back when that panel lets go.
+    if (railMode !== 'float' && !toolbarDock.classList.contains('is-detached')) return;
     if (railSession) placeRail(railSession);
   }
   /**
-   * Timeline open: the rail stops floating and becomes a fixed-width left PANEL - the
-   * mirror of the right edge-dock column (export settings / player). Content is
-   * NUDGED right, never overlapped: the measured panel width goes on the stage as
-   * `--stage-reserve-left` (fitCanvas margins the canvas into the remaining band,
-   * exactly like the timeline's bottom reserve) and onto <html> as `--ldock-w` so
-   * the fixed back pill insets past it (the `--dock-w` pattern). Dragging is off
-   * while docked - a set-width panel has nowhere to drag to - and `railSession`
-   * (the user's floating position) is kept and restored when the panel closes.
+   * REMEMBER, BEFORE A PANEL TAKES IT. Both docks strip the dock's `is-detached` and its
+   * inline left/top, which is also the evidence of where the rail was, so the snapshot
+   * has to happen while the rail is still floating.
+   */
+  function snapshotRailHome(): void {
+    railWasDetached = toolbarDock.classList.contains('is-detached');
+    railPreDock = railSession ? { ...railSession } : null;
+  }
+  /**
+   * GIVE IT BACK, explicitly (plans/179 T2). `railSession` first, because it is the
+   * user's own last word on where the rail lives and it survives a dock - so a drag that
+   * happened before it (or in another editor this page session) still wins. Then the
+   * pre-dock snapshot. And if neither says "detached", the rail was parked on the CSS
+   * edge: clear the column's leftovers rather than leaving the dock in whatever
+   * half-state the panel styles put it in, which is how it ended up mostly off-screen.
+   */
+  function restoreFloatingRail(): void {
+    const back = railSession ?? railPreDock;
+    if (back && (railWasDetached || railSession)) {
+      placeRail(back);
+    } else {
+      toolbarDock.classList.remove('is-detached');
+      toolbarDock.style.removeProperty('left');
+      toolbarDock.style.removeProperty('top');
+    }
+    railPreDock = null;
+    railWasDetached = false;
+  }
+  /** Put the buttons in the navigator's slot (idempotent - a rebuilt slot re-homes). */
+  function homeRailInNav(): void {
+    const slot = navRailSlot();
+    if (!slot || toolbar.parentElement === slot) return;
+    slot.appendChild(toolbar);
+  }
+  /**
+   * Navigator open: the rail is not a second left column beside it, it is the grid of
+   * icons at the top OF it (Andy, 2026-09-02: "if the left dock is on we should dock the
+   * fc-toolbar too, perhaps wrap the icons in a grid up the top of the toolbar"). Every
+   * button keeps its element, so its handler, tooltip and accessible name travel with it;
+   * only the drag grip and the separators go, and those are CSS (`.fc-toolbar--grid`).
+   */
+  function enterNavDock(): void {
+    toolbarDock.classList.remove('is-detached');
+    toolbarDock.style.removeProperty('left');
+    toolbarDock.style.removeProperty('top');
+    toolbar.classList.add('fc-toolbar--grid');
+    homeRailInNav();
+  }
+  function leaveNavDock(): void {
+    toolbar.classList.remove('fc-toolbar--grid');
+    if (toolbar.parentElement !== toolbarDock) toolbarDock.appendChild(toolbar);
+  }
+  /**
+   * Timeline open with no navigator: the rail stops floating and becomes a fixed-width
+   * left PANEL - the mirror of the right edge-dock column (export settings / player).
+   * Content is NUDGED right, never overlapped: the measured panel width is handed to
+   * `syncStageReserves`, the one writer of `--stage-reserve-left`, `--ldock-rail-w` and
+   * `--ldock-w`. Dragging is off while docked - a set-width panel has nowhere to drag to.
    * The panel look itself is CSS (`.has-tl-reserve` in editor.css).
    */
+  function enterTimelineDock(): void {
+    toolbarDock.classList.remove('is-detached');
+    toolbarDock.style.removeProperty('left');
+    toolbarDock.style.removeProperty('top');
+    // Measure the floating rail BEFORE the panel styles land, +gutters. A rail that
+    // cannot be measured (display:none mid-navigation) falls back to its design width.
+    railDockW = Math.ceil(toolbar.getBoundingClientRect().width) || 46;
+    stageEl.classList.add('has-tl-reserve');
+  }
+  function leaveTimelineDock(): void {
+    railDockW = 0;
+    stageEl.classList.remove('has-tl-reserve');
+  }
+  /**
+   * The one applier. The navigator wins over the timeline: with the column open the rail
+   * is inside it, and when the column closes the timeline's own left dock takes over
+   * again, so today's behaviour stands wherever there is no navigator.
+   */
+  function applyRailMode(): void {
+    const want = navWantsRail ? 'navigator' : (tlWantsRail ? 'timeline' : 'float');
+    if (want === railMode) {
+      // Same mode, but a navigator re-render replaces the slot node under us.
+      if (want === 'navigator') homeRailInNav();
+      return;
+    }
+    if (railMode === 'float') snapshotRailHome();
+    else if (railMode === 'timeline') leaveTimelineDock();
+    else leaveNavDock();
+    railMode = want;
+    if (want === 'timeline') enterTimelineDock();
+    else if (want === 'navigator') enterNavDock();
+    else restoreFloatingRail();
+  }
+  /** The timeline's half of that request (the panel calls this as it opens/closes). */
   function dockRailForTimeline(on: boolean): void {
     // Desktop only, like the right edge-dock: a fixed left column is dead space on a
     // phone, so below the shell's breakpoint the rail keeps its floating behaviour.
     // Feature-detect matchMedia (absent under jsdom/CLI, where docking is harmless).
     if (on && typeof window.matchMedia === 'function' && !window.matchMedia('(min-width: 641px)').matches) return;
-    if (on === railDockedForTl) return;
-    railDockedForTl = on;
-    stageEl.classList.toggle('has-tl-reserve', on);
-    if (on) {
-      toolbarDock.classList.remove('is-detached');
-      toolbarDock.style.removeProperty('left');
-      toolbarDock.style.removeProperty('top');
-      // Measure the floating rail BEFORE the panel styles land, +gutters. A rail that
-      // cannot be measured (display:none mid-navigation) falls back to its design width.
-      const railW = Math.ceil(toolbar.getBoundingClientRect().width) || 46;
-      const panelW = `${railW + 12}px`;
-      stageEl.style.setProperty('--stage-reserve-left', panelW);
-      document.documentElement.style.setProperty('--ldock-w', panelW);
-    } else {
-      stageEl.style.removeProperty('--stage-reserve-left');
-      document.documentElement.style.removeProperty('--ldock-w');
-      if (railSession) placeRail(railSession);
-    }
+    if (on === tlWantsRail) return;
+    tlWantsRail = on;
+    applyRailMode();
+    syncStageReserves();
   }
   const onRailDown = (e: PointerEvent): void => {
     if (e.button !== 0 || railDrag) return;
-    if (railDockedForTl) return;   // a docked panel has a set width and place - no drag
+    if (railMode !== 'float') return;   // a docked rail has a set width and place - no drag
     // Buttons/fields already stop pointerdown before it reaches here; this is the
     // belt to that pair of braces, and it keeps the colour trigger draggable-proof.
     if ((e.target as HTMLElement).closest?.('button, input, select, .fc-color-btn')) return;
@@ -2835,7 +3428,20 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   const modeBtns: Record<'select' | 'create' | 'pen' | 'line', HTMLButtonElement | null> =
     { select: null, create: null, pen: null, line: null };
   let nodeToolBtn: HTMLButtonElement | null = null;   // the Node tool (opt-in, cv.pathField)
-  function closePopover() { popover?.remove(); popover = null; }
+  /** The control the open popover belongs to: it owns the trigger's `aria-expanded`,
+   *  and it is where focus goes back to when the menu closes from the keyboard. */
+  let popoverAnchor: HTMLElement | null = null;
+  function closePopover(restoreFocus = false): void {
+    const anchor = popoverAnchor;
+    popoverAnchor = null;
+    popover?.remove();
+    popover = null;
+    if (!anchor) return;
+    if (anchor.hasAttribute('aria-haspopup')) anchor.setAttribute('aria-expanded', 'false');
+    // Only when the CLOSE came from the keyboard: a pointer dismiss has already moved
+    // focus wherever the user clicked, and yanking it back would fight them.
+    if (restoreFocus && anchor.isConnected) anchor.focus();
+  }
   buildToolbar();   // after arrangeBtn exists (buildToolbar assigns it)
   // Put the rail back where it was dragged to earlier in this page session, re-clamped
   // against THIS stage (a different tool, a resized window).
@@ -2931,10 +3537,51 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       });
     }
     let lollyBtn: HTMLButtonElement | null = null;
+    /**
+     * WHERE THE MARK MENU IS HANGING FROM right now. The menu has two triggers - the
+     * rail's own mark and the Design top bar's (`openLollyMenu`) - and four of its rows
+     * open a PANEL that positions itself under its anchor. Hard-wiring `lollyBtn` there
+     * put "Artboard size" / "Custom CSS" / "Document info" / "Import" on the far left of
+     * the stage, docked to a rail button, whenever the menu had been opened from the bar.
+     */
+    const anchorEl = (): HTMLElement => lollyAnchor ?? lollyBtn!;
+    /**
+     * Is a Design TOP BAR mounted over this stage (plans/179 M1)? `opts.chrome` is only
+     * handed over by a tool view that mounted one, so its presence is the signal - not a
+     * media query, and not a guess from the layout.
+     *
+     * When it is, the menu stops being the editor's only door to the document actions and
+     * becomes what a menu is for: the long tail. Export, Save, Copy, Share, Undo, Redo,
+     * Slide transition and Present all have their own visible control up there, and a
+     * second copy of each is a second thing to keep in step (the Undo rows in particular
+     * would fight the bar over `history.register`'s single slot). What only a menu can
+     * hold - Theme and Interface sounds, which used to ride the zoom HUD the bar retires -
+     * moves IN. Without a bar the menu is byte-identical to what it has always been.
+     */
+    const barMounted = !!designChrome;
+    /**
+     * …and is that bar in its NARROW form? Under 640px design-topbar.css folds the
+     * centre cluster (undo/redo, the zoom cluster, the panel toggles) and Share away,
+     * and its comment has always said they "fold into the mark menu" - this is where
+     * they land, so a phone is not left with no undo at all.
+     *
+     * Read off the LIVE DOM rather than a second copy of the breakpoint: `offsetParent`
+     * is null exactly when a rule has taken the element out of the layout, so the menu
+     * grows the rows the bar dropped whatever that sheet decides. NO BAR at all reads as
+     * "not folded" - the bar's own controls are then not the ones missing. A bar that
+     * cannot be measured (a host with no layout engine) reads as folded, which is the
+     * safe direction: the cost is a duplicated row, and the cost of guessing the other
+     * way is a phone with no undo.
+     */
+    const barFolded = (): boolean => {
+      if (!barMounted) return false;
+      const centre = stageEl.querySelector<HTMLElement>('.design-topbar .dtb-centre');
+      return !!centre && centre.offsetParent === null;
+    };
     const lollyItems = (): PopItem[] => {
       const items: PopItem[] = [];
       // Export leads - it's the star of the Lolly menu. Present is added LAST (very bottom).
-      if (actions) {
+      if (actions && !barMounted) {
         items.push({ label: t('Export'), icon: icon(SVG.exportUp), key: 'export', run: () => actions.export() });
         if (actions.canSave !== false) items.push({ label: t('Save to your library'), icon: icon(SVG.save), key: 'save', run: () => actions.save() });
         // Copy + Share ride directly under Save with NO divider - the on-device outputs of
@@ -2943,19 +3590,35 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         items.push({ label: t('Copy image to clipboard'), icon: icon(SVG.dup), key: 'copy', run: () => actions.copy() });
         items.push({ label: t('Share'), icon: icon(SVG.share), key: 'share', run: () => actions.share() });
       }
-      if (history) {
+      // The one action the bar hands BACK: saving is the render pill's, and the pill is
+      // hidden in editor layout, so the menu keeps the door open when the view offers it.
+      if (barMounted && designChrome?.saveToLibrary) {
+        items.push({ label: t('Save to your library'), icon: icon(SVG.save), key: 'save', run: () => designChrome.saveToLibrary!() });
+      }
+      // Share is hidden with the bar's centre under 640px, and a phone has no ⌘Z, so
+      // the two rows the fold takes away come back here (see barFolded).
+      if (actions && barMounted && barFolded()) {
+        items.push({ label: t('Share'), icon: icon(SVG.share), key: 'share', run: () => actions.share() });
+      }
+      if (history && (!barMounted || barFolded())) {
         if (items.length) items.push({ sep: true });
         items.push({ label: t('Undo - step back'), icon: icon(SVG.undo), key: 'undo', disabled: !histUndo, keepOpen: true, run: () => history.undo() });
         items.push({ label: t('Redo - step forward'), icon: icon(SVG.redo), key: 'redo', disabled: !histRedo, keepOpen: true, run: () => history.redo() });
       }
+      // The inspector's toggle is folded away with the rest of the bar's centre, and
+      // with nothing selected the object bar (its other door) does not exist either -
+      // so the column would be unreachable on a phone. It closes from its own header.
+      if (inspectorPort && barFolded()) {
+        items.push({ label: t('Inspector'), icon: icon(SVG.more), key: 'inspector', run: () => inspectorPort?.reveal('document') });
+      }
       if (pages || setCanvasSize) {
         if (items.length) items.push({ sep: true });
-        if (pages) items.push({ label: t('Pages & page size'), icon: icon(SVG.pages), key: 'pages', run: () => openPagesMenu(lollyBtn!) });
-        else items.push({ label: activeFrameIndex(getBoxes()) >= 0 ? t('Artboard size') : t('Canvas size'), icon: icon(SVG.size), key: 'size', run: () => openSizeMenu(lollyBtn!) });
+        if (pages) items.push({ label: t('Pages & page size'), icon: icon(SVG.pages), key: 'pages', run: () => openPagesMenu(anchorEl()) });
+        else items.push({ label: activeFrameIndex(getBoxes()) >= 0 ? t('Artboard size') : t('Canvas size'), icon: icon(SVG.size), key: 'size', run: () => openSizeMenu(anchorEl()) });
       }
       if (info || importCfg || actions?.newFromTemplate || actions?.bulk) {
         if (items.length) items.push({ sep: true });
-        if (info) items.push({ label: t('Document info'), icon: icon(SVG.info), key: 'info', run: () => openInfoPanel(lollyBtn!) });
+        if (info) items.push({ label: t('Document info'), icon: icon(SVG.info), key: 'info', run: () => openInfoPanel(anchorEl()) });
         // Back to the Start chooser (plans/142 WP-1) - sits in the same "bring a
         // document in" group as Import. The pick applies through the tool's own
         // undoable path, so it is one ⌘Z away, never a destructive reset.
@@ -2967,16 +3630,23 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // panel to `popover`: without it fillPopover's trailing closePopover() would
         // tear the freshly-mounted import panel down in the same click. (The pages /
         // size / info rows are safe - those assign `morePanel`, a different variable.)
-        if (importCfg) items.push({ label: t('Import a design'), icon: icon(SVG.importFile), key: 'import', keepOpen: true, run: () => openImportPanel(lollyBtn!) });
+        if (importCfg) items.push({ label: t('Import a design'), icon: icon(SVG.importFile), key: 'import', keepOpen: true, run: () => openImportPanel(anchorEl()) });
       }
       // Custom CSS (plan 112 M4): only for a tool that declares the `customCss` input
       // (Design). Opens a highlighted, auto-completing editor bound to that input.
       if (runtime.getModel().some((i) => i.id === 'customCss')) {
         if (items.length) items.push({ sep: true });
-        items.push({ label: t('Custom CSS'), icon: icon(SVG.code), key: 'css', run: () => openCssPanel(lollyBtn!) });
+        items.push({ label: t('Custom CSS'), icon: icon(SVG.code), key: 'css', run: () => openCssPanel(anchorEl()) });
       }
       // Slide transition (plan 112 M5): one compact cycling row - Slide → Fade → Morph.
       // The menu closes on click; reopening shows the new value (no live refresh needed).
+      //
+      // Kept when a top bar is mounted, unlike the eight rows the bar really does carry:
+      // this one is DOC-LEVEL and the bar has no transition control (nor has the
+      // inspector's Document section, nor the navigator, which only reads it as a chip).
+      // Dropping it left the input with no door anywhere in the editor - a deck set to
+      // Morph could not be changed back to Fade except by hand-editing the URL. It goes
+      // back to the per-frame slot's owner when plan 179 M4 ships that select.
       const trModel = runtime.getModel().find((i) => i.id === 'transition');
       if (trModel) {
         const order = ['slide', 'fade', 'morph'];
@@ -2993,18 +3663,33 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       }
       // Present is the VERY LAST row (Andy: Export is the star; Present sits at the bottom),
       // set off by its own separator and next to the Slide transition it uses (plan 112).
-      if (actions?.present) {
+      if (actions?.present && !barMounted) {
         if (items.length) items.push({ sep: true });
         items.push({ label: t('Present'), icon: icon(SVG.present), key: 'present', run: () => actions.present!() });
       }
+      // App preferences, at the very bottom (plans/179 M1). The rows are PROXIES: the tool
+      // view built the real controls and lends them here, so the theme/sound state and its
+      // persistence stay in one place and the menu never becomes a second opinion.
+      if (barMounted && (designChrome?.themeToggle || designChrome?.soundToggle)) {
+        if (items.length) items.push({ sep: true });
+        if (designChrome.themeToggle) {
+          items.push({ label: t('Theme'), icon: icon(SVG.theme), key: 'theme', run: () => designChrome.themeToggle!.click() });
+        }
+        if (designChrome.soundToggle) {
+          items.push({ label: t('Interface sounds'), icon: icon(SVG.sound), key: 'sound', run: () => designChrome.soundToggle!.click() });
+        }
+      }
       return items;
     };
+    // The ports' door onto the same menu: the top bar's mark button opens it anchored to
+    // ITSELF, not to a rail button that may not even be on screen (see openLollyMenu).
+    lollyMenuItems = lollyItems;
     if (actions || history || info || importCfg || pages || setCanvasSize) {
       // `fc-action-primary` is kept on the trigger because it is now the editor's
       // primary action affordance - mountTool focuses it on open (tool.ts) - with
       // .fc-btn-lolly restyling it back to the mark's own colour.
       lollyBtn = toolBtn(t('Menu - export, save, undo, canvas size'), '',
-        () => { const items = lollyItems(); if (items.length) spawnPopover(lollyBtn!, items); },
+        () => { setLollyAnchor(lollyBtn!); const items = lollyItems(); if (items.length) spawnPopover(lollyBtn!, items); },
         'fc-action fc-action-primary fc-btn-lolly');
       // The mark is a whole <svg> (the brand swirl, root icon.svg), not a path set, so it
       // replaces toolBtn's icon(). Its three rings spin on hover only - see .fc-btn-lolly in
@@ -3073,7 +3758,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // button is absent for carousel/deck and every non-frame tool. Toggles the panel.
     if (frameCfg?.orderField) {
       toolBtn(t('Artboards'), SVG.frame,
-        (b) => { if (morePanel?.classList.contains('fc-frames-panel')) closeMorePanel(); else openFramesPanel(b); }, 'fc-btn-frames');
+        (b) => toggleFramesPanel(b), 'fc-btn-frames');
     }
     // (Auto-arrange no longer has a standalone rail button - it moved to a HOLD / right-click
     // of the Line tool above, since the line tool is what creates the bindings it lays out.)
@@ -3097,17 +3782,92 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // Pages / canvas size, copy, share, document info and import all live in the
     // Lolly menu at the top of the rail now - see lollyItems() above.
     const sep = document.createElement('div'); sep.className = 'fc-sep'; toolbar.appendChild(sep);
-    // Canvas background - the app's shared colour picker (swatches + hex + alpha).
-    const bgWrap = document.createElement('div');
-    bgWrap.className = 'fc-btn fc-color-btn';
-    bgWrap.setAttribute('data-tip', t('Canvas background'));
-    bgWrap.innerHTML = colorFieldHtml('fc-bg', getBg(), { float: true });
-    bgWrap.addEventListener('pointerdown', (e) => e.stopPropagation());
-    toolbar.appendChild(bgWrap);
-    wireColorField(bgWrap, {
-      onChange: (_id, val) => { onDirty?.(bgInputId); runtime.setInput(bgInputId, unwrapColor(val)); },
-    });
+    // The paint at the foot of the rail - the app's shared colour picker (swatches + hex
+    // + alpha). WHAT it paints depends on the document; see paintBgField. It lives in a
+    // `display:contents` slot so the field itself can be REPLACED (not mutated) on a
+    // re-sync while staying a direct flex child of the rail.
+    bgSlot = document.createElement('div');
+    bgSlot.style.display = 'contents';
+    toolbar.appendChild(bgSlot);
+    paintBgField();
     syncModeUI();     // Pointer lit on mount; the rail is never rebuilt after this
+  }
+
+  // ── the rail's paint swatch (plans/179 A1) ───────────────────────────────────
+  //
+  // It used to write the document `background` input unconditionally. In any document
+  // with artboards - which is every new one, since the default `boxes` seeds artboard-1 -
+  // the hook forces the page background to `transparent`, so the most visible control on
+  // the rail did nothing at all. That is the "can't fill artboards" report.
+  //
+  // Now it follows the ACTIVE artboard (the one holding the selection, else the primary)
+  // and paints its fill; with no artboards in the document it keeps writing `background`.
+  // The field is rebuilt rather than mutated, because the swatch, the value field, the
+  // LCH sliders and the aria-label are all seeded from the value at build time - and it
+  // is replaced wholesale (a fresh element, freshly wired) because `wireColorField` binds
+  // delegated listeners on the scope it is handed, so re-wiring one in place would fire
+  // every later edit twice.
+  /** What the swatch edits right now. `frameId` empty = the document background. */
+  function bgTarget(): { frameId: string; value: unknown; tip: string } {
+    if (frameCfg && cfg.fillField) {
+      const boxes = getBoxes();
+      const fid = hasFrames(boxes) ? activeFrameIdFor(boxes, selection, frameFields()) : '';
+      if (fid) {
+        const fb = boxes.find((b, i) => idOf(b, i) === fid);
+        return { frameId: fid, value: fb ? fb[cfg.fillField] ?? '' : '', tip: t('Artboard fill') };
+      }
+    }
+    return { frameId: '', value: getBg(), tip: t('Canvas background') };
+  }
+
+  function paintBgField(): void {
+    if (!bgSlot) return;
+    const tgt = bgTarget();
+    bgFieldKey = `${tgt.frameId}|${String(tgt.value ?? '')}`;
+    const wrap = document.createElement('div');
+    wrap.className = 'fc-btn fc-color-btn';
+    wrap.setAttribute('data-tip', tgt.tip);
+    // Resolved, never raw (plan 179 A2): an artboard whose fill is `var(--brand-surface)`
+    // seeded this swatch BLACK and its sliders a blue that came from the field's own
+    // neutral seed. `seededColorField` reads the token off the canvas's computed style
+    // and labels the trigger with the token's name; the model keeps the `var()`.
+    wrap.innerHTML = seededColorField('fc-bg', tgt.value);
+    wrap.addEventListener('pointerdown', (e) => e.stopPropagation());
+    bgSlot.replaceChildren(wrap);
+    wireColorField(wrap, {
+      onChange: (_id, val) => {
+        const col = unwrapColor(val);
+        // Read the target FRESH: the selection may have moved since the field was built.
+        const now = bgTarget();
+        if (now.frameId && cfg.fillField) {
+          const boxes = getBoxes();
+          const i = boxes.findIndex((b, n) => idOf(b, n) === now.frameId);
+          if (i < 0) return;
+          // The field now SHOWS the pick while the popover stays open, and the open-popover
+          // guard in syncBgField will skip the repaint that would have recorded it - so
+          // forget the last painted key here, or an undo that restores the old value
+          // compares equal to that stale key and leaves the swatch showing the pick.
+          bgFieldKey = '';
+          commit(boxes.map((b, n) => (n === i ? { ...b, [cfg.fillField]: col } : b)));
+          return;
+        }
+        onDirty?.(bgInputId);
+        runtime.setInput(bgInputId, col);
+      },
+    });
+  }
+
+  /** Keep the swatch honest as the selection and the model move. Skipped while the
+   *  picker is open - rebuilding the field under an open popover would close it
+   *  mid-edit - and skipped when nothing it shows has changed. */
+  function syncBgField(): void {
+    if (!bgSlot) return;
+    const tgt = bgTarget();
+    if (`${tgt.frameId}|${String(tgt.value ?? '')}` === bgFieldKey) return;
+    // Skipped while the picker is open: drop the key so the deferred repaint happens on
+    // the next sync after it closes, whatever the model says by then.
+    if (bgSlot.querySelector('.color-popover:not([hidden])')) { bgFieldKey = ''; return; }
+    paintBgField();
   }
 
   function fillPopover(el: HTMLElement, items: PopItem[]): void {
@@ -3125,10 +3885,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           gb.type = 'button';
           gb.className = 'fc-pop-gitem' + (gi.danger ? ' fc-pop-danger' : '');
           gb.disabled = gi.disabled === true;
+          gb.setAttribute('role', 'menuitem');
           gb.setAttribute('data-tip', gi.label);
           gb.setAttribute('aria-label', gi.label);
           gb.innerHTML = gi.icon || '';
-          gb.addEventListener('click', (e) => { e.stopPropagation(); if (gb.disabled) return; gi.run(); if (!gi.keepOpen) closePopover(); });
+          // `activeElement === gb` is read AFTER run(): a row that opened a panel and
+          // focused something inside it must keep that focus, and one that did not has
+          // to hand the keyboard back to the trigger rather than to <body>.
+          gb.addEventListener('click', (e) => { e.stopPropagation(); if (gb.disabled) return; gi.run(); if (!gi.keepOpen) closePopover(document.activeElement === gb); });
           g.appendChild(gb);
         }
         el.appendChild(g);
@@ -3137,11 +3901,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'fc-pop-item' + (it.danger ? ' fc-pop-danger' : '') + (it.on ? ' is-on' : '');
-      if (it.on !== undefined) { b.setAttribute('role', 'menuitemradio'); b.setAttribute('aria-checked', String(it.on)); }
+      // A row in a `role="menu"` has to be a menuitem, or the container's role makes the
+      // whole popover unnavigable to a screen reader: only the radio rows carried one,
+      // so every plain row (Export, Undo, Custom CSS…) announced as a bare button.
+      b.setAttribute('role', it.on !== undefined ? 'menuitemradio' : 'menuitem');
+      if (it.on !== undefined) b.setAttribute('aria-checked', String(it.on));
       if (it.key) b.dataset.pop = it.key;
       b.disabled = it.disabled === true;
       b.innerHTML = (it.icon ? `<span class="fc-pop-ic">${it.icon}</span>` : '') + `<span>${it.label}</span>`;
-      b.addEventListener('click', (e) => { e.stopPropagation(); if (b.disabled) return; it.run(); if (!it.keepOpen) closePopover(); });
+      b.addEventListener('click', (e) => { e.stopPropagation(); if (b.disabled) return; it.run(); if (!it.keepOpen) closePopover(document.activeElement === b); });
       el.appendChild(b);
     }
   }
@@ -3149,11 +3917,33 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     closePopover();
     popover = document.createElement('div');
     popover.className = 'fc-popover';
+    // A MENU, and one the keyboard can actually use. The popover is appended to the
+    // STAGE (it has to be, to position itself absolutely inside it), so it is after
+    // every bar and rail control in DOM order: a Tab from the trigger walked the whole
+    // top bar before reaching the rows. Moving focus INTO it on open, with Escape and
+    // Tab handing focus back to the trigger, is what closes that gap - the same
+    // contract design-topbar's own menus keep.
+    popover.setAttribute('role', 'menu');
+    const named = anchor.getAttribute('aria-label');
+    if (named) popover.setAttribute('aria-label', named);
     fillPopover(popover, items);
     popover.addEventListener('pointerdown', (e) => e.stopPropagation());
-    stageEl.appendChild(popover);
+    popover.addEventListener('keydown', onPopoverKey);
+    // A trigger OUTSIDE the stage - the docked HUD's mark sits in the right column, a
+    // fixed sibling stacked above the stage - cannot use a stage-positioned menu: it
+    // opened behind the column and looked like a dead button (Andy, 2026-09-03). Such a
+    // menu goes on the body in viewport coordinates, above the column (editor.css).
+    const detached = !stageEl.contains(anchor);
+    if (detached) {
+      popover.classList.add('fc-popover--viewport');
+      document.body.appendChild(popover);
+    } else stageEl.appendChild(popover);
+    popoverAnchor = anchor;
+    if (anchor.hasAttribute('aria-haspopup')) anchor.setAttribute('aria-expanded', 'true');
     const ar = anchor.getBoundingClientRect();
-    const sr = stageEl.getBoundingClientRect();
+    const sr = detached
+      ? { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }
+      : stageEl.getBoundingClientRect();
     const pr = popover.getBoundingClientRect();   // after append: it is laid out
     const pos = placePopover(
       { left: ar.left - sr.left, right: ar.right - sr.left, top: ar.top - sr.top },
@@ -3162,6 +3952,34 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     );
     popover.style.left = pos.left + 'px';
     popover.style.top = pos.top + 'px';
+    popoverItems()[0]?.focus();
+  }
+
+  /** The popover's focusable rows, in order - grid cells included, disabled skipped. */
+  function popoverItems(): HTMLButtonElement[] {
+    if (!popover) return [];
+    return [...popover.querySelectorAll<HTMLButtonElement>('.fc-pop-item, .fc-pop-gitem')].filter((b) => !b.disabled);
+  }
+
+  /**
+   * Menu keys, the APG way: arrows roam, Home/End jump, Escape closes and Tab closes
+   * and lets the browser move on - both handing focus back to the trigger, because a
+   * menu removed with focus still inside it drops the keyboard onto `<body>` and the
+   * next Tab restarts at the top of the page.
+   */
+  function onPopoverKey(e: KeyboardEvent): void {
+    if (!popover) return;
+    const list = popoverItems();
+    const at = list.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closePopover(true); return; }
+    if (e.key === 'Tab') { closePopover(true); return; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); list[(at + 1 + list.length) % list.length]?.focus(); return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); list[(at - 1 + list.length) % list.length]?.focus(); return; }
+    if (e.key === 'Home') { e.preventDefault(); list[0]?.focus(); return; }
+    if (e.key === 'End') { e.preventDefault(); list[list.length - 1]?.focus(); return; }
+    // Everything else the canvas would have answered - a bare letter is a tool
+    // shortcut, Delete deletes the selection - stops at the menu.
+    if (!(e.metaKey || e.ctrlKey)) e.stopPropagation();
   }
   // Sequence editors (timeCfg) import a design file as SCENES instead: every
   // frame/board/page becomes a stored vector asset placed as one full-canvas clip
@@ -3226,7 +4044,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const fk = frameCfg.frameKind;
     const frameAddKind = addKinds.find((k) => k.id === 'frame' || (k.seed != null && String(k.seed[cfg.kindField]) === fk));
     const rows = layoutArtboards(
-      res.frames.map((fr) => ({ name: fr.name, width: fr.width, height: fr.height, boxes: fr.boxes as Box[], ...(fr.background ? { background: fr.background } : {}) })),
+      res.frames.map((fr) => ({
+        name: fr.name, width: fr.width, height: fr.height, boxes: fr.boxes as Box[],
+        ...(fr.background ? { background: fr.background } : {}),
+        // plans/179 P2 - a .pptx's speaker notes are parsed, normalised and capped by
+        // pptx-import, and used to stop here: the re-projection dropped the field, so
+        // "Speaker notes…" was empty on every imported slide and a re-export to PowerPoint
+        // (which P1 just fixed) had nothing to put back.
+        ...(fr.notes ? { notes: fr.notes } : {}),
+      })),
       {
         cfg,
         frameField: frameCfg.frameField,
@@ -3235,6 +4061,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         frameSeed: (frameAddKind?.seed || {}) as Box,
         mintId: (used) => freshId(used),
         background: res.background,
+        notesField: FRAME_NOTES_FIELD,
       },
     );
     if (disposed) return 0;
@@ -3718,8 +4545,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (slideItems.length) items.splice(3, 0, ...slideItems, { sep: true });
     popover = document.createElement('div');
     popover.className = 'fc-popover fc-context-menu';
+    // The rows carry `role="menuitem"`, so the container has to say `menu` - an orphan
+    // menuitem tells a screen reader less than a plain button would.
+    popover.setAttribute('role', 'menu');
     fillPopover(popover, items);
     popover.addEventListener('pointerdown', (e) => e.stopPropagation());
+    popover.addEventListener('keydown', onPopoverKey);
     stageEl.appendChild(popover);
     const sr = stageEl.getBoundingClientRect();
     const left = Math.max(6, Math.min(clientX - sr.left, sr.width - popover.offsetWidth - 6));
@@ -3738,8 +4569,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const nat = clientToNative(clientX, clientY);
     const boxes = getBoxes();
     const hit = selectHit(boxes, nat.x, nat.y);   // artboard-aware: child over frame; frame on empty area
+    // Plan 179 C4, both halves. An UNSELECTED box is SELECTED - `new Set`, replacing what
+    // was there, never adding to it: a menu that acts on "this and whatever was selected
+    // before" is a menu whose verbs are aimed at something the user cannot see. A box that
+    // IS in the selection leaves the selection exactly as it stands, so right-clicking one
+    // member of a group of five still means all five.
     if (hit >= 0 && !selection.has(idOf(boxes[hit], hit))) {
       selection = new Set(selectionForHit(boxes, hit, soloBox));
+      ctxSelKey = null;                       // the object bar re-gates for the new kind
       renderChrome();
     }
     openContextMenu(clientX, clientY);
@@ -3810,17 +4647,100 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     return idx.every((i) => boxOutlineKind(boxes[i], vectorCfg!) === 'path');
   }
 
+  // ── what a KIND can carry (plan 179 C3 / A5) ─────────────────────────────────
+  //
+  // The object bar used to offer every control to every selection, so "Edit text" on an
+  // artboard, an image or a path opened nothing and said nothing (`startTextEdit` returns
+  // on a missing text node), while Stroke - which the manifest offers to four kinds and
+  // the hooks render as a real CSS border - was reachable only on a path. Both halves of
+  // that are the same mistake: the bar was not asking what the selection IS.
+  //
+  // `stroke`, `strokeW` and `strokeDash` declare `showFor: ["path","box","image","frame"]`,
+  // so STROKE_KINDS is the manifest read back. Text and image have no `showFor` in any
+  // manifest, so they are gated the other way round: by the kinds that provably CANNOT
+  // carry them, taken from the render. Everything else is offered.
+  //
+  // That direction matters. An allow-list here was a second opinion the manifests do not
+  // back, and it was wrong three ways at once: Org Chart's boxes are all `kind:"card"` and
+  // lost their pencil, their Aa panel and Set image although the template paints
+  // `.lolly-box-text` and an avatar on every one of them; a Design `image` or `path` box
+  // lost the pencil while double-click kept editing the caption it renders; and an `audio`
+  // box lost the only canvas route to its track, which lives in the SAME `image` field.
+  //
+  // The two deny sets come from `hooks.js`: `isBareBox` (audio, camera) is the pair whose
+  // text `compute()` blanks, a frame renders a page div with no text node at all, and a
+  // camera is a marker that paints nothing whatsoever.
+  //
+  // The EMPTY kind passes every gate. A tool whose boxes carry no `kind` at all (Carousel
+  // Maker, every non-Design canvas) must keep the bar it has always had, and a gate that
+  // read `String(undefined)` would have hidden the lot.
+  const STROKE_KINDS = new Set(['path', 'box', 'image', 'frame']);
+  /** Kinds that render NO text node, so "Edit text" would open nothing. */
+  const NO_TEXT_KINDS = new Set(['frame', 'audio', 'camera']);
+  /** Kinds that paint no picture from the image field. (An `audio` box DOES use it - that
+   *  field is where its track lives - and a frame page paints it as the board's fill.) */
+  const NO_IMAGE_KINDS = new Set(['camera']);
+  /** The kind a row declares, or '' for a tool whose boxes carry none. */
+  const kindOf = (b: Box | undefined): string => String(b?.[cfg.kindField] ?? '');
+  /** Does EVERY selected row's kind belong to `kinds`? (A mixed selection gets the
+   *  control only when all of it can honour the write - the `selectionAllPaths` rule.) */
+  function selectionAllKinds(boxes: Box[], idx: number[], kinds: ReadonlySet<string>): boolean {
+    if (!idx.length) return false;
+    return idx.every((i) => { const k = kindOf(boxes[i]); return !k || kinds.has(k); });
+  }
+  /** Does EVERY selected row's kind stay OUT of `kinds`? The deny-list twin of
+   *  {@link selectionAllKinds}; the empty kind is never in a deny set, so it passes. */
+  function selectionNoKinds(boxes: Box[], idx: number[], kinds: ReadonlySet<string>): boolean {
+    if (!idx.length) return false;
+    return idx.every((i) => !kinds.has(kindOf(boxes[i])));
+  }
+
   /**
-   * The PAINT section of a contextual bar: fill, text colour, and - on a path selection - 
-   * stroke colour plus the button onto the rest of the stroke (width, style, ends, corners,
-   * fill rule).
+   * The element whose cascade resolves a `var()` colour: the tool's own canvas, where
+   * the brand vars are installed. `#tool-canvas` is the shell's id for it; the overlay's
+   * `canvasEl` IS that element in the app and a bare div in a test harness, so this reads
+   * the id first and falls back to what the overlay was handed.
+   */
+  function colorScope(): Element | null {
+    return (typeof document !== 'undefined' ? document.getElementById('tool-canvas') : null) ?? canvasEl;
+  }
+
+  /**
+   * One colour field's SEED (plan 179 A2). A stored `var(--brand-primary, #0b1220)` is
+   * resolved through the canvas's computed style so the swatch, the sliders and the value
+   * field all show the colour the artboard is actually painted, and the token's own name
+   * ("Primary") rides along on the trigger.
+   *
+   * The MODEL is not touched. Nothing here writes; the `var()` survives in the box until
+   * the user picks a different colour, at which point the picker stores whatever it
+   * always stored.
+   */
+  function colorSeed(raw: unknown): { value: string; name: string } {
+    const s = raw == null ? '' : String(raw);
+    return { value: resolveColorVar(s, colorScope()), name: colorVarLabel(s) };
+  }
+  /** `colorFieldHtml` with the var() resolution applied - every seed in the editor.
+   *  A function declaration, not a const: `buildToolbar` runs before this line does. */
+  function seededColorField(id: string, raw: unknown): string {
+    const s = colorSeed(raw);
+    return colorFieldHtml(id, s.value, { float: true, name: s.name });
+  }
+
+  /**
+   * The PAINT section of a contextual bar: fill, text colour, and - for any kind that
+   * renders a stroke - stroke colour plus the button onto the rest of the stroke (width,
+   * style, ends, corners, fill rule).
    *
    * Shared by the object bar and the pen's node-editing bar because the pen bar REPLACES
    * `ctxbar.innerHTML`: without sharing, every paint control vanished at exactly the moment
    * the user was shaping the thing they wanted to paint. Composed rather than appended so
    * each bar keeps deciding its own order.
+   *
+   * `allPaths` still gates the PATH-only half (a path has no text ink and no gradient
+   * fill); `allStroked` - which every path also satisfies - gates the stroke pair, so an
+   * artboard's baked 2px border is finally removable from the canvas that drew it.
    */
-  function paintCtxHtml(first: Box, allPaths: boolean): string {
+  function paintCtxHtml(first: Box, allPaths: boolean, allStroked: boolean = allPaths): string {
     const fillVal = cfg.fillField ? (first[cfg.fillField] || 'transparent') : '';
     const fgVal = cfg.textColorField ? (first[cfg.textColorField] || '#0c322c') : '#0c322c';
     const strokeVal = cfg.strokeField ? (first[cfg.strokeField] || 'transparent') : 'transparent';
@@ -3830,13 +4750,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const gradOn = gradEdit != null;
     const fillTitle = gradOn ? t('Gradient stop colour') : t('Fill');
     const fillShown = gradOn ? (gradStopColor(first) ?? fillVal) : fillVal;
-    return (cfg.fillField ? `<span class="fc-cfield" data-tip="${escape(fillTitle)}">${colorFieldHtml('fc-fill', fillShown, { float: true })}</span>` : '')
+    return (cfg.fillField ? `<span class="fc-cfield" data-tip="${escape(fillTitle)}">${seededColorField('fc-fill', fillShown)}</span>` : '')
       + (cfg.gradField && !allPaths
         ? `<button type="button" class="fc-cbtn${gradOn ? ' is-on' : ''}" data-cx="grad" aria-pressed="${gradOn}" data-tip="${escape(t('Gradient - drag the stops on the canvas'))}" aria-label="${escape(t('Gradient fill'))}">${icon(SVG.gradIc)}</button>`
         : '')
-      + (cfg.textColorField && !allPaths ? `<span class="fc-cfield" data-tip="${escape(t('Text colour'))}">${colorFieldHtml('fc-fg', fgVal, { float: true })}</span>` : '')
-      + (allPaths && cfg.strokeField ? `<span class="fc-cfield" data-tip="${escape(t('Stroke colour'))}">${colorFieldHtml('fc-stroke', strokeVal, { float: true })}</span>` : '')
-      + (allPaths ? `<button type="button" class="fc-cbtn" data-cx="stroke" data-tip="${escape(t('Stroke - width, style, ends, corners, fill rule'))}" aria-label="${escape(t('Stroke options'))}">${icon(SVG.strokeIc)}</button>` : '');
+      + (cfg.textColorField && !allPaths ? `<span class="fc-cfield" data-tip="${escape(t('Text colour'))}">${seededColorField('fc-fg', fgVal)}</span>` : '')
+      + (allStroked && cfg.strokeField ? `<span class="fc-cfield" data-tip="${escape(t('Stroke colour'))}">${seededColorField('fc-stroke', strokeVal)}</span>` : '')
+      + (allStroked ? `<button type="button" class="fc-cbtn" data-cx="stroke" data-tip="${escape(t('Stroke - width, style, ends, corners, fill rule'))}" aria-label="${escape(t('Stroke options'))}">${icon(SVG.strokeIc)}</button>` : '');
   }
 
   /** One `wireColorField` call per bar - it binds delegated listeners on the scope, so a
@@ -3985,9 +4905,82 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     dollyTimer = setTimeout(flushDolly, DOLLY_PAUSE_MS);
   }
 
-  // Every box is ONE unified object (fill + shape + image + text), so the bar
-  // always offers every control. Rebuilt only when the selection set changes (so
-  // the colour pickers show the selected box); positioned each frame elsewhere.
+  /**
+   * A cheap signature of everything the object bar PAINTS from the model: the four colour
+   * fields' values plus the kind that decides which controls exist. Compared per sync, so
+   * an undo, a redo, a hook patch or another device's edit re-seeds the swatches.
+   *
+   * It is deliberately narrow. Opacity, radius, shadow and every other More-panel field
+   * are absent because the bar does not show them - widening this would rebuild the bar
+   * (and close the open panel) on every slider tick.
+   *
+   * While a floating surface is OPEN the signature is HELD at whatever the bar was built
+   * with, because `rebuildCtxBar` begins with `closeMorePanel()` and re-writes
+   * `ctxbar.innerHTML`: a rebuild under an open surface destroys the very thing the
+   * pointer is inside. Two surfaces qualify, and BOTH are needed once the trigger widened
+   * from "the selection set changed" to "any painted value changed":
+   *
+   *   · a colour popover ANYWHERE - the picker writes the model on every swatch click and
+   *     slider tick, and the rail's artboard-fill swatch is not a child of `ctxbar`, so a
+   *     bar-scoped test let each LCH tick re-`innerHTML` the bar under it;
+   *   · an open More / Stroke / Text / dims panel - Cmd+Z, a collaborator's fill edit or a
+   *     colour picked from the bar would otherwise close the panel being worked in.
+   *
+   * Each trigger keeps itself current on its own (`updateTrigger`), and the next sync
+   * after the surface closes picks the real signature back up.
+   */
+  const ctxValueHeld = (): boolean =>
+    !!document.querySelector('.color-trigger[aria-expanded="true"]') || !!morePanel;
+
+  function ctxValueSig(boxes: Box[], idx: number[]): string {
+    if (ctxValueHeld()) {
+      // Split at the FIRST '|' only: ids never contain one, but an authored colour could,
+      // and a sig sliced in half would compare unequal and rebuild the very bar this
+      // branch exists to keep standing.
+      const cut = String(ctxSelKey ?? '').indexOf('|');
+      if (cut >= 0) return String(ctxSelKey).slice(cut + 1);
+    }
+    const fields = [cfg.fillField, cfg.gradField, cfg.textColorField, cfg.strokeField, cfg.kindField];
+    // Delimited, not concatenated: '#fff' + '' and '' + '#fff' are different states, and a
+    // signature that cannot tell them apart is a rebuild that never happens. The two
+    // separators are control characters, so no authored colour or kind can forge one.
+    return idx.map((i) => {
+      const b = boxes[i] || {};
+      return fields.map((f) => (f ? String(b[f] ?? '') : '')).join('\u0001');
+    }).join('\u0002');
+  }
+
+  // A box is one unified object (fill + shape + image + text), but the KINDS differ in
+  // what they can hold - so the bar offers what this selection can actually do (plan 179
+  // C3). Rebuilt when the selection set changes OR when the values it shows change (A16:
+  // the fill swatch used to keep the pre-undo colour after Cmd+Z); positioned each frame
+  // elsewhere.
+  /**
+   * The mounted Design inspector, when there is one (plans/179 M3, design-ports'
+   * `setInspector`). Its presence turns four object-bar buttons from PANEL OPENERS into
+   * NAVIGATION: Text / More / Stroke / the position readout reveal the column's section
+   * instead of hanging a one-slot popover off the bar, because the column already shows
+   * every one of those controls and two live copies of a field is how they drift.
+   *
+   * `null` restores today's panels exactly - which is what keeps Org Chart, Carousel
+   * Maker and every other editor tool (none of which mount a column) unchanged.
+   */
+  let inspectorPort: { reveal(section: 'document' | 'artboard' | 'object' | 'text' | 'image' | 'motion' | 'present'): void } | null = null;
+  function setInspector(h: typeof inspectorPort): void {
+    inspectorPort = h;
+    // With the full Design chrome mounted the bar is the selection toolbar: it stays
+    // while something is selected instead of fading whenever the pointer leaves the
+    // stage for the inspector or the navigator (see .fc-ctxbar--pinned in editor.css).
+    ctxbar.classList.toggle('fc-ctxbar--pinned', !!h);
+  }
+  /** The stage's reserved bands, read from the inline custom properties the arbiter
+   *  (left) and the Design top bar (top) write on the stage; inline reads cost nothing
+   *  per sync frame, unlike a computed style. */
+  function stageReserves(): { top: number; left: number; right: number } {
+    const px = (p: string): number => parseFloat(stageEl.style.getPropertyValue(p)) || 0;
+    return { top: px('--stage-reserve-top'), left: px('--stage-reserve-left'), right: px('--stage-reserve-right') };
+  }
+
   function rebuildCtxBar(boxes: Box[], idx: number[]): void {
     // The gradient panel outlives a ctx-bar rebuild. Selecting a stop (and picking a
     // stop colour) deliberately rebuilds the bar so its Fill field shows that stop - 
@@ -3999,14 +4992,30 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const coarse = matchMedia('(pointer: coarse)').matches;   // touch → offer add-to-selection
     const first: Box = boxes[idx[0]!] || {};
     const allPaths = selectionAllPaths(boxes, idx);
+    // Stroke goes to every kind that renders a border (A5); text and image controls to
+    // the kinds that can hold them (C3). A control that appears and then does nothing is
+    // worse than one that is not there: "Edit text" on an artboard, an image or a path
+    // opened nothing and said nothing at all.
+    // `vectorCfg` (i.e. the manifest declared `pathField`) is the tool-level gate. It is
+    // not incidental: `cfg.strokeField` DEFAULTS to 'stroke' for every canvas tool, so
+    // without it a Carousel Maker card - whose hooks paint no border at all - would grow
+    // a stroke swatch writing a field nothing reads. Both tools that declare `pathField`
+    // (Design, Org Chart) also declare stroke on box/image/frame, which is the model this
+    // widening follows.
+    const allStroked = allPaths || (!!vectorCfg && selectionAllKinds(boxes, idx, STROKE_KINDS));
+    const canText = !!cfg.textField && selectionNoKinds(boxes, idx, NO_TEXT_KINDS);
+    const canImage = !!cfg.imageField && selectionNoKinds(boxes, idx, NO_IMAGE_KINDS);
+    // An audio box's "image" IS its track, so the one button says which it is picking.
+    const audioPick = canImage && selectionAllKinds(boxes, idx, new Set(['audio']));
+    const imgTip = audioPick ? t('Choose a sound') : t('Set image');
     ctxbar.innerHTML = `
-      ${paintCtxHtml(first, allPaths)}
+      ${paintCtxHtml(first, allPaths, allStroked)}
       ${vectorCfg && idx.length === 1 && boxOutlineKind(first, vectorCfg) === 'path'
         ? `<button type="button" class="fc-cbtn" data-cx="nodes" data-tip="${escape(t('Edit points (double-click)'))}" aria-label="${escape(t('Edit points'))}">${icon(SVG.nodes)}</button>`
         : ''}
-      <button type="button" class="fc-cbtn" data-cx="edit" data-tip="${escape(t('Edit text (double-click)'))}" aria-label="${escape(t('Edit text'))}">${icon(SVG.pencil)}</button>
-      <button type="button" class="fc-cbtn fc-cbtn-text" data-cx="text" data-tip="${escape(t('Text - size, font, weight, line height, kerning, ligatures, alignment'))}" aria-label="${escape(t('Text options'))}">Aa</button>
-      <button type="button" class="fc-cbtn" data-cx="setimg" data-tip="${escape(t('Set image'))}" aria-label="${escape(t('Set image'))}">${icon(SVG.image)}</button>
+      ${canText ? `<button type="button" class="fc-cbtn" data-cx="edit" data-tip="${escape(t('Edit text (double-click)'))}" aria-label="${escape(t('Edit text'))}">${icon(SVG.pencil)}</button>` : ''}
+      ${canText ? `<button type="button" class="fc-cbtn fc-cbtn-text" data-cx="text" data-tip="${escape(t('Text - size, font, weight, line height, kerning, ligatures, alignment'))}" aria-label="${escape(t('Text options'))}">Aa</button>` : ''}
+      ${canImage ? `<button type="button" class="fc-cbtn" data-cx="setimg"${audioPick ? ' data-cx-audio="1"' : ''} data-tip="${escape(imgTip)}" aria-label="${escape(imgTip)}">${icon(audioPick ? SVG.audioKind : SVG.image)}</button>` : ''}
       <button type="button" class="fc-cbtn" data-cx="more" data-tip="${escape(t('More - shape, radius, opacity, fit, blend, shadow'))}" aria-label="${escape(t('More options'))}">${icon(SVG.more)}</button>
       <span class="fc-sep fc-sep-v"></span>
       ${kfCtxHtml(boxes, idx)}
@@ -4018,18 +5027,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     ctxbar.querySelectorAll<HTMLElement>('[data-cx]').forEach((b) => b.addEventListener('click', (e) => {
       e.stopPropagation();
       const cx = b.dataset.cx;
-      if (cx === 'text') openTextPanel(b);
-      else if (cx === 'stroke') openStrokePanel(b);
+      if (cx === 'text') { if (inspectorPort) inspectorPort.reveal('text'); else openTextPanel(b); }
+      else if (cx === 'stroke') { if (inspectorPort) inspectorPort.reveal('object'); else openStrokePanel(b); }
       else if (cx === 'nodes') { if (selection.size) startPenEdit([...selection][0]!); }
       else if (cx === 'edit') { if (selection.size) startTextEdit([...selection][0]!, { selectAll: true }); }
       else if (cx === 'kf') { if (b.getAttribute('aria-disabled') !== 'true') addKeyframeFromCanvas(); }
       else if (cx === 'dup') duplicateSelection();
       else if (cx === 'del') deleteSelection();
-      else if (cx === 'setimg') pickImage();
-      else if (cx === 'more') openMorePanel(b);
+      else if (cx === 'setimg') pickImage(b.dataset.cxAudio ? { pickType: 'audio' } : undefined);
+      else if (cx === 'more') { if (inspectorPort) inspectorPort.reveal('object'); else openMorePanel(b); }
       else if (cx === 'grad') toggleGradEdit(b);
       else if (cx === 'multi') { multiTapMode = !multiTapMode; b.classList.toggle('is-on', multiTapMode); b.setAttribute('aria-pressed', String(multiTapMode)); announce(multiTapMode ? t('Select more - tap cards to add them.') : t('Multi-select off.')); }
-      else if (cx === 'dims') openDimsPanel(b);
+      else if (cx === 'dims') { if (inspectorPort) inspectorPort.reveal('object'); else openDimsPanel(b); }
     }));
   }
 
@@ -4153,7 +5162,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const value = formatGradientSpec(spec);
     if (live) {
       gradLive = spec;
-      const el = canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(gradEdit)}"]`);
+      // `liveBoxEl`, not a bare `.lolly-box` lookup: an ARTBOARD's element is its page
+      // (`.lolly-frame-page[data-frame-id]`), so the plain query answered null and the
+      // whole live write was skipped - the handles tracked the pointer while the board's
+      // fill sat still until the commit re-rendered (plan 179 A3).
+      const el = liveBoxEl(gradEdit);
       if (el) el.style.backgroundImage = gradientSpecToCss(spec) || '';
       return;
     }
@@ -4241,7 +5254,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
     const r = boxRect(boxes[i]!, cfg);
     const line = gradientLine(r.w, r.h, spec.angle);
-    const off = frameOffsetOfEl(canvasEl.querySelector(`.lolly-box[data-box-id="${cssEscape(gradEdit!)}"]`) ?? canvasEl);
+    const off = frameOffsetOfEl(liveBoxEl(gradEdit!) ?? canvasEl);
     // Through the box's ROTATION, not a plain translation: the same element that paints
     // the gradient carries `transform: rotate()`, so an axis-aligned mapping left the
     // line and swatches ~76px off the visible sweep on a 200×120 box at 45°, and every
@@ -4295,8 +5308,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // Native (box-local) coords for a pointer event, in the edited box's own frame.
   function gradLocal(e: PointerEvent, boxes: Box[], i: number): { x: number; y: number; w: number; h: number } {
     const r = boxRect(boxes[i]!, cfg);
-    const el = canvasEl.querySelector(`.lolly-box[data-box-id="${cssEscape(gradEdit!)}"]`);
-    const off = frameOffsetOfEl(el ?? canvasEl);
+    const off = frameOffsetOfEl(liveBoxEl(gradEdit!) ?? canvasEl);
     const n = clientToNative(e.clientX, e.clientY);
     // The exact inverse of paintGradChrome's mapping, rotation included.
     const l = frameToLocal(r as PenFrame, n.x - off.x, n.y - off.y);
@@ -4384,16 +5396,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const spec = i >= 0 ? gradSpecOf(boxes[i]) : null;
     if (!spec) return;
     const polar = isPolarSpace(spec.space);
-    const segRow = (lbl: string, seg: string): string =>
+    // NOT the shared `segRow` (which leads with a glyph): a gradient row is named in
+    // words, so this one is its own builder and keeps its own name rather than shadowing
+    // the import with a different signature.
+    const gradSegRow = (lbl: string, seg: string): string =>
       `<div class="fc-row"><span class="fc-row-lbl"><span>${escape(lbl)}</span></span>${seg}</div>`;
     const p = document.createElement('div');
     p.className = 'fc-panel fc-grad-panel';
     p.innerHTML =
-      segRow(t('Gradient'), segHtml('gradkind', spec.kind, [
+      gradSegRow(t('Gradient'), segHtml('gradkind', spec.kind, [
         ['linear', t('Linear')], ['radial', t('Radial')], ['conic', t('Conic')]]))
-      + segRow(t('Blend'), segHtml('gradspace', spec.space,
+      + gradSegRow(t('Blend'), segHtml('gradspace', spec.space,
         BLEND_STYLES.map(b => [b.space, t(b.label)] as [string, string])))
-      + (polar ? segRow(t('Hue route'), segHtml('gradhue', spec.hue || 'shorter',
+      + (polar ? gradSegRow(t('Hue route'), segHtml('gradhue', spec.hue || 'shorter',
         HUE_ROUTES.map(r => [r.dir, t(r.label)] as [string, string]))) : '')
       + `<div class="fc-row fc-grad-row-btns">`
       + `<button type="button" class="fc-pop-item" data-gp="add">${t('Add stop')}</button>`
@@ -4507,6 +5522,42 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (cmp < 0) best = i;
     }
     return best;
+  }
+
+  /**
+   * The frame's LIVE on-screen box - the page element (or the frame box as a fallback).
+   * Client coords so the stage can frame it without knowing the canvas coordinate space;
+   * see `onQueryRect` for why every rect on this seam is client-space.
+   *
+   * Module-level (it was born inside `openFramesPanel`) because the filmstrip, the
+   * navigator column and the top bar's "Fit artboard" must all frame a board the SAME
+   * way - one `fc-focus-rect` payload, computed once.
+   */
+  function frameClientRect(fb: Box | undefined): DOMRect | null {
+    const fid = fb?.[cfg.idField] == null ? '' : String(fb![cfg.idField]);
+    if (!fid) return null;
+    const el = canvasEl.querySelector<HTMLElement>(`.lolly-frame-page[data-frame-id="${cssEscape(fid)}"]`)
+      ?? canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(fid)}"]`);
+    return el ? el.getBoundingClientRect() : null;
+  }
+
+  /** The active artboard's id, or '' when the document has no artboards - the same
+   *  resolution `emitActiveArtboard` publishes (a selected board, else the board owning
+   *  the selection, else the primary one). */
+  function activeArtboardId(): string {
+    const boxes = getBoxes();
+    return hasFrames(boxes) ? activeFrameIdFor(boxes, selection, frameFields()) : '';
+  }
+
+  /** Pan/zoom the stage onto one artboard - exactly what a filmstrip cell's click does. */
+  function focusArtboard(id: string): void {
+    if (!id) return;
+    const boxes = getBoxes();
+    const r = frameClientRect(boxes.find((b, i) => idOf(b, i) === id));
+    if (!r) return;
+    stageEl.dispatchEvent(new CustomEvent('fc-focus-rect', { bubbles: true, detail: {
+      x: r.left, y: r.top, w: r.width, h: r.height,
+    } }));
   }
 
   // With artboards in the doc the pasteboard is the world - a canvas-rect clamp
@@ -4661,7 +5712,6 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const idx = selIndices(boxes);
     if (!idx.length) return;
     const b: Box = boxes[idx[0]!] || {};
-    const opt = (v: string, label: string, cur: any): string => `<option value="${v}"${String(cur) === v ? ' selected' : ''}>${label}</option>`;
     // Frame-only "Clip children" toggle - shown only when a SINGLE frame-kind box is
     // selected. Dead for non-frame tools (frameCfg is null there) and for a mixed/multi
     // selection, so no-frames documents and ordinary boxes are byte-identical. The hook
@@ -4705,26 +5755,45 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const showTilt = idx.length === 1 && !!(tiltRx || tiltRy) && isPosable(b);
     const rxCur = showTilt ? Math.round(clampN(parseFloat(String(b[tiltRx])), 0, FC_TILT[0], FC_TILT[1])) : 0;
     const ryCur = showTilt ? Math.round(clampN(parseFloat(String(b[tiltRy])), 0, FC_TILT[0], FC_TILT[1])) : 0;
-    const tiltRow = (key: string, lbl: string, cur: number): string =>
-      `<label class="fc-row"><span class="fc-row-lbl">${lbl}</span><input type="range" class="field-range" data-mp="${key}" min="${FC_TILT[0]}" max="${FC_TILT[1]}" value="${cur}"><b data-mp-val="${key}">${cur}</b></label>`;
-    // Row with a leading icon label (keeps the "clean up + use icons" intent while
-    // staying legible). segRow hosts a segmented control; iconRow a slider/select.
-    const iconRow = (ic: string, lbl: string, ctrl: string): string => `<label class="fc-row"><span class="fc-row-lbl" data-tip="${escape(lbl)}">${icon(ic)}<span>${lbl}</span></span>${ctrl}</label>`;
-    const segRow = (ic: string, lbl: string, seg: string): string => `<div class="fc-row"><span class="fc-row-lbl" data-tip="${escape(lbl)}">${icon(ic)}<span>${lbl}</span></span>${seg}</div>`;
+    // ── what this selection can actually be asked (plan 179 C6) ────────────────
+    // Image fit and Image position style an image the box does not have: on a text box
+    // they were two controls that wrote a field nothing read, and they were the first
+    // two rows a poster author met. Offered for the kinds that CAN carry an image, and
+    // only once one of them has one (or the kind is `image`, whose whole job is to).
+    // Shape and Corner radius go the other way: a path box's outline is its own
+    // geometry, and rounding the bounding div does nothing to the curve.
+    // EVERY selected item, not just the first: the panel reads one box and writes them
+    // all, so a path beside a box still has a box to shape.
+    const allPathSel = selectionAllPaths(boxes, idx);
+    const hasImg = !!cfg.imageField && idx.some((i) => {
+      const row = boxes[i] || {};
+      return kindOf(row) === 'image' || !!row[cfg.imageField];
+    });
+    const showImgRows = hasImg && selectionNoKinds(boxes, idx, NO_IMAGE_KINDS);
+    const showShapeRows = !allPathSel;
+    // Shadow targets an ARTBOARD can honour (plan 179 A4's remainder). `frameGroupsFor`
+    // takes `shadowCss(fb).box` and nothing else, on purpose: a page has no text run, and
+    // the alpha-silhouette targets ('content', 'depth') describe a shape's outline - on a
+    // full rectangle they are the box shadow by a slower route, and `depth` reads a `z`
+    // a frame never carries. Offering them anyway wrote the model and painted nothing.
+    const framesOnly = !!frameCfg && selectionAllKinds(boxes, idx, new Set([frameCfg.frameKind]));
+    const shadowOpts = framesOnly
+      ? shadowChoices.filter(([v]) => v === 'none' || v === 'box')
+      : shadowChoices;
     const p = document.createElement('div');
     p.className = 'fc-panel fc-more-panel';
     p.innerHTML = `
       ${showClip ? `<label class="fc-row fc-row-toggle field-toggle"><span class="fc-row-lbl" data-tip="${escape(t('Clip children'))}">${icon(SVG.clip)}<span>${t('Clip children')}</span></span><input type="checkbox" class="field-check" data-mp-clip${clipCur ? ' checked' : ''}></label>` : ''}
-      ${cfg.shapeField && shapeChoices.length ? segRow(SVG.shRounded, t('Shape'), segHtml(cfg.shapeField, shapeCur, shapeChoices)) : ''}
-      ${cfg.radiusField ? iconRow(SVG.radius, t('Corner radius'), `<input type="range" class="field-range" data-mp="radius" min="0" max="200" value="${radiusCur}"><b data-mp-val="radius">${radiusCur}</b>`) : ''}
+      ${cfg.shapeField && shapeChoices.length && showShapeRows ? segRow(SVG.shRounded, t('Shape'), segHtml(cfg.shapeField, shapeCur, shapeChoices)) : ''}
+      ${cfg.radiusField && showShapeRows ? iconRow(SVG.radius, t('Corner radius'), `<input type="range" class="field-range" data-mp="radius" min="0" max="200" value="${radiusCur}"><b data-mp-val="radius">${radiusCur}</b>`) : ''}
       ${cfg.opacityField ? iconRow(SVG.opacity, t('Opacity'), `<input type="range" class="field-range" data-mp="opacity" min="0" max="100" value="${Number.isFinite(opacityCur) ? opacityCur : 100}"><b data-mp-val="opacity">${Number.isFinite(opacityCur) ? opacityCur : 100}</b>`) : ''}
-      ${cfg.fitField ? segRow(SVG.fitContain, t('Image fit'), segHtml(cfg.fitField, fitCur, [['contain', t('Contain'), SVG.fitContain], ['cover', t('Cover (crop)'), SVG.fitCover], ['fill', t('Stretch'), SVG.fitFill]])) : ''}
-      ${cfg.imgPosField ? segRow(SVG.fitPos, t('Image position'), posGridHtml(cfg.imgPosField, posCur)) : ''}
+      ${cfg.fitField && showImgRows ? segRow(SVG.fitContain, t('Image fit'), segHtml(cfg.fitField, fitCur, [['contain', t('Contain'), SVG.fitContain], ['cover', t('Cover (crop)'), SVG.fitCover], ['fill', t('Stretch'), SVG.fitFill]])) : ''}
+      ${cfg.imgPosField && showImgRows ? segRow(SVG.fitPos, t('Image position'), posGridHtml(cfg.imgPosField, posCur)) : ''}
       ${cfg.blendField ? iconRow(SVG.blend, t('Blend mode'), `<select class="field-select field-select--sm" data-mp="blend">
         ${['normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten', 'color-dodge', 'color-burn', 'hard-light', 'soft-light', 'difference', 'exclusion', 'hue', 'saturation', 'color', 'luminosity'].map((m) => opt(m, t(m[0]!.toUpperCase() + m.slice(1).replace('-', ' ')), blendCur)).join('')}
       </select>`) : ''}
       ${cfg.shadowField ? `<div class="fc-panel-sub">${t('Shadow')}</div>
-        ${segRow(SVG.shadowIc, t('Apply to'), segHtml(cfg.shadowField, shadowCur, shadowChoices))}
+        ${segRow(SVG.shadowIc, t('Apply to'), segHtml(cfg.shadowField, shadowCur, shadowOpts))}
         <label class="fc-row"><span class="fc-row-lbl">${t('Colour')}</span><span class="fc-cfield">${colorFieldHtml('fc-shadow', shColor, { float: true })}</span></label>
         <label class="fc-row"><span class="fc-row-lbl">${t('X')}</span><input type="range" class="field-range" data-mp="shx" min="-300" max="300" value="${shX}"><b data-mp-val="shx">${shX}</b></label>
         <label class="fc-row"><span class="fc-row-lbl">${t('Y')}</span><input type="range" class="field-range" data-mp="shy" min="-300" max="300" value="${shY}"><b data-mp-val="shy">${shY}</b></label>
@@ -4771,7 +5840,36 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const ar = anchor.getBoundingClientRect();
     const sr = stageEl.getBoundingClientRect();
     p.style.left = Math.min(ar.left - sr.left, sr.width - p.offsetWidth - 8) + 'px';
-    p.style.top = (ar.bottom - sr.top + 8) + 'px';
+    const top = ar.bottom - sr.top + 8;
+    p.style.top = top + 'px';
+    // Clamp to the stage and let the panel scroll (plan 179 C6). It hangs from the object
+    // bar, which is pinned to the TOP chrome row, so on a short viewport its last section -
+    // Perspective tilt - ran off the bottom of the screen with no way to reach it. A
+    // max-height plus the sheet's own `overflow-y: auto` is the whole fix; the rows keep
+    // their sizes, and a panel that fits is byte-identical (the cap is simply never hit).
+    p.style.maxHeight = Math.max(160, sr.height - top - 12) + 'px';
+  }
+
+  /**
+   * ── Explicit page order for a new artboard (plans/179 A9) ─────────────────────
+   *
+   * Until now nothing on the canvas ever wrote `order`, so "which slide is this" was
+   * decided by x position alone: a scratch board drawn to the LEFT of a deck became
+   * slide 1, and the presenter opened on it. Every path that CREATES a frame now stamps
+   * the next slot - one past the highest order in the document - and a legacy document
+   * (frames, no order anywhere) has its existing order seeded from x in the SAME commit,
+   * so the sequence the user was looking at is the sequence that gets written down.
+   *
+   * Returns both halves because the seeding rewrites rows in `boxes`; the caller must
+   * commit the returned array, not the one it started with. Inert (same objects back) for
+   * a non-frame box, and for any tool whose canvas declares no `orderField`.
+   */
+  function withNewFrameOrder(boxes: Box[], box: Box): { boxes: Box[]; box: Box } {
+    if (!frameCfg?.orderField) return { boxes, box };
+    if (String(box[cfg.kindField]) !== frameCfg.frameKind) return { boxes, box };
+    const ff = frameFields();
+    const seeded = seedFrameOrders(boxes, ff);
+    return { boxes: seeded, box: { ...box, [ff.orderField]: nextFrameOrder(seeded, ff) } };
   }
 
   /**
@@ -4801,9 +5899,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       ? frames.reduce((m, b) => Math.max(m, num(b[cfg.xField]) + num(b[cfg.wField])), 0) + gap
       : 0;
     const id = freshId(boxes);
-    const box = seedBox(cfg, {}, frameAddKind.seed || {}, { x, y: 0, w: d.w, h: d.h } as MathRect, id);
+    const made = withNewFrameOrder(boxes,
+      seedBox(cfg, {}, frameAddKind.seed || {}, { x, y: 0, w: d.w, h: d.h } as MathRect, id));
     selection = new Set([id]);
-    commit(assignFrames([...boxes, box], new Set([boxes.length])));  // frame keeps frame='' (no self-nesting)
+    commit(assignFrames([...made.boxes, made.box], new Set([made.boxes.length])));  // frame keeps frame='' (no self-nesting)
     renderChrome();
     // Bring it into view (the doc may be panned); defer so the frame page has rendered.
     requestAnimationFrame(() => {
@@ -4814,6 +5913,69 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       stageEl.dispatchEvent(new CustomEvent('fc-focus-rect', { bubbles: true, detail: { x: r.left, y: r.top, w: r.width, h: r.height } }));
     });
   }
+
+  /**
+   * ── Fit targets: what the stage is allowed to zoom to (plan 179 C5) ───────────
+   *
+   * The RETURN LEG of the `fc-focus-rect` seam. That event is the overlay asking the
+   * stage to frame something; this one is the stage asking the overlay what is worth
+   * framing. Same shape, same one-way-per-direction rule: the overlay still never sees
+   * the StageNav, and tool.ts still owns it. Answered inline - `dispatchEvent` runs its
+   * listeners synchronously, so the asker reads `detail.rect` the moment it returns.
+   *
+   *   · `content`   - the union of every artboard PAGE, so Fit frames the WORK instead of
+   *                   the 1920×1080 export box. A 3-slide deck used to open on slide 1
+   *                   with 2 and 3 off the right edge and nothing saying they existed.
+   *                   Null when this canvas has no frame primitive or no artboards, which
+   *                   is exactly what keeps Fit unchanged in every other document.
+   *   · `selection` - the current selection's AABB, for Zoom to selection (Shift+2).
+   *
+   * CLIENT coords, deliberately, for the reason focusRect documents: a frames tool's
+   * canvas overflows its nominal width with pasteboard artboards, so any native→screen
+   * scale derived from nativeW is wrong by the pasteboard ratio. A live rect is not. It
+   * also makes a rotated box's AABB free - a client rect already IS one.
+   *
+   * The listener is not unregistered: `disposed` makes it inert, and stageEl is rebuilt
+   * with the view that owns it (same reasoning as the `tl-*` handlers, which only need
+   * explicit removal because the timeline can be closed and reopened within one mount).
+   */
+  /**
+   * The computation behind BOTH doors onto a fit target: the `fc-query-rect` event below
+   * (tool.ts's StageNav) and `handle.design`'s `contentRect()`/`selectionRect()`. One
+   * function, so the top bar's Fit buttons and the stage's own keys can never frame two
+   * different rectangles.
+   */
+  function queryRect(what: 'content' | 'selection'): CanvasRect | null {
+    const els: HTMLElement[] = [];
+    if (what === 'content') {
+      if (!frameCfg) return null;
+      for (const el of canvasEl.querySelectorAll<HTMLElement>('.lolly-frame-page[data-frame-id]')) els.push(el);
+    } else {
+      for (const id of selection) {
+        const el = canvasEl.querySelector<HTMLElement>(`.lolly-frame-page[data-frame-id="${cssEscape(id)}"]`)
+          ?? canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(id)}"]`);
+        if (el) els.push(el);
+      }
+    }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const el of els) {
+      const r = el.getBoundingClientRect();
+      if (!(r.width > 0) || !(r.height > 0)) continue;
+      minX = Math.min(minX, r.left); minY = Math.min(minY, r.top);
+      maxX = Math.max(maxX, r.right); maxY = Math.max(maxY, r.bottom);
+    }
+    if (!(maxX > minX) || !(maxY > minY)) return null;   // nothing measurable
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }
+  function onQueryRect(e: Event): void {
+    if (disposed) return;
+    const d = (e as CustomEvent).detail as { what?: unknown; rect?: unknown } | null;
+    if (!d || typeof d !== 'object') return;
+    if (d.what !== 'content' && d.what !== 'selection') return;
+    const rect = queryRect(d.what);
+    if (rect) (d as { rect: unknown }).rect = rect;
+  }
+  stageEl.addEventListener('fc-query-rect', onQueryRect);
 
   /**
    * ── Artboards navigator (plan 112) ────────────────────────────────────────────
@@ -4839,7 +6001,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!frameCfg?.orderField) return;
     const of = frameCfg.orderField;
     const fk = frameCfg.frameKind;
-    const xF = cfg.xField, yF = cfg.yField, wF = cfg.wField, hF = cfg.hField;
+    const xF = cfg.xField;
     const THUMB_MAX_W = 132, THUMB_MAX_H = 90; // letterbox any aspect (landscape slide → portrait poster)
     const p = document.createElement('div');
     p.className = 'fc-panel fc-frames-panel';
@@ -4850,52 +6012,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       .filter((b) => String(b?.[cfg.kindField]) === fk)
       .sort((a, b) => (num(a?.[of]) - num(b?.[of])) || (num(a?.[xF]) - num(b?.[xF])));
 
-    // A still, scaled clone of just THIS frame's rendered page. The template already emits
-    // one `.lolly-frame-page[data-frame-id]` per frame (its boxes at frame-LOCAL coords over
-    // the frame bg), so cloning that page - not the whole canvas - keeps the strip O(N), not
-    // O(N²): a whole-canvas clone per cell renders every frame N times over and froze big
-    // decks. Media is frozen so N thumbnails don't spin N decoders; pointer-inert (the cell
-    // owns the click). Falls back to a canvas-clip if the page markup isn't present.
-    function makeThumb(fb: Box): HTMLElement {
-      const fw = Math.max(1, num(fb[wF])), fh = Math.max(1, num(fb[hF]));
-      const s = Math.min(THUMB_MAX_W / fw, THUMB_MAX_H / fh);
-      const media = document.createElement('div');
-      media.className = 'fc-frame-thumb';
-      media.style.width = `${Math.round(fw * s)}px`;
-      media.style.height = `${Math.round(fh * s)}px`;
-      const fid = fb[cfg.idField] == null ? '' : String(fb[cfg.idField]);
-      const page = fid ? canvasEl.querySelector<HTMLElement>(`.lolly-frame-page[data-frame-id="${cssEscape(fid)}"]`) : null;
-      const src = page ?? canvasEl;
-      const clone = src.cloneNode(true) as HTMLElement;
-      clone.removeAttribute('id');
-      clone.style.position = 'absolute';
-      clone.style.left = '0';
-      clone.style.top = '0';
-      clone.style.margin = '0';
-      clone.style.pointerEvents = 'none';
-      clone.style.transformOrigin = 'top left';
-      // A frame page is already frame-local (starts at 0,0); the whole-canvas fallback must
-      // be shifted so the frame's native rect lands at the thumbnail origin.
-      clone.style.transform = page
-        ? `scale(${s})`
-        : `translate(${-num(fb[xF]) * s}px, ${-num(fb[yF]) * s}px) scale(${s})`;
-      for (const v of clone.querySelectorAll<HTMLVideoElement>('video')) {
-        v.muted = true; v.autoplay = false; v.removeAttribute('autoplay');
-        try { v.pause(); } catch { /* not-ready - ignore */ }
-      }
-      media.appendChild(clone);
-      return media;
-    }
-
-    // The frame's LIVE on-screen box - the page element (or the frame box as a fallback).
-    // Client coords so the stage can frame it without knowing the canvas coordinate space.
-    function frameClientRect(fb: Box): DOMRect | null {
-      const fid = fb[cfg.idField] == null ? '' : String(fb[cfg.idField]);
-      if (!fid) return null;
-      const el = canvasEl.querySelector<HTMLElement>(`.lolly-frame-page[data-frame-id="${cssEscape(fid)}"]`)
-        ?? canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(fid)}"]`);
-      return el ? el.getBoundingClientRect() : null;
-    }
+    // The thumbnail is `frameThumb` from ./free-canvas-fields.ts now - the SAME clone the
+    // navigator column's rows use, so the strip and the column can never drift on how a
+    // page is scaled, frozen or made pointer-inert. This is only its strip-sized binding.
+    const makeThumb = (fb: Box): HTMLElement =>
+      frameThumb(canvasEl, fb, cfg, { maxW: THUMB_MAX_W, maxH: THUMB_MAX_H });
 
     function goTo(i: number, frames: Box[]): void {
       active = Math.max(0, Math.min(i, frames.length - 1));
@@ -4970,6 +6091,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     reposition();
   }
 
+  /** Is the Artboards filmstrip the panel currently in the one-slot `morePanel`? */
+  const isFramesPanelOpen = (): boolean => !!morePanel?.classList.contains('fc-frames-panel');
+  /** Open/close the filmstrip. The anchor is unused by the panel (it docks to the stage
+   *  bottom, not to its trigger), so the top bar's toggle needs none. */
+  function toggleFramesPanel(anchor?: HTMLElement): void {
+    if (isFramesPanelOpen()) closeMorePanel();
+    else openFramesPanel(anchor ?? toolbar);
+  }
+
   /**
    * Validate a typed dash pattern. The ENGINE owns this contract (it is the same parse the
    * tool's hook runs on the stored value), so the running engine's primitive wins whenever
@@ -5028,7 +6158,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // supplies the label for what Auto currently resolves to, so "auto" is never a mystery.
     const routeCur = String(b[cfg.routeField] ?? '');
     const routeBound = hasRouteCfg && isBoundPath(b);
-    const segRow = (ic: string, lbl: string, seg: string): string => `<div class="fc-row"><span class="fc-row-lbl" data-tip="${escape(lbl)}">${icon(ic)}<span>${lbl}</span></span>${seg}</div>`;
+    // Plan 179 A5: the panel is reachable from any kind that renders a stroke now, and a
+    // box / image / artboard paints its stroke as a CSS BORDER. A border has a width and
+    // a solid/dashed/dotted style and nothing else - no line ends, no join style, no fill
+    // rule, no arrowheads, no dash array. Those are the SVG path's, and the manifest says
+    // so (`strokeCap`, `strokeJoin`, `fillRule`, `headStart/End`, `strokeDashArray` and
+    // `dashFit` all declare `showFor: ["path"]`). Offering them here would be the object
+    // bar's old mistake one level down: a control that writes a field the render ignores.
+    const pathOnly = selectionAllPaths(boxes, idx);
     const headSelect = (field: string, cur: string, lbl: string): string =>
       `<select class="field-select field-select--sm" data-sp-head="${escape(field)}" aria-label="${escape(lbl)}">` +
       HEAD_CHOICES.map(([v, l]) => `<option value="${v}"${cur === v ? ' selected' : ''}>${escape(t(l))}</option>`).join('') +
@@ -5047,7 +6184,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // a dash style is on, or whenever an array is already authored - so a pattern can
       // never become unreachable by switching the keyword back to Solid, and a solid stroke
       // is not asked about dashes it has none of.
-      (hasDashArrayCfg
+      (hasDashArrayCfg && pathOnly
         ? `<label class="fc-row" data-sp-row="dasharray"${dashRowOn(dashCur, dashArrCur) ? '' : ' hidden'}>` +
           `<span class="fc-row-lbl" data-tip="${escape(t('Dash array'))}">${icon(SVG.dashDotted)}<span>${t('Dash array')}</span></span>` +
           `<input type="text" data-sp="dasharray" inputmode="decimal" spellcheck="false" autocomplete="off"` +
@@ -5056,15 +6193,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           `<span class="fc-row-lbl" data-tip="${escape(t('Fit dashes to corners'))}">${icon(SVG.joinMiter)}<span>${t('Fit dashes to corners')}</span></span>` +
           `<input type="checkbox" class="field-check" data-sp="dashfit"${dashFitCur ? ' checked' : ''}></label>`
         : '') +
-      segRow(SVG.capRound, t('Line ends'), segHtml(cfg.strokeCapField, capCur, [
-        ['round', t('Round ends'), SVG.capRound],
-        ['butt', t('Flat ends'), SVG.capButt],
-        ['square', t('Square ends'), SVG.capSquare],
-      ])) +
+      (pathOnly
+        ? segRow(SVG.capRound, t('Line ends'), segHtml(cfg.strokeCapField, capCur, [
+          ['round', t('Round ends'), SVG.capRound],
+          ['butt', t('Flat ends'), SVG.capButt],
+          ['square', t('Square ends'), SVG.capSquare],
+        ]))
+        : '') +
       // Arrowheads. Two plain menus rather than twelve icon buttons: the six shapes are
       // named things, and the row already carries three other segmented controls. Offered
       // only where the manifest declares them - see hasHeadCfg.
-      (hasHeadCfg
+      (hasHeadCfg && pathOnly
         ? segRow(SVG.line, t('Path start'), headSelect(cfg.headStartField, headStartCur, t('Path start'))) +
           segRow(SVG.line, t('Path end'), headSelect(cfg.headEndField, headEndCur, t('Path end')))
         : '') +
@@ -5076,15 +6215,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           ROUTE_CHOICES.map(([v, l]) => `<option value="${v}"${routeCur === v ? ' selected' : ''}>${escape(t(l))}</option>`).join('') +
           '</select>')
         : '') +
-      segRow(SVG.joinRound, t('Corners'), segHtml(cfg.strokeJoinField, joinCur, [
-        ['round', t('Round corners'), SVG.joinRound],
-        ['miter', t('Sharp corners'), SVG.joinMiter],
-        ['bevel', t('Bevelled corners'), SVG.joinBevel],
-      ])) +
-      segRow(SVG.ruleEvenOdd, t('Fill rule'), segHtml(cfg.fillRuleField, ruleCur, [
-        ['nonzero', t('Fill overlaps (non-zero)'), SVG.ruleNonzero],
-        ['evenodd', t('Punch holes (even-odd)'), SVG.ruleEvenOdd],
-      ]));
+      (pathOnly
+        ? segRow(SVG.joinRound, t('Corners'), segHtml(cfg.strokeJoinField, joinCur, [
+          ['round', t('Round corners'), SVG.joinRound],
+          ['miter', t('Sharp corners'), SVG.joinMiter],
+          ['bevel', t('Bevelled corners'), SVG.joinBevel],
+        ])) +
+          segRow(SVG.ruleEvenOdd, t('Fill rule'), segHtml(cfg.fillRuleField, ruleCur, [
+            ['nonzero', t('Fill overlaps (non-zero)'), SVG.ruleNonzero],
+            ['evenodd', t('Punch holes (even-odd)'), SVG.ruleEvenOdd],
+          ]))
+        : '');
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
     // The dash-style segment also decides whether the two dash rows are on screen, so it
     // needs the write PLUS the reveal - hence a custom onSet rather than wireSegs' default.
@@ -5934,9 +7075,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const x = rd(cfg.xField, 0), y = rd(cfg.yField, 0);
     const w = Math.max(1, rd(cfg.wField, 1)), h = Math.max(1, rd(cfg.hField, 1));
     const rot = Math.round(clampN(b[cfg.rotationField], 0, -180, 180));
-    // One labelled number cell: leading axis letter · the field · trailing unit.
-    const cell = (label: string, field: string, val: number, min1 = false): string =>
-      `<label class="fc-dims-f"><span>${label}</span><input type="number"${min1 ? ' min="1"' : ''} data-dm="${field}" value="${val}"><i>px</i></label>`;
+    // One labelled number cell: leading axis letter · the field · trailing unit. Shared
+    // with the inspector's Object section - see ./free-canvas-fields.ts's `dimsCell`.
+    const cell = dimsCell;
     const p = document.createElement('div');
     p.className = 'fc-panel fc-dims-panel';
     p.innerHTML =
@@ -6057,7 +7198,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // active in the speaker view - never rendered on the slide the audience sees.
   function openSpeakerNotesPanel(anchor: HTMLElement, frameIdx: number): void {
     closeMorePanel();
-    const cur = String(getBoxes()[frameIdx]?.['notes'] ?? '');
+    const cur = String(getBoxes()[frameIdx]?.[FRAME_NOTES_FIELD] ?? '');
     const p = document.createElement('div');
     p.className = 'fc-panel fc-notes-panel';
     p.innerHTML =
@@ -6071,7 +7212,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const input = p.querySelector<HTMLTextAreaElement>('.fc-notes-input');
     input?.addEventListener('change', () => {
       const boxes = getBoxes();
-      if (frameIdx < boxes.length) commit(boxes.map((b, i) => (i === frameIdx ? { ...b, notes: input.value } : b)));
+      if (frameIdx < boxes.length) commit(boxes.map((b, i) => (i === frameIdx ? { ...b, [FRAME_NOTES_FIELD]: input.value } : b)));
     });
     input?.focus();
   }
@@ -6229,36 +7370,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       return { ...b, [cfg.fontSizeField]: Math.max(4, base + delta) };
     }));
   }
-  // Segmented icon/label control shared by the Text + More panels. `choices` is
-  // [value, label, iconSvg?]; data-seg carries the RESOLVED field so wireSegs writes
-  // it directly. When an entry has an icon it renders as an icon button (tooltip =
-  // label); otherwise the label text.
-  function segHtml(field: string, cur: any, choices: Array<[string, string, string?]>): string {
-    return `<div class="fc-seg" data-seg="${field}">` +
-      choices.map(([v, lbl, ic]) => `<button type="button" class="fc-seg-btn${String(cur) === String(v) ? ' is-on' : ''}${ic ? ' fc-seg-ic' : ''}" data-v="${v}" data-tip="${escape(lbl)}" aria-label="${escape(lbl)}">${ic ? icon(ic) : escape(lbl)}</button>`).join('') +
-      '</div>';
-  }
-  // Image-position anchor picker - a 3×3 grid of the CSS `object-position` anchors,
-  // where the button's CELL is its meaning (top-left cell = anchor top-left). It's a
-  // `.fc-seg` so wireSegs writes it like any segmented control; the values are literal
-  // CSS object-position keywords (the hook whitelists them; the exporter reads the
-  // computed value so SVG/PDF honour the anchor too). Default 'center'.
-  const POS9: Array<[string, string]> = [
-    ['left top', 'Top left'], ['center top', 'Top'], ['right top', 'Top right'],
-    ['left center', 'Left'], ['center', 'Centre'], ['right center', 'Right'],
-    ['left bottom', 'Bottom left'], ['center bottom', 'Bottom'], ['right bottom', 'Bottom right'],
-  ];
-  function posGridHtml(field: string, cur: string): string {
-    return `<div class="fc-seg fc-posgrid" data-seg="${field}">` +
-      POS9.map(([v, lbl]) => `<button type="button" class="fc-seg-btn fc-pos-btn${cur === v ? ' is-on' : ''}" data-v="${v}" data-tip="${escape(t(lbl))}" aria-label="${escape(tRaw('Anchor image {pos}', { pos: t(lbl).toLowerCase() }))}"><i></i></button>`).join('') +
-      '</div>';
-  }
-  function wireSegs(panel: HTMLElement, onSet: (field: string | undefined, v: string | undefined) => void = (field, v) => setField(field, v)): void {
-    panel.querySelectorAll<HTMLElement>('.fc-seg').forEach((segEl) => segEl.querySelectorAll<HTMLButtonElement>('.fc-seg-btn').forEach((btn) => btn.addEventListener('click', () => {
-      segEl.querySelectorAll('.fc-seg-btn').forEach((x) => x.classList.toggle('is-on', x === btn));
-      onSet(segEl.dataset.seg, btn.dataset.v);
-    })));
-  }
+  // `segHtml`, `POS9`/`posGridHtml` and `wireSegs` used to live here as closures over
+  // `setField`. They are ./free-canvas-fields.ts's now (plans/179 M3), so the Design
+  // inspector column renders the same rows from the same builder - and `wireSegs` takes
+  // an explicit `onSet` at every call site, because a shared builder that writes through
+  // one panel's closure by default is not shared.
   // ── Text panel: font · size · weight · line height · align · vertical · padding ─
   // In editor layout there is NO sidebar, so this panel is the only place these
   // typographic properties (several of which were previously unreachable) can be
@@ -6269,7 +7385,6 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const idx = selIndices(boxes);
     if (!idx.length) return;
     const b: Box = boxes[idx[0]!] || {};
-    const opt = (v: string, label: string, cur: any): string => `<option value="${v}"${String(cur) === v ? ' selected' : ''}>${label}</option>`;
     const fontCur = String(b[cfg.fontField] || defaultFont);
     const sizeCur = Math.max(1, Math.round(parseFloat(String(b[cfg.fontSizeField])) || 48));
     const weightCur = String(b[cfg.weightField] || '700');
@@ -6345,7 +7460,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     p.querySelectorAll<HTMLInputElement>('input[type="checkbox"][data-tp]').forEach((cb) => cb.addEventListener('change', () => {
       setField(cbField[cb.dataset.tp!], cb.checked);
     }));
-    wireSegs(p);
+    wireSegs(p, (field, v) => setField(field, v));
     stageEl.appendChild(p);
     morePanel = p;
     const ar = anchor.getBoundingClientRect();
@@ -6880,10 +7995,47 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     commit(boxes.map((b, i) => (sel.has(i) ? { ...b, [field]: !boolOf(b[field], false) } : b)));
   }
 
+  /** How far to the right of the original a duplicated artboard sits - the same 56px
+   *  gutter the carousel migration and the import layout put between pages. */
+  const FRAME_DUP_GAP = 56;
+
+  /** Fields of a copied row that POINT AT another box, so a deep copy has to repoint them
+   *  when the target came along in the same copy. `matchOf` is listed for completeness -
+   *  it is a free-text morph TAG, not an id, so it only ever re-keys in the pathological
+   *  case where someone typed a box id as their tag; an ordinary tag ("hero") is left
+   *  alone, which is what lets a slide and its duplicate morph into each other. */
+  const dupRefFields = (): string[] =>
+    [cfg.clipField, cv.linkField, cfg.bindStartField, cfg.bindEndField, 'matchOf']
+      .filter((f): f is string => !!f);
+
   function duplicateSelection(): void {
     const boxes = getBoxes();
     const idx = selIndices(boxes);
     if (!idx.length) return;
+    // plans/179 A8 - duplicating an ARTBOARD duplicates what is on it. Cloning the frame
+    // row alone left an empty page appended last, and because `resolveFrame` answers with
+    // the LAST containing frame, the next gesture on any child of the ORIGINAL re-bucketed
+    // it into that empty duplicate. The deep copy fixes both halves: the children come
+    // along with fresh ids, and the copy is placed clear to the RIGHT so no rect overlaps.
+    //
+    // Gated on a LONE frame: a mixed selection has no single answer for where the copy
+    // goes, and a frame copy moves a whole page rather than nudging a box by 24px.
+    const fk = frameCfg?.frameKind;
+    if (frameCfg && fk && idx.length === 1 && String(boxes[idx[0]!]?.[cfg.kindField]) === fk) {
+      const ff = frameFields();
+      const seeded = seedFrameOrders(boxes, ff);          // A9: legacy docs get an order first
+      const pool: Box[] = seeded.slice();
+      const res = duplicateFrameWithChildren(seeded, idOf(boxes[idx[0]!], idx[0]!), ff, {
+        // Each minted id joins the pool, so two children can never draw the same one.
+        id: () => { const id = freshId(pool); pool.push({ [cfg.idField]: id } as Box); return id; },
+        group: () => freshGroupId(pool),
+      }, { gap: FRAME_DUP_GAP, groupField: cfg.groupField, refFields: dupRefFields() });
+      if (res.frameId) {
+        selection = new Set([res.frameId]);               // the new PAGE, not its contents
+        commit(res.boxes);
+        return;
+      }
+    }
     const clones: Box[] = [];
     const nextSel = new Set<string>();
     const pool = boxes.slice();
@@ -6902,7 +8054,42 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const sel = new Set(selIndices(boxes));
     if (!sel.size) return;
     selection = new Set<string>();
-    commit(boxes.filter((_, i) => !sel.has(i)));
+    const fk = frameCfg?.frameKind;
+    const deadFrames = fk ? [...sel].filter((i) => String(boxes[i]?.[cfg.kindField]) === fk) : [];
+    if (!frameCfg || !deadFrames.length) { commit(boxes.filter((_, i) => !sel.has(i))); return; }
+    // plans/179 A7 - deleting an artboard used to orphan its children: they kept pointing
+    // at a dead frame id, stayed visible in the editor as scratch, and were absent from
+    // every PNG/PDF/PPTX export (the render only walks boxes whose stored `frame` names a
+    // live page). They now move to the PREVIOUS artboard keeping their frame-local
+    // position, or - when the deleted page was the first one - onto the pasteboard.
+    //
+    // One commit, so the whole thing is one undo step, and A9's renumber rides along in
+    // it: the pages that remain are densely re-ordered, so deleting slide 2 makes slide 3
+    // slide 2 rather than leaving a hole for the x tie-break to guess at.
+    const ff = frameFields();
+    const seeded = seedFrameOrders(boxes, ff);
+    // EVERY doomed row, not only the artboards. A child that is itself in the delete is
+    // dropped by index one line below, so counting it as re-homed made the toast say
+    // "its 12 items are now on the pasteboard" of a document Cmd+A had just emptied.
+    // `rehomeChildrenOfDeletedFrames` skips any row whose own id is in the set, and a
+    // non-frame id matches no page, so widening it only narrows the tally.
+    const deadIds = [...sel].map((i) => idOf(boxes[i], i)).filter(Boolean);
+    const res = rehomeChildrenOfDeletedFrames(seeded, deadIds, ff);
+    const survivors = res.boxes.filter((_, i) => !sel.has(i));   // index-aligned with `boxes`
+    const seq = framesInPageOrder(survivors, ff).map((b) => String(b[cfg.idField] ?? ''));
+    commit(renumberFrameOrder(survivors, seq, ff));
+    // One sentence, and it names the outcome the user has to go looking for. With both
+    // outcomes in one delete (several artboards at once, the first among them) the
+    // pasteboard is the one worth saying: homed items are where you would expect them.
+    if (res.orphaned) {
+      flash(res.orphaned === 1
+        ? t('Deleted artboard. Its one item is now on the pasteboard.')
+        : t('Deleted artboard. Its {n} items are now on the pasteboard.', { n: res.orphaned }));
+    } else if (res.homed) {
+      flash(res.homed === 1
+        ? t('Deleted artboard. Its one item moved to the previous artboard.')
+        : t('Deleted artboard. Its {n} items moved to the previous artboard.', { n: res.homed }));
+    }
   }
 
   // ── vector operations (opt-in via canvas.pathField) ───────────────────────────
@@ -7558,8 +8745,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     items.push({ label: t('Delete the selected points'), icon: icon(SVG.trash), danger: true, disabled: !penSel.size, run: () => penDeleteSelected() });
     popover = document.createElement('div');
     popover.className = 'fc-popover fc-context-menu';
+    // The rows carry `role="menuitem"`, so the container has to say `menu` - an orphan
+    // menuitem tells a screen reader less than a plain button would.
+    popover.setAttribute('role', 'menu');
     fillPopover(popover, items);
     popover.addEventListener('pointerdown', (e) => e.stopPropagation());
+    popover.addEventListener('keydown', onPopoverKey);
     stageEl.appendChild(popover);
     const sr = stageEl.getBoundingClientRect();
     popover.style.left = Math.max(6, Math.min(clientX - sr.left, sr.width - popover.offsetWidth - 6)) + 'px';
@@ -8048,7 +9239,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    *  and never sits over the path the user is shaping. */
   function positionPenCtxBar(): void {
     const m = metrics();
-    const band = ctxTopBand({ w: m.sr.width, h: m.sr.height }, ctxBarBlockers(m.sr));
+    const band = ctxTopBand({ w: m.sr.width, h: m.sr.height }, ctxBarBlockers(m.sr), { reserve: stageReserves() });
     ctxbar.style.maxWidth = Math.max(0, band.hi - band.lo) + 'px';
     const bw = ctxbar.offsetWidth || 0;
     if (bw <= 0) return;   // not laid out yet - next frame, rather than a half-width-off jump
@@ -8294,38 +9485,97 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const ae = document.activeElement;
     return !(ae && ae !== document.body && !stageEl.contains(ae));
   }
+  /**
+   * What a copy takes: the selection, PLUS the children of any selected artboard
+   * (plans/179 A8, the Cmd+C leg). A slide is its content - copying the page row alone
+   * pasted an empty board. Ids are written explicitly so `pasteObjects` can re-point a
+   * child at the copy of its own page even when the tool stores no id on the row.
+   */
+  function copyRows(boxes: Box[], idx: number[]): Box[] {
+    const take = new Set(idx);
+    const fk = frameCfg?.frameKind;
+    if (fk) {
+      const ff = frameFields();
+      const pages = new Set(idx
+        .filter((i) => String(boxes[i]?.[cfg.kindField]) === fk)
+        .map((i) => idOf(boxes[i], i)));
+      if (pages.size) boxes.forEach((b, i) => { if (b && pages.has(String(b[ff.frameField] ?? ''))) take.add(i); });
+    }
+    return [...take].sort((a, b) => a - b)
+      .map((i) => ({ ...boxes[i], [cfg.idField]: idOf(boxes[i], i) }));
+  }
   function onCopy(e: ClipboardEvent): void {
     if (disposed || editing) return;               // editing → native text copy
     if (typingTarget() || !pasteAimedHere()) return;
     const boxes = getBoxes();
     const idx = selIndices(boxes);
     if (!idx.length) return;                        // nothing selected → native copy
-    const picked = idx.map((i) => ({ ...boxes[i] }));
+    const picked = copyRows(boxes, idx);
     objectClipboard = picked;
     try {
       e.clipboardData!.setData('text/plain', FC_CLIP_PREFIX + JSON.stringify(picked));
       e.preventDefault();
     } catch { /* clipboard write blocked - the in-memory copy still serves ⌘V */ }
   }
-  // Duplicate a set of copied boxes at a +24,+24 offset (cascades on repeat paste),
-  // clamped into the canvas, and select the fresh copies. Mirrors duplicateSelection.
+  /**
+   * Duplicate a set of copied boxes at a +24,+24 offset (cascades on repeat paste),
+   * clamped into the canvas, and select the fresh copies. Mirrors duplicateSelection.
+   *
+   * An ARTBOARD row takes the same path Cmd+D does (plans/179 A8/A9), because a paste
+   * creates a frame exactly as a duplicate does. Left on the +24 rule it kept the SOURCE
+   * board's `order` - two slides claiming one page slot, settled only by the x tie-break -
+   * and sat 24px over the board it came from; since the paste is appended LAST and
+   * `resolveFrame` answers with the last containing frame, that board's children re-bucketed
+   * into the copy on their next gesture and vanished from every export. So a pasted board
+   * goes clear of every board there is, takes the next page slot, and brings the children
+   * `copyRows` collected with it, keeping their frame-local position.
+   */
   function pasteObjects(picked: any): void {
     if (!Array.isArray(picked) || !picked.length) return;
-    const boxes = getBoxes();
-    const cw = canvasWH();
+    const rows = (picked as unknown[]).filter((s): s is Box => !!s && typeof s === 'object');
+    if (!rows.length) return;
+    const fk = frameCfg?.frameKind;
+    const ff = frameCfg ? frameFields() : null;
+    const isFrameRow = (s: Box): boolean => !!fk && String(s[cfg.kindField]) === fk;
+    let boxes = getBoxes();
+    if (ff && rows.some(isFrameRow)) boxes = seedFrameOrders(boxes, ff);  // legacy docs get an order first
     const clones: Box[] = [];
     const nextSel = new Set<string>();
-    for (const src of picked) {
-      if (!src || typeof src !== 'object') continue;
+    const pageIds = new Map<string, string>();                  // pasted frame id → its copy's id
+    const pageShift = new Map<string, number>();                // …and how far right it moved
+    let deckRight = fk
+      ? boxes.reduce((m, b) => (b && String(b[cfg.kindField]) === fk
+        ? Math.max(m, num(b[cfg.xField]) + num(b[cfg.wField])) : m), Number.NEGATIVE_INFINITY)
+      : Number.NEGATIVE_INFINITY;
+    for (const src of rows) {                                   // pages first - a child needs its new page
+      if (!isFrameRow(src)) continue;
+      const r = boxRect(src, cfg);
+      const x = Math.round(Number.isFinite(deckRight) ? deckRight + FRAME_DUP_GAP : r.x);
+      const id = freshId(boxes.concat(clones));
+      const clone: Box = { ...src, [cfg.idField]: id, [cfg.xField]: x, [cfg.yField]: Math.round(r.y) };
+      if (ff) clone[ff.orderField] = nextFrameOrder(boxes.concat(clones), ff);
+      clones.push(clone);
+      nextSel.add(id);
+      const old = src[cfg.idField] == null ? '' : String(src[cfg.idField]);
+      if (old) { pageIds.set(old, id); pageShift.set(old, x - r.x); }
+      deckRight = x + r.w;
+    }
+    for (const src of rows) {
+      if (isFrameRow(src)) continue;
       const id = freshId(boxes.concat(clones));
       const r = boxRect(src, cfg);
-      let clone = { ...src, [cfg.idField]: id, [cfg.xField]: Math.round(r.x + 24), [cfg.yField]: Math.round(r.y + 24) };
-      clone = clampToWorkArea(clone);
+      const owner = ff ? String(src[ff.frameField] ?? '') : '';
+      const dx = owner ? pageShift.get(owner) : undefined;
+      const clone: Box = dx == null
+        ? clampToWorkArea({ ...src, [cfg.idField]: id, [cfg.xField]: Math.round(r.x + 24), [cfg.yField]: Math.round(r.y + 24) })
+        : { ...src, [cfg.idField]: id, [cfg.xField]: Math.round(r.x + dx), [cfg.yField]: Math.round(r.y), [ff!.frameField]: pageIds.get(owner)! };
       clones.push(clone);
       nextSel.add(id);
     }
     if (!clones.length) return;
-    selection = nextSel;
+    // With a whole page pasted the selection is that PAGE, not its contents - the same
+    // answer Cmd+D gives, so the next gesture moves the slide.
+    selection = pageIds.size ? new Set(pageIds.values()) : nextSel;
     commit([...boxes, ...clones]);
     renderChrome();
   }
@@ -9218,6 +10468,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
   function tryArmedCreateAt(e: PointerEvent, nat: Point): boolean {
     if (!armedKind) return false;
+    // The sentence has been acted on - take it down at the START of the gesture, not at
+    // its commit, or it sits over the rubber band describing something already happening.
+    hideArmHint();
     beginGesture(e, { type: 'create', origin: nat, seed: armedKind.seed || {}, others: otherAABBs(getBoxes(), new Set<number>()) });
     rubber.hidden = false;
     return true;
@@ -9361,11 +10614,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const id = idOf(boxes[hit], hit);
       const additive = e.shiftKey || e.metaKey || e.ctrlKey || multiTapMode;
       const hitSel = selectionForHit(boxes, hit, e.altKey);   // whole group, or Alt = just this box
+      // A plain click on a box that is ALREADY in a multi-selection means "just this one"
+      // (plan 179 C4) - but the same press is also the start of a drag of everything
+      // selected, and narrowing here would make every group move impossible. So the
+      // intention is recorded and settled at pointerup, once we know whether the pointer
+      // moved. Nothing is narrowed when the click lands on the only thing selected.
+      let narrow: string[] | undefined;
       if (additive) {
         const anyIn = hitSel.some((x) => selection.has(x));
         for (const x of hitSel) anyIn ? selection.delete(x) : selection.add(x);
       } else if (!selection.has(id)) {
         selection = new Set(hitSel);
+      } else if (selection.size > hitSel.length) {
+        narrow = hitSel;
       }
       renderChrome();
       // Start a move for the whole current selection.
@@ -9373,7 +10634,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const sel = selIndices(boxes);
       for (const i of sel) start.set(i, boxRect(boxes[i], cfg));
       beginGesture(e, {
-        type: 'move', start, sel,
+        type: 'move', start, sel, narrow,
         selAABB: selectionAABB(boxes, sel, cfg),
         others: otherAABBs(boxes, new Set(sel)),
       });
@@ -9861,7 +11122,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (wasText) box = withLegibleInk(box, boxes);
       // Containment-on-create: the new box lands in whatever frame its centre falls in
       // (dead unless frameCfg). It is the last element of the array, so index boxes.length.
-      commit(assignFrames([...boxes, box], new Set([boxes.length])));
+      // A DRAWN artboard also takes the next explicit page order (plans/179 A9), which is
+      // why the commit reads the pair back rather than `boxes`: seeding a legacy doc's
+      // order rewrites frame rows, and both halves belong in this one commit.
+      const made = withNewFrameOrder(boxes, box);
+      commit(assignFrames([...made.boxes, made.box], new Set([made.boxes.length])));
       // Added from the timeline, so it lands TIMED at the playhead instead of as scenery
       // (the rail's plus keeps that default). The panel's promote() owns the write - one
       // commit through moveOverlay + setDuration - so no timing arithmetic lives here.
@@ -9932,7 +11197,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // A marquee grabs cards AND any connector lines it crosses - a mixed selection
         // (card handles + the connector panel editing every selected line at once).
         const rect = normDragRect(g.origin.x, g.origin.y, nat.x, nat.y, 0);
-        const hits = pickMarquee(boxes, rect, cfg, seqHiddenSkip(boxes)).map((i: number) => idOf(boxes[i], i));
+        // plans/179 A13: an ARTBOARD joins the selection only when the band encloses it
+        // whole (Figma's rule). Rubber-banding over two cards used to grab the page they
+        // sit on as well, so the next Fill recoloured the slide and Delete removed it.
+        // Children keep the ordinary "touched by the band" rule.
+        const raw = pickMarquee(boxes, rect, cfg, seqHiddenSkip(boxes));
+        const kept = frameCfg
+          ? filterMarqueeFrames(boxes, raw, rect, { ...cfg, frameKind: frameCfg.frameKind })
+          : raw;
+        const hits = kept.map((i: number) => idOf(boxes[i], i));
         const edgeHits = edgesInRect(rect);
         if (g.additive) {
           for (const id of hits) selection.add(id);
@@ -9951,6 +11224,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (g.type === 'move') {
       const d = g.moveDelta || { dx: 0, dy: 0 };
       const sel = g.sel;
+      const narrow = g.narrow;
       endGesture();
       if (Math.abs(d.dx) > 0.5 || Math.abs(d.dy) > 0.5) {
         // PLAYHEAD-CONTEXTUAL WRITES (plans/104 section 8). The gesture is untouched - the
@@ -9972,7 +11246,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // and only the boxes that actually MOVED are re-bucketed: a posed box's own
         // geometry never changed, so it cannot have crossed a frame edge.
         commit(assignFrames(cascadeFrameChildren(boxes, next, moveIdx), new Set(moveIdx)));
-      } else renderChrome();
+      } else {
+        // The press never became a drag, so honour the click's own meaning: narrow the
+        // multi-selection to the box that was clicked (plan 179 C4). `ctxSelKey` is reset
+        // because the object bar's controls are gated by what is selected, and the bar
+        // must not survive a selection it no longer describes.
+        if (narrow && narrow.length) { selection = new Set(narrow); ctxSelKey = null; }
+        renderChrome();
+      }
       return;
     }
     if (g.type === 'resize' || g.type === 'rotate') {
@@ -10100,7 +11381,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // native px (a fixed SCREEN distance regardless of zoom).
   function otherAABBs(boxes: Box[], exclude: Set<number>): AABB[] {
     const out: AABB[] = [];
-    for (let i = 0; i < boxes.length; i++) if (!exclude.has(i)) out.push(boxAABB(boxes[i], cfg));
+    // A HIDDEN layer (plans/179 M4) is not drawn, so it must not pull a guide either: a
+    // drag snapping to an edge nobody can see reads as the canvas fighting back. A LOCKED
+    // one still snaps - it is on screen, and "can't be moved" is not "isn't there".
+    const hideF = frameCfg?.hiddenField;
+    for (let i = 0; i < boxes.length; i++) {
+      if (exclude.has(i)) continue;
+      if (hideF && boolOf(boxes[i]?.[hideF], false)) continue;
+      out.push(boxAABB(boxes[i], cfg));
+    }
     return out;
   }
   const snapThreshNative = (): number => SNAP_PX / (metrics().scale || 1);
@@ -10720,11 +12009,28 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // follow the selection, animated formats follow the playhead. No frames → no
   // event, and the bar keeps its no-frames behaviour.
   let activeArtboardKey = '';
+  /**
+   * The ArtboardPort's own subscribers (plans/179 M2). Separate from the `fc-artboard`
+   * DOM event because a column wants the ID and nothing else: the event's payload also
+   * carries the PLAYHEAD's artboard, so it re-fires as the clock moves over a deck and a
+   * navigator subscribed to it would repaint on every frame of playback.
+   */
+  const artboardListeners = new Set<(id: string) => void>();
+  let artboardNotifiedId = '';
+  function notifyActiveArtboard(id: string): void {
+    if (id === artboardNotifiedId) return;
+    artboardNotifiedId = id;
+    for (const f of [...artboardListeners]) { try { f(id); } catch (e) { console.error(e); } }
+  }
   function emitActiveArtboard(): void {
+    // The rail's paint swatch follows the same active artboard (plans/179 A1), and this
+    // is the one function that already runs on every selection change, commit and
+    // `tl-time` - so it is where the swatch is kept in step. Ahead of the frameCfg
+    // guard: a no-frames document still has a `background` to re-show after an undo.
+    syncBgField();
     if (!frameCfg) return;
     const boxes = getBoxes();
     const fk = frameCfg.frameKind;
-    const of = frameCfg.orderField;
     const frames = boxes.filter((b) => b && String(b[cfg.kindField]) === fk);
     // With artboards in the doc the canvas rect is only the pasteboard - this class
     // drops the shell's page chrome (the outer shadow ring) so the artboards are the
@@ -10732,19 +12038,20 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     canvasEl.classList.toggle('fc-has-frames', frames.length > 0);
     const info = (b: Box | null): { id: string; w: number; h: number } | null =>
       b ? { id: idOf(b, boxes.indexOf(b)), w: num(b[cfg.wField]), h: num(b[cfg.hField]) } : null;
-    let sel: Box | null = null;
-    for (const i of selIndices(boxes)) {
-      const b = boxes[i];
-      if (b && String(b[cfg.kindField]) === fk) { sel = b; break; }
-    }
-    const primary = frames.length
-      ? [...frames].sort((a, b) =>
-          (num(of ? a[of] : 0) - num(of ? b[of] : 0)) || (num(a[cfg.xField]) - num(b[cfg.xField])))[0]!
-      : null;
+    // plans/179 A11: a still export follows the artboard that CONTAINS the selection,
+    // not the primary one. Selecting a card on slide 3 and exporting PNG used to export
+    // slide 1. `activeFrameIdFor` is the same resolution the rail's fill swatch uses -
+    // a selected artboard, else the one owning the selected box, else primary - so the
+    // swatch you just painted and the page you just exported can never disagree.
+    const activeId = activeFrameIdFor(boxes, selection, frameFields());
+    // Ahead of the `activeArtboardKey` dedupe below, which also folds in the PLAYHEAD's
+    // artboard and the two sizes - none of which change which board the editor is "on".
+    notifyActiveArtboard(frames.length ? activeId : '');
+    const sel = activeId ? frames.find((b) => String(b[cfg.idField] ?? '') === activeId) ?? null : null;
     const timedEl = canvasEl.querySelector<HTMLElement>('[data-pdf-page][data-t-start]:not(.seq-off)');
     const timedId = timedEl?.getAttribute('data-frame-id') ?? '';
     const timed = timedId ? frames.find((b) => String(b[cfg.idField] ?? '') === timedId) ?? null : null;
-    const detail = { sel: info(sel ?? primary), timed: info(timed) };
+    const detail = { sel: info(sel), timed: info(timed) };
     const key = JSON.stringify(detail);
     if (key === activeArtboardKey) return;
     activeArtboardKey = key;
@@ -10800,8 +12107,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       frameLabelKey = '';
       return;
     }
-    const key = frames.map(({ b, i }, n) => `${idOf(b, i)}:${n}:${selection.has(idOf(b, i)) ? 1 : 0}`).join('|');
-    if (key !== frameLabelKey) {
+    // The NAME is part of the key: a rename has to repaint the tab (plans/179 A10).
+    const key = frames.map(({ b, i }, n) =>
+      `${idOf(b, i)}:${n}:${selection.has(idOf(b, i)) ? 1 : 0}:${frameLabelText(b, n)}`).join('|');
+    // Never rebuild under an open rename - the input lives in this container and a
+    // replaceChildren would delete it mid-word.
+    if (key !== frameLabelKey && !renamingFrameId) {
       frameLabelKey = key;
       frameLabels.replaceChildren(...frames.map(({ b, i }, n) => {
         const id = idOf(b, i);
@@ -10809,7 +12120,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         el.type = 'button';
         el.className = 'fc-frame-label' + (selection.has(id) ? ' is-active' : '');
         el.dataset.frameId = id;
-        el.textContent = `${t('Artboard')} ${n + 1}`;
+        el.textContent = frameLabelText(b, n);
+        if (nameField) { el.title = t('Double-click to rename'); el.setAttribute('aria-keyshortcuts', 'F2 Enter'); }
         return el;
       }));
     }
@@ -10820,9 +12132,94 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (!el) continue;
       const fb = frames[n]!.b;
       const tl = nativeToStage(num(fb[cfg.xField]), num(fb[cfg.yField]), m);
-      el.style.left = `${Math.round(tl.x)}px`;
-      el.style.top = `${Math.round(Math.max(2, tl.y - 20))}px`;
+      const left = `${Math.round(tl.x)}px`;
+      const top = `${Math.round(Math.max(2, tl.y - 20))}px`;
+      el.style.left = left;
+      el.style.top = top;
+      // The rename input rides on the same rect as the tab it replaces, so a pan or zoom
+      // mid-rename does not leave it behind.
+      if (renamingFrameId && idOf(fb, frames[n]!.i) === renamingFrameId) {
+        const inp = frameLabels.querySelector<HTMLElement>('.fc-frame-rename');
+        if (inp) { inp.style.left = left; inp.style.top = top; }
+      }
     }
+  }
+
+  // ── artboard rename (plans/179 A10) ──────────────────────────────────────────
+  //
+  // The tabs were hard-coded "Artboard N" and there was no rename anywhere on the canvas,
+  // so the `name` an import fills in was written and never shown. The tab now reads the
+  // name when there is one, and a double-click turns it into a one-field editor: Enter or
+  // a click away saves, Escape cancels. Single click still solos the frame.
+  let renamingFrameId = '';
+
+  /** The tab text for a frame: its own name, else its 1-based place in the PAGE order.
+   *  `Artboard` is the key every one of the 26 catalogues already carries; an
+   *  `Artboard {n}` key would be a NEW string in none of them, so a French deck would
+   *  have regressed from "Plan de travail 1" to "Artboard 1". */
+  function frameLabelText(b: Box | undefined, n: number): string {
+    const nm = nameField ? String(b?.[nameField] ?? '').trim() : '';
+    return nm || `${t('Artboard')} ${n + 1}`;
+  }
+
+  function startFrameRename(el: HTMLElement, fid: string): void {
+    if (!nameField || renamingFrameId || !fid) return;
+    const boxes = getBoxes();
+    const i = boxes.findIndex((b, n) => idOf(b, n) === fid);
+    if (i < 0) return;
+    renamingFrameId = fid;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'fc-frame-rename field-input';
+    input.value = String(boxes[i]![nameField] ?? '');
+    input.placeholder = el.textContent || '';
+    input.setAttribute('aria-label', t('Artboard name'));
+    input.spellcheck = false;
+    input.style.left = el.style.left;
+    input.style.top = el.style.top;
+    el.hidden = true;
+    frameLabels.appendChild(input);
+    input.focus();
+    input.select();
+    let done = false;
+    /**
+     * `refocus` is only ever true for a KEY (Enter / Escape): the input is about to be
+     * removed and the tab it replaced is about to be rebuilt, so without a hand-back
+     * focus falls to `<body>` - where the next Tab restarts at the top of the page and
+     * every bare canvas shortcut is live again. A blur, by contrast, means the user has
+     * already put the focus somewhere themselves, and taking it back would fight them.
+     */
+    const finish = (save: boolean, refocus = false): void => {
+      if (done) return;
+      done = true;
+      renamingFrameId = '';
+      input.remove();
+      el.hidden = false;
+      if (save && nameField) {
+        const bs = getBoxes();
+        const j = bs.findIndex((b, n) => idOf(b, n) === fid);
+        const v = input.value.trim();
+        if (j >= 0 && String(bs[j]![nameField] ?? '') !== v) {
+          commit(bs.map((b, n) => (n === j ? { ...b, [nameField]: v } : b)));
+        }
+      }
+      frameLabelKey = '';          // force the tab to repaint with the new name
+      renderChrome();
+      // The repaint replaced the tab, so `el` is detached - find the new one by id.
+      if (refocus) {
+        const back = [...frameLabels.querySelectorAll<HTMLElement>('.fc-frame-label')]
+          .find((l) => (l.dataset.frameId || '') === fid);
+        back?.focus();
+      }
+    };
+    // Typing a name must not reach the canvas shortcuts (every letter is a tool).
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') { e.preventDefault(); finish(true, true); }
+      else if (e.key === 'Escape') { e.preventDefault(); finish(false, true); }
+    });
+    input.addEventListener('blur', () => finish(true));
+    input.addEventListener('pointerdown', (e) => e.stopPropagation());
   }
 
   function paintChrome(boxes: Box[], liveRects: Map<number, Rect> | null): void {
@@ -10917,10 +12314,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       buildChrome(idx.length);            // (re)create nodes for the new set
     }
     positionChrome(boxes, idx, liveRects, m);
-    // Contextual bar - rebuild its controls only when the SELECTION set changes
-    // (so the colour pickers reflect the box); otherwise just reposition it.
-    if (key !== ctxSelKey) {
-      ctxSelKey = key;
+    // Contextual bar - rebuilt when the selection set changes OR when the VALUES it shows
+    // change (plan 179 A16). The set alone was not enough: Cmd+Z put the old fill back in
+    // the model and left the swatch showing the colour that had just been undone, which is
+    // the one state a colour control must never be in. The signature is the handful of
+    // fields the bar actually paints, so an opacity drag or a text edit still costs nothing.
+    const ctxKey = idx.length ? `${key}|${ctxValueSig(boxes, idx)}` : '';
+    if (ctxKey !== ctxSelKey) {
+      ctxSelKey = ctxKey;
       if (idx.length) rebuildCtxBar(boxes, idx);
       else { hideCtxBar(); closeMorePanel(); multiTapMode = false; }
     }
@@ -11198,16 +12599,21 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   let ctxFrozen: { left: number; top: number } | null = null;
   function ctxBarBlockers(sr: DOMRect): StageBox[] {
     if (ctxBlockers && gesture) return ctxBlockers;
-    const out: StageBox[] = [];
     // .chrome-topleft, not just its .tools-home pill: the island can also carry the
     // Home fab beside the pill, and the ctx bar must dodge the whole cluster.
-    for (const el of [stageEl.querySelector<HTMLElement>('.stage-nav'),
-                      ...Array.from(document.querySelectorAll<HTMLElement>('.chrome-topleft, .tools-home'))]) {
-      if (!el || el.hidden || !el.getClientRects().length) continue;
-      const r = el.getBoundingClientRect();
-      if (r.width <= 0 || r.height <= 0) continue;
-      out.push({ left: r.left - sr.left, top: r.top - sr.top, right: r.right - sr.left, bottom: r.bottom - sr.top });
-    }
+    //
+    // The LEFT SIDEBAR is on that list too (plans/179 M4): `.fc-nav` is the navigator
+    // column - open, or collapsed to its dot rail - and while it is open the tool rail is
+    // a grid inside it, so one rect covers both. The rail's own dock joins them only
+    // while the TIMELINE has made it a full-height column; a floating rail is vertically
+    // centred and nowhere near this row, so counting it would push the bar sideways for
+    // chrome that is not actually in the way.
+    const out = stageBlockers([
+      stageEl.querySelector<HTMLElement>('.stage-nav'),
+      stageEl.querySelector<HTMLElement>('.fc-nav'),
+      railMode === 'timeline' ? toolbarDock : null,
+      ...Array.from(document.querySelectorAll<HTMLElement>('.chrome-topleft, .tools-home')),
+    ], sr);
     ctxBlockers = gesture ? out : null;
     return out;
   }
@@ -11219,7 +12625,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // looking at), centred in the band between the back pill and the zoom HUD and capped
     // to it - a bar too wide for a narrow phone row scrolls inside that width (see the
     // `.fc-ctxbar` overflow) instead of dropping down over the canvas.
-    const band = ctxTopBand({ w: m.sr.width, h: m.sr.height }, ctxBarBlockers(m.sr));
+    const band = ctxTopBand({ w: m.sr.width, h: m.sr.height }, ctxBarBlockers(m.sr), { reserve: stageReserves() });
     ctxbar.style.maxWidth = Math.max(0, band.hi - band.lo) + 'px';
     // Measured AFTER the bar is shown and its max-width is set, so `offsetWidth` reflects
     // a laid-out, capped bar rather than the zero a `hidden` element reports. A zero here
@@ -11329,12 +12735,44 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!(e.metaKey || e.ctrlKey)) return false;
     return k === 'd' || k === 'D' || k === 'g' || k === 'G' || k === ']' || k === '[';
   }
+  /**
+   * Chrome that puts focusable controls over the canvas opts out of the canvas keyboard
+   * by marking its own root `data-canvas-keys="off"`: the Design top bar, the right edge
+   * dock column, the navigator column. The verbs in `onKey` are bound on `window`, so
+   * without this a focused button in one of those roots was a live canvas surface -
+   * Delete on the Export button removed the selection, an arrow key in a menu nudged a
+   * box. One attribute check covers every such root, rather than a growing class list.
+   *
+   * The event target AND the deep active element are both tested: a pointer-focused
+   * button is the target, while a jelly text field keeps its real input in a shadow root
+   * (the event retargets to the host, which is what `closest` can walk).
+   *
+   * The two exemptions are the ones those roots already make by hand where they stop
+   * their own keys (`onRootKey` in design-topbar.ts and design-navigator.ts), so the
+   * attribute says the same thing rather than something stricter: app-wide chords carry
+   * meta/ctrl and mean the same wherever focus is, and Escape is how you leave a mode,
+   * a draft or a selection, so it belongs to the ladder below from anywhere.
+   *
+   * The NEAREST marked ancestor decides, so a surface inside one of those roots can say
+   * `data-canvas-keys="on"` and get the canvas keys back. The tool rail needs exactly
+   * that: it is a canvas palette that free-canvas parks inside the navigator column while
+   * that column is open, and without the opt-back-in `v` armed the pointer tool from a
+   * floating rail and did nothing from a docked one - the same button, two meanings.
+   */
+  function chromeKeysOff(e: KeyboardEvent): boolean {
+    if (e.metaKey || e.ctrlKey || e.key === 'Escape') return false;
+    const off = (el: HTMLElement | null): boolean =>
+      el?.closest?.('[data-canvas-keys]')?.getAttribute('data-canvas-keys') === 'off';
+    if (off(e.target as HTMLElement | null)) return true;
+    return off(deepActiveElement() as HTMLElement | null);
+  }
   function onKey(e: KeyboardEvent): void {
     if (disposed) return;
     // The timeline panel binds its keys on its OWN root and owns them while focus is
     // inside it (deck-editor's `.deck-strip, .deck-bar…` bail). Without this, Delete /
     // arrows / ⌘A / Enter typed at a clip would also hit the canvas selection.
     if (timelinePanel && (document.activeElement as HTMLElement | null)?.closest?.('.tl-panel')) return;
+    if (chromeKeysOff(e)) return;
     // ── Escape: ONE ladder, innermost rung first, one rung per press ───────────
     // Escape is exempt from the typing bail below on purpose: it is how you get out of a
     // text edit too (onEditKey owns that and stops here).
@@ -11432,9 +12870,21 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       return;
     }
     // Enter / F2 on a selected box → edit its text (select-all so typing replaces it).
-    if ((e.key === 'Enter' || e.key === 'F2') && !editing && selection.size && cfg.textField) {
+    // On a kind with no text node - an artboard, an audio bed, a camera marker -
+    // `startTextEdit` returns on the missing node and nothing at all happens, which is
+    // the silent no-op plan 179 C3 refuses. The object bar hides its pencil for those
+    // kinds; the keyboard has no such affordance, so it says why instead.
+    // Cmd/Ctrl+Return is the tool view's Present shortcut (plans/179 M1 section 4), so a
+    // held modifier is NOT a request to edit text here - it belongs to the document.
+    if ((e.key === 'Enter' || e.key === 'F2') && !(e.key === 'Enter' && (e.metaKey || e.ctrlKey))
+      && !editing && selection.size && cfg.textField) {
       e.preventDefault();
-      startTextEdit([...selection][0]!, { selectAll: e.key === 'Enter' });
+      const rows = getBoxes();
+      const first = [...selection][0]!;
+      const at = rows.findIndex((b, n) => idOf(b, n) === first);
+      const k = at >= 0 ? kindOf(rows[at]) : '';
+      if (NO_TEXT_KINDS.has(k)) { announce(t('This object has no text to edit.')); return; }
+      startTextEdit(first, { selectAll: e.key === 'Enter' });
       return;
     }
     // In gradient mode the selected thing is a STOP, so Delete removes that - deleting
@@ -11569,6 +13019,21 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   window.addEventListener('resize', onStageMove);
   const ro = new ResizeObserver(onStageMove);
   ro.observe(stageEl);
+  // A CSS transition that finishes inside the stage - the rail docking or undocking is the
+  // one that matters (plans/179 A10) - changes the layout with no resize, no wheel and no
+  // transform mutation, so nothing above catches it and the artboard label tabs stay where
+  // the pre-transition rect put them. One re-sync at transitionend glues them back.
+  // Narrowed twice over, because every rail button transitions its colour on hover and a
+  // chrome rebuild per hover would be a real cost: only a transition on the RAIL, and only
+  // of a property that can move something.
+  const onStageTransitionEnd = (e: Event): void => {
+    const el = (e.target as HTMLElement | null);
+    if (!el?.closest?.('.fc-toolbar-dock')) return;
+    const prop = (e as TransitionEvent).propertyName || '';
+    if (!/^(left|top|right|bottom|width|height|transform|inset|margin|padding)/.test(prop)) return;
+    scheduleSync();
+  };
+  stageEl.addEventListener('transitionend', onStageTransitionEnd);
   // Keyboard/HUD zoom (setupStageNav's − / + / 0 / 1 / Fit) changes the canvas
   // wrapper's transform with NO pointer or wheel event - watch the wrapper's
   // style attribute so the selection chrome follows those zooms too.
@@ -11585,21 +13050,27 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     scheduleSync();
     if (!timelineAutoOpened && timeCfg && anyTimed(getBoxes())) { timelineAutoOpened = true; openTimeline(); }
   });
-  // Hide-controls full preview (Figma/Penpot `\`): strip the editor chrome to a clean canvas
-  // so the artwork can be seen whole. Chrome-only - the render geometry and export are
-  // untouched. Escape always restores it, so a preview can never trap you.
+  // Hide-controls full preview (Figma/Penpot `\`, and `/` - Andy, 2026-09-03): strip the
+  // editor chrome to a clean canvas so the artwork can be seen whole. Chrome-only - the
+  // render geometry and export are untouched. Escape always restores it, so a preview
+  // can never trap you. The hidden state also takes the chrome's SPACE back: editor.css
+  // zeroes the stage reserves and the dock width under the class, and since the fit
+  // reads computed values it only needs asking.
   const chromeRoot = (): HTMLElement | null => stageEl.closest('.tool-view');
+  const refitAfterChrome = (): void => { try { canvasEl.dispatchEvent(new Event('canvas-resize')); } catch { /* stage detached */ } };
   function onPreviewKey(e: KeyboardEvent): void {
     if (e.defaultPrevented) return;
     const l = chromeRoot();
     if (!l) return;
-    if (e.key === '\\' && !e.metaKey && !e.ctrlKey && !e.altKey && !isTypingTarget(e.target as Element | null)) {
+    if ((e.key === '\\' || e.key === '/') && !e.metaKey && !e.ctrlKey && !e.altKey && !isTypingTarget(e.target as Element | null)) {
       e.preventDefault();
       l.classList.toggle('is-chrome-hidden');
+      refitAfterChrome();
     } else if (e.key === 'Escape' && l.classList.contains('is-chrome-hidden')) {
       e.preventDefault();
       e.stopPropagation();
       l.classList.remove('is-chrome-hidden');
+      refitAfterChrome();
     }
   }
   document.addEventListener('keydown', onPreviewKey);
@@ -11764,12 +13235,283 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     })();
   }
 
+  // ══ the Design side-column ports (plans/179 M1-C / M2 / M3) ═══════════════════
+  //
+  // Everything below is a THIN adapter onto code this file already has. None of it
+  // is a second implementation: the columns get the overlay's own selection Set, its own
+  // `commit`, its own artboard resolution and its own arrange runners, so a verb pressed
+  // in a column and the same verb pressed on the canvas are literally the same code.
+  // Nothing here is Design-specific either - a canvas with no frame primitive answers ''
+  // and null rather than being handed a port that is absent.
+
+  /**
+   * Write one field across the GIVEN ids in one commit. The bar's `setField` writes the
+   * SELECTION; a column's row can act on a box it did not select (a layer's lock, a
+   * navigator rename), and making that go through the selection would move the user's
+   * selection as a side effect of typing in a text field.
+   */
+  function setFieldOn(ids: readonly string[], field: string, value: unknown): void {
+    if (!field || !ids.length) return;
+    const want = new Set(ids.map((s) => String(s)));
+    const boxes = getBoxes();
+    let touched = false;
+    const next: Box[] = boxes.map((b, i) => {
+      if (!want.has(idOf(b, i))) return b;
+      touched = true;
+      return { ...b, [field]: value } as Box;
+    });
+    if (touched) commit(next);
+  }
+
+  /** Act on ONE artboard by id through a selection-driven runner, then hand the selection
+   *  back. Duplicate and delete both re-point it themselves (at the copy / at nothing),
+   *  which is the behaviour a row menu wants, so only the pre-state is staged here. */
+  function withFrameSelected(id: string, run: () => void): void {
+    if (!id) return;
+    const boxes = getBoxes();
+    if (indexOfId(boxes, id) < 0) return;
+    selection = new Set([id]);
+    run();
+  }
+
+  /**
+   * A new artboard immediately AFTER `id`: placed to its right, at its size, and slotted
+   * into the page sequence at its order + 1 with every later page renumbered - so
+   * "add after slide 2" makes a slide 3 rather than a slide 9 that x happens to sort
+   * third. One commit. Unknown id falls back to `addArtboard`'s append-at-the-end.
+   */
+  function addArtboardAfter(id: string): void {
+    if (!frameCfg?.orderField) { addArtboard(); return; }
+    const fk = frameCfg.frameKind;
+    const frameAddKind = addKinds.find((k) => k.id === 'frame' || (k.seed != null && String(k.seed[cfg.kindField]) === fk));
+    if (!frameAddKind) return;
+    const boxes0 = getBoxes();
+    const at = indexOfId(boxes0, id);
+    if (at < 0 || String(boxes0[at]?.[cfg.kindField]) !== fk) { addArtboard(); return; }
+    const ff = frameFields();
+    const seeded = seedFrameOrders(boxes0, ff);   // A9: a legacy doc gets its order first
+    const src = seeded[at]!;
+    const d = canvasWH();
+    const w = Math.max(1, num(src[cfg.wField]) || d.w);
+    const h = Math.max(1, num(src[cfg.hField]) || d.h);
+    const newId = freshId(seeded);
+    const box = seedBox(cfg, {}, frameAddKind.seed || {}, {
+      x: num(src[cfg.xField]) + w + Math.round(w * 0.08), y: num(src[cfg.yField]), w, h,
+    } as MathRect, newId);
+    const seq = framesInPageOrder(seeded, ff).map((b) => String(b[cfg.idField] ?? ''));
+    const where = seq.indexOf(String(id));
+    seq.splice(where < 0 ? seq.length : where + 1, 0, newId);
+    selection = new Set([newId]);
+    commit(renumberFrameOrder([...seeded, box], seq, ff));
+    renderChrome();
+    focusArtboardWhenPainted(newId);
+  }
+
+  /** Frame a board once the render has actually put its page in the DOM (the commit only
+   *  schedules one), so the focus is not a no-op on a page that does not exist yet. */
+  function focusArtboardWhenPainted(id: string): void {
+    requestAnimationFrame(() => { if (!disposed) focusArtboard(id); });
+  }
+
+  /**
+   * Reorder ONE artboard's children. Array order IS z here (`reorderZ`'s model), so the
+   * rewrite keeps every other row where it was and only refills the slots the children
+   * already occupy: a layer drag must not move a box between artboards, and it must not
+   * disturb the order of anything outside this frame.
+   */
+  function reorderFrameChildren(frameId: string, orderedIds: readonly string[]): void {
+    if (!frameCfg || !frameId) return;
+    const ff = frameCfg.frameField, fk = frameCfg.frameKind;
+    const boxes = getBoxes();
+    const slots: number[] = [];
+    for (let i = 0; i < boxes.length; i++) {
+      const b = boxes[i];
+      if (!b || String(b[cfg.kindField]) === fk) continue;
+      if (String(b[ff] ?? '') !== frameId) continue;
+      slots.push(i);
+    }
+    if (slots.length < 2) return;
+    const byId = new Map<string, number>();
+    for (const i of slots) byId.set(idOf(boxes[i], i), i);
+    const seen = new Set<number>();
+    const seq: number[] = [];
+    for (const id of orderedIds) {
+      const i = byId.get(String(id));
+      if (i == null || seen.has(i)) continue;
+      seen.add(i); seq.push(i);
+    }
+    // A child the caller did not name keeps its own relative order, behind the named
+    // ones - a partial list re-stacks what it mentions and loses nothing.
+    for (const i of slots) if (!seen.has(i)) seq.push(i);
+    if (seq.every((src, k) => src === slots[k])) return;   // already in that order
+    const next = boxes.slice();
+    slots.forEach((dst, k) => { next[dst] = boxes[seq[k]!]!; });
+    commit(next);
+  }
+
+  /** The arrange menu's runners, by name (design-inspector's `ARRANGE_OPS`). A switch,
+   *  not a translation table: the column speaks this overlay's own op vocabulary. */
+  function runArrange(op: string): void {
+    switch (op) {
+      case 'left': case 'hcentre': case 'right': case 'top': case 'vcentre': case 'bottom':
+        applyAlign(op); break;
+      case 'h': case 'v': applyDistribute(op); break;
+      case 'front': case 'forward': case 'backward': case 'back':
+        if (selection.size) applyZ(op); break;
+      case 'group': if (selection.size >= 2) groupSelection(); break;
+      case 'ungroup': ungroupSelection(); break;
+      // Not in ARRANGE_OPS today, but the same menu's other two runners - named so a
+      // later column row is a string, not a second door into the model.
+      case 'clip': if (selection.size >= 2) clipSelection(); break;
+      case 'unclip': releaseClip(); break;
+      default: break;
+    }
+  }
+
+  /**
+   * The inspector's Motion section is a DOOR, not a second editor: it opens the timeline
+   * on the box. The panel exposes no public "open this inspector group" method, so the
+   * `group` argument is honoured as far as it can be - the timeline opens and reveals the
+   * clip, and the group's own disclosure stays the panel's business.
+   */
+  function openTimelineOn(_group: string, id: string): void {
+    void _group;
+    openTimeline();
+    if (!id) return;
+    // The panel may still be a chunk in flight; `selectAndReveal` is only meaningful once
+    // it is mounted, so ask on the next frame as well as now.
+    const reveal = (): void => { try { timelinePanel?.selectAndReveal([id]); } catch (e) { console.error(e); } };
+    reveal();
+    requestAnimationFrame(() => { if (!disposed) reveal(); });
+  }
+
+  /** `model.cfg`, plus the two tilt field names that live on the CANVAS block rather than
+   *  the resolved geometry config (see openMorePanel) - a column asking for `rxField`
+   *  must get the same answer the panel does. */
+  const portCfg = { ...cfg, rxField: cv.rxField || undefined, ryField: cv.ryField || undefined } as unknown as ModelPort['cfg'];
+
+  const modelPort: ModelPort = {
+    blockId, cfg: portCfg,
+    frame: frameCfg ? {
+      frameField: frameCfg.frameField,
+      frameKind: frameCfg.frameKind,
+      orderField: frameCfg.orderField || 'order',
+      clipChildrenField: frameCfg.clipChildrenField,
+      labelField: nameField || undefined,
+      transitionField: frameCfg.transitionField,
+    } as FramePort : null,
+    getBoxes,
+    commit,
+    setField: (ids, field, value) => setFieldOn(ids, field, value),
+    // The runtime's own subscribe may return nothing (a host that never unsubscribes);
+    // a port promises an unsubscribe, so a missing one becomes a no-op rather than a
+    // crash inside a column's destroy().
+    subscribe: (cb) => { const off = runtime.subscribe(cb); return typeof off === 'function' ? off : () => {}; },
+    getInput: (id) => runtime.getModel().find((i) => i.id === id)?.value,
+    setInput: (id, value) => { onDirty?.(id); runtime.setInput(id, value as InputValue); },
+  };
+
+  const artboardPort: ArtboardPort = {
+    active: activeArtboardId,
+    focus: focusArtboard,
+    onChange: (cb) => { artboardListeners.add(cb); return () => { artboardListeners.delete(cb); }; },
+  };
+
+  const navigatorActions: NavigatorActions = {
+    duplicateFrame: (id) => withFrameSelected(id, duplicateSelection),
+    deleteFrame: (id) => withFrameSelected(id, deleteSelection),
+    addArtboardAfter,
+    present: (fromFrameId) => actions?.present?.(fromFrameId),
+    reorderChildren: reorderFrameChildren,
+  };
+
+  const inspectorActions: InspectorActions = {
+    pickImage: (ids) => {
+      if (!ids.length) return;
+      selection = new Set(ids);
+      renderChrome();
+      const boxes = getBoxes();
+      // An audio box's "image" IS its track - the same read the object bar's Set image does.
+      const audio = selectionAllKinds(boxes, selIndices(boxes), new Set(['audio']));
+      void pickImage(audio ? { pickType: 'audio' } : undefined);
+    },
+    openGradient: (ids) => {
+      if (ids.length) { selection = new Set(ids); renderChrome(); }
+      toggleGradEdit(ctxbar);   // the anchor is unused - the panel re-anchors on the rebuilt button
+    },
+    arrange: runArrange,
+    openTimeline: openTimelineOn,
+  };
+
+  const designPorts: DesignCanvasPorts = {
+    selection: selectionPort,
+    artboard: artboardPort,
+    thumb: (frameBox, maxW, maxH) => frameThumb(canvasEl, frameBox, cfg, { maxW, maxH }),
+    model: modelPort,
+    navigatorActions,
+    inspectorActions,
+    // Notes to voice (plans/180). Offered only where the pieces exist: a speech
+    // bridge, frames, a time model and a group field. Absent, no column grows a
+    // Narrate control, which beats a button that cannot work.
+    ...(frameCfg && timeCfg && cfg.groupField && (host as unknown as HostV1).speech?.isAvailable()
+      ? {
+        narrationActions: {
+          narrateAll: () => { void narrateDeck(); },
+          narrateFrame: (id: string) => { void narrateDeck(id); },
+          status: (id: string) => narrationStatusOf(id),
+          // Busy counts as not ready: a menu built while a run is in flight greys the
+          // row rather than offering a press that can only be refused.
+          ready: () => !narrateBusy && framesWithNotes() > 0,
+          reason: () => (narrateBusy
+            ? t('A narration run is already going.')
+            : t('No slide has speaker notes yet.')),
+        },
+      }
+      : {}),
+    fonts: {
+      options: () => fontOptions.map((o) => [o.value, o.label] as [string, string]),
+      weights: (font: string) => weightChoicesFor(font).map(([v, l]) => [v, t(l)] as [string, string]),
+    },
+    fields: input.fields ?? [],
+    activeFrameId: activeArtboardId,
+    // CLIENT px, like every other rect on this seam - see `queryRect`/`frameClientRect`
+    // for why (a frames document's canvas overflows its nominal width, so any
+    // native-from-nativeW scale is wrong by the pasteboard ratio).
+    activeFrameRect: () => {
+      const id = activeArtboardId();
+      if (!id) return null;
+      const boxes = getBoxes();
+      const r = frameClientRect(boxes.find((b, i) => idOf(b, i) === id));
+      return r ? { x: r.left, y: r.top, w: r.width, h: r.height } : null;
+    },
+    contentRect: () => queryRect('content'),
+    selectionRect: () => queryRect('selection'),
+    openLollyMenu: (anchor) => {
+      // Claim the anchor BEFORE the rows are built: four of them open a panel that
+      // positions itself under it, and `anchorEl()` is how they find out which control
+      // was actually clicked rather than docking to the rail button on the far left.
+      if (anchor) setLollyAnchor(anchor);
+      const items = lollyMenuItems?.() ?? [];
+      if (items.length && anchor) spawnPopover(anchor, items);
+    },
+    toggleTimeline,
+    isTimelineOpen: () => !!timelinePanel?.isOpen(),
+    toggleFramesPanel: () => toggleFramesPanel(),
+    isFramesPanelOpen,
+    setColumnWidths,
+    setInspector,
+  };
+
   return {
+    design: designPorts,
     destroy() {
       disposed = true;
       // FIRST, so nothing that throws later in this teardown can leave the stage's
       // bottom band reserved for a panel that no longer exists.
       destroyTimeline();
+      // …and the same promise for the SIDE bands: a leaked left/right reserve
+      // permanently narrows the stage for every other tool mounted in this session.
+      setColumnWidths(0, 0);
       finishEdit();
       if (flashTimer) clearTimeout(flashTimer);
       stageEl.removeEventListener('pointerdown', onStageTouchDown, true);
@@ -11801,6 +13543,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       document.removeEventListener('copy', onCopy);
       stageEl.removeEventListener('pointermove', onStagePointerMove);
       stageEl.removeEventListener('wheel', onStageMove);
+      stageEl.removeEventListener('transitionend', onStageTransitionEnd);
       canvasEl.removeEventListener('wheel', onCameraWheel as EventListener);
       if (dollyTimer) { clearTimeout(dollyTimer); dollyTimer = null; }
       window.removeEventListener('resize', onStageMove);
@@ -11814,6 +13557,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       unsub?.();
       canvasEl.classList.remove('fc-open-canvas');
       stageEl.classList.remove('fc-penning', 'fc-node-editing');
+      // Take the rail back from whichever panel is holding it BEFORE the dock goes: while
+      // the navigator has it, the buttons live in that column, and removing an empty dock
+      // would leave them behind in a node this handle no longer owns.
+      tlWantsRail = navWantsRail = false;
+      applyRailMode();
       overlay.remove(); toolbarDock.remove(); closePopover(); closeMorePanel(); closeEdgePanel();
       document.body.classList.remove('fc-manipulating');
     },

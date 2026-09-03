@@ -77,6 +77,70 @@ export function carriesBytes(v: InputValue): boolean {
   return (Array.isArray(v) ? v : Object.values(v)).some((c) => carriesBytes(c as InputValue));
 }
 
+// ── What the undo toast should CALL a change (plans/179 A16, second half) ──────
+//
+// A history entry is keyed on an INPUT, so the toast read "Undid Boxes" - the input's
+// own name, which says nothing about what was taken back. Nothing in the model records
+// the gesture behind a write, but the two VALUES do: for a blocks/canvas array the
+// before/after says whether rows arrived, rows left, or one field of one row changed -
+// and the canvas config names the geometry fields, so a drag reads as "Move" rather than
+// as two field names. Pure and field-name-injected, exactly like the rest of this module.
+//
+// It answers `null` whenever it cannot name the change honestly (a non-array input, a
+// wholesale rewrite, more fields than one gesture plausibly touches). The caller then
+// falls back to the input label, so every input this cannot describe reads as it always did.
+
+/** How a blocks/canvas array changed, as a stable key the view translates. */
+export type RowChange =
+  | { kind: 'add' | 'delete' | 'move' | 'resize' | 'rotate' }
+  | { kind: 'field'; field: string };
+
+/** The canvas field names that let a geometry change be named as one (all optional). */
+export interface RowChangeFields {
+  xField?: string; yField?: string; wField?: string; hField?: string; rotationField?: string;
+  /** Give up once more than this many rows differ - a rewrite has no single name. */
+  maxRows?: number;
+  /** …and once more than this many distinct fields differ. */
+  maxFields?: number;
+}
+
+export function describeRowChange(
+  before: InputValue, after: InputValue, fields: RowChangeFields = {},
+): RowChange | null {
+  if (!Array.isArray(before) || !Array.isArray(after)) return null;
+  if (after.length > before.length) return { kind: 'add' };
+  if (after.length < before.length) return { kind: 'delete' };
+  const maxRows = fields.maxRows ?? 64;
+  const maxFields = fields.maxFields ?? 4;
+  const changed = new Set<string>();
+  let rows = 0;
+  for (let i = 0; i < after.length; i++) {
+    const a: unknown = before[i];
+    const b: unknown = after[i];
+    if (a === b) continue;
+    if (!a || !b || typeof a !== 'object' || typeof b !== 'object' || Array.isArray(a) || Array.isArray(b)) return null;
+    if (++rows > maxRows) return null;
+    const ar = a as Record<string, unknown>;
+    const br = b as Record<string, unknown>;
+    for (const k of new Set([...Object.keys(ar), ...Object.keys(br)])) {
+      if (!sameValue(ar[k] as InputValue, br[k] as InputValue)) changed.add(k);
+      if (changed.size > maxFields) return null;
+    }
+  }
+  if (!changed.size) return null;
+  const { xField: x, yField: y, wField: w, hField: h, rotationField: r } = fields;
+  /** Is every changed field one of these (ignoring the ones the tool does not declare)? */
+  const onlyIn = (...ids: Array<string | undefined>): boolean => {
+    const set = new Set(ids.filter((v): v is string => !!v));
+    return set.size > 0 && [...changed].every((k) => set.has(k));
+  };
+  if (onlyIn(r)) return { kind: 'rotate' };
+  if (onlyIn(x, y)) return { kind: 'move' };
+  if (onlyIn(x, y, w, h)) return { kind: 'resize' };
+  if (changed.size === 1) return { kind: 'field', field: [...changed][0]! };
+  return null;
+}
+
 /** What `record` did, so a caller can drive toasts/UI without inspecting stacks. */
 export type RecordOutcome = 'pushed' | 'coalesced' | 'ignored';
 

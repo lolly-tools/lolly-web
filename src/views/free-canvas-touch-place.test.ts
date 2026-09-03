@@ -270,11 +270,18 @@ test('a kind that is not text gets the generic wording', () => {
   } finally { f.destroy(); coarse = false; }
 });
 
-test('the hint never appears for a fine pointer', () => {
+test('a fine pointer gets the hint too - in its own words', () => {
+  // This test used to assert the opposite: the chip was touch-only, because a mouse has
+  // a crosshair cursor. A crosshair is not a sentence - plan 179 A18 reported the Add
+  // menu's Artboard / Image / Box as "arm a draw mode silently", and a pink `+` was the
+  // whole feedback. So the chip is shown on every pointer now; only the WORDS differ,
+  // because a mouse drags to size and a finger taps to place.
   const f = mount({ ground: '#ffffff' });
   try {
     arm(f, 'Text');
-    assert.equal(hint(f)?.hidden, true, 'a mouse already has the crosshair cursor');
+    assert.equal(hint(f)?.hidden, false, 'the arm says what it is waiting for');
+    assert.match(hint(f)!.textContent ?? '', /drag on the canvas/i, 'a mouse is asked to drag');
+    assert.match(hint(f)!.textContent ?? '', /escape/i, 'and told the way out');
   } finally { f.destroy(); }
 });
 

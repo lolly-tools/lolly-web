@@ -78,7 +78,7 @@ import type { HostV1, TokenSet } from '@lolly-tools/core/host-v1';
 import type { WebTokensAPI } from '../bridge/tokens.ts';
 import { installUserTokens, USER_TOKENS_ID } from '../bridge/tokens.ts';
 import {
-  isRec, prettify, walkSwatches, setSwatchValue, setSwatchName, deleteSwatch, addSwatch, setSemanticRampAlias,
+  isRec, prettify, walkSwatches, setSwatchValue, setSwatchName, deleteSwatch, addSwatch, setSwatchGroup, setSemanticRampAlias,
   setSwatchCmykLock, setSwatchSpotLock, getSwatchPrintOverride, primaryAnchorPath,
   getSwatchFaces, setSwatchFace, leafAt,
   getExcludedSwatches, setSwatchExcluded,
@@ -111,7 +111,6 @@ import {
   setDisplayFont, setItalicFont, displayFontFamily, italicFontFamily,
 } from '../user-fonts.ts';
 import type { UserFontsHost, UserFontFamily, FontRole } from '../user-fonts.ts';
-import { mountFontsManager } from '../components/fonts-manager.ts';
 import {
   LOGO_ORIENTATIONS, LOGO_TREATMENTS, ORIENTATION_META, TREATMENT_META, LOGO_SLUG_RE,
   splitVariant, variantLabel, listLogos, installLogo, removeLogo,
@@ -125,7 +124,9 @@ import { prepareTrim, mountTrimOffer } from './design-system/trim-offer.ts';
 import { rasterAlphaBounds } from './design-system/trim-bounds.ts';
 import { createTray, candidatesFromCensus } from './design-system/tray.ts';
 import type { Tray } from './design-system/tray.ts';
-import { mountTypeCompare } from './design-system/type-compare.ts';
+import {
+  mountTypeCompare, faceLine, collapsedFaceText, pinnedFaces, stageAfterIndex,
+} from './design-system/type-compare.ts';
 import type { CompareChoice, TypeCompare } from './design-system/type-compare.ts';
 import { googleMatch, parseFaceName } from './design-system/font-resolve.ts';
 import { censusFromSvgColors, censusHex } from './design-system/census.ts';
@@ -133,7 +134,7 @@ import { icon } from './icons.ts';
 import { mountTokensPanel, mountGradientsPanel, mountCataloguePanel, panelHead } from './brand-studio-tabs.ts';
 import { mountStudioSplit } from './studio-split.ts';
 import { STUDIO_GROUPS, gradientAliasRefCount, materializeGradientAliases } from './token-studio.ts';
-import { POPULAR_FAMILIES } from './google-fonts.ts';
+import { POPULAR_FAMILIES, PINNED_FAMILIES } from './google-fonts.ts';
 import { exportBrandPack, importBrandPack } from '../brand-transfer.ts';
 import type { BrandTransferHost } from '../brand-transfer.ts';
 import { saveBlob } from '../pro/zip.ts';
@@ -145,12 +146,20 @@ import { segHtml } from './seg.ts';
 import { announce } from '../a11y.ts';
 import { prefersReducedMotion } from './a11y-prefs.ts';
 import { playSfx } from './sfx.ts';
-import { mountAddColor } from './design-system/add-color.ts';
+import { mountAddColor, COLOR_NOTATION_EXAMPLES } from './design-system/add-color.ts';
 import type { ColorEntry } from './design-system/add-color.ts';
+import { colourBeat } from './design-system/beats.ts';
+import type { Beat } from './design-system/beats.ts';
+import { createSelection } from './design-system/palette-select.ts';
+import type { SelectTile } from './design-system/palette-select.ts';
 import { readStarterDoc } from './design-system/rooms/overview.ts';
+import { colorIdentity, starterColorIds, reportOwnership, FONT_ROLES } from './design-system/ownership.ts';
+import type { FaceState } from './design-system/ownership.ts';
+import { typeBeat } from './design-system/beats-type.ts';
+import type { TypeBeat } from './design-system/beats-type.ts';
 import { helpTip, wireHelpTips } from '../components/help-tip.ts';
 import {
-  ROLE_IDS, roleLabel, readRoles, assignRole, clearRole, mountRolesStrip,
+  ROLE_IDS, ROLE_IDS_ALL, roleLabel, readRoles, assignRole, clearRole, mountRolesStrip,
 } from './design-system/roles.ts';
 import type { RoleId } from './design-system/roles.ts';
 
@@ -185,6 +194,18 @@ const CONTRASTS: ReadonlyArray<{ id: Contrast; label: string }> = [
 // white text but auto-flips to black for the higher ratio (see deriveBrandTokens).
 const FOREGROUNDS: ReadonlyArray<{ id: Fg; label: string }> = [
   { id: 'auto', label: t('Auto') }, { id: 'light', label: t('Light') }, { id: 'dark', label: t('Dark') },
+];
+// The palette download formats, as the bulk bar's Download menu lists them
+// (plan 182 section 5.5) - the same six lib/swatch-export.ts serves the pane's
+// download dock. The dock keeps its own <select>, whose tokens-json option
+// carries a "Penpot / Tokens Studio" note the menu has no room for.
+const PALETTE_FORMATS: ReadonlyArray<{ id: SwatchExportFormat; label: string }> = [
+  { id: 'tokens-json', label: t('Design tokens (JSON)') },
+  { id: 'css-vars', label: t('CSS variables') },
+  { id: 'css-classes', label: t('CSS classes') },
+  { id: 'scss', label: t('SCSS variables') },
+  { id: 'gpl', label: t('GIMP palette (.gpl)') },
+  { id: 'ase', label: t('Adobe Swatch Exchange (.ase)') },
 ];
 const DEFAULT_PRIMARY = '#4f83cc';
 // The engine's own default for `secondary` (deriveBrandTokens hardcodes ramp
@@ -233,7 +254,10 @@ async function ensureGoogleFontsConsent(): Promise<boolean> {
   catch { /* storage blocked - ask every time rather than assume yes */ }
   const ok = await confirmDialog({
     title: t('Fetch this font from Google?'),
-    message: t('Google Fonts are hosted by Google, so downloading one tells Google the family name and your IP address. The file is then stored on this device and used offline - nothing further is sent. Everything else in Lolly stays on your device; this is the one step that reaches a third party, so we ask first.'),
+    // Trimmed to the two facts and the one reassurance (plan 182 section 6.3): the
+    // dialog now arrives on the press somebody just made, so it has to be
+    // readable at a glance rather than skimmed past.
+    message: t('Google learns the family name and your IP address. The file is then kept on this device and used offline. This is the one step in the studio that reaches a third party.'),
     confirmLabel: t('Fetch from Google'),
   });
   if (!ok) return false;
@@ -269,6 +293,15 @@ const TYPE_ROLES: readonly TypeRoleDef[] = [
   { id: 'mono', css: 'var(--font-mono)', mono: true },
   { id: 'italic', css: 'var(--font-italic, var(--font-brand))', slanted: true },
 ];
+
+/** Every role in the resting state, for the moment before the ownership read
+ *  answers. `unset` is what "nothing read yet" honestly is - it prints no
+ *  family and claims nothing. */
+function blankFaces(): Record<FontRole, FaceState> {
+  const out = {} as Record<FontRole, FaceState>;
+  for (const role of FONT_ROLES) out[role] = { family: '', state: 'unset' };
+  return out;
+}
 
 /** The role's name on screen. Called at render, not at module load, so a late
  *  locale still lands (the same reason the rooms build their markup in mount). */
@@ -319,11 +352,23 @@ function typeRoleCardHtml(def: TypeRoleDef): string {
       <header class="be-typecard-head">
         <span class="be-typecard-role">${label}</span>
         <span class="be-typecard-face" data-be-typecard-face></span>
+        ${/* The starter pill - the same recipe the palette's inherited groups
+               wear (.be-pal-starter), because it is the same statement about the
+               same kind of material. Empty and hidden until paintRoleCards says
+               the face is one nobody chose. */''}
+        <span class="be-pal-starter be-typecard-tag" data-be-typecard-tag hidden></span>
       </header>
+      ${/* The card's one-line self while the stage is open (plan 182 section
+             6.6). Same data, different template - the strip is what puts the
+             stage on the first screen of a phone. */''}
+      <span class="be-typecard-chip" data-be-typecard-chip></span>
       <p class="be-typecard-sample${def.mono ? ' be-typecard-sample--mono' : ''}"
         style="font-family:${def.css}${def.slanted ? ';font-style:italic' : ''}">${typeRoleSample(def.id)}</p>
       <button type="button" class="be-btn be-typecard-act" data-be-typecard-choose="${def.id}"
         aria-label="${escape(act.name)}"><span data-be-typecard-actlabel>${act.text}</span></button>
+      ${def.id === 'brand'
+      ? `<span class="be-typecard-note">${t('Nothing installs until you choose one.')}</span>`
+      : ''}
     </article>`;
 }
 
@@ -802,16 +847,30 @@ function mountPrintLock(mount: HTMLElement, ctx: PrintLockCtx): { render: () => 
 // rec 12 - swatchTile), so the grid, mobile mirror and this file's in-place
 // recolour paths (syncTileMeta) all compose the same accessible-name string.
 
-function tileHtml(s: BrandSwatch, idx: number): string {
-  return swatchTile({ label: s.name, hex: s.hex, locked: !!s.lock }, { idx });
+function tileHtml(s: BrandSwatch, idx: number, roleGlyph?: string): string {
+  return swatchTile({ label: s.name, hex: s.hex, locked: !!s.lock }, {
+    idx, roleGlyph, roleOnLight: roleGlyph ? (hexToOklch(s.hex)?.l ?? 0) > 0.68 : false,
+  });
 }
 
-/** Identity of one starter swatch: its key AND its stored value, joined by a
- *  separator neither can contain. Both halves are needed - a Replace-palette
- *  writes the user's own ramps over the very same keys, and only the value tells
- *  them apart - and a SET of pairs also lets the light and dark spelling of a
- *  role live side by side without either shadowing the other. */
-const starterId = (key: string, raw: string): string => `${key}␟${raw}`;
+/**
+ * The corner mark an assigned tile wears (plan 182 section 4.2).
+ *
+ * Two letters for Surface because S is already Secondary's, and the whole point
+ * of the glyph is that it is readable at 10px on a 44px tile without a legend.
+ * Untranslated on purpose - it is a mark, not a word (the `PANTONE 186 C`
+ * precedent), and the Roles strip beside it carries the translated names.
+ */
+// Partial: the contract has seven slots (plan 182 section 5.7) and only these
+// four earn a mark. Muted, edge and on-primary are derived company for the
+// colours above them - a tile wearing four glyphs would be a legend, not a mark.
+const ROLE_GLYPH: Partial<Record<RoleId, string>> = { primary: 'P', secondary: 'S', surface: 'Su', text: 'T' };
+
+/** Identity of one starter swatch: its key AND its stored value. The definition
+ *  and the reason both halves are needed live in lib/design-system/ownership.ts,
+ *  which is where every room's "did somebody choose this?" answer comes from;
+ *  this alias is only so the call sites below read as they always did. */
+const starterId = colorIdentity;
 
 /**
  * The palette grid.
@@ -820,27 +879,62 @@ const starterId = (key: string, raw: string): string => `${key}␟${raw}`;
  * document (see readStarterDoc): a group every one of whose swatches is still in
  * there is a hand-me-down, not a decision, and says so on its heading. Empty for
  * every brand that ships no starter, which renders the grid exactly as before.
+ *
+ * ROLES ARE NOT TILES (plan 182 C5). A `color.semantic.*` leaf is an alias that
+ * re-points at a swatch; it is material nowhere. Rendered as a tile it put the
+ * starter's seven roles in the grid on a blank profile, and - worse - drew a
+ * SECOND tile of a person's own colour the moment they gave it a role, so one
+ * add read as two colours. The Roles strip is the one place roles are listed;
+ * here they are filtered out of the groups and out of the count.
+ *
+ * INHERITED COLOURS ARE NOT LISTED EITHER (plan 182 section 4.2). A starter
+ * palette is scaffolding, and a pane that opens on a wall of colours nobody
+ * chose cannot answer "which of this is mine?". So the groups and the headline
+ * count are the OWN colours; the starter's neutrals live in the Tokens room,
+ * which routes back here with `opts.starterGroup` when somebody asks to see
+ * them - and that one folded group is the only place a starter tile is drawn.
  */
-function paletteHtml(swatches: BrandSwatch[], starter: Set<string>): string {
+interface PaletteOpts {
+  /** Swatch key → the corner mark its role wears. Empty at beat 0/1 with no
+   *  roles assigned; never contains a `color.semantic.*` key (those are the
+   *  aliases doing the pointing, not the material pointed at). */
+  roles: ReadonlyMap<string, string>;
+  /** The inherited group to reveal, folded and tagged, at the foot of the pane
+   *  (`?area=color&group=neutral`). Null - the ordinary case - draws no starter
+   *  material at all. Matched case-insensitively against the group heading, and
+   *  against its theme-less stem, so `neutral` finds "Neutral · Light" too. */
+  starterGroup: string | null;
+}
+
+function paletteHtml(swatches: BrandSwatch[], starter: Set<string>, opts: PaletteOpts): string {
+  // Indices address the FULL list - `data-be-tile="<i>"` is read straight back
+  // as `swatches[i]` by the popover, the bulk selection and the mobile mirror -
+  // so the filter happens after the map, never before it.
+  const idxOf = new Map(swatches.map((s, i) => [s, i]));
+  const material = swatches.filter(s => s.kind !== 'semantic');
+  const isStarterSwatch = (s: BrandSwatch): boolean => starter.size > 0 && starter.has(starterId(s.key, s.raw));
+  const tiles = material.filter(s => !isStarterSwatch(s));
   // Group in a stable, meaningful order: ramps first (Primary, Neutral, then the
   // rest alphabetically), Spectrum, Custom, then the theme roles.
   const groups = new Map<string, BrandSwatch[]>();
-  swatches.forEach(s => { (groups.get(s.group) ?? groups.set(s.group, []).get(s.group)!).push(s); });
+  tiles.forEach(s => { (groups.get(s.group) ?? groups.set(s.group, []).get(s.group)!).push(s); });
   const rank = (g: string): number =>
     /^primary$/i.test(g) ? 0 : /^neutral$/i.test(g) ? 1 : /^secondary$/i.test(g) ? 2 :
     /spectrum/i.test(g) ? 6 : /custom/i.test(g) ? 7 : /roles/i.test(g) ? 9 : 4;
   const order = [...groups.keys()].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
-  const idxOf = new Map(swatches.map((s, i) => [s, i]));
   // A palette-level Add always shows - a brand with no `custom` group yet has no
   // Custom section to hang a per-group Add off, so the first swatch needs this.
-  const countLabel = swatches.length === 1
-    ? t('{n} colour', { n: swatches.length })
-    : t('{n} colours', { n: swatches.length });
+  const countLabel = tiles.length === 1
+    ? t('{n} colour', { n: tiles.length })
+    : t('{n} colours', { n: tiles.length });
   const top = `
     <div class="be-pal-top">
       <span class="be-pal-count">${countLabel}</span>
+      ${/* The "Select" mode button is gone (plan 182 section 5.5): selection is a
+             gesture now - drag on empty space, Shift/Cmd-click, a group's Select
+             all, or the arrow keys - and the bulk bar arrives with the first
+             selected tile rather than with a mode. */''}
       <span class="be-pal-topbtns">
-        <button type="button" class="be-add" data-be-pal-select aria-pressed="false">${t('Select')}</button>
         <button type="button" class="be-add" data-be-add="custom">${t('+ Add swatch')}</button>
       </span>
     </div>`;
@@ -849,14 +943,8 @@ function paletteHtml(swatches: BrandSwatch[], starter: Set<string>): string {
   // swatch, and a derived section (Primary/Neutral/Roles…) adds a custom swatch
   // TAGGED to render under that heading (addSwatch's displayGroup). Tiles stay
   // in the DOM either way, so the delegated click/scroll wiring keeps working.
-  // The note is said once, on the first starter group: three sections all
-  // repeating the same sentence is nagging, and the chip alone carries the fact.
-  let noted = false;
   const body = order.map(g => {
     const items = groups.get(g)!;
-    const isStarter = starter.size > 0 && items.every(s => starter.has(starterId(s.key, s.raw)));
-    const note = isStarter && !noted;
-    if (note) noted = true;
     // The displayGroup tag PERSISTS on the token, so store the theme-less base
     // name ("Roles", not the "Roles · Light" heading) - walkSwatches files a
     // "Roles" tag under whichever theme's Roles section is currently showing,
@@ -868,14 +956,45 @@ function paletteHtml(swatches: BrandSwatch[], starter: Set<string>): string {
       <details class="be-pal-group" data-be-group="${escape(g)}" open>
         <summary class="be-pal-group-head">
           <span class="be-pal-group-label">${escape(g)}<span class="be-pal-group-n">${items.length}</span></span>
-          ${isStarter ? `<span class="be-pal-starter">${t('Starter')}</span>` : ''}
+          ${/* Selecting a whole section without a drag - the phone's main door
+                into a selection, where there is no marquee (plan 182 section
+                5.5). It ADDS to the selection, so two sections can be collected
+                in two presses. */''}
+          <button type="button" class="be-pal-group-all" data-be-pal-all="${escape(g)}">${t('Select all')}</button>
           <button type="button" class="be-add be-add--sm" ${addAttrs}>${t('+ Add')}</button>
         </summary>
-        ${note ? `<p class="be-pal-group-note">${t('Replaced when you build yours')}</p>` : ''}
-        <div class="be-pal-grid">${items.map(s => tileHtml(s, idxOf.get(s)!)).join('')}</div>
+        <div class="be-pal-grid">${items.map(s => tileHtml(s, idxOf.get(s)!, opts.roles.get(s.key))).join('')}</div>
       </details>`;
   }).join('');
-  return top + body;
+  return top + body + starterGroupHtml(material.filter(isStarterSwatch), idxOf, opts.starterGroup);
+}
+
+/**
+ * The one folded group where a starter colour is ever drawn (plan 182 section
+ * 12) - the Tokens room's "Neutrals · starter" Open, landing here.
+ *
+ * Folded, tagged, and at the foot of the pane, because it is scaffolding rather
+ * than a decision. Never dashed (dashed is a drop target in this app), and never
+ * present at all unless somebody asked for it by name.
+ */
+function starterGroupHtml(
+  inherited: BrandSwatch[], idxOf: Map<BrandSwatch, number>, want: string | null,
+): string {
+  if (!want) return '';
+  const stem = (g: string): string => g.replace(/\s*·.*$/, '').trim().toLowerCase();
+  const target = stem(want);
+  const items = inherited.filter(s => stem(s.group) === target);
+  if (!items.length) return '';
+  const heading = items[0]!.group;
+  return `
+    <details class="be-pal-group be-pal-group--starter" data-be-group="${escape(heading)}">
+      <summary class="be-pal-group-head">
+        <span class="be-pal-group-label">${escape(heading)}<span class="be-pal-group-n">${items.length}</span></span>
+        <span class="be-pal-starter">${t('Starter')}</span>
+      </summary>
+      <p class="be-pal-group-note">${t("Lolly's ink and paper. Tools use them until the design system has colours of its own.")}</p>
+      <div class="be-pal-grid">${items.map(s => tileHtml(s, idxOf.get(s)!)).join('')}</div>
+    </details>`;
 }
 
 /**
@@ -945,6 +1064,20 @@ export interface BrandEditorOptions {
    * always passes it. Additive since plan 97 M5.
    */
   tray?: Tray;
+  /** Open the host's source picker - beat 0's "or bring a file" (plan 182
+   *  section 3a). The room never learns the picker has stages. Absent, the link
+   *  is inert, which is the honest state for a host that has no picker. */
+  openImport?: () => void;
+  /**
+   * Read an image file as colour candidates - "From an image" beside the add
+   * row (plan 182 section 5.3).
+   *
+   * The HOST owns this pipeline (sample → colour cloud → census → tray) because
+   * the source picker's image tile already runs it, and two copies of it would
+   * drift on the first tweak to the condensing. Absent, the row does not render
+   * the button at all.
+   */
+  scanImage?: (file: File) => void;
 }
 
 /** teardown: unmount. exportPack/importPack: the brand-file share pair, exposed
@@ -995,6 +1128,27 @@ export interface BrandEditorHandle {
   /** Session undo for the room's destructive actions. Additive since M1. */
   undo?: () => boolean;
   canUndo?: () => boolean;
+  /** Which beat the Colours room is showing (plan 182 section 3a) - 0 when the
+   *  design system has no colour of its own, 1 after the first, 2 once there is
+   *  a palette. The host reads it to decide whether the phone's palette mirror
+   *  has anything to mirror. 2 on a locked build, which renders no studio and
+   *  therefore holds nothing back. Additive. */
+  colourBeat?: () => 0 | 1 | 2;
+  /** Show one INHERITED colour group in the Colours pane, folded and tagged
+   *  Starter (`?area=color&group=neutral` - the Tokens room's "Open"). The one
+   *  place a starter tile is ever drawn. False when no such group exists.
+   *  Additive. */
+  openStarterGroup?: (group: string) => boolean;
+  /** Open the Colours room's colour picker, anchored to the add row's chip
+   *  (`?area=color&focus=pick` - the Overview's "Pick a colour" door). Nothing is
+   *  written until the person presses Add colour. False when the room did not
+   *  render (a locked build). Additive, plan 182 section 3a. */
+  openPickCard?: () => boolean;
+  /** Open the Type room's face stage for one role (`?area=type&focus=stage` -
+   *  the Overview's "Choose a face" door). Presentation only: the stage installs
+   *  nothing until a card is chosen. False when the room did not render.
+   *  Additive, plan 182 section 3a. */
+  openTypeStage?: (role: FontRole) => boolean;
 }
 
 export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts: BrandEditorOptions = {}): Promise<BrandEditorHandle> {
@@ -1077,7 +1231,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const p = primaryAnchorPath(doc);
     return p ? getSwatchPrintOverride(doc, p) : null;
   };
-  // The colour-harmony the "Build your palette" generator suggests accents from - 
+  // The colour-harmony the "Build the palette" generator suggests accents from - 
   // either a fixed SchemeKind (complement/adjacent/triad/tetrad) or the parametric
   // 'analogous' mode (its own count + angle controls, generateAnalogous instead of
   // generateSchemeAccents). One value because the Harmony control is a single
@@ -1137,7 +1291,13 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // two one-shot transforms used to share the "whichever ramp's glyph you
   // clicked" state; now that they live in two separate wings, each wing renders
   // the SAME picker and this is the one value both read.
-  let curveRamp: RampId = 'primary';
+  // `primary` is only the right default while the document HAS a primary ramp.
+  // The starter cut ships none (plan 182 section 12), so a design system that
+  // has never generated a palette would open both wings on a ramp that does not
+  // exist; neutral is the one ramp a starter always carries. The wings are
+  // beat-2 material either way, so this only ever bites the person who reached
+  // beat 2 on custom colours alone.
+  let curveRamp: RampId = primaryAnchorPath(doc) ? 'primary' : 'neutral';
   /** The ramp picker, rendered once per wing (the two instances stay in sync).
    *  Its own `groupAttr` keeps it out of DERIVE_SEGS's generic delegate. */
   const rampPickHtml = (): string => segHtml(
@@ -1153,13 +1313,13 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // single mark (plan 137 C4). The whole of it is still here, one tap away in
   // the shared help tip, and the room opens on the one sentence that says what
   // to do. Plain text, no markup: helpTip escapes what it is given.
-  const logoTaxonomyTip = helpTip(t('Each orientation (horizontal, vertical) can carry each treatment: primary and mono, each with a reverse form for dark backgrounds. Marks your brand names its own way - an icon, a crest - go under Custom marks. A brand with more than one logo can carry each as its own set. Every slot is optional. PNG, SVG, JPEG or WebP; they stay on this device and travel in your brand file.'));
+  const logoTaxonomyTip = helpTip(t('Each orientation (horizontal, vertical) can carry each treatment: primary and mono, each with a reverse form for dark backgrounds. Marks the design system names its own way - an icon, a crest - go under Custom marks. A design system with more than one logo can carry each as its own set. Every slot is optional. PNG, SVG, JPEG or WebP; they stay on this device and travel in the design system file.'));
 
   root.innerHTML = `
     <div class="be" data-brand-editor>
       <div class="be-tab" data-be-tab-panel="logos">
         <div class="be-panel be-logos">
-          ${panelHead(t('Logos'), `<span class="help-tip-host be-logos-lead">${t('Add your marks - Lolly reads each file and offers it the right slot.')} ${logoTaxonomyTip.button}${logoTaxonomyTip.pop}</span>`)}
+          ${panelHead(t('Logos'), `<span class="help-tip-host be-logos-lead">${t('Add the marks - Lolly reads each file and offers it the right slot.')} ${logoTaxonomyTip.button}${logoTaxonomyTip.pop}</span>`)}
           ${/* Level 0 (plan 97 section 7.3): one multi-file drop zone. Each file is
                 read for shape and ink, proposes a slot, and waits for a tap - 
                 the matrix below stays exactly as it was, per-slot drops and
@@ -1184,8 +1344,19 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       ${/* ── Level 0: the one control. Adding a colour writes exactly one token
              (plan 97 section 7.1) - nothing is derived, suggested-into, or demanded. */''}
       <div class="be-panel be-addcolor">
+        ${/* Beat 0's whole room (plan 182 section 3a): a title, a line, the pick
+              row, and one quiet sentence saying what arrives later and where a
+              file goes instead. It replaces the panel head rather than joining
+              it - two headings over one control is the wall this beat removes. */''}
+        <div class="be-beat0-head">
+          <h2 class="be-beat0-title">${t('Start with one colour')}</h2>
+          <p class="be-beat0-sub">${t('Tap the chip to pick it, paste it in any notation, take it from the screen, or pull it from an image.')}</p>
+        </div>
         ${panelHead(t('Add a colour'), t('Paste or pick any colour, in any notation. One colour adds one token, nothing else. Paste a list and every colour in it becomes a chip you can add.'))}
         <div data-be-addcolor></div>
+        <p class="be-beat0-foot">${tRaw('Roles, shades and print settings appear as the system grows. Or {link} - design tokens, a Penpot project, a PDF or an SVG.', {
+          link: `<button type="button" class="be-beat0-file" data-be-beat0-file>${t('bring a file')}</button>`,
+        })}</p>
         ${/* The answer to one add (plan 137 C1): the colour, its name, and the two
               things worth doing next. Static markup filled in place (textContent
               and one custom property) so a swatch name never reaches a markup
@@ -1198,16 +1369,29 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
           </span>
           <button type="button" class="be-btn" data-be-added-primary>${t('Use as primary?')}</button>
           <button type="button" class="be-btn" data-be-added-tune>${t('Fine-tune')}</button>
-          <a class="be-added-gen" data-be-added-gen href="#/start?area=color&amp;focus=generate" hidden>${t('Generate your palette from this colour')}</a>
           <button type="button" class="be-suggest-dismiss" data-be-added-dismiss aria-label="${escape(t('Dismiss'))}">&#x2715;</button>
         </div>
         <div class="be-suggest" data-be-suggest hidden></div>
       </div>
 
-      ${/* Roles are an assignment layer over the swatches that already exist - 
+      ${/* The generate offer as a PANEL, not a link (plan 182 section 3a, beat
+            1). The old handover was a link on the post-add chip, which is a
+            transient thing that a dismiss takes away with it - so the one offer
+            worth making after a first colour lived on the most temporary
+            surface in the room. It is a panel now: it says which colour it will
+            build from, and its press opens the Generate wing primed with it. */''}
+      <div class="be-panel be-generate-cta" data-be-generate-cta hidden>
+        <div class="be-generate-cta-copy">
+          <span class="be-generate-cta-title" data-be-generate-cta-title></span>
+          <span class="be-generate-cta-sub">${t('Shades, a neutral to match, and every role, worked out in OKLCH. You see it before anything changes.')}</span>
+        </div>
+        <button type="button" class="be-cta be-generate-cta-go" data-be-generate-cta-go>${t('Generate')}</button>
+      </div>
+
+      ${/* Roles are an assignment layer over the swatches that already exist -
             a design system of three loose colours with no roles is valid. */''}
       <div class="be-panel be-roles">
-        ${panelHead(t('Roles'), t('Which colour plays each part. Roles are optional, and any swatch can take one. Contrast is measured against the surface, APCA first.'))}
+        ${panelHead(t('Roles · what tools read'), t("Which colour plays each part in every tool and export. Until a colour of the design system's own takes a role, the starter's stands in. Contrast is measured against the surface, APCA first."))}
         <div data-be-roles></div>
       </div>
 
@@ -1246,7 +1430,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       </div>
 
       <div class="be-generate">
-        ${panelHead(t('Build your palette'), t('Generate matching colours from your primary - pick a harmony, then <strong>+ Add</strong> the ones you want to your brand. Each comes pre-named; rename any of them later. See the whole palette on real graphics below.'))}
+        ${panelHead(t('Build the palette'), t('Generate matching colours from the primary - pick a harmony, then <strong>+ Add</strong> the ones you want. Each comes pre-named; rename any of them later. See the whole palette on real graphics below.'))}
         <div class="be-field">
           <span class="be-field-label">${t('Harmony')}</span>
           ${/* The shared segmented-control primitive (lib/seg.ts). The free-N kinds
@@ -1279,7 +1463,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         </div>
         <div class="be-candidates" data-be-candidates aria-live="polite"></div>
         <div class="be-previews-wrap">
-          <span class="be-field-label">${t('Your palette, applied')}</span>
+          <span class="be-field-label">${t('The palette, applied')}</span>
           <div class="be-previews" data-be-previews></div>
         </div>
       </div>
@@ -1394,6 +1578,12 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
           <!-- The primary is one colour; Lolly shows its on-screen (sRGB) form and
                auto-converts it for print - UNLESS the shared print lock inside pins
                an exact CMYK anchor or a named spot colour instead. -->
+          ${/* A print lock pins the PRIMARY RAMP's anchor step, and a design
+                system that has never generated a palette has no primary ramp to
+                pin (the starter cut, plan 182 section 12) - primaryAnchorPath
+                answers null. Rather than show four CMYK sliders that write
+                nowhere, the wing says what is missing and offers nothing. */''}
+          <p class="be-subst-none" data-be-print-none hidden>${t('Generate a palette to pin a print build for the primary.')}</p>
           <div class="be-subst" data-be-subst>
             <div class="be-subst-line">
               <span class="be-subst-key">${t('Screen')}</span>
@@ -1416,8 +1606,12 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
            bottom edge however far the palette scrolls. -->
       <div class="be-split-scroll" data-be-split-scroll>
       <div class="be-panel be-palette">
-        ${panelHead(t('Palette'), t('Every colour your brand carries. Click a swatch to recolour, rename or remove it; each section folds and grows with its own <strong>+ Add</strong>. The <strong>Colour chart</strong> below plots the same swatches by hue and chroma. Changes flow to every picker, tool and export.'))}
+        ${panelHead(t('Colours'), t('Every colour the design system carries. Click a swatch to recolour, rename or remove it; each section folds and grows with its own <strong>+ Add</strong>. The <strong>Colour chart</strong> below plots the same swatches by hue and chroma. Changes flow to every picker, tool and export.'))}
         <div class="be-pal" data-be-pal></div>
+        ${/* Beat 1 only (the CSS hides it at 0 and 2): what the pane is holding
+              back, said once, so the missing chart/gradients/dock read as "not
+              yet" rather than "gone". */''}
+        <p class="be-pal-later">${t('Shades, the colour chart, gradients and bulk editing appear once the palette grows.')}</p>
         <!-- The colour charts, demoted to a folded card - repainted on open,
              since a hidden mount measures 0×0 (see the toggle wiring below).
              Two views of the SAME swatches: the wheel reads a palette's spread
@@ -1456,13 +1650,30 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       </aside>
       </div>
 
-      <div class="be-tab" data-be-tab-panel="type">
+      ${/* The room has two beats (plan 182 section 3a), written on the panel by
+             paintFonts and read by the CSS below it: 0 = no face of its own, so
+             ONE card and one decision; 1 = the four cards, the Fonts list and
+             the specimen. `beats-type.ts` decides; nothing here guesses. */''}
+      <div class="be-tab" data-be-tab-panel="type" data-be-beat="0">
       ${/* ── Level 0 (plan 97 section 7.2): the four role cards. Each shows the face
              that serves its role right now and opens the compare stage scoped
              to it. Nothing on a card commits anything. */''}
-      <div class="be-panel be-typecards">
+      <div class="be-panel be-typecards" data-be-typecards-panel>
+        ${/* Beat 0's own head - the room's first decision, said as a decision.
+               The panel head below is the beat-1 head; exactly one shows. */''}
+        <div class="be-typelede">
+          <h3 class="be-typelede-title">${t('Choose a face')}</h3>
+          <p class="be-typelede-sub">${t('One face for body copy, buttons and every tool. Search Google Fonts, or drop a font file.')}</p>
+        </div>
         ${panelHead(t('Type'), t('Four faces the app, the tools and every export read. Each card shows what serves that role today, and opens a stage where candidates stand side by side before anything installs.'))}
         <div class="be-typecard-grid" data-be-typecards>${TYPE_ROLES.map(typeRoleCardHtml).join('')}</div>
+        ${/* Beat 0's tail: the three optional roles are not hidden, they are
+               DEFERRED, and the sentence says what they do meanwhile. Revealing
+               them holds for the mount - a disclosure that re-folds under you is
+               a disclosure you stop trusting. */''}
+        <p class="be-typemore" data-be-typemore>${t('Headings, code and italic follow the primary until you choose them.')}
+          <button type="button" class="be-typemore-btn" data-be-typemore-toggle>${t('Choose them separately')} <span aria-hidden="true">▸</span></button>
+        </p>
       </div>
 
       ${/* The compare stage (lib/design-system/type-compare.ts), hosted inline by
@@ -1475,11 +1686,24 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
           <button type="button" class="be-typestage-x" data-be-typestage-close aria-label="${escape(t('Close without choosing'))}">${icon('close', { size: 14 })}</button>
         </div>
         <form class="be-typestage-search" data-be-typestage-search>
-          <label class="visually-hidden" for="be-typestage-q">${t('Google Fonts family')}</label>
-          <input type="text" id="be-typestage-q" data-be-typestage-q list="be-google-fonts" placeholder="${escape(t('Search Google Fonts, for example Inter or Fraunces'))}" autocomplete="off" autocapitalize="words" spellcheck="false">
+          <label class="visually-hidden" for="be-typestage-q">${t('Font name')}</label>
+          ${/* Example values, not prose - untranslated on purpose, the same
+                 PANTONE-placeholder precedent the print lock keeps. */''}
+          <input type="text" id="be-typestage-q" data-be-typestage-q list="be-google-fonts" placeholder="Inter, Fraunces, Space Mono…" autocomplete="off" autocapitalize="words" spellcheck="false">
           <datalist id="be-google-fonts">${POPULAR_FAMILIES.map(f => `<option value="${escape(f)}"></option>`).join('')}</datalist>
-          <button type="submit" class="be-btn" data-be-typestage-add>${t('Add to the comparison')}</button>
+          <button type="submit" class="be-cta" data-be-typestage-add>${t('Preview')}</button>
         </form>
+        ${/* Six families, one press each (plan 182 section 6.4). On a fresh
+               origin this is the first thing that shows what a candidate looks
+               like, and it costs nothing until pressed - the chips are names,
+               and a press is what fetches. The row is filled by openStage (the
+               families already serving a role are dropped), so the buttons
+               themselves are built with textContent, never markup. */''}
+        <div class="be-typestage-pins" data-be-typestage-pins hidden>
+          <span class="be-typestage-pins-label">${t('Pinned')}</span>
+          <div class="be-typestage-pinrow" data-be-typestage-pinrow></div>
+          <span class="be-typestage-pinnote">${t('one press each')}</span>
+        </div>
         <div data-be-typestage-mount></div>
         <p class="be-err" data-be-typestage-err hidden></p>
       </section>
@@ -1489,7 +1713,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
              now goes through the stage, so there is one door and everything is
              seen before it is stored. */''}
       <div class="be-panel be-fonts">
-        ${panelHead(t('Fonts on this device'), t('Every face installed here, and the roles it serves. Fonts stay on this device and travel in the design system file.'))}
+        ${panelHead(t('Fonts'), t("Every face on this device and the role it serves. Faces of the design system's own travel in its file; starter faces come with the app."))}
         <ul class="be-font-list" data-be-fonts role="list"></ul>
         <div class="be-font-add">
           <button type="button" class="be-btn" data-be-font-compare>${t('Add a face')}</button>
@@ -1498,11 +1722,9 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         <p class="be-err" data-be-font-err hidden></p>
       </div>
 
-      <div class="be-panel be-custom-fonts">
-        ${panelHead(t('Your fonts'), t('Upload TTF, OTF, or WOFF font files - they stay on this device and are available to all tools and exports.'))}
-        <div data-be-font-file-mount></div>
-      </div>
-
+      ${/* The second upload door is gone (plan 182 T6, section 6.4): the stage's
+             own drop zone is the one door for a file, and it runs the same
+             validators the panel did. */''}
       <div class="be-panel be-typeroles">
         ${panelHead(t('Type roles'), t('What each face is <em>for</em> - the roles tools and the app read. Body and UI wear the primary; set an optional <em>display</em> face for the top headings (h1/h2), an <em>italic</em> face for emphasis, and a <em>mono</em> face for code and data. Each falls back to the primary until you assign it.'))}
         <div class="be-specimen" data-be-specimen aria-live="off"></div>
@@ -1536,8 +1758,34 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
            The card grows with its folds and REPOSITIONS (see positionEditor) -
            opening a section moves the card to where it fits rather than starting
            an inner scroll. -->
-      <div class="be-bulkbar" data-be-bulkbar hidden>
+      ${/* The bulk bar (plan 182 section 5.5). It arrives with the first selected
+             tile and leaves with the last - there is no mode to be in. Move to
+             and Give a role are held back until beat 2: at beat 1 the pane holds
+             a handful of tiles and there is nothing to sort them into.
+             Each menu is a button plus a panel that opens under it; the Move-to
+             panel's rows are built at open time (they are the live group names),
+             the other two are fixed lists and are written here. */''}
+      <div class="be-bulkbar" data-be-bulkbar role="region" aria-label="${escape(t('Selection actions'))}" hidden>
         <span class="be-bulkbar-n" data-be-bulk-n aria-live="polite"></span>
+        <span class="be-bulkbar-sep" aria-hidden="true"></span>
+        <span class="be-bulkbar-wrap" data-be-bulk-wrap="move">
+          <button type="button" class="be-bulkbar-btn" data-be-bulk-menu="move" aria-haspopup="true" aria-expanded="false">${t('Move to')} <span aria-hidden="true">▾</span></button>
+          <div class="be-bulkbar-menu" data-be-bulk-panel="move" hidden></div>
+        </span>
+        <span class="be-bulkbar-wrap" data-be-bulk-wrap="role">
+          <button type="button" class="be-bulkbar-btn" data-be-bulk-menu="role" aria-haspopup="true" aria-expanded="false">${t('Give a role')} <span aria-hidden="true">▾</span></button>
+          <div class="be-bulkbar-menu" data-be-bulk-panel="role" hidden>
+            <p class="be-bulkbar-menu-note">${t('Each selected colour takes the next role in turn.')}</p>
+            ${ROLE_IDS.map(r => `<button type="button" class="be-bulkbar-item" data-be-bulk-role="${escape(r)}">${escape(roleLabel(r))}</button>`).join('')}
+          </div>
+        </span>
+        <span class="be-bulkbar-wrap" data-be-bulk-wrap="download">
+          <button type="button" class="be-bulkbar-btn" data-be-bulk-menu="download" aria-haspopup="true" aria-expanded="false">${t('Download')} <span aria-hidden="true">▾</span></button>
+          <div class="be-bulkbar-menu" data-be-bulk-panel="download" hidden>
+            ${PALETTE_FORMATS.map(f => `<button type="button" class="be-bulkbar-item" data-be-bulk-dl="${escape(f.id)}">${escape(f.label)}</button>`).join('')}
+          </div>
+        </span>
+        <button type="button" class="be-bulkbar-btn" data-be-bulk-copy>${t('Copy values')}</button>
         <button type="button" class="be-bulkbar-del" data-be-bulk-del>${t('Delete')}</button>
         <button type="button" class="be-bulkbar-x" data-be-bulk-cancel aria-label="${escape(t('Cancel selection'))}">✕</button>
       </div>
@@ -1583,9 +1831,15 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
               <div data-be-faces-mount></div>
             </details>
           </div>
+          ${/* Two footers in one row, one pair showing at a time: Delete | Save
+                for a swatch that exists, Cancel | Add colour for the pick card
+                (plan 182 section 5.1), which is bound to no token until it is
+                pressed. */''}
           <div class="be-editor-actions">
             <button type="button" class="be-editor-del" data-be-editor-del hidden>${t('Delete')}</button>
+            <button type="button" class="be-editor-del be-editor-cancel" data-be-editor-cancel hidden>${t('Cancel')}</button>
             <button type="button" class="be-cta be-editor-done" data-be-editor-done>${t('Save')}</button>
+            <button type="button" class="be-cta be-editor-done be-editor-add" data-be-editor-add hidden>${t('Add colour')}</button>
           </div>
         </div>
       </div>
@@ -1594,6 +1848,9 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const $ = <T extends Element>(sel: string): T | null => root.querySelector<T>(sel);
   const preview = $('[data-be-preview]') as HTMLElement | null;
   const palMount = $('[data-be-pal]') as HTMLElement | null;
+  // The Colours room's own panel - the element the beat is stamped on, and the
+  // scope every beat rule in brand-studio.css hangs off.
+  const colorPanel = $('[data-be-tab-panel="color"]') as HTMLElement | null;
   const editorEl = $('[data-be-editor]') as HTMLElement | null;
   const editorCard = editorEl?.querySelector<HTMLElement>('.be-editor-card') ?? null;
   const cleanups: Array<() => void> = [];
@@ -1613,7 +1870,10 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   let selected = -1;
   // The OKLCH channel the palette grid's keyboard nudging steps (huetone-style).
   // A mode that persists across tiles; L by default, re-armed with l/c/h.
-  let armedChannel: 'L' | 'C' | 'H' = 'L';
+  // Null until a letter arms one: the arrow keys are the palette grid's
+  // navigation (plan 182 section 5.5), and only an armed channel takes Arrow
+  // Up/Down away from them.
+  let armedChannel: 'L' | 'C' | 'H' | null = null;
   // The tile/dot the open swatch popover is anchored to - repositioning on
   // side-pane scroll needs it (the popover positions in `.be` space, so the
   // sticky pane's own scroll would otherwise drift it off its tile).
@@ -1657,6 +1917,39 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // empty on any brand that ships no starter - so the palette and the Overview
   // count agree about which colours nobody chose. See readStarterDoc.
   let starterSwatches = new Set<string>();
+  /** Is a swatch still exactly as the starter shipped it? The one test, spelled
+   *  once, so the pane, the count, the beat and the roles strip all agree. */
+  const isStarterSwatch = (s: BrandSwatch): boolean =>
+    starterSwatches.size > 0 && starterSwatches.has(starterId(s.key, s.raw));
+  /** Colours the person actually chose - the headline number, and what the beat
+   *  is decided on (plan 182 sections 3a, 4.2). Roles are skipped for the reason
+   *  paletteHtml skips them: an alias is not a colour somebody added. */
+  const ownColorCount = (): number => swatches.filter(s => s.kind !== 'semantic' && !isStarterSwatch(s)).length;
+  /**
+   * The inherited group the pane is showing, or null.
+   *
+   * Set once from `?area=color&group=<name>` (the Tokens room's "Open" for the
+   * starter neutrals) and never by anything the room itself does - the pane's
+   * ordinary state carries no starter material at all.
+   */
+  let revealedStarterGroup: string | null = null;
+  /** Which swatch wears which role mark, read off the doc's own aliases so the
+   *  glyph and the Roles strip can never disagree. */
+  const roleGlyphsNow = (): Map<string, string> => {
+    const out = new Map<string, string>();
+    let resolve: ((key: string) => unknown) | undefined;
+    try {
+      const set = createTokenSet(doc, { theme: currentTheme === 'dark' ? 'dark' : 'light' });
+      resolve = (key: string) => set.resolve(key);
+    } catch { /* unresolvable doc - no marks rather than wrong ones */ }
+    const held = readRoles(doc, currentTheme === 'dark' ? 'dark' : 'light', resolve);
+    for (const role of ROLE_IDS) {
+      const ref = held[role]?.ref;
+      const glyph = ROLE_GLYPH[role];
+      if (ref && glyph && !out.has(ref)) out.set(ref, glyph);
+    }
+    return out;
+  };
   const repaintPalette = (): void => {
     // Roles store `{alias}` refs, so hand the walker a resolver built from the
     // SAME doc + theme the tiles are describing - otherwise every role renders
@@ -1679,7 +1972,9 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         [...palMount.querySelectorAll<HTMLDetailsElement>('.be-pal-group:not([open])')]
           .map(d => d.dataset.beGroup ?? '').filter(Boolean),
       );
-      palMount.innerHTML = paletteHtml(swatches, starterSwatches);
+      palMount.innerHTML = paletteHtml(swatches, starterSwatches, {
+        roles: roleGlyphsNow(), starterGroup: revealedStarterGroup,
+      });
       if (closed.size) {
         palMount.querySelectorAll<HTMLDetailsElement>('.be-pal-group').forEach(d => {
           if (closed.has(d.dataset.beGroup ?? '')) d.open = false;
@@ -1690,7 +1985,56 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     paintSlices();
     syncPickerSwatches();
     for (const fn of paletteHooks) fn();
+    applyBeat();
     notifyPaletteObservers();
+  };
+
+  // ── Beats: the room grows with the system (plan 182 section 3a) ─────────────
+  // Three beats, decided by how much of this palette is the person's own, and
+  // stamped as `data-be-beat` on the room's panel. Nothing below the current
+  // beat is on screen: at beat 0 the room is one centred pick control, at beat 1
+  // it is the split with the roles and the generate offer, at beat 2 it is
+  // everything. The decision itself is lib/design-system/beats.ts, pure and
+  // unit-tested, because this file has no DOM harness.
+  //
+  // `beat` starts at 2 and the attribute starts ABSENT, which renders the room
+  // exactly as it always did - so a brand with no readable starter (a pack of
+  // its own, an unreachable catalog) is never held back by a count it cannot
+  // compute.
+  let beat: Beat = 2;
+  /** A beat the room owes but has not applied - see applyBeat. */
+  let beatPending = false;
+  /** The ramp only a generate writes. `deriveBrandTokens` always emits
+   *  `secondary`, so its presence is the cheapest honest answer to "has a
+   *  palette been generated here" - the same test the Overview's
+   *  `worthExporting` latch makes, deliberately spelled the same way. */
+  const GENERATED_RAMP = /(^|\.)ramp\.secondary\./;
+  /**
+   * Stamp the beat, unless something is open over the room.
+   *
+   * The layout MOVES between beats - the split appears, panels arrive - and
+   * doing that under an open swatch card or picker would pull the thing the
+   * person is operating out from under them. So a beat that falls due mid-
+   * interaction is held and applied by the next close (see closeEditor).
+   */
+  const applyBeat = (): void => {
+    if (!colorPanel) return;
+    if (editorEl && !editorEl.hidden) { beatPending = true; return; }
+    beatPending = false;
+    const next = colourBeat(
+      { counts: { ownColors: ownColorCount(), starterColors: 0, ownFaces: 0, logos: 0 } },
+      { generatedRamp: swatches.some(s => GENERATED_RAMP.test(s.key)) },
+    );
+    if (colorPanel.dataset.beBeat === String(next)) return;
+    beat = next;
+    colorPanel.dataset.beBeat = String(next);
+    syncAddPlaceholder();
+    syncGenerateCta();
+    // The roles strip widens to all seven slots at beat 2 (plan 182 section 5.7),
+    // and the palette hooks above have already run with the OLD beat - so the
+    // strip is re-rendered here, on the change itself. Its own render is a no-op
+    // patch when the row set has not moved.
+    rolesStrip?.render();
   };
 
   // Feed the colour PICKER's swatch grid from the live (draft) brand palette, so
@@ -2198,7 +2542,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     return goodPrimaryHex;
   };
 
-  // ── Build your palette: generate harmony accents (named) + live "applied" previews ──
+  // ── Build the palette: generate harmony accents (named) + live "applied" previews ──
   // Each accent is a candidate the user must explicitly + Add to officiate it
   // into the brand (addSwatch → repaintPalette → persist), matching the Palette
   // panel's add semantics. The previews render the CURRENT brand palette on
@@ -2281,7 +2625,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     repaintPalette();       // refreshes swatches + picker + wheel + (via hook) the generator
     persist(true);          // officiate: the accent is now part of the brand
     playSfx('click');
-    announce(tRaw('{name} added to your palette', { name }));
+    announce(tRaw('{name} added to the palette', { name }));
   });
   paletteHooks.push(renderGenerator); // keep candidates + previews in sync with the palette
   renderGenerator();                  // initial paint
@@ -2318,7 +2662,19 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // (the control's toggles AND afterSwatchLockChange → primaryLock.render())
   // update them without either knowing about the folded summary.
   const printChips = $('[data-be-print-chips]') as HTMLElement | null;
+  const printNone = $('[data-be-print-none]') as HTMLElement | null;
+  const printSubst = $('[data-be-subst]') as HTMLElement | null;
+  /** No primary ramp, no anchor step, nothing a print build could pin itself
+   *  to - so the wing states that instead of offering controls that write
+   *  nowhere. Re-read live, because a Replace palette creates the ramp. */
+  const syncPrintWing = (): void => {
+    const anchored = primaryAnchorPath(doc) !== null;
+    if (printNone) printNone.hidden = anchored;
+    if (printSubst) printSubst.hidden = !anchored;
+    if (printChips) printChips.hidden = !anchored;
+  };
   const renderPrintChips = (): void => {
+    syncPrintWing();
     if (!printChips) return;
     const lock = primaryPrintLock();
     const bits: string[] = [];
@@ -2777,13 +3133,17 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const renderEditField = (hex: string): void => {
     const mountEl = editorEl?.querySelector<HTMLElement>('[data-be-editor-color]'); if (!mountEl) return;
     // The same field the primary gets: inline (it lays out in the card's flow
-    // rather than as a popover that would overlap the rows below) and `modes`,
-    // whose value input IS the typed-value entry - hex, OKLCH, HSL, RGB, CMYK.
-    mountEl.innerHTML = colorFieldHtml('be-edit-color', hex || '#888888', { inline: true, modes: true });
+    // rather than as a popover that would overlap the rows below), `modes`,
+    // whose value input IS the typed-value entry (hex, OKLCH, HSL, RGB, CMYK),
+    // and `dials` - the L/C/H wheels the first pick is worth opening on.
+    mountEl.innerHTML = colorFieldHtml('be-edit-color', hex || '#888888', { inline: true, modes: true, dials: true });
     wireColorField(mountEl, {
       onChange: (id, value) => {
         if (id !== 'be-edit-color') return;
         const raw = typeof value === 'string' ? value : value.value;
+        // In pick mode nothing is bound to a token yet - the drag paints the
+        // card and the add row, and only "Add colour" writes.
+        if (pickHex !== null) { setPickHex(raw); return; }
         applyEditedHex(raw); // field-driven → don't re-render the field under the user
       },
     });
@@ -2862,9 +3222,21 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     top = Math.max(MARGIN, Math.min(top, window.innerHeight - MARGIN - h));
     editorEl.style.top = `${top - pr.top}px`;
   };
-  /** Re-place the open card against its anchor - after anything that resized it. */
-  const reposition = (): void => { if (editorAnchor && editorEl && !editorEl.hidden) positionEditor(editorAnchor); };
-  const closeEditor = (): void => { if (editorEl) { editorEl.hidden = true; } selected = -1; editorAnchor = null; root.querySelectorAll('.be-swatch.is-selected').forEach(t => t.classList.remove('is-selected')); };
+  /** Re-place the open card against its anchor - after anything that resized it.
+   *  Never in the phone's sheet pose, where the card has no anchor to follow:
+   *  it is docked to the viewport's bottom edge and the CSS owns its box. */
+  const reposition = (): void => {
+    if (pickSheet) return;
+    if (editorAnchor && editorEl && !editorEl.hidden) positionEditor(editorAnchor);
+  };
+  const closeEditor = (): void => {
+    if (editorEl) { editorEl.hidden = true; }
+    selected = -1; editorAnchor = null;
+    leavePickMode();
+    root.querySelectorAll('.be-swatch.is-selected').forEach(t => t.classList.remove('is-selected'));
+    // A beat that fell due while this card was open is owed now (see applyBeat).
+    if (beatPending) { applyBeat(); notifyPaletteObservers(); }
+  };
   const openEditor = (idx: number, tile: HTMLElement): void => {
     const s = swatches[idx]; if (!s || !editorEl) return;
     selected = idx;
@@ -2899,6 +3271,105 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     nameInput.focus();
   };
 
+  // ── The first pick: the same card, not bound to a token (plan 182 section 5.1)
+  // The Fine-tune popover is the best colour control in the app, and it was one
+  // click away from where the first colour had to be TYPED. Pick mode opens that
+  // exact card with nothing selected: the chip and name field, the full OKLCH
+  // picker, "Stored as", and a footer of Cancel | Add colour instead of Delete |
+  // Save. Nothing is written until Add colour; Cancel and Escape leave the add
+  // row exactly as they found it. Roles and print substitutes are hidden - both
+  // are things you do to a colour that exists.
+  const editorAddBtn = editorEl?.querySelector<HTMLButtonElement>('[data-be-editor-add]') ?? null;
+  const editorCancelBtn = editorEl?.querySelector<HTMLButtonElement>('[data-be-editor-cancel]') ?? null;
+  const editorDoneBtn = editorEl?.querySelector<HTMLButtonElement>('[data-be-editor-done]') ?? null;
+  const editorDelBtn = editorEl?.querySelector<HTMLButtonElement>('[data-be-editor-del]') ?? null;
+  /** The colour the pick card is holding, or null when it is not open. */
+  let pickHex: string | null = null;
+  /** True while the card is docked to the phone's bottom edge rather than
+   *  anchored to the chip - the pose has no anchor, so nothing may reposition
+   *  it and no anchor scroll may close it. */
+  let pickSheet = false;
+  const PICK_SEED = '#7c3aed';
+  /** Put the card back in swatch-editing clothes. Idempotent - closeEditor calls
+   *  it on every close, including the ones that were never a pick. */
+  const leavePickMode = (): void => {
+    if (pickHex === null) return;
+    pickHex = null;
+    pickSheet = false;
+    editorEl?.classList.remove('is-pick', 'is-picksheet');
+    if (editorAddBtn) editorAddBtn.hidden = true;
+    if (editorCancelBtn) editorCancelBtn.hidden = true;
+    if (editorDoneBtn) editorDoneBtn.hidden = false;
+    // The folds pick mode put away belong to the next swatch that opens here;
+    // openEditor decides their OPEN state, never their existence.
+    if (substDetails) substDetails.hidden = false;
+    if (facesDetails) facesDetails.hidden = false;
+  };
+  /** A live drag: paint the card's chip and write the add row's field, so the
+   *  row's own chip follows and the value is there to be pasted elsewhere. */
+  const setPickHex = (raw: string): void => {
+    if (!raw || raw === 'transparent') return;
+    pickHex = colorToHex(raw) ?? raw;
+    editorChip?.style.setProperty('--sw', pickHex);
+    const field = addField();
+    if (field) {
+      field.value = serializeColor(pickHex, storedFmt);
+      // The row parses on `input`, which is also what repaints its chip - so
+      // one dispatch keeps the two controls saying the same thing.
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  };
+  /**
+   * Open the card in pick mode against `anchor`, seeded with `current` (the
+   * colour the add row is holding) or a considered default when it holds none.
+   *
+   * On a phone the card docks to the bottom edge instead of floating over a
+   * 44px chip: the inline anchoring has nowhere to put a 340px card there, and
+   * the CSS parks the palette mirror underneath for the same single-owner
+   * reason the tray does.
+   */
+  const openPickCard = (anchor: HTMLElement, current: string | null): void => {
+    if (!editorEl) return;
+    closeEditor();                       // one card at a time, whatever it held
+    const nameInput = editorEl.querySelector<HTMLInputElement>('[data-be-editor-name]');
+    const hex = current || PICK_SEED;
+    pickHex = hex;
+    storedFmt = 'lch';
+    renderStoredSeg();
+    if (storedRow) storedRow.hidden = false;
+    if (editorLockBadge) editorLockBadge.hidden = true;
+    if (useasRow) useasRow.hidden = true;
+    if (substDetails) { substDetails.open = false; substDetails.hidden = true; }
+    if (facesDetails) { facesDetails.open = false; facesDetails.hidden = true; }
+    if (editorDelBtn) editorDelBtn.hidden = true;
+    if (editorDoneBtn) editorDoneBtn.hidden = true;
+    if (editorAddBtn) editorAddBtn.hidden = false;
+    if (editorCancelBtn) editorCancelBtn.hidden = false;
+    editorEl.classList.add('is-pick');
+    renderEditField(hex);
+    editorChip?.style.setProperty('--sw', hex);
+    if (nameInput) nameInput.value = nameColor(hex);
+    pickSheet = typeof window !== 'undefined' && !!window.matchMedia?.('(max-width: 640px)')?.matches;
+    editorEl.classList.toggle('is-picksheet', pickSheet);
+    editorAnchor = pickSheet ? null : anchor;
+    editorEl.hidden = false;             // before positioning - the clamp measures offsetHeight
+    if (pickSheet) { editorEl.style.left = ''; editorEl.style.top = ''; }
+    else positionEditor(anchor);
+    nameInput?.focus();
+  };
+  /** Commit the pick through the room's ONE add path, carrying the name the
+   *  person typed. The add row is cleared the way it clears itself. */
+  const commitPickCard = (): void => {
+    const hex = pickHex;
+    if (!hex) return;
+    const name = editorEl?.querySelector<HTMLInputElement>('[data-be-editor-name]')?.value ?? '';
+    const value = serializeColor(hex, storedFmt);
+    closeEditor();
+    const field = addField();
+    if (field) { field.value = ''; field.dispatchEvent(new Event('input', { bubbles: true })); }
+    addColorEntries([{ value, hex: colorToHex(hex) ?? hex, name }], true);
+  };
+
   /**
    * Select the swatch at a JSON path and open its editor against the best
    * available anchor. Never "the last one" - key order shifts on repaint - and
@@ -2928,44 +3399,110 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     cleanups.push(() => ro.disconnect());
   }
 
-  // ── Palette multi-select (the catalogue/projects pattern) ───────────────────
-  // "Select" flips a mode where tiles collect into a set instead of opening the
-  // popover, and one floating bar deletes the lot. Keys are JSON paths, so the
-  // set survives a repaint; per-swatch semantics mirror the popover's Delete
-  // exactly (ramp/role steps hide via the exclusion list, custom swatches
-  // materialise any gradient aliases then delete; non-removable kinds don't
-  // collect at all, so the bar never promises more than it does).
-  let palSelecting = false;
-  const palSel = new Set<string>();
+  // ── Palette selection: a gesture, not a mode (plan 182 section 5.5) ─────────
+  // Drag on the pane's empty space to sweep a rectangle across groups, Shift-
+  // click for a range in reading order, Cmd/Ctrl-click to toggle one, a group
+  // header's "Select all", or the arrow keys. The bar arrives with the first
+  // selected tile and leaves with the last, so there is no mode to be in and no
+  // "Select" button to find. Keys are JSON paths, so a selection survives a
+  // repaint; the rules themselves are lib/design-system/palette-select.ts, pure
+  // and unit-tested, because this file has no DOM harness.
+  //
+  // EVERY OWN TILE COLLECTS, including the ones Delete cannot remove. The bar
+  // does five things now, and refusing to collect a swatch because ONE of them
+  // cannot act on it would take Move to, roles, Download and Copy away from it
+  // too; Delete reports what it held back instead.
   const swKey = (s: BrandSwatch): string => s.path.join('␟');
-  const canBulkRemove = (s: BrandSwatch): boolean => s.kind === 'ramp' || s.kind === 'semantic' || !!s.deletable;
   const bulkbar = $('[data-be-bulkbar]') as HTMLElement | null;
+  /** The own tiles the pane is showing, in reading order. Read off the DOM
+   *  rather than off `swatches` so the model can never disagree with what is on
+   *  screen - and so the one folded starter group is out of reach of Select all
+   *  by construction rather than by a filter somebody has to remember. */
+  const ownTileEls = (groupSel = ''): HTMLElement[] => palMount
+    ? [...palMount.querySelectorAll<HTMLElement>(`.be-pal-group:not(.be-pal-group--starter)${groupSel} [data-be-tile]`)]
+    : [];
+  const keyOfTile = (el: HTMLElement): string | null => {
+    const s = swatches[Number(el.dataset.beTile)];
+    return s ? swKey(s) : null;
+  };
+  const ownOrder = (): string[] => ownTileEls().map(keyOfTile).filter((k): k is string => !!k);
+  const palSel = createSelection({ order: ownOrder });
+  /** The tile holding the grid's one tab stop (roving tabindex). */
+  let palFocusKey: string | null = null;
+  const tileForKey = (key: string): HTMLElement | null => ownTileEls().find(el => keyOfTile(el) === key) ?? null;
+  /** The selected swatches in the pane's READING order, which is the order the
+   *  bar's role walk and the copied list both follow. */
+  const selectedSwatches = (): BrandSwatch[] => {
+    const byKey = new Map(swatches.map(s => [swKey(s), s]));
+    return palSel.keys().map(k => byKey.get(k)).filter((s): s is BrandSwatch => !!s);
+  };
+
+  // The bar's three menus. One open at a time; a second press on its own button
+  // closes it, as does Escape, an outside pointer, and the bar itself leaving.
+  let openBulkPanel: string | null = null;
+  const closeBulkMenu = (): void => {
+    if (!bulkbar) return;
+    openBulkPanel = null;
+    bulkbar.querySelectorAll<HTMLElement>('[data-be-bulk-panel]').forEach(p => { p.hidden = true; });
+    bulkbar.querySelectorAll<HTMLElement>('[data-be-bulk-menu]').forEach(b => b.setAttribute('aria-expanded', 'false'));
+  };
   const syncPalSelect = (): void => {
-    const live = new Set(swatches.map(swKey));
-    for (const k of [...palSel]) if (!live.has(k)) palSel.delete(k);
-    swatches.forEach((s, i) => {
-      const tile = palMount?.querySelector<HTMLElement>(`[data-be-tile="${i}"]`);
-      if (!tile) return;
-      const on = palSel.has(swKey(s));
-      tile.classList.toggle('is-multi', on);
-      if (palSelecting && canBulkRemove(s)) tile.setAttribute('aria-pressed', String(on));
-      else tile.removeAttribute('aria-pressed');
-    });
-    const sb = palMount?.querySelector<HTMLElement>('[data-be-pal-select]');
-    if (sb) { sb.setAttribute('aria-pressed', String(palSelecting)); sb.textContent = palSelecting ? t('Done') : t('Select'); }
+    palSel.prune();
+    const n = palSel.size();
+    const order = ownOrder();
+    if (palFocusKey && !order.includes(palFocusKey)) palFocusKey = null;
+    const roving = palFocusKey ?? order[0] ?? null;
+    for (const el of ownTileEls()) {
+      const k = keyOfTile(el);
+      if (!k) continue;
+      const on = palSel.has(k);
+      el.classList.toggle('is-multi', on);
+      if (on) el.setAttribute('aria-pressed', 'true');
+      else el.removeAttribute('aria-pressed');
+      // One tab stop for the whole grid: Tab crosses it in a press and the
+      // arrows do the walking inside it.
+      el.tabIndex = k === roving ? 0 : -1;
+    }
     if (bulkbar) {
-      bulkbar.hidden = !palSelecting;
-      const n = palSel.size;
+      bulkbar.hidden = n === 0;
+      if (n === 0) closeBulkMenu();
       const nEl = bulkbar.querySelector<HTMLElement>('[data-be-bulk-n]');
       if (nEl) nEl.textContent = n === 1 ? t('1 selected') : tRaw('{n} selected', { n });
-      const del = bulkbar.querySelector<HTMLButtonElement>('[data-be-bulk-del]');
-      if (del) del.disabled = n === 0;
+      // Move to and Give a role are beat-2 doors: at beat 1 the pane holds a
+      // handful of tiles, with no sections to sort them into and the Roles strip
+      // one glance to the left.
+      for (const id of ['move', 'role']) {
+        const wrap = bulkbar.querySelector<HTMLElement>(`[data-be-bulk-wrap="${id}"]`);
+        if (wrap) wrap.hidden = beat < 2;
+      }
     }
-    if (palSelecting) root.setAttribute('data-pal-selecting', '1');
+    if (n) root.setAttribute('data-pal-selecting', '1');
     else root.removeAttribute('data-pal-selecting');
+    dockBulkBar();
   };
   /**
-   * Hand focus back to the Select toggle once the bulk bar has gone.
+   * Sit the bar on the palette pane's bottom edge where there IS a pane to sit
+   * on - the ≥1100px split, whose width is a per-person number the divider
+   * writes, so no stylesheet can know it. Below that (and on the phone, where
+   * the bar rides the sheet's free edge) it stays the centred pill it was.
+   */
+  const dockBulkBar = (): void => {
+    if (!bulkbar) return;
+    const pane = root.querySelector<HTMLElement>('[data-be-split-side]');
+    let wide = false;
+    try { wide = !!window.matchMedia?.('(min-width: 1100px)').matches; } catch { /* no matchMedia - stay centred */ }
+    const r = wide ? pane?.getBoundingClientRect() : null;
+    if (!r || !r.width) { bulkbar.classList.remove('is-docked'); return; }
+    bulkbar.style.setProperty('--be-bulk-left', `${Math.round(r.left)}px`);
+    bulkbar.style.setProperty('--be-bulk-w', `${Math.round(r.width)}px`);
+    bulkbar.style.setProperty('--be-bulk-bottom', `${Math.max(8, Math.round(window.innerHeight - r.bottom + 8))}px`);
+    bulkbar.classList.add('is-docked');
+  };
+  const onBulkResize = (): void => { if (!bulkbar?.hidden) dockBulkBar(); };
+  window.addEventListener('resize', onBulkResize);
+  cleanups.push(() => window.removeEventListener('resize', onBulkResize));
+  /**
+   * Hand focus back to the grid once the bulk bar has gone.
    *
    * Cancel and Delete both hide the bar that holds the button being pressed, so
    * without this the document's focus falls to `<body>` and a keyboard user
@@ -2975,26 +3512,181 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
    * when a repaint has already detached whatever was focused. Focus that is
    * demonstrably somewhere else is left alone.
    *
-   * The toggle is re-queried each time: it lives in the grid, which the delete
+   * The tile is re-queried each time: it lives in the grid, which the delete
    * path rebuilds, so a handle taken before the repaint would be a dead node.
    */
   const handBackPalFocus = (was: Element | null): void => {
     if (was && was !== document.body && !bulkbar?.contains(was)) return;
-    palMount?.querySelector<HTMLElement>('[data-be-pal-select]')?.focus();
+    const order = ownOrder();
+    const key = palFocusKey && order.includes(palFocusKey) ? palFocusKey : order[0];
+    if (key) tileForKey(key)?.focus();
   };
   const exitPalSelect = (): void => {
-    if (!palSelecting) return;
+    if (!palSel.size()) return;
     const was = document.activeElement;
-    palSelecting = false; palSel.clear(); syncPalSelect();
+    palSel.clear(); syncPalSelect();
     handBackPalFocus(was);
   };
   paletteHooks.push(syncPalSelect);
   bulkbar?.querySelector<HTMLElement>('[data-be-bulk-cancel]')?.addEventListener('click', exitPalSelect);
+
+  // ── What the bar does ──────────────────────────────────────────────────────
+  // Every bulk write is ONE undo entry and one durable checkpoint: forty
+  // swatches moved with one press come back with one Ctrl-Z.
+  const bulkWrite = (label: string, checkpoint: string, run: () => void): void => {
+    pushUndo(label);
+    ctxCheckpoint(checkpoint);
+    run();
+    closeBulkMenu();
+    repaintPalette(); persist(true);
+  };
+  const moveSelectionTo = (group: string): void => {
+    const items = selectedSwatches();
+    // The tag is stored theme-less by contract (see setSwatchGroup), so a live
+    // heading loses its "· Light" before it is written.
+    const name = group.replace(/\s*·.*$/, '').trim();
+    if (!items.length || !name) return;
+    bulkWrite(tRaw('Move {n} swatches', { n: items.length }), t('Before moving swatches'), () => {
+      for (const s of items) setSwatchGroup(doc, s.path, name);
+    });
+    announce(`${tRaw('{n} moved to {group}.', { n: items.length, group: name })} ${t('Undo with Control Z.')}`);
+  };
+  /** Walk the selection onto consecutive roles from the one that was chosen, so
+   *  a four-tile selection can take all four in one press. A role's own alias
+   *  tile cannot take a role (the alias would chain), so those sit it out. */
+  const giveSelectionRoles = (from: RoleId): void => {
+    const items = selectedSwatches().filter(s => s.kind !== 'semantic');
+    const start = ROLE_IDS.indexOf(from);
+    if (!items.length || start < 0) return;
+    const pairs = items.slice(0, ROLE_IDS.length - start).map((s, i) => ({ s, role: ROLE_IDS[start + i]! }));
+    bulkWrite(tRaw('Give {n} swatches a role', { n: pairs.length }), t('Before assigning roles'), () => {
+      for (const p of pairs) assignRole(doc, p.role, p.s.key, roleTheme());
+    });
+    const said = pairs.map(p => tRaw('{role} is now {name}', { role: roleLabel(p.role), name: p.s.name })).join(' ');
+    const spare = items.length - pairs.length;
+    const left = spare > 0 ? ` ${tRaw('{n} colours had no role left to take.', { n: spare })}` : '';
+    announce(`${said}${left} ${t('Undo with Control Z.')}`);
+  };
+  const downloadSelection = async (format: SwatchExportFormat): Promise<void> => {
+    const items = selectedSwatches();
+    if (!items.length) return;
+    closeBulkMenu();
+    if (palErr) palErr.hidden = true;
+    try {
+      const fonts = format === 'tokens-json' ? await exportFonts() : undefined;
+      const { blob, filename } = exportSwatches(items, format, undefined, fonts?.length ? { fonts } : undefined);
+      saveBlob(blob, filename);
+      announce(tRaw('{n} colours downloaded as {filename}', { n: items.length, filename }));
+    } catch (err) {
+      if (palErr) { palErr.textContent = String((err as { message?: unknown })?.message ?? err); palErr.hidden = false; }
+    }
+  };
+  const copySelectionValues = (): void => {
+    const items = selectedSwatches();
+    if (!items.length) return;
+    closeBulkMenu();
+    // The STORED notation - what the document holds and what a person pasting it
+    // back would type. An alias has no notation of its own, so it copies as the
+    // hex it currently resolves to.
+    const text = items.map(s => (s.isAlias ? s.hex : s.raw)).filter(Boolean).join('\n');
+    void Promise.resolve(host.clipboard?.writeText?.(text)).then(
+      () => announce(items.length === 1
+        ? tRaw('Copied {value}', { value: text })
+        : tRaw('{n} colours copied', { n: items.length })),
+      () => announce(t('Copy failed - your browser blocked clipboard access'), { assertive: true }),
+    );
+  };
+
+  /** The Move-to menu's rows: every heading the pane is showing right now, plus
+   *  the door to a new one. Built at open time with textContent because the
+   *  names are the person's own group headings. */
+  const fillMoveMenu = (panel: HTMLElement): void => {
+    panel.textContent = '';
+    const stems: string[] = [];
+    for (const el of ownTileEls()) {
+      const stem = (el.closest<HTMLElement>('.be-pal-group')?.dataset.beGroup ?? '').replace(/\s*·.*$/, '').trim();
+      if (stem && !stems.includes(stem)) stems.push(stem);
+    }
+    for (const stem of stems) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'be-bulkbar-item';
+      b.dataset.beBulkMove = stem;
+      b.textContent = stem;
+      panel.append(b);
+    }
+    const fresh = document.createElement('button');
+    fresh.type = 'button';
+    fresh.className = 'be-bulkbar-item';
+    fresh.dataset.beBulkMoveNew = '1';
+    fresh.textContent = t('New group…');
+    panel.append(fresh);
+  };
+  /** "New group…" asks for the name in the menu itself rather than in a prompt
+   *  the person has to leave the selection to answer. */
+  const askNewGroup = (panel: HTMLElement): void => {
+    panel.textContent = '';
+    const form = document.createElement('form');
+    form.className = 'be-bulkbar-newgroup';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'field-input be-bulkbar-newname';
+    input.maxLength = 60;
+    input.autocomplete = 'off';
+    input.placeholder = t('Group name');
+    input.setAttribute('aria-label', t('New group name'));
+    const go = document.createElement('button');
+    go.type = 'submit';
+    go.className = 'be-bulkbar-item';
+    go.textContent = t('Move');
+    form.append(input, go);
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (input.value.trim()) moveSelectionTo(input.value);
+      else input.focus();
+    });
+    panel.append(form);
+    input.focus();
+  };
+  const openBulkMenu = (id: string): void => {
+    if (!bulkbar) return;
+    const wasOpen = openBulkPanel === id;
+    closeBulkMenu();
+    if (wasOpen) return;
+    const panel = bulkbar.querySelector<HTMLElement>(`[data-be-bulk-panel="${id}"]`);
+    const btn = bulkbar.querySelector<HTMLElement>(`[data-be-bulk-menu="${id}"]`);
+    if (!panel || !btn) return;
+    if (id === 'move') fillMoveMenu(panel);
+    panel.hidden = false;
+    btn.setAttribute('aria-expanded', 'true');
+    openBulkPanel = id;
+    panel.querySelector<HTMLElement>('button, input')?.focus();
+  };
+  bulkbar?.addEventListener('click', (e) => {
+    const el = e.target as HTMLElement;
+    const menu = el.closest<HTMLElement>('[data-be-bulk-menu]');
+    if (menu) { openBulkMenu(menu.dataset.beBulkMenu ?? ''); return; }
+    const move = el.closest<HTMLElement>('[data-be-bulk-move]');
+    if (move) { moveSelectionTo(move.dataset.beBulkMove ?? ''); return; }
+    if (el.closest('[data-be-bulk-move-new]')) {
+      const panel = bulkbar.querySelector<HTMLElement>('[data-be-bulk-panel="move"]');
+      if (panel) askNewGroup(panel);
+      return;
+    }
+    const role = el.closest<HTMLElement>('[data-be-bulk-role]');
+    if (role) { giveSelectionRoles(role.dataset.beBulkRole as RoleId); return; }
+    const dl = el.closest<HTMLElement>('[data-be-bulk-dl]');
+    if (dl) { void downloadSelection(dl.dataset.beBulkDl as SwatchExportFormat); return; }
+    if (el.closest('[data-be-bulk-copy]')) copySelectionValues();
+  });
   // No confirm dialog: undo is the safety net (plan 97 section 3 principle 3). The
   // gradient-stop side effect moves from a pre-hoc warning to a post-hoc
   // statement, and the per-swatch semantics are byte-for-byte what they were.
   bulkbar?.querySelector<HTMLElement>('[data-be-bulk-del]')?.addEventListener('click', () => {
-    const items = swatches.filter(s => palSel.has(swKey(s)));
+    deleteSelection();
+  });
+  const deleteSelection = (): void => {
+    const items = selectedSwatches();
     if (!items.length) return;
     const refs = items.reduce((n, s) => n + (s.kind !== 'ramp' && s.kind !== 'semantic' && s.deletable ? gradientAliasRefCount(doc, s.key) : 0), 0);
     pushUndo(items.length === 1 ? tRaw('Delete {name}', { name: items[0]!.name }) : tRaw('Delete {n} swatches', { n: items.length }));
@@ -3006,22 +3698,158 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       if (gradientAliasRefCount(doc, s.key)) materializeGradientAliases(doc, ref => aliasPath(ref) === s.key, () => s.hex || null);
       deleteSwatch(doc, s.path); removed++;
     }
-    exitPalSelect(); closeEditor(); repaintPalette(); persist(true);
-    // The repaint rebuilt the grid, and with it the toggle exitPalSelect had
+    exitPalSelect(); closeBulkMenu(); closeEditor(); repaintPalette(); persist(true);
+    // The repaint rebuilt the grid, and with it the tile exitPalSelect had
     // just focused - so the handoff is repeated against the live one.
     handBackPalFocus(document.activeElement);
     const gone = removed === 1 ? t('1 swatch removed') : tRaw('{n} swatches removed', { n: removed });
+    // Selection reaches every own tile now, so a selection can hold a swatch
+    // this room does not remove (a token an import brought in read-only). Say
+    // so rather than quietly dropping it from the count.
+    const held = items.length - removed;
+    const kept = held > 0 ? ` ${tRaw('{n} were kept - they are not this room to remove.', { n: held })}` : '';
     const stops = refs === 0 ? ''
       : refs === 1 ? ` ${t('1 gradient stop keeps its colour as a fixed value.')}`
         : ` ${tRaw('{refs} gradient stops keep their colour as a fixed value.', { refs })}`;
-    announce(`${gone}${stops} ${t('Undo with Control Z.')}`);
+    announce(`${gone}${kept}${stops} ${t('Undo with Control Z.')}`);
+  };
+
+  // ── Marquee, and the touch gesture that stands in for it ───────────────────
+  // Drag on the pane's empty space and every tile the rectangle touches joins
+  // the selection, across group boundaries. Pure geometry over
+  // getBoundingClientRect(), no library. The rectangle is one absolutely
+  // positioned div inside `.be-pal` (which is position: relative for exactly
+  // this), so it scrolls with the tiles and paints under the swatch popover,
+  // which is a sibling of the pane at z 30.
+  //
+  // Tiles come from the OPEN groups only: a folded <details> contributes none,
+  // which is what stops a sweep collecting colours nobody can see.
+  //
+  // TOUCH HAS NO MARQUEE. A drag on a phone is the pane scrolling, so a long
+  // press on a tile starts the selection instead and every later tap toggles;
+  // the per-group "Select all" carries the rest.
+  const DRAG_SLOP = 4;
+  const LONG_PRESS_MS = 500;
+  let lastPointerType = '';
+  /** A long press has just made a selection - swallow the click it turns into,
+   *  or the tap that started the selection immediately undoes it. */
+  let swallowTileClick = false;
+  let longPressTimer: ReturnType<typeof setTimeout> | undefined;
+  let longPressFrom: { x: number; y: number } | null = null;
+  let marqueeEl: HTMLElement | null = null;
+  let marqueeFrom: { x: number; y: number } | null = null;
+  let marqueeBase: string[] = [];
+  let marqueeMoved = false;
+  cleanups.push(() => clearTimeout(longPressTimer));
+
+  const marqueeTiles = (): SelectTile[] => ownTileEls('[open]').flatMap((el) => {
+    const k = keyOfTile(el);
+    if (!k) return [];
+    const r = el.getBoundingClientRect();
+    return [{ key: k, rect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom } }];
+  });
+  const endMarquee = (): void => {
+    marqueeEl?.remove();
+    marqueeEl = null; marqueeFrom = null; marqueeMoved = false;
+    palMount?.classList.remove('is-marqueeing');
+  };
+  cleanups.push(endMarquee);
+
+  palMount?.addEventListener('pointerdown', (e) => {
+    lastPointerType = e.pointerType;
+    // A press that never became a click (a long press then a scroll) must not
+    // leave the swallow armed for whatever is pressed next.
+    swallowTileClick = false;
+    clearTimeout(longPressTimer); longPressFrom = null;
+    const el = e.target as HTMLElement;
+    const tile = el.closest<HTMLElement>('[data-be-tile]');
+    if (tile) {
+      if (e.pointerType !== 'touch' || palSel.size() || tile.closest('.be-pal-group--starter')) return;
+      const k = keyOfTile(tile);
+      if (!k) return;
+      longPressFrom = { x: e.clientX, y: e.clientY };
+      longPressTimer = setTimeout(() => {
+        longPressFrom = null;
+        swallowTileClick = true;
+        palFocusKey = k;
+        palSel.toggle(k);
+        syncPalSelect();
+        playSfx('click');
+      }, LONG_PRESS_MS);
+      return;
+    }
+    if (e.button !== 0 || e.pointerType === 'touch' || !palMount) return;
+    // The pane's own empty space only - a group head, a disclosure or a button
+    // is a control, not canvas.
+    if (el.closest('button, a, input, select, summary, .be-pal-group-note')) return;
+    e.preventDefault(); // no text selection dragging along behind the rectangle
+    marqueeBase = (e.shiftKey || e.metaKey || e.ctrlKey) ? palSel.keys() : [];
+    const pr = palMount.getBoundingClientRect();
+    marqueeFrom = { x: e.clientX - pr.left, y: e.clientY - pr.top };
+    marqueeMoved = false;
+    try { palMount.setPointerCapture(e.pointerId); } catch { /* capture is a nicety, not the gesture */ }
   });
 
+  palMount?.addEventListener('pointermove', (e) => {
+    if (longPressFrom
+      && (Math.abs(e.clientX - longPressFrom.x) > DRAG_SLOP || Math.abs(e.clientY - longPressFrom.y) > DRAG_SLOP)) {
+      clearTimeout(longPressTimer); longPressFrom = null; // a scroll, not a press
+    }
+    if (!marqueeFrom || !palMount) return;
+    // Measured fresh every move: the pane's scroller can move under the drag,
+    // and the anchor is held in pane-local coordinates so it stays on the tile
+    // it started beside rather than on a point of the viewport.
+    const pr = palMount.getBoundingClientRect();
+    const x = e.clientX - pr.left, y = e.clientY - pr.top;
+    if (!marqueeMoved) {
+      if (Math.abs(x - marqueeFrom.x) < DRAG_SLOP && Math.abs(y - marqueeFrom.y) < DRAG_SLOP) return;
+      marqueeMoved = true;
+      marqueeEl = document.createElement('div');
+      marqueeEl.className = 'be-marquee';
+      palMount.append(marqueeEl);
+      palMount.classList.add('is-marqueeing');
+    }
+    const left = Math.min(x, marqueeFrom.x), top = Math.min(y, marqueeFrom.y);
+    const w = Math.abs(x - marqueeFrom.x), h = Math.abs(y - marqueeFrom.y);
+    if (marqueeEl) {
+      marqueeEl.style.left = `${left}px`; marqueeEl.style.top = `${top}px`;
+      marqueeEl.style.width = `${w}px`; marqueeEl.style.height = `${h}px`;
+    }
+    palSel.marquee(
+      { left: pr.left + left, top: pr.top + top, right: pr.left + left + w, bottom: pr.top + top + h },
+      marqueeTiles(), marqueeBase,
+    );
+    syncPalSelect();
+  });
+
+  const finishPalPointer = (e: PointerEvent): void => {
+    clearTimeout(longPressTimer); longPressFrom = null;
+    if (!marqueeFrom) return;
+    const moved = marqueeMoved;
+    try { palMount?.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+    endMarquee();
+    // A press on empty space that never became a drag drops the selection - the
+    // same gesture every file manager answers to.
+    if (!moved && palSel.size()) { palSel.clear(); syncPalSelect(); }
+  };
+  palMount?.addEventListener('pointerup', finishPalPointer);
+  palMount?.addEventListener('pointercancel', finishPalPointer);
+
   palMount?.addEventListener('click', (e) => {
-    const selToggle = (e.target as HTMLElement).closest<HTMLElement>('[data-be-pal-select]');
-    if (selToggle) {
-      palSelecting = !palSelecting;
-      if (palSelecting) closeEditor(); else palSel.clear();
+    if (swallowTileClick) { swallowTileClick = false; e.preventDefault(); return; }
+    const all = (e.target as HTMLElement).closest<HTMLElement>('[data-be-pal-all]');
+    if (all) {
+      // It sits in a <summary>, so the default toggle has to be swallowed or
+      // selecting a section folds it away under the selection.
+      e.preventDefault();
+      const g = all.dataset.bePalAll ?? '';
+      // Matched in JS rather than through a selector: a heading is the person's
+      // own text and may hold anything a CSS attribute selector would need
+      // escaping for.
+      const keys = ownTileEls()
+        .filter(el => (el.closest<HTMLElement>('.be-pal-group')?.dataset.beGroup ?? '') === g)
+        .map(keyOfTile).filter((k): k is string => !!k);
+      palSel.allInGroup(keys);
       syncPalSelect();
       return;
     }
@@ -3042,14 +3870,21 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const tileEl = (e.target as HTMLElement).closest<HTMLElement>('[data-be-tile]');
     if (!tileEl) return;
     const tIdx = Number(tileEl.dataset.beTile);
-    if (palSelecting) {
-      const s = swatches[tIdx];
-      if (s && canBulkRemove(s)) {
-        const k = swKey(s);
-        if (palSel.has(k)) palSel.delete(k); else palSel.add(k);
-        syncPalSelect();
-      }
-      return;
+    const s = swatches[tIdx];
+    const k = s ? swKey(s) : null;
+    // A starter tile in the one revealed group is material to look at, not to
+    // collect - it never joins a selection, whichever modifier is held.
+    const own = !!k && !tileEl.closest('.be-pal-group--starter');
+    if (own && k) {
+      palFocusKey = k;
+      if (e.metaKey || e.ctrlKey) { palSel.toggle(k); syncPalSelect(); return; }
+      if (e.shiftKey) { palSel.range(palSel.anchor() ?? k, k); syncPalSelect(); return; }
+      // On a touch screen there is no marquee and no modifier key, so once a
+      // long press has started a selection a tap adds and removes. With a
+      // pointer, a plain click still opens the editor exactly as it always did,
+      // and drops the selection on the way in.
+      if (lastPointerType === 'touch' && palSel.size()) { palSel.toggle(k); syncPalSelect(); return; }
+      if (palSel.size()) { palSel.clear(); syncPalSelect(); }
     }
     openEditor(tIdx, tileEl);
   });
@@ -3064,6 +3899,53 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // copies hex": bare `c` ARMS Chroma (keeping the L/C/H channel model whole), so
   // copy-hex moved to Shift+H (H = Hex) - the model reads "letter arms, Shift+
   // letter copies", and Cmd/Ctrl+C is never touched, which was the real rule.
+  /** How many tiles sit in the focused tile's row. Measured, not assumed: the
+   *  grid is `auto-fill`, so the count moves with the pane's width. */
+  const gridColumns = (tile: HTMLElement): number => {
+    const grid = tile.closest<HTMLElement>('.be-pal-grid');
+    if (!grid) return 1;
+    const kids = [...grid.children] as HTMLElement[];
+    const top = kids[0]?.offsetTop ?? 0;
+    return Math.max(1, kids.filter(el => el.offsetTop === top).length);
+  };
+  /**
+   * The grid's own keyboard (plan 182 section 5.5): arrows move the focused
+   * tile, Shift-arrows extend the selection, Space toggles, Cmd-A takes every
+   * own colour, Delete removes the selection. True means the press was consumed,
+   * so the channel nudging below only ever sees what is left.
+   *
+   * THE ARROWS BELONG TO THE GRID NOW, and the channel nudge keeps them only
+   * while a channel is ARMED - which is why `armedChannel` starts at null rather
+   * than 'L'. The model was always "a letter arms, the arrows nudge"; it just
+   * started armed, so the first Arrow Up on a freshly focused tile recoloured it
+   * instead of moving. Press l, c or h and Arrow Up/Down nudge exactly as they
+   * always did.
+   *
+   * Escape is deliberately NOT here: the studio's Escape ladder (popover, then
+   * the review card, then the selection) lives on the document handler, and one
+   * ladder is the only way it stays in order.
+   */
+  const paletteSelectKey = (e: KeyboardEvent, tile: HTMLElement): boolean => {
+    const k = keyOfTile(tile);
+    if (!k || e.key === 'Escape' || tile.closest('.be-pal-group--starter')) return false;
+    palFocusKey = k;
+    if ((e.key === 'Delete' || e.key === 'Backspace') && palSel.size()) {
+      e.preventDefault();
+      deleteSelection();
+      return true;
+    }
+    if (armedChannel && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.metaKey && !e.ctrlKey) return false;
+    const r = palSel.keyboard(e.key, k, {
+      shift: e.shiftKey, meta: e.metaKey || e.ctrlKey, columns: gridColumns(tile),
+    });
+    if (!r.handled) return false;
+    e.preventDefault();
+    if (r.focus) palFocusKey = r.focus;
+    syncPalSelect();
+    if (r.focus && r.focus !== k) tileForKey(r.focus)?.focus();
+    return true;
+  };
+
   const CHANNEL_NAME: Record<'L' | 'C' | 'H', string> = { L: t('Lightness'), C: t('Chroma'), H: t('Hue') };
   const channelValueStr = (ch: 'L' | 'C' | 'H', hex: string): string => {
     const o = hexToOklch(hex);
@@ -3078,10 +3960,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     );
   };
   palMount?.addEventListener('keydown', (e) => {
-    if (palSelecting) return; // tiles are collect-toggles in select mode - no channel nudging
     const tile = (e.target as HTMLElement | null)?.closest?.<HTMLElement>('[data-be-tile]') ?? null;
     // Only when the tile BUTTON itself holds focus - never a nested/other control.
-    if (!tile || tile !== (e.target as HTMLElement) || e.altKey || e.metaKey || e.ctrlKey) return;
+    if (!tile || tile !== (e.target as HTMLElement) || e.altKey) return;
+    if (paletteSelectKey(e, tile)) return; // arrows, Shift-arrows, Space, Cmd-A, Delete
+    if (e.metaKey || e.ctrlKey) return;
     const idx = Number(tile.dataset.beTile);
     const s = Number.isInteger(idx) ? swatches[idx] : undefined;
     if (!s || !s.hex) return;
@@ -3103,7 +3986,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     }
     // Nudge the armed channel (Shift = coarse ×5), written through the same doc
     // path a popover edit uses, so it persists on Save identically.
-    if (k === 'ArrowUp' || k === 'ArrowDown') {
+    if (armedChannel && (k === 'ArrowUp' || k === 'ArrowDown')) {
       e.preventDefault();
       const next = nudgeSwatch(s.hex, armedChannel, k === 'ArrowUp' ? 1 : -1, e.shiftKey);
       writeSwatchHex(idx, next, nudgeFmtOf(s));
@@ -3153,9 +4036,24 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   editorEl?.querySelector('[data-be-editor-done]')?.addEventListener('click', () => {
     persist(true); playSfx('saveProfile'); closeEditor();
   });
+  // The pick card's footer. Cancel is a real cancel - nothing was written, so
+  // there is nothing to undo and the add row keeps whatever it had.
+  editorEl?.querySelector('[data-be-editor-cancel]')?.addEventListener('click', () => {
+    closeEditor();
+    addField()?.focus();
+  });
+  editorEl?.querySelector('[data-be-editor-add]')?.addEventListener('click', () => { commitPickCard(); });
   // Esc / outside-click closes the swatch editor (the colour popover stops its own Esc).
+  // The add row's chip is exempt: it OPENS this card, so letting the pointer-down
+  // close it first would make every press a toggle that ends closed.
   const onDocPointer = (e: PointerEvent): void => {
-    if (editorEl && !editorEl.hidden && !editorEl.contains(e.target as Node) && !(e.target as HTMLElement).closest('[data-be-tile]')) closeEditor();
+    // The bulk bar's menus dismiss on the same press, and on their own: the bar
+    // shows whether or not a swatch card is open.
+    if (openBulkPanel && !bulkbar?.contains(e.target as Node)) closeBulkMenu();
+    if (!editorEl || editorEl.hidden || editorEl.contains(e.target as Node)) return;
+    const el = e.target as HTMLElement;
+    if (el.closest('[data-be-tile]') || el.closest('[data-ds-addc-pick]')) return;
+    closeEditor();
   };
   // stopImmediatePropagation, not stopPropagation: the host view's own
   // Esc-to-leave handler listens on the SAME document target, and plain
@@ -3180,7 +4078,16 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (e.key !== 'Escape') return;
     if (editorEl && !editorEl.hidden) { e.stopImmediatePropagation(); closeEditor(); return; }
     if (reviewEl && !reviewEl.hidden) { e.stopImmediatePropagation(); hideReview(); return; }
-    if (palSelecting) { e.stopImmediatePropagation(); exitPalSelect(); }
+    if (openBulkPanel) { e.stopImmediatePropagation(); closeBulkMenu(); return; }
+    // The model decides whether there was anything to clear, and the event is
+    // only stopped when there was - an Escape this room did not answer has to
+    // reach the studio's own handler, or the room becomes a trap.
+    const was = document.activeElement;
+    if (palSel.keyboard('Escape', palFocusKey).cleared) {
+      e.stopImmediatePropagation();
+      syncPalSelect();
+      handBackPalFocus(was);
+    }
   };
   document.addEventListener('pointerdown', onDocPointer, true);
   document.addEventListener('keydown', onKey);
@@ -3196,7 +4103,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // refreshTile swaps tiles via outerHTML, so a disconnected anchor is
   // re-queried by index before giving up.
   const onAnchorScroll = (e: Event): void => {
-    if (!editorEl || editorEl.hidden) return;
+    if (!editorEl || editorEl.hidden || pickSheet) return; // the phone pose is docked, not anchored
     if (e.target instanceof Node && editorEl.contains(e.target)) return; // the popover's own body scrolling
     const anchor = editorAnchor?.isConnected
       ? editorAnchor
@@ -3503,7 +4410,6 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const addedEl = $('[data-be-added]') as HTMLElement | null;
   const addedSw = addedEl?.querySelector<HTMLElement>('[data-be-added-sw]') ?? null;
   const addedNameEl = addedEl?.querySelector<HTMLElement>('[data-be-added-name]') ?? null;
-  const addedGen = addedEl?.querySelector<HTMLElement>('[data-be-added-gen]') ?? null;
   const addedPrimaryBtn = addedEl?.querySelector<HTMLButtonElement>('[data-be-added-primary]') ?? null;
   const addedTuneBtn = addedEl?.querySelector<HTMLButtonElement>('[data-be-added-tune]') ?? null;
   /** The swatch the visible chip describes, or null when no chip is showing. */
@@ -3521,35 +4427,38 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const focusAddField = (): void => {
     root.querySelector<HTMLElement>('[data-ds-addc-input]')?.focus();
   };
-  const showAddedChip = (one: { path: string[]; name: string; hex: string }): void => {
+  /**
+   * The chip in its "this colour now has the primary role" state - what a press
+   * of "Use as primary?" leaves behind, and what the very first colour of all
+   * shows straight away (it becomes the primary on arrival, plan 182 section
+   * 5.2). One action is left, Fine-tune, and the ✕.
+   *
+   * The generate handover is NOT here any more. It was a link on this chip,
+   * which a dismiss took away with it; it is the `.be-generate-cta` panel now,
+   * which is on screen for the whole of beat 1.
+   */
+  const showPrimarySetChip = (name: string): void => {
+    if (addedPrimaryBtn) addedPrimaryBtn.hidden = true;
+    if (addedTuneBtn) addedTuneBtn.hidden = false;
+    if (addedNameEl) addedNameEl.textContent = tRaw('{role} is now {name}', { role: roleLabel('primary'), name });
+    addedTuneBtn?.focus();
+  };
+  const showAddedChip = (one: { path: string[]; name: string; hex: string }, primarySet = false): void => {
     if (!addedEl || !addedNameEl) return;
     addedSwatch = { path: one.path, name: one.name };
     addedNameEl.textContent = one.name;
-    // A previous chip may have ended in the primary-set state (buttons hidden,
-    // generate offer kept) - a fresh add starts with both actions back.
+    // A previous chip may have ended in the primary-set state (the offer button
+    // hidden) - a fresh add starts with both actions back.
     if (addedPrimaryBtn) addedPrimaryBtn.hidden = false;
     if (addedTuneBtn) addedTuneBtn.hidden = false;
     addedSw?.style.setProperty('--sw', one.hex || 'transparent');
-    // The handover to the Generate wing is offered on the FIRST colour of a
-    // person's own, and only over a starter palette: it is the answer to "you
-    // now have one colour and 25 you did not pick". Every later add is just an
-    // add, and a brand with no starter never sees it at all.
-    const own = swatches.filter(s => !starterSwatches.has(starterId(s.key, s.raw))).length;
-    if (addedGen) {
-      addedGen.hidden = !(starterSwatches.size > 0 && own <= 1);
-      // Carry THE colour into the generator (audit 167 F-A12): without the seed
-      // the link opened the generate wing primed with the starter primary - the
-      // one promise in "Generate your palette from this colour", dropped.
-      if (one.hex) addedGen.setAttribute('href', `#/start?area=color&focus=generate&seed=${encodeURIComponent(one.hex)}`);
-    }
     addedEl.hidden = false;
-    addedPrimaryBtn?.focus();
+    if (primarySet) showPrimarySetChip(one.name);
+    else addedPrimaryBtn?.focus();
   };
   addedEl?.addEventListener('click', (e) => {
     const target = e.target as HTMLElement;
     if (target.closest('[data-be-added-dismiss]')) { clearAddedChip(); focusAddField(); return; }
-    // The generate link navigates on its own; the chip's job is done.
-    if (target.closest('[data-be-added-gen]')) { clearAddedChip(); return; }
     if (target.closest('[data-be-added-tune]')) {
       const path = addedSwatch?.path ?? null;
       clearAddedChip();       // before the popover opens - it takes focus itself
@@ -3565,21 +4474,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const key = swatches.find(s => s.path.length === path.length && s.path.every((seg, i) => seg === path[i]))?.key;
     if (!key || !assignRole(doc, 'primary', key)) { clearAddedChip(); focusAddField(); return; }
     repaintPalette(); persist(true); playSfx('click');
-    // Taking the primary is step ONE of the same gesture the generate offer
-    // completes - and this chip is the offer's only home, so retiring the whole
-    // row here destroyed it exactly on the first colour (plans/163 F3). Keep the
-    // chip up as a confirmation with the offer still live; without the offer the
-    // chip has nothing left to say, so it clears as before.
-    const genOffered = !!addedGen && !addedGen.hidden;
-    if (genOffered) {
-      if (addedPrimaryBtn) addedPrimaryBtn.hidden = true;
-      if (addedTuneBtn) addedTuneBtn.hidden = true;
-      if (addedNameEl) addedNameEl.textContent = tRaw('{role} is now {name}', { role: roleLabel('primary'), name });
-      (addedGen as HTMLAnchorElement).focus();
-    } else {
-      clearAddedChip();
-      focusAddField();
-    }
+    // The chip STAYS as a confirmation (plans/163 F3 - retiring the whole row
+    // here used to destroy the only handover to Generate). The handover is the
+    // `.be-generate-cta` panel now, which the same repaint has just re-titled
+    // after this colour, so the chip's remaining job is to say what happened.
+    showPrimarySetChip(name);
     announce(tRaw('{role} is now {name}', { role: roleLabel('primary'), name }));
   });
 
@@ -3604,19 +4503,35 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
    * hero for a colour that was added somewhere else.
    */
   const addColorEntries = (entries: ColorEntry[], reveal = false): number => {
+    // Was this room empty of the person's own colour before the add? That is
+    // what makes the next line the FIRST colour, and the first colour becomes
+    // the primary (plan 182 section 5.2) - it is what nine people in ten mean
+    // by it, and asking would be asking about a decision already made.
+    const wasEmpty = ownColorCount() === 0;
     const added: Array<{ path: string[]; name: string; hex: string }> = [];
     for (const e of entries) {
-      const name = nameColor(e.hex);
+      // The picker card names the colour it committed; a scan of pasted text
+      // has no name to report, so the room's own namer answers for those.
+      const name = e.name?.trim() || nameColor(e.hex);
       const path = addSwatch(doc, 'custom', name, serializeColor(e.hex, storageFormatOf(e.value)));
       if (path) added.push({ path, name, hex: e.hex });
     }
     if (!added.length) return 0;
+    // Deliberately UNSCOPED (no theme), for the reason the chip's own "Use as
+    // primary?" is: a colour someone names as their primary is the primary in
+    // both themes, unlike surface and text, which each theme inverts.
+    const first = added[0]!;
+    const firstKey = walkSwatches(doc, currentTheme)
+      .find(s => s.path.length === first.path.length && s.path.every((seg, i) => seg === first.path[i]))?.key;
+    const tookPrimary = !!(wasEmpty && added.length === 1 && firstKey && assignRole(doc, 'primary', firstKey));
     repaintPalette(); persist(true); playSfx('click');
     if (reveal) {
       clearAddedChip();   // one chip at a time: the previous add has had its answer
       if (added.length === 1) {
-        showAddedChip(added[0]!);
-        announce(tRaw('{name} added', { name: added[0]!.name }));
+        showAddedChip(first, tookPrimary);
+        announce(tookPrimary
+          ? tRaw('{role} is now {name}', { role: roleLabel('primary'), name: first.name })
+          : tRaw('{name} added', { name: first.name }));
       } else {
         announce(tRaw('{n} colours added', { n: added.length }));
       }
@@ -3629,9 +4544,70 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     const teardownAdd = mountAddColor(addColorMount, {
       t: (source, params) => (params ? tRaw(source, params) : t(source)),
       onAdd: (entries: ColorEntry[]) => { addColorEntries(entries, true); },
+      // The chip opens the studio's OWN swatch card in pick mode (plan 182
+      // section 5.1) - the same OKLCH picker a tile opens, with Add colour as
+      // its footer instead of Delete/Save. One picker in the room, not two.
+      onOpenPicker: (anchor, current) => { openPickCard(anchor, current); },
+      // "From an image" is the studio's existing image source, reached through
+      // the host rather than re-implemented: sample → colour cloud → census →
+      // tray, exactly as the source picker's image tile does it. Without a host
+      // that offers it, the button is not rendered at all.
+      onImageFile: opts.scanImage ? (file: File) => { opts.scanImage?.(file); } : undefined,
     });
     cleanups.push(teardownAdd);
   }
+  /** The add row's field, the one place the pick card writes its live value. */
+  const addField = (): HTMLInputElement | null => root.querySelector<HTMLInputElement>('[data-ds-addc-input]');
+  /**
+   * Beat 0 spells the notations out in full under a 72px chip; the compact row
+   * keeps the short sentence, because by then the person has done this once.
+   * The example values stay untranslated (they are values, not prose).
+   */
+  function syncAddPlaceholder(): void {
+    const field = addField();
+    if (!field) return;
+    field.placeholder = beat === 0
+      ? `${t('Paste a colour')} · ${COLOR_NOTATION_EXAMPLES}`
+      : t('Paste a colour, or a list');
+  }
+  // "Or bring a file" - beat 0's one alternative door, opening the host's own
+  // source picker (the same one the rail's "Add from…" opens).
+  root.querySelector('[data-be-beat0-file]')?.addEventListener('click', () => { opts.openImport?.(); });
+
+  // ── The generate offer as a panel (plan 182 section 3a, beat 1) ─────────────
+  const genCta = $('[data-be-generate-cta]') as HTMLElement | null;
+  const genCtaTitle = $('[data-be-generate-cta-title]') as HTMLElement | null;
+  /** The colour the offer is about: the swatch holding the primary role, else
+   *  the first colour of the person's own. Null when there is neither, which is
+   *  the only state the offer stays away for. */
+  const generateSeed = (): { name: string; hex: string } | null => {
+    const ref = readRoles(doc, roleTheme()).primary?.ref ?? null;
+    const own = swatches.filter(s => s.hex && s.kind !== 'semantic' && !isStarterSwatch(s));
+    const hit = (ref ? own.find(s => s.key === ref) : undefined) ?? own[0];
+    return hit ? { name: hit.name, hex: hit.hex } : null;
+  };
+  /** Re-title the offer after whatever the palette is now leading with. Runs on
+   *  every repaint, so an add, a rename or a re-pointed role all land. */
+  function syncGenerateCta(): void {
+    if (!genCta) return;
+    const seed = generateSeed();
+    genCta.hidden = !seed;
+    if (seed && genCtaTitle) genCtaTitle.textContent = tRaw('Generate a palette from {name}', { name: seed.name });
+  }
+  paletteHooks.push(syncGenerateCta);
+  // A Replace palette creates the primary ramp the Print wing needs; a re-derive
+  // or an undo can take it away again. Both land here.
+  paletteHooks.push(syncPrintWing);
+  $('[data-be-generate-cta-go]')?.addEventListener('click', () => {
+    // Prime the wing with the colour the offer names BEFORE it opens, so the
+    // ramps on screen are built from that colour rather than from whatever the
+    // derive controls were last left holding (the same order the `?seed=`
+    // deep link uses).
+    const seed = generateSeed();
+    if (seed?.hex) setPrimaryTo(seed.hex);
+    openWing('generate');
+    playSfx('click');
+  });
 
   // ── Roles as an assignment layer ────────────────────────────────────────────
   // The strip reads the doc and writes through assignRole/clearRole; every
@@ -3644,12 +4620,21 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const roleTheme = (): string => (currentTheme === 'dark' ? 'dark' : 'light');
   /** A swatch key's display name, for the announcements. */
   const nameOfKey = (key: string): string => swatches.find(s => s.key === key)?.name ?? key;
-  const roleSwatchOptions = (): Array<{ key: string; name: string; hex: string; group?: string }> =>
+  // Every non-role swatch is assignable, INCLUDING the starter's neutrals -
+  // Surface and Text want paper and ink, and pointing at them on purpose is a
+  // real decision. What the flag buys is the picker filing them under their own
+  // "Starter" heading, and the strip painting a role that sits on one in the
+  // muted register (plan 182 section 4.2).
+  const roleSwatchOptions = (): Array<{ key: string; name: string; hex: string; group?: string; starter?: boolean }> =>
     swatches.filter(s => s.hex && s.kind !== 'semantic')
-      .map(s => ({ key: s.key, name: s.name, hex: s.hex, group: s.group }));
+      .map(s => ({ key: s.key, name: s.name, hex: s.hex, group: s.group, starter: isStarterSwatch(s) }));
   const rolesStrip = rolesMount ? mountRolesStrip(rolesMount, {
     doc: () => doc as Record<string, unknown>,
     theme: roleTheme,
+    // Four slots until there is a palette, then every slot a tool can read
+    // (plan 182 section 5.7 step 1). Seven rows in front of somebody who has
+    // just added their first colour is a form; four is a strip.
+    ids: () => (beat >= 2 ? ROLE_IDS_ALL : ROLE_IDS),
     resolve: (key) => {
       try { return createTokenSet(doc, { theme: roleTheme() }).resolve(key); }
       catch { return null; }
@@ -3718,25 +4703,21 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       : tRaw('{role} is now {name}', { role: roleLabel(role), name: cur.name }));
   });
 
-  repaintPalette();
-
   // Which of these colours came with the blank brand rather than from a person
-  // (plan 137 C3). Off the first paint's critical path: the read is an IDB hit
-  // plus a JSON parse, and a palette that has not answered yet just says nothing
-  // about ownership. BOTH themes are walked because a role's stored value differs
+  // (plan 137 C3). AWAITED before the first paint, unlike the fire-and-forget
+  // read it replaced: the beat is decided on the own count, and a room that
+  // painted first and learned second would show a first-time visitor the whole
+  // studio for one frame and then collapse it to a single control. The read is
+  // one IDB hit plus a JSON parse, in a mount that already awaits three.
+  // starterColorIds walks BOTH themes, because a role's stored value differs
   // between them and either spelling is equally a starter one.
-  void readStarterDoc(host)
-    .then((starterDoc) => {
-      if (!starterDoc || !root.isConnected) return;
-      const pairs = new Set<string>();
-      for (const theme of ['light', 'dark']) {
-        for (const s of walkSwatches(starterDoc, theme)) pairs.add(starterId(s.key, s.raw));
-      }
-      if (!pairs.size) return;
-      starterSwatches = pairs;
-      repaintPalette();
-    })
-    .catch(() => { /* no starter reachable - the palette claims nothing */ });
+  try {
+    const starterDoc = await readStarterDoc(host);
+    const pairs = starterDoc ? starterColorIds(starterDoc) : new Set<string>();
+    if (pairs.size) starterSwatches = pairs;
+  } catch { /* no starter reachable - the palette claims nothing */ }
+
+  repaintPalette();
 
   // ── Type (the Type room, plan 97 section 7.2) ───────────────────────────────────────
   // Three layers, top to bottom: the four ROLE CARDS (level 0 - what serves each
@@ -3752,14 +4733,36 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   let monoFamily = '';    // the font.mono role's family, '' when the platform default serves
   let displayFamily = ''; // the font.display (h1/h2 heading) role's family
   let italicFamily = '';  // the font.italic role's family
+  let brandFace = '';     // what the primary role RESOLVES to (a starter face counts)
+  /**
+   * Which faces are the person's own and which came with the app - one read of
+   * ownership.ts per paintFonts, and the cards, the rows, the specimen and the
+   * BEAT all print from it. Before it says otherwise every role reads `unset`,
+   * which is the honest resting state: nothing has been read yet.
+   */
+  let faces: Record<FontRole, FaceState> = blankFaces();
+  /** 0 = no face of its own (one card, one decision), 1 = the room. Named for
+   *  its room: the Colours room keeps its own beat in this same mount scope. */
+  let typeRoomBeat: TypeBeat = 0;
+  /** The role the open stage is choosing for, and whether one is open at all.
+   *  Held here rather than read off the stage block below, which is declared
+   *  after the paints that need it. */
+  let choosingRole: FontRole | null = null;
+  let stageOpen = false;
+  const typePanel = $('[data-be-tab-panel="type"]') as HTMLElement | null;
+  const typeCardsPanel = $('[data-be-typecards-panel]') as HTMLElement | null;
   // One optional face-role chip: an active badge, or a button to assign the role.
   const roleControl = (family: string, active: boolean, activeLabel: string, badgeMod: string, dataAttr: string, assignLabel: string, assignTitle: string): string =>
     active
       ? `<span class="be-font-badge be-font-badge--${badgeMod}">${activeLabel}</span>`
       : `<button type="button" class="be-btn be-font-role" ${dataAttr}="${escape(family)}" title="${escape(assignTitle)}">${assignLabel}</button>`;
+  /** A face of the design system's own. Every row in this list is one - the
+   *  starter's faces are never rows, they are the fold below - so `is-own` is
+   *  the tint every row wears and the green PRIMARY badge is earned by the one
+   *  that serves the primary role (plan 182 section 4.2). */
   const fontRow = (f: UserFontFamily): string => {
     return `
-    <li class="be-font-row${f.primary ? ' is-primary' : ''}" data-font-family="${escape(f.family)}">
+    <li class="be-font-row is-own" data-font-family="${escape(f.family)}">
       <span class="be-font-aa" style="font-family:'${escape(f.family)}'" aria-hidden="true">Aa</span>
       <span class="be-font-meta"><span class="be-font-name" style="font-family:'${escape(f.family)}'">${escape(f.family)}</span>
         <span class="be-font-sub">${escape(f.weights)} · ${fmtBytes(f.bytes)}</span></span>
@@ -3773,37 +4776,79 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       <button type="button" class="be-font-del" data-del="${escape(f.family)}" aria-label="${escape(tRaw('Remove {family}', { family: f.family }))}">&#x2715;</button>
     </li>`;
   };
+  // The list of everything the person themself installed, plus one folded row
+  // for what the app shipped. Two registers, one list (plan 182 section 6.5):
+  // an own face is a row with its roles and a delete; the starter's faces are a
+  // fold that says which roles they are serving until somebody chooses.
+  const joinWords = (items: readonly string[]): string =>
+    items.length <= 1
+      ? (items[0] ?? '')
+      : `${items.slice(0, -1).join(', ')} ${t('and')} ${items[items.length - 1]}`;
+  const starterFoldHtml = (): string => {
+    // family -> the roles it is serving, in the order the room shows them.
+    const served = new Map<string, string[]>();
+    for (const role of FONT_ROLES) {
+      const face = faces[role];
+      if (face.state !== 'inherited' || !face.family) continue;
+      const list = served.get(face.family) ?? [];
+      list.push(typeRoleLabel(role));
+      served.set(face.family, list);
+    }
+    if (!served.size) return '';
+    const summary = t('{families} · serving {roles} until you choose', {
+      families: [...served.keys()].join(', '),
+      roles: joinWords([...served.values()].flat()),
+    });
+    const rows = [...served.entries()].map(([family, roles]) => `
+      <div class="be-font-row be-font-row--starter">
+        <span class="be-font-aa" style="font-family:'${escape(family)}'" aria-hidden="true">Aa</span>
+        <span class="be-font-meta"><span class="be-font-name">${escape(family)}</span>
+          <span class="be-font-sub">${t('Serving {roles}', { roles: joinWords(roles) })}</span></span>
+      </div>`).join('');
+    return `
+    <li class="be-font-starter">
+      <details class="be-subst-details be-font-starterfold">
+        <summary><span class="be-pal-starter">${t('Starter')}</span><span class="be-font-startersum">${summary}</span></summary>
+        <div class="be-font-starterbody">${rows}</div>
+      </details>
+    </li>`;
+  };
   // The live specimen (Type roles panel): each role rendered in the face that
   // actually serves it - --font-brand / --font-mono, whatever set them.
-  const paintSpecimen = async (): Promise<void> => {
+  /** The face under a specimen block: the family plus the state it is in, so the
+   *  same face can appear three times without three of them looking chosen
+   *  (plan 182 T2). Text - it is escape()d into the sink below. */
+  const specimenWho = (role: FontRole): string => {
+    const face = faces[role];
+    const family = face.family;
+    if (face.state === 'own') return family;
+    if (face.state === 'inherited') return family ? `${family} · ${t('starter')}` : t('starter');
+    if (face.state === 'follows') return family ? `${family} · ${t('follows Primary')}` : t('follows Primary');
+    return collapsedFaceText(role, face, tRaw);
+  };
+  const paintSpecimen = (): void => {
     const mount = $('[data-be-specimen]') as HTMLElement | null; if (!mount) return;
-    const brandFace = await primaryFontFamily(fontsHost).catch(() => '') || t('Platform default');
-    const monoFace = monoFamily || t('Platform default');
-    // Display/italic fall back to the primary when the brand leaves them unset,
-    // so the face label reads "the primary" rather than an empty slot.
-    const displayFace = displayFamily || `${brandFace} (${t('primary')})`;
-    const italicFace = italicFamily || `${brandFace} (${t('primary')})`;
     if (!root.isConnected) return;
     mount.innerHTML = `
       <div class="be-typerole">
         <span class="be-typerole-role">${t('Heading (h1/h2)')}</span>
         <span class="be-typerole-sample be-typerole-sample--h" style="font-family:var(--font-display, var(--font-brand))">${t('Pack my box with five dozen liqueur jugs')}</span>
-        <span class="be-typerole-face">${escape(displayFace)}</span>
+        <span class="be-typerole-face">${escape(specimenWho('display'))}</span>
       </div>
       <div class="be-typerole">
         <span class="be-typerole-role">${t('Body')}</span>
         <span class="be-typerole-sample" style="font-family:var(--font-brand)">${t('Every tool, page and export follows the primary face - headings, body copy and UI alike. Sub-heading, call-to-action and italic roles arrive here as tokens tools can read.')}</span>
-        <span class="be-typerole-face">${escape(brandFace)}</span>
+        <span class="be-typerole-face">${escape(specimenWho('brand'))}</span>
       </div>
       <div class="be-typerole">
         <span class="be-typerole-role">${t('Italic')}</span>
         <span class="be-typerole-sample" style="font-family:var(--font-italic, var(--font-brand));font-style:italic">${t('Emphasis, quotations and asides wear the italic face.')}</span>
-        <span class="be-typerole-face">${escape(italicFace)}</span>
+        <span class="be-typerole-face">${escape(specimenWho('italic'))}</span>
       </div>
       <div class="be-typerole">
         <span class="be-typerole-role">${t('Code &amp; data')}</span>
         <span class="be-typerole-sample be-typerole-sample--mono" style="font-family:var(--font-mono)">lolly qr-code --url=https://example.com --export=svg</span>
-        <span class="be-typerole-face">${escape(monoFace)}</span>
+        <span class="be-typerole-face">${escape(specimenWho('mono'))}</span>
       </div>`;
   };
   /**
@@ -3813,36 +4858,46 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
    * off the button that caused it, and no family name would then be a step away
    * from a markup sink. The specimen itself needs no touching at all - it paints
    * through the role's CSS var, which applyChromeBrandVars has already moved.
+   *
+   * The card says which of four states its face is in (plan 182 section 4.2):
+   * `is-own` is the tint, and it is earned only by a face the person installed -
+   * an inherited one wears the Starter pill instead, a following one draws the
+   * arrow and the role it follows. The button reads "Change" only on an own
+   * face, because everything else is still a first choice.
    */
-  const paintRoleCards = async (): Promise<void> => {
+  const paintRoleCards = (): void => {
     const grid = $('[data-be-typecards]') as HTMLElement | null;
-    if (!grid) return;
-    const brandFace = await primaryFontFamily(fontsHost).catch(() => '');
-    if (!root.isConnected) return;
-    const held: Record<FontRole, string> = {
-      brand: brandFace, display: displayFamily, mono: monoFamily, italic: italicFamily,
-    };
+    if (!grid || !root.isConnected) return;
+    typeCardsPanel?.toggleAttribute('data-collapsed', stageOpen);
     for (const def of TYPE_ROLES) {
       const card = grid.querySelector<HTMLElement>(`[data-be-typecard="${def.id}"]`);
       if (!card) continue;
-      const face = held[def.id];
-      card.classList.toggle('is-set', !!face);
+      const face = faces[def.id];
+      const own = face.state === 'own';
+      card.classList.toggle('is-own', own);
+      card.classList.toggle('is-choosing', choosingRole === def.id);
+      // tRaw, not t: these are written with textContent, so a family with an
+      // ampersand in it must arrive as the ampersand (see type-compare.ts's
+      // note on the two translators).
+      const line = faceLine(def.id, face, tRaw);
       const faceEl = card.querySelector<HTMLElement>('[data-be-typecard-face]');
-      // What the role resolves to, said plainly. An unset optional role names
-      // the primary it falls through to rather than showing a blank, because
-      // "nothing here" is not what the role does.
-      if (faceEl) {
-        faceEl.textContent = face || (def.id === 'brand'
-          ? t('Platform default')
-          : brandFace
-            ? tRaw('{family}, the primary', { family: brandFace })
-            : t('Follows the primary'));
-      }
+      if (faceEl) faceEl.textContent = line.text;
+      const tagEl = card.querySelector<HTMLElement>('[data-be-typecard-tag]');
+      if (tagEl) { tagEl.textContent = line.tag; tagEl.hidden = !line.tag; }
+      const chipEl = card.querySelector<HTMLElement>('[data-be-typecard-chip]');
+      if (chipEl) chipEl.textContent = collapsedFaceText(def.id, face, tRaw, choosingRole === def.id);
       // The label and the accessible name move together - see typeRoleActStrings.
-      const act = typeRoleActStrings(typeRoleLabel(def.id), !!face);
+      const act = typeRoleActStrings(typeRoleLabel(def.id), own);
       const actEl = card.querySelector<HTMLElement>('[data-be-typecard-actlabel]');
       if (actEl) actEl.textContent = act.text;
-      card.querySelector<HTMLElement>('[data-be-typecard-choose]')?.setAttribute('aria-label', act.name);
+      const btn = card.querySelector<HTMLElement>('[data-be-typecard-choose]');
+      btn?.setAttribute('aria-label', act.name);
+      // Beat 0's one card carries the room's only decision, so its button is the
+      // filled primary rather than the outline every card wears at beat 1. A
+      // class swap, not a second fill recipe (buttons.css owns the fill).
+      const hero = typeRoomBeat === 0 && def.id === 'brand';
+      btn?.classList.toggle('be-cta', hero);
+      btn?.classList.toggle('be-btn', !hero);
     }
   };
   const paintFonts = async (): Promise<void> => {
@@ -3851,21 +4906,39 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     monoFamily = await monoFontFamily(fontsHost).catch(() => '');
     displayFamily = await displayFontFamily(fontsHost).catch(() => '');
     italicFamily = await italicFontFamily(fontsHost).catch(() => '');
+    brandFace = await primaryFontFamily(fontsHost).catch(() => '');
+    const liveDoc = await tokens?.raw().catch(() => null) ?? null;
+    if (!root.isConnected) return;
+    // FACES ONLY. Two empty palette halves are what stop the read walking both
+    // documents for an answer this room never asks for; face state does not
+    // consult the starter document at all, since a declared family is the
+    // person's own when it names a face installed HERE and inherited otherwise
+    // (ownership.ts, `faceState`).
+    const report = reportOwnership({
+      doc: liveDoc,
+      starterDoc: null,
+      palette: { colors: [], starter: [] },
+      userFontFamilies: fontFamilies.map(f => f.family),
+      resolvedFaces: { brand: brandFace, display: displayFamily, mono: monoFamily, italic: italicFamily },
+    });
+    faces = report.faces;
+    // An installed face with no role still needs its row, so the count of
+    // families is part of the question - see beats-type.ts.
+    typeRoomBeat = typeBeat(report, fontFamilies.length);
+    typePanel?.setAttribute('data-be-beat', String(typeRoomBeat));
     const rows: string[] = [];
-    if (!fontFamilies.some(f => f.primary)) {
-      const builtin = await primaryFontFamily(fontsHost).catch(() => '');
-      // 'SUSE' is the platform default face (tokens.css --font-brand) - the label
-      // must name whatever that default actually is, or the Fonts tab reports a
-      // face the app is not using. It was 'Outfit' until 2026-08-10.
-      rows.push(`<li class="be-font-row is-primary is-builtin"><span class="be-font-aa" style="font-family:'${escape(builtin || 'SUSE')}'" aria-hidden="true">Aa</span>
-        <span class="be-font-meta"><span class="be-font-name">${escape(builtin || 'SUSE')}</span><span class="be-font-sub">${builtin ? t('built-in brand font') : t('platform default')}</span></span>
-        <span class="be-font-badge">${t('Primary')}</span></li>`);
-    }
+    if (fontFamilies.length) rows.push(`<li class="be-font-glabel" role="presentation">${t('In the design system')}</li>`);
     rows.push(...fontFamilies.map(fontRow));
-    if (!fontFamilies.length) rows.push(`<li class="be-font-empty">${t('No fonts added yet. Choose a face on a card above.')}</li>`);
-    if (root.isConnected) list.innerHTML = rows.join('');
-    void paintSpecimen();
-    void paintRoleCards();
+    const fold = starterFoldHtml();
+    rows.push(fold);
+    if (!fontFamilies.length && !fold) rows.push(`<li class="be-font-empty">${t('No fonts added yet. Choose a face on a card above.')}</li>`);
+    list.innerHTML = rows.join('');
+    paintSpecimen();
+    paintRoleCards();
+    // A stage opened from a cold `?focus=stage` mount painted its pinned chips
+    // before these faces resolved, so the starter's own SUSE and SUSE Mono were
+    // offered as things to add. The faces are known now: repaint the row.
+    if (stageOpen) paintStagePins();
   };
   void paintFonts();
   // ── The compare stage (plan 97 section 7.2) ────────────────────────────────────────
@@ -3885,10 +4958,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   const stageQ = $('[data-be-typestage-q]') as HTMLInputElement | null;
   const stageErr = $('[data-be-typestage-err]') as HTMLElement | null;
   let stage: TypeCompare | null = null;
-  /** Which role the open stage is choosing for. Null = the management list's
-   *  "Add a face": the face installs and takes no role beyond the only-font
-   *  promotion every install has always done. */
-  let stageRole: FontRole | null = null;
+  // Which role the open stage is choosing for lives in `choosingRole`, declared
+  // up with the paints - they read it on every repaint to tint the card that is
+  // choosing and to write "choosing…" into its collapsed pill. Null = the Fonts
+  // panel's "Add a face": the face installs and takes no role beyond the
+  // only-font promotion every install has always done.
   /** The control the stage was opened from - where the keyboard goes when it
    *  closes, however it closes. */
   let stageReturn: HTMLElement | null = null;
@@ -3910,22 +4984,66 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     stageErr.hidden = !m;
   };
 
+  /** The stage's seat when nothing is open: the scaffold position, straight
+   *  after the cards panel. Both halves are remembered, because appending to the
+   *  parent would park it after the Fonts panel instead. */
+  const stageHome = stageEl?.parentElement ?? null;
+  const stageHomeNext = stageEl?.nextElementSibling ?? null;
+  /**
+   * Move the stage under the card that opened it (plan 182 section 6.6). It
+   * becomes a full-width item of the card grid, so at any column count it sits
+   * on the row below its own card rather than below all four - which on a phone
+   * was a stage a screen and a half down (T7).
+   *
+   * Two cases go back to the seat instead: the Fonts panel's "Add a face",
+   * which no card owns, and any width where the collapsed strip is a sideways
+   * scroller (≤640px) - a stage inside a scroller would be off to the right of
+   * the pills rather than under them.
+   */
+  const narrowStrip = (): boolean => {
+    try { return !!root.ownerDocument.defaultView?.matchMedia('(max-width: 640px)').matches; }
+    catch { return false; }
+  };
+  const placeStage = (): void => {
+    if (!stageEl) return;
+    const grid = $('[data-be-typecards]') as HTMLElement | null;
+    const after = choosingRole && grid && !narrowStrip()
+      ? grid.querySelector<HTMLElement>(`[data-be-typecard="${choosingRole}"]`)
+      : null;
+    if (after) after.insertAdjacentElement('afterend', stageEl);
+    else if (stageHome && stageEl.parentElement !== stageHome) stageHome.insertBefore(stageEl, stageHomeNext);
+  };
+
   /** Close the stage. Always a cancel: nothing is installed on the way out, and
    *  every preview registration goes with it (type-compare.ts's teardown). */
   const closeStage = (opts: { restoreFocus?: boolean } = {}): void => {
     const open = stage;
     stage = null;
-    stageRole = null;
+    choosingRole = null;
+    stageOpen = false;
     stageFromTray.clear();
     open?.teardown();
     if (stageEl) stageEl.hidden = true;
     setStageErr('');
+    // The cards come back BEFORE the keyboard does: the control we are handing
+    // focus to is a card button, and a display:none button cannot take it.
+    placeStage();
+    paintRoleCards();
     const back = stageReturn;
     stageReturn = null;
     // Never let a close drop the keyboard on <body>.
     if (open && opts.restoreFocus !== false && back?.isConnected) back.focus();
   };
   cleanups.push(() => closeStage({ restoreFocus: false }));
+  // A width change while the stage is open moves it: under its card on a wide
+  // screen, after the strip on a narrow one. Without this, rotating a phone
+  // leaves the stage inside a sideways scroller.
+  try {
+    const mq = root.ownerDocument.defaultView?.matchMedia('(max-width: 640px)');
+    const onWidth = (): void => { if (stageOpen) placeStage(); };
+    mq?.addEventListener('change', onWidth);
+    cleanups.push(() => mq?.removeEventListener('change', onWidth));
+  } catch { /* no matchMedia - the stage keeps its seat, which works at any width */ }
 
   /**
    * Persist one stage choice. The stage hands over a candidate and this decides
@@ -3938,7 +5056,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
    * failed, so it can be tried again. The reason lands under the stage.
    */
   const applyTypeChoice = async (choice: CompareChoice): Promise<void> => {
-    const role = stageRole;
+    const role = choosingRole;
     setStageErr('');
     let family = '';
     try {
@@ -4021,12 +5139,53 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     }
   };
 
+  /**
+   * The pinned families, as one-press previews (plan 182 section 6.4).
+   *
+   * Built with DOM calls rather than markup: the only value that varies is a
+   * family NAME, which never needs to be markup, and textContent keeps it out of
+   * a sink altogether. Families already serving a role are dropped by
+   * `pinnedFaces` - a chip offering the face you are already wearing previews
+   * nothing.
+   */
+  const paintStagePins = (): void => {
+    const wrap = $('[data-be-typestage-pins]') as HTMLElement | null;
+    const row = $('[data-be-typestage-pinrow]') as HTMLElement | null;
+    if (!wrap || !row) return;
+    // Every family a role RESOLVES to counts as taken, the starter's included:
+    // the ownership report is the settled answer, the four locals are the same
+    // reads one paint earlier, and both are listed so a stage opened before
+    // paintFonts resolved still skips whatever is already on a card.
+    const taken = [
+      ...fontFamilies.map(f => f.family),
+      ...Object.values(faces).map(f => f.family),
+      brandFace, displayFamily, monoFamily, italicFamily,
+    ];
+    const families = pinnedFaces(PINNED_FAMILIES, taken);
+    row.replaceChildren(...families.map((family) => {
+      const chip = row.ownerDocument.createElement('button');
+      chip.type = 'button';
+      chip.className = 'be-btn be-typestage-pin';
+      chip.dataset.bePin = family;
+      chip.textContent = family;
+      return chip;
+    }));
+    wrap.hidden = families.length === 0;
+  };
+
   const openStage = (role: FontRole | null, opener: HTMLElement | null): void => {
     if (!stageEl || !stageMount) return;
     closeStage({ restoreFocus: false }); // one stage, one decision
-    stageRole = role;
+    choosingRole = role;
+    stageOpen = true;
     stageReturn = opener;
     stageEl.hidden = false;
+    // The cards fold to a one-line strip and the stage takes their place under
+    // the one being chosen for, so the decision and its subject are on the same
+    // screen at every width (plan 182 section 6.6).
+    placeStage();
+    paintRoleCards();
+    paintStagePins();
     if (stageTitleEl) {
       stageTitleEl.textContent = role
         ? tRaw('Choose the {role} face', { role: typeRoleLabel(role) })
@@ -4052,6 +5211,22 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (!btn || !role) return;
     openStage(role, btn);
   });
+  // Beat 0's disclosure: the other three roles, revealed for good. No state is
+  // stored - a fresh mount is a fresh first decision - and once the room is at
+  // beat 1 the sentence and its button are gone anyway.
+  $('[data-be-typemore-toggle]')?.addEventListener('click', () => {
+    typePanel?.setAttribute('data-be-more', 'on');
+    announce(t('Headings, code and italic are now on the page.'));
+  });
+  $('[data-be-typestage-pinrow]')?.addEventListener('click', (e) => {
+    const chip = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-be-pin]');
+    const family = chip?.dataset.bePin;
+    if (!family || !stage) return;
+    // Exactly what the search field's Preview does, minus the typing: one press
+    // admits the card AND starts its load, and the consent dialog is what that
+    // press asks (plan 182 section 6.4).
+    stage.addCandidate({ kind: 'google', family });
+  });
   $('[data-be-font-compare]')?.addEventListener('click', (e) => {
     openStage(null, e.currentTarget as HTMLElement);
   });
@@ -4060,9 +5235,10 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     e.preventDefault();
     const family = stageQ?.value.trim();
     if (!family || !stage) return;
-    // A CANDIDATE, not an install. Nothing is fetched until the card's Preview
-    // is pressed (or consent is already in hand for this stage), and nothing is
-    // stored until "Use this face".
+    // A PREVIEW, not an install. The card appears already loading: the stage's
+    // own `add()` starts it, and the consent dialog fires from inside that load,
+    // so this one press is the press that asks (plan 182 section 6.1). Nothing
+    // is stored until "Use this face".
     stage.addCandidate({ kind: 'google', family });
     if (stageQ) { stageQ.value = ''; stageQ.focus(); }
   });
@@ -4118,15 +5294,19 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // only truly exists through its assets, so empty sections live here until the
   // first mark lands (and vanish on reload if none ever does; that's honest).
   const pendingIdentities: string[] = [];
-  const identityLabel = (id: string): string => (id === 'default' ? t('Your logo') : prettify(id));
+  const identityLabel = (id: string): string => (id === 'default' ? t('The logo') : prettify(id));
   const logoTile = (v: string, identity: string, slot: LogoSlot | undefined, label?: string): string => {
     const { treatment } = splitVariant(v);
     const tm = treatment ? TREATMENT_META[treatment] : null;
     const name = label ?? slot?.label ?? (tm ? tm.label : prettify(v));
-    const hint = slot ? t('Click to replace') : (tm ? tm.hint : t('Your own named mark.'));
+    const hint = slot ? t('Click to replace') : (tm ? tm.hint : t('A mark named its own way.'));
+    // An empty slot says what it IS - "Not set", in the muted register - rather
+    // than showing a bare "+" that reads as an instruction (plan 182 section
+    // 4.2). The whole tile is still the drop target and the file input's label,
+    // so nothing about adding a mark changed; only the words did.
     const body = slot
       ? `<span class="be-logo-art"><img src="${escape(slot.url)}" alt="${escape(tRaw('{name} logo', { name }))}" loading="lazy"></span>`
-      : `<span class="be-logo-empty" aria-hidden="true">+</span>`;
+      : `<span class="be-logo-empty">${t('Not set')}</span>`;
     // The slot's file input is `visually-hidden`, never `hidden`: a display:none
     // input is not focusable, which made every logo slot mouse-only. The label
     // draws the keyboard ring on its behalf via .be-logo-drop:focus-within
@@ -4184,7 +5364,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       const customTiles = customs.map(s => logoTile(s.variant, identity, s)).join('');
       const customGroup = logoGroupHtml({
         name: t('Custom marks'),
-        hint: t('Marks your brand names its own way - an icon, a crest, a favicon.'),
+        hint: t('Marks the design system names its own way - an icon, a crest, a favicon.'),
         cls: ' be-logo-group--custom',
         filled: customs.length > 0,
         body: `${customTiles}
@@ -5030,19 +6210,13 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     host,
     doc: () => doc as Record<string, unknown>,
     persist: (immediate?: boolean) => persist(immediate),
+    // The shipped starter's colour identities, so a panel can tell scaffolding
+    // from a decision without a second comparison of its own (the Tokens room's
+    // neutrals row is the one caller - plan 182 section 12).
+    starterIds: (): ReadonlySet<string> => starterSwatches,
   };
-  const fontFileMount = $('[data-be-font-file-mount]') as HTMLElement | null;
-  if (fontFileMount) {
-    void mountFontsManager(fontFileMount, {
-      host: host as unknown as HostV1,
-      onFontInstalled: () => {
-        // Refresh the font list and apply chrome brand vars
-        repaintPalette();
-        void applyChromeBrandVars(host);
-      },
-    });
-  }
-
+  // (The fonts-manager panel that used to mount here is gone - plan 182 section
+  // 6.4 leaves one file door, the compare stage's own drop zone.)
   const tokensMount = $('[data-be-tokens-mount]') as HTMLElement | null;
   const tokensPanel = tokensMount ? mountTokensPanel(tokensMount, { ...studioCtx, notify: () => notify('tokens') }) : null;
   const gradsMount = $('[data-be-grads-mount]') as HTMLElement | null;
@@ -5141,6 +6315,39 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
       return true;
     },
     openWing: (key) => openWing(key),
+    colourBeat: () => beat,
+    openStarterGroup: (group) => {
+      const name = String(group || '').trim();
+      if (!name) return false;
+      revealedStarterGroup = name;
+      repaintPalette();
+      const details = palMount?.querySelector<HTMLDetailsElement>('.be-pal-group--starter');
+      if (!details) { revealedStarterGroup = null; return false; }
+      // On a fresh design system this IS beat 0, where the pane is not on
+      // screen at all - so the pane comes back for the group that was asked for
+      // by name, holding nothing else (see the beat rules in brand-studio.css).
+      colorPanel?.classList.add('is-starter-shown');
+      details.open = true;
+      details.scrollIntoView({ block: 'nearest', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+      return true;
+    },
+    openPickCard: () => {
+      // Anchored on the add row's own chip, which is the control the card
+      // belongs to at every beat - on a phone the card ignores the anchor and
+      // docks to the bottom edge (see openPickCard).
+      const chip = $('[data-be-tab-panel="color"] [data-ds-addc-pick]') as HTMLElement | null;
+      if (!chip) return false;
+      openPickCard(chip, null);
+      return true;
+    },
+    openTypeStage: (role) => {
+      // The card for that role is the opener, so Escape returns focus where the
+      // person would have pressed. A room that did not render has no card.
+      const card = $(`[data-be-typecard-choose="${role}"]`) as HTMLButtonElement | null;
+      if (!card) return false;
+      openStage(role, card);
+      return true;
+    },
     setGeneratePrimary: (hex) => {
       setPrimaryTo(hex);
       // The deep-linked promise is "one colour in, palette offered" (audit 167

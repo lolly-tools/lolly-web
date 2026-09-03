@@ -19,7 +19,7 @@ import {
   generateAnalogous, hexToOklch, oklchToHex, inGamut, clipToGamut,
 } from '@lolly/engine';
 import {
-  walkSwatches, setSwatchValue, setSwatchName, deleteSwatch, addSwatch, leafAt,
+  walkSwatches, setSwatchValue, setSwatchName, deleteSwatch, addSwatch, setSwatchGroup, leafAt,
   setSwatchCmykLock, setSwatchSpotLock, getSwatchPrintOverride, primaryAnchorPath,
   getExcludedSwatches, setSwatchExcluded,
   getRampCurve, setRampCurve, seedRampCurve, reanchorCurve, overlayRampCurves,
@@ -46,13 +46,16 @@ test('walkSwatches finds the starter brand’s ramps and one theme’s roles', (
   const spectrum = s.filter(x => x.kind === 'spectrum');
   const roles = s.filter(x => x.kind === 'semantic');
 
-  // The minimal starter is two ramps (primary + neutral) × 9 steps and the 7 semantic
-  // slots (light only) - contract shape, so pinned. It deliberately ships NO chart
-  // spectrum and NO secondary ramp: a new brand grows by ADDING those, not by clearing
-  // a big preset (chart tools fall back to their own palette until a spectrum exists).
-  assert.equal(ramps.length, 18, 'primary + neutral, 9 steps each');
+  // The minimal starter is ONE ramp (neutral, 1 Ink … 9 Paper) and the 7 semantic
+  // slots (light only, every one of them an alias into that ramp) - contract shape,
+  // so pinned. It deliberately ships NO chart spectrum and NO primary or secondary
+  // ramp: a fresh install is ink and paper, and a new design system grows by ADDING
+  // colour, not by clearing a big preset (chart tools fall back to their own palette
+  // until a spectrum exists).
+  assert.equal(ramps.length, 9, 'neutral only, 9 steps');
   assert.equal(spectrum.length, 0, 'the starter ships no spectrum - the user adds one');
   assert.equal(roles.length, 7);
+  assert.equal(s.length, 16, '9 ramp steps + 7 roles is the whole starter palette');
   assert.equal(s.length, ramps.length + spectrum.length + roles.length, 'no swatch is walked twice or missed');
 
   // Dark roles are filtered out entirely (they'd duplicate primary/surface/…).
@@ -100,21 +103,21 @@ test('roles are structural (not deletable); ramps, spectrum + custom are the use
 test('token keys are the canonical dotted paths pickers resolve', () => {
   const doc = load();
   const s = walkSwatches(doc, 'light', resolverFor(doc, 'light'));
-  assert.ok(s.some(x => x.key === 'color.ramp.primary.5'));
+  assert.ok(s.some(x => x.key === 'color.ramp.neutral.5'));
   assert.ok(s.some(x => x.key === 'color.semantic.primary'));
   // Group labels drive the palette's sections.
-  assert.equal(s.find(x => x.key === 'color.ramp.primary.5')!.group, 'Primary');
+  assert.equal(s.find(x => x.key === 'color.ramp.neutral.5')!.group, 'Neutral');
   assert.equal(s.find(x => x.key === 'color.semantic.primary')!.group, 'Roles · Light');
 });
 
 test('setSwatchValue recolours a ramp step in place', () => {
   const doc = load();
-  const path = ['base', 'color', 'ramp', 'primary', '5'];
+  const path = ['base', 'color', 'ramp', 'neutral', '5'];
   assert.equal(setSwatchValue(doc, path, '#ff0000'), true);
   assert.equal(leafAt(doc, path)!.$value, '#ff0000');
 
   const s = walkSwatches(doc, 'light', resolverFor(doc, 'light'));
-  assert.equal(s.find(x => x.key === 'color.ramp.primary.5')!.hex.toLowerCase(), '#ff0000');
+  assert.equal(s.find(x => x.key === 'color.ramp.neutral.5')!.hex.toLowerCase(), '#ff0000');
   assert.equal(setSwatchValue(doc, ['base', 'color', 'ramp', 'nope', '1'], '#fff'), false);
 });
 
@@ -231,10 +234,34 @@ test('walkSwatches ignores $-metadata and non-colour leaves', () => {
   assert.equal(s[0]!.kind, 'ramp');
 });
 
-test('primary CMYK lock: pin, read back, and clear (round-trip)', () => {
+// ── Print locks (CMYK / spot) ────────────────────────────────────────────────
+// The print anchor is the PRIMARY ramp's middle step, and the shipped starter has
+// no primary ramp at all - it is ink and paper until somebody picks a colour - so
+// the anchor tests build one: the starter plus a minimal 9-step primary, the shape
+// a derived design system carries.
+const withPrimaryRamp = (): Record<string, unknown> => {
   const doc = load();
+  const ramp = leafAt(doc, ['base', 'color', 'ramp'])!;
+  const steps = ['#04150e', '#0a2b1d', '#0f412b', '#14573a', '#30ba78', '#6fd0a0', '#a3e2c4', '#d0f0e2', '#f2fbf7'];
+  ramp.primary = Object.fromEntries(steps.map((hex, i) => [String(i + 1), { $value: hex }]));
+  return doc;
+};
+/** An ordinary swatch for the lock behaviours that are NOT about the anchor: the
+ *  starter's middle neutral step (5 Ash). */
+const NEUTRAL_STEP = ['base', 'color', 'ramp', 'neutral', '5'];
+
+test('the shipped starter has no print anchor: no primary ramp, nothing to pin', () => {
+  // A greyscale fresh install: every print-lock caller has to branch on this null
+  // rather than assume a brand colour exists to anchor CMYK/spot to.
+  assert.equal(primaryAnchorPath(load()), null);
+  // …and the moment a primary ramp exists, the anchor is its middle step again.
+  assert.deepEqual(primaryAnchorPath(withPrimaryRamp()), ['base', 'color', 'ramp', 'primary', '5']);
+});
+
+test('primary CMYK lock: pin, read back, and clear (round-trip)', () => {
+  const doc = withPrimaryRamp();
   const path = primaryAnchorPath(doc)!;
-  assert.equal(getSwatchPrintOverride(doc, path), null, 'starter brand has no pinned override');
+  assert.equal(getSwatchPrintOverride(doc, path), null, 'a freshly derived ramp has no pinned override');
 
   assert.equal(setSwatchCmykLock(doc, path, [80, 20, 0, 5]), true);
   assert.deepEqual(getSwatchPrintOverride(doc, path), { cmyk: [80, 20, 0, 5] });
@@ -251,14 +278,14 @@ test('primary CMYK lock: pin, read back, and clear (round-trip)', () => {
 });
 
 test('primary CMYK lock clamps to 0–100 and rounds', () => {
-  const doc = load();
+  const doc = withPrimaryRamp();
   const path = primaryAnchorPath(doc)!;
   setSwatchCmykLock(doc, path, [120, -5, 33.7, 50]);
   assert.deepEqual(getSwatchPrintOverride(doc, path), { cmyk: [100, 0, 34, 50] });
 });
 
 test('cmyk and spot locks are independent: setting/clearing one never touches the other', () => {
-  const doc = load();
+  const doc = withPrimaryRamp();
   const path = primaryAnchorPath(doc)!;
 
   assert.equal(setSwatchCmykLock(doc, path, [80, 20, 0, 5]), true);
@@ -283,8 +310,9 @@ test('cmyk and spot locks are independent: setting/clearing one never touches th
 });
 
 test('a spot lock carries its tactile finish through write → read → walk', () => {
+  // Any swatch, not the anchor: a spot ink is pinnable on every colour in the doc.
   const doc = load();
-  const path = primaryAnchorPath(doc)!;
+  const path = NEUTRAL_STEP;
 
   // setSwatchSpotLock rebuilds the extension object field-by-field, so a new
   // SpotColor field is silently DROPPED unless it's listed there. This is the
@@ -320,8 +348,8 @@ test('a malformed finish in a stored doc degrades to no finish, keeping the ink'
   // readSpotColor: `name` is what a /Separation plate is named for, so a
   // nonsense finish must cost us the field and nothing more.
   const doc = load();
-  const path = primaryAnchorPath(doc)!;
-  const leaf = leafAt(doc, ['base', 'color', 'ramp', 'primary', '5'])!;
+  const path = NEUTRAL_STEP;
+  const leaf = leafAt(doc, path)!;
   for (const bad of [42, null, { kind: 'foil' }, ['foil'], true]) {
     leaf.$extensions = { 'com.suse.lolly': { spot: { name: 'Gold foil', book: 'Luxor', finish: bad } } };
     assert.deepEqual(
@@ -334,7 +362,7 @@ test('a malformed finish in a stored doc degrades to no finish, keeping the ink'
 
 test('walkSwatches surfaces a swatch\'s print lock (cmyk and/or spot, or none)', () => {
   const doc = load();
-  const path = primaryAnchorPath(doc)!;
+  const path = NEUTRAL_STEP;
   setSwatchCmykLock(doc, path, [0, 100, 79, 4]);
   setSwatchSpotLock(doc, path, { name: 'PANTONE 186 C' });
   const s = walkSwatches(doc, 'light').find(sw => sw.path.length === path.length && sw.path.every((seg, i) => seg === path[i]));
@@ -347,19 +375,19 @@ test('swatch exclusions: hide (not remove) derived leaves; empty list cleans up'
 
   // Excluding a ramp step lists its key; the token itself stays in the doc, so
   // roles + gradient aliases pointing at it keep resolving.
-  assert.equal(setSwatchExcluded(doc, 'color.ramp.primary.2', true), true);
+  assert.equal(setSwatchExcluded(doc, 'color.ramp.neutral.2', true), true);
   assert.equal(setSwatchExcluded(doc, 'color.semantic.muted', true), true);
-  assert.deepEqual(getExcludedSwatches(doc), ['color.ramp.primary.2', 'color.semantic.muted']);
-  assert.ok(leafAt(doc, ['base', 'color', 'ramp', 'primary', '2']), 'the token survives its exclusion');
+  assert.deepEqual(getExcludedSwatches(doc), ['color.ramp.neutral.2', 'color.semantic.muted']);
+  assert.ok(leafAt(doc, ['base', 'color', 'ramp', 'neutral', '2']), 'the token survives its exclusion');
   // Re-excluding is idempotent.
-  assert.equal(setSwatchExcluded(doc, 'color.ramp.primary.2', true), true);
-  assert.deepEqual(getExcludedSwatches(doc), ['color.ramp.primary.2', 'color.semantic.muted']);
+  assert.equal(setSwatchExcluded(doc, 'color.ramp.neutral.2', true), true);
+  assert.deepEqual(getExcludedSwatches(doc), ['color.ramp.neutral.2', 'color.semantic.muted']);
   // walkSwatches still lists it - filtering is the CALLER's seam (the editor's
   // repaintPalette / the bridge's colors()), so other consumers stay whole.
-  assert.ok(walkSwatches(doc, 'light').some(s => s.key === 'color.ramp.primary.2'));
+  assert.ok(walkSwatches(doc, 'light').some(s => s.key === 'color.ramp.neutral.2'));
 
   // Un-excluding both empties the list and cleans the vendor entry away.
-  assert.equal(setSwatchExcluded(doc, 'color.ramp.primary.2', false), true);
+  assert.equal(setSwatchExcluded(doc, 'color.ramp.neutral.2', false), true);
   assert.equal(setSwatchExcluded(doc, 'color.semantic.muted', false), true);
   assert.deepEqual(getExcludedSwatches(doc), []);
   assert.equal((doc as Record<string, unknown>).$extensions, undefined, 'empty $extensions cleaned up');
@@ -396,6 +424,28 @@ test('a "Roles" displayGroup tag follows the CURRENT theme’s Roles section', (
   assert.equal(l.group, 'Roles · Dark');
 });
 
+test('setSwatchGroup re-files a tile under a heading, and null sends it home', () => {
+  const doc = load();
+  // The bulk bar's "Move to" - the same vendor tag addSwatch writes, so a ramp
+  // step keeps deriving and a custom swatch keeps its key.
+  const step = walkSwatches(doc, 'light', resolverFor(doc, 'light')).find(s => s.kind === 'ramp')!;
+  assert.equal(setSwatchGroup(doc, step.path, 'Brights'), true);
+  const moved = walkSwatches(doc, 'light', resolverFor(doc, 'light'))
+    .find(s => s.path.join('.') === step.path.join('.'))!;
+  assert.equal(moved.group, 'Brights');
+  assert.equal(moved.kind, 'ramp', 'a move relabels the section, never the token');
+  assert.equal(moved.key, step.key);
+
+  assert.equal(setSwatchGroup(doc, step.path, null), true);
+  const home = walkSwatches(doc, 'light', resolverFor(doc, 'light'))
+    .find(s => s.path.join('.') === step.path.join('.'))!;
+  assert.equal(home.group, step.group);
+  const leaf = leafAt(doc, step.path)!;
+  assert.equal(leaf.$extensions, undefined, 'the emptied vendor entry is cleaned away');
+
+  assert.equal(setSwatchGroup(doc, ['color', 'nope', 'nope'], 'Brights'), false);
+});
+
 // ── Per-ramp tonal curves ─────────────────────────────────────────────────────
 
 /** The primary ramp's step $values (`base.color.ramp.<ramp>.<i>`), in step order. */
@@ -408,25 +458,27 @@ const rampStepValues = (doc: unknown, ramp: string): string[] => {
 test('setRampCurve ⇄ getRampCurve round-trips the stored ColorCurveJSON, and null clears it', () => {
   const doc = load();
   const curve = defaultColorCurve({ l: 0.6, c: 0.12, h: 250 }, 9);
-  assert.equal(getRampCurve(doc, 'primary'), null, 'starter brand carries no ramp curve');
+  // Neutral is the starter's only ramp (no primary until the user picks a colour),
+  // so it is the one a fresh install can carry a tuned curve on.
+  assert.equal(getRampCurve(doc, 'neutral'), null, 'starter brand carries no ramp curve');
 
-  assert.equal(setRampCurve(doc, 'primary', curve), true);
-  const json = getRampCurve(doc, 'primary');
+  assert.equal(setRampCurve(doc, 'neutral', curve), true);
+  const json = getRampCurve(doc, 'neutral');
   assert.ok(json, 'the curve reads back');
   // Stored as the canonical serialized OBJECT, so it round-trips exactly.
   assert.equal(JSON.stringify(json), serializeCurve(curve));
   assert.deepEqual(deserializeCurve(json!), curve);
 
   // The curve rides in the ramp GROUP node's vendor $extensions (not a step).
-  const group = leafAt(doc, ['base', 'color', 'ramp', 'primary'])!;
+  const group = leafAt(doc, ['base', 'color', 'ramp', 'neutral'])!;
   const ext = group.$extensions as Record<string, { curve?: unknown }>;
   assert.ok(ext['com.suse.lolly']!.curve, 'stored under the vendor namespace on the group');
 
   // Clearing removes the curve and the now-empty extension scaffolding, but the
   // group's own $description survives (cleanupExt only touches $extensions).
   assert.equal('$description' in group, true);
-  assert.equal(setRampCurve(doc, 'primary', null), true);
-  assert.equal(getRampCurve(doc, 'primary'), null);
+  assert.equal(setRampCurve(doc, 'neutral', null), true);
+  assert.equal(getRampCurve(doc, 'neutral'), null);
   assert.equal(group.$extensions, undefined, 'empty $extensions cleaned up');
   assert.equal('$description' in group, true, 'the group description is untouched');
 });
@@ -434,13 +486,13 @@ test('setRampCurve ⇄ getRampCurve round-trips the stored ColorCurveJSON, and n
 test('a group-level $extensions.curve is NEVER surfaced as a swatch', () => {
   const doc = load();
   const before = walkSwatches(doc, 'light', resolverFor(doc, 'light'));
-  setRampCurve(doc, 'primary', defaultColorCurve({ l: 0.6, c: 0.12, h: 250 }, 9));
+  setRampCurve(doc, 'neutral', defaultColorCurve({ l: 0.6, c: 0.12, h: 250 }, 9));
   const after = walkSwatches(doc, 'light', resolverFor(doc, 'light'));
   // The walker skips every $-prefixed key, so the curve adds no phantom swatch.
   assert.equal(after.length, before.length);
   assert.ok(!after.some(s => s.path.includes('$extensions') || s.path.includes('curve')));
-  // The primary ramp still shows exactly its 9 steps.
-  assert.equal(after.filter(s => s.kind === 'ramp' && s.group === 'Primary').length, 9);
+  // The neutral ramp still shows exactly its 9 steps.
+  assert.equal(after.filter(s => s.kind === 'ramp' && s.group === 'Neutral').length, 9);
 });
 
 test('seedRampCurve of an untouched derived ramp re-bakes byte-identical to its step $values', () => {
@@ -553,20 +605,20 @@ test('rotateCurveHue: a full ±360° turn is an identity on the control points',
 test('a rotated curve is an ordinary ColorCurve - round-trips through set/getRampCurve', () => {
   const doc = load();
   const steps = 9;
-  const base = seedRampCurve(doc, 'primary', steps);
+  const base = seedRampCurve(doc, 'neutral', steps);
   const curve = rotateCurveHue(base, 120);
   // Its shape (L/C) matches the seed; only the hues moved.
   assert.deepEqual(curve.L.points, base.L.points);
   assert.deepEqual(curve.C.points, base.C.points);
 
-  assert.equal(setRampCurve(doc, 'primary', curve), true);
-  const json = getRampCurve(doc, 'primary');
+  assert.equal(setRampCurve(doc, 'neutral', curve), true);
+  const json = getRampCurve(doc, 'neutral');
   assert.ok(json, 'the rotated curve reads back');
   assert.deepEqual(deserializeCurve(json!), curve, 'exact round-trip - it is just a curve');
   // And overlaying it bakes the ramp steps + re-stamps the curve (same machinery
   // every other curve rides), so the rotation persists like any hand edit.
-  overlayRampCurves(doc, { primary: curve }, steps);
-  assert.ok(getRampCurve(doc, 'primary'), 'the curve survives overlay + re-stamp');
+  overlayRampCurves(doc, { neutral: curve }, steps);
+  assert.ok(getRampCurve(doc, 'neutral'), 'the curve survives overlay + re-stamp');
 });
 
 // ── Parametric analogous (the harmony picker's Analogous mode generator) ───────

@@ -45,6 +45,54 @@
   text-transform: uppercase;
   color: hsl(var(--muted-foreground));
 }
+/* ─── the chip bar and its Tips (plans/181 section 4) ───────────────────────────
+   Marks are ordinary text, so a chip is a shortcut for typing rather than a
+   widget: the bar sits between the sheet label and the page, quiet enough to
+   ignore and close enough to reach. */
+.scriptst-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.scriptst-chip {
+  min-width: calc(28px * var(--a11y-fs));
+  padding: 3px 8px;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius-sm);
+  background: hsl(var(--background));
+  color: hsl(var(--muted-foreground));
+  font: inherit;
+  font-size: var(--fs-md);
+  line-height: 1.4;
+  cursor: pointer;
+}
+.scriptst-chip:hover { background: hsl(var(--accent) / 0.5); color: hsl(var(--foreground)); }
+.scriptst-tips-toggle { margin-inline-start: auto; }
+.scriptst-tips {
+  padding: 10px 12px;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: hsl(var(--accent) / 0.35);
+}
+.scriptst-tips-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: var(--fs-sm);
+  color: hsl(var(--muted-foreground));
+}
+.scriptst-tips-list li { display: flex; flex-direction: column; gap: 2px; }
+.scriptst-tip-eg {
+  white-space: pre-line;   /* an example may be two lines - the split-here tip */
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: hsl(var(--foreground));
+}
+
 /* The hero: reading-sized type on a borderless page. The sheet card carries the
    visual edge, so the field's own box dissolves into the page - the focus ring
    (a11y layer, :focus-visible) still draws on the textarea itself. */
@@ -86,6 +134,27 @@
   gap: 4px;
   font-size: var(--fs-sm);
   font-weight: 600;
+  color: hsl(var(--muted-foreground));
+}
+/* ─── voice blending: the second voice and its one weight ─────────────────────
+   One slider for two voices - the label carries both shares, so the control
+   reads as a mix rather than as "how much of the other one". */
+.scriptst-mix {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.scriptst-slider { width: 100%; accent-color: hsl(var(--primary)); }
+.scriptst-accent {
+  margin: 0;
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: hsl(var(--muted-foreground));
+}
+/* Which saved clip this sheet was opened on, and what Save will do to it. */
+.scriptst-source {
+  margin: 0.35rem 0 0;
+  font-size: var(--fs-sm);
   color: hsl(var(--muted-foreground));
 }
 .scriptst-audition {

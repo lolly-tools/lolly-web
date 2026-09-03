@@ -559,11 +559,14 @@ window.__lollyChipField=function(canvas,opt){
     // Clear any filters from a previous pass so a re-run (e.g. after webfonts change
     // the button size) rebuilds cleanly instead of stacking duplicate-id filters.
     document.querySelectorAll('svg.lg-svg').forEach(function(s){ s.remove(); });
-    // .btn-compact (the persona lanes, plans/177) opts OUT: over the pane's flat
-    // ground the displacement backdrop paints the button blank in some renderers,
-    // and the glass reads as hero jewellery anyway - small utility buttons keep
-    // their plain fill.
-    document.querySelectorAll('.btn-primary:not(.btn-compact),.btn-secondary:not(.btn-compact)').forEach(function(btn,i){
+    // PRIMARY only. The displacement backdrop paints the button blank in some
+    // renderers (Chromium at rest, recovering only on the hover transform), which
+    // is a nuisance under the primary's black-on-white label and a blank white
+    // box under the secondary's white-on-glass one - so the secondary keeps the
+    // stylesheet's plain blur and never takes the SVG filter. .btn-compact (the
+    // persona lanes, plans/177) opts out for the same reason over the pane's flat
+    // ground; small utility buttons keep their plain fill.
+    document.querySelectorAll('.btn-primary:not(.btn-compact)').forEach(function(btn,i){
       try{ buildGlass(btn,i); }catch(e){ if(window.console)console.warn('liquid-glass failed',e); }
     });
   }

@@ -13,8 +13,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  CAPTION_GROUP_PREFIX, MIN_CUE_KEEP_S, TRANSCRIPT_META_KEY, captionGroup, cueSpansOnTimeline,
-  isCaptionGroup, transcriptWordsOf, ttsWordsOf, wordTimingsOf,
+  CAPTION_BOX_CLASS, CAPTION_GROUP_PREFIX, MIN_CUE_KEEP_S, TRANSCRIPT_META_KEY, captionGroup, captionPreset,
+  cueSpansOnTimeline, isCaptionGroup, transcriptWordsOf, ttsWordsOf, withCaptionPreset, wordTimingsOf,
 } from './timeline-captions.ts';
 import { MIN_DUR } from './timeline-math.ts';
 
@@ -129,4 +129,69 @@ test('wordTimingsOf is the one validator both rungs read through', () => {
   assert.equal(wordTimingsOf([]), null);
   assert.equal(wordTimingsOf('words'), null);
   assert.equal(wordTimingsOf([{ text: 'a', start: 'x', end: 1 }]), null);
+});
+
+// ── the lower-third preset (plans/180 section 4, layer 1) ────────────────────
+
+test('the preset is a bottom-anchored lower third of the artboard it is given', () => {
+  const p = captionPreset({ stageW: 1920, stageH: 1080 });
+  assert.equal(p.fontSize, 49, '4.5% of 1080 - the broadcast band');
+  assert.equal(p.w, 1536, '80% of the artboard width');
+  assert.equal(p.x, (1920 - 1536) / 2, 'centred horizontally');
+  assert.ok(p.y + p.h <= 1080 - 1080 * 0.08 + 1, 'the band clears the bottom edge');
+  assert.ok(p.y > 1080 / 2, 'and it sits in the lower half - a lower third, not a title');
+  assert.equal(p.align, 'center');
+  assert.equal(p.valign, 'middle');
+});
+
+test('the preset is legible by construction: dark panel, light type, padding, soft corners', () => {
+  const p = captionPreset({ stageW: 1920, stageH: 1080 });
+  assert.equal(p.bg, '#000000cc', 'a translucent black panel, not bare text over a photograph');
+  assert.equal(p.fg, '#ffffff');
+  assert.equal(p.shape, 'rounded');
+  assert.ok(p.radius > 0, 'rounded needs a radius to mean anything');
+  assert.ok(p.pad > 0, 'type never touches the panel edge');
+  assert.equal(p.cls, CAPTION_BOX_CLASS, 'and it carries the marker the export reads');
+});
+
+test('the preset scales with the artboard, and stays readable at both extremes', () => {
+  const small = captionPreset({ stageW: 200, stageH: 120 });
+  const huge = captionPreset({ stageW: 8000, stageH: 6000 });
+  assert.equal(small.fontSize, 14, 'clamped up: 4.5% of 120px would be unreadable');
+  assert.equal(huge.fontSize, 72, 'clamped down: a billboard does not get 270px captions');
+  assert.ok(small.x >= 0 && small.x + small.w <= 200, 'a small artboard still lays the band out inside itself');
+  assert.ok(huge.x + huge.w <= 8000 && huge.y + huge.h <= 6000, 'and so does a huge one');
+  // No sizes at all is the 1920x1080 frame, so a caller with no artboard to hand
+  // still gets a usable caption rather than a zero-sized box.
+  assert.deepEqual(captionPreset(), captionPreset({ stageW: 1920, stageH: 1080 }));
+  assert.deepEqual(captionPreset({ stageW: 0, stageH: -5 }), captionPreset());
+});
+
+test('withCaptionPreset fills the created boxes and never touches what the caller set', () => {
+  const made = withCaptionPreset<Record<string, unknown>>(
+    { id: 'b3', text: 'Slide one, spoken.', start: 2, dur: 1.4, group: captionGroup('b1') },
+    { stageW: 1920, stageH: 1080 });
+  // What the caller minted survives untouched...
+  assert.equal(made.id, 'b3');
+  assert.equal(made.text, 'Slide one, spoken.');
+  assert.equal(made.start, 2);
+  assert.equal(made.dur, 1.4);
+  assert.equal(made.group, 'captions:b1');
+  // ...and the look is filled in around it.
+  const p = captionPreset({ stageW: 1920, stageH: 1080 });
+  for (const k of ['bg', 'fg', 'pad', 'radius', 'shape', 'align', 'valign', 'fontSize', 'x', 'y', 'w', 'h'] as const) {
+    assert.equal(made[k], p[k], `preset field ${k}`);
+  }
+  assert.equal(made.cls, CAPTION_BOX_CLASS);
+});
+
+test('withCaptionPreset FILLS, so a restyled caption keeps its own look - but never loses the marker', () => {
+  const styled = withCaptionPreset<Record<string, unknown>>({ id: 'b4', text: 'x', bg: '#123456', fontSize: 30, cls: 'callout' });
+  assert.equal(styled.bg, '#123456', 'an authored fill is not overwritten');
+  assert.equal(styled.fontSize, 30);
+  assert.equal(styled.cls, `callout ${CAPTION_BOX_CLASS}`, 'the caption class joins the authored classes');
+  // Empty strings are unset, which is what a blank colour field holds.
+  assert.equal(withCaptionPreset<Record<string, unknown>>({ bg: '' }).bg, '#000000cc');
+  // Running it twice is the same box - re-generating a caption set is idempotent.
+  assert.deepEqual(withCaptionPreset(styled), styled);
 });

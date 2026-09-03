@@ -164,6 +164,14 @@ const PRIMARY_FILL_ALLOWED: Record<string, number> = {
   'pro/pro.css → .pro-fill-btn:hover': 1,                              // pro fill-tool hover state
   'styles/parts/editor.css → .fc-btn.is-armed': 1,                     // flow-chart editor armed state
   'styles/parts/editor.css → .fc-btn.fc-action-primary': 1,            // flow-chart editor primary action
+  // The Design top bar's Export CTA (plan 179 M1). It cannot join the alias list:
+  // design-topbar.css is UNLAYERED on purpose (its `.chrome-topleft` reset has to
+  // out-rank parts/overrides.css, which sits in the `overrides` layer), and an
+  // unlayered `.dtb-btn { background: transparent }` beats ANY layered rule
+  // regardless of specificity - so `.btn--primary` in the `primitives` layer can
+  // never reach this button. Same structural reason as .fc-action-primary above,
+  // one layer further out. 2026-09-02.
+  'styles/parts/design-topbar.css → .dtb-primary': 1,
   'styles/parts/gallery.css → .personalize-nudge-cta': 1,              // personalize nudge CTA
   'styles/parts/gallery.css → .gtile-continue': 1,                     // gallery tile continue pill
   'styles/parts/profile.css → .profile-view .profile-theme-pill': 1,   // Appearance theme pill active
@@ -243,6 +251,12 @@ const INLINE_GLYPH_ALLOWED: Record<string, number> = {
   'views/dashboard.ts': 5,
   'views/doc-editor.ts': 23,
   'views/free-canvas.ts': 1,
+  // The `svgIcon()` wrapper lifted out of free-canvas.ts with the shape/fit/align
+  // field rows (plan 179 M1). It is that file's glyph wrapper copied VERBATIM - the
+  // lifted builders emit markup free-canvas.ts's own tests compare byte-for-byte, and
+  // icon() is not interchangeable: it looks a NAME up in PATHS and emits a different
+  // attribute order (it adds xmlns). One template, no new pictures. 2026-09-02.
+  'views/free-canvas-fields.ts': 1,
   'views/multi-edit.ts': 1,
   'views/personalize-nudge.ts': 1,
   'views/picker.ts': 3,
@@ -1020,6 +1034,28 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   'views/cost-panel.ts': 1,
   'views/dashboard.ts': 11,
   'views/deck-editor.ts': 9,
+  // 2 as of 2026-09-02 (new file: the Design editor's top bar, plan 179 M1). One is
+  // the VERBATIM re-insert of the shell's own `backHomeHtml()` island, which the bar
+  // is handed as a string and must not re-author (mountBackPill finds
+  // `[data-back-pill]` wherever it sits). The other is the file's single `icBox()`
+  // glyph wrapper, shared by every button and menu row: its input is always
+  // `icon()` output from lib/icons.ts or the static LOLLY_MARK_SVG. The document
+  // name, the zoom readout and every menu label are `textContent`, never a sink.
+  'views/design-topbar.ts': 2,
+  // 2 as of 2026-09-02 (new file: the Design editor's right-hand inspector, plan 179
+  // M2). The second is the column head's close button, whose input is the STATIC
+  // `icon('close')` registry string with nothing interpolated into it at all.
+  // The first is `render()`, which rebuilds the section list; the rest of the column
+  // scaffold is built with createElement precisely so this stays a short list.
+  // Reviewed against the rule above: the section heading is `escape(sectionTitle(…))`,
+  // `sec` is a fixed InspectorSection union, the glyph is `icon()` registry markup,
+  // and the body comes from the shared row builders (views/free-canvas-fields.ts),
+  // whose interpolations are t() copy, manifest-declared field ids and select values,
+  // numbers, or `escape()`d - the same composed-markup helper category the note at
+  // the top of this rule measured. The one place DOCUMENT text reaches the column -
+  // the text/notes rows - is `escape(String(value ?? ''))` at both the attribute and
+  // the textarea child, so the attacker-shaped half of the input is covered.
+  'views/design-inspector.ts': 2,
   'views/doc-editor.ts': 1,
   // 1 as of 2026-07-31: applyPreflight writes the "Before you export" card body.
   // Reviewed - every value at that sink comes from preflightBodyHtml, which
@@ -1087,11 +1123,14 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   //   page-mode question. One `p.innerHTML` of escape()d t() strings; the only dynamic
   //   value is the page COUNT, an integer formatted by t(); class strings are constants.
   'views/free-canvas.ts': 54,   // +1 2026-09-02: openMorphMatchPanel (escapeHtml'd value + t() strings, the fstate/notes panel pattern)
-  // present-mode.ts (plan 112): the presenter's three chrome sinks - the pause button and
-  //   the two nav-button builders - are each `el.innerHTML = icon(name, opts)`, a static
-  //   glyph string from lib/icons' PATHS registry with NO interpolated value. Nothing from a
-  //   document or user reaches them.
-  'views/present-mode.ts': 3,
+  // present-mode.ts (plan 112): the presenter's chrome sinks - the pause button, the mute
+  //   button and the two nav-button builders - are each `el.innerHTML = icon(name, opts)`, a
+  //   static glyph string from lib/icons' PATHS registry with NO interpolated value. Nothing
+  //   from a document or user reaches them.
+  // 3 → 4, 2026-09-03 (plans/180): syncMuteBtn, the volumeOn/volumeOff swap on the mute
+  //   control a self-playing narrated deck owes its audience (WCAG 1.4.2). Same shape as
+  //   syncPauseBtn beside it - one registry glyph, no value.
+  'views/present-mode.ts': 4,
   // 6 → 8, 2026-08-09 (the lazy-chunk pass): two lazy-mount injections joined the
   // six standing sinks - the bulk bar now lands via insertAdjacentHTML of
   // lib/bulk-bar.ts's bulkBarHtml() (labels/titles/ids all escape()d inside the
@@ -1137,7 +1176,7 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // passphrase) or t() output; the rest is static markup. The section is a sub-block
   // of Connected services since 2026-08-23, but it kept its own module and sinks.
   'views/profile-sync.ts': 2,
-  'views/profile.ts': 18,  // +1 2026-07-31: the Offline-tools download manager list (loadOffline) - ids/names escape()d, sizes via fmtBytes, glyphs via icon(); +1 2026-08-17: the "Save my renders" auto-save toggle (jelly-switch) - label + id escape()d; 23 → 18 2026-08-19: "Export everything" became a background job (lib/batch-job.ts), so its five progress-toast writes are gone - the global job toast reports it now
+  'views/profile.ts': 19,  // +1 2026-07-31: the Offline-tools download manager list (loadOffline) - ids/names escape()d, sizes via fmtBytes, glyphs via icon(); +1 2026-08-17: the "Save my renders" auto-save toggle (jelly-switch) - label + id escape()d; 23 → 18 2026-08-19: "Export everything" became a background job (lib/batch-job.ts), so its five progress-toast writes are gone - the global job toast reports it now; +1 2026-09-03: the Appearance card's "Interface follows the design system" row (plans/182 SS5.6) re-rendered when the Jelly flag flips, exactly as the a11y and render-save lists beside it are - the row is a t() label and an escape()d id, no user data
                            // +1 2026-08-01: the offline persistence line (syncPersistLine) - both t() strings escape()d, the button markup is static
   'views/projects.ts': 9,   // 10 → 9: the context-menu popover sink moved to lib/context-menu.ts (2026-08-09)
   // 6 → 7, 2026-08-27: the choose-microphone stage button's glyph injection,
@@ -1218,7 +1257,11 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // label, the summary chips) goes through textContent, deliberately: the chips
   // carry model-derived strings, and an authored `cubic-bezier(…)` curve is user
   // text arriving from a share URL.
-  'views/timeline-panel.ts': 8,   // +1 2026-09-02: alab (the compact audio strip's icon labels - registry glyph only, title/aria carry the string)
+  // 8 → 9 on 2026-09-03 (plans/179 M4, the Motion group's "Preview this motion"
+  // button): `play.innerHTML = icon('play')` - a literal registry name, nothing
+  // interpolated. Its visible name is a t() string set through .title and
+  // .setAttribute('aria-label'), never through markup.
+  'views/timeline-panel.ts': 9,   // +1 2026-09-02: alab (the compact audio strip's icon labels - registry glyph only, title/aria carry the string)
   // 8 as of 2026-08-07: +1 for the badged/per-option-formats export-picker work
   // (schemas' badge/formats option fields); confirmed safe by the author.
   // 8 → 9 on 2026-08-11: the deterministic live-drive export path paints the exact
@@ -1563,7 +1606,14 @@ const R12_RATCHETS: Array<{ what: string; pin: number; count: (text: string) => 
   },
   {
     what: 'font-size calc(<len> * var(--a11y-fs)) boilerplate',
-    pin: 445,
+    // 445 → 444 on 2026-09-03: `.be-added-gen` retired with the post-add chip's
+    // handover LINK (plan 182 section 3a - the generate offer is a panel now,
+    // `.be-generate-cta`, which is on screen for the whole of beat 1 rather than
+    // a link a dismiss takes away with it).
+    // 444 → 443 on 2026-09-03: `.be-logo-empty` took var(--fs-sm). An empty logo
+    // slot says "Not set" in the muted register now (plan 182 section 4.2), so
+    // the 1.6rem literal that drew a "+" glyph has nothing left to size.
+    pin: 443,
     count: (t) => (t.match(/font-size:\s*calc\(\s*[\d.]+(?:px|rem)\s*\*\s*var\(--a11y-fs\)\s*\)/g) ?? []).length,
     fix: 'use var(--fs-2xs..xl) - the multiplier is inside the token, so the largeText contract holds by construction',
   },

@@ -24,6 +24,7 @@ import '../styles/parts/offline-manager.css'; // the "Offline tools" download ma
 import { applyTheme, currentTheme, THEMES, THEME_LABELS, THEME_ICONS } from '../theme.ts';
 import { setTheme } from '../lib/set-theme.ts';
 import { currentA11yPrefs, setA11yPref, prefersReducedMotion } from '../lib/a11y-prefs.ts';
+import { chromeFollowsDesignSystem, setChromeFollow } from '../lib/chrome-follow.ts';
 import { fold, tokenize, scoreHaystack } from '../lib/search/match.ts';
 import { captureNeutralPinned } from '../lib/capture-neutral.ts';
 import type { A11yPrefs } from '../lib/a11y-prefs.ts';
@@ -593,6 +594,34 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // re-renders these rows in place so their control kind swaps with the rest.
   const a11yListHtml = () => A11Y_ROWS.map(a11yRow).join('');
 
+  // ── Appearance: does the app follow the design system? (plans/182 SS5.6) ─────
+  // The app taking its accent from the design system's primary is the APP's use
+  // of the palette, and a palette is for tools and exports first - so it is a
+  // preference in this card, beside the theme, rather than a token in the studio.
+  // Initial state is what is in FORCE (the device mirror lib/chrome-follow.ts
+  // reads), not profile.appearance, for the reason a11yState reads the applied
+  // attributes: a switch that disagrees with the page you are looking at is the
+  // worse lie.
+  let followDsState = chromeFollowsDesignSystem();
+  const followDsRow = (on: boolean) => {
+    const tip = helpTip(t('The app\'s accent takes the primary colour. Tools and exports are not affected.'));
+    const ctlId = 'follow-ds';
+    const checked = on ? ' checked' : '';
+    const label = t('Interface follows the design system');
+    const control = jellyOn
+      ? `<jelly-switch id="${escape(ctlId)}" class="feature-flag-jelly" data-follow-ds size="sm" label="${escape(label)}"${checked}></jelly-switch>`
+      : `<input type="checkbox" id="${escape(ctlId)}" class="feature-flag-input" data-follow-ds aria-describedby="${tip.id}"${checked}>
+        <span class="feature-flag-switch" aria-hidden="true"></span>`;
+    return `
+    <li>
+      <label class="feature-flag" for="${escape(ctlId)}">
+        <span class="feature-flag-label">${escape(label)}<span class="feature-flag-info a11y-pref-info help-tip-host">${tip.button}${tip.pop}</span></span>
+        ${control}
+      </label>
+    </li>`;
+  };
+  const followDsListHtml = () => followDsRow(followDsState);
+
   // ── Renders auto-save (WP-B) ─────────────────────────────────────────────────
   // A single toggle for "keep a copy of every render in my library". Default ON:
   // unset means on, so an untouched profile keeps its renders. Same control kinds
@@ -763,6 +792,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
               <div class="profile-theme-sample">Aa</div>
             </button>`).join('')}
         </div>
+        <ul class="feature-flags profile-a11y-prefs" id="appearance-prefs">${followDsListHtml()}
+        </ul>
         </div>
       </details>
 
@@ -1034,6 +1065,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       if (a11yList) a11yList.innerHTML = a11yListHtml();
       const renderSaveList = viewEl.querySelector('#render-save-prefs');
       if (renderSaveList) renderSaveList.innerHTML = renderSaveListHtml();
+      // The Appearance card's one toggle row swaps its control kind with them.
+      const followDsList = viewEl.querySelector('#appearance-prefs');
+      if (followDsList) followDsList.innerHTML = followDsListHtml();
       // The identity form swaps its controls in place too, carrying any unsaved
       // edits across (both control kinds expose `.value` on the [name] element).
       const form = viewEl.querySelector('#profile-form');
@@ -1060,6 +1094,20 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     a11yState[key] = input.checked;   // keeps a jelly-flag re-render in step with the live state
     setSummary('a11y-section', a11ySummary());
     await setA11yPref(host, key, input.checked);
+    announce(input.checked ? t('Enabled') : t('Disabled'));
+  });
+
+  // "Interface follows the design system" - mirror + profile through
+  // lib/chrome-follow.ts, then one repaint through the painter that owns the
+  // chrome accent. Turning it off removes the injected style; turning it on
+  // resolves the primary again, so the accent is right on the same gesture.
+  viewEl.querySelector('#appearance-prefs')?.addEventListener('change', async e => {
+    const input = (e.target as Element).closest<HTMLInputElement>('[data-follow-ds]');
+    if (!input) return;
+    followDsState = input.checked;   // keeps a jelly-flag re-render in step
+    await setChromeFollow(host as unknown as Parameters<typeof setChromeFollow>[0], input.checked);
+    const { applyChromeBrandVars } = await import('../brand-vars.ts');
+    await applyChromeBrandVars(host as unknown as Parameters<typeof applyChromeBrandVars>[0]);
     announce(input.checked ? t('Enabled') : t('Disabled'));
   });
 

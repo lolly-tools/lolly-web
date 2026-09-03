@@ -193,6 +193,52 @@ function glyphFor(t: TemplateVariant): Parameters<typeof icon>[0] {
 
 const BLANK_ID = '__blank__';
 
+// ── Brand token scope (plan 179 C12) ────────────────────────────────────────────
+//
+// brand-vars.ts writes the brand's semantic colour slots (--brand-primary, --brand-
+// on-primary, …) INLINE onto the tool-canvas root, and only the primary onto <html>.
+// This modal is a body-level overlay OUTSIDE that element, so anything it paints from
+// `var(--brand-primary, <fallback>)` resolves to the template's stand-in colour while
+// the canvas underneath resolves to the brand's - the tile and the document it seeds
+// disagree, which is exactly what C12 reports.
+//
+// Two consequences, both handled below: the modal copies the slots onto its own root so
+// its subtree sits in the same scope as the canvas, and a rendered preview is cached
+// under a namespace that names the brand it was rendered in. Without the second half the
+// first brand to render a template would own its thumbnail permanently - the memoised
+// `sig` is the values JSON, which is byte-identical under every brand.
+
+/** Every `--brand-*` custom property in force on the live tool canvas, nearest ancestor
+ *  first (the cascade's own answer for that element). Empty when no tool canvas is
+ *  mounted or the active brand declares no semantic slots, which is the unbranded
+ *  default and needs no scope of its own. */
+function brandScopeVars(): Array<[string, string]> {
+  if (typeof document === 'undefined') return [];
+  const start = document.querySelector<HTMLElement>('#tool-content')
+    ?? document.querySelector<HTMLElement>('#tool-canvas')
+    ?? document.documentElement;
+  const seen = new Map<string, string>();
+  for (let node: HTMLElement | null = start; node; node = node.parentElement) {
+    const decl = node.style;
+    for (let i = 0; i < decl.length; i++) {
+      const name = decl.item(i);
+      if (name.startsWith('--brand-') && !seen.has(name)) {
+        seen.set(name, decl.getPropertyValue(name).trim());
+      }
+    }
+  }
+  return [...seen].filter(([, v]) => v !== '');
+}
+
+/** FNV-1a, base36 - a short stable tag for a set of colour values. Not a checksum of
+ *  anything anyone verifies; it only has to change when the brand does. */
+function brandTag(vars: ReadonlyArray<readonly [string, string]>): string {
+  let h = 2166136261;
+  const s = vars.map(([n, v]) => `${n}:${v}`).join(';');
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0).toString(36);
+}
+
 /**
  * Resolve at the next idle moment (or after `timeout` ms, whichever comes first).
  *
@@ -244,6 +290,13 @@ interface ChooserOpts {
    * (a pick, Escape, or an earlier call) is a no-op, same as any other post-settle path.
    */
   onOpen?: (close: () => void) => void;
+  /**
+   * The seed for the "Blank canvas" tile. Defaults to `{}`, which opens the tool's
+   * DEFAULT document; a tool whose default is a composed cover (Design, plan 179) hands
+   * in a real blank here - the bare artboard with nothing on it - so "start from
+   * scratch" means what it says.
+   */
+  blankSeed?: () => Record<string, InputValue>;
 }
 
 /**
@@ -267,6 +320,25 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
       resolve({});
     };
     try {
+
+    // Brand token scope (C12). Mirrors the canvas's --brand-* slots onto this modal, so
+    // the chooser's own subtree resolves them the way the document it seeds will, and
+    // names the brand in the preview cache namespace so a tile can never be served a
+    // picture rendered under a different one. Re-run before each preview render, because
+    // the slots arrive asynchronously while the tool mounts underneath.
+    let previewNs = 'template';
+    let brandTagApplied = '';
+    const syncBrandScope = (): void => {
+      const vars = brandScopeVars();
+      const tag = vars.length ? brandTag(vars) : '';
+      if (tag === brandTagApplied) return;
+      brandTagApplied = tag;
+      for (const [name, value] of vars) root.style.setProperty(name, value);
+      // No brand slots in force is the unbranded default: keep the bare namespace so an
+      // install that never had a brand keeps the previews it has already cached.
+      previewNs = tag ? `template@${tag}` : 'template';
+    };
+    syncBrandScope();
 
     const byId = new Map<string, TemplateVariant>(opts.templates.map(v => [v.id, v]));
 
@@ -393,7 +465,7 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
 
     const pickTile = (tile: HTMLElement, presetId?: string): void => {
       const id = tile.dataset.templateId!;
-      if (id === BLANK_ID) { finish({}); return; }
+      if (id === BLANK_ID) { finish(opts.blankSeed ? opts.blankSeed() : {}); return; }
       // Reflect the fetch in the tile so a slow network doesn't read as a dead click.
       tile.setAttribute('aria-busy', 'true');
       // Fetch (or reuse) the template's external file, THEN resolve: the base seed,
@@ -481,10 +553,15 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
             const id = queue.shift()!;
             const values = await getValues(id).catch(() => null);
             if (!values || settled) continue;
+            // Re-read the brand scope per render, not once on open: the tool is mounting
+            // underneath and applyBrandVars writes its slots asynchronously, so the first
+            // tile can easily be queued before the canvas has them. Cheap - a walk up one
+            // inline style chain (C12; see brandScopeVars above).
+            syncBrandScope();
             try {
               const src = await renderFeaturedVariant(
                 host as Parameters<typeof renderFeaturedVariant>[0],
-                opts.toolId, formats, id, values as Record<string, unknown>, 'template',
+                opts.toolId, formats, id, values as Record<string, unknown>, previewNs,
               );
               if (settled || !src) continue;
               const media = root.querySelector<HTMLElement>(

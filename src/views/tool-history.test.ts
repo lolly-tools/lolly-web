@@ -12,7 +12,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  createHistory, sameValue, carriesBytes, cloneValue,
+  createHistory, sameValue, carriesBytes, cloneValue, describeRowChange,
   HISTORY_LIMIT, COALESCE_MS,
 } from './tool-history.ts';
 import type { InputValue } from '../../../../engine/src/inputs.js';
@@ -220,4 +220,49 @@ test('a full undo-all then redo-all round-trip restores the original order', () 
 test('cloneValue falls back to the original when a value cannot be cloned', () => {
   const fn = { f: () => 1 };
   assert.equal(cloneValue(fn as unknown as InputValue), fn);
+});
+
+
+// ── describeRowChange (plans/179 A16) ────────────────────────────────────────
+//
+// "Undid Boxes" named the input that was written, never what the user had done.
+
+const CANVAS = { xField: 'x', yField: 'y', wField: 'w', hField: 'h', rotationField: 'rot' };
+const ROW = (over: Record<string, unknown> = {}) =>
+  ({ id: 'a', x: 0, y: 0, w: 10, h: 10, rot: 0, bg: '#fff', ...over });
+
+test('describeRowChange names the arrival and the departure of rows', () => {
+  const one = [ROW()] as unknown as InputValue;
+  const two = [ROW(), ROW({ id: 'b' })] as unknown as InputValue;
+  assert.deepEqual(describeRowChange(one, two, CANVAS), { kind: 'add' });
+  assert.deepEqual(describeRowChange(two, one, CANVAS), { kind: 'delete' });
+});
+
+test('describeRowChange names a geometry gesture by the gesture, not by its fields', () => {
+  const at = (o: Record<string, unknown>) => [ROW(o)] as unknown as InputValue;
+  assert.deepEqual(describeRowChange(at({}), at({ x: 5, y: 7 }), CANVAS), { kind: 'move' });
+  assert.deepEqual(describeRowChange(at({}), at({ x: 5, w: 40, h: 20 }), CANVAS), { kind: 'resize' });
+  assert.deepEqual(describeRowChange(at({}), at({ rot: 15 }), CANVAS), { kind: 'rotate' });
+  // A tool that declares no geometry fields cannot be told a move from a rename.
+  assert.deepEqual(describeRowChange(at({}), at({ x: 5, y: 7 }), {}), null);
+});
+
+test('describeRowChange names a single field, so the toast can use its LABEL', () => {
+  const a = [ROW()] as unknown as InputValue;
+  const b = [ROW({ bg: '#ffa3e9' })] as unknown as InputValue;
+  assert.deepEqual(describeRowChange(a, b, CANVAS), { kind: 'field', field: 'bg' });
+});
+
+test('describeRowChange refuses to name what it cannot: a rewrite, a no-op, a scalar', () => {
+  const a = [ROW()] as unknown as InputValue;
+  // Same length, nothing different - the caller keeps the input label.
+  assert.equal(describeRowChange(a, [ROW()] as unknown as InputValue, CANVAS), null);
+  // Two unrelated fields at once is a gesture with no one name.
+  assert.equal(describeRowChange(a, [ROW({ bg: '#000', text: 'hi' })] as unknown as InputValue, CANVAS), null);
+  // More rows changed than a gesture plausibly touches.
+  const many = (n: number, o: Record<string, unknown> = {}) =>
+    Array.from({ length: n }, (_, i) => ROW({ id: 'r' + i, ...o })) as unknown as InputValue;
+  assert.equal(describeRowChange(many(70), many(70, { bg: '#000' }), { ...CANVAS, maxRows: 64 }), null);
+  // Not a blocks input at all.
+  assert.equal(describeRowChange('a' as unknown as InputValue, 'b' as unknown as InputValue, CANVAS), null);
 });

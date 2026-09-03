@@ -1679,6 +1679,35 @@ export function restoreSequenceTime(root: HTMLElement): void {
   if (s) { s.restore(); AD_HOC.delete(root); }
 }
 
+/**
+ * RELEASE THE CLOCK: hand `root` back to its author for as long as nobody is looking
+ * at a playhead, and hand back the resume (plans/179 T2).
+ *
+ * This is `beginAuthoredDom` plus the one thing that scope deliberately leaves alone.
+ * A photographer suspends the writers because it is about to READ authored geometry,
+ * and it strips `.seq-off` per shot itself - so lifting the class there would un-hide
+ * the whole composition on the live stage for the length of an export. The timeline
+ * CLOSING is the opposite case: nothing is reading, the user is back on the canvas,
+ * and the contract that governs a canvas with no clock is "every box shows". Leaving
+ * the class behind is exactly the bug this exists to fix - close the panel on a deck
+ * that has been placed in order and three of the four artboards stay `display: none`
+ * with only their labels on screen.
+ *
+ * A HOLD, not a teardown, and that is the whole point: the writers keep their clocks
+ * (so reopening resumes at the same playhead), the registry's own depth counter keeps
+ * them down, and an export taken while the panel is shut nests inside this hold
+ * instead of resuming it out from under us. Calling the returned closure lifts the
+ * hold and re-asserts each writer at its own current time.
+ */
+export function releaseSequenceDom(root: HTMLElement): () => void {
+  const resume = beginAuthoredDom(root);
+  for (const el of sequenceTimeElements(sequenceStageOf(root) ?? root)) {
+    el.classList.remove(OFF_CLASS);
+    releaseShotBorrow(el);
+  }
+  return resume;
+}
+
 /** A playhead someone else's clock is pacing. See `driveSequenceTime`. */
 export interface SequenceDriver {
   /** Begin at t=0 and advance in real time. Idempotent. */

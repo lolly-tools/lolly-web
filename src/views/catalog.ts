@@ -2590,6 +2590,17 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // is a different asset, not a trimmed one.
     const trimmable = isUser && !ref.meta?._placeholder && !ref.meta?.animated
       && (ref.type === 'raster' || ref.type === 'vector');
+    // "Edit script" (plans/181 section 5.4): a clip Lolly SYNTHESIZED can go back
+    // to the words that made it - Script audio prefills the recipe and Save
+    // rewrites these very bytes, so every document using the clip hears the fix.
+    // The gate is the same cheap meta.tts pre-filter the heal above uses; the
+    // studio re-reads the block through ttsRecipeFromMeta and leaves a blank
+    // sheet if it does not hold up, so a recording or an upload can never land
+    // in an editor that would claim Lolly made it.
+    const ttsBlock = (ref.meta as { tts?: { text?: unknown; voice?: unknown } } | undefined)?.tts;
+    const canEditScript = isUser && ref.type === 'audio'
+      && typeof ttsBlock?.text === 'string' && !!ttsBlock.text.trim()
+      && typeof ttsBlock?.voice === 'string' && !!ttsBlock.voice.trim();
     const wasOpen = !!detailsDialog; // paging (←/→) replaces an open modal - cue only a FRESH open
     closeDetails();
     const content = `
@@ -2636,6 +2647,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
             trimmable ? `<button type="button" class="btn cat-act-trim" data-act="trim">${icon('fitContain', { size: 14 })}<span>${t('Trim margins')}</span></button>` : '',
             canOcr || canReadDoc || canReadVector ? `<button type="button" class="btn cat-act-read-text" data-act="read-text">${icon('aiSpark', { size: 14 })}<span>${t('Read text')}</span></button>` : '',
             canExtractAudio ? `<button type="button" class="btn cat-act-extract-audio" data-act="extract-audio">${icon('music', { size: 14 })}<span>${t('Extract audio…')}</span></button>` : '',
+            canEditScript ? `<button type="button" class="btn cat-act-edit-script" data-act="edit-script">${icon('mic', { size: 14 })}<span>${t('Edit script')}</span></button>` : '',
             canVideoMatte ? `<button type="button" class="btn cat-act-vid-matte" data-act="vid-matte">${icon('scissors', { size: 14 })}<span>${t('Remove background…')}</span></button>` : '',
             canVideoCrop ? `<button type="button" class="btn cat-act-vid-crop" data-act="vid-crop">${CROP_ICON}<span>${t('Crop…')}</span></button>` : '',
             canVideoUpscale ? `<button type="button" class="btn cat-act-vid-upscale" data-act="vid-upscale">${icon('aiSpark', { size: 14 })}<span>${t('Upscale…')}</span></button>` : '',
@@ -4222,6 +4234,13 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       }
       if (act === 'open-lut') {
         window.location.hash = `#/tool/darkroom?lutSource=preset&lutPreset=${encodeURIComponent(ref.id.split('/').pop() ?? '')}&lutIntensity=100`;
+        return;
+      }
+      // A generated clip re-opens on its own script. The asset id is the whole
+      // deep link: the studio reads the recipe off the record, so nothing about
+      // the clip has to survive a URL.
+      if (act === 'edit-script') {
+        window.location.hash = `#/script?asset=${encodeURIComponent(ref.id)}`;
         return;
       }
       if (act === 'download') {

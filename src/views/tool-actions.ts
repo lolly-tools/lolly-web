@@ -10,14 +10,14 @@
  * This module never value-imports from ./tool.ts (that would create a runtime
  * cycle) - it only `import type`s the shell-side aliases it needs from there.
  */
-import { serializeUrlState, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS, composeSong, generatedSongSpec, HDR_DEFAULTS, preflight, PRINT_MARK_FORMATS, SEPARATING_FORMATS, computeCost, parseRateCard, isRateCardError, validateRateCard, isNonAffineTransform, selectFramePage, frameFilterApplies, LEXICON_VERSION, deriveExportFilename } from '@lolly/engine';
+import { serializeUrlState, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS, composeSong, cuesToSrt, cuesToVtt, generatedSongSpec, HDR_DEFAULTS, preflight, PRINT_MARK_FORMATS, SEPARATING_FORMATS, computeCost, parseRateCard, isRateCardError, validateRateCard, isNonAffineTransform, selectFramePage, frameFilterApplies, LEXICON_VERSION, deriveExportFilename } from '@lolly/engine';
 import type {
   Fact, PreflightInput, PreflightJob, PreflightManifest, PreflightSwatch, StageFacts, Count, CostWorking,
 } from '@lolly/engine';
 import type { MoneyContext } from '@lolly-tools/core';
 import type { Profile } from '@lolly-tools/core/host-v1';
 import { escape, safeHref } from '../utils.js';
-import { t, tRaw } from '../i18n.ts';
+import { currentLang, t, tRaw } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
 import { navigateTo } from '../nav.js';
 import { announce } from '../a11y.js';
@@ -38,6 +38,7 @@ import { pcmToWavBlob } from '../lib/pcm-wav.ts';
 import { modUrlToWavBlobUrl, isModuleFormat } from '../lib/mod-render.ts';
 import { aspectWarning } from './export-size.js';
 import { MAX_TIME_S } from './timeline-math.ts';
+import { buildStepsDropped, restMsOf } from '../lib/motion-model.ts';
 import { bumpMetric, recordFormat } from '../metrics.js';
 import { videoSupport, audioSupport, cmykTiffSupport, tiffSupport, liveCaptureSupport, durableSupport, proFormatSupport } from '../bridge/format-support.js';
 import { isAudioFormat as isAudioFmt } from '../lib/audio-encode.js';
@@ -104,9 +105,19 @@ export const flatExportNode = (c: HTMLElement | null): HTMLElement | null => {
  *  RGBA frame host.media.renderFrameAt hands the tool's onFrame during a deterministic export. */
 type MediaFrameLike = { width: number; height: number; data: Uint8ClampedArray; t: number };
 
+/** One set of captions, serialised into the two formats a moving export can carry
+ *  them in (plans/180 section 4): WebVTT for the embedded track and for the web,
+ *  SubRip for the editors and platforms that only take `.srt`. Both are built from
+ *  the SAME cues, so the file beside the video and the track inside it always say
+ *  the same words at the same moments. */
+interface CaptionText { vtt: string; srt: string }
+
 // from their raw string (e.g. "pdf-cmyk" → "Print PDF" / ".pdf").
 const FMT_LABEL: Record<string, string> = { 'pdf-cmyk': 'Print PDF', 'cmyk-tiff': 'Print TIFF', tiff: 'TIFF', 'jpeg': 'JPG', 'webm': 'WebM', 'mp4': 'MP4', apng: 'aPNG', 'webp-anim': 'Animated WebP', 'svg-anim': 'Animated SVG',
   emf: 'EMF (old)', eps: 'EPS', 'eps-cmyk': 'EPS (CMYK)', dxf: 'DXF (cut file)', pptx: 'PowerPoint', penpot: 'Penpot', docx: 'Word', odt: 'OpenDocument', ics: 'Calendar', vcf: 'vCard', ico: 'Icon', zip: 'ZIP', csv: 'CSV', json: 'JSON',
+  // A SCORM course package (plans/180 M-D1) - a zip an LMS imports. The qualifier is
+  // there because "SCORM" alone means nothing to anyone who has not been sent to one.
+  scorm: 'SCORM (LMS)',
   // Palette exchange (color-palette): a design-tokens JSON, CSS/SCSS variable
   // blocks, a GIMP palette, and a binary Adobe swatch file. extFor falls back to
   // the format id for each (blob MIME isn't mp4/webm/zip), so no FMT_EXT entry.
@@ -117,7 +128,9 @@ const FMT_LABEL: Record<string, string> = { 'pdf-cmyk': 'Print PDF', 'cmyk-tiff'
 // `penpot` is spelled out rather than left to extFor's fallback: the archive IS a
 // zip, and only its `application/x-penpot` blob type keeps the MIME sniff below from
 // renaming the download to .zip - which Penpot's own Import will not take.
-const FMT_EXT: Record<string, string>   = { 'pdf-cmyk': 'pdf', 'cmyk-tiff': 'tiff', 'jpeg': 'jpg', 'eps-cmyk': 'eps', 'webp-anim': 'webp', 'svg-anim': 'svg', penpot: 'penpot' };
+// `scorm` IS a zip and wants the .zip extension (an LMS import takes one); the branch
+// below names the file itself, so this entry only covers any other path that asks.
+const FMT_EXT: Record<string, string>   = { 'pdf-cmyk': 'pdf', 'cmyk-tiff': 'tiff', 'jpeg': 'jpg', 'eps-cmyk': 'eps', 'webp-anim': 'webp', 'svg-anim': 'svg', penpot: 'penpot', scorm: 'zip' };
 // Animated WebP is credentialed via the still-'webp' path (renderFormat maps
 // webp-anim→webp before stamping), but the engine's C2PA_FORMATS lists only 'webp' - 
 // so treat webp-anim as stampable in the UI gating too, else the toggle/card would be
@@ -306,11 +319,18 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     // The effective export format (user-selected, or the tool's default). Drives
     // a vector (SVG) thumbnail for vector tools - see captureThumbnail.
     const fmt = el?.querySelector<HTMLSelectElement>('[data-action="format"]')?.value ?? '';
+    const filename = el?.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() ?? '';
     return {
       ...values,
       __toolId:          manifest.id,
       __toolVersion:     manifest.version,
-      __export_filename: el?.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() ?? '',
+      // The saved record's TITLE, which is the document name the author typed - the same
+      // field the export sheet and the Design top bar both write (plan 179 M1). bridge/
+      // state.ts maps `__label` onto the session record's label, which is what the
+      // Projects tiles and the session list show; `undefined` (never '') leaves the
+      // existing auto-label alone, so an unnamed document keeps the title it always had.
+      __label:           filename || undefined,
+      __export_filename: filename,
       __export_format:   fmt,
       __export_width:    el?.querySelector<HTMLInputElement>('[data-action="export-width"]')?.value ?? '',
       __export_height:   el?.querySelector<HTMLInputElement>('[data-action="export-height"]')?.value ?? '',
@@ -1099,6 +1119,45 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         </label>
       </div>`;
 
+  // Captions (plans/180 section 4) - the three layers a moving export can carry, in
+  // order of how reliably they reach a viewer.
+  //
+  //   Burned in    - the caption boxes on the canvas. They are part of the picture, so
+  //                  they are always there and cannot be switched off from here; the
+  //                  row says so rather than pretending it is a choice.
+  //   Embedded     - a soft, player-toggleable WebVTT track beside the audio. WebM
+  //                  carries it safely; MP4 stores it as ISO 14496-30 `wvtt`, which
+  //                  Safari and QuickTime read and several Windows players ignore. So
+  //                  the box follows the container until the user touches it: on for
+  //                  WebM, off for MP4, and the MP4 note explains why.
+  //   Sidecar      - a .vtt and a .srt beside the film. A render is one Blob, so
+  //                  asking for these turns the download into a small zip.
+  //
+  // Every option is off-by-default for MP4 and adds nothing to a document with no
+  // caption boxes and no cached transcript, so an untouched export is unchanged.
+  const captionsTip = hasVideo ? helpTip(t(
+    'Captions drawn on the canvas are always part of the picture. An embedded track can be switched off by the viewer’s player; the sidecar files are the ones an editor or a video platform will accept.'
+  )) : null;
+  const captionsRow = !hasVideo ? '' : `
+      <div class="export-audio export-captions" data-video-only style="display:${isVideoFmt(initialFmt) ? 'flex' : 'none'}">
+        <span class="audio-head help-tip-host">${icon('transcript', { className: 'audio-icon' })}<span>${escape(t('Captions'))}</span>${captionsTip!.button}${captionsTip!.pop}</span>
+        <div class="audio-fade">
+          <label title="${escape(t('Caption boxes on the canvas are drawn into every frame.'))}">
+            <input type="checkbox" class="field-check" checked disabled aria-label="${escape(t('Burned in'))}">
+            ${escape(t('Burned in'))}
+          </label>
+          <label>
+            <input type="checkbox" class="field-check" data-action="captions-embed" ${initialFmt === 'webm' ? 'checked' : ''}>
+            ${escape(t('Embedded track'))}
+          </label>
+          <label>
+            <input type="checkbox" class="field-check" data-action="captions-sidecar">
+            ${escape(t('Sidecar .vtt + .srt'))}
+          </label>
+        </div>
+        <p class="section-card__hint" data-captions-mp4-note style="display:${initialFmt === 'mp4' ? 'block' : 'none'}">${escape(t('Some players ignore captions inside MP4'))}</p>
+      </div>`;
+
   // WP-B: video quality select (Smaller / Balanced / Best) plus a default-collapsed
   // "Pro settings" disclosure (explicit codec, frame rate, rate mode, encoder hint).
   // Video-only. The quality stop drives the bitrate authority; the pro knobs override
@@ -1368,7 +1427,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       ${downloadRow}
       ${actions.includes('download') ? `<p class="export-degraded-note" data-export-degraded role="status" hidden style="margin:.2rem 0 0;color:hsl(var(--muted-foreground));font-size:12px;text-align:center"></p>` : ''}
     </div>
-    ${actions.includes('download') ? `${recordingRow}${filenameRow}${dimsRow}${timingRow}${aspectWarnRow}${fidelityWarnRow}${hdrRow}${cmykRow}${printRow}${protectionRow}<div class="export-ingredient-note" data-ingredient-note hidden></div>${audioRow}${loudnessRow}${settingsRow}${videoQualityRow}${sendRow}${preflightRow}${costRow}` : ''}
+    ${actions.includes('download') ? `${recordingRow}${filenameRow}${dimsRow}${timingRow}${aspectWarnRow}${fidelityWarnRow}${hdrRow}${cmykRow}${printRow}${protectionRow}<div class="export-ingredient-note" data-ingredient-note hidden></div>${audioRow}${loudnessRow}${captionsRow}${settingsRow}${videoQualityRow}${sendRow}${preflightRow}${costRow}` : ''}
   `;
   void fillIngredientNote();
 
@@ -1690,25 +1749,50 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
 
   // WP-F soft captions (plan 153). A cached transcript of the tool's own audio -
   // a TTS clip's own alignment, an earlier "Generate subtitles" run persisted on
-  // the asset record, or this session's stash - becomes a WebVTT string the video
-  // export embeds as a soft, player-toggleable subtitle track (default-on, no
-  // toggle). Cached words ONLY: this never triggers transcription, so an export
-  // never blocks on inference; no cached transcript ⇒ undefined ⇒ the export is
-  // byte-identical. Mirrors the timing ladder in views/transcribe-control.ts and
-  // its 'word'-granularity reasoning (the engine grouper only joins, never splits).
-  // ponytail: cue times are source-relative; caller only feeds this when the clip
-  // exports from its head (stageAudioStart 0), since a nonzero in-point would
-  // desync the soft cues - map through cueSpansOnTimeline if a tool needs both.
-  async function toolTranscriptVtt(): Promise<string | undefined> {
+  // the asset record, or this session's stash. Cached words ONLY: this never
+  // triggers transcription, so an export never blocks on inference; no cached
+  // transcript ⇒ undefined ⇒ nothing to embed and nothing to ship beside the file.
+  // Mirrors the timing ladder in views/transcribe-control.ts and its
+  // 'word'-granularity reasoning (the engine grouper only joins, never splits).
+  // ponytail: cue times are source-relative; the caller only reads this when the
+  // clip exports from its head (stageAudioStart 0), since a nonzero in-point would
+  // desync the cues - map through cueSpansOnTimeline if a tool needs both.
+  async function toolTranscriptText(): Promise<CaptionText | null> {
     const ref = toolAudioRef();
-    if (!ref) return undefined;
+    if (!ref) return null;
     const assetId = ref.id ?? '';
     let words = assetId && host.assets?.get
       ? await host.assets.get(assetId).then(r => ttsWordsOf(r?.meta) ?? transcriptWordsOf(r?.meta), () => null)
       : null;
     if (!words) words = stashedTranscript(assetId, ref.url ?? '');
-    if (!words?.length) return undefined;
-    return formatCaptions({ words, granularity: 'word' }, 'vtt') || undefined;
+    if (!words?.length) return null;
+    const transcript = { words, granularity: 'word' as const };
+    const vtt = formatCaptions(transcript, 'vtt');
+    return vtt ? { vtt, srt: formatCaptions(transcript, 'srt') } : null;
+  }
+
+  /**
+   * The captions of a moving export, serialised once for both the embedded track
+   * and the sidecar files (plans/180 section 4). Two rungs, most specific first:
+   *
+   *   1. the CAPTION BOXES on a timed composition. They are already burned into
+   *      the picture, so their own timeline windows are the film's cue times - no
+   *      offset to apply and no second pass over the audio;
+   *   2. the tool audio's cached transcript (the WP-F ladder above), for a
+   *      single-clip tool like the audiogram, which has no timeline to read.
+   *
+   * Null means there is genuinely nothing to caption - neither option adds a byte.
+   */
+  async function captionText(): Promise<CaptionText | null> {
+    if (canvasEl?.querySelector?.('[data-sequence]')) {
+      // The compositor module is large and only a timed composition ever gets here,
+      // so it is loaded on demand rather than from the panel's own graph.
+      const { stageCaptionCues } = await import('../bridge/sequence-render.ts');
+      const p = videoParams();
+      const cues = stageCaptionCues(canvasEl, p.durationUserSet ? { totalMs: p.duration * 1000 } : {});
+      if (cues.length) return { vtt: cuesToVtt(cues), srt: cuesToSrt(cues) };
+    }
+    return stageAudioStart() === 0 ? await toolTranscriptText() : null;
   }
 
   // "Generate music": a transient ZzFXM bed, seeded so the SAME tune deterministically
@@ -1834,10 +1918,26 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     if (en) en.checked = printIntentFmt(fmt);   // refreshPrintUi (called next) reveals/hides the body
   };
 
+  // The embedded-caption box follows the CONTAINER until the user has an opinion
+  // (plans/180 section 4): WebM carries a WebVTT track that every WebM player reads,
+  // MP4 stores it as `wvtt`, which several Windows players ignore - so MP4 is opt-in
+  // and WebM is on. One touch of the checkbox ends the following for this panel, the
+  // way marksUserSet ends the print-marks default.
+  let captionsEmbedUserSet = false;
+  el.querySelector<HTMLInputElement>('[data-action="captions-embed"]')
+    ?.addEventListener('change', () => { captionsEmbedUserSet = true; });
+  const syncCaptionsUi = (fmt: string): void => {
+    const embed = el.querySelector<HTMLInputElement>('[data-action="captions-embed"]');
+    if (embed && !captionsEmbedUserSet) embed.checked = fmt === 'webm';
+    const note = el.querySelector<HTMLElement>('[data-captions-mp4-note]');
+    if (note) note.style.display = fmt === 'mp4' ? 'block' : 'none';
+  };
+
   // Show/hide timing params and format-specific controls when the format selector changes.
   if (formatEl) {
     formatEl.addEventListener('change', () => {
       const fmt = formatEl.value;
+      syncCaptionsUi(fmt);
       if (animParamsEl) animParamsEl.style.display = isAnimatedFmt(fmt) ? 'flex' : 'none';
       if (ditherEl)     ditherEl.style.display     = fmt === 'gif'  ? 'flex' : 'none';
       el.querySelectorAll<HTMLElement>('[data-vector-only]').forEach(c => { c.style.display = isVectorFmt(fmt) ? 'flex' : 'none'; });
@@ -3051,6 +3151,15 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           : fps === 60
             ? `Rendering 60fps… ${totalS}s+`
             : `Recording… ${totalS}s`;
+      // A build step is a CLICK, and a video has nobody to click it. Rather than invent
+      // a pace for the fragments - which would put words on screen at a speed nobody
+      // chose - every box is drawn and the count of unseen steps is said out loud, so
+      // the author can reach for "Place in order" and time them deliberately
+      // (plans/179 M4). English, like every other export log: host.log is console-only.
+      const dropped = buildStepsDropped(canvasEl);
+      if (dropped > 0) {
+        host.log('warn', `export: ${dropped} build step${dropped === 1 ? '' : 's'} cannot be clicked in a moving export, so every box is drawn from the start. Use "Place in order" in the timeline to give them times.`);
+      }
     } else {
       // Slow non-animated exports (CMYK TIFF, high-DPI raster, PDF) previously froze
       // on a disabled button with no signal. Show progress and tell assistive tech.
@@ -3181,14 +3290,16 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         const v = Number(el!.querySelector<HTMLInputElement>(`[data-action="${action}"]`)?.value);
         return Number.isFinite(v) ? v : def;
       };
-      // WP-F soft captions: feed the tool audio's cached transcript as a soft
-      // subtitle track on video exports (default-on). Only when the clip exports
-      // from its head - a nonzero in-point (stageAudioStart) would offset the
-      // source-relative cue times, so skip rather than ship them out of sync; the
-      // burned-in captions the tool draws are unaffected either way.
-      const softCaptionsVtt = isVideoFmt(fmt) && stageAudioStart() === 0
-        ? await toolTranscriptVtt()
-        : undefined;
+      // Captions for a moving export (plans/180 section 4). Serialised ONCE and used
+      // by both options below, so the track inside the file and the files beside it
+      // can never disagree. Read only when at least one option is on and only for a
+      // video format, so every other export does no work and ships no extra bytes;
+      // the burned-in caption boxes are unaffected either way.
+      const wantEmbed = isVideoFmt(fmt) && (el!.querySelector<HTMLInputElement>('[data-action="captions-embed"]')?.checked ?? false);
+      const wantSidecar = isVideoFmt(fmt) && (el!.querySelector<HTMLInputElement>('[data-action="captions-sidecar"]')?.checked ?? false);
+      const captions = wantEmbed || wantSidecar ? await captionText() : null;
+      const softCaptionsVtt = wantEmbed && captions ? captions.vtt : undefined;
+      const sidecarCaptions = wantSidecar && captions ? captions : null;
       // RunExportOpts plus the durationUserSet contract flag: it belongs to the
       // sequence path (the tool hook reads ctx.opts.durationUserSet), not to the
       // generic shell-wide export options, so it's carried as a local widening
@@ -3223,7 +3334,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         // it entirely, so the single-playhead-frame default path is untouched.
         ...(isStillFmt(fmt) && el!.querySelector('[data-seq-still-only]') ? { cuts: cutsValue() } : {}),
         ...audioOpt,
-        ...(softCaptionsVtt ? { subtitlesVtt: softCaptionsVtt } : {}),   // WP-F soft caption track (video only)
+        ...(softCaptionsVtt ? { subtitlesVtt: softCaptionsVtt } : {}),   // the embedded caption track (video only)
         ...(isGif ? { dither: el!.querySelector<HTMLInputElement>('[data-action="gif-dither"]')?.checked ?? false } : {}),
         ...(fmt === 'html' ? { fullPage: el!.querySelector<HTMLInputElement>('[data-action="full-page"]')?.checked ?? false } : {}),
         // EMF text mode: live GDI text records by default; the "Outline fonts"
@@ -3344,7 +3455,116 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         ? selectFramePage(pageEls.map((p) => p.getAttribute('data-frame-id')), exportDefaults.slide)
         : ({ kind: 'none' } as const);
       const framePages = framePick.kind === 'page' ? [pageEls[framePick.index]!] : pageEls;
-      if (pageEls.length >= 1 && !isAnimated && fmt !== 'pdf' && fmt !== 'zip' && fmt !== 'html' && fmt !== 'pptx' && fmt !== 'penpot') {
+      // A SCORM course package (plans/180 M-D1): not one render but a zip of them - every
+      // artboard as a still, the narrated film with its caption sidecar, the fonts, the
+      // manifest, the adapter and a launch page. bridge/export-scorm.ts owns the
+      // packaging; this branch owns the two things only the live app can do, which is why
+      // they go in as closures: photograph an artboard at its rest pose, and encode the
+      // film. Placed BEFORE the still fan-out because it consumes the same pages for a
+      // different purpose (a zip of loose images is not a course).
+      if (fmt === 'scorm') {
+        const { buildScormPackage, collectScormFonts } = await import('../bridge/export-scorm.ts');
+        const { narrationSlicesFromModel } = await import('../lib/narration.ts');
+        const { applySequenceTime, restoreSequenceTime, beginAuthoredDom, OFF_CLASS } =
+          await import('../bridge/sequence-dom.ts');
+        // SVG where the deck is vector, PNG otherwise - the tool's own format list decides,
+        // exactly as the docs-shot pipeline does.
+        const stillFmt = formats.includes('svg') ? 'svg' : 'png';
+        // Same stage discipline as the fan-out below: lift the playhead's `.seq-off`, hold
+        // ONE set of authored styles across every page, and put both back afterwards. The
+        // film renderer needs the stage handed back first, so the release is a closure that
+        // can be called twice.
+        const seqOff = canvasEl ? [...canvasEl.querySelectorAll<HTMLElement>('.seq-off')] : [];
+        seqOff.forEach((o) => o.classList.remove('seq-off'));
+        const seqRoot = canvasEl;
+        const releaseAuthored = seqRoot ? beginAuthoredDom(seqRoot) : null;
+        let stageHeld = true;
+        const releaseStage = (): void => {
+          if (!stageHeld) return;
+          stageHeld = false;
+          if (seqRoot) restoreSequenceTime(seqRoot);
+          releaseAuthored?.();
+          seqOff.forEach((o) => o.classList.add('seq-off'));
+        };
+        // A deck is NARRATED when a page holds an audio marker. A bed lives on the
+        // pasteboard, outside every page, so it does not make a deck narrated by itself.
+        const narrated = !!canvasEl?.querySelector('[data-pdf-page] [data-audio-src]');
+        const filmFmt = formats.includes('mp4') ? 'mp4' : formats.includes('webm') ? 'webm' : null;
+        const scormPages: HTMLElement[] = pageEls.length ? pageEls : (canvasEl ? [canvasEl] : []);
+        let pkg: Awaited<ReturnType<typeof buildScormPackage>>;
+        try {
+          pkg = await exportUnscaled(async (report) => buildScormPackage({
+            title: filename,
+            lang: currentLang(),
+            // The engine has no i18n, so the launch page's own words arrive from here or
+            // the package ships English chrome under a non-English `<html lang>`.
+            // The three templated ones go through t() with NO params on purpose: the
+            // catalog string keeps its {n}/{total}/{title} for the launch page's own
+            // one-line substitution, which is the only place the numbers exist.
+            labels: {
+              previous: t('Previous'),
+              next: t('Next'),
+              slide: t('Slide {n}'),
+              slideOf: t('Slide {n} of {total}'),
+              captions: t('Captions'),
+              video: t('{title} video'),
+            },
+            // T4: the caption sidecar cut from each clip's OWN word timings, clamped to
+            // its slide. Without it the package's .vtt existed only when the burned-in
+            // caption boxes did, so deleting them (or narrating with captions off) sent
+            // an uncaptioned video into an LMS while the exact timings sat unused on
+            // every narration clip.
+            narration: narrationSlicesFromModel(runtime.getModel()),
+            signal: exportAbort.signal,
+            onProgress: (done, total) => { report?.(done, total); },
+            slides: scormPages.map((page) => ({
+              el: page,
+              notes: page.getAttribute('data-frame-notes') || undefined,
+              alt: page.getAttribute('data-frame-name') || undefined,
+            })),
+            fonts: await collectScormFonts(canvasEl),
+            renderStill: async (el) => {
+              // AT REST, not mid-entrance - the fan-out's rule, and for the same reason:
+              // a page whose boxes fade in over 400 ms photographs half-transparent.
+              if (seqRoot) {
+                applySequenceTime(seqRoot, restMsOf(el));
+                for (const o of seqRoot.querySelectorAll<HTMLElement>(`.${OFF_CLASS}`)) {
+                  o.classList.remove(OFF_CLASS);
+                }
+              }
+              const node = el as HTMLElement;
+              const blob = await runtime.export(node, stillFmt, {
+                ...opts, width: node.offsetWidth, height: node.offsetHeight,
+              });
+              return { bytes: new Uint8Array(await blob.arrayBuffer()), ext: stillFmt === 'svg' ? 'svg' : 'png' };
+            },
+            renderFilm: narrated && filmFmt ? async () => {
+              // The compositor poses the document itself, so hand the stage back before it
+              // runs rather than filming through this branch's still-life scaffolding.
+              releaseStage();
+              // `live` is dropped deliberately: "Record live" films the screen, and a
+              // course package wants the deterministic render at full quality.
+              const { live: _live, ...vp } = videoParams();
+              const blob = await runtime.export(exportTargetNode(canvasEl), filmFmt, { ...opts, ...vp });
+              return {
+                bytes: new Uint8Array(await blob.arrayBuffer()),
+                ext: filmFmt,
+                // The same cues the moving export ships (plans/180 section 4): the timed
+                // composition's own caption boxes, else the tool audio's cached word
+                // timings. Never a second pass over audio we synthesised.
+                captionsVtt: (await captionText())?.vtt,
+              };
+            } : null,
+          }), { shutter: true, detail: fmtLabel(fmt), onCancel: cancelExport });
+        } finally {
+          releaseStage();
+        }
+        downloadedBlob = pkg.blob;
+        // A course package is an archive, not a render: the 'renders' auto-save must not
+        // store it under the format tag, exactly as the multi-page zip must not.
+        downloadedIsZip = true;
+        await host.export.download(pkg.blob, `${filename}-scorm.zip`);
+      } else if (pageEls.length >= 1 && !isAnimated && fmt !== 'pdf' && fmt !== 'zip' && fmt !== 'html' && fmt !== 'pptx' && fmt !== 'penpot') {
         if (framePick.kind === 'unmatched') {
           const why = tRaw('No slide matches ?s={s}. Exporting every slide.', { s: framePick.address.raw });
           console.warn(`[export] ${why}`);
@@ -3369,6 +3589,26 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         // class name is the CSS contract - OFF_CLASS in bridge/sequence-dom.ts).
         const seqOff = canvasEl ? [...canvasEl.querySelectorAll<HTMLElement>('.seq-off')] : [];
         seqOff.forEach((o) => o.classList.remove('seq-off'));
+        // Loaded here rather than at the top of the file: the timeline composer is a
+        // large module and only a framed, timed document ever reaches this branch.
+        const { applySequenceTime, restoreSequenceTime, beginAuthoredDom, OFF_CLASS } =
+          await import('../bridge/sequence-dom.ts');
+        // THE DOCUMENT IS THE ROOT, never a single page. The applier reads two of its
+        // rules off the whole stage: a frames-as-scenes document opts OUT of depth and
+        // tilt entirely, and what says so are the `[data-pdf-page]` elements themselves -
+        // which are not descendants of any one page - while `data-seq-ms`, the length an
+        // open-ended box is measured against, is stamped on the `.lolly-frames` root.
+        // Handed one page, the composition answered both questions the other way from
+        // the preview and the video compositor: it projected a lifted box through a
+        // camera they refuse, at a perspective measured off the wrong element. One
+        // session over the canvas, driven to each page's own rest moment, asks the same
+        // questions they do - and it keeps ONE set of authored styles across the whole
+        // fan-out, which is what `createSequenceTime` exists to do.
+        const seqRoot = canvasEl;
+        // The editor's own playhead stands down for the length of the export, so the
+        // styles this session captures as authored are the author's and not the pose the
+        // timeline happened to be holding. The same scope every other photographer opens.
+        const releaseAuthored = seqRoot ? beginAuthoredDom(seqRoot) : null;
         let files: Array<{ name: string; blob: Blob }>;
         try {
           files = await exportUnscaled(async (report) => {
@@ -3381,12 +3621,38 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
               // own, so this is what stops a 40-page fan-out part way.
               report?.(i, framePages.length);
               exportAbort.signal.throwIfAborted();
+              // AT REST, not mid-entrance. Lifting `.seq-off` above only decides which
+              // artboards are on stage; it says nothing about WHEN each one is
+              // photographed, so a page whose boxes fade in over 400 ms came out as a
+              // page of half-transparent boxes. Compose the document at this page's own
+              // rest moment first - the moment every enter on it has finished, which
+              // restMsOf works out from the page's own timing attributes (plans/179 M4).
+              if (seqRoot) {
+                applySequenceTime(seqRoot, restMsOf(el));
+                // THE APPLIER DOES NOT DECIDE VISIBILITY ON THIS PATH. It hides every box
+                // whose half-open window does not contain that moment - including,
+                // inside the page it was just asked to pose, the two bullets that have
+                // already had their turn. A still of an artboard draws everything ON it:
+                // that is what the strip above decided for the pages, it is what a
+                // moving export says out loud through `buildStepsDropped` for the
+                // fragments, and it is what this export did before it learned about
+                // time. So the POSE is kept and the hiding is lifted again, every page,
+                // before the shot.
+                for (const o of seqRoot.querySelectorAll<HTMLElement>(`.${OFF_CLASS}`)) {
+                  o.classList.remove(OFF_CLASS);
+                }
+              }
               const pb = await runtime.export(el, fmt, { ...pageOpts, width: el.offsetWidth, height: el.offsetHeight });
               out.push({ name: `${filename}-${i + 1}.${extFor(fmt, pb)}`, blob: pb });
             }
             return out;
           }, { shutter: true, detail: fmtLabel(fmt), onCancel: cancelExport });
         } finally {
+          // Reverse order of the two scopes above: hand the composition back first (it
+          // also lifts every `.seq-off` it wrote), then the playhead, then put the
+          // artboards that were genuinely off the playhead back off it.
+          if (seqRoot) restoreSequenceTime(seqRoot);
+          releaseAuthored?.();
           seqOff.forEach((o) => o.classList.add('seq-off'));
         }
         if (files.length === 1) {
@@ -3460,8 +3726,28 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
             }
           }
         })();
-        downloadedBlob = blob;
-        await host.export.download(blob, `${filename}.${extFor(fmt, blob)}`);
+        // Sidecar captions (plans/180 section 4, layer 3). A render is ONE Blob and a
+        // browser download is one file, so the only way to hand over the video and its
+        // caption files together is a small zip - the same shape the multi-page fan-out
+        // above already downloads. The video keeps its own bytes verbatim inside it,
+        // credential included; the .vtt and the .srt are the cues the film was captioned
+        // from. Off ⇒ the plain single file, unchanged.
+        if (sidecarCaptions) {
+          const { zipAsync } = await import('../lib/zip.ts');
+          const enc = new TextEncoder();
+          const zipped = await zipAsync({
+            [`${filename}.${extFor(fmt, blob)}`]: new Uint8Array(await blob.arrayBuffer()),
+            [`${filename}.vtt`]: enc.encode(sidecarCaptions.vtt),
+            [`${filename}.srt`]: enc.encode(sidecarCaptions.srt),
+          });
+          const zipBlob = new Blob([zipped as BlobPart], { type: 'application/zip' });
+          downloadedBlob = zipBlob;
+          downloadedIsZip = true;
+          await host.export.download(zipBlob, `${filename}.zip`);
+        } else {
+          downloadedBlob = blob;
+          await host.export.download(blob, `${filename}.${extFor(fmt, blob)}`);
+        }
       }
       revokeTrackUrls();
       bumpMetric('filesRendered'); recordFormat(fmt); // local usage metric

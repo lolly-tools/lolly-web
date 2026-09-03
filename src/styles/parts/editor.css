@@ -53,7 +53,26 @@
 .tool-view.is-chrome-hidden .fc-ctxbar,
 .tool-view.is-chrome-hidden .fc-frame-labels,
 .tool-view.is-chrome-hidden [data-back-pill],
+.tool-view.is-chrome-hidden .url-budget,
 .tool-view.is-chrome-hidden .render-pill { display: none !important; }
+/* The hidden state takes the chrome's SPACE back as well. The columns' reserves live as
+   inline custom properties on the stage and the right dock's width on <html>, and with
+   the chrome merely display:none the canvas kept fitting into the middle of a blank
+   frame (a 232px band on the left, the dock's 340px on the right, the timeline's band
+   below). A stylesheet !important wins over a plain inline value, the fit reads
+   computed values, and the toggle in free-canvas.ts asks for a refit. The dock is a
+   fixed column outside .tool-view, hence the :has() on <html>. */
+.tool-view.is-chrome-hidden .tool-stage {
+  --stage-reserve-top: 0px !important; --stage-reserve-left: 0px !important;
+  --stage-reserve-right: 0px !important; --stage-reserve-bottom: 0px !important;
+  --ldock-rail-w: 0px !important;
+}
+html:has(.tool-view.is-chrome-hidden) {
+  --dock-w: 0px !important; --ldock-w: 0px !important;
+  --design-topbar-h: 0px !important; --design-timeline-h: 0px !important;
+}
+html:has(.tool-view.is-chrome-hidden) .edge-dock,
+html:has(.tool-view.is-chrome-hidden) .edge-dock-drop { display: none !important; }
 
 /* Floating tool palette - a detached, DRAGGABLE rail rather than a full-height
    slab, always visible (it auto-hid at rest until 2026-08-28; the hover reveal
@@ -69,7 +88,18 @@
    as an object on the canvas, not a pane of glass down the whole edge). */
 .fc-toolbar-dock {
   position: absolute;
-  left: 0; top: 0; bottom: 0;
+  /* Starts where the left BAND ends, not at the stage edge. `--stage-reserve-left` is
+     the whole left band (the Design navigator plus, while the timeline is docked, this
+     rail's own column) and `--ldock-rail-w` is this rail's share of it, so the
+     difference is the navigator's own width in both states - and 0px for every editor
+     that has no navigator. Without it the floating rail painted over the navigator's
+     rows, covering the index badges and swallowing clicks meant for a slide (the dock
+     is pointer-transparent, `.fc-toolbar` inside it is not), and covered the collapsed
+     36px dot rail entirely. A dragged rail carries its own inline `left` and is kept
+     clear of the same band by `clampRailPos`'s `reserveLeft`. */
+  left: calc(var(--stage-reserve-left, 0px) - var(--ldock-rail-w, 0px));
+  /* Inside the stage band only: below the top bar, above the timeline. */
+  top: var(--stage-reserve-top, 0px); bottom: var(--stage-reserve-bottom, 0px);
   display: flex;
   align-items: center;
   padding-left: calc(10px + var(--vv-left, 0px));
@@ -85,16 +115,26 @@
   align-items: flex-start;
   padding-left: 0;
 }
-/* Timeline open (free-canvas toggles .has-tl-reserve + writes --stage-reserve-left):
+/* Timeline open AND no navigator column (free-canvas toggles .has-tl-reserve only in
+   that case - with the navigator open the rail is a grid inside it instead, see
+   parts/design-navigator.css; syncStageReserves writes both --ldock-rail-w, this
+   column's OWN width, and --stage-reserve-left, the whole left band - plans/179 M2-d):
    the rail stops floating and becomes a fixed-width left PANEL, the mirror of the
    right edge-dock column (export settings / player). fitCanvas margins the canvas
-   into the remaining band, so content is nudged right, never overlapped. The column
-   takes the FULL viewport height - the timeline band starts at its right edge
-   (the .tl-panel shift below) rather than running under it. The grip hides and
+   into the remaining band, so content is nudged right, never overlapped. It runs from
+   the foot of the top bar to the bottom of the stage - the timeline band starts at its
+   right edge (the .tl-panel shift below) rather than running under it. The grip hides and
    free-canvas refuses rail drags while docked - a set-width panel has nowhere to
    drag to. Desktop only: free-canvas skips the dock below the 640px breakpoint. */
 .tool-stage.has-tl-reserve .fc-toolbar-dock {
-  width: var(--stage-reserve-left, 58px);
+  width: var(--ldock-rail-w, 58px);
+  /* BELOW the top bar, exactly like `.fc-nav` - the same fix for the same defect. This
+     column has a higher z-index than the bar (24 vs 22, so a FLOATING rail rides over
+     the timeline), so a docked one that started at the stage top painted over the Home
+     pill and swallowed its clicks: the label read as "ome" and the link could not be hit
+     (Andy's screenshot, 2026-09-02). design-topbar's `measure` writes the property and
+     it defaults to 0, so an editor with no top bar lays the column out as before. */
+  top: var(--stage-reserve-top, 0px);
   padding-left: 0;
   justify-content: center;
   background: hsl(var(--card));
@@ -109,7 +149,27 @@
   pointer-events: auto;              /* the column is chrome now, not a pass-through */
 }
 .tool-stage.has-tl-reserve .fc-toolbar { margin-block: auto; flex: none; }
-.tool-stage.has-tl-reserve .tl-panel { left: var(--stage-reserve-left, 0px); }
+/* THE TIMELINE BAND STARTS WHERE THE LEFT COLUMN ENDS, whatever is standing there -
+   the navigator column, the rail docked as a column, or nothing (the property is absent
+   and the panel spans the stage exactly as it always did). Not gated on
+   `.has-tl-reserve` any more: that class only means "the rail is the column", and with
+   the navigator open the band ran under the navigator's rows and clipped the layer names
+   (Andy's screenshot, 2026-09-02). `.tool-stage` qualifies it so it out-specifies
+   parts/timeline.css's own `left: 0` regardless of which sheet Vite injects first. */
+/* The timeline is a full-width band across the whole VIEWPORT (Andy, 2026-09-03: the sequence
+   editor gets the full width of the viewport). The stage is its positioned ancestor and is
+   overflow: hidden, so an absolute band can never reach past the stage; a fixed band spans
+   the viewport while the sidebars stop at its top (--stage-reserve-bottom) and the right dock
+   ends above it (--design-timeline-h, published by free-canvas reserveBottom). The stage
+   reserve for the canvas is unchanged - the band is the same height either way. */
+.tool-layout.is-editor .tool-stage .tl-panel {
+  position: fixed;
+  left: 0; right: 0;
+  /* A fixed bottom anchor honours the notch inset and the soft keyboard (mobile-chrome
+     contract): both are 0px on desktop. */
+  bottom: calc(0px + var(--safe-bottom) + var(--vv-bottom, 0px));
+  max-height: 50vh;
+}
 /* A docked panel is chrome: the floating card dressing (shadow, own background)
    comes off - the panel column carries it. */
 .tool-stage.has-tl-reserve .fc-toolbar {
@@ -283,8 +343,16 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
    purpose - those sizes are matched to screen-px hit tolerances owned by JS. */
 .fc-btn svg { width: calc(21px * var(--a11y-fs)); height: calc(21px * var(--a11y-fs)); }
 .fc-btn:hover:not(:disabled) { background: hsl(var(--muted)); }
-/* Press feedback - a tactile down-state (audit A4#7). Brightness only, so it needs no reduced-motion guard. */
-.fc-btn:active:not(:disabled) { filter: brightness(0.92); }
+/* Press feedback - a tactile down-state (audit A4#7). Brightness only, so it needs no reduced-motion guard.
+   NOT on the colour button: its picker is a position:fixed popover INSIDE the button, and a
+   `filter` on an ancestor makes that ancestor the containing block for fixed descendants
+   (the same trap as transform/backdrop-filter, see fixed-popover-containing-block.test.ts).
+   With the filter applied for exactly the duration of a press, the popover jumped ~800px
+   between pointerdown and pointerup, so the click landed on the stage and no swatch ever
+   applied - the second half of the "can't fill artboards" report (plan 179 A1). The
+   colour button presses its trigger instead, which contains no popover. */
+.fc-btn:active:not(:disabled):not(.fc-color-btn) { filter: brightness(0.92); }
+.fc-color-btn:active .color-trigger { filter: brightness(0.92); }
 .fc-btn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
 /* Undo/redo dim out at the ends of history (same treatment as .history-btn). */
 .fc-btn:disabled { opacity: 0.3; cursor: default; }
@@ -327,6 +395,10 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
   overscroll-behavior: contain;
   scrollbar-width: thin;
 }
+/* A menu whose trigger lives outside the stage (the docked HUD's mark in the right
+   column, a fixed sibling stacked at 9400): spawnPopover puts it on the body in
+   viewport coordinates, above the column, or it opens behind it. */
+.fc-popover.fc-popover--viewport { position: fixed; z-index: 9500; max-height: 76vh; }
 
 /* Import a design (openImportPanel) - the chrome that used to live in `style=` attributes
    on every element, hard-coding a brand green that never themed. Now class-driven, so it
@@ -513,6 +585,11 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
 .tool-stage:hover .fc-ctxbar,
 .fc-ctxbar:hover,
 .fc-ctxbar:focus-within { opacity: 1; transition-delay: 0s; }
+/* With the full Design chrome mounted (free-canvas setInspector) the bar is the
+   selection toolbar under the top bar: it stays while something is selected, because
+   the pointer now spends its time in the inspector and the navigator, and a bar that
+   faded every time it left the stage read as "gone" (Andy, 2026-09-03). */
+.fc-ctxbar.fc-ctxbar--pinned { opacity: 1; transition-delay: 0s; }
 
 /* The ENTRANCE (absent → present), driven by showCtxBar() in free-canvas.ts.
    The auto-hide above means the stage is ALREADY hovered at the moment a card is
@@ -521,7 +598,7 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
    only cue there is: a beat to let the gesture settle, then a fade and a small rise
    so the eye is led to the bar rather than ambushed by it.
 
-   `backwards` and NOT `forwards` is load-bearing. A transform on this bar is the
+   `backwards` and NOT `forwards` is what the rule depends on. A transform on this bar is the
    containing block for its colour popover's `position: fixed` - the reason the bar is
    centred with a computed `left` rather than a translateX - so the transform must not
    survive the animation. backwards fills the 120ms delay only; afterwards the computed
@@ -599,14 +676,16 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
   -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
 }
 .fc-flash[hidden] { display: none; }
-/* Armed-tool hint for touch (see free-canvas.ts's showArmHint). The same frosted pill the
-   off-playhead and frames-in-order chips wear, on the flash's bottom-centre perch but
-   clear of it, so a refusal and a live arm can both be on screen. POINTER-TRANSPARENT
-   except its dismiss button: the whole chip is asking for a canvas tap, so it must not be
-   able to swallow one. Only ever shown on a coarse pointer, and only while a create tool
-   is armed - free-canvas.ts owns both gates, so there is no media query here. */
+/* Armed-tool hint (see free-canvas.ts's showArmHint). The same frosted pill the
+   off-playhead and frames-in-order chips wear, on the frames-in-order chip's TOP-centre
+   perch - a drawing gesture happens under the pointer, and a chip at the bottom of the
+   stage is read once and then never looked at again (plan 179 A18). Offset below the top
+   chrome row so it clears the back pill, the zoom HUD and the object bar rather than
+   landing on them. POINTER-TRANSPARENT except its dismiss button: the whole chip is asking
+   for a canvas gesture, so it must not be able to swallow one. Shown only while a create
+   tool is armed - free-canvas.ts owns that gate, so there is no media query here. */
 .fc-armhint {
-  position: absolute; left: 50%; bottom: 52px; transform: translateX(-50%); z-index: 25;
+  position: absolute; left: 50%; top: 58px; transform: translateX(-50%); z-index: 25;
   pointer-events: none; display: flex; align-items: center; gap: var(--sp-2);
   max-width: min(430px, 88%);
   padding: 7px 6px 7px 14px; border-radius: var(--radius-pill);
@@ -924,6 +1003,22 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
 .fc-frame-label.is-active { color: hsl(var(--primary)); }
 .fc-frame-label:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
 
+/* Inline artboard rename (plans/179 A10) - sits on the tab's own rect, so the name is
+   edited where it is read. Same type as the tab so nothing jumps on the swap. */
+.fc-frame-rename {
+  position: absolute;
+  pointer-events: auto;
+  width: 160px; max-width: 240px;
+  height: calc(19px * var(--a11y-fs));
+  padding: 0 5px;
+  border: 1px solid hsl(var(--primary));
+  border-radius: var(--radius-sm);
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font: inherit; font-size: var(--fs-xs); font-weight: 600;
+  line-height: calc(17px * var(--a11y-fs));
+}
+
 /* Toolbar canvas-background - the shared colour picker, compacted to a swatch. */
 .fc-color-btn { padding: 0; overflow: visible; }
 .fc-toolbar .color-picker-field { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; }
@@ -991,6 +1086,15 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
    `cursor` has to be restated because `.fc-row-toggle` above (layer `views`) beats
    the primitive's `not-allowed` - this is the delta that makes it true. */
 .fc-row-toggle:has(.field-check:disabled) { cursor: not-allowed; }
+
+/* The More panel hangs from the object bar, which is pinned to the TOP chrome row, so on
+   a short viewport its last section (Perspective tilt) ran off the bottom of the screen
+   with no way to reach it (plan 179 C6). free-canvas.ts measures the room left below the
+   anchor and writes an inline `max-height`; this is the scroll that cap needs to clip
+   against. Inert until the cap is written - a panel that fits paints exactly as before,
+   and no other `.fc-more-panel` (stroke, dims, text) sets one.
+   `overscroll-behavior` keeps a flick at the end of the list off the page behind it. */
+.fc-more-panel { overflow-y: auto; overscroll-behavior: contain; }
 
 /* Connector inspector (org-chart) - the properties popover for a selected line. */
 .fc-edge-panel { min-width: 236px; }
@@ -1496,6 +1600,23 @@ button.fc-readout:empty { display: none; }
    owns position). */
 .stage-nav[data-docked] { position: static; opacity: 1; flex-direction: row; }
 
+/* Editor layout keeps the HUD but hides it while it is OUT of the right sidebar - the
+   top bar owns zoom then (tool-stage-nav.ts `paintHudVisible`). Nothing is needed here
+   for that: parts/a11y.css's `[hidden] { display: none !important }` sits in the top
+   layer and already beats this sheet's `display: flex`.
+
+   The brand mark leads the docked bar in that layout, and the profile avatar closes it:
+   the avatar is one node the top bar hands over while the column is open (design-topbar
+   `profileDock`). Same identity glyph as the rail's mark and the top bar's, at the pill's
+   own button size, brand-tinted through --lolly-swirl (lolly-mark.ts) - pointed at the
+   shared primary token, so every brand and both themes follow. */
+.stage-nav-mark {
+  --lolly-swirl: var(--lolly-mark, hsl(var(--primary)));
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  padding: 0;
+}
+.stage-nav-mark svg { width: calc(24px * var(--a11y-fs)); height: calc(24px * var(--a11y-fs)); }
+
 /* Theme cycle + sound toggles docked at the end of the HUD (createThemeToggle /
    createSoundToggle) - icon-only .stage-nav-btn, set off from the zoom controls by a
    hairline separator so they don't read as zoom buttons. The explicit svg size pins
@@ -1577,6 +1698,17 @@ button.fc-readout:empty { display: none; }
   -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: none; }
 .stage-nav .profile-link-mark,
 .stage-nav .profile-link-avatar { width: calc(28px * var(--a11y-fs)); height: calc(28px * var(--a11y-fs)); }
+/* …but NOT in the editor's docked bar (.stage-nav--editor, set in tool-stage-nav.ts):
+   the brand mark is the anchor there, the bar cannot fold, and the avatar is on loan
+   from the top bar - so it sits last, at the pill's ordinary control size, exactly as
+   it does beside the theme and sound toggles. Same specificity as the fold rule above
+   (both two classes), so it has to stay BELOW it to win. The mobile capsule order is
+   left alone on purpose: under 640px there is no dock column, so the editor's pill
+   never holds the avatar in the first place. */
+.stage-nav--editor .profile-link { order: 0;
+  width: calc(26px * var(--a11y-fs)); height: calc(26px * var(--a11y-fs)); }
+.stage-nav--editor .profile-link-mark,
+.stage-nav--editor .profile-link-avatar { width: calc(20px * var(--a11y-fs)); height: calc(20px * var(--a11y-fs)); }
 .stage-nav-grip { order: 100; }
 .stage-nav.is-collapsed > :not(.profile-link) { display: none; }
 .stage-nav.is-collapsed { opacity: 1; padding: 3px; }

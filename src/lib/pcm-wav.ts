@@ -32,11 +32,24 @@ export function pcmToWavBlob({ left, right, sampleRate }: RenderedPcm): Blob {
   dv.setUint32(40, dataLen, true);
   let o = 44;
   for (let i = 0; i < frames; i++) {
-    const l = Math.max(-1, Math.min(1, left[i] ?? 0));
-    const r = Math.max(-1, Math.min(1, right[i] ?? 0));
-    dv.setInt16(o, l < 0 ? l * 0x8000 : l * 0x7fff, true);
-    dv.setInt16(o + 2, r < 0 ? r * 0x8000 : r * 0x7fff, true);
+    dv.setInt16(o, toInt16(left[i] ?? 0), true);
+    dv.setInt16(o + 2, toInt16(right[i] ?? 0), true);
     o += 4;
   }
   return new Blob([buf], { type: 'audio/wav' });
+}
+
+/**
+ * One float sample to 16-bit: scale by 2^15, round to nearest, clamp.
+ *
+ * Both halves matter. The power-of-two scale makes the conversion exactly
+ * reversible (a decoder reads back over 32768), which is what lets
+ * lib/tts-splice.ts rewrite a speech clip sentence by sentence and leave every
+ * untouched sample bit-identical no matter how many times it is edited. And
+ * rounding rather than truncating keeps the quantizer unbiased: truncation
+ * pulls every sample toward zero, so a re-encode of already-decoded audio
+ * quietly shrank it a little each pass.
+ */
+function toInt16(x: number): number {
+  return Math.max(-0x8000, Math.min(0x7fff, Math.round(x * 0x8000)));
 }

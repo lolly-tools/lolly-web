@@ -10,13 +10,12 @@
 @layer views {
 
 /* ─── The clock's visibility contract ────────────────────────────────────────
-   sequence-clock.ts toggles ONE class, `seq-off`, on canvas boxes that are not
-   live at the playhead. Those boxes carry authored inline styles (position,
-   size, transform, opacity - written by the tool's hooks), so the hide has to
-   out-rank an inline declaration: !important is the only thing that does.
-   NOTE the scope - this element lives inside #tool-canvas, NOT inside
-   .tl-panel. Never nest this rule under the panel. */
-.seq-off { display: none !important; }
+   `.seq-off { display: none !important }` is NOT here any more: it moved to
+   styles/parts/sequence.css, which app.css imports eagerly into this same
+   `views` layer. This sheet is lazy - it arrives with the timeline panel - and
+   the presenter and the per-artboard still export both apply the class without
+   ever mounting that panel, so the rule cannot ride this chunk. Same priority,
+   same class, one eager home. */
 
 /* A box being PHOTOGRAPHED for its timeline thumbnail (lib/clip-thumbs.ts, SHOT_CLASS).
    dom-to-image copies the computed cssText into its clone, so an off-playhead box has
@@ -52,6 +51,13 @@
   display: flex;
   flex-direction: column;
   min-height: 112px;          /* mirrors MIN_PANEL_H in timeline-panel.ts */
+  /* …and the ceiling (plans/179 T12): the stage IS the viewport minus the top chrome
+     (`.tool-stage` is `position: relative` + `100dvh` and this panel is absolutely
+     positioned in it), so 100% is exactly "fits the viewport". clampPanelH already
+     holds a DRAGGED height to half the stage; this is the belt for every other way a
+     height reaches the panel - a restored height from a taller window, a chrome row
+     that wrapped after the height was set, the mobile keyboard shrinking the stage. */
+  max-height: 100%;
   box-sizing: border-box;
   pointer-events: auto;
   /* NOT `hidden`. The [data-tip] primitive is a ::after pseudo-element on the button
@@ -834,6 +840,15 @@
 /* ─── Tracks scroller ────────────────────────────────────────────────────────*/
 .tl-tracks {
   flex: 1 1 auto;
+  /* THE SCROLL (plans/179 T12). A flex item's `min-height` is `auto`, which means "never
+     smaller than my content" - so this row refused to shrink, `overflow-y: auto` below
+     never had anything to scroll, and the extra height went straight out of the panel's
+     bottom edge. The panel is bottom-anchored in a `overflow: hidden` stage, so what
+     fell off the end was the "Always on" strip: on a 1009px-tall viewport the scenery
+     chips (and with them every artboard in a deck) sat below the fold with no way to
+     reach them. `0` lets the row shrink to the space the chrome leaves and scroll
+     inside it, which is what the panel always meant. */
+  min-height: 0;
   position: relative;
   overflow-x: auto;
   overflow-y: auto;

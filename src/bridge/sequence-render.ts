@@ -181,7 +181,7 @@ import {
   resolveCamera,
   hdrBoostToPQ,
 } from '@lolly/engine';
-import type { HdrBoostOptions } from '@lolly/engine';
+import type { CaptionCue, HdrBoostOptions } from '@lolly/engine';
 import { activitySpans, createTruePeakLimiter, createLoudnessMeter, normalizeGain, parseFxChain, processFxPcm } from '@lolly/engine';
 // The compositor photographs the LIVE artboard, and the phase-2 clock has been
 // writing `.seq-off` (display:none) onto every box that is not under the playhead.
@@ -200,6 +200,10 @@ import { OFF_CLASS, applySplitAt, clearSplitUnits, createSequenceTime, withAutho
 // the memory and, worse, could resolve to a different build of the animation than
 // the one the preview showed. Reported alongside the other layering note.
 import { lottiePlayerFor } from '../views/lottie-mount.ts';
+// The same bridge → views edge, for the caption contract: the class a caption box
+// carries and the sliver floor a cue has to clear are both defined once, beside the
+// cue maths that mints those boxes, so the collector below cannot drift from them.
+import { CAPTION_BOX_CLASS, MIN_CUE_KEEP_S } from '../views/timeline-captions.ts';
 import { suspendNodeRasters, drainNodeRasters } from '../lib/clip-thumbs.ts';
 import type { ExportOpts } from './export.ts';
 // Type only - the encoders themselves stay out of this module's graph.
@@ -1375,6 +1379,85 @@ async function gatherStageIngredients(
   } catch (err) {
     host?.log?.('warn', `Source credentials not gathered (${(err as { message?: string })?.message ?? err}); exporting without them.`);
   }
+}
+
+// ── caption collection (plans/180 section 4) ────────────────────────────────
+//
+// A caption on this stage is an ordinary drawn text box, so it is already burned
+// into the picture. What the subtitle track and the sidecar files need is the same
+// set of cues as DATA: what was said, and between which two moments of the film.
+// The stage is the one place both facts sit together, which is why the collection
+// is here rather than beside the model - the export bar never has to know a tool's
+// field names, and a re-timed or trimmed caption cannot disagree with the picture
+// it was rendered into.
+
+/** The class the caption preset stamps on a caption box (views/timeline-captions.ts
+ *  owns it). `data-caption` is the same statement as an attribute, for a tool that
+ *  marks its captions itself rather than through the Design box `cls` field. */
+const CAPTION_SELECTOR = `.lolly-box.${CAPTION_BOX_CLASS}[data-t-start], .lolly-box[data-caption][data-t-start]`;
+
+/** Collapse every run of whitespace, including the line breaks a two-line caption
+ *  box holds, to one space: a blank line TERMINATES a cue block in both WebVTT and
+ *  SubRip, so a cue carrying one would split into a good cue and a broken fragment. */
+const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim();
+
+const attrMs = (el: Element, name: string): number => {
+  const v = parseFloat(el.getAttribute(name) ?? '');
+  return Number.isFinite(v) ? v : Number.NaN;
+};
+
+const round3 = (v: number): number => Math.round(v * 1000) / 1000;
+
+/** How {@link stageCaptionCues} is bounded. */
+export interface StageCaptionOpts {
+  /** The film's length in ms. Defaults to the stage's own `data-seq-ms`; pass the
+   *  export's length when the user typed a shorter one, so no cue outlives the file. */
+  totalMs?: number;
+}
+
+/**
+ * The caption boxes on a `[data-sequence]` stage, as cues in FILM seconds.
+ *
+ * Read straight off the rendered markup: `data-t-start` / `data-t-dur` are the
+ * same numbers the compositor gates the picture with, and the box's own text is
+ * what the viewer sees burned in. So a cue here can never say something the frame
+ * does not, which is the property that lets the sidecar and the embedded track be
+ * generated without a second pass over the audio.
+ *
+ * Struck-through clips (`data-t-ignored`) are skipped - the compositor draws none
+ * of them - and a cue is clamped to the film, then dropped if the clamp leaves it
+ * too short to read. Empty in, empty out: a document with no caption boxes gives
+ * back no cues at all, which is what keeps a caption-less export byte-identical.
+ */
+export function stageCaptionCues(node: Element | null | undefined, opts: StageCaptionOpts = {}): CaptionCue[] {
+  const root = node as HTMLElement | null | undefined;
+  const stage = root?.matches?.('[data-sequence]')
+    ? root
+    : (root?.querySelector?.('[data-sequence]') as HTMLElement | null);
+  if (!stage?.querySelectorAll) return [];
+  const declared = attrMs(stage, 'data-seq-ms');
+  const totalMs = Number.isFinite(Number(opts.totalMs)) && Number(opts.totalMs) > 0
+    ? Number(opts.totalMs)
+    : (Number.isFinite(declared) && declared > 0 ? declared : 0);
+  const endLimit = totalMs > 0 ? totalMs / 1000 : Number.POSITIVE_INFINITY;
+  const out: CaptionCue[] = [];
+  for (const el of stage.querySelectorAll<HTMLElement>(CAPTION_SELECTOR)) {
+    if (el.getAttribute('data-t-ignored') != null) continue;
+    const startMs = attrMs(el, 'data-t-start');
+    if (!Number.isFinite(startMs)) continue;
+    const durMs = attrMs(el, 'data-t-dur');
+    const start = Math.max(0, startMs / 1000);
+    // An open-ended caption box (no authored duration) runs to the end of the film,
+    // exactly as the compositor draws it.
+    const end = Math.min(endLimit, Number.isFinite(durMs) && durMs > 0 ? start + durMs / 1000 : endLimit);
+    if (!(end > start) || !Number.isFinite(end)) continue;
+    const text = oneLine((el.querySelector('.lolly-box-text') ?? el).textContent ?? '');
+    if (!text) continue;
+    if (end - start < MIN_CUE_KEEP_S) continue;
+    out.push({ start: round3(start), end: round3(end), text });
+  }
+  out.sort((a, b) => (a.start - b.start) || (a.end - b.end));
+  return out;
 }
 
 /**

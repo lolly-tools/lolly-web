@@ -43,6 +43,8 @@ import { vizSupported } from '../lib/viz-support.ts';
 // The dependency-free leaf, NOT '../lib/speech-kokoro.ts' (which re-exports the whole
 // engine speech-text module) - this module is on the boot path and needs only the number.
 import { KOKORO_MODEL_BYTES } from '../../../../engine/src/speech-model-bytes.ts';
+// Type only, so naming the web speech surface here costs the boot chunk nothing.
+import type { WebSpeechAPI } from './speech.ts';
 import { WHISPER_MODEL_BYTES } from '../lib/speech-whisper.ts';
 import { stagedUpscaleModels, UPSCALE_MODEL_BYTES } from '../lib/upscale-models.ts';
 import { matteModelsFor, MATTE_MODEL_BYTES } from '../lib/matte-models.ts';
@@ -421,12 +423,18 @@ export async function createBridge(): Promise<WebHost> {
   // main-thread decode rides), the byte totals from the pure constants modules
   // (lib/speech-kokoro.ts / lib/speech-whisper.ts, a few hundred bytes).
   const loadSpeech = memo(async () => (await import('./speech.ts')).createSpeechAPI());
-  host.speech = {
+  // Typed as the WEB speech surface, not the v1 contract, so `synthesizeLines`
+  // (the shell-only per-line regenerate path, plans/181) is forwarded rather
+  // than dropped the way a facade silently drops any method it forgets to
+  // list. Assigned through a named const because a fresh object literal on
+  // `host.speech` would be rejected for the extra method.
+  const speechFacade: WebSpeechAPI = {
     isAvailable: () => typeof WebAssembly !== 'undefined' && typeof Worker === 'function',
     modelBytes: () => KOKORO_MODEL_BYTES,
     cached: async () => (await loadSpeech()).cached(),
     voices: async () => (await loadSpeech()).voices(),
     synthesize: async (text, opts) => (await loadSpeech()).synthesize(text, opts),
+    synthesizeLines: async (lines, opts) => (await loadSpeech()).synthesizeLines(lines, opts),
     transcribeAvailable: () => typeof WebAssembly !== 'undefined' && typeof Worker === 'function'
       && (typeof window.OfflineAudioContext === 'function'
         || typeof (window as { webkitOfflineAudioContext?: unknown }).webkitOfflineAudioContext === 'function'),
@@ -434,6 +442,7 @@ export async function createBridge(): Promise<WebHost> {
     transcribeCached: async () => (await loadSpeech()).transcribeCached(),
     transcribe: async (src, opts) => (await loadSpeech()).transcribe(src, opts),
   };
+  host.speech = speechFacade;
 
   // Deep image codecs (v1.100) - a float pixel frame in, deep image bytes out
   // (16-bit PNG / EXR / Radiance / dithered 8-bit). Lazy facade: bridge/codec.ts

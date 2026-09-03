@@ -132,23 +132,6 @@ for (const { name, pack } of PACKS) {
     assert.equal(colors.length, COLLAB_COLOR_COUNT, `${name}: seats ${colors.length} people, not ${COLLAB_COLOR_COUNT}`);
   });
 
-  test(`${name}: the pack's own hues survive into the set`, { skip: pack ? false : `${name} is not mounted` }, () => {
-    const colors = collabPalette(pack!);
-    const fromPack = colors.filter(c => c.source === 'palette');
-    assert.ok(fromPack.length > 0, `${name}: nothing of the brand made it through - the derivation stopped being brand-derived`);
-
-    // Every colour labelled `palette` really is a hue the pack owns.
-    const packHues = pack!.palette
-      .map(p => paletteHue(p.value))
-      .filter((h): h is number => h !== null);
-    for (const c of fromPack) {
-      assert.ok(
-        packHues.some(h => hueGap(h, c.hue) < 0.5),
-        `${name}: ${c.hex} is labelled 'palette' but ${c.hue.toFixed(1)}° is in no pack token`,
-      );
-    }
-  });
-
   test(`${name}: the same pack yields the same colours every time`, { skip: pack ? false : `${name} is not mounted` }, () => {
     const a = collabPalette(pack!);
     const b = collabPalette(pack!);
@@ -157,6 +140,48 @@ for (const { name, pack } of PACKS) {
     assert.deepEqual(c, a, 'a copied palette array disagreed');
   });
 }
+
+// ── What each pack actually contributes ──────────────────────────────────────
+// The two shipped packs answer this differently, so they get a case each rather
+// than one loop-generated assertion: suse owns hues and must show them, while the
+// starter owns none by design and must fall back to a full set anyway.
+
+const startPack = PACKS.find(p => p.name === 'lolly-start')!.pack;
+const susePack = PACKS.find(p => p.name === 'suse')!.pack;
+
+test('suse: the pack\'s own hues survive into the set', { skip: susePack ? false : 'suse is not mounted' }, () => {
+  const colors = collabPalette(susePack!);
+  const fromPack = colors.filter(c => c.source === 'palette');
+  assert.ok(fromPack.length > 0, 'suse: nothing of the brand made it through - the derivation stopped being brand-derived');
+
+  // Every colour labelled `palette` really is a hue the pack owns.
+  const packHues = susePack!.palette
+    .map(p => paletteHue(p.value))
+    .filter((h): h is number => h !== null);
+  for (const c of fromPack) {
+    assert.ok(
+      packHues.some(h => hueGap(h, c.hue) < 0.5),
+      `suse: ${c.hex} is labelled 'palette' but ${c.hue.toFixed(1)}° is in no pack token`,
+    );
+  }
+});
+
+test('lolly-start: the greyscale starter seats everyone from the platform fallback', { skip: startPack ? false : 'lolly-start is not mounted' }, () => {
+  // The starter ships one neutral ramp and every semantic role aliases into it, so
+  // there is no brand hue to derive from. The guarantee is that this costs nobody
+  // a seat: all six are SPUN from the documented fallback anchor, and none of them
+  // pretends to be a colour the pack owns.
+  const packHues = startPack!.palette
+    .map(p => paletteHue(p.value))
+    .filter((h): h is number => h !== null);
+  assert.deepEqual(packHues, [], 'the starter pack has gained a hue - it is meant to be ink and paper');
+
+  const colors = collabPalette(startPack!);
+  assert.equal(colors.length, COLLAB_COLOR_COUNT, `lolly-start: seats ${colors.length} people, not ${COLLAB_COLOR_COUNT}`);
+  assert.ok(colors.every(c => c.source === 'spun'), 'a neutral was read as a brand hue');
+  assert.equal(colors[0]!.hue, DEFAULT_ANCHOR_HUE, 'the spin did not start at the documented fallback anchor');
+  assertProperties(colors, 'lolly-start');
+});
 
 test('the shipped packs do not collapse onto one another', { skip: PACKS.every(p => p.pack) ? false : 'both packs need mounting' }, () => {
   const [start, suse] = PACKS.map(p => collabPalette(p.pack!));

@@ -365,7 +365,7 @@ test('landing mode drops the sidebar and TOC rails but keeps pathways + sitemap'
   view.remove();
 });
 
-test('landing app links are rewritten to in-SPA routes (Launch App lands on #/d)', async () => {
+test('landing app links are rewritten to in-SPA routes (Launch App opens the tools gallery, #/)', async () => {
   stubOkFetch(LANDING_HTML);
   const view = freshView();
 
@@ -373,8 +373,8 @@ test('landing app links are rewritten to in-SPA routes (Launch App lands on #/d)
 
   const article = view.querySelector<HTMLElement>('[data-content] article.docs-landing')!;
   assert.equal(
-    article.querySelectorAll('a[href="#/d"]').length, 2,
-    'both app-root links (hero mark + Launch App CTA) point at the dashboard',
+    article.querySelectorAll('a[href="#/"]').length, 2,
+    'both app-root links (hero mark + Launch App CTA) point at the tools gallery, the main view - not the dashboard (Andy, 2026-09-03)',
   );
   assert.equal(article.querySelector('a[href^="/?lang=de"]'), null, 'no locale-root link survives');
   // Read the seeded links by class: nwsapi (jsdom's selector engine) does not match an
@@ -487,4 +487,34 @@ test('a fetch throw renders the connection-error .docs-status message', async ()
   assert.equal(view.querySelector('article.docs-content'), null, 'no fragment article is mounted');
 
   view.remove();
+});
+
+// ── Hero CTA ink (2026-09-03) ────────────────────────────────────────────────
+import { inkFor, fitHeroCtaInk } from '../lib/docs-landing.ts';
+
+test('the hero primary button takes the ink that reads on its painted fill', () => {
+  // Bright fills take black, dark fills take white; the crossover is where the two
+  // WCAG ratios are equal, so the chosen ink is always the better of the two.
+  assert.equal(inkFor('rgb(48, 186, 120)'), '#000', 'SUSE green: black (8.6:1 vs 2.4:1)');
+  assert.equal(inkFor('rgb(228, 46, 255)'), '#000', 'a bright magenta: black');
+  assert.equal(inkFor('rgb(26, 26, 26)'), '#fff', 'the starter\'s ink: white');
+  assert.equal(inkFor('rgb(12, 50, 44)'), '#fff', 'SUSE Pine: white');
+  assert.equal(inkFor('rgba(0, 0, 0, 0)'), null, 'a transparent fill is not a fill');
+  assert.equal(inkFor(''), null, 'jsdom\'s empty computed style leaves the stylesheet fallback');
+  assert.equal(inkFor('oklch(67% 0.3 322)'), null, 'an unparsed syntax is left alone rather than guessed');
+
+  const root = document.createElement('div');
+  root.innerHTML = '<div class="hero-cta"><a class="btn btn-primary" href="#/">Launch App</a></div>';
+  document.body.appendChild(root);
+  const btn = root.querySelector<HTMLElement>('.btn-primary')!;
+  const realGcs = globalThis.getComputedStyle;
+  try {
+    (globalThis as { getComputedStyle: typeof getComputedStyle }).getComputedStyle = ((el: Element) =>
+      el === btn ? ({ backgroundColor: 'rgb(26, 26, 26)' } as CSSStyleDeclaration) : realGcs(el)) as typeof getComputedStyle;
+    fitHeroCtaInk(root);
+    assert.equal(btn.style.getPropertyValue('--hero-cta-ink'), '#fff', 'a dark brand fill gets a white label');
+  } finally {
+    (globalThis as { getComputedStyle: typeof getComputedStyle }).getComputedStyle = realGcs;
+    root.remove();
+  }
 });

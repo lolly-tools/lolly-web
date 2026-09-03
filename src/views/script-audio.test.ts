@@ -36,6 +36,28 @@ test('images drop, links keep their text', () => {
   );
 });
 
+test('the pronunciation mark survives the link rule (plans/181 section 3)', () => {
+  // `[word](/ipa/)` is link-shaped but it is script grammar: the engine reads
+  // it and speaks the phonemes instead of asking eSpeak. Stripping it to the
+  // bare word here would silently delete the one technique that fixes accuracy.
+  assert.equal(
+    markdownToSpokenText('[SUSE](/ˈsuːsə/) ships today.'),
+    '[SUSE](/ˈsuːsə/) ships today.',
+  );
+  // …and an ordinary link sitting next to one still loses its URL.
+  assert.equal(
+    markdownToSpokenText('[Rancher](/ɹˈantʃɚ/) and [the docs](https://example.com).'),
+    '[Rancher](/ɹˈantʃɚ/) and the docs.',
+  );
+  // A target that is not one slash-wrapped run is a link, however slashy.
+  assert.equal(markdownToSpokenText('[docs](/a/b/)'), 'docs');
+});
+
+test('bracket marks are not markdown and pass through untouched', () => {
+  assert.equal(markdownToSpokenText('Ready. [pause 1.2] Go.'), 'Ready. [pause 1.2] Go.');
+  assert.equal(markdownToSpokenText('[slow] Read this carefully.'), '[slow] Read this carefully.');
+});
+
 test('inline code keeps its content, loses the ticks', () => {
   assert.equal(markdownToSpokenText('Run `npm install` first.'), 'Run npm install first.');
 });
@@ -155,4 +177,117 @@ test('buildTtsCredential alone returns null on failure, a store on success', asy
   const bad = clipFixture();
   (bad.wavBlob as any).arrayBuffer = async () => { throw new Error('gone'); };
   assert.equal(await buildTtsCredential(host, bad), null);
+});
+
+// ── What a clip remembers, and rewriting it in place (plans/181 section 5) ───
+import { buildTtsRecord, ttsScriptOf, ttsSegmentsFor, rewriteTtsClip } from './script-audio.ts';
+
+const RATE = 24000;
+/** Two sentences with a 0.6 s gap between them - what the pipeline synthesizes. */
+const twoSentenceResult = (): any => ({
+  sampleRate: RATE,
+  duration: 3,
+  granularity: 'word',
+  words: [
+    { text: 'Hello', start: 0, end: 0.4 },
+    { text: 'there.', start: 0.4, end: 0.9 },
+    { text: 'Second', start: 1.5, end: 1.9 },
+    { text: 'one.', start: 1.9, end: 2.4 },
+  ],
+});
+
+test('ttsScriptOf is the model-facing form: normalized, one sentence per line', () => {
+  assert.equal(ttsScriptOf('Hello there. Second one.'), 'Hello there.\nSecond one.');
+  // A mark keeps its place on the line it belongs to.
+  assert.equal(ttsScriptOf('Ready. [pause 2] Go.'), 'Ready.\n[pause 2] Go.');
+});
+
+test('buildTtsRecord stores the script and the per-line sample tiling', () => {
+  const clip = clipFixture({ result: twoSentenceResult(), spokenText: 'Hello there. Second one.' });
+  const tts = buildTtsRecord(clip).meta!.tts as any;
+  assert.equal(tts.script, 'Hello there.\nSecond one.');
+  // `text` stays the human prose - the provenance recipe is signed from it.
+  assert.equal(tts.text, 'Hello there. Second one.');
+  assert.equal(tts.segments.length, 2, 'one entry per script line');
+  // The ranges TILE: one segment ends exactly where the next begins, which is
+  // what makes a single sentence replaceable.
+  assert.deepEqual(tts.segments[0].samples, [0, 28800]);
+  assert.deepEqual(tts.segments[1].samples, [28800, 72000]);
+  assert.deepEqual(tts.segments[0].words, [0, 2]);
+  assert.deepEqual(tts.segments[1].words, [2, 4]);
+});
+
+test('a tiling that does not have one entry per line is omitted, not guessed', () => {
+  // "Welcome" is its own synthesis chunk (a line break ends a breath group) but
+  // carries no terminal punctuation, so the word stream cannot see the seam.
+  // Two lines, one derivable segment: store nothing and let the consumer derive.
+  const clip = clipFixture({
+    result: {
+      sampleRate: RATE, duration: 3, granularity: 'word',
+      words: [
+        { text: 'Welcome', start: 0, end: 0.5 },
+        { text: 'Hello', start: 1.1, end: 1.5 },
+        { text: 'there.', start: 1.5, end: 2 },
+      ],
+    } as any,
+    spokenText: 'Welcome\nHello there.',
+  });
+  assert.equal(ttsScriptOf(clip.spokenText), 'Welcome\nHello there.');
+  assert.equal(ttsSegmentsFor(clip, 2), undefined);
+  assert.equal((buildTtsRecord(clip).meta!.tts as any).segments, undefined);
+});
+
+test('a sentence-granular clip stores no tiling at all', () => {
+  const clip = clipFixture({
+    result: { ...twoSentenceResult(), granularity: 'sentence' },
+    spokenText: 'Hello there. Second one.',
+  });
+  assert.equal(ttsSegmentsFor(clip, 2), undefined);
+});
+
+test('an exact tiling from the synthesis wins over the derived one', () => {
+  const exact = [
+    { words: [0, 2], samples: [0, 30000], gapAfter: 1200 },
+    { words: [2, 4], samples: [30000, 72000], gapAfter: 0 },
+  ];
+  const clip = clipFixture({
+    result: twoSentenceResult(), spokenText: 'Hello there. Second one.', segments: exact as any,
+  });
+  assert.deepEqual(ttsSegmentsFor(clip, 2), exact);
+});
+
+function rewriteHost(calls: any[]): ScriptAudioHost {
+  return {
+    version: '1',
+    profile: { get: async () => ({}) },
+    log: () => {},
+    assets: {
+      _uploadUserAsset: async () => { throw new Error('a rewrite must never mint a new id'); },
+      _replaceUserAssetBytes: async (id: string, patch: any) => { calls.push({ id, patch }); },
+      get: async (id: string) => ({ source: 'user', id, type: 'audio', format: 'wav', url: 'blob:x' }),
+    },
+  } as any;
+}
+
+test('rewriteTtsClip replaces the bytes at the SAME asset id, keeping the name', async () => {
+  const calls: any[] = [];
+  const clip = clipFixture({ result: twoSentenceResult(), spokenText: 'Hello there. Second one.' });
+  const ref = await rewriteTtsClip(rewriteHost(calls), 'user/tts/1-hello', clip, { name: 'Intro line' });
+  assert.equal(ref?.id, 'user/tts/1-hello', 'the id is the contract - no box is re-pointed');
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].id, 'user/tts/1-hello');
+  assert.ok(calls[0].patch.blob instanceof Blob);
+  assert.ok(calls[0].patch.credential instanceof Uint8Array, 'a rewrite is re-signed, not left stale');
+  assert.equal(calls[0].patch.credentialFormat, 'wav');
+  assert.equal(calls[0].patch.meta.name, 'Intro line', 'a regenerated clip is the same clip');
+  assert.equal((calls[0].patch.meta.tts as any).script, 'Hello there.\nSecond one.');
+});
+
+test('rewriteTtsClip refuses on a shell with no in-place replace', async () => {
+  const uploads: any[] = [];
+  await assert.rejects(
+    () => rewriteTtsClip(fakeHost(uploads), 'user/tts/1-hello', clipFixture()),
+    /cannot rewrite/,
+  );
+  assert.equal(uploads.length, 0, 'and never quietly saves a copy instead');
 });

@@ -89,6 +89,8 @@ interface Fixture {
   dock: HTMLElement;
   rail: HTMLElement;
   calls: string[];
+  /** The design ports - `setColumnWidths` is how a left column reports itself. */
+  design: ReturnType<typeof initFreeCanvas>['design'];
   setHistory(canUndo: boolean, canRedo: boolean): void;
   destroy(): void;
 }
@@ -150,6 +152,7 @@ function mount(initial: Box[] = [], o: { withActions?: boolean; withHistory?: bo
   };
   return {
     stageEl, canvasEl, dock, rail, calls,
+    design: handle.design,
     setHistory(u, r) { histSync?.(u, r); },
     destroy() { handle.destroy(); viewEl.remove(); doc.body.innerHTML = ''; },
   };
@@ -203,6 +206,23 @@ test('clampRailPos lifts the rail clear of a reserved bottom band (the export pi
   const reserved = clampRailPos({ left: 0, top: 9999 }, rail, stage, { reserveBottom: 120 }).top;
   assert.equal(free, 492);
   assert.equal(reserved, 372, 'the pill band comes off the travel range');
+});
+
+test('clampRailPos keeps the rail off a docked LEFT column (the Design navigator)', () => {
+  // The rail is `pointer-events: none` but the toolbar inside it is not, so a rail
+  // parked over the navigator both covered its rows (index badges, thumbnails) and ate
+  // the clicks meant for them - clicking a slide near its left edge armed a canvas tool.
+  const rail = { w: 60, h: 300 }, stage = { w: 1000, h: 800 };
+  assert.equal(clampRailPos({ left: 0, top: 100 }, rail, stage, { reserveLeft: 232 }).left, 240,
+    'the band comes off the travel range, like the bottom one');
+  assert.equal(clampRailPos({ left: 500, top: 100 }, rail, stage, { reserveLeft: 232 }).left, 500,
+    'a rail already clear of the column is left where it is');
+  assert.equal(clampRailPos({ left: 0, top: 100 }, rail, stage, { reserveLeft: 0 }).left, 8,
+    'and with no column the clamp is byte-for-byte what it was');
+  // A column wider than the room that is left must not produce a left past the right
+  // edge: the same "park at the padded edge rather than off-stage" rule as reserveBottom.
+  const squeezed = clampRailPos({ left: 0, top: 0 }, rail, { w: 300, h: 800 }, { reserveLeft: 400 });
+  assert.equal(squeezed.left, 408, 'an impossible band still yields one honest, finite offset');
 });
 
 test('clampRailPos never returns a negative offset, even when the rail is taller than the stage', () => {
@@ -515,6 +535,65 @@ test('the rail keeps clear of the docked timeline panel, not just the export pil
   const top = parseFloat(f.dock.style.top);
   assert.ok(top + RAIL_H <= STAGE - BAND, `the rail's foot (${top + RAIL_H}) stays above the panel band`);
   f.destroy();
+});
+
+// ══ the navigator borrows the rail (plans/179 M4) ═════════════════════════════
+
+/** The navigator's rail seat. Only the slot matters to free-canvas - see `navRailSlot`. */
+function fakeNavSlot(f: Fixture, open = true): { el: HTMLElement; slot: HTMLElement } {
+  const doc = f.stageEl.ownerDocument;
+  const el = doc.createElement('div');
+  el.className = 'fc-nav fc-nav--column';
+  const slot = doc.createElement('div');
+  slot.setAttribute('data-nav-rail-slot', '');
+  slot.hidden = !open;
+  el.append(slot);
+  f.stageEl.append(el);
+  return { el, slot };
+}
+
+test('an open navigator takes the rail into its grid, and hands it back where it was', () => {
+  // The whole point of ONE left sidebar: while the column is open there is no floating
+  // palette beside it. And the position the user chose has to survive the loan - that is
+  // the T2 regression (the rail came back stranded at x=-33, a third of it off-screen).
+  const f = mount([plainBox('a', 300, 300)]);
+  dragRail(f, 420, 260);
+  assert.equal(f.dock.style.left, '420px', 'precondition: the user parked it here');
+
+  const nav = fakeNavSlot(f);
+  f.design.setColumnWidths(232, 0);
+  assert.equal(f.rail.parentElement, nav.slot, 'the buttons moved into the column');
+  assert.ok(f.rail.classList.contains('fc-toolbar--grid'));
+  assert.equal(f.dock.classList.contains('is-detached'), false, 'the empty dock stops floating');
+  assert.equal(f.dock.style.left, '', 'and drops the inline position it was holding');
+  // Every button came with it - same elements, so same handlers, tooltips and names.
+  assert.ok(f.rail.querySelector('.fc-btn-lolly'), 'the mark still leads');
+  assert.ok(f.rail.querySelector('.fc-color-btn'), 'and the paint swatch is still last');
+  assert.equal(f.rail.querySelector('.fc-btn-pointer')!.getAttribute('aria-label')?.startsWith('Pointer'), true);
+
+  // The column closes: the rail floats again, at the position it was dragged to.
+  nav.slot.hidden = true;
+  f.design.setColumnWidths(36, 0);
+  assert.equal(f.rail.parentElement, f.dock);
+  assert.equal(f.rail.classList.contains('fc-toolbar--grid'), false);
+  assert.equal(f.dock.classList.contains('is-detached'), true);
+  assert.equal(f.dock.style.left, '420px');
+  assert.equal(f.dock.style.top, '260px');
+  nav.el.remove();
+  f.destroy();
+});
+
+test('the rail goes back into its own dock when the navigator is torn down first', () => {
+  // tool.ts destroys the design chrome BEFORE the overlay, so for one moment the rail is
+  // inside a column that has already left the document. The overlay's own teardown has
+  // to reclaim it, or the next mount finds no rail at all.
+  const f = mount([plainBox('a', 300, 300)]);
+  const nav = fakeNavSlot(f);
+  f.design.setColumnWidths(232, 0);
+  assert.equal(f.rail.parentElement, nav.slot);
+  nav.el.remove();                       // the navigator's own destroy()
+  f.destroy();                           // …then the overlay's
+  assert.equal(f.rail.parentElement, f.dock, 'the rail left with the dock it belongs to');
 });
 
 test('the rail restates [hidden] - the views layer would otherwise beat base.css', () => {

@@ -21,7 +21,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { ctxTopBand, centreCtxBar } from './free-canvas.ts';
+import { ctxTopBand, centreCtxBar, stageBlockers } from './free-canvas.ts';
 
 const STAGE = { w: 1000, h: 700 };
 // The two pieces of fixed chrome, in stage coordinates: the back pill top-left (← Home)
@@ -72,6 +72,24 @@ test('the band aligns its top to the TOPMOST chrome, never to zero', () => {
 
 // ══ centring in the band ══════════════════════════════════════════════════════
 
+test('the reserved bands are the row\'s edges: below the top bar, between the columns', () => {
+  // Design chrome: a 55px top bar, a 232px navigator on the left, a 340px right column.
+  const reserve = { top: 55, left: 232, right: 340 };
+  const band = ctxTopBand(STAGE, [], { reserve });
+  assert.equal(band.top, 55 + 6, 'the row starts one pad below the top bar, never under it');
+  assert.equal(band.lo, 232 + 6, 'and one pad right of the left column');
+  assert.equal(band.hi, 1000 - 340 - 6, 'and one pad left of the right column');
+  // The top bar's own controls stand wholly inside the top reserve: not this row's chrome.
+  const inBar = { left: 400, top: 8, right: 600, bottom: 46 };
+  assert.deepEqual(ctxTopBand(STAGE, [inBar], { reserve }), band, 'chrome inside the reserve is ignored');
+  // Chrome that reaches below the reserve still bounds and aligns the row as before.
+  const hud = { left: 700, top: 70, right: 990, bottom: 110 };
+  const withHud = ctxTopBand(STAGE, [hud], { reserve: { top: 55 } });
+  assert.equal(withHud.top, 70, 'aligned to the chrome row below the bar');
+  assert.equal(withHud.hi, hud.left - 8);
+  assert.equal(ctxTopBand({ w: 0, h: 0 }, [], { reserve }).top, 61, 'the unmeasurable strip sits below the reserve too');
+});
+
 test('a bar that fits centres in the band', () => {
   const band = ctxTopBand(STAGE, [HOME, HUD]);   // lo 128, hi 692, room 564
   const pos = centreCtxBar(420, band);
@@ -111,6 +129,56 @@ test('chrome that leaves no gap never inverts the band - hi clamps up to lo', ()
   ]);
   assert.ok(band.hi >= band.lo, 'a zero-or-negative span, never a flipped one');
   assert.equal(centreCtxBar(200, band).left, band.lo, 'the bar still pins to lo and scrolls');
+});
+
+// ══ which chrome is actually in the way (stageBlockers) ══════════════════════
+//
+// The band's inputs. jsdom lays nothing out, so each stand-in carries the rect and the
+// client-rect count that a real element would report - which is exactly what the
+// function reads, and the reason it takes elements rather than doing its own queries.
+
+const stageRect = { left: 100, top: 200, right: 1100, bottom: 900, width: 1000, height: 700 } as DOMRect;
+/** An element as `stageBlockers` sees one: a rect, a hidden flag, and whether it paints. */
+function fakeEl(o: { left: number; top: number; width: number; height: number; hidden?: boolean; boxes?: number }): HTMLElement {
+  return {
+    hidden: !!o.hidden,
+    getClientRects: () => ({ length: o.boxes ?? 1 }),
+    getBoundingClientRect: () => ({
+      left: o.left, top: o.top, right: o.left + o.width, bottom: o.top + o.height,
+      width: o.width, height: o.height,
+    }),
+  } as unknown as HTMLElement;
+}
+
+test('stageBlockers reports stage-relative boxes and drops what cannot be in the way', () => {
+  const out = stageBlockers([
+    null,
+    fakeEl({ left: 100, top: 210, width: 120, height: 40 }),                  // real chrome
+    fakeEl({ left: 100, top: 210, width: 120, height: 40, hidden: true }),    // display:none
+    fakeEl({ left: 100, top: 210, width: 120, height: 40, boxes: 0 }),        // not painting
+    fakeEl({ left: 100, top: 210, width: 0, height: 0 }),                    // unmeasurable
+    fakeEl({ left: 100, top: 100, width: 200, height: 60 }),                 // ABOVE the stage
+  ], stageRect);
+  assert.deepEqual(out, [{ left: 0, top: 10, right: 120, bottom: 50 }],
+    'one blocker, in stage coordinates - the top bar\'s own band is not one of them');
+});
+
+test('the LEFT SIDEBAR bounds the band, so the object bar never opens under it', () => {
+  // The navigator column runs the full height of the stage at the left edge; while it is
+  // open the tool rail is a grid inside it, so this one rect covers both.
+  const column = fakeEl({ left: 100, top: 248, width: 232, height: 652 });
+  const blockers = stageBlockers([column], stageRect);
+  assert.deepEqual(blockers, [{ left: 0, top: 48, right: 232, bottom: 700 }]);
+  const alone = ctxTopBand(STAGE, blockers);
+  assert.equal(alone.lo, 232 + 8, 'the bar starts one gap right of the column');
+  assert.equal(alone.top, 48, 'and on the column\'s own top line, under the top bar');
+  // …and with the zoom HUD as well, both edges hold and nothing is painted over either.
+  const band = ctxTopBand(STAGE, [...blockers, HUD]);
+  assert.equal(band.lo, 240);
+  assert.equal(band.hi, HUD.left - 8);
+  for (const bw of [200, 500, 900]) {
+    assert.equal(overlaps(paintedBox(bw, band), blockers[0]!), false, `clear of the column at ${bw}px`);
+  }
 });
 
 // ══ the CSS contracts the placement depends on ════════════════════════════════
@@ -175,4 +243,36 @@ test('the rail does NOT try to keep a `[hidden]` button laid out', () => {
   assert.match(css, /\.fc-btn\[hidden\]\s*\{[^}]*display:\s*none/, 'the plain rule survives');
   assert.equal(css.match(/\.fc-toolbar \.fc-btn\[hidden\]\s*\{[^}]*\}/), null,
     'the rail must not override [hidden] - gate with a class + inert if it needs to stay laid out');
+});
+
+// ══ the panels the bar opens (plan 179 C6 / A18) ══════════════════════════════
+
+test('the More panel can scroll, so the cap free-canvas writes has something to clip', () => {
+  // The bar is pinned to the TOP chrome row, so its panels hang DOWN - and on a short
+  // viewport the last section (Perspective tilt) ran off the bottom of the screen with
+  // no way to reach it. free-canvas.ts measures the room below the anchor and writes an
+  // inline `max-height`; a cap with no overflow rule is a cap that just hides the rows.
+  const rule = css.match(/^\.fc-more-panel\s*\{[^}]*\}/m);
+  assert.ok(rule, 'editor.css declares .fc-more-panel');
+  assert.match(rule![0], /overflow-y:\s*auto/);
+  // …and the flick at the end of the list must not scroll the page behind it.
+  assert.match(rule![0], /overscroll-behavior:\s*contain/);
+  // The cap itself is measured per open, never a hard-coded height in the sheet.
+  assert.doesNotMatch(rule![0], /max-height:/,
+    'the room left below the anchor is a runtime measurement, not a constant');
+});
+
+test('the armed-tool hint sits at the TOP of the stage, clear of the chrome row', () => {
+  // A drawing gesture happens under the pointer; a chip at the bottom of the stage is
+  // read once and then never looked at again (plan 179 A18). It takes the frames-in-order
+  // chip's perch, offset below the back pill / zoom HUD / object bar row so it sits
+  // beside them rather than on them.
+  const rule = css.match(/^\.fc-armhint\s*\{[^}]*\}/m);
+  assert.ok(rule, 'editor.css declares .fc-armhint');
+  assert.doesNotMatch(rule![0], /bottom:/, 'no longer perched at the foot of the stage');
+  const top = /top:\s*(\d+)px/.exec(rule![0]);
+  assert.ok(top, 'it is placed from the top');
+  assert.ok(Number(top![1]) >= 48,
+    `${top![1]}px would put the chip inside the top chrome row the object bar owns`);
+  assert.match(rule![0], /left:\s*50%/, 'and centred, like every other stage chip');
 });

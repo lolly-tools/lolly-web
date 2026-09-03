@@ -51,7 +51,7 @@ import { createDocsTtsHost, type DocsTtsHost } from '../../../../docs/player/tts
 import { hydrateDocsTryIt } from '../lib/docs-tryit.ts';
 import { icon } from '../lib/icons.ts';
 import { enhanceDocsFormats } from '../lib/docs-formats.ts';
-import { ensureLandingStyles, adaptLandingLinks, hydrateLandingCycle, hydrateLandingCovers } from '../lib/docs-landing.ts';
+import { ensureLandingStyles, adaptLandingLinks, hydrateLandingCycle, hydrateLandingCovers, fitHeroCtaInk } from '../lib/docs-landing.ts';
 import {
   rewriteDocLinks,
   extractSidebar,
@@ -419,7 +419,7 @@ export async function mountDocs(
   // (lib/docs-landing.ts). The audience strip needs no hydration since plan 123 D1 -
   // its pills are plain #id jump links the anchor handler above already intercepts,
   // and every card is open on both surfaces.
-  if (isLanding) { adaptLandingLinks(node); hydrateLandingCycle(node); hydrateLandingCovers(node); }
+  if (isLanding) { adaptLandingLinks(node); hydrateLandingCycle(node); hydrateLandingCovers(node); fitHeroCtaInk(node); }
 
   // Deep-link: a spotlight/Ask docs result routes here as #/docs/<slug>?h=<anchor>
   // (the section heading rides a ?h= query param, since a second '#' can't ride the

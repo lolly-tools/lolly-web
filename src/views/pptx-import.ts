@@ -684,6 +684,31 @@ export function pptxSlideToNodes(slide: PptxReadSlide, opts: PptxNodeMapOpts): P
         placeholder(g, 'Chart / SmartArt');
     }
   }
+  // The slide's narration, last, so it never sits under a picture in paint order
+  // (plans/180 section 5, the import side). It paints nothing anyway: the Design tool
+  // treats a box whose asset is typed `audio` as a TIMELINE citizen, hides its marker
+  // and keeps the box transparent, so the marker's geometry only decides where the
+  // clip's handle sits on the board.
+  //
+  // The node's kind is `image`, not `audio`, and that is the engine's mapper talking:
+  // `nodeToBox` knows three kinds (box / text / image), and audio-ness is a property of
+  // the ASSET, which is exactly how a Design audio box is recognised today. The group is
+  // deliberately NOT set to `narration:<frameId>`: frame ids do not exist yet at this
+  // point, and that group is the Narrate flow's contract over clips it generated - an
+  // imported clip is someone else's recording, and claiming otherwise would invite a
+  // re-generate to replace it.
+  //
+  // Captions for it must come from Whisper under TRANSCRIPT_META_KEY, never `meta.tts`:
+  // we did not synthesise this audio and hold no word timings for it. Two different
+  // claims about origin, and the credential depends on keeping them apart.
+  const audioRef = slide.audio?.part ? opts.resolveMedia(slide.audio.part) : null;
+  if (audioRef && out.length < MAX_SLIDE_NODES) {
+    const side = Math.max(1, Math.round(Math.min(px(opts.widthEmu), px(opts.heightEmu)) * 0.08));
+    out.push({
+      kind: 'image', image: audioRef, fill: '', fit: 'contain',
+      x: side / 2, y: Math.max(0, Math.round(px(opts.heightEmu)) - side - side / 2), w: side, h: side,
+    });
+  }
   return out;
 }
 
@@ -707,11 +732,60 @@ export function pptxSlideBackground(slide: PptxReadSlide, deck: PptxDeckRead): s
   return hexAttr(slide.background?.color) ?? pptxDeckPage(deck).background;
 }
 
+/**
+ * Speaker notes are worth as much as the slide (plan 179 P2). `readPptx` has parsed a
+ * slide's notesSlide into `slide.notes` since engine 1.x, and this module simply never
+ * read the field - so importing a rehearsed deck silently threw the whole script away,
+ * and a re-export could not put it back (P1). Verbatim text: a note is prose, never
+ * markup, and the Design frame field it fills is a plain textarea.
+ */
+const MAX_NOTES_CHARS = 20_000;
+export function pptxSlideNotes(slide: PptxReadSlide | undefined): string | undefined {
+  const raw = typeof slide?.notes === 'string' ? slide.notes : '';
+  // CRLF is normal in OOXML text; the frame field and the speaker view both want \n.
+  const text = raw.replace(/\r\n?/g, '\n').trim();
+  if (!text) return undefined;
+  return text.length > MAX_NOTES_CHARS ? `${text.slice(0, MAX_NOTES_CHARS)}…` : text;
+}
+
+/** One imported slide as an artboard row: geometry + ground + its speaker notes. */
+export type PptxPageFrame = PdfPageFrame & { notes?: string };
+
+/**
+ * The artboard row a slide becomes - pure, so the notes/name/ground rules are testable
+ * without a zip, a host or a DOM. `index` is the slide's 0-based place in the DECK (the
+ * frame keeps the slide's own number even when the picker skipped its neighbours).
+ */
+export function pptxSlideFrame(
+  slide: PptxReadSlide, deck: PptxDeckRead, boxes: unknown[], index: number,
+  page: { width: number; height: number },
+): PptxPageFrame {
+  const notes = pptxSlideNotes(slide);
+  return {
+    name: `Slide ${index + 1}`,
+    width: page.width,
+    height: page.height,
+    boxes,
+    background: pptxSlideBackground(slide, deck),
+    ...(notes ? { notes } : {}),
+  };
+}
+
 /** Media extension → MIME for the parts an image box can hold. Anything else (emf,
  *  wmf, tiff, video…) stays a placeholder rather than an unreadable asset. */
 const MEDIA_MIME: Record<string, string> = {
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
   webp: 'image/webp', svg: 'image/svg+xml', bmp: 'image/bmp',
+};
+
+/** Extension → MIME for a slide's NARRATION part (plans/180 section 5, the import side).
+ *  Separate from MEDIA_MIME because these are the sounds an audio box can hold, not the
+ *  pictures an image box can; the store types the ref `audio` from the MIME, which is
+ *  what makes the Design tool treat the box as a timeline citizen rather than a picture. */
+const AUDIO_MIME: Record<string, string> = {
+  wav: 'audio/wav', wave: 'audio/wav', mp3: 'audio/mpeg', m4a: 'audio/mp4',
+  mp4: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', oga: 'audio/ogg',
+  opus: 'audio/ogg', flac: 'audio/flac', wma: 'audio/x-ms-wma',
 };
 
 /**
@@ -730,13 +804,15 @@ async function primeMedia(
   for (const slide of slides) {
     if (slide.background?.media) paths.push(slide.background.media);
     for (const node of [...(slide.inherited ?? []), ...slide.nodes]) if (node.type === 'pic' && node.media) paths.push(node.media);
+    // The slide's narration part, stored the same way a picture is (plans/180).
+    if (slide.audio?.part) paths.push(slide.audio.part);
   }
   {
     for (const path of paths) {
       if (refs.has(path)) continue;
       const part = parts[path];
       const ext = (/\.([a-z0-9]+)$/i.exec(path)?.[1] ?? '').toLowerCase();
-      const mime = MEDIA_MIME[ext];
+      const mime = MEDIA_MIME[ext] ?? AUDIO_MIME[ext];
       if (!(part instanceof Uint8Array) || !part.length || part.length > MAX_MEDIA_BYTES || !mime) { refs.set(path, null); continue; }
       try {
         const file = new File([part as BlobPart], path.split('/').pop() || `image.${ext}`, { type: mime });
@@ -803,7 +879,7 @@ export async function parsePptxPages(
   { host, warn = () => {}, pages, interactive, map }: {
     host: HostV1; warn?: (msg: string) => void; pages?: number[]; interactive?: boolean; map?: DesignMapOptions;
   },
-): Promise<{ frames: PdfPageFrame[]; background: string }> {
+): Promise<{ frames: PptxPageFrame[]; background: string }> {
   const deck = readDeck(parts);
   const count = deck.slides.length;
   if (!count) throw new Error('This deck has no slides.');
@@ -823,13 +899,13 @@ export async function parsePptxPages(
   const slides = picked.map((i) => deck.slides[i]!).filter(Boolean);
   const resolveMedia = await primeMedia(host, parts, slides, warn);
   const { width, height, background } = pptxDeckPage(deck);
-  const frames: PdfPageFrame[] = [];
+  const frames: PptxPageFrame[] = [];
   for (const i of picked) {
     const slide = deck.slides[i];
     if (!slide) continue;
     const boxes = finalizeBoxes(pptxSlideToNodes(slide, { widthEmu: deck.widthEmu, heightEmu: deck.heightEmu, theme: deck.theme, resolveMedia }) as never, { prefix: 's', ...map });
     if (!boxes.length) { warn(`Slide ${i + 1} has no importable content - skipped.`); continue; }
-    frames.push({ name: `Slide ${i + 1}`, width, height, boxes, background: pptxSlideBackground(slide, deck) });
+    frames.push(pptxSlideFrame(slide, deck, boxes, i, { width, height }));
   }
   if (!frames.length) throw new Error('Couldn’t find any importable content in this deck.');
   return { frames, background };

@@ -349,3 +349,134 @@ export function stackStep(deck: Deck, index: number, dir: 'up' | 'down'): number
   const target = column[targetRow];
   return target ? target.index : pos.index;
 }
+
+// ── The canvas camera, and the flight transition (plan 179 M4 section 7) ──────────────
+// A deck is authored on a canvas, and two of the presenter's surfaces are views of that
+// same arrangement: the OVERVIEW map (a camera framing every frame at once) and the
+// FLIGHT transition (a camera travelling from one frame to the next, Prezi-style). Both
+// are `cameraFor` applied to a rectangle, which is what stops the map and the flight from
+// disagreeing about where a frame is - there is one placement rule, not two.
+
+/** A rectangle in AUTHORED canvas units (a frame's `left`/`top`/`width`/`height`). */
+export interface Rect { x: number; y: number; w: number; h: number }
+
+/** The presenter viewport, in CSS pixels. */
+export interface Viewport { w: number; h: number }
+
+/**
+ * A camera over the canvas, expressed exactly as the CSS that applies it:
+ * `transform: translate(tx, ty) scale(scale)` with `transform-origin: 0 0`. So a point
+ * `p` in canvas units paints at `tx + p * scale`.
+ */
+export interface Camera { scale: number; tx: number; ty: number }
+
+const clampNum = (v: number, lo: number, hi: number): number => (v < lo ? lo : v > hi ? hi : v);
+
+function finiteRect(r: Rect | null | undefined): r is Rect {
+  return !!r && Number.isFinite(r.x) && Number.isFinite(r.y) && r.w > 0 && r.h > 0;
+}
+
+/** The smallest rectangle containing them all; a degenerate list yields a unit box. */
+export function unionRect(rects: readonly Rect[]): Rect {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const r of rects) {
+    if (!finiteRect(r)) continue;
+    minX = Math.min(minX, r.x); minY = Math.min(minY, r.y);
+    maxX = Math.max(maxX, r.x + r.w); maxY = Math.max(maxY, r.y + r.h);
+  }
+  if (!Number.isFinite(minX)) return { x: 0, y: 0, w: 1, h: 1 };
+  return { x: minX, y: minY, w: maxX - minX || 1, h: maxY - minY || 1 };
+}
+
+/** The camera that centres `rect` in `view` and fits it with `margin` to spare. */
+export function cameraFor(rect: Rect, view: Viewport, margin = 1): Camera {
+  const w = rect.w > 0 ? rect.w : 1;
+  const h = rect.h > 0 ? rect.h : 1;
+  const scale = Math.min(view.w / w, view.h / h) * margin;
+  return {
+    scale,
+    tx: view.w / 2 - (rect.x + w / 2) * scale,
+    ty: view.h / 2 - (rect.y + h / 2) * scale,
+  };
+}
+
+/** Where `rect` paints, in viewport pixels, under `cam`. */
+export function rectOnScreen(rect: Rect, cam: Camera): Rect {
+  return {
+    x: cam.tx + rect.x * cam.scale,
+    y: cam.ty + rect.y * cam.scale,
+    w: rect.w * cam.scale,
+    h: rect.h * cam.scale,
+  };
+}
+
+/** Do two rectangles share any area? (Touching edges do not count.) */
+export function rectsOverlap(a: Rect, b: Rect): boolean {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
+/** One leg of a flight: the camera to arrive at, and how long to take getting there. */
+export interface FlightPhase extends Camera { ms: number }
+
+/** A whole camera move from one frame to another. */
+export interface FlightPath {
+  /** One phase for a near move, two for the zoom-out-then-in arc. Never empty. */
+  phases: FlightPhase[];
+  /** The sum of the phase durations, ms. */
+  total: number;
+  /** Was the arc used (the two frames do not share the screen)? */
+  zoomOut: boolean;
+  /** How far the camera travels, measured in frame-spans - the "is this too far" number. */
+  spans: number;
+}
+
+/** The flight's duration band. A near hop takes the floor, a whole-canvas move the ceiling. */
+export const FLIGHT_MIN_MS = 500;
+export const FLIGHT_MAX_MS = 900;
+/** Travel, in frame-spans, at which a flight takes the full {@link FLIGHT_MAX_MS}. */
+export const FLIGHT_FULL_SPANS = 2;
+/** Past this much travel a flight stops reading as a move and becomes a whoosh - the
+ *  caller crossfades instead. Deliberately generous: a wide deck is still flyable. */
+export const FLIGHT_MAX_SPANS = 24;
+/** How much of the viewport a flown-to frame fills - the same 0.94 the stacked deck fits to. */
+export const FLIGHT_MARGIN = 0.94;
+/** The looser fit at the top of the arc, so both frames are comfortably inside it. */
+export const FLIGHT_OUT_MARGIN = 0.82;
+/** Share of the total the zoom-out leg takes; the zoom-in gets the rest (it reads better
+ *  slightly slower - the audience is looking for which frame they arrived at). */
+export const FLIGHT_ARC_SPLIT = 0.45;
+
+/**
+ * The camera move from frame `a` to frame `b`.
+ *
+ * TWO SHAPES, and which one you get is geometry, not taste. When `a` is still on screen
+ * once the camera frames `b` - overlapping boards, a frame inside another, a tiny hop -
+ * one eased move is the honest answer: the audience never loses sight of where they came
+ * from. When it is not, a straight interpolation would sweep the canvas past the viewport
+ * in a blur, so the camera ARCS: out to a scale that holds both frames, then in on `b`.
+ * That is the whole Prezi idea, and it is the reason a two-phase path exists at all.
+ *
+ * Returns null for input that cannot be flown (a zero viewport, an empty frame).
+ */
+export function flightPath(a: Rect, b: Rect, view: Viewport): FlightPath | null {
+  if (!finiteRect(a) || !finiteRect(b) || !(view.w > 0) || !(view.h > 0)) return null;
+  const camB = cameraFor(b, view, FLIGHT_MARGIN);
+  const span = Math.max(a.w, a.h, b.w, b.h) || 1;
+  const travel = Math.hypot((b.x + b.w / 2) - (a.x + a.w / 2), (b.y + b.h / 2) - (a.y + a.h / 2));
+  const spans = travel / span;
+  const total = Math.round(
+    FLIGHT_MIN_MS + (FLIGHT_MAX_MS - FLIGHT_MIN_MS) * clampNum(spans / FLIGHT_FULL_SPANS, 0, 1),
+  );
+  const screen: Rect = { x: 0, y: 0, w: view.w, h: view.h };
+  if (rectsOverlap(rectOnScreen(a, camB), screen)) {
+    return { phases: [{ ...camB, ms: total }], total, zoomOut: false, spans };
+  }
+  const camOut = cameraFor(unionRect([a, b]), view, FLIGHT_OUT_MARGIN);
+  const ms1 = Math.round(total * FLIGHT_ARC_SPLIT);
+  return {
+    phases: [{ ...camOut, ms: ms1 }, { ...camB, ms: total - ms1 }],
+    total,
+    zoomOut: true,
+    spans,
+  };
+}

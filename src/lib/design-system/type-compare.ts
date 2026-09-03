@@ -32,12 +32,15 @@
  * Inter.ttf) and must never share one registration, or removing either would
  * blank the other.
  *
- * NO FACE PRETENDS TO BE ANOTHER. A card whose face has not loaded - not fetched
- * yet, declined, failed, or a browser with no FontFace at all - renders its
- * specimen in the INTERFACE face and says that is what you are looking at. A
- * silent fallback here would be the one unforgivable bug in a type comparison:
- * you would choose a face you never saw. For the same reason "Use this face" is
- * disabled until the card is `ready`.
+ * NO FACE PRETENDS TO BE ANOTHER. A card whose face has not loaded - fetching,
+ * declined, failed - draws a SKELETON bar the height of the specimen instead of
+ * setting the line in the interface face. A silent fallback here would be the
+ * one unforgivable bug in a type comparison: you would choose a face you never
+ * saw. The one card that does show the interface face is `no-source`, where
+ * nothing is ever coming, and it says so in words. `select()` refuses anything
+ * that is not `ready`, which is what makes the rule true rather than decorative
+ * - the button is simply absent until then, never present and greyed out
+ * (plan 182 section 6.2, "no dead primaries").
  *
  * A PRESS ALWAYS ANSWERS. The card row is rebuilt wholesale on every state
  * change, so a load that ends changes nothing but text in a subtree that was
@@ -71,6 +74,11 @@ import { announce } from '../../a11y.ts';
 import { detectFontFormat, parseFontMetadata, readFontEmbedding, validateFontFile } from '../font-utils.ts';
 import type { FontEmbedding, FontFormat } from '../font-utils.ts';
 import { variableWeightRange } from './font-resolve.ts';
+// Type-only, erased at build: the grammar helpers below speak the ownership
+// report's own vocabulary without pulling its module (or user-fonts) into this
+// lazy chunk.
+import type { FaceState } from './ownership.ts';
+import type { FontRole } from '../../user-fonts.ts';
 import {
   GOOGLE_FAMILY_RE, POPULAR_FAMILIES, keepFaces, parseGoogleFontCss, resolveFamilySpec,
 } from '../google-fonts.ts';
@@ -301,7 +309,10 @@ export function admitCandidate(
 /** What can happen to a card's face. */
 export type CardEvent =
   | { type: 'start' }
-  | { type: 'ready' }
+  /** `chips` are facts the FETCHED file stated (its weight axis), which a Google
+   *  card cannot know before the bytes arrive. Added to the card's own, never
+   *  replacing them, and only for a card that had none of its own already. */
+  | { type: 'ready'; chips?: readonly string[] }
   | { type: 'fail'; reason: CardReason }
   | { type: 'declined' };
 
@@ -324,7 +335,8 @@ export function applyCardEvent(card: CompareCard, ev: CardEvent): CompareCard {
     case 'ready': {
       if (card.state !== 'loading') return card;
       const { reason: _drop, ...rest } = card;
-      return { ...rest, state: 'ready' };
+      const extra = (ev.chips ?? []).map((chip) => String(chip)).filter(Boolean);
+      return { ...rest, state: 'ready', ...(extra.length ? { chips: [...card.chips, ...extra] } : {}) };
     }
     case 'fail':
       if (card.state !== 'loading') return card;
@@ -513,7 +525,8 @@ export async function readSystemName(host: HostV1): Promise<string | null> {
 function reasonText(reason: CardReason, t: TFn): string {
   switch (reason) {
     case 'no-source': return t('No source we can fetch for this family. A font file installs it.');
-    case 'declined': return t('Not fetched. Nothing has left this device.');
+    // Names the third party, because that is the fact a decline was about.
+    case 'declined': return t('Not fetched. Nothing was sent to Google.');
     case 'fetch-failed': return t('Could not fetch this face from Google Fonts.');
     case 'decode-failed': return t('This file did not load as a font.');
     case 'unsupported': return t('This browser cannot preview a font file.');
@@ -555,28 +568,67 @@ function chipsHtml(card: CompareCard, t: TFn): string {
 const fallbackId = (card: CompareCard): string => `${card.previewFamily}-fallback`;
 const noteId = (card: CompareCard): string => `${card.previewFamily}-note`;
 
+/** The sentence under the specimen. Empty on a `ready` card: a face you can see
+ *  needs no explanation. */
+function noteText(card: CompareCard, t: TFn): string {
+  if (card.state === 'loading') {
+    return card.needsFetch ? t('Fetching from Google…') : t('Reading the file…');
+  }
+  if (card.reason) return reasonText(card.reason, t);
+  // Transient since plan 182 (a fetchable card previews on the press that admits
+  // it), but reachable - a stage seeded with candidates it cannot fetch yet.
+  return card.state === 'idle' ? t('Not fetched yet.') : '';
+}
+
+/**
+ * One card.
+ *
+ * ONE PRIMARY PER STATE, AND NEVER A DISABLED ONE (plan 182 section 6.2). The old
+ * card carried "Use this face" in every state and greyed it out in four of
+ * them, so the loudest thing on a candidate a person had just asked for was a
+ * dead button - read as "this is broken" rather than as "press the other one",
+ * which was a ghost button beside it. Now the state decides the button:
+ *
+ *   loading   skeleton  "Fetching from Google…"            (no button)
+ *   ready     the face  -                                  Use this face
+ *   declined  skeleton  "Not fetched. Nothing was sent…"   Fetch from Google
+ *   failed    skeleton  the reason                         Try again
+ *   no-source specimen  "No source we can fetch…"          (no button)
+ *   idle      skeleton  "Not fetched yet."                 Fetch from Google
+ *
+ * `select()` keeps its `state !== 'ready'` guard, and that guard - not an
+ * attribute - is what makes a face nobody has seen unchoosable.
+ *
+ * THE SKELETON IS NOT A FALLBACK. A specimen set in the interface face is the
+ * one unforgivable bug in a type comparison (see the module note), and a bar of
+ * the right height says "nothing here yet" without drawing a single letter in
+ * the wrong face. The exception is `no-source`, where nothing is ever coming:
+ * there the interface face is all there is, and the card says so in words.
+ */
 function cardHtml(card: CompareCard, text: string, t: TFn): string {
   const ready = card.state === 'ready';
-  // The face only paints when it is REALLY loaded. Every other state renders in
-  // the interface face and says so on the next line - see the module note.
+  const noSource = card.reason === 'no-source';
+  // The face only paints when it is REALLY loaded.
   const style = ready ? ` style="font-family:'${escape(card.previewFamily)}'"` : '';
-  const note = card.reason ? reasonText(card.reason, t)
-    : card.state === 'loading' ? t('Loading the face…')
-      : card.state === 'idle' ? t('Nothing fetched yet.')
-        : '';
-  const retry = card.state === 'failed' && card.reason !== 'no-source' && card.reason !== 'unsupported';
-  const preview = card.state === 'idle' && card.needsFetch;
+  const note = noteText(card, t);
+  const retry = card.state === 'failed' && !noSource && card.reason !== 'unsupported';
+  // Idle is the pre-fetch state, declined or not: both offer the same press, and
+  // a decline is not a refusal - somebody may change their mind on the card.
+  const fetch = card.state === 'idle' && card.needsFetch;
   // t(), NOT escape(t()): the translator has already escaped the family it
   // interpolated, and escaping that again is what puts "&amp;amp;" in an
   // accessible name.
   const remove = t('Remove {family}', { family: card.family });
   // What the card is, and why it is in the state it is in. The <article> is the
-  // one thing an AT user can land on that is not a button - "Use this face" is
-  // DISABLED on every non-ready card, so a description hung on that button would
-  // be unreachable exactly when it is the thing worth reading. It is focusable
-  // programmatically (tabindex="-1") so a repaint that destroys the pressed
-  // control can hand the keyboard back to the card rather than to its Remove.
-  const describedBy = [ready ? '' : fallbackId(card), note ? noteId(card) : ''].filter(Boolean).join(' ');
+  // one thing an AT user can land on that is not a button, and a loading card
+  // has no button at all - so the description belongs here, where the keyboard
+  // can always reach it. It is focusable programmatically (tabindex="-1") so a
+  // repaint that destroys the pressed control can hand the keyboard back to the
+  // card rather than to its Remove.
+  const describedBy = [noSource ? fallbackId(card) : '', note ? noteId(card) : ''].filter(Boolean).join(' ');
+  const specimen = ready || noSource
+    ? `<p class="tycmp-specimen" data-tycmp-specimen${style} aria-hidden="true">${escape(text)}</p>`
+    : `<div class="tycmp-skel" aria-hidden="true"></div>`;
 
   return `
     <article class="tycmp-card" data-tycmp-card="${escape(card.id)}" data-tycmp-state="${escape(card.state)}"
@@ -588,15 +640,14 @@ function cardHtml(card: CompareCard, text: string, t: TFn): string {
           aria-label="${remove}" title="${remove}">${icon('close', { size: 14 })}</button>
       </header>
       ${card.label ? `<p class="tycmp-label">${escape(card.label)}</p>` : ''}
-      <p class="tycmp-specimen" data-tycmp-specimen${style} aria-hidden="true">${escape(text)}</p>
-      ${ready ? '' : `<p class="tycmp-fallback" id="${escape(fallbackId(card))}">${t('Shown in the interface face.')}</p>`}
+      ${specimen}
+      ${noSource ? `<p class="tycmp-fallback" id="${escape(fallbackId(card))}">${t('Shown in the interface face.')}</p>` : ''}
       ${note ? `<p class="tycmp-note" id="${escape(noteId(card))}">${escape(note)}</p>` : ''}
       <ul class="tycmp-chips" role="list">${chipsHtml(card, t)}</ul>
       <div class="tycmp-acts">
-        ${preview ? `<button type="button" class="btn btn--ghost btn--sm" data-tycmp-preview="${escape(card.id)}">${t('Preview from Google')}</button>` : ''}
-        ${retry ? `<button type="button" class="btn btn--ghost btn--sm" data-tycmp-preview="${escape(card.id)}">${t('Try again')}</button>` : ''}
-        <button type="button" class="btn btn--primary btn--sm" data-tycmp-select="${escape(card.id)}"
-          ${ready && !card.busy ? '' : 'disabled'}>${t('Use this face')}</button>
+        ${fetch ? `<button type="button" class="btn btn--primary btn--sm" data-tycmp-preview="${escape(card.id)}">${t('Fetch from Google')}</button>` : ''}
+        ${retry ? `<button type="button" class="btn btn--primary btn--sm" data-tycmp-preview="${escape(card.id)}">${t('Try again')}</button>` : ''}
+        ${ready ? `<button type="button" class="btn btn--primary btn--sm" data-tycmp-select="${escape(card.id)}"${card.busy ? ' aria-busy="true"' : ''}>${t('Use this face')}</button>` : ''}
       </div>
     </article>`;
 }
@@ -610,6 +661,94 @@ function cardHtml(card: CompareCard, text: string, t: TFn): string {
  */
 export function compareCardsHtml(cards: readonly CompareCard[], text: string, t: TFn): string {
   return cards.map((card) => cardHtml(card, text, t)).join('');
+}
+
+// ── Pure: the ownership grammar the Type room paints with (plan 182 sections 4.2, 6.5) ──
+//
+// The room's four role cards and their collapsed pills say one thing each: which
+// state this role's face is in. `reportOwnership` (ownership.ts) decides the
+// state; these turn it into the words, so the strings live beside the stage they
+// belong to and are testable without booting the room.
+//
+// TEXT, NOT MARKUP. Every return here is written with `textContent` - the family
+// is a name a person typed or a font file stated, and the one place it could
+// meet a markup sink is the caller's, which uses textContent instead. Hand these
+// the NON-escaping translator (`tRaw`), for the same reason `chipsFromFacts`
+// takes it.
+//
+// The two imports are TYPE-ONLY and erase at build, so the stage still pulls no
+// user-fonts or brand-doc code into its lazy chunk.
+
+/** One card's face line: the words, plus the "Starter" pill when the face is one
+ *  nobody chose. An empty `tag` means no pill. */
+export interface FaceLine { text: string; tag: string }
+
+/**
+ * What a role card says about its face.
+ *
+ *   own        the family, and nothing else - it is the person's
+ *   inherited  the family plus the Starter pill: a real face, chosen by nobody
+ *   follows    the arrow and the role it defers to (only display/italic can)
+ *   unset      mono falls through to the starter mono; anything else that still
+ *              resolves to a face is showing a starter one; a role resolving to
+ *              nothing at all is "Not set"
+ *
+ * The `follows` line names Primary rather than the resolved family on purpose:
+ * a chain is a different fact from a choice, and restating "SUSE" on three cards
+ * was the defect (plan 182 T2).
+ */
+export function faceLine(role: FontRole, face: FaceState, t: TFn): FaceLine {
+  const family = String(face?.family ?? '').trim();
+  switch (face?.state) {
+    case 'own': return { text: family, tag: '' };
+    case 'inherited': return { text: family, tag: t('Starter') };
+    case 'follows': return { text: t('↳ follows Primary'), tag: '' };
+    default:
+      if (role === 'mono') return { text: t('↳ follows the starter mono'), tag: '' };
+      return family ? { text: family, tag: t('Starter') } : { text: t('Not set'), tag: '' };
+  }
+}
+
+/**
+ * The same face, on one line, for the strip the cards collapse to while the
+ * stage is open (plan 182 section 6.6). The card being chosen for says so
+ * instead: it is the one the stage below belongs to.
+ */
+export function collapsedFaceText(role: FontRole, face: FaceState, t: TFn, choosing = false): string {
+  if (choosing) return t('choosing…');
+  const line = faceLine(role, face, t);
+  return line.tag ? `${line.text} · ${line.tag}` : line.text;
+}
+
+/**
+ * The pinned families offered as one-press previews under the search field
+ * (plan 182 section 6.4), minus anything already serving a role or installed
+ * here - a chip for the face you are already using previews nothing.
+ *
+ * `max` is six because six is what fits on one row beside the "Pinned" label,
+ * and the stage's own cap is six cards.
+ */
+export function pinnedFaces(pinned: readonly string[], taken: readonly string[] = [], max = 6): string[] {
+  const skip = new Set(taken.map((f) => String(f ?? '').trim().toLowerCase()).filter(Boolean));
+  const out: string[] = [];
+  for (const family of pinned) {
+    const name = String(family ?? '').trim();
+    const key = name.toLowerCase();
+    if (!name || skip.has(key)) continue;
+    skip.add(key);           // the pinned list may repeat a family; the chips may not
+    out.push(name);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/**
+ * Which card the stage is moved in after (plan 182 section 6.6): the index of
+ * the role that opened it, or -1 for the Fonts panel's "Add a face", which
+ * belongs to no card and goes back after the strip.
+ */
+export function stageAfterIndex(roles: readonly string[], role: string | null): number {
+  return role ? roles.indexOf(role) : -1;
 }
 
 // ── Browser: FontFace plumbing ───────────────────────────────────────────────
@@ -725,8 +864,11 @@ export function mountTypeCompare(el: HTMLElement, ctx: TypeCompareCtx): TypeComp
           <output class="tycmp-size-out" for="${escape(sizeId)}" data-tycmp-size-out>${SIZE_DEFAULT}</output>
         </div>
       </div>
-      <p class="tycmp-lede">${t('Every face is set at the same size on the same line. Nothing installs until you choose one.')}</p>
       <div class="tycmp-cards" data-tycmp-cards></div>
+      ${/* Under the cards, not over them (plan 182 section 6.4): it describes the
+             comparison, so it reads as a footnote to the row it is about rather
+             than as a paragraph between the controls and the faces. */''}
+      <p class="tycmp-lede">${t('Every face is set at the same size on the same line. Nothing installs until you choose one.')}</p>
       <p class="tycmp-empty" data-tycmp-empty>${t('No faces to compare yet. Drop a font file, or bring one in from a source.')}</p>
       <label class="tycmp-drop" for="${escape(dropId)}" data-tycmp-drop>
         <span class="tycmp-drop-ic" aria-hidden="true">${icon('upload', { size: 20 })}</span>
@@ -785,10 +927,10 @@ export function mountTypeCompare(el: HTMLElement, ctx: TypeCompareCtx): TypeComp
       const el = cardsEl.querySelector<HTMLElement>(`[${attr}="${cssQuote(id)}"]`);
       if (el && !(el as HTMLButtonElement).disabled) { el.focus(); return true; }
     }
-    // Nothing pressable is left (a load in flight disables Use and removes
-    // Preview): the card itself, which carries the family as its accessible name
-    // and the state sentence as its description, so landing there SAYS where you
-    // are and why. Tab from here reaches Remove.
+    // Nothing pressable is left (a load in flight offers no button at all): the
+    // card itself, which carries the family as its accessible name and the state
+    // sentence as its description, so landing there SAYS where you are and why.
+    // Tab from here reaches Remove.
     const article = cardsEl.querySelector<HTMLElement>(`[${CARD_ATTR}="${cssQuote(id)}"]`);
     if (article) { article.focus(); landedOnCard = id; return true; }
     return false;
@@ -864,11 +1006,18 @@ export function mountTypeCompare(el: HTMLElement, ctx: TypeCompareCtx): TypeComp
   }
 
   /** One consent, then it holds for the mount. A decline is not remembered as a
-   *  refusal - someone may press Preview again, and asking again is the honest
-   *  reading of a second press. */
+   *  refusal - someone may press Fetch again, and asking again is the honest
+   *  reading of a second press.
+   *
+   *  Single-flight: two presses landing before the first answer share ONE
+   *  dialog. Two stacked modals asking the same question is not two questions,
+   *  and the second would be answering for a card whose press nobody made. */
+  let asking: Promise<boolean> | null = null;
   async function ensureConsent(): Promise<boolean> {
     if (consented) return true;
-    const ok = await ctx.consentGoogle().catch(() => false);
+    if (!asking) asking = ctx.consentGoogle().catch(() => false);
+    const ok = await asking;
+    asking = null;   // idempotent: every awaiter clears the same settled promise
     if (ok) consented = true;
     return ok;
   }
@@ -893,15 +1042,20 @@ export function mountTypeCompare(el: HTMLElement, ctx: TypeCompareCtx): TypeComp
    * the face URL is on fonts.gstatic.com - both already in the CSP, and both
    * reached only after `ensureConsent()` said yes.
    */
-  async function previewFromGoogle(card: CompareCard): Promise<FontFace> {
+  async function previewFromGoogle(card: CompareCard): Promise<{ face: FontFace; chips: string[] }> {
     const css = await resolveFamilySpec(card.family);
     if (!css) throw new Error('fetch-failed');
-    const face = pickPreviewFace(keepFaces(parseGoogleFontCss(css)));
-    if (!face) throw new Error('fetch-failed');
-    const resp = await fetch(face.url).catch(() => null);
+    const pick = pickPreviewFace(keepFaces(parseGoogleFontCss(css)));
+    if (!pick) throw new Error('fetch-failed');
+    const resp = await fetch(pick.url).catch(() => null);
     if (!resp?.ok) throw new Error('fetch-failed');
     const bytes = new Uint8Array(await resp.arrayBuffer());
-    return loadPreviewFace(doc, card.previewFamily, bytes, { weight: face.weight, style: face.style });
+    const face = await loadPreviewFace(doc, card.previewFamily, bytes, { weight: pick.weight, style: pick.style });
+    // The axis the FAMILY SPEC stated, which the served woff2 cannot be asked
+    // for (describeFaceBytes only opens ttf/otf). Same sentence a dropped
+    // variable file earns, so the two kinds of card read alike.
+    const range = pick.weight.includes(' ') ? pick.weight.replace(' ', '–') : '';
+    return { face, chips: range ? [tRaw('Variable weight {range}', { range })] : [] };
   }
 
   /** Start (or restart) one card's preview. Consent first for anything that has
@@ -923,6 +1077,7 @@ export function mountTypeCompare(el: HTMLElement, ctx: TypeCompareCtx): TypeComp
     }
 
     let face: FontFace;
+    let chips: string[] = [];
     try {
       if (card.bytes) {
         face = await previewFromBytes(card, card.bytes);
@@ -930,7 +1085,9 @@ export function mountTypeCompare(el: HTMLElement, ctx: TypeCompareCtx): TypeComp
         const ok = await ensureConsent();
         if (!current()) return;
         if (!ok) { update(id, { type: 'declined' }); return; }
-        face = await previewFromGoogle(card);
+        const loaded = await previewFromGoogle(card);
+        face = loaded.face;
+        chips = loaded.chips;
       }
     } catch (err) {
       if (!current()) return;
@@ -948,7 +1105,7 @@ export function mountTypeCompare(el: HTMLElement, ctx: TypeCompareCtx): TypeComp
     // Held by card id, not by family: removal must pull back exactly THIS
     // registration, and two cards can carry the same family.
     faces.set(id, face);
-    update(id, { type: 'ready' });
+    update(id, { type: 'ready', ...(chips.length ? { chips } : {}) });
   }
 
   // ── Adding and removing ────────────────────────────────────────────────────
@@ -972,10 +1129,20 @@ export function mountTypeCompare(el: HTMLElement, ctx: TypeCompareCtx): TypeComp
     cards = [...cards, result.card];
     say('');
     paint();
-    // A file previews at once (no network). A Google family previews at once too
-    // ONLY once consent is already in hand - otherwise the card waits behind its
-    // own Preview button, which is the press that asks.
-    if (!result.card.needsFetch || consented) void preview(result.card.id);
+    // A candidate somebody ASKED for previews at once (plan 182 section 6.1).
+    //
+    //  - a file or a candidate carrying bytes has nothing to ask about;
+    //  - a `google` candidate is a family somebody typed and pressed Preview on,
+    //    so it previews now: `ensureConsent()` inside `preview()` is what that
+    //    press asks. The network contract is exactly what it was - nothing
+    //    leaves this device before the dialog resolves true. What changed is
+    //    WHEN the dialog arrives: at the press the person made, instead of two
+    //    presses later on a ghost button they had to notice first.
+    //  - a `tray` candidate is SEEDED, not asked for. A stage opens with up to
+    //    three of them, so previewing those would fire a fetch (and a consent
+    //    dialog) per card for family names nobody chose. They keep their own
+    //    button, which is the press that asks.
+    if (result.card.kind !== 'tray' || !result.card.needsFetch) void preview(result.card.id);
   }
 
   function remove(id: string): void {

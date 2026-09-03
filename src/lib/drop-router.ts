@@ -50,6 +50,8 @@ import type { DialogChoice } from '../components/confirm-dialog.ts';
 import type { ToolManifest } from '../../../../engine/src/loader.ts';
 import type { InstalledToolTrust } from './installed-tools.ts';
 import { setPendingVerify } from './verify-handoff.ts';
+import { deepLinkToHash } from './deep-link.ts';
+import { tauriInvoke } from './nearby-boot.ts';
 import type { PickerHost } from '../views/picker.ts';
 import type { BeamPackHost } from './beam-pack.ts';
 import type { Unzipped } from 'fflate';
@@ -87,6 +89,13 @@ const CONTAINER_DOC_EXT_RE = /\.(xlsx|docx|pptx|epub|odt)$/i;
 // document; the zip/JSON cases need evidence, below.
 const PENPOT_EXT_RE = /\.penpot$/i;
 const JSON_EXT_RE = /\.json$/i;
+// A table of data by name or MIME. `.xlsx` is a zip and an office container, so it
+// is gated here too, not left to the zip-magic design sniff (which used to claim
+// it and error in Design); the Chart route decodes it sheet by sheet.
+const DATA_DROP_RE = /\.(csv|tsv|xlsx)$/i;
+const DATA_MIME_RE = /^text\/(csv|tab-separated-values)$/i;
+// The engine's row-import cap (parseDataRows) - a bigger file is not a chart.
+const DATA_MAX_BYTES = 8 * 1024 * 1024;
 // A zipped tool folder: `tool.json` named in a local file header, at the archive root
 // or one folder down (the "zip the folder" shape). Entry names sit in the clear even
 // when bodies deflate, so this rides the same 64 KB head read as the other zip sniffs.
@@ -200,6 +209,10 @@ export interface Sniff {
    *  A head-read heuristic like `designSystem`; `readToolZip` is the authoritative
    *  read, run when the user picks the route. Optional, absent reads as false. */
   tool?: boolean;
+  /** A table of data (.csv/.tsv/.xlsx): its route is the Chart tool, seeded with
+   *  the rows - the same decode the field's own data-source button performs.
+   *  Optional, absent reads as false. */
+  data?: boolean;
 }
 
 const isMediaFile = (f: File): boolean =>
@@ -315,7 +328,8 @@ async function sniffFile(file: File, deep: boolean, picker: PickerModule): Promi
     ? ((head[0] === 0x38 && head[1] === 0x42 && head[2] === 0x50 && head[3] === 0x53)
       || text.startsWith('gimp xcf '))
     : /\.(psd|psb|xcf)$/i.test(file.name);
-  const design = !lolly && !pdf && !pptx && !docx && !layers && (DESIGN_EXT_RE.test(file.name) || zipMagic || svgText);
+  const data = !lolly && (DATA_DROP_RE.test(file.name) || DATA_MIME_RE.test(file.type));
+  const design = !lolly && !pdf && !pptx && !docx && !layers && !data && (DESIGN_EXT_RE.test(file.name) || zipMagic || svgText);
   // A plain archive: a zip/tar by name, or PK-magic bytes that aren't a design
   // bundle. Design bundles and office/OCF packages (zips too) are excluded so the
   // "unpack" route never competes for a .penpot or shreds a .xlsx.
@@ -346,7 +360,7 @@ async function sniffFile(file: File, deep: boolean, picker: PickerModule): Promi
     && (TEXT_DROP_RE.test(file.name) || /^text\//i.test(file.type));
   // A PSD/XCF often carries an image/* MIME - the layered routes own it, not
   // the plain media ones (the library route still exists, as a flatten).
-  return { design, pdf, pptx, docx, media: isMediaFile(file) && !layers, c2pa, layers, archive, designSystem, lolly, textDoc, tool };
+  return { design, pdf, pptx, docx, media: isMediaFile(file) && !layers, c2pa, layers, archive, designSystem, lolly, textDoc, tool, data };
 }
 
 const toolExists = (id: string): boolean =>
@@ -464,10 +478,14 @@ export function dropChooserChoices(s: Sniff, ctx: ChooserContext): DialogChoice[
   if (single && s.docx) {
     choices.push({ id: 'extract', label: t('Extract content (Markdown)'), primary: true });
   }
+  // A table of data charts itself (plans/87): the rows go into Chart's data field.
+  if (single && s.data && ctx.has('chart')) {
+    choices.push({ id: 'chart', label: t('Chart the data'), primary: !choices.some((c) => c.primary) });
+  }
   if ((single && (s.media || s.textDoc) && !s.pdf && !s.pptx) || (!single && allIngestable)) {
     choices.push({ id: 'library', label: t('Add to your library'), primary: choices.length === 0 });
   }
-  const unknown = single && !s.design && !s.pdf && !s.pptx && !s.media && !s.textDoc;
+  const unknown = single && !s.design && !s.pdf && !s.pptx && !s.media && !s.textDoc && !s.data;
   // Provenance applies to media, to anything carrying C2PA-looking bytes, to a text
   // document (the verify view reads its AI-writing signals), to unknown formats - and
   // as the last resort when no other route landed.
@@ -497,6 +515,7 @@ export function dropChooserMessage(s: Sniff, name: string, ctx: ChooserContext):
   if (s.designSystem) return tRaw('“{name}” looks like a design system.', { name });
   if (s.tool) return tRaw('“{name}” looks like a Lolly tool folder.', { name });
   if (s.archive) return tRaw('“{name}” is an archive.', { name });
+  if (s.data) return tRaw('“{name}” is a table of data.', { name });
   if (s.design) return tRaw('“{name}” looks like a design file.', { name });
   if (s.media) return tRaw('“{name}” is ready to import.', { name });
   return tRaw('“{name}” isn’t a format Lolly can import directly.', { name });
@@ -914,6 +933,22 @@ export async function openDropChooser(
       pendingToolFile = { toolId: 'compress-pdf', file: first };
       routeToConsumer('#/tool/compress-pdf', onToolRoute('compress-pdf'));
       break;
+    case 'chart': {
+      // Rows → Chart's data field (a longtext taking CSV/TSV): the decode is the
+      // field's own data-source one (xlsx → CSV, a sheet picker when there is more
+      // than one sheet), then the one-shot seed the tool view folds into its
+      // initial values on mount. Cancelling the sheet picker cancels the route.
+      if (first.size > DATA_MAX_BYTES) {
+        announce(t('That file is too big to chart - the limit is 8 MB.'), { assertive: true });
+        break;
+      }
+      const { bytesToFieldTextInteractive } = await import('./data-source.ts');
+      const text = await bytesToFieldTextInteractive(new Uint8Array(await first.arrayBuffer()), first.name, announce);
+      if (text == null) break;
+      setPendingToolSeed('chart', { data: text });
+      routeToConsumer('#/tool/chart', onToolRoute('chart'));
+      break;
+    }
     case 'verify':
       setPendingVerify({ files });
       routeToConsumer('#/verify', /^#\/(verify|valid|v)([?/]|$)/.test(window.location.hash));
@@ -1248,32 +1283,73 @@ export function initShareTargetIngest(host: PickerHost): void {
 }
 
 /** The App-Link half of the `LollyShare` interface (plan 171): MainActivity
- *  stashes a tapped ACTION_VIEW https URL, consumed on read. */
+ *  stashes a tapped ACTION_VIEW link, consumed on read. */
 interface LollyLinkBridge {
   pendingDeepLink(): string;
 }
 
+/** Route one OS-delivered link. An https lolly.tools link (Android App Links)
+ *  re-mounts exactly what the browser would have shown - the SPA router owns the
+ *  path+query+hash grammar, packed z/zx links included. A lolly:// link goes
+ *  through the shared scheme mapper and is refused, with a warn, when it names no
+ *  route the app owns. */
+export function routeDeliveredLink(raw: string): void {
+  if (/^lolly:/i.test(raw)) {
+    const hash = deepLinkToHash(raw);
+    if (hash) routeToConsumer(hash, window.location.hash === hash);
+    else console.warn('[deep-link] ignoring malformed lolly:// link', raw);
+    return;
+  }
+  let u: URL;
+  try { u = new URL(raw); } catch { return; }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return;
+  void import('../nav.ts').then((m) => m.navigateTo(u.pathname + u.search + u.hash));
+}
+
+const MOBILE_LINK_POLL_MS = 1200;
+
 /**
- * Android App-Link intake: a tapped https://lolly.tools/t/… (or /design) link
- * opens the app, and this maps it onto the in-app route - the SPA router owns
- * the path+query+hash grammar, so navigateTo with the URL's own tail re-mounts
- * exactly what the browser would have shown (packed z/zx links included; the
- * zx password prompt runs at the tool view's own load boundary as usual).
- * Same cold-poll + warm-event pattern as the share target; feature-detected,
- * so a no-op everywhere but the Android app. Call once at boot (main.ts).
+ * Deep-link intake for the native shells. Android: a tapped https://lolly.tools/t/…
+ * (or /design) App Link, or a lolly:// link, opens the app and MainActivity stashes
+ * it on the LollyShare bridge - same cold-poll + warm-event pattern as the share
+ * target. iOS: the Rust side queues the lolly:// URLs the app is opened with
+ * (RunEvent::Opened) and this drains that queue on the desktop poll loop's cadence,
+ * retiring on the first "no such command" rejection - the desktop shell carries
+ * the Tauri internals too, but has its own queue (linux-desktop-boot.ts), so one
+ * rejection says this whole surface is absent. Feature-detected throughout, so a
+ * no-op in the browser. Call once at boot (main.ts).
  */
 export function initDeepLinkIntake(): void {
   const bridge = (window as unknown as { LollyShare?: Partial<LollyLinkBridge> }).LollyShare;
-  if (typeof bridge?.pendingDeepLink !== 'function') return;
-  const link = bridge as LollyLinkBridge;
-  const poll = (): void => {
-    const raw = link.pendingDeepLink();
-    if (!raw) return;
-    let u: URL;
-    try { u = new URL(raw); } catch { return; }
-    if (u.protocol !== 'https:' && u.protocol !== 'http:') return;
-    void import('../nav.ts').then((m) => m.navigateTo(u.pathname + u.search + u.hash));
+  if (typeof bridge?.pendingDeepLink === 'function') {
+    const link = bridge as LollyLinkBridge;
+    const poll = (): void => {
+      const raw = link.pendingDeepLink();
+      if (raw) routeDeliveredLink(raw);
+    };
+    window.addEventListener('lolly-deep-link', poll);
+    poll(); // cold start: the launching intent was stashed before this JS booted
+    return;
+  }
+  const invoke = tauriInvoke();
+  if (!invoke) return;
+  let handle = 0;
+  let draining = false;
+  const tick = (): void => {
+    if (draining) return;
+    draining = true;
+    void invoke('mobile_poll_events')
+      .then((raw) => {
+        if (!Array.isArray(raw)) return;
+        for (const e of raw as Array<{ kind?: unknown; value?: unknown }>) {
+          if (e?.kind === 'deepLink' && typeof e.value === 'string') routeDeliveredLink(e.value);
+        }
+      })
+      .catch((e: unknown) => {
+        if (/mobile_poll_events/.test(String((e as Error)?.message ?? e))) window.clearInterval(handle);
+      })
+      .finally(() => { draining = false; });
   };
-  window.addEventListener('lolly-deep-link', poll);
-  poll(); // cold start: the launching intent was stashed before this JS booted
+  handle = window.setInterval(tick, MOBILE_LINK_POLL_MS);
+  tick();
 }

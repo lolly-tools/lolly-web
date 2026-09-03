@@ -29,6 +29,7 @@
 // scripts/check-bundle-budget.ts.
 import { colorToHex, isAlias } from '../../../engine/src/tokens.ts';
 import { parseOklch, oklchToHex, hexToOklch, contrastRatio, parseHex } from '../../../engine/src/brand-derive.ts';
+import { chromeFollowsDesignSystem } from './lib/chrome-follow.ts';
 
 /** The seven semantic slots (token leaf under `color.semantic`) → CSS var. */
 const SLOTS = [
@@ -731,6 +732,10 @@ function applyBrandLogo(dataUrl: string | null): void {
  * bust() empties the token caches but nothing re-paints chrome by itself.
  * Best-effort like applyBrandVars: never throws, removes the style when the
  * brand has no resolvable primary.
+ *
+ * The colour half is gated on the Appearance pref (lib/chrome-follow.ts): the
+ * app taking the design system's accent is a preference, not a token. Fonts and
+ * radius are not - see the note at the gate.
  */
 export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
   // Nothing here to do without a document (a DOM-free shell / test bridge) - 
@@ -753,9 +758,23 @@ export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
   };
   // Fonts and shape first, independently of the colour blocks below - a brand
   // may declare font/shape tokens without semantic colour slots (the SUSE doc)
-  // or vice versa.
+  // or vice versa. Both are outside the Appearance pref below: a face and a
+  // corner are what the design system says the app should LOOK like, and neither
+  // is the app helping itself to a colour (lib/chrome-follow.ts).
   await applyBrandFonts({ tokens: tk }).catch(() => { /* never breaks boot */ });
   await applyBrandRadius({ tokens: tk }).catch(() => { /* never breaks boot */ });
+  // "Interface follows the design system" (plan 182 section 5.6), off: every
+  // chrome COLOUR this function paints is removed and the app's own accent
+  // stands. Not a skip - a re-entry has to undo what an earlier one applied,
+  // because this is also the path a flip of the pref repaints through.
+  if (!chromeFollowsDesignSystem()) {
+    applyChromeAccent({ primary: null, onPrimary: null }, { primary: null, onPrimary: null });
+    root.removeProperty('--brand-primary');
+    root.removeProperty('--brand-warn');
+    root.removeProperty('--brand-warn-ink');
+    applyBrandLogo(null);
+    return;
+  }
   // The warm "needs attention" accent scans every resolved colour (ramps,
   // spectrum, roles) - independent of the semantic primary/on-primary block
   // below, so it still finds SUSE's Persimmon even though that catalog

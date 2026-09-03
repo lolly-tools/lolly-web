@@ -405,6 +405,32 @@ export function addSwatch(
   return [...(multiSet ? ['base'] : []), 'color', group, slug];
 }
 
+/**
+ * Re-file the swatch at `path` under a display heading - the write behind the
+ * bulk bar's "Move to" (plan 182 section 5.5).
+ *
+ * The SAME `$extensions` vendor tag {@link addSwatch} writes, read back by
+ * `walkSwatches` as the swatch's `group`: a move relabels where a tile renders
+ * and never what the token is, so a ramp step keeps deriving and a custom
+ * swatch keeps its key. `null` drops the tag, sending the swatch back to the
+ * heading its path implies. The tag is stored theme-less by contract, so a
+ * caller passing a live heading strips the "· Light" suffix first.
+ */
+export function setSwatchGroup(doc: unknown, path: string[], group: string | null): boolean {
+  const leaf = leafAt(doc, path);
+  if (!leaf) return false;
+  const name = group?.trim() ?? '';
+  if (!name) {
+    const ext = isRec(leaf.$extensions) ? (leaf.$extensions as Rec) : null;
+    if (ext && isRec(ext[TOKEN_EXT])) { delete (ext[TOKEN_EXT] as Rec).group; cleanupExt(leaf); }
+    return true;
+  }
+  const ext = (isRec(leaf.$extensions) ? leaf.$extensions : (leaf.$extensions = {} as Rec)) as Rec;
+  const ns = (isRec(ext[TOKEN_EXT]) ? ext[TOKEN_EXT] : (ext[TOKEN_EXT] = {} as Rec)) as Rec;
+  ns.group = name;
+  return true;
+}
+
 // ── Swatch exclusions - "delete" for derived leaves ──────────────────────────
 // Derived ramp steps (and the theme roles) are structural: the ramp stays
 // derived, so deleting one from the palette means HIDING it, not removing the

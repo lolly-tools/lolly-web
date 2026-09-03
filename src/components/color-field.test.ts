@@ -12,7 +12,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { lchTrackGradients, LCH_MAX, colorFieldHtml, wireColorField, setSwatches, runBoundaries } from './color-field.ts';
+import {
+  lchTrackGradients, LCH_MAX, colorFieldHtml, wireColorField, setSwatches, runBoundaries,
+  swatchName, resolveColorVar, colorVarLabel,
+} from './color-field.ts';
 import type { ColorChangeDetail, ColorFieldValue, WireColorFieldOpts } from './color-field.ts';
 import { colorSpaces } from './color-spaces.ts';
 
@@ -924,4 +927,181 @@ test('the swatch name tip never survives a pick, an Escape, or the swatch leavin
   document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   assert.equal(tipShown(), false, 'Escape hides the chip');
   sw3.remove();
+});
+
+// ══ colour NAMES (plan 179 A17) ═══════════════════════════════════════════════
+//
+// "Colour: aqua #ffa3e9" was announced for a pink artboard fill. A name picked by
+// anything other than distance in a perceptual space can do that; a name picked by
+// OKLCH distance over a hue wheel that WRAPS cannot. These pin the three colours
+// from the bug report plus the wrap itself.
+
+// The list the picker names against for this block: a brand White, plus a swatch whose
+// LABEL disagrees with its colour. Nothing here may hand "Aqua" to a pink.
+//
+// Installed PER TEST, not at module scope. `setSwatches` is global state and every module
+// body runs before the first test callback does, so a module-scope call here was overwritten
+// by the token test's own single-swatch list (declared earlier in the file, executed later):
+// this block was naming against a lone Jungle swatch, the mislabelled Aqua was never in
+// the list, and the test that exists to catch a swatch-list interference tested nothing.
+const nameSwatches = (): void => {
+  setSwatches([
+    { value: '#ffffff', label: 'White', group: null, ref: null },
+    { value: '#00c8d7', label: 'Aqua', group: null, ref: null },
+  ]);
+};
+
+test('a pink is never named for a cyan, whatever the swatch list says', () => {
+  nameSwatches();
+  assert.equal(swatchName('#00c8d7'), 'Aqua', 'the mislabelled swatch really is in the list');
+  const name = swatchName('#ffa3e9');
+  assert.doesNotMatch(name, /aqua|cyan|teal|blue|green/i,
+    `#ffa3e9 is a pale magenta - "${name}" would have to be measured, not asserted`);
+  assert.match(name, /magenta|pink|rose|purple|violet/i, 'named for the half of the wheel it is on');
+});
+
+test('a dark green is named a green', () => {
+  nameSwatches();
+  assert.match(swatchName('#025937'), /green|emerald|teal/i);
+});
+
+test('white takes its palette name, not a computed one', () => {
+  // #ffffff IS a swatch, and a swatch's own label always wins - that is the whole
+  // point of having a brand palette in the picker. Named against TWO different lists,
+  // because 'White' is also what the perceptual table would answer: with only the
+  // first assertion, deleting the palette lookup from swatchName left this passing.
+  nameSwatches();
+  assert.equal(swatchName('#ffffff'), 'White');
+  setSwatches([{ value: '#ffffff', label: 'Paper', group: null, ref: null }]);
+  assert.equal(swatchName('#ffffff'), 'Paper', 'the palette is consulted, not a fixed table');
+});
+
+test('the hue wheel wraps: 359° and 1° are named by the same neighbourhood', () => {
+  nameSwatches();
+  // Two colours a couple of degrees apart across the 0/360 seam. A lookup that
+  // compared raw hue numbers would put them at opposite ends of the list.
+  const a = swatchName('#ff005b');   // ~just below 360 in OKLCH
+  const b = swatchName('#ff2a2a');   // ~just above 0
+  assert.ok(a && b, 'both are named');
+  const family = (s: string): string => s.split(' ').pop()!;
+  assert.ok(['Rose', 'Red', 'Pink', 'Magenta'].includes(family(a)), `${a} sits on the seam`);
+  assert.ok(['Rose', 'Red', 'Pink', 'Magenta'].includes(family(b)), `${b} sits on the seam`);
+});
+
+test('alpha and shorthand do not change a name, and a non-colour has none', () => {
+  nameSwatches();
+  assert.equal(swatchName('#ffffffcc'), 'White', 'alpha is ignored when naming');
+  assert.equal(swatchName('#fff'), 'White', 'shorthand is the same colour');
+  assert.equal(swatchName('transparent'), '',
+    'transparent is a sentinel, not a colour to name perceptually - only a swatch can name it');
+  assert.equal(swatchName('var(--brand-primary, #0b1220)'), '',
+    'a token reference is not a colour we can name - the host resolves it first');
+  assert.equal(swatchName(''), '');
+});
+
+// ══ var() colour values (plan 179 A2) ═════════════════════════════════════════
+//
+// The resolver is driven with a FAKE getComputedStyle: what matters is the decision
+// tree (cascade → literal fallback → the raw string), not jsdom's cascade.
+
+/** Run `fn` with `getComputedStyle` replaced by a lookup over `vars`. */
+function withVars<T>(vars: Record<string, string>, fn: () => T): T {
+  const real = globalThis.getComputedStyle;
+  (globalThis as { getComputedStyle: unknown }).getComputedStyle = ((el: Element) => ({
+    getPropertyValue: (p: string) => vars[p] ?? '',
+    el,
+  })) as unknown as typeof globalThis.getComputedStyle;
+  try { return fn(); } finally { (globalThis as { getComputedStyle: unknown }).getComputedStyle = real; }
+}
+
+const scope = (): Element => document.getElementById('host')!;
+
+test('a var() resolves through the element it is painted on', () => {
+  withVars({ '--brand-primary': ' #ff8fbe ' }, () => {
+    assert.equal(resolveColorVar('var(--brand-primary, #0b1220)', scope()), '#ff8fbe',
+      'the cascade is the only thing that knows what the token paints right now');
+    assert.equal(resolveColorVar('var(--brand-primary)', scope()), '#ff8fbe');
+  });
+});
+
+test('an unresolvable var() falls back to the literal the author wrote', () => {
+  withVars({}, () => {
+    assert.equal(resolveColorVar('var(--brand-primary, #0b1220)', scope()), '#0b1220');
+  });
+});
+
+test('an unresolvable var() with no fallback keeps the raw string, never a guess', () => {
+  withVars({}, () => {
+    assert.equal(resolveColorVar('var(--nope)', scope()), 'var(--nope)',
+      'showing black would be a claim about the colour; the raw string is only a claim about the model');
+  });
+});
+
+test('a nested var() chain is walked to the first thing that resolves', () => {
+  withVars({ '--b': 'rgb(1, 2, 3)' }, () => {
+    assert.equal(resolveColorVar('var(--a, var(--b, #fff))', scope()), 'rgb(1, 2, 3)');
+  });
+  withVars({}, () => {
+    assert.equal(resolveColorVar('var(--a, var(--b, #fff))', scope()), '#fff', 'down to the last literal');
+  });
+});
+
+test('a plain colour passes through untouched, so every seed can be wrapped', () => {
+  withVars({ '--brand-primary': '#ff8fbe' }, () => {
+    for (const v of ['#0c322c', 'transparent', 'rgb(1 2 3)', 'oklch(62% 0.11 250)', '']) {
+      assert.equal(resolveColorVar(v, scope()), v);
+    }
+  });
+});
+
+test('the resolver never throws when there is no computed style to read', () => {
+  const real = globalThis.getComputedStyle;
+  (globalThis as { getComputedStyle: unknown }).getComputedStyle = (() => { throw new Error('no layout'); });
+  try {
+    assert.equal(resolveColorVar('var(--x, #123456)', scope()), '#123456');
+  } finally { (globalThis as { getComputedStyle: unknown }).getComputedStyle = real; }
+});
+
+test('a brand token has a human name; a private variable does not', () => {
+  assert.equal(colorVarLabel('var(--brand-primary, #0b1220)'), 'Primary');
+  assert.equal(colorVarLabel('var(--brand-on-primary)'), 'On Primary');
+  assert.equal(colorVarLabel('var(--lolly-frame-surface)'), 'Frame Surface');
+  assert.equal(colorVarLabel('var(--x)'), '', 'not a brand token');
+  assert.equal(colorVarLabel('#0b1220'), '', 'not a var at all');
+});
+
+test('a host can say WHICH property the field paints, and an edit does not lose it', () => {
+  // A panel can lay out several of these at once - the Design inspector shows Fill,
+  // Stroke, shadow Colour and Text colour on one box, in `<div><span>` rows that
+  // associate nothing - so all four announced the identical "Colour: #000000": the
+  // trigger carried the value and no hint of what the value was FOR.
+  const m = mount('#123456', { float: true, label: 'Fill' });
+  const trigger = m.field.querySelector('.color-trigger')!;
+  assert.match(trigger.getAttribute('aria-label') ?? '', /^Fill: /, 'the name leads with the property');
+  assert.match(trigger.getAttribute('aria-label') ?? '', /#123456/, 'and still says which colour it is');
+  assert.equal(m.field.querySelector('.color-trigger-name')!.textContent, swatchName('#123456'),
+    'and the VISIBLE name is untouched - the label is an accessible-name addition, not a caption');
+
+  // updateTrigger rewrites this attribute on every edit, so the label rides on the
+  // field (data-color-label) rather than in a closure it could be dropped from.
+  const hex = m.field.querySelector<HTMLInputElement>('.color-input')!;
+  hex.value = '#00ff00';
+  fire(hex, 'change');
+  assert.match(trigger.getAttribute('aria-label') ?? '', /^Fill: /, 'the property survived the edit');
+
+  // Nothing passed, nothing changed: the wording is what it has always been.
+  const plain = mount('#123456', { float: true });
+  assert.match(plain.field.querySelector('.color-trigger')!.getAttribute('aria-label') ?? '', /^Colour: /);
+});
+
+test('the name a host passes wins over the computed one, and the hex still rides along', () => {
+  const host = document.getElementById('host')!;
+  host.innerHTML = colorFieldHtml('cf-tok', '#ff8fbe', { float: true, name: 'Primary' });
+  const trigger = host.querySelector('.color-trigger')!;
+  assert.equal(host.querySelector('.color-trigger-name')!.textContent, 'Primary');
+  assert.match(trigger.getAttribute('aria-label') ?? '', /^Colour: Primary #ff8fbe/,
+    'the token names the colour and the resolved hex says which one it is today');
+  // Without the override the field names the colour itself.
+  host.innerHTML = colorFieldHtml('cf-tok', '#ff8fbe', { float: true });
+  assert.notEqual(host.querySelector('.color-trigger-name')!.textContent, 'Primary');
 });

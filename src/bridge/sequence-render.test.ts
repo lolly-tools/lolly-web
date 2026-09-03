@@ -46,8 +46,16 @@ test('contract: the raster pass clears the phase-2 clock\'s off-playhead class',
     'the applier owns the name');
   assert.match(read('../views/sequence-clock.ts'), /OFF_CLASS,?[\s\S]{0,200}from '\.\.\/bridge\/sequence-dom\.ts'/,
     'and the clock takes it from there rather than declaring a second one');
-  assert.match(read('../styles/parts/timeline.css'), /\.seq-off\s*\{[^}]*display:\s*none/,
+  assert.match(read('../styles/parts/sequence.css'), /\.seq-off\s*\{[^}]*display:\s*none\s*!important/,
     'the class only matters because the stylesheet hides it');
+  // …and that sheet has to be EAGER. It used to live in parts/timeline.css, which only
+  // arrives with the timeline panel's lazy chunk - so a deck presented without ever
+  // opening the timeline stamped the class and nothing gave it meaning, and every build
+  // fragment was on screen from the moment its slide arrived.
+  assert.match(read('../styles/app.css'), /@import '\.\/parts\/sequence\.css'\s+layer\(views\)/,
+    'app.css must import the rule eagerly, in the views layer it has always had');
+  assert.doesNotMatch(read('../styles/parts/timeline.css'), /^\s*\.seq-off\s*\{/m,
+    'and the lazy panel sheet must not declare a second copy of it');
 });
 
 test('contract: a frozen snapshotMotion still is marked, and the compositor hides it', () => {

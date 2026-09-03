@@ -36,11 +36,11 @@ test('LEGACY: ?tab= opens the same rooms', () => {
 });
 
 test('LEGACY: #/start?tab=type - the dashboard "Manage fonts" link', () => {
-  assert.deepEqual(resolveStartRoute('tab=type'), { area: 'type', wheel: false, importOpen: false, focus: null, source: null, seed: null });
+  assert.deepEqual(resolveStartRoute('tab=type'), { area: 'type', wheel: false, importOpen: false, focus: null, source: null, seed: null, group: null });
 });
 
 test('LEGACY: #/start?tab=color&wheel opens the colour room with the chart flag', () => {
-  assert.deepEqual(resolveStartRoute('tab=color&wheel'), { area: 'color', wheel: true, importOpen: false, focus: null, source: null, seed: null });
+  assert.deepEqual(resolveStartRoute('tab=color&wheel'), { area: 'color', wheel: true, importOpen: false, focus: null, source: null, seed: null, group: null });
 });
 
 test('LEGACY: ?wheel is presence, not value - ?wheel=0 has always meant open', () => {
@@ -87,13 +87,13 @@ test('an inherited object key is never mistaken for a room', () => {
 });
 
 test('a leading ? is tolerated (a caller passing the raw search string)', () => {
-  assert.deepEqual(resolveStartRoute('?area=color&wheel'), { area: 'color', wheel: true, importOpen: false, focus: null, source: null, seed: null });
+  assert.deepEqual(resolveStartRoute('?area=color&wheel'), { area: 'color', wheel: true, importOpen: false, focus: null, source: null, seed: null, group: null });
 });
 
 test('unknown params are ignored, not fatal', () => {
   assert.deepEqual(
     resolveStartRoute('area=tokens&utm_source=x&swatch=jungle-500'),
-    { area: 'tokens', wheel: false, importOpen: false, focus: null, source: null, seed: null },
+    { area: 'tokens', wheel: false, importOpen: false, focus: null, source: null, seed: null, group: null },
   );
 });
 
@@ -108,6 +108,17 @@ test('?focus= opens a named wing of the colour room (plan 97 SS5)', () => {
   for (const f of ['generate', 'curves', 'contrast', 'print', 'chart']) {
     assert.equal(resolveStartRoute(`area=color&focus=${f}`).focus, f, `?focus=${f}`);
   }
+});
+
+// The Overview's empty-state doors (plan 182 section 3a). Not wings: they open
+// the control that makes the FIRST decision in each room, and a link carries the
+// same pair the door does.
+test('?focus=pick and ?focus=stage carry the first decisions', () => {
+  assert.equal(resolveStartRoute('area=color&focus=pick').focus, 'pick');
+  assert.equal(resolveStartRoute('area=type&focus=stage').focus, 'stage');
+  // Resolution is not routing: the word survives whichever room it arrives with,
+  // and the view decides what (if anything) it opens there.
+  assert.equal(resolveStartRoute('area=logos&focus=pick').area, 'logos');
 });
 
 test('an unrecognised ?focus= is null, never a passthrough', () => {
@@ -171,7 +182,7 @@ test('?source rides a room param and does not move the room', () => {
 test('#/start?area=versions opens the Versions panel (plan 97 SS5 / SS6a)', () => {
   assert.deepEqual(
     resolveStartRoute('area=versions'),
-    { area: 'versions', wheel: false, importOpen: false, focus: null, source: null, seed: null },
+    { area: 'versions', wheel: false, importOpen: false, focus: null, source: null, seed: null, group: null },
   );
   // The kept alias reaches it too: one resolution table, no second rule.
   assert.equal(resolveStartRoute('tab=versions').area, 'versions');
@@ -312,4 +323,18 @@ test('?seed carries a hex colour into the generate wing, and only a hex (audit 1
   assert.equal(resolveStartRoute('seed=coral').seed, null);
   assert.equal(resolveStartRoute('seed=oklch(70%25 .15 157)').seed, null);
   assert.equal(resolveStartRoute('area=color').seed, null);
+});
+
+test('?group names one inherited colour group to reveal, and refuses anything else', () => {
+  // The Tokens room's "Open" beside the starter neutrals is the only minter,
+  // and this is the one link that draws a starter tile at all (plan 182 section 12).
+  assert.equal(resolveStartRoute('area=color&group=neutral').group, 'neutral');
+  assert.equal(resolveStartRoute('area=color&group=Neutral%20%C2%B7%20Light').group, 'Neutral · Light');
+  assert.equal(resolveStartRoute('area=color').group, null);
+  assert.equal(resolveStartRoute('area=color&group=').group, null);
+  // A group HEADING, not a selector or a path - anything that could be read as
+  // markup, a query or a traversal is simply not one.
+  assert.equal(resolveStartRoute('area=color&group=%3Cscript%3E').group, null);
+  assert.equal(resolveStartRoute('area=color&group=..%2F..%2Fetc').group, null);
+  assert.equal(resolveStartRoute(`area=color&group=${'n'.repeat(61)}`).group, null);
 });

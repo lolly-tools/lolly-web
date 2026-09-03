@@ -38,6 +38,14 @@ export interface ColorEntry {
   value: string;
   /** The resolved colour as `#rrggbb`, gamut-mapped, alpha dropped. */
   hex: string;
+  /**
+   * A name the person chose for this colour (plan 182 section 5.1).
+   *
+   * Only the picker card sets it - a scan of pasted text has no name to report,
+   * and the room's own `nameColor(hex)` is the right answer there. Optional
+   * everywhere, so every existing producer and consumer is unchanged.
+   */
+  name?: string;
 }
 
 /** Upper bound on entries returned from one scan. A style-guide paste that finds
@@ -151,24 +159,60 @@ export interface AddColorOpts {
   /** Called only from an explicit press: Enter/Add on a single colour, or
    *  "Add all" / "Add selected" on a group. Never from typing or the picker. */
   onAdd: (entries: ColorEntry[]) => void;
+  /**
+   * Open the colour picker (plan 182 sections 5.1-5.2) - what the live chip
+   * does, and what Add does when the field holds nothing it can read.
+   *
+   * The button used to be `disabled` until exactly one colour parsed, which
+   * made the first thing a person can press on a blank Colours room a dead
+   * primary. A greyed primary reads as "this is broken", not as "do the other
+   * thing first", and the other thing was never named. Now the press always
+   * answers: with a colour it adds one, and with nothing it opens the picker,
+   * which is the likeliest intent when somebody presses Add on an empty field.
+   * Optional; without it the press falls back to focusing the field.
+   *
+   * `anchor` is the element to place the card against (the chip when the chip
+   * was pressed, else the Add button), and `current` is the colour the row is
+   * holding right now as `#rrggbb`, or null when it holds nothing readable - so
+   * the card opens on what the person can already see rather than on a default.
+   */
+  onOpenPicker?: (anchor: HTMLElement, current: string | null) => void;
+  /**
+   * A file the person picked with "From an image" (plan 182 section 5.3).
+   *
+   * The row owns the button and the `<input type=file>`; the host owns what an
+   * image MEANS - which is the studio's existing image source (sample → colour
+   * cloud → census → tray), reached through the same call the source picker's
+   * image tile makes. Absent, the button is not rendered at all: a door that
+   * leads nowhere is worse than no door.
+   */
+  onImageFile?: (file: File) => void;
   /** The shell's `t` - passed in so this module has no i18n import. Params are
    *  escaped by `t` itself; the raw source string is trusted markup, as usual. */
   t: (source: string, params?: Record<string, string | number>) => string;
 }
 
-/** Example notations, shown as the placeholder. Values, not prose - untranslated
- *  on purpose (the `PANTONE 186 C` precedent in the brand editor), so the row
- *  demonstrates the same thing in every locale. */
-const PLACEHOLDER = '#7c3aed, rgb(124 58 237), oklch(55% .24 292)';
+/** Example notations. Values, not prose - untranslated on purpose (the
+ *  `PANTONE 186 C` precedent in the brand editor), so the row demonstrates the
+ *  same thing in every locale. Exported because the Colours room spells the
+ *  beat-0 placeholder out in full over these (plan 182 section 5.3) while the
+ *  compact row keeps the short sentence below. */
+export const COLOR_NOTATION_EXAMPLES = '#7c3aed, rgb(124 58 237), oklch(55% .24 292)';
 
 /**
  * Render the add-a-colour row into `el` and wire it. Returns a teardown.
  *
+ * The row leads with a live CHIP (plan 182 section 5.1): it paints whatever the
+ * field parses to, and pressing it asks the host to open its picker on that
+ * colour. Around it sit the doors - paste, the screen sampler, an image - and
+ * Add, which is never greyed.
+ *
  * Behaviour, in one paragraph because it is one control: typing parses live. One
- * colour arms Add (and Enter). Several colours open a chips row - every chip
- * starts picked, tapping one toggles it, and only "Add all" or "Add selected"
- * commits. The eyedropper fills the field, it does not add. Escape clears the
- * row, and only swallows the key when there was something to clear.
+ * colour is what Add (and Enter) commits. Several colours open a chips row -
+ * every chip starts picked, tapping one toggles it, and only "Add all" or "Add
+ * selected" commits. The eyedropper fills the field, it does not add. Escape
+ * clears the row, and only swallows the key when there was something to clear.
+ * Add is never disabled: see `onOpenPicker` for what it does with nothing to add.
  */
 export function mountAddColor(el: HTMLElement, opts: AddColorOpts): () => void {
   const { t } = opts;
@@ -179,8 +223,17 @@ export function mountAddColor(el: HTMLElement, opts: AddColorOpts): () => void {
   el.innerHTML = `
     <div class="ds-addc">
       <div class="ds-addc-row">
+        ${/* The chip IS the picker (plan 182 section 5.1). It leads the row
+              because nobody chooses a colour by typing oklch(55% .24 292): the
+              first thing on a blank Colours room should show colour and answer
+              a tap. Empty it paints a neutral ground with a half-moon glyph,
+              drawn in CSS - visibly empty rather than a colour nobody picked. */''}
+        <button type="button" class="ds-addc-pick" data-ds-addc-pick
+          aria-label="${escape(t('Pick a colour'))}" title="${escape(t('Pick a colour'))}">
+          <span class="ds-addc-pick-glyph" aria-hidden="true"></span>
+        </button>
         <input type="text" class="field-input ds-addc-input" data-ds-addc-input
-          placeholder="${escape(PLACEHOLDER)}"
+          placeholder="${escape(t('Paste a colour, or a list'))}"
           aria-label="${escape(t('Colour value, or paste several'))}"
           autocomplete="off" autocapitalize="off" spellcheck="false">
         ${EyeDropper
@@ -188,8 +241,16 @@ export function mountAddColor(el: HTMLElement, opts: AddColorOpts): () => void {
               aria-label="${escape(t('Pick a colour from the screen'))}"
               title="${escape(t('Pick a colour from the screen'))}">${icon('droplet')}</button>`
           : ''}
-        <button type="button" class="be-btn ds-addc-add" data-ds-addc-add disabled>${t('Add')}</button>
+        ${opts.onImageFile
+          ? `<button type="button" class="ds-addc-drop ds-addc-image" data-ds-addc-image
+              aria-label="${escape(t('Take colours from an image'))}"
+              title="${escape(t('Take colours from an image'))}">${icon('image')}</button>
+             <input type="file" accept="image/*" class="ds-addc-file" data-ds-addc-file hidden
+               aria-hidden="true" tabindex="-1">`
+          : ''}
+        <button type="button" class="be-btn ds-addc-add" data-ds-addc-add>${t('Add')}</button>
       </div>
+      <p class="ds-addc-hint" data-ds-addc-hint role="status" hidden></p>
       <div class="ds-addc-found" data-ds-addc-found hidden>
         <p class="ds-addc-count" data-ds-addc-count aria-live="polite"></p>
         <div class="ds-addc-chips" data-ds-addc-chips role="group"
@@ -202,22 +263,52 @@ export function mountAddColor(el: HTMLElement, opts: AddColorOpts): () => void {
     </div>`;
 
   const input = el.querySelector<HTMLInputElement>('[data-ds-addc-input]');
+  const pickBtn = el.querySelector<HTMLButtonElement>('[data-ds-addc-pick]');
+  const fileInput = el.querySelector<HTMLInputElement>('[data-ds-addc-file]');
   const found = el.querySelector<HTMLElement>('[data-ds-addc-found]');
   const count = el.querySelector<HTMLElement>('[data-ds-addc-count]');
   const chips = el.querySelector<HTMLElement>('[data-ds-addc-chips]');
+  const hint = el.querySelector<HTMLElement>('[data-ds-addc-hint]');
   const addBtn = el.querySelector<HTMLButtonElement>('[data-ds-addc-add]');
   const allBtn = el.querySelector<HTMLButtonElement>('[data-ds-addc-all]');
   const selBtn = el.querySelector<HTMLButtonElement>('[data-ds-addc-sel]');
-  if (!input || !found || !count || !chips || !addBtn || !allBtn || !selBtn) {
+  if (!input || !pickBtn || !found || !count || !chips || !hint || !addBtn || !allBtn || !selBtn) {
     return (): void => { el.innerHTML = ''; };
   }
 
   let entries: ColorEntry[] = [];
   let picked: boolean[] = [];
 
+  /** The colour the row is holding, or null when it holds nothing readable (or
+   *  a whole list, which has no single colour to open a card on). */
+  const current = (): string | null => (entries.length === 1 ? entries[0]!.hex : null);
+
+  /** Paint the chip from whatever the field currently parses to. `--sw` is the
+   *  swatch custom property the whole studio paints tiles with; `is-empty`
+   *  swaps in the half-moon glyph, exactly as an unset palette tile does. */
+  const paintChip = (): void => {
+    const hex = current();
+    pickBtn.classList.toggle('is-empty', hex === null);
+    pickBtn.style.setProperty('--sw', hex ?? 'transparent');
+  };
+
+  /** Open the picker card against the chip (or, when Add asked for it, against
+   *  Add - the card belongs to the control the person pressed). */
+  const openPicker = (anchor: HTMLElement): void => {
+    if (opts.onOpenPicker) opts.onOpenPicker(anchor, current());
+    else input.focus();
+  };
+
+  /** The one line under the row. Empty clears it; it never survives the next
+   *  keystroke, because by then it is describing text that is gone. */
+  const setHint = (message: string): void => {
+    hint.textContent = message;
+    hint.hidden = message === '';
+  };
+
   const paint = (): void => {
+    paintChip();
     const many = entries.length > 1;
-    addBtn.disabled = entries.length !== 1;
     found.hidden = !many;
     if (!many) { chips.innerHTML = ''; count.textContent = ''; return; }
 
@@ -236,6 +327,7 @@ export function mountAddColor(el: HTMLElement, opts: AddColorOpts): () => void {
   const sync = (): void => {
     entries = parseColorEntries(input.value);
     picked = entries.map(() => true);
+    setHint('');   // whatever it said was about text that has since changed
     paint();
   };
 
@@ -254,6 +346,7 @@ export function mountAddColor(el: HTMLElement, opts: AddColorOpts): () => void {
     input.value = '';
     entries = [];
     picked = [];
+    setHint('');
     paint();
     if (keep) input.focus();
   };
@@ -270,12 +363,30 @@ export function mountAddColor(el: HTMLElement, opts: AddColorOpts): () => void {
    *  nothing or holds a group (a group needs one of the explicit group buttons). */
   const lone = (): ColorEntry | null => (entries.length === 1 ? entries[0] ?? null : null);
 
+  /**
+   * The Add press, in every state the row can be in. It always answers - see
+   * `onOpenPicker`.
+   *
+   *  - one colour        → add it
+   *  - several           → hand the keyboard to the group buttons, which is
+   *                        where the decision now is
+   *  - text that is not a colour → say so, and open the picker
+   *  - nothing typed     → open the picker
+   */
+  const pressAdd = (): void => {
+    const one = lone();
+    if (one) { commit([one]); return; }
+    if (entries.length > 1) { allBtn.focus(); return; }
+    if (input.value.trim() !== '') {
+      setHint(t('Not a colour I can read - try #hex, rgb(), oklch() or a name'));
+    }
+    openPicker(addBtn);
+  };
+
   const onKeydown = (e: KeyboardEvent): void => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      const one = lone();
-      if (one) commit([one]);
-      else if (entries.length > 1) allBtn.focus();
+      pressAdd();
       return;
     }
     if (e.key === 'Escape' && (input.value !== '' || entries.length > 0)) {
@@ -300,7 +411,15 @@ export function mountAddColor(el: HTMLElement, opts: AddColorOpts): () => void {
       }
       return;
     }
-    if (target.closest('[data-ds-addc-add]')) { const one = lone(); if (one) commit([one]); return; }
+    if (target.closest('[data-ds-addc-pick]')) { openPicker(pickBtn); return; }
+    if (target.closest('[data-ds-addc-image]')) {
+      // The file dialog is the OS's; a dismissal fires nothing, which is a
+      // normal outcome. `value = ''` first, so picking the same file twice in a
+      // row still fires `change` the second time.
+      if (fileInput) { fileInput.value = ''; fileInput.click(); }
+      return;
+    }
+    if (target.closest('[data-ds-addc-add]')) { pressAdd(); return; }
     if (target.closest('[data-ds-addc-all]')) { commit(entries.slice()); return; }
     if (target.closest('[data-ds-addc-sel]')) { commit(entries.filter((_, i) => picked[i])); return; }
 
@@ -314,14 +433,25 @@ export function mountAddColor(el: HTMLElement, opts: AddColorOpts): () => void {
     }
   };
 
+  /** One image, handed straight to the host's own image source. The row keeps
+   *  nothing: what an image MEANS (a colour cloud, a census, the tray) is the
+   *  studio's, and duplicating that pipeline here is how the two would drift. */
+  const onFile = (): void => {
+    const file = fileInput?.files?.[0];
+    if (file) opts.onImageFile?.(file);
+  };
+
   input.addEventListener('input', onInput);
   input.addEventListener('keydown', onKeydown);
   el.addEventListener('click', onClick);
+  fileInput?.addEventListener('change', onFile);
+  paintChip();
 
   return (): void => {
     input.removeEventListener('input', onInput);
     input.removeEventListener('keydown', onKeydown);
     el.removeEventListener('click', onClick);
+    fileInput?.removeEventListener('change', onFile);
     el.innerHTML = '';
   };
 }

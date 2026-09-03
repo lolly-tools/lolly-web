@@ -46,9 +46,19 @@ export function isStartArea(value: string | null | undefined): value is StartAre
   return !!value && AREAS.has(value);
 }
 
-/** The colour room's openable wings; `chart` routes to the colour chart card
- *  (the same target `?wheel` has always opened). */
-export const START_FOCUS = ['generate', 'curves', 'contrast', 'print', 'chart'] as const;
+/**
+ * What a link asks to be OPEN on arrival.
+ *
+ * Five of these are the colour room's wings (`chart` routes to the colour chart
+ * card - the same target `?wheel` has always opened). The last two are the first
+ * decisions rather than wings, minted by the Overview's empty-state doors (plan
+ * 182 section 3a): `pick` opens the Colours room's colour picker on the add
+ * row's chip, `stage` opens the Type room's face stage for the primary. Both
+ * open a control the room already has; neither writes anything, so a link
+ * somebody sends can only ever put a person in front of a decision, never make
+ * one for them.
+ */
+export const START_FOCUS = ['generate', 'curves', 'contrast', 'print', 'chart', 'pick', 'stage'] as const;
 
 export type StartFocus = (typeof START_FOCUS)[number];
 
@@ -71,7 +81,8 @@ export interface StartRoute {
   wheel: boolean;
   /** `?import` - open the source modal on arrival (`?import=0` means shut). */
   importOpen: boolean;
-  /** `?focus=<wing>` - open that wing of the colour room (plan 97 section 5). */
+  /** `?focus=<what>` - open that wing of the colour room (plan 97 section 5), or
+   *  the first-decision control the Overview's doors name (see START_FOCUS). */
   focus: StartFocus | null;
   /** `?source=<kind>` - which source the picker opens on. Naming one IMPLIES the
    *  picker opens (see `importOpen`); it never fetches or reads anything by
@@ -81,6 +92,17 @@ export interface StartRoute {
    *  it opens. Minted by the added-chip's "Generate your palette from this
    *  colour" link (audit 167 F-A12); hex only, anything else is ignored. */
   seed: string | null;
+  /**
+   * `?group=<name>` - show one INHERITED colour group in the Colours pane,
+   * folded and tagged Starter (plan 182 section 12). Minted by the Tokens room's
+   * "Open" beside "Neutrals · starter", and the one thing that ever draws a
+   * starter tile: the pane's ordinary state lists own colours only.
+   *
+   * A group HEADING, so the grammar is loose on purpose - letters, digits,
+   * spaces and the separators a heading can carry - but bounded, and anything
+   * outside it is ignored rather than passed on.
+   */
+  group: string | null;
 }
 
 /**
@@ -101,6 +123,7 @@ export function resolveStartRoute(query: string): StartRoute {
   const focus = params.get('focus');
   const source = params.get('source');
   const seed = params.get('seed');
+  const group = (params.get('group') ?? '').trim();
   const resolvedSource = source && SOURCES.has(source) ? (source as StartSource) : null;
   return {
     area: isStartArea(area) ? area : isStartArea(tab) ? tab : DEFAULT_AREA,
@@ -113,5 +136,8 @@ export function resolveStartRoute(query: string): StartRoute {
     // Hex only - the chip link mints hex, and a colour that must be parsed is a
     // colour that can silently become a different colour. Unknown → null.
     seed: seed && /^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$/.test(seed) ? seed : null,
+    // Bounded and grammar-checked, like every other param here: a group heading
+    // is words, digits and the few separators one can carry, up to 60 chars.
+    group: /^[\p{L}\p{N} ._··-]{1,60}$/u.test(group) ? group : null,
   };
 }

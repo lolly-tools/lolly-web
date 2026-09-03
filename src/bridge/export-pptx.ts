@@ -10,9 +10,10 @@
  * later, lift those shared helpers into a common render-util module.)
  */
 import { buildPptxParts, EMU_PER_PX, parseGradientAngle, parseGradientStop, splitCssArgs, svgToNativePptx } from "@lolly/engine";
-import type { PptxSlide, PptxShape, PptxFill, PptxMedia, PptxLayout } from "../../../../engine/src/pptx.ts";
+import type { PptxSlide, PptxShape, PptxFill, PptxMedia, PptxLayout, PptxAudio } from "../../../../engine/src/pptx.ts";
 import { parseCssColorFull, objectPositionFractions } from "./export-css.ts";
-import { asStr, deckAnim, deckBox, deckFill, deckPlaceholder, deckSrcRect, deckSyncShape, deckTheme, emuOf, parseDeckModel, type DeckBox } from "./pptx-deck.ts";
+import { asStr, deckAnim, deckAudioExt, deckBox, deckFill, deckNarrationMark, deckNotes, deckPlaceholder, deckSrcRect, deckSlideTransitions, deckSyncShape, deckTheme, emuOf, parseDeckModel, type DeckBox, type DeckColorResolver, type DeckNotes, type DeckNoteSink } from "./pptx-deck.ts";
+import { narrationDwellMs } from "../lib/motion-model.ts";
 import { pureRotationDeg, detectUnsupportedCss, inlineBlobUrlsInEl, rasterizeNodeToDataUrl, imprintEmbedCanvas, stripCommentNodes, _host, type ExportOpts, type ImprintState } from "./export.ts";
 
 type Rgba = [number, number, number, number];
@@ -471,6 +472,82 @@ export function sourceAuthorOf(node: Element): string | undefined {
   return v || undefined;
 }
 
+/* ── per-slide narration (plans/180 M-C) ─────────────────────────────────────── */
+
+/** Ceiling on one narration clip's bytes. A minute of 24 kHz mono WAV is about 3 MB, so
+ *  this is generous for speech and still refuses a whole film dropped on a slide. */
+const MAX_NARRATION_BYTES = 64 * 1024 * 1024;
+
+/** Does the document ask its slides to advance by themselves? The Design tool stamps
+ *  `data-auto-advance` on the render root for exactly this, and it is EXPLICIT (plan 179
+ *  T3): every frame carries a dwell, and whether that dwell drives the deck is one
+ *  document-level flag. Without it a narrated .pptx still plays its audio - it just waits
+ *  for the presenter's click, which is what a click-advanced deck asked for. */
+function deckAutoAdvances(node: Element | null | undefined): boolean {
+  if (!node) return false;
+  return !!(node.matches?.('[data-auto-advance]') || node.querySelector?.('[data-auto-advance]'));
+}
+
+/** The frame's own dwell in ms, as `data-frame-dur` stamps it, or 0. */
+function pageDwellMs(page: Element | null | undefined): number {
+  const v = Number(page?.getAttribute?.('data-frame-dur'));
+  return Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
+}
+
+/**
+ * One slide's narration clip, ready for the engine's audio part family.
+ *
+ * The bytes are fetched and passed through UNTOUCHED (plans/180 section 7): a narration
+ * WAV carries a C2PA manifest in its RIFF chunks saying the voice is synthetic, and any
+ * re-encode on the way into the package would quietly strip that claim. So there is no
+ * transcode here, not even a container change - a clip whose container the writer cannot
+ * declare is dropped instead.
+ *
+ * `advanceAfterMs` is the slide's own dwell, which the narration dwell solver has already
+ * sized to hold the clip (T1); a frame with no stamped dwell falls back to deriving one
+ * from the clip's length, so the deck never moves on mid-sentence.
+ */
+async function slideNarration(page: Element | null | undefined, index: number, autoAdvance: boolean): Promise<PptxAudio | null> {
+  const marks = page?.querySelectorAll ? [...page.querySelectorAll('[data-audio-src]')] : [];
+  const mark = deckNarrationMark(marks);
+  if (!mark) return null;
+  try {
+    const res = await fetch(mark.src);
+    if (!res.ok) return null;
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    if (!bytes.length || bytes.byteLength > MAX_NARRATION_BYTES) return null;
+    const ext = deckAudioExt(bytes, mark.src);
+    if (!ext) {
+      _host?.log?.('warn', 'pptx: a slide’s narration is in a container PowerPoint cannot embed; the slide is silent.');
+      return null;
+    }
+    const durationMs = mark.durationMs;
+    const dwell = pageDwellMs(page) || narrationDwellMs({ narrationMs: durationMs });
+    return {
+      bytes, ext, durationMs, autoplay: true,
+      ...(autoAdvance && dwell > 0 ? { advanceAfterMs: dwell } : {}),
+      name: `narration-${index + 1}.${ext}`,
+    };
+  } catch { return null; /* clip unreachable - the slide keeps its picture and its notes */ }
+}
+
+/**
+ * The narration clip for every slide, index-aligned with the deck's own slides.
+ *
+ * The rendered `[data-pdf-page]` elements and the authored deck slides come from the SAME
+ * frame list in the SAME order (Design's `frameGroupsFor` and `deckModelFor` both sort by
+ * `order` then `x`), which is what makes matching by index sound. When the two counts
+ * disagree that correspondence is not something to guess at, so no slide gets audio.
+ */
+async function narrationForSlides(node: Element | undefined, slideCount: number): Promise<Array<PptxAudio | null>> {
+  const pages = node?.querySelectorAll ? [...node.querySelectorAll('[data-pdf-page]')] : [];
+  if (!pages.length || pages.length !== slideCount) return [];
+  const autoAdvance = deckAutoAdvances(node);
+  const out: Array<PptxAudio | null> = [];
+  for (let i = 0; i < pages.length; i++) out.push(await slideNarration(pages[i]!, i, autoAdvance));
+  return out;
+}
+
 function pptxMeta(opts: ExportOpts, sourceAuthor?: string): PptxBuildOptsMeta {
   if (!opts.meta && !sourceAuthor) return null;
   const m = opts.meta;
@@ -508,7 +585,7 @@ const MAX_DECK_IMG_BYTES = 32 * 1024 * 1024; // 32 MB per embedded image (`src` 
 // An image element - the sole async lowering (it fetches bytes). SVG rides in as a real
 // vector (svgBlip + PNG fallback); raster embeds its original bytes; an unreachable/oversized
 // asset drops the element but keeps the deck.
-async function deckImageShape(el: Record<string, unknown>, box: DeckBox, addMedia: (b: Uint8Array, e: PptxMedia['ext']) => number, animNotes?: string[]): Promise<PptxShape | null> {
+async function deckImageShape(el: Record<string, unknown>, box: DeckBox, addMedia: (b: Uint8Array, e: PptxMedia['ext']) => number, animNotes?: DeckNoteSink): Promise<PptxShape | null> {
   const src = asStr(el?.src); if (!src) return null;
   // Native animation rides pictures exactly as it rides the sync shapes (plans/175 WP-E).
   const anim = deckAnim(el?.anim, animNotes);
@@ -527,10 +604,52 @@ async function deckImageShape(el: Record<string, unknown>, box: DeckBox, addMedi
   return null;
 }
 
-async function deckElementToShape(el: Record<string, unknown>, addMedia: (b: Uint8Array, e: PptxMedia['ext']) => number, animNotes?: string[]): Promise<PptxShape | null> {
+async function deckElementToShape(el: Record<string, unknown>, addMedia: (b: Uint8Array, e: PptxMedia['ext']) => number, animNotes?: DeckNoteSink, resolve?: DeckColorResolver): Promise<PptxShape | null> {
   if (!el || typeof el !== 'object') return null;
   if (el.t === 'image') return await deckImageShape(el, deckBox(el), addMedia, animNotes);
-  return deckSyncShape(el, animNotes); // rect / text / table (pure)
+  return deckSyncShape(el, animNotes, resolve); // rect / text / table (pure)
+}
+
+/**
+ * The brand-token lookup a deck colour resolves through (plan 179 A12).
+ *
+ * A Design artboard's fill is a token on any branded document - `var(--brand-surface,
+ * #ffffff)` - and pptx-deck.ts understands literal colours only, so before this the
+ * default deck exported with no slide background at all.
+ *
+ * Read the custom properties off THE NODE BEING EXPORTED, not off a global id. Custom
+ * properties inherit, and `applyBrandVars` writes the active brand block onto whichever
+ * element the caller handed it: `#tool-canvas` in the editor, but a bare
+ * `.pro-export-canvas` on the offscreen stage that #/batch renders through (pro/render-
+ * export.ts). A `#tool-canvas` lookup found nothing on that route and fell back to
+ * `documentElement`, where brand-vars only ever writes `--brand-primary`/`--brand-warn` -
+ * so every other `var(--brand-*)` resolved to '', `deckFill` answered undefined, and the
+ * same document exported white from the batch route and branded from the editor. Closest
+ * ancestor first so a node INSIDE the canvas still finds it; the node itself otherwise.
+ * Memoised by name - one deck references the same handful of tokens on every slide.
+ * Returns undefined (→ every var() falls back to its own literal) when there is no DOM,
+ * which is how the node-side suites reach this module's pure half.
+ */
+function canvasColorResolver(node?: Element): DeckColorResolver | undefined {
+  const doc = typeof document === 'undefined' ? null : document;
+  const win = typeof window === 'undefined' ? null : window;
+  if (!doc || typeof win?.getComputedStyle !== 'function') return undefined;
+  const root = node?.closest?.('#tool-canvas') ?? node
+    ?? doc.querySelector?.('#tool-canvas') ?? doc.documentElement;
+  if (!root) return undefined;
+  const seen = new Map<string, string>();
+  let cs: CSSStyleDeclaration | null = null;
+  return (name: string): string => {
+    const hit = seen.get(name);
+    if (hit !== undefined) return hit;
+    let val = '';
+    try {
+      cs ??= win.getComputedStyle(root);
+      val = (cs.getPropertyValue(name) || '').trim();
+    } catch { /* detached document - the var()'s own fallback stands */ }
+    seen.set(name, val);
+    return val;
+  };
 }
 
 // Read + validate a tool-authored deck model off the export node, or null to DOM-walk.
@@ -545,7 +664,7 @@ const MAX_LAYOUT_PLACEHOLDERS = 16;   // placeholders per layout
 // Lower an authored layout gallery (untrusted tool JSON → engine PptxLayout[]). Same
 // element vocabulary as slides, so a layout's vector logo rides the same async image
 // fetch (svgBlip + PNG fallback). Returns undefined when there is no gallery.
-async function deckLayoutsFrom(raw: unknown): Promise<PptxLayout[] | undefined> {
+async function deckLayoutsFrom(raw: unknown, resolve?: DeckColorResolver): Promise<PptxLayout[] | undefined> {
   const arr = Array.isArray(raw) ? raw.slice(0, MAX_DECK_LAYOUTS) : [];
   if (!arr.length) return undefined;
   const layouts: PptxLayout[] = [];
@@ -556,52 +675,71 @@ async function deckLayoutsFrom(raw: unknown): Promise<PptxLayout[] | undefined> 
     const els = (Array.isArray(L?.elements) ? L.elements : []).slice(0, MAX_DECK_ELEMENTS);
     for (const el of els) {
       if (shapes.length >= MAX_PPTX_SHAPES) break;
-      const shape = await deckElementToShape(el, addMedia);
+      const shape = await deckElementToShape(el, addMedia, undefined, resolve);
       if (shape) shapes.push(shape);
     }
     const placeholders = (Array.isArray(L?.placeholders) ? L.placeholders : []).slice(0, MAX_LAYOUT_PLACEHOLDERS)
-      .map(deckPlaceholder).filter((p): p is NonNullable<ReturnType<typeof deckPlaceholder>> => p != null);
-    layouts.push({ name: asStr(L?.name) ?? 'Layout', bg: deckFill(L?.bg), shapes, media, placeholders });
+      .map((p: unknown) => deckPlaceholder(p, resolve)).filter((p): p is NonNullable<ReturnType<typeof deckPlaceholder>> => p != null);
+    layouts.push({ name: asStr(L?.name) ?? 'Layout', bg: deckFill(L?.bg, resolve), shapes, media, placeholders });
   }
   return layouts;
 }
 
-async function renderPptxFromDeck(deck: Record<string, unknown>, opts: ExportOpts, sourceAuthor?: string): Promise<Blob> {
+async function renderPptxFromDeck(deck: Record<string, unknown>, opts: ExportOpts, sourceAuthor?: string, node?: Element): Promise<Blob> {
   const size = deck.size as { w?: unknown; h?: unknown } | undefined;
   const emuW = Math.max(1, emuOf(size?.w, 1280));
   const emuH = Math.max(1, emuOf(size?.h, 720));
-  const layouts = await deckLayoutsFrom(deck.layouts);
+  // Brand tokens in the deck's colours resolve against the EXPORTED node's cascade (A12).
+  const resolve = canvasColorResolver(node);
+  const layouts = await deckLayoutsFrom(deck.layouts, resolve);
   const slidesIn = (deck.slides as Array<Record<string, unknown>>).slice(0, MAX_DECK_SLIDES);
   const slides: PptxSlide[] = [];
   // Animation degrade notes (plans/175 WP-E), deduped across the whole deck and
   // logged ONCE - a substitution is worth one line, not one per slide it recurs on.
-  const animNotes: string[] = [];
+  // Two lists, two levels: `mapped` is "it moves, differently" (info), `dropped` is
+  // "PowerPoint has no form for this, so it sits still" (warn, plans/179 M4).
+  const animNotes: DeckNotes = { mapped: [], dropped: [] };
+  const transitions = deckSlideTransitions(slidesIn, animNotes);
+  // Per-slide narration (plans/180 M-C). The deck model carries no audio - a narration
+  // clip is a timeline citizen, not an artboard one - so it is read off the RENDERED
+  // pages, index-aligned with these slides.
+  const narration = await narrationForSlides(node, slidesIn.length);
   for (const s of slidesIn) {
     const shapes: PptxShape[] = [];
     const media: PptxMedia[] = [];
     const addMedia = (bytes: Uint8Array, ext: PptxMedia['ext']): number => (media.push({ bytes, ext }), media.length - 1);
-    const bg = deckFill(s?.bg);
+    const bg = deckFill(s?.bg, resolve);
     if (bg) shapes.push({ kind: 'rect', x: 0, y: 0, cx: emuW, cy: emuH, fill: bg });
     // Bound by elements PROCESSED (not shapes produced): a slide of 100k {t:'image'}
     // elements would otherwise fire 100k fetches even though each returns null.
     const els = (Array.isArray(s?.elements) ? s.elements : []).slice(0, MAX_DECK_ELEMENTS);
     for (const el of els) {
       if (shapes.length >= MAX_PPTX_SHAPES) { _host?.log?.('warn', `pptx: slide hit the ${MAX_PPTX_SHAPES}-object cap; some elements were dropped.`); break; }
-      const shape = await deckElementToShape(el, addMedia, animNotes);
+      const shape = await deckElementToShape(el, addMedia, animNotes, resolve);
       if (shape) shapes.push(shape);
     }
     const slide: PptxSlide = { shapes, media };
-    const notes = asStr(s?.notes)?.trim();
+    const notes = deckNotes(s?.notes);
     if (notes) slide.notes = notes;
     // Gallery binding: which layout this slide builds on (the engine clamps the index).
     if (layouts && typeof s?.layout === 'number' && Number.isFinite(s.layout)) slide.layout = s.layout;
+    // How the deck ARRIVES on this slide - which is what the slide BEFORE it authored
+    // (deckSlideTransitions owns that index shift, and is node-tested on it).
+    const tr = transitions[slides.length];
+    if (tr) slide.transition = tr;
+    const clip = narration[slides.length];
+    if (clip) slide.audio = clip;
     slides.push(slide);
     opts.onProgress?.(slides.length, slidesIn.length);
   }
-  if (animNotes.length) {
-    _host?.log?.('info', `pptx: animation mapped to PowerPoint's own presets - ${animNotes.join('; ')}.`);
+  if (animNotes.mapped.length) {
+    _host?.log?.('info', `pptx: animation mapped to PowerPoint's own presets - ${animNotes.mapped.join('; ')}.`);
   }
-  const parts = buildPptxParts(slides, { emuW, emuH, theme: deckTheme(deck.theme), layouts, meta: pptxMeta(opts, sourceAuthor), now: new Date().toISOString() });
+  // The warn line is the honest half: these are the differences a reader would notice.
+  if (animNotes.dropped.length) {
+    _host?.log?.('warn', `pptx: some motion has no PowerPoint form and was left out - ${animNotes.dropped.join('; ')}.`);
+  }
+  const parts = buildPptxParts(slides, { emuW, emuH, theme: deckTheme(deck.theme, resolve), layouts, meta: pptxMeta(opts, sourceAuthor), now: new Date().toISOString() });
   return zipPptxParts(parts);
 }
 
@@ -610,7 +748,7 @@ export async function renderPptx(node: Element, opts: ExportOpts): Promise<Blob>
   // Fast path: a tool that authored its own native deck model (tables, precise text,
   // brand theme) drives the OOXML directly; the DOM walk below is the general fallback.
   const deck = readDeckModel(node);
-  if (deck) return renderPptxFromDeck(deck, opts, srcAuthor);
+  if (deck) return renderPptxFromDeck(deck, opts, srcAuthor, node);
 
   const pages = node.querySelectorAll ? [...node.querySelectorAll('[data-pdf-page]')] : [];
   const pageEls: Element[] = pages.length ? pages : [node];
@@ -637,14 +775,20 @@ export async function renderPptx(node: Element, opts: ExportOpts): Promise<Blob>
       if (ref && typeof ref.w === 'number' && ref.w > 0 && typeof ref.h === 'number' && ref.h > 0) {
         scaleDeckLayouts(arr, (r0.width || ref.w) / ref.w, (r0.height || ref.h) / ref.h);
       }
-      layouts = await deckLayoutsFrom(arr);
-      if (!Array.isArray(raw)) walkTheme = deckTheme(raw?.theme);
+      const resolve = canvasColorResolver(node);   // token-valued gallery colours (A12)
+      layouts = await deckLayoutsFrom(arr, resolve);
+      if (!Array.isArray(raw)) walkTheme = deckTheme(raw?.theme, resolve);
     } catch { /* malformed gallery - export without one */ }
   }
 
   const slides: PptxSlide[] = [];
+  // Narration rides the DOM-walk path too: a tool that emits `[data-audio-src]` markers
+  // inside its pages gets embedded per-slide audio without authoring a deck model.
+  const walkAutoAdvance = deckAutoAdvances(node);
   for (const el of pageEls) {
     const slide = await pptxSlideFromPage(el, opts);
+    const clip = await slideNarration(el, slides.length, walkAutoAdvance);
+    if (clip) slide.audio = clip;
     if (layouts) {
       const li = parseInt(el.getAttribute?.('data-pptx-layout') ?? '', 10);
       if (Number.isFinite(li)) slide.layout = li; // engine clamps

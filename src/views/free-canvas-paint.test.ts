@@ -233,7 +233,13 @@ const byId = (f: Fixture, id: string): Box => {
 
 // ══ presence: every control is reachable, and only where it applies ════════════
 
-test('a path selection offers stroke colour and the stroke panel; a plain box offers neither', () => {
+test('stroke colour and the stroke panel reach a path AND a plain box', () => {
+  // This test used to assert that a box offered NEITHER. That gating was wrong (plan 179
+  // A5): the manifest declares `stroke`/`strokeW`/`strokeDash` with
+  // `showFor: ["path","box","image","frame"]` and hooks.js renders them on a non-path box
+  // as a real CSS border - so every artboard drawn by the Artboard tool carried a baked
+  // 2px edge that nothing on the canvas could remove. What differs between the two kinds
+  // is the MECHANISM, and the stroke panel is where that shows (see below).
   const f = mount([plainBox({ id: 'b1', x: 100, y: 100 }), pathBox({ id: 'p1', x: 500, y: 500 })]);
 
   selectAt(f, ...centre(byId(f, 'p1')));
@@ -247,15 +253,32 @@ test('a path selection offers stroke colour and the stroke panel; a plain box of
 
   selectAt(f, ...centre(byId(f, 'b1')));
   const onBox = ctxbar(f);
-  assert.equal(colourField(onBox, 'fc-stroke'), null, 'a div has no SVG stroke, so no stroke colour');
-  assert.equal(onBox.querySelector('[data-cx="stroke"]'), null, 'and no stroke panel');
+  assert.ok(colourField(onBox, 'fc-stroke'), 'a box paints its stroke as a border - it is still a stroke');
+  assert.ok(onBox.querySelector('[data-cx="stroke"]'), 'and the panel onto its width and style');
   assert.ok(colourField(onBox, 'fc-fill'), 'fill is still there');
   assert.ok(colourField(onBox, 'fc-fg'), 'and text colour is back');
   f.destroy();
 });
 
-test('a MIXED selection offers no stroke controls rather than half-applicable ones', () => {
-  const f = mount([plainBox({ id: 'b1', x: 100, y: 100 }), pathBox({ id: 'p1', x: 500, y: 500 })]);
+test('the stroke panel hides the path-only options for a kind whose stroke is a border', () => {
+  const f = mount([plainBox({ id: 'b1', x: 100, y: 100 })]);
+  selectAt(f, ...centre(byId(f, 'b1')));
+  const p = openStrokePanel(f);
+  assert.ok(p.querySelector('input[data-sp="width"]'), 'a border has a width');
+  assert.ok(p.querySelector('.fc-seg[data-seg="strokeDash"]'), 'and solid / dashed / dotted');
+  for (const field of ['strokeCap', 'strokeJoin', 'fillRule']) {
+    assert.equal(p.querySelector(`.fc-seg[data-seg="${field}"]`), null,
+      `${field} is an SVG path's, not a border's - the manifest declares it showFor:["path"]`);
+  }
+  f.destroy();
+});
+
+test('a selection containing a kind with NO border offers no stroke controls', () => {
+  // The "all of it, or none of it" rule stands - it is only the SET of kinds that widened.
+  // A text box paints no border, so a path + text selection gets no stroke pair rather
+  // than one that half the selection would ignore.
+  const textish = { ...plainBox({ id: 'b1', x: 100, y: 100 }), kind: 'text' } as Box;
+  const f = mount([textish, pathBox({ id: 'p1', x: 500, y: 500 })]);
   selectAt(f, ...centre(byId(f, 'p1')));
   selectAt(f, ...centre(byId(f, 'b1')), { shift: true });
   const bar = ctxbar(f);

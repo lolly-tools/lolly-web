@@ -131,10 +131,19 @@ export interface SwatchTileOptions {
    *  delegation can look the swatch back up. Always rendered when given, even
    *  as `""` - callers that always expect the attribute rely on that. */
   idx?: number | string;
-  /** md only: whether to show the locked/empty state classes. Default true - 
+  /** md only: whether to show the locked/empty state classes. Default true -
    *  the brand studio's own grid always wants them; a caller reusing the 'md'
    *  shape purely for layout (none currently) can opt out. */
   editable?: boolean;
+  /** md only: the role mark this tile wears in the corner - `P`, `S`, `Su`, `T`
+   *  (plan 182 section 4.2). Decorative and aria-hidden: the Roles strip is
+   *  where roles are listed and named, and the tile's accessible label is kept
+   *  fresh in place by the studio's own recolour paths, which know nothing about
+   *  roles. Omit it and the tile is byte-identical to what it always was. */
+  roleGlyph?: string;
+  /** md only: the tile is light enough that the mark needs ink rather than
+   *  paper. The caller measures - it already holds the swatch's OKLCH. */
+  roleOnLight?: boolean;
 }
 
 /** The tile's accessible name - the visible grid is shape-only, so name + hex
@@ -147,7 +156,7 @@ export function tileLabel(name: string, hex: string, locked: boolean): string {
 }
 
 export function swatchTile(entry: SwatchTileEntry, opts: SwatchTileOptions = {}): string {
-  const { size = 'md', idx, editable = true } = opts;
+  const { size = 'md', idx, editable = true, roleGlyph = '', roleOnLight = false } = opts;
   const trans = !entry.hex || entry.hex === 'transparent';
   const sw = escape(trans ? 'transparent' : entry.hex);
   if (size === 'sm') {
@@ -158,10 +167,13 @@ export function swatchTile(entry: SwatchTileEntry, opts: SwatchTileOptions = {})
   const label = tileLabel(entry.label, entry.hex, !!entry.locked);
   const idxAttr = idx != null ? ` data-be-tile="${escape(String(idx))}"` : '';
   const stateCls = editable ? `${trans ? ' is-empty' : ''}${entry.locked ? ' is-pinned' : ''}` : '';
+  const mark = roleGlyph
+    ? `<span class="be-swatch-role${roleOnLight ? ' is-onlight' : ''}" aria-hidden="true">${escape(roleGlyph)}</span>`
+    : '';
   return `
     <button type="button" class="be-swatch${stateCls}"${idxAttr}
       style="--sw:${sw}"
       title="${escape(label)}" aria-label="${escape(label)}">
-      <span class="be-swatch-chip" aria-hidden="true"></span>
+      <span class="be-swatch-chip" aria-hidden="true"></span>${mark}
     </button>`;
 }

@@ -770,27 +770,65 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
      * Internal: replace one user asset's stored bytes with a
      * provenance-stamped copy of THEMSELVES: the lazy heal for TTS clips
      * saved before Lolly embedded Content Credentials into audio files
-     * (lib/tts-provenance.ts). A read-modify-write like _renameUserAsset,
-     * but the blob changes, so quota is checked on the byte DELTA only (the
-     * stamp adds a few KB to bytes already stored; re-running assertQuotaRoom
-     * on the full size could spuriously trip STORAGE_FULL near quota), and
-     * `version` is bumped so toAssetRef mints a fresh object URL instead of
-     * serving the pre-heal bytes out of OBJECT_URL_CACHE. No-op if the asset
-     * is gone.
+     * (lib/tts-provenance.ts). The narrow case of _replaceUserAssetBytes
+     * below, which is where the pin preservation, the delta-only quota check
+     * and the `version` bump are explained; kept as its own name because the
+     * heal has one job and reads better saying so.
      */
     async _restampUserAsset(id: string, patch: { blob: Blob; credential: Uint8Array; credentialFormat: string }): Promise<void> {
-      // The stamp rewrites the bytes at an existing id. Pinned or not, the
-      // previous bytes are what a published version checksummed.
+      await api._replaceUserAssetBytes(id, patch);
+    },
+
+    /**
+     * Internal: replace one user asset's stored bytes at the SAME id - the
+     * general form of _restampUserAsset (which is now this, with only a
+     * credential to change). The regenerate path for a speech clip writes
+     * through here: new audio, a fresh Content Credential over it, and the
+     * `meta` keys the new take changed (plans/181 section 5.2). The id never
+     * moves, so no box in any document is re-pointed and every `#/c?asset=`
+     * link keeps resolving.
+     *
+     * Like _restampUserAsset before it: preservePinned FIRST, because the
+     * previous bytes are what a published version checksummed; quota on the
+     * byte DELTA only (re-running assertQuotaRoom on the full size could
+     * spuriously trip STORAGE_FULL near quota for a write that adds almost
+     * nothing); and `version` bumped so toAssetRef mints a fresh object URL
+     * instead of serving the old bytes out of OBJECT_URL_CACHE.
+     *
+     * `meta` MERGES into the stored meta, so a caller passes only what
+     * changed. A patch with no `credential` DROPS the stored one: it was
+     * signed over bytes that no longer exist, and a credential that does not
+     * bind its file is worse than none. No-op if the asset is gone.
+     */
+    async _replaceUserAssetBytes(
+      id: string,
+      patch: { blob: Blob; credential?: Uint8Array; credentialFormat?: string; meta?: Record<string, unknown> },
+    ): Promise<void> {
       await opts.preservePinned?.(id);
       const rec = await db.get('user-assets', id);
       if (!rec) return;
       await assertQuotaRoom(Math.max(0, patch.blob.size - (rec.blob?.size ?? 0)));
       rec.blob = patch.blob;
-      rec.credential = patch.credential;
-      rec.credentialFormat = patch.credentialFormat;
-      rec.meta = { ...rec.meta, bytes: patch.blob.size };
+      if (patch.credential && patch.credentialFormat) {
+        rec.credential = patch.credential;
+        rec.credentialFormat = patch.credentialFormat;
+      } else {
+        delete rec.credential;
+        delete rec.credentialFormat;
+      }
+      // The AI-kind memo is keyed by id and valid only while the bytes under
+      // that id do not change. These bytes just changed.
+      AI_KIND_MEMO.delete(id);
+      rec.meta = { ...rec.meta, ...patch.meta, bytes: patch.blob.size };
       rec.version = String(Date.now());   // cache-buster - object URLs key on id:format:version
       await db.put('user-assets', rec);
+      // The bump only stops a NEW ref from reusing the old URL; the old URL
+      // itself stays in the cache and keeps resolving to bytes that no longer
+      // exist, so anything still holding it plays the previous take. Revoke
+      // them here, the same way a delete does, and let holders re-resolve
+      // through get() - a regenerated voiceover whose box still pointed at the
+      // pre-rewrite URL played the old audio under the new cuts.
+      evictObjectUrlsByPrefix(`user:${id}:`);
     },
 
     /**

@@ -20,6 +20,10 @@ import type { InputValue } from '../../../../engine/src/inputs.ts';
 // the conversion (plans/104 section 4.3 - `eff` and `z` are only the same sentence at one
 // perspective, so nobody re-types the formula).
 import { depthForEff } from '../../../../engine/src/keyframes.ts';
+// ONE mapping from a deck transition to the per-box pair that expresses it (plans/179 M4),
+// shared with the presenter and the .pptx writer so a slide laid out on the timeline and
+// the same slide presented can never disagree about what "slide" means.
+import { slideTransitionPair } from '../lib/motion-model.ts';
 
 /** A flat row of a `blocks` input, keyed by field id - the structure of one "box". */
 export type Box = { [key: string]: InputValue | undefined };
@@ -1126,6 +1130,8 @@ export interface ArtboardFrameSource {
   boxes: Box[];
   /** This page's own ground, painted as the frame's fill; else the document's. */
   background?: string;
+  /** The slide's speaker notes, where the source carried them (plans/179 P2). */
+  notes?: string;
 }
 
 export interface ArtboardLayoutOpts {
@@ -1148,6 +1154,9 @@ export interface ArtboardLayoutOpts {
   background?: string;
   /** Horizontal gap between artboards, px. Default 8 % of the widest page (min 40). */
   gap?: number;
+  /** The frame field a page's SPEAKER NOTES land in (Design: 'notes'). Without it an
+   *  imported deck's notes are parsed and then thrown away (plans/179 P2). */
+  notesField?: string;
 }
 
 /**
@@ -1185,6 +1194,7 @@ export function layoutArtboards(frames: ArtboardFrameSource[], opts: ArtboardLay
     fb[cfg.kindField] = frameKind;
     if (orderField) fb[orderField] = index;
     if (cfg.labelField && frame.name) fb[cfg.labelField] = frame.name;
+    if (opts.notesField && frame.notes) fb[opts.notesField] = frame.notes;
     const ground = frame.background || opts.background;
     if (cfg.fillField && ground) fb[cfg.fillField] = ground;
     fb[frameField] = '';   // a frame never nests
@@ -1603,12 +1613,12 @@ export function cascadeFrameMove(boxes: Box[], frameId: string, dx: number, dy: 
 }
 
 /** New frame copies with `order` (0-based) assigned left→right by ascending x, stable for ties; input not mutated. */
-export function seedFrameOrder(frameBoxes: Box[]): Box[] {
-  const ranked = frameBoxes.map((b, i) => ({ i, x: num(b?.x) }));
+export function seedFrameOrder(frameBoxes: Box[], orderField = 'order', xField = 'x'): Box[] {
+  const ranked = frameBoxes.map((b, i) => ({ i, x: num(b?.[xField]) }));
   ranked.sort((a, b) => a.x - b.x || a.i - b.i);
   const order: number[] = new Array(frameBoxes.length);
   ranked.forEach((r, rank) => { order[r.i] = rank; });
-  return frameBoxes.map((b, i) => ({ ...b, order: order[i] }));
+  return frameBoxes.map((b, i) => ({ ...b, [orderField]: order[i] }));
 }
 
 /**
@@ -1640,6 +1650,325 @@ export function renumberFrameOrder(
     // keep the existing object so an unchanged frame doesn't force a re-render.
     if (cur != null && cur !== '' && Number(cur) === r) return b;
     return { ...b, [orderField]: r };
+  });
+}
+
+// ── Artboard housekeeping (plans/179 section 5.2 - A1, A7, A8, A9, A13) ─────────
+//
+// Everything below reads the SAME page order the tool's hook reads (order asc, then x
+// asc), so the shell and a headless render can never disagree about which artboard is
+// slide 1. All of it is pure: boxes in, new boxes out, no DOM, no mutation.
+
+/** The frame-primitive field names these helpers need (the shell's `canvas` flags). */
+export interface FrameFields {
+  idField: string;
+  kindField: string;
+  xField: string;
+  yField: string;
+  wField: string;
+  hField: string;
+  frameField: string;
+  orderField: string;
+  frameKind: string;
+}
+
+/** A box's id as a string ('' when it carries none). */
+function fmId(b: Box | undefined, idField: string): string {
+  const v = b?.[idField];
+  return v == null ? '' : String(v);
+}
+
+/** Is this row a frame (artboard)? */
+function isFrameBox(b: Box | undefined, kindField: string, frameKind: string): boolean {
+  return !!b && String(b[kindField]) === frameKind;
+}
+
+/**
+ * The document's artboards in PAGE order - `order` ascending, x ascending as the
+ * tie-break. Exactly the comparator `frameGroupsFor` uses in the tool's hooks, which is
+ * why it lives here once instead of being retyped at each call site. Input untouched.
+ */
+export function framesInPageOrder(
+  boxes: Box[], fields: { kindField: string; xField: string; orderField: string; frameKind: string },
+): Box[] {
+  const { kindField, xField, orderField, frameKind } = fields;
+  return boxes
+    .filter((b) => isFrameBox(b, kindField, frameKind))
+    .sort((a, b) => (num(a?.[orderField]) - num(b?.[orderField])) || (num(a?.[xField]) - num(b?.[xField])));
+}
+
+/**
+ * The artboard the user is working ON (plans/179 A1 + A11) - the one a fill swatch should
+ * paint and a still export should frame.
+ *
+ * Three answers in order: a SELECTED artboard is itself the active one; otherwise the
+ * artboard that owns the first selected box - its STORED membership first, because that
+ * is what the render reads (the hook never re-resolves geometry), with `resolveFrame` as
+ * the fallback for a row that has never been through a gesture; and only with nothing
+ * selected (or a selection sitting on the pasteboard) the PRIMARY artboard, i.e. the
+ * first in page order. '' when the document has no artboards at all.
+ */
+export function activeFrameIdFor(
+  boxes: Box[], selectionIds: Iterable<string>, fields: FrameFields,
+): string {
+  const { idField, kindField, frameField, frameKind } = fields;
+  const frames = boxes.filter((b) => isFrameBox(b, kindField, frameKind));
+  if (!frames.length) return '';
+  const sel = new Set<string>();
+  for (const id of selectionIds) sel.add(String(id));
+  if (sel.size) {
+    const selected = boxes.filter((b) => b && sel.has(fmId(b, idField)));
+    for (const b of selected) {
+      if (isFrameBox(b, kindField, frameKind)) return fmId(b, idField);
+    }
+    const frameIds = new Set(frames.map((f) => fmId(f, idField)));
+    for (const b of selected) {
+      const stored = b![frameField] == null ? '' : String(b![frameField]);
+      if (stored && frameIds.has(stored)) return stored;
+      const hit = resolveFrame(b, frames);
+      if (hit) return hit;
+    }
+  }
+  return fmId(framesInPageOrder(boxes, fields)[0], idField);
+}
+
+/** The page `order` a NEWLY created artboard takes: one past the highest in the document
+ *  (0 when there are none). A board drawn to the LEFT of a deck is the last slide, not
+ *  the first - which is the whole of plans/179 A9. */
+export function nextFrameOrder(
+  boxes: Box[], fields: { kindField: string; orderField: string; frameKind: string },
+): number {
+  const { kindField, orderField, frameKind } = fields;
+  let max = -1;
+  for (const b of boxes) {
+    if (!isFrameBox(b, kindField, frameKind)) continue;
+    const v = b![orderField];
+    if (v == null || v === '') continue;
+    const n = Number(v);
+    if (isFinite(n) && n > max) max = n;
+  }
+  return max + 1;
+}
+
+/**
+ * Seed `order` from x on a LEGACY document - one whose artboards carry no order at all,
+ * because until plans/179 nothing on the canvas ever wrote the field. Run once, on the
+ * first commit that creates or deletes an artboard, so that "the order you see" becomes
+ * "the order that is stored" before anything renumbers around it.
+ *
+ * A document where even ONE artboard carries an order is left alone: that order is a
+ * user's (or an import's) explicit answer and re-deriving it from x would overwrite it.
+ * Returns the SAME array when nothing was seeded, so a caller can skip a commit.
+ */
+export function seedFrameOrders(
+  boxes: Box[], fields: { kindField: string; xField: string; orderField: string; frameKind: string },
+): Box[] {
+  const { kindField, orderField, frameKind } = fields;
+  const frames = boxes.filter((b) => isFrameBox(b, kindField, frameKind));
+  if (!frames.length) return boxes;
+  const hasAny = frames.some((b) => {
+    const v = b![orderField];
+    return v != null && v !== '' && isFinite(Number(v));
+  });
+  if (hasAny) return boxes;
+  const seeded = seedFrameOrder(frames, orderField, fields.xField);
+  const swap = new Map<Box, Box>();
+  frames.forEach((f, i) => swap.set(f!, seeded[i]!));
+  return boxes.map((b) => (b && swap.has(b) ? swap.get(b)! : b));
+}
+
+/** What {@link rehomeChildrenOfDeletedFrames} did, so the caller can say it out loud. */
+export interface RehomeResult {
+  /** boxes with the children re-homed - SAME length and index order as the input, so the
+   *  caller still drops the deleted rows by index in the same commit. */
+  boxes: Box[];
+  /** children moved onto the previous artboard. */
+  homed: number;
+  /** children left on the pasteboard (their artboard was the first one). */
+  orphaned: number;
+}
+
+/**
+ * Deleting an artboard must not strand its children (plans/179 A7). Before the delete,
+ * every box whose `frame` names a doomed artboard is moved to the PREVIOUS surviving
+ * artboard in page order - translated so it keeps its frame-LOCAL position, which is what
+ * makes the move look like the slide's content arriving rather than jumping - or, when the
+ * doomed artboard was the first one, is cut loose onto the pasteboard (`frame` cleared).
+ *
+ * Without this the children keep pointing at a dead id: still visible in the editor, and
+ * absent from every PNG/PDF/PPTX export, because the render only walks boxes whose stored
+ * `frame` names a live page.
+ *
+ * Returns an array of the SAME length - the deleted rows are untouched here, so the caller
+ * filters them out by index in the same commit and the whole delete stays one undo step.
+ */
+export function rehomeChildrenOfDeletedFrames(
+  boxes: Box[], deletedIds: Iterable<string>, fields: FrameFields,
+): RehomeResult {
+  const { idField, kindField, xField, yField, frameField, frameKind } = fields;
+  const dead = new Set<string>();
+  for (const id of deletedIds) dead.add(String(id));
+  if (!dead.size) return { boxes, homed: 0, orphaned: 0 };
+
+  // Walk the pages in order, remembering the last SURVIVOR: that is "the previous
+  // artboard" for every doomed page that follows it.
+  const target = new Map<string, Box | null>();
+  const doomed = new Map<string, Box>();
+  let prevAlive: Box | null = null;
+  for (const f of framesInPageOrder(boxes, fields)) {
+    const id = fmId(f, idField);
+    if (dead.has(id)) { target.set(id, prevAlive); doomed.set(id, f!); }
+    else prevAlive = f!;
+  }
+  if (!doomed.size) return { boxes, homed: 0, orphaned: 0 };
+
+  let homed = 0;
+  let orphaned = 0;
+  const next = boxes.map((b) => {
+    if (!b || dead.has(fmId(b, idField))) return b;          // the doomed rows are the caller's to drop
+    if (isFrameBox(b, kindField, frameKind)) return b;       // a frame never belongs to a frame
+    const owner = b[frameField] == null ? '' : String(b[frameField]);
+    if (!owner || !doomed.has(owner)) return b;
+    const src = doomed.get(owner)!;
+    const dst = target.get(owner) ?? null;
+    if (!dst) { orphaned++; return { ...b, [frameField]: '' }; }
+    homed++;
+    return {
+      ...b,
+      [frameField]: fmId(dst, idField),
+      [xField]: num(b[xField]) + (num(dst[xField]) - num(src[xField])),
+      [yField]: num(b[yField]) + (num(dst[yField]) - num(src[yField])),
+    };
+  });
+  return { boxes: next, homed, orphaned };
+}
+
+/** What {@link duplicateFrameWithChildren} produced. */
+export interface FrameDupResult {
+  boxes: Box[];
+  /** id of the copied artboard ('' when `frameId` named no artboard - boxes come back unchanged). */
+  frameId: string;
+  /** every minted id, the frame's first. */
+  ids: string[];
+}
+
+/**
+ * Duplicate an artboard AND everything on it (plans/179 A8).
+ *
+ * Three things make this more than a row copy:
+ *
+ *  1. **The children come too**, with fresh ids, keeping their frame-local position and
+ *     pointing at the copy. Cloning the frame row alone left an empty page.
+ *  2. **The copy goes clear of EVERY artboard** - past the right edge of the furthest
+ *     frame, plus `gap` - never on top of one. That is not only tidiness: `resolveFrame`
+ *     answers with the LAST containing frame and the copies are appended last, so a copy
+ *     laid over ANY board would swallow that board's children on their next gesture - the
+ *     re-bucket trap the plan describes. Clearing the original alone is not enough: every
+ *     shipped multi-artboard layout puts the SAME order of gutter between its pages
+ *     (carousel 56, slide-deck 80, `layoutArtboards` max(40, 8% of the width)), so
+ *     `src.x + src.w + gap` drops the copy almost exactly on the NEXT slide. Placing it
+ *     past the furthest board is the rule `addArtboard` already follows.
+ *  3. **It takes the next page slot** - `order` = the original's + 1, with every later
+ *     artboard renumbered through {@link renumberFrameOrder} - so a duplicated slide 2
+ *     becomes slide 3, not slide 12.
+ *
+ * References BETWEEN copied rows are re-keyed: `groupField` gets a whole new group id per
+ * distinct group (otherwise clicking a copy would select the original's members too), and
+ * every field named in `refFields` (clip, linkOf, …) that points at a copied box is
+ * repointed at its copy. A reference OUT of the copied set is left exactly as authored -
+ * which is what keeps a morph key (`matchOf`, a free-text tag, not an id) working between
+ * a slide and its duplicate.
+ */
+export function duplicateFrameWithChildren(
+  boxes: Box[],
+  frameId: string,
+  fields: FrameFields,
+  mint: { id: () => string; group?: () => string },
+  opts: { gap?: number; groupField?: string; refFields?: readonly string[] } = {},
+): FrameDupResult {
+  const { idField, kindField, xField, yField, wField, frameField, orderField, frameKind } = fields;
+  const gap = opts.gap ?? 56;
+  const wanted = String(frameId);
+  const src = boxes.find((b) => isFrameBox(b, kindField, frameKind) && fmId(b, idField) === wanted);
+  if (!src || !wanted) return { boxes, frameId: '', ids: [] };
+  const kids = boxes.filter((b) =>
+    b && !isFrameBox(b, kindField, frameKind) && String(b[frameField] ?? '') === wanted);
+
+  const sources = [src, ...kids];
+  // Fresh ids minted per SOURCE ROW (not per old id) so a row that arrived without one
+  // still gets a copy with an id; `idMap` is keyed by old id, for the reference re-keying.
+  const newIds = sources.map(() => mint.id());
+  const idMap = new Map<string, string>();
+  sources.forEach((s, i) => { const old = fmId(s, idField); if (old) idMap.set(old, newIds[i]!); });
+
+  const groupMap = new Map<string, string>();
+  const gf = opts.groupField;
+  if (gf && mint.group) {
+    for (const s of sources) {
+      const g = s[gf] == null ? '' : String(s[gf]);
+      if (g && !groupMap.has(g)) groupMap.set(g, mint.group());
+    }
+  }
+
+  // Clear of every artboard, same row (see 2. above), and never to the LEFT of the
+  // original however the boards are laid out.
+  const srcRight = num(src[xField]) + num(src[wField]);
+  const deckRight = boxes.reduce((m, b) => (isFrameBox(b, kindField, frameKind)
+    ? Math.max(m, num(b?.[xField]) + num(b?.[wField])) : m), srcRight);
+  const dx = deckRight + gap - num(src[xField]);
+  const newFrameId = newIds[0]!;
+  const copies: Box[] = sources.map((s, i) => {
+    const copy: Box = { ...s, [idField]: newIds[i]!, [xField]: num(s[xField]) + dx, [yField]: num(s[yField]) };
+    if (s !== src) copy[frameField] = newFrameId;
+    if (gf) {
+      const g = s[gf] == null ? '' : String(s[gf]);
+      if (g && groupMap.has(g)) copy[gf] = groupMap.get(g)!;
+    }
+    for (const rf of opts.refFields ?? []) {
+      const v = copy[rf];
+      const ref = v == null ? '' : String(v);
+      if (ref && idMap.has(ref)) copy[rf] = idMap.get(ref)!;
+    }
+    return copy;
+  });
+
+  // The new page sequence: the copy sits immediately after its original.
+  const seq: string[] = [];
+  for (const f of framesInPageOrder(boxes, fields)) {
+    const id = fmId(f, idField);
+    seq.push(id);
+    if (id === wanted) seq.push(newFrameId);
+  }
+  const next = renumberFrameOrder([...boxes, ...copies], seq,
+    { kindField, idField, orderField, frameKind });
+  return { boxes: next, frameId: newFrameId, ids: copies.map((c) => String(c[idField])) };
+}
+
+/**
+ * The marquee rule for artboards (plans/179 A13, Figma's): a band selects an artboard only
+ * when it FULLY ENCLOSES it. Crossing a board on the way to its cards used to grab the
+ * board itself, so the next Fill recoloured the page and Delete removed the slide.
+ * Children keep the ordinary "touched by the band" rule.
+ *
+ * `hits` are indices into `boxes` (whatever the generic marquee returned); the returned
+ * array keeps their order and drops only the partially-crossed frames. Containment is
+ * tested on the plain x/y/w/h rect, matching `resolveFrame` - the frame primitive never
+ * rotates a page.
+ */
+export function filterMarqueeFrames(
+  boxes: Box[], hits: readonly number[], rect: MarqueeRect,
+  fields: { kindField: string; xField: string; yField: string; wField: string; hField: string; frameKind: string },
+): number[] {
+  const { kindField, xField, yField, wField, hField, frameKind } = fields;
+  const rx = Math.min(rect.x, rect.x + rect.w);
+  const ry = Math.min(rect.y, rect.y + rect.h);
+  const rr = Math.max(rect.x, rect.x + rect.w);
+  const rb = Math.max(rect.y, rect.y + rect.h);
+  return hits.filter((i) => {
+    const b = boxes[i];
+    if (!isFrameBox(b, kindField, frameKind)) return true;
+    const x = num(b![xField]), y = num(b![yField]);
+    return rx <= x && ry <= y && rr >= x + num(b![wField]) && rb >= y + num(b![hField]);
   });
 }
 
@@ -1798,10 +2127,34 @@ export interface FrameSeqOpts {
   defaultDurMs?: number;
   /** The scenes lane value written to every frame's lane field (e.g. 'seq'). */
   lane: string;
-  /** Default enter transition when a frame has none authored (e.g. 'fade'). Omit to leave enter alone. */
+  /** Default enter transition when a frame has none authored (e.g. 'fade'). Omit to leave enter alone.
+   *  Ignored for a frame whose own `transitionField` resolves to a pair - see the field below. */
   defaultEnter?: string;
   /** Default exit transition when a frame has none authored (e.g. 'fade'). Omit to leave exit alone. */
   defaultExit?: string;
+  /** The FRAME sub-field holding this slide's own transition to the next one (Design's
+   *  `slideTransition`). Given, each frame's enter/exit are derived from ITS value rather
+   *  than from the flat defaults above. Omit for a caller with no per-frame transition
+   *  (Sequence Studio), which keeps the defaults exactly as they were. */
+  transitionField?: string;
+  /** The DOCUMENT's transition, which a frame whose own value is empty inherits. */
+  docTransition?: string;
+  /**
+   * Per-frame dwell FLOOR in MILLISECONDS, keyed by frame id (plans/180 T1, T7).
+   *
+   * `defaultDurMs` cannot express "this ONE slide must be at least 11.4 s": it fills
+   * an unset dur and nothing else, so a narrated slide whose author already set a 3 s
+   * dwell would cut its own voice off mid-sentence. A floor named here raises that
+   * frame to `max(its own dwell, the floor)` and the pack re-flows behind it, so every
+   * later slide's start shifts by exactly what the narration needed.
+   *
+   * A frame not named here is untouched - which is what keeps Narrate off the slides
+   * that have nothing to say. Values are read through the same second/clamp discipline
+   * as `defaultDurMs`, so a floor over the hour ceiling clamps rather than overflowing.
+   */
+  minDurMs?: Readonly<Record<string, number>>;
+  /** The row's id field, read ONLY to look a frame up in {@link minDurMs}. Default 'id'. */
+  idField?: string;
   startField: string;
   durField: string;
   laneField: string;
@@ -1853,9 +2206,15 @@ export function framesAreSequenced(boxes: Box[], cfg: FramesSequencedCfg): boole
  * exact key frameGroupsFor / seedFrameOrder use, so the timeline order matches the editor's
  * frame numbering). Each frame gets:
  *   • start = cumulative sum of the prior frames' durations (gapless from 0),
- *   • dur   = its existing dur when >0, else the default scene length,
+ *   • dur   = its existing dur when >0, else the default scene length - raised to this
+ *     frame's `minDurMs` floor when one is given (a narrated slide must hold its clip),
  *   • lane  = the scenes lane,
- *   • enter/exit = its existing transition, else the default (only when a default is given).
+ *   • exit  = its existing transition, else the exit half of the pair its OWN slide
+ *     transition means (`transitionField`, inheriting `docTransition` when empty),
+ *     else the flat default,
+ *   • enter = its existing transition, else the enter half of the pair its PREDECESSOR's
+ *     slide transition means - the field says how a slide changes into the NEXT one, so
+ *     the move into this frame was authored on the frame before it.
  * Non-frame boxes are returned untouched (same reference). The input is never mutated, and a
  * frame already at its target timing keeps object identity (no re-render churn), so the
  * operation is idempotent in value.
@@ -1881,12 +2240,25 @@ export function sequenceFramesInOrder(boxes: Box[], opts: FrameSeqOpts): Box[] {
     return xa !== xb ? xa - xb : a - b;
   });
 
+  // Per-frame dwell floors, seconds (plans/180 T1): a narrated slide has to hold its
+  // own voice, so its length is max(what the author set, what the narration needs).
+  const idField = opts.idField || 'id';
+  const floors = opts.minDurMs;
+  const floorOf = (i: number): number => {
+    if (!floors) return 0;
+    const id = String(rows[i]?.[idField] ?? '');
+    const msVal = id ? floors[id] : undefined;
+    if (typeof msVal !== 'number' || !Number.isFinite(msVal) || msVal <= 0) return 0;
+    return clampDur(r3s(msVal / 1000));
+  };
+
   const starts = new Map<number, number>();
   const durs = new Map<number, number>();
   let cursor = 0;
   for (const i of frames) {
     const existing = num(rows[i]![durField], 0);
-    const d = existing > 0 ? clampDur(existing) : defaultDurS;
+    const authored = existing > 0 ? clampDur(existing) : defaultDurS;
+    const d = Math.max(authored, floorOf(i));
     const room = FRAME_MAX_TIME_S - cursor;
     // ONE rounding grid (packOrder's discipline): advance the cursor by the STORED dur so
     // start[i] === start[i-1] + dur[i-1] exactly, else a gapless row grows sub-ms seams.
@@ -1903,6 +2275,11 @@ export function sequenceFramesInOrder(boxes: Box[], opts: FrameSeqOpts): Box[] {
   // Later frames keep the default enter; the first frame still gets `defExit` so it fades
   // OUT into the second. An explicitly-authored enter is untouched (noTransition guard).
   const firstFrame = frames.length ? frames[0]! : -1;
+  const trField = opts.transitionField;
+  // Each frame's PREDECESSOR in play order - the frame whose "Transition to next" is the
+  // move INTO this one. Absent for the first frame, which nothing precedes.
+  const prevFrame = new Map<number, number>();
+  for (let k = 1; k < frames.length; k++) prevFrame.set(frames[k]!, frames[k - 1]!);
   return rows.map((b, i) => {
     if (!b || !starts.has(i)) return b;
     const patch: Record<string, InputValue> = {
@@ -1910,8 +2287,31 @@ export function sequenceFramesInOrder(boxes: Box[], opts: FrameSeqOpts): Box[] {
       [durField]: durs.get(i)!,
       [laneField]: lane,
     };
-    if (defEnter != null && noTransition(b[enterField])) patch[enterField] = i === firstFrame ? 'none' : defEnter;
-    if (defExit != null && noTransition(b[exitField])) patch[exitField] = defExit;
+    // Which enter/exit this frame gets, resolved the one way motion-model resolves a
+    // slide transition: an authored value wins, '' inherits the document's, and 'custom'
+    // derives NOTHING - it is the author saying the frame's timeline rows are the truth.
+    // Without a `transitionField` (Sequence Studio) the flat defaults stand, exactly as
+    // they did before per-frame transitions existed.
+    //
+    // The field means "how THIS slide changes into the NEXT one", so the two halves come
+    // off two different frames: a frame EXITS the way it says, and it ENTERS the way its
+    // PREDECESSOR said. Taking both off the arriving frame is what made A ('slide') slide
+    // out leftwards while B ('fade') cross-faded in - a mismatched pair the presenter
+    // (which resolves min(from, to), the earlier frame) and the .pptx writer (which gives
+    // slide k the transition slide k-1 authored) both already got right.
+    let frameEnter = defEnter;
+    let frameExit = defExit;
+    if (trField) {
+      const own = (v: number | undefined): string => (v == null ? '' : String(rows[v]?.[trField] ?? ''));
+      const ownStr = own(i);
+      const prevStr = own(prevFrame.get(i));
+      const exitPair = ownStr === 'custom' ? null : slideTransitionPair(ownStr || opts.docTransition);
+      const enterPair = prevStr === 'custom' ? null : slideTransitionPair(prevStr || opts.docTransition);
+      frameEnter = enterPair ? enterPair.enter : undefined;
+      frameExit = exitPair ? exitPair.exit : undefined;
+    }
+    if (frameEnter != null && noTransition(b[enterField])) patch[enterField] = i === firstFrame ? 'none' : frameEnter;
+    if (frameExit != null && noTransition(b[exitField])) patch[exitField] = frameExit;
     let changed = false;
     for (const k of Object.keys(patch)) { if (b[k] !== patch[k]) { changed = true; break; } }
     return changed ? { ...b, ...patch } : b;

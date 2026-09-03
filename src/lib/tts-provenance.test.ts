@@ -11,8 +11,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  hasRiffC2pa, ttsRecipeFromMeta, shouldHealTts, healTtsProvenance,
-  TTS_MODEL, type TtsHealHost,
+  hasRiffC2pa, ttsRecipeFromMeta, spokenScriptOf, shouldHealTts, healTtsProvenance, rewriteTtsClip,
+  TTS_MODEL, type TtsHealHost, type TtsRewriteHost,
 } from './tts-provenance.ts';
 import type { AssetRef } from '@lolly-tools/core/host-v1';
 
@@ -108,6 +108,17 @@ test('ttsRecipeFromMeta refuses anything that does not prove Lolly generated it'
   assert.equal(ttsRecipeFromMeta({ tts: { text: '   ', voice: 'af_heart' } }), null);
 });
 
+test('spokenScriptOf prefers the marks-bearing script, and every re-opener reads it', () => {
+  const prose = { text: 'the render finished', voice: 'bf_lily', speed: 1, model: TTS_MODEL, lang: 'en' };
+  assert.equal(spokenScriptOf(prose), 'the render finished');
+  // Once a regeneration has written one, the script IS what the voice read;
+  // `text` still holds the prose someone first typed, one edit behind. An
+  // editor prefilling from `text` and saving would re-speak the old words
+  // under the same asset id and undo the fix wherever the clip is used.
+  const edited = { ...prose, script: '[slow] The render just finished!' };
+  assert.equal(spokenScriptOf(edited), '[slow] The render just finished!');
+});
+
 // ── shouldHealTts ────────────────────────────────────────────────────────────
 
 test('a pre-embed TTS clip (meta.tts + bare wav bytes) heals', () => {
@@ -181,4 +192,87 @@ test('a failed record write reports no heal (the file bytes were never swapped)'
     },
   } as unknown as TtsHealHost;
   assert.equal(await healTtsProvenance(host, ttsRef(), bareWav()), null);
+});
+
+// ── the rewrite path (plans/181 section 5.2 step 4) ──────────────────────────
+
+test('a rewritten clip is stamped with the marks-bearing script and written at the same id', async () => {
+  const writes: Array<{ id: string; patch: Record<string, unknown> }> = [];
+  const host = {
+    version: '1',
+    profile: { get: async () => ({}) },
+    log: () => {},
+    assets: {
+      _replaceUserAssetBytes: async (id: string, patch: never) => { writes.push({ id, patch }); },
+    },
+  } as unknown as TtsRewriteHost;
+
+  const script = 'Hello from Lolly.\n[pause 1.2] This voice is [slow] synthetic.';
+  const stored = await rewriteTtsClip(host, {
+    id: 'user/tts/123-hello',
+    name: 'Hello from Lolly…',
+    blob: new Blob([bareWav(2048) as BlobPart], { type: 'audio/wav' }),
+    recipe: {
+      text: 'Hello from Lolly, this voice is synthetic.',
+      voice: 'af_heart+bf_lily:0.3', speed: 1, model: TTS_MODEL, lang: 'en', script,
+    },
+    meta: { durationMs: 4200, tts: { voice: 'af_heart+bf_lily:0.3', script } },
+  });
+
+  assert.ok(stored, 'the rewrite produced stored bytes');
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0]!.id, 'user/tts/123-hello', 'the asset id never moves');
+  assert.equal(writes[0]!.patch.credentialFormat, 'wav');
+  assert.deepEqual(writes[0]!.patch.meta, { durationMs: 4200, tts: { voice: 'af_heart+bf_lily:0.3', script } });
+
+  // The credential binds these bytes and says what the voice actually read:
+  // the marks-bearing script, not the prose someone first typed.
+  const { collectActionChain } = await import('../../../../engine/src/c2pa-extract.ts');
+  const created = collectActionChain(writes[0]!.patch.credential as Uint8Array)
+    .find((s) => s.action === 'c2pa.created');
+  const params = created?.parameters as Map<string, unknown>;
+  assert.equal(params.get('script'), script);
+  assert.equal(params.get('voice'), 'af_heart+bf_lily:0.3');
+  assert.equal(hasRiffC2pa(new Uint8Array(await stored.arrayBuffer())), true);
+});
+
+test('a clip with no edited script still stamps the prose it was generated from', async () => {
+  const writes: Array<{ patch: Record<string, unknown> }> = [];
+  const host = {
+    version: '1',
+    profile: { get: async () => ({}) },
+    log: () => {},
+    assets: { _replaceUserAssetBytes: async (_id: string, patch: never) => { writes.push({ patch }); } },
+  } as unknown as TtsRewriteHost;
+
+  await rewriteTtsClip(host, {
+    id: 'user/tts/123-hello',
+    name: 'Hello',
+    blob: new Blob([bareWav(2048) as BlobPart], { type: 'audio/wav' }),
+    recipe: { text: 'Hello from Lolly.', voice: 'bf_lily', speed: 1, model: TTS_MODEL, lang: 'en' },
+  });
+  const { collectActionChain } = await import('../../../../engine/src/c2pa-extract.ts');
+  const created = collectActionChain(writes[0]!.patch.credential as Uint8Array)
+    .find((s) => s.action === 'c2pa.created');
+  assert.equal((created?.parameters as Map<string, unknown>).get('script'), 'Hello from Lolly.');
+});
+
+test('ttsRecipeFromMeta reads a stored script, and a failed write reports no rewrite', async () => {
+  const recipe = ttsRecipeFromMeta(ttsMeta({ script: 'Hello from Lolly.\n[pause] Again.' }));
+  assert.equal(recipe?.script, 'Hello from Lolly.\n[pause] Again.');
+  assert.equal(recipe?.text, 'Hello from Lolly, this voice is synthetic.', 'the prose is still its own field');
+  // A clip that never carried one keeps `script` absent rather than empty.
+  assert.equal('script' in (ttsRecipeFromMeta(ttsMeta()) ?? {}), false);
+
+  const host = {
+    version: '1',
+    profile: { get: async () => ({}) },
+    log: () => {},
+    assets: { _replaceUserAssetBytes: async () => { throw new Error('quota'); } },
+  } as unknown as TtsRewriteHost;
+  assert.equal(await rewriteTtsClip(host, {
+    id: 'user/tts/123-hello', name: 'Hello',
+    blob: new Blob([bareWav() as BlobPart], { type: 'audio/wav' }),
+    recipe: { text: 'Hello.', voice: 'bf_lily', speed: 1, model: TTS_MODEL, lang: 'en' },
+  }), null);
 });

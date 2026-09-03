@@ -176,7 +176,35 @@ test('starter colours are counted apart from the ones a person added', async () 
   }));
   assert.equal(model.colorCount, 3);
   assert.equal(model.starterCount, 2);
-  assert.match(overviewHtml(model), /1 yours - 2 starter/);
+  assert.equal(model.ownColorCount, 1);
+  // Own leads, the starter's rides behind it in the muted register.
+  assert.match(overviewHtml(model), /1 colour(?!s)/);
+  assert.match(overviewHtml(model), /· 2 starter/);
+});
+
+// The blank brand's whole inherited palette is the neutral ramp - ink and paper
+// so surfaces can render at all. It lives under Tokens as "Neutrals · starter"
+// (plan 182 section 12), so counting it here would put "9 starter" beside a
+// room that draws none of it.
+test('the scaffolding neutrals are not counted or drawn as starter colours', async () => {
+  const model = await readOverview(stubHost({
+    installed: true,
+    starter: {
+      color: { ramp: { neutral: { 1: { $type: 'color', $value: '#111111' }, 9: { $type: 'color', $value: '#fafafa' } } } },
+    },
+    swatches: [
+      { path: 'color.ramp.neutral.1', value: '#111111' },
+      { path: 'color.ramp.neutral.9', value: '#fafafa' },
+      { path: 'color.custom.mine', value: '#ff6600' },
+    ],
+  }));
+  assert.equal(model.starterCount, 0, 'ink and paper are scaffolding, not a starter palette');
+  assert.deepEqual(model.starterColors, []);
+  assert.deepEqual(model.colors, ['#ff6600'], 'the strip is the design system\'s own');
+  const html = overviewHtml(model);
+  assert.match(html, /1 colour(?!s)/);
+  assert.equal(/· \d+ starter/.test(html), false, 'nothing to count for a ramp this room never shows');
+  assert.equal(/ds-ov-chip is-starter/.test(html), false, 'and nothing to draw for it either');
 });
 
 test('a starter path the user has recoloured is theirs, not the starter\'s', async () => {
@@ -189,6 +217,28 @@ test('a starter path the user has recoloured is theirs, not the starter\'s', asy
     ],
   }));
   assert.equal(model.starterCount, 1);
+});
+
+// One tile per token (plan 182 C5). A `color.semantic.*` leaf is an alias that
+// re-points at a swatch, so the Colours room stopped rendering one as a tile -
+// and this count has to agree with that grid, or "1 colour" here reads beside
+// "2 colours" one room over.
+test('a role is not a colour: re-pointing one adds nothing to the count', async () => {
+  const model = await readOverview(stubHost({
+    installed: true,
+    starter: STARTER,
+    swatches: [
+      { path: 'color.ramp.primary.1', value: '#111111' },
+      { path: 'color.custom.mine', value: '#ff6600' },
+      // The role the person just pointed at their own colour.
+      { path: 'color.semantic.primary', value: '#ff6600' },
+    ],
+  }));
+  assert.equal(model.colorCount, 2, 'two swatches, one of them serving a role');
+  assert.equal(model.starterCount, 1);
+  assert.equal(model.ownColorCount, 1);
+  assert.equal(model.ownership?.colors.has('color.semantic.primary'), false);
+  assert.match(overviewHtml(model), /1 colour(?!s) <small/);
 });
 
 test('a catalog that ships no starter attributes nothing', async () => {
@@ -272,13 +322,14 @@ test('two roles pointing at colours of your own are worth exporting', async () =
   assert.equal(model.worthExporting, true, 'two roles wired up, on two own colours');
 });
 
-test('the plain count returns once the palette is mostly the user\'s own', () => {
+test('the own count leads, whatever the starter\'s size', () => {
   const html = overviewHtml({
     furnished: true, colors: [], colorCount: 5, starterCount: 2,
     fonts: [], logoCount: 0, tokenCount: 0,
   });
-  assert.match(html, /5 colours/);
-  assert.equal(/yours/.test(html), false);
+  assert.match(html, /3 colours/, 'five in the palette, two of them the starter\'s');
+  assert.match(html, /· 2 starter/);
+  assert.equal(/yours/.test(html), false, 'no possessives on the material');
 });
 
 test('an unreadable tokens doc still yields the palette rather than throwing', async () => {
@@ -289,11 +340,19 @@ test('an unreadable tokens doc still yields the palette rather than throwing', a
 
 // ── overviewHtml ─────────────────────────────────────────────────────────────
 
-test('the empty state offers exactly two doors plus a quiet exit', () => {
+test('the empty state offers one door per first move, plus a file and a way out', () => {
   const html = overviewHtml({ furnished: false, colors: [], colorCount: 0, fonts: [], logoCount: 0, tokenCount: 0 });
-  assert.equal([...html.matchAll(/data-ds-door="/g)].length, 2);
+  // Three doors and the inline "Bring a file" - the two old ones ("Start from a
+  // file" / "Start from scratch") named routes, not decisions (plan 182 3a).
+  assert.equal([...html.matchAll(/data-ds-door="/g)].length, 4);
+  assert.match(html, /data-ds-door="color-pick"/);
+  assert.match(html, /data-ds-door="type-stage"/);
+  assert.match(html, /data-ds-door="logos"/);
   assert.match(html, /data-ds-door="file"/);
-  assert.match(html, /data-ds-door="scratch"/);
+  assert.equal(/data-ds-door="scratch"/.test(html), false, 'the old route-shaped door is gone');
+  assert.match(html, /Pick a colour/);
+  assert.match(html, /Choose a face/);
+  assert.match(html, /Add a logo/);
   assert.match(html, /href="#\/"/);
   // The website door arrives with M6, gated on a transport that works - a
   // disabled third door would advertise something nobody here can use.
@@ -329,6 +388,125 @@ test('singular and plural counts both read naturally', () => {
   assert.match(html, /1 colour(?!s)/);
   assert.match(html, /1 logo(?!s)/);
   assert.match(html, /1 token(?!s)/);
+});
+
+// ── The cards read by ownership (plan 182 section 4.2) ───────────────────────
+// Own material leads; what shipped is named underneath in the muted register.
+// The three type states are the whole grammar: nothing chosen, one role chosen,
+// every role chosen.
+
+/** A model with an ownership report shaped by `faces`, everything else quiet. */
+function faceModel(
+  faces: Record<string, { family: string; state: string; follows?: string }>,
+  extra: Partial<Parameters<typeof overviewHtml>[0] & object> = {},
+): NonNullable<Parameters<typeof overviewHtml>[0]> {
+  return {
+    furnished: true, colors: ['#ff6600'], colorCount: 1, ownColorCount: 1,
+    fonts: [], logoCount: 0, tokenCount: 12,
+    ownership: {
+      colors: new Map(), faces, logos: {}, radius: 'inherited',
+      counts: { ownColors: 1, starterColors: 0, ownFaces: 0, logos: 0 },
+    },
+    ...extra,
+  } as NonNullable<Parameters<typeof overviewHtml>[0]>;
+}
+
+test('TYPE: nothing of its own reads Not set, with the starter faces named', () => {
+  const html = overviewHtml(faceModel({
+    brand: { family: 'SUSE', state: 'inherited' },
+    display: { family: 'SUSE', state: 'follows', follows: 'brand' },
+    mono: { family: 'SUSE Mono', state: 'inherited' },
+    italic: { family: 'SUSE', state: 'follows', follows: 'brand' },
+  }));
+  assert.match(html, /Not set/);
+  assert.match(html, /Starter · SUSE, SUSE Mono/);
+  assert.equal(/for the rest/.test(html), false, 'there is no rest when nothing was chosen');
+});
+
+test('TYPE: one own role leads, and the starter takes the rest', () => {
+  const html = overviewHtml(faceModel({
+    brand: { family: 'SUSE', state: 'inherited' },
+    display: { family: 'Inter', state: 'own' },
+    mono: { family: 'SUSE Mono', state: 'inherited' },
+    italic: { family: 'Inter', state: 'follows', follows: 'brand' },
+  }));
+  assert.match(html, /Inter <small[^>]*>for headings/);
+  assert.match(html, /Starter for the rest · SUSE, SUSE Mono/);
+  // A following role repeats a decision rather than making one, so its family is
+  // never listed as the starter's.
+  assert.equal(/Starter for the rest · [^<]*Inter/.test(html), false);
+});
+
+test('TYPE: every role chosen says so and nothing else', () => {
+  const html = overviewHtml(faceModel({
+    brand: { family: 'Inter', state: 'own' },
+    display: { family: 'Fraunces', state: 'own' },
+    mono: { family: 'Space Mono', state: 'own' },
+    italic: { family: 'Inter', state: 'own' },
+  }));
+  assert.match(html, /Inter <small[^>]*>for text/);
+  assert.match(html, /Space Mono <small[^>]*>for code/);
+  assert.equal(/Starter/.test(html), false, 'nothing is standing in');
+});
+
+test('LOGOS: an empty room says Not set and names the slots', () => {
+  const html = overviewHtml(faceModel({}, { logoCount: 0 }));
+  assert.match(html, /Horizontal, vertical, custom marks/);
+  const withMarks = overviewHtml(faceModel({}, { logoCount: 2 }));
+  assert.match(withMarks, /2 logos/);
+  assert.equal(/Horizontal, vertical/.test(withMarks), false);
+});
+
+test('TOKENS: the corner radius says who set it', () => {
+  assert.match(overviewHtml(faceModel({}, { radius: { value: '1rem', own: false } })),
+    /Corner radius · starter 1rem/);
+  assert.match(overviewHtml(faceModel({}, { radius: { value: '0.75rem', own: true } })),
+    /Corner radius · 0\.75rem/);
+});
+
+test('FILES: an empty catalogue says so, and an unknown one says nothing', () => {
+  assert.match(overviewHtml(faceModel({}, { fileCount: 0 })), /Nothing yet/);
+  assert.equal(/Nothing yet/.test(overviewHtml(faceModel({}, { fileCount: 3 }))), false);
+  assert.equal(/Nothing yet/.test(overviewHtml(faceModel({}))), false, 'an unanswerable store says nothing');
+});
+
+// `furnished` goes true on the FIRST write, whatever it was - so a system whose
+// every colour, face and mark is still what shipped would otherwise show five
+// cards counting other people's decisions.
+test('a furnished system with nothing chosen still gets the doors', () => {
+  const html = overviewHtml({
+    furnished: true, colors: [], colorCount: 9, starterCount: 0, ownColorCount: 0,
+    fonts: ['SUSE'], logoCount: 0, tokenCount: 30,
+    ownership: {
+      colors: new Map(), faces: {}, logos: {}, radius: 'inherited',
+      counts: { ownColors: 0, starterColors: 9, ownFaces: 0, logos: 0 },
+    },
+  } as unknown as NonNullable<Parameters<typeof overviewHtml>[0]>);
+  assert.match(html, /ds-ov--empty/);
+  assert.match(html, /Nothing here yet/);
+});
+
+test('one own thing of any kind brings the cards back', () => {
+  for (const counts of [
+    { ownColors: 1, starterColors: 9, ownFaces: 0, logos: 0 },
+    { ownColors: 0, starterColors: 9, ownFaces: 1, logos: 0 },
+    { ownColors: 0, starterColors: 9, ownFaces: 0, logos: 1 },
+  ]) {
+    const html = overviewHtml({
+      furnished: true, colors: [], colorCount: 9, fonts: [], logoCount: 0, tokenCount: 30,
+      ownership: { colors: new Map(), faces: {}, logos: {}, radius: 'inherited', counts },
+    } as unknown as NonNullable<Parameters<typeof overviewHtml>[0]>);
+    assert.equal(/ds-ov--empty/.test(html), false, `${JSON.stringify(counts)} is something of its own`);
+  }
+  // Moving the radius adds no material, but it is still a decision.
+  const moved = overviewHtml({
+    furnished: true, colors: [], colorCount: 9, fonts: [], logoCount: 0, tokenCount: 30,
+    ownership: {
+      colors: new Map(), faces: {}, logos: {}, radius: 'own',
+      counts: { ownColors: 0, starterColors: 9, ownFaces: 0, logos: 0 },
+    },
+  } as unknown as NonNullable<Parameters<typeof overviewHtml>[0]>);
+  assert.equal(/ds-ov--empty/.test(moved), false);
 });
 
 test('a hostile family name cannot break out of the card', () => {
@@ -376,7 +554,7 @@ function mountInto(opts: StubOpts): {
     editor: () => ({
       onPalette: () => { counts.paletteSubs++; return () => { counts.paletteSubs--; }; },
     } as unknown as ReturnType<Parameters<typeof mountOverviewRoom>[1]['editor']>),
-    goto: (area) => gone.push(area),
+    goto: (area, focus) => gone.push(`${area}:${focus ?? ''}`),
     openImport: () => { counts.imports++; },
   });
   return {
@@ -392,8 +570,11 @@ test('mount paints the empty state and its doors are wired', async () => {
   assert.match(m.el.innerHTML, /ds-ov--empty/);
   m.el.querySelector<HTMLElement>('[data-ds-door="file"]')!.click();
   assert.equal(m.imports, 1);
-  m.el.querySelector<HTMLElement>('[data-ds-door="scratch"]')!.click();
-  assert.deepEqual(m.gone, ['color']);
+  // Each door carries the room AND the control it wants open there.
+  m.el.querySelector<HTMLElement>('[data-ds-door="color-pick"]')!.click();
+  m.el.querySelector<HTMLElement>('[data-ds-door="type-stage"]')!.click();
+  m.el.querySelector<HTMLElement>('[data-ds-door="logos"]')!.click();
+  assert.deepEqual(m.gone, ['color:pick', 'type:stage', 'logos:']);
   m.room.teardown();
 });
 
@@ -403,7 +584,7 @@ test('mount paints the furnished state and every card opens its room', async () 
   const cards = [...m.el.querySelectorAll<HTMLElement>('[data-ds-goto]')];
   assert.ok(cards.length >= 5, `expected a card per room, got ${cards.length}`);
   for (const card of cards) card.click();
-  assert.deepEqual(m.gone, cards.map(c => c.dataset.dsGoto));
+  assert.deepEqual(m.gone, cards.map(c => `${c.dataset.dsGoto}:`), 'a card opens its room, with nothing forced open in it');
   m.room.teardown();
 });
 

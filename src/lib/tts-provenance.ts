@@ -32,6 +32,15 @@ export interface TtsRecipe {
   speed: number;
   model: string;
   lang: string;
+  /**
+   * The model-facing script: normalized, one sentence per line, with the
+   * `[pause]` / `[slow]` / `[word](/ipa/)` marks in place (plans/181 section
+   * 5.1). Set once a clip has been regenerated from an edited script, because
+   * then it - not the prose someone first typed - is what produced this audio.
+   * Absent on a clip generated straight from a textarea, where the two are the
+   * same words.
+   */
+  script?: string;
 }
 
 /** What both provenance builders consume: the clip's bytes as a Blob (read
@@ -59,7 +68,8 @@ export function ttsRecipeFromMeta(meta: Record<string, unknown> | null | undefin
   const speed = typeof block.speed === 'number' && Number.isFinite(block.speed) && block.speed > 0 ? block.speed : 1;
   const model = typeof block.model === 'string' && block.model ? block.model : TTS_MODEL;
   const lang = typeof block.lang === 'string' && block.lang ? block.lang : 'en';
-  return { text, voice, speed, model, lang };
+  const script = typeof block.script === 'string' ? block.script.trim() : '';
+  return { text, voice, speed, model, lang, ...(script ? { script } : {}) };
 }
 
 /**
@@ -110,12 +120,29 @@ async function signerOptions(host: HostV1): Promise<Record<string, unknown>> {
     : { dates: { notBefore: new Date(Date.now() - 60_000), notAfter: new Date(Date.now() + 30 * 86_400_000) } };
 }
 
+/**
+ * The words this clip was actually spoken from: the marks-bearing model-facing
+ * script once a regeneration has written one, else the prose someone typed,
+ * which on a clip generated straight from a textarea is the same words.
+ *
+ * The created action records this, and so must anything that RE-OPENS the clip
+ * for editing. Prefilling an editor from `text` alone shows the words as they
+ * were before the last edit; saving from there then re-speaks them under the
+ * same asset id and destroys the fix everywhere the clip is used.
+ */
+export function spokenScriptOf(recipe: TtsRecipe): string {
+  return recipe.script || recipe.text;
+}
+
 /** The one created-action shape (trainedAlgorithmicMedia + the full recipe). */
 const createdAction = (recipe: TtsRecipe, digitalSourceType: string) => ({
   action: 'c2pa.created',
   digitalSourceType,
   description: TTS_DECLARATION,
-  parameters: { script: recipe.text, voice: recipe.voice, speed: recipe.speed, model: recipe.model, lang: recipe.lang },
+  parameters: {
+    script: spokenScriptOf(recipe),
+    voice: recipe.voice, speed: recipe.speed, model: recipe.model, lang: recipe.lang,
+  },
 });
 
 /**
@@ -216,4 +243,71 @@ export async function healTtsProvenance(host: TtsHealHost, ref: AssetRef, bytes:
     return null;
   }
   return embedded.blob;
+}
+
+/** The seam a rewrite writes through (bridge/assets.ts's general bytes swap). */
+export interface TtsRewriteHost extends HostV1 {
+  assets: HostV1['assets'] & {
+    _replaceUserAssetBytes(id: string, patch: {
+      blob: Blob; credential?: Uint8Array; credentialFormat?: string; meta?: Record<string, unknown>;
+    }): Promise<void>;
+  };
+}
+
+/** One regenerated take, ready to replace the clip it came from. */
+export interface TtsRewrite {
+  /** The clip's own asset id - a rewrite never mints a new one. */
+  id: string;
+  /** Display name for the manifest title (the stored `meta.name`). */
+  name: string;
+  /** The re-encoded wav for the spliced audio. */
+  blob: Blob;
+  /** The inputs that produced THIS take, with `script` set to the edited script. */
+  recipe: TtsRecipe;
+  /** The `meta` keys the new take changed - merged over what is stored. */
+  meta?: Record<string, unknown>;
+}
+
+/**
+ * Rewrite a generated clip in place after a regenerate (plans/181 section 5.2
+ * step 4): stamp the new bytes exactly as the save path stamps a first take -
+ * a fresh `c2pa.created` whose `parameters.script` is the script that was
+ * actually read, marks included - then swap the record's bytes, credential and
+ * changed meta under the same id.
+ *
+ * No `c2pa.edited` action: the clip is still wholly generated, and the created
+ * action already carries the recipe that made it. The asset id does not move,
+ * so every document, link and caption pointing at this clip hears the fix.
+ *
+ * Returns the stored blob, or null when the write failed - never throws. A
+ * clip that cannot be stamped still saves with the record-side credential, and
+ * one that cannot be written keeps the take it had.
+ */
+export async function rewriteTtsClip(host: TtsRewriteHost, rw: TtsRewrite): Promise<Blob | null> {
+  const args: TtsProvenanceArgs = { blob: rw.blob, name: rw.name, recipe: rw.recipe };
+  const patch: { blob: Blob; credential?: Uint8Array; credentialFormat?: string; meta?: Record<string, unknown> } = {
+    blob: rw.blob, meta: rw.meta,
+  };
+  // Provenance lives in the file, as it does for a first take. When the embed
+  // cannot run the record-side credential alone is the fallback, and a clip
+  // with neither is still rewritten - the bytes matter more than the stamp.
+  const embedded = await embedTtsProvenance(host, args);
+  if (embedded) {
+    patch.blob = embedded.blob;
+    patch.credential = embedded.store;
+    patch.credentialFormat = 'wav';
+  } else {
+    const credential = await buildTtsCredential(host, args);
+    if (credential) {
+      patch.credential = credential.store;
+      patch.credentialFormat = credential.format;
+    }
+  }
+  try {
+    await host.assets._replaceUserAssetBytes(rw.id, patch);
+  } catch (err) {
+    host.log?.('warn', `tts provenance: rewrite write failed - ${(err as Error)?.message || err}`);
+    return null;
+  }
+  return patch.blob;
 }

@@ -46,11 +46,33 @@ const aliasTarget = (v: unknown): string | null => {
   return m ? m[1]!.trim() : null;
 };
 
-/** The four assignable slots, in strip order. */
-export type RoleId = 'primary' | 'secondary' | 'surface' | 'text';
+/**
+ * The seven slots of the token contract (`color.semantic.*` →`--brand-*`, see
+ * brand-vars.ts SLOTS and plans/archive/brand-token-contract.md), in strip
+ * order.
+ *
+ * Three lists, because they answer three different questions:
+ *
+ *  - {@link ROLE_IDS} - the four a room shows before there is a palette. They
+ *    are the decisions a person makes first, and four rows is a strip; seven is
+ *    a form (plan 182 section 3a).
+ *  - {@link ROLE_IDS_ALL} - every slot a tool can read. Shown once a palette
+ *    exists (beat 2), so nothing a tool consumes is invisible here.
+ *  - {@link ASSIGNABLE_ROLES} - what a picker may WRITE. `on-primary` is
+ *    derived: `deriveBrandTokens` picks it against the primary so the pair
+ *    passes, and hand-pointing it somewhere else is how a system quietly stops
+ *    being readable. It is shown, measured, and read-only.
+ */
+export type RoleId = 'primary' | 'secondary' | 'surface' | 'text' | 'muted' | 'edge' | 'on-primary';
 export const ROLE_IDS: readonly RoleId[] = ['primary', 'secondary', 'surface', 'text'];
+export const ROLE_IDS_ALL: readonly RoleId[] =
+  ['primary', 'secondary', 'surface', 'text', 'muted', 'edge', 'on-primary'];
+export const ASSIGNABLE_ROLES: readonly RoleId[] =
+  ['primary', 'secondary', 'surface', 'text', 'muted', 'edge'];
 
-const isRoleId = (v: unknown): v is RoleId => ROLE_IDS.includes(v as RoleId);
+/** A slot a picker may write. `on-primary` is deliberately not one - see the
+ *  list above and the module header. */
+const isRoleId = (v: unknown): v is RoleId => ASSIGNABLE_ROLES.includes(v as RoleId);
 
 /** The role's name as the strip shows it. Called per render, never cached at
  *  module scope, so a language switch repaints correctly. */
@@ -60,6 +82,9 @@ export function roleLabel(id: RoleId): string {
     case 'secondary': return t('Secondary');
     case 'surface': return t('Surface');
     case 'text': return t('Text');
+    case 'muted': return t('Muted');
+    case 'edge': return t('Edge');
+    case 'on-primary': return t('On primary');
   }
 }
 
@@ -117,7 +142,7 @@ function roleSetOf(doc: Rec, keys: string[]): string {
 }
 
 /**
- * Which sets a role write lands in, and a read looks at.
+ * Which sets a role write goes into, and a read looks at.
  *
  * A derived document carries the roles once per THEME, and the two are
  * deliberately different - `deriveBrandTokens` inverts surface and text so the
@@ -185,7 +210,7 @@ function slotValue(doc: unknown, theme: string, slot: string): unknown {
  * A literal reads directly. An `{alias}` needs the caller's token set: try the
  * ROLE's own key first (what `walkSwatches` does, so a `createTokenSet` resolver
  * behaves identically here), then the alias target, so a bare doc + a shallow
- * resolver still lands a colour.
+ * resolver still resolves to a colour.
  */
 function hexOfSlot(raw: unknown, slot: string, resolve?: (key: string) => unknown): string {
   if (raw === undefined) return '';
@@ -222,7 +247,7 @@ export function readRoles(
   doc: unknown, theme = 'light', resolve?: (key: string) => unknown,
 ): Record<RoleId, RoleState> {
   const out = {} as Record<RoleId, RoleState>;
-  for (const role of ROLE_IDS) {
+  for (const role of ROLE_IDS_ALL) {
     const raw = slotValue(doc, theme, role);
     if (raw === undefined) { out[role] = { ...UNSET }; continue; }
     const ref = aliasTarget(raw);
@@ -237,6 +262,11 @@ export function readRoles(
  * A literal-valued role is deliberately absent: it has no swatch behind it, so
  * it is a colour the slot owns rather than an assignment. Use {@link readRoles}
  * when you need to see those too.
+ *
+ * The FOUR, not all seven. Callers count these as decisions a person made (the
+ * Overview's worth-exporting latch is the one that matters), and `muted`, `edge`
+ * and `on-primary` are written by the derive as a set - counting them would read
+ * one generate as four choices.
  */
 export function roleAssignments(
   doc: unknown, theme = 'light', resolve?: (key: string) => unknown,
@@ -366,15 +396,21 @@ export interface RoleReadout extends RoleState {
  * The pairing, applied uniformly (plan 97 section 7.1: "with roles set, live APCA
  * readouts appear against the chosen surface"):
  *
- * | role      | foreground                        | background            |
- * |-----------|-----------------------------------|-----------------------|
- * | primary   | `on-primary`, falling back `text` | the primary itself    |
- * | secondary | `text`                            | the secondary itself  |
- * | surface   | `text`                            | the surface itself    |
- * | text      | the text colour                   | `surface`, else white |
+ * | role       | foreground                        | background            |
+ * |------------|-----------------------------------|-----------------------|
+ * | primary    | `on-primary`, falling back `text` | the primary itself    |
+ * | secondary  | `text`                            | the secondary itself  |
+ * | surface    | `text`                            | the surface itself    |
+ * | text       | the text colour                   | `surface`, else white |
+ * | muted      | the muted colour                  | `surface`, else white |
+ * | edge       | the edge colour                   | `surface`, else white |
+ * | on-primary | the on-primary colour             | the primary           |
  *
- * The white fallback is the last resort for a document with no surface role at
- * all: text has to be read on something, and a blank page is what it gets.
+ * The last three are INK, like `text`: muted labels and hairlines are drawn on
+ * the surface and are judged there, and `on-primary` exists only to be legible
+ * on the primary. The white fallback is the last resort for a document with no
+ * surface role at all: ink has to be read on something, and a blank page is what
+ * it gets.
  */
 export function roleReadouts(
   doc: unknown, theme = 'light', resolve?: (key: string) => unknown,
@@ -383,17 +419,20 @@ export function roleReadouts(
   const textHex = roles.text.hex || semanticHex(doc, theme, 'text', resolve);
   const surfaceHex = roles.surface.hex || semanticHex(doc, theme, 'surface', resolve);
   const onPrimary = semanticHex(doc, theme, 'on-primary', resolve) || textHex;
+  const primaryHex = roles.primary.hex || semanticHex(doc, theme, 'primary', resolve);
+  /** Roles that are INK: the slot itself is the foreground. */
+  const isInk = (role: RoleId): boolean =>
+    role === 'text' || role === 'muted' || role === 'edge' || role === 'on-primary';
 
   const out = {} as Record<RoleId, RoleReadout>;
-  for (const role of ROLE_IDS) {
+  for (const role of ROLE_IDS_ALL) {
     const state = roles[role];
     const against =
       role === 'primary' ? onPrimary
-        : role === 'text' ? (surfaceHex || '#ffffff')
-          : textHex;
-    // For `text` the role IS the foreground; for the other three it is the
-    // ground the pairing colour sits on.
-    const [fg, bg] = role === 'text' ? [state.hex, against] : [against, state.hex];
+        : role === 'on-primary' ? primaryHex
+          : isInk(role) ? (surfaceHex || '#ffffff')
+            : textHex;
+    const [fg, bg] = isInk(role) ? [state.hex, against] : [against, state.hex];
     out[role] = { ...state, against, contrast: roleContrast(fg, bg) };
   }
   return out;
@@ -408,6 +447,12 @@ export interface RoleSwatchOption {
   name: string;
   hex: string;
   group?: string;
+  /** Still exactly as the starter shipped it - nobody chose this colour (plan
+   *  182 section 4.2). Such a swatch is still assignable (Surface and Text want
+   *  paper and ink, and those ARE the starter's), so it stays in the picker
+   *  under its own "Starter" heading; what changes is the register the row
+   *  wears when a role is sitting on one. Absent = the person's own. */
+  starter?: boolean;
 }
 
 /** One rendered chip. Built by {@link buildRolesModel}, so the strip's shape is
@@ -422,9 +467,25 @@ export interface RoleRow {
   value: string;
   /** True when the slot holds something. */
   set: boolean;
+  /**
+   * The slot is filled, but by a colour nobody chose - the starter's, standing
+   * in (plan 182 section 4.2). The row goes muted and says so, and its picker
+   * reads "Choose…" rather than naming the placeholder as if it were a choice.
+   * This is the single change that answers "what is my palette": the strip stops
+   * claiming the starter's ink is the person's Text colour.
+   */
+  starter: boolean;
+  /** The role this one is resolving to instead of having a colour of its own -
+   *  Secondary pointed at the same swatch as Primary reads "↳ follows Primary".
+   *  Empty for every row that is not doing that. */
+  follows: string;
   /** The picker's current selection: a swatch key, or '' for Not set. */
   selected: string;
   contrast: RoleContrast | null;
+  /** Derived and read-only (`on-primary`): shown and measured, with no picker.
+   *  The derive maintains it against the primary so the pair passes, and
+   *  re-pointing it by hand is how a system stops being readable. */
+  derived: boolean;
 }
 
 export interface RolesModel {
@@ -460,25 +521,61 @@ export function rampStepName(name: string, key: string): string {
  * `swatches` is expected to be pre-filtered to the non-semantic ones (a role
  * cannot take a role) - the caller has that list already from `walkSwatches`,
  * and re-deriving it here would mean importing the editor's doc surgery.
+ *
+ * `ids` is which slots to show: the four assignable ones by default, and
+ * {@link ROLE_IDS_ALL} once there is a palette to point them at (plan 182
+ * section 5.7). It is a parameter rather than a beat, because this module has
+ * no idea what a beat is.
  */
+/**
+ * The Lc is always reported; the WARNING is not.
+ *
+ * `edge` is a hairline - a rule, a border, the quietest thing in the system -
+ * and it is SUPPOSED to sit far under the floor {@link WEAK_LC} names, which is
+ * where text stops being readable. Painting the number red there would be a
+ * false alarm on every well-built palette (the engine's own derive puts it
+ * around Lc 22), and an alarm that is always on is one nobody reads. Every other
+ * slot is ink or a ground for ink, so it keeps the band it earns.
+ */
+function quietWhereQuietIsRight(id: RoleId, c: RoleContrast | null): RoleContrast | null {
+  return c && id === 'edge' ? { ...c, weak: false } : c;
+}
+
 export function buildRolesModel(
   doc: unknown, theme: string, swatches: RoleSwatchOption[], resolve?: (key: string) => unknown,
+  ids: readonly RoleId[] = ROLE_IDS,
 ): RolesModel {
   const readouts = roleReadouts(doc, theme, resolve);
   const options = swatches.filter(s => !s.key.startsWith('color.semantic.'));
   const byKey = new Map(options.map(s => [s.key, s]));
-  const rows = ROLE_IDS.map((id): RoleRow => {
+  const primaryRef = readouts.primary.ref ?? '';
+  const rows = ids.map((id): RoleRow => {
     const r = readouts[id];
     const named = r.ref ? byKey.get(r.ref) : undefined;
     const set = !!(r.ref || (r.literal && r.hex));
+    const name = (named && rampStepName(named.name, r.ref ?? '')) || (r.ref ?? '') || r.hex;
+    const starter = !!named?.starter;
+    // A slot resolving to the SAME swatch the primary sits on is not a second
+    // decision - it is the first one, showing through. Naming the colour twice
+    // reads as two choices; the arrow says what actually happened.
+    const follows = id !== 'primary' && !!r.ref && r.ref === primaryRef ? roleLabel('primary') : '';
     return {
       id,
       label: roleLabel(id),
       hex: r.hex,
-      value: (named && rampStepName(named.name, r.ref ?? '')) || (r.ref ?? '') || r.hex || t('Not set'),
+      value: follows
+        ? tRaw('↳ follows {role}', { role: follows })
+        : starter
+          ? tRaw('Starter {name} stands in', { name })
+          : (name || t('Not set')),
       set,
-      selected: r.ref && byKey.has(r.ref) ? r.ref : '',
-      contrast: r.contrast,
+      starter,
+      follows,
+      // A starter (or following) row has had nothing CHOSEN for it, so its
+      // picker sits on its placeholder - see optionsHtml.
+      selected: !starter && !follows && r.ref && byKey.has(r.ref) ? r.ref : '',
+      contrast: quietWhereQuietIsRight(id, r.contrast),
+      derived: !ASSIGNABLE_ROLES.includes(id),
     };
   });
   return { rows, options };
@@ -508,11 +605,26 @@ function apcaHtml(c: RoleContrast | null): string {
   return `<span class="be-role-apca${p.weak ? ' is-weak' : ''}" title="${escape(p.title)}">${escape(p.text)}</span>`;
 }
 
-function optionsHtml(options: RoleSwatchOption[], selected: string): string {
+/**
+ * The picker's options.
+ *
+ * Starter swatches are kept - Surface and Text genuinely want paper and ink, and
+ * those are the starter's - but they are collected under one "Starter" heading
+ * at the END, after every colour of the person's own, so choosing one is
+ * deliberate rather than accidental (plan 182 section 4.2).
+ *
+ * `placeholder` is what the empty option says. A row whose slot is filled by a
+ * starter colour (or by the primary showing through) reads "Choose…", because
+ * nothing has been chosen for it; a row with a real choice behind it keeps "Not
+ * set", which is what selecting the empty option would DO.
+ */
+function optionsHtml(options: RoleSwatchOption[], selected: string, placeholder: string): string {
   const opt = (s: RoleSwatchOption): string =>
     `<option value="${escape(s.key)}"${s.key === selected ? ' selected' : ''}>${escape(s.name)}</option>`;
   const groups = new Map<string, RoleSwatchOption[]>();
+  const starters: RoleSwatchOption[] = [];
   for (const s of options) {
+    if (s.starter) { starters.push(s); continue; }
     const g = s.group ?? '';
     const bucket = groups.get(g) ?? [];
     bucket.push(s);
@@ -520,23 +632,41 @@ function optionsHtml(options: RoleSwatchOption[], selected: string): string {
   }
   const body = [...groups].map(([g, list]) =>
     g ? `<optgroup label="${escape(g)}">${list.map(opt).join('')}</optgroup>` : list.map(opt).join('')).join('');
-  return `<option value=""${selected ? '' : ' selected'}>${escape(t('Not set'))}</option>${body}`;
+  const starterBody = starters.length
+    ? `<optgroup label="${escape(t('Starter'))}">${starters.map(opt).join('')}</optgroup>` : '';
+  return `<option value=""${selected ? '' : ' selected'}>${escape(placeholder)}</option>${body}${starterBody}`;
 }
 
 /** The strip's markup for a model. Pure, so its shape is unit-tested headless. */
 export function rolesStripHtml(model: RolesModel): string {
   return `<div class="be-roles-strip">${model.rows.map(row => `
-    <div class="be-role${row.set ? '' : ' is-unset'}" data-be-role="${escape(row.id)}">
+    <div class="be-role${row.set ? '' : ' is-unset'}${roleStandInClass(row)}${row.derived ? ' is-derived' : ''}" data-be-role="${escape(row.id)}">
       <span class="be-role-sw" style="--sw:${escape(row.hex || 'transparent')}" aria-hidden="true"></span>
       <span class="be-role-meta">
         <span class="be-role-name">${escape(row.label)}</span>
         <span class="be-role-val" title="${escape(row.value)}">${escape(row.value)}</span>
       </span>
       ${apcaHtml(row.contrast)}
-      <select class="field-select be-role-pick" data-be-role-pick="${escape(row.id)}"
+      ${row.derived
+        // No picker: the derive owns this slot, and a control that wrote it
+        // would be offering to break the pair it exists to keep.
+        ? `<span class="be-role-derived">${escape(t('Derived'))}</span>`
+        : `<select class="field-select be-role-pick" data-be-role-pick="${escape(row.id)}"
               aria-label="${escape(tRaw('Colour for {role}', { role: row.label }))}">${
-    optionsHtml(model.options, row.selected)}</select>
+          optionsHtml(model.options, row.selected, rolePlaceholder(row))}</select>`}
     </div>`).join('')}</div>`;
+}
+
+/** The muted register a stand-in row wears - the starter's colour, or the
+ *  primary showing through. One class for both: they are the same statement
+ *  ("nothing was chosen for this") and they read the same on screen. */
+function roleStandInClass(row: RoleRow): string {
+  return row.starter || row.follows ? ' is-starter' : '';
+}
+
+/** What the picker's empty option says on this row - see optionsHtml. */
+function rolePlaceholder(row: RoleRow): string {
+  return row.starter || row.follows ? t('Choose…') : t('Not set');
 }
 
 /** Live getters, the same ctx shape `mountPrintLock` and the rooms use - the
@@ -550,6 +680,10 @@ export interface RolesCtx {
   resolve?: (key: string) => unknown;
   /** Assignable swatches, non-semantic, already resolved to hex. */
   swatches: () => RoleSwatchOption[];
+  /** Which slots to show - the four by default, all seven once there is a
+   *  palette (plan 182 section 5.7). Read per render, so the room can widen the
+   *  strip by re-rendering it. */
+  ids?: () => readonly RoleId[];
   /** The room does the write (`assignRole`), the repaint and the persist - this
    *  module never touches the document from the DOM half. Write the theme you
    *  are reading: pass `theme()` through to `assignRole`/`clearRole`, or a strip
@@ -563,7 +697,10 @@ export interface RolesCtx {
  *  the picker's own change event leaves this identical, which is what lets the
  *  repaint it triggers patch rather than rebuild. */
 function optionsSig(options: RoleSwatchOption[]): string {
-  return options.map(s => `${s.key}␟${s.name}␟${s.group ?? ''}`).join('␞');
+  // `starter` rides the signature because it decides which optgroup a swatch is
+  // filed under: a recolour that makes a starter colour the person's own has to
+  // rebuild the list, not patch it.
+  return options.map(s => `${s.key}␟${s.name}␟${s.group ?? ''}␟${s.starter ? '1' : ''}`).join('␞');
 }
 
 /**
@@ -576,7 +713,7 @@ function optionsSig(options: RoleSwatchOption[]): string {
  * the person is operating survives the repaint its own `change` event caused.
  *
  * The caller only reaches here when the OPTION LIST is unchanged, which is
- * exactly the picker's own case: a role write lands in `color.semantic.*`, and
+ * exactly the picker's own case: a role write goes into `color.semantic.*`, and
  * `buildRolesModel` filters those out of the options. A real palette change
  * rebuilds.
  */
@@ -588,30 +725,39 @@ function patchStrip(mount: HTMLElement, model: RolesModel): boolean {
     const el = rows[i]!;
     if (el.dataset.beRole !== row.id) return false;
     const sel = el.querySelector<HTMLSelectElement>('[data-be-role-pick]');
-    if (!sel) return false;
+    // A derived row never has a picker; any other row missing one is not the
+    // shape this model describes, so the caller rebuilds.
+    if (!sel && !row.derived) return false;
     el.classList.toggle('is-unset', !row.set);
+    el.classList.toggle('is-starter', !!roleStandInClass(row));
+    // The empty option is the only one whose TEXT changes between renders (a
+    // row stops being a stand-in the moment an own colour takes it), so it is
+    // rewritten here rather than left saying "Choose…" over a real choice.
+    const blank = sel?.querySelector<HTMLOptionElement>('option[value=""]');
+    if (blank) blank.textContent = rolePlaceholder(row);
     el.querySelector<HTMLElement>('.be-role-sw')?.style.setProperty('--sw', row.hex || 'transparent');
     const name = el.querySelector<HTMLElement>('.be-role-name');
     if (name) name.textContent = row.label;
-    sel.setAttribute('aria-label', tRaw('Colour for {role}', { role: row.label }));
+    sel?.setAttribute('aria-label', tRaw('Colour for {role}', { role: row.label }));
     const val = el.querySelector<HTMLElement>('.be-role-val');
     if (val) { val.textContent = row.value; val.title = row.value; }
     // The readout appears and disappears with the pairing, so it is created and
     // removed rather than only rewritten. It holds no state and nothing in it
-    // is focusable, so replacing it costs the interaction nothing.
+    // is focusable, so replacing it costs the interaction nothing. It goes
+    // before the picker, or before the derived row's read-only tail.
     let apca = el.querySelector<HTMLElement>('.be-role-apca');
     if (!row.contrast) { apca?.remove(); }
     else {
       const p = apcaParts(row.contrast);
       if (!apca) {
         apca = el.ownerDocument.createElement('span');
-        sel.before(apca);
+        (sel ?? el.querySelector<HTMLElement>('.be-role-derived'))?.before(apca);
       }
       apca.className = `be-role-apca${p.weak ? ' is-weak' : ''}`;
       apca.title = p.title;
       apca.textContent = p.text;
     }
-    sel.value = row.selected;
+    if (sel) sel.value = row.selected;
   }
   return true;
 }
@@ -638,8 +784,12 @@ function patchStrip(mount: HTMLElement, model: RolesModel): boolean {
 export function mountRolesStrip(mount: HTMLElement, ctx: RolesCtx): { render: () => void } {
   let sig: string | null = null;
   const render = (): void => {
-    const model = buildRolesModel(ctx.doc(), ctx.theme(), ctx.swatches(), ctx.resolve);
-    const next = optionsSig(model.options);
+    const ids = ctx.ids?.() ?? ROLE_IDS;
+    const model = buildRolesModel(ctx.doc(), ctx.theme(), ctx.swatches(), ctx.resolve, ids);
+    // The row set rides the signature: widening the strip is a rebuild, and
+    // patchStrip would otherwise be handed a model with more rows than the DOM
+    // has and report failure one frame later than it should.
+    const next = `${ids.join(',')}␞${optionsSig(model.options)}`;
     const sameOptions = next === sig;
     sig = next;
     if (sameOptions && patchStrip(mount, model)) return;

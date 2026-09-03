@@ -20,6 +20,8 @@ import {
   defaultValueFor, gradientCss, resolveStopHex, formatStudioValue,
 } from './token-studio.ts';
 import type { StudioKind, StudioToken, GradientStop } from './token-studio.ts';
+import { walkSwatches } from './brand-doc.ts';
+import { colorIdentity, isNeutralRampKey } from './design-system/ownership.ts';
 import { mountUploadDropzone } from './upload-dropzone.ts';
 import type { PickerHost } from '../views/picker.ts';
 import { confirmDialog } from '../components/confirm-dialog.ts';
@@ -34,6 +36,11 @@ export interface StudioTabCtx {
   doc: () => Record<string, unknown>;
   persist: (immediate?: boolean) => void;
   notify: () => void;
+  /** The shipped starter's colour identities (lib/design-system/ownership.ts
+   *  `colorIdentity`), for a panel that has to tell scaffolding from a decision.
+   *  Absent on a host that ships no starter, which attributes nothing - the same
+   *  honest default every ownership read keeps. */
+  starterIds?: () => ReadonlySet<string>;
 }
 
 export interface StudioPanelHandle { render: () => void; teardown: () => void }
@@ -119,9 +126,40 @@ function shadowFromRow(row: HTMLElement, changedField: string | undefined, curre
 }
 const isRecObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
+/**
+ * The neutral ramp, where it belongs (plan 182 section 12).
+ *
+ * Ink and paper: the ramp the blank brand ships so surfaces and text can render
+ * at all. It is not a palette and the Colours room does not draw it, so the one
+ * place it is listed is here - as a row with its nine steps and an Open that
+ * routes to the Colours pane with that group revealed, folded and tagged. Once
+ * somebody regenerates it, the same nine keys are theirs and the tag goes.
+ *
+ * A plain anchor, not a button: it is a link to a place, `#/start` is the
+ * destination, and the studio's own catalogue panel already links out this way.
+ */
+const NEUTRALS_LINK = '#/start?area=color&group=neutral';
+
+function neutralSwatches(ctx: StudioTabCtx): Array<{ hex: string; own: boolean }> {
+  const starter = ctx.starterIds?.() ?? new Set<string>();
+  try {
+    return walkSwatches(ctx.doc(), 'light')
+      .filter(s => s.hex && isNeutralRampKey(s.key))
+      .map(s => ({ hex: s.hex, own: !starter.has(colorIdentity(s.key, s.raw)) }));
+  } catch { return []; }   // an unreadable doc simply has no row
+}
+
 export function mountTokensPanel(mount: HTMLElement, ctx: StudioTabCtx): StudioPanelHandle {
   mount.innerHTML = `
-    ${panelHead(t('More tokens'), t('The rest of the system - spacing, sizing, stroke widths, opacity, rotation, plain numbers and shadows. Tools that read tokens follow these the way they follow your colours.'))}
+    <div class="be-neutrals" data-be-neutrals hidden>
+      <div class="be-neutrals-row">
+        <span class="be-neutrals-label" data-be-neutrals-label></span>
+        <span class="be-neutrals-tiles" data-be-neutrals-tiles aria-hidden="true"></span>
+        <a class="be-btn be-neutrals-open" href="${NEUTRALS_LINK}">${t('Open')}</a>
+      </div>
+      <p class="be-neutrals-note">${t("Lolly's ink and paper. Tools use them until the design system has colours of its own.")}</p>
+    </div>
+    ${panelHead(t('More tokens'), t('The rest of the system - spacing, sizing, stroke widths, opacity, rotation, plain numbers and shadows. Tools that read tokens follow these the way they follow the colours.'))}
     <div class="be-tok-list" data-tok-list></div>
     <form class="be-tok-add" data-tok-add>
       <select class="field-select field-select--auto field-select--sm be-tok-add-kind" data-tok-add-kind aria-label="${escape(t('Token type'))}">
@@ -157,7 +195,40 @@ export function mountTokensPanel(mount: HTMLElement, ctx: StudioTabCtx): StudioP
     });
   };
 
+  // The neutrals row, painted through the DOM rather than a second raw-HTML
+  // sink: it is nine boxes and a line of text, and the tiles carry a colour that
+  // came out of a document.
+  const neutralsEl = mount.querySelector<HTMLElement>('[data-be-neutrals]');
+  const neutralsLabel = mount.querySelector<HTMLElement>('[data-be-neutrals-label]');
+  const neutralsTiles = mount.querySelector<HTMLElement>('[data-be-neutrals-tiles]');
+  const neutralsNote = mount.querySelector<HTMLElement>('.be-neutrals-note');
+  const renderNeutrals = (): void => {
+    if (!neutralsEl) return;
+    const steps = neutralSwatches(ctx);
+    neutralsEl.hidden = steps.length === 0;
+    if (!steps.length) return;
+    const inherited = steps.some(s => !s.own);
+    if (neutralsLabel) {
+      neutralsLabel.textContent = inherited
+        ? tRaw('Neutrals · starter · {n}', { n: steps.length })
+        : tRaw('Neutrals · {n}', { n: steps.length });
+    }
+    // The sentence is only true while nobody has retoned them.
+    if (neutralsNote) neutralsNote.hidden = !inherited;
+    if (neutralsTiles) {
+      neutralsTiles.textContent = '';
+      for (const step of steps) {
+        const tile = mount.ownerDocument.createElement('span');
+        tile.className = 'be-neutrals-tile';
+        tile.style.setProperty('--sw', step.hex);
+        neutralsTiles.appendChild(tile);
+      }
+    }
+  };
+  renderNeutrals();
+
   const render = (): void => {
+    renderNeutrals();
     const all = listStudioTokens(ctx.doc()).filter(t => t.kind !== 'gradient');
     if (!all.length) {
       list.innerHTML = `<p class="be-tok-empty">${t('No extra tokens yet - most brands start with a spacing unit and a card shadow.')}</p>`;
@@ -273,9 +344,9 @@ const GRAD_STOPS_MAX = 8;
 
 export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): StudioPanelHandle {
   mount.innerHTML = `
-    ${panelHead(t('Gradients'), t("Optional colour tokens - blends of your palette for backgrounds and accents. Stops wear your swatches, so they follow a recolour. Skip these entirely if your brand doesn't do gradients."))}
+    ${panelHead(t('Gradients'), t("Optional colour tokens - blends of the palette for backgrounds and accents. Stops wear the swatches, so they follow a recolour. Skip these entirely if the design system doesn't do gradients."))}
     <details class="be-subst-details be-grads-details" data-be-grads-details>
-      <summary><span class="be-subst-details-label">${t('Your gradients')}</span><span class="be-subst-chips"><span class="be-ps-chip" data-grad-count></span></span></summary>
+      <summary><span class="be-subst-details-label">${t('Gradients')}</span><span class="be-subst-chips"><span class="be-ps-chip" data-grad-count></span></span></summary>
       <div class="be-grad-list" data-grad-list></div>
       <button type="button" class="be-add" data-grad-add>${t('+ Add gradient')}</button>
       <p class="be-err" data-grad-err hidden></p>
@@ -527,7 +598,7 @@ export function mountGradientsPanel(mount: HTMLElement, ctx: GradientsCtx): Stud
     }
     const del = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-grad-del]'); if (!del) return;
     const tok = tokenAt(del.dataset.gradDel ?? '');
-    const ok = await confirmDialog({ title: tRaw('Delete {name}?', { name: tok?.name ?? t('this gradient') }), message: t('It’s removed from your brand tokens.'), confirmLabel: t('Delete') });
+    const ok = await confirmDialog({ title: tRaw('Delete {name}?', { name: tok?.name ?? t('this gradient') }), message: t('It’s removed from the design system tokens.'), confirmLabel: t('Delete') });
     if (!ok || !tok) return;
     if (deleteStudioToken(ctx.doc(), tok.path)) { render(); ctx.persist(true); ctx.notify(); }
   });
@@ -614,7 +685,7 @@ export interface CataloguePanelCtx { host: HostV1; notify: () => void }
 
 export function mountCataloguePanel(mount: HTMLElement, ctx: CataloguePanelCtx): StudioPanelHandle {
   mount.innerHTML = `
-    ${panelHead(t('Catalogue'), tRaw("The files your brand keeps - drop them here and they land in your {link}, sorted into its sections, ready for every tool's asset picker.", { link: `<a href="#/c">${t('Catalogue')}</a>` }))}
+    ${panelHead(t('Catalogue'), tRaw("Files the design system keeps - drop them here and they land in the {link}, sorted into its sections, ready for every tool's asset picker.", { link: `<a href="#/c">${t('Catalogue')}</a>` }))}
     <div data-be-cat-dropzone></div>
     <div class="be-cat-groups" data-be-cat-groups aria-live="polite"></div>`;
 

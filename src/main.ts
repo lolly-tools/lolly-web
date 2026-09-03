@@ -17,6 +17,7 @@ import { saveFavouriteAssets } from './lib/asset-favourites.ts';
 import { mountGallery } from './views/gallery.ts';
 import { initTheme, applyTheme, urlThemeOverride } from './theme.ts';
 import { hydrateA11yPrefs, currentA11yPrefs, setA11yPref } from './lib/a11y-prefs.ts';
+import { hydrateChromeFollow } from './lib/chrome-follow.ts';
 import { computeViewportInsets } from './lib/viewport-insets.ts';
 import { initI18n, loadedLang } from './i18n.ts';
 import { hydrateSfxMuted, hydrateSfxVolume, installGlobalSfx, playSfx } from './lib/sfx.ts';
@@ -912,12 +913,9 @@ async function boot(): Promise<void> {
   if ('__TAURI_INTERNALS__' in window) {
     void import('./lib/app-menu.ts').then(m =>
       m.initAppMenu(host as unknown as Parameters<typeof m.initAppMenu>[0]));
-    // Desktop integration poll loop (plans/174): drains the native event queue -
-    // double-clicked .lolly files, lolly:// links, tray/search activations, hot
-    // folder arrivals. Same dynamic-import shape as app-menu: web builds never
-    // load it, boot never waits on it.
-    void import('./lib/linux-desktop-boot.ts').then(m =>
-      m.installLinuxDesktopBoot(host as unknown as Parameters<typeof m.installLinuxDesktopBoot>[0]));
+    // The desktop integration poll loop (lolly:// links, double-clicked .lolly
+    // files, tray/search activations) is installed further down, after the first
+    // navigate has resolved - see the drop-router block there.
     // Tauri shells never send a Referer: the app origin (http://tauri.localhost)
     // is worthless to any external host and trips anti-localhost hotlink rules -
     // SomaFM's icecast 403s media requests carrying it, which silently killed
@@ -1050,6 +1048,12 @@ async function boot(): Promise<void> {
   // Accessibility prefs ride the profile the same way (localStorage is only
   // their FOUC mirror, applied by the index.html inline script) - reconcile.
   hydrateA11yPrefs(profile.a11y);
+  // Same for "Interface follows the design system" (plans/182 section 5.6). The
+  // chrome accent above is applied off the device mirror, unordered with this
+  // read; a profile that disagrees repaints once, through the same painter.
+  if (hydrateChromeFollow((profile as { appearance?: { followDesignSystem?: boolean } }).appearance?.followDesignSystem)) {
+    void import('./brand-vars.ts').then(m => m.applyChromeBrandVars(host));
+  }
   // One-time migration: "Hide previews" used to be a device-local gallery toggle
   // (localStorage 'lolly-hide-previews'); it is now the hidePreviews a11y pref.
   // Carry an ON choice into the profile once, then retire the old key.
@@ -1495,6 +1499,19 @@ async function boot(): Promise<void> {
     // App Links (plan 171): a tapped https://lolly.tools/t/… link that opened the
     // Android app resolves to its in-app route. Feature-detected no-op elsewhere.
     m.initDeepLinkIntake();
+    // Desktop integration poll loop (plans/174): drains the native event queue -
+    // double-clicked .lolly files, lolly:// links, tray/search activations, hot
+    // folder arrivals. Installed HERE, after the first navigate, for the same reason
+    // the Android intake above is: its first tick navigates, and a tool route set
+    // while boot was still choosing its own first paint was overridden (a cold
+    // `lolly://tool/<id>` launch on macOS opened the docs landing, 2026-09-03,
+    // while `lolly://lab` and every warm link routed). The Rust queue holds a link
+    // that arrived before this point, so deferring the drain loses nothing. Same
+    // dynamic-import shape as app-menu: web builds never load it.
+    if ('__TAURI_INTERNALS__' in window) {
+      void import('./lib/linux-desktop-boot.ts').then(d =>
+        d.installLinuxDesktopBoot(host as unknown as Parameters<typeof d.installLinuxDesktopBoot>[0]));
+    }
     return m;
   });
 

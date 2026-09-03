@@ -302,11 +302,11 @@ test('recolouring a NON-path selection does not teach the pen anything', () => {
   // curve, so the memory is gated on the selection being all paths.
   const f = mount(WITH_PATH_KIND, [{ id: 'plain', kind: 'box', shape: 'rect', x: 100, y: 100, w: 300, h: 300, bg: '#111111' } as Box]);
   place(f, 250, 250);            // select the plain box
-  // The stroke panel is path-only, so a non-path selection is restyled through the field
-  // the object bar does offer it - the same setField the memory listens on.
+  // A box reaches the stroke panel too since plan 179 A5 (its stroke is a CSS border),
+  // but the pen's memory is gated on the SELECTION being all paths, not on which controls
+  // are on screen - so nothing here teaches the pen anything whatever the bar offers.
   const bar = f.stageEl.querySelector<HTMLElement>('.fc-ctxbar');
   assert.ok(bar, 'the plain box is selected and has a bar');
-  assert.equal(bar!.querySelector('[data-cx="stroke"]'), null, 'and no stroke button, being a box');
   const drawn = drawPath(f, [[600, 200], [800, 300], [700, 500]]);
   assert.equal(drawn.bg, '', 'the path still starts from its own seed, not the box’s fill');
   assert.equal(drawn.strokeW, 4, 'and its own width');

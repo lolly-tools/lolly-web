@@ -234,3 +234,158 @@ test('the chooser hands back a working close only once the modal is real', () =>
   assert.match(CHOOSER, /opts\.onOpen\?\.\(\(\) => finish\(\{\}\)\);/,
     'closing resolves blank - identical to Escape / backdrop / ×, and idempotent (settled guard)');
 });
+
+// ── Design chrome mount gate (plan 179 M1-M3) ────────────────────────────────────────
+//
+// The top bar and the two side columns belong to ONE layout - `render.layout:"editor"`
+// with a canvas blocks input. Mounting any of them anywhere else would put a document
+// name field, a slide list and an inspector over a tool that has no boxes to inspect, and
+// (because they write `--stage-reserve-*`) would shrink its canvas to make room for
+// chrome that does nothing. They also hold listeners, a ResizeObserver and a stage
+// reserve each, so a mount with no matching destroy leaks all three past a navigation.
+//
+// Same source-scan reasoning as the rest of this file: `mountTool` cannot be imported
+// outside Vite. The modules' own behaviour is covered by design-topbar.test.ts,
+// design-navigator.test.ts and design-inspector.test.ts.
+
+/** The `{ … }` bodies of EVERY occurrence of `head`, concatenated. */
+function bodiesAfter(src: string, head: string): string {
+  const out: string[] = [];
+  for (let from = src.indexOf(head); from !== -1; from = src.indexOf(head, from + head.length)) {
+    out.push(bodyAfter(src.slice(from), head));
+  }
+  assert.notEqual(out.length, 0, `expected at least one \`${head}\` in tool.ts`);
+  return out.join('\n');
+}
+
+const EDITOR_BLOCK_HEAD = 'if (editorLayout && canvasEditInput && canvasEl && stageEl) {';
+
+test('the design chrome mounts ONLY inside the editor-layout block', () => {
+  const block = bodyAfter(CODE, EDITOR_BLOCK_HEAD);
+  for (const fn of ['mountDesignTopbar', 'initDesignNavigator', 'initDesignInspector']) {
+    const calls = CODE.match(new RegExp(`${fn}\\s*\\(`, 'g')) ?? [];
+    assert.equal(calls.length, 1, `${fn} is called exactly once in tool.ts (found ${calls.length})`);
+    assert.match(block, new RegExp(`${fn}\\s*\\(`),
+      `${fn} must be called from inside \`${EDITOR_BLOCK_HEAD}\` - it is that layout's chrome`);
+  }
+});
+
+test('every design chrome part is destroyed in the view teardown', () => {
+  const block = bodyAfter(CODE, EDITOR_BLOCK_HEAD);
+  const teardown = bodiesAfter(block, 'viewEl._cleanup = () => {');
+  for (const handle of ['designTopbar', 'designNav', 'designInspector']) {
+    assert.match(teardown, new RegExp(`\\b${handle}\\b`),
+      `${handle} must be reached from a _cleanup body, or its listeners and stage reserve outlive the view`);
+  }
+  assert.match(teardown, /destroy\(\)/, 'the parts are destroyed, not merely dropped');
+  assert.match(teardown, /setInspector\(null\)/,
+    'the overlay must stop routing its object bar at a column that is about to be destroyed');
+});
+
+// ── One right-hand panel (Andy, 2026-09-02) ──────────────────────────────────
+//
+// "lets only have a single left sidebar and a single right sidebar." The inspector used
+// to append itself to the stage, which put a second right-hand panel INSIDE the canvas
+// surface next to the edge dock the export sheet already used: two columns over the
+// artwork, the inner one clipping it. It is an occupant of that one column now
+// (lib/edge-dock.ts), so three things have to hold together and each of them silently
+// restores the old double column on its own:
+//
+//   1. the inspector is DOCKED, never appended to the stage;
+//   2. the stage's right reserve stays 0 - the dock already nudges `#view` with
+//      `--dock-w`, so a reserve on top of it takes the same space twice and leaves the
+//      canvas off-centre on its own surface;
+//   3. the dock can hand a panel back on its own (the user undocks it, or the window
+//      drops below the mobile breakpoint where the whole column is inert), so the
+//      release path - not only the bar's toggle - is what records the state.
+
+test('the inspector takes a slot in the ONE right-hand column, and is never a stage child', () => {
+  const docked = CODE.match(/requestDock\('inspector'/g) ?? [];
+  assert.equal(docked.length, 1, `the inspector is docked exactly once (found ${docked.length})`);
+  assert.match(CODE, /requestDock\('inspector', insp\.el/,
+    'the column element itself goes into the dock');
+  assert.match(CODE, /onRelease: \(reason\) => \{[\s\S]{0,200}?inspectorOpen = false;/,
+    'a release the dock initiates must clear the open flag, or the bar keeps claiming it is open');
+  // …and it must only write the device preference for a release the USER asked for. A
+  // route change and the mobile-breakpoint undock both hand the panel back, and recording
+  // "closed" for either meant leaving the editor once turned the inspector off forever.
+  assert.match(CODE, /if \(reason === 'user'\) writeColumnPref\(INSP_KEY, false\)/,
+    'a host-driven release must not record a preference the user never set');
+  assert.match(CODE, /if \(isDocked\('inspector'\)\) releaseDock\('inspector', 'host'\)/,
+    'the view teardown takes it back out of a column that outlives the view, as the HOST');
+  assert.match(CODE, /initiallyOpen: readColumnPref\(INSP_KEY\)/,
+    'the panel is built detached: constructing it "open" made it rebuild itself on every '
+    + 'selection change for a node that was never in the document');
+  // Nothing in this view may put it on the stage - that IS the second column.
+  assert.ok(
+    !/stageEl\.appendChild\(designInspector/.test(CODE) && !/stageEl\.append\(designInspector/.test(CODE),
+    'the inspector is never appended to the stage',
+  );
+});
+
+test('the stage reserves NO right band - the dock nudges the view instead', () => {
+  assert.match(CODE, /design\.setColumnWidths\(navW, 0\)/,
+    'the arbiter is told the right band is zero, so --stage-reserve-right stays unset');
+  assert.ok(
+    !/--stage-reserve-right/.test(CODE),
+    'fitCanvas must not read a right reserve either: with the dock nudging #view, the stage '
+    + 'it measures is already narrower, and subtracting again double-counts the column',
+  );
+});
+
+test('the Inspector toggle and the object bar\'s reveal both go through the dock gate', () => {
+  assert.match(CODE, /toggle: \(\) => setInspectorOpen\(!inspectorOpen\)/,
+    'the bar\'s toggle is a dock request, not a setOpen on the panel');
+  assert.match(CODE, /reveal: \(section\) => \{ setInspectorOpen\(true\); designInspector\?\.reveal\(section\); \}/,
+    'the object bar can reveal a section while the column is out of the dock, so it asks for a slot first');
+  assert.match(CODE, /onClose: \(\) => \{ setInspectorOpen\(false\); designTopbar\?\.focusInspectorToggle\(\); \}/,
+    'the column\'s own header close comes back to the one writer, or the toggle and the panel '
+    + 'disagree - and it hands the keyboard to the only control that re-opens the panel, '
+    + 'because closing removes the subtree that held focus');
+  // Docked is not the same as visible: a docked panel can be behind a tab or inside a
+  // collapsed rail, and the object bar's Text / More / Dims / Stroke were dead in both.
+  assert.match(CODE, /showPanel\('inspector'\)/,
+    'asking for an already-docked inspector must bring it to the front');
+});
+
+test('the top bar follows the dock, so one screen never carries two zoom clusters', () => {
+  assert.match(CODE, /zoomDocked: \(\) => isDocked\('zoom'\) && !edgeDockCollapsed\(\)/,
+    'a live read, and one that counts a collapsed column as carrying nothing - otherwise '
+    + 'collapsing the dock left the editor with no zoom control anywhere on screen');
+  assert.match(CODE, /subscribe: \(cb\) => onDockChange\(cb\)/,
+    'and it follows every occupancy change - the compact bar can dock from its own drag');
+});
+
+test('the profile avatar is created once, and exactly one surface may claim it', () => {
+  // It is ADOPTED (moved), not cloned, so two claimants means one of them silently ends up
+  // empty - and the bug this replaced was the avatar drawn over the bar's Export button.
+  assert.equal((CODE.match(/\bprofileToggle\b/g) ?? []).length, 3,
+    'exactly three mentions: the one construction, the stage-nav HUD, and the bar\'s slot');
+  // Both surfaces are handed the ONE element; the stage-nav HUD holds it while docked
+  // in the right column and the bar's slot hides itself meanwhile (design-topbar
+  // syncDock), so the avatar is never drawn twice (Andy, 2026-09-03).
+  assert.doesNotMatch(CODE, /designChrome \? undefined : profileToggle/,
+    'the stage-nav HUD gets it in the design layout too - it docks with the zoom bar');
+  assert.match(CODE, /profileEl: profileToggle \?\? undefined/,
+    '…and so does the top bar');
+});
+
+test('the export sheet re-syncs the bar on the way OUT as well as in', () => {
+  assert.match(CODE, /dispatchEvent\(new CustomEvent\('lolly:export-close'\)\)/,
+    'closing the sheet announces itself, the mirror of lolly:export-open');
+  assert.match(CODE, /addEventListener\('lolly:export-close', onExportOpen\)/,
+    'and the bar re-reads the name on it - the sheet can normalise or revert a rename as it closes');
+  assert.match(CODE, /removeEventListener\('lolly:export-close', onExportOpen\)/,
+    '…removed with the view, like its sibling');
+});
+
+test('the editor layout hands its Home pill to the top bar, and builds no zoom HUD', () => {
+  // Two Home pills (the view corner and the bar) would sit on top of each other, and two
+  // zoom controls on one stage is the duplication M1 exists to retire. Both are one-line
+  // gates, which is exactly the kind of line a later edit drops without noticing.
+  assert.match(CODE, /!designChrome \? backPillHtml\(backPillOpts\) : ''/,
+    'the free-floating corner pill is gated off for the design chrome');
+  assert.match(CODE, /backPillHtml:\s*backHomeHtml\(backPillOpts\)/,
+    '…and the bar emits it instead, so mountBackPill still finds a [data-back-pill]');
+  assert.match(CODE, /hud:\s*!designChrome/, 'setupStageNav builds no floating HUD in this layout');
+});

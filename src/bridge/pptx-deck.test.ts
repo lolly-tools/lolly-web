@@ -7,7 +7,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { deckAnim, deckColor, deckFill, deckPara, deckPh, deckPlaceholder, deckSyncShape, deckTheme, parseDeckModel, emuOf, asStr } from './pptx-deck.ts';
+import { deckAnim, deckAudioExt, deckColor, deckFill, deckNarrationMark, deckNotes, deckPara, deckPh, deckPlaceholder, deckSyncShape, deckTheme, parseDeckModel, resolveDeckColorValue, emuOf, asStr } from './pptx-deck.ts';
+import type { DeckColorResolver } from './pptx-deck.ts';
 import { buildPptxParts, EMU_PER_PX } from '../../../../engine/src/pptx.ts';
 import type { PptxTable, PptxText, PptxRect, PptxSlide } from '../../../../engine/src/pptx.ts';
 
@@ -126,14 +127,42 @@ test('a lowered deck flows through buildPptxParts to real DrawingML', () => {
 
 // ── adversarial-verify Phase-2 findings (B1, M4, M5) ─────────────────────────
 test('B1: a malformed rgb() never emits a NaN hex channel', () => {
-  // '.' / '1.2.3' parse to NaN via unary-plus; hex2 must degrade to 00, not "NAN".
+  // The old hand-rolled regex accepted '.' as a channel and leaned on hex2's clamp to
+  // turn the NaN into '00' - i.e. it painted an authoring mistake solid black. Through
+  // the engine's CSS Color 4 parser a malformed colour is REFUSED, which is the better
+  // answer for the same defect: nothing is emitted, so nothing can carry a NaN channel.
   for (const bad of ['rgb(.,.,.)', 'rgb(1.2.3,4,5)', 'rgba(.,0,0,1)']) {
     const c = deckColor(bad);
-    assert.ok(c, `${bad} still parses`);
-    assert.match(c!.hex, /^[0-9A-F]{6}$/, `${bad} → valid 6-hex, got ${c!.hex}`);
-    assert.doesNotMatch(c!.hex, /NAN/);
+    assert.equal(c, null, `${bad} is not a colour`);
   }
-  assert.equal(deckColor('rgb(.,.,.)')!.hex, '000000');
+  // …and a well-formed one still is, in every notation a brand token can arrive in.
+  for (const [css, hex] of [
+    ['rgb(48,186,120)', '30BA78'],      // legacy comma form
+    ['rgb(48 186 120)', '30BA78'],      // modern space form - the wheel and getComputedStyle
+    ['hsl(150 59% 46%)', null],         // any hsl at all (value asserted below)
+  ] as Array<[string, string | null]>) {
+    const c = deckColor(css);
+    assert.ok(c, `${css} parses`);
+    assert.match(c!.hex, /^[0-9A-F]{6}$/, `${css} → valid 6-hex, got ${c!.hex}`);
+    if (hex) assert.equal(c!.hex, hex);
+  }
+});
+
+test('A12: a brand token that resolves to oklch()/hsl() still paints the slide', () => {
+  // brand-editor's colour wheel stores `oklch()` and applyBrandVars passes the authored
+  // string onto the canvas verbatim, so this is what the resolver really hands back.
+  const oklch: DeckColorResolver = () => 'oklch(0.98 0.01 250)';
+  const c = deckColor('var(--brand-surface, #ffffff)', oklch);
+  assert.ok(c, 'the token resolved and the literal parsed');
+  assert.match(c!.hex, /^[0-9A-F]{6}$/);
+  assert.notEqual(c!.hex, 'FFFFFF', 'and it is the TOKEN colour, not the var()’s fallback');
+  // The same through deckFill, which is where a missing answer became "no background rect".
+  assert.ok(deckFill('var(--brand-surface, #ffffff)', oklch), 'the slide gets its fill');
+  assert.ok(deckFill('var(--brand-surface, #ffffff)', () => 'hsl(150 40% 20%)'));
+  assert.ok(deckFill('var(--brand-surface, #ffffff)', () => 'rgb(48 186 120)'));
+  // An unreadable token value still degrades to the var()'s own fallback? No - the
+  // fallback is consumed by the resolve step, so an unparseable answer is honestly null.
+  assert.equal(deckColor('var(--brand-surface, #ffffff)', () => 'not-a-colour'), null);
 });
 
 test('M5: emuOf clamps an absurd coordinate to the ST_Coordinate bound', () => {
@@ -269,4 +298,178 @@ test('deckSyncShape attaches the mapped anim to rect and text alike', () => {
   // …and a shape with no anim carries none (byte-identity of the lowered model).
   const still = deckSyncShape({ t: 'rect', x: 0, y: 0, w: 100, h: 50 }) as PptxRect;
   assert.ok(!('anim' in still));
+});
+
+// ── brand tokens in a deck colour (plan 179 A12) ──────────────────────────────
+//
+// The bug: a Design artboard's fill is `var(--brand-surface, #ffffff)` on any branded
+// document, deckColor understood hex/rgb only, so the fill became null and the exported
+// slide had NO background rect. The fix is an injected resolver, never a baked-in table.
+
+/** A stand-in for getComputedStyle over the live canvas: a plain token map. */
+const fakeResolver = (map: Record<string, string>): DeckColorResolver => (name) => map[name];
+
+test('A12: deckColor resolves var(--token) through the resolver', () => {
+  const resolve = fakeResolver({ '--brand-surface': '#0C322C' });
+  assert.deepEqual(deckColor('var(--brand-surface, #ffffff)', resolve), { hex: '0C322C', alpha: undefined });
+  assert.deepEqual(deckColor('var(--brand-surface)', resolve), { hex: '0C322C', alpha: undefined });
+  // The resolver may answer with any colour form the literal parser takes.
+  assert.deepEqual(deckColor('var(--x)', fakeResolver({ '--x': 'rgb(48,186,120)' })), { hex: '30BA78', alpha: undefined });
+});
+
+test('A12: an undefined token falls back to the literal inside the var(), then to null', () => {
+  const none = fakeResolver({});
+  assert.deepEqual(deckColor('var(--nope, #30BA78)', none), { hex: '30BA78', alpha: undefined });
+  assert.deepEqual(deckColor('var(--nope, #30BA78)'), { hex: '30BA78', alpha: undefined }, 'no resolver at all → the fallback');
+  assert.equal(deckColor('var(--nope)', none), null, 'nothing to fall back to');
+  assert.equal(deckColor('var(--nope, transparent)', none), null);
+  // A resolver that answers with blank is the same as not defining the token.
+  assert.deepEqual(deckColor('var(--x, #111111)', fakeResolver({ '--x': '   ' })), { hex: '111111', alpha: undefined });
+});
+
+test('A12: var() nests, self-reference and junk names degrade to null (never a loop)', () => {
+  assert.deepEqual(deckColor('var(--a, var(--b, #ABCDEF))', fakeResolver({})), { hex: 'ABCDEF', alpha: undefined });
+  assert.deepEqual(deckColor('var(--a)', fakeResolver({ '--a': 'var(--b, #123456)' })), { hex: '123456', alpha: undefined });
+  assert.equal(deckColor('var(--a)', fakeResolver({ '--a': 'var(--a)' })), null, 'a self-reference stops at the hop cap');
+  assert.equal(deckColor('var(--a)', fakeResolver({ '--a': 'var(--b)', '--b': 'var(--c)', '--c': 'var(--d)', '--d': 'var(--e)', '--e': '#fff' })), null, 'deeper than the hop cap');
+  assert.equal(deckColor('var(nope, #fff)', fakeResolver({})), null, 'not a custom-property name');
+  assert.equal(deckColor('var(--a, #fff) var(--b, #000)', fakeResolver({})), null, 'not one var() call');
+  assert.equal(deckColor('var(--a', fakeResolver({})), null, 'unbalanced');
+});
+
+test('A12: a fallback may itself carry commas and parens', () => {
+  assert.deepEqual(resolveDeckColorValue('var(--x, rgb(48, 186, 120))', fakeResolver({})), 'rgb(48, 186, 120)');
+  assert.deepEqual(deckColor('var(--x, rgba(0,0,0,0.5))', fakeResolver({}))!.hex, '000000');
+});
+
+test('A12: a literal colour is untouched, so every already-literal deck is byte-identical', () => {
+  const resolve = fakeResolver({ '--x': '#30BA78' });
+  assert.equal(resolveDeckColorValue('  #30BA78  ', resolve), '#30BA78');
+  assert.deepEqual(deckColor('#0C322C', resolve), deckColor('#0C322C'));
+  assert.equal(resolveDeckColorValue(42, resolve), '');
+});
+
+test('A12: the resolver reaches fills, lines, runs, bullets, cells, placeholders and the theme', () => {
+  const resolve = fakeResolver({ '--brand-surface': '#0C322C', '--brand-fg': '#FFFFFF', '--brand-accent': '#30BA78' });
+
+  // A slide/frame background - the defect that started A12.
+  assert.deepEqual(deckFill('var(--brand-surface, #ffffff)', resolve), { solid: '0C322C', alpha: undefined });
+  const grad = deckFill({ grad: { stops: [{ pos: 0, color: 'var(--brand-accent)' }, { pos: 1, color: 'var(--brand-surface)' }] } }, resolve);
+  assert.deepEqual((grad as { grad: Array<{ color: string }> }).grad.map((s) => s.color), ['30BA78', '0C322C']);
+
+  // Element fill + stroke.
+  const rect = deckSyncShape({ t: 'rect', x: 0, y: 0, w: 10, h: 10, fill: 'var(--brand-accent)', line: { color: 'var(--brand-fg)', w: 2 } }, undefined, resolve) as PptxRect;
+  assert.deepEqual(rect.fill, { solid: '30BA78', alpha: undefined });
+  assert.equal(rect.line!.color, 'FFFFFF');
+
+  // Text colour, on a run and on a bullet.
+  const para = deckPara({ bulletColor: 'var(--brand-accent)', runs: [{ text: 'x', sizePt: 12, color: 'var(--brand-fg)' }] }, resolve);
+  assert.equal(para.runs[0]!.color, 'FFFFFF');
+  assert.equal(para.bulletColor, '30BA78');
+  const text = deckSyncShape({ t: 'text', x: 0, y: 0, w: 10, h: 10, paras: [{ runs: [{ text: 'x', sizePt: 12, color: 'var(--brand-fg)' }] }] }, undefined, resolve) as PptxText;
+  assert.equal(text.paras[0]!.runs[0]!.color, 'FFFFFF');
+
+  // Table cells (fill, colour, borders) reach it through deckSyncShape too.
+  const table = deckSyncShape({
+    t: 'table', x: 0, y: 0, w: 100, h: 40, cols: [100],
+    rows: [{ cells: [{ text: 'H', fill: 'var(--brand-accent)', color: 'var(--brand-fg)', borders: { t: { color: 'var(--brand-surface)', w: 1 } } }] }],
+  }, undefined, resolve) as PptxTable;
+  const cell = table.rows[0]!.cells[0]!;
+  assert.equal(cell.fill, '30BA78');
+  assert.equal(cell.color, 'FFFFFF');
+  assert.equal(cell.borders!.t!.color, '0C322C');
+
+  // Layout placeholder style + the deck theme.
+  const ph = deckPlaceholder({ type: 'title', x: 0, y: 0, w: 10, h: 10, style: { color: 'var(--brand-fg)' } }, resolve);
+  assert.equal(ph!.style!.color, 'FFFFFF');
+  assert.equal(deckTheme({ colors: { accent1: 'var(--brand-accent)' } }, resolve)!.colors!.accent1, '30BA78');
+});
+
+test('A12: without a resolver the same deck still exports its literal fallbacks', () => {
+  // The node/CLI path (and any detached document) passes no resolver: a token-valued
+  // fill must still paint, using the literal the tool wrote inside the var().
+  const rect = deckSyncShape({ t: 'rect', x: 0, y: 0, w: 10, h: 10, fill: 'var(--brand-surface, #ffffff)' }) as PptxRect;
+  assert.deepEqual(rect.fill, { solid: 'FFFFFF', alpha: undefined });
+});
+
+// ── speaker notes on a slide (plan 179 P1) ────────────────────────────────────
+
+test('deckNotes trims, keeps markup verbatim, and blanks stay undefined', () => {
+  assert.equal(deckNotes('  Open with the customer story.  '), 'Open with the customer story.');
+  assert.equal(deckNotes('5 < 6 & <b>not bold</b>'), '5 < 6 & <b>not bold</b>', 'a notes body is text, not markup');
+  assert.equal(deckNotes('   '), undefined);
+  assert.equal(deckNotes(''), undefined);
+  assert.equal(deckNotes(undefined), undefined);
+  assert.equal(deckNotes(42), undefined);
+});
+
+// ── per-slide narration (plans/180 M-C) ───────────────────────────────────────
+
+test('deckAudioExt sniffs the container from the bytes, and falls back to the name', () => {
+  const riff = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x41, 0x56, 0x45]);
+  const ftyp = new Uint8Array([0, 0, 0, 0x20, 0x66, 0x74, 0x79, 0x70, 0x4d, 0x34, 0x41, 0x20]);
+  const id3 = new Uint8Array([0x49, 0x44, 0x33, 3, 0, 0, 0, 0, 0, 0, 0, 0]);
+  const sync = new Uint8Array([0xff, 0xfb, 0x90, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+  // A narration clip is a blob: URL with no extension, so the BYTES have to answer.
+  assert.equal(deckAudioExt(riff, 'blob:https://lolly.tools/9f2'), 'wav');
+  assert.equal(deckAudioExt(ftyp, 'blob:https://lolly.tools/9f2'), 'm4a');
+  assert.equal(deckAudioExt(id3, ''), 'mp3');
+  assert.equal(deckAudioExt(sync, ''), 'mp3');
+  // The name is the fallback, not the authority.
+  assert.equal(deckAudioExt(null, 'narration.wav'), 'wav');
+  assert.equal(deckAudioExt(new Uint8Array(0), 'https://x/clip.m4a?v=2'), 'm4a');
+  assert.equal(deckAudioExt(riff, 'clip.mp3'), 'wav', 'the bytes win over the extension');
+  // Anything the writer cannot declare answers null - the slide goes out silent rather
+  // than sending PowerPoint to the repair dialog.
+  assert.equal(deckAudioExt(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]), 'clip.ogg'), null);
+  assert.equal(deckAudioExt(null, ''), null);
+});
+
+test('deckNarrationMark takes the data-narration flag the hook actually writes', () => {
+  const mark = (attrs: Record<string, string>) => ({ getAttribute: (n: string) => attrs[n] ?? null });
+  const wrapped = (attrs: Record<string, string>, box: Record<string, string>) => ({
+    getAttribute: (n: string) => attrs[n] ?? null,
+    closest: () => ({ getAttribute: (n: string) => box[n] ?? null }),
+  });
+
+  // The failure this exists for. A sound effect renders FIRST (the narration clip is
+  // appended last), so DOM order used to hand PowerPoint the effect as slide narration
+  // and drop the voice from the file entirely.
+  assert.deepEqual(
+    deckNarrationMark([
+      mark({ 'data-audio-src': 'blob:sfx', 'data-present-audio': '1', 'data-audio-dur': '900' }),
+      mark({ 'data-audio-src': 'blob:voice', 'data-narration': '1', 'data-present-audio': '1', 'data-audio-dur': '9100' }),
+    ]),
+    { src: 'blob:voice', durationMs: 9100 },
+  );
+  // The flag is read off the `.lolly-box` wrapper too, as present-mode.ts reads it.
+  assert.deepEqual(
+    deckNarrationMark([wrapped({ 'data-audio-src': 'blob:voice' }, { 'data-narration': '1' })]),
+    { src: 'blob:voice', durationMs: 0 },
+  );
+  // A group attribute, should markers ever start declaring one, still wins.
+  assert.deepEqual(
+    deckNarrationMark([
+      mark({ 'data-audio-src': 'blob:bed', 'data-audio-group': 'bed' }),
+      mark({ 'data-audio-src': 'blob:voice', 'data-audio-group': 'narration:f3', 'data-audio-dur': '9100' }),
+    ]),
+    { src: 'blob:voice', durationMs: 9100 },
+  );
+  // A grouped non-narration marker is never the fallback.
+  assert.equal(deckNarrationMark([mark({ 'data-audio-src': 'blob:bed', 'data-audio-group': 'bed' })]), null);
+  // The fallback survives for a hand-authored deck with ONE sound that opted into present
+  // audio. No duration attribute (a procedural bed omits it) is 0, not NaN.
+  assert.deepEqual(
+    deckNarrationMark([mark({ 'data-audio-src': 'blob:a', 'data-present-audio': '1' })]),
+    { src: 'blob:a', durationMs: 0 },
+  );
+  // A bed that opted into nothing is not embedded and not labelled narration…
+  assert.equal(deckNarrationMark([mark({ 'data-audio-src': 'blob:bed' })]), null);
+  // …and two unflagged sounds are not guessed between: the slide goes out silent.
+  assert.equal(deckNarrationMark([
+    mark({ 'data-audio-src': 'blob:a', 'data-present-audio': '1' }),
+    mark({ 'data-audio-src': 'blob:b', 'data-present-audio': '1' }),
+  ]), null);
+  assert.equal(deckNarrationMark([mark({ 'data-audio-src': '  ' })]), null);
+  assert.equal(deckNarrationMark([]), null);
 });

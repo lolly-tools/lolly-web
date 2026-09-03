@@ -16,6 +16,9 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://lolly.tools/' });
@@ -44,16 +47,20 @@ function panel(id: string): HTMLElement {
   return el;
 }
 function reset(): void {
-  ED.releaseDock('zoom');
-  ED.releaseDock('neuro');
-  ED.releaseDock('export');
+  for (const id of ['zoom', 'neuro', 'inspector', 'export', 'transcript'] as const) ED.releaseDock(id);
   document.querySelector('.edge-dock-drop')?.remove();
   document.documentElement.dir = '';
   mobile = false;
-  for (const el of [...document.querySelectorAll('#pn, #px, #pz')]) el.remove();
+  for (const el of [...document.querySelectorAll('#pn, #px, #pz, #pi, #pt')]) el.remove();
 }
 const dockW = (): string => document.documentElement.style.getPropertyValue('--dock-w');
 const hasCol = (): boolean => !!document.querySelector('.edge-dock');
+const collapseBtn = (): HTMLElement => document.querySelector<HTMLElement>('.edge-dock-collapse')!;
+/** Collapse is column GEOMETRY: it outlives every panel leaving, and the button toggles,
+ *  so a case that puts the column away asks before it opens it again. */
+const expandColumn = (): void => { if (ED.edgeDockCollapsed()) collapseBtn().click(); };
+const visibleSlots = (): string[] =>
+  [...document.querySelectorAll<HTMLElement>('.edge-dock-slot')].filter((s) => !s.hidden).map((s) => s.dataset.slot ?? '');
 
 test('below the mobile breakpoint docking is fully inert', () => {
   reset();
@@ -183,4 +190,342 @@ test('collapse hides the body to the rail and persists; expand restores', () => 
   assert.equal(document.querySelector('.edge-dock')!.classList.contains('is-collapsed'), false);
   assert.equal(dockW(), '400px');
   assert.equal(JSON.parse(localStorage.getItem('lolly:edge-dock')!).collapsed, false);
+});
+
+// ── ONE right sidebar (2026-09-02): the inspector joined the column, and past two
+//    full panels the stack becomes a tab strip. ────────────────────────────────────
+
+test('the inspector docks between the player and the export panel, in column order', () => {
+  reset();
+  ED.requestDock('export', panel('px'));      // request order still decides nothing
+  ED.requestDock('inspector', panel('pi'));
+  ED.requestDock('neuro', panel('pn'));
+  const slots = [...document.querySelectorAll('.edge-dock-slot')];
+  assert.deepEqual(slots.map((s) => s.getAttribute('data-slot')), ['neuro', 'inspector', 'export']);
+  assert.equal(ED.dockedFullCount(), 3);
+});
+
+test('three full panels become a tab strip - one visible slot, no divider, the newest active', () => {
+  reset();
+  ED.requestDock('neuro', panel('pn'), { label: 'Player' });
+  ED.requestDock('export', panel('px'), { label: 'Export' });
+  ED.requestDock('inspector', panel('pi'), { label: 'Inspector' });   // last requested = active
+  const strip = document.querySelector<HTMLElement>('.edge-dock-tabs')!;
+  assert.ok(strip, 'a tab strip is built');
+  assert.equal(strip.getAttribute('role'), 'tablist');
+  const tabs = [...strip.querySelectorAll<HTMLElement>('.edge-dock-tab')];
+  assert.deepEqual(tabs.map((t) => t.dataset.tab), ['neuro', 'inspector', 'export'], 'tabs follow column order');
+  assert.deepEqual(tabs.map((t) => t.textContent), ['Player', 'Inspector', 'Export'], 'each tab names its panel');
+  assert.equal(document.querySelectorAll('.edge-dock-divider').length, 0, 'a tabbed column has no split to drag');
+  const shown = [...document.querySelectorAll<HTMLElement>('.edge-dock-slot')].filter((s) => !s.hidden);
+  assert.deepEqual(shown.map((s) => s.dataset.slot), ['inspector'], 'only the active panel fills the body');
+  assert.ok(shown[0]!.classList.contains('edge-dock-slot--fill'));
+  assert.equal(tabs.find((t) => t.dataset.tab === 'inspector')!.getAttribute('aria-selected'), 'true');
+  // Every panel stays MOUNTED - a tab switch must not tear a panel's DOM down.
+  assert.equal(document.querySelectorAll('.edge-dock-slot').length, 3);
+  assert.ok(document.getElementById('pn')!.closest('.edge-dock-slot'));
+});
+
+test('a compact zoom bar sits above the tab strip, never in it', () => {
+  reset();
+  ED.requestDock('zoom', panel('pz'), { compact: true, label: 'Zoom' });
+  ED.requestDock('neuro', panel('pn'));
+  ED.requestDock('export', panel('px'));
+  ED.requestDock('inspector', panel('pi'));
+  const body = document.querySelector<HTMLElement>('.edge-dock-body')!;
+  const kids = [...body.children].map((k) => k.className.split(' ')[0]);
+  assert.equal(kids[0], 'edge-dock-slot', 'the compact bar is the first child');
+  assert.equal((body.children[0] as HTMLElement).dataset.slot, 'zoom');
+  assert.equal(kids[1], 'edge-dock-tabs', 'and the strip comes straight after it');
+  assert.equal(document.querySelectorAll('.edge-dock-tab').length, 3, 'the compact bar gets no tab');
+});
+
+test('clicking a tab swaps the visible panel without rebuilding the strip', () => {
+  reset();
+  ED.requestDock('neuro', panel('pn'), { label: 'Player' });
+  ED.requestDock('export', panel('px'), { label: 'Export' });
+  ED.requestDock('inspector', panel('pi'), { label: 'Inspector' });
+  const strip = document.querySelector<HTMLElement>('.edge-dock-tabs')!;
+  const exportTab = strip.querySelector<HTMLElement>('.edge-dock-tab[data-tab="export"]')!;
+  exportTab.click();
+  assert.equal(document.querySelector('.edge-dock-tabs'), strip, 'same strip node across the switch');
+  assert.equal(exportTab.getAttribute('aria-selected'), 'true');
+  assert.equal(strip.querySelector('.edge-dock-tab[data-tab="inspector"]')!.getAttribute('aria-selected'), 'false');
+  const shown = [...document.querySelectorAll<HTMLElement>('.edge-dock-slot')].filter((s) => !s.hidden);
+  assert.deepEqual(shown.map((s) => s.dataset.slot), ['export']);
+  assert.equal(JSON.parse(localStorage.getItem('lolly:edge-dock')!).tab, 'export', 'and it is remembered');
+  // Arrow keys move between tabs (roving tabindex), which is the whole point of a tablist.
+  exportTab.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }));
+  assert.equal(strip.querySelector('.edge-dock-tab[data-tab="inspector"]')!.getAttribute('aria-selected'), 'true');
+  assert.equal(strip.querySelector<HTMLElement>('.edge-dock-tab[data-tab="inspector"]')!.tabIndex, 0);
+  assert.equal(exportTab.tabIndex, -1);
+});
+
+test('dropping back to two full panels restores the stacked split', () => {
+  reset();
+  ED.requestDock('neuro', panel('pn'));
+  ED.requestDock('export', panel('px'));
+  ED.requestDock('inspector', panel('pi'));
+  assert.ok(document.querySelector('.edge-dock-tabs'));
+  ED.releaseDock('inspector');
+  assert.equal(document.querySelector('.edge-dock-tabs'), null, 'the strip goes with the third panel');
+  assert.equal(document.querySelectorAll('.edge-dock-divider').length, 1, 'and the split comes back');
+  assert.equal([...document.querySelectorAll<HTMLElement>('.edge-dock-slot')].filter((s) => s.hidden).length, 0);
+});
+
+test('a panel docked while DETACHED goes back to detached, not parked on <body>', () => {
+  reset();
+  // The Design inspector is built with no parent: the dock IS its mount point, and the
+  // host puts it back in a slot itself. Parking it on <body> left a full panel loose at
+  // the end of the page.
+  const el = document.createElement('div');
+  el.id = 'pi';
+  ED.requestDock('inspector', el);
+  assert.ok(el.closest('.edge-dock-slot'));
+  ED.releaseDock('inspector');
+  assert.equal(el.parentElement, null, 'detached again');
+  assert.equal(el.isConnected, false);
+});
+
+test('onDockChange reports every occupancy change, in column order, until unsubscribed', () => {
+  reset();
+  const seen: string[][] = [];
+  const off = ED.onDockChange((ids) => seen.push([...ids]));
+  ED.requestDock('export', panel('px'));
+  ED.requestDock('neuro', panel('pn'));
+  assert.deepEqual(seen, [['export'], ['neuro', 'export']]);
+  ED.releaseDock('export');
+  assert.deepEqual(seen[2], ['neuro']);
+  // A listener may dock something itself - the stage HUD does exactly that when the
+  // column opens - so a change made DURING a notification must not nest or spin.
+  const zoom = panel('pz');
+  const off2 = ED.onDockChange((ids) => { if (ids.includes('neuro') && !ED.isDocked('zoom')) ED.requestDock('zoom', zoom, { compact: true }); });
+  ED.requestDock('inspector', panel('pi'));
+  off2();
+  assert.equal(ED.isDocked('zoom'), true, 'the listener got its own dock through');
+  assert.equal(ED.dockedFullCount(), 2, 'and the compact bar is not counted as a panel');
+  const before = seen.length;
+  ED.releaseDock('zoom');
+  assert.equal(seen.length, before + 1, 'the compact bar leaving is a change too');
+  off();
+  const after = seen.length;
+  ED.releaseDock('inspector');
+  assert.equal(seen.length, after, 'unsubscribed means unsubscribed');
+  const off3 = ED.onDockChange(() => { throw new Error('a bad listener'); });
+  ED.requestDock('neuro', panel('pn'));   // must not throw out of requestDock
+  off3();
+});
+
+test('dragging the width grip inside the snap collapses the column, and back out re-expands it', () => {
+  reset();
+  ED.requestDock('neuro', panel('pn'));
+  const col = document.querySelector<HTMLElement>('.edge-dock')!;
+  const grip = document.querySelector<HTMLElement>('.edge-dock-grip')!;
+  // jsdom measures nothing, so the column reports the box a 400px-wide dock would have.
+  col.getBoundingClientRect = () => ({ x: 624, y: 0, left: 624, top: 0, right: 1024, bottom: 768, width: 400, height: 768, toJSON: () => ({}) }) as DOMRect;
+  const move = (clientX: number): void => {
+    grip.dispatchEvent(new dom.window.MouseEvent('pointermove', { clientX, clientY: 300, bubbles: true }));
+  };
+  grip.dispatchEvent(new dom.window.MouseEvent('pointerdown', { clientX: 624, clientY: 300, bubbles: true }));
+  move(724);   // 300px wide
+  assert.equal(dockW(), '300px');
+  move(900);   // 124px - inside the snap, so it puts itself away
+  assert.ok(col.classList.contains('is-collapsed'));
+  assert.equal(dockW(), '48px');
+  move(674);   // dragged back out without letting go: 350px
+  assert.equal(col.classList.contains('is-collapsed'), false);
+  assert.equal(dockW(), '350px');
+  grip.dispatchEvent(new dom.window.MouseEvent('pointerup', { clientX: 674, clientY: 300, bubbles: true }));
+  assert.equal(JSON.parse(localStorage.getItem('lolly:edge-dock')!).width, 350);
+});
+
+test('the width grip takes the keyboard: arrows resize, Enter puts the column away', () => {
+  reset();
+  localStorage.setItem('lolly:edge-dock', JSON.stringify({ width: 400 }));
+  ED.requestDock('neuro', panel('pn'));
+  const col = document.querySelector<HTMLElement>('.edge-dock')!;
+  const grip = document.querySelector<HTMLElement>('.edge-dock-grip')!;
+  assert.equal(grip.tabIndex, 0, 'reachable by keyboard at all');
+  assert.equal(grip.getAttribute('aria-valuenow'), dockW().replace('px', ''));
+  const key = (k: string): void => {
+    grip.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  };
+  const w0 = parseFloat(dockW());
+  key('ArrowLeft');    // the grip is on the column's inline-start edge: left is wider
+  assert.equal(parseFloat(dockW()) > w0, true);
+  key('ArrowRight');
+  assert.equal(parseFloat(dockW()), w0);
+  key('Home');
+  assert.equal(dockW(), '280px', 'Home is the narrowest usable column');
+  key('Enter');
+  assert.ok(col.classList.contains('is-collapsed'));
+  key('ArrowLeft');    // widening from the rail re-opens it
+  assert.equal(col.classList.contains('is-collapsed'), false);
+  assert.equal(dockW(), '280px');
+});
+
+test('the narrower arrow reaches the snap: at the minimum the next press puts the column away', () => {
+  // applyGripWidth re-clamps to MIN_W (280) on every pass and the snap sits at 200, a gap
+  // wider than one 24px step - so the key used to stall at 280 forever and the "narrow it
+  // away" half of the gesture existed only for the mouse.
+  reset();
+  ED.requestDock('neuro', panel('pn'));
+  const col = document.querySelector<HTMLElement>('.edge-dock')!;
+  const grip = document.querySelector<HTMLElement>('.edge-dock-grip')!;
+  const key = (k: string): void => {
+    grip.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+  };
+  key('Home');
+  assert.equal(dockW(), '280px', 'the narrowest usable column, as before');
+  key('ArrowRight');
+  assert.equal(col.classList.contains('is-collapsed'), true, 'and one more press is "put it away"');
+  assert.equal(dockW(), '48px');
+  key('ArrowRight');
+  assert.equal(col.classList.contains('is-collapsed'), true, 'narrowing an already-collapsed column is a no-op');
+  key('ArrowLeft');
+  assert.equal(col.classList.contains('is-collapsed'), false, 'and the way back is unchanged');
+  assert.equal(dockW(), '280px');
+});
+
+// ── COLLAPSED IS A STATE PANELS ARRIVE INTO, and one the chrome outside has to hear ──
+//    The body is `display: none` while the column is put away, so a panel docked into it
+//    is mounted and invisible - the bug was an Inspector the bar reported as open with
+//    nothing on screen.
+
+test('docking a panel into a collapsed column opens it, rather than swallowing the panel', () => {
+  reset();
+  ED.requestDock('neuro', panel('pn'));
+  collapseBtn().click();
+  assert.equal(dockW(), '48px', 'precondition: the column is put away');
+  ED.requestDock('inspector', panel('pi'));
+  assert.equal(ED.edgeDockCollapsed(), false, 'asking for a panel is asking to see it');
+  assert.ok(document.getElementById('pi')!.closest('.edge-dock-slot'));
+  assert.notEqual(dockW(), '48px');
+});
+
+test('the compact zoom bar follows the column instead of prising it open, and is told', () => {
+  reset();
+  ED.requestDock('neuro', panel('pn'));
+  collapseBtn().click();
+  let told: boolean | null = null;
+  ED.requestDock('zoom', panel('pz'), { compact: true, onCollapse: (c) => { told = c; } });
+  assert.equal(ED.edgeDockCollapsed(), true, 'a bar that follows the column must not re-open it');
+  assert.equal(told, true, 'and it is told the column it went into is put away');
+  expandColumn();
+});
+
+test('showPanel fronts a docked panel: out from behind a tab, and out of the rail', () => {
+  reset();
+  ED.requestDock('neuro', panel('pn'), { label: 'Player' });
+  ED.requestDock('export', panel('px'), { label: 'Export' });
+  ED.requestDock('inspector', panel('pi'), { label: 'Inspector' });   // newest requested = active
+  assert.deepEqual(visibleSlots(), ['inspector']);
+  ED.showPanel('neuro');
+  assert.deepEqual(visibleSlots(), ['neuro'], 'the panel asked for is the one on screen');
+  collapseBtn().click();
+  ED.showPanel('export');
+  assert.equal(ED.edgeDockCollapsed(), false, 'a panel asked for is a panel on screen, not one behind a rail');
+  assert.deepEqual(visibleSlots(), ['export']);
+  assert.equal(ED.isDocked('inspector'), true, 'and nothing was evicted to make room');
+});
+
+test('re-requesting a panel that is already docked fronts it instead of reporting success over nothing', () => {
+  reset();
+  ED.requestDock('neuro', panel('pn'), { label: 'Player' });
+  ED.requestDock('export', panel('px'), { label: 'Export' });
+  ED.requestDock('inspector', panel('pi'), { label: 'Inspector' });
+  const px = document.getElementById('px')!;
+  ED.showPanel('neuro');
+  collapseBtn().click();
+  assert.equal(ED.requestDock('export', px, { label: 'Export' }), true);
+  assert.equal(ED.edgeDockCollapsed(), false, 'the second ask opened the column');
+  assert.deepEqual(visibleSlots(), ['export'], 'and brought the panel forward');
+  assert.equal(ED.dockedFullCount(), 3, 'it is the same occupant, not a fourth');
+});
+
+test('collapsing is an occupancy-shaped change: it notifies, and edgeDockCollapsed reports it', () => {
+  // The Design top bar drops its whole zoom cluster (and the mark, and the avatar) while
+  // the compact zoom bar holds a slot. With no notification and occupancy alone to read,
+  // collapsing the column left the editor with no zoom control anywhere on screen.
+  reset();
+  ED.requestDock('neuro', panel('pn'));
+  ED.requestDock('zoom', panel('pz'), { compact: true });
+  const seen: boolean[] = [];
+  const off = ED.onDockChange(() => seen.push(ED.edgeDockCollapsed()));
+  collapseBtn().click();
+  assert.deepEqual(seen, [true], 'the bar hears that the docked bar is off the screen');
+  collapseBtn().click();
+  assert.deepEqual(seen, [true, false], 'and hears it come back');
+  off();
+});
+
+test('expanding from a rail icon hands the keyboard on - the icon that did it is about to vanish', () => {
+  reset();
+  const p = panel('pn');
+  const inner = document.createElement('button');
+  p.appendChild(inner);
+  ED.requestDock('neuro', p, { label: 'Player' });
+  collapseBtn().click();
+  const railBtn = document.querySelector<HTMLElement>('.edge-dock-rail-btn')!;
+  railBtn.focus();
+  railBtn.click();
+  assert.equal(ED.edgeDockCollapsed(), false, 'the icon expands the column');
+  assert.equal(document.activeElement, inner, 'and focus is inside the panel, not on <body>');
+
+  // Tabbed: the panel the icon NAMES is the one to open, so its tab takes the keyboard.
+  ED.requestDock('export', panel('px'), { label: 'Export' });
+  ED.requestDock('inspector', panel('pi'), { label: 'Inspector' });
+  collapseBtn().click();
+  const rails = [...document.querySelectorAll<HTMLElement>('.edge-dock-rail-btn')];
+  rails.find((b) => b.title === 'Export')!.click();
+  assert.deepEqual(visibleSlots(), ['export']);
+  assert.equal(document.activeElement, document.querySelector('.edge-dock-tab[data-tab="export"]'),
+    'the tab of the panel that was asked for');
+});
+
+test('a release says WHY: the user put the panel away, or the host took it back', () => {
+  // An occupant that persists an open/closed preference reads this. Without it, leaving
+  // the view (or dragging the window narrow) recorded "closed" against a panel the user
+  // never closed, and it never came back.
+  reset();
+  const p = panel('pn');
+  const seen: string[] = [];
+  ED.requestDock('neuro', p, { onRelease: (reason) => seen.push(reason) });
+  ED.releaseDock('neuro');
+  assert.deepEqual(seen, ['user'], 'a plain release is someone putting the panel away');
+  ED.requestDock('neuro', p, { onRelease: (reason) => seen.push(reason) });
+  mobile = true;
+  window.dispatchEvent(new dom.window.Event('resize'));
+  assert.deepEqual(seen, ['user', 'host'], 'the breakpoint undock is the app, not a decision');
+  mobile = false;
+});
+
+test('every panel names itself through t() - the tab strip shows that label as body text', () => {
+  // `label` used to feed a title and an aria-label only. The tab strip (three or more
+  // panels) renders it as visible chrome copy, so a raw literal reads as English beside a
+  // translated neighbour - "Transcription | Export | Player" in French.
+  const here = dirname(fileURLToPath(import.meta.url));
+  const sites: Array<[string, string, string]> = [
+    ['the export sheet', join(here, 'export-panel-float.ts'), 'Export'],
+    ['the player', join(here, 'audio-dock-singleton.ts'), 'Player'],
+    ['the Design inspector', join(here, '..', 'views', 'tool.ts'), 'Inspector'],
+    ['the transcript', join(here, '..', 'views', 'transcript-panel.ts'), 'Transcript'],
+    ['the compact zoom bar', join(here, '..', 'views', 'tool-stage-nav.ts'), 'Zoom'],
+  ];
+  for (const [what, path, word] of sites) {
+    const src = readFileSync(path, 'utf8');
+    assert.ok(src.includes(`label: t('${word}')`), `${what} names itself through t()`);
+    assert.ok(!src.includes(`label: '${word}'`), `${what} passes no raw English label`);
+  }
+});
+
+
+test('the column runs from the top edge down to the timeline band - never below the top bar', () => {
+  reset();
+  ED.requestDock('inspector', panel('pa'));
+  const css = [...document.querySelectorAll('style')].map((s) => s.textContent ?? '').join('\n');
+  // Andy, 2026-09-03: a column starting under the Design top bar left a blank band above
+  // itself, because the bar ends where the column begins.
+  assert.match(css, /\.edge-dock \{[^}]*inset-block: 0 var\(--design-timeline-h, 0px\)/, 'the column starts at 0');
+  assert.doesNotMatch(css, /inset-block: var\(--design-topbar-h/, 'nothing starts below the top bar any more');
 });

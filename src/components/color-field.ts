@@ -49,6 +49,7 @@ import { contrastText } from '../brand-vars.ts';
 import { escape } from '../utils.ts';
 import { t } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
+import { nameColor } from '../lib/color-namer.ts';
 import { wireTabs } from '../lib/tabs.ts';
 import {
   colorSpaces, getColorSpace, composeColor, decomposeColor, channelRuns, pinValue,
@@ -134,23 +135,44 @@ function toHex(value: unknown): string {
   return ((value && typeof value === 'object' && typeof o.ref === 'string') ? (o.value ?? '') : value) as string;
 }
 
+/** `#abc` → `#aabbcc`, `#rrggbbaa` → `#rrggbb`, everything else lowercased as-is.
+ *  Alpha is ignored when naming: a 40%-opacity Pine is still Pine. */
+function nameKey(raw: string): string {
+  const v = raw.trim().toLowerCase();
+  if (/^#[0-9a-f]{3}$/.test(v)) return `#${v[1]}${v[1]}${v[2]}${v[2]}${v[3]}${v[3]}`;
+  if (/^#[0-9a-f]{8}$/.test(v)) return v.slice(0, 7);
+  return v;
+}
+
 /**
- * The palette name for a colour value ("Persimmon 3"), or '' when it isn't a named
- * swatch (a custom colour). Matches on the RGB channels - alpha is ignored - against
- * the active swatch list (the brand palette, or tokens once setSwatches() has run).
- * The FIRST matching swatch wins, so a hex shared by several ramps takes its primary
- * name (e.g. #0c322c → "Pine", not "Jungle 1").
+ * The name a colour is announced and labelled by.
+ *
+ * A value that IS a palette swatch takes that swatch's own name ("Persimmon 3"),
+ * matched on the RGB channels against the active swatch list (the brand palette, or
+ * tokens once setSwatches() has run). The FIRST matching swatch wins, so a hex shared
+ * by several ramps takes its primary name (e.g. #0c322c → "Pine", not "Jungle 1").
+ *
+ * Anything else is named PERCEPTUALLY - nearest hue anchor by circular OKLCH distance,
+ * with a lightness/chroma qualifier (`lib/color-namer.ts`) - rather than left blank or,
+ * worse, given the label of a swatch it merely sits next to in a list. That second
+ * failure is what plan 179 A17 reported: a pink `#ffa3e9` announced as "aqua". Naming
+ * by distance in a perceptual space is the only lookup that cannot do that, and the hue
+ * wheel is walked circularly, so a hue at 359° is named by the anchor at 8° and not by
+ * whatever happens to be numerically closest.
+ *
+ * Returns '' for `transparent` and for anything that is not a hex (a `var()` token, a
+ * mid-paste fragment): a name we cannot compute is better absent than guessed.
  */
 export function swatchName(value: unknown): string {
   const raw = toHex(value);
   if (typeof raw !== 'string' || !raw) return '';
-  let v = raw.toLowerCase();
-  if (v !== 'transparent' && /^#[0-9a-f]{8}$/.test(v)) v = v.slice(0, 7); // ignore alpha when naming
+  const v = nameKey(raw);
   for (const s of SWATCHES) {
-    const sv = typeof s.value === 'string' ? s.value.toLowerCase() : '';
+    const sv = typeof s.value === 'string' ? nameKey(s.value) : '';
     if (sv && sv === v) return s.label || '';
   }
-  return '';
+  if (!/^#[0-9a-f]{6}$/.test(v)) return '';
+  return nameColor(v);
 }
 
 /**
@@ -173,6 +195,76 @@ function nearestSwatch(value: string): { value: string; ref: string | null; labe
     if (Number.isFinite(d) && d < bestD) { bestD = d; best = s; }
   }
   return best ? { value: best.value, ref: best.ref ?? null, label: best.label || best.value, d: bestD } : null;
+}
+
+// ── var() colour values (plan 179 A2) ─────────────────────────────────────────
+//
+// A tool may store a colour as a design-token reference - `var(--brand-primary,
+// #0b1220)` - and the picker has no way to guess what that paints. Seeded raw, the
+// swatch went BLACK (parseColor refuses the string, so the field fell back to its
+// neutral seed), the sliders showed the seed's own blue, and the text field showed
+// the `var(` string itself. All three were lies about a pink artboard.
+//
+// So the host RESOLVES the reference before seeding: `var(--x)` is read off a real
+// element's computed style (the cascade is the only thing that knows what a token
+// paints right now), falling back to the literal fallback the author wrote, and only
+// then to the raw string. The MODEL is untouched - resolution is a read for display,
+// and the stored `var()` survives until the user picks a different colour.
+
+/** `var(--x)` / `var(--x, fallback)` split into its two halves, or null. */
+export function parseColorVar(raw: unknown): { name: string; fallback: string } | null {
+  const s = typeof raw === 'string' ? raw.trim() : '';
+  const m = /^var\(\s*(--[A-Za-z0-9_-]+)\s*(?:,([\s\S]*))?\)$/.exec(s);
+  return m ? { name: m[1]!, fallback: (m[2] ?? '').trim() } : null;
+}
+
+/** One custom property off `scope`'s computed style (the document element when no
+ *  scope is given). Never throws: a detached node, a display:none host or a test
+ *  environment with no layout engine is a "don't know", not a crash. */
+function readCustomProp(name: string, scope?: Element | null): string {
+  try {
+    const el = scope ?? (typeof document !== 'undefined' ? document.documentElement : null);
+    if (!el || typeof getComputedStyle !== 'function') return '';
+    return (getComputedStyle(el).getPropertyValue(name) || '').trim();
+  } catch { return ''; }
+}
+
+/** Longest `var()` chain resolved - `var(--a, var(--b, var(--c, #fff)))` and stop. */
+const VAR_HOPS = 4;
+
+/**
+ * A colour value as it should be SHOWN: a `var()` resolved through the cascade at
+ * `scope`, else its literal fallback, else the raw string unchanged. Anything that is
+ * not a `var()` comes back untouched, so this is safe to wrap every seed in.
+ */
+export function resolveColorVar(raw: unknown, scope?: Element | null): string {
+  const s = typeof raw === 'string' ? raw.trim() : '';
+  let cur = s;
+  for (let hop = 0; hop < VAR_HOPS; hop++) {
+    const v = parseColorVar(cur);
+    if (!v) return cur;                       // a plain colour (or the fallback we hopped to)
+    const got = readCustomProp(v.name, scope);
+    if (got) return got;
+    if (!v.fallback) return s;                // unresolvable and no fallback: say what is stored
+    cur = v.fallback;
+  }
+  return s;
+}
+
+/** Brand tokens wear a prefix; anything else is a private variable with no public name. */
+const BRAND_VAR = /^--(?:brand|lolly)-/;
+
+/**
+ * The human name of a brand token used as a colour: `var(--brand-primary)` → "Primary",
+ * `var(--brand-on-primary, #fff)` → "On Primary". '' for a non-token `var()` and for
+ * every ordinary colour - the caller then falls back to `swatchName`.
+ */
+export function colorVarLabel(raw: unknown): string {
+  const v = parseColorVar(raw);
+  if (!v || !BRAND_VAR.test(v.name)) return '';
+  return v.name.replace(BRAND_VAR, '').split('-').filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
 }
 
 // A colour value is only interpolated into an inline `style="…"` attribute after
@@ -790,7 +882,26 @@ function colorModesHtml(eid: string, seed: CssColor, lastHue: number, active: Co
 const noteHtml = (eid: string): string =>
   `<p class="color-space-note" data-color-note="${eid}" id="${eid}-note" role="status" aria-live="polite" hidden></p>`;
 
-export function colorFieldHtml(id: string, value: unknown, { float = false, swatchesOnly = false, block = false, inline = false, modes = false, dials }: { float?: boolean; swatchesOnly?: boolean; block?: boolean; inline?: boolean; modes?: boolean; dials?: boolean } = {}): string {
+/**
+ * The trigger's accessible name.
+ *
+ * `label` is WHICH PROPERTY this field paints, and it exists because a host can lay
+ * several of these out in one panel: the Design inspector shows Fill, Stroke, shadow
+ * Colour and Text colour on a single box, and its row labels are `<span>`s in a `<div>`,
+ * so nothing associated them with the control. Every one of the four then announced
+ * itself as the identical "Colour: #000000" - the trigger carried the value and no hint
+ * of what the value was FOR. Given a label the name leads with it; without one the
+ * wording is byte-identical to what it has always been.
+ *
+ * Not translated here: this component has always written this string in English (the
+ * "Colour: " prefix below), and the label arrives already translated by its host.
+ */
+function triggerAria(label: string, name: string, hex: string): string {
+  const value = `${name ? name + ' ' : ''}${hex}`;
+  return label ? `${label}: ${value}` : `Colour: ${value}`;
+}
+
+export function colorFieldHtml(id: string, value: unknown, { float = false, swatchesOnly = false, block = false, inline = false, modes = false, dials, name: nameOverride, label = '' }: { float?: boolean; swatchesOnly?: boolean; block?: boolean; inline?: boolean; modes?: boolean; dials?: boolean; name?: string; label?: string } = {}): string {
   const rawVal = toHex(value) ?? '';
   const isTransparent = String(rawVal).trim().toLowerCase() === 'transparent';
   // Seeding is strictly WIDENED: anything the engine's parseColor accepts (hex,
@@ -828,7 +939,13 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
   const previewBg = isTransparent ? '' : `style="background:${escape(safeCssColor(parsed ? hex : String(rawVal)) || '#000000')}"`;
   const previewClass = `color-trigger-preview${isTransparent ? ' color-swatch--transparent' : ''}`;
   const eid = escape(id);
-  const name = swatchName(value);
+  // `name` overrides the computed one for a host that knows something the value alone
+  // cannot say - a token-backed fill seeds the field with the RESOLVED colour and passes
+  // the token's own name ("Primary") here, so the trigger reads "Primary #ff8fbe" rather
+  // than naming the resolved hex a second time. The moment the user picks a new colour
+  // the override stops applying (updateTrigger computes the name again from the value),
+  // which is right: the value is no longer that token's.
+  const name = nameOverride || swatchName(value);
   const wantDials = dials ?? inline;
 
   // Swatches are NOT rendered here - they're the heaviest part (the whole
@@ -861,8 +978,8 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
   // the hidden native input is now WRITE-ONLY - it is the OS picker's own control
   // and can only speak `#rrggbb`, so it cannot be the authority.
   const cls = `color-picker-field${float ? ' color-field--float' : ''}${block ? ' block-color-field' : ''}${inline ? ' color-field--inline' : ''}`;
-  return `<div class="${cls}" data-color-field="${eid}" data-color-canon="${escape(canon)}">
-    ${inline ? '' : `<button type="button" class="color-trigger" data-color-trigger="${eid}" aria-haspopup="true" aria-expanded="false" aria-label="Colour: ${escape(name ? name + ' ' : '')}${escape(hex)}">
+  return `<div class="${cls}" data-color-field="${eid}" data-color-canon="${escape(canon)}"${label ? ` data-color-label="${escape(label)}"` : ''}>
+    ${inline ? '' : `<button type="button" class="color-trigger" data-color-trigger="${eid}" aria-haspopup="true" aria-expanded="false" aria-label="${escape(triggerAria(label, name, hex))}">
       <span class="${previewClass}" ${previewBg} aria-hidden="true"></span>
       <span class="color-trigger-name">${escape(name)}</span>
     </button>`}
@@ -1295,7 +1412,9 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
     const name = swatchName(value);
     if (nameText) nameText.textContent = name;             // :empty CSS hides it for custom colours
     const trigger = field.querySelector('.color-trigger');
-    if (trigger) trigger.setAttribute('aria-label', `Colour: ${name ? name + ' ' : ''}${value || '#000000'}`);
+    // The host's own label rides on the field (data-color-label) rather than in a
+    // closure, so this rewrite - which runs on every edit - cannot drop it.
+    if (trigger) trigger.setAttribute('aria-label', triggerAria(field.dataset.colorLabel || '', name, value || '#000000'));
     updateNearest(field, value);
   }
 

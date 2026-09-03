@@ -27,13 +27,20 @@
  * writes ('transformers-cache', keyed by the local model path) WITHOUT
  * fetching - that is the essential part of the consent story: a tool can
  * tell "instant" from "one-time download" before any bytes move.
+ *
+ * One method here is NOT part of the v1 contract: `synthesizeLines` renders
+ * named script lines on their own so an edited sentence can be spliced into a
+ * saved clip (plans/181 section 5.2). It rides the same worker, the same
+ * pending map and the same abort; see {@link WebSpeechAPI}.
  */
 import type {
-  AudioSource, SpeechAPI, SpeechProgress, SpeechResult, SpeechSynthesizeOpts,
+  AudioSource, SpeechAPI, SpeechProgress, SpeechSynthesizeOpts,
   SpeechTranscribeOpts, SpeechTranscript, SpeechVoiceInfo,
 } from '@lolly-tools/core/host-v1';
 import { KOKORO_MODEL_BYTES, KOKORO_MODEL_ID, KOKORO_VOICES, MAX_INPUT_CHARS } from '../lib/speech-kokoro.ts';
-import type { SpeechWorkerReply, SpeechWorkerRequest } from '../lib/speech-kokoro-worker.ts';
+import type {
+  SpeechLineResult, SpeechScriptResult, SpeechWorkerReply, SpeechWorkerRequest,
+} from '../lib/speech-kokoro-worker.ts';
 import { isSilentPcm, WHISPER_MODEL_BYTES, WHISPER_MODEL_ID, WHISPER_SAMPLE_RATE } from '../lib/speech-whisper.ts';
 import type { TranscribeWorkerReply, TranscribeWorkerRequest } from '../lib/speech-whisper-worker.ts';
 import { MODELS_BASE } from '../lib/models-base.ts';
@@ -50,8 +57,28 @@ const WHISPER_CACHE_URLS = [
   `${MODELS_BASE}/models/${WHISPER_MODEL_ID}/onnx/decoder_model_merged_quantized.onnx`,
 ];
 
+/**
+ * The web shell's speech bridge: the v1 contract plus the one shell-only
+ * method the transcript panel's Regenerate needs. It is NOT on `SpeechAPI`,
+ * because a tool has no business re-rendering half a clip; reach it by casting
+ * `host.speech`, and check the method is there (the lazy facade in
+ * bridge/index.ts forwards it, an older shell would not).
+ */
+export interface WebSpeechAPI extends SpeechAPI {
+  synthesize(text: string, opts?: SpeechSynthesizeOpts): Promise<SpeechScriptResult>;
+  /**
+   * Synthesize these script lines and hand each back on its own - the
+   * regenerate path, which re-renders only the sentences that changed and
+   * splices them into the stored clip (plans/181 section 5.2). The lines come
+   * from a clip's `tts.script`, so they are already in the model-facing form
+   * and `prenormalized` defaults to true here; pass it false only for lines
+   * that never went through the normalizer.
+   */
+  synthesizeLines(lines: string[], opts?: SpeechSynthesizeOpts): Promise<SpeechLineResult[]>;
+}
+
 interface Pending {
-  resolve: (r: SpeechResult) => void;
+  resolve: (r: SpeechWorkerReply) => void;
   reject: (e: unknown) => void;
   onProgress?: (p: SpeechProgress) => void;
 }
@@ -64,13 +91,13 @@ function ensureWorker(): Worker {
   if (worker) return worker;
   worker = new Worker(new URL('../lib/speech-kokoro-worker.ts', import.meta.url), { type: 'module' });
   worker.onmessage = (e: MessageEvent<SpeechWorkerReply>): void => {
-    const { id, progress, result, error } = e.data;
+    const { id, progress, result, lines, error } = e.data;
     const p = pending.get(id);
     if (!p) return; // late reply for an aborted request - already rejected
     if (progress) { p.onProgress?.(progress); return; }
     pending.delete(id);
-    if (error || !result) p.reject(new Error(error ?? 'speech synthesis failed'));
-    else p.resolve(result);
+    if (error || (!result && !lines)) p.reject(new Error(error ?? 'speech synthesis failed'));
+    else p.resolve(e.data);
   };
   worker.onerror = (): void => {
     for (const p of pending.values()) p.reject(new Error('speech worker error'));
@@ -156,7 +183,37 @@ async function decodePcm16k(src: AudioSource): Promise<Float32Array> {
   return mono;
 }
 
-export function createSpeechAPI(): SpeechAPI {
+/**
+ * Post one request to the synthesis worker and wait for its reply, with the
+ * abort plumbing both entry points share: reject NOW and tell the worker,
+ * which stops at the next sentence boundary (a sentence mid-inference cannot
+ * be preempted in-wasm) - its late reply then finds no pending entry and is
+ * dropped.
+ */
+function ask(
+  req: Omit<SpeechWorkerRequest, 'id' | 'type'>, opts: SpeechSynthesizeOpts,
+): Promise<SpeechWorkerReply> {
+  const { signal } = opts;
+  const w = ensureWorker();
+  const id = ++seq;
+  return new Promise<SpeechWorkerReply>((resolve, reject) => {
+    const onAbort = (): void => {
+      if (!pending.has(id)) return;
+      pending.delete(id);
+      w.postMessage({ id, type: 'abort' } satisfies SpeechWorkerRequest);
+      reject(abortError());
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    pending.set(id, {
+      resolve: (r) => { signal?.removeEventListener('abort', onAbort); resolve(r); },
+      reject: (e) => { signal?.removeEventListener('abort', onAbort); reject(e); },
+      onProgress: opts.onProgress,
+    });
+    w.postMessage({ id, type: 'synthesize', ...req } satisfies SpeechWorkerRequest);
+  });
+}
+
+export function createSpeechAPI(): WebSpeechAPI {
   return {
     isAvailable(): boolean {
       // Wasm for the model + a worker to run it off-thread. The Worker check is
@@ -184,38 +241,41 @@ export function createSpeechAPI(): SpeechAPI {
       return KOKORO_VOICES.map((v) => ({ ...v }));
     },
 
-    synthesize(text: string, opts: SpeechSynthesizeOpts = {}): Promise<SpeechResult> {
-      const { signal } = opts;
-      if (signal?.aborted) return Promise.reject(abortError());
+    async synthesize(text: string, opts: SpeechSynthesizeOpts = {}): Promise<SpeechScriptResult> {
+      if (opts.signal?.aborted) throw abortError();
       // Hard bound (well above the UI's soft nudge) - reject BEFORE the text
       // crosses to the worker; the worker re-checks as defence in depth.
       if (text.length > MAX_INPUT_CHARS) {
-        return Promise.reject(new Error(
+        throw new Error(
           `speech input too long: ${text.length} chars (max ${MAX_INPUT_CHARS}) - split the text and synthesize in parts`,
-        ));
+        );
       }
-      const w = ensureWorker();
-      const id = ++seq;
-      return new Promise<SpeechResult>((resolve, reject) => {
-        const onAbort = (): void => {
-          // Reject NOW and tell the worker, which stops at the next sentence
-          // boundary (a sentence mid-inference cannot be preempted in-wasm) - 
-          // its late reply then finds no pending entry and is dropped.
-          if (!pending.has(id)) return;
-          pending.delete(id);
-          w.postMessage({ id, type: 'abort' } satisfies SpeechWorkerRequest);
-          reject(abortError());
-        };
-        signal?.addEventListener('abort', onAbort, { once: true });
-        pending.set(id, {
-          resolve: (r) => { signal?.removeEventListener('abort', onAbort); resolve(r); },
-          reject: (e) => { signal?.removeEventListener('abort', onAbort); reject(e); },
-          onProgress: opts.onProgress,
-        });
-        w.postMessage({
-          id, type: 'synthesize', text, voice: opts.voice, speed: opts.speed,
-        } satisfies SpeechWorkerRequest);
-      });
+      const reply = await ask(
+        { text, voice: opts.voice, speed: opts.speed, prenormalized: opts.prenormalized },
+        opts,
+      );
+      return reply.result as SpeechScriptResult;
+    },
+
+    async synthesizeLines(lines: string[], opts: SpeechSynthesizeOpts = {}): Promise<SpeechLineResult[]> {
+      if (opts.signal?.aborted) throw abortError();
+      const chars = lines.reduce((n, l) => n + l.length, 0);
+      if (chars > MAX_INPUT_CHARS) {
+        throw new Error(
+          `speech input too long: ${chars} chars (max ${MAX_INPUT_CHARS}) - split the text and synthesize in parts`,
+        );
+      }
+      if (lines.length === 0) return [];
+      // A script line is by definition already normalized (it came out of the
+      // normalizer as one line of `tts.script`), and normalizing twice is not
+      // the same as normalizing once - '2,024' collapses to '2024' and then
+      // reads as the year '20 24'. So the default is the opposite of
+      // synthesize()'s, and a caller with raw prose says so.
+      const reply = await ask(
+        { lines, voice: opts.voice, speed: opts.speed, prenormalized: opts.prenormalized ?? true },
+        opts,
+      );
+      return reply.lines as SpeechLineResult[];
     },
 
     transcribeAvailable(): boolean {

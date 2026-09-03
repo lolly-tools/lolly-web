@@ -27,7 +27,7 @@ globalThis.window = dom.window as unknown as typeof globalThis.window;
 globalThis.document = dom.window.document;
 
 const {
-  ROLE_IDS, roleLabel, readRoles, roleAssignments, assignRole, clearRole,
+  ROLE_IDS, ROLE_IDS_ALL, ASSIGNABLE_ROLES, roleLabel, readRoles, roleAssignments, assignRole, clearRole,
   roleContrast, roleReadouts, buildRolesModel, rampStepName, rolesStripHtml, mountRolesStrip, WEAK_LC,
 } = await import('./roles.ts');
 type RoleId = import('./roles.ts').RoleId;
@@ -68,7 +68,7 @@ const imported = (): Rec => ({
   },
 });
 
-/** Resolve through the real token machinery, exactly as the editor does. */
+/** Resolve through the real token modules, exactly as the editor does. */
 const resolverFor = (doc: unknown, theme = 'light') =>
   (key: string): unknown => {
     try { return createTokenSet(doc, { theme }).resolve(key); } catch { return null; }
@@ -192,7 +192,7 @@ test('a layered Tokens-Studio document is read and written in its own set', () =
   assert.equal(roles.primary.hex.toLowerCase(), '#1c4fd8');
   assert.equal(roles.surface.ref, null, 'an unfilled slot is still unset');
 
-  // Write: lands in the role set (last in tokenSetOrder, so it wins), never at
+  // Write: goes into the role set (last in tokenSetOrder, so it wins), never at
   // the document root, and says so honestly.
   assert.equal(assignRole(doc, 'surface', 'color.brand.paper'), true);
   const roleSet = (doc['Lolly roles'] as Rec).color as Rec;
@@ -425,6 +425,69 @@ test('buildRolesModel: a semantic swatch is never offered as an option', () => {
   assert.equal(model.options.some(o => o.key.startsWith('color.semantic.')), false);
 });
 
+// ── The ownership grammar in the strip (plan 182 section 4.2) ────────────────
+// The strip used to claim the starter's ink WAS the person's Text colour. These
+// pin the three registers apart: a role on an own colour, a role standing on a
+// starter one, and a role resolving to the same swatch the primary already has.
+
+const STARTER_OPTIONS = [
+  ...OPTIONS,
+  { key: 'color.ramp.neutral.1', name: 'Ink', hex: '#17191d', group: 'Neutral', starter: true },
+  { key: 'color.ramp.neutral.9', name: 'Paper', hex: '#f8f8f9', group: 'Neutral', starter: true },
+];
+
+test('buildRolesModel: a role standing on a starter colour says so, and keeps its picker empty', () => {
+  const doc = imported();
+  assignRole(doc, 'text', 'color.ramp.neutral.1');
+  assignRole(doc, 'primary', 'color.brand.teal');
+  const model = buildRolesModel(doc, 'light', STARTER_OPTIONS, resolverFor(doc));
+
+  const text = model.rows.find(r => r.id === 'text')!;
+  assert.equal(text.starter, true);
+  assert.equal(text.set, true, 'something IS resolving there - tools read it');
+  assert.equal(text.value, 'Starter Ink stands in');
+  assert.equal(text.selected, '', 'nothing was chosen, so the picker sits on its placeholder');
+
+  const primary = model.rows.find(r => r.id === 'primary')!;
+  assert.equal(primary.starter, false, 'an own colour is the full register');
+  assert.equal(primary.value, 'Teal');
+  assert.equal(primary.selected, 'color.brand.teal');
+});
+
+test('buildRolesModel: a role resolving to the primary draws the arrow, not the name twice', () => {
+  const doc = imported();
+  assignRole(doc, 'primary', 'color.brand.teal');
+  assignRole(doc, 'secondary', 'color.brand.teal');
+  const model = buildRolesModel(doc, 'light', OPTIONS, resolverFor(doc));
+
+  const secondary = model.rows.find(r => r.id === 'secondary')!;
+  assert.equal(secondary.follows, roleLabel('primary'));
+  assert.equal(secondary.value, `\u21b3 follows ${roleLabel('primary')}`);
+  assert.equal(secondary.selected, '', 'it is the first decision showing through, not a second one');
+  assert.equal(model.rows.find(r => r.id === 'primary')!.follows, '', 'the primary follows nothing');
+});
+
+test('buildRolesModel: an unset role is still Not set, not a stand-in', () => {
+  const doc = imported();
+  const model = buildRolesModel(doc, 'light', STARTER_OPTIONS, resolverFor(doc));
+  const surface = model.rows.find(r => r.id === 'surface')!;
+  assert.equal(surface.set, false);
+  assert.equal(surface.starter, false);
+  assert.equal(surface.value, 'Not set');
+});
+
+test('rolesStripHtml: starter swatches keep their own heading, and a stand-in row reads Choose', () => {
+  const doc = imported();
+  assignRole(doc, 'text', 'color.ramp.neutral.1');
+  const html = rolesStripHtml(buildRolesModel(doc, 'light', STARTER_OPTIONS, resolverFor(doc)));
+  assert.ok(html.includes('<optgroup label="Starter">'), 'the starter neutrals are assignable, under their own heading');
+  assert.ok(html.includes('be-role is-starter') || /class="be-role[^"]*is-starter/.test(html),
+    'the stand-in row wears the muted register');
+  assert.ok(html.includes('Choose'), 'and its picker asks rather than naming a placeholder as a choice');
+  // The Starter heading comes LAST, after every colour of the person's own.
+  assert.ok(html.indexOf('<optgroup label="Brand">') < html.indexOf('<optgroup label="Starter">'));
+});
+
 test('rolesStripHtml: one chip per role, escaped, with the picker keyed by role', () => {
   const doc = imported();
   assignRole(doc, 'primary', 'color.brand.teal');
@@ -543,8 +606,119 @@ test('mountRolesStrip: a changed swatch list rebuilds, and puts focus back', () 
 });
 
 test('roleLabel covers every declared role', () => {
-  for (const id of ROLE_IDS) assert.ok(roleLabel(id).length > 0, `${id} has no label`);
-  assert.equal(new Set(ROLE_IDS.map(roleLabel)).size, ROLE_IDS.length, 'labels must be distinct');
+  for (const id of ROLE_IDS_ALL) assert.ok(roleLabel(id).length > 0, `${id} has no label`);
+  assert.equal(new Set(ROLE_IDS_ALL.map(roleLabel)).size, ROLE_IDS_ALL.length, 'labels must be distinct');
+});
+
+// ── All seven slots (plan 182 section 5.7 step 1) ────────────────────────────
+// The token contract is seven `color.semantic.*` slots and the strip showed
+// four, so `muted`, `edge` and `on-primary` were things a tool read and nobody
+// could see. Beat 2 shows them all; the first two beats keep the four.
+
+test('the three lists say what they are for', () => {
+  assert.deepEqual([...ROLE_IDS], ['primary', 'secondary', 'surface', 'text']);
+  assert.deepEqual([...ROLE_IDS_ALL],
+    ['primary', 'secondary', 'surface', 'text', 'muted', 'edge', 'on-primary']);
+  // Derived: the derive maintains on-primary against the primary, so a picker
+  // that wrote it would be offering to break the pair it exists to keep.
+  assert.equal(ASSIGNABLE_ROLES.includes('on-primary' as RoleId), false);
+  assert.equal(ASSIGNABLE_ROLES.length, ROLE_IDS_ALL.length - 1);
+});
+
+test('the seven-row strip: every contract slot is shown, on-primary read-only', () => {
+  const doc = derived();
+  const model = buildRolesModel(doc, 'light', [], resolverFor(doc), ROLE_IDS_ALL);
+  assert.deepEqual(model.rows.map(r => r.id), [...ROLE_IDS_ALL]);
+  assert.deepEqual(model.rows.filter(r => r.derived).map(r => r.id), ['on-primary']);
+  const html = rolesStripHtml(model);
+  // Six pickers, not seven, and the derived row says why it has none.
+  assert.equal([...html.matchAll(/data-be-role-pick=/g)].length, 6);
+  assert.equal(/data-be-role-pick="on-primary"/.test(html), false);
+  assert.match(html, /be-role-derived/);
+  for (const id of ROLE_IDS_ALL) assert.match(html, new RegExp(`data-be-role="${id}"`));
+});
+
+test('the strip still shows four by default - a beat is not this module\'s business', () => {
+  const doc = derived();
+  assert.deepEqual(buildRolesModel(doc, 'light', [], resolverFor(doc)).rows.map(r => r.id), [...ROLE_IDS]);
+});
+
+test('muted and edge are ink: they read against the surface, like text', () => {
+  const doc = derived();
+  const out = roleReadouts(doc, 'light', resolverFor(doc));
+  assert.equal(out.muted.against, out.text.against, 'both are judged on the surface');
+  assert.equal(out.edge.against, out.text.against);
+  for (const id of ['muted', 'edge'] as RoleId[]) {
+    assert.ok(out[id].hex, `${id} resolves to a colour`);
+    assert.ok(out[id].contrast, `${id} is measured`);
+  }
+});
+
+test('on-primary is measured against the primary itself', () => {
+  const doc = derived();
+  const out = roleReadouts(doc, 'light', resolverFor(doc));
+  assert.equal(out['on-primary'].against.toLowerCase(), out.primary.hex.toLowerCase());
+  assert.ok(out['on-primary'].contrast, 'the derived pair is still measured');
+  // It is the same pair the Primary row reports, read from the other end.
+  assert.equal(out['on-primary'].contrast?.lc, out.primary.contrast?.lc);
+});
+
+// A hairline is meant to be quiet. The engine's own derive puts `edge` around
+// Lc 22, so flagging it would be an alarm that is always on.
+test('the edge row reports its Lc without the weak warning', () => {
+  const doc = derived();
+  const raw = roleReadouts(doc, 'light', resolverFor(doc)).edge.contrast;
+  assert.ok(raw && raw.weak, 'the raw reading really is under the text floor');
+  const row = buildRolesModel(doc, 'light', [], resolverFor(doc), ROLE_IDS_ALL)
+    .rows.find(r => r.id === 'edge');
+  assert.equal(row?.contrast?.lc, raw.lc, 'the number is unchanged');
+  assert.equal(row?.contrast?.weak, false, 'but it is not painted as a fault');
+});
+
+test('muted and edge can be re-pointed; on-primary cannot', () => {
+  const doc = derived();
+  assert.equal(assignRole(doc, 'muted', 'color.ramp.neutral.5', 'light'), true);
+  assert.equal(assignRole(doc, 'edge', 'color.ramp.neutral.5', 'light'), true);
+  assert.equal(assignRole(doc, 'on-primary', 'color.ramp.neutral.5', 'light'), false,
+    'the derive owns on-primary');
+  assert.equal(readRoles(doc, 'light', resolverFor(doc)).muted.ref, 'color.ramp.neutral.5');
+});
+
+test('the extra slots are not counted as decisions somebody made', () => {
+  const doc = derived();
+  // Every one of the seven is assigned by the derive, but roleAssignments - what
+  // the Overview's worth-exporting latch counts - reports the four.
+  assert.deepEqual(Object.keys(roleAssignments(doc, 'light', resolverFor(doc))).sort(),
+    [...ROLE_IDS].sort());
+});
+
+test('mountRolesStrip widens on demand and keeps its pickers working', () => {
+  const doc = derived();
+  const mount = document.getElementById('mount') as HTMLElement;
+  mount.innerHTML = '';
+  let ids: readonly RoleId[] = ROLE_IDS;
+  const assigned: string[] = [];
+  const strip = mountRolesStrip(mount, {
+    doc: () => doc,
+    theme: () => 'light',
+    resolve: resolverFor(doc),
+    swatches: () => [{ key: 'color.ramp.neutral.5', name: 'Neutral 5', hex: '#888888' }],
+    ids: () => ids,
+    assign: (role, key) => { assigned.push(`${role}=${key}`); },
+    clear: (role) => { assigned.push(`${role}=`); },
+  });
+  assert.equal(mount.querySelectorAll('[data-be-role]').length, 4);
+  ids = ROLE_IDS_ALL;
+  strip.render();
+  assert.equal(mount.querySelectorAll('[data-be-role]').length, 7, 'the row set moved, so it rebuilt');
+  const pick = mount.querySelector<HTMLSelectElement>('[data-be-role-pick="muted"]')!;
+  pick.value = 'color.ramp.neutral.5';
+  pick.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  assert.deepEqual(assigned, ['muted=color.ramp.neutral.5']);
+  // And back down again, with no residue.
+  ids = ROLE_IDS;
+  strip.render();
+  assert.equal(mount.querySelectorAll('[data-be-role]').length, 4);
 });
 
 test('sanity: the derived fixture really is the multi-set engine shape', () => {

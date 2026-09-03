@@ -72,6 +72,13 @@
   text-align: right;
 }
 .script-audio-count-over { color: hsl(var(--destructive)); }
+/* The one way out of the compact dialog: voice blending and the prosody chips
+   live in the writing view, so this sheet stays two controls wide. */
+.script-audio-more {
+  margin: 0;
+  font-size: var(--fs-xs);
+}
+.script-audio-more a { color: hsl(var(--primary)); }
 .script-audio-controls {
   display: flex;
   gap: 10px;

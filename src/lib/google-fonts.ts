@@ -252,7 +252,11 @@ export async function fetchGoogleFont(family: string): Promise<DownloadedFontFac
 // export the plain alphabetical `ALPHABETICAL_FAMILIES` as POPULAR_FAMILIES.
 // (This ordering is intentionally NOT gated on the active content profile: the
 // web bundle has no runtime profile signal, so the revert is a one-line edit.)
-const PINNED_FAMILIES: readonly string[] = [
+// Exported since plan 182 section 6.4: the compare stage offers the first six of
+// these as one-press preview chips, which is the same "these are near at hand"
+// claim the datalist order makes. Its filter drops any family already serving a
+// role, so the starter's own faces never appear as something to add.
+export const PINNED_FAMILIES: readonly string[] = [
   'Outfit', 'SUSE', 'SUSE Mono', 'Overpass', 'Overpass Mono',
   'JetBrains Mono', 'Ubuntu', 'Ubuntu Mono', 'Red Hat Display', 'Red Hat Mono',
 ];

@@ -40,6 +40,7 @@ import {
   recTransition, isTransitionKind, isSplitTier, isSplitOrder, splitSeedOf,
   splitPhaseWindowMs, MAX_SPLIT_STAGGER_MS,
   holdPose, isHoldFx, withHold, DEFAULT_HOLD_RATE, MIN_HOLD_RATE, MAX_HOLD_RATE,
+  DEFAULT_TRANSITION_MS,
   type TransitionKind, type SplitTier, type SplitOrder, type HoldFx,
 } from '../lib/transitions.ts';
 // THE PARITY LAW, extended to depth (plans/104 section 4): every keyframe and projection
@@ -63,8 +64,9 @@ export const MAX_SPEED = 4;
 /** Transition-length range, mirroring sequence-clock's MIN/MAX_TRANSITION_MS. */
 export const MIN_TRANSITION_MS = 100;
 export const MAX_TRANSITION_MS = 3000;
-/** The enter/exit length a box gets when it declares a kind but no duration. */
-export const DEFAULT_TRANSITION_MS = 400;
+/** The enter/exit length a box gets when it declares a kind but no duration. Defined in
+ *  lib/transitions.ts and re-exported here, so the readers cannot drift to two numbers. */
+export { DEFAULT_TRANSITION_MS };
 
 /**
  * How far short of `computeDuration()` a decode may land before it counts as

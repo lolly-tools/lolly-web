@@ -223,6 +223,8 @@ export interface DesignImportFrame {
   boxes: unknown[];
   /** This page's own ground where the source declares one (a slide's background). */
   background?: string;
+  /** The slide's speaker notes where the source carried them (.pptx) - plans/179 P2. */
+  notes?: string;
   /** A prototype-flow entrance (Penpot), on `parseDesignScenes`' terms. */
   enter?: string;
   enterMs?: number;

@@ -172,6 +172,9 @@ const PATHS = {
 
   // ---- /valid-specific glyphs (no dupes elsewhere) ----
   eye: '<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>',
+  // The struck-through eye: a HIDDEN layer in the Design navigator, and the state its
+  // own toggle shows. Same 24-grid and stroke weight as `eye`, so the two swap in place.
+  eyeOff: '<path d="M3 3 21 21"/><path d="M10.2 5.2A11 11 0 0 1 12 5c7 0 11 7 11 7a19 19 0 0 1-3.4 4.3"/><path d="M6.9 7A19 19 0 0 0 1 12s4 7 11 7a11 11 0 0 0 4.4-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
   heart: '<path d="M12 20.3 4.2 12.5a4.6 4.6 0 0 1 6.5-6.5l1.3 1.3 1.3-1.3a4.6 4.6 0 0 1 6.5 6.5z"/>',
   link: '<path d="M9 15 15 9"/><path d="M11 6l1-1a4 4 0 0 1 6 6l-1 1"/><path d="M13 18l-1 1a4 4 0 0 1-6-6l1-1"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3.5 2"/>',
@@ -326,6 +329,19 @@ const PATHS = {
   orderForward: '<rect x="6" y="13" width="12" height="8" rx="2" fill="currentColor" stroke="none"/><path d="M12 10V4"/><path d="m8.5 7.5 3.5-3.5 3.5 3.5"/>',
   orderBackward: '<rect x="6" y="3" width="12" height="8" rx="2" fill="currentColor" stroke="none"/><path d="M12 14v6"/><path d="m8.5 16.5 3.5 3.5 3.5-3.5"/>',
   orderBack: '<rect x="6" y="3" width="12" height="8" rx="2" fill="currentColor" stroke="none"/><path d="M3 21h18"/><path d="M12 14v4"/><path d="m8.5 14.5 3.5 3.5 3.5-3.5"/>',
+
+  // ---- editor bar (views/design-topbar.ts, plan 179 M1) ----
+  // The history pair and the three view verbs the Design top bar shows. They were
+  // drawn as a local `GLYPH` map in that module first; minted here on 2026-09-02 so
+  // the bar and the editor rail can say the same thing with one picture (rec 5).
+  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5 5.5 5.5 0 0 1-5.5 5.5H11"/>',
+  redo: '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5 5.5 5.5 0 0 0 9.5 20H13"/>',
+  /** Four corner brackets - "fit everything on screen". */
+  fitAll: '<path d="M9 3H5a2 2 0 0 0-2 2v4"/><path d="M15 3h4a2 2 0 0 1 2 2v4"/><path d="M15 21h4a2 2 0 0 0 2-2v-4"/><path d="M9 21H5a2 2 0 0 1-2-2v-4"/>',
+  /** The "#" artboard mark - "fit the artboard I am on". */
+  fitArtboard: '<path d="M8 3v18M16 3v18M3 8h18M3 16h18"/>',
+  /** Playhead plus three frame chevrons - the sequence/timeline panel toggle. */
+  timeline: '<path d="M4 9v6"/><path d="M1 12h6"/><path d="M9 6.5l5 5.5-5 5.5"/><path d="M13 6.5l5 5.5-5 5.5"/><path d="M17 6.5l5 5.5-5 5.5"/>',
 } as const;
 
 export type IconName = keyof typeof PATHS;

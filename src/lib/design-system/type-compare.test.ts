@@ -87,20 +87,25 @@ const {
   admitCandidate,
   applyCardEvent,
   chipsFromFacts,
+  collapsedFaceText,
   compareCardsHtml,
   defaultSpecimen,
   describeFaceBytes,
+  faceLine,
   hasFetchableSource,
   mountTypeCompare,
   pickPreviewFace,
+  pinnedFaces,
   previewFamilyName,
   readSystemName,
   slugFamily,
+  stageAfterIndex,
   usableSystemName,
 } = await import('./type-compare.ts');
 import type {
   CompareCandidate, CompareCard, CompareChoice, FaceFacts, TypeCompareCtx,
 } from './type-compare.ts';
+import type { FaceState } from './ownership.ts';
 import type { GoogleFontFace } from '../google-fonts.ts';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 import { escape } from '../../utils.ts';
@@ -480,30 +485,68 @@ test('readSystemName digs the label out of the tokens asset, and survives a brok
 test('compareCardsHtml paints the face ONLY when the card is ready', () => {
   const ready = compareCardsHtml([card({ state: 'ready' })], 'Hamburgefonstiv', t);
   assert.ok(ready.includes(`font-family:'__ds-preview-inter-0-1'`), 'a ready card shows the real face');
+  assert.ok(!ready.includes('tycmp-skel'));
   assert.ok(!ready.includes('Shown in the interface face.'));
 
+  // Nothing loaded, but something is coming: a skeleton bar the height of the
+  // specimen. Not a line of type in the interface face - that is the one
+  // unforgivable bug in a comparison, and the words under it were never enough.
   for (const state of ['idle', 'loading', 'failed'] as const) {
     const html = compareCardsHtml([card({ state })], 'Hamburgefonstiv', t);
     assert.ok(!html.includes('font-family'), `a ${state} card must not paint a face it does not have`);
-    assert.ok(html.includes('Shown in the interface face.'), `a ${state} card says what you are looking at`);
+    assert.ok(html.includes('tycmp-skel'), `a ${state} card draws the placeholder instead`);
+    assert.ok(!html.includes('Hamburgefonstiv'), 'and does not set the specimen at all');
+    assert.ok(!html.includes('Shown in the interface face.'));
   }
+
+  // The one exception: nothing is EVER coming for this family, so the interface
+  // face is all there is, and the card says so in words.
+  const dead = compareCardsHtml([card({ state: 'failed', reason: 'no-source' })], 'Hamburgefonstiv', t);
+  assert.ok(!dead.includes('font-family'));
+  assert.ok(dead.includes('Hamburgefonstiv'), 'the specimen still stands');
+  assert.ok(dead.includes('Shown in the interface face.'));
 });
 
-test('compareCardsHtml gates "Use this face" on a face you can actually see', () => {
+test('compareCardsHtml renders no disabled control, ever - the state chooses the primary', () => {
+  // plan 182 section 6.2. "Use this face" used to be on every card and greyed out on
+  // four of them, so the loudest thing on a card somebody had just asked for was
+  // a dead button. It is now simply absent until there is a face to choose.
   const ready = compareCardsHtml([card({ state: 'ready' })], 'Aa', t);
   assert.ok(ready.includes('data-tycmp-select="tycmp-card-1"'));
-  assert.ok(!/data-tycmp-select="tycmp-card-1"[^>]*disabled/.test(ready));
 
   for (const state of ['idle', 'loading', 'failed'] as const) {
     const html = compareCardsHtml([card({ state })], 'Aa', t);
-    assert.match(html, /data-tycmp-select="tycmp-card-1"[\s\S]*?disabled/, `${state} cannot be chosen`);
+    assert.equal(html.includes('data-tycmp-select'), false, `${state} offers no Use this face at all`);
   }
+  // A press in flight is not repeatable - but the guard is select()'s own
+  // `card.busy` check, not an attribute that makes the button read as broken.
   const busy = compareCardsHtml([card({ state: 'ready', busy: true })], 'Aa', t);
-  assert.match(busy, /data-tycmp-select="tycmp-card-1"[\s\S]*?disabled/, 'a press in flight cannot be repeated');
+  assert.match(busy, /data-tycmp-select="tycmp-card-1"[^>]*aria-busy="true"/);
+
+  const every: CompareCard[] = [
+    card(),
+    card({ state: 'idle', reason: 'declined' }),
+    card({ state: 'loading' }),
+    card({ state: 'ready' }),
+    card({ state: 'ready', busy: true }),
+    card({ state: 'failed', reason: 'fetch-failed' }),
+    card({ state: 'failed', reason: 'no-source' }),
+    card({ state: 'failed', reason: 'unsupported' }),
+    card({ kind: 'upload', needsFetch: false, state: 'failed', reason: 'decode-failed' }),
+  ];
+  for (const c of every) {
+    const html = compareCardsHtml([c], 'Aa', t);
+    const where = `${c.state}/${c.reason ?? '-'}`;
+    assert.equal(/disabled/.test(html), false, `a disabled control in ${where}`);
+    const buttons = [...html.matchAll(/data-tycmp-(?:select|preview)=/g)].length;
+    assert.ok(buttons <= 1, `one primary at most, got ${buttons} in ${where}`);
+  }
 });
 
-test('compareCardsHtml offers Preview before a fetch, Try again after a failure, and neither with no source', () => {
-  assert.ok(compareCardsHtml([card()], 'Aa', t).includes('Preview from Google'));
+test('compareCardsHtml offers Fetch before a fetch, Try again after a failure, and neither with no source', () => {
+  assert.ok(compareCardsHtml([card()], 'Aa', t).includes('Fetch from Google'));
+  assert.ok(compareCardsHtml([card({ state: 'idle', reason: 'declined' })], 'Aa', t).includes('Fetch from Google'),
+    'a decline is not a refusal - the offer stands on the card');
   assert.ok(compareCardsHtml([card({ state: 'failed', reason: 'fetch-failed' })], 'Aa', t).includes('Try again'));
 
   const dead = compareCardsHtml([card({ state: 'failed', reason: 'no-source' })], 'Aa', t);
@@ -511,7 +554,23 @@ test('compareCardsHtml offers Preview before a fetch, Try again after a failure,
   assert.ok(dead.includes('No source we can fetch for this family. A font file installs it.'));
 
   const local = compareCardsHtml([card({ kind: 'upload', needsFetch: false })], 'Aa', t);
-  assert.ok(!local.includes('Preview from Google'), 'a file on this device has nothing to fetch');
+  assert.ok(!local.includes('Fetch from Google'), 'a file on this device has nothing to fetch');
+});
+
+test('every card state carries exactly one sentence saying where it is', () => {
+  const notes: Array<[Partial<CompareCard>, string]> = [
+    [{ state: 'loading' }, 'Fetching from Google…'],
+    [{ state: 'loading', kind: 'upload', needsFetch: false }, 'Reading the file…'],
+    [{ state: 'idle' }, 'Not fetched yet.'],
+    [{ state: 'idle', reason: 'declined' }, 'Not fetched. Nothing was sent to Google.'],
+    [{ state: 'failed', reason: 'fetch-failed' }, 'Could not fetch this face from Google Fonts.'],
+  ];
+  for (const [over, sentence] of notes) {
+    assert.ok(compareCardsHtml([card(over)], 'Aa', t).includes(sentence),
+      `expected "${sentence}" on ${over.state}/${over.reason ?? '-'}`);
+  }
+  assert.equal(compareCardsHtml([card({ state: 'ready' })], 'Aa', t).includes('tycmp-note'), false,
+    'a face you can see explains itself');
 });
 
 test('compareCardsHtml escapes a hostile family, label, chip and specimen', () => {
@@ -573,21 +632,29 @@ test('the source chips a stage did not write are still escaped on the way in', (
   assert.equal(holder.querySelector('.tycmp-chip b'), null, 'the source authored text, not markup');
 });
 
-test('a card names itself and points at the sentence that explains a disabled action', () => {
-  // "Use this face" is DISABLED on every non-ready card, and a disabled button is
-  // out of the tab order and carries no state text - so the reason has to hang
-  // off the thing an AT user can actually land on.
-  const holder = parseCards(compareCardsHtml([card({ state: 'failed', reason: 'fetch-failed' })], 'Aa', t));
+test('a card names itself and points at the sentence that explains the state it is in', () => {
+  // A loading card has NO button at all, so there is nothing pressable to hang a
+  // description on - and that is the state a screen-reader user is most likely to
+  // land in, because pressing the previous button is what caused it. The reason
+  // hangs off the <article>, which focusInCard parks the keyboard on.
+  const described = (c: CompareCard): string => {
+    const holder = parseCards(compareCardsHtml([c], 'Aa', t));
+    const article = holder.querySelector('[data-tycmp-card]') as HTMLElement;
+    return (article.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean)
+      .map((id) => [...holder.querySelectorAll('[id]')].find((n) => n.id === id)?.textContent ?? '')
+      .join(' ');
+  };
+
+  const holder = parseCards(compareCardsHtml([card({ state: 'loading' })], 'Aa', t));
   const article = holder.querySelector('[data-tycmp-card]') as HTMLElement;
   assert.equal(article.getAttribute('aria-label'), 'Inter');
   assert.equal(article.getAttribute('tabindex'), '-1', 'a repaint can hand the keyboard back to the card');
-
-  const ids = (article.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
-  const described = ids
-    .map((id) => [...holder.querySelectorAll('[id]')].find((n) => n.id === id)?.textContent ?? '')
-    .join(' ');
-  assert.match(described, /Could not fetch this face from Google Fonts\./);
-  assert.match(described, /Shown in the interface face\./);
+  assert.match(described(card({ state: 'loading' })), /Fetching from Google…/);
+  assert.match(described(card({ state: 'failed', reason: 'fetch-failed' })), /Could not fetch this face from Google Fonts\./);
+  // The one card that IS showing the interface face says both things.
+  const dead = described(card({ state: 'failed', reason: 'no-source' }));
+  assert.match(dead, /No source we can fetch for this family\./);
+  assert.match(dead, /Shown in the interface face\./);
 
   const ready = parseCards(compareCardsHtml([card({ state: 'ready' })], 'Aa', t));
   assert.equal((ready.querySelector('[data-tycmp-card]') as HTMLElement).getAttribute('aria-describedby'), null,
@@ -598,7 +665,9 @@ test('describedby ids are per MOUNT as well as per card, so two stages cannot co
   const a = admitCandidate([], { kind: 'google', family: 'Inter' }, 1, 1);
   const b = admitCandidate([], { kind: 'google', family: 'Inter' }, 1, 2);
   assert.ok(a.ok && b.ok);
-  const idsOf = (c: CompareCard): string[] => [...parseCards(compareCardsHtml([{ ...c, state: 'failed', reason: 'fetch-failed' }], 'Aa', t))
+  // `no-source` is the state that carries BOTH addressed sentences (the note and
+  // the interface-face line), so it is the one that can collide in two ways.
+  const idsOf = (c: CompareCard): string[] => [...parseCards(compareCardsHtml([{ ...c, state: 'failed', reason: 'no-source' }], 'Aa', t))
     .querySelectorAll('[id]')].map((n) => n.id);
   const first = idsOf(a.card);
   assert.ok(first.length >= 2, `the note and the fallback both carry ids, got ${first}`);
@@ -680,33 +749,38 @@ test('a file that is not a font fails honestly - no card pretending, no registra
   assert.equal(cardEl.getAttribute('data-tycmp-state'), 'failed');
   assert.equal(registered.size, 0);
   assert.ok(cardEl.textContent?.includes('This file did not load as a font.'));
-  assert.ok(cardEl.textContent?.includes('Shown in the interface face.'));
-  assert.ok(cardEl.querySelector('[data-tycmp-select]')?.hasAttribute('disabled'));
+  assert.ok(cardEl.querySelector('.tycmp-skel'), 'the specimen is a placeholder, not the interface face');
+  assert.equal(cardEl.querySelector('[data-tycmp-select]'), null, 'nothing to choose, so nothing to press');
   ui.teardown();
 });
 
 // ── Mount: the consent gate is the only door to the network ──────────────────
 
-test('a Google candidate fetches NOTHING until consent is asked and given', async () => {
+test('a Google candidate asks at the press that adds it, and a decline fetches nothing', async () => {
+  // plan 182 section 6.1: the dialog moved from a ghost button two presses later to
+  // the press somebody actually made. The NETWORK contract is unchanged - nothing
+  // leaves this device until consentGoogle() resolves true - which is asserted in
+  // both directions here.
   const el = stage();
   let asked = 0;
   const ui = mountTypeCompare(el, ctxFor({ consentGoogle: async () => { asked++; return false; } }));
   ui.addCandidate({ kind: 'google', family: 'Inter' });
   await settle();
 
-  assert.equal(asked, 0, 'landing a candidate is not a press; nothing is asked yet');
-  assert.equal(fetchCalls.length, 0);
+  assert.equal(asked, 1, 'the press that lands the card is the press that asks');
+  assert.equal(fetchCalls.length, 0, 'a decline fetches nothing at all');
   const cardEl = el.querySelector('.tycmp-card')!;
   assert.equal(cardEl.getAttribute('data-tycmp-state'), 'idle');
-  assert.ok(cardEl.textContent?.includes('Nothing fetched yet.'));
+  assert.ok(cardEl.textContent?.includes('Not fetched. Nothing was sent to Google.'));
+  assert.equal(cardEl.querySelector('[data-tycmp-select]'), null, 'no face yet, so no way to choose one');
 
+  // The offer stands on the card, so changing your mind is not a hunt.
   el.querySelector<HTMLElement>('[data-tycmp-preview="tycmp-card-1"]')!.click();
   await settle();
 
-  assert.equal(asked, 1, 'the press is what asks');
-  assert.equal(fetchCalls.length, 0, 'a decline fetches nothing at all');
+  assert.equal(asked, 2, 'a second press is a second question, not a remembered refusal');
+  assert.equal(fetchCalls.length, 0);
   assert.equal(el.querySelector('.tycmp-card')!.getAttribute('data-tycmp-state'), 'idle');
-  assert.ok(el.textContent?.includes('Not fetched. Nothing has left this device.'));
   ui.teardown();
 });
 
@@ -715,9 +789,6 @@ test('consent given once holds for the mount, and a later fetch failure stays ho
   let asked = 0;
   const ui = mountTypeCompare(el, ctxFor({ consentGoogle: async () => { asked++; return true; } }));
   ui.addCandidate({ kind: 'google', family: 'Inter' });
-  await settle();
-
-  el.querySelector<HTMLElement>('[data-tycmp-preview="tycmp-card-1"]')!.click();
   await settle();
 
   assert.equal(asked, 1);
@@ -734,6 +805,51 @@ test('consent given once holds for the mount, and a later fetch failure stays ho
   await settle();
   assert.equal(asked, 1, 'the gate is one-time, per the type tab it shares');
   assert.ok(fetchCalls.length > 0);
+  ui.teardown();
+});
+
+test('a SEEDED tray candidate is not a press: it waits behind its own button', async () => {
+  // The Type room opens the stage with up to three pending tray fonts. Nobody
+  // asked for those, so previewing them on arrival would fire a fetch - and a
+  // consent dialog - per card for family names the person never typed. The
+  // press-previews-at-once rule is for candidates somebody asked for.
+  const el = stage();
+  let asked = 0;
+  const ui = mountTypeCompare(el, ctxFor({
+    consentGoogle: async () => { asked++; return true; },
+    candidates: [{ kind: 'tray', family: 'Inter', provenance: 'brand-guidelines.pdf' }],
+  }));
+  await settle();
+
+  assert.equal(asked, 0, 'a stage opening is not a request to fetch anything');
+  assert.equal(fetchCalls.length, 0);
+  const cardEl = el.querySelector('.tycmp-card')!;
+  assert.equal(cardEl.getAttribute('data-tycmp-state'), 'idle');
+  assert.ok(cardEl.textContent?.includes('Not fetched yet.'));
+
+  el.querySelector<HTMLElement>('[data-tycmp-preview="tycmp-card-1"]')!.click();
+  await settle();
+  assert.equal(asked, 1, 'the button on the card is the press that asks');
+  ui.teardown();
+});
+
+test('two presses before the first answer share one consent dialog', async () => {
+  const el = stage();
+  let asked = 0;
+  // The resolver is parked on an object, not a `let` - TS narrows a local
+  // assigned only inside a callback to `never` and then refuses the call.
+  const gate: { release?: (ok: boolean) => void } = {};
+  const ui = mountTypeCompare(el, ctxFor({
+    consentGoogle: () => { asked++; return new Promise<boolean>((r) => { gate.release = r; }); },
+  }));
+  ui.addCandidate({ kind: 'google', family: 'Inter' });
+  ui.addCandidate({ kind: 'google', family: 'Outfit' });
+  await settle();
+
+  assert.equal(asked, 1, 'two stacked modals asking the same question is not two questions');
+  gate.release?.(false);
+  await settle();
+  assert.equal(el.querySelectorAll('[data-tycmp-state="idle"]').length, 2, 'and one answer settles both');
   ui.teardown();
 });
 
@@ -791,13 +907,14 @@ test('the install path follows the bytes, and a face nobody has seen cannot be c
 
   // And the real Google shape - a card with no bytes of its own - cannot be
   // selected at all until its face has loaded, which is the point of the stage.
+  // The default ctx declines consent, so this card never gets one.
   const el2 = stage();
   const ui2 = mountTypeCompare(el2, ctxFor({ onSelect: async (c) => { chosen.push(c); } }));
   ui2.addCandidate({ kind: 'google', family: 'Outfit' });
   await settle();
-  el2.querySelector<HTMLElement>('[data-tycmp-select="tycmp-card-1"]')!.click();
-  await settle();
-  assert.equal(chosen.length, 1, 'you cannot choose a face you have never seen');
+  assert.equal(el2.querySelector('[data-tycmp-select="tycmp-card-1"]'), null,
+    'you cannot choose a face you have never seen - there is no button to press');
+  assert.equal(chosen.length, 1);
   ui.teardown();
   ui2.teardown();
 });
@@ -936,8 +1053,6 @@ test('a card that finishes loading says so, whether or not anyone is looking at 
   // sentence in a subtree that was just replaced wholesale, which no live region
   // covers, so silence here would mean a press that returns nothing at all.
   ui.addCandidate({ kind: 'google', family: 'Inter' });
-  await settle();
-  el.querySelector<HTMLElement>('[data-tycmp-preview="tycmp-card-2"]')!.click();
   assert.equal(await spoken(), 'Inter: Could not fetch this face from Google Fonts.');
 
   // A decline is an outcome too - nothing broke, and saying nothing would read
@@ -945,9 +1060,7 @@ test('a card that finishes loading says so, whether or not anyone is looking at 
   const el2 = stage();
   const ui2 = mountTypeCompare(el2, ctxFor({ consentGoogle: async () => false }));
   ui2.addCandidate({ kind: 'google', family: 'Outfit' });
-  await settle();
-  el2.querySelector<HTMLElement>('[data-tycmp-preview="tycmp-card-1"]')!.click();
-  assert.equal(await spoken(), 'Outfit: Not fetched. Nothing has left this device.');
+  assert.equal(await spoken(), 'Outfit: Not fetched. Nothing was sent to Google.');
 
   ui.teardown();
   ui2.teardown();
@@ -1010,4 +1123,86 @@ test('the empty state stands only while there is nothing to compare', async () =
   await settle();
   assert.equal(el.querySelector<HTMLElement>('[data-tycmp-empty]')!.hidden, false);
   ui.teardown();
+});
+
+// ── The ownership grammar (plan 182 sections 4.2, 6.5) ───────────────────────
+// One face, four states, four different sentences. The defect these close is T2:
+// a chosen face, an inherited default and a role following another role all said
+// the same thing, so nothing on the page told you which of your type was yours.
+
+const face = (over: Partial<FaceState> = {}): FaceState =>
+  ({ family: 'SUSE', state: 'inherited', ...over });
+
+test('a face line says which of the four states a role is in', () => {
+  // Own: the family, and nothing else on the line.
+  assert.deepEqual(faceLine('display', face({ family: 'Inter', state: 'own' }), tRaw),
+    { text: 'Inter', tag: '' });
+  // Inherited: a real face, chosen by nobody - the family plus the pill.
+  assert.deepEqual(faceLine('brand', face(), tRaw), { text: 'SUSE', tag: 'Starter' });
+  // Follows: the CHAIN, not the resolved family. Restating "SUSE" here is what
+  // made three different states look like one.
+  assert.deepEqual(faceLine('italic', { family: 'SUSE', state: 'follows', follows: 'brand' }, tRaw),
+    { text: '↳ follows Primary', tag: '' });
+  // Unset mono ends at the platform mono, not at another role.
+  assert.deepEqual(faceLine('mono', { family: '', state: 'unset' }, tRaw),
+    { text: '↳ follows the starter mono', tag: '' });
+  // Unset with a face still resolving is a starter face by another route…
+  assert.deepEqual(faceLine('brand', { family: 'SUSE', state: 'unset' }, tRaw),
+    { text: 'SUSE', tag: 'Starter' });
+  // …and unset with nothing behind it says so plainly.
+  assert.deepEqual(faceLine('brand', { family: '', state: 'unset' }, tRaw),
+    { text: 'Not set', tag: '' });
+});
+
+test('a family with an ampersand reaches the line intact (textContent, not markup)', () => {
+  const line = faceLine('brand', face({ family: 'Q&A Sans', state: 'own' }), tRaw);
+  assert.equal(line.text, 'Q&A Sans', 'the non-escaping translator is the one this takes');
+});
+
+test('the collapsed strip says role, face and state on one line', () => {
+  assert.equal(collapsedFaceText('brand', face(), tRaw), 'SUSE · Starter');
+  assert.equal(collapsedFaceText('display', face({ family: 'Inter', state: 'own' }), tRaw), 'Inter');
+  assert.equal(collapsedFaceText('italic', { family: 'SUSE', state: 'follows', follows: 'brand' }, tRaw),
+    '↳ follows Primary');
+  // The card the open stage belongs to says what is happening to it instead.
+  assert.equal(collapsedFaceText('display', face({ family: 'Inter', state: 'own' }), tRaw, true), 'choosing…');
+});
+
+test('pinned chips are candidates you do not already have', () => {
+  const pinned = ['Outfit', 'SUSE', 'SUSE Mono', 'Overpass', 'Overpass Mono', 'JetBrains Mono', 'Ubuntu', 'Ubuntu Mono'];
+  // The starter's own faces are already serving roles, so they are not offered.
+  assert.deepEqual(pinnedFaces(pinned, ['SUSE', 'SUSE Mono']),
+    ['Outfit', 'Overpass', 'Overpass Mono', 'JetBrains Mono', 'Ubuntu', 'Ubuntu Mono']);
+  // Six is the row, and the stage's own cap.
+  assert.equal(pinnedFaces(pinned).length, 6);
+  // Case and spacing are not a second chip, and neither is a repeat in the list.
+  assert.deepEqual(pinnedFaces(['Inter', ' inter ', 'Lora'], [' INTER ']), ['Lora']);
+  assert.deepEqual(pinnedFaces(['Inter', 'Inter', 'Lora']), ['Inter', 'Lora']);
+  assert.deepEqual(pinnedFaces([], ['Inter']), []);
+});
+
+test('the stage follows the card that opened it, and no card when nothing did', () => {
+  const roles = ['brand', 'display', 'mono', 'italic'];
+  assert.equal(stageAfterIndex(roles, 'brand'), 0);
+  assert.equal(stageAfterIndex(roles, 'italic'), 3);
+  // The Fonts panel's "Add a face" belongs to no card: back to its own seat.
+  assert.equal(stageAfterIndex(roles, null), -1);
+  assert.equal(stageAfterIndex(roles, 'nonsense'), -1);
+});
+
+test('a Google card can state the axis the family spec declared, once it is ready', () => {
+  const loading = applyCardEvent(card({ state: 'loading', chips: [] }), { type: 'start' });
+  const ready = applyCardEvent({ ...loading, state: 'loading' }, {
+    type: 'ready', chips: ['Variable weight 100–900'],
+  });
+  assert.equal(ready.state, 'ready');
+  assert.deepEqual(ready.chips, ['Variable weight 100–900']);
+  // A card's own chips are never replaced by the fetch's.
+  const kept = applyCardEvent(card({ state: 'loading', chips: ['SUBSET'] }), {
+    type: 'ready', chips: ['Variable weight 100–900'],
+  });
+  assert.deepEqual(kept.chips, ['SUBSET', 'Variable weight 100–900']);
+  // No chips is no change at all.
+  assert.deepEqual(applyCardEvent(card({ state: 'loading', chips: ['SUBSET'] }), { type: 'ready' }).chips,
+    ['SUBSET']);
 });

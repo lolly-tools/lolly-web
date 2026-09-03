@@ -67,6 +67,13 @@
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
   gap: 12px;
 }
+/* Three across on a desktop, one on a phone (plan 182 section 6.3). Auto-fit
+   alone put five narrow cards on a wide stage, and a face judged in a 12rem
+   column is a face nobody judged - the specimen is the point, so the column has
+   to be wide enough to hold a line of it. */
+@media (min-width: 900px) {
+  .tycmp-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 @media (max-width: 640px) {
   .tycmp-cards { grid-template-columns: 1fr; }
 }
@@ -148,10 +155,23 @@
   overflow-wrap: anywhere;
 }
 /* Not loaded: the interface face is doing the drawing and the card says so, so
-   the line is calmed to make that obvious at a glance rather than only in words. */
+   the line is calmed to make that obvious at a glance rather than only in words.
+   Reached only by the `no-source` card now - every other unloaded state draws
+   the skeleton below instead of a line of type in the wrong face. */
 .tycmp-card[data-tycmp-state="loading"] .tycmp-specimen,
 .tycmp-card[data-tycmp-state="idle"] .tycmp-specimen,
 .tycmp-card[data-tycmp-state="failed"] .tycmp-specimen { color: hsl(var(--muted-foreground)); }
+
+/* The specimen's placeholder while there is no face to set it in (plan 182
+   section 6.2). Same box as `.tycmp-specimen` - the same size variable, the same
+   margin - so a card does not jump when the face arrives. */
+.tycmp-skel {
+  margin: 2px 0;
+  height: calc(var(--tycmp-size) * 1.25);
+  max-width: 70%;
+  border-radius: var(--radius-sm);
+  background: hsl(var(--muted));
+}
 
 .tycmp-fallback,
 .tycmp-note {
@@ -181,6 +201,11 @@
 }
 
 .tycmp-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 4px; }
+/* On a phone the card's one press is a real target: 40px, which is what the
+   phone mockup draws and what a thumb needs on a card it has scrolled to. */
+@media (max-width: 640px) {
+  .tycmp-acts .btn { min-height: 40px; }
+}
 
 /* ── Empty state, drop zone, messages ────────────────────────────────────── */
 

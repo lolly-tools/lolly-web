@@ -17,6 +17,7 @@
  */
 import type { PickerHost } from '../views/picker.ts';
 import { tauriInvoke, type TauriInvoke } from './nearby-boot.ts';
+import { deepLinkToHash } from './deep-link.ts';
 
 const POLL_MS = 1200;
 const MAX_EVENTS_PER_POLL = 16;
@@ -32,15 +33,9 @@ export interface LinuxDesktopEnv {
   openFiles?: (files: File[]) => Promise<void>;
 }
 
-/** A lolly:// URL is the app's own hash route under a scheme - lolly://tool/qr-code?url=x
- *  becomes #/tool/qr-code?url=x. Anything that does not parse as that shape is
- *  ignored (with a warn): a deep link must never navigate somewhere invented. */
-export function deepLinkToHash(link: string): string | null {
-  if (!link.startsWith('lolly://')) return null;
-  const rest = link.slice('lolly://'.length).replace(/^\/+/, '');
-  if (!rest || /[\s<>"']/.test(rest)) return null;
-  return `#/${rest}`;
-}
+// The lolly:// grammar lives in deep-link.ts, shared with the Android and iOS
+// intakes; re-exported here because this module's test and callers named it first.
+export { deepLinkToHash };
 
 function fileNameOf(path: string): string {
   const base = path.split('/').pop() ?? 'file';

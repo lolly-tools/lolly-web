@@ -114,6 +114,11 @@ export function jellyActive(): boolean {
  */
 export async function ensureJelly(on: boolean = jellyEnabled()): Promise<boolean> {
   if (!on) return false;
+  // No custom-element registry means no browser to define <jelly-*> in (a bare
+  // jsdom test host is the everyday case). The bundle registers its elements at
+  // import time, so importing it there throws and the answer is false either
+  // way - refuse up front rather than warning once per mount.
+  if (typeof customElements === 'undefined') return false;
   if (!loading) {
     loading = import('../vendor/jelly/jelly.mjs').then(() => {
       if (!document.getElementById(BRIDGE_ID)) {

@@ -278,6 +278,16 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 .be-pal-group-head .be-add { margin-inline-start: auto; }
 .be-pal-group-label { font-size: var(--fs-xs); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
 .be-pal-group-n { margin-inline-start: .4rem; font-weight: 500; opacity: .7; }
+/* "Select all" - a quiet text button, not a third pill competing with + Add.
+   It takes the free space so + Add keeps its seat at the end of the row (plan
+   182 section 5.5). */
+.be-pal-group-all {
+  margin-inline-start: auto;
+  border: 0; background: transparent; cursor: pointer;
+  padding: .1rem .2rem; border-radius: var(--radius-sm);
+  font: inherit; font-size: var(--fs-xs); color: hsl(var(--muted-foreground));
+}
+.be-pal-group-all:hover { color: hsl(var(--foreground)); text-decoration: underline; }
 /* A section still holding the colours the blank brand shipped with (plan 137 C3).
    The chip is a statement of fact, not a state to act on, so it is quiet: the
    same pill the rest of the studio uses, in the muted pair, and the sentence
@@ -288,6 +298,19 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
   text-transform: none; color: hsl(var(--muted-foreground));
 }
 .be-pal-group-note { margin: 0 0 .5rem; font-size: var(--fs-xs); color: hsl(var(--muted-foreground)); }
+/* The pane is the marquee's canvas, so it owns the coordinate space the
+   rectangle is drawn in (plan 182 section 5.5). */
+.be-pal { position: relative; }
+.be-pal.is-marqueeing { user-select: none; }
+/* The sweep itself: one div, alive only for the length of the drag. z 5 keeps
+   it over the tiles and well under the swatch popover (30) - it must never
+   paint across a card the person is operating. */
+.be-marquee {
+  position: absolute; z-index: 5; pointer-events: none;
+  border: 1.5px solid hsl(var(--primary));
+  background: hsl(var(--primary) / .08);
+  border-radius: var(--radius-sm);
+}
 /* Dense grid of pure swatches; corner rounding rides the brand radius token -
    a full-radius brand rounds these into circles, and that's the intent. */
 .be-pal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: .45rem; }
@@ -310,6 +333,22 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
     repeating-conic-gradient(hsl(var(--muted-foreground) / .35) 0% 25%, hsl(var(--card)) 0% 50%) 50% / 8px 8px;
 
 }
+/* The role mark a tile wears when a role points at it - P, S, Su, T (plan 182
+   section 4.2). ONE tile per token: an assignment re-points an alias, it never
+   makes a second swatch, so this corner glyph is how an assigned colour looks
+   different from an unassigned one. Paper on a dark tile, ink on a light one -
+   the caller measures the swatch's lightness, because a text-shadow alone is
+   not readable over a pale ground. */
+.be-swatch-role {
+  position: absolute; right: 4px; bottom: 2px;
+  font-family: var(--font-mono); font-size: var(--fs-2xs); font-weight: 700;
+  line-height: 1.2; letter-spacing: .02em; pointer-events: none;
+  /* Measured against the SWATCH, which is the user's colour and not a theme
+     token - so these two are absolute, exactly as the swatch's own checkerboard
+     is, and neither may follow the theme. */
+  color: hsl(0 0% 100%); text-shadow: 0 1px 2px hsl(0 0% 0% / .5);
+}
+.be-swatch-role.is-onlight { color: hsl(0 0% 8%); text-shadow: 0 1px 2px hsl(0 0% 100% / .55); }
 
 /* Download-all - the floating pill at the palette pane's bottom edge (the
    catalog toolbar's exact clothes: catalog.css .cat-toolbar), so the palette
@@ -460,7 +499,24 @@ button.be-ramp-cell.is-selected { box-shadow: inset 0 0 0 2px hsl(var(--ring)), 
 /* The optional face-roles (primary / headings / code / italic) as a group that
    wraps under the name when the row is tight, rather than overflowing it. */
 .be-font-roles { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .3rem .45rem; }
-.be-font-row.is-primary { border-color: hsl(var(--primary) / .5); background: hsl(var(--primary) / .05); }
+/* A face of the design system's own (plan 182 section 4.2). Every row in the
+   list is one - the starter's faces are the fold below, never rows - so this is
+   the tint, and the green PRIMARY badge inside says which own face serves the
+   primary role. It was `.is-primary`, which tinted one row and left the others
+   looking like candidates. */
+.be-font-row.is-own { border-color: hsl(var(--primary) / .5); background: hsl(var(--primary) / .05); }
+/* The group label above the own rows, and the folded starter row under them.
+   The fold reuses the studio's own disclosure (.be-subst-details) but not its
+   uppercase summary: this summary is a SENTENCE, not a label. */
+.be-font-glabel { font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.be-font-starter { list-style: none; }
+.be-font-starterfold { padding: .5rem .6rem; border: 1px solid hsl(var(--border) / .7); border-radius: calc(var(--radius) * .55); }
+.be-font-starterfold summary { text-transform: none; letter-spacing: normal; font-size: var(--fs-xs); font-weight: 500; }
+.be-font-startersum { color: hsl(var(--muted-foreground)); }
+.be-font-starterbody { display: grid; gap: .4rem; margin-top: .5rem; }
+/* Inherited material is quiet, never dashed (dashed means drop target here):
+   no tint, no roles to press, no delete. */
+.be-font-row--starter { color: hsl(var(--muted-foreground)); border-color: hsl(var(--border) / .7); }
 .be-font-aa { flex: 0 0 auto; width: 2rem; font-size: calc(1.1rem * var(--a11y-fs)); line-height: 1; text-align: center; color: hsl(var(--foreground)); }
 .be-font-meta { display: grid; gap: 1px; min-width: 0; margin-inline-end: auto; }
 .be-font-name { font-size: var(--fs-md); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -565,7 +621,9 @@ background-image:
    neutral card so a one-colour dark mark still shows. */
 .be-logo-slot[data-treatment$="reverse"] .be-logo-art { background: hsl(var(--foreground)); padding: .5rem; }
 .be-logo-slot[data-treatment="mono"] .be-logo-art { background: hsl(var(--muted) / .5); padding: .5rem; }
-.be-logo-empty { font-size: calc(1.6rem * var(--a11y-fs)); font-weight: 300; color: hsl(var(--muted-foreground) / .7); }
+/* "Not set", in the muted register - the slot says what it is rather than
+   drawing a 1.6rem "+" that reads as an instruction (plan 182 section 4.2). */
+.be-logo-empty { font-size: var(--fs-sm); font-weight: 500; color: hsl(var(--muted-foreground) / .8); }
 .be-logo-hint { margin: 0; font-size: var(--fs-xs); line-height: 1.45; color: hsl(var(--muted-foreground)); }
 
 /* ── Logo intake - level 0 of the room (plan 97 section 7.3) ──────────────────────────
@@ -736,6 +794,27 @@ background-image:
 .ds-addc { display: grid; gap: .7rem; }
 .ds-addc-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 .ds-addc-input { flex: 1 1 16rem; min-width: 12rem; }
+/* The live chip that IS the picker (plan 182 section 5.1). It paints `--sw` -
+   the same swatch custom property every tile in the room paints - so the row
+   shows the colour it is holding before anything is committed. 48px in the
+   compact row; the beat-0 hero grows it to 72px (see the beat rules below).
+   Never dashed while empty: dashed borders are drop targets in this app. */
+.ds-addc-pick {
+  flex: 0 0 auto; display: grid; place-items: center;
+  width: 48px; height: 48px; padding: 0; cursor: pointer;
+  border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .8);
+  background: var(--sw, transparent); box-shadow: var(--edge-strong);
+}
+.ds-addc-pick.is-empty { background: hsl(var(--muted) / .6); }
+/* The empty state's half-moon, drawn rather than iconised: it is a state of one
+   control, not a glyph the icon registry has any other use for. Hidden the
+   moment the chip carries a colour, so the colour is the whole chip. */
+.ds-addc-pick-glyph { display: none; }
+.ds-addc-pick.is-empty .ds-addc-pick-glyph {
+  display: block; width: 42%; aspect-ratio: 1; border-radius: var(--radius-round);
+  border: 2px solid hsl(var(--muted-foreground) / .75);
+  background: linear-gradient(90deg, transparent 0 50%, hsl(var(--muted-foreground) / .3) 50% 100%);
+}
 .ds-addc-drop {
   flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
   width: calc(2rem * var(--a11y-fs)); height: calc(2rem * var(--a11y-fs));
@@ -746,6 +825,12 @@ background-image:
 /* The inline icon carries no width/height attributes (lib/icons.ts), so its box
    is set here - the house "Icon SVG CSS size" rule. */
 .ds-addc-drop svg { width: calc(1rem * var(--a11y-fs)); height: calc(1rem * var(--a11y-fs)); }
+/* What Add says when the field holds text it cannot read (plan 182 section 5.1). The
+   button is never disabled, so the row has to explain itself in words instead.
+   No margin of its own: `.ds-addc` is a grid and its gap already spaces this,
+   and hidden it leaves no row behind (the `.ds-addc-found` pattern above). */
+.ds-addc-hint { margin: 0; font-size: var(--fs-xs); color: hsl(var(--muted-foreground)); }
+.ds-addc-hint[hidden] { display: none; }
 .ds-addc-found { display: grid; gap: .5rem; }
 .ds-addc-found[hidden] { display: none; }
 .ds-addc-count { margin: 0; font-size: calc(.74rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
@@ -772,12 +857,38 @@ background-image:
    min-width is its longest option - pushed the name and the value underneath
    itself. 250 makes that width one full-width track instead, and 390px and the
    desktop widths keep resolving to the same track counts they always did. */
-.be-roles-strip { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+/* 250 → 320 (plan 182 section 4.2): a value line used to be a swatch NAME and is
+   now sometimes a short sentence ("Starter Paper stands in", "↳ follows
+   Primary"). The fixed items in a row are a 26px swatch, the Lc readout and a
+   136px picker, which with padding and gaps leaves a 250px track about 20px for
+   the meta column - three letters and an ellipsis. At 320 the same row keeps
+   ~90px, and the track counts that matter are unchanged: one full-width track
+   below 640px (the phone) and at the 507px stacked width, two across a desktop
+   split's main column. */
+.be-roles-strip { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
 .be-role { display: flex; align-items: center; gap: .6rem; min-width: 0; padding: .45rem .55rem; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .6); background: hsl(var(--background)); }
 .be-role.is-unset { border-style: solid; opacity: .75; }
+/* A slot filled by a colour NOBODY CHOSE - the starter's, standing in, or the
+   primary showing through (plan 182 section 4.2). It is not "unset" (something
+   is resolving there, and tools read it), and it is not a decision either, so
+   it gets its own quiet register: the row recedes and its value line drops the
+   mono face that says "this is a value somebody set". Never dashed - dashed is
+   a drop target in this app. */
+.be-role.is-starter { opacity: .72; }
+.be-role.is-starter .be-role-val { font-family: inherit; color: hsl(var(--muted-foreground)); }
+.be-role.is-starter .be-role-sw { opacity: .8; }
 .be-role-sw { flex: 0 0 auto; width: 26px; height: 26px; border-radius: var(--radius-sm); background: var(--sw, transparent); box-shadow: var(--edge-faint); }
 .be-role-meta { display: grid; gap: 1px; min-width: 0; margin-inline-end: auto; }
-.be-role-name { font-size: calc(.74rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+/* Clipped like the value line below it. `.be-role-meta` is a min-width: 0 grid,
+   so a name wider than its track OVERFLOWED rather than shrinking - and painted
+   straight over the APCA readout and the picker beside it. Visible the moment a
+   value line got longer than a swatch name ("Starter Paper stands in"), but the
+   overlap was always one long role label away. */
+.be-role-name {
+  font-size: calc(.74rem * var(--a11y-fs)); font-weight: 700; letter-spacing: .03em; text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .be-role-val { font-family: var(--font-mono); font-size: var(--fs-xs); color: hsl(var(--foreground)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .be-role-apca { font-family: var(--font-mono); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; color: hsl(var(--muted-foreground)); }
 .be-role-apca.is-weak { color: hsl(var(--destructive)); }
@@ -787,6 +898,13 @@ background-image:
    its content size, and for a select that is its longest option name, which
    out-ranks max-width and grew the picker over the card's own labels. */
 .be-role-pick { flex: 0 0 auto; min-width: 0; max-width: 8.5rem; font-size: var(--fs-xs); }
+/* `on-primary` is maintained by the derive against the primary so the pair
+   passes (plan 182 section 5.7 step 1), so its row is shown and MEASURED but has
+   no picker - the word sits where the picker would, in the muted register, so
+   the strip's columns still line up. */
+.be-role.is-derived .be-role-derived {
+  flex: 0 0 auto; font-size: var(--fs-xs); color: hsl(var(--muted-foreground));
+}
 
 /* The swatch popover's "Use as" row - roles reached from the colour itself. */
 .be-useas-row { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem; padding-top: .5rem; border-top: 1px solid hsl(var(--border) / .6); }
@@ -843,7 +961,6 @@ background-image:
   }
   [data-be-tab-panel="type"] > .be-typecards,
   [data-be-tab-panel="type"] > .be-typestage { grid-column: 1 / -1; }
-  [data-be-tab-panel="type"] > .be-custom-fonts,
   [data-be-tab-panel="type"] > .be-fonts { grid-column: 1; }
   [data-be-tab-panel="type"] > .be-typeroles { grid-column: 2; }
 }
@@ -939,6 +1056,114 @@ background-image:
   .be-split-divider::after { transition: none; }
 }
 
+/* ── Beats: the Colours room grows with the system (plan 182 section 3a) ──────
+      lib/brand-editor.ts stamps `data-be-beat="0|1|2"` on the room's panel from
+      the ownership report. Everything below is subtraction: with no attribute
+      (a locked build, a brand whose starter cannot be read) not one selector
+      matches and the room is byte-identical to what it always was.
+
+        0  nothing of its own - one centred column: the hero, the pick row, one
+           quiet line. No roles, no offer, no wings, no pane, no dock.
+        1  the first colour - the split returns with the add row, the generate
+           offer and Roles on the left, and the own tiles on the right.
+        2  a palette - everything.
+
+      WHY :not([open]) ON THE WINGS. A wing hidden outright cannot be deep-linked
+      into (`?focus=print`) or opened by the generate offer, because opening it
+      would change nothing visible. Hiding only the CLOSED ones keeps every
+      opener working: the press sets `open`, and the wing appears. */
+.be-beat0-head, .be-beat0-foot, .be-pal-later { display: none; }
+
+[data-be-beat="0"] .be-panel-head,
+[data-be-beat="0"] .be-roles,
+[data-be-beat="0"] .be-generate-cta,
+[data-be-beat="0"] .be-wing:not([open]),
+[data-be-beat="0"] .be-chart-details,
+[data-be-beat="0"] .be-gradients,
+[data-be-beat="0"] .be-pal-dock,
+[data-be-beat="0"]:not(.is-starter-shown) .be-split-side,
+[data-be-beat="0"]:not(.is-starter-shown) .be-split-divider { display: none; }
+/* …unless the pane was asked for by name. `?area=color&group=neutral` (the
+   Tokens room's "Open" beside the starter neutrals) is the one thing that draws
+   a starter tile, and on a fresh design system that IS beat 0 - so the pane
+   comes back for it, holding only that one folded group. */
+[data-be-beat="0"].is-starter-shown .be-palette .be-panel-head { display: block; }
+[data-be-beat="0"] .be-beat0-head,
+[data-be-beat="0"] .be-beat0-foot { display: block; }
+/* One centred column, the width of a sentence, sitting a little off the top so
+   the room does not read as a form that starts at the ceiling. */
+[data-be-beat="0"] .be-addcolor {
+  width: min(40rem, 100%); margin-inline: auto; margin-block-start: clamp(1rem, 6vh, 5rem);
+  border: 0; background: none; padding-inline: 0;
+  /* The hero is a DISPLAY size, above the chrome scale's 16px ceiling, so it
+     declares its own - with the largeText multiplier INSIDE the declaration,
+     which is the sanctioned home for it (see tokens.css's --fs-* note). One
+     declaration, two sizes: the phone steps it down near the foot of this file. */
+  --be-hero-fs: calc(26px * var(--a11y-fs));
+}
+[data-be-beat="0"] .be-beat0-title { margin: 0 0 .5rem; font-size: var(--be-hero-fs); font-weight: 800; letter-spacing: -.02em; line-height: 1.15; }
+[data-be-beat="0"] .be-beat0-sub { margin: 0 0 1.1rem; font-size: var(--fs-md); color: hsl(var(--muted-foreground)); }
+[data-be-beat="0"] .be-beat0-foot { margin: .9rem 0 0; font-size: var(--fs-sm); color: hsl(var(--muted-foreground)); }
+/* The chip is the subject of beat 0, so it is the size of one. */
+[data-be-beat="0"] .ds-addc-pick { width: 72px; height: 72px; }
+[data-be-beat="0"] .ds-addc-add { min-height: 44px; padding-inline: 1.25rem; }
+
+[data-be-beat="1"] .be-wing:not([open]),
+[data-be-beat="1"] .be-chart-details,
+[data-be-beat="1"] .be-gradients,
+[data-be-beat="1"] .be-pal-dock { display: none; }
+[data-be-beat="1"] .be-pal-later { display: block; }
+/* The offer and the wing are the same offer. Whichever is open owns it - and at
+   beat 2 the wing is on screen unfolded, so the panel has nothing left to say. */
+[data-be-beat="1"] .be-split-main:has(> .be-wing[data-be-wing="generate"][open]) .be-generate-cta,
+[data-be-beat="2"] .be-generate-cta { display: none; }
+
+/* A one-column room at beat 0: the pane and the divider are gone, so the main
+   column takes the whole width. Written at (0,3,0) so it beats
+   `.be-tab--split.is-collapsed`, whose own template the divider may have set. */
+.be-tab--split[data-be-tab-panel="color"][data-be-beat="0"]:not(.is-starter-shown) { grid-template-columns: minmax(0, 1fr); }
+
+/* ── The generate offer (plan 182 section 3a, beat 1). A panel, not a link on a
+      chip that a dismiss takes away: it is the one thing worth doing after a
+      first colour, and it says which colour it will build from. Full-perimeter
+      tint in the brand's own colour - never a single accent edge. */
+.be-generate-cta {
+  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+  border-color: hsl(var(--primary) / .5); background: hsl(var(--primary) / .06);
+}
+.be-generate-cta[hidden] { display: none; }
+.be-generate-cta-copy { display: grid; gap: .25rem; min-width: 0; flex: 1 1 18rem; }
+.be-generate-cta-title { font-size: var(--fs-lg); font-weight: 700; color: hsl(var(--foreground)); }
+.be-generate-cta-sub { font-size: var(--fs-sm); line-height: 1.5; color: hsl(var(--muted-foreground)); }
+.be-generate-cta-go { flex: 0 0 auto; margin-inline-start: auto; }
+
+/* What beat 1's pane is holding back, said once. */
+.be-pal-later { margin: .7rem 0 0; font-size: var(--fs-xs); color: hsl(var(--muted-foreground)); }
+
+/* Beat 0's "or bring a file" - a real button that reads as the link it is
+   (the studio has no shared link-button primitive; this is the only one). */
+.be-beat0-file {
+  border: 0; padding: 0; background: none; font: inherit; color: hsl(var(--primary));
+  text-decoration: underline; cursor: pointer;
+}
+.be-beat0-file:hover, .be-beat0-file:focus-visible { text-decoration: none; }
+
+/* The Print wing with no primary ramp to pin (the starter cut, plan 182 section
+   12) - one sentence where the controls would be. */
+.be-subst-none { margin: 0; font-size: var(--fs-sm); color: hsl(var(--muted-foreground)); }
+.be-subst-none[hidden] { display: none; }
+
+/* ── The pick card (plan 182 section 5.1) - the swatch popover with nothing
+      selected. Same box, different footer; the pair of actions that does not
+      apply is `hidden`, so only the geometry is here. */
+.be-editor-cancel[hidden], .be-editor-add[hidden], .be-editor-done[hidden] { display: none; }
+.be-editor-add { margin-inline-start: auto; }
+
+/* ── The one folded group where a starter colour is drawn: the Tokens room's
+      "Open" for the neutrals (`?area=color&group=neutral`). Recedes, because it
+      is scaffolding - and never dashed. */
+.be-pal-group--starter { opacity: .82; }
+
 /* ── Colour-from-logo suggestion (Colour tab, fed by the Logos tab). */
 .be-suggest { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin: -.3rem 0 .8rem; }
 .be-suggest[hidden] { display: none; }
@@ -955,16 +1180,14 @@ background-image:
 .be-suggest-dismiss:hover { color: hsl(var(--foreground)); }
 
 /* ── The post-add chip (plan 137 C1). Same box as the suggestion row above - it
-      is the same kind of row in the same panel - so only its own two additions
-      live here: the handover link, and a touch floor. The floor is not shared
-      with .be-suggest because these are the first controls a first-run tap
-      meets, and .be-btn is sized for a mouse. */
-.be-added-gen { font-size: calc(.76rem * var(--a11y-fs)); font-weight: 600; color: hsl(var(--primary)); text-decoration: none; }
-.be-added-gen:hover, .be-added-gen:focus-visible { text-decoration: underline; }
-.be-added-gen[hidden] { display: none; }
+      is the same kind of row in the same panel - so only its own addition lives
+      here: a touch floor. Not shared with .be-suggest because these are the
+      first controls a first-run tap meets, and .be-btn is sized for a mouse.
+      (`.be-added-gen` retired with the chip's handover LINK, plan 182 section
+      3a - the generate offer is `.be-generate-cta`, a panel that is on screen
+      for the whole of beat 1 rather than a link a dismiss takes away.) */
 @media (pointer: coarse) {
   .be-added .be-btn { min-height: 44px; }
-  .be-added .be-added-gen { display: inline-flex; align-items: center; min-height: 44px; }
   .be-added .be-suggest-dismiss { min-width: 44px; min-height: 44px; }
 }
 
@@ -975,23 +1198,38 @@ background-image:
       The sample paints through the role's own CSS var chain
       (`var(--font-display, var(--font-brand))`), which is why an unset Headings
       card shows the primary: that IS what a heading wears today, and a blank
-      would be a different, untrue answer. `is-set` is the only state class, and
-      it says "this role has a face of its own" - it wears the same tinted-fill
-      treatment as `.be-font-row.is-primary` (full border, never one accent
-      edge). */
+      would be a different, untrue answer.
+
+      `is-own` is the tint, and it is the WHOLE tint rule of this room (plan 182
+      section 4.2): a face the person installed. It replaced `is-set`, which
+      tinted any role that resolved to a face and therefore tinted the starter's
+      two on a profile nobody had touched (T1). An inherited face wears the
+      `.be-pal-starter` pill instead - the same pill the palette's inherited
+      groups wear, because it is the same statement - and a following role draws
+      the arrow and the role it follows. Full border and a tinted fill, never one
+      accent edge; same recipe as `.be-font-row.is-own`. */
 .be-typecard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .7rem; }
+/* The stage is DOM-moved into this grid, under the card that opened it (plan
+   182 section 6.6). It is full width wherever it lands - while it is open the
+   cards are the collapsed strip below, where the flex rules take over. */
+.be-typecard-grid > .be-typestage { grid-column: 1 / -1; }
 .be-typecard {
   display: grid; gap: .45rem; align-content: start; min-width: 0;
   padding: .75rem .8rem;
   border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .55);
 }
-.be-typecard.is-set { border-color: hsl(var(--primary) / .5); background: hsl(var(--primary) / .05); }
+.be-typecard.is-own { border-color: hsl(var(--primary) / .5); background: hsl(var(--primary) / .05); }
 .be-typecard-head { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
 .be-typecard-role { font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
 .be-typecard-face {
   flex: 1 1 8ch; min-width: 0; font-size: var(--fs-xs); color: hsl(var(--muted-foreground));
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* An own face is the person's own words on the card: full ink, and the weight
+   that says so. Everything else stays in the muted register above. */
+.be-typecard.is-own .be-typecard-face { color: hsl(var(--foreground)); font-weight: 600; }
+.be-typecard-tag { flex: none; }
+.be-typecard-tag[hidden] { display: none; }
 /* One line, always: the card is a glance at a face, and a wrapped sample would
    change height as the type does. */
 .be-typecard-sample {
@@ -1000,6 +1238,104 @@ background-image:
 }
 .be-typecard-sample--mono { font-size: calc(.86rem * var(--a11y-fs)); }
 .be-typecard-act { justify-self: start; }
+/* Beat 0's one line of reassurance, beside the one button (plan 182 section
+   3a). Present in the markup at every beat and shown at beat 0 only - the
+   sentence is about a first choice, and after one it is noise. */
+.be-typecard-note { display: none; font-size: var(--fs-xs); color: hsl(var(--muted-foreground)); }
+/* The card's one-line self, drawn only inside the collapsed strip below. */
+.be-typecard-chip { display: none; font-size: var(--fs-xs); color: hsl(var(--muted-foreground)); }
+
+/* ── Beat 0 (plan 182 section 3a): no face of its own, so ONE decision.
+      A centred column - the room's own title, the Primary card at reading size,
+      and the sentence that says what the other three roles do meanwhile. The
+      Fonts list and the specimen do not exist yet; there is nothing in them.
+      Everything here is a display switch on markup that is always present, so a
+      beat change is one attribute and never a re-render. */
+[data-be-tab-panel="type"][data-be-beat="0"] > .be-fonts,
+[data-be-tab-panel="type"][data-be-beat="0"] > .be-typeroles { display: none; }
+[data-be-tab-panel="type"][data-be-beat="0"] > .be-typecards {
+  border: 0; padding: 0; max-width: 42rem; margin-inline: auto; display: grid; gap: 1rem;
+}
+[data-be-tab-panel="type"][data-be-beat="0"] > .be-typecards > .be-panel-head { display: none; }
+[data-be-tab-panel="type"][data-be-beat="0"] .be-typecard-grid { grid-template-columns: minmax(0, 1fr); }
+/* The other three roles are deferred, not hidden: the sentence below the card
+   says what they are doing, and the button reveals them for the rest of the
+   mount (`data-be-more`). */
+[data-be-tab-panel="type"][data-be-beat="0"]:not([data-be-more]) .be-typecard:not([data-be-typecard="brand"]) { display: none; }
+/* Beat 0 is one card at reading size. The three sizes it needs are bigger than
+   the --fs-* scale carries (it stops at 16px), and tokens.css's rule is that the
+   a11y multiplier lives INSIDE a token while call sites read the token - so
+   these are room-scoped tokens rather than three more inline multipliers. */
+[data-be-tab-panel="type"][data-be-beat="0"] .be-typecard {
+  --be-type-hero-fs: calc(1.6rem * var(--a11y-fs));
+  --be-type-hero-mono-fs: calc(1rem * var(--a11y-fs));
+  padding: 1rem 1.1rem; gap: .55rem;
+}
+[data-be-tab-panel="type"][data-be-beat="0"] .be-typecard-sample { font-size: var(--be-type-hero-fs); }
+[data-be-tab-panel="type"][data-be-beat="0"] .be-typecard-sample--mono { font-size: var(--be-type-hero-mono-fs); }
+[data-be-tab-panel="type"][data-be-beat="0"] .be-typecard[data-be-typecard="brand"] .be-typecard-act { justify-self: start; }
+[data-be-tab-panel="type"][data-be-beat="0"] > .be-typecards:not([data-collapsed]) .be-typecard[data-be-typecard="brand"] .be-typecard-note { display: inline; }
+/* The lede and the deferral sentence are display:none by default and SHOWN by
+   the beat-0 rules - which is why the collapsed strip below does not need to
+   out-specify anything to hide them: `:not([data-collapsed])` in the show rule
+   simply stops showing them. */
+.be-typelede { display: none; --be-type-lede-fs: calc(1.5rem * var(--a11y-fs)); }
+[data-be-tab-panel="type"][data-be-beat="0"] > .be-typecards:not([data-collapsed]) > .be-typelede { display: grid; gap: .35rem; }
+.be-typelede-title { margin: 0; font-size: var(--be-type-lede-fs); font-weight: 800; letter-spacing: -.02em; color: hsl(var(--foreground)); }
+.be-typelede-sub { margin: 0; font-size: var(--fs-md); color: hsl(var(--muted-foreground)); }
+.be-typemore { display: none; margin: 0; font-size: var(--fs-xs); color: hsl(var(--muted-foreground)); }
+[data-be-tab-panel="type"][data-be-beat="0"]:not([data-be-more]) > .be-typecards:not([data-collapsed]) > .be-typemore { display: block; }
+.be-typemore-btn {
+  border: 0; background: none; padding: 0; margin-inline-start: .3rem;
+  font: inherit; font-weight: 600; color: hsl(var(--foreground));
+  text-decoration: underline; cursor: pointer;
+}
+.be-typemore-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+
+/* ── The collapsed strip (plan 182 section 6.6). While the stage is open the
+      four cards fold to one line each - role plus what serves it - so the
+      decision and its subject are on the same screen, which on a phone they
+      were not (T7). The panel gives up its own chrome while collapsed, because
+      the stage moves INSIDE it and two nested panel borders read as a box in a
+      box. `order` keeps the stage after the pills whatever card it follows in
+      the DOM; the DOM order is what a widthless reading (and the keyboard) go
+      by, so both are right. */
+.be-typecards[data-collapsed] { border: 0; padding: 0; }
+/* Beat 0 is a narrow centred column, but the stage that opens inside it is a
+   comparison and wants the room's full width. */
+[data-be-tab-panel="type"][data-be-beat="0"] > .be-typecards[data-collapsed] { max-width: none; }
+.be-typecards[data-collapsed] > .be-panel-head { display: none; }
+.be-typecards[data-collapsed] .be-typecard-grid { display: flex; flex-wrap: wrap; gap: .45rem; }
+.be-typecards[data-collapsed] .be-typecard {
+  display: flex; align-items: center; gap: .45rem; flex: 0 1 auto;
+  min-height: calc(2.5rem * var(--a11y-fs));
+  padding: 0 .75rem; border-radius: var(--radius-pill);
+}
+/* `display: contents` rather than a second copy of the role name in the markup:
+   the header stops being a box and its role span becomes an item of the pill. */
+.be-typecards[data-collapsed] .be-typecard-head { display: contents; }
+.be-typecards[data-collapsed] .be-typecard-face,
+.be-typecards[data-collapsed] .be-typecard-tag,
+.be-typecards[data-collapsed] .be-typecard-sample,
+.be-typecards[data-collapsed] .be-typecard-note,
+.be-typecards[data-collapsed] .be-typecard-act { display: none; }
+.be-typecards[data-collapsed] .be-typecard-chip { display: inline; white-space: nowrap; }
+.be-typecards[data-collapsed] .be-typecard.is-choosing {
+  border-color: hsl(var(--primary) / .5); background: hsl(var(--primary) / .05);
+}
+.be-typecards[data-collapsed] .be-typecard.is-choosing .be-typecard-role,
+.be-typecards[data-collapsed] .be-typecard.is-choosing .be-typecard-chip { color: hsl(var(--foreground)); }
+/* The grammar holds in the strip: an own face is full ink here too. */
+.be-typecards[data-collapsed] .be-typecard.is-own .be-typecard-chip { color: hsl(var(--foreground)); font-weight: 600; }
+/* The stage, when it is a grid item: full width, and after every pill whatever
+   card it follows in the DOM. Below 640px it is not here at all - placeStage
+   leaves it after the strip, because the strip is a sideways scroller there and
+   a stage inside one would be off to the right of it. */
+.be-typecards[data-collapsed] .be-typestage { flex: 1 0 100%; order: 1; }
+@media (max-width: 640px) {
+  .be-typecards[data-collapsed] .be-typecard-grid { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .be-typecards[data-collapsed] .be-typecard { flex: none; }
+}
 
 /* ── The compare stage's frame (plan 97 section 7.2). Everything INSIDE
       [data-be-typestage-mount] belongs to styles/parts/type-compare.css, which
@@ -1027,6 +1363,23 @@ background-image:
 .be-typestage-x:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 .be-typestage-x svg { width: var(--fs-lg); height: var(--fs-lg); }
 .be-typestage-search { display: flex; gap: .5rem; flex-wrap: wrap; }
+/* Pinned families - one press each (plan 182 section 6.4). A row of names under
+   the field, so a fresh origin has something to press before it has something
+   to type. On a phone the row scrolls sideways rather than wrapping into three
+   lines of chips above the cards they would push off-screen. */
+.be-typestage-pins { display: flex; align-items: center; gap: .4rem .5rem; flex-wrap: wrap; }
+.be-typestage-pins[hidden] { display: none; }
+.be-typestage-pins-label { font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
+.be-typestage-pinrow { display: flex; gap: .4rem; flex-wrap: wrap; min-width: 0; }
+.be-typestage-pin { border-radius: var(--radius-pill); }
+.be-typestage-pinnote { font-size: var(--fs-2xs); color: hsl(var(--muted-foreground)); }
+@media (max-width: 640px) {
+  .be-typestage-pinrow { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .be-typestage-pin { flex: none; }
+  .be-typestage-pinnote { display: none; }
+  /* One decision per line on a phone: the field, then the press (TypePhone). */
+  .be-typestage-search { display: grid; }
+}
 /* The note beside "Add a face" says what the button opens, so the management
    list never looks like a dead end now that the search lives in the stage. */
 .be-font-addnote { align-self: center; font-size: var(--fs-xs); color: hsl(var(--muted-foreground)); }
@@ -1075,6 +1428,25 @@ background-image:
   background: hsl(var(--background)); color: hsl(var(--foreground)); outline: none;
 }
 .be-logo-addidentity input:focus { border-color: hsl(var(--ring) / .6); }
+
+/* ── Tokens tab: the starter neutrals (plan 182 section 12).
+   Ink and paper, listed where they belong - one row, nine small tiles and the
+   one Open that ever draws a starter tile (it routes to the Colours pane with
+   that group revealed). Muted and small because it is scaffolding; never dashed,
+   which in this app means drop target. */
+.be-neutrals { display: grid; gap: .35rem; margin-bottom: 1.2rem; }
+.be-neutrals[hidden] { display: none; }
+.be-neutrals-row { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.be-neutrals-label { font-size: var(--fs-sm); font-weight: 600; color: hsl(var(--muted-foreground)); }
+.be-neutrals-tiles { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+.be-neutrals-tile {
+  width: 14px; height: 14px; border-radius: var(--radius-xs);
+  background: var(--sw, transparent);
+  box-shadow: var(--edge-faint);
+}
+.be-neutrals-open { margin-inline-start: auto; }
+.be-neutrals-note { margin: 0; font-size: var(--fs-sm); color: hsl(var(--muted-foreground)); }
+.be-neutrals-note[hidden] { display: none; }
 
 /* ── Tokens tab: grouped rows, one editor per kind. */
 .be-tok-list { display: grid; gap: 1rem; margin-bottom: 1rem; }
@@ -1253,6 +1625,45 @@ background-image:
   /* The download pill sticks to the viewport bottom here (no pane scroller
      below 1100px) - lifted clear of the palette sheet's peek strip. */
   .be-pal-dock { bottom: calc(var(--stu-peek-h, 64px) + var(--safe-bottom) + 12px); }
+
+  /* ── Beat 0 on a phone (plan 182 section 7, ColoursPhone.dc.html). Chip and
+        field on one line, then the three doors with Add filled and taking the
+        rest of the row, so the whole beat fits under the header and the room
+        chips on a 390×844 screen. The hero steps down to 22px, which is the
+        one line of copy that gives way - the room chips never do. */
+  [data-be-beat="0"] .be-addcolor { --be-hero-fs: calc(22px * var(--a11y-fs)); margin-block-start: 1.25rem; }
+  [data-be-beat="0"] .ds-addc-row { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: .5rem; }
+  [data-be-beat="0"] .ds-addc-pick { width: 64px; height: 64px; grid-row: 1; }
+  [data-be-beat="0"] .ds-addc-input { grid-column: 2; grid-row: 1; min-width: 0; }
+  [data-be-beat="0"] .ds-addc-drop,
+  [data-be-beat="0"] .ds-addc-add { grid-row: 2; min-height: 44px; }
+  [data-be-beat="0"] .ds-addc-drop { width: 44px; }
+  [data-be-beat="0"] .ds-addc-add { grid-column: -2 / -1; justify-self: stretch; }
+
+  /* The pick card as the phone's bottom sheet (plan 182 section 5.3). It is the
+     same card - not reparented into lib/mobile-sheet.ts's driver, which owns
+     the palette mirror and admits one occupant - so the inline left/top the
+     anchored pose writes is cleared by brand-editor.ts before this pose
+     applies, and nothing here has to out-!important it. */
+  .be-editor.is-picksheet {
+    position: fixed; left: 0; right: 0; top: auto; width: auto;
+    /* Rides ABOVE the soft keyboard, which this card actually raises (its name
+       field is a text input), and reaches the screen edge when there is none.
+       The home-indicator inset is padding on the card below, so the card's
+       background still runs to the edge while its footer clears the strip. */
+    bottom: var(--vv-bottom, 0px);
+    z-index: 60; /* over the palette sheet (50), which it parks below */
+  }
+  .be-editor.is-picksheet .be-editor-card {
+    max-height: min(86dvh, calc(100dvh - var(--vv-bottom, 0px) - 12px));
+    border-radius: var(--radius) var(--radius) 0 0;
+    padding-bottom: var(--safe-bottom);
+  }
+  /* Single owner of the bottom edge, the rule the tray already keeps: two fixed
+     sheets stacked is one of them unreachable, so the palette mirror and its
+     grip stand down while the picker is up. */
+  .start:has(.be-editor.is-picksheet:not([hidden])) > .stu-sheet,
+  .start:has(.be-editor.is-picksheet:not([hidden])) > .stu-sheet-grip { display: none; }
 
   /* The bulk bar rides the sheet's FREE EDGE, exactly as the grip does. It
      cannot be lifted over the sheet with z-index (see the ladder note at
@@ -1806,7 +2217,11 @@ html[data-a11y-motion="reduce"] .be-ramp-curve { transition: none; }
       never behind it in the first place. It also stops fighting the download
       dock, which stands down while selecting ([data-pal-selecting] below). */
 .be-pal-topbtns { display: flex; gap: .4rem; }
-[data-be-tile].is-multi { position: relative; outline: 2px solid hsl(var(--primary)); outline-offset: 1px; }
+/* The selection ring: a 2px gap then a 2px accent ring, drawn OUTSIDE the tile
+   (plan 182 section 5.5's mockup). Outside is what makes it read on a white
+   swatch as well as a black one - the ring never has to contrast with the
+   colour it is marking, only with the panel behind it. */
+[data-be-tile].is-multi { position: relative; outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
 /* The tick badge takes the page GROUND as its ink, not --primary-foreground:
    that pair IS the primary-fill button recipe, declared exactly once in
    buttons.css (rec 2 / primitive-guards R2), and a selection tick on a
@@ -1827,17 +2242,77 @@ html[data-a11y-motion="reduce"] .be-ramp-curve { transition: none; }
   background: hsl(var(--primary)); color: hsl(var(--background));
   pointer-events: none;
 }
+/* The INK pill (plan 182 section 5.5's mockup). The palette under it is the
+   subject, so the bar is the one surface in this room that does not follow the
+   brand: it inverts the page pair, which reads the same way in either theme and
+   cannot be tinted into the swatches it sits over. */
 .be-bulkbar {
   position: fixed; left: 50%; bottom: calc(4.2rem + var(--safe-bottom) + var(--vv-bottom, 0px));
   transform: translateX(-50%); z-index: 40;
-  display: flex; align-items: center; gap: var(--sp-6);
+  display: flex; align-items: center; gap: var(--sp-3);
   padding: 8px 8px 8px 16px; border-radius: var(--radius-pill);
-  background: hsl(var(--popover)); color: hsl(var(--popover-foreground));
+  background: hsl(var(--foreground)); color: hsl(var(--background));
   border: 1px solid hsl(var(--border)); box-shadow: 0 .6rem 2rem #0006;
   font-size: var(--fs-md);
   white-space: nowrap;
+  max-width: calc(100vw - 24px);
+}
+/* ≥1100px the palette pane is viewport-anchored, so the bar takes its bottom
+   edge (brand-editor.ts measures it - CSS cannot know the split's width, which
+   the divider makes a per-person number). Below that, and on the phone, it
+   stays the centred pill the sheet rules position against. */
+.be-bulkbar.is-docked {
+  left: var(--be-bulk-left); width: var(--be-bulk-w);
+  /* The measured edge PLUS the two insets the undocked pose already carries:
+     both are 0 on the desktop this pose is for, and neither may be dropped from
+     a fixed bottom anchor (plans/132, styles/mobile-chrome-contract.test.ts). */
+  bottom: calc(var(--be-bulk-bottom) + var(--safe-bottom) + var(--vv-bottom, 0px));
+  transform: none;
 }
 .be-bulkbar[hidden] { display: none; }
+/* A selection belongs to the Colours room. The bar is a fixed surface outside
+   the tab panels (it has to be, to sit over them), so leaving for the Type or
+   Logos room would otherwise leave it floating over a room it cannot act on.
+   The selection itself survives - come back and it is still there. */
+[data-brand-editor][data-active-tab]:not([data-active-tab="color"]) .be-bulkbar { display: none; }
+.be-bulkbar-n { font-weight: 700; }
+.be-bulkbar-sep { width: 1px; align-self: stretch; margin: 2px; background: hsl(var(--background) / .3); }
+.be-bulkbar-wrap { position: relative; display: inline-flex; }
+.be-bulkbar-wrap[hidden] { display: none; }
+/* The bar's own outline button - .be-btn's shape on an inverted ground, which
+   is why it cannot simply alias it. */
+.be-bulkbar-btn {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  border: 1px solid hsl(var(--background) / .35); border-radius: var(--radius-pill);
+  padding: .35rem .7rem; cursor: pointer;
+  font: inherit; font-weight: 600; font-size: var(--fs-sm);
+  background: transparent; color: inherit;
+}
+.be-bulkbar-btn:hover { background: hsl(var(--background) / .14); }
+.be-bulkbar-btn[aria-expanded="true"] { background: hsl(var(--background) / .2); }
+/* The menu opens UP from its button - the bar is already at the bottom edge. */
+.be-bulkbar-menu {
+  position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 1;
+  min-width: 190px; max-height: 42dvh; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 1px;
+  padding: var(--sp-2); border-radius: var(--radius-md);
+  background: hsl(var(--popover)); color: hsl(var(--popover-foreground));
+  border: 1px solid hsl(var(--border)); box-shadow: var(--shadow-3);
+  white-space: normal;
+}
+.be-bulkbar-menu[hidden] { display: none; }
+.be-bulkbar-menu-note {
+  margin: 0 0 var(--sp-2); padding: 0 var(--sp-3);
+  font-size: var(--fs-xs); color: hsl(var(--muted-foreground));
+}
+.be-bulkbar-item {
+  border: 0; background: transparent; color: inherit; cursor: pointer; text-align: start;
+  padding: .4rem var(--sp-3); border-radius: var(--radius-sm);
+  font: inherit; font-size: var(--fs-sm);
+}
+.be-bulkbar-item:hover { background: hsl(var(--muted) / .7); }
+.be-bulkbar-newgroup { display: flex; align-items: center; gap: var(--sp-2); }
+.be-bulkbar-newname { min-width: 0; flex: 1 1 auto; font-size: var(--fs-sm); }
 .be-bulkbar-del {
   border: 0; border-radius: var(--radius-pill); padding: .45rem .95rem; cursor: pointer;
   font: inherit; font-weight: 600;
@@ -1847,9 +2322,16 @@ html[data-a11y-motion="reduce"] .be-ramp-curve { transition: none; }
 .be-bulkbar-x {
   border: 0; background: transparent; color: inherit; cursor: pointer;
   font: inherit; font-size: var(--fs-lg);
+  margin-inline-start: auto;
   padding: .3rem .55rem; border-radius: var(--radius-pill);
 }
-.be-bulkbar-x:hover { background: hsl(var(--muted) / .6); }
+.be-bulkbar-x:hover { background: hsl(var(--background) / .2); }
+/* Phone: the bar is a scrolling row rather than a wrap - it docks above the
+   sheet handle (see the mobile block), where there is one line of room. */
+@media (max-width: 640px) {
+  .be-bulkbar { gap: var(--sp-2); padding: 6px 6px 6px 12px; overflow-x: auto; }
+  .be-bulkbar-menu { max-height: 34dvh; }
+}
 /* While selecting, the download dock yields the floor to the action bar (both
    are fixed, and on a phone they land on top of each other). The attribute is
    set on the editor's MOUNT element (brand-editor.ts's `root`), which is the

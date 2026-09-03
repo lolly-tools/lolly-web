@@ -17,8 +17,17 @@ import {
   seedStacks,
   clampIndex,
   matchMorphBoxes,
+  cameraFor,
+  unionRect,
+  rectOnScreen,
+  rectsOverlap,
+  flightPath,
+  FLIGHT_MIN_MS,
+  FLIGHT_MAX_MS,
+  FLIGHT_MARGIN,
   type FrameSpec,
   type MorphBox,
+  type Rect,
 } from './present-math.ts';
 
 /** A flat three-slide deck (no stacks) - the M1 shape. */
@@ -310,4 +319,90 @@ test('seedStacks abstains: authored stackOf anywhere, a single column, or nothin
   // Pure side-by-side has nothing to stack.
   const flat = linear();
   assert.deepEqual(seedStacks(flat), flat);
+});
+
+// ── The canvas camera and the flight transition (plan 179 M4 section 7) ──────────────
+
+/** A 16:9 board, and the presenter viewport the tests fly it in. */
+const BOARD = (x: number, y = 0): Rect => ({ x, y, w: 1920, h: 1080 });
+const VIEW = { w: 1000, h: 600 };
+
+/** Is `r` inside the viewport, with a pixel of slack for rounding? */
+function insideView(r: Rect): boolean {
+  return r.x >= -1 && r.y >= -1 && r.x + r.w <= VIEW.w + 1 && r.y + r.h <= VIEW.h + 1;
+}
+
+test('cameraFor centres a rect in the viewport and fits it with the margin to spare', () => {
+  const cam = cameraFor(BOARD(0), VIEW, 1);
+  // Width-bound here (1000/1920 < 600/1080), so the frame fills the width exactly.
+  assert.equal(cam.scale, 1000 / 1920);
+  const on = rectOnScreen(BOARD(0), cam);
+  assert.ok(Math.abs(on.x) < 1, 'flush left when width-bound');
+  assert.equal(Math.round(on.x + on.w), VIEW.w, 'and flush right');
+  assert.equal(Math.round(on.y + on.h / 2), VIEW.h / 2, 'centred vertically');
+  // A margin shrinks the frame about the same centre - it never moves it off centre.
+  const inset = cameraFor(BOARD(0), VIEW, 0.9);
+  const onInset = rectOnScreen(BOARD(0), inset);
+  assert.equal(Math.round(onInset.x + onInset.w / 2), VIEW.w / 2);
+  assert.ok(onInset.w < on.w, 'the margin leaves room around the frame');
+});
+
+test('unionRect covers every frame, and degrades to a unit box on nothing', () => {
+  assert.deepEqual(unionRect([BOARD(0), BOARD(4000, 500)]), { x: 0, y: 0, w: 5920, h: 1580 });
+  assert.deepEqual(unionRect([]), { x: 0, y: 0, w: 1, h: 1 });
+});
+
+test('flightPath: a near move is ONE eased leg, framing the destination exactly', () => {
+  // The destination is a quarter-size board inside the one being left, so once the camera
+  // frames it the frame it came from still fills the screen - nothing is lost sight of.
+  const a = BOARD(0);
+  const b: Rect = { x: 200, y: 100, w: 480, h: 270 };
+  const path = flightPath(a, b, VIEW)!;
+  assert.ok(path, 'a flyable pair');
+  assert.equal(path.zoomOut, false, 'no arc needed');
+  assert.equal(path.phases.length, 1);
+  const camB = cameraFor(b, VIEW, FLIGHT_MARGIN);
+  assert.deepEqual(
+    { scale: path.phases[0]!.scale, tx: path.phases[0]!.tx, ty: path.phases[0]!.ty },
+    camB,
+    'the move ends framing B, exactly as the stacked stage would fit it',
+  );
+  assert.equal(path.phases[0]!.ms, path.total, 'one leg takes the whole move');
+});
+
+test('flightPath: frames that do not share the screen ARC out to hold both, then in on B', () => {
+  const a = BOARD(0);
+  const b = BOARD(4000);
+  const camB = cameraFor(b, VIEW, FLIGHT_MARGIN);
+  // The premise: from B's camera, A is nowhere on screen - that is what makes the arc
+  // necessary rather than decorative.
+  assert.equal(rectsOverlap(rectOnScreen(a, camB), { x: 0, y: 0, ...VIEW }), false);
+  const path = flightPath(a, b, VIEW)!;
+  assert.equal(path.zoomOut, true);
+  assert.equal(path.phases.length, 2);
+  // Top of the arc: BOTH frames are on screen at once.
+  const out = path.phases[0]!;
+  assert.ok(insideView(rectOnScreen(a, out)), 'the frame being left is inside the wide shot');
+  assert.ok(insideView(rectOnScreen(b, out)), 'and so is the one being flown to');
+  assert.ok(out.scale < camB.scale, 'the wide shot is further away than the arrival');
+  // ...and the landing is the same frame-filling camera the near move ends on.
+  const last = path.phases[1]!;
+  assert.deepEqual({ scale: last.scale, tx: last.tx, ty: last.ty }, camB);
+  assert.equal(out.ms + last.ms, path.total, 'the legs add up to the whole move');
+  assert.ok(out.ms > 0 && last.ms > 0, 'neither leg is instant');
+});
+
+test('flightPath: the duration is clamped to the band, and grows with the distance', () => {
+  const near = flightPath(BOARD(0), BOARD(0), VIEW)!;
+  assert.equal(near.total, FLIGHT_MIN_MS, 'no travel takes the floor');
+  const far = flightPath(BOARD(0), BOARD(40_000), VIEW)!;
+  assert.equal(far.total, FLIGHT_MAX_MS, 'a long haul is capped, not slower and slower');
+  const mid = flightPath(BOARD(0), BOARD(2000), VIEW)!;
+  assert.ok(mid.total > FLIGHT_MIN_MS && mid.total < FLIGHT_MAX_MS, 'a neighbouring board sits between');
+  assert.ok(far.spans > mid.spans && mid.spans > near.spans, 'spans measure the travel');
+});
+
+test('flightPath: nothing to fly returns null (a zero viewport, an empty frame)', () => {
+  assert.equal(flightPath(BOARD(0), BOARD(2000), { w: 0, h: 600 }), null);
+  assert.equal(flightPath({ x: 0, y: 0, w: 0, h: 0 }, BOARD(2000), VIEW), null);
 });

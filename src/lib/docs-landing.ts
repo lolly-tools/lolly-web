@@ -108,8 +108,8 @@ export function ensureLandingStyles(): void {
  * `/?lang=de#/tool/...` in a locale - and each of those is a full page load that would
  * drop the reader, the music and the a11y prefs on the floor. Rewritten to the bare
  * `#/...` route they stay in the SPA. The app-root links (the hero mark and both "Launch
- * App" buttons) land on the dashboard: you are already in the app, so the honest target
- * is your own workspace, not a reload of it. Labels and copy are untouched.
+ * App" buttons) go to the tools gallery, the app's main view (Andy, 2026-09-03; they
+ * used to go to the dashboard). Labels and copy are untouched.
  *
  * Doc links (`/info/<slug>.html`) are NOT this function's business - views/docs.ts runs
  * rewriteDocLinks over the same fragment for those.
@@ -128,6 +128,40 @@ export function adaptLandingLinks(root: ParentNode): void {
       a.style.removeProperty('-webkit-backdrop-filter');
     }
   });
+}
+
+/**
+ * The ink that reads on a painted fill: black above the relative luminance where the
+ * two WCAG ratios cross (about 18%), white below it, so the chosen ink always has the
+ * higher contrast of the two. Null when the string is not an rgb()/rgba() colour or the
+ * fill is mostly transparent (jsdom's empty computed style, a glass button with no
+ * fill), in which case the stylesheet's fallback stands.
+ */
+export function inkFor(cssColor: string): '#000' | '#fff' | null {
+  const m = /^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/.exec((cssColor || '').trim());
+  if (!m) return null;
+  const a = m[4] === undefined ? 1 : (m[4].endsWith('%') ? parseFloat(m[4]) / 100 : parseFloat(m[4]));
+  if (!(a > 0.5)) return null;
+  const lin = (c: number): number => { const s = c / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; };
+  const L = 0.2126 * lin(+m[1]!) + 0.7152 * lin(+m[2]!) + 0.0722 * lin(+m[3]!);
+  return L > 0.179 ? '#000' : '#fff';
+}
+
+/**
+ * Set the hero's primary button ink from the fill it actually painted. The fill is the
+ * active brand's primary (docs-landing.css), which can be anything from the starter's
+ * near-black ink to a light pastel, and CSS alone cannot pick a label colour for an
+ * unknown fill - so the label used to be a fixed black and vanished on a dark brand
+ * (Andy's screenshot, 2026-09-03). Runs once the fragment is in the DOM; a fill the
+ * engine cannot report (jsdom) leaves the stylesheet's fallback in place.
+ */
+export function fitHeroCtaInk(root: ParentNode): void {
+  const btn = root.querySelector<HTMLElement>('.hero-cta .btn-primary');
+  if (!btn || !btn.isConnected) return;
+  let fill = '';
+  try { fill = getComputedStyle(btn).backgroundColor; } catch { return; }
+  const ink = inkFor(fill);
+  if (ink) btn.style.setProperty('--hero-cta-ink', ink);
 }
 
 /**

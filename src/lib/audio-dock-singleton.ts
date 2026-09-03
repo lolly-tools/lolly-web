@@ -37,6 +37,7 @@ import { neuroDemoActive } from './neuro-demo.ts';
 import { attachWobble, type WobbleHandle } from './wobble.ts';
 import { requestDock, releaseDock, isDocked, edgeDockHitTest, edgeDockPreview } from './edge-dock.ts';
 import { icon } from './icons.ts';
+import { t } from '../i18n.ts';
 
 const DOCK_ID = 'neuro-dock';
 const STYLE_ID = 'lolly-audio-dock-app-styles';
@@ -164,7 +165,10 @@ function dockNeuroToEdge(): void {
   if (!el) return;
   // onRelease fires when it later undocks (drag-out, or the breakpoint guard); its inline
   // left/top persist, so it re-floats where it was. The kick is the "pop out" wobble.
-  if (requestDock('neuro', el, { onRelease: () => wobble?.impulse(-edgeKick(), 0), icon: icon('music'), label: 'Player' })) {
+  // The label is VISIBLE text once three panels share the column (the dock's tab strip
+  // names each one), so it goes through t() rather than reading English beside a
+  // translated neighbour.
+  if (requestDock('neuro', el, { onRelease: () => wobble?.impulse(-edgeKick(), 0), icon: icon('music'), label: t('Player') })) {
     wobble?.impulse(edgeKick(), 0);
   }
 }

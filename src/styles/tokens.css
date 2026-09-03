@@ -214,7 +214,7 @@
      here" stays legible as transparency rather than reading as a solid backdrop the
      tool chose. Alpha on both squares → it rides whatever surface is underneath. */
   --preview-checker: repeating-conic-gradient(
-    hsl(var(--muted-foreground) / .05) 0% 25%,
+    hsl(var(--muted-foreground) / .025) 0% 25%,
     transparent 0% 50%) 50% / 14px 14px;
 }
 

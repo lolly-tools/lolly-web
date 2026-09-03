@@ -75,11 +75,42 @@
 .pr-stage[data-pr-transition="fade"] .pr-page.pr-past,
 .pr-stage[data-pr-transition="fade"] .pr-page.pr-future { --pr-tx: 0px; --pr-ty: 0px; --pr-op: 0; }
 
+/* Deck-level `none`: a straight cut. No travel, no fade, no transition to interpolate -
+   the frame field spells this one "Cut", and it should look like one. */
+.pr-stage[data-pr-transition="none"] .pr-page { transition: none; }
+.pr-stage[data-pr-transition="none"] .pr-page.pr-past,
+.pr-stage[data-pr-transition="none"] .pr-page.pr-future { --pr-tx: 0px; --pr-ty: 0px; --pr-op: 0; }
+
 /* Morph (M5): while a morph is in flight, the PAGES crossfade in place (both centred) so
    only the matched boxes - FLIP-animated by the conductor via WAAPI - appear to travel. */
 .pr-stage.pr-morphing .pr-page.pr-past,
 .pr-stage.pr-morphing .pr-page.pr-future { --pr-tx: 0px; --pr-ty: 0px; --pr-op: 0; }
 .pr-stage.pr-morphing .pr-page.pr-active { --pr-tx: 0px; --pr-ty: 0px; --pr-op: 1; }
+
+/* ---- The canvas stage: "fly between artboards" (plan 179 M4 section 7) -------------- */
+/* A flight is not a swap of two centred pages - it is a CAMERA over the arrangement the
+   deck was authored in. Every page sits at its own x/y inside `.pr-frames`, and one
+   transform on that container carries the audience from one frame to the next. The camera
+   rides three custom properties so the conductor can set the duration per leg of the arc
+   (zoom out to hold both frames, then in on the destination) while the transition
+   interpolates the composed transform. Placement is `cameraFor` in present-math.ts - the
+   same function the overview map uses, so the map and the flight cannot disagree about
+   where a frame is. Reduced motion never enters this mode; it crossfades instead. */
+.pr-stage.pr-canvas .pr-frames {
+  transform-origin: 0 0;
+  transform: translate(var(--pr-cam-x, 0px), var(--pr-cam-y, 0px)) scale(var(--pr-cam-s, 1));
+  will-change: transform;
+}
+.pr-stage.pr-canvas .pr-page {
+  left: var(--pr-cx, 0px);
+  top: var(--pr-cy, 0px);
+  transform-origin: 0 0;
+  /* The camera owns the scale and the offset; a page in canvas mode is simply where it
+     was authored, at full size, fully opaque. */
+  transform: none;
+  --pr-op: 1;
+  transition: none;
+}
 
 /* Unload window - belt and braces beside a11y.css's global [hidden] rule. */
 .pr-page[hidden] { display: none; }
@@ -174,15 +205,47 @@
 }
 .pr-stage.pr-idle .pr-hud:hover { opacity: 1; transform: translateX(-50%); }
 
+/* ---- Stage note (plan 179 P4) ------------------------------------------------------ */
+/* A transient message, mounted INSIDE the stage on purpose: the presenter normally owns
+   fullscreen, and a body-level toast would paint behind the fullscreen element where no
+   one can see it. Sits just above the HUD, never takes the pointer, and is hidden (not
+   just faded) between messages so it leaves the a11y tree with the text. */
+.pr-note {
+  position: absolute;
+  left: 50%;
+  bottom: calc(max(18px, var(--safe-bottom)) + var(--vv-bottom, 0px) + 62px);
+  transform: translateX(-50%);
+  z-index: 6; /* above the speaker overlay - it may be reporting on that very panel */
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 9px 14px;
+  border-radius: var(--radius-pill);
+  background: rgba(12, 16, 24, 0.86);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  box-shadow: var(--shadow-3);
+  font: 500 13px/1.35 SUSE, system-ui, sans-serif;
+  color: rgba(255, 255, 255, 0.92);
+  text-align: center;
+  pointer-events: none;
+  animation: pr-note-in 0.22s ease both;
+}
+@keyframes pr-note-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  to { opacity: 1; transform: translateX(-50%); }
+}
+
 /* ---- Builds / fragments (M3) ------------------------------------------------------- */
 /* A build box starts hidden and fades in when its step is revealed (`pr-shown`). Reveal
-   is opacity-only here; per-box `enter` one-shots are a later refinement. Reduced motion
-   and OS reduce both cut the fade (below). Only inside the presenter - never the editor. */
-.pr-page .pr-build {
+   is opacity-only here. Reduced motion and OS reduce both cut the fade (below). Only
+   inside the presenter - never the editor.
+   NOT on a slide running its own motion (`pr-motion`, plan 179 M4): there a fragment is
+   held back by the applier's own `seq-off` and enters with whatever Enter its author gave
+   it, and this fixed fade would sit on top of that one, fighting it for the opacity. */
+.pr-stage:not(.pr-motion) .pr-page .pr-build {
   opacity: 0;
   transition: opacity var(--pr-dur) ease;
 }
-.pr-page .pr-build.pr-shown { opacity: 1; }
+.pr-stage:not(.pr-motion) .pr-page .pr-build.pr-shown { opacity: 1; }
 
 /* ---- Kiosk dwell progress + blackout (M2) ------------------------------------------ */
 .pr-progress {
@@ -288,7 +351,9 @@
 @media (prefers-reduced-motion: reduce) {
   .pr-page { transition: opacity var(--pr-dur) linear; }
   .pr-page.pr-past, .pr-page.pr-future { --pr-tx: 0px; --pr-ty: 0px; }
+  .pr-note { animation: none; }
 }
+.pr-stage.pr-reduced .pr-note { animation: none; }
 .pr-stage.pr-reduced { --pr-dur: 0.14s; }
 .pr-stage.pr-reduced .pr-page { transition: opacity var(--pr-dur) linear; }
 .pr-stage.pr-reduced .pr-page.pr-past,

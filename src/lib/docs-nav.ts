@@ -59,8 +59,9 @@ export function toReaderHref(href: string): string | null {
  * Followed as written, each is a full page load: the reader unmounts, the music stops,
  * and the locale is re-picked from the query. The route form keeps its own `#/…` (the
  * `?lang=` is redundant in-app, where the locale is already live), and the bare root
- * resolves to the dashboard `#/d` - the app front door for someone who is standing in
- * the app already.
+ * resolves to the tools gallery `#/` - the app's main view. It used to resolve to the
+ * dashboard (plans/123 D3); Andy, 2026-09-03: "the launch app button on the landing
+ * page should go to the main view not the dashboard".
  *
  * Returns null for everything else, including `/info/…` doc links (toReaderHref owns
  * those) and any absolute URL - so a caller can run both rewriters over one fragment.
@@ -68,7 +69,7 @@ export function toReaderHref(href: string): string | null {
 export function toAppHref(href: string): string | null {
   const m = /^\/(?:\?[^#]*)?(#\/.*)?$/.exec(href);
   if (!m) return null;
-  return m[1] ?? '#/d';
+  return m[1] ?? '#/';
 }
 
 /** Rewrite every internal `/info` doc link inside `root` to the in-app reader route,

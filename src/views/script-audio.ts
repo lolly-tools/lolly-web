@@ -28,6 +28,9 @@ import {
   TTS_MODEL, type TtsRecipe,
 } from '../lib/tts-provenance.ts';
 import { audioTransportHtml, wireAudioTransport, type AudioTransport } from '../lib/audio-transport.ts';
+import {
+  scriptLinesOf, deriveSegmentsFromWords, MIN_SEAM_GAP_S, type TtsSegment,
+} from '../lib/speech-kokoro.ts';
 import { invalidateNeurospicyTracks } from '../lib/neurospicy.ts';
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
 import { startJob, jobsSnapshot } from '../lib/jobs.ts';
@@ -65,6 +68,19 @@ export interface TtsAssetRecordInput {
 export interface ScriptAudioHost extends HostV1 {
   assets: HostV1['assets'] & {
     _uploadUserAsset(record: TtsAssetRecordInput): Promise<void>;
+    /**
+     * Replace a saved clip's bytes at its own id (plans/181 section 5.2) - the
+     * regenerate path, so every document already using the clip hears the fix
+     * and no box is re-pointed. Optional because the picker's own host type
+     * predates it; {@link rewriteTtsClip} refuses rather than guessing when a
+     * shell does not have it, and the caller falls back to saving a new clip.
+     */
+    _replaceUserAssetBytes?(id: string, patch: {
+      blob: Blob;
+      credential?: Uint8Array;
+      credentialFormat?: string;
+      meta?: Record<string, unknown>;
+    }): Promise<void>;
   };
 }
 
@@ -87,8 +103,13 @@ export function markdownToSpokenText(src: string): string {
   s = s.replace(/~~~[\s\S]*?(?:~~~|$)\n?/g, '');
   // Images before links (leading !): nothing of an image is speakable.
   s = s.replace(/!\[[^\]]*\]\([^)]*\)/g, ' ');
-  // Links keep their text, lose the URL.
-  s = s.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');
+  // Links keep their text, lose the URL - EXCEPT the pronunciation mark
+  // `[SUSE](/ˈsuːsə/)`, which is link-shaped but is script grammar rather than
+  // markdown (the engine's parseScriptMarks reads it and speaks the phonemes
+  // instead of calling eSpeak). A target that is one slash-wrapped run is the
+  // tell; anything else is an ordinary link.
+  s = s.replace(/\[([^\]]+)\]\(([^)]*)\)/g, (whole, text: string, target: string) =>
+    /^\s*\/[^/]*\/\s*$/.test(target) ? whole : text);
   // Inline code keeps its content, loses the ticks.
   s = s.replace(/`([^`\n]*)`/g, '$1');
   // Horizontal rules are pure structure. Before list markers - `- - -` is a
@@ -133,8 +154,50 @@ export interface TtsClip {
   result: SpeechResult;
   wavBlob: Blob;
   spokenText: string;
+  /** One voice id, or a `+`-joined weighted blend of them (plans/181 section 4). */
   voice: string;
   speed: number;
+  /**
+   * The per-line sample tiling, when the synthesis reported it exactly (one
+   * entry per line of {@link ttsScriptOf}). Left out, {@link buildTtsRecord}
+   * derives the tiling from the word timings instead - the same fallback a
+   * clip saved before this field existed gets.
+   */
+  segments?: TtsSegment[];
+}
+
+/**
+ * The model-facing form of a script (plans/181 section 5.1, `tts.script`):
+ * normalized, one sentence per line, marks kept in place. This is what a
+ * regeneration re-parses (with `{ prenormalized: true }`, because normalizing
+ * twice is not the same as normalizing once) and what the transcript panel
+ * edits, so the words on screen are the words the model read.
+ */
+export function ttsScriptOf(spoken: string): string {
+  return scriptLinesOf(spoken).join('\n');
+}
+
+/**
+ * The segment tiling to store for a clip, or undefined when there is none that
+ * can be trusted (plans/181 section 5.1).
+ *
+ * A tiling is only useful if it has ONE entry per script line - that is the
+ * whole contract a splice reads it through. So an exact tiling from the
+ * synthesis is taken when its length matches, and otherwise the derivation
+ * from word timings is taken only when IT matches. Both can legitimately miss:
+ * a line with no terminal punctuation (a heading) is its own synthesis chunk
+ * but not its own sentence in the word stream. Omitting is safe - a consumer
+ * without segments derives its own seams on demand, which is exactly how a
+ * clip saved before this field existed is handled.
+ */
+export function ttsSegmentsFor(clip: TtsClip, lines: number): TtsSegment[] | undefined {
+  if (lines < 1) return undefined;
+  if (clip.segments && clip.segments.length === lines) return clip.segments;
+  if (clip.result.granularity !== 'word') return undefined;
+  const rate = clip.result.sampleRate;
+  const total = Math.max(0, Math.round((clip.result.duration || 0) * rate));
+  const derived = deriveSegmentsFromWords(clip.result.words ?? [], rate, MIN_SEAM_GAP_S, total);
+  return derived && derived.length === lines ? derived : undefined;
 }
 
 /** The one asset-record recipe for a TTS clip - shared by the dialog and the
@@ -146,6 +209,12 @@ export function buildTtsRecord(clip: TtsClip, now = Date.now()): TtsAssetRecordI
   // RIFF binding) plus LIST/INFO tags, mirroring the store onto the record for
   // the runtime's ingredient chaining (buildTtsCredential is the fallback when
   // the embed cannot run).
+  //
+  // `script` and `segments` (plans/181 section 5.1) are what let a later edit
+  // re-synthesize ONE sentence instead of the whole clip: the script is the
+  // exact lines the model read, the segments say which samples each line owns.
+  const script = ttsScriptOf(clip.spokenText);
+  const segments = ttsSegmentsFor(clip, script ? script.split('\n').length : 0);
   return {
     id: ttsAssetId(clip.spokenText, now),
     type: 'audio',
@@ -169,6 +238,8 @@ export function buildTtsRecord(clip: TtsClip, now = Date.now()): TtsAssetRecordI
         text: clip.spokenText,
         words: clip.result.words,
         granularity: clip.result.granularity,
+        ...(script ? { script } : {}),
+        ...(segments ? { segments } : {}),
       },
     },
   };
@@ -207,8 +278,7 @@ export async function embedTtsProvenance(host: ScriptAudioHost, clip: TtsClip): 
 /** Store a generated clip as a user audio asset and resolve its AssetRef (via
  *  the public API, so the ref carries a live object URL). Throws on a store
  *  failure - each surface owns its own error presentation. */
-export async function saveTtsClip(host: ScriptAudioHost, clip: TtsClip): Promise<AssetRef | null> {
-  const record = buildTtsRecord(clip);
+async function stampTtsRecord(host: ScriptAudioHost, clip: TtsClip, record: TtsAssetRecordInput): Promise<void> {
   // Provenance lives in the file: the stored blob carries the LIST/INFO tags
   // and the signed C2PA chunk, and the extracted store rides the record for
   // ingredient chaining. When the embed cannot run (malformed bytes, signing
@@ -220,17 +290,55 @@ export async function saveTtsClip(host: ScriptAudioHost, clip: TtsClip): Promise
     if (record.meta) record.meta.bytes = embedded.blob.size;
     record.credential = embedded.store;
     record.credentialFormat = 'wav';
-  } else {
-    const credential = await buildTtsCredential(host, clip);
-    if (credential) {
-      record.credential = credential.store;
-      record.credentialFormat = credential.format;
-    }
+    return;
   }
+  const credential = await buildTtsCredential(host, clip);
+  if (credential) {
+    record.credential = credential.store;
+    record.credentialFormat = credential.format;
+  }
+}
+
+export async function saveTtsClip(host: ScriptAudioHost, clip: TtsClip): Promise<AssetRef | null> {
+  const record = buildTtsRecord(clip);
+  await stampTtsRecord(host, clip, record);
   await host.assets._uploadUserAsset(record);
   // The new clip should appear in the Neurospicy player right away.
   invalidateNeurospicyTracks();
   return host.assets.get(record.id);
+}
+
+/**
+ * Rewrite a saved clip at its own asset id (plans/181 section 5.2): the same
+ * record recipe, the same freshly signed credential, only the bytes and the
+ * `meta.tts` block change. The id is the contract - no timeline box is
+ * re-pointed, every `#/c?asset=` link keeps resolving, and each document using
+ * the clip hears the fix, which is the point of a fix.
+ *
+ * `name` keeps the clip's existing display name: a regenerated clip is the
+ * same clip, so a fix to one word must not rename it out from under whoever
+ * named it.
+ *
+ * Throws when the shell has no `_replaceUserAssetBytes` (the caller then offers
+ * Save as new clip instead) and when the store write itself fails; a signing
+ * failure degrades exactly as it does on a first save.
+ */
+export async function rewriteTtsClip(
+  host: ScriptAudioHost, id: string, clip: TtsClip, opts: { name?: string } = {},
+): Promise<AssetRef | null> {
+  const replace = host.assets._replaceUserAssetBytes;
+  if (!replace) throw new Error('this shell cannot rewrite a saved clip in place');
+  const record = buildTtsRecord(clip);
+  if (record.meta && opts.name) record.meta.name = opts.name;
+  await stampTtsRecord(host, clip, record);
+  await replace.call(host.assets, id, {
+    blob: record.blob as Blob,
+    credential: record.credential,
+    credentialFormat: record.credentialFormat,
+    meta: record.meta,
+  });
+  invalidateNeurospicyTracks();
+  return host.assets.get(id);
 }
 
 /**
@@ -336,6 +444,11 @@ export async function generateSpeechAsJob(
         else job.progress(Math.round(fraction * 100), 100, note);
       },
     });
+    // The web speech bridge reports the exact per-line tiling it built while
+    // concatenating (plans/181 section 5.1). The v1 contract has no field for
+    // it, so it is read structurally; a shell whose bridge does not report it
+    // leaves buildTtsRecord to derive the seams from the word timings.
+    const reported = (result as { segments?: TtsSegment[] }).segments;
     const clip: TtsClip = {
       result,
       // Mono PCM → 16-bit WAV: the encoder is stereo, so the one channel feeds both.
@@ -343,6 +456,7 @@ export async function generateSpeechAsJob(
       spokenText: req.spokenText,
       voice: req.voice,
       speed: req.speed,
+      ...(Array.isArray(reported) ? { segments: reported } : {}),
     };
     if (surface.alive()) { job.finish(); return clip; }
     // Nobody is watching any more: the take would otherwise evaporate with the
@@ -411,6 +525,9 @@ export function openScriptAudioDialog(host: ScriptAudioHost): Promise<AssetRef |
               </select>
             </label>
           </div>
+          <p class="script-audio-more">
+            <a href="#/script">${t('More options in Script audio')}</a>
+          </p>
           <p class="script-audio-consent" data-consent hidden></p>
           <div class="script-audio-progress" data-progress role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="${escapeHtml(t('Generating speech'))}" hidden>
             <div class="script-audio-progress-fill" data-progress-fill></div>

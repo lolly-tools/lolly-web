@@ -28,6 +28,7 @@ import { JSDOM } from 'jsdom';
 import { encodeAuthoredPath, decodeAuthoredPath, type SplineNode } from '@lolly/engine';
 import type { Box } from './free-canvas-math.ts';
 import { initFreeCanvas } from './free-canvas.ts';
+import { announce } from '../a11y.ts';
 
 // ── jsdom bootstrap (same shape as free-canvas-pen.test.ts) ───────────────────
 const dom = new JSDOM('<!DOCTYPE html><body></body>');
@@ -105,11 +106,17 @@ interface Fixture {
   boxes(): Box[];
   edges(): Box[];
   commits: () => number;
+  /** Replace the whole `boxes` value from OUTSIDE the editor - what an undo, a hook
+   *  patch or a collaborator's edit looks like from the overlay's point of view. */
+  setBoxes(next: Box[]): void;
   sync(): void;
   destroy(): void;
 }
 
-function mount(initial: Box[]): Fixture {
+/** `cfgExtra` widens the canvas block for one test without disturbing the shared
+ *  fixture - the object-bar tests need Design's image/frame/stroke declarations, and
+ *  every other test in this file must keep the exact config it was written against. */
+function mount(initial: Box[], cfgExtra: Record<string, unknown> = {}, frame?: Record<string, unknown>): Fixture {
   const viewEl = dom.window.document.createElement('div');
   const stageEl = dom.window.document.createElement('div');
   const canvasEl = dom.window.document.createElement('div');
@@ -133,7 +140,8 @@ function mount(initial: Box[]): Fixture {
     viewEl, stageEl, canvasEl,
     runtime: runtime as never,
     host: {} as never,
-    input: { id: 'boxes', canvas: canvasCfg() as never, fields: [] },
+    input: { id: 'boxes', canvas: { ...canvasCfg(), ...cfgExtra } as never, fields: [] },
+    ...(frame ? { frame: frame as never } : {}),
     nativeW: NATIVE, nativeH: NATIVE,
   });
   frames();
@@ -142,6 +150,7 @@ function mount(initial: Box[]): Fixture {
     boxes: () => model.get('boxes') as Box[],
     edges: () => model.get('edges') as Box[],
     commits: () => commits,
+    setBoxes(next: Box[]) { runtime.setInput('boxes', next); frames(); },
     sync() { for (const s of subs) s(); frames(); },
     destroy() { handle.destroy(); viewEl.remove(); dom.window.document.body.innerHTML = ''; },
   };
@@ -570,4 +579,486 @@ test('the retired Connect button is gone from the rail, and its mode with it', (
   assert.ok(f.stageEl.querySelector('.fc-btn-line'), 'the Line tool is there');
   assert.ok(f.stageEl.querySelector('.fc-btn-pen'), 'beside the Pen');
   f.destroy();
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// The OBJECT BAR, kind by kind (plan 179 A5 / A16 / C3 / C4 / C6 / A18)
+//
+// The bar used to offer every control to every selection: "Edit text" on an image
+// opened nothing, "Set image" on a path wrote a field the render ignores, and Stroke -
+// which four kinds render as a real border - was reachable only on a path. Each test
+// below is one half of the rule that replaced that: the bar shows what THIS selection
+// can do, and it re-seeds when what it shows changes.
+//
+// Driven through the real `initFreeCanvas` on the harness above, so a claim about a
+// button is a claim about the DOM a user would click.
+
+// The single live region `announce()` owns is created lazily and cached forever; the
+// mounts above clear `document.body` on destroy, which orphans it. Claim it here, at
+// module scope (before any test runs), so the reference survives every later teardown.
+announce('probe');
+const LIVE = dom.window.document.querySelector('[data-a11y-live]')!;
+
+/** Design's own canvas declarations on top of the shared fixture: the image trio, the
+ *  ink and gradient fields, and the blend select the More panel offers. */
+const DESIGN_CFG = {
+  imageField: 'image', fitField: 'fit', imgPosField: 'imgpos', blendField: 'blend',
+  textColorField: 'fg', gradField: 'grad',
+};
+
+const kindBox = (id: string, kind: string, x: number, y: number, extra: Record<string, unknown> = {}): Box =>
+  ({ kind, shape: 'rect', id, x, y, w: 160, h: 160, bg: '#cccccc', ...extra } as Box);
+
+const ctxBtn = (f: Fixture, cx: string): HTMLElement | null =>
+  f.stageEl.querySelector<HTMLElement>(`.fc-ctxbar [data-cx="${cx}"]`);
+const ctxColor = (f: Fixture, id: string): HTMLElement | null =>
+  f.stageEl.querySelector<HTMLElement>(`.fc-ctxbar [data-color-field="${id}"]`);
+const panel = (f: Fixture): HTMLElement | null => f.stageEl.querySelector<HTMLElement>('.fc-more-panel');
+/** How many boxes are selected. `selectionCount` above counts every `.fc-outline`, and a
+ *  multi-selection draws one per box PLUS the group AABB - so the group ring is excluded
+ *  here rather than the count being off by one for every n > 1. */
+const selN = (f: Fixture): number =>
+  f.stageEl.querySelectorAll('.fc-chrome .fc-outline:not(.fc-group-outline)').length;
+/** The fill field's trigger label - "Colour: <name> <hex>", i.e. what the swatch claims. */
+const fillLabel = (f: Fixture): string =>
+  ctxColor(f, 'fc-fill')?.querySelector('.color-trigger')?.getAttribute('aria-label') ?? '';
+const panelText = (f: Fixture): string => (panel(f)?.textContent ?? '');
+/** Select one box by clicking its centre (a 160px box drawn at x,y). */
+const pick = (f: Fixture, b: Box): void => {
+  place(f, Number(b['x']) + 80, Number(b['y']) + 80);
+};
+// ── C3: text and image controls follow the kind ───────────────────────────────
+
+test('Edit text and Aa appear for every kind that RENDERS a text node', () => {
+  // The template paints `.lolly-box-text` on every child box, so an image with a caption
+  // and a path with a label really are editable - and so is a `card`, which is the ONLY
+  // kind Org Chart has. An allow-list of {box,text} took the pencil off all three while
+  // double-click kept editing them.
+  for (const kind of ['box', 'text', 'image', 'path', 'card']) {
+    const b = kindBox('k', kind, 300, 300);
+    const f = mount([b], DESIGN_CFG);
+    try {
+      pick(f, b);
+      assert.ok(ctxBtn(f, 'edit'), `${kind}: the pencil is offered`);
+      assert.ok(ctxBtn(f, 'text'), `${kind}: so is Aa`);
+    } finally { f.destroy(); }
+  }
+  // …and off the three that render no text node at all: a frame is a page div, and
+  // `compute()` blanks the text of the two bare kinds.
+  for (const kind of ['frame', 'audio', 'camera']) {
+    const b = kindBox('k', kind, 300, 300);
+    const f = mount([b], DESIGN_CFG);
+    try {
+      pick(f, b);
+      assert.equal(ctxBtn(f, 'edit'), null, `${kind}: a pencil that opens nothing is worse than no pencil`);
+      assert.equal(ctxBtn(f, 'text'), null, `${kind}: and so is a type panel with no type`);
+    } finally { f.destroy(); }
+  }
+});
+
+test('Set image appears for the kinds that can hold one - an audio box included', () => {
+  // `mediaHtmlFor` paints a picture for ANY kind carrying `image.url`, a frame page takes
+  // one as its board fill, and an audio box stores its TRACK in the very same field - so
+  // the only kind that can do nothing with it is the camera marker, which paints nothing.
+  for (const [kind, want] of [['box', true], ['image', true], ['frame', true], ['text', true],
+    ['path', true], ['card', true], ['audio', true], ['camera', false]] as const) {
+    const b = kindBox('k', kind, 300, 300);
+    const f = mount([b], DESIGN_CFG);
+    try {
+      pick(f, b);
+      assert.equal(!!ctxBtn(f, 'setimg'), want, `${kind}: Set image ${want ? 'offered' : 'withheld'}`);
+    } finally { f.destroy(); }
+  }
+});
+
+test('the image button on an audio box says it is picking a SOUND', () => {
+  const b = kindBox('k', 'audio', 300, 300);
+  const f = mount([b], DESIGN_CFG);
+  try {
+    pick(f, b);
+    const btn = ctxBtn(f, 'setimg')!;
+    assert.ok(btn, 'the only canvas route to an audio clip is not withheld');
+    assert.match(btn.getAttribute('aria-label') ?? '', /sound/i, 'and it names the track, not an image');
+  } finally { f.destroy(); }
+});
+
+test('a mixed selection only keeps the controls EVERY member can honour', () => {
+  const a = kindBox('a', 'box', 100, 100);
+  const b = kindBox('b', 'camera', 400, 400);
+  const f = mount([a, b], DESIGN_CFG);
+  try {
+    pick(f, a);
+    f.canvasEl.dispatchEvent(pointerEvent('pointerdown', { x: 480, y: 480, shift: true }));
+    f.canvasEl.dispatchEvent(pointerEvent('pointerup', { x: 480, y: 480, shift: true }));
+    frames();
+    assert.equal(selN(f), 2, 'both are selected');
+    assert.equal(ctxBtn(f, 'edit'), null, 'the camera half has no text, so neither half is offered it');
+    assert.equal(ctxBtn(f, 'setimg'), null, 'and it can hold no picture either');
+  } finally { f.destroy(); }
+});
+
+test('Enter on a kind with no text says so instead of doing nothing at all', () => {
+  const b = kindBox('k', 'frame', 300, 300);
+  const f = mount([b], DESIGN_CFG);
+  try {
+    pick(f, b);
+    LIVE.textContent = '';
+    key('Enter');
+    frames();
+    assert.match(LIVE.textContent ?? '', /no text to edit/i,
+      'the keyboard has no pencil to hide, so it has to explain itself');
+    assert.equal(f.stageEl.querySelector('.fc-box-editing'), null, 'and nothing entered an edit');
+  } finally { f.destroy(); }
+});
+
+test('Enter on an IMAGE box opens its caption - the double-click route is not the only one', () => {
+  const b = kindBox('k', 'image', 300, 300);
+  const f = mount([b], DESIGN_CFG);
+  try {
+    pick(f, b);
+    LIVE.textContent = '';
+    key('Enter');
+    frames();
+    assert.doesNotMatch(LIVE.textContent ?? '', /no text to edit/i,
+      'the template renders a text node here, so the refusal would be a lie');
+  } finally { f.destroy(); }
+});
+
+// ── A5: stroke for every kind that renders a border ───────────────────────────
+
+test('the stroke swatch and the Stroke button reach every kind that paints a border', () => {
+  for (const [kind, want] of [['path', true], ['box', true], ['image', true], ['frame', true], ['audio', false]] as const) {
+    const b = kind === 'path' ? pathBox({ id: 'k' }) : kindBox('k', kind, 300, 300);
+    const f = mount([b], DESIGN_CFG);
+    try {
+      if (kind === 'path') place(f, 400, 480); else pick(f, b);
+      assert.equal(!!ctxColor(f, 'fc-stroke'), want, `${kind}: stroke colour ${want ? 'offered' : 'withheld'}`);
+      assert.equal(!!ctxBtn(f, 'stroke'), want, `${kind}: Stroke options ${want ? 'offered' : 'withheld'}`);
+    } finally { f.destroy(); }
+  }
+});
+
+test('a tool with no vector model grows no stroke controls at all', () => {
+  // `cfg.strokeField` DEFAULTS to 'stroke' for every canvas tool, so the widening above
+  // has to be gated on the tool having declared a stroke model - otherwise a Carousel
+  // Maker card, whose hooks paint no border, would sprout a swatch writing a dead field.
+  const b = kindBox('k', 'box', 300, 300);
+  const f = mount([b], { ...DESIGN_CFG, pathField: undefined });
+  try {
+    pick(f, b);
+    assert.ok(ctxColor(f, 'fc-fill'), 'the bar is up and painting');
+    assert.equal(ctxColor(f, 'fc-stroke'), null, 'but no stroke colour');
+    assert.equal(ctxBtn(f, 'stroke'), null, 'and no Stroke panel');
+  } finally { f.destroy(); }
+});
+
+test('the Stroke panel keeps the path-only options for paths and hides them elsewhere', () => {
+  const openStroke = (f: Fixture): void => { click(ctxBtn(f, 'stroke')!); frames(); };
+
+  const box = kindBox('k', 'box', 300, 300);
+  const fb = mount([box], DESIGN_CFG);
+  try {
+    pick(fb, box);
+    openStroke(fb);
+    const txt = panelText(fb);
+    assert.match(txt, /Stroke width/, 'a border has a width');
+    assert.match(txt, /Stroke style/, 'and solid / dashed / dotted, which a CSS border can do');
+    for (const gone of ['Line ends', 'Corners', 'Fill rule', 'Path start', 'Path end', 'Dash array']) {
+      assert.ok(!txt.includes(gone), `a CSS border has no ${gone} - offering one writes a field nothing reads`);
+    }
+  } finally { fb.destroy(); }
+
+  const fp = mount([pathBox({ id: 'p' })], DESIGN_CFG);
+  try {
+    place(fp, 400, 480);
+    openStroke(fp);
+    const txt = panelText(fp);
+    for (const kept of ['Stroke width', 'Line ends', 'Corners', 'Fill rule']) {
+      assert.ok(txt.includes(kept), `a path keeps ${kept}`);
+    }
+  } finally { fp.destroy(); }
+});
+
+// ── A16: the bar re-seeds when the model moves under it ───────────────────────
+
+test('the object bar re-seeds when the selected box changes under it (undo, sync, hook)', () => {
+  const b = kindBox('k', 'box', 300, 300, { bg: '#112233' });
+  const f = mount([b], DESIGN_CFG);
+  try {
+    pick(f, b);
+    assert.match(fillLabel(f), /#112233/, 'seeded from the selected box');
+    // Exactly what Cmd+Z does: the same selection, a different value.
+    f.setBoxes([{ ...b, bg: '#aabbcc' }]);
+    assert.doesNotMatch(fillLabel(f), /#112233/,
+      'the swatch kept the colour that had just been undone - the one state a colour control must never be in');
+    assert.match(fillLabel(f), /#aabbcc/);
+  } finally { f.destroy(); }
+});
+
+test('a change the bar does not show costs no rebuild', () => {
+  const b = kindBox('k', 'box', 300, 300, { bg: '#112233', opacity: 100 });
+  const f = mount([b], DESIGN_CFG);
+  try {
+    pick(f, b);
+    const before = ctxBtn(f, 'more');
+    f.setBoxes([{ ...b, opacity: 40 }]);
+    assert.equal(ctxBtn(f, 'more'), before,
+      'the same nodes - opacity is not on the bar, so a slider drag must not tear it down');
+  } finally { f.destroy(); }
+});
+
+test('an open panel survives a paint change made from outside it', () => {
+  // The value signature is what makes the bar re-seed - but `rebuildCtxBar` starts by
+  // closing the More panel, so a fill arriving from an undo, a collaborator or the rail's
+  // own artboard swatch used to tear down the panel the user was working in.
+  const b = kindBox('k', 'box', 300, 300, { bg: '#112233' });
+  const f = mount([b], DESIGN_CFG);
+  try {
+    pick(f, b);
+    click(ctxBtn(f, 'more')!);
+    frames();
+    const open = panel(f);
+    assert.ok(open, 'the More panel is up');
+    f.setBoxes([{ ...b, bg: '#aabbcc' }]);
+    assert.equal(panel(f), open, 'and it is the SAME node - the panel was not rebuilt out from under it');
+    // Closing the panel releases the hold: the next sync picks the real colour up.
+    key('Escape');
+    frames();
+    assert.equal(panel(f), null, 'Escape closed it');
+    f.sync();
+    assert.match(fillLabel(f), /#aabbcc/, 'the swatch catches up as soon as the panel is down');
+  } finally { f.destroy(); }
+});
+
+// ── C4: what a click and a right-click do to a multi-selection ────────────────
+
+test('a plain click on a member of a multi-selection narrows to that one box', () => {
+  const a = kindBox('a', 'box', 100, 100);
+  const b = kindBox('b', 'box', 400, 400);
+  const f = mount([a, b], DESIGN_CFG);
+  try {
+    pick(f, a);
+    f.canvasEl.dispatchEvent(pointerEvent('pointerdown', { x: 480, y: 480, shift: true }));
+    f.canvasEl.dispatchEvent(pointerEvent('pointerup', { x: 480, y: 480, shift: true }));
+    frames();
+    assert.equal(selN(f), 2, 'shift-click added the second box');
+    pick(f, b);
+    assert.equal(selN(f), 1, 'a plain click means "just this one"');
+  } finally { f.destroy(); }
+});
+
+test('a DRAG of a member moves the whole selection - narrowing waits for the release', () => {
+  const a = kindBox('a', 'box', 100, 100);
+  const b = kindBox('b', 'box', 400, 400);
+  const f = mount([a, b], DESIGN_CFG);
+  try {
+    pick(f, a);
+    f.canvasEl.dispatchEvent(pointerEvent('pointerdown', { x: 480, y: 480, shift: true }));
+    f.canvasEl.dispatchEvent(pointerEvent('pointerup', { x: 480, y: 480, shift: true }));
+    frames();
+    // Press on b and actually move: both boxes travel, and both stay selected.
+    f.canvasEl.dispatchEvent(pointerEvent('pointerdown', { x: 480, y: 480 }));
+    f.canvasEl.dispatchEvent(pointerEvent('pointermove', { x: 560, y: 480 }));
+    f.canvasEl.dispatchEvent(pointerEvent('pointerup', { x: 560, y: 480 }));
+    frames();
+    assert.equal(selN(f), 2, 'a drag is not a click - the group survives it');
+    assert.equal(Number(f.boxes()[0]!['x']), 180, 'and the box that was not pressed moved too');
+  } finally { f.destroy(); }
+});
+
+test('shift-click still toggles a member out of the selection', () => {
+  const a = kindBox('a', 'box', 100, 100);
+  const b = kindBox('b', 'box', 400, 400);
+  const f = mount([a, b], DESIGN_CFG);
+  try {
+    pick(f, a);
+    for (const ev of ['pointerdown', 'pointerup']) {
+      f.canvasEl.dispatchEvent(pointerEvent(ev, { x: 480, y: 480, shift: true }));
+    }
+    frames();
+    assert.equal(selN(f), 2);
+    for (const ev of ['pointerdown', 'pointerup']) {
+      f.canvasEl.dispatchEvent(pointerEvent(ev, { x: 480, y: 480, shift: true }));
+    }
+    frames();
+    assert.equal(selN(f), 1, 'the second shift-click took it back out');
+  } finally { f.destroy(); }
+});
+
+test('right-click SELECTS an unselected box and LEAVES a selected one alone', () => {
+  const a = kindBox('a', 'box', 100, 100);
+  const b = kindBox('b', 'box', 400, 400);
+  const f = mount([a, b], DESIGN_CFG);
+  const rightClick = (x: number, y: number): void => {
+    f.canvasEl.dispatchEvent(new W.MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+    frames();
+  };
+  try {
+    pick(f, a);
+    rightClick(480, 480);
+    assert.equal(selN(f), 1, 'the menu acts on the box under the cursor, never on it PLUS the stale selection');
+    // Now put both in the selection and right-click one of them.
+    for (const ev of ['pointerdown', 'pointerup']) {
+      f.canvasEl.dispatchEvent(pointerEvent(ev, { x: 180, y: 180, shift: true }));
+    }
+    frames();
+    assert.equal(selN(f), 2);
+    rightClick(480, 480);
+    assert.equal(selN(f), 2, 'right-clicking one of five still means all five');
+  } finally { f.destroy(); }
+});
+
+// ── C6: the More panel asks only what this selection can answer ───────────────
+
+test('Image fit and Image position are hidden for a box with no image, shown for an image', () => {
+  const bare = kindBox('k', 'box', 300, 300);
+  const f1 = mount([bare], DESIGN_CFG);
+  try {
+    pick(f1, bare);
+    click(ctxBtn(f1, 'more')!);
+    frames();
+    const txt = panelText(f1);
+    assert.ok(!txt.includes('Image fit'), 'nothing to fit');
+    assert.ok(!txt.includes('Image position'), 'and nothing to position');
+    assert.ok(txt.includes('Opacity'), 'the rows that DO apply are still there');
+  } finally { f1.destroy(); }
+
+  const withImg = kindBox('k', 'image', 300, 300, { image: { id: 'x' } });
+  const f2 = mount([withImg], DESIGN_CFG);
+  try {
+    pick(f2, withImg);
+    click(ctxBtn(f2, 'more')!);
+    frames();
+    assert.ok(panelText(f2).includes('Image fit'), 'an image box is asked how to fit it');
+  } finally { f2.destroy(); }
+});
+
+test('Shape and Corner radius are hidden for a path, whose outline is its own geometry', () => {
+  const f = mount([pathBox({ id: 'p' })], DESIGN_CFG);
+  try {
+    place(f, 400, 480);
+    click(ctxBtn(f, 'more')!);
+    frames();
+    const txt = panelText(f);
+    assert.ok(!txt.includes('Corner radius'), 'rounding the bounding div does nothing to the curve');
+    assert.ok(!txt.includes('Shape'), 'and neither does switching its shape keyword');
+  } finally { f.destroy(); }
+});
+
+test('an artboard is offered only the shadow target its page can paint', () => {
+  const segs = (f: Fixture): string[] =>
+    [...(panel(f)?.querySelectorAll<HTMLElement>('[data-seg="shadow"] .fc-seg-btn') ?? [])]
+      .map((b) => b.dataset.v ?? '');
+  const FRAME = { frameField: 'frame', frameKind: 'frame', orderField: 'order' };
+  const SHADOW = { ...DESIGN_CFG, shadowField: 'shadow' };
+  const fb = kindBox('k', 'frame', 300, 300);
+  const f1 = mount([fb], SHADOW, FRAME);
+  try {
+    pick(f1, fb);
+    click(ctxBtn(f1, 'more')!);
+    frames();
+    // `frameGroupsFor` emits `shadowCss(fb).box` only; 'content' and 'depth' come back as
+    // a filterFn the frame branch never consumes, so offering them wrote the model and
+    // painted nothing at all.
+    assert.deepEqual(segs(f1), ['none', 'box']);
+  } finally { f1.destroy(); }
+
+  const bx = kindBox('k', 'box', 300, 300);
+  const f2 = mount([bx], SHADOW, FRAME);
+  try {
+    pick(f2, bx);
+    click(ctxBtn(f2, 'more')!);
+    frames();
+    assert.ok(segs(f2).includes('content'), 'a BOX still has every target it always had');
+  } finally { f2.destroy(); }
+});
+
+test('the More panel is capped to the stage, so its last section stays reachable', () => {
+  const b = kindBox('k', 'box', 300, 300);
+  const f = mount([b], DESIGN_CFG);
+  try {
+    pick(f, b);
+    click(ctxBtn(f, 'more')!);
+    frames();
+    const p = panel(f)!;
+    const cap = parseFloat(p.style.maxHeight);
+    assert.ok(Number.isFinite(cap) && cap > 0, `a max-height is written (${p.style.maxHeight})`);
+    assert.ok(cap <= NATIVE, 'and it never claims more room than the stage has');
+  } finally { f.destroy(); }
+});
+
+// ── A18: an armed draw mode says what it is waiting for ───────────────────────
+
+const armHint = (f: Fixture): HTMLElement | null => f.stageEl.querySelector<HTMLElement>('.fc-armhint');
+
+test('arming a shape from the Add menu tells the mouse what to do with it', () => {
+  const f = mount([], DESIGN_CFG);
+  try {
+    assert.equal(armHint(f)?.hidden, true, 'nothing is armed yet');
+    enter(f, 'create');                     // the Add menu's first kind - Box
+    const h = armHint(f)!;
+    assert.equal(h.hidden, false, 'a pink + is not a sentence');
+    assert.match(h.textContent ?? '', /drag on the canvas to draw: box/i, 'it names the kind that was chosen');
+    assert.match(h.textContent ?? '', /escape/i, 'and the way out');
+    // No article in the source string: "draw a artboard" is ungrammatical in English and
+    // unrepairable in any translation, so the sentence carries none for any kind.
+    assert.doesNotMatch(h.textContent ?? '', /\bdraw a\b/i);
+  } finally { f.destroy(); }
+});
+
+test('an asset kind says which asset it is waiting for, not "an image" for all four', () => {
+  // Design's four asset kinds all seed `kind: 'image'`, which is exactly why one shared
+  // sentence said "place an image" when the user had chosen Video or Animation.
+  const KINDS = [
+    { id: 'image', label: 'Image', seed: { kind: 'image' }, want: /place an image/i },
+    { id: 'video', label: 'Video', seed: { kind: 'image' }, want: /place a video/i },
+    { id: 'lottie', label: 'Animation', seed: { kind: 'image' }, want: /place an animation/i },
+    { id: 'clip', label: 'Clip', seed: { kind: 'image' }, want: /place a video/i },
+    { id: 'audio', label: 'Audio', seed: { kind: 'audio' }, want: /place a sound/i },
+    { id: 'frame', label: 'Artboard', seed: { kind: 'frame' }, want: /draw: artboard/i },
+  ];
+  for (const k of KINDS) {
+    const f = mount([], { ...DESIGN_CFG, addKinds: [{ id: k.id, label: k.label, seed: k.seed }] });
+    try {
+      click(btn(f, 'fc-btn-add'));
+      frames();
+      const item = f.stageEl.querySelector<HTMLButtonElement>('.fc-pop-item, .fc-pop-gitem');
+      assert.ok(item, `the Add menu offers ${k.id}`);
+      click(item!);
+      frames();
+      assert.match(armHint(f)?.textContent ?? '', k.want, `${k.id}: the chip names its own noun`);
+    } finally { f.destroy(); }
+  }
+});
+
+test('the hint comes down when the gesture starts, and when the mode is cancelled', () => {
+  const f = mount([], DESIGN_CFG);
+  try {
+    enter(f, 'create');
+    assert.equal(armHint(f)?.hidden, false);
+    f.canvasEl.dispatchEvent(pointerEvent('pointerdown', { x: 300, y: 300 }));
+    frames();
+    assert.equal(armHint(f)?.hidden, true, 'the sentence has been acted on');
+    f.canvasEl.dispatchEvent(pointerEvent('pointerup', { x: 420, y: 420 }));
+    frames();
+
+    enter(f, 'create');
+    assert.equal(armHint(f)?.hidden, false);
+    key('Escape');
+    frames();
+    assert.equal(armHint(f)?.hidden, true, 'Escape disarms, so the sentence stops being true');
+  } finally { f.destroy(); }
+});
+
+test('dismissing the hint keeps it dismissed for the rest of the mount', () => {
+  const f = mount([], DESIGN_CFG);
+  try {
+    enter(f, 'create');
+    click(f.stageEl.querySelector<HTMLButtonElement>('.fc-armhint-x')!);
+    assert.equal(armHint(f)?.hidden, true);
+    key('Escape');
+    frames();
+    enter(f, 'create');
+    assert.equal(armHint(f)?.hidden, true, 'read once is read');
+  } finally { f.destroy(); }
 });

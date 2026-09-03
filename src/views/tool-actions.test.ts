@@ -60,6 +60,26 @@ for (const k of [
   try { (globalThis as Record<string, unknown>)[k] = (dom.window as unknown as Record<string, unknown>)[k]; } catch { /* getter-only global */ }
 }
 globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => dom.window.requestAnimationFrame(cb)) as typeof requestAnimationFrame;
+// jsdom 25's Blob has no arrayBuffer(), and the line above puts that Blob on the
+// global. Any export path that reads bytes back out of a finished blob therefore
+// threw, and the download handler's catch swallowed it: the multi-page fan-out
+// zipped nothing, printed "Export failed: f.blob.arrayBuffer is not a function",
+// and the tests around it still passed. Give the jsdom Blob the reader the
+// platform has (through jsdom's own FileReader) so the fan-out is exercised
+// rather than silently failing inside a green suite.
+{
+  const proto = dom.window.Blob.prototype as unknown as { arrayBuffer?: () => Promise<ArrayBuffer> };
+  if (!proto.arrayBuffer) {
+    proto.arrayBuffer = function (this: Blob): Promise<ArrayBuffer> {
+      return new Promise((resolve, reject) => {
+        const reader = new dom.window.FileReader();
+        reader.onload = () => resolve(reader.result as ArrayBuffer);
+        reader.onerror = () => reject(reader.error ?? new Error('blob read failed'));
+        reader.readAsArrayBuffer(this as unknown as Parameters<FileReader['readAsArrayBuffer']>[0]);
+      });
+    };
+  }
+}
 
 // tool-actions.ts probes recording support ONCE at module load (the VIDEO const)
 // and gates the whole animated-params row on it, so the probes have to answer
@@ -105,6 +125,9 @@ interface Harness {
   download: () => void;
   /** The post-export "add your details" line, or null when it wasn't offered. */
   ask: () => HTMLElement | null;
+  /** Every file handed to host.export.download, in order - name included, because
+   *  the sidecar-caption option changes it from `<name>.mp4` to `<name>.zip`. */
+  saved: () => Array<{ name: string; blob: Blob }>;
   /** Every profile the panel wrote back, in order. */
   profileWrites: () => Array<Record<string, unknown>>;
   /** Every runtime.setInput(id, value) the panel made, in order. */
@@ -164,13 +187,16 @@ function mount({ seqMs, videoDuration = 12, formats = ['webm', 'mp4', 'png'], pr
   };
   const profileWrites: Array<Record<string, unknown>> = [];
   const stateWrites: Array<{ slot: string; data: Record<string, unknown> }> = [];
+  // What actually reached the user, in order: the sidecar-caption path turns one
+  // file into a zip, and the name is the only place that shows.
+  const saved: Array<{ name: string; blob: Blob }> = [];
   const host = {
     assets: { query: async () => [] },
     state: {
       save: async (slot: string, data: Record<string, unknown>) => { stateWrites.push({ slot, data }); },
       load: async () => null,
     },
-    export: { download: async () => {} },
+    export: { download: async (blob: Blob, name: string) => { saved.push({ name, blob }); } },
     ...(profile ? {
       profile: {
         get: async () => ({ ...profile }),
@@ -208,6 +234,7 @@ function mount({ seqMs, videoDuration = 12, formats = ['webm', 'mp4', 'png'], pr
     download: () => (panel.querySelector('[data-action="download"]') as HTMLElement)
       .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
     ask: () => panel.querySelector('.export-details-ask') as HTMLElement | null,
+    saved: () => saved,
     profileWrites: () => profileWrites,
     inputWrites: () => inputWrites,
     stateWrites: () => stateWrites,
@@ -1284,4 +1311,188 @@ test('a finished download remembers the shape it was exported at', async () => {
 test('nothing is remembered when nothing was downloaded', () => {
   const h = mount({ seqMs: null, formats: ['png'], toolId: 'qr-code' });
   assert.deepEqual(h.stateWrites().filter(w => w.slot.startsWith('__xprefs__:')), []);
+});
+
+// ── 17. Captions on a moving export (plans/180 section 4, M-B) ────────────────
+// Three layers, and the row says which is which. Burned-in caption boxes are part
+// of the picture and cannot be switched off from here. The EMBEDDED WebVTT track
+// follows the container until the user has an opinion (WebM reads it everywhere;
+// MP4 stores it as `wvtt`, which several players ignore - hence the note). The
+// SIDECAR turns the single download into a zip carrying the film plus a .vtt and
+// a .srt. Both options are read off ONE cue set, collected from the caption boxes
+// on the stage, so the track inside the file and the files beside it always agree.
+
+/** A caption box as the design hook renders one: a `.lolly-box` carrying the
+ *  preset's `caption` class, its timeline window, and the text in the usual child. */
+function addCaptionBox(stage: HTMLElement, startMs: number, durMs: number, text: string, opts: { ignored?: boolean; cls?: string } = {}): HTMLElement {
+  const box = dom.window.document.createElement('div');
+  box.className = `lolly-box ${opts.cls ?? 'caption'}`.trim();
+  box.setAttribute('data-t-start', String(startMs));
+  box.setAttribute('data-t-dur', String(durMs));
+  if (opts.ignored) box.setAttribute('data-t-ignored', '1');
+  const inner = dom.window.document.createElement('div');
+  inner.className = 'lolly-box-text';
+  inner.textContent = text;
+  box.appendChild(inner);
+  stage.appendChild(box);
+  return box;
+}
+
+/** The stem every download in this section is saved under - typed into the panel's own
+ *  filename field, so the assertions read a name the test chose rather than the
+ *  auto-derived one. The stub render hands back a webm blob, and extFor reads the
+ *  blob, so the extension is `.webm` whatever format the picker is showing. */
+const STEM = 'deck';
+const named = (h: Harness): Harness => {
+  (h.panel.querySelector('[data-action="filename"]') as HTMLInputElement).value = STEM;
+  return h;
+};
+
+/** Wait for the export to finish handing a file over (the download path awaits a
+ *  render, a zip and two dynamic imports, so one macrotask is not enough). */
+async function settleDownload(h: Harness): Promise<void> {
+  for (let i = 0; i < 200 && !h.saved().length; i++) await new Promise(r => setTimeout(r, 5));
+  await settle();
+}
+
+const CAPTIONED = (seqMs = 8000): Harness => {
+  const h = named(mount({ seqMs, formats: ['mp4', 'webm'] }));
+  addCaptionBox(h.stage!, 500, 1800, 'Slide one, spoken.');
+  addCaptionBox(h.stage!, 2600, 2000, 'And the second line.');
+  return h;
+};
+
+test('captions: the row is video-only, and the MP4 note appears only for MP4', async () => {
+  const h = mount({ seqMs: null, formats: ['mp4', 'webm', 'png'] });
+  const row = h.panel.querySelector('.export-captions') as HTMLElement;
+  assert.ok(row, 'a tool that can export video gets the Captions row');
+  assert.ok(row.textContent?.includes('Burned in'), 'the always-on layer is stated, not hidden');
+  const note = h.panel.querySelector('[data-captions-mp4-note]') as HTMLElement;
+  assert.equal(note.style.display, 'block', 'the note is up, MP4 being the first format offered');
+  h.setFormat('webm');
+  assert.equal(note.style.display, 'none', 'WebM carries the track properly - no warning');
+  h.setFormat('png');
+  assert.equal(row.style.display, 'none', 'a still has nothing to embed captions in');
+});
+
+test('captions: the embedded track follows the container until the user touches it', () => {
+  const h = mount({ seqMs: null, formats: ['mp4', 'webm'] });
+  const embed = h.panel.querySelector('[data-action="captions-embed"]') as HTMLInputElement;
+  assert.equal(embed.checked, false, 'MP4 is opt-in');
+  h.setFormat('webm');
+  assert.equal(embed.checked, true, 'WebM is safe, so it is on');
+  // One deliberate click ends the following, in both directions.
+  embed.checked = false;
+  embed.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  h.setFormat('mp4');
+  h.setFormat('webm');
+  assert.equal(embed.checked, false, 'a user decision is never overwritten by a format switch');
+});
+
+test('captions: nothing is embedded and nothing is zipped when neither option is on', async () => {
+  const h = CAPTIONED();
+  h.download();
+  await settleDownload(h);
+  assert.equal(h.downloads().length, 1);
+  assert.equal(h.downloads()[0]!.opts.subtitlesVtt, undefined, 'the byte-identical guard: no track unless asked');
+  assert.equal(h.saved()[0]!.name, `${STEM}.webm`, 'and one plain file, not a zip');
+});
+
+test('captions: the embedded track is the VTT of the caption boxes on the stage', async () => {
+  const h = CAPTIONED();
+  (h.panel.querySelector('[data-action="captions-embed"]') as HTMLInputElement).checked = true;
+  h.download();
+  await settleDownload(h);
+  const vtt = h.downloads()[0]!.opts.subtitlesVtt as string;
+  assert.ok(vtt.startsWith('WEBVTT'), 'a real WebVTT document');
+  assert.match(vtt, /00:00:00\.500 --> 00:00:02\.300\nSlide one, spoken\./, 'first cue: start and start+dur, in film seconds');
+  assert.match(vtt, /00:00:02\.600 --> 00:00:04\.600\nAnd the second line\./, 'second cue');
+  assert.equal(h.saved()[0]!.name, `${STEM}.webm`, 'embedding alone leaves the download a single file');
+});
+
+test('captions: sidecar on ⇒ the download is a zip of the film, the .vtt and the .srt', async () => {
+  const h = CAPTIONED();
+  (h.panel.querySelector('[data-action="captions-sidecar"]') as HTMLInputElement).checked = true;
+  h.download();
+  await settleDownload(h);
+  const file = h.saved()[0]!;
+  const stem = STEM;
+  assert.equal(file.name, `${stem}.zip`, 'one download, so the sidecars ride a zip');
+  const { unzipAsync } = await import('../lib/zip.ts');
+  const entries = await unzipAsync(new Uint8Array(await file.blob.arrayBuffer()));
+  assert.deepEqual(Object.keys(entries).sort(), [`${stem}.srt`, `${stem}.vtt`, `${stem}.webm`],
+    'the film keeps its own name and extension; the captions sit beside it');
+  const text = (name: string): string => new TextDecoder().decode(entries[name]!);
+  assert.ok(text(`${stem}.vtt`).startsWith('WEBVTT'));
+  assert.match(text(`${stem}.srt`), /^1\n00:00:00,500 --> 00:00:02,300\nSlide one, spoken\./, 'SubRip: comma decimals, numbered');
+  assert.equal(text(`${stem}.webm`), 'x', 'the rendered bytes go in verbatim');
+});
+
+test('captions: both options read ONE cue set - the track and the sidecar cannot disagree', async () => {
+  const h = CAPTIONED();
+  (h.panel.querySelector('[data-action="captions-embed"]') as HTMLInputElement).checked = true;
+  (h.panel.querySelector('[data-action="captions-sidecar"]') as HTMLInputElement).checked = true;
+  h.download();
+  await settleDownload(h);
+  const { unzipAsync } = await import('../lib/zip.ts');
+  const stem = STEM;
+  const entries = await unzipAsync(new Uint8Array(await h.saved()[0]!.blob.arrayBuffer()));
+  assert.equal(new TextDecoder().decode(entries[`${stem}.vtt`]!), h.downloads()[0]!.opts.subtitlesVtt,
+    'the same WebVTT document inside the file and beside it');
+});
+
+test('captions: a document with no caption boxes asks for nothing and ships nothing extra', async () => {
+  const h = named(mount({ seqMs: 8000, formats: ['mp4', 'webm'] }));   // a stage, but no captions on it
+  (h.panel.querySelector('[data-action="captions-embed"]') as HTMLInputElement).checked = true;
+  (h.panel.querySelector('[data-action="captions-sidecar"]') as HTMLInputElement).checked = true;
+  h.download();
+  await settleDownload(h);
+  assert.equal(h.downloads()[0]!.opts.subtitlesVtt, undefined, 'no cues, no track');
+  assert.equal(h.saved()[0]!.name, `${STEM}.webm`, 'and no zip around a file with nothing beside it');
+});
+
+// The collector itself: what counts as a caption box, and how a cue is bounded.
+
+test('stageCaptionCues reads the caption boxes and only those', async () => {
+  const { stageCaptionCues } = await import('../bridge/sequence-render.ts');
+  const h = mount({ seqMs: 10000, formats: ['mp4'] });
+  addCaptionBox(h.stage!, 1000, 1000, 'One');
+  addCaptionBox(h.stage!, 3000, 1000, 'Two', { ignored: true });     // struck through - not drawn, not captioned
+  addCaptionBox(h.stage!, 5000, 1000, 'Three', { cls: 'callout' });  // an ordinary text box, not a caption
+  const plain = dom.window.document.createElement('div');            // a caption class with no timing at all
+  plain.className = 'lolly-box caption';
+  h.stage!.appendChild(plain);
+  assert.deepEqual(stageCaptionCues(h.canvas), [{ start: 1, end: 2, text: 'One' }]);
+});
+
+test('stageCaptionCues collapses line breaks - a blank line would break the cue block', async () => {
+  const { stageCaptionCues } = await import('../bridge/sequence-render.ts');
+  const h = mount({ seqMs: 10000, formats: ['mp4'] });
+  addCaptionBox(h.stage!, 0, 2000, '  Two lines\n\n  of caption  ');
+  assert.deepEqual(stageCaptionCues(h.canvas), [{ start: 0, end: 2, text: 'Two lines of caption' }]);
+});
+
+test('stageCaptionCues bounds every cue by the film, and sorts them', async () => {
+  const { stageCaptionCues } = await import('../bridge/sequence-render.ts');
+  const h = mount({ seqMs: 4000, formats: ['mp4'] });
+  addCaptionBox(h.stage!, 3000, 5000, 'Runs past the end');
+  addCaptionBox(h.stage!, 1000, 500, 'Earlier');
+  const open = addCaptionBox(h.stage!, 2000, 500, 'Open ended');
+  open.removeAttribute('data-t-dur');           // no authored length ⇒ runs to the end, as drawn
+  assert.deepEqual(stageCaptionCues(h.canvas), [
+    { start: 1, end: 1.5, text: 'Earlier' },
+    { start: 2, end: 4, text: 'Open ended' },
+    { start: 3, end: 4, text: 'Runs past the end' },
+  ]);
+  // A shorter export truncates the film, so it truncates the captions with it.
+  assert.deepEqual(stageCaptionCues(h.canvas, { totalMs: 1400 }), [{ start: 1, end: 1.4, text: 'Earlier' }]);
+  // And a cue the truncation leaves too short to read is dropped, not flashed.
+  assert.deepEqual(stageCaptionCues(h.canvas, { totalMs: 1020 }), []);
+});
+
+test('stageCaptionCues answers nothing for a canvas that is not a timed stage', async () => {
+  const { stageCaptionCues } = await import('../bridge/sequence-render.ts');
+  const h = mount({ seqMs: null, formats: ['mp4'] });
+  assert.deepEqual(stageCaptionCues(h.canvas), []);
+  assert.deepEqual(stageCaptionCues(null), []);
 });

@@ -312,13 +312,34 @@
 }
 .ds-ov-card-label { font-size: var(--fs-xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: hsl(var(--muted-foreground)); }
 .ds-ov-card-value { font-size: var(--fs-lg); font-weight: 700; overflow-wrap: anywhere; }
-.ds-ov-strip { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+/* Own counts lead, the starter's follows in the muted register - the one
+   grammar every room paints ownership with (plan 182 section 4.2). */
+.ds-ov-sub-value { font-size: var(--fs-sm); font-weight: 500; color: hsl(var(--muted-foreground)); }
+.ds-ov-card-note { font-size: var(--fs-sm); color: hsl(var(--muted-foreground)); overflow-wrap: anywhere; }
+.ds-ov-strip { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .ds-ov-chip {
   width: 16px;
   height: 16px;
   border-radius: 4px;
   box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.12);
 }
+/* Scaffolding, not a decision: smaller and faded, behind a hairline. Never a
+   dashed edge - dashed means drop target in this app. */
+.ds-ov-chip.is-starter { width: 12px; height: 12px; border-radius: var(--radius-xs); opacity: 0.5; }
+.ds-ov-strip-rule { width: 1px; height: 14px; margin: 0 2px; background: hsl(var(--border)); }
+/* The empty state's one quiet line: two inline controls that read as text. */
+.ds-ov-bring { margin: 0; font-size: var(--fs-sm); color: hsl(var(--muted-foreground)); }
+.ds-ov-inline {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.ds-ov-inline:hover { color: hsl(var(--foreground)); }
 .ds-ov-more { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .ds-ov-exit { font-size: calc(12.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
 

@@ -56,7 +56,7 @@ export async function fileBytesToFieldText(
  * than one (the sheet-picker). Returns null when the user cancels the sheet chooser.
  * Non-xlsx files decode straight through.
  */
-async function bytesToFieldTextInteractive(
+export async function bytesToFieldTextInteractive(
   bytes: Uint8Array,
   filename: string,
   announce: (m: string, o?: { assertive?: boolean }) => void = () => {},

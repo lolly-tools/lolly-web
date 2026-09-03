@@ -140,7 +140,10 @@ test('the ONLY collab identifiers reaching single-player code are the two null h
 test('both re-anchor hooks are optional calls on a holder that stays null', () => {
   assert.match(
     CODE,
-    /const ro = new ResizeObserver\(\(\) => \{ fitCanvas\(\); collabReanchor\?\.\(\); \}\);/,
+    // `refitStage` is the re-fit entry point since plan 179 C5 (at Fit it runs the full
+    // fit - canvas, then the artboard union; a user-zoomed view is left alone). What is
+    // pinned here is unchanged: ONE observer, the re-fit first, the re-anchor after it.
+    /const ro = new ResizeObserver\(\(\) => \{ refitStage\(\); collabReanchor\?\.\(\); \}\);/,
     'the stage ResizeObserver re-anchors the overlay after the canvas re-fits',
   );
   // The rAF paint: the canvas rebuild moves every rect the rings are anchored from.

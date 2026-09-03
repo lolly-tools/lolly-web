@@ -15,6 +15,11 @@
 // lazy view, instead of render-blocking the gallery/catalog landing (see app.css).
 import '../styles/parts/tool.css';
 import '../styles/parts/editor.css';
+// The Design editor's three chrome columns (plan 179 M1-M3). Their modules import no CSS
+// of their own - so they stay mountable in a node test - and ride this lazy tool chunk.
+import '../styles/parts/design-topbar.css';
+import '../styles/parts/design-navigator.css';
+import '../styles/parts/design-inspector.css';
 import '../styles/parts/document.css';
 import '../styles/parts/deck-editor.css';
 import '../styles/parts/tool-chrome.css';
@@ -57,8 +62,9 @@ import { getToolIntegrity } from '../catalog/integrity.ts';
 import { isToolInstalled, installedFetchFile } from '../lib/installed-tools.ts';
 
 import { escape } from '../utils.ts';
-import { createHistory, cloneValue } from './tool-history.ts';
-import { backPillHtml, mountBackPill } from '../components/back-pill.ts';
+import { createHistory, cloneValue, describeRowChange } from './tool-history.ts';
+import { backPillHtml, backHomeHtml, mountBackPill } from '../components/back-pill.ts';
+import { mountHomeFab } from '../components/home-fab.ts';
 import { hasGuide, guideButtonHtml, showToolGuide, autoOpenToolGuide } from '../components/tool-guide.ts';
 import { jellyActive } from '../lib/jelly.ts';
 import { toolSupport, capabilityLabel, canBatchTool, singleFileInputId } from '../capabilities.ts';
@@ -78,7 +84,7 @@ import { scopeCss, scopeTemplateStyles } from '../lib/scope-css.ts';
 import { setupMobileSheet, flickDirection } from '../lib/mobile-sheet.ts';
 import { wireExportPanelFloat } from '../lib/export-panel-float.ts';
 import { loadExportPrefs, mergeExportPrefs } from '../lib/export-prefs.ts';
-import { isDocked, releaseDock } from '../lib/edge-dock.ts';
+import { edgeDockCollapsed, isDocked, onDockChange, releaseDock, requestDock, showPanel } from '../lib/edge-dock.ts';
 import { runTemplateScripts, waitForQuiescence } from '../lib/render-lifecycle.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { createShutter } from '../lib/shutter.ts';
@@ -687,7 +693,9 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // `loop` is a live input id in other tools and could never be reserved.
   const isPresent = urlFlags.has('present');
   const presentAddress = urlFlags.get('s');
-  const presentLoop = urlFlags.has('kiosk');
+  // `let`, not const: the Design top bar's Loop row flips it and rewrites the URL, so the
+  // flag the next openPresenter() reads is the one the author just chose (plan 179 M1).
+  let presentLoop = urlFlags.has('kiosk');
 
   let initialValues: Record<string, InputValue> = values;
   if (slot) {
@@ -851,6 +859,16 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
           templates,
           host,
           formats: tool.manifest.render?.formats,
+          // "Blank canvas" on a frame-based tool is the default document's artboards with
+          // nothing on them, not the composed cover the default opens with (plan 179).
+          blankSeed: () => {
+            type FrameInput = { id: string; type?: string; default?: unknown; canvas?: { frameKind?: string; kindField?: string } };
+            const inp = (tool.manifest.inputs as FrameInput[]).find((i) => i.type === 'blocks' && !!i.canvas?.frameKind);
+            const rows = Array.isArray(inp?.default) ? (inp!.default as Array<Record<string, unknown>>) : [];
+            const kindField = inp?.canvas?.kindField ?? 'kind';
+            const frames = rows.filter((r) => r && String(r[kindField]) === inp!.canvas!.frameKind);
+            return frames.length ? { [inp!.id]: frames as unknown as InputValue } : {};
+          },
           // Arms the navigate-away close. If teardown landed in the same tick as the
           // modal's own construction (the race the check exists for), close immediately
           // instead of leaving a reference nobody will ever call.
@@ -945,12 +963,40 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // programmatic width/height px-sync) can set inputs without the change landing in the
   // undo history. baseSetInput itself is local to mountTool; this is the shared handle.
   runtime.setInputNoHistory = baseSetInput;
+  /**
+   * What the undo/redo toast calls this edit (plans/179 A16). The input's own name is
+   * the LAST resort, not the first: "Undid Boxes" names the slot that was written, which
+   * is never what the user just did. `describeRowChange` reads the two values of a
+   * blocks/canvas array and names the gesture where it honestly can - Add, Delete, Move,
+   * Resize, Rotate, or the one field's own label in the user's language - and answers
+   * null for everything else, where the input label is the truthful answer it always was.
+   */
+  const changeLabel = (item: { id: string; label?: string; fields?: Array<{ id?: string; label?: string }>; canvas?: Record<string, unknown> }, before: InputValue, after: InputValue): string => {
+    const fallback = item.label || item.id;
+    const cvs = (item.canvas || {}) as Record<string, unknown>;
+    const str = (k: string): string | undefined => (typeof cvs[k] === 'string' ? cvs[k] as string : undefined);
+    const ch = describeRowChange(before, after, {
+      xField: str('xField'), yField: str('yField'), wField: str('wField'),
+      hField: str('hField'), rotationField: str('rotationField'),
+    });
+    if (!ch) return fallback;
+    switch (ch.kind) {
+      case 'add': return t('Add');
+      case 'delete': return t('Delete');
+      case 'move': return t('Move');
+      case 'resize': return t('Resize');
+      case 'rotate': return t('Rotate');
+      default: break;
+    }
+    const f = (item.fields || []).find(x => x?.id === ch.field);
+    return f?.label ? t(f.label) : fallback;
+  };
   runtime.setInput = (id: string, value: InputValue) => {
     if (!applyingHistory) {
       const cur = runtime.getModel().find(i => i.id === id);
-      // `label` (the input's human name) is what the toast shows on undo/redo.
+      // `label` is what the toast shows on undo/redo - what CHANGED where we can name it.
       if (cur && inputHistory.record(
-        { id, label: cur.label || cur.id, before: cur.value, after: value },
+        { id, label: changeLabel(cur, cur.value, value), before: cur.value, after: value },
         Date.now(),
       ) !== 'ignored') {
         historyToastEl?.classList.remove('is-visible');   // dismiss a now-stale undo/redo toast
@@ -1173,18 +1219,30 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // [data-pdf-page] pages and the overlay drives frame-local drag + containment-on-drop.
   // The fields live on the blocks input's `canvas`, not on render.*; null for every tool
   // without a frameField so the overlay's frame-aware paths stay dead.
-  const frameCanvas = (canvasEditInput as { canvas?: { frameField?: string; frameKind?: string; orderField?: string; clipChildrenField?: string } } | null)?.canvas;
+  const frameCanvas = (canvasEditInput as { canvas?: { frameField?: string; frameKind?: string; orderField?: string; clipChildrenField?: string; frameTransitionField?: string; hiddenField?: string; lockedField?: string } } | null)?.canvas;
   const frameCfg = (editorLayout && frameCanvas?.frameField) ? {
     frameField: frameCanvas.frameField,
     frameKind: frameCanvas.frameKind || 'frame',
     orderField: frameCanvas.orderField,
     clipChildrenField: frameCanvas.clipChildrenField,
+    // The M4 declarations (plans/179): a slide's own transition to the next one, and the
+    // two layer flags. Each is optional, so a canvas that declares none keeps every
+    // frame-aware path exactly as it was.
+    transitionField: frameCanvas.frameTransitionField,
+    hiddenField: frameCanvas.hiddenField,
+    lockedField: frameCanvas.lockedField,
   } : undefined;
   // A fixed-size editor canvas (no resize control): the canvas input opts in via
   // canvas.fixedCanvas. Connector tools (Org Chart) set this so their rendered
   // connector <svg>'s viewBox stays 1:1 with box coordinates (a resized canvas would
   // scale the lines away from the boxes). Treated like carousel mode for sizing.
   const fixedCanvasMode = !!(canvasEditInput && (canvasEditInput as { canvas?: { fixedCanvas?: boolean } }).canvas?.fixedCanvas);
+  // Will the Design chrome (top bar + the two side columns, plan 179 M1-M3) mount? The
+  // same predicate the overlay block below is gated on, minus the two DOM lookups that
+  // cannot happen until the template has painted - so the render can already move the
+  // Home pill into the bar, and a layout:'editor' tool that declares no canvas blocks
+  // input keeps the free-floating corner pill it has always had.
+  const designChrome = editorLayout && !!canvasEditInput;
   // The multi-page rich-text document layout (render.layout:'document', e.g. Doc
   // Studio): chromeless like 'editor', but mounts a TipTap rich-document editor
   // (doc-editor.js) over the tool's `content` input, which stores the document as
@@ -1328,7 +1386,11 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
     </div>` : '';
 
   viewEl.innerHTML = `
-    ${noAside && !visitorPage ? backPillHtml(backPillOpts) : ''}
+    ${/* The editor layout's Home pill moves INTO the design top bar's left slot (plan 179
+          M1), so the free-floating corner pill is gated off there - two pills would sit on
+          top of each other. mountBackPill() scans the whole view, so the one the bar emits
+          (backHomeHtml, below) is wired by the same call, unsaved-changes intercept and all. */ ''}
+    ${noAside && !visitorPage && !designChrome ? backPillHtml(backPillOpts) : ''}
     <div class="tool-layout${chromeless ? ' is-editor' : ''}${documentLayout ? ' is-document' : ''}${pagedDoc ? ' is-paged' : ''}${webDoc ? ' is-webdoc' : ''}${visitorPage ? ' is-visitor' : ''}${hideSidebar && !visitorPage ? ' is-bare' : ''}" id="tool-layout"${documentLayout ? ' data-theme="light"' : ''} data-sidebar="${noAside ? 'hidden' : (sidebarOpen ? 'open' : 'closed')}">
       ${showAside ? `
         <aside class="sidebar" id="tool-sidebar">
@@ -1402,7 +1464,12 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
         </div>
         <div class="export-overlay" id="export-overlay">
           <div class="export-overlay-scrim" data-export-close></div>
-          <div class="export-popup" role="dialog" aria-modal="true" aria-label="${escape(t('Export'))}">
+          ${/* data-canvas-keys="off": the canvas editor binds its bare-key verbs on
+                `window`, so this sheet's own buttons were a live canvas surface - Delete
+                on Download removed the selected box, the arrows nudged it. The attribute
+                travels WITH the element the dock re-parents, so it covers the sheet
+                docked in the right column and floating over the stage alike. */ ''}
+          <div class="export-popup" role="dialog" aria-modal="true" data-canvas-keys="off" aria-label="${escape(t('Export'))}">
             <div class="export-popup-head">
               <span class="export-popup-title">${t('Export')}</span>
               <button type="button" class="export-popup-close" data-export-close aria-label="${escape(t('Close'))}">&#x2715;</button>
@@ -1660,6 +1727,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // (see setupStageNav below). Reset whenever the stage is resized by a
   // sidebar toggle so the preview returns to a clean fit.
   let stageZoom: StageNav | null = null;
+  // The Design mark menu lives on the free-canvas handle, which mounts after the stage
+  // nav; the docked HUD's swirl reaches it through this late-bound slot.
+  let openDesignMarkMenu: ((anchor: HTMLElement) => void) | null = null;
   let onFocusRect: ((e: Event) => void) | null = null;
 
   if (showAside) {
@@ -1758,7 +1828,12 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // timeline is open (see dockRailForTimeline). Same margin mechanism as top/bottom -
     // centring the margin box puts the canvas exactly centred in the remaining band.
     const reserveLeft   = Math.max(0, parseFloat(cs.getPropertyValue('--stage-reserve-left'))   || 0);
-
+    // There is NO right band. The one right-hand column is the app's edge dock
+    // (lib/edge-dock.ts) - the export sheet, the compact zoom bar and the Design
+    // inspector all take a slot in it - and that column reserves its space by nudging
+    // `#view` with `--dock-w`, so the stage this function measures is already narrower.
+    // Subtracting a second right reserve on top of it took the space twice and left the
+    // canvas sitting off-centre to the left of its own surface.
     const availW    = Math.max(40, stageRect.width  - reserveLeft - 32);
     const availH    = Math.max(40, stageRect.height - topPad - reserveTop - reserveBottom - 32);
     const scale     = Math.min(1, availW / canvasW, availH / canvasH);
@@ -1768,14 +1843,25 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     outerEl.style.marginTop    = reserveTop    ? `${reserveTop}px`    : '';
     outerEl.style.marginBottom = reserveBottom ? `${reserveBottom}px` : '';
     outerEl.style.marginLeft   = reserveLeft   ? `${reserveLeft}px`   : '';
+    outerEl.style.marginRight  = '';
     stageZoom?.sync(); // refresh the zoom % readout after a re-fit
   }
 
   // Reset pan/zoom and re-fit. Passed to renderActions so a dimension change always
   // returns to a clean fitted view rather than leaving a panned/zoomed canvas.
+  //
+  // The fit is the CONTENT fit (`stageZoom.fit()`), the same one `refitStage` and the
+  // `canvas-resize` listener use since plan 179 C5 - not `reset() + fitCanvas()`, which
+  // frames the export box alone. `setCanvasSize` calls this, and `importAsArtboards`
+  // calls `setCanvasSize` the moment its rows commit: a 20-slide .pptx was therefore
+  // framed on slide 1 with slides 2-20 off the right edge and nothing saying they were
+  // there, on the newest path, with no later re-fit (the ResizeObserver watches the
+  // stage, whose size did not change). `fit()` resets first, so the "return to a clean
+  // fitted view" contract is unchanged; a tool with no artboards cannot tell the
+  // difference, since the content rect is then null and fit() is exactly what this was.
   function resetView(): void {
-    stageZoom?.reset();
-    fitCanvas();
+    if (stageZoom) stageZoom.fit();
+    else fitCanvas();
   }
 
   // ── Multi-page document canvas (render.paged) ──────────────────────────────
@@ -1855,23 +1941,64 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   }
   if (pagesMode) syncStrip();   // size the strip before the first fit
 
+  // Re-fit after the stage (or the canvas) changed size. At Fit this is the FULL fit,
+  // which since plan 179 C5 means "the canvas, then the artboard union on top of it" -
+  // so a deck's framing tracks a window resize, and a template load that brings in new
+  // artboards is framed rather than left half off-screen. A view the USER zoomed or
+  // panned is untouched, exactly as before (fitCanvas's own isZoomed guard), and a tool
+  // with no artboards cannot tell the difference: stageZoom.fit() is then reset() (a
+  // no-op at Fit) plus the same fitCanvas call this always made.
+  function refitStage(): void {
+    if (stageZoom && !stageZoom.isUserZoomed()) stageZoom.fit();
+    else fitCanvas();
+  }
+
   // The stage resized, so the canvas re-fits - and every remote focus ring and
   // cursor was anchored from rects that just moved. `collabReanchor` is null unless
   // a collab is live, so this stays the one-call observer it has always been.
-  const ro = new ResizeObserver(() => { fitCanvas(); collabReanchor?.(); });
+  const ro = new ResizeObserver(() => { refitStage(); collabReanchor?.(); });
   ro.observe(stageEl);
   fitCanvas();
-  if (canvasEl) canvasEl.addEventListener('canvas-resize', fitCanvas);
+  if (canvasEl) canvasEl.addEventListener('canvas-resize', refitStage);
 
   // Canvas navigation - one module for both pointer types. Touch gets pinch-zoom +
   // drag-pan; desktop gets trackpad-native zoom/pan (Cmd/Ctrl-wheel & pinch zoom
   // about the cursor, Space/middle-drag pan, 0/1/+/- keys) plus a Fit/% HUD.
   if (stageEl && !hideSidebar && !visitorPage && outerEl && canvasEl && !pagedDoc) {
+    // The other direction of the `fc-focus-rect` seam (plan 179 C5): the stage ASKS the
+    // overlay for a rect worth framing - the union of the document's artboards for Fit,
+    // the selection's AABB for Shift+2. The dispatch is synchronous, so the answer is on
+    // `detail.rect` by the time it returns; with no overlay mounted (every tool but the
+    // canvas editors) or no artboards in the document it stays null, and Fit then does
+    // exactly what it always did.
+    const askRect = (what: 'content' | 'selection') => (): { x: number; y: number; w: number; h: number } | null => {
+      const detail: { what: string; rect: { x: number; y: number; w: number; h: number } | null } = { what, rect: null };
+      try { stageEl.dispatchEvent(new CustomEvent('fc-query-rect', { detail })); } catch { return null; }
+      return detail.rect;
+    };
+    const contentRect = askRect('content');
     // Pass fitCanvas as the "fit" action so the HUD's Fit button re-fits to the
     // CURRENT layout (e.g. the area left by the mobile sheet), not just the
     // stale fit that reset() restores. themeToggle docks into the HUD (its icon
     // sits alongside the zoom controls; see setupStageNav).
-    stageZoom = setupStageNav(stageEl, outerEl, canvasEl, nativeW, fitCanvas, themeToggle, soundToggle, profileToggle);
+    // The Design editor gets NO floating HUD: its top bar carries Fit / ± / NN% (plan 179
+    // M1), and the swirl pill was the second of two zoom controls on one stage. The theme
+    // and sound toggles the HUD used to host move with it - into the bar's mark menu, via
+    // the `chrome` option on initFreeCanvas below - so nothing is lost, only re-homed.
+    // Every gesture (pinch, wheel, space-pan, 0/1/+/-) is unchanged either way.
+    // In the Design editor the HUD is built hidden and docks itself into the right
+    // sidebar's compact bar (mark menu, zoom, theme, sound, profile) whenever that
+    // column holds a panel; the top bar carries the zoom cluster and the avatar only
+    // while nothing is docked (Andy, 2026-09-03: "the zoom / theme / profile menu are
+    // meant to be part of the right dock if it is opened, we don't need to recreate
+    // those things in the top panel"). The mark menu opener is late-bound: the
+    // free-canvas handle that owns the menu is created further down.
+    stageZoom = setupStageNav(stageEl, outerEl, canvasEl, nativeW, fitCanvas,
+      themeToggle, soundToggle, profileToggle, {
+        contentRect, selectionRect: askRect('selection'), hud: !designChrome,
+        editorLayout: !!designChrome,
+        onMarkMenu: designChrome ? (anchor: HTMLElement) => { openDesignMarkMenu?.(anchor); } : undefined,
+      });
     // The Artboards navigator (free-canvas) asks the stage to frame one artboard by
     // dispatching `fc-focus-rect` with the frame's native rect - the overlay never
     // touches the pan/zoom transform itself. Wired here because only tool.ts holds the
@@ -1881,6 +2008,21 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       if (d) stageZoom?.focusRect(d.x, d.y, d.w, d.h);
     };
     stageEl.addEventListener('fc-focus-rect', onFocusRect);
+
+    // A document with artboards OPENS showing all of them. Both halves of the answer land
+    // after this line - the runtime paints the frame pages asynchronously and the overlay
+    // that reports them is a lazy chunk - so poll a bounded run of frames for the first
+    // content rect, exactly like the `?present` auto-entry below, and fit once. Any hand
+    // on the trackpad (or a deep link that framed something) wins and stops the poll.
+    {
+      let tries = 0;
+      const openFit = (): void => {
+        if (!viewEl.isConnected || !stageZoom || stageZoom.isUserZoomed()) return;
+        if (contentRect()) { stageZoom.fit(); return; }
+        if (tries++ < 120) requestAnimationFrame(openFit);   // ~2s at 60fps, then give up
+      };
+      requestAnimationFrame(openFit);
+    }
   } else if (stageEl && pagedDoc && (themeToggle || soundToggle)) {
     // Paged docs navigate by NATIVE scroll of the canvas surface (no pan/zoom transform),
     // so there's no zoom HUD - but the theme / sound toggles still dock in the same
@@ -2048,12 +2190,24 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       // only when a panel was actually open (defensive/duplicate closes stay silent). The
       // matching 'shhhht' open rides the trigger's data-sfx, which every open path clicks.
       if (wasOpen) playSfx('hydraulicClose');
+      // The mirror of 'lolly:export-open': anything showing a value the sheet also edits
+      // has to re-read it on the way OUT too. The document name is the case that bit -
+      // the sheet's Filename field and the design top bar's name field are two views of
+      // one string, and a rename that was normalised or reverted as the sheet closed left
+      // the bar showing the value the user no longer had.
+      if (wasOpen) actionsEl.dispatchEvent(new CustomEvent('lolly:export-close'));
       applyModality();                 // un-inert before returning focus to the trigger
-      // Return focus to the trigger. In editor mode the render pill is hidden, so
-      // the rail Export icon (which opened the popup) is the real trigger.
-      const focusTarget = (chromeless ? viewEl.querySelector<HTMLElement>('.fc-action-primary') : null) ?? renderFab;
+      // Return focus to the trigger. In editor mode the render pill is hidden, so the
+      // visible Export control is the real trigger: the design top bar's when it is
+      // mounted (plan 179 M1 - it is the primary now), the rail icon otherwise.
+      const focusTarget = (chromeless
+        ? (viewEl.querySelector<HTMLElement>('[data-topbar="export"]') ?? viewEl.querySelector<HTMLElement>('.fc-action-primary'))
+        : null) ?? renderFab;
       focusTarget.focus();
     };
+    // Subscribers to "the sheet just opened" - today only the float wiring below, which
+    // uses it to put the sheet back in the right-hand column the user keeps it in.
+    const exportOpenHooks = new Set<() => void>();
     const openExport = ({ focus = true }: { focus?: boolean } = {}): void => {
       layout.classList.add('export-open');
       renderFab.setAttribute('aria-expanded', 'true');
@@ -2061,6 +2215,11 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       // Let the panel refresh anything derived from live state (the auto
       // filename placeholder follows the inputs and the provenance toggles).
       actionsEl.dispatchEvent(new CustomEvent('lolly:export-open'));
+      // …and tell the float wiring, which is where the sheet decides whether it belongs
+      // in the one right-hand column. A plain event will not do: the actions panel is a
+      // DESCENDANT of the popup, so an event fired on it never reaches a listener on the
+      // popup, and the sheet has to be placed before focus moves into it.
+      for (const cb of [...exportOpenHooks]) { try { cb(); } catch (e) { console.error(e); } }
       // Move focus into the dialog (its close button) for keyboard/SR users - but
       // not when auto-opened from ?options on load, where grabbing focus is jarring.
       if (focus) exportOverlay.querySelector<HTMLElement>('.export-popup-close')?.focus();
@@ -2153,6 +2312,8 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           overlay: exportOverlay, popup: exportPopup, head: exportHead,
           isMobile: () => mqMobile.matches,
           freeLayout: chromeless || !sidebarEl,
+          editorLayout,
+          onOpen: (cb) => { exportOpenHooks.add(cb); return () => { exportOpenHooks.delete(cb); }; },
         })
       : null;
 
@@ -3075,10 +3236,27 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       if (sTimer) return;                       // a write is already scheduled this window
       sTimer = setTimeout(() => { sTimer = null; flushPresentAddress(); }, 1100);
     };
-    const openPresenter = async (): Promise<void> => {
+    /**
+     * Open the deck. `at` starts on one frame (the top bar's "Present from this slide" and
+     * the navigator's row menu both pass a frame id, which present-mode parses as an `s=`
+     * address exactly like the deep link); `speaker` opens straight into the speaker view.
+     * Both optional, so every existing caller - the rail's Present action, the `?present`
+     * auto-entry - keeps its no-argument call and its behaviour.
+     */
+    const openPresenter = async (o?: { at?: string; speaker?: boolean }): Promise<void> => {
       if (presenter) return;
       const { openPresentMode } = await import('./present-mode.ts');
-      if (presenter || !viewEl.isConnected) return;   // re-check after the await
+      // `varsFrom` is read ONCE, at open, off `contentEl`'s inline `--brand-*` slots -
+      // and `applyBrandVars` writes those asynchronously (seven awaited token resolves).
+      // The `?present` deep link opens on the first rAF that sees a frame page, which on
+      // a cold token cache is BEFORE the slots exist: `readScopeVars` returned [] and
+      // every `var(--brand-on-primary, #ffffff)` box painted its white fallback, with no
+      // second read to recover when the tokens arrived a moment later. So wait for the
+      // same promise every other deep-link path waits on (plan 179 T7). On the menu path
+      // this is one microtask - the promise settled during mount, long before the click -
+      // and it carries brandVarsReady's own 3s cap, so a stalled fetch cannot wedge it.
+      await brandVarsReady;
+      if (presenter || !viewEl.isConnected) return;   // re-check after the awaits
       // Present from the ENGINE's render (nested frame pages WITH their children), not the
       // editor's live DOM: the free-canvas editor flattens boxes to siblings of empty
       // frame-page backgrounds for editing, so cloning those pages would show blank frames.
@@ -3088,9 +3266,25 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       const transitionVal = String(runtime.getModel().find((i) => i.id === 'transition')?.value ?? 'slide');
       presenter = openPresentMode({
         source: presentSource,
-        initial: presentAddress,
+        // A frame id IS an `s=` address (present-mode resolves position / id / `h.f`), so
+        // "from this slide" needs no second entry point - it just addresses the open.
+        initial: o?.at || presentAddress,
         loop: presentLoop,
-        transition: transitionVal === 'morph' || transitionVal === 'fade' ? transitionVal : 'slide',
+        // The presenter stage is a body-level overlay, so it inherits none of the
+        // `--brand-*` slots applyBrandVars wrote onto this canvas - hand it the canvas to
+        // copy them from, or a box coloured `var(--brand-on-primary, #ffffff)` paints its
+        // fallback while presenting and the brand colour while editing (plan 179 T7).
+        varsFrom: contentEl,
+        // Every value the manifest's `transition` select offers, and no more: the
+        // presenter reads this one string as the deck's own transition, so a spelling
+        // dropped here is a chosen option that silently becomes a push. `flight` (the
+        // camera move over the canvas, plans/179 section 7) was exactly that - offered in
+        // the sidebar, written to the model, honoured by the .pptx and mp4 exports, and
+        // downgraded on the way into the one player that can actually fly it. Anything
+        // unrecognised still falls back to the manifest's own default.
+        transition: transitionVal === 'morph' || transitionVal === 'fade' || transitionVal === 'flight'
+          ? transitionVal
+          : 'slide',
         onAddress: (frameId, _index, build) => writePresentAddress(build > 0 ? `${frameId}.${build}` : frameId),
         onClose: () => {
           presenter = null;
@@ -3100,6 +3294,10 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           writePresentUrl((sp) => { sp.delete('present'); sp.delete('kiosk'); sp.delete('s'); });
         },
       });
+      // "Speaker view" opens the deck AND its notes panel in one gesture. Done here rather
+      // than as an option on openPresentMode because the controller's own `s` key toggles
+      // the very same function - one implementation, two doors.
+      if (o?.speaker) presenter?.speaker();
     };
 
     // New from template (plans/142 WP-1): re-open the Start chooser from the editor's
@@ -3153,6 +3351,51 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       } finally { templateChooserBusy = false; }
     };
 
+    // The document name lives in ONE place - the export sheet's filename field - and three
+    // surfaces read and write it (the Document-info panel, the top bar, the save snapshot's
+    // `__label`). Hoisted out of the `info` literal below so the bar shares the exact same
+    // pair rather than a second copy of the selector.
+    const getFilename = (): string => viewEl.querySelector<HTMLInputElement>('[data-action="filename"]')?.value || '';
+    const setFilename = (v: string): void => {
+      const fn = viewEl.querySelector<HTMLInputElement>('[data-action="filename"]');
+      if (fn) { fn.value = v; fn.dispatchEvent(new Event('input', { bubbles: true })); }
+    };
+
+    // History is a SINGLE-SLOT contract (`historyControls`), and this layout now has two
+    // registrants: the overlay's rail pair and the top bar's. Fanning out here keeps the
+    // slot single while letting both stay live - without it whichever registered last
+    // would leave the other's buttons frozen at their mount-time enabled state.
+    const historySyncs: Array<(canUndo: boolean, canRedo: boolean) => void> = [];
+    const registerHistory = (sync: (canUndo: boolean, canRedo: boolean) => void): void => {
+      historySyncs.push(sync);
+      historyControls = { sync: (canUndo, canRedo) => { for (const s of historySyncs) s(canUndo, canRedo); } };
+      refreshHistoryUI();
+    };
+
+    // The three Design chrome modules (plan 179 M1-M3). Declared here so the top bar's
+    // Navigator toggle can reach a column that is mounted after it, and so teardown has
+    // one list to fold into `_cleanup`.
+    let designTopbar: import('./design-topbar.ts').DesignTopbar | null = null;
+    let designNav: import('./design-navigator.ts').DesignNavigatorHandle | null = null;
+    let designInspector: import('./design-inspector.ts').DesignInspectorHandle | null = null;
+
+    /**
+     * Column open state is a DEVICE preference, not document data: it must never dirty the
+     * document, ride a collab op or travel in a saved session, which is what `host.state`
+     * would mean. Same reasoning (and the same try/catch) as the sidebar width.
+     */
+    const readColumnPref = (key: string): boolean => {
+      try {
+        const v = localStorage.getItem(key);
+        if (v === 'open') return true;
+        if (v === 'closed') return false;
+      } catch { /* private mode / blocked storage: fall through to the width default */ }
+      return window.innerWidth > 1180;
+    };
+    const writeColumnPref = (key: string, open: boolean): void => {
+      try { localStorage.setItem(key, open ? 'open' : 'closed'); } catch { /* best-effort */ }
+    };
+
     import('./free-canvas.ts').then(({ initFreeCanvas }) => {
       if (!viewEl.isConnected) return;   // navigated away before the chunk loaded
       // The host-UI profile setter is a web-shell extension (WebProfileAPI), not on
@@ -3192,11 +3435,8 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           version: tool.manifest.version,
           status: tool.manifest.status,
           formats: tool.manifest.render.formats,
-          getFilename: () => viewEl.querySelector<HTMLInputElement>('[data-action="filename"]')?.value || '',
-          setFilename: (v: string) => {
-            const fn = viewEl.querySelector<HTMLInputElement>('[data-action="filename"]');
-            if (fn) { fn.value = v; fn.dispatchEvent(new Event('input', { bubbles: true })); }
-          },
+          getFilename,
+          setFilename,
           lastEdited: (async () => {
             if (!slot) return null;
             try { return (await host.state.list()).find(s => s.slot === slot)?.updatedAt || null; }
@@ -3228,13 +3468,24 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         // passes mode 'edit' when re-opening the box's current Lolly render.
         editTool: (toolUrl: string, mode = 'insert') => openEmbedEditor(host, { editUrl: toolUrl, slotLabel: t('image'), mode }),
         // The editor is chromeless (no sidebar header), so the free-canvas rail
-        // hosts the visible undo/redo buttons - the only touch trigger for
-        // history here. register() adopts them as THE history controls (the
-        // header pair can't exist in this layout, so no conflict).
+        // hosts a pair of visible undo/redo buttons. Since plan 179 M1 the design
+        // top bar hosts a second pair, so `registerHistory` fans the single-slot
+        // contract out to both rather than letting the later mount silence the
+        // earlier one (the header pair can't exist in this layout, so no conflict).
         history: {
           undo: undoHistory,
           redo: redoHistory,
-          register: (sync: (canUndo: boolean, canRedo: boolean) => void) => { historyControls = { sync }; refreshHistoryUI(); },
+          register: registerHistory,
+        },
+        // Chrome the tool view owns and the overlay's trimmed Lolly menu now hosts: the
+        // theme cycle and sound toggles the retired zoom HUD used to carry (see the
+        // setupStageNav call above), the profile avatar, and "Save to your library".
+        // The elements are ADOPTED, not cloned - the HUD is not built in this layout,
+        // so nothing else holds a claim on them.
+        chrome: {
+          themeToggle: themeToggle ?? undefined,
+          soundToggle: soundToggle ?? undefined,
+          saveToLibrary: canSaveSession ? () => { renderSaveBtn?.click(); } : undefined,
         },
         // Primary actions as prominent rail icons (the chromeless editor has no
         // bottom pill). Each delegates to the tool's existing handler/button so
@@ -3248,8 +3499,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           copy: () => viewEl.querySelector<HTMLButtonElement>('[data-action="copy"]')?.click(),
           share: () => viewEl.querySelector<HTMLButtonElement>('[data-action="copy-url"]')?.click(),
           // Present the frames as a fullscreen deck (plan 112). Fire-and-forget: the
-          // presenter module is lazily imported on first use.
-          present: () => { void openPresenter(); },
+          // presenter module is lazily imported on first use. An optional frame id starts
+          // the deck there - what the navigator's "Present from here" row spends.
+          present: (atFrameId?: string) => { void openPresenter(atFrameId ? { at: atFrameId } : undefined); },
           // Only offered when the tool ships templates (index metadata / inline
           // manifest); a tool with only user-saved templates reaches them via a
           // fresh open, which the chooser gate already covers.
@@ -3261,6 +3513,300 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           dirtyRef: renderSaveBtn,
         },
       } as Parameters<typeof initFreeCanvas>[0]);
+
+      // ── The Design chrome: top bar + navigator + inspector (plan 179 M1-M3) ──────
+      //
+      // Lazily imported alongside the overlay, not statically, so a tool that never
+      // mounts an editor pays nothing for three modules it cannot use. Each is mounted
+      // through the ports on `fc.design` (see design-ports.ts) - none of them import
+      // free-canvas, and none of them reach the model except through those ports, which
+      // is why they are unit-testable and why this wiring is the only place that knows
+      // both halves. Order matters: the bar measures its own height into
+      // `--stage-reserve-top` before the columns report their widths, so the first fit
+      // the canvas performs already accounts for all three bands.
+      void Promise.all([
+        import('./design-topbar.ts'), import('./design-navigator.ts'), import('./design-inspector.ts'),
+      ]).then(([{ mountDesignTopbar }, { initDesignNavigator }, { initDesignInspector }]) => {
+        if (!viewEl.isConnected) return;
+        const design = fc.design;
+        openDesignMarkMenu = (anchor: HTMLElement) => design.openLollyMenu(anchor);
+
+        // The navigator is the only writer of a stage side reserve, and it writes through
+        // the overlay's arbiter - which also owns the docked rail's share of the left
+        // band, so a navigator and an open timeline cannot each claim the same edge.
+        //
+        // The RIGHT number is always 0: the inspector is not a stage child any more but an
+        // occupant of the app's one right-hand column (lib/edge-dock.ts), and that column
+        // reserves its width by nudging `#view` with `--dock-w`. Passing its width here as
+        // well would take the same space twice.
+        let navW = 0;
+        const pushWidths = (): void => { design.setColumnWidths(navW, 0); };
+
+        // ── One right-hand panel (Andy, 2026-09-02: "a single left sidebar and a single
+        // right sidebar") ───────────────────────────────────────────────────────────
+        //
+        // The inspector used to append itself to the stage, which put a second right-hand
+        // panel INSIDE the canvas surface, beside the edge dock the export sheet was
+        // already using - two columns over the artwork, one of them clipping it. It is now
+        // an occupant of that one column (lib/edge-dock.ts) like everything else, so
+        // "the inspector is open" means "the inspector is docked", and `setInspectorOpen`
+        // is the single writer of that fact.
+        //
+        // The column is the app's, not this view's: it can hand a panel back on its own
+        // (the user undocks it, or the window drops below the mobile breakpoint, where the
+        // whole dock is inert). That is why the release path - not just the bar's toggle -
+        // is what records the state and re-syncs the bar.
+        const INSP_KEY = 'lolly-design-inspector';
+        let inspectorOpen = false;
+        const setInspectorOpen = (open: boolean): void => {
+          if (open) {
+            const insp = designInspector;
+            if (!insp) return;                    // the column has not mounted yet
+            if (!isDocked('inspector')) {
+              inspectorOpen = requestDock('inspector', insp.el, {
+                icon: icon('sliders'),
+                label: t('Inspector'),
+                // WHY THE PANEL LEFT decides whether a preference is written. A route
+                // change and the mobile-breakpoint undock both hand the panel back, and
+                // recording "closed" for either meant leaving the editor once turned the
+                // inspector off for every session after it.
+                onRelease: (reason) => {
+                  inspectorOpen = false;
+                  if (reason === 'user') writeColumnPref(INSP_KEY, false);
+                  designTopbar?.sync();
+                },
+              });
+            } else {
+              // Already in the column, which is not the same as on the screen: it can be
+              // behind a tab, or inside a collapsed rail. Asking for it again means show it.
+              showPanel('inspector');
+              inspectorOpen = true;
+            }
+          } else if (isDocked('inspector')) {
+            releaseDock('inspector');             // its onRelease records + syncs
+            return;
+          } else {
+            inspectorOpen = false;
+          }
+          // An ask the dock could not honour (below the mobile breakpoint the column does
+          // not exist) must NOT overwrite a desktop preference with "closed" - the user
+          // asked for it, the host simply had nowhere to put it.
+          if (inspectorOpen === open) writeColumnPref(INSP_KEY, open);
+          designTopbar?.sync();
+        };
+
+        // (a) The top bar. Every port is a live read off the overlay or this view; the
+        // bar holds no state of its own beyond its own open menu.
+        designTopbar = mountDesignTopbar({
+          stageEl, canvasEl,
+          // The Home pill moved out of the view's corner and into the bar's left slot
+          // (see the render gate above), so the bar emits it and we wire it here.
+          backPillHtml: backHomeHtml(backPillOpts),
+          history: { undo: undoHistory, redo: redoHistory, register: registerHistory },
+          name: {
+            get: getFilename,
+            set: setFilename,
+            // The export field's own placeholder IS the auto-filename (tool-actions keeps
+            // it fresh on every `lolly:export-open`), so reading it here needs no second
+            // implementation of the naming rules.
+            placeholder: () => viewEl.querySelector<HTMLInputElement>('[data-action="filename"]')?.placeholder || '',
+          },
+          zoom: {
+            fitAll: () => { stageZoom?.fit(); },
+            // Deliberately the overlay's own focus path (`fc-focus-rect`), not a rect this
+            // view converts: the overlay owns the canvas→client mapping, and the navigator
+            // and the timeline already frame artboards through exactly this door.
+            fitArtboard: () => { const id = design.activeFrameId(); if (id) design.artboard.focus(id); },
+            zoomBy: (f) => { stageZoom?.zoomBy(f); },
+            zoomTo: (abs) => { stageZoom?.zoomTo(abs); },
+            actual: () => stageZoom?.actual() ?? 0,
+            subscribe: (cb) => stageZoom?.subscribe(cb) ?? (() => { /* no stage nav: nothing to follow */ }),
+          },
+          timeline: { toggle: () => design.toggleTimeline(), isOpen: () => design.isTimelineOpen() },
+          navigator: {
+            toggle: () => { const n = designNav; if (n) n.setOpen(!n.isOpen()); },
+            isOpen: () => !!designNav?.isOpen(),
+          },
+          // The inspector's only show/hide control from outside the column (it carries a
+          // close button of its own, and nothing else could re-open it). The toggle is a
+          // dock request now, not a `setOpen` on the column: whether the panel is on
+          // screen is the one right-hand column's answer, not the panel's.
+          inspector: {
+            toggle: () => setInspectorOpen(!inspectorOpen),
+            isOpen: () => inspectorOpen,
+          },
+          // …and the same column's other occupant the bar has to know about: while the
+          // compact zoom bar is docked it carries Fit / NN% / ±, so the bar drops its own
+          // copy of them rather than showing the five verbs twice.
+          dock: {
+            // Docked AND on screen: a collapsed column hides its body, so a bar that read
+            // occupancy alone dropped Fit / NN% / ± (and the mark, and the avatar) for a
+            // compact zoom bar nobody could see.
+            zoomDocked: () => isDocked('zoom') && !edgeDockCollapsed(),
+            subscribe: (cb) => onDockChange(cb),
+          },
+          share: () => { viewEl.querySelector<HTMLButtonElement>('[data-action="copy-url"]')?.click(); },
+          present: (o) => { void openPresenter(o); },
+          exportSheet: () => { renderFab?.click(); },
+          // The deck-wide Narrate row (plans/180 section 8). Undefined where the overlay
+          // offers no narration - no speech bridge, no frames - and then there is no row.
+          narrate: design.narrationActions,
+          model: {
+            getInput: (id) => runtime.getModel().find(i => i.id === id)?.value,
+            // Caught, not floated: the bar writes doc-level inputs the MANIFEST declares
+            // (`autoAdvance`), and a tool that has not declared one yet must leave a log
+            // line rather than an unhandled rejection on the page.
+            setInput: (id, v) => {
+              markUserDirty(id);
+              void Promise.resolve(runtime.setInput(id, v as InputValue))
+                .catch((e: unknown) => host.log?.('warn', `top bar could not set "${id}": ${String(e)}`));
+            },
+          },
+          // Loop is the reserved `?kiosk` flag, not a model field: it describes how the
+          // deck is PLAYED, and a shared link is how that travels.
+          loop: {
+            get: () => presentLoop,
+            set: (v) => {
+              presentLoop = v;
+              writePresentUrl((sp) => { if (v) sp.set('kiosk', ''); else sp.delete('kiosk'); });
+            },
+          },
+          onMarkMenu: (anchor) => design.openLollyMenu(anchor),
+          // The avatar is ADOPTED (moved), so exactly one surface holds it at a time. The
+          // bar is its home while the right column is closed; when the compact zoom bar
+          // takes the column the bar hands the avatar to that bar instead (profileDock
+          // below), so the profile menu is always reachable and never doubled.
+          profileEl: profileToggle ?? undefined,
+          // The docked compact zoom bar is the stage nav's own pill, so its element is
+          // where the avatar goes while the column holds it. Null before the pill exists
+          // (or on a layout that builds none), which the bar reads as "keep it".
+          profileDock: () => stageZoom?.profileHome() ?? null,
+          // A document can only be presented (or have an artboard framed) if the tool
+          // declares a frame primitive AND the document actually holds one.
+          hasFrames: () => {
+            if (!frameCfg) return false;
+            if (design.activeFrameId()) return true;
+            const kindField = (design.model.cfg as { kindField?: string }).kindField || 'kind';
+            const frameKind = design.model.frame?.frameKind || frameCfg.frameKind || 'frame';
+            return design.model.getBoxes().some(b => String(b[kindField] ?? '') === frameKind);
+          },
+          activeFrameId: () => design.activeFrameId(),
+        });
+        // No frame primitive at all: there is no deck here and never will be, so the
+        // Present split is not disabled - it is not offered.
+        if (!frameCfg) {
+          const split = designTopbar.el.querySelector<HTMLElement>('.dtb-split');
+          if (split) split.hidden = true;
+        }
+        // The bar's Home pill is not in the DOM when the view-wide mountBackPill() runs
+        // (this callback is a dynamic import behind it), so wire the bar's own subtree.
+        mountBackPill(designTopbar.el, { intercept: backPillIntercept });
+        mountHomeFab(designTopbar.el);
+        // An edit made to the filename in the export sheet must show up in the bar. The
+        // event is dispatched on the actions panel and does not bubble, so listen there.
+        // Both edges of the sheet: it can open on one name and close on another (the field
+        // normalises, or an unsaved edit is dropped), and a bar left on the stale one
+        // writes it straight back over the sheet's at the next keystroke.
+        const onExportOpen = (): void => designTopbar?.sync();
+        actionsEl?.addEventListener('lolly:export-open', onExportOpen);
+        actionsEl?.addEventListener('lolly:export-close', onExportOpen);
+        // …and the OPEN event is not enough: it fires when the sheet opens, so a name
+        // typed into the Filename field while it is open left the bar showing the old
+        // one for the rest of the session - and the next keystroke in the bar wrote that
+        // stale value straight back over the sheet's. `input` bubbles up to the panel, so
+        // one delegated listener covers the field however it is rebuilt; the bar's own
+        // `sync()` skips an unchanged value, so this is inert while typing in the bar.
+        const onFilenameInput = (e: Event): void => {
+          if ((e.target as HTMLElement | null)?.closest?.('[data-action="filename"]')) designTopbar?.sync();
+        };
+        actionsEl?.addEventListener('input', onFilenameInput);
+
+        // (b) The navigator column (slides / artboards + the active frame's layers).
+        const NAV_KEY = 'lolly-design-nav';
+        designNav = initDesignNavigator({
+          stageEl, canvasEl,
+          model: design.model,
+          selection: design.selection,
+          artboard: design.artboard,
+          thumb: design.thumb,
+          actions: design.navigatorActions,
+          // Notes to voice (plans/180): undefined on a host with no speech bridge, and
+          // then the row's dot is the speaker-notes mark it has always been.
+          narration: design.narrationActions,
+          initiallyOpen: readColumnPref(NAV_KEY),
+          onOpenChange: (open) => { writeColumnPref(NAV_KEY, open); designTopbar?.sync(); },
+          onWidthChange: (px) => { navW = px; pushWidths(); },
+        });
+
+        // (c) The inspector column, then hand it to the overlay so the object bar's
+        // Text / More / Dims / Stroke buttons reveal its sections instead of opening
+        // the one-slot popovers.
+        //
+        // It is built DETACHED and never appended to the stage: `setInspectorOpen` puts
+        // it in the one right-hand column, which is also what takes it back out. Its own
+        // header close button comes back here through `onClose` for the same reason - so
+        // the panel and the bar's toggle can never disagree about where it is.
+        designInspector = initDesignInspector({
+          stageEl, canvasEl,
+          model: design.model,
+          selection: design.selection,
+          artboard: design.artboard,
+          actions: design.inspectorActions,
+          // The Narrate button under the Speaker notes, and the document's own narration
+          // settings. Absent means neither is drawn (plans/180 section 8).
+          narration: design.narrationActions,
+          fonts: design.fonts,
+          fields: design.fields,
+          // The panel skips its whole render while closed, and it is built DETACHED - so
+          // without this it was constructed "open" and rebuilt its full property column on
+          // every selection change and every commit, for a node that was never in the
+          // document. The dock's own setOpen(true) forces a fresh sync on the way in.
+          initiallyOpen: readColumnPref(INSP_KEY),
+          // The close button removes the column from the page, which drops focus to
+          // <body>; the bar's toggle is the only way back in, so it takes the keyboard.
+          onClose: () => { setInspectorOpen(false); designTopbar?.focusInspectorToggle(); },
+        });
+        // The object bar's Text / More / Dims / Stroke buttons reveal a section, and that
+        // can arrive while the column is out of the dock - so the handle the overlay gets
+        // asks for a slot FIRST and then scrolls. Wrapped here rather than inside the
+        // column, because taking a dock slot is this view's job, not the panel's.
+        design.setInspector({
+          reveal: (section) => { setInspectorOpen(true); designInspector?.reveal(section); },
+        });
+        // Docked from the device-local preference, which defaults to open above 1180px -
+        // the same rule the navigator reads on the other edge.
+        if (readColumnPref(INSP_KEY)) setInspectorOpen(true);
+        // BOTH columns are mounted after the bar, and neither announces its state at
+        // mount: the navigator fires `onOpenChange` only from its own setOpen, and the
+        // inspector's is now a dock request this view makes. So the bar's own `sync()`
+        // (which ran inside mountDesignTopbar, when both handles were still null) had
+        // every toggle reading `aria-pressed="false"` over an open column: a screen
+        // reader told the panel was off while it was on, and the pressed styling never
+        // painted. One sync here, once all three exist, with the real state.
+        designTopbar?.sync();
+
+        const prevChromeCleanup = viewEl._cleanup;
+        viewEl._cleanup = () => {
+          actionsEl?.removeEventListener('lolly:export-open', onExportOpen);
+          actionsEl?.removeEventListener('lolly:export-close', onExportOpen);
+          actionsEl?.removeEventListener('input', onFilenameInput);
+          // Unregister the inspector BEFORE destroying it, so a late object-bar rebuild
+          // cannot reveal a section on a column that is already gone - and take it out of
+          // the shared right-hand column, which outlives this view and would otherwise
+          // keep a slot for an element nobody owns any more.
+          try { design.setInspector(null); } catch (e) { console.error(e); }
+          // 'host': the view is being torn down, which is not the user closing the panel.
+          // The default reason would write "closed" to the device preference on every
+          // route change, so the inspector never came back on the next visit.
+          try { if (isDocked('inspector')) releaseDock('inspector', 'host'); } catch (e) { console.error(e); }
+          for (const part of [designInspector, designNav, designTopbar]) {
+            try { part?.destroy(); } catch (e) { console.error(e); }
+          }
+          designInspector = designNav = designTopbar = null;
+          prevChromeCleanup?.();
+        };
+      }).catch((err: unknown) => console.error('[design] chrome failed to load:', err));
+
       // The runtime half of the editor-state API (plans/176 v1): the same wire object
       // a link's `_ui` carries, readable and writable while a canvas editor is mounted.
       // `apply` routes through the exact DeepLinkState routine the mount-time deep link
@@ -3298,9 +3844,32 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       requestAnimationFrame(tryOpen);
     }
 
+    // ── Editor keyboard verbs (plan 179 M1 section 4) ────────────────────────────
+    //
+    // Three document-level chords, and only in this layout - a chromeless editor has no
+    // visible pill to reach for, so Save and Export need a key. Each delegates to the
+    // button that already owns the behaviour, so there is exactly one implementation.
+    //
+    // NOT Cmd/Ctrl+Shift+P: Firefox opens a private window on it and will not let a page
+    // intercept, so a shortcut printed in a menu would silently do the wrong thing on one
+    // browser. Cmd/Ctrl+Return is free everywhere and reads as "go".
+    //
+    // `z`/`y` stay with onHistoryKey and the canvas keeps its own bare-key chords; nothing
+    // here collides. A text field always wins - typing beats every shortcut.
+    const onDocKey = (e: KeyboardEvent): void => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      if (isTextEditing()) return;
+      const k = e.key.toLowerCase();
+      if (k === 's') { e.preventDefault(); renderSaveBtn?.click(); return; }
+      if (k === 'e') { e.preventDefault(); renderFab?.click(); return; }
+      if (e.key === 'Enter') { e.preventDefault(); void openPresenter(); }
+    };
+    window.addEventListener('keydown', onDocKey);
+
     // Fold the presenter into teardown so navigating away closes the deck cleanly.
     const prevCleanupPresent = viewEl._cleanup;
     viewEl._cleanup = () => {
+      window.removeEventListener('keydown', onDocKey);
       try { presenter?.close(); } catch (e) { console.error(e); }
       prevCleanupPresent?.();
     };
@@ -3385,26 +3954,32 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // dialog first; the pill's own `go` is what finally leaves, so the dialog's exits
   // land exactly where the pill says they will (the launch folder when the session
   // came from one, else the view the user arrived from).
-  mountBackPill(viewEl, {
-    intercept: (go) => {
-      if (!hasInputs || !userHasMadeChanges || exportedSinceEdit) return false;
-      // Offer "Save & leave" only when the tool actually has a save action.
-      const canSave = !!actionsEl?.querySelector('[data-action="save"]') && !!actionsApi?.save;
-      // If the session carries heavy embedded bytes (a recorded clip stamps meta.bytes),
-      // tell the user how big the save is - the recording is what makes a Record session
-      // large, and it's stored on-device.
-      const heavy = runtime.getModel()
-        .map(i => (i.value as { meta?: { bytes?: number } } | undefined)?.meta?.bytes)
-        .find((b): b is number => typeof b === 'number' && b > 0);
-      const detail = heavy ? t('Includes a {size} video clip, stored on this device.', { size: fmtBytes(heavy) }) : undefined;
-      showUnsavedDialog(
-        canSave ? async () => { if (await actionsApi!.save!()) go(); } : null,
-        () => { go(); },
-        detail,
-      );
-      return true;
-    },
-  });
+  /**
+   * The unsaved-work gate every Home/Back pill in this view shares. A `function`
+   * declaration, so it hoists over the whole mount: the Design top bar's pill is wired
+   * from inside a dynamic import's callback, which may run either side of the call below.
+   * Returns true when it has taken the click (a dialog is up), false to let the pill go.
+   */
+  function backPillIntercept(go: () => void): boolean {
+    if (!hasInputs || !userHasMadeChanges || exportedSinceEdit) return false;
+    // Offer "Save & leave" only when the tool actually has a save action.
+    const canSave = !!actionsEl?.querySelector('[data-action="save"]') && !!actionsApi?.save;
+    // If the session carries heavy embedded bytes (a recorded clip stamps meta.bytes),
+    // tell the user how big the save is - the recording is what makes a Record session
+    // large, and it's stored on-device.
+    const heavy = runtime.getModel()
+      .map(i => (i.value as { meta?: { bytes?: number } } | undefined)?.meta?.bytes)
+      .find((b): b is number => typeof b === 'number' && b > 0);
+    const detail = heavy ? t('Includes a {size} video clip, stored on this device.', { size: fmtBytes(heavy) }) : undefined;
+    showUnsavedDialog(
+      canSave ? async () => { if (await actionsApi!.save!()) go(); } : null,
+      () => { go(); },
+      detail,
+    );
+    return true;
+  }
+
+  mountBackPill(viewEl, { intercept: backPillIntercept });
 
   // Mark model inputs dirty the first time the user touches them.
   // The listener lives on the container so it survives renderInputs re-renders.

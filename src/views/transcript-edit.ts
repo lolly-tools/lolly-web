@@ -23,7 +23,7 @@ import type { CaptionCue, GroupWordsOpts } from '../../../../engine/src/captions
 import { groupWordsToCues } from '../../../../engine/src/captions.ts';
 import type { SpeechWordTiming } from '@lolly-tools/core/host-v1';
 import type { Box, TimeCfg, MediaDurFn } from './timeline-math.ts';
-import { boxTiming, removeAndRipple, splitBox, trimClip, MIN_DUR } from './timeline-math.ts';
+import { boxTiming, packSeq, removeAndRipple, splitBox, trimClip, MIN_DUR } from './timeline-math.ts';
 import { cueSpansOnTimeline, type CueSourceTiming } from './timeline-captions.ts';
 
 /** Slop for "does this carve reach the box edge" tests, in seconds. Below any
@@ -422,4 +422,229 @@ export function flattenIgnored(
   let out: Box[] = boxes.map((b) => b);
   for (const id of ids) out = removeAndRipple(out, cfg, id, mediaDur);
   return out;
+}
+
+// ─── Regeneration: re-fitting the cuts and skips (plans/181 section 5.3) ──────
+
+/**
+ * One regenerated span, in the clip's OLD source seconds: the range that was
+ * re-synthesized and how much longer (or shorter) the new audio is. A merged or
+ * split sentence arrives as one wider range, because the hunk that produced it
+ * covered every old line it touched.
+ */
+export interface SentenceEdit {
+  /** Start of the replaced range, in old source seconds. */
+  from: number;
+  /** End of the replaced range, in old source seconds. */
+  to: number;
+  /** New length minus old length, in seconds. */
+  delta: number;
+}
+
+/** Lowercased, punctuation-free comparison key - what alignWords matches on. */
+function alignKey(s: string): string {
+  return s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+/**
+ * Match two lists of strings and report, for each index in `a`, the index in
+ * `b` holding the same string (null when it has no counterpart). A longest
+ * common subsequence, so unchanged entries either side of an insertion, a
+ * deletion or a replacement all keep their pairing.
+ *
+ * Shared by {@link alignWords} (which feeds it words with case and punctuation
+ * removed) and by the transcript panel's line diff (which feeds it whole
+ * script lines, compared exactly, because punctuation IS the edit there).
+ */
+export function lcsMap(a: readonly string[], b: readonly string[]): (number | null)[] {
+  const n = a.length;
+  const m = b.length;
+  const out: (number | null)[] = new Array(n).fill(null);
+  if (n === 0 || m === 0) return out;
+
+  // dp[i][j] = length of the longest common subsequence of a[i:] and b[j:].
+  const w = m + 1;
+  const dp = new Uint32Array((n + 1) * w);
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i * w + j] = a[i] === b[j]
+        ? (dp[(i + 1) * w + j + 1] as number) + 1
+        : Math.max(dp[(i + 1) * w + j] as number, dp[i * w + j + 1] as number);
+    }
+  }
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { out[i] = j; i++; j++; continue; }
+    if ((dp[(i + 1) * w + j] as number) >= (dp[i * w + j + 1] as number)) i++;
+    else j++;
+  }
+  return out;
+}
+
+/**
+ * Align an old run of words to a new one: for each OLD index, the NEW index it
+ * is the same word as, or null.
+ *
+ * Case and punctuation come off first, so this is the identity for a
+ * punctuation-only edit (the common case: "wow" becoming "wow!"), and still
+ * finds the unchanged words around a typo fix, an inserted word, or a token
+ * the normalizer split ("$45" being read as "45 dollars").
+ */
+export function alignWords(oldWords: readonly string[], newWords: readonly string[]): (number | null)[] {
+  return lcsMap(oldWords.map(alignKey), newWords.map(alignKey));
+}
+
+const r3 = (n: number): number => Math.round(n * 1000) / 1000;
+
+/** The word indices whose midpoint falls inside `[lo, hi)`, in order. */
+function wordsInRange(words: readonly SpeechWordTiming[], lo: number, hi: number): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i] as SpeechWordTiming;
+    const mid = (w.start + w.end) / 2;
+    if (mid >= lo && mid < hi) out.push(i);
+  }
+  return out;
+}
+
+/**
+ * Build the old-source-second to new-source-second map for one regeneration.
+ * Outside every edit it is a shift by the deltas that came before; inside an
+ * edit it re-fits through the word alignment, so a cut that sat between two
+ * words comes back between the same two words.
+ */
+function mediaMapper(
+  oldWords: readonly SpeechWordTiming[],
+  newWords: readonly SpeechWordTiming[],
+  edits: readonly SentenceEdit[],
+): (sec: number) => number {
+  const cache = new Map<SentenceEdit, { oldIdx: number[]; newIdx: number[]; map: (number | null)[] }>();
+
+  const refit = (sec: number, e: SentenceEdit, shift: number): number => {
+    const newFrom = e.from + shift;
+    const newTo = e.to + shift + e.delta;
+    const oldSpan = Math.max(1e-6, e.to - e.from);
+    const spread = (): number => newFrom + ((sec - e.from) / oldSpan) * (newTo - newFrom);
+
+    let cached = cache.get(e);
+    if (!cached) {
+      const oldIdx = wordsInRange(oldWords, e.from, e.to);
+      const newIdx = wordsInRange(newWords, newFrom, newTo);
+      const map = alignWords(
+        oldIdx.map((k) => (oldWords[k] as SpeechWordTiming).text),
+        newIdx.map((k) => (newWords[k] as SpeechWordTiming).text),
+      );
+      cached = { oldIdx, newIdx, map };
+      cache.set(e, cached);
+    }
+    const { oldIdx, newIdx, map } = cached;
+    if (!oldIdx.length || !newIdx.length) return spread();
+
+    // The first old word the cut is at or before; none means it sits after the
+    // last word of the range, which is the range's own end.
+    let at = oldIdx.findIndex((k) => (oldWords[k] as SpeechWordTiming).end > sec);
+    if (at < 0) at = oldIdx.length;
+
+    // The cut sits BEFORE the word at `at`. If that word is still in the
+    // rewritten line, put the cut before its counterpart. If it is not, use the
+    // end of the last word before it that is, so a replaced word cannot drag
+    // the cut past the words that stayed; only when nothing before it is left
+    // do we look forward.
+    let target: number | null = null;
+    const here = at < oldIdx.length ? map[at] : null;
+    if (here != null) target = (newWords[newIdx[here] as number] as SpeechWordTiming).start;
+    for (let k = at - 1; k >= 0 && target == null; k--) {
+      const j = map[k];
+      if (j != null) target = (newWords[newIdx[j] as number] as SpeechWordTiming).end;
+    }
+    for (let k = at + 1; k < oldIdx.length && target == null; k++) {
+      const j = map[k];
+      if (j != null) target = (newWords[newIdx[j] as number] as SpeechWordTiming).start;
+    }
+    if (target == null) target = spread();
+    // Land the cut in the middle of the silence, exactly as a hand cut would.
+    const snapped = snapCut(newWords, target);
+    return Math.min(newTo, Math.max(newFrom, snapped));
+  };
+
+  return (sec: number): number => {
+    if (!Number.isFinite(sec)) return sec;
+    let shift = 0;
+    for (const e of edits) {
+      if (sec >= e.to) { shift += e.delta; continue; }
+      if (sec > e.from) return refit(sec, e, shift);
+      break;
+    }
+    return sec + shift;
+  };
+}
+
+/**
+ * Re-fit one source's boxes after some of its sentences were re-synthesized in
+ * place (plans/181 section 5.3). The asset id never changes, so no box is
+ * re-pointed; because the untouched audio is the same samples, a box that plays
+ * only untouched sentences needs at most a shift.
+ *
+ * `srcIds` is the source's box ids, the same set deleteMediaRange takes (the
+ * panel gathers them off the asset ref). Boxes outside it never move, so a
+ * music bed or a second speaker on the lane keeps its place.
+ *
+ *  - A box before every edit is returned unchanged.
+ *  - A box after an edit takes the running delta on its `clipIn`, and its
+ *    timeline `start` moves by the same amount, so a longer sentence pushes the
+ *    rest of the same voiceover later and a shorter one pulls it in.
+ *  - A box overlapping an edit is re-fitted through the word alignment and
+ *    snapped to the new gap midpoints; a skipped box stays skipped, and a
+ *    deleted span stays deleted, because neither flag nor box list is touched.
+ *
+ * Sequence-lane boxes get their row repacked instead of a hand-written start,
+ * which is the same division of labour removeAndRipple keeps.
+ */
+export function spliceSentences(
+  boxes: readonly Box[],
+  cfg: TimeCfg,
+  srcIds: Iterable<string>,
+  oldWords: readonly SpeechWordTiming[],
+  newWords: readonly SpeechWordTiming[],
+  edits: readonly SentenceEdit[],
+  mediaDur?: MediaDurFn,
+): Box[] {
+  const ids = srcIds instanceof Set ? srcIds : new Set(srcIds);
+  // `to === from` is a real edit, not an empty one: a sentence typed between
+  // two others replaces no old audio at all, and dropping it would leave every
+  // box after the insert playing the wrong seconds of a longer clip.
+  const eds = edits
+    .filter((e) => Number.isFinite(e.from) && Number.isFinite(e.to) && Number.isFinite(e.delta) && e.to >= e.from)
+    .sort((a, b) => a.from - b.from);
+  const out: Box[] = boxes.map((b) => b);
+  if (!ids.size || !eds.length) return out;
+
+  const mapMedia = mediaMapper(oldWords, newWords, eds);
+
+  // Timeline seconds already absorbed on each lane, so several boxes of the
+  // same voiceover accumulate their neighbours' growth in order.
+  const shifts = new Map<string, number>();
+  let touchedSeq = false;
+
+  const order = out
+    .map((b, i) => ({ b, i, t: boxTiming(b, cfg) }))
+    .filter((x) => ids.has(idOf(x.b, cfg)) && x.t.dur != null)
+    .sort((a, b) => (a.t.start ?? 0) - (b.t.start ?? 0));
+
+  for (const { b, i, t } of order) {
+    const win = mediaWindow(b, cfg);
+    if (!win) continue;
+    const lane = String(t.lane ?? '');
+    const shift = shifts.get(lane) ?? 0;
+    const ns = mapMedia(win.start);
+    const ne = mapMedia(win.end);
+    const dur = Math.max(MIN_DUR, (ne - ns) / t.speed);
+    const next: Box = { ...b, [cfg.clipInField]: r3(ns), [cfg.durField]: r3(dur) };
+    if (t.lane === 'seq') touchedSeq = true;
+    else if (shift !== 0) next[cfg.startField] = r3(Math.max(0, (t.start ?? 0) + shift));
+    shifts.set(lane, shift + (dur - (t.dur as number)));
+    out[i] = next;
+  }
+  return touchedSeq ? packSeq(out, cfg, mediaDur) : out;
 }

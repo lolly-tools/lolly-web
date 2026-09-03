@@ -56,7 +56,7 @@
 :root {
   --preview-surface: hsl(var(--muted) / 0.6);
   --preview-checker: repeating-conic-gradient(
-    hsl(var(--muted-foreground) / .05) 0% 25%,
+    hsl(var(--muted-foreground) / .025) 0% 25%,
     transparent 0% 50%) 50% / 14px 14px;
 }
 :root {
@@ -455,7 +455,7 @@ html[data-theme="dark"] .quicknav{background:rgba(9,26,21,.9)}
 .hero-wrap{position:relative;overflow:hidden;background:linear-gradient(180deg,#1c4a2e 0%,#0c3226 100%) top/100% var(--hero-h,100%) no-repeat,#0c3226;background:linear-gradient(180deg,color-mix(in oklab,hsl(var(--primary)) 34%,#0b1512) 0%,color-mix(in oklab,hsl(var(--primary)) 15%,#0a120f) 100%) top/100% var(--hero-h,100%) no-repeat,color-mix(in oklab,hsl(var(--primary)) 15%,#0a120f)}
 .hero{background:transparent;color:hsl(var(--on-band-dark));padding:4.5rem 1.5rem 3.5rem;text-align:center;position:relative;z-index:1;min-height:50vh;user-select:none;-webkit-user-select:none}
 /* Double-clicking the hero backdrop shouldn't highlight the heading/subtitle/trust copy; buttons keep normal selection. */
-.hero .btn{user-select:auto;-webkit-user-select:auto}
+.hero .btn{user-select:auto;-webkit-user-select:auto; }
 .hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 90% 55% at 50% -5%,rgba(48,186,120,.13) 0%,transparent 65%);pointer-events:none}
 #heroCanvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;mix-blend-mode:color-dodge;opacity:.6}
 .hero h1{font-size:clamp(2.75rem,6vw,5rem);letter-spacing:-.04em;line-height:1.05;margin-bottom:1.5rem;color:hsl(var(--on-band-dark));position:relative;padding-left:.3em;font-weight:200}
@@ -533,21 +533,43 @@ html[data-a11y-motion="reduce"] .hero-logo-link:focus-visible .hero-logo-still{o
 .hero-trust span{font-size:.8rem;line-height:1;color:hsl(var(--on-band-dark) / .5);letter-spacing:0}
 .trust-dot{color:hsl(var(--on-band-dark) / .18)!important}
 .btn{display:inline-flex;align-items:center;padding:2rem 3rem;border-radius:1rem;font-weight:700;font-size:1rem;transition:all .18s ease;box-shadow:0 .2em 1em #0002}
-.btn-primary{background:rgba(48,186,120,.72);color:#000;mix-blend-mode:plus-lighter}
-/* Hover BRIGHTENS. `var(--light)` is hsl(var(--primary) / .4), and --primary is the
-   near-black SUSE teal in the light theme - so under the plus-lighter blend the old
-   hover composited at roughly a sixth of the rest state's brightness in light and a
-   half of it in dark. The button visibly went out when you pointed at it. A literal
-   lightened Pine Green at full alpha instead: the blend adds luminance, so this
-   reads brighter than the rest state in BOTH themes rather than tracking a token
-   whose value flips with the theme. */
-.btn-primary:hover{background:#5fd79b;text-decoration:none;transform:translateY(-2px);
-  box-shadow:0 8px 32px rgba(95,215,155,.45)}
-.btn-secondary{background:rgba(255,255,255,.05);color:hsl(var(--on-band-dark));border:1px solid rgba(255,255,255,.22);position:relative}
-.btn-secondary:hover{background:rgba(255,255,255,.1);text-decoration:none;transform:translateY(-1px)}
+/* The primary CTA wears the brand's primary, and its ink is whichever of black or
+   white reads on that fill: --hero-cta-ink is measured off the PAINTED button by
+   fitHeroCtaInk (lib/docs-landing.ts) once the fragment is in the DOM, so a near-black
+   brand primary (the ink-and-paper starter) gets white text and a bright one black.
+   The static /info site runs no such script and its brand is the fixed green, so the
+   fallback stays black, exactly what it painted before. No plus-lighter blend any
+   more: it ADDED the fill to the always-dark band, so a dark primary contributed
+   nothing and the button and its cut-out label both went out (Andy, 2026-09-03). The
+   hairline keeps a dark fill readable as a button on the dark band. */
+/* The static /info page defines no --brand-primary at all (only the app shell's
+   chrome injects it), so the fill falls back to --green, the site's own primary
+   (docs.css: hsl(var(--primary)), Pine Green on /info): a brand-green pill under the
+   black default label, the same green as the nav's Launch App pill. A white pill
+   here read as a blank (Andy, 2026-09-03). In the app the reader bridges --green to
+   the active brand too, and an injected --brand-primary still wins. */
+.btn-primary{background:var(--brand-primary,var(--green));color:var(--hero-cta-ink,#000);
+  box-shadow:0 .2em 1em #0002,inset 0 0 0 1px rgba(255,255,255,.16)}
+/* Hover lightens the BRAND fill rather than painting a fixed lighter Pine Green
+   (which turned every other brand's button SUSE mint on hover). An engine without
+   color-mix() drops the two declarations and keeps the rest fill; the lift and the
+   hairline still say "hover". */
+.btn-primary:hover{text-decoration:none;transform:translateY(-2px);
+  background:color-mix(in oklab,var(--brand-primary,var(--green)) 82%,#fff);
+  box-shadow:0 8px 32px color-mix(in oklab,var(--brand-primary,var(--green)) 45%,transparent),inset 0 0 0 1px rgba(255,255,255,.24)}
+/* The secondary pill owns its legibility. Its ground is a dark translucency, not
+   a near-clear white: white ink over a near-clear fill only reads while the
+   backdrop behind it is dark, and a backdrop-filter that fails to paint (seen in
+   Chromium: the pill rendered a blank white box at rest and only recovered on the
+   hover transform) left white text on white. A dark fill of its own keeps the
+   words readable over anything the backdrop turns into. */
+.btn-secondary{background:rgba(6,20,14,.42);color:hsl(var(--on-band-dark));border:1px solid rgba(255,255,255,.22);position:relative}
+.btn-secondary:hover{background:rgba(6,20,14,.28);text-decoration:none;transform:translateY(-1px)}
 /* Glass baseline - frosted blur so the buttons read as glass even where the JS
    liquid-displacement filter can't render. The buildGlass script overrides this
-   inline with the refractive filter where it's supported. */
+   inline with the refractive filter on the PRIMARY button only: the secondary
+   pill's white ink cannot survive a backdrop that paints blank, so it keeps this
+   plain, reliable blur and never takes the SVG displacement. */
 .btn-primary,.btn-secondary{-webkit-backdrop-filter:blur(3px) saturate(1.45);backdrop-filter:blur(3px) saturate(1.45)}
 
 
@@ -1495,7 +1517,7 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 /* ── beat 1: the cycling H1 ─────────────────────────────────────────────── */
 .hero-statement--cycle{display:block}
 .hero-statement--cycle .cycle-lead{display:block;font-weight:900}
-.hero-statement--cycle .cycle-word{display:block;max-width:100%;color:hsl(var(--band-accent));text-decoration:none;font-weight:500;overflow-wrap:break-word;line-height:1.15}
+.hero-statement--cycle .cycle-word{display:block;max-width:100%;color:var(--brand-primary);text-decoration:none;font-weight:500;overflow-wrap:break-word;line-height:1.15}
 .hero .hero-statement--cycle .cycle-word:hover{text-decoration:none}
 .hero-statement--cycle .cycle-word span{display:block;overflow-wrap:break-word;hyphens:auto;text-transform:none; font-style:italic;transition: transform .24s ease,opacity .24s ease}
 /* block, not inline-block: an inline-block is an atomic box whose content never
@@ -1552,7 +1574,7 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
    links. */
 .covers-open-btn{display:none;width:max-content;margin:.4rem auto 0;opacity:0;transform:translateY(6px);transition:opacity .25s ease,transform .25s ease;pointer-events:none;background:hsl(var(--primary));color:hsl(var(--primary-foreground,0 0% 100%));border-radius:999px;padding:.55rem 1.1rem;font-weight:700;font-size:.875rem;white-space:nowrap;box-shadow:0 10px 28px rgba(0,0,0,.35);text-decoration:none}
 .covers--fan .covers-open-btn{display:flex;align-items:center;gap:.35em}
-.covers-open-btn.is-on{opacity:1;transform:none;pointer-events:auto}
+.covers-open-btn.is-on{opacity:1;transform:none;pointer-events:auto; position:relative; z-index:9}
 .covers-open-btn:hover{text-decoration:none;filter:brightness(1.07)}
 @media (prefers-reduced-motion: reduce){.covers-open-btn{transition:none}}
 .covers-nav{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:.5rem}
@@ -1595,7 +1617,7 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 #door-creators:checked ~ .persona-tabs label[for="door-creators"],
 #door-builders:checked ~ .persona-tabs label[for="door-builders"],
 #door-operators:checked ~ .persona-tabs label[for="door-operators"]{border-color:var(--green);background:hsl(var(--band-accent) / .33)}
-.persona-tabs img{transition: all .5s ease; filter:drop-shadow( 0 1px 4px hsl(var(--band-accent) /.5))}
+.persona-tabs img{transition: all .5s ease; filter:drop-shadow( 0 1px 14px hsl(var(--band-accent) /.5))}
 #door-creators:not(:checked) ~ .persona-tabs label[for="door-creators"] img,
 #door-builders:not(:checked) ~ .persona-tabs label[for="door-builders"] img,
 #door-operators:not(:checked) ~ .persona-tabs label[for="door-operators"] img{filter:grayscale(.6) brightness(1.3) contrast(1.16) ; opacity:.2; transition: all .5s ease; transform:scale(.8) translate(2em, -5em)}
@@ -1687,11 +1709,11 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 
 /* ── beat 4b: the lolly.work band ───────────────────────────────────────── */
 .work-section{padding:0 1.5rem 3.5rem}
-.work-inner{max-width:1120px;margin:0 auto;padding:1.5rem 1.6rem;border:1px solid var(--border);border-radius:14px;background:color-mix(in oklab,hsl(var(--primary)) 6%,var(--page))}
+.work-inner{max-width:1120px;margin:0 auto;padding:1.5rem 1.6rem;border:1px solid var(--border);border-radius:14px;background:color-mix(in oklab,hsl(var(--band-accent)) 36%,var(--page))}
 .work-eyebrow{display:block;font-family:'SUSE Mono',monospace;font-size:.75rem;letter-spacing:.08em;color:color-mix(in oklab,hsl(var(--primary)) 70%,var(--text));margin-bottom:.35rem}
 .work-cols{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1rem 2rem;align-items:center}
 .work-heading{font-size:1.25rem;font-weight:800;text-transform:none;letter-spacing:0;margin:0 0 .4rem;text-wrap:balance}
-.work-body{margin:0;color:var(--muted);max-width:62ch;font-size:.95rem}
+.work-body{margin:0;color:var(--band-primary);max-width:62ch;font-size:.95rem}
 .work-links{display:flex;flex-direction:column;gap:.6rem;align-items:flex-start}
 .work-links .btn{display:inline-flex;align-items:center;gap:.4em;background:hsl(var(--primary));color:hsl(var(--primary-foreground,0 0% 100%));border:1px solid transparent;border-radius:999px;padding:.55rem 1.1rem;font-size:.875rem;font-weight:700;text-decoration:none;white-space:nowrap;backdrop-filter:none;-webkit-backdrop-filter:none;mix-blend-mode:normal}
 .work-links .btn:hover{filter:brightness(1.07);text-decoration:none;transform:none;box-shadow:none}

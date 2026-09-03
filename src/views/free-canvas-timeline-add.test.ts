@@ -329,3 +329,82 @@ test('abandoning a timeline arm with Escape leaves the next hand-drawn box as sc
       `an abandoned arm must not time a later box (got start ${JSON.stringify(b.start)})`);
   } finally { f.destroy(); }
 });
+
+// ── plans/179 T2: closing the timeline gives the rail back ────────────────────
+
+/**
+ * The auto-dock is desktop-only, so the harness's global `matchMedia` (which answers
+ * `false` to everything) has to say the viewport is wide for the length of the test.
+ */
+async function withDesktopViewport(fn: () => Promise<void>): Promise<void> {
+  const real = (globalThis as Record<string, unknown>).matchMedia;
+  (globalThis as Record<string, unknown>).matchMedia = (q: string) =>
+    ({ matches: /min-width/.test(q), media: q, addEventListener() {}, removeEventListener() {} });
+  try { await fn(); } finally { (globalThis as Record<string, unknown>).matchMedia = real; }
+}
+
+test('opening the timeline docks the rail as a column; closing it hands the rail back', async () => {
+  await withDesktopViewport(async () => {
+    const f = mount();
+    const dock = f.stageEl.querySelector<HTMLElement>('.fc-toolbar-dock')!;
+    try {
+      assert.ok(dock, 'the rail has a dock');
+      assert.equal(f.stageEl.classList.contains('has-tl-reserve'), false, 'precondition: floating');
+
+      await openPanel(f);
+      assert.ok(f.stageEl.classList.contains('has-tl-reserve'), 'the open panel took the rail as a column');
+      assert.ok(f.stageEl.style.getPropertyValue('--stage-reserve-left'), 'and reserved a band for it');
+
+      // Close the way the panel's own Escape does - straight through setOpen, never
+      // back through free-canvas's ensureTimeline. That is the path T2 was reported on.
+      const panelRoot = f.stageEl.querySelector<HTMLElement>('.tl-panel')!;
+      panelRoot.focus?.();
+      panelRoot.dispatchEvent(new W.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+
+      assert.equal(f.stageEl.classList.contains('has-tl-reserve'), false, 'the column came off');
+      assert.equal(f.stageEl.style.getPropertyValue('--stage-reserve-left'), '', 'and its reserve with it');
+      assert.equal(dom.window.document.documentElement.style.getPropertyValue('--ldock-w'), '',
+        'and the back pill stopped being inset past a column that is gone');
+      // Nothing left holding the rail anywhere but its CSS park: no half-detached dock
+      // carrying a stale left/top (the "stranded at x=-33" state).
+      assert.equal(dock.classList.contains('is-detached'), false, 'an undragged rail goes back to the edge');
+      assert.equal(dock.style.left, '', 'with no position of its own');
+      assert.equal(dock.style.top, '');
+      // …and free-canvas noticed, so the rail button is not still lit.
+      const btn = f.stageEl.querySelector<HTMLButtonElement>('.fc-btn-timeline')!;
+      assert.equal(btn.getAttribute('aria-pressed'), 'false', 'the rail button tracks a self-close');
+      assert.equal(btn.classList.contains('is-armed'), false);
+    } finally { f.destroy(); }
+  });
+});
+
+test('a rail dragged before the timeline opened comes back to exactly where it was', async () => {
+  await withDesktopViewport(async () => {
+    const f = mount();
+    const dock = f.stageEl.querySelector<HTMLElement>('.fc-toolbar-dock')!;
+    const toolbar = f.stageEl.querySelector<HTMLElement>('.fc-toolbar')!;
+    // jsdom measures nothing, so give the rail a size to be clamped against.
+    toolbar.getBoundingClientRect = () => rect(0, 0, 46, 300);
+    try {
+      // Drag it out to a spot the user chose.
+      toolbar.dispatchEvent(pointerEvent('pointerdown', 20, 60));
+      toolbar.dispatchEvent(pointerEvent('pointermove', 320, 260));
+      toolbar.dispatchEvent(pointerEvent('pointerup', 320, 260));
+      await settle();
+      assert.ok(dock.classList.contains('is-detached'), 'precondition: the rail floats where it was put');
+      const was = { left: dock.style.left, top: dock.style.top };
+      assert.ok(was.left && was.left !== '0px', `precondition: a real position (${was.left})`);
+
+      await openPanel(f);
+      assert.equal(dock.classList.contains('is-detached'), false, 'the dock gives up its position to be a column');
+
+      const panelRoot = f.stageEl.querySelector<HTMLElement>('.tl-panel')!;
+      panelRoot.focus?.();
+      panelRoot.dispatchEvent(new W.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+
+      assert.ok(dock.classList.contains('is-detached'), 'and takes it back on close');
+      assert.deepEqual({ left: dock.style.left, top: dock.style.top }, was,
+        'the rail returns to the spot the user dragged it to, not to wherever the column left it');
+    } finally { f.destroy(); }
+  });
+});

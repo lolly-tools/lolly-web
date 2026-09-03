@@ -401,7 +401,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
       <header class="start-head">
         <p class="start-eyebrow">${t('Design system')}</p>
         <h1 class="start-title">${t('Make it yours')}</h1>
-        <p class="start-sub">${t('Colours, type, logos, tokens and files. Everything stays on this device, and every tool, page and export follows it.')}</p>
+        <p class="start-sub">${t('Everything stays on this device. Every tool and export follows it.')}</p>
       </header>
 
       <div class="ds-shell">
@@ -472,7 +472,7 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
           <section class="ds-panel" id="start-panel-versions" data-ds-panel="versions"
             role="region" aria-labelledby="ds-room-versions" hidden></section>
           <div class="start-editor-wrap">
-            <div class="start-editor-mount" data-start-editor><p class="start-editor-loading">${t('Loading your brand…')}</p></div>
+            <div class="start-editor-mount" data-start-editor><p class="start-editor-loading">${t('Loading the design system…')}</p></div>
           </div>
         </div>
       </div>
@@ -625,6 +625,13 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
         try { await studio.load(); await studio.checkpoint(label); }
         catch { /* nothing to go back to */ }
       },
+      // Beat 0's "or bring a file" - the same picker the rail's "Add from…"
+      // opens, on its source list (plan 182 section 3a).
+      openImport: () => { openImport(); playSfx('click'); },
+      // "From an image" beside the add row. THIS view owns the image pipeline
+      // (the source picker's image tile runs the same call), so the room asks
+      // for it rather than carrying a second copy - plan 182 section 5.3.
+      scanImage: (file) => { void scanImageFile(file, showNote); },
     });
   } catch (err) {
     editorMount.innerHTML = `<p class="be-err">${t('Couldn’t open the brand editor: {error}', { error: String((err as { message?: unknown })?.message ?? err) })}</p>`;
@@ -650,7 +657,14 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     // both fixed sheets there, and two of them stacked is one of them unreachable.
     // The tray is the transient one, so it wins while it is open and the palette
     // mirror comes back the moment it closes (onOpenChange calls this).
-    const want = activeArea === 'color' && editor !== null && !!editorRoot && !(trayUi?.isOpen() ?? false);
+    //
+    // Beat 0 has nothing to mirror (plan 182 section 3a): the room holds no
+    // colour of its own, so a sheet there would peek an empty strip and eat the
+    // bottom of the one screen the first pick has to fit in. The editor answers
+    // the beat, and every commit re-asks through onPalette below.
+    const want = activeArea === 'color' && editor !== null && !!editorRoot
+      && (editor.colourBeat?.() ?? 2) > 0
+      && !(trayUi?.isOpen() ?? false);
     if (want && !paletteSheet) paletteSheet = mountPaletteSheet(shell, editor!, editorRoot!);
     else if (!want && paletteSheet) { paletteSheet.teardown(); paletteSheet = null; }
   };
@@ -770,7 +784,14 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   overview = mountOverviewRoom(overviewPanel, {
     host: host as unknown as Parameters<typeof mountOverviewRoom>[1]['host'],
     editor: () => editor,
-    goto: (area) => { if (isStartArea(area)) selectRoom(area, { focus: true, sfx: true }); },
+    goto: (area, focus) => {
+      if (!isStartArea(area)) return;
+      selectRoom(area, { focus: true, sfx: true });
+      // A door names the room AND the control it wants open there - the same
+      // pair `?focus=` carries, routed through the same openers, so the door and
+      // the link can never land in different places.
+      if (focus) openFocus(area, focus);
+    },
     // The Overview's "Start from a file" door means exactly that, so it skips the
     // source list and opens on the file stage. OverviewCtx.openImport stays a
     // bare `() => void` - the room never learns the picker has stages.
@@ -785,17 +806,42 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   // is consumed here - selectRoom's replaceState above already dropped it from the URL.
   if (activeArea === 'color' && wantWheel) editor?.openColorChart();
 
+  /**
+   * Open what a `?focus=` (or an Overview door) asked for, in the room it
+   * belongs to. One table for both, so a door and a link can never disagree.
+   *
+   * Every opener is optional on the handle and answers false when its room did
+   * not render, which is how a locked or degraded studio degrades: the room
+   * opens, the control does not, nothing throws. None of them writes - `pick`
+   * and `stage` put a decision in front of the person and wait for it.
+   */
+  function openFocus(area: StartArea, focus: string): void {
+    if (area === 'type') { if (focus === 'stage') editor?.openTypeStage?.('brand'); return; }
+    if (area !== 'color') return;
+    if (focus === 'pick') { editor?.openPickCard?.(); return; }
+    if (focus === 'chart') { editor?.openColorChart(); return; }
+    if (focus === 'generate' || focus === 'curves' || focus === 'contrast' || focus === 'print') {
+      editor?.openWing?.(focus);
+    }
+  }
+
   // Deep-link: `#/start?area=color&focus=<wing>` opens that wing of the Colours
   // room (`chart` is the colour chart, the same target as `?wheel`). Same
   // consume-on-mount, no-op-when-degraded contract as the wheel flag.
   // `?seed=<hex>` primes the Generate wing's primary FIRST, so the wing opens
   // already showing ramps built from the carried colour (audit 167 F-A12 - the
   // added-chip's "Generate your palette from this colour" finally means it).
-  if (activeArea === 'color' && route.focus) {
-    if (route.seed) editor?.setGeneratePrimary?.(route.seed);
-    if (route.focus === 'chart') editor?.openColorChart();
-    else editor?.openWing?.(route.focus);
+  if (route.focus) {
+    if (activeArea === 'color' && route.seed) editor?.setGeneratePrimary?.(route.seed);
+    openFocus(activeArea, route.focus);
   }
+
+  // Deep-link: `#/start?area=color&group=<name>` reveals one INHERITED colour
+  // group in the pane, folded and tagged Starter (plan 182 section 12) - minted
+  // by the Tokens room's "Open" beside the starter neutrals, and the one thing
+  // that ever draws a starter tile. Same consume-on-mount, no-op-when-degraded
+  // contract as the wing flags above.
+  if (activeArea === 'color' && route.group) editor?.openStarterGroup?.(route.group);
 
   // ── Export (always on) ───────────────────────────────────────────────────────
   const showNote = (msg: string, isError = false): void => {
@@ -927,6 +973,9 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
   };
 
   let unsubTray: (() => void) | null = null;
+  /** Unsubscribe from the palette seam that re-asks the Colours beat (plan 182
+   *  section 3a) - the mirror only exists past beat 0. */
+  let unsubBeat: (() => void) | null = null;
   const trayToggle = viewEl.querySelector<HTMLButtonElement>('[data-start-tray]');
   const trayCountEl = viewEl.querySelector<HTMLElement>('[data-start-tray-n]');
   const syncTrayToggle = (): void => {
@@ -976,6 +1025,11 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     unsubTray = tray.subscribe(syncTrayToggle);
     syncTrayToggle();
     trayToggle?.addEventListener('click', () => { trayUi?.toggle(); syncTrayToggle(); playSfx('click'); });
+    // The Colours room's beat moves on a commit, and the palette mirror only
+    // exists past beat 0 - so the first colour is what mounts the sheet, and an
+    // undo back to nothing is what takes it away. Same seam the mirror itself
+    // re-renders off; it tolerates double-fires, and so does this.
+    unsubBeat = editor.onPalette(syncPaletteSheet);
   }
 
   /** A finished census into the tray, opened on what it found. Every source ends
@@ -2774,6 +2828,8 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     closeImport();
     unsubTray?.();
     unsubTray = null;
+    unsubBeat?.();
+    unsubBeat = null;
     trayUi?.teardown();
     trayUi = null;
     overview?.teardown();
@@ -2807,7 +2863,7 @@ function mountPaletteSheet(shell: HTMLElement, editor: BrandEditorHandle, editor
   const sheet = document.createElement('div');
   sheet.className = 'stu-sheet';
   sheet.setAttribute('role', 'region');
-  sheet.setAttribute('aria-label', escape(t('Your palette')));
+  sheet.setAttribute('aria-label', escape(t('The palette')));
   sheet.innerHTML = `
     <div class="stu-sheet-head">
       <div class="stu-sheet-strip" data-stu-strip aria-label="${escape(t('Brand palette'))}"></div>

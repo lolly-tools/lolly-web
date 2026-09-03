@@ -195,6 +195,105 @@
 }
 .field-row--inline .field-label { flex: none; }
 
+/* ─── Numeric field (components/num-field.ts) ────────────────────────────── */
+
+/* One number, a short leading label that is also the drag handle, an optional
+   unit. The box is `.field-input`'s emboss at a denser padding rather than a
+   second recipe: two of these sit side by side in a 340px inspector column, so
+   the 9px/10px padding of the standard field would leave no room for digits.
+
+   The INPUT paints nothing itself - the wrapper is the object, so the label,
+   the number and the unit read as one control and a focus ring surrounds all
+   three. That is why the ring is `:focus-within` here and not `:focus`. */
+.num-field {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  min-width: 0;
+  box-sizing: border-box;
+  padding-inline-start: var(--sp-3);
+  border-radius: calc(var(--radius) * .5);
+  background-color: hsl(var(--background));
+  /* The same object as `.field-input` above, through the chrome tokens rather than
+     that block's older hand-written pair (plans/172: `--bevel` IS the white top
+     highlight, `--shadow-1` the soft drop). Hover lifts, focus haloes, exactly as
+     every other field here does. */
+  box-shadow: var(--bevel), var(--shadow-1);
+  transition: box-shadow var(--dur-1);
+}
+.num-field:hover { box-shadow: var(--bevel), var(--shadow-2); }
+.num-field:focus-within { box-shadow: var(--bevel), var(--ring-focus); }
+
+/* The handle. `ew-resize` is the promise that it drags; `touch-action: none`
+   is what lets a touch drag reach the pointer handlers instead of scrolling
+   the column under it. Its width is a glyph width, so it rides the type
+   multiplier like every other mark in the chrome. */
+.num-field-lbl {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: calc(11px * var(--a11y-fs));
+  color: hsl(var(--muted-foreground));
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  line-height: 1;
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.num-field-lbl svg { width: calc(13px * var(--a11y-fs)); height: calc(13px * var(--a11y-fs)); }
+
+/* A row that already names the field in its own label cell gets a plain grip
+   instead of a second copy of the name: two hairlines, drawn in the border
+   token so they read as texture rather than as type. */
+.num-field-lbl--grip {
+  width: calc(11px * var(--a11y-fs));   /* the same box as a one-glyph label, so rows line up */
+  height: calc(12px * var(--a11y-fs));
+  background-image: linear-gradient(to right, hsl(var(--border)) 1px, transparent 1px);
+  background-size: 4px 100%;
+  background-position: center;
+  background-repeat: repeat-x;
+}
+
+.num-field-in {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 5px 2px 5px 4px;
+  border: 0;
+  background: none;
+  color: hsl(var(--foreground));
+  font: inherit;
+  font-size: var(--fs-md);
+  font-variant-numeric: tabular-nums;
+}
+/* The wrapper's `:focus-within` ring is the indicator; a second outline inside
+   it would draw a box within a box. */
+.num-field-in:focus,
+.num-field-in:focus-visible { outline: none; }
+.num-field-in::placeholder { color: hsl(var(--muted-foreground)); }
+
+.num-field-unit {
+  flex: none;
+  padding-inline-end: var(--sp-3);
+  color: hsl(var(--muted-foreground));
+  font-size: var(--fs-xs);
+  font-style: normal;
+}
+
+/* Live drag: the field brightens so the eye stays on the number it is changing
+   while the pointer is somewhere else entirely. */
+.num-field.is-scrubbing { box-shadow: var(--bevel), var(--ring-focus); }
+
+@media (forced-colors: active) {
+  .num-field { border: 1px solid ButtonBorder; }
+  .num-field:focus-within { outline: 2px solid Highlight; outline-offset: 2px; }
+  .num-field-lbl--grip { background-image: linear-gradient(to right, ButtonBorder 1px, transparent 1px); }
+}
+
 /* ─── Checkbox + radio ───────────────────────────────────────────────────── */
 
 /* An outlined box that fills on check - the shape the profile view drew first

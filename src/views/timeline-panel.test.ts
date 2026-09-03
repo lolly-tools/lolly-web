@@ -66,7 +66,7 @@ const {
   clampPanelH, tickStep, frameCountFor, packSeqRow, initTimelinePanel,
   isPaintedColor, thumbMode, canRasterBox, appearanceSig,
   MIN_PPS, MAX_PPS, MIN_PANEL_H, ONE_LANE_H, EDGE_PX, EDGE_PX_COARSE, TAKE_TIMING,
-  MAX_NODE_RASTERS_PER_PASS, MAX_THUMB_PASSES, PANEL_SHORTCUTS,
+  MAX_NODE_RASTERS_PER_PASS, MAX_THUMB_PASSES, PANEL_SHORTCUTS, playOnce, canPlayOnce,
 } = await import('./timeline-panel.ts');
 // The trim readout's formatters, asserted against the badge the panel paints (the
 // numbers themselves are covered in tests/timeline-math.test.ts).
@@ -788,8 +788,8 @@ test('the inspector opens for an UNTIMED box, with empty Start/Length and the tr
     assert.equal(len.value, '', 'Length is EMPTY, not a misleading 0');
     assert.equal(start.placeholder, '-');
     // The animate controls are authorable before the box is timed.
-    assert.ok(field(h.root, 'Animate in'), 'Animate in is reachable');
-    assert.ok(field(h.root, 'Animate out'), 'Animate out is reachable');
+    assert.ok(field(h.root, 'Enter'), 'Enter is reachable');
+    assert.ok(field(h.root, 'Exit'), 'Exit is reachable');
     assert.equal(timingBtn(h.root).textContent, 'Add to the timeline');
     // Playback-only fields stay out of the way until there is something playing.
     assert.equal(h.root.querySelector('.tl-inspector .tl-mute'), null, 'no mute on a box with no span');
@@ -852,7 +852,7 @@ test('the inspector never right-aligns its overflow off the unreachable start ed
   // bug was purely declarative and invisible to every behavioural test: with
   // `justify-content: flex-end` on a scroll container, content overflowing the START
   // edge cannot be scrolled back to (scrollLeft is already 0), so Start, Length, Trim in,
-  // Speed and Animate in were permanently off the left edge of a narrow panel and only
+  // Speed and Enter were permanently off the left edge of a narrow panel and only
   // the tail of the row could ever be reached.
   const css = readFileSync(new URL('../styles/parts/timeline.css', import.meta.url), 'utf8');
   // Comments out first: the rule that replaced the defect NAMES the defect, so a raw
@@ -887,8 +887,8 @@ test('the easing control opens on the BUILT-IN curve, and rendering it writes no
   const h = mount([clip('a', 0, 3)]);
   try {
     h.select(['a']);
-    const inSel = easeSel(h.root, 'In curve');
-    const outSel = easeSel(h.root, 'Out curve');
+    const inSel = easeSel(h.root, 'Enter curve');
+    const outSel = easeSel(h.root, 'Exit curve');
     assert.equal(inSel.value, '', 'unauthored is a real state, and it is the default one');
     assert.equal(outSel.value, '');
     assert.equal(inSel.options[0]!.value, '', 'the built-in is an OPTION, not an implied absence of one');
@@ -905,19 +905,19 @@ test('choosing a preset is exactly ONE commit, carrying the wire string', () => 
   const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
   try {
     h.select(['a']);
-    pick(easeSel(h.root, 'In curve'), 'overshoot');
+    pick(easeSel(h.root, 'Enter curve'), 'overshoot');
     assert.equal(h.commits.length, 1, 'one commit, one undo step - like every other field in this row');
     assert.equal(h.commits[0]!.find((b) => b.id === 'a')!.enterEase, 'overshoot');
     assert.equal(h.commits[0]!.find((b) => b.id === 'b')!.enterEase, undefined, 'and only the selected box');
 
     // Back to the built-in, through the same one control.
     h.notify();
-    pick(easeSel(h.root, 'In curve'), '');
+    pick(easeSel(h.root, 'Enter curve'), '');
     assert.equal(h.commits.length, 2);
     assert.equal(h.commits[1]!.find((b) => b.id === 'a')!.enterEase, '', 'the built-in is reachable again');
 
     h.notify();
-    pick(easeSel(h.root, 'Out curve'), 'anticipate');
+    pick(easeSel(h.root, 'Exit curve'), 'anticipate');
     assert.equal(h.commits[2]!.find((b) => b.id === 'a')!.exitEase, 'anticipate', 'in and out are independent');
   } finally { h.teardown(); }
 });
@@ -926,7 +926,7 @@ test('an authored bezier brings its own option, showing the numbers rather than 
   const h = mount([{ ...clip('a', 0, 3), enterEase: 'cubic-bezier(0.2,1.4,0.6,1)' } as Box]);
   try {
     h.select(['a']);
-    const sel = easeSel(h.root, 'In curve');
+    const sel = easeSel(h.root, 'Enter curve');
     assert.equal(sel.value, 'cubic-bezier(0.2,1.4,0.6,1)', 'the control shows the value the model holds');
     const opt = Array.from(sel.options).find((o) => o.value === sel.value)!;
     assert.equal(opt.textContent, 'cubic-bezier(0.2,1.4,0.6,1)', 'a curve nobody can see is not described by the word "Custom"');
@@ -937,7 +937,7 @@ test('"Custom…" is a route, not a value: it opens the editor and leaves the mo
   const h = mount([clip('a', 0, 3)]);
   try {
     h.select(['a']);
-    const sel = easeSel(h.root, 'In curve');
+    const sel = easeSel(h.root, 'Enter curve');
     pick(sel, '__custom');
     assert.equal(h.commits.length, 0, 'opening the editor is not an edit');
     assert.equal(sel.value, '', 'and the control never shows a state the model is not in');
@@ -953,7 +953,7 @@ test('the curve editor writes through the SAME one-commit path as every other fi
   const h = mount([clip('a', 0, 3)]);
   try {
     h.select(['a']);
-    pick(easeSel(h.root, 'In curve'), '__custom');
+    pick(easeSel(h.root, 'Enter curve'), '__custom');
     const read = openMenu('.tl-ease-pop')!.querySelector('.ease-ed-input') as HTMLInputElement;
     read.value = 'cubic-bezier(0.1,0.9,0.2,1.4)';
     read.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
@@ -966,7 +966,7 @@ test('Escape closes the curve editor and puts focus back on the control that ope
   const h = mount([clip('a', 0, 3)]);
   try {
     h.select(['a']);
-    const sel = easeSel(h.root, 'In curve');
+    const sel = easeSel(h.root, 'Enter curve');
     pick(sel, '__custom');
     assert.ok(openMenu('.tl-ease-pop'), 'precondition: it is up');
     dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
@@ -980,7 +980,7 @@ test('destroying the panel takes the curve editor with it', () => {
   const h = mount([clip('a', 0, 3)]);
   try {
     h.select(['a']);
-    pick(easeSel(h.root, 'In curve'), '__custom');
+    pick(easeSel(h.root, 'Enter curve'), '__custom');
     assert.ok(openMenu('.tl-ease-pop'), 'precondition: a card is up');
   } finally { h.teardown(); }
   assert.equal(openMenu('.tl-ease-pop'), null, 'no orphan popover left on <body>');
@@ -994,10 +994,247 @@ test('a tool that never declared an ease sub-field is offered no curve control',
   try {
     h.select(['a']);
     const labels = Array.from(h.root.querySelectorAll('.tl-inspector .field-label')).map((n) => n.textContent);
-    assert.ok(labels.includes('Animate in'), 'precondition: the transition fields are still there');
-    assert.equal(labels.includes('In curve'), false);
-    assert.equal(labels.includes('Out curve'), false);
+    assert.ok(labels.includes('Enter'), 'precondition: the transition fields are still there');
+    assert.equal(labels.includes('Enter curve'), false);
+    assert.equal(labels.includes('Exit curve'), false);
   } finally { h.teardown(); }
+});
+
+// ── Appears: one control for the three ways a box arrives (plans/179 M4) ──────
+//
+// The regression these pin is a MODEL one, not a look: before the segmented control a
+// box could carry a build step AND a start, and the presenter, the video compositor and
+// the .pptx writer each resolved that pair differently. The patch the row writes comes
+// from lib/motion-model.ts and is exclusive by construction, so the state cannot be
+// authored from this UI at all.
+
+/** The Appears segment buttons, in the order the row lays them out. */
+const appearBtns = (root: HTMLElement): HTMLButtonElement[] =>
+  Array.from(root.ownerDocument!.querySelectorAll<HTMLButtonElement>(
+    '.tl-inspector .tl-appear-seg .view-seg-btn, .tl-group-pop .tl-appear-seg .view-seg-btn'));
+
+const pressedAppear = (root: HTMLElement): string =>
+  appearBtns(root).find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent ?? '';
+
+test('the Appears row reads the box, and each segment writes the EXCLUSIVE patch', async () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    h.select(['a']);
+    assert.deepEqual(appearBtns(h.root).map((b) => b.textContent), ['With the slide', 'On click', 'At time'],
+      'three ways to appear, one control, in the order they are learned');
+    assert.equal(pressedAppear(h.root), 'At time', 'a timed clip already appears at a time');
+
+    // → On click. The patch carries ALL FOUR fields, every time: that is what makes two
+    // answers impossible, so the assertion is about the keys as much as the values.
+    appearBtns(h.root)[1]!.click();
+    assert.equal(h.commits.length, 1, 'ONE commit - one undo step');
+    const clicked = h.commits[0]!.find((b) => b.id === 'a')!;
+    assert.equal(clicked.build, 1, 'the first advance, unless the box already had a step');
+    assert.equal(clicked.start, '', 'and no start');
+    assert.equal(clicked.dur, '');
+    assert.equal(clicked.lane, '');
+    for (const k of ['build', 'start', 'dur', 'lane']) {
+      assert.ok(k in clicked, `${k} is in the patch - the clear is an EMPTY STRING, never a missing key`);
+    }
+    assert.equal(h.commits[0]!.find((b) => b.id === 'b')!.build, undefined, 'and only the selected box');
+
+    h.notify();
+    await frames(3);
+    assert.equal(pressedAppear(h.root), 'On click', 'the row is a reading of the model, not a memory of the press');
+    type(field(h.root, 'step'), '3');
+    assert.equal(h.boxes.find((b) => b.id === 'a')!.build, 3, 'the step is editable where it applies');
+
+    // → With the slide clears all three ways.
+    h.notify();
+    await frames(3);
+    appearBtns(h.root)[0]!.click();
+    const plain = h.boxes.find((b) => b.id === 'a')!;
+    assert.deepEqual([plain.build, plain.start, plain.dur, plain.lane], ['', '', '', ''],
+      'nothing left standing from either of the other two');
+    h.notify();
+    await frames(3);
+    assert.equal(pressedAppear(h.root), 'With the slide');
+  } finally { h.teardown(); }
+});
+
+test('a tool whose time fields are not the model\'s own is offered no Appears row', () => {
+  // The patch names Design\'s field ids (`build`/`start`/`dur`/`lane`) - the same
+  // manifest-is-the-contract rule the ease sub-fields are gated by. A tool that names
+  // its start something else must not be handed a control that would write a field its
+  // hook never declared.
+  const h = mount([clip('a', 0, 3)], 40, ADD_KINDS, { cfgPatch: { startField: 'start2' } });
+  try {
+    h.select(['a']);
+    assert.equal(appearBtns(h.root).length, 0);
+  } finally { h.teardown(); }
+});
+
+// ── a frame's enter/exit is the author overriding the deck (M4 section 1c) ────
+
+const FRAME_CFG = { cfgPatch: { frameTransitionField: 'slideTransition' } };
+const frameBox = (id: string, start: number, dur: number): Box =>
+  ({ id, start, dur, lane: 'seq', kind: 'frame' });
+
+test('editing a FRAME\'s enter marks its transition custom, in the same patch', () => {
+  const h = mount([frameBox('f', 0, 3), clip('b', 3, 2)], 40, ADD_KINDS, FRAME_CFG);
+  try {
+    h.select(['f']);
+    pick(field(h.root, 'Enter') as unknown as HTMLSelectElement, 'fade');
+    assert.equal(h.commits.length, 1, 'ONE commit: the pair and the override are one edit');
+    const f = h.commits[0]!.find((b) => b.id === 'f')!;
+    assert.equal(f.enter, 'fade');
+    assert.equal(f.slideTransition, 'custom',
+      'nothing derives a transition over a pair the author has just set by hand');
+
+    h.notify();
+    pick(field(h.root, 'Exit') as unknown as HTMLSelectElement, 'none');
+    assert.equal(h.commits[1]!.find((b) => b.id === 'f')!.slideTransition, 'custom', 'the exit says it too');
+  } finally { h.teardown(); }
+});
+
+test('a frame is offered no Appears row - a slide does not arrive on its own slide', () => {
+  const h = mount([frameBox('f', 0, 3), clip('b', 3, 2)], 40, ADD_KINDS, FRAME_CFG);
+  try {
+    h.select(['f']);
+    assert.equal(appearBtns(h.root).length, 0, 'and a build step on a frame is a number no player reads');
+    assert.ok(field(h.root, 'Enter'), 'precondition: the rest of the Motion group is still there');
+  } finally { h.teardown(); }
+});
+
+test('the custom stamp is manifest-gated, and never lands on an ordinary box', () => {
+  // No declared field: nothing to stamp, and inventing one is the defect.
+  const noField = mount([frameBox('f', 0, 3), clip('b', 3, 2)]);
+  try {
+    noField.select(['f']);
+    pick(field(noField.root, 'Enter') as unknown as HTMLSelectElement, 'fade');
+    assert.equal('slideTransition' in noField.commits[0]!.find((b) => b.id === 'f')!, false);
+  } finally { noField.teardown(); }
+
+  // A box that is not a frame has no transition to the next slide at all.
+  const notFrame = mount([clip('a', 0, 3), clip('b', 3, 2)], 40, ADD_KINDS, FRAME_CFG);
+  try {
+    notFrame.select(['a']);
+    pick(field(notFrame.root, 'Enter') as unknown as HTMLSelectElement, 'fade');
+    assert.equal('slideTransition' in notFrame.commits[0]!.find((b) => b.id === 'a')!, false);
+  } finally { notFrame.teardown(); }
+});
+
+// ── playOnce: the preview beside Enter, and the navigator's transition chip ───
+
+test('playOnce ramps ONE element through its own entrance and hands the DOM back', async () => {
+  const doc = dom.window.document;
+  const host = doc.createElement('div');
+  host.innerHTML = `<div class="artboard" data-sequence data-seq-ms="4000">
+    <div class="lolly-box" id="p" data-t-start="1000" data-t-dur="1000"
+         data-t-enter="fade" data-t-enter-ms="400" style="left:0px;top:0px"></div>
+    <div class="lolly-box" id="q" style="left:0px;top:0px"></div>
+  </div>`;
+  doc.body.appendChild(host);
+  const el = doc.getElementById('p') as HTMLElement;
+  const untouched = doc.getElementById('q') as HTMLElement;
+  try {
+    // A wall clock and a queue, so the ramp is driven rather than waited on - the same
+    // seams driveSequenceTime takes for the same reason.
+    let now = 0;
+    let pending: (() => void) | null = null;
+    const done = playOnce(el, 400, {
+      now: () => now,
+      schedule: (fn) => { pending = fn; return () => { pending = null; }; },
+    });
+    // The FIRST frame is applied before anything is scheduled: the entrance starts at
+    // its own start, not at the top of the sequence.
+    assert.equal(el.style.opacity, '0', 'the box begins its fade where the render begins it');
+    assert.equal(untouched.getAttribute('style'), 'left:0px;top:0px',
+      'a box with no timing of its own is not part of anybody\'s preview');
+
+    now = 200;
+    pending!();
+    assert.ok(Number(el.style.opacity) > 0 && Number(el.style.opacity) < 1, 'half way through, half way in');
+
+    now = 400;
+    pending!();
+    await done;
+    assert.equal(el.style.opacity, '', 'restored: the preview composes nothing it does not take back');
+    assert.equal(el.style.transform, '');
+    assert.equal(el.classList.contains('seq-off'), false);
+    assert.equal(el.style.left, '0px', 'and the authored geometry is still the author\'s');
+  } finally { host.remove(); }
+});
+
+test('the Enter row offers the preview only where there is motion to play, and it is not an edit', async () => {
+  const h = mount([clip('a', 0, 3), clip('b', 3, 2)]);
+  try {
+    h.select(['a']);
+    assert.equal(inspEl('.tl-preview'), null,
+      'no box on the canvas, nothing stamped, nothing to play - absent, never a dead button');
+
+    const el = dom.window.document.createElement('div');
+    el.className = 'lolly-box';
+    el.dataset.boxId = 'a';
+    for (const [k, v] of Object.entries({
+      'data-t-start': '0', 'data-t-dur': '3000', 'data-t-enter': 'fade', 'data-t-enter-ms': '400',
+    })) el.setAttribute(k, v);
+    el.setAttribute('style', 'left:0px;top:0px');
+    h.canvasEl.appendChild(el);
+    h.select([]);
+    h.select(['a']);
+    const btn = inspEl<HTMLButtonElement>('.tl-preview');
+    assert.ok(btn, 'a timed box on screen has an entrance, so it has a preview');
+    assert.equal(btn!.getAttribute('aria-label'), 'Preview this motion');
+    btn!.click();
+    assert.equal(h.commits.length, 0, 'watching a motion is not authoring one');
+    // Let the ramp finish so the element is handed back before the panel goes.
+    await new Promise((r) => { setTimeout(r, 480); });
+    // NOT LEFT HALF-DRAWN, which is the one state a preview must never end in. What
+    // remains is either the authored pose or the pose the panel's own clock re-asserts
+    // when the preview hands the canvas back (a fade at the playhead's 0 is invisible) -
+    // never a frame from the middle of the ramp.
+    assert.ok(['', '0'].includes(el.style.opacity),
+      `the preview ended mid-entrance at opacity ${el.style.opacity}`);
+    assert.equal(el.classList.contains('seq-off'), false, 'and nothing is left hidden');
+  } finally { h.teardown(); }
+});
+
+test('playOnce plays an entrance on a page that was never placed in order, and unstamps it', async () => {
+  // The navigator's slide-transition chip: it stamps the enter kind on the page it is
+  // about to show and takes it off again. A deck that has never been put on a timeline
+  // has no start anywhere, and the applier only walks elements that have one - so the
+  // player supplies a 0 for the length of the ramp, and the page keeps its own shape.
+  const doc = dom.window.document;
+  const canvas = doc.createElement('div');
+  const page = doc.createElement('div');
+  page.className = 'lolly-frame-page';
+  page.setAttribute('data-t-enter', 'fade');
+  page.setAttribute('data-t-enter-ms', '400');
+  page.setAttribute('style', 'left:0px;top:0px');
+  canvas.appendChild(page);
+  doc.body.appendChild(canvas);
+  try {
+    let now = 0;
+    let pending: (() => void) | null = null;
+    const done = playOnce(page, 400, { now: () => now, schedule: (fn) => { pending = fn; return () => { pending = null; }; } });
+    assert.equal(page.getAttribute('data-t-start'), '0', 'a start it did not have, for as long as it needs one');
+    assert.equal(page.style.opacity, '0', 'and the entrance actually runs');
+    now = 400;
+    pending!();
+    await done;
+    assert.equal(page.hasAttribute('data-t-start'), false, 'absent stays absent');
+    assert.equal(page.style.opacity, '', 'and the pose came back off');
+  } finally { canvas.remove(); }
+});
+
+test('playOnce on an element with no timing of its own does nothing at all', async () => {
+  const doc = dom.window.document;
+  const el = doc.createElement('div');
+  el.className = 'lolly-box';
+  el.setAttribute('style', 'left:0px');
+  doc.body.appendChild(el);
+  try {
+    await playOnce(el, 400);
+    await playOnce(el, 0);
+    await playOnce(null, 400);
+    assert.equal(el.getAttribute('style'), 'left:0px');
+  } finally { el.remove(); }
 });
 
 test('typing a Start promotes an untimed box in EXACTLY ONE commit, onto an overlay lane', async () => {
@@ -4071,8 +4308,8 @@ test('the inspector renders GROUPS, each an icon + a text label + a disclosure b
     for (const label of ['Start', 'Length', 'Trim in', 'Speed']) {
       assert.ok(inGroup('time', label), `${label} is in Time`);
     }
-    for (const label of ['Animate in', 'In (ms)', 'In curve', 'Animate out', 'Out (ms)', 'Out curve']) {
-      assert.ok(inGroup('animate', label), `${label} is in Animate`);
+    for (const label of ['Enter', 'Enter (ms)', 'Enter curve', 'Exit', 'Exit (ms)', 'Exit curve']) {
+      assert.ok(inGroup('animate', label), `${label} is in Motion`);
     }
     // And the things that are NOT groups are direct children of the strip: the mute
     // toggle (M2.6) and the timed ⇄ always-on switch.
@@ -4110,11 +4347,11 @@ test('a shut group reads as its values: the summary chips', async () => {
     // The ms and the curve did not vanish from the UI - they are one press away, which
     // is the whole trade this pass makes.
     setGroup(h.root, 'animate', true);
-    assert.equal(field(h.root, 'In (ms)').value, '400', 'the number lives in the popup');
-    assert.equal(easeSel(h.root, 'In curve').value, 'ease-out', 'and so does the curve');
+    assert.equal(field(h.root, 'Enter (ms)').value, '400', 'the number lives in the popup');
+    assert.equal(easeSel(h.root, 'Enter curve').value, 'ease-out', 'and so does the curve');
 
     // Changing a kind still moves the chip: it is a summary of the model, not a label.
-    pick(easeSel(h.root, 'Animate out'), 'none');
+    pick(easeSel(h.root, 'Exit'), 'none');
     h.notify();
     await frames(3);
     assert.deepEqual(groupChips(h.root, 'animate'), ['Rise'],
@@ -4177,7 +4414,7 @@ test('the disclosure opens a POPOVER above the transport, and writes nothing', (
     // NAMED FOR THE GROUP it is showing. All four groups open this one popover, so a
     // dialog that always announced the same constant never told a screen-reader user
     // which one they had just opened.
-    assert.equal(pop!.getAttribute('aria-label'), 'Animate');
+    assert.equal(pop!.getAttribute('aria-label'), 'Motion');
     assert.equal(pop!.parentElement, dom.window.document.body,
       'on the BODY, never inside the panel - .tl-panel is a transformed/clipping ancestor and a '
       + 'fixed popover parented under it would be positioned against the wrong containing block');
@@ -4667,7 +4904,11 @@ test('the groups work right-to-left', () => {
 // the repo root) and `timeline-math.ts` (tests/timeline-math.test.ts). What this file
 // owns is the glue - which is exactly the split the panel's header law describes.
 
-const { parseKf: parse } = await import('../../../../engine/src/keyframes.ts');
+const { parseKf: parse, KF_EASE_TOKENS, kfEaseName } = await import('../../../../engine/src/keyframes.ts');
+// The shell's own word for each of those curves - the picker's labels are asserted
+// against this registry rather than against transcribed strings, so a renamed preset
+// moves in one place.
+const { EASINGS } = await import('../lib/transitions.ts');
 
 /**
  * sequence-studio's cfg plus the keyframe, depth and tilt sub-fields a keyframable tool
@@ -5255,6 +5496,37 @@ test('the CRUD list is the AT route: real labelled controls that each write once
     h.notify(); await frames(3);
     rows()[1]!.querySelector<HTMLButtonElement>('.tl-kf-del')!.click();
     assert.deepEqual(parse(kfOf(h, 'a')).map((k) => k.t), [0, 1400]);
+  } finally { closeOverlays(); h.teardown(); }
+});
+
+test('the keyframe curve picker names EVERY preset, and a bezier spelling selects its preset', () => {
+  // ONE vocabulary (plans/179 M4): the engine names the curve, `EASINGS` gives that name
+  // its word, and the picker seeds from the name rather than from string equality on the
+  // token - so a curve cannot be called two things, and a preset written as its own
+  // bezier selects the preset instead of an extra "Custom" row beside it.
+  for (const tok of KF_EASE_TOKENS) {
+    const h = mount(kfScene({ ...clip('a', 0, 3), kf: `t0_${tok}_x0*t1500_eo_x40` } as Box), 40, ADD_KINDS, KF_CFG);
+    try {
+      h.select(['a']);
+      setGroup(h.root, 'keyframes', true);
+      const sel = inspAll<HTMLSelectElement>('.tl-kf-row .tl-kf-ease')[0]!;
+      assert.equal(sel.value, tok, `${tok}: the row selects its own token`);
+      const label = Array.from(sel.options).find((o) => o.value === tok)?.textContent;
+      assert.equal(label, EASINGS[kfEaseName(tok) as keyof typeof EASINGS],
+        `${tok}: named by the shared easing vocabulary, never by the raw token`);
+      assert.equal(Array.from(sel.options).filter((o) => o.textContent === 'Custom').length, 0,
+        `${tok}: a preset is never also a Custom row`);
+    } finally { closeOverlays(); h.teardown(); }
+  }
+
+  // `smooth` spelled out as its own control points.
+  const h = mount(kfScene({ ...clip('a', 0, 3), kf: 't0_eb(0.4)(0)(0.2)(1)_x0*t1500_eo_x40' } as Box), 40, ADD_KINDS, KF_CFG);
+  try {
+    h.select(['a']);
+    setGroup(h.root, 'keyframes', true);
+    const sel = inspAll<HTMLSelectElement>('.tl-kf-row .tl-kf-ease')[0]!;
+    assert.equal(sel.value, 'es');
+    assert.equal(Array.from(sel.options).find((o) => o.value === 'es')?.textContent, 'Smooth');
   } finally { closeOverlays(); h.teardown(); }
 });
 
@@ -6292,4 +6564,352 @@ test('the Pan row stays out of a tool that never declared panField', () => {
     assert.equal(h.root.ownerDocument!.querySelector('.tl-inspector .tl-alab[aria-label="Pan"]'), null,
       'no manifest sub-field, no row');
   } finally { h.teardown(); }
+});
+
+// ── plans/179 T2: closing the timeline releases the clock ─────────────────────
+
+/** The applier's own class + the export-time authored scope, imported so the
+ *  assertions below cannot drift from the module they are about. */
+const { OFF_CLASS, beginAuthoredDom } = await import('../bridge/sequence-dom.ts');
+
+/**
+ * The canvas a tool hook renders for a timed composition: a stage that declares its
+ * length, and one element per box carrying the `data-t-*` the applier reads. This is
+ * the ONLY input the sequence clock has - it never sees the model.
+ */
+function paintSequence(h: Harness, seqMs: number, boxes: Record<string, Record<string, string>>): void {
+  h.canvasEl.setAttribute('data-seq-ms', String(seqMs));
+  for (const [id, attrs] of Object.entries(boxes)) {
+    const el = h.canvasEl.ownerDocument!.createElement('div');
+    // A frames doc's scenes are PAGES, not boxes - `sequenceTimeElements` walks
+    // `[data-t-start]` rather than `.lolly-box` for exactly that reason, and the deck
+    // repro ("Place in order", then Escape) leaves its artboards behind, not its boxes.
+    const page = attrs['data-pdf-page'] != null;
+    el.className = page ? 'lolly-frame-page' : 'lolly-box';
+    el.setAttribute(page ? 'data-frame-id' : 'data-box-id', id);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    h.canvasEl.appendChild(el);
+  }
+}
+
+const painted = (h: Harness, id: string): HTMLElement =>
+  h.canvasEl.querySelector(`[data-box-id="${id}"], [data-frame-id="${id}"]`) as HTMLElement;
+
+/** The panel handle's time seam, which the Harness type does not restate. */
+const clockOf = (h: Harness): { seek(sec: number): void; time(): number } =>
+  h.panel as unknown as { seek(sec: number): void; time(): number };   // both in SECONDS
+
+test('closing the timeline RELEASES the clock: no seq-off, no composed pose, and the playhead is kept', () => {
+  // Two scenes and a fade. Parked at 4s, scene one is off screen entirely and scene
+  // two is exactly half way into a 2s fade-in - so there is BOTH a hidden box and a
+  // posed one to hand back, which is the pair the bug left behind.
+  const h = mount([clip('one', 0, 3), clip('two', 3, 3)]);
+  try {
+    paintSequence(h, 6000, {
+      // Artboards, as "Place in order" leaves them: sequenced [data-pdf-page] frames.
+      one: { 'data-pdf-page': '', 'data-t-start': '0', 'data-t-dur': '3000' },
+      two: { 'data-pdf-page': '', 'data-t-start': '3000', 'data-t-dur': '3000', 'data-t-enter': 'fade', 'data-t-enter-ms': '2000' },
+    });
+    clockOf(h).seek(4);
+    assert.ok(painted(h, 'one').classList.contains(OFF_CLASS), 'precondition: the off-playhead scene is hidden');
+    assert.ok(painted(h, 'two').style.opacity !== '', 'precondition: the on-playhead scene is mid-fade');
+
+    h.panel.setOpen(false);
+
+    // The whole of T2: a canvas with no clock on it shows every box, at rest.
+    assert.equal(h.canvasEl.querySelectorAll(`.${OFF_CLASS}`).length, 0,
+      'closing the panel left a box hidden with nothing on screen to explain it');
+    assert.equal(painted(h, 'two').style.opacity, '',
+      'the composed pose went back to the authored one');
+
+    // …and it is a HOLD, not a teardown: the playhead survives the close.
+    assert.ok(Math.abs(clockOf(h).time() - 4) < 0.001, 'the clock kept its time');
+    h.panel.setOpen(true);
+    assert.ok(painted(h, 'one').classList.contains(OFF_CLASS), 'reopening resumes at the same playhead');
+    assert.ok(painted(h, 'two').style.opacity !== '', '…including the pose it had');
+  } finally { h.teardown(); }
+});
+
+test('a released canvas stays released: an export-shaped authored scope cannot re-hide it', () => {
+  // The door the release had to close. `withAuthoredDom` stands every live writer down
+  // and re-asserts it afterwards - so with the clock merely PAUSED, the first export
+  // taken after closing the timeline put `.seq-off` straight back on a canvas the user
+  // was editing. The hold nests inside the scope, so the resume finds it still held.
+  const h = mount([clip('one', 0, 3), clip('two', 3, 3)]);
+  try {
+    paintSequence(h, 6000, {
+      one: { 'data-t-start': '0', 'data-t-dur': '3000' },
+      two: { 'data-t-start': '3000', 'data-t-dur': '3000' },
+    });
+    clockOf(h).seek(4);
+    h.panel.setOpen(false);
+    const release = beginAuthoredDom(h.canvasEl);
+    release();
+    assert.equal(h.canvasEl.querySelectorAll(`.${OFF_CLASS}`).length, 0,
+      'an export finishing must not re-pose a canvas whose timeline is shut');
+    // …and reopening still works, so the nesting did not strand the writer.
+    h.panel.setOpen(true);
+    assert.ok(painted(h, 'one').classList.contains(OFF_CLASS), 'the clock came back');
+  } finally { h.teardown(); }
+});
+
+test('destroying a CLOSED panel leaves nothing of the clock behind', () => {
+  const h = mount([clip('one', 0, 3), clip('two', 3, 3)]);
+  paintSequence(h, 6000, {
+    one: { 'data-t-start': '0', 'data-t-dur': '3000' },
+    two: { 'data-t-start': '3000', 'data-t-dur': '3000' },
+  });
+  clockOf(h).seek(4);
+  h.panel.setOpen(false);
+  h.panel.destroy();
+  assert.equal(h.canvasEl.querySelectorAll(`.${OFF_CLASS}`).length, 0, 'no class survived the teardown');
+  h.stageEl.remove();
+});
+
+// ── plans/179 T11: honest labels ─────────────────────────────────────────────
+
+test('a bar/chip says what it IS - never a bare "Clip"', () => {
+  const h = mount(
+    [
+      { id: 'named', start: 0, dur: 2, lane: 'seq', kind: 'box', name: 'Opening titles' },
+      { id: 'worded', start: 2, dur: 2, lane: 'seq', kind: 'text' },
+      { id: 'bed', start: 0, dur: '', lane: '', kind: 'audio' },
+      { id: 'shape', start: '', dur: '', lane: '', kind: 'path' },
+      { id: 'blank', start: '', dur: '', lane: '', kind: 'box' },
+      { id: 'empty-words', start: '', dur: '', lane: '', kind: 'text' },
+    ] as Box[],
+    40, ADD_KINDS, { cfgPatch: { labelField: 'name' } },
+  );
+  try {
+    // The words come off the LIVE canvas, exactly as `mediaOf` does - and the bed is a
+    // PROCEDURAL bed (`zzfxm:`), which is the one the Video template ships and the one
+    // that has no `data-audio-dur` to fall back on.
+    paintSequence(h, 8000, {
+      named: { 'data-t-start': '0', 'data-t-dur': '2000' },
+      worded: { 'data-t-start': '2000', 'data-t-dur': '2000' },
+      bed: { 'data-t-start': '0' },
+      shape: {}, blank: {}, 'empty-words': {},
+    });
+    painted(h, 'worded').innerHTML =
+      '<div class="lolly-box-text">A headline that runs on and on past the budget\nand a second line</div>';
+    painted(h, 'bed').innerHTML = '<div class="lolly-box-audio" data-audio-src="zzfxm:20260807"></div>';
+    h.panel.setOpen(false);
+    h.panel.setOpen(true);
+
+    const barLabel = (id: string): string =>
+      h.bar(id).querySelector('.tl-clip-label')!.textContent ?? '';
+    const chipLabel = (id: string): string =>
+      (h.root.querySelector(`.tl-chip[data-id="${id}"]`) as HTMLElement).textContent ?? '';
+
+    assert.equal(barLabel('named'), 'Opening titles', 'a rename wins over everything');
+    assert.equal(barLabel('worded'), 'A headline that runs on…',
+      'the FIRST line of the box\u2019s own words, at 24 characters');
+    assert.equal(barLabel('bed'), 'Audio', 'the music bed is not "Clip"');
+    assert.equal(chipLabel('shape'), 'Shape', 'a pen shape is not "Clip"');
+    assert.equal(chipLabel('blank'), 'Box', 'an untimed background box is not "Clip"');
+    assert.equal(chipLabel('empty-words'), 'Text', 'nor is a text box that has no words yet');
+  } finally { h.teardown(); }
+});
+
+test('an artboard chip reads its own name, else its place in the deck', () => {
+  const h = mount(
+    [
+      { id: 'f1', start: '', dur: '', lane: '', kind: 'frame' },
+      { id: 'f2', start: '', dur: '', lane: '', kind: 'frame' },
+      { id: 'f3', start: '', dur: '', lane: '', kind: 'frame' },
+    ] as Box[],
+    40, ADD_KINDS, { cfgPatch: { labelField: 'name' } },
+  );
+  try {
+    // The pages the hook emits, in the deck's own page order (`frameGroupsFor` sorts
+    // before it emits, so DOM order IS the numbering the canvas and presenter use).
+    for (const [fid, name] of [['f1', ''], ['f2', 'Agenda'], ['f3', '']] as const) {
+      const page = h.canvasEl.ownerDocument!.createElement('div');
+      page.className = 'lolly-frame-page';
+      page.setAttribute('data-frame-id', fid);
+      if (name) page.setAttribute('data-frame-name', name);
+      h.canvasEl.appendChild(page);
+    }
+    h.panel.setOpen(false);
+    h.panel.setOpen(true);
+    const chip = (id: string): string =>
+      (h.root.querySelector(`.tl-chip[data-id="${id}"]`) as HTMLElement).textContent ?? '';
+    assert.equal(chip('f1'), 'Slide 1');
+    assert.equal(chip('f2'), 'Agenda', 'a named board says its name, never its number');
+    assert.equal(chip('f3'), 'Slide 3');
+  } finally { h.teardown(); }
+});
+
+test('the audio row is titled, and its bar is classified for the waveform', () => {
+  const h = mount([overlay('bed', 0, 4), overlay('card', 0, 4)]);
+  try {
+    paintSequence(h, 8000, { bed: { 'data-t-start': '0', 'data-t-dur': '4000' }, card: { 'data-t-start': '0', 'data-t-dur': '4000' } });
+    painted(h, 'bed').innerHTML = '<div class="lolly-box-audio" data-audio-src="zzfxm:20260807"></div>';
+    h.panel.setOpen(false);
+    h.panel.setOpen(true);
+
+    const lane = h.bar('bed').closest('.tl-lane') as HTMLElement;
+    assert.ok(lane.classList.contains('tl-lane-audio'), 'the sound row is marked');
+    assert.equal(lane.querySelector('.tl-lane-label')?.textContent, 'Audio', 'and titled');
+    // The row that is NOT sound keeps its unlabelled lane - the title is information,
+    // not decoration.
+    const other = h.bar('card').closest('.tl-lane') as HTMLElement;
+    assert.equal(other.querySelector('.tl-lane-label'), null);
+
+    // The waveform branch. A procedural bed resolves to its own id as its url, so the
+    // classification the thumb pass routes on is `audio` + a url - which is exactly
+    // `thumbMode`'s waveform case. (peaks() itself needs a real decoder; what is
+    // checked here is that the pass reaches it, which is the half jsdom can see.)
+    assert.equal(h.bar('bed').dataset.kind, 'audio');
+    assert.equal(thumbMode('audio', 'zzfxm:20260807', ''), 'waveform');
+  } finally { h.teardown(); }
+});
+
+// ── plans/179 T12: the panel fits the viewport ───────────────────────────────
+
+test('the timeline panel CSS contract: a capped panel over a scrolling lanes region', () => {
+  // jsdom has no layout, so the fold this defends cannot be reproduced by measuring
+  // (every rect is 0). The contract is therefore asserted against the stylesheet
+  // itself - the `a11y-prefs-contract.test.ts` precedent - because both halves are
+  // one-line CSS facts and both were silently absent:
+  //
+  //   • `.tl-tracks` is a flex item whose `min-height` defaults to `auto`, i.e. "never
+  //     smaller than my content". Its own `overflow-y: auto` therefore never had
+  //     anything to scroll, and the surplus went out of the panel's bottom edge, taking
+  //     the "Always on" strip below the fold on a 1009px-tall viewport.
+  //   • `.tl-panel` is absolutely positioned in a `position: relative` stage that is
+  //     itself `100dvh`, so `max-height: 100%` IS "the viewport minus the top chrome".
+  const css = readFileSync(new URL('../styles/parts/timeline.css', import.meta.url), 'utf8');
+  const block = (sel: string): string => {
+    const at = css.indexOf(`\n${sel} {`);
+    assert.ok(at >= 0, `${sel} is styled`);
+    return css.slice(at, css.indexOf('\n}', at));
+  };
+  const tracks = block('.tl-tracks');
+  assert.match(tracks, /min-height:\s*0\s*;/, '.tl-tracks must be allowed to shrink');
+  assert.match(tracks, /overflow-y:\s*auto\s*;/, '…so that its own scroller engages');
+  assert.match(block('.tl-panel'), /max-height:\s*100%\s*;/,
+    '.tl-panel is capped to the stage, which is the viewport minus the top chrome');
+  // And the floor still clears the panel's own chrome, so the cap can never squeeze
+  // the tracks to nothing: clampPanelH owns that end and is unchanged.
+  assert.ok(clampPanelH(0, 1009, 120) >= 120 + ONE_LANE_H, 'the resize floor still clears the chrome');
+});
+
+// ── the Appears row is a row, not a label (a11y / mis-click) ──────────────────
+
+test('clicking the words "Appears" presses nothing - the row is not a <label>', () => {
+  // `<button>` is a labelable element, so inside a `<label>` the FIRST segment becomes
+  // the labelled control and label activation fires it. Reading the row therefore
+  // committed "With the slide", whose exclusive patch clears start, dur, lane and build
+  // in one go - a box losing its whole timeline placement with nothing pressed on screen.
+  const h = mount([{ id: 'a', start: 12, dur: 3, lane: 'seq' }]);
+  try {
+    h.select(['a']);
+    const seg = inspEl<HTMLElement>('.tl-appear-seg')!;
+    const row = seg.parentElement!;
+    assert.equal(row.tagName, 'DIV', 'the Appears row must not be a <label>');
+    const label = row.querySelector<HTMLElement>('.field-label')!;
+    assert.equal(label.textContent, 'Appears');
+    label.click();
+    assert.equal(h.commits.length, 0, 'reading the row is not an edit');
+    assert.equal(appearBtns(h.root).find((b) => b.dataset.val === 'time')!.getAttribute('aria-pressed'), 'true',
+      'and the box is still timed');
+  } finally { h.teardown(); }
+});
+
+test('the Enter select is named "Enter", not "Enter Preview this motion"', () => {
+  // The preview button lives inside the Enter row's <label>, and a labelled control takes
+  // its accessible name from the WHOLE label subtree - so the button's own aria-label was
+  // read out as part of the select's name.
+  const h = mount([clip('a', 0, 3)]);
+  try {
+    h.select(['a']);
+    const sel = field(h.root, 'Enter') as unknown as HTMLSelectElement;
+    assert.equal(sel.getAttribute('aria-label'), 'Enter');
+  } finally { h.teardown(); }
+});
+
+// ── the preview reaches the boxes it was built for ───────────────────────────
+
+test('canPlayOnce accepts the PRESENTER-only entrance an untimed box carries', () => {
+  const doc = dom.window.document;
+  const mk = (attrs: Record<string, string>): HTMLElement => {
+    const el = doc.createElement('div');
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    return el;
+  };
+  // A box that appears "with the slide" or "on click" is stamped `data-pr-enter` and
+  // never `data-t-enter` - widening the timeline name would change what a video renders.
+  // Asking for the timeline name alone hid the preview from every slide-deck box.
+  assert.equal(canPlayOnce(mk({ 'data-pr-enter': 'fade' })), true);
+  assert.equal(canPlayOnce(mk({ 'data-t-enter': 'fade' })), true);
+  assert.equal(canPlayOnce(mk({ 'data-pr-enter': 'none' })), false, 'a cut is not an entrance');
+  assert.equal(canPlayOnce(mk({ 'data-pr-enter': 'wobble' })), false, 'nor is a kind nothing renders');
+  assert.equal(canPlayOnce(mk({})), false);
+});
+
+test('playOnce borrows the presenter-only names for the ramp and hands them back', async () => {
+  const doc = dom.window.document;
+  const canvas = doc.createElement('div');
+  const el = doc.createElement('div');
+  el.className = 'lolly-box';
+  el.setAttribute('data-pr-enter', 'fade');
+  el.setAttribute('data-pr-enter-ms', '400');
+  el.setAttribute('style', 'left:0px;top:0px');
+  canvas.appendChild(el);
+  doc.body.appendChild(canvas);
+  try {
+    let now = 0;
+    let pending: (() => void) | null = null;
+    const done = playOnce(el, 400, { now: () => now, schedule: (fn) => { pending = fn; return () => { pending = null; }; } });
+    assert.equal(el.getAttribute('data-t-enter'), 'fade', 'the applier only reads the timeline name');
+    assert.equal(el.style.opacity, '0', 'so the entrance actually runs');
+    now = 400;
+    pending!();
+    await done;
+    assert.equal(el.hasAttribute('data-t-enter'), false, 'borrowed, not kept');
+    assert.equal(el.hasAttribute('data-t-enter-ms'), false);
+    assert.equal(el.getAttribute('data-pr-enter'), 'fade', 'and the box keeps its own');
+    // Declaration-identical, not byte-identical: writing through CSSStyleDeclaration
+    // re-serialises the whole attribute, which the applier documents.
+    assert.equal(el.style.opacity, '', 'and nothing composed is left on it');
+    assert.equal(el.style.transform, '');
+    assert.equal(el.style.left, '0px');
+  } finally { canvas.remove(); }
+});
+
+test('playOnce refuses a SECOND preview while one is running', async () => {
+  // Two sessions over one root: the newer suspends the older, and the older's restore
+  // then strips `seq-off` across the whole stage - every box that has not started yet
+  // flashes on screen for a frame. The navigator's chip already refused a second press.
+  const doc = dom.window.document;
+  const host = doc.createElement('div');
+  host.innerHTML = `<div class="artboard" data-sequence data-seq-ms="4000">
+    <div class="lolly-box" id="one" data-t-start="0" data-t-enter="fade" data-t-enter-ms="400" style="left:0px"></div>
+    <div class="lolly-box" id="two" data-t-start="0" data-t-enter="fade" data-t-enter-ms="400" style="left:0px"></div>
+  </div>`;
+  doc.body.appendChild(host);
+  const one = doc.getElementById('one') as HTMLElement;
+  const two = doc.getElementById('two') as HTMLElement;
+  try {
+    let now = 0;
+    let pending: (() => void) | null = null;
+    const first = playOnce(one, 400, { now: () => now, schedule: (fn) => { pending = fn; return () => { pending = null; }; } });
+    assert.equal(one.style.opacity, '0', 'the first ramp is running');
+    let started = 0;
+    await playOnce(two, 400, { now: () => 0, schedule: (fn) => { started++; return () => { void fn; }; } });
+    assert.equal(started, 0, 'the second press never opened a session of its own');
+    now = 400;
+    pending!();
+    await first;
+    assert.equal(one.style.opacity, '', 'and the first still hands its element back');
+    // …and once nothing is running, a preview is offered again.
+    let n2 = 0;
+    let p2: (() => void) | null = null;
+    const third = playOnce(two, 400, { now: () => n2, schedule: (fn) => { p2 = fn; return () => { p2 = null; }; } });
+    assert.equal(two.style.opacity, '0', 'not a one-shot latch');
+    n2 = 400;
+    p2!();
+    await third;
+  } finally { host.remove(); }
 });
