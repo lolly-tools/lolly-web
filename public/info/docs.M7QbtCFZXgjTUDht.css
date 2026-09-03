@@ -1545,7 +1545,8 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 .covers-section.covers--fan{padding-left:0;padding-right:0}
 .covers--fan .covers-inner{max-width:none}
 .covers{outline:none;border-radius:10px}
-.covers:focus-visible{outline:2px solid hsl(var(--primary));outline-offset:6px}
+/* Keyboard ring only: a focus the fan took for itself after a pointer drag is marked data-focus-by=pointer (lib/covers-flow.ts). */
+.covers:focus-visible:not([data-focus-by="pointer"]){outline:2px solid hsl(var(--primary));outline-offset:6px}
 /* The strip is a scroll box, so it clips its own overflow: the card shadow reaches
    ~52px below the card (0 24px 48px -20px) and was cut at the strip's bottom edge as a
    hard line. Pad past the shadow and pull the flow back with a negative margin, so
@@ -1634,7 +1635,7 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 .persona-sub{font-size:.8125rem;color:var(--muted)}
 #door-creators:checked ~ .persona-tabs label[for="door-creators"],
 #door-builders:checked ~ .persona-tabs label[for="door-builders"],
-#door-operators:checked ~ .persona-tabs label[for="door-operators"]{border-color:var(--green);background:color-mix(in oklab,var(--green) 56%,var(--page))}
+#door-operators:checked ~ .persona-tabs label[for="door-operators"]{border-color:var(--green);background:color-mix(in oklab,var(--green) 30%,var(--page))}
 .persona-tabs img{transition: all .5s ease; filter:drop-shadow( 0 1px 14px color-mix(in oklab,var(--green) 86%,var(--page)))}
 #door-creators:not(:checked) ~ .persona-tabs label[for="door-creators"] img,
 #door-builders:not(:checked) ~ .persona-tabs label[for="door-builders"] img,

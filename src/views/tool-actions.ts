@@ -549,6 +549,18 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     // clip away. Clamped to the timeline's own ceiling (timeline-math MAX_TIME_S).
     return Math.min(MAX_TIME_S, Math.max(0.1, Math.round(ms / 10) / 100));
   };
+  /** A tool whose material has its own length - an audio bed - stamps it on its stage
+   *  as data-clip-ms, and the Duration field follows it the way it follows a timeline,
+   *  so what the panel shows is what the export hook will run to. Before this the
+   *  audiogram's hook lengthened the clip to the analysed audio at export time while
+   *  the field still read the manifest's 8 s (Andy, 2026-09-03: the duration may
+   *  grow, but it has to be seen and settable at export). */
+  const clipDurationS = (): number | null => {
+    const el = canvasEl?.matches?.('[data-clip-ms]') ? canvasEl : canvasEl?.querySelector<HTMLElement>('[data-clip-ms]');
+    const ms = parseFloat(el?.getAttribute('data-clip-ms') ?? '');
+    if (!Number.isFinite(ms) || ms <= 0) return null;
+    return Math.min(MAX_TIME_S, Math.max(0.1, Math.round(ms / 10) / 100));
+  };
   /** The bed in-point in seconds a tool stamps on its stage as data-audio-start
    *  (0 when it doesn't, or the value is unusable) - see the export handler. */
   const stageAudioStart = (): number => {
@@ -1579,13 +1591,16 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     // An animated tool (window.__lollyAnim) seeds Duration from its loop when this
     // isn't a sequence; the sequence timeline wins if a tool were somehow both.
     const animSecs = isSeq ? null : animDurationS();
-    const derived  = secs ?? animSecs;
+    // A bed's own length (data-clip-ms) seeds Duration too, but does not make the
+    // tool a "timed composition": Record live stays offered, as it always was here.
+    const clipSecs = isSeq || animSecs != null ? null : clipDurationS();
+    const derived  = secs ?? animSecs ?? clipSecs;
     const timed    = isSeq || animSecs != null;
     if (durationEl) {
       // A timeline (or a long animation loop) may legitimately outrun the 60s
       // recording cap - take the 1-hour ceiling while it's timed, restore 60s if it
       // stops being one (every clip deleted, or the animation cleared).
-      const max = timed ? String(MAX_TIME_S) : '60';
+      const max = timed || clipSecs != null ? String(MAX_TIME_S) : '60';
       if (durationEl.max !== max) durationEl.max = max;
       if (derived != null && !durationUserSet) {
         const next = String(derived);
@@ -1623,7 +1638,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // there is no teardown seam here and none is needed - the node goes with the mount.
   if (canvasEl && (durationEl || liveLabelEl || hasStillFmt)) {
     new MutationObserver(() => syncSequenceUi())
-      .observe(canvasEl, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-seq-ms', 'data-sequence'] });
+      .observe(canvasEl, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-seq-ms', 'data-sequence', 'data-clip-ms'] });
   }
   syncSequenceUi();
 

@@ -94,6 +94,12 @@ interface Entry {
 
 const registry = new Map<Element, Entry>();
 
+/** Seconds into the analysed bed for a normalised clip time `t`: the export bar's clip
+ *  length is the span t runs over, not the length of the whole track. */
+export function clipSeconds(t: number, clipSec: number): number {
+  return Math.max(0, t) * clipSec;
+}
+
 function readConfig(el: HTMLElement): VizToolConfig {
   return {
     preset: el.dataset.lollyViz || '',
@@ -329,14 +335,29 @@ export async function mountToolViz(container: Element, opts: MountToolVizOpts = 
   };
   entry.step = step;
 
-  // The shared frame-clock convention (bridge/export.ts): t is normalised clip time and
-  // t === 0 is the poster frame - a still of an audiogram should show the loudest moment,
-  // not the silence clips routinely open on.
+  // The shared frame-clock convention (bridge/export.ts): t is normalised over the
+  // CLIP the export bar asked for, and a video export also passes that clip's length
+  // in seconds. The analysis spans the whole bed from the in-point, so the mapping
+  // goes through seconds: a 2 s export shows the first 2 s of the track at the speed
+  // the preview plays it. (It used to spread t across the whole analysis, so a short
+  // export of a long track raced through the entire song - Andy, 2026-09-03.) Without
+  // a clip length - a still - t === 0 is the poster frame: a still of an audiogram
+  // should show the loudest moment, not the silence clips routinely open on.
   // Every export begins at t === 0, so that is where the sequence is pinned: reset,
   // warm up from a cleared field, and render. Two exports of the same clip then agree
   // frame for frame instead of each inheriting however long the preview had been up.
-  canvas.__lollyFrameRender = (t: number): void => {
-    step(t === 0 ? live.poster : Math.floor(t * live.count), t === 0);
+  let clockSecs = -1;
+  canvas.__lollyFrameRender = (t: number, clipSec?: number): void => {
+    if (!(clipSec && clipSec > 0)) { clockSecs = -1; step(t === 0 ? live.poster : Math.floor(t * live.count), t === 0); return; }
+    const secs = clipSeconds(t, clipSec);
+    const idx = Math.min(live.count - 1, Math.max(0, Math.floor(secs * live.fps)));
+    // One MilkDrop frame per ANALYSIS frame, exactly as the preview loop steps it: a
+    // preset's per-frame equations (the bouncing balls' velocities) advance once per
+    // render, so rendering once per exported frame at 60 fps would run the motion at
+    // twice the speed the preview shows. A 60 fps file therefore repeats each frame
+    // for the fraction of the analysis interval it covers, and moves at preview speed.
+    step(idx, t === 0 || clockSecs < 0 || secs < clockSecs);
+    clockSecs = secs;
   };
 
   // Live preview. Stands down while the export clock is driving, and holds the poster

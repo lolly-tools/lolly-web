@@ -10679,7 +10679,7 @@ async function renderGif(node: Element, opts: ExportOpts): Promise<Blob> {
 
     const repeat = opts.repeat != null ? opts.repeat : 0;
     for (let i = 0; i < frameCount; i++) {
-      const canvas = await source.frame(i / frameCount);
+      const canvas = await source.frame(i / frameCount, durationMs / 1000);   // clip length too, so a frame-clock tool paces its own material (see viz-tool-mount)
       offCtx.clearRect(0, 0, targetW, targetH);
       offCtx.drawImage(canvas, 0, 0, targetW, targetH);
       const pixels = offCtx.getImageData(0, 0, targetW, targetH).data;
@@ -10759,7 +10759,7 @@ async function renderApng(node: Element, opts: ExportOpts): Promise<Blob> {
   const frames: Uint8Array[] = [];
   try {
     for (let i = 0; i < frameCount; i++) {
-      const canvas = await source.frame(i / frameCount);
+      const canvas = await source.frame(i / frameCount, durationMs / 1000);   // clip length too, so a frame-clock tool paces its own material (see viz-tool-mount)
       offCtx.clearRect(0, 0, targetW, targetH);
       offCtx.drawImage(canvas, 0, 0, targetW, targetH);
       const blob = await new Promise<Blob>((res, rej) =>
@@ -10829,7 +10829,7 @@ async function renderWebpAnim(node: Element, opts: ExportOpts): Promise<Blob> {
   const frames: Uint8Array[] = [];
   try {
     for (let i = 0; i < frameCount; i++) {
-      const canvas = await source.frame(i / frameCount);
+      const canvas = await source.frame(i / frameCount, durationMs / 1000);   // clip length too, so a frame-clock tool paces its own material (see viz-tool-mount)
       offCtx.clearRect(0, 0, targetW, targetH);
       offCtx.drawImage(canvas, 0, 0, targetW, targetH);
       const blob = await new Promise<Blob>((res, rej) =>

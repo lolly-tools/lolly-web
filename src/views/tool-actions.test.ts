@@ -141,8 +141,8 @@ interface Harness {
 /** Mount the export bar over a canvas that is (or isn't) a timed composition.
  *  `profile` installs a profile store on the host (absent by default, the way a
  *  host without one behaves). */
-function mount({ seqMs, videoDuration = 12, formats = ['webm', 'mp4', 'png'], profile, model = [], toolId = 'sequence-studio' }:
-  { seqMs: number | null; videoDuration?: number; formats?: string[]; profile?: Record<string, unknown>;
+function mount({ seqMs, clipMs = null, videoDuration = 12, formats = ['webm', 'mp4', 'png'], profile, model = [], toolId = 'sequence-studio' }:
+  { seqMs: number | null; /** A bed's own length stamped as data-clip-ms (the audiogram). */ clipMs?: number | null; videoDuration?: number; formats?: string[]; profile?: Record<string, unknown>;
     /** The runtime's input model - only the tests that read it pass one. */
     model?: Array<Record<string, unknown>>; toolId?: string }): Harness {
   const doc = dom.window.document;
@@ -156,6 +156,10 @@ function mount({ seqMs, videoDuration = 12, formats = ['webm', 'mp4', 'png'], pr
     stage = doc.createElement('div');
     stage.setAttribute('data-sequence', '');
     stage.setAttribute('data-seq-ms', String(seqMs));
+    canvas.appendChild(stage);
+  } else if (clipMs != null) {
+    stage = doc.createElement('div');
+    stage.setAttribute('data-clip-ms', String(clipMs));
     canvas.appendChild(stage);
   }
 
@@ -264,6 +268,37 @@ test('sequence: sub-second timelines keep centisecond precision', () => {
 test('no sequence: Duration still comes from the manifest, unchanged', () => {
   const h = mount({ seqMs: null, videoDuration: 12 });
   assert.equal(h.duration().value, '12');
+});
+
+// ── 1b. a bed's own length (data-clip-ms, the audiogram) ─────────────────────
+
+test('clip: Duration is seeded from data-clip-ms so the field shows what the export runs to', () => {
+  const h = mount({ seqMs: null, clipMs: 84886, videoDuration: 8 });
+  assert.equal(h.duration().value, '84.89', 'an 85s bed must show 85s, not the manifest 8');
+  assert.equal(h.duration().max, '3600', 'the 60s ceiling yields to a long bed');
+});
+
+test('clip: a nonsense data-clip-ms leaves the manifest default alone', () => {
+  const h = mount({ seqMs: null, clipMs: null, videoDuration: 8 });
+  const stray = dom.window.document.createElement('div');
+  stray.setAttribute('data-clip-ms', 'soon');
+  h.canvas.appendChild(stray);
+  assert.equal(h.duration().value, '8');
+});
+
+test('clip: a bed is not a timed composition - Record live stays offered', () => {
+  const h = mount({ seqMs: null, clipMs: 84886 });
+  assert.equal(h.liveLabel()!.style.display, 'flex');
+  assert.equal(h.liveLabel()!.dataset.suppressed, undefined);
+});
+
+test('clip: a user edit wins over the bed length and reaches the export as durationUserSet', async () => {
+  const h = mount({ seqMs: null, clipMs: 84886 });
+  h.duration().value = '6';
+  h.duration().dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  h.stage!.setAttribute('data-clip-ms', '90000');
+  await new Promise(r => setTimeout(r, 0));
+  assert.equal(h.duration().value, '6', 'the typed value is not re-seeded by a re-stamp');
 });
 
 // ── 2. the ceiling ───────────────────────────────────────────────────────────

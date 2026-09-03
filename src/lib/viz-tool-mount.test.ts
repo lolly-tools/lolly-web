@@ -7,7 +7,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decodeWave, parseTrack } from './viz-tool-mount.ts';
+import { decodeWave, parseTrack, clipSeconds } from './viz-tool-mount.ts';
 
 const b64 = (bytes: Uint8Array): string => Buffer.from(bytes).toString('base64');
 
@@ -56,4 +56,13 @@ test('parseTrack clamps the poster into the track and defaults the fps', () => {
   assert.equal(parseTrack(JSON.stringify({ count: 3, samples: 4, poster: 99 }), wave)?.poster, 2);
   assert.equal(parseTrack(JSON.stringify({ count: 3, samples: 4, poster: -5 }), wave)?.poster, 0);
   assert.equal(parseTrack(JSON.stringify({ count: 3, samples: 4, fps: 0 }), wave)?.fps, 30);
+});
+
+test('clipSeconds maps normalised clip time over the EXPORTED clip, not the whole track', () => {
+  // A 2 s export of an 85 s bed: t = 1 is 2 s in, so the export runs at preview speed.
+  assert.equal(clipSeconds(1, 2), 2);
+  assert.equal(clipSeconds(0.5, 6), 3);
+  assert.equal(clipSeconds(0, 6), 0);
+  // A negative t (never sent, but cheap to refuse) cannot reach before the in-point.
+  assert.equal(clipSeconds(-0.2, 6), 0);
 });

@@ -179,10 +179,10 @@ export function mountCoverFlow(root: ParentNode): void {
   // The animated covers are muted looping clips; under reduced motion they hold
   // their poster frame instead of playing.
   const videos = cards.map((el) => el.querySelector('video'));
-  // Playback is this module's to decide from here: in the fan only the centred
-  // clip and its neighbours run (videoPolicy), in the filmstrip every clip does
-  // (exitFan). The autoplay attribute would otherwise restart a clip the policy
-  // just paused as soon as its metadata arrives.
+  // Playback is this module's to decide from here: videoPolicy runs the clips
+  // in the fan (all of them, for now), exitFan every clip in the filmstrip. The
+  // autoplay attribute would otherwise restart a clip the policy just paused
+  // (reduced motion) as soon as its metadata arrives.
   videos.forEach((v) => { if (v) { v.removeAttribute('autoplay'); v.autoplay = false; if (reduced) v.pause(); } });
   const wide = matchMedia('(min-width: 720px)');
 
@@ -314,16 +314,15 @@ export function mountCoverFlow(root: ParentNode): void {
     openBtn.classList.add('is-on');
   }
 
-  /** Only the centred clip and its two neighbours play; the rest hold their
-   *  poster. Three decoding videos inside 3-D layers is what a tablet can
-   *  composite smoothly - sixteen is not. */
-  function videoPolicy(r: number): void {
+  /** Every real clip plays (the clones hold posters, so at most the four
+   *  posed loops decode at once); Andy 2026-09-03: try them all playing and
+   *  see how it performs - if a tablet struggles, narrow this back to the
+   *  centred clip and its two neighbours (`d <= 1` on the ring distance). */
+  function videoPolicy(_r: number): void {
     if (reduced) return;
-    videos.forEach((v, i) => {
+    videos.forEach((v) => {
       if (!v) return;
-      const d = Math.min(Math.abs(i - r), n - Math.abs(i - r));
-      if (d <= 1) { if (v.paused) void v.play().catch(() => { /* autoplay policy */ }); }
-      else if (!v.paused) v.pause();
+      if (v.paused) void v.play().catch(() => { /* autoplay policy */ });
     });
   }
 
@@ -512,6 +511,7 @@ export function mountCoverFlow(root: ParentNode): void {
   rootEl.querySelector('[data-covers="prev"]')?.addEventListener('click', () => go(curIndex() - 1));
   rootEl.querySelector('[data-covers="next"]')?.addEventListener('click', () => go(curIndex() + 1));
   rootEl.addEventListener('keydown', (e) => {
+    rootEl.removeAttribute('data-focus-by');
     if (!fan) return;
     if (e.key === 'ArrowLeft') { go(curIndex() - 1); e.preventDefault(); }
     if (e.key === 'ArrowRight') { go(curIndex() + 1); e.preventDefault(); }
@@ -581,8 +581,12 @@ export function mountCoverFlow(root: ParentNode): void {
     // Take focus on RELEASE: Chrome's own press handling still moves focus to
     // the body after a cancelled pointerdown, so a focus() there is undone by
     // the time the keys arrive. After the release it sticks, and the region's
-    // arrow-key handler owns the strip from here (no scroll jump).
-    if (e.pointerType !== 'touch') rootEl.focus({ preventScroll: true });
+    // arrow-key handler owns the strip from here (no scroll jump). The focus is
+    // marked as pointer-made so the stylesheet can hold back the keyboard ring
+    // (browsers differ on whether a scripted focus() after a click gets one -
+    // Andy saw the whole fan outlined after a drag); the mark clears on the
+    // first key or when focus leaves, so keyboard users still see the ring.
+    if (e.pointerType !== 'touch') { rootEl.setAttribute('data-focus-by', 'pointer'); rootEl.focus({ preventScroll: true }); }
     // A slow release (the hand already at rest) stops dead; only a real throw
     // coasts. A cancelled pointer (the page took the gesture for a vertical
     // scroll) coasts with whatever it had - stopping dead there is the jolt.
@@ -607,7 +611,7 @@ export function mountCoverFlow(root: ParentNode): void {
   rootEl.addEventListener('mouseenter', () => { hov = true; });
   rootEl.addEventListener('mouseleave', () => { hov = false; });
   rootEl.addEventListener('focusin', () => { hov = true; });
-  rootEl.addEventListener('focusout', () => { hov = false; });
+  rootEl.addEventListener('focusout', () => { hov = false; rootEl.removeAttribute('data-focus-by'); });
 
   if (!reduced) {
     const timer = setInterval(() => {
