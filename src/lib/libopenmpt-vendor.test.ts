@@ -17,7 +17,10 @@ import assert from 'node:assert/strict';
 test('the vendored libopenmpt wasm instantiates and reports its version', async () => {
   const { default: createLibopenmpt } = await import('../vendor/libopenmpt/libopenmpt.mjs');
   const lib = await createLibopenmpt();
-  const version = lib._openmpt_get_library_version() as number;
+  // Through cwrap, the way mod-worker.ts reaches every libopenmpt entry point (the
+  // vendored .d.mts types the runtime surface, not the C exports).
+  const getVersion = lib.cwrap('openmpt_get_library_version', 'number', []) as () => number;
+  const version = getVersion();
   // 0.8.x encodes as (major << 24) | (minor << 16) | patch - anything non-zero means
   // the binary decoded, linked and ran; a corrupted embed never gets this far.
   assert.ok(version > 0, `library version should be non-zero, got ${version}`);
