@@ -1657,6 +1657,8 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 /* The lorikeet stands tall on its stick, so it hangs 5em below the pane instead
    of stretching the row (Andy, 2026-09-03). */
 .lane-mascot[data-shot$="lorikeet.webp"]{margin-bottom:-5em}
+.lane-mascot[data-shot$="pelican.webp"]{margin:-4em 0}
+.lane-mascot[data-shot$="bin-chicken.webp"]{margin-bottom:-3.6em}
 .lane-pane h3{font-family:'SUSE Mono',monospace;font-size:1.05rem;font-weight:600;text-transform:none;letter-spacing:.02em;margin-bottom:.4rem}
 .lane-pitch{color:var(--muted);max-width:56ch;margin:0 0 .9rem;font-size:.95rem}
 .lane-links{list-style:none;margin:0 0 1rem;padding:0;display:flex;flex-direction:column;gap:6px;max-width:520px}
