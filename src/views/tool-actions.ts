@@ -3237,7 +3237,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       const dwellMs = Math.round(videoParams().duration * 1000);
       unstageDeck = stageDeckAsSequence(canvasEl, { dwellMs });
       if (unstageDeck) {
-        host.log('info', `export: ${pageEls.length} slides placed in order for this ${fmt} (${Math.round(stagedDeckMs(canvasEl, dwellMs) / 100) / 10}s) - each slide's own dwell, else the export duration. The document is unchanged.`);
+        host.log('info', `export: ${pageEls.length} slides placed in order for this ${fmt} (${Math.round(stagedDeckMs(canvasEl, dwellMs) / 100) / 10}s) - each slide's own dwell, else the Duration field as the dwell. The document is unchanged.`);
       }
     }
     const isAnimated = isAnimatedFmt(fmt);
@@ -3432,6 +3432,11 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
           btn.textContent = `Exporting… ${pct}%`;
         },
         ...(isAnimated ? videoParams() : {}),
+        // A staged click deck (plans/184 R3): the Duration field is each slide's dwell,
+        // not the video's total - the total is the slides added up, which the compositor
+        // reads off the stamped data-seq-ms when the duration is NOT flagged user-set.
+        // Flagged, it would truncate a two-slide deck to one slide's length.
+        ...(unstageDeck ? { durationUserSet: false } : {}),
         // Contact sheet - `opts.cuts` is the pinned cross-agent name the export
         // bridge reads. Passed only when the Frames control is actually mounted
         // (a timed composition) AND the format is a still: every other export omits
@@ -3627,7 +3632,6 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
             } : null,
           }), { shutter: true, detail: fmtLabel(fmt), onCancel: cancelExport });
         } finally {
-      unstageDeck?.(); unstageDeck = null;
           releaseStage();
         }
         downloadedBlob = pkg.blob;
@@ -3918,6 +3922,9 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       setTimeout(() => { btn.textContent = prev; btn.toggleAttribute('disabled', false); }, 3500);
       return;
     } finally {
+      // The staged click deck goes back exactly (plans/184 R3) - before anything else
+      // reads the canvas, and whether the export finished, failed or was cancelled.
+      unstageDeck?.(); unstageDeck = null;
       // Always release the module-global sink, whatever exit the export took.
       _setExportNoticeSink(null);
     }

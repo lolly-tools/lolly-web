@@ -663,9 +663,14 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
     return `<span class="num-slot" data-num-slot="${escape(key)}"></span>`;
   }
 
-  /** One labelled number cell in a dims row: the axis letter, the number, the unit. */
+  /**
+   * One labelled number cell in a dims row: the axis letter, the number, the unit. One
+   * decimal of px is kept (plans/184 R10, R12): a typed `210mm` commits 793.7, not 794,
+   * so the board is A4 to the export bar and the PDF page; an integer still shows as one,
+   * and the arrow keys and the scrub still move by a whole pixel.
+   */
   const dimCell = (label: string, field: string | undefined, value: number | 'mixed', o: NumCellOpts = {}): string =>
-    numCell(label, field, value, { unit: 'px', ...o });
+    numCell(label, field, value, { unit: 'px', step: 1, precision: 1, ...o });
 
   /** A plain labelled row whose whole control is one number. `tip` is a helptip on the
    *  label - what this number does on the surface the person is looking at. */

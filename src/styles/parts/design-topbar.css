@@ -189,7 +189,11 @@
 
 .dtb-menu {
   position: absolute;
-  z-index: 24;
+  /* Above the floating tool rail (.fc-toolbar-dock, editor.css, z 24) and the canvas
+     hint pills (25, 26), below the colour popover (30). At 24 the rail, painted later,
+     won the tie and covered this menu on a phone - where it is the only way to reach
+     the Navigator and the Inspector (plans/184 section 6, S1). */
+  z-index: 28;
   min-inline-size: 190px;
   margin-block-start: var(--sp-3);
   padding: var(--sp-2);
