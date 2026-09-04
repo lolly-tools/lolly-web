@@ -492,8 +492,10 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
   border: 1.5px solid hsl(var(--primary));
   transform-origin: 50% 50%;
 }
-/* Group / multi-selection bounding box - dashed to distinguish from a box outline. */
-.fc-group-outline { border-style: dashed; }
+/* Group / multi-selection bounding box (plans/184 R17): the same solid line and the same
+   handles as a single box - one vocabulary - told apart by weight and tone rather than a
+   dash. Dashed borders are drop areas throughout this shell and nothing else. */
+.fc-group-outline { border-width: 1px; border-color: hsl(var(--primary) / 0.65); }
 .fc-handle {
   position: absolute; width: 12px; height: 12px;
   margin-left: -6px; margin-top: -6px;
