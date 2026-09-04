@@ -250,6 +250,12 @@ interface NumCellOpts {
   pair?: string;
   /** Overrides the default write (used where the value is not one model field). */
   onCommit?(v: number): void;
+  /**
+   * Stored value = shown value x scale. A doc input kept in ms is shown in seconds with
+   * `scale: 1000` - one time notation in the editor (plans/184 R7); `min`/`max` are in
+   * the SHOWN unit.
+   */
+  scale?: number;
 }
 
 /** One number cell awaiting its slot: the markup goes in first, the control after. */
@@ -747,10 +753,12 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
    */
   const docNumRow = (label: string, input: string, dflt: number, o: NumCellOpts = {}): string => {
     const min = o.min ?? 0, max = o.max ?? 60000;
-    const cur = clampN(model.getInput(input), dflt, min, max);
+    const scale = o.scale && o.scale > 0 ? o.scale : 1;
+    const cur = clampN(model.getInput(input), dflt, min * scale, max * scale) / scale;
+    const q = 10 ** (o.precision ?? 0);
     return `<div class="fc-row"><span>${label}</span>`
-      + numCell('', input, o.precision ? Math.round(cur * 100) / 100 : Math.round(cur), {
-        name: label, ...o, min, max, onCommit: (v: number) => model.setInput(input, v),
+      + numCell('', input, Math.round(cur * q) / q, {
+        name: label, ...o, min, max, onCommit: (v: number) => model.setInput(input, Math.round(v * scale * 1e6) / 1e6),
       })
       + '</div>';
   };
@@ -852,8 +860,8 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
       + docNumRow(t('Speed'), 'narrationSpeed', 1, { min: 0.5, max: 2, step: 0.05, precision: 2 })
       // The ranges are the MANIFEST's own (community/design/tool.json), so this column
       // cannot offer a number the runtime would refuse.
-      + docNumRow(t('Lead-in'), 'narrationLeadInMs', NARRATION_LEAD_IN_MS, { min: 0, max: 5000, step: 50, unit: 'ms' })
-      + docNumRow(t('Tail'), 'narrationTailMs', NARRATION_TAIL_MS, { min: 0, max: 5000, step: 50, unit: 'ms' })
+      + docNumRow(t('Lead-in'), 'narrationLeadInMs', NARRATION_LEAD_IN_MS, { min: 0, max: 5, step: 0.05, precision: 2, unit: 's', scale: 1000 })
+      + docNumRow(t('Tail'), 'narrationTailMs', NARRATION_TAIL_MS, { min: 0, max: 5, step: 0.05, precision: 2, unit: 's', scale: 1000 })
       // Captions are ordinary boxes on the canvas, so a narrated deck would show them at
       // the podium too. Off by default: a live presenter is not a video (plans/180 s4).
       + docToggleRow(t('Show captions when presenting'), 'showCaptionsWhenPresenting');

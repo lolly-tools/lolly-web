@@ -5595,18 +5595,20 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   //
   // The paper sizes are CSS pixels at the 96 dpi convention the engine's units.ts maps px
   // through (plans/184 section 2): A4 is 210 × 297 mm = 793.7 × 1122.5 px, Letter 8.5 × 11 in
-  // = 816 × 1056 px. Print resolution is the EXPORT's dpi (300 by default), applied at export
-  // time - not baked into the canvas. The old presets wrote A4 at 300 dpi (2480 × 3508) and
-  // at 150 dpi (1240 × 1754) as px, so a board called A4 exported as a 656 × 928 mm page.
+  // = 816 × 1056 px. Fractional px are stored as they are (plans/184 R12), so A4 exports as a
+  // true 595.3 × 841.9 pt page. Print resolution is the EXPORT's dpi (300 by default), applied
+  // at export time - not baked into the canvas. The old presets wrote A4 at 300 dpi (2480 ×
+  // 3508) and at 150 dpi (1240 × 1754) as px, so a board called A4 exported 656 × 928 mm.
+  // design-units-contract.test.ts round-trips every paper preset through units.ts.
   const SIZE_PRESETS: Array<[string, number, number]> = [
     ['Landscape 16:9', 1920, 1080], ['Story 9:16', 1080, 1920], ['Square', 1080, 1080],
     ['Standard 4:3', 1440, 1080], ['Cinematic 21:9', 2520, 1080], ['Stage 32:9', 3840, 1080],
-    ['Portrait 4:5', 1080, 1350], ['Wide 1.91:1', 1200, 630], ['A4 portrait', 794, 1123],
+    ['Portrait 4:5', 1080, 1350], ['Wide 1.91:1', 1200, 630], ['A4 portrait', 793.7, 1122.5],
   ];
   // Page-size presets for multi-page (carousel) mode. Every page shares one size.
   const PAGE_PRESETS: Array<[string, number, number]> = [
     ['Portrait 4:5', 1080, 1350], ['Square', 1080, 1080], ['Story 9:16', 1080, 1920],
-    ['Landscape 16:9', 1920, 1080], ['A4 portrait', 794, 1123], ['Letter', 816, 1056],
+    ['Landscape 16:9', 1920, 1080], ['A4 portrait', 793.7, 1122.5], ['Letter', 816, 1056],
   ];
   const modelVal = (id: string, dflt: number): number => {
     const v = runtime.getModel().find((i) => i.id === id)?.value;

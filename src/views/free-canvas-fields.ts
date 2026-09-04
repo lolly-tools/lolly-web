@@ -324,8 +324,12 @@ export function frameThumb(
   return media;
 }
 
-/** Rounded, clamped read of a numeric box field - the Dims panel's `rd`. */
+/**
+ * Clamped read of a numeric box field - the Dims panel's `rd`. Kept to two decimals
+ * rather than an integer (plans/184 R12): a 793.7 px A4 board must read back as itself,
+ * and the cell's own precision decides what is shown.
+ */
 export function dimOf(b: Box, field: string | undefined, dflt: number): number {
   if (!field) return dflt;
-  return Math.round(clampN(b[field], dflt, -100000, 100000));
+  return Math.round(clampN(b[field], dflt, -100000, 100000) * 100) / 100;
 }

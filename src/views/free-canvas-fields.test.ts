@@ -352,8 +352,11 @@ test('frameThumb: the thumbnail isolates itself, so a blended board cannot blend
 
 // ── small readers ─────────────────────────────────────────────────────────────
 
-test('dimOf: rounds, defaults, and returns the default for a field the tool does not declare', () => {
-  assert.equal(dimOf({ x: 12.4 }, 'x', 0), 12);
+test('dimOf: keeps two decimals, defaults, and returns the default for a field the tool does not declare', () => {
+  // Two decimals, not an integer (plans/184 R12): a 793.7 px A4 board reads back as itself.
+  assert.equal(dimOf({ x: 12.4 }, 'x', 0), 12.4);
+  assert.equal(dimOf({ x: 793.7 }, 'x', 0), 793.7);
+  assert.equal(dimOf({ x: 12.456 }, 'x', 0), 12.46);
   assert.equal(dimOf({ x: 'nope' }, 'x', 7), 7);
   assert.equal(dimOf({ x: 12 }, undefined, 3), 3);
 });

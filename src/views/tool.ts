@@ -2700,11 +2700,12 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     }
 
     if (dirtyParams.has('w')) {
-      const w = parseInt(actionsEl?.querySelector<HTMLInputElement>('[data-action="export-width"]')?.value ?? '', 10);
+      // As typed, not truncated: `8.5in` must survive a share link (plans/184 R12).
+      const w = parseFloat(actionsEl?.querySelector<HTMLInputElement>('[data-action="export-width"]')?.value ?? '');
       if (w > 0) params.set('w', String(w));
     }
     if (dirtyParams.has('h')) {
-      const h = parseInt(actionsEl?.querySelector<HTMLInputElement>('[data-action="export-height"]')?.value ?? '', 10);
+      const h = parseFloat(actionsEl?.querySelector<HTMLInputElement>('[data-action="export-height"]')?.value ?? '');
       if (h > 0) params.set('h', String(h));
     }
     if (dirtyParams.has('unit')) {
@@ -5316,11 +5317,11 @@ async function shrinkUrl(runtime: Runtime, manifest: ToolManifest, barSeq: BarSe
     if (RESERVED_KEEP.has(key)) { kept.push(part); continue; }
 
     if (key === 'w' || key === 'width') {
-      if (parseInt(val, 10) !== manifest.render.width) kept.push(part);
+      if (parseFloat(val) !== manifest.render.width) kept.push(part);
       continue;
     }
     if (key === 'h' || key === 'height') {
-      if (parseInt(val, 10) !== manifest.render.height) kept.push(part);
+      if (parseFloat(val) !== manifest.render.height) kept.push(part);
       continue;
     }
     if (key === 'filename') {

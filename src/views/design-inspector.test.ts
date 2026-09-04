@@ -594,8 +594,10 @@ test('the document narration settings write TOP-LEVEL inputs, never the selected
   assert.deepEqual(h.setInputs, [['narrationVoice', 'bf_lily+af_heart:0.30']], 'a blend, composed the way the engine reads it');
   assert.deepEqual(h.commits, [], 'no box field was written');
 
-  typeNum(h, 'narrationLeadInMs', '250');
-  typeNum(h, 'narrationTailMs', '900');
+  // The fields show seconds (plans/184 R7) and store ms: a typed '250ms' converts, a
+  // bare 0.9 is the field's own unit.
+  typeNum(h, 'narrationLeadInMs', '250ms');
+  typeNum(h, 'narrationTailMs', '0.9');
   const cap = row(h, 'input[data-doc="showCaptionsWhenPresenting"]') as HTMLInputElement;
   cap.checked = true;
   fire(cap, 'change');

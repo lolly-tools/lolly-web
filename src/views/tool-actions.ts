@@ -65,6 +65,7 @@ import type { InputValue } from '../../../../engine/src/inputs.js';
 import type { ToolManifest } from '../../../../engine/src/loader.js';
 import type { Runtime } from '../../../../engine/src/runtime.js';
 import type { Unit } from '../../../../engine/src/units.js';
+import { stepFor, displayIn, convertLength, roundIn } from '../lib/unit-steps.ts';
 
 import type {
   WebToolHost, ToolRuntime, PanelEl, ExportUnscaled, ExportDefaults,
@@ -2280,6 +2281,9 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     ? 'px'
     : (el!.querySelector<HTMLSelectElement>('[data-action="export-unit"]')?.value || 'px');
   const dimDpi  = (): number => { const n = parseInt(el!.querySelector<HTMLInputElement>('[data-action="export-dpi"]')?.value ?? '', 10); return n > 0 ? n : 300; };
+  /** A stored px length as the bar shows it in the active unit - one rounding, shared by
+   *  every reader, so "is this field still showing the stored size" is a string compare. */
+  const dispDim = (px: number): string => String(displayIn(px, dimUnit()));
   // Whether the dimension fields still hold their manifest-derived defaults.
   // Seeded true only when a URL param or a restored session supplied the size;
   // flipped by an edit, a scrub, a size-select pick or a unit change. Preflight
@@ -2839,12 +2843,8 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     const wEl = el!.querySelector<HTMLInputElement>('[data-action="export-width"]');
     const hEl = el!.querySelector<HTMLInputElement>('[data-action="export-height"]');
     if (!wEl || !hEl) return;
-    const unit = dimUnit();
-    const disp = (px: number): string => unit === 'px'
-      ? String(Math.round(px))
-      : String(Math.round(px / toCssPx({ value: 1, unit: unit as Unit }) * 100) / 100);
-    wEl.value = disp(tgt.w);
-    hEl.value = disp(tgt.h);
+    wEl.value = dispDim(tgt.w);
+    hEl.value = dispDim(tgt.h);
     refreshPreflight();
   }
   canvasEl?.addEventListener('fc-artboard', (e) => {
@@ -2935,7 +2935,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     if (!inp) return;
     const onDimChange = () => { sizeUserSet = true; onUrlSync?.(key); refreshCanvasPreview(); invalidatePreview(); pulseCanvasResize(); };
     inp.addEventListener('input', onDimChange);
-    addScrubBehavior(inp, onDimChange, { format: v => `${v} ${dimUnit()}` });
+    addScrubBehavior(inp, onDimChange, { format: v => `${v} ${dimUnit()}`, step: () => stepFor(dimUnit()) });
   });
 
   // A committed bar edit resizes the ACTIVE artboard only (plans/142 WP-B replaced
@@ -2952,13 +2952,20 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     const wField = typeof canvasCfg?.wField === 'string' ? canvasCfg.wField : 'w';
     const hField = typeof canvasCfg?.hField === 'string' ? canvasCfg.hField : 'h';
     const unit = dimUnit();
-    const w = parseFloat(el!.querySelector<HTMLInputElement>('[data-action="export-width"]')?.value ?? '');
-    const h = parseFloat(el!.querySelector<HTMLInputElement>('[data-action="export-height"]')?.value ?? '');
+    const wEl = el!.querySelector<HTMLInputElement>('[data-action="export-width"]');
+    const hEl = el!.querySelector<HTMLInputElement>('[data-action="export-height"]');
+    const w = parseFloat(wEl?.value ?? '');
+    const h = parseFloat(hEl?.value ?? '');
     if (!(w > 0 && h > 0)) return;
-    const pxW = Math.round(unit === 'px' ? w : toCssPx({ value: w, unit: unit as Unit }));
-    const pxH = Math.round(unit === 'px' ? h : toCssPx({ value: h, unit: unit as Unit }));
+    // Fractional px, kept to the bar's two decimals (plans/184 R12): a 793.7 px A4 board
+    // stays A4. A field still showing the stored size as the bar rounds it keeps that
+    // size to the decimal, so editing the height never re-rounds the width.
+    const toPx = (v: number, cur: number, shown: string | undefined): number =>
+      shown === dispDim(cur) ? cur : roundIn(convertLength(v, unit, 'px'), 'px');
+    const pxW = toPx(w, tgt.w, wEl?.value);
+    const pxH = toPx(h, tgt.h, hEl?.value);
     if (pxW < 1 || pxH < 1) return;
-    if (Math.round(tgt.w) === pxW && Math.round(tgt.h) === pxH) return; // already this size
+    if (tgt.w === pxW && tgt.h === pxH) return; // already this size
     const boxes = (runtime.getModel().find(i => i.id === canvasInputId)?.value as Array<Record<string, InputValue>> | undefined) ?? [];
     artResizing = true;
     try {
@@ -3023,10 +3030,13 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     const to = unitSel.value;
     const wEl = el!.querySelector<HTMLInputElement>('[data-action="export-width"]');
     const hEl = el!.querySelector<HTMLInputElement>('[data-action="export-height"]');
-    const conv = (v: string): string => { const n = parseFloat(v); return n > 0 ? String(Math.round(toCssPx({ value: n, unit: curUnit as Unit }) / (toCssPx({ value: 1, unit: to as Unit })) * 100) / 100) : v; };
+    const conv = (v: string): string => { const n = parseFloat(v); return n > 0 ? String(roundIn(convertLength(n, curUnit, to), to)) : v; };
     if (wEl) wEl.value = conv(wEl.value);
     if (hEl) hEl.value = conv(hEl.value);
     curUnit = to;
+    // An artboard's stored px size is the source of truth: re-read it rather than
+    // converting the rounded text, so switching units back and forth never drifts.
+    if (hasArtboards()) reflectArtboardDims();
     if (dpiFieldEl) dpiFieldEl.style.display = (to === 'px') ? 'none' : 'inline-flex';
     onUrlSync?.('unit'); onUrlSync?.('w'); onUrlSync?.('h');
     refreshCanvasPreview();
@@ -4139,10 +4149,17 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
 // onChange fires after every value change from either interaction.
 // opts.format(value) returns the label shown in the floating readout that
 // appears while dragging (defaults to the bare value) - see scrub-readout.js.
-function addScrubBehavior(inputEl: HTMLInputElement, onChange: () => void, opts: { format?: (value: string) => string } = {}): void {
+// opts.step() is one tick's worth in the field's current unit (default 1) - read per
+// event, since the export bar's unit select can change under a live field; the value
+// is kept to that step's decimals, so a mm field scrubs by 0.1 and an in field by 0.01.
+function addScrubBehavior(inputEl: HTMLInputElement, onChange: () => void, opts: { format?: (value: string) => string; step?: () => number } = {}): void {
   const format = opts.format ?? ((v: string) => String(v));
-  const getMin = () => parseInt(inputEl.min, 10) || 1;
-  const getMax = () => parseInt(inputEl.max, 10) || 99999;
+  const stepNow = (): number => { const s = opts.step?.(); return s != null && s > 0 && Number.isFinite(s) ? s : 1; };
+  const read   = (v: string): number => parseFloat(v) || 0;
+  const getMin = () => parseFloat(inputEl.min) || 1;
+  const getMax = () => parseFloat(inputEl.max) || 99999;
+  /** Snapped to the step and written with the step's decimals, so 0.1 + 0.2 is '0.3'. */
+  const fmt    = (v: number): string => { const s = stepNow(); const dec = s >= 1 ? 0 : Math.min(6, (String(s).split('.')[1] ?? '').length); const out = (Math.round(v / s) * s).toFixed(dec); return dec ? out.replace(/\.?0+$/, '') : out; };
   const clamp  = (v: number): number => Math.min(getMax(), Math.max(getMin(), v));
 
   inputEl.addEventListener('wheel', e => {
@@ -4150,8 +4167,8 @@ function addScrubBehavior(inputEl: HTMLInputElement, onChange: () => void, opts:
     // let the event bubble so the surrounding panel scrolls past it normally.
     if (document.activeElement !== inputEl) return;
     e.preventDefault();
-    const step = e.shiftKey ? 10 : 1;
-    inputEl.value = String(clamp((parseInt(inputEl.value, 10) || 0) + (e.deltaY < 0 ? step : -step)));
+    const step = (e.shiftKey ? 10 : 1) * stepNow();
+    inputEl.value = fmt(clamp(read(inputEl.value) + (e.deltaY < 0 ? step : -step)));
     onChange();
   }, { passive: false });
 
@@ -4166,7 +4183,7 @@ function addScrubBehavior(inputEl: HTMLInputElement, onChange: () => void, opts:
     if (activeId !== null) return;
     activeId = e.pointerId;
     const startX   = e.clientX;
-    const startVal = parseInt(inputEl.value, 10) || 0;
+    const startVal = read(inputEl.value);
     // Touch can't lock the pointer, so the value stays hidden under the finger - 
     // track the readout above the touch point; otherwise anchor it to the field.
     const isTouch  = e.pointerType === 'touch';
@@ -4199,17 +4216,17 @@ function addScrubBehavior(inputEl: HTMLInputElement, onChange: () => void, opts:
         }
       }
 
-      const step = e.shiftKey ? 10 : 1;
+      const step = (e.shiftKey ? 10 : 1) * stepNow();
       if (document.pointerLockElement === inputEl) {
         // Locked: accumulate raw movementX - no screen-edge limit.
         accumulated += e.movementX * step;
-        inputEl.value = String(clamp(startVal + Math.round(accumulated)));
+        inputEl.value = fmt(clamp(startVal + accumulated));
       } else {
         // Lock not yet active (or unavailable): fall back to clientX delta.
         const dx = e.clientX - startX;
-        inputEl.value = String(clamp(startVal + Math.round(dx * step)));
+        inputEl.value = fmt(clamp(startVal + dx * step));
         // Keep accumulated in sync so the switch to locked mode is smooth.
-        accumulated = parseInt(inputEl.value, 10) - startVal;
+        accumulated = read(inputEl.value) - startVal;
       }
       if (inputEl.value !== lastScrubVal) { lastScrubVal = inputEl.value; playScrubTick(); } // detent per step
       onChange();

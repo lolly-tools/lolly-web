@@ -18,7 +18,9 @@
  *   • TYPING. On Enter or blur the text is read as an expression:
  *     `+10` and `-5` are relative, `50%` is a share of the current value,
  *     `1920/2` and `3*4` are arithmetic, a plain number is itself, a unit written
- *     after a number (`120px`, `400 ms`) is ignored, and a comma is the decimal
+ *     after a number CONVERTS when the field has a unit of the same kind (`210mm`
+ *     in a px field is 793.7, `400ms` in a seconds field is 0.4) and is ignored
+ *     otherwise (`30deg` in a plain field is 30), and a comma is the decimal
  *     separator the app's other 25 languages type. Nonsense reverts: a character
  *     the grammar cannot read puts the old value back rather than being deleted so
  *     the rest can be parsed without it. Escape reverts.
@@ -46,6 +48,7 @@
  * owns what a commit means.
  */
 import { t } from '../i18n.ts';
+import { isUnit, toUnit } from '@lolly/engine';
 
 /** How long an arrow-key burst stays open before it commits as one gesture. */
 export const KEY_COALESCE_MS = 300;
@@ -66,7 +69,11 @@ export interface NumFieldOpts {
   name?: string;
   /** The current value, or 'mixed' when the rows behind it disagree. */
   value: number | 'mixed';
-  /** Trailing unit text, shown but never parsed back (px, %, ms). */
+  /**
+   * Trailing unit text (px, %, s). A length unit (px, pt, pc, mm, cm, in) or a time
+   * unit (s, ms) is also what a typed suffix converts INTO - see {@link parseNumExpr};
+   * any other unit text is shown and nothing more.
+   */
   unit?: string;
   min?: number;
   max?: number;
@@ -176,22 +183,29 @@ function evalArith(src: string): number | null {
  * `(-5)` or `0-5`, and by the arrow keys and the scrub, which have no such
  * ambiguity to resolve.
  */
-export function parseNumExpr(raw: string, current: number): number | null {
-  // A unit is dropped where a unit can stand: directly after a number, at the end of
-  // the text or before an operator. '120px', '400 ms', '30deg' and both halves of
-  // '100px + 20px' are just their numbers. Everything else keeps every character it
+export function parseNumExpr(raw: string, current: number, unit?: string): number | null {
+  let cleaned = raw.trim();
+  if (!cleaned) return null;
+  // A comma is the decimal separator in most of the languages the app speaks, and it
+  // is what `inputMode="decimal"` offers on their phone keypads, so '12,5' is 12.5
+  // (and '12,5mm' is 12.5 mm). Three digits after it is the one case that is not
+  // readable either way - '1,000' is a thousand as often as it is one - so that one
+  // falls through to the junk guard and reverts rather than being read as 1.
+  const dec = /^([+-]?\s*\d+),(\d+)(\s*\p{L}*)$/u.exec(cleaned);
+  if (dec && dec[2]!.length !== 3) cleaned = `${dec[1]}.${dec[2]}${dec[3]}`;
+  // A unit may stand directly after a number, at the end of the text or before an
+  // operator. When the field has a unit of the same kind it CONVERTS: '210mm' in a px
+  // field is 793.7, '8.5in' is 816, '400ms' in a seconds field is 0.4, and both halves
+  // of '100mm + 20px' are read in their own unit (plans/184 R10). Anything else - a
+  // unit of another kind, or a field with no unit - just drops the suffix, so '120px',
+  // '400 ms' and '30deg' are their numbers. Everything else keeps every character it
   // had, so evalArith's junk guard can see it and the caller reverts. Deleting each
   // unreadable character wherever it sat is what silently made '12,5' into 125, '1e3'
   // into 13 and '12px34' into 1234.
-  let cleaned = raw.replace(/(\d)\s*\p{L}+(?=$|[\s+\-*/)])/gu, '$1').trim();
-  if (!cleaned) return null;
-  // A comma is the decimal separator in most of the languages the app speaks, and it
-  // is what `inputMode="decimal"` offers on their phone keypads, so '12,5' is 12.5.
-  // Three digits after it is the one case that is not readable either way - '1,000' is
-  // a thousand as often as it is one - so that one falls through to the junk guard and
-  // reverts rather than being read as 1.
-  const dec = /^([+-]?\s*\d+),(\d+)$/.exec(cleaned);
-  if (dec && dec[2]!.length !== 3) cleaned = `${dec[1]}.${dec[2]}`;
+  cleaned = cleaned.replace(/(\d*\.?\d+)\s*(\p{L}+)(?=$|[\s+\-*/)])/gu, (_m, num: string, suffix: string) => {
+    const v = convertSuffix(parseFloat(num), suffix, unit);
+    return v == null ? num : String(v);
+  }).trim();
   const pct = /^([+-]?)\s*(\d*\.?\d+)\s*%$/.exec(cleaned);
   if (pct) {
     const part = current * (parseFloat(pct[2]!) / 100);
@@ -206,6 +220,23 @@ export function parseNumExpr(raw: string, current: number): number | null {
     return rel[1] === '+' ? current + n : current - n;
   }
   return evalArith(cleaned);
+}
+
+/** Seconds per time unit a field or a typed suffix may name. */
+const TIME_UNITS: Record<string, number> = { ms: 0.001, s: 1 };
+
+/**
+ * A typed `value suffix` re-expressed in the field's unit, or null when the two are not
+ * of one kind - the caller then keeps the bare number, as it always did.
+ */
+function convertSuffix(value: number, suffix: string, fieldUnit: string | undefined): number | null {
+  if (!fieldUnit || !Number.isFinite(value)) return null;
+  const s = suffix.toLowerCase();
+  const f = fieldUnit.toLowerCase();
+  if (s === f) return value;
+  if (isUnit(f) && isUnit(s)) return toUnit({ value, unit: s }, f);
+  if (f in TIME_UNITS && s in TIME_UNITS) return value * TIME_UNITS[s]! / TIME_UNITS[f]!;
+  return null;
 }
 
 export function numField(opts: NumFieldOpts): NumFieldHandle {
@@ -340,7 +371,7 @@ export function numField(opts: NumFieldOpts): NumFieldHandle {
   /** Read what is typed and commit it, or put the last known value back. */
   function applyTyped(): void {
     if (!dirty) return;
-    const v = parseNumExpr(input.value, base ?? 0);
+    const v = parseNumExpr(input.value, base ?? 0, opts.unit);
     if (v == null) { paint(); return; }
     commit(v);
   }
@@ -357,7 +388,7 @@ export function numField(opts: NumFieldOpts): NumFieldHandle {
     if (ev.key === 'ArrowUp' || ev.key === 'ArrowDown') {
       ev.preventDefault();
       const mult = ev.shiftKey ? 10 : (ev.altKey ? 0.1 : 1);
-      const from = keyPending ?? parseNumExpr(input.value, base ?? 0) ?? base ?? 0;
+      const from = keyPending ?? parseNumExpr(input.value, base ?? 0, opts.unit) ?? base ?? 0;
       const next = fix(from + (ev.key === 'ArrowUp' ? 1 : -1) * step * mult);
       input.value = fmt(next);
       announce(next);
