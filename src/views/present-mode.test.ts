@@ -991,6 +991,7 @@ function makeMotionSource(
     start?: number;
     boxes?: Array<{
       id?: string; build?: number; prEnter?: string; prEnterMs?: number;
+      prExit?: string; prExitMs?: number;
       start?: number; dur?: number;
     }>;
   }>,
@@ -1018,6 +1019,10 @@ function makeMotionSource(
       if (b.prEnter) {
         box.setAttribute('data-pr-enter', b.prEnter);
         box.setAttribute('data-pr-enter-ms', String(b.prEnterMs ?? 400));
+      }
+      if (b.prExit) {
+        box.setAttribute('data-pr-exit', b.prExit);
+        box.setAttribute('data-pr-exit-ms', String(b.prExitMs ?? 400));
       }
       if (b.start != null) box.setAttribute('data-t-start', String(b.start));
       if (b.dur != null) box.setAttribute('data-t-dur', String(b.dur));
@@ -1101,18 +1106,76 @@ test('motion: reduced motion strips the moving parts and keeps the timing', () =
   } finally { delete document.documentElement.dataset.a11yMotion; }
 });
 
-test('motion: leaving a slide swaps the classes NOW - no exit is waited on', () => {
+test('motion: leaving a slide with no exits swaps the classes NOW', () => {
   const src = makeMotionSource([
     { id: 'a', boxes: [{ id: 'x', prEnter: 'fade', prEnterMs: 3000 }] },
     { id: 'b', boxes: [{ id: 'y', prEnter: 'fade' }] },
   ]);
   const ctl = openPresentMode({ source: src })!;
   document.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowRight' }));
-  // Synchronously after the key: the deck has already moved.
+  // Synchronously after the key: nothing had an Exit, so the deck has already moved.
   assert.equal(ctl.frameId, 'b');
   assert.ok(clones()[1]!.classList.contains('pr-active'), 'slide b is active on this tick');
   assert.ok(clones()[0]!.classList.contains('pr-past'), 'and slide a is behind it');
   ctl.close(); cleanup();
+});
+
+test('motion: a with-the-slide box with an Exit plays it, and the slide leaves when it is done (plans/184 R4)', async () => {
+  const src = makeMotionSource([
+    { id: 'a', boxes: [{ id: 'x', prEnter: 'fade', prExit: 'fade', prExitMs: 150 }, { id: 'plain' }] },
+    { id: 'b', boxes: [{ id: 'y', prEnter: 'fade' }] },
+  ]);
+  const ctl = openPresentMode({ source: src })!;
+  const x = cloneBox(0, 'x')!;
+  assert.equal(x.hasAttribute('data-t-dur'), false, 'open-ended on arrival');
+  document.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowRight' }));
+  // The move is HELD: the box now has an out point that puts its exit at the clock.
+  assert.equal(ctl.frameId, 'a', 'still on slide a while the exit plays');
+  assert.equal(stageEl()!.dataset.prLeaving, '1');
+  const dur = Number(x.getAttribute('data-t-dur'));
+  assert.ok(Number.isFinite(dur) && dur >= 150 && dur < 1000, `an out point of about the exit length, got ${dur}`);
+  assert.equal(x.getAttribute('data-pr-leave-dur'), '1', 'marked, so the next arrival can take it back');
+  assert.equal(cloneBox(0, 'plain')!.hasAttribute('data-t-dur'), false, 'a box with no Exit is left alone');
+  await delay(260);
+  assert.equal(ctl.frameId, 'b', 'then the deck moved on its own');
+  assert.equal(stageEl()!.dataset.prLeaving, undefined);
+  assert.ok(clones()[1]!.classList.contains('pr-active'));
+  // Back to slide a: the out point is gone, so the box is on the slide again.
+  document.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowLeft' }));
+  assert.equal(ctl.frameId, 'a');
+  assert.equal(x.hasAttribute('data-t-dur'), false, 'the leave’s out point was taken back on arrival');
+  assert.equal(x.hasAttribute('data-pr-leave-dur'), false);
+  ctl.close(); cleanup();
+});
+
+test('motion: a second move during the exit wait goes at once, to the newer target', async () => {
+  const src = makeMotionSource([
+    { id: 'a', boxes: [{ id: 'x', prExit: 'fade', prExitMs: 400 }] },
+    { id: 'b' },
+    { id: 'c' },
+  ]);
+  const ctl = openPresentMode({ source: src })!;
+  document.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowRight' }));
+  assert.equal(ctl.frameId, 'a', 'held for the exit');
+  ctl.go('c');
+  assert.equal(ctl.frameId, 'c', 'the second move did not wait, and went where it was asked');
+  await delay(450);
+  assert.equal(ctl.frameId, 'c', 'the held move never fired afterwards');
+  ctl.close(); cleanup();
+});
+
+test('motion: reduced motion strips exits too, so a leave never waits', () => {
+  document.documentElement.dataset.a11yMotion = 'reduce';
+  try {
+    const src = makeMotionSource([
+      { id: 'a', boxes: [{ id: 'x', prExit: 'fade', prExitMs: 3000 }] },
+      { id: 'b' },
+    ]);
+    const ctl = openPresentMode({ source: src })!;
+    document.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowRight' }));
+    assert.equal(ctl.frameId, 'b', 'moved on this tick');
+    ctl.close(); cleanup();
+  } finally { delete document.documentElement.dataset.a11yMotion; }
 });
 
 test('transition: a move plays the EARLIER frame’s own transition, both directions', () => {

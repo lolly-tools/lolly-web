@@ -52,6 +52,7 @@ import { mountAnimSvgPlayers } from './anim-svg-mount.ts';
 import { createSequenceTime, DRIVE_FPS } from '../bridge/sequence-dom.ts';
 import { appearModeOf, NARRATION_TAIL_MS } from '../lib/motion-model.ts';
 import { easingPoints, splitPhaseWindowMs } from '../lib/transitions.ts';
+import { MIN_TRANSITION_MS, MAX_TRANSITION_MS } from '../bridge/sequence-plan.ts';
 import { CAPTION_BOX_CLASS } from './timeline-captions.ts';
 
 /** How long the HUD stays visible after the last pointer/key wake (viz-overlay's 2600). */
@@ -418,6 +419,49 @@ interface SlideMotion {
   teardown(): void;
 }
 
+/**
+ * Take back the out points a LEAVE wrote (plans/184 R4). A slide re-entered later has to
+ * arrive whole: a box whose exit played on the way out would otherwise be past its end
+ * from the first tick and never show.
+ */
+function clearLeaveDurs(clone: HTMLElement): void {
+  for (const box of clone.querySelectorAll<HTMLElement>('[data-pr-leave-dur]')) {
+    box.removeAttribute('data-t-dur');
+    box.removeAttribute('data-pr-leave-dur');
+  }
+}
+
+/**
+ * Give every box on screen with an authored Exit an out point NOW, so its exit plays
+ * (plans/184 R4). Returns how long the longest exit takes, in ms - what a leave waits.
+ *
+ * A with-the-slide box is open-ended on the slide's clock and could never exit; a click
+ * box is the same once revealed. The timeline and the video play those exits (the box
+ * ends where the frame does), so the podium was the one player where an authored Exit
+ * was silently nothing. Each box gets `data-t-dur = now - start + window`, which puts
+ * the applier's exit phase exactly at now; a timed box with its own length keeps it. The
+ * marker lets `clearLeaveDurs` undo this on the slide's next arrival.
+ */
+function beginExits(clone: HTMLElement, atMs: number): number {
+  let longest = 0;
+  for (const box of clone.querySelectorAll<HTMLElement>('[data-t-exit]')) {
+    const kind = box.getAttribute('data-t-exit');
+    if (!kind || kind === 'none' || box.hasAttribute('data-t-dur')) continue;
+    const start = numAttr(box, 'data-t-start', 0);
+    if (start >= PENDING_MS || start > atMs) continue;   // parked, or not yet arrived
+    const exitMs = Math.min(MAX_TRANSITION_MS, Math.max(MIN_TRANSITION_MS, numAttr(box, 'data-t-exit-ms', 400)));
+    // Split text leaves when its LAST unit has - the window the applier deals its exits
+    // from, imported rather than re-typed so the wait and the motion cannot disagree.
+    const win = box.getAttribute('data-t-split')
+      ? splitPhaseWindowMs(numAttr(box, 'data-t-stagger', 60), box.querySelectorAll('.lly-u').length, exitMs)
+      : exitMs;
+    box.setAttribute('data-t-dur', String(Math.max(1, Math.round(atMs - start + win))));
+    box.setAttribute('data-pr-leave-dur', '1');
+    longest = Math.max(longest, win);
+  }
+  return Math.round(longest);
+}
+
 /** Open the motion session for one slide's clone, posed at t=0, clock not yet running.
  *  Null when the slide has nothing to animate - the common case, and it costs one query. */
 function openSlideMotion(
@@ -426,6 +470,7 @@ function openSlideMotion(
   reduced: boolean,
   buildThreshold: number,
 ): SlideMotion | null {
+  clearLeaveDurs(clone);
   if (!restampSlideMotion(clone, reduced)) return null;
   armBuildStarts(clone, buildThreshold);
   const session = createSequenceTime(clone); // no media callback - conductMedia owns video
@@ -679,6 +724,8 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
   let canvasMode = false;
   let flying: { from: number; to: number } | null = null;
   let flyTimer: ReturnType<typeof setTimeout> | null = null;
+  /** A leave held while the departing slide's exits play (plans/184 R4). */
+  let leaveTimer: ReturnType<typeof setTimeout> | null = null;
   // Speaker view (the presenter's private panel: current + next slide previews, notes, timer).
   let speaker: HTMLElement | null = null;
   let speakerRefs: {
@@ -884,10 +931,32 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
     flying = null;
   }
 
-  /** How long a leaving slide keeps its pose: the outgoing transition, plus the same
-   *  60ms of slack `armWillChange` leaves. The slide leaves NOW - nothing here waits for
-   *  an exit to play - this is only when its boxes are handed back. */
+  /** How long a leaving slide keeps its pose after the swap: the outgoing transition,
+   *  plus the same 60ms of slack `armWillChange` leaves. The exits themselves have
+   *  already played by the time the swap happens (`goIndex` waits for them, plans/184
+   *  R4); this is only when the boxes are handed back. */
   const MOTION_LEAVE_MS = (reduced ? 0 : 460) + 60;
+
+  /**
+   * Start the active slide's exits and say how long they take. Zero when there is nothing
+   * to wait for: no clock on this slide, reduced motion (exits were stripped), or no box
+   * with an Exit still on screen. The clock is woken so the exit plays past the end the
+   * session had computed.
+   */
+  function startLeaving(): number {
+    const m = motion;
+    const clone = cloneByIndex[active];
+    if (!m || m.index !== active || !clone || reduced) return 0;
+    const wait = beginExits(clone, m.t());
+    if (wait > 0) m.wake();
+    return wait;
+  }
+
+  /** Drop a held leave: whoever calls this is about to move on its own terms. */
+  function cancelLeave(): void {
+    if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; }
+    delete stage.dataset.prLeaving;
+  }
 
   /** Hand back one leaving slide (or all of them) at once, rather than on its timer. */
   function flushLeaving(index?: number): void {
@@ -1585,6 +1654,19 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
     const clamped = clampIndex(deck, idx);
     if (clamped === active && dir !== null && buildTarget === build) return;
     if (clamped !== active) {
+      // The departing slide's exits play FIRST (plans/184 R4): the swap waits for the
+      // longest of them, then runs exactly as it would have. A second move during the
+      // wait does not wait again - the newer intent wins and the deck goes now. Andy
+      // (2026-09-04): "the wait is fine if the exit is playing".
+      if (leaveTimer) cancelLeave();
+      else {
+        const wait = startLeaving();
+        if (wait > 0) {
+          stage.dataset.prLeaving = '1';
+          leaveTimer = setTimeout(() => { leaveTimer = null; delete stage.dataset.prLeaving; goIndex(idx, dir, buildTarget); }, wait);
+          return;
+        }
+      }
       let kind = transitionFor(active, clamped);
       // A flight is a camera move over the canvas, so it needs both real motion and the
       // stacked stage stood down: a reduced-motion viewer crossfades, and so does a move
@@ -1822,6 +1904,7 @@ export function openPresentMode(opts: OpenPresentOptions): PresentController | n
     if (idleTimer) clearTimeout(idleTimer);
     if (armTimer) clearTimeout(armTimer);
     if (advTimer) clearTimeout(advTimer);
+    if (leaveTimer) clearTimeout(leaveTimer);
     if (morphTimer) clearTimeout(morphTimer);
     if (noteTimer) clearTimeout(noteTimer);
     if (narrTailTimer) clearTimeout(narrTailTimer);

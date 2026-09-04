@@ -430,6 +430,8 @@ interface InitFreeCanvasOpts {
   onDirty?(id: string): void;
   editTool?(url: string, mode?: string): Promise<any>;
   setCanvasSize?(w: number, h: number, unit?: string): void;
+  /** Keeps Design's persisted document unit/DPI and the export bar in lockstep. */
+  setDocumentSettings?(settings: { unit: string; dpi: number; width?: number; height?: number }): void;
   info?: DocInfo;
   history?: HistoryApi;
   actions?: ToolbarActions;
@@ -1161,7 +1163,7 @@ const H_JUSTIFY: Record<string, string> = { left: 'flex-start', center: 'center'
 const V_ALIGN: Record<string, string> = { top: 'flex-start', middle: 'center', bottom: 'flex-end' };
 
 export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
-  const { viewEl, stageEl, canvasEl, runtime, host, input, nativeW, nativeH, onDirty, editTool, setCanvasSize, info, history, actions, pages, chrome: designChrome, frame: frameCfg } = opts;
+  const { viewEl, stageEl, canvasEl, runtime, host, input, nativeW, nativeH, onDirty, editTool, setCanvasSize, setDocumentSettings, info, history, actions, pages, chrome: designChrome, frame: frameCfg } = opts;
   let dirtyObserver: MutationObserver | null = null;   // mirrors the Save icon's unsaved cue (see buildToolbar/actions)
   // The artboard is resizable, so read its CURRENT declared size (not the mount-time
   // nativeW/H) everywhere geometry depends on the canvas dimensions.
@@ -4988,6 +4990,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // while something is selected instead of fading whenever the pointer leaves the
     // stage for the inspector or the navigator (see .fc-ctxbar--pinned in editor.css).
     ctxbar.classList.toggle('fc-ctxbar--pinned', !!h);
+    // And it is a different bar (verbs only, plans/184 R16), so the one on screen is
+    // rebuilt for the current selection rather than waiting for the next change.
+    ctxSelKey = '';
+    renderChrome();
   }
   /** The stage's reserved bands, read from the inline custom properties the arbiter
    *  (left) and the Design top bar (top) write on the stage; inline reads cost nothing
@@ -5024,21 +5030,29 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // An audio box's "image" IS its track, so the one button says which it is picking.
     const audioPick = canImage && selectionAllKinds(boxes, idx, new Set(['audio']));
     const imgTip = audioPick ? t('Choose a sound') : t('Set image');
+    // VERBS ONLY when an inspector owns the properties (plans/184 R16): edit text, edit
+    // points, set image, keyframe, duplicate, delete, select more - and the readout, which
+    // jumps to the Object section, plus Aa to the Text section. The paint cluster and the
+    // More opener duplicated the inspector beside it, on a bar that floats over the work.
+    // Gradient mode is the one exception: its stops are handles on the canvas and the bar's
+    // Fill field edits the SELECTED STOP, which nothing else offers. Without an inspector
+    // (no dock host) the bar keeps every control and its own popovers, as before.
+    const verbsOnly = !!inspectorPort && gradEdit == null;
     ctxbar.innerHTML = `
-      ${paintCtxHtml(first, allPaths, allStroked)}
+      ${verbsOnly ? '' : paintCtxHtml(first, allPaths, allStroked)}
       ${vectorCfg && idx.length === 1 && boxOutlineKind(first, vectorCfg) === 'path'
         ? `<button type="button" class="fc-cbtn" data-cx="nodes" data-tip="${escape(t('Edit points (double-click)'))}" aria-label="${escape(t('Edit points'))}">${icon(SVG.nodes)}</button>`
         : ''}
       ${canText ? `<button type="button" class="fc-cbtn" data-cx="edit" data-tip="${escape(t('Edit text (double-click)'))}" aria-label="${escape(t('Edit text'))}">${icon(SVG.pencil)}</button>` : ''}
       ${canText ? `<button type="button" class="fc-cbtn fc-cbtn-text" data-cx="text" data-tip="${escape(t('Text - size, font, weight, line height, kerning, ligatures, alignment'))}" aria-label="${escape(t('Text options'))}">Aa</button>` : ''}
       ${canImage ? `<button type="button" class="fc-cbtn" data-cx="setimg"${audioPick ? ' data-cx-audio="1"' : ''} data-tip="${escape(imgTip)}" aria-label="${escape(imgTip)}">${icon(audioPick ? SVG.audioKind : SVG.image)}</button>` : ''}
-      <button type="button" class="fc-cbtn" data-cx="more" data-tip="${escape(t('More - shape, radius, opacity, fit, blend, shadow'))}" aria-label="${escape(t('More options'))}">${icon(SVG.more)}</button>
+      ${verbsOnly ? '' : `<button type="button" class="fc-cbtn" data-cx="more" data-tip="${escape(t('More - shape, radius, opacity, fit, blend, shadow'))}" aria-label="${escape(t('More options'))}">${icon(SVG.more)}</button>`}
       <span class="fc-sep fc-sep-v"></span>
       ${kfCtxHtml(boxes, idx)}
       <button type="button" class="fc-cbtn" data-cx="dup" data-tip="${escape(t('Duplicate'))}" aria-label="${escape(t('Duplicate'))}">${icon(SVG.dup)}</button>
       <button type="button" class="fc-cbtn fc-danger" data-cx="del" data-tip="${escape(t('Delete'))}" aria-label="${escape(t('Delete'))}">${icon(SVG.trash)}</button>
       ${coarse ? `<button type="button" class="fc-cbtn${multiTapMode ? ' is-on' : ''}" data-cx="multi" aria-pressed="${multiTapMode}" data-tip="${escape(t('Select more - tap cards to add'))}" aria-label="${escape(t('Select more cards'))}">${icon(SVG.add)}</button>` : ''}
-      <button type="button" class="fc-readout" data-cx="dims" data-cx-readout data-tip="${escape(t('Edit position & size'))}" aria-label="${escape(t('Edit position and size'))}"></button>`;
+      <button type="button" class="fc-readout" data-cx="dims" data-cx-readout data-tip="${escape(verbsOnly ? t('Edit in the inspector') : t('Edit position & size'))}" aria-label="${escape(verbsOnly ? t('Edit in the inspector') : t('Edit position and size'))}"></button>`;
     wirePaintCtx(ctxbar);
     ctxbar.querySelectorAll<HTMLElement>('[data-cx]').forEach((b) => b.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -5514,7 +5528,44 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   // ── canvas (document) size ────────────────────────────────────────────────────
   const SIZE_UNITS = ['px', 'mm', 'cm', 'in', 'pt'];
-  let sizeUnit = 'px';   // remembered across opens of the size menu
+  // This is document state, not a temporary menu preference: the same saved Design
+  // document must reopen with the unit its author used. Geometry remains CSS px, so
+  // legacy boxes and the renderer retain their exact values.
+  const readDocumentUnit = (): string => {
+    const v = runtime.getModel().find(i => i.id === 'documentUnit')?.value;
+    return typeof v === 'string' && SIZE_UNITS.includes(v) ? v : 'px';
+  };
+  const readDocumentDpi = (): number => {
+    const n = Number(runtime.getModel().find(i => i.id === 'documentDpi')?.value);
+    return Number.isFinite(n) && n >= 36 && n <= 2400 ? Math.round(n) : 300;
+  };
+  let sizeUnit = readDocumentUnit();
+  const syncDocumentSettings = (width?: number, height?: number): void => {
+    setDocumentSettings?.({ unit: sizeUnit, dpi: readDocumentDpi(), width, height });
+  };
+  const setDocumentUnit = (unit: string): void => {
+    if (!SIZE_UNITS.includes(unit)) return;
+    sizeUnit = unit;
+    onDirty?.('documentUnit');
+    void runtime.setInput('documentUnit', unit);
+    syncDocumentSettings();
+  };
+  // The export panel is a peer of the size menu. Its unit picker updates the
+  // persisted document input itself, then tells this long-lived editor instance
+  // to use the same unit the next time its panel opens.
+  canvasEl.addEventListener('fc-document-unit', ((e: Event) => {
+    const unit = (e as CustomEvent<unknown>).detail;
+    if (typeof unit === 'string' && SIZE_UNITS.includes(unit)) {
+      sizeUnit = unit;
+      // The size panel/export sheet may have originated this event, but the Inspector
+      // can too. Re-publish the complete document setting so all three surfaces converge.
+      syncDocumentSettings();
+    }
+  }) as EventListener);
+  canvasEl.addEventListener('fc-document-dpi', ((e: Event) => {
+    const dpi = Number((e as CustomEvent<unknown>).detail);
+    if (Number.isFinite(dpi) && dpi >= 36 && dpi <= 2400) syncDocumentSettings();
+  }) as EventListener);
   // px per 1 of a unit (96-DPI CSS convention - matches the artboard mapping).
   const pxPerUnit = (u: string): number => (u === 'px' ? 1 : toCssPx({ value: 1, unit: u as any }));
   const toUnitVal = (n: number, from: string, to: string): number => (n > 0 ? Math.round(n * pxPerUnit(from) / pxPerUnit(to) * 100) / 100 : n);
@@ -5594,10 +5645,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const boxes = getBoxes();
     const fi = activeFrameIndex(boxes);
     if (fi >= 0) {
-      const pxW = Math.round(toUnitVal(w, unit, 'px'));
-      const pxH = Math.round(toUnitVal(h, unit, 'px'));
+      const pxW = toUnitVal(w, unit, 'px');
+      const pxH = toUnitVal(h, unit, 'px');
       if (pxW < 1 || pxH < 1) return;
       commit(boxes.map((b, i) => (i === fi ? withRect(b, { w: pxW, h: pxH }, cfg) : b)));
+      syncDocumentSettings(w, h);
       scheduleSync();
       return;
     }
@@ -5682,6 +5734,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const d = fi >= 0
       ? { w: num(boxes0[fi]![cfg.wField]), h: num(boxes0[fi]![cfg.hField]) }
       : canvasWH();   // always px
+    const dpi = readDocumentDpi();
     // Show the current px size expressed in the remembered unit.
     const dispW = toUnitVal(d.w, 'px', sizeUnit), dispH = toUnitVal(d.h, 'px', sizeUnit);
     const p = document.createElement('div');
@@ -5693,18 +5746,21 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       '</div>' +
       `<label class="fc-row"><span>${t('Units')}</span><select class="field-select field-select--sm" data-sz="unit">${SIZE_UNITS.map((u) => `<option value="${u}"${u === sizeUnit ? ' selected' : ''}>${u}</option>`).join('')}</select></label>` +
       `<label class="fc-row"><span>${t('Width')}</span><input type="number" min="1" max="30000" step="any" data-sz="w" value="${dispW}"><b data-sz-unit>${sizeUnit}</b></label>` +
-      `<label class="fc-row"><span>${t('Height')}</span><input type="number" min="1" max="30000" step="any" data-sz="h" value="${dispH}"><b data-sz-unit>${sizeUnit}</b></label>`;
+      `<label class="fc-row"><span>${t('Height')}</span><input type="number" min="1" max="30000" step="any" data-sz="h" value="${dispH}"><b data-sz-unit>${sizeUnit}</b></label>` +
+      `<label class="fc-row"><span>${t('DPI')}</span><input type="number" min="36" max="2400" step="1" data-sz="dpi" value="${dpi}"><b>${t('dpi')}</b></label>`;
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
     const wIn = () => p.querySelector<HTMLInputElement>('[data-sz="w"]')!;
     const hIn = () => p.querySelector<HTMLInputElement>('[data-sz="h"]')!;
     p.querySelectorAll<HTMLButtonElement>('.fc-size-preset').forEach((b) => b.addEventListener('click', () => {
-      // Presets are px - switch the unit control back to px and fill it in.
-      sizeUnit = 'px';
-      p.querySelector<HTMLSelectElement>('[data-sz="unit"]')!.value = 'px';
-      p.querySelectorAll<HTMLElement>('[data-sz-unit]').forEach((x) => (x.textContent = 'px'));
-      wIn().value = b.dataset.w!; hIn().value = b.dataset.h!;
+      // Paper presets carry their truthful physical unit; screen presets remain px.
+      const paper = b.textContent?.includes('A4') ? 'mm' : b.textContent?.includes('Letter') ? 'in' : 'px';
+      const pw = +b.dataset.w!, ph = +b.dataset.h!;
+      setDocumentUnit(paper);
+      p.querySelector<HTMLSelectElement>('[data-sz="unit"]')!.value = paper;
+      p.querySelectorAll<HTMLElement>('[data-sz-unit]').forEach((x) => (x.textContent = paper));
+      wIn().value = String(toUnitVal(pw, 'px', paper)); hIn().value = String(toUnitVal(ph, 'px', paper));
       p.querySelectorAll('.fc-size-preset').forEach((x) => x.classList.toggle('is-current', x === b));
-      applyDocSize(+b.dataset.w!, +b.dataset.h!, 'px');
+      applyDocSize(+wIn().value, +hIn().value, paper);
     }));
     const commitCustom = () => {
       const w = parseFloat(wIn().value), h = parseFloat(hIn().value);
@@ -5714,12 +5770,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       }
     };
     p.querySelectorAll<HTMLInputElement>('input[data-sz]').forEach((i) => i.addEventListener('change', commitCustom));
+    p.querySelector<HTMLInputElement>('[data-sz="dpi"]')!.addEventListener('change', (e) => {
+      const next = Math.round(Number((e.target as HTMLInputElement).value));
+      if (!(next >= 36 && next <= 2400)) return;
+      onDirty?.('documentDpi');
+      void runtime.setInput('documentDpi', next);
+      syncDocumentSettings();
+    });
     // Unit switch keeps the physical size: convert the shown W/H into the new unit.
     p.querySelector<HTMLSelectElement>('[data-sz="unit"]')!.addEventListener('change', (e) => {
       const to = (e.target as HTMLSelectElement).value;
       wIn().value = String(toUnitVal(parseFloat(wIn().value) || 0, sizeUnit, to));
       hIn().value = String(toUnitVal(parseFloat(hIn().value) || 0, sizeUnit, to));
-      sizeUnit = to;
+      setDocumentUnit(to);
       p.querySelectorAll<HTMLElement>('[data-sz-unit]').forEach((x) => (x.textContent = to));
       p.querySelectorAll('.fc-size-preset').forEach((x) => x.classList.remove('is-current'));
     });

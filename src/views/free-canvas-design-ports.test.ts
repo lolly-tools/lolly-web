@@ -553,16 +553,26 @@ test('setInspector routes the object bar’s Text button to reveal(text); null r
     assert.deepEqual(revealed, ['text'], 'the button revealed the column’s Text section');
     assert.equal(f.stageEl.querySelector('.fc-text-panel'), null, 'and opened no one-slot panel');
 
-    // More / Stroke / the position readout all reveal the Object section.
-    click(f.stageEl.querySelector<HTMLElement>('.fc-ctxbar [data-cx="more"]')!);
-    click(f.stageEl.querySelector<HTMLElement>('.fc-ctxbar [data-cx="dims"]')!);
-    assert.deepEqual(revealed, ['text', 'object', 'object']);
+    // With an inspector the bar is VERBS (plans/184 R16): no More opener, no paint cluster -
+    // those live in the column - and the readout jumps to the Object section.
+    const bar = f.stageEl.querySelector<HTMLElement>('.fc-ctxbar')!;
+    assert.equal(bar.querySelector('[data-cx="more"]'), null, 'More is not on the bar');
+    assert.equal(bar.querySelector('.fc-cfield'), null, 'nor any colour field');
+    assert.equal(bar.querySelector('[data-cx="stroke"]'), null, 'nor the stroke opener');
+    assert.ok(bar.querySelector('[data-cx="dup"]') && bar.querySelector('[data-cx="del"]'), 'the verbs stay');
+    const readout = bar.querySelector<HTMLElement>('[data-cx="dims"]')!;
+    assert.equal(readout.getAttribute('aria-label'), 'Edit in the inspector');
+    click(readout);
+    assert.deepEqual(revealed, ['text', 'object']);
     assert.equal(f.stageEl.querySelector('.fc-more-panel, .fc-dims-panel'), null);
 
-    // Unregistering brings today's panels straight back.
+    // Unregistering brings today's bar and its panels straight back.
     f.design.setInspector(null);
-    click(f.stageEl.querySelector<HTMLElement>('.fc-ctxbar [data-cx="text"]')!);
-    assert.equal(revealed.length, 3, 'no further reveals');
+    const full = f.stageEl.querySelector<HTMLElement>('.fc-ctxbar')!;
+    assert.ok(full.querySelector('[data-cx="more"]'), 'More is back');
+    assert.ok(full.querySelector('.fc-cfield'), 'and the colour fields');
+    click(full.querySelector<HTMLElement>('[data-cx="text"]')!);
+    assert.equal(revealed.length, 2, 'no further reveals');
     assert.ok(f.stageEl.querySelector('.fc-text-panel'), 'the Text panel opened as it always did');
   } finally { f.destroy(); }
 });
