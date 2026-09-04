@@ -887,7 +887,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
             ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - orgAdminHref() returns the '/admin' literal or null; no control-plane value reaches it */ ''}
             ${adminHref ? `<a class="btn" id="instance-console-link" href="${escape(adminHref)}">${t('Instance console')}</a>` : ''}
             ${canChangeInstance ? `<button type="button" class="btn" id="instance-change-btn">${t('Change')}</button>` : ''}
-            ${canChangeInstance ? `<button type="button" class="btn-link-danger" id="instance-disconnect-btn"${instanceBase ? '' : ' hidden'}>${t('Leave')}</button>` : ''}
+            ${/* Leave is never desktop-only: a .lolly share file carrying an instance pack
+                  connects ANY shell to that pack's instance (brand-transfer.ts), and a browser
+                  that got there this way needs the same way back. */ ''}
+            ${instanceBase ? `<button type="button" class="btn-link-danger" id="instance-disconnect-btn">${t('Leave')}</button>` : ''}
           </span>
         </div>
         ${canChangeInstance ? '' : `<p class="profile-appearance-sub">${t('Pointing at another Lolly instance needs the desktop app - a browser blocks a page from loading tools and assets across origins.')}</p>`}
