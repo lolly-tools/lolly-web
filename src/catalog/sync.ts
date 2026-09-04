@@ -27,7 +27,7 @@ import { pinnedAssetIds, refreshPinnedToolFiles } from '../lib/offline-pins.ts';
 // they are the only two edges to a ~7.9 KB module that also drags the upscale/matte
 // model tables along. Both call sites are async, so the import is invisible.
 const offlineManager = () => import('../lib/offline-manager.ts');
-import { initInstanceBase, instanceFetch, instancePath } from '../lib/instance.ts';
+import { initInstanceBase, instanceFetch, instancePath, usesBrowserCors } from '../lib/instance.ts';
 
 /** One resolvable file for a catalog asset (an entry in an asset's `formats`).
  *  Structurally matches the bridge's AssetFormat so it flows into
@@ -264,6 +264,22 @@ export async function syncCatalog(host: SyncHost): Promise<void> {
  * speak this protocol.
  */
 async function conditionalFetch(url: string, etagKey: string): Promise<Response | null> {
+  // A remote instance reached through the browser's own fetch gets NO validator
+  // headers. If-None-Match / If-Modified-Since are not CORS-safelisted, so they turn
+  // this simple GET into a preflighted one, and Vercel answers the OPTIONS for a
+  // static file with no CORS headers at all: the request fails, every sync after
+  // the first "loads from cache (offline)", and a tool added to the instance never
+  // shows up (found 2026-09-04 with a dev shell connected to lolly.tools).
+  // `cache: 'no-cache'` has the browser revalidate against its own HTTP cache
+  // instead - its internal conditional request needs no preflight - so an
+  // unchanged index still costs only a 304 on the wire; it just arrives here as a
+  // full response rather than the early null. Tauri's transport is CORS-free and
+  // keeps the explicit validators.
+  if (usesBrowserCors(url)) {
+    const fresh = await instanceFetch(url, { cache: 'no-cache' });
+    if (!fresh.ok) throw new Error(`HTTP ${fresh.status} fetching ${url}`);
+    return fresh;
+  }
   const stored = getCatalogMeta(etagKey);
   const headers: Record<string, string> = {};
   if (stored?.etag) headers['If-None-Match'] = stored.etag;

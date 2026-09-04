@@ -343,6 +343,18 @@ function isCrossOrigin(url: string): boolean {
   }
 }
 
+/**
+ * True when a fetch of `url` from this shell goes through the browser's own CORS
+ * machinery: a cross-origin URL outside Tauri (whose plugin-http transport is
+ * CORS-free). A caller that adds request headers uses it to stay within the
+ * CORS-safelisted set: a non-safelisted header (If-None-Match, If-Modified-Since,
+ * x-lolly-client) turns a simple GET into a preflighted one, and a static host
+ * that answers the OPTIONS without CORS headers then fails the whole request.
+ */
+export function usesBrowserCors(url: string): boolean {
+  return isCrossOrigin(url) && !hasTauriInternals();
+}
+
 /** What plugin:http|fetch_send resolves with (see @tauri-apps/plugin-http dist-js). */
 interface TauriFetchSendResponse {
   status: number;
