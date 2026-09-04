@@ -1530,7 +1530,7 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 /* ── beat 2: the covers ─────────────────────────────────────────────────────
    Base form is a scroll-snap FILMSTRIP: native swipe and drag on touch, wheel
    and scrollbar elsewhere, and fully working with scripts stripped (the in-app
-   reader). COVERS_JS upgrades it to the 3-D fan from 720px up and adds pointer
+   reader). COVERS_JS upgrades it to the 3-D fan at every width and adds pointer
    drag, dots, arrows and the slow autoplay. */
 /* No background of its own: the band sits inside .hero-wrap, which paints the
    surface, and the chip field lies between that surface and this content
@@ -1545,7 +1545,8 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 .covers-section.covers--fan{padding-left:0;padding-right:0}
 .covers--fan .covers-inner{max-width:none}
 .covers{outline:none;border-radius:10px}
-.covers:focus-visible{outline:2px solid hsl(var(--primary));outline-offset:6px}
+/* Keyboard ring only: a focus the fan took for itself after a pointer drag is marked data-focus-by=pointer (lib/covers-flow.ts). */
+.covers:focus-visible:not([data-focus-by="pointer"]){outline:2px solid hsl(var(--primary));outline-offset:6px}
 /* The strip is a scroll box, so it clips its own overflow: the card shadow reaches
    ~52px below the card (0 24px 48px -20px) and was cut at the strip's bottom edge as a
    hard line. Pad past the shadow and pull the flow back with a negative margin, so
@@ -1565,6 +1566,13 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 .covers--fan .covers-strip{gap:0;overflow:hidden;perspective:1500px;perspective-origin:50% 45%;padding:2.25rem calc(50% - min(520px,58vw)/2) 4rem;margin-bottom:-2.75rem;scroll-snap-type:none;scroll-behavior:auto;touch-action:pan-y;overscroll-behavior-x:contain;scrollbar-width:none}
 .covers--fan .covers-strip::-webkit-scrollbar{display:none}
 .covers--fan .cover-card{flex:0 0 min(520px,58vw);width:min(520px,58vw);will-change:transform;backface-visibility:hidden;pointer-events:none;user-select:none;-webkit-user-select:none}
+/* Phones run the fan too (Andy, 2026-09-03). A 58vw card is a thumbnail at 390px, so
+   under 720px the centred cover takes 78vw and the strip's centring pad follows; the
+   tuck still shows the neighbours' edges either side. */
+@media(max-width:719px){
+  .covers--fan .covers-strip{padding-left:calc(50% - 39vw);padding-right:calc(50% - 39vw)}
+  .covers--fan .cover-card{flex-basis:78vw;width:78vw}
+}
 /* The loop's clones (lib/covers-flow.ts): pixel copies of the edge covers so the
    fan never shows an end. The filmstrip is finite and hides them. */
 .covers-section:not(.covers--fan) .cover-card.is-clone{display:none}
@@ -1628,7 +1636,7 @@ html[data-theme="dark"] .fmt-dialog-unsup{background:rgba(254,124,63,.13)}
 .persona-tab{display:flex;flex-direction:column;gap:4px;padding:1rem 1.15rem;border:1px solid var(--border);border-radius:12px;background:var(--page);cursor:pointer;position:relative;transition:border-color .2s ease,transform .2s ease;padding-right:4.4rem}
 .persona-mascot{position:absolute;right:.7rem;top:50%;transform:translateY(-50%);width:8.5em;height:8.5em;object-fit:contain;pointer-events:none}
 /* The platypus is a wide animal: in the 8.5em square it read as a smudge (Andy, 2026-09-03: 12em). */
-.persona-mascot[src$="platypus.webp"]{width:12em;height:12em}
+.persona-mascot[src$="platypus.webp"]{width:12em;height:12em; margin-top:-1.5em}
 .persona-tab:hover{border-color:var(--muted);transform:translateY(-2px)}
 .persona-name{font-family:'SUSE Mono',monospace;font-weight:600;font-size:1.1rem}
 .persona-sub{font-size:.8125rem;color:var(--muted)}
@@ -2549,8 +2557,9 @@ footer .founded-badge{margin-top:.5rem}
      anchors, which are also <a> inside <nav> (the results panel lives in .docs-search).
      Without the exemption this rule hid every hit, collapsing the results panel to an
      empty strip on any viewport ≤1100px, and neither the jump nav's section links
-     (.doc-jump-nav), for the same reason. */
-  nav:not(.quicknav):not(.doc-jump-nav) a:not(.brand):not(.docs-search-hit){display:none}
+     (.doc-jump-nav), for the same reason. The GitHub mark beside the theme switch is
+     an <a> too, and stays: it is a control of the bar, not a link of the row. */
+  nav:not(.quicknav):not(.doc-jump-nav) a:not(.brand):not(.docs-search-hit):not(.nav-github){display:none}
   nav .nav-group{display:none}
   .nav-hamburger{display:flex}
 }
@@ -2593,6 +2602,11 @@ footer .founded-badge{margin-top:.5rem}
 .nav-theme-toggle{background:none;border:none;cursor:pointer;color:hsl(var(--on-band-dark) / .65);width:2rem;height:2rem;display:flex;align-items:center;justify-content:center;border-radius:5px;padding:.25rem;flex-shrink:0;margin-left:.25rem}
 .nav-theme-toggle:hover{color:hsl(var(--on-band-dark));background:rgba(255,255,255,.1)}
 .nav-theme-toggle svg{width:1.1rem;height:1.1rem;pointer-events:none}
+/* The repository, one glyph beside the theme switch (Andy, 2026-09-04): same footprint,
+   same colour ramp, a plain link - the code is the product's proof and belongs in the chrome. */
+.nav-github{color:hsl(var(--on-band-dark) / .65);width:2rem;height:2rem;display:flex;align-items:center;justify-content:center;border-radius:5px;padding:.25rem;flex-shrink:0;margin-left:.25rem;text-decoration:none}
+.nav-github:hover{color:hsl(var(--on-band-dark));background:rgba(255,255,255,.1)}
+.nav-github svg{width:1.1rem;height:1.1rem;pointer-events:none}
 /* Show the ACTIVE theme's glyph. Default (light, incl. no [data-theme]) = sun;
    dark = moon; brand = palette. Each theme hides the other two. */
 .nav-theme-toggle .icon-moon,.nav-theme-toggle .icon-brand{display:none}
