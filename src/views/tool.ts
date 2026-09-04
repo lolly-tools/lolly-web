@@ -300,6 +300,7 @@ export interface ActionsApi {
   preview?: () => Promise<void>;
   save?: (btn?: HTMLElement | null, opts?: { folderId?: string | null }) => Promise<boolean>;
   setDims?: (dims?: { width?: number; height?: number; unit?: string }) => void;
+  setFormat?: (fmt: string) => void;
   /** Narrow the export format bar to a mode/effect select option's `formats`
    *  (see exportFormatDriver). Keeps the current pick when it survives. */
   setFormats?: (allowed: string[]) => void;
@@ -3664,7 +3665,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           },
           share: () => { viewEl.querySelector<HTMLButtonElement>('[data-action="copy-url"]')?.click(); },
           present: (o) => { void openPresenter(o); },
-          exportSheet: () => { renderFab?.click(); },
+          exportSheet: (o) => { if (o?.format) actionsApi?.setFormat?.(o.format); renderFab?.click(); },
           // The deck-wide Narrate row (plans/180 section 8). Undefined where the overlay
           // offers no narration - no speech bridge, no frames - and then there is no row.
           narrate: design.narrationActions,

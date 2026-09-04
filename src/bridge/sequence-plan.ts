@@ -64,6 +64,14 @@ export const MAX_SPEED = 4;
 /** Transition-length range, mirroring sequence-clock's MIN/MAX_TRANSITION_MS. */
 export const MIN_TRANSITION_MS = 100;
 export const MAX_TRANSITION_MS = 3000;
+/**
+ * How long a deck's slide transition runs in a video - the presenter's own `--pr-dur`
+ * (styles/parts/present.css, 0.46 s), so the mp4 of a sequenced deck changes slides at
+ * the pace the podium does (plans/184 R2).
+ */
+export const DECK_TRANSITION_MS = 460;
+/** The deck transitions the compositor renders as a junction dissolve (see applyDeckTransitions). */
+const DECK_DISSOLVES: ReadonlySet<string> = new Set(['fade', 'slide', 'morph', 'flight']);
 /** The enter/exit length a box gets when it declares a kind but no duration. Defined in
  *  lib/transitions.ts and re-exported here, so the readers cannot drift to two numbers. */
 export { DEFAULT_TRANSITION_MS };
@@ -320,6 +328,16 @@ export interface SeqLayer {
    */
   openEnded: boolean;
   /**
+   * The slide transition a timed frame page plays INTO the next one, resolved the way
+   * the presenter resolves it: the page's own `data-frame-transition`, else the deck's
+   * `data-deck-transition` on the render root, else the manifest default 'slide'. Empty
+   * for anything that is not a frame page. Read by `applyDeckTransitions`.
+   */
+  frameTransition: string;
+  /** Set by `applyDeckTransitions` on a page whose exit it wrote - the deck's slide
+   *  transition standing in as a dissolve, which the renderer says once per export. */
+  deckDissolve?: boolean;
+  /**
    * True when this layer is a timed FRAME PAGE ([data-pdf-page]) - a "Design"
    * frames-as-scenes slide, photographed whole. A frames slideshow places its pages
    * side by side on the pasteboard (x = 0, 1120, 2240 …), but the video output is one
@@ -515,6 +533,7 @@ export function readLayer(el: HTMLElement, idx: number, totalMs: number): SeqLay
     radius: styleProp(el, 'border-radius'),
     clipPath: styleProp(el, 'clip-path'),
     openEnded,
+    frameTransition: el.getAttribute?.('data-pdf-page') != null ? deckTransitionOf(el) : '',
     frameScene: el.getAttribute?.('data-pdf-page') != null,
     z: readDepthZ(el.getAttribute?.('data-t-z') ?? null),
     rx: readTiltDeg(el.getAttribute?.('data-t-rx') ?? null),
@@ -604,7 +623,52 @@ export function parseSequenceStage(node: HTMLElement): SequenceStage | null {
   const els = frames.length > 0
     ? [...frames, ...soundInPages]
     : (stage.querySelectorAll ? [...stage.querySelectorAll<HTMLElement>('.lolly-box')] : []);
-  return { layers: els.map((el, i) => readLayer(el, i, totalMs)), totalMs };
+  return { layers: applyDeckTransitions(els.map((el, i) => readLayer(el, i, totalMs))), totalMs };
+}
+
+/**
+ * The slide transition a timed frame page plays into the next one - the page's own
+ * `data-frame-transition`, else the deck's `data-deck-transition` (the Design hook stamps
+ * it on the render root when the document's Slide transition is not the default), else
+ * 'slide', which is what views/tool.ts hands the presenter when nothing is set.
+ */
+export function deckTransitionOf(el: HTMLElement): string {
+  const own = (el.getAttribute?.('data-frame-transition') ?? '').trim();
+  if (own) return own;
+  const root = (el.closest?.('[data-deck-transition]') ?? null) as HTMLElement | null;
+  return (root?.getAttribute?.('data-deck-transition') ?? '').trim() || 'slide';
+}
+
+/**
+ * A timed deck's slide transitions, as junction dissolves (plans/184 R2).
+ *
+ * The presenter plays the deck's Slide transition between consecutive slides; the
+ * compositor knew nothing of it, so the mp4 of a sequenced deck cut where the podium
+ * faded. Consecutive frame pages whose outgoing page resolves to fade, slide, morph or
+ * flight get a fade exit on A and a fade enter on B of the presenter's own length, so
+ * `crossfadeJunctions` forms the same handover it forms for two faded clips. slide,
+ * morph and flight have no compositor form (no camera to fly, no boxes to morph across
+ * a photographed still) and render as the dissolve - the nearest honest thing, which
+ * the renderer logs. `none` cuts; `custom` leaves the page's own timeline enter/exit in
+ * charge; an authored enter or exit on either side is never overridden. Only the
+ * junctions change: the first page never fades in from nothing, the last never fades
+ * out. The preview still cuts (a DOM page that has left its window is display:none),
+ * exactly as it does for two faded clips - see the crossfadeJunctions note.
+ */
+export function applyDeckTransitions(layers: SeqLayer[]): SeqLayer[] {
+  const pages = layers
+    .filter((l) => l.frameScene && l.durMs > 0 && !l.ignored)
+    .sort((a, b) => a.startMs - b.startMs || a.idx - b.idx);
+  for (let i = 0; i < pages.length - 1; i++) {
+    const a = pages[i] as SeqLayer;
+    const b = pages[i + 1] as SeqLayer;
+    if (!DECK_DISSOLVES.has(a.frameTransition)) continue;
+    if (a.openEnded || Math.abs(endOf(a) - b.startMs) > 1) continue;
+    if (a.exit != null || b.enter != null) continue;
+    a.exit = 'fade'; a.exitMs = DECK_TRANSITION_MS; a.deckDissolve = true;
+    b.enter = 'fade'; b.enterMs = DECK_TRANSITION_MS;
+  }
+  return layers;
 }
 
 /**
@@ -1169,7 +1233,9 @@ export function endOf(layer: SeqLayer): number {
  */
 export function crossfadeJunctions(layers: SeqLayer[]): { aIdx: number; bIdx: number; ms: number }[] {
   const out: { aIdx: number; bIdx: number; ms: number }[] = [];
-  const seq = layers.filter((l) => l.lane === 'seq' && l.durMs > 0).sort((a, b) => a.startMs - b.startMs || a.idx - b.idx);
+  // A timed frame page is a sequence clip whatever lane attribute it carries: exactly
+  // one shows at the playhead, so two adjacent pages can hand over like two clips.
+  const seq = layers.filter((l) => (l.lane === 'seq' || l.frameScene) && l.durMs > 0).sort((a, b) => a.startMs - b.startMs || a.idx - b.idx);
   for (let i = 0; i < seq.length - 1; i++) {
     const a = seq[i] as SeqLayer;
     const b = seq[i + 1] as SeqLayer;

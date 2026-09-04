@@ -245,6 +245,9 @@ export interface SeqJobLayer {
   openEnded: boolean;
   /** True for a timed frame-page scene layer - see SeqLayer.frameScene. */
   frameScene: boolean;
+  /** The deck transition a frame page plays into the next - see SeqLayer.frameTransition.
+   *  OPTIONAL so a job posted by an older build reads as absent, which hydrates to ''. */
+  frameTransition?: string;
   /** The box's depth, px above the surface - see SeqLayer.z. */
   z: number;
   /**
@@ -320,6 +323,7 @@ export function toJobLayer(
     opacity: L.opacity, blend: L.blend, radius: L.radius, clipPath: L.clipPath,
     openEnded: L.openEnded,
     frameScene: L.frameScene,
+    frameTransition: L.frameTransition,
     z: L.z, rx: L.rx, ry: L.ry, kf: L.kf, blur: L.blur, shadowFilter: L.shadowFilter,
     platePad: extra.platePad ?? 0,
     plateEff: Number.isFinite(extra.plateEff) && (extra.plateEff as number) > 0 ? extra.plateEff as number : 1,
@@ -352,6 +356,7 @@ export function hydrateJobLayer(w: SeqJobLayer): SeqLayer {
     lane: w.lane, kind: w.kind, rect: { ...w.rect }, opacity: w.opacity, blend: w.blend,
     radius: w.radius, clipPath: w.clipPath, openEnded: w.openEnded,
     frameScene: w.frameScene ?? false,
+    frameTransition: w.frameTransition ?? '',
     // A structured clone arrives unfrozen and, from an older job, possibly absent
     // entirely - so the track is re-normalised to the empty singleton rather than
     // trusted to be an array. Nothing mutates it after this point, which is the one

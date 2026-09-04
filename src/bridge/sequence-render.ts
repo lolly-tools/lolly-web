@@ -75,6 +75,7 @@ import {
   frameTimestamps,
   activeFrameWindow,
   crossfadeJunctions,
+  DECK_TRANSITION_MS,
   normalizeFrameScene,
   ownsLayerFx,
   planCameraView,
@@ -1682,6 +1683,11 @@ async function renderSequenceAuthored(
   // composition fails in milliseconds instead of half way through a render.
   const junctions = crossfadeJunctions(stage.layers);
   const ext = new Map(junctions.map((j) => [j.aIdx, j.ms]));
+  // The deck's slide transition standing in as a dissolve (plans/184 R2), said once.
+  const standIns = [...new Set(stage.layers.filter((l) => l.deckDissolve && l.frameTransition !== 'fade').map((l) => l.frameTransition))];
+  if (standIns.length) {
+    log('info', `sequence: the deck's "${standIns.join('", "')}" slide transition has no video form, so each slide change is a ${DECK_TRANSITION_MS} ms dissolve - the presenter's own length. Set the transition to "fade" or a frame's own to "none" to choose.`);
+  }
   for (const j of junctions) {
     const a = stage.layers.find((l) => l.idx === j.aIdx);
     if (a && a.exitMs > j.ms) {

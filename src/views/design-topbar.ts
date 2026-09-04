@@ -115,8 +115,8 @@ export interface DesignTopbarOpts {
   share(): void;
   /** Open the presenter. `at` is a frame id to start on; `speaker` opens speaker view. */
   present(o?: { at?: string; speaker?: boolean }): void;
-  /** Open the export sheet (today's render popup). */
-  exportSheet(): void;
+  /** Open the export sheet (today's render popup), on `format` when one is named. */
+  exportSheet(o?: { format?: string }): void;
   /**
    * Notes to voice for the whole deck (plans/180 section 8), offered as a row in the
    * Present split's menu. OPTIONAL: a host with no speech bridge passes nothing and the
@@ -527,6 +527,17 @@ export function mountDesignTopbar(opts: DesignTopbarOpts): DesignTopbar {
         label: t('Loop the deck (kiosk)'),
         checked: () => opts.loop.get() === true,
         run: () => opts.loop.set(!opts.loop.get()),
+      },
+      // The deck as a moving picture (plans/184 R3): the export panel places the slides
+      // on a temporary timeline for the render, each for its own dwell, with the deck's
+      // slide transition between them. Last, after the presenter's own settings, because
+      // it leaves the podium for the export sheet.
+      {
+        label: t('Export slides as video'),
+        glyph: icon('filmStrip'),
+        disabled: !opts.hasFrames(),
+        reason: !opts.hasFrames() ? t('Add an artboard first.') : undefined,
+        run: () => opts.exportSheet({ format: 'mp4' }),
       },
     ];
   }

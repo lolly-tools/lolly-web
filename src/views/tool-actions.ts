@@ -66,6 +66,7 @@ import type { ToolManifest } from '../../../../engine/src/loader.js';
 import type { Runtime } from '../../../../engine/src/runtime.js';
 import type { Unit } from '../../../../engine/src/units.js';
 import { stepFor, displayIn, convertLength, roundIn } from '../lib/unit-steps.ts';
+import { stageDeckAsSequence, stagedDeckMs } from '../lib/deck-as-sequence.ts';
 
 import type {
   WebToolHost, ToolRuntime, PanelEl, ExportUnscaled, ExportDefaults,
@@ -2989,6 +2990,15 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // fires the format `change` refresh so every per-format control follows. Never
   // empties the bar (an empty intersection falls back to the full set). Driven by
   // exportFormatDriver in tool.js; a no-op for a single-format tool (no <select>).
+  /** Pick one of the formats on offer, as if the person had - the picker and the URL follow. */
+  function setFormat(fmt: string): void {
+    if (!formatEl) return;
+    const offered = [...formatEl.options].map((o) => o.value);
+    if (!offered.includes(fmt) || formatEl.value === fmt) return;
+    formatEl.value = fmt;
+    formatPicker?.refresh(offered, fmt);
+    formatEl.dispatchEvent(new Event('change', { bubbles: true }));
+  }
   function setFormats(allowed: string[]): void {
     if (!formatEl) return;
     const allow = new Set(allowed.map(f => (f === 'jpeg' ? 'jpg' : f)));
@@ -3180,6 +3190,56 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     btn.setAttribute('aria-busy', 'true');
 
     const fmt        = formatEl?.value ?? formats[0]!;
+    // Carousel / paged tool: a STILL-image download becomes one image PER PAGE, zipped.
+    // (PDF already fans out to a multi-page document via renderMultiPagePdf; animated /
+    // html / zip formats keep their own paths.) Each [data-pdf-page] frame is exported
+    // at its own measured size - width/height dims are stripped so a re-sized page still
+    // exports at its true pixel size rather than the static render dimensions.
+    // Gate on the carousel-specific render.pages - NOT render.paged, which also marks
+    // multi-page-pdf / doc-studio, whose SVG export must stay a single whole-canvas file.
+    // Also admit the Design frame primitive: an editor-layout tool whose
+    // boxes input declares canvas.frameField emits one [data-pdf-page] per ARTBOARD (frame
+    // box). A no-frames Design doc renders a single .artboard with zero [data-pdf-page], so
+    // pageEls stays empty and it correctly falls through to a single flat export. Mirrors
+    // tool.ts's frameCfg derivation (render.layout==='editor' && canvas.frameField).
+    const framesCanvas = manifest.render.layout === 'editor'
+      ? (manifest.inputs?.find(
+          (i) => i.type === 'blocks' && (i as { canvas?: unknown }).canvas,
+        ) as { canvas?: { frameField?: string } } | undefined)?.canvas
+      : undefined;
+    const hasFrames = !!framesCanvas?.frameField;
+    const pageEls = (manifest.render.pages || hasFrames) && canvasEl
+      ? [...canvasEl.querySelectorAll<HTMLElement>('[data-pdf-page]')] : [];
+    // The `?s=` STILL-EXPORT FILTER (plan 112 section 10): `?s=2&format=png` renders just
+    // that one slide, which is what makes a Design deck's slides individually linkable
+    // (and buys per-slide embeds/OG later). The address is resolved by the ENGINE
+    // (frame-address.ts) against the ids these pages carry, so the CLI's own `s=` picks
+    // the same page from the same string - one meaning, two transports, no shell logic to
+    // drift. Absent ⇒ 'none' ⇒ the fan-out below is byte-identical to before this existed.
+    // An address that names nothing is NOT collapsed to "the first page": the whole deck
+    // exports and the mismatch is announced, so nobody mistakes slide 1 for slide 9.
+    // `frameFilterApplies` is a no-op guard HERE (the fan-out branch below already
+    // excludes every format it names) - it is called anyway so web and CLI ask the
+    // engine the same question rather than each carrying their own format list.
+    const framePick = frameFilterApplies(fmt)
+      ? selectFramePage(pageEls.map((p) => p.getAttribute('data-frame-id')), exportDefaults.slide)
+      : ({ kind: 'none' } as const);
+    // A click deck exported as a moving picture (plans/184 R3). With no timeline of its
+    // own the whole stage rendered for the export's duration - slide one, five seconds,
+    // then nothing - and no "deck as video" action existed. For this export only, the
+    // slides go onto a temporary timeline in order (each its own dwell, else the export's
+    // duration) and the deck's slide transition becomes the junction between them; the
+    // DOM is restored in `finally`, so the document itself never changes. A `?s=` pick
+    // (one slide) keeps its single-frame render, and a document that already has a
+    // timeline keeps its own timing.
+    let unstageDeck: (() => void) | null = null;
+    if (isAnimatedFmt(fmt) && fmt !== 'svg-anim' && pageEls.length >= 2 && framePick.kind !== 'page' && canvasEl && !canvasEl.querySelector('[data-sequence]')) {
+      const dwellMs = Math.round(videoParams().duration * 1000);
+      unstageDeck = stageDeckAsSequence(canvasEl, { dwellMs });
+      if (unstageDeck) {
+        host.log('info', `export: ${pageEls.length} slides placed in order for this ${fmt} (${Math.round(stagedDeckMs(canvasEl, dwellMs) / 100) / 10}s) - each slide's own dwell, else the export duration. The document is unchanged.`);
+      }
+    }
     const isAnimated = isAnimatedFmt(fmt);
     const isGif      = fmt === 'gif';
 
@@ -3464,40 +3524,6 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       // 'renders' auto-save skips it: saving the zip under the per-page format tag would
       // write a corrupt asset (a .zip stored as if it were a png/svg/pdf).
       let downloadedIsZip = false;
-      // Carousel / paged tool: a STILL-image download becomes one image PER PAGE, zipped.
-      // (PDF already fans out to a multi-page document via renderMultiPagePdf; animated /
-      // html / zip formats keep their own paths.) Each [data-pdf-page] frame is exported
-      // at its own measured size - width/height dims are stripped so a re-sized page still
-      // exports at its true pixel size rather than the static render dimensions.
-      // Gate on the carousel-specific render.pages - NOT render.paged, which also marks
-      // multi-page-pdf / doc-studio, whose SVG export must stay a single whole-canvas file.
-      // Also admit the Design frame primitive: an editor-layout tool whose
-      // boxes input declares canvas.frameField emits one [data-pdf-page] per ARTBOARD (frame
-      // box). A no-frames Design doc renders a single .artboard with zero [data-pdf-page], so
-      // pageEls stays empty and it correctly falls through to a single flat export. Mirrors
-      // tool.ts's frameCfg derivation (render.layout==='editor' && canvas.frameField).
-      const framesCanvas = manifest.render.layout === 'editor'
-        ? (manifest.inputs?.find(
-            (i) => i.type === 'blocks' && (i as { canvas?: unknown }).canvas,
-          ) as { canvas?: { frameField?: string } } | undefined)?.canvas
-        : undefined;
-      const hasFrames = !!framesCanvas?.frameField;
-      const pageEls = (manifest.render.pages || hasFrames) && canvasEl
-        ? [...canvasEl.querySelectorAll<HTMLElement>('[data-pdf-page]')] : [];
-      // The `?s=` STILL-EXPORT FILTER (plan 112 section 10): `?s=2&format=png` renders just
-      // that one slide, which is what makes a Design deck's slides individually linkable
-      // (and buys per-slide embeds/OG later). The address is resolved by the ENGINE
-      // (frame-address.ts) against the ids these pages carry, so the CLI's own `s=` picks
-      // the same page from the same string - one meaning, two transports, no shell logic to
-      // drift. Absent ⇒ 'none' ⇒ the fan-out below is byte-identical to before this existed.
-      // An address that names nothing is NOT collapsed to "the first page": the whole deck
-      // exports and the mismatch is announced, so nobody mistakes slide 1 for slide 9.
-      // `frameFilterApplies` is a no-op guard HERE (the fan-out branch below already
-      // excludes every format it names) - it is called anyway so web and CLI ask the
-      // engine the same question rather than each carrying their own format list.
-      const framePick = frameFilterApplies(fmt)
-        ? selectFramePage(pageEls.map((p) => p.getAttribute('data-frame-id')), exportDefaults.slide)
-        : ({ kind: 'none' } as const);
       const framePages = framePick.kind === 'page' ? [pageEls[framePick.index]!] : pageEls;
       // A SCORM course package (plans/180 M-D1): not one render but a zip of them - every
       // artboard as a still, the narrated film with its caption sidecar, the fonts, the
@@ -3601,6 +3627,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
             } : null,
           }), { shutter: true, detail: fmtLabel(fmt), onCancel: cancelExport });
         } finally {
+      unstageDeck?.(); unstageDeck = null;
           releaseStage();
         }
         downloadedBlob = pkg.blob;
@@ -4140,7 +4167,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // popup-close + tool-teardown paths silence an in-progress audio audition.
   // `sessionState` is the SAME snapshot a save writes, read (never written) by the beam
   // for its `__export_*` markers - the one place they exist outside this panel's DOM.
-  return { copy: performCopy, preview, save: performSave, setDims, setFormats, stopAudioPreview, sessionState: sessionSnapshot, getSlot: () => activeSlot, dispose: disposeCostSlot };
+  return { copy: performCopy, preview, save: performSave, setDims, setFormat, setFormats, stopAudioPreview, sessionState: sessionSnapshot, getSlot: () => activeSlot, dispose: disposeCostSlot };
 }
 
 // Adds scroll-to-change and click-drag-to-scrub to a number input.

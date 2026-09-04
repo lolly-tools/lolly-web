@@ -67,6 +67,7 @@ interface Calls {
   loop: boolean[];
   share: number;
   export: number;
+  exportFormat?: string;
   markMenu: number;
   zoom: string[];
   names: string[];
@@ -118,7 +119,7 @@ function fixture(over: Partial<DesignTopbarOpts> = {}) {
     inspector: { toggle: () => { inspOpen = !inspOpen; }, isOpen: () => inspOpen },
     share: () => { calls.share++; },
     present: o => { calls.present.push(o); },
-    exportSheet: () => { calls.export++; },
+    exportSheet: (o) => { calls.export++; calls.exportFormat = o?.format; },
     model: { getInput: id => model.get(id), setInput: (id, v) => { model.set(id, v); calls.inputs.push([id, v]); } },
     loop: { get: () => loopOn, set: v => { loopOn = v; calls.loop.push(v); } },
     onMarkMenu: () => { calls.markMenu++; },
@@ -557,7 +558,7 @@ test('the Present split: the main half presents, each menu row calls its own ver
   click(f.at('present-menu'));
   let rows = f.rows();
   assert.deepEqual(rows.map(r => r.textContent), [
-    'Present from this slide', 'Speaker view', 'Auto-advance slides', 'Loop the deck (kiosk)',
+    'Present from this slide', 'Speaker view', 'Auto-advance slides', 'Loop the deck (kiosk)', 'Export slides as video',
   ]);
   click(rows[0]!);
   assert.deepEqual(f.calls.present[1], { at: 'frame-2' }, 'starts on the active frame');
@@ -567,6 +568,14 @@ test('the Present split: the main half presents, each menu row calls its own ver
   click(rows[1]!);
   assert.deepEqual(f.calls.present[2], { speaker: true });
   assert.equal(f.calls.present.length, 3, 'each row fires exactly once');
+
+  // The last row leaves the podium for the export sheet, opened on mp4 (plans/184 R3).
+  click(f.at('present-menu'));
+  rows = f.rows();
+  click(rows[rows.length - 1]!);
+  assert.equal(f.calls.export, 1, 'the video row opens the export sheet once');
+  assert.equal(f.calls.exportFormat, 'mp4', 'on the mp4 format');
+  assert.equal(f.calls.present.length, 3, 'and presents nothing');
 
   // The two checkbox rows are one open: a checkbox keeps the menu up so both can be set.
   click(f.at('present-menu'));
@@ -621,7 +630,7 @@ test('the Present menu grows a Narrate row that calls the port once, and only wi
   const plain = fixture();
   click(plain.at('present-menu'));
   assert.deepEqual(plain.rows().map(r => r.textContent), [
-    'Present from this slide', 'Speaker view', 'Auto-advance slides', 'Loop the deck (kiosk)',
+    'Present from this slide', 'Speaker view', 'Auto-advance slides', 'Loop the deck (kiosk)', 'Export slides as video',
   ], 'no narration port, no row');
   plain.bar.destroy();
 
@@ -636,7 +645,7 @@ test('the Present menu grows a Narrate row that calls the port once, and only wi
   click(f.at('present-menu'));
   const rows = f.rows();
   assert.deepEqual(rows.map(r => r.textContent), [
-    'Present from this slide', 'Speaker view', 'Narrate', 'Auto-advance slides', 'Loop the deck (kiosk)',
+    'Present from this slide', 'Speaker view', 'Narrate', 'Auto-advance slides', 'Loop the deck (kiosk)', 'Export slides as video',
   ], 'Narrate sits with the other present-time verbs');
   assert.equal(rows[2]!.getAttribute('role'), 'menuitem', 'a verb, not a checkbox');
   click(rows[2]!);
@@ -823,7 +832,7 @@ test('menus: only one is open at a time, and a second click on the trigger close
   click(f.at('zoom-level'));
   assert.equal(f.rows().length, 6);
   click(f.at('present-menu'));
-  assert.equal(f.rows().length, 4, 'opening the second closed the first');
+  assert.equal(f.rows().length, 5, 'opening the second closed the first');
   assert.equal(f.at('zoom-level').getAttribute('aria-expanded'), 'false');
   click(f.at('present-menu'));
   assert.equal(f.menu(), null, 'the trigger is a toggle');
