@@ -30,6 +30,7 @@ test('deck-as-sequence: pages are placed in order, each for its own dwell or the
   const root = c.querySelector('.lolly-frames')!;
   assert.equal(root.hasAttribute('data-sequence'), true);
   assert.equal(root.getAttribute('data-seq-ms'), '12000');
+  assert.equal(root.getAttribute('data-deck-staged'), '1', 'the compositor is told the pages were unplaced');
   assert.equal(stagedDeckMs(deck(['data-frame-id="a"', 'data-frame-id="b" data-frame-dur="2000"', 'data-frame-id="c"']), 5000), 12000);
 });
 

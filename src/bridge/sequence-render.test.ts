@@ -289,14 +289,14 @@ test('contract: every PLANNED layer is photographed clean, and the stage backgro
   // layer's plates are shot with the `<video>` hidden because the decoded frame is
   // composited between them, so a live re-shot that kept it would paint a stale poster
   // under the frame it is about to draw.
-  assert.match(src, /rasterBox\(entry\.box, scaleOf\(layerIdx\), entry\.hide, \{[\s\S]{0,420}opaque: true,\s*neutralFilter: neutralOf\(layerIdx\),\s*neutralClipPath: clipNeutralOf\(layerIdx\),\s*pad: padOf\(layerIdx\),/,
-    'the per-frame live plate matches the static one it replaces');
+  assert.match(src, /const hide = slideHide\.length \? \[\.\.\.entry\.hide, \.\.\.slideHide\] : entry\.hide;\s*const shot = await rasterBox\(entry\.box, scaleOf\(layerIdx\), hide, \{[\s\S]{0,420}opaque: true,\s*neutralFilter: neutralOf\(layerIdx\),\s*neutralClipPath: clipNeutralOf\(layerIdx\),\s*pad: padOf\(layerIdx\),/,
+    'the per-frame live plate matches the static one it replaces - the static hide list, plus a posed slide’s off-screen boxes (plans/184 R1)');
   // The `over` slot is the transparent half of that pair, framed identically.
   assert.match(src, /slot === 'over' \? \{ transparentBg: true \} : \{\}/,
     'a video layer\'s second live plate is the transparent one, as its static twin is');
-  assert.match(src, /makeLiveRaster\(\s*liveBoxes, plateScaleOf, padOf, neutralOf, clipNeutralOf, sizeAt, splitShotAt, stage\.totalMs,\s*\)/,
+  assert.match(src, /makeLiveRaster\(\s*liveBoxes, plateScaleOf, padOf, neutralOf, clipNeutralOf, sizeAt, splitShotAt, stage\.totalMs, slideShotAt,\s*\)/,
     'and is handed the same per-layer pad, scale and ownership the static plates were shot at'
-    + ' (plus the split-text window predicate, plans/175 WP-A)');
+    + ' (plus the split-text window predicate, plans/175 WP-A, and the posed-slide predicate, plans/184 R1)');
   // section 5.4: a camera is a pose over time. `drawItem` already refuses to draw one; the
   // plates loop must refuse to photograph its marker div in the first place.
   assert.match(src, /L\.kind !== 'audio' && L\.kind !== 'camera'/,
@@ -312,7 +312,7 @@ test('contract: the whole render runs inside the authored-DOM scope (plans/104 s
   // `applySplitAt`/`clearSplitUnits` joined at plans/175 WP-A: the live split shots
   // drive unit spans through the SAME applier module, and the render's finally hands
   // them back at rest - a private split writer would be the drift this test prevents.
-  assert.match(src, /import \{ OFF_CLASS, applySplitAt, clearSplitUnits, createSequenceTime, withAuthoredDom \} from '\.\/sequence-dom\.ts'/,
+  assert.match(src, /import \{\s*OFF_CLASS, applySplitAt, applyTimeToElements, clearSplitUnits, createAuthoredStore, createSequenceTime,\s*isActiveAt, readTiming, stageNativeSize, transitionAt, withAuthoredDom,\s*\} from '\.\/sequence-dom\.ts'/,
     'the scope comes from the applier that owns the writes, never a local restore');
   // `createSequenceTime` joined that import at P2: the tilt capture tier poses the live
   // artboard frame by frame through the SAME session the contact sheet uses, from
@@ -552,4 +552,24 @@ test('normalizeMixGain: a -20 LKFS mix lifted to -14 is ~+6 dB; off and silence 
   assert.equal(normalizeMixGain(spec, n, undefined), 1, 'off is exactly 1');
   const silent = { clips: [{ pcm: [new Float32Array(n), new Float32Array(n)], startMs: 0 }], beds: [] } as never;
   assert.equal(normalizeMixGain(silent, n, -14), 1, 'an unmeterable mix is left alone');
+});
+
+test('contract (plans/184 R1): a slide’s boxes are posed by the SAME rule the presenter uses, and the slide is re-shot while they move', () => {
+  const src = strip(read('./sequence-render.ts'));
+  const pm = strip(read('../views/present-mode.ts'));
+  // One rule, two readers: both import poseSlideBoxes from lib/slide-pose.ts.
+  assert.match(src, /import \{ poseSlideBoxes, type SlidePose \} from '\.\.\/lib\/slide-pose\.ts'/);
+  assert.match(pm, /import \{ PENDING_MS, poseSlideBoxes \} from '\.\.\/lib\/slide-pose\.ts'/);
+  assert.ok(!/appearModeOf/.test(pm), 'the presenter no longer keeps its own copy of the appear-mode mapping');
+  // The film shows clicks from the start on the page’s own timeline window; the podium parks them.
+  assert.match(src, /poseSlideBoxes\(L\.el, \{\s*reduced: false, clicks: 'show', pageStartMs: L\.startMs,\s*authoredPageStartMs: staged \? 0 : L\.startMs, pageDurMs: L\.durMs,\s*\}\)/);
+  assert.match(pm, /poseSlideBoxes\(clone, \{ reduced, clicks: 'park', pageStartMs: 0, authoredPageStartMs: frameStartMs, pageDurMs: null \}\)/);
+  // A staged click deck says so, and the compositor reads it (deck-as-sequence.ts writes it).
+  assert.match(src, /const staged = stageEl\.hasAttribute\('data-deck-staged'\)/);
+  assert.match(strip(read('../lib/deck-as-sequence.ts')), /set\(root, 'data-deck-staged', '1'\)/);
+  // A posed slide is a live layer, its static plate is at rest with off-screen boxes hidden,
+  // and everything is put back in the render’s outer finally.
+  assert.match(src, /if \(slidePose && !liveBoxes\.has\(L\.idx\)\) \{\s*liveBoxes\.set\(L\.idx, \{ marker: null, box: el, hide: \[\] \}\);\s*needsLiveRaster = true;/);
+  assert.match(src, /if \(slidePose\) plateHide = slideHiddenAt\(slidePose, slideRestMs\(slidePose, L\)\);\s*under = await rasterBox\(el, PS, plateHide, plateOpts\);/);
+  assert.match(src, /slideStore\.restoreAll\(\);\s*for \(const pose of slidePoses\.values\(\)\) \{\s*for \(const b of pose\.boxes\) b\.classList\.remove\(OFF_CLASS\);\s*pose\.restore\(\);/);
 });

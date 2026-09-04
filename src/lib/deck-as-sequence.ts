@@ -55,6 +55,9 @@ export function stageDeckAsSequence(canvas: HTMLElement, o: StageDeckOpts): (() 
   }
   set(root, 'data-sequence', '');
   set(root, 'data-seq-ms', String(t));
+  // Tells the compositor these pages had no authored timeline start (plans/184 R1): a
+  // timed box inside one was measured from 0, not from the page's staged start.
+  set(root, 'data-deck-staged', '1');
   return () => { for (const u of undo.reverse()) u(); };
 }
 

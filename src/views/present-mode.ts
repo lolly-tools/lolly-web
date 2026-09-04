@@ -50,7 +50,8 @@ import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
 import { mountLottiePlayers, destroyLottiePlayers, lottiePlayerFor } from './lottie-mount.ts';
 import { mountAnimSvgPlayers } from './anim-svg-mount.ts';
 import { createSequenceTime, DRIVE_FPS } from '../bridge/sequence-dom.ts';
-import { appearModeOf, NARRATION_TAIL_MS } from '../lib/motion-model.ts';
+import { NARRATION_TAIL_MS } from '../lib/motion-model.ts';
+import { PENDING_MS, poseSlideBoxes } from '../lib/slide-pose.ts';
 import { easingPoints, splitPhaseWindowMs } from '../lib/transitions.ts';
 import { MIN_TRANSITION_MS, MAX_TRANSITION_MS } from '../bridge/sequence-plan.ts';
 import { CAPTION_BOX_CLASS } from './timeline-captions.ts';
@@ -245,10 +246,6 @@ function readFrames(source: HTMLElement, kiosk: boolean): { specs: FrameSpec[]; 
 // projector tab that loses focus stops getting frames, and a deck that freezes mid-build
 // because the presenter alt-tabbed is the whole reason the export path banned rAF too.
 
-/** A parked start: so far ahead that the applier reads the box as "not yet" and hides it.
- *  What holds a build fragment back until its click. One day, in ms. */
-const PENDING_MS = 86_400_000;
-
 /**
  * The window the slide's own clock runs inside, declared on the clone as `data-seq-ms`.
  *
@@ -284,31 +281,18 @@ function numAttr(el: Element, name: string, fallback: number): number {
  *  The hook emits those for an UNTIMED box, because widening `data-t-enter` to every box
  *  would change what the video compositor renders (it reads that attribute off all of
  *  them). Only this file reads `data-pr-*`, and only onto its own clone. */
-function copyPresenterMotion(box: Element): void {
-  for (const phase of ['enter', 'exit'] as const) {
-    const kind = box.getAttribute(`data-pr-${phase}`);
-    if (!kind) continue;
-    box.setAttribute(`data-t-${phase}`, kind);
-    const ms = box.getAttribute(`data-pr-${phase}-ms`);
-    if (ms) box.setAttribute(`data-t-${phase}-ms`, ms);
-    const ease = box.getAttribute(`data-pr-${phase}-ease`);
-    if (ease) box.setAttribute(`data-t-${phase}-ease`, ease);
-  }
-}
-
 /**
  * Rewrite one CLONE's timing into slide-local terms. Runs ONCE per clone (the result is
  * remembered on it), and never touches the original page - the presenter's whole restore
  * story is that the editor's DOM was never in this.
  *
  * The document's timeline is one long line across every frame; a slide's clock starts at
- * zero when that slide arrives. So each box's start is rebased off its frame's own start,
- * and the three ways of appearing (motion-model's `appearModeOf`, the single answer all
- * three players read) land as three different starts:
- *
- *   • with the slide - start 0, open-ended.
- *   • at a time      - the authored start, minus the frame's, so 0 is this slide's arrival.
- *   • on a click     - parked at PENDING_MS, which hides it until `stepBuild` reaches it.
+ * zero when that slide arrives. The three ways of appearing land as three different
+ * starts - with the slide (0, open-ended), at a time (the authored start minus the
+ * frame's), on a click (parked at PENDING_MS until `stepBuild` reaches it) - and that
+ * mapping is `poseSlideBoxes`, shared with the video compositor so the film and the
+ * podium pose a slide from one rule (plans/184 R1). No slide length is passed: a click
+ * deck has none, and exits play on the way out instead (`beginExits`).
  *
  * Returns how many boxes ended up on the clock; zero means the slide has nothing to
  * animate and no session is opened for it at all.
@@ -321,42 +305,7 @@ function restampSlideMotion(clone: HTMLElement, reduced: boolean): number {
   const frameStartMs = numAttr(clone, 'data-t-start', 0);
   for (const name of ['data-t-start', 'data-t-dur', 'data-t-enter', 'data-t-exit']) clone.removeAttribute(name);
   clone.setAttribute('data-seq-ms', String(SLIDE_SPAN_MS));
-  let posed = 0;
-  for (const box of clone.querySelectorAll<HTMLElement>('.lolly-box')) {
-    copyPresenterMotion(box);
-    if (reduced) {
-      // Cut, don't move. `data-t-split` goes with them: a per-unit stagger still deals
-      // its letters out one after another even with no kind authored, which is exactly
-      // the sort of motion the preference is asking us to stop.
-      for (const name of ['data-t-enter', 'data-t-exit', 'data-t-hold', 'data-t-kf', 'data-t-split']) {
-        box.removeAttribute(name);
-      }
-    }
-    const mode = appearModeOf({
-      build: box.getAttribute('data-build'),
-      start: box.getAttribute('data-t-start'),
-      lane: box.getAttribute('data-t-lane'),
-    });
-    if (mode === 'click') {
-      box.setAttribute('data-t-start', String(PENDING_MS));
-      box.removeAttribute('data-t-dur'); // a revealed fragment stays; a click has no out point
-      posed++;
-    } else if (mode === 'time') {
-      const start = Math.max(0, Math.round(numAttr(box, 'data-t-start', 0) - frameStartMs));
-      box.setAttribute('data-t-start', String(start));
-      posed++;
-    } else if (
-      box.hasAttribute('data-t-enter') || box.hasAttribute('data-t-exit')
-      || box.hasAttribute('data-t-hold') || box.hasAttribute('data-t-kf')
-    ) {
-      // Arrives with the slide AND has something to animate. A box with nothing to
-      // animate is left exactly as rendered: it is already on screen, and every element
-      // the applier is handed is one more it measures every frame and hands back after.
-      box.setAttribute('data-t-start', '0');
-      box.removeAttribute('data-t-dur');
-      posed++;
-    }
-  }
+  const { posed } = poseSlideBoxes(clone, { reduced, clicks: 'park', pageStartMs: 0, authoredPageStartMs: frameStartMs, pageDurMs: null });
   clone.dataset.prRestamped = String(posed);
   return posed;
 }

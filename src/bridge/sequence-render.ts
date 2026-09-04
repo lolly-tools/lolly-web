@@ -194,7 +194,11 @@ import { activitySpans, createTruePeakLimiter, createLoudnessMeter, normalizeGai
 // the clock APPLIES, and the four inline properties it COMPOSES (transform, opacity,
 // filter, z-index) have to come off the stage for exactly as long - see the wrapper on
 // `renderSequence` below, and plans/104 section 6 point 0.
-import { OFF_CLASS, applySplitAt, clearSplitUnits, createSequenceTime, withAuthoredDom } from './sequence-dom.ts';
+import {
+  OFF_CLASS, applySplitAt, applyTimeToElements, clearSplitUnits, createAuthoredStore, createSequenceTime,
+  isActiveAt, readTiming, stageNativeSize, transitionAt, withAuthoredDom,
+} from './sequence-dom.ts';
+import { poseSlideBoxes, type SlidePose } from '../lib/slide-pose.ts';
 // bridge → views. Phase 3 already has this edge (sequence-providers.ts reuses the
 // clock's seek semantics); reusing the LIVE Lottie player instance is the only way
 // a Lottie box can be exported at all - re-mounting a second player would double
@@ -1546,6 +1550,9 @@ export async function renderSequence(
   return await withAuthoredDom(node as HTMLElement, () => renderSequenceAuthored(node, format, opts, host));
 }
 
+/** A start so far ahead it can only be a parked fragment - never a rest moment. */
+const PENDING_SLIDE_MS = 86_400_000;
+
 async function renderSequenceAuthored(
   node: Element, format: 'mp4' | 'webm' | 'gif' | 'apng' | 'webp-anim', opts: ExportOpts, host: SeqHost | null = null,
 ): Promise<Blob> {
@@ -1875,6 +1882,27 @@ async function renderSequenceAuthored(
    * frame it is about to draw.
    */
   const liveBoxes = new Map<number, { marker: Element | null; box: HTMLElement; hide: Element[] }>();
+  // A slide's boxes on the film's clock (plans/184 R1): the poses written onto the live
+  // frame pages for this render, and the store their per-frame styles compose through.
+  // Both are undone in the outer `finally`, so the editor gets its DOM back whatever way
+  // the render ends.
+  const slidePoses = new Map<number, SlidePose>();
+  const slideStore = createAuthoredStore();
+  const slideCtx = { seqMs: stage.totalMs, store: slideStore, stage: () => stageNativeSize(stageEl) };
+  /** The boxes of a posed slide that are OFF at `t` - hidden from that shot, since
+   *  rasterBox lifts the applier's own off class for its photograph. */
+  const slideHiddenAt = (pose: SlidePose, t: number): Element[] =>
+    pose.boxes.filter((b) => !isActiveAt(readTiming(b), t, stage.totalMs));
+  /** When a posed slide is at rest for its static plate: every enter done. */
+  const slideRestMs = (pose: SlidePose, L: SeqLayer): number => {
+    let rest = L.startMs;
+    for (const b of pose.boxes) {
+      const tm = readTiming(b);
+      if (tm.start >= PENDING_SLIDE_MS) continue;
+      rest = Math.max(rest, tm.start + (tm.enter && tm.enter !== 'none' ? tm.enterMs : 0));
+    }
+    return Math.min(rest, L.startMs + Math.max(0, L.durMs - 1));
+  };
   let bgRaster: HTMLCanvasElement | null = null;
   // The timeline panel's frame thumbnails run through the SAME dom-to-image instance
   // this render is about to drive, and that library's options / url cache / sandbox
@@ -1910,6 +1938,24 @@ async function renderSequenceAuthored(
           ...stageEl.querySelectorAll('[data-pdf-page][data-t-start]'),
         ], bgPad > 0 ? { pad: bgPad } : {});
       }
+      // A frames-as-scenes slide poses its boxes the way the podium does (plans/184 R1,
+      // `poseSlideBoxes` - the one rule both read): a with-the-slide box enters when the
+      // slide arrives and exits where it ends, a timed box at its time, a click box from
+      // the start (a film has nobody to click). Written onto the LIVE page for this
+      // render and restored after. A slide with something on its clock is re-shot per
+      // frame while anything moves (`slideShotAt` below) and served one at-rest shot in
+      // between, so its static plate is only the fallback - posed at rest, with the boxes
+      // not yet on screen hidden from the shot.
+      const staged = stageEl.hasAttribute('data-deck-staged');
+      for (const L of stage.layers) {
+        if (!L.frameScene || L.durMs <= 0) continue;
+        const pose = poseSlideBoxes(L.el, {
+          reduced: false, clicks: 'show', pageStartMs: L.startMs,
+          authoredPageStartMs: staged ? 0 : L.startMs, pageDurMs: L.durMs,
+        });
+        if (!pose.posed) { pose.restore(); continue; }
+        slidePoses.set(L.idx, pose);
+      }
       // Every PLANNED layer's plate is shot the same way: at full opacity, with no
       // filter, and with its own padding and resolution - the things the planner owns
       // rather than the picture. The stage background above takes none of them (it is
@@ -1917,6 +1963,9 @@ async function renderSequenceAuthored(
       for (const L of stage.layers) {
         const w = win.get(L.idx)!;
         const el = L.el;
+        // A posed slide's static plate is its picture at rest (see above).
+        const slidePose = slidePoses.get(L.idx) ?? null;
+        if (slidePose) applyTimeToElements(slidePose.boxes, slideRestMs(slidePose, L), slideCtx);
         // `neutralFilter` follows the ONE ownership predicate (section 5.5, `ownsLayerFx`): a
         // layer with depth is shot clean and the compositor applies its whole filter;
         // a layer without keeps its filter baked into the plate, which is what every
@@ -1964,7 +2013,13 @@ async function renderSequenceAuthored(
               needsLiveRaster = true;
             }
           } else {
-            under = await rasterBox(el, PS, [], plateOpts);
+            if (slidePose) plateHide = slideHiddenAt(slidePose, slideRestMs(slidePose, L));
+            under = await rasterBox(el, PS, plateHide, plateOpts);
+          }
+          // A posed slide (plans/184 R1) is re-shot live while its boxes move.
+          if (slidePose && !liveBoxes.has(L.idx)) {
+            liveBoxes.set(L.idx, { marker: null, box: el, hide: [] });
+            needsLiveRaster = true;
           }
           // A size tween re-photographs per frame whatever kind the layer is - the
           // static plate above stays as the fallback for a frame whose shot fails.
@@ -2061,8 +2116,29 @@ async function renderSequenceAuthored(
       const t = usedGrid[frameIndex] ?? 0;
       return { t, animating: splitAnimatingAt(L, t, stage.totalMs) };
     };
+    // A posed slide at an output frame (plans/184 R1): the boxes are driven to that
+    // frame's time before the shot, the ones not yet on screen are named so the shot can
+    // hide them, and the memo key says whether anything is mid-transition - the steady
+    // middle of a slide collapses onto one shot per set of boxes on screen.
+    const slideShotAt = (idx: number, frameIndex: number): { t: number; animating: boolean; restKey: number; hide: Element[] } | null => {
+      const pose = slidePoses.get(idx);
+      if (!pose) return null;
+      const t = usedGrid[frameIndex] ?? 0;
+      applyTimeToElements(pose.boxes, t, slideCtx);
+      let animating = false;
+      let restKey = 7;
+      const hide: Element[] = [];
+      for (const b of pose.boxes) {
+        const tm = readTiming(b);
+        const on = isActiveAt(tm, t, stage.totalMs);
+        restKey = Math.imul(restKey, 31) + (on ? 1 : 0);
+        if (!on) { hide.push(b); continue; }
+        if (tm.hold || tm.kf.length > 0 || tm.split || transitionAt(tm, t, stage.totalMs)) animating = true;
+      }
+      return { t, animating, restKey: Math.abs(restKey) + 1, hide };
+    };
     const liveRaster = makeLiveRaster(
-      liveBoxes, plateScaleOf, padOf, neutralOf, clipNeutralOf, sizeAt, splitShotAt, stage.totalMs,
+      liveBoxes, plateScaleOf, padOf, neutralOf, clipNeutralOf, sizeAt, splitShotAt, stage.totalMs, slideShotAt,
     );
     const hybrid = liveBoxes.size > 0;
 
@@ -2125,6 +2201,14 @@ async function renderSequenceAuthored(
     // The live split shots wrote unit-span styles outside the authored store's
     // sight (plans/175); hand the text back at rest whatever way the render ended.
     for (const entry of liveBoxes.values()) clearSplitUnits(entry.box);
+    // The slide poses (plans/184 R1): composed styles first, then the attributes, so
+    // the editor's pages read exactly as they did before the render.
+    slideStore.restoreAll();
+    for (const pose of slidePoses.values()) {
+      for (const b of pose.boxes) b.classList.remove(OFF_CLASS);
+      pose.restore();
+    }
+    slidePoses.clear();
   }
 
   // ── inner helpers (closures over the render's state) ──────────────────────
@@ -2568,6 +2652,8 @@ function makeLiveRaster(
   splitAt?: (idx: number, frameIndex: number) => { t: number; animating: boolean } | null,
   /** The sequence's total ms - applySplitAt's open-ended-box authority. */
   seqMs = 0,
+  /** A posed slide at that frame (plans/184 R1): drives its boxes and names the hidden ones. */
+  slideAt?: (idx: number, frameIndex: number) => { t: number; animating: boolean; restKey: number; hide: Element[] } | null,
 ): SeqJobIO['lottieAt'] {
   if (!boxes.size) return undefined;
   // Keyed by layer AND slot: a video layer's two plates are two different pictures of
@@ -2580,6 +2666,7 @@ function makeLiveRaster(
     const memoKey = `${layerIdx}:${slot}`;
     const size = sizeAt(layerIdx, frameIndex);
     let key: number;
+    let slideHide: Element[] = [];
     if (entry.marker) {
       const player = lottiePlayerFor(entry.marker) as LottieScrubber | null;
       if (!player?.goToAndStop) return null;
@@ -2598,9 +2685,14 @@ function makeLiveRaster(
       // A split-text layer (plans/175) joins the same memo: inside an animation window
       // every frame is its own key; at rest every frame collapses onto one.
       const split = splitAt?.(layerIdx, frameIndex) ?? null;
-      if (!size && !split) return null;
+      const slide = slideAt?.(layerIdx, frameIndex) ?? null;
+      if (!size && !split && !slide) return null;
       key = size ? Math.round(size.w * 100) + Math.round(size.h * 100) * 65537 : 0;
       if (split) key = Math.imul(key, 31) + (split.animating ? Math.round(split.t) + 2 : 1);
+      // A slide mid-transition is its own frame; at rest it is one shot per set of boxes
+      // on screen (a timed box arriving changes the picture without animating anything).
+      if (slide) key = Math.imul(key, 37) + (slide.animating ? Math.round(slide.t) * 2 + 1 : slide.restKey * 2);
+      slideHide = slide?.hide ?? [];
       const prev = memo.get(memoKey);
       if (prev && prev.key === key) return prev.shot;
       // Drive the unit spans to this frame's state BEFORE the shot - the box's own
@@ -2613,7 +2705,8 @@ function makeLiveRaster(
     // transparent for `over` exactly as the static pair is. A live plate is a drop-in
     // replacement for the static one on the frames it covers, so any difference in how
     // it is framed is a jump in the picture.
-    const shot = await rasterBox(entry.box, scaleOf(layerIdx), entry.hide, {
+    const hide = slideHide.length ? [...entry.hide, ...slideHide] : entry.hide;
+    const shot = await rasterBox(entry.box, scaleOf(layerIdx), hide, {
       opaque: true,
       neutralFilter: neutralOf(layerIdx),
       neutralClipPath: clipNeutralOf(layerIdx),
