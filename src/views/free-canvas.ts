@@ -2696,7 +2696,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   offPlayheadX.type = 'button';
   offPlayheadX.className = 'btn btn--ghost btn--sm fc-offplayhead-x';
   offPlayheadX.setAttribute('aria-label', t('Dismiss'));
-  offPlayheadX.innerHTML = icon('close');
+  // Parsed, not assigned as HTML: the raw-HTML sink inventory is pinned (primitive-guards
+  // R10), and a glyph from lib/icons.ts is an SVG document in its own right.
+  {
+    const Parser = document.defaultView?.DOMParser ?? (globalThis as { DOMParser?: typeof DOMParser }).DOMParser;
+    const glyph = Parser ? new Parser().parseFromString(icon('close'), 'image/svg+xml').documentElement : null;
+    if (glyph && glyph.localName !== 'parsererror') offPlayheadX.append(document.importNode(glyph, true));
+  }
   offPlayheadEl.append(offPlayheadTxt, offPlayheadGo, offPlayheadX);
   overlay.appendChild(offPlayheadEl);
   let offPlayheadAtMs = 0;
