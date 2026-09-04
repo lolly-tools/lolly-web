@@ -9,14 +9,14 @@ Roughly 475,000 lines of TypeScript, tests included, and 44,000 lines of CSS.
 
 | Directory | Source | Tests | CSS |
 |---|---|---|---|
-| `views/` | 106 files, 120,065 lines | 111 files, 47,633 lines | none |
-| `lib/` | 382 files, 101,410 lines | 243 files, 53,677 lines | 7 files, 1,098 lines |
+| `views/` | 106 files, 120,091 lines | 111 files, 47,633 lines | none |
+| `lib/` | 382 files, 101,422 lines | 243 files, 53,677 lines | 7 files, 1,098 lines |
 | `bridge/` | 93 files, 42,940 lines | 76 files, 18,853 lines | none |
 | `components/` | 45 files, 20,250 lines | 26 files, 8,941 lines | 2 files, 221 lines |
 | `collab/` | 18 files, 12,959 lines | 20 files, 13,682 lines | none |
 | `pro/` | 20 files, 7,906 lines | 10 files, 1,666 lines | 2 files, 1,210 lines |
 | `org/` | 16 files, 5,619 lines | 12 files, 3,678 lines | none |
-| `catalog/` | 2 files, 785 lines | 1 file, 86 lines | none |
+| `catalog/` | 2 files, 801 lines | 1 file, 86 lines | none |
 | `ext/` | 2 files, 136 lines | 1 file, 86 lines | none |
 | `styles/` | none | 4 files, 837 lines | 80 files, 41,133 lines |
 
@@ -58,17 +58,17 @@ Do not be ambushed by these. The largest source files, by line count:
 <!-- web-src-largest:start -->
 | Lines | File | Direct test coverage |
 |---|---|---|
-| 13,580 | `views/free-canvas.ts` | yes, nine `free-canvas-*.test.ts` files |
+| 13,586 | `views/free-canvas.ts` | yes, nine `free-canvas-*.test.ts` files |
 | 11,286 | `bridge/export.ts` | yes, but mostly gated. `export-audio-bed.test.ts` imports `bedStartOffset` and `connectMusic` directly and always runs; the SVG and PDF emission is covered by ten `chromiumOrSkip()` suites (`export-m3`, `export-paint-order`, `export-stroke-paint`, `export-shadow-fidelity`, `export-pdf-shadow-fidelity`, `export-emf-eps-shadow`, `export-atomic-inline`, `export-backdrop-blur`, `export-form-controls`, `export-text-emission`) that esbuild-bundle the real `renderSvgFromHtml` and drive it in Chromium, and which **self-skip** when no Chromium is installed. `export-text-emission` is the newest and covers the `<path>`-vs-`<text>` decision layer specifically; unlike the SUSE-gated golden suite it is brand-independent, so it runs on `lolly-start` too. |
 | 9,367 | `views/timeline-panel.ts` | yes |
 | 6,811 | `views/catalog.ts` | partial - the selection model (visibility, filetype filter, search, favourites dedupe, selectable ids, prune) is extracted to `catalog-filter.ts` and covered by `catalog-filter.test.ts`; the 3,000-line `mountCatalog` body around it is not. |
 | 6,368 | `lib/brand-editor.ts` | none |
-| 5,774 | `views/tool.ts` | partial - the undo/redo model (coalescing, the byte-carrying filter, the cap, the redo chain) is extracted to `tool-history.ts` and covered by `tool-history.test.ts`; the rest of `mountTool` is not. |
+| 5,778 | `views/tool.ts` | partial - the undo/redo model (coalescing, the byte-carrying filter, the cap, the redo chain) is extracted to `tool-history.ts` and covered by `tool-history.test.ts`; the rest of `mountTool` is not. |
 | 4,346 | `views/tool-actions.ts` | yes |
 | 4,232 | `views/picker.ts` | partial - the format and embeddability rules are extracted to `picker-formats.ts` and covered by `picker-formats.test.ts`, plus `picker-initial-tab.test.ts`; the 3,000-line panel body is not. |
 | 3,960 | `views/valid.ts` | `valid-verdict.test.ts` only |
 | 3,656 | `views/color-lab.ts` | yes |
-| 3,439 | `views/profile.ts` | none |
+| 3,442 | `views/profile.ts` | none |
 | 3,286 | `views/projects.ts` | none |
 | 3,282 | `views/tool-inputs.ts` | none |
 | 3,273 | `views/gallery.ts` | none |

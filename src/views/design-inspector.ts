@@ -661,9 +661,12 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
   const dimCell = (label: string, field: string | undefined, value: number | 'mixed', o: NumCellOpts = {}): string =>
     numCell(label, field, value, { unit: 'px', ...o });
 
-  /** A plain labelled row whose whole control is one number. */
-  const numRow = (label: string, field: string, value: number, o: NumCellOpts = {}): string =>
-    `<div class="fc-row"><span>${label}</span>${numCell('', field, value, { name: label, ...o })}</div>`;
+  /** A plain labelled row whose whole control is one number. `tip` is a helptip on the
+   *  label - what this number does on the surface the person is looking at. */
+  const numRow = (label: string, field: string, value: number, o: NumCellOpts = {}, tip?: string): string =>
+    `<div class="fc-row"><span${tip ? ` data-tip="${escape(tip)}"` : ''}>${label}</span>${numCell('', field, value, { name: label, ...o })}</div>`;
+  /** Milliseconds to the seconds the editor shows, one decimal. */
+  const msToS = (ms: number): number => Math.round(ms / 100) / 10;
 
   /**
    * A row whose control is not one labelled input. `iconRow` wraps its contents in a
@@ -1081,15 +1084,18 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
     // The number beside the mode is only ever the one that mode uses: a step for a
     // click, a start and a length for a time. Nothing offers a value the box is not
     // currently keeping, which is what makes the exclusivity visible rather than a rule.
+    // The tips say what each number does on THIS surface (plans/184 R6): a build step is
+    // a click, so a video or a PDF never sees it; a time is what a video and Auto-advance
+    // play, and a click deck ignores it unless Auto-advance is on.
     const detail = mode === 'click'
-      ? `<div class="fc-dims-row"><span class="fc-dims-ic" data-tip="${escape(t('Appears'))}">${icon('play')}</span>`
+      ? `<div class="fc-dims-row"><span class="fc-dims-ic" data-tip="${escape(t('A click step. A video or a PDF export does not wait for clicks, so it shows the box from the start.'))}">${icon('play')}</span>`
         + numCell(t('Step'), undefined, step, {
           name: t('Build step'), min: 1, max: 999,
           onCommit: (v) => applyAppear({ mode: 'click', step: v }),
         })
         + '</div>'
       : mode === 'time'
-        ? `<div class="fc-dims-row"><span class="fc-dims-ic" data-tip="${escape(t('Appears'))}">${icon('clock')}</span>`
+        ? `<div class="fc-dims-row"><span class="fc-dims-ic" data-tip="${escape(t('Timed: what a video and Auto-advance play. Presenting by click ignores the time unless Auto-advance is on.'))}">${icon('clock')}</span>`
           + numCell(t('At'), undefined, startS, {
             name: t('Appears at'), unit: 's', min: 0, max: 86400, step: 0.1, precision: 2,
             onCommit: (v) => applyAppear({ mode: 'time', startS: v }),
@@ -1153,9 +1159,15 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
       + '</div>'
       + doorBtn(t('Open in timeline'), 'timeline', 'animate')
       + (cfg.enterField && enter.length ? selectRow(t('Enter'), cfg.enterField, enter, String(fv(b, cfg.enterField) ?? 'fade')) : '')
-      + (cfg.enterMsField ? numRow(t('Enter'), cfg.enterMsField, Math.round(clampN(fv(b, cfg.enterMsField), 400, 0, 60000)), { min: 0, max: 60000, step: 10, unit: 'ms' }) : '')
+      // Seconds, like Appears and the timeline badges - one time notation in the editor
+      // (plans/184 R7). The field itself stays in ms; the cell converts both ways.
+      + (cfg.enterMsField ? numRow(t('Enter'), cfg.enterMsField, msToS(clampN(fv(b, cfg.enterMsField), 400, 0, 60000)), {
+          min: 0, max: 60, step: 0.1, precision: 1, unit: 's', onCommit: (v) => write(cfg.enterMsField, Math.round(v * 1000)),
+        }) : '')
       + (cfg.exitField && exit.length ? selectRow(t('Exit'), cfg.exitField, exit, String(fv(b, cfg.exitField) ?? 'fade')) : '')
-      + (cfg.exitMsField ? numRow(t('Exit'), cfg.exitMsField, Math.round(clampN(fv(b, cfg.exitMsField), 400, 0, 60000)), { min: 0, max: 60000, step: 10, unit: 'ms' }) : '');
+      + (cfg.exitMsField ? numRow(t('Exit'), cfg.exitMsField, msToS(clampN(fv(b, cfg.exitMsField), 400, 0, 60000)), {
+          min: 0, max: 60, step: 0.1, precision: 1, unit: 's', onCommit: (v) => write(cfg.exitMsField, Math.round(v * 1000)),
+        }) : '');
   }
 
   /**
@@ -1182,7 +1194,8 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
         + textRow(t('Slide style'), 'state', b['state'], 'dark title-slide')
         + readRow(t('Stack'), String(b['stackOf'] ?? '') || '-');
     }
-    return numRow(t('Build step'), 'build', Math.round(clampN(b['build'], 0, 0, 999)), { min: 0, max: 999 })
+    return numRow(t('Build step'), 'build', Math.round(clampN(b['build'], 0, 0, 999)), { min: 0, max: 999 },
+        t('A click step while presenting. A video or a PDF export shows the box from the start.'))
       + textRow(t('Morph match'), 'matchOf', b['matchOf'], 'hero')
       + textRow(t('Slide audio'), 'presentAudio', b['presentAudio']);
   }

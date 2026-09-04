@@ -3276,6 +3276,12 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       const presentSource = document.createElement('div');
       presentSource.innerHTML = runtime.getHydrated();
       const transitionVal = String(runtime.getModel().find((i) => i.id === 'transition')?.value ?? 'slide');
+      // Derived from the manifest so an option added to the select can never be
+      // silently downgraded to a push here (that is how `flight` was lost once).
+      const deckTransitionOptions = (): Set<string> => new Set(
+        ((tool.manifest.inputs.find((i) => i.id === 'transition') as { options?: Array<string | { value?: unknown }> } | undefined)?.options ?? [])
+          .map((o) => String(typeof o === 'string' ? o : o?.value ?? '')).filter(Boolean),
+      );
       presenter = openPresentMode({
         source: presentSource,
         // A frame id IS an `s=` address (present-mode resolves position / id / `h.f`), so
@@ -3294,9 +3300,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         // the sidebar, written to the model, honoured by the .pptx and mp4 exports, and
         // downgraded on the way into the one player that can actually fly it. Anything
         // unrecognised still falls back to the manifest's own default.
-        transition: transitionVal === 'morph' || transitionVal === 'fade' || transitionVal === 'flight'
-          ? transitionVal
-          : 'slide',
+        transition: deckTransitionOptions().has(transitionVal) ? transitionVal as 'slide' | 'fade' | 'morph' | 'flight' : 'slide',
         onAddress: (frameId, _index, build) => writePresentAddress(build > 0 ? `${frameId}.${build}` : frameId),
         onClose: () => {
           presenter = null;
