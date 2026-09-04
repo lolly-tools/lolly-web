@@ -184,6 +184,10 @@
   color: hsl(var(--muted-foreground));
   font-size: var(--fs-sm);
 }
+/* A document with boxes and no artboards (plans/184 R15): the one press that draws an
+   artboard around everything, under the empty text and above the loose layers. */
+.fc-nav-make-all { margin: 0 var(--sp-2) var(--sp-4); }
+.fc-nav-make-all[hidden] { display: none; }
 
 /* ── Rows ─────────────────────────────────────────────────────────────────────
    One row per artboard: thumbnail, index, name, then the notes dot and the chips.
@@ -479,6 +483,14 @@ button.fc-nav-chip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-
   font-size: var(--fs-2xs);
   color: hsl(var(--muted-foreground));
   white-space: nowrap;
+}
+/* When a timed layer is (plans/184 R15) - the timeline's own seconds, aligned as numbers. */
+.fc-nav-layer-time {
+  flex: none;
+  font-size: var(--fs-2xs);
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 /* A hidden layer is not drawn on the canvas, so its row reads as absent too. */
 .fc-nav-layer.is-hidden { opacity: 0.5; }

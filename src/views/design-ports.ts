@@ -74,6 +74,12 @@ export interface NavigatorActions {
   present?(fromFrameId: string): void;
   /** Reorder the z-stack of the active frame's children: ids in new paint order (first paints first). */
   reorderChildren?(frameId: string, orderedIds: string[]): void;
+  /**
+   * A new artboard drawn around loose boxes, which it then contains (plans/184 R15) -
+   * how a timeline document with no artboards gets its first one from the navigator.
+   * Absent, the navigator offers no such verb.
+   */
+  makeArtboard?(ids: string[]): void;
 }
 
 /** Verbs the inspector delegates to the overlay. */

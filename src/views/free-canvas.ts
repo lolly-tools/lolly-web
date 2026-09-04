@@ -5933,6 +5933,38 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   /**
+   * A new artboard drawn around loose boxes (plans/184 R15): the union of their rects,
+   * seeded like any added frame, appended to the page order, and the boxes re-parented
+   * into it - `assignFrames` resolves each touched box by geometry, and the new frame
+   * now contains them. One commit. A timeline document with no artboards gets its first
+   * one this way from the navigator, without drawing one by hand around the work.
+   */
+  function makeArtboardAround(ids: readonly string[]): void {
+    if (!frameCfg || !ids.length) return;
+    const fk = frameCfg.frameKind;
+    const frameAddKind = addKinds.find((k) => k.id === 'frame' || (k.seed != null && String(k.seed[cfg.kindField]) === fk));
+    if (!frameAddKind) return;
+    const boxes = getBoxes();
+    const want = new Set(ids.map(String));
+    const picked: number[] = [];
+    boxes.forEach((b, i) => { if (b && want.has(String(b[cfg.idField] ?? '')) && String(b[cfg.kindField]) !== fk) picked.push(i); });
+    if (!picked.length) return;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const i of picked) {
+      const b = boxes[i]!;
+      const x = num(b[cfg.xField]), y = num(b[cfg.yField]);
+      const w = Math.max(1, num(b[cfg.wField])), h = Math.max(1, num(b[cfg.hField]));
+      x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + w); y1 = Math.max(y1, y + h);
+    }
+    const rect = { x: Math.round(x0), y: Math.round(y0), w: Math.max(1, Math.round(x1 - x0)), h: Math.max(1, Math.round(y1 - y0)) } as MathRect;
+    const id = freshId(boxes);
+    const made = withNewFrameOrder(boxes, seedBox(cfg, {}, frameAddKind.seed || {}, rect, id));
+    selection = new Set([id]);
+    commit(assignFrames([...made.boxes, made.box], new Set([...picked, made.boxes.length])));
+    renderChrome();
+  }
+
+  /**
    * ── Fit targets: what the stage is allowed to zoom to (plan 179 C5) ───────────
    *
    * The RETURN LEG of the `fc-focus-rect` seam. That event is the overlay asking the
@@ -13441,6 +13473,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     addArtboardAfter,
     present: (fromFrameId) => actions?.present?.(fromFrameId),
     reorderChildren: reorderFrameChildren,
+    makeArtboard: makeArtboardAround,
   };
 
   const inspectorActions: InspectorActions = {

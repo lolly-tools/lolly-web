@@ -425,6 +425,15 @@ export function initDesignNavigator(opts: DesignNavigatorOpts): DesignNavigatorH
   listEl.setAttribute('data-nav-list', 'frames');
   const emptyEl = make('p', 'fc-nav-empty', t('No artboards yet.'));
   emptyEl.hidden = true;
+  // A document with boxes and no artboards (plans/184 R15): one press draws an artboard
+  // around everything, and each loose layer's row carries the same verb for itself.
+  const makeAllBtn = make('button', 'btn btn--sm fc-nav-make-all', t('Make an artboard around everything'));
+  makeAllBtn.type = 'button';
+  makeAllBtn.hidden = true;
+  makeAllBtn.addEventListener('click', () => {
+    const ids = looseOf(model.getBoxes()).map((b) => fieldStr(b, F.id)).filter(Boolean);
+    if (ids.length) actions.makeArtboard?.(ids);
+  });
   const layersEl = make('section', 'fc-nav-layers');
   const layersHead = make('h3', 'fc-nav-subhead', t('Layers'));
   const layersList = make('div', 'fc-nav-layer-list');
@@ -462,7 +471,7 @@ export function initDesignNavigator(opts: DesignNavigatorOpts): DesignNavigatorH
 
   head.append(titleEl, toggleBtn);
   layersEl.append(layersHead, layersList);
-  bodyEl.append(listEl, emptyEl);
+  bodyEl.append(listEl, emptyEl, makeAllBtn);
   if (skin === 'column') bodyEl.append(layersEl);
   else layersEl.hidden = true;
   el.append(head);
@@ -512,6 +521,32 @@ export function initDesignNavigator(opts: DesignNavigatorOpts): DesignNavigatorH
   function childrenOf(boxes: Box[], frameId: string): Box[] {
     if (!frameId) return [];
     return boxes.filter((b) => !!b && !isFrame(b) && fieldStr(b, F.frame) === frameId);
+  }
+
+  /** Every box that is not a frame - the layers of a document that has no artboards. */
+  function looseOf(boxes: Box[]): Box[] {
+    return boxes.filter((b) => !!b && !isFrame(b));
+  }
+
+  /** One decimal of seconds, the timeline's own notation. */
+  const secs = (v: unknown): string => (Math.round(Number(v) * 10) / 10).toFixed(1);
+
+  /**
+   * A timed box's place on the timeline, in the row's own words (plans/184 R15): a
+   * navigator that lists the layers of a timeline document has to say WHEN each one is,
+   * or the list is a set of names with nothing to tell them apart.
+   */
+  function timeChip(b: Box): HTMLElement | null {
+    const startRaw = b[F.start];
+    if (startRaw == null || startRaw === '' || !Number.isFinite(Number(startRaw))) return null;
+    const dur = Number(b[F.dur]);
+    const when = Number.isFinite(dur) && dur > 0
+      ? tRaw('{start}s for {dur}s', { start: secs(startRaw), dur: secs(dur) })
+      : tRaw('from {start}s', { start: secs(startRaw) });
+    const seq = String(b['lane'] ?? '') === 'seq';
+    const chip = make('span', 'fc-nav-layer-time', seq ? `${t('Sequence')} ${when}` : when);
+    chip.title = seq ? t('On the sequence lane') : t('On its own lane');
+    return chip;
   }
 
   const frameName = (b: Box, i: number): string => {
@@ -1167,7 +1202,7 @@ export function initDesignNavigator(opts: DesignNavigatorOpts): DesignNavigatorH
     return b;
   }
 
-  function buildLayerRow(b: Box, i: number): HTMLElement {
+  function buildLayerRow(b: Box, i: number, loose = false): HTMLElement {
     const id = fieldStr(b, F.id);
     const kind = fieldStr(b, F.kind) || 'box';
     const hidden = boolFlag(b[F.hidden]);
@@ -1191,6 +1226,8 @@ export function initDesignNavigator(opts: DesignNavigatorOpts): DesignNavigatorH
     // `flagBtn`), so without this a hidden layer is announced exactly like a visible one.
     const state = [hidden ? t('Hidden') : '', locked ? t('Locked') : ''].filter(Boolean).join(', ');
     if (state) row.append(make('span', 'fc-nav-layer-state', state));
+    const when = timeChip(b);
+    if (when) row.append(when);
     row.addEventListener('click', () => {
       if (dragSuppressClick) { dragSuppressClick = false; return; }
       selection.set([id]);
@@ -1209,7 +1246,24 @@ export function initDesignNavigator(opts: DesignNavigatorOpts): DesignNavigatorH
       flagBtn('lock', locked, locked ? t('Unlock layer') : t('Lock layer'),
         () => setFlag(id, F.locked, !locked)),
     );
+    // A loose layer (no artboard anywhere) can become the first one's contents.
+    if (loose && actions.makeArtboard) item.append(verbBtn(kindIcon(F.frameKind), t('Make artboard'), () => actions.makeArtboard?.([id])));
     return item;
+  }
+
+  /** A row-side verb: the flag button's shape without a pressed state. */
+  function verbBtn(glyph: IconName, label: string, run: () => void): HTMLElement {
+    const b = make('button', 'fc-nav-layer-btn');
+    b.type = 'button';
+    b.tabIndex = -1;
+    b.setAttribute('aria-label', label);
+    b.title = label;
+    b.setAttribute('data-nav-verb', 'make-artboard');
+    const g = iconNode(glyph);
+    if (g) b.append(g);
+    b.addEventListener('pointerdown', (ev: Event) => ev.stopPropagation());
+    b.addEventListener('click', (ev: Event) => { ev.stopPropagation(); run(); });
+    return b;
   }
 
   /**
@@ -1333,13 +1387,16 @@ export function initDesignNavigator(opts: DesignNavigatorOpts): DesignNavigatorH
     const frames = framesOf(boxes);
     const deck = isDeck(boxes, frames);
     const activeId = artboard.active();
-    const kids = skin === 'column' ? childrenOf(boxes, activeId) : [];
+    // No artboards at all (a timeline document, plans/184 R15): every box is a layer of
+    // the document itself, listed with its timing, rather than an empty column.
+    const loose = frames.length === 0;
+    const kids = skin === 'column' ? (loose ? looseOf(boxes) : childrenOf(boxes, activeId)) : [];
     const pages = pageHashes(boxes);
     const sigs = frames.map((b, i) => rowSig(b, i, pages.get(fieldStr(b, F.id)) ?? 0));
     const sig = [
       sigs.join('|'), activeId, String(kids.length),
       kids.map((b) => `${fieldStr(b, F.id)}:${fieldStr(b, F.kind)}:${String(b[F.label] ?? '')}:${String(b[F.text] ?? '')}`
-        + `:${String(b[F.hidden] ?? '')}:${String(b[F.locked] ?? '')}`).join('~'),
+        + `:${String(b[F.hidden] ?? '')}:${String(b[F.locked] ?? '')}:${String(b[F.start] ?? '')}:${String(b[F.dur] ?? '')}:${String(b['lane'] ?? '')}`).join('~'),
       String(model.getInput('transition') ?? ''), String(model.getInput('autoAdvance') ?? ''),
       deck ? 'd' : 'a', open ? 'o' : 'c',
     ].join('#');
@@ -1353,7 +1410,10 @@ export function initDesignNavigator(opts: DesignNavigatorOpts): DesignNavigatorH
     // under a heading that says Slides.
     titleEl.textContent = deck ? t('Slides') : t('Artboards');
     listEl.setAttribute('aria-label', deck ? tRaw('Slides') : tRaw('Artboards'));
-    emptyEl.textContent = deck ? t('No slides yet.') : t('No artboards yet.');
+    emptyEl.textContent = loose && kids.length
+      ? t('No artboards. Every box is a loose layer, listed below.')
+      : (deck ? t('No slides yet.') : t('No artboards yet.'));
+    makeAllBtn.hidden = !(loose && kids.length > 0 && skin === 'column' && !!actions.makeArtboard);
     toggleBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
     toggleBtn.setAttribute('aria-label', open ? tRaw('Hide navigator') : tRaw('Show navigator'));
     toggleBtn.title = open ? tRaw('Hide navigator') : tRaw('Show navigator');
@@ -1387,9 +1447,9 @@ export function initDesignNavigator(opts: DesignNavigatorOpts): DesignNavigatorH
     if (skin === 'column') {
       const disp = [...kids].reverse();
       layersEl.hidden = disp.length === 0;
-      layersHead.textContent = t('Layers');
+      layersHead.textContent = loose ? t('Loose layers') : t('Layers');
       layersList.setAttribute('aria-label', tRaw('{n} layers', { n: disp.length }));
-      layersList.replaceChildren(...disp.map((b, i) => buildLayerRow(b, i)));
+      layersList.replaceChildren(...disp.map((b, i) => buildLayerRow(b, i, loose)));
     }
 
     paintActive(true);

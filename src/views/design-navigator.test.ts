@@ -204,6 +204,7 @@ function mount(rows: Box[], opt: {
 
   const nextOrder = (): number => boxes.reduce((n, b) => Math.max(n, Number(b.order ?? 0) + 1), 0);
   const actions: NavigatorActions = {
+    makeArtboard: (ids) => { c.actions.push(`makeArtboard:${ids.join(',')}`); },
     duplicateFrame: (id) => {
       c.actions.push(`duplicate:${id}`);
       if (!opt.liveActions) return;
@@ -324,8 +325,14 @@ test('empty document: the empty state shows and the list is hidden', () => {
   assert.equal(f.rowIds().length, 0);
   const empty = f.nav.el.querySelector<HTMLElement>('.fc-nav-empty')!;
   assert.equal(empty.hidden, false);
-  assert.equal(empty.textContent, 'No artboards yet.');
+  // A box with no artboard is a loose layer (plans/184 R15), and the text says so.
+  assert.equal(empty.textContent, 'No artboards. Every box is a loose layer, listed below.');
   f.nav.destroy();
+  // Nothing at all: the plain empty state.
+  const g = mount([]);
+  assert.equal(g.nav.el.querySelector<HTMLElement>('.fc-nav-empty')!.textContent, 'No artboards yet.');
+  assert.equal(g.nav.el.querySelector<HTMLElement>('.fc-nav-make-all')!.hidden, true);
+  g.nav.destroy();
 });
 
 // ── rename ────────────────────────────────────────────────────────────────────
@@ -1478,5 +1485,46 @@ test('two edits to one board before the paint frame clone it once, after the pai
   assert.equal(f.c.thumbs.length, n, 'nothing cloned on the emit itself');
   frames();
   assert.deepEqual(f.c.thumbs.slice(n), ['f1'], 'one clone, from the row standing after the paint');
+  f.nav.destroy();
+});
+
+// ── a document with no artboards (plans/184 R15) ─────────────────────────────
+
+test('no artboards: the column lists every box as a loose layer, with its timing, and offers Make artboard', () => {
+  const f = mount([
+    { id: 'a', kind: 'text', text: 'Opening line', x: 0, y: 0, w: 400, h: 80, start: 0, dur: 3, lane: 'seq' },
+    { id: 'b', kind: 'image', x: 0, y: 100, w: 400, h: 300, start: 1.25 },
+    { id: 'c', kind: 'box', x: 50, y: 50, w: 10, h: 10 },
+  ] as Box[]);
+  const empty = f.nav.el.querySelector<HTMLElement>('.fc-nav-empty')!;
+  assert.equal(empty.hidden, false);
+  assert.equal(empty.textContent, 'No artboards. Every box is a loose layer, listed below.');
+  assert.equal(f.nav.el.querySelector<HTMLElement>('.fc-nav-subhead')!.textContent, 'Loose layers');
+  const rows = [...f.nav.el.querySelectorAll<HTMLElement>('.fc-nav-layer')];
+  // Reversed: the top of the list paints on top.
+  assert.deepEqual(rows.map((r) => r.dataset.id), ['c', 'b', 'a']);
+  const chips = rows.map((r) => r.querySelector('.fc-nav-layer-time')?.textContent ?? null);
+  assert.deepEqual(chips, [null, 'from 1.3s', 'Sequence 0.0s for 3.0s']);
+  // Each loose row carries the verb; the button under the empty text wraps everything.
+  const perRow = f.nav.el.querySelector<HTMLButtonElement>('.fc-nav-layer-item [data-nav-verb="make-artboard"]')!;
+  assert.ok(perRow);
+  click(perRow);
+  assert.deepEqual(f.c.actions, ['makeArtboard:c']);
+  const all = f.nav.el.querySelector<HTMLButtonElement>('.fc-nav-make-all')!;
+  assert.equal(all.hidden, false);
+  click(all);
+  assert.deepEqual(f.c.actions, ['makeArtboard:c', 'makeArtboard:a,b,c']);
+  f.nav.destroy();
+});
+
+test('with an artboard the loose-layer verbs are gone and the empty text is the old one', () => {
+  const f = mount([
+    { id: 'f1', kind: 'frame', name: 'One', x: 0, y: 0, w: 800, h: 450, order: 0 },
+    { id: 'a', kind: 'text', frame: 'f1', text: 'Hi', x: 10, y: 10, w: 100, h: 40 },
+  ] as Box[]);
+  assert.equal(f.nav.el.querySelector<HTMLElement>('.fc-nav-empty')!.hidden, true);
+  assert.equal(f.nav.el.querySelector<HTMLElement>('.fc-nav-make-all')!.hidden, true);
+  assert.equal(f.nav.el.querySelector('[data-nav-verb="make-artboard"]'), null);
+  assert.equal(f.nav.el.querySelector<HTMLElement>('.fc-nav-subhead')!.textContent, 'Layers');
   f.nav.destroy();
 });
