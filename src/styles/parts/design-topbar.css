@@ -265,6 +265,14 @@
    Under "icons" every label is visually hidden, not removed: the accessible name is
    untouched, and each button carries its own aria-label anyway. The zoom readout is
    exempt: its text IS the control. */
+/* One tooltip system (plans/184 section 6, S6): every control carries the app's
+   [data-tip] bubble, below the bar. A button whose text label is showing needs no
+   bubble repeating it, so the bubble only comes through at the densities that hide
+   .dtb-label (the rule just below) - and never on the zoom readout, whose label stays. */
+.design-topbar:not([data-density="icons"]):not([data-density="compact"]):not([data-density="min"]) .dtb-btn[data-tip]:has(.dtb-label)::after,
+.design-topbar:not([data-density="icons"]):not([data-density="compact"]):not([data-density="min"]) .dtb-btn[data-tip]:has(.dtb-label)::before,
+.dtb-zoom-level[data-tip]::after,
+.dtb-zoom-level[data-tip]::before { display: none; }
 .design-topbar[data-density="icons"] .dtb-btn:not(.dtb-zoom-level) .dtb-label,
 .design-topbar[data-density="compact"] .dtb-btn:not(.dtb-zoom-level) .dtb-label,
 .design-topbar[data-density="min"] .dtb-btn:not(.dtb-zoom-level) .dtb-label {

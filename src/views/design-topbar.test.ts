@@ -839,6 +839,60 @@ test('menus: only one is open at a time, and a second click on the trigger close
   f.bar.destroy();
 });
 
+test('one tooltip system: every bar control carries the app bubble below it, never a native title', () => {
+  const f = fixture();
+  const btns = [...f.bar.el.querySelectorAll<HTMLButtonElement>('button.dtb-btn')];
+  assert.ok(btns.length > 5);
+  for (const b of btns) {
+    assert.equal(b.title, '', `${b.getAttribute('data-topbar')} has no native title`);
+    assert.ok(b.getAttribute('data-tip'), `${b.getAttribute('data-topbar')} carries data-tip`);
+    assert.equal(b.hasAttribute('data-tip-below'), true, 'the bar hugs the top, so the bubble drops below');
+  }
+  // The panel toggles say their key.
+  assert.match(f.at('timeline').getAttribute('data-tip')!, /Timeline \((⌥|Alt\+)1\)/);
+  assert.match(f.at('inspector').getAttribute('data-tip')!, /Inspector \((⌥|Alt\+)3\)/);
+  f.bar.destroy();
+});
+
+test('the document name shows whole on hover once the field has cut it short', () => {
+  const f = fixture();
+  const name = f.bar.el.querySelector<HTMLInputElement>('input.dtb-name')!;
+  // jsdom lays nothing out: scrollWidth and clientWidth are both 0, so the field is
+  // never "clipped" here and the hint is the rename prompt.
+  assert.equal(name.title, 'Rename this design');
+  Object.defineProperty(name, 'scrollWidth', { value: 400, configurable: true });
+  Object.defineProperty(name, 'clientWidth', { value: 120, configurable: true });
+  f.bar.sync();
+  assert.equal(name.title, 'Quarterly deck', 'the full name, once it overflows');
+  f.bar.destroy();
+});
+
+test('Alt+1 / Alt+2 / Alt+3 toggle the panels from anywhere but a field, and die with the bar', () => {
+  const f = fixture();
+  const alt = (code: string, target: EventTarget = dom.window.document.body) =>
+    target.dispatchEvent(new dom.window.KeyboardEvent('keydown', { code, altKey: true, bubbles: true, cancelable: true }));
+  assert.equal(f.at('timeline').getAttribute('aria-pressed'), 'false');
+  alt('Digit1');
+  assert.equal(f.at('timeline').getAttribute('aria-pressed'), 'true', 'Alt+1 opens the timeline');
+  alt('Digit2');
+  assert.equal(f.at('navigator').getAttribute('aria-pressed'), 'true', 'Alt+2 opens the navigator');
+  alt('Digit3');
+  assert.equal(f.at('inspector').getAttribute('aria-pressed'), 'true', 'Alt+3 opens the inspector');
+  // Typing in a field keeps its own keys.
+  const field = dom.window.document.createElement('input');
+  dom.window.document.body.appendChild(field);
+  field.focus();
+  alt('Digit1', field);
+  assert.equal(f.at('timeline').getAttribute('aria-pressed'), 'true', 'no toggle while typing');
+  field.remove();
+  // Shift, Cmd or Ctrl alongside Alt is somebody else's chord.
+  dom.window.document.body.dispatchEvent(new dom.window.KeyboardEvent('keydown', { code: 'Digit1', altKey: true, shiftKey: true, bubbles: true }));
+  assert.equal(f.at('timeline').getAttribute('aria-pressed'), 'true', 'Alt+Shift+1 is not ours');
+  f.bar.destroy();
+  alt('Digit1');
+  assert.equal(f.at('timeline').getAttribute('aria-pressed'), 'true', 'a destroyed bar listens to nothing');
+});
+
 test('destroy tears the bar and any open menu out of the document', () => {
   const f = fixture();
   click(f.at('zoom-level'));

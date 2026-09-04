@@ -47,6 +47,7 @@
  * additions must answer in those units or the readout lies.
  */
 import { t } from '../i18n.ts';
+import { isTypingTarget } from '../lib/typing-target.ts';
 import { icon } from '../lib/icons.ts';
 import { LOLLY_MARK_SVG } from '../lib/lolly-mark.ts';
 import type { NarrationActions } from './design-ports.ts';
@@ -182,6 +183,9 @@ const GLYPH = {
 const ZOOM_STOPS: Array<[number, string]> = [[0.5, '50%'], [1, '100%'], [2, '200%'], [4, '400%']];
 
 /** One row in a bar menu. `checked` present ⇒ the row is a checkbox and keeps the menu open. */
+/** The modifier's name for a tooltip hint: the Mac glyph, or the word everywhere else. */
+const ALT_KEY = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform ?? '') ? '⌥' : 'Alt+';
+
 interface MenuRow {
   label: string;
   glyph?: string;
@@ -245,9 +249,19 @@ export function mountDesignTopbar(opts: DesignTopbarOpts): DesignTopbar {
   nameInput.className = 'dtb-name';
   nameInput.setAttribute('data-topbar', 'name');
   nameInput.setAttribute('aria-label', t('Document name'));
-  nameInput.title = t('Rename this design');
   nameInput.spellcheck = false;
   root.appendChild(nameInput);
+  /**
+   * The full name on hover once the field has cut it short (plans/184 section 6, S8):
+   * "Design-lo…" at 860px had no way to be read whole. A native title, because an
+   * <input> is a replaced element and draws no ::after bubble. Re-read on every sync
+   * and every measure, since the density steps change the field's width.
+   */
+  function syncNameTip(): void {
+    const clipped = nameInput.value !== '' && nameInput.scrollWidth > nameInput.clientWidth + 1;
+    nameInput.title = clipped ? nameInput.value : t('Rename this design');
+  }
+  syncNameTip();
 
   // ── centre: history, zoom, panels ───────────────────────────────────────────
   const centre = doc.createElement('div');
@@ -288,14 +302,17 @@ export function mountDesignTopbar(opts: DesignTopbarOpts): DesignTopbar {
 
   const timelineBtn = mkBtn('timeline', t('Timeline'), GLYPH.timeline, { text: t('Timeline') });
   timelineBtn.setAttribute('aria-pressed', 'false');
+  timelineBtn.setAttribute('data-tip', `${t('Timeline')} (${ALT_KEY}1)`);
   timelineBtn.addEventListener('click', () => { opts.timeline.toggle(); syncToggles(); });
   const navBtn = mkBtn('navigator', t('Navigator'), icon('dock'), { text: t('Navigator') });
   navBtn.setAttribute('aria-pressed', 'false');
+  navBtn.setAttribute('data-tip', `${t('Navigator')} (${ALT_KEY}2)`);
   navBtn.addEventListener('click', () => { opts.navigator.toggle(); syncToggles(); });
   centre.append(timelineBtn, navBtn);
   const inspBtn = opts.inspector ? mkBtn('inspector', t('Inspector'), icon('sliders'), { text: t('Inspector') }) : null;
   if (inspBtn) {
     inspBtn.setAttribute('aria-pressed', 'false');
+    inspBtn.setAttribute('data-tip', `${t('Inspector')} (${ALT_KEY}3)`);
     inspBtn.addEventListener('click', () => { opts.inspector?.toggle(); syncToggles(); });
     centre.append(inspBtn);
   }
@@ -542,6 +559,27 @@ export function mountDesignTopbar(opts: DesignTopbarOpts): DesignTopbar {
     ];
   }
 
+  // ── panel shortcuts ─────────────────────────────────────────────────────────
+  // Alt+1 / Alt+2 / Alt+3 toggle Timeline, Navigator and Inspector (plans/184 section 6,
+  // S4) - the keys Figma gives its panels, and unbound in every browser (Cmd/Ctrl+digit
+  // switches tabs; Alt+digit alone means nothing). Read by `code`, since a Mac reports
+  // Alt+1 as the key "¡". Never while typing: a field keeps its own keys. Bound on the
+  // document because the bar never holds focus - it is the stage's chrome, not a panel.
+  const PANEL_KEYS: Record<string, (() => void) | undefined> = {
+    Digit1: () => opts.timeline.toggle(),
+    Digit2: () => opts.navigator.toggle(),
+    Digit3: opts.inspector ? () => opts.inspector?.toggle() : undefined,
+  };
+  function onPanelKey(e: KeyboardEvent): void {
+    if (!e.altKey || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    const run = PANEL_KEYS[e.code];
+    if (!run || isTypingTarget(e.target as Element | null)) return;
+    e.preventDefault();
+    run();
+    syncToggles();
+  }
+  doc.addEventListener('keydown', onPanelKey);
+
   // ── the geometry contract ───────────────────────────────────────────────────
   // Whatever the stage carried before the bar arrived, so destroy() can put it back
   // rather than assuming the property was ours to delete.
@@ -549,6 +587,7 @@ export function mountDesignTopbar(opts: DesignTopbarOpts): DesignTopbar {
   let lastReserve = priorReserve;
 
   function measure(): void {
+    syncNameTip();
     const next = Math.round(root.offsetHeight || 0) + 'px';
     if (next === lastReserve) return;      // the guard: our own dispatch wakes the stage RO
     lastReserve = next;
@@ -734,6 +773,7 @@ export function mountDesignTopbar(opts: DesignTopbarOpts): DesignTopbar {
     // an unchanged name is left completely alone.
     const nextName = opts.name.get();
     if (nameInput.value !== nextName) nameInput.value = nextName;
+    syncNameTip();
     // The auto-filename when there is one, and a word rather than an empty grey box
     // when there is not - a nameless document still has to look like a document.
     nameInput.placeholder = opts.name.placeholder() || t('Untitled');
@@ -753,6 +793,7 @@ export function mountDesignTopbar(opts: DesignTopbarOpts): DesignTopbar {
     sync,
     focusInspectorToggle,
     destroy() {
+      doc.removeEventListener('keydown', onPanelKey);
       closeMenu();
       doc.removeEventListener('pointerdown', onDocPointer, true);
       root.removeEventListener('keydown', onRootKey);
@@ -797,7 +838,12 @@ export function mountDesignTopbar(opts: DesignTopbarOpts): DesignTopbar {
     b.className = 'dtb-btn' + (o.cls ? ` ${o.cls}` : '');
     b.setAttribute('data-topbar', id);
     b.setAttribute('aria-label', aria);
-    b.title = aria;
+    // The app's ONE tooltip (styles/parts/tooltip.css), not a native title: title is
+    // invisible to keyboard and touch and drew under the cursor while the rail beside
+    // this bar bubbled (plans/184 section 6, S6). Below, since the bar hugs the top of
+    // the stage; design-topbar.css keeps the bubble off a button whose label shows.
+    b.setAttribute('data-tip', aria);
+    b.setAttribute('data-tip-below', '');
     if (svg) b.appendChild(icBox('dtb-ic', svg));
     if (o.text) {
       const label = doc.createElement('span');

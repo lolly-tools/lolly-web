@@ -699,15 +699,15 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
 /* The dismiss IS `.btn.btn--sm` (buttons.css owns fill/hover/focus - never restate them
    here); local to this chip are only the pill shape and the pointer-events opt back IN. */
 .fc-armhint-x { pointer-events: auto; flex: 0 0 auto; border-radius: var(--radius-pill); font-weight: 600; white-space: nowrap; }
-/* Off-playhead selection - the one rule's reconciliation chip (see free-canvas.ts's
-   header). Centred over the artboard because that is where the missing box WOULD be.
-   Above the frame scrim (13) and the object bar (15) - which is hidden for the whole
-   time this is up, by construction. Solid border, never dashed: dashed is reserved
-   for drop areas throughout this shell. POINTER-TRANSPARENT except its button, the
-   armhint chip's own recipe: it perches at the artboard centre, which is exactly
-   where an armed create tool clicks - the pill body must not swallow that tap. */
+/* Off-playhead selection - the one rule's reconciliation toast (see free-canvas.ts's
+   header). At the foot of the stage, bottom-centre, beside the timeline it speaks
+   about (plans/184 section 6, S3): dead-centre on the canvas it read as a stuck error
+   over the work. Above the frame scrim (13) and the object bar (15) - which is hidden
+   for the whole time this is up, by construction. Solid border, never dashed: dashed
+   is reserved for drop areas throughout this shell. POINTER-TRANSPARENT except its
+   buttons, the armhint chip's own recipe, so the body never swallows a stage tap. */
 .fc-offplayhead {
-  position: absolute; transform: translate(-50%, -50%); z-index: 24;
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 24;
   pointer-events: none; display: flex; align-items: center; gap: var(--sp-5);
   max-width: min(430px, 88%);
   padding: 8px 10px 8px 14px; border-radius: var(--radius-pill);
@@ -721,6 +721,7 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
    the focus ring - never restate them here). Local: the pill shape to match its chip,
    and the pointer-events opt back IN (the chip body is transparent, above). */
 .fc-offplayhead-go { pointer-events: auto; border-radius: var(--radius-pill); font-weight: 600; }
+.fc-offplayhead-x { pointer-events: auto; flex: 0 0 auto; border-radius: var(--radius-pill); margin-inline-start: calc(-1 * var(--sp-3)); }
 /* Frames-as-scenes invitation - the "Play your N frames in order?" prompt shown when the
    timeline opens on an un-sequenced frame doc (free-canvas.ts). Top-centre so it never
    sits over the docked timeline panel (bottom) or fights the object bar; a pointer-

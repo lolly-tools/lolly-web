@@ -2689,19 +2689,33 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   offPlayheadGo.type = 'button';
   offPlayheadGo.className = 'btn btn--primary btn--sm fc-offplayhead-go';
   offPlayheadGo.textContent = t('Go to it');
-  offPlayheadEl.append(offPlayheadTxt, offPlayheadGo);
+  // A close (plans/184 section 6, S3): the chip read as a stuck error with no way to
+  // put it away. Dismissed for THIS selection only - a new selection off the playhead
+  // raises it again, since that is a new fact.
+  const offPlayheadX = document.createElement('button');
+  offPlayheadX.type = 'button';
+  offPlayheadX.className = 'btn btn--ghost btn--sm fc-offplayhead-x';
+  offPlayheadX.setAttribute('aria-label', t('Dismiss'));
+  offPlayheadX.innerHTML = icon('close');
+  offPlayheadEl.append(offPlayheadTxt, offPlayheadGo, offPlayheadX);
   overlay.appendChild(offPlayheadEl);
   let offPlayheadAtMs = 0;
   // Guards the announcement so entering the state speaks ONCE, not on every repaint
   // (a pan, a zoom and every tl-time all repaint the chrome).
   let lastOffPlayheadKey = '';
+  let dismissedOffPlayheadKey = '';
   offPlayheadGo.addEventListener('click', () => {
     stageEl.dispatchEvent(new CustomEvent('fc-seek', { bubbles: true, detail: { atMs: offPlayheadAtMs } }));
   });
+  offPlayheadX.addEventListener('click', () => {
+    dismissedOffPlayheadKey = lastOffPlayheadKey;
+    offPlayheadEl.hidden = true;
+  });
 
   /**
-   * Raise the banner over the artboard for an off-playhead selection. Centred with the
-   * same maths positionFrameScrim uses, so it tracks pan/zoom for free.
+   * Raise the toast for an off-playhead selection. At the foot of the stage, beside the
+   * timeline it is about (plans/184 section 6, S3) - it used to sit dead-centre on the
+   * canvas, where it read as a stuck error over the work. The CSS owns the position.
    *
    * Two suppressions, both deliberate: no timeline panel means no clock means nothing is
    * ever `seq-off` (so this can only be a stale class), and during PLAYBACK a scene
@@ -2712,21 +2726,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const b = boxes[idx[0]!];
     // A field read, not arithmetic: the box's own authored start, in ms.
     offPlayheadAtMs = Math.max(0, Number(b?.[timeCfg.startField]) * 1000) || 0;
-    const m = metrics();
-    const wh = canvasWH();
-    const tl = nativeToStage(0, 0, m);
-    offPlayheadEl.style.left = `${tl.x + (wh.w * m.scale) / 2}px`;
-    offPlayheadEl.style.top = `${tl.y + (wh.h * m.scale) / 2}px`;
-    offPlayheadEl.hidden = false;
     const key = idx.map((k) => idOf(boxes[k], k)).sort().join(',');
     if (key !== lastOffPlayheadKey) {
       lastOffPlayheadKey = key;
       announce(t('This card is not on screen at the playhead. Go to it to edit it.'));
     }
+    offPlayheadEl.hidden = key === dismissedOffPlayheadKey;
   }
   function hideOffPlayhead(): void {
     if (!offPlayheadEl.hidden) offPlayheadEl.hidden = true;
     lastOffPlayheadKey = '';
+    dismissedOffPlayheadKey = '';
   }
 
   // ── frames-as-scenes: the "play in order" invitation (plan 92) ───────────────
