@@ -5496,8 +5496,14 @@ function makeLollyVehicle(host: WebToolHost, toolId: string, manifest: ToolManif
     const fonts = await import('../lib/session-fonts.ts')
       .then(m => m.collectSessionFonts(canvasEl))
       .catch(() => []);
+    // The design system this session wore, so the receiving studio's "Add from a
+    // file" can install the same look (bridge/tokens.ts readUserDesignSystem).
+    const designSystem = await import('../bridge/tokens.ts')
+      .then(m => m.readUserDesignSystem(host as unknown as Parameters<typeof m.readUserDesignSystem>[0]))
+      .catch(() => null);
     const { blob, filename, summary } = await buildLollyFile({
       session, toolId,
+      ...(designSystem ? { designSystem } : {}),
       ...(fonts.length ? { fonts } : {}),
       ...(typeof thumb === 'string' && thumb.startsWith('data:image/') ? { thumb } : {}),
       toolVersion: manifest.version != null ? String(manifest.version) : undefined,

@@ -324,3 +324,16 @@ test('creatorFromProfile embeds identity only with the useDetails opt-in', () =>
   assert.equal(optedIn.name, 'Ada L');
   assert.equal(optedIn.org, 'Contoso Inc', 'the instance name fills the org line when the user has none');
 });
+
+test('.lolly carries the sender\'s design system as its own integrity-covered part, and reads it back', async () => {
+  const doc = { color: { brand: { $type: 'color', $value: '#30ba78' } } };
+  const built = await buildLollyFile({ session: { a: 1 }, toolId: 'design', userAssets: [], designSystem: { doc, label: 'Acme' } });
+  assert.deepEqual(built.manifest.designSystem, { label: 'Acme' });
+  assert.ok(built.manifest.integrity?.['design-system.json'], 'the part is in the integrity map');
+  const parsed = await readLollyFile(new Uint8Array(await built.blob.arrayBuffer()));
+  assert.deepEqual(parsed.designSystem, doc);
+  // Without one, nothing about the format changes.
+  const plain = await buildLollyFile({ session: { a: 1 }, toolId: 'design', userAssets: [] });
+  assert.equal(plain.manifest.designSystem, undefined);
+  assert.equal((await readLollyFile(new Uint8Array(await plain.blob.arrayBuffer()))).designSystem, undefined);
+});

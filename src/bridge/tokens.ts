@@ -326,6 +326,20 @@ async function headName(host: InstallTokensHost, label?: string): Promise<string
 }
 
 /** Parse a JSON blob, or null when there is nothing readable there. */
+/**
+ * The user's own design system as a document, with its name - for a `.lolly` share file
+ * to carry (lib/lolly-pack.ts `designSystem`). Null when this device has installed none:
+ * the brand pack's tokens are the pack's to travel, not the file's.
+ */
+export async function readUserDesignSystem(
+  host: { assets: { _getBlob(id: string): Promise<Blob | null>; _getUserRecord?(id: string): Promise<{ meta?: { name?: unknown } } | null> } },
+): Promise<{ doc: Record<string, unknown>; label?: string } | null> {
+  const doc = await readJsonBlob(await host.assets._getBlob(USER_TOKENS_ID).catch(() => null));
+  if (!doc || typeof doc !== 'object') return null;
+  const name = (await host.assets._getUserRecord?.(USER_TOKENS_ID).catch(() => null))?.meta?.name;
+  return { doc: doc as Record<string, unknown>, ...(typeof name === 'string' && name ? { label: name } : {}) };
+}
+
 async function readJsonBlob(blob: Blob | null): Promise<unknown> {
   if (!blob) return null;
   try { return JSON.parse(await blob.text()); } catch { return null; }

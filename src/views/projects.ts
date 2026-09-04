@@ -3093,6 +3093,11 @@ export async function mountProjects(
         return q;
       };
       let done = 0, skipped = 0;
+      // The exporter's own design system rides in every .lolly of the batch (see tool.ts's
+      // share path); read once, not per session.
+      const designSystem = await import('../bridge/tokens.ts')
+        .then(m => m.readUserDesignSystem(h as unknown as Parameters<typeof m.readUserDesignSystem>[0]))
+        .catch(() => null);
       for (const it of items) {
         if (job.cancelled) return;
         try {
@@ -3104,7 +3109,7 @@ export async function mountProjects(
             if (isBatchSlot(it.ref)) {
               entries[unique(`${it.dir}${slug(name) || 'batch'}.json`)] = new TextEncoder().encode(JSON.stringify(data, null, 2));
             } else {
-              const { blob } = await buildLollyFile({ session: data, toolId: e.toolId, name, thumb: e.thumb, userAssets, creator, appVersion, engineVersion: ENGINE_VERSION });
+              const { blob } = await buildLollyFile({ session: data, toolId: e.toolId, name, thumb: e.thumb, userAssets, creator, appVersion, engineVersion: ENGINE_VERSION, ...(designSystem ? { designSystem } : {}) });
               entries[unique(`${it.dir}${slug(name) || 'session'}.lolly`)] = new Uint8Array(await blob.arrayBuffer());
             }
           } else {

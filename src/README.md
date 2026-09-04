@@ -9,9 +9,9 @@ Roughly 475,000 lines of TypeScript, tests included, and 44,000 lines of CSS.
 
 | Directory | Source | Tests | CSS |
 |---|---|---|---|
-| `views/` | 106 files, 120,037 lines | 111 files, 47,633 lines | none |
-| `lib/` | 382 files, 101,368 lines | 243 files, 53,641 lines | 7 files, 1,098 lines |
-| `bridge/` | 93 files, 42,926 lines | 76 files, 18,853 lines | none |
+| `views/` | 106 files, 120,065 lines | 111 files, 47,633 lines | none |
+| `lib/` | 382 files, 101,410 lines | 243 files, 53,677 lines | 7 files, 1,098 lines |
+| `bridge/` | 93 files, 42,940 lines | 76 files, 18,853 lines | none |
 | `components/` | 45 files, 20,250 lines | 26 files, 8,941 lines | 2 files, 221 lines |
 | `collab/` | 18 files, 12,959 lines | 20 files, 13,682 lines | none |
 | `pro/` | 20 files, 7,906 lines | 10 files, 1,666 lines | 2 files, 1,210 lines |
@@ -63,17 +63,17 @@ Do not be ambushed by these. The largest source files, by line count:
 | 9,367 | `views/timeline-panel.ts` | yes |
 | 6,811 | `views/catalog.ts` | partial - the selection model (visibility, filetype filter, search, favourites dedupe, selectable ids, prune) is extracted to `catalog-filter.ts` and covered by `catalog-filter.test.ts`; the 3,000-line `mountCatalog` body around it is not. |
 | 6,368 | `lib/brand-editor.ts` | none |
-| 5,768 | `views/tool.ts` | partial - the undo/redo model (coalescing, the byte-carrying filter, the cap, the redo chain) is extracted to `tool-history.ts` and covered by `tool-history.test.ts`; the rest of `mountTool` is not. |
+| 5,774 | `views/tool.ts` | partial - the undo/redo model (coalescing, the byte-carrying filter, the cap, the redo chain) is extracted to `tool-history.ts` and covered by `tool-history.test.ts`; the rest of `mountTool` is not. |
 | 4,346 | `views/tool-actions.ts` | yes |
 | 4,232 | `views/picker.ts` | partial - the format and embeddability rules are extracted to `picker-formats.ts` and covered by `picker-formats.test.ts`, plus `picker-initial-tab.test.ts`; the 3,000-line panel body is not. |
 | 3,960 | `views/valid.ts` | `valid-verdict.test.ts` only |
 | 3,656 | `views/color-lab.ts` | yes |
 | 3,439 | `views/profile.ts` | none |
+| 3,286 | `views/projects.ts` | none |
 | 3,282 | `views/tool-inputs.ts` | none |
-| 3,281 | `views/projects.ts` | none |
 | 3,273 | `views/gallery.ts` | none |
 | 3,047 | `bridge/sequence-render.ts` | yes |
-| 2,985 | `views/start.ts` | yes |
+| 3,002 | `views/start.ts` | yes |
 | 2,675 | `views/deck-editor.ts` | yes |
 | 2,502 | `views/design-import.ts` | **none** |
 | 2,320 | `views/free-canvas-math.ts` | yes |

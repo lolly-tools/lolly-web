@@ -158,7 +158,9 @@ const IMPORT_FORMATS: ReadonlyArray<{ icon: string; name: string; ext: string }>
   { icon: `<img src="/icons/icon-192.png" alt="" width="26" height="26" decoding="async">`, name: 'Brand Pack', ext: '.lolly' },
   { icon: `<img src="/icons/icon-192.png" alt="" width="26" height="26" decoding="async">`, name: 'LollyBrand', ext: '.zip' },
   { icon: PENPOT_ICON, name: 'Penpot', ext: '.penpot' },
-  { icon: TOKENS_ICON, name: 'Design Tokens', ext: '.json' },
+  // The braces are the studio's own Tokens glyph (Andy, 2026-09-04) - the Token Studio mark
+  // below is that product's, and a plain DTCG file is not from it.
+  { icon: icon('tokens', { size: 26 }), name: 'Design Tokens', ext: '.json' },
   { icon: TOKENS_ICON, name: 'Token Studio', ext: '.json' },
   { icon: SVG_ICON, name: 'Plain SVG', ext: '.svg' },
 ];
@@ -795,7 +797,9 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
     // The Overview's "Start from a file" door means exactly that, so it skips the
     // source list and opens on the file stage. OverviewCtx.openImport stays a
     // bare `() => void` - the room never learns the picker has stages.
-    openImport: () => { openImport('file'); playSfx('click'); },
+    // Same picker, same first stage as the rail's "Add from…" (Andy, 2026-09-04: two
+    // buttons, two different modals - unify). The door used to skip to the file stage.
+    openImport: () => { openImport(); playSfx('click'); },
   });
 
   // Deep-link: `#/start?area=color&wheel` opens the OKLCH Colour chart on mount - 
@@ -2409,6 +2413,19 @@ export async function mountStart(viewEl: HTMLElement, host: StartHost, params = 
       // still checked at click time (see data-install-colors below) rather
       // than from importedDoc/data-install-import.
       return;
+    }
+
+    // A shared SESSION (.lolly share file, lib/lolly-pack.ts). Since 1.0.7 it carries the
+    // design system the session was made under as design-system.json; that document is
+    // exactly what the tokens path below installs, so hand it there. A file from before
+    // the part existed, or from a sender with no design system of their own, says so
+    // instead of the old "isn't a design system pack" refusal.
+    if (fileRoute.kind === 'lolly-share') {
+      if (!fileRoute.extraction?.doc) {
+        showImportError(tRaw('{filename} is a shared session and carries no design system to bring across. Open it from the Dashboard to load the session itself.', { filename: file.name }));
+        return;
+      }
+      fileRoute = { kind: 'tokens', label: fileRoute.label, extraction: fileRoute.extraction };
     }
 
     // A Lolly design-system PACK: tokens + fonts + a theme preference, installed

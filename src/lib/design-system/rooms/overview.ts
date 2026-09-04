@@ -481,7 +481,7 @@ export function overviewHtml(model: OverviewModel | null): string {
         ${cardHtml('catalogue', t('Files'), escape(t('Uploads and downloads')), cardSub(files))}
       </div>
       <div class="ds-ov-more">
-        <button type="button" class="be-btn" data-ds-door="file">${t('Add from a file')}</button>
+        <button type="button" class="be-btn" data-ds-door="file">${t('Add from…')}</button>
         <button type="button" class="be-btn" data-ds-door="color-pick">${t('Pick a colour')}</button>
         <a class="ds-ov-exit" href="#/">${t('Explore the tools')}</a>
       </div>

@@ -175,6 +175,29 @@ test('a zip of token sets survives a wrapper folder and Finder’s shadow tree',
   assert.deepEqual(route.extraction.warnings, []);
 });
 
+test('routeDesignFile routes a .lolly share file, with or without a carried design system', async () => {
+  const doc = { color: { brand: { $type: 'color', $value: '#30ba78' } } };
+  const carried = await routeDesignFile('shared.lolly', zip({
+    'manifest.json': bytes({ format: 'lolly-share', formatVersion: 1, minReader: 1, designSystem: { label: 'Acme' }, fonts: [{ family: 'Inter' }], tool: { id: 'design' } }),
+    'design-system.json': bytes(doc),
+    'session.json': bytes({}),
+  }));
+  assert.equal(carried.kind, 'lolly-share');
+  if (carried.kind === 'lolly-share') {
+    assert.equal(carried.label, 'Acme', 'the design system is named by the manifest, not the file');
+    assert.ok(carried.extraction?.doc, 'the carried document is a tokens document');
+    assert.equal(carried.fonts, 1);
+    assert.equal(carried.toolId, 'design');
+  }
+  // A file from before the part existed is still a share file, not an unknown zip.
+  const bare = await routeDesignFile('older.lolly', zip({
+    'manifest.json': bytes({ format: 'lolly-share', formatVersion: 1, minReader: 1 }),
+    'session.json': bytes({}),
+  }));
+  assert.equal(bare.kind, 'lolly-share');
+  if (bare.kind === 'lolly-share') { assert.equal(bare.extraction, null); assert.equal(bare.label, 'older'); }
+});
+
 test('routeDesignFile refuses a zip that is none of the three shapes', async () => {
   const route = await routeDesignFile('photos.zip', zip({ 'a.png': new Uint8Array([1, 2, 3]) }));
   assert.equal(route.kind === 'refused' && route.reason, 'unknown-zip');

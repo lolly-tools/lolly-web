@@ -59,6 +59,11 @@ export const LOLLY_MIN_READER = 1;
 /** The `+zip` structured suffix (RFC 6839) advertises the container to OS/tooling. */
 export const LOLLY_MIME = 'application/vnd.lolly+zip';
 export const LOLLY_EXT = '.lolly';
+/** The sender's design system, as the DTCG document their studio holds. An additive part
+ *  (readers before it simply see no `designSystem` in the manifest), so the file also
+ *  carries the brand a session was made under - the design-system studio's "Add from a
+ *  file" can bring it across without the sender's pack. */
+export const DESIGN_SYSTEM_PART = 'design-system.json';
 
 // Read caps - a .lolly can legitimately carry a video, so allow well past the
 // brand-pack defaults while still bounding a malicious archive.
@@ -184,6 +189,8 @@ export interface LollyManifest {
   fonts?: LollyFontEntry[];
   /** The tool's own files, when the sender chose to carry it (Wave 7 / plans 114). */
   bundledTool?: LollyBundledTool;
+  /** Present when `design-system.json` travels: the sender's design system by name. */
+  designSystem?: { label?: string };
   integrity?: Record<string, string> | null;
 }
 
@@ -244,6 +251,10 @@ export interface LollyBuildInput {
   /** "Lolly x.y.z". */
   appVersion?: string;
   engineVersion?: string;
+  /** The sender's design system (the user tokens document) and its name, carried as
+   *  `design-system.json` so the receiving studio can install the same look. Omit when
+   *  the sender has none of their own. */
+  designSystem?: { doc: unknown; label?: string } | null;
 }
 
 export interface LollyBuildResult {
@@ -257,6 +268,8 @@ export interface LollyBuildResult {
 export interface LollyFileContents {
   manifest: LollyManifest;
   session: unknown;
+  /** The carried design system document, when the manifest announces one. */
+  designSystem?: unknown;
   /** The unzipped parts, so ingest can pull each asset's bytes by `entry.path`. */
   files: Record<string, Uint8Array>;
 }
@@ -427,6 +440,10 @@ export async function buildLollyFile(input: LollyBuildInput): Promise<LollyBuild
 
   // The session payload, integrity-protected alongside the blobs.
   entries['session.json'] = strToU8(JSON.stringify(input.session ?? null, null, 2));
+  // The sender's design system, when they have one - the same document their studio
+  // holds, so "Add from a file" on another device installs the look the session wore.
+  const designSystem = input.designSystem?.doc != null ? input.designSystem : null;
+  if (designSystem) entries[DESIGN_SYSTEM_PART] = strToU8(JSON.stringify(designSystem.doc, null, 2));
 
   const byReferenceCount = assets.filter(a => a.kind === 'asset-ref').length;
   const summary: LollySummary = {
@@ -463,6 +480,7 @@ export async function buildLollyFile(input: LollyBuildInput): Promise<LollyBuild
     assets,
     ...(input.fonts?.length ? { fonts: [...input.fonts] } : {}),
     ...(bundledTool ? { bundledTool } : {}),
+    ...(designSystem ? { designSystem: { ...(designSystem.label ? { label: designSystem.label } : {}) } } : {}),
     ...(integrity ? { integrity } : {}),
   };
   entries['manifest.json'] = strToU8(JSON.stringify(manifest, null, 2));
@@ -565,7 +583,8 @@ export async function readLollyFile(bytes: ArrayBuffer | Uint8Array): Promise<Lo
   }
   await verifyIntegrity(files, manifest.integrity, 'This .lolly file');
   const session = readJson(files, 'session.json');
-  return { manifest, session, files: files as Record<string, Uint8Array> };
+  const designSystem = manifest.designSystem && files[DESIGN_SYSTEM_PART] ? readJson(files, DESIGN_SYSTEM_PART) : undefined;
+  return { manifest, session, files: files as Record<string, Uint8Array>, ...(designSystem !== undefined ? { designSystem } : {}) };
 }
 
 /** A carried tool pulled out of a parsed `.lolly`, ready to hand to the installer.
