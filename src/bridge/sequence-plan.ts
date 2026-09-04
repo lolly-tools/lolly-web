@@ -331,9 +331,10 @@ export interface SeqLayer {
    * The slide transition a timed frame page plays INTO the next one, resolved the way
    * the presenter resolves it: the page's own `data-frame-transition`, else the deck's
    * `data-deck-transition` on the render root, else the manifest default 'slide'. Empty
-   * for anything that is not a frame page. Read by `applyDeckTransitions`.
+   * for anything that is not a frame page. Read by `applyDeckTransitions`. Optional so a
+   * layer literal built elsewhere (the tests, an older wire) reads as "no deck transition".
    */
-  frameTransition: string;
+  frameTransition?: string;
   /** Set by `applyDeckTransitions` on a page whose exit it wrote - the deck's slide
    *  transition standing in as a dissolve, which the renderer says once per export. */
   deckDissolve?: boolean;
@@ -662,7 +663,7 @@ export function applyDeckTransitions(layers: SeqLayer[]): SeqLayer[] {
   for (let i = 0; i < pages.length - 1; i++) {
     const a = pages[i] as SeqLayer;
     const b = pages[i + 1] as SeqLayer;
-    if (!DECK_DISSOLVES.has(a.frameTransition)) continue;
+    if (!DECK_DISSOLVES.has(a.frameTransition ?? '')) continue;
     if (a.openEnded || Math.abs(endOf(a) - b.startMs) > 1) continue;
     if (a.exit != null || b.enter != null) continue;
     a.exit = 'fade'; a.exitMs = DECK_TRANSITION_MS; a.deckDissolve = true;
