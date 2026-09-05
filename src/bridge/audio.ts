@@ -21,7 +21,6 @@
 import type {
   AudioAPI, AudioSource, AudioAnalyseOpts, AudioAnalysis, AssetRef, AudioCleanOpts,
 } from '@lolly-tools/core/host-v1';
-import { cleanAudioPcm, resamplePcm, cleanAudioPreview } from '../../../../engine/src/audio-clean.ts';
 import type { ZzfxSong } from '../../../../engine/src/zzfxm.ts';
 import { renderSong } from '../lib/zzfxm-render.ts';
 import { isZzfxmRef, parseZzfxmRef } from '../../../../engine/src/zzfxm-ref.ts';
@@ -191,9 +190,6 @@ async function composeProceduralSong(id: string): Promise<ZzfxSong> {
   return composeSong(generatedSongSpec(ref.seed, 30, ref.style));
 }
 
-function videoHint(opts: AudioCleanOpts): boolean {
-  return String(opts.sourceMime || '').startsWith('video/') || /\.(mp4|m4v|mov|webm|mkv)$/i.test(String(opts.sourceName || ''));
-}
 
 export function createAudioAPI(): AudioAPI {
   return {
@@ -241,44 +237,10 @@ export function createAudioAPI(): AudioAPI {
     },
 
     async clean(src: AudioSource, opts: AudioCleanOpts = {}) {
-      const decoded = await toPcm(src);
-      const channels = resamplePcm(decoded.channels, decoded.sampleRate);
-      let enhanced: Float32Array[] | undefined;
-      if ((opts.denoise ?? 'off') !== 'off') {
-        try {
-          const { cleanPcm } = await import('../lib/audio-clean-core.ts');
-          enhanced = await cleanPcm(channels, 48_000);
-        } catch (error) {
-          throw new Error(`audio clean: the on-device speech denoiser could not run (${String((error as Error)?.message || error)})`);
-        }
-      }
-      const result = cleanAudioPcm(channels, 48_000, { ...opts, trimSilence: videoHint(opts) ? false : opts.trimSilence, ...(enhanced ? { enhanced } : {}) });
-      const format = opts.output ?? 'wav';
-      if (videoHint(opts)) {
-        const { encodeAudio } = await import('../lib/audio-encode.ts');
-        const { remuxCleanedTracks } = await import('./audio-clean-video.ts');
-        const audioFormat = /webm|matroska/i.test(opts.sourceMime || '') || /\.(webm|mkv)$/i.test(opts.sourceName || '') ? 'opus' : 'm4a';
-        const audioBlob = await encodeAudio(audioFormat, { channels: result.channels, sampleRate: result.sampleRate });
-        let remuxed: { bytes: Uint8Array; mime: string; container: string };
-        try { remuxed = await remuxCleanedTracks(src as Uint8Array, new Uint8Array(await audioBlob.arrayBuffer()), opts); }
-        catch (error) { throw new Error(`audio clean: video remux failed (${String((error as Error)?.message || error)})`); }
-        return {
-          ...result, ...remuxed, format, preview: cleanAudioPreview(result),
-          videoPreserved: true,
-          operations: [...result.operations, `Copied every ${remuxed.container.toUpperCase()} picture packet unchanged; video timing and silent edges kept`],
-        };
-      }
-      const { encodeAudio, audioMime } = await import('../lib/audio-encode.ts');
-      let blob: Blob;
-      try {
-        blob = await encodeAudio(format, { channels: result.channels, sampleRate: result.sampleRate });
-      } catch (error) {
-        throw new Error(`audio clean: ${format} encoder is unavailable (${String((error as Error)?.message || error)})`);
-      }
-      return {
-        ...result,
-        bytes: new Uint8Array(await blob.arrayBuffer()), mime: audioMime(format), format, preview: cleanAudioPreview(result),
-      };
+      // The whole implementation (decode, DSP, encode, remux) is a user action, never
+      // first paint, so it lives in its own chunk (scripts/check-bundle-budget.ts).
+      const { runAudioClean } = await import('./audio-clean-run.ts');
+      return runAudioClean(src, opts, toPcm);
     },
   };
 }

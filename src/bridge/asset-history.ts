@@ -2,7 +2,15 @@
 /** Immutable byte snapshots beside the stable user asset id. No silent eviction. */
 import type { AssetRef } from '@lolly-tools/core/host-v1';
 import { FROZEN_PREFIX } from './version-assets.ts';
-import { sha256Bytes } from '../lib/file-conversion.ts';
+
+/** Lowercase hex SHA-256, the same digest core's image-operation contract uses.
+ *  Local on purpose: importing it from lib/file-conversion.ts re-exports the whole
+ *  core image-operation module, and this file is reached from the assets bridge
+ *  on the boot path (scripts/check-bundle-budget.ts). */
+async function sha256Bytes(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', bytes as BufferSource);
+  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
 export interface VersionedUserAsset { id: string; type: AssetRef['type']; format: string; version?: string; blob?: Blob; checksum?: string; meta?: Record<string, unknown>; credential?: Uint8Array; credentialFormat?: string }
 export interface UserAssetVersion { assetId: string; version: string; savedAt: number; sha256: string; bytes: number; record: VersionedUserAsset }
 // Same structural seam as AssetsDb: IDB in production, narrow test adapters in

@@ -44,7 +44,10 @@ import { designMaterialOf } from '../../../../engine/src/design-system.ts';
 // re-spelled) so the listing filter below and the preserver that writes them can
 // never disagree about which rows are machine-owned.
 import { FROZEN_PREFIX } from './version-assets.ts';
-import { writeVersionedUserAsset, readUserAssetVersion, listUserAssetVersions, removeUserAssetVersions } from './asset-history.ts';
+// Version history is a write-time / restore-time concern, never first paint:
+// loaded on demand so its IDB transaction code stays off the boot path
+// (scripts/check-bundle-budget.ts).
+const assetHistory = () => import('./asset-history.ts');
 import type { AssetRef, AssetQuery } from '@lolly-tools/core/host-v1';
 import type { IconTheme } from '../../../../engine/src/icon-theme.ts';
 import type { PhotoTreatment } from '../../../../engine/src/photo-treatment.ts';
@@ -302,7 +305,7 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
         };
       }
       if (id.startsWith('user/')) {
-        const userAsset = await readUserAssetVersion(db, id, opts.version);
+        const userAsset = await (await assetHistory()).readUserAssetVersion(db, id, opts.version);
         if (!userAsset) throw new Error(`User asset not found: ${id}`);
         return toAssetRef(userAsset, 'user');
       }
@@ -602,7 +605,7 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
       // catalog can sort/show "Modified". _importUserAsset (backup restore)
       // deliberately does NOT stamp - a restore preserves history.
       record.meta = { ...record.meta, modifiedAt: Date.now() };
-      await writeVersionedUserAsset(db, record, upOpts.expectedVersion);
+      await (await assetHistory()).writeVersionedUserAsset(db, record, upOpts.expectedVersion);
     },
 
     /**
@@ -636,17 +639,17 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
     },
 
     async _listUserAssetVersions(id: string) {
-      return (await listUserAssetVersions(db, id)).map(({ record, ...version }) => ({ ...version, name: String(record.meta?.name || id), format: record.format }));
+      return (await (await assetHistory()).listUserAssetVersions(db, id)).map(({ record, ...version }) => ({ ...version, name: String(record.meta?.name || id), format: record.format }));
     },
     async _restoreUserAssetVersion(id: string, version: string): Promise<void> {
-      const snapshot = await readUserAssetVersion(db, id, version);
+      const snapshot = await (await assetHistory()).readUserAssetVersion(db, id, version);
       if (!snapshot?.blob) throw new Error('Saved version not found.');
       // A restore creates a new head and snapshots the replaced head. It never
       // moves or overwrites the immutable version selected by the designer.
       await api._uploadUserAsset({ ...snapshot, version: crypto.randomUUID() });
       evictObjectUrlsByPrefix(`user:${id}:`);
     },
-    async _removeUserAssetVersion(id: string, version: string): Promise<void> { await removeUserAssetVersions(db, id, version); },
+    async _removeUserAssetVersion(id: string, version: string): Promise<void> { await (await assetHistory()).removeUserAssetVersions(db, id, version); },
 
     /** Internal: list the user's saved images, newest first, as resolved AssetRefs.
      *  Frozen rows (bytes a published design-system version pins, preserved by
@@ -694,7 +697,7 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
       // A restore rewrites ids on faith, so it can land on top of bytes a
       // published version pins exactly like an upload can.
       await opts.preservePinned?.(record.id);
-      await writeVersionedUserAsset(db, record, undefined, 'import');
+      await (await assetHistory()).writeVersionedUserAsset(db, record, undefined, 'import');
     },
 
     /** Internal: how many images are in the user's personal library. */
@@ -865,7 +868,7 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
       AI_KIND_MEMO.delete(id);
       rec.meta = { ...rec.meta, ...patch.meta, bytes: patch.blob.size };
       rec.version = String(Date.now());   // cache-buster - object URLs key on id:format:version
-      await writeVersionedUserAsset(db, rec, previousVersion);
+      await (await assetHistory()).writeVersionedUserAsset(db, rec, previousVersion);
       // The bump only stops a NEW ref from reusing the old URL; the old URL
       // itself stays in the cache and keeps resolving to bytes that no longer
       // exist, so anything still holding it plays the previous take. Revoke
@@ -910,7 +913,7 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
       // blob (no format/version keying). Mirror get()'s resolution order so
       // callers like the tokens bridge can read a user-installed document by id.
       if (id.startsWith('user/')) {
-        return (await readUserAssetVersion(db, id, opts.version))?.blob ?? null;
+        return (await (await assetHistory()).readUserAssetVersion(db, id, opts.version))?.blob ?? null;
       }
       const meta = await db.get('asset-meta', id);
       if (!meta) return null;
