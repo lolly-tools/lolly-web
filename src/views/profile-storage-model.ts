@@ -9,7 +9,8 @@
 import { BATCH_SLOT_PREFIX } from '../lib/batch-slots.ts';
 import { relativeTime, fmtBytes, sessionRow } from '../folder-tiles.ts';
 import { t, tRaw } from '../i18n.ts';
-import { escape } from '../utils.ts';
+// Aliased on import: a bare `escape` shadows the deprecated global of that name.
+import { escape as escapeHtml } from '../utils.ts';
 import type { AssetRef, StateEntry } from '@lolly-tools/core/host-v1';
 
 /** A saved session as the web state bridge lists it - StateEntry plus the
@@ -108,7 +109,7 @@ export function renderSessRow(s: SessionEntry, bytes: number, ctx: SessionRowCon
   const subtitle = ctx.toolNameOf(s.toolId) + (s.updatedAt ? ` · ${relativeTime(s.updatedAt)}` : '');
   return sessionRow(s, {
     rowClass: 'store-sess',
-    rowAttrs: `data-slot="${escape(s.slot)}"`,
+    rowAttrs: `data-slot="${escapeHtml(s.slot)}"`,
     thumbClass: 'store-sess-thumb',
     thumbImgAttrs: 'loading="lazy"',
     emptyThumbContent: ctx.placeholderIcon,
@@ -123,7 +124,7 @@ export function renderSessRow(s: SessionEntry, bytes: number, ctx: SessionRowCon
     subClass: 'store-sess-sub',
     subtitle,
     sizeBytes: bytes,
-    deleteAttr: `data-del-session="${escape(s.slot)}"`,
+    deleteAttr: `data-del-session="${escapeHtml(s.slot)}"`,
     deleteClass: 'store-sess-del',
     deleteLabel: tRaw('Delete {name}', { name: label }),
   });

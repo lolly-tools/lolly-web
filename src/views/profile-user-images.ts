@@ -12,7 +12,8 @@
 import { mountModal } from '../components/modal.ts';
 import type { ModalHandle } from '../components/modal.ts';
 import { t, tRaw } from '../i18n.ts';
-import { escape } from '../utils.ts';
+// Aliased on import: a bare `escape` shadows the deprecated global of that name.
+import { escape as escapeHtml } from '../utils.ts';
 import type { AssetRef } from '@lolly-tools/core/host-v1';
 
 /** The slice of /profile's `openProfileModals` set this module needs. */
@@ -31,14 +32,14 @@ export function userImageThumb(ref: AssetRef): string {
   const media = ref.type === 'lottie'
     ? `<span class="userimg-thumb" style="display:flex;align-items:center;justify-content:center;font-size:2rem;color:var(--text-muted,#789)" aria-hidden="true">▶</span>`
     : ref.type === 'video'
-      ? `<video class="userimg-thumb" src="${escape(ref.url)}" muted loop autoplay playsinline preload="metadata"></video>`
-      : `<img class="userimg-thumb${isVector ? ' is-vector' : ''}" src="${escape(ref.url)}" alt="${escape(name)}" loading="lazy">`;
+      ? `<video class="userimg-thumb" src="${escapeHtml(ref.url)}" muted loop autoplay playsinline preload="metadata"></video>`
+      : `<img class="userimg-thumb${isVector ? ' is-vector' : ''}" src="${escapeHtml(ref.url)}" alt="${escapeHtml(name)}" loading="lazy">`;
   return `
-    <div class="userimg-item" data-userimg="${escape(ref.id)}">
-      <button type="button" class="userimg-view" data-view-userimg="${escape(ref.id)}" title="${escape(name)}" aria-label="${escape(tRaw('View {name}', { name }))}">
+    <div class="userimg-item" data-userimg="${escapeHtml(ref.id)}">
+      <button type="button" class="userimg-view" data-view-userimg="${escapeHtml(ref.id)}" title="${escapeHtml(name)}" aria-label="${escapeHtml(tRaw('View {name}', { name }))}">
         ${media}
       </button>
-      <button type="button" class="userimg-delete" data-delete-userimg="${escape(ref.id)}" title="${escape(t('Delete'))}" aria-label="${escape(tRaw('Delete {name}', { name }))}">&#x2715;</button>
+      <button type="button" class="userimg-delete" data-delete-userimg="${escapeHtml(ref.id)}" title="${escapeHtml(t('Delete'))}" aria-label="${escapeHtml(tRaw('Delete {name}', { name }))}">&#x2715;</button>
     </div>
   `;
 }
@@ -59,15 +60,15 @@ export function openImageLightbox(ref: AssetRef, modals: ProfileModalRegistry): 
   const media = isLottie
     ? `<div class="userimg-lightbox-img" style="display:flex;align-items:center;justify-content:center;min-width:220px;min-height:220px;font-size:5rem;color:var(--text-muted,#789)" aria-hidden="true">▶</div>`
     : isVideo
-      ? `<video class="userimg-lightbox-img" src="${escape(ref.url)}" muted loop autoplay playsinline controls></video>`
-      : `<img class="userimg-lightbox-img${isVector ? ' is-vector' : ''}" src="${escape(ref.url)}" alt="${escape(name)}">`;
+      ? `<video class="userimg-lightbox-img" src="${escapeHtml(ref.url)}" muted loop autoplay playsinline controls></video>`
+      : `<img class="userimg-lightbox-img${isVector ? ' is-vector' : ''}" src="${escapeHtml(ref.url)}" alt="${escapeHtml(name)}">`;
 
   const content = `
-    <button type="button" class="userimg-lightbox-close" aria-label="${escape(t('Close'))}">&#x2715;</button>
+    <button type="button" class="userimg-lightbox-close" aria-label="${escapeHtml(t('Close'))}">&#x2715;</button>
     ${media}
     <div class="userimg-lightbox-caption">
-      <span class="userimg-lightbox-name">${escape(name)}</span>
-      ${dims ? `<span class="userimg-lightbox-dims">${escape(dims)}</span>` : ''}
+      <span class="userimg-lightbox-name">${escapeHtml(name)}</span>
+      ${dims ? `<span class="userimg-lightbox-dims">${escapeHtml(dims)}</span>` : ''}
     </div>`;
   const modal = mountModal<void>(content, {
     className: 'userimg-lightbox',

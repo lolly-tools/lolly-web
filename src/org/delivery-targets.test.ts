@@ -73,8 +73,9 @@ test('org target posts exact bytes with an idempotency key and returns a receipt
     payload.bytes,
     'the signed bytes are not re-encoded',
   );
-  assert.equal((calls[0]!.init?.headers as Record<string, string>)['content-type'], 'image/png');
-  assert.match((calls[0]!.init?.headers as Record<string, string>)['idempotency-key']!, /^shell-v1-/);
+  const headers = calls[0]!.init!.headers as Record<string, string>;
+  assert.equal(headers['content-type'], 'image/png');
+  assert.match(headers['idempotency-key']!, /^shell-v1-/);
 });
 
 test('a second explicit send retries the idempotently returned failed record', async () => {
