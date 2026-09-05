@@ -9,7 +9,7 @@ Roughly 477,000 lines of TypeScript, tests included, and 44,000 lines of CSS.
 
 | Directory | Source | Tests | CSS |
 |---|---|---|---|
-| `views/` | 107 files, 121,076 lines | 113 files, 48,067 lines | none |
+| `views/` | 107 files, 121,070 lines | 113 files, 48,067 lines | none |
 | `lib/` | 385 files, 101,670 lines | 245 files, 53,829 lines | 7 files, 1,098 lines |
 | `bridge/` | 93 files, 43,111 lines | 76 files, 18,873 lines | none |
 | `components/` | 45 files, 20,281 lines | 26 files, 8,941 lines | 2 files, 221 lines |
@@ -63,7 +63,7 @@ Do not be ambushed by these. The largest source files, by line count:
 | 9,512 | `views/timeline-panel.ts` | yes |
 | 6,811 | `views/catalog.ts` | partial - the selection model (visibility, filetype filter, search, favourites dedupe, selectable ids, prune) is extracted to `catalog-filter.ts` and covered by `catalog-filter.test.ts`; the 3,000-line `mountCatalog` body around it is not. |
 | 6,368 | `lib/brand-editor.ts` | none |
-| 5,936 | `views/tool.ts` | partial - the undo/redo model (coalescing, the byte-carrying filter, the cap, the redo chain) is extracted to `tool-history.ts` and covered by `tool-history.test.ts`; the rest of `mountTool` is not. |
+| 5,930 | `views/tool.ts` | partial - the undo/redo model (coalescing, the byte-carrying filter, the cap, the redo chain) is extracted to `tool-history.ts` and covered by `tool-history.test.ts`; the rest of `mountTool` is not. |
 | 4,442 | `views/tool-actions.ts` | yes |
 | 4,232 | `views/picker.ts` | partial - the format and embeddability rules are extracted to `picker-formats.ts` and covered by `picker-formats.test.ts`, plus `picker-initial-tab.test.ts`; the 3,000-line panel body is not. |
 | 3,960 | `views/valid.ts` | `valid-verdict.test.ts` only |
