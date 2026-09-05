@@ -9,13 +9,13 @@ Roughly 493,000 lines of TypeScript, tests included, and 44,000 lines of CSS.
 
 | Directory | Source | Tests | CSS |
 |---|---|---|---|
-| `views/` | 115 files, 131,629 lines | 116 files, 48,280 lines | none |
+| `views/` | 115 files, 131,623 lines | 116 files, 48,280 lines | none |
 | `lib/` | 399 files, 104,557 lines | 259 files, 55,567 lines | 7 files, 1,098 lines |
 | `bridge/` | 95 files, 42,162 lines | 77 files, 19,308 lines | none |
 | `components/` | 45 files, 20,361 lines | 26 files, 8,957 lines | 2 files, 221 lines |
 | `collab/` | 18 files, 12,959 lines | 20 files, 13,683 lines | none |
 | `pro/` | 20 files, 7,906 lines | 10 files, 1,666 lines | 2 files, 1,210 lines |
-| `org/` | 17 files, 5,805 lines | 13 files, 3,820 lines | none |
+| `org/` | 17 files, 5,811 lines | 13 files, 3,827 lines | none |
 | `catalog/` | 2 files, 836 lines | 1 file, 86 lines | none |
 | `ext/` | 2 files, 136 lines | 1 file, 86 lines | none |
 | `styles/` | none | 4 files, 837 lines | 80 files, 41,896 lines |
@@ -61,7 +61,7 @@ Do not be ambushed by these. The largest source files, by line count:
 | 16,892 | `views/free-canvas.ts` | yes, nine `free-canvas-*.test.ts` files |
 | 11,356 | `bridge/export.ts` | yes, but mostly gated. `export-audio-bed.test.ts` imports `bedStartOffset` and `connectMusic` directly and always runs; the SVG and PDF emission is covered by ten `chromiumOrSkip()` suites (`export-m3`, `export-paint-order`, `export-stroke-paint`, `export-shadow-fidelity`, `export-pdf-shadow-fidelity`, `export-emf-eps-shadow`, `export-atomic-inline`, `export-backdrop-blur`, `export-form-controls`, `export-text-emission`) that esbuild-bundle the real `renderSvgFromHtml` and drive it in Chromium, and which **self-skip** when no Chromium is installed. `export-text-emission` is the newest and covers the `<path>`-vs-`<text>` decision layer specifically; unlike the SUSE-gated golden suite it is brand-independent, so it runs on `lolly-start` too. |
 | 10,838 | `views/timeline-panel.ts` | yes |
-| 7,173 | `views/tool.ts` | partial - the undo/redo model (coalescing, the byte-carrying filter, the cap, the redo chain) is extracted to `tool-history.ts` and covered by `tool-history.test.ts`; the rest of `mountTool` is not. |
+| 7,167 | `views/tool.ts` | partial - the undo/redo model (coalescing, the byte-carrying filter, the cap, the redo chain) is extracted to `tool-history.ts` and covered by `tool-history.test.ts`; the rest of `mountTool` is not. |
 | 7,096 | `views/catalog.ts` | partial - the selection model (visibility, filetype filter, search, favourites dedupe, selectable ids, prune) is extracted to `catalog-filter.ts` and covered by `catalog-filter.test.ts`; the 3,000-line `mountCatalog` body around it is not. |
 | 6,423 | `lib/brand-editor.ts` | none |
 | 5,351 | `views/tool-actions.ts` | yes |
