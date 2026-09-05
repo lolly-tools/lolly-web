@@ -11,7 +11,7 @@
  *   the 'Offline Utilities' feature flag is on - the same flag that gates the
  *   `#/u` route itself (main.ts redirects to the gallery when it's off).
  *
- * - Jelly pill (`syncJellyNavToggle()`, Jelly effects flag on, desktop only):
+ * - Jelly pill (`syncJellyNavToggle()`, Jelly effects flag on, web desktop only):
  *   ONE persistent <jelly-segmented> mounted at body level, ABOVE the
  *   view-fade overlay. It is deliberately NOT part of any view's markup: the
  *   cross-view fade snapshots the outgoing view by MOVING its live nodes, and a
@@ -26,11 +26,19 @@
  *   bundle is refresh-pinned, so the glyphs are injected into the OPEN shadow
  *   root from here - see injectJellyIcons below.
  *
+ * Tauri deliberately keeps the native form. The Jelly segmented control paints
+ * beyond its host on a transparent canvas; macOS WKWebView has intermittently
+ * composited that overflow as an opaque, oversized layer and exposed the
+ * component's hidden sizing clone as a second label. The native links already
+ * provide the same destinations, icon+label affordance, keyboard semantics and
+ * responsive layout without relying on that WebKit compositing path.
+ *
  * `active` is 'tools', 'utilities', 'projects' or 'catalog'.
  */
 import { flagEnabledSync } from '../feature-flags.ts';
 import { t } from '../i18n.ts';
 import { icon } from '../lib/icons.ts';
+import { isTauriShell } from '../lib/instance-choice.ts';
 import { jellyActive } from '../lib/jelly.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { escape } from '../utils.ts';
@@ -98,6 +106,14 @@ export function viewToggle(active: ViewToggleKey): string {
 let jellyNav: HTMLElement | null = null;
 let jellyIconsObserver: MutationObserver | null = null;
 
+/** The canvas-backed segmented control is a web enhancement, not shell chrome.
+ *  Tauri uses its native HTML/CSS equivalent to avoid WKWebView canvas overflow
+ *  and shadow-DOM clone compositing regressions. Exported to pin that platform
+ *  boundary in a small DOM test without loading the Jelly animation bundle. */
+export function jellyNavSupportedInCurrentShell(): boolean {
+  return !isTauriShell();
+}
+
 /**
  * Put the tab glyphs INTO the jelly pill's shadow buttons. The vendored
  * jelly-segmented rebuilds its shadow markup from each segment's textContent
@@ -139,7 +155,7 @@ function segmentsHtml(keys: ViewToggleKey[]): string {
  * is off or the bundle isn't loaded yet.
  */
 export function syncJellyNavToggle(active: ViewToggleKey | null): void {
-  if (!active || !jellyActive()) {
+  if (!active || !jellyActive() || !jellyNavSupportedInCurrentShell()) {
     jellyNav?.setAttribute('hidden', '');
     document.documentElement.removeAttribute('data-jelly-nav');
     return;

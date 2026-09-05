@@ -66,6 +66,7 @@ interface BackupAssetRecord {
 
 /** The slice of the host bridge a backup travels through. */
 interface BackupHost {
+  fileHistory?: import('./lib/file-history-backup.ts').FileHistoryBackup;
   profile: {
     get(): Promise<Record<string, unknown>>;
     set(profile: object): Promise<unknown>;
@@ -93,6 +94,9 @@ interface BackupSummary {
   sessions: number;
   userAssets: number;
   prefs: number;
+  assetVersions?: number;
+  fileOperations?: number;
+  fileBatches?: number;
 }
 
 interface ImportSummary extends BackupSummary {
@@ -100,6 +104,7 @@ interface ImportSummary extends BackupSummary {
   /** Uploaded images that failed to restore (e.g. device storage full). Distinct
    *  from `skipped` (parts a newer writer produced that this build can't read). */
   failedAssets: number;
+  failedHistory?: number;
 }
 
 interface BackupManifest {
@@ -137,7 +142,7 @@ export const MAX_RESTORE_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;
 // like a future `tokens.json`) keeps `minReader` low, so an older app still imports
 // every part it recognises and simply skips the rest. Only a *breaking* change
 // raises `minReader`. See docs/data-transfer.md for the full version policy.
-export const BACKUP_FORMAT_VERSION = 1;
+export const BACKUP_FORMAT_VERSION = 2;
 
 // The newest bundle this build knows how to read. A bundle is importable when its
 // `minReader` is ≤ this number.
@@ -154,8 +159,9 @@ const PREF_KEYS = ['theme', 'sidebarWidth', 'ct-metrics'];
 // the round-trip is honest about what it didn't restore rather than silently
 // dropping it. `assets/blobs/*` is the open-ended image payload.
 const KNOWN_PARTS = new Set(['manifest.json', 'profile.json', 'sessions.json', 'assets.json', 'prefs.json', 'design-systems.json']);
-function isKnownPart(path: string): boolean {
-  return KNOWN_PARTS.has(path) || path === README_NAME || path.startsWith('assets/blobs/');
+function isKnownPart(path: string, historySupported: boolean): boolean {
+  return KNOWN_PARTS.has(path) || path === README_NAME || path.startsWith('assets/blobs/')
+    || historySupported && (path === 'file-history.json' || path.startsWith('file-history/'));
 }
 
 // The human-readable `lolly.txt` dropped into every backup zip: the branding header, a
@@ -192,6 +198,9 @@ function backupReadme(
     `🗂  Saved sessions    ${summary.sessions}`,
     `🖼  Images, fonts & brand   ${summary.userAssets}`,
     `⚙  Preferences        ${summary.prefs}`,
+    `↶  Saved asset versions  ${summary.assetVersions ?? 0}`,
+    `✓  File operation records ${summary.fileOperations ?? 0} (completed copies included)`,
+    `☷  File batch manifests  ${summary.fileBatches ?? 0} (all selected members)`,
     '',
     '',
     '[ The files in this zip ]',
@@ -201,6 +210,10 @@ function backupReadme(
     'sessions.json   your saved tool sessions (thumbnails included)',
     'assets.json     details of your uploaded images, brand tokens & fonts',
     'assets/blobs/   the image and font files themselves',
+    'file-history.json  saved versions and file-operation reports (when supported)',
+    'file-history/   exact snapshot/result bytes and extracted Content Credentials',
+    'Originals selected for conversion are NOT retained or included.',
+    'Operations still running at export restore as interrupted, without restarting.',
     'prefs.json      theme + local settings',
     'lolly.txt       this summary (the app ignores it on import)',
   ];
@@ -211,15 +224,6 @@ function backupReadme(
   if (authorLine) lines.push('', '', '[ Author Information ]', '', authorLine);
 
   return lines.join('\n') + '\n';
-}
-
-// Map a stored asset format / MIME to a file extension for the in-zip blob name.
-// Cosmetic only - import reconstructs the Blob from the recorded MIME, not the name.
-function extFor(record: BackupAssetRecord): string {
-  const fmt = (record.format || '').toLowerCase();
-  if (fmt) return fmt === 'jpeg' ? 'jpg' : fmt;
-  const mime = record.blob?.type || '';
-  return mime.split('/')[1]?.replace('+xml', '') || 'bin';
 }
 
 // Download-name helpers ------------------------------------------------------
@@ -269,6 +273,13 @@ export async function exportBackup(
   { host, storage }: { host: BackupHost; storage: BackupStorage },
 ): Promise<{ blob: Blob; filename: string; summary: BackupSummary }> {
   const entries: Record<string, BundleEntry> = {};
+  // Read/history-budget first: a large result library must fail before we copy
+  // hundreds of unrelated asset blobs into the ZIP's in-memory entry map.
+  const history = host.fileHistory ? await host.fileHistory.export() : null;
+  if (history) {
+    const { packFileHistory } = await import('./lib/file-history-backup.ts');
+    await packFileHistory(history, entries);
+  }
 
   // Profile.
   const profile = await host.profile.get();
@@ -310,16 +321,9 @@ export async function exportBackup(
   // file and keep the rest (id/type/format/dims/version/meta) as metadata.
   const userAssets = await host.assets._exportUserAssets();
   const assetMeta = [];
+  const { packBackupAsset } = await import('./lib/backup-asset-record.ts');
   for (let i = 0; i < userAssets.length; i++) {
-    const { blob, ...rest } = userAssets[i]!;
-    let path = null;
-    let mime = '';
-    if (blob) {
-      path = `assets/blobs/${i}.${extFor(userAssets[i]!)}`;
-      mime = blob.type || '';
-      entries[path] = [new Uint8Array(await blob.arrayBuffer()), { level: 0 }]; // already-compressed image bytes
-    }
-    assetMeta.push({ ...rest, _file: path, _mime: mime });
+    assetMeta.push(await packBackupAsset(userAssets[i]!, `assets/blobs/${i}`, entries));
   }
   entries['assets.json'] = strToU8(JSON.stringify(assetMeta, null, 2));
 
@@ -336,6 +340,7 @@ export async function exportBackup(
     sessions: sessions.length,
     userAssets: userAssets.length,
     prefs: Object.keys(prefs).length,
+    ...(history ? { assetVersions: history.assetVersions.length, fileOperations: history.operations.length, ...(history.batches ? { fileBatches: history.batches.length } : {}) } : {}),
   };
 
   // Named before the manifest so the human-readable lolly.txt can show it (and the
@@ -420,6 +425,15 @@ export async function importBackup(
   // bundle without it imports unchanged (can't-verify is not the same as corrupt).
   await verifyIntegrity(files, manifest.integrity, 'This backup');
 
+  // Validate known binary parts before ANY writes, including backups from older
+  // writers without an integrity map. A missing blob must never replace a head
+  // with a metadata-only record and appear to be a successful recovery.
+  const { unpackBackupAsset } = await import('./lib/backup-asset-record.ts');
+  const assetMeta = readJson(files, 'assets.json') ?? [];
+  if (!Array.isArray(assetMeta)) throw new Error('Invalid asset list in backup.');
+  const assetRecords = assetMeta.map(meta => unpackBackupAsset(meta, files, 'assets/blobs/'));
+  const history = host.fileHistory ? await (await import('./lib/file-history-backup.ts')).unpackFileHistory(files) : null;
+
   const summary: ImportSummary = { profile: false, sessions: 0, userAssets: 0, prefs: 0, skipped: 0, failedAssets: 0 };
 
   // Profile.
@@ -456,13 +470,8 @@ export async function importBackup(
   }
 
   // Uploaded images - rebuild the Blob from its in-zip bytes + recorded MIME.
-  const assetMeta = readJson(files, 'assets.json') ?? [];
-  for (const meta of assetMeta) {
-    if (!meta || !meta.id) continue;
-    const { _file, _mime, ...rest } = meta;
-    const raw = _file ? files[_file] : null;
-    const record = { ...rest };
-    if (raw) record.blob = new Blob([raw], { type: _mime || 'application/octet-stream' });
+  for (const record of assetRecords) {
+    if (!record.id) continue;
     // Restore each asset independently: a single oversized blob (a large verbatim
     // video/animation can trip IndexedDB's quota, which _importUserAsset does NOT
     // pre-check) must not abort the rest of the restore. Skip + count the casualty.
@@ -474,7 +483,15 @@ export async function importBackup(
       // honestly report that some images didn't make it - a user who then discards the
       // source backup would otherwise lose them silently.
       summary.failedAssets++;
-      host.log?.('warn', 'Skipped restoring one image (storage full or unreadable)', { id: String(meta.id), error: String(e) });
+      host.log?.('warn', 'Skipped restoring one image (storage full or unreadable)', { id: String(record.id), error: String(e) });
+    }
+  }
+
+  if (history) {
+    try { Object.assign(summary, await host.fileHistory!.restore(history)); }
+    catch (error) {
+      summary.failedHistory = history.assetVersions.length + history.operations.length + (history.batches?.length ?? 0);
+      host.log?.('warn', 'File history could not be restored; keep the backup', { error: String(error) });
     }
   }
 
@@ -486,7 +503,7 @@ export async function importBackup(
 
   // Parts from a newer, forward-compatible writer that this build doesn't know how
   // to restore. Reported (not hidden) so the UI can be honest: "imported X, skipped Y".
-  summary.skipped = Object.keys(files).filter(p => !isKnownPart(p)).length;
+  summary.skipped = Object.keys(files).filter(p => !isKnownPart(p, Boolean(host.fileHistory))).length;
 
   return summary;
 }

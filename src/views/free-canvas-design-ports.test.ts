@@ -602,7 +602,7 @@ test('with no top bar the mark menu is untouched', () => {
   } finally { f.destroy(); }
 });
 
-test('with a top bar the menu sheds the rows the bar carries and grows the three only it can hold', () => {
+test('with a top bar the menu sheds duplicated rows and keeps its long-tail controls', () => {
   const doc = dom.window.document;
   const themeToggle = doc.createElement('button');
   const soundToggle = doc.createElement('button');
@@ -620,6 +620,7 @@ test('with a top bar the menu sheds the rows the bar carries and grows the three
     }
     assert.ok(keys.includes('transition'), 'Slide transition has no other door - see BAR_SHED');
     for (const k of MENU_OWNED) assert.ok(keys.includes(k), `the menu kept "${k}"`);
+    assert.ok(keys.includes('shortcuts'), 'the menu is the pointer/touch door onto keyboard help');
     assert.ok(keys.includes('save'), 'Save to your library came back as the chrome-supplied row');
     assert.ok(keys.includes('theme'), 'Theme moved in');
     assert.ok(keys.includes('sound'), 'and Interface sounds');

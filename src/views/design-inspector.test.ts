@@ -242,9 +242,50 @@ const openSecs = (h: Harness): string[] => [...h.el.querySelectorAll<HTMLElement
 test('empty selection shows only Document: canvas size, background, and why nothing else is here', () => {
   const h = mount();
   assert.deepEqual(secs(h), ['document']);
+  const check = h.el.querySelector<HTMLElement>('[data-design-check]');
+  assert.equal(check?.dataset.designCheck, 'clean');
+  assert.match(check?.textContent ?? '', /1 Artboard · 3 Layers/);
   assert.match(h.el.textContent!, /1600 x 900 px/);
   assert.ok(h.el.querySelector('[data-color-field]'), 'the background swatch is a real colour field');
   assert.match(h.el.textContent!, /Select something to edit its properties\./);
+  h.handle.destroy();
+});
+
+test('Document health refreshes from the shared structural inspection model', () => {
+  const h = mount();
+  h.poke((boxes) => [...boxes, { id: 't1', kind: 'text', frame: 'missing', x: 0, y: 0, w: 0, h: 20, text: '' }]);
+  const check = h.el.querySelector<HTMLElement>('[data-design-check]');
+  assert.equal(check?.dataset.designCheck, 'error');
+  assert.match(check?.textContent ?? '', /Layer id "t1" is duplicated/);
+  assert.match(check?.textContent ?? '', /missing artboard "missing"/);
+  h.handle.destroy();
+});
+
+test('Document health merges settled mounted overflow, contrast and vector-font findings', async () => {
+  const h = mount(BOXES, { resolveFont: async () => false });
+  const canvas = document.getElementById('tool-canvas')!;
+  canvas.style.backgroundColor = 'rgb(255, 255, 255)';
+  canvas.innerHTML = `<div class="lolly-box" data-box-id="t1">
+    <div class="lolly-box-text" style="color:rgb(180, 180, 180);font:400 16px 'Missing Face'">Hello</div>
+  </div>`;
+  const box = canvas.querySelector<HTMLElement>('.lolly-box')!;
+  const text = canvas.querySelector<HTMLElement>('.lolly-box-text')!;
+  Object.defineProperties(box, {
+    clientWidth: { configurable: true, value: 200 },
+    clientHeight: { configurable: true, value: 60 },
+  });
+  Object.defineProperties(text, {
+    scrollWidth: { configurable: true, value: 260 },
+    scrollHeight: { configurable: true, value: 40 },
+  });
+  fire(canvas, 'lolly-canvas-painted');
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  const check = h.el.querySelector<HTMLElement>('[data-design-check]');
+  assert.equal(check?.dataset.designCheck, 'warn');
+  assert.match(check?.textContent ?? '', /Text in “Hello” is clipped/);
+  assert.match(check?.textContent ?? '', /contrast/);
+  assert.match(check?.textContent ?? '', /cannot be embedded in vector exports/);
   h.handle.destroy();
 });
 

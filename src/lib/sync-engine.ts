@@ -97,6 +97,9 @@ export async function pullAndApply(
     throw new Error('This snapshot is not encrypted, but a passphrase was set. Check your sync settings.');
   }
   const summary = await importBackup(deps, bytes);
+  // A partial restore is not a synced revision. Leave the previous revision in
+  // place, so a storage/conflict failure remains visible and retryable.
+  if (summary.failedAssets || summary.failedHistory || summary.skipped) throw new Error('The snapshot was only partly restored. Keep the cloud backup and retry after freeing space, resolving conflicting versions, or updating Lolly.');
   return { summary, state: { lastSyncedRev: got.meta.rev, lastSyncedAt: got.meta.updatedAt } };
 }
 

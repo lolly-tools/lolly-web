@@ -85,7 +85,7 @@ function fillRounded(
  * aren't available in this app" fallback. At most maxPages (default 40) come
  * back.
  */
-export async function pdfPages(bytes: Uint8Array, opts?: { maxPages?: number }, host?: RedactHost): Promise<PdfPagesResult> {
+export async function pdfPages(bytes: Uint8Array, opts?: { maxPages?: number; pageNumbers?: number[] }, host?: RedactHost): Promise<PdfPagesResult> {
   const input = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   const core = await import('./pdf-redact-core.ts');
   const maxPages = core.clampMaxPages(opts?.maxPages);
@@ -115,11 +115,16 @@ export async function pdfPages(bytes: Uint8Array, opts?: { maxPages?: number }, 
     });
     const svg = await embedFonts(page.svg, []);
     return { svg, page: i + 1, widthPt: wPt, heightPt: hPt };
-  });
+  }, opts?.pageNumbers);
   if (!res.pages.length) {
     throw new Error('None of the pages in this PDF could be rendered. It may be encrypted or damaged.');
   }
-  return { pages: res.pages, truncated: res.truncated, ...(res.failed.length ? { failed: res.failed } : {}) };
+  return {
+    pages: res.pages,
+    totalPages: sizes.length,
+    truncated: res.truncated,
+    ...(res.failed.length ? { failed: res.failed } : {}),
+  };
 }
 
 export async function redactPdf(bytes: Uint8Array, opts: PdfRedactOpts, host?: RedactHost): Promise<PdfRedactResult> {

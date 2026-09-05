@@ -22,7 +22,7 @@ export const MAX_ARCHIVE_TOTAL_BYTES = 256 * 1024 * 1024;
 /** Bound directory/empty/bookkeeping records too, while allowing more than 200 useful files. */
 export const MAX_ARCHIVE_ZIP_ENTRIES = MAX_ARCHIVE_MEMBERS * 4;
 /** Payload plus bounded ZIP directory/header overhead. */
-const MAX_ZIP_ARCHIVE_BYTES = MAX_ARCHIVE_TOTAL_BYTES + 64 * 1024 * 1024;
+export const MAX_ZIP_ARCHIVE_BYTES = MAX_ARCHIVE_TOTAL_BYTES + 64 * 1024 * 1024;
 /** Payload cap plus the maximum tar header/padding overhead for 200 members. */
 const MAX_TAR_ARCHIVE_BYTES = MAX_ARCHIVE_TOTAL_BYTES + (MAX_ARCHIVE_MEMBERS + 2) * 512;
 
@@ -34,6 +34,34 @@ export interface ArchiveMember {
 
 /** Thrown with a user-facing message when the bytes are not a plain archive, or bust a cap. */
 export class ArchiveIngestError extends Error {}
+
+/** Nested packages spend the same budget as their enclosing import. */
+export interface ArchiveBudget { bytes: number; entries: number }
+const inheritedBudgets = new WeakMap<File, ArchiveBudget>();
+export function archiveBudgetFor(file: File): ArchiveBudget {
+  // Root files start a fresh operation; only extracted children inherit a budget.
+  // Retrying a normal upload must not reuse the previous operation's spent budget.
+  return inheritedBudgets.get(file) ?? { bytes: MAX_ARCHIVE_TOTAL_BYTES, entries: MAX_ARCHIVE_ZIP_ENTRIES };
+}
+export function archiveMemberFile(bytes: Uint8Array, name: string, budget: ArchiveBudget): File {
+  const file = new File([bytes as BlobPart], name.split('/').pop() || name);
+  inheritedBudgets.set(file, budget);
+  return file;
+}
+export function readUploadZip(bytes: Uint8Array, budget: ArchiveBudget): ArchiveMember[] {
+  if (budget.bytes < 1 || budget.entries < 1) throw new ArchiveIngestError('That import has exhausted its archive expansion limit.');
+  const entries = readZip(bytes, {
+    maxInputBytes: MAX_ZIP_ARCHIVE_BYTES, maxEntries: budget.entries,
+    maxEntryBytes: budget.bytes, maxTotalBytes: budget.bytes,
+  });
+  budget.entries -= entries.length;
+  budget.bytes -= entries.reduce((sum, entry) => sum + entry.bytes.length, 0);
+  return entries;
+}
+export async function readUploadArchiveBytes(file: File): Promise<Uint8Array> {
+  if (file.size > MAX_ZIP_ARCHIVE_BYTES) throw new ArchiveIngestError('That archive exceeds the 320 MB input limit - unpack it on your device first.');
+  return new Uint8Array(await file.arrayBuffer());
+}
 
 const isTarGzName = (name: string): boolean => /\.(tar\.gz|tgz)$/i.test(name);
 
@@ -60,18 +88,13 @@ export function isIgnoredUploadName(name: string): boolean {
  * is an OOXML/OCF package (route it to its own reader), an unsupported/corrupt
  * archive, or busts the member/byte caps.
  */
-export function readArchiveMembers(bytes: Uint8Array, filename: string): ArchiveMember[] {
+export function readArchiveMembers(bytes: Uint8Array, filename: string, budget: ArchiveBudget = { bytes: MAX_ARCHIVE_TOTAL_BYTES, entries: MAX_ARCHIVE_ZIP_ENTRIES }): ArchiveMember[] {
   const kind = sniffContainer(bytes);
   let raw: { name: string; bytes: Uint8Array }[];
 
   if (kind === 'zip') {
     try {
-      raw = readZip(bytes, {
-        maxInputBytes: MAX_ZIP_ARCHIVE_BYTES,
-        maxEntries: MAX_ARCHIVE_ZIP_ENTRIES,
-        maxEntryBytes: MAX_ARCHIVE_TOTAL_BYTES,
-        maxTotalBytes: MAX_ARCHIVE_TOTAL_BYTES,
-      });
+      raw = readUploadZip(bytes, budget);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (/entries; maximum|expands to|input is .* maximum/.test(message)) {
@@ -95,18 +118,24 @@ export function readArchiveMembers(bytes: Uint8Array, filename: string): Archive
   } else if (kind === 'tar') {
     // TarFile carries `.data`; normalise to the shared { name, bytes } shape.
     raw = readTar(bytes, {
-      maxMembers: MAX_ARCHIVE_MEMBERS,
-      maxPayloadBytes: MAX_ARCHIVE_TOTAL_BYTES,
+      maxMembers: Math.min(MAX_ARCHIVE_MEMBERS, budget.entries),
+      maxPayloadBytes: Math.min(MAX_ARCHIVE_TOTAL_BYTES, budget.bytes),
       maxArchiveBytes: MAX_TAR_ARCHIVE_BYTES,
     }).map((f) => ({ name: f.name, bytes: f.data }));
   } else if (kind === 'gzip' && isTarGzName(filename)) {
     raw = readTarGz(bytes, {
-      maxMembers: MAX_ARCHIVE_MEMBERS,
-      maxPayloadBytes: MAX_ARCHIVE_TOTAL_BYTES,
+      maxMembers: Math.min(MAX_ARCHIVE_MEMBERS, budget.entries),
+      maxPayloadBytes: Math.min(MAX_ARCHIVE_TOTAL_BYTES, budget.bytes),
       maxArchiveBytes: MAX_TAR_ARCHIVE_BYTES,
     }).map((f) => ({ name: f.name, bytes: f.data }));
   } else {
     throw new ArchiveIngestError('That file is not a ZIP or tar archive.');
+  }
+
+  if (kind !== 'zip') {
+    budget.bytes -= raw.reduce((sum, entry) => sum + entry.bytes.length, 0);
+    budget.entries -= raw.length;
+    if (budget.bytes < 0 || budget.entries < 0) throw new ArchiveIngestError('That import has exhausted its archive expansion limit.');
   }
 
   const members: ArchiveMember[] = [];
@@ -155,9 +184,10 @@ export async function expandArchiveFiles(files: File[]): Promise<File[]> {
       continue;
     }
     try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      for (const m of readArchiveMembers(bytes, file.name)) {
-        out.push(new File([m.bytes as BlobPart], m.name.split('/').pop() || m.name));
+      const bytes = await readUploadArchiveBytes(file);
+      const budget = archiveBudgetFor(file);
+      for (const m of readArchiveMembers(bytes, file.name, budget)) {
+        out.push(archiveMemberFile(m.bytes, m.name, budget));
       }
     } catch {
       out.push(file); // not a plain archive after all - let the caller's path deal with it

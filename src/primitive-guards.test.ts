@@ -669,6 +669,29 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // and the target list (escape()d name; TRANSMUX_CONTAINERS ids/exts are in-code
   // constants).
   'views/convert.ts': 7,
+  // The convert workbench (plans/203 file operations). Reviewed 2026-09-05: two t()-only
+  // refusal lines, the page scaffold (t() labels, escape()d file names/kind, numeric
+  // sizes/dimensions, a blob: object URL from urlFor()), the findings list (escape()d
+  // t() messages) and the output card (escape()d name/changes/sha256, numeric facts,
+  // a blob: URL, t() labels).
+  'views/convert-workbench.ts': 5,
+  // Saved asset versions modal (plans/203). Reviewed 2026-09-05: the version rows
+  // (escape()d name/date/sha256, numeric index + fmtBytes) and the library rows
+  // (escape()d name, numeric count/bytes, t() labels).
+  'views/asset-versions.ts': 2,
+  // Batch history under the convert view (plans/203). Reviewed 2026-09-05: the t()-only
+  // heading scaffold, the batch summary (escape()d names/target/date, numeric counts,
+  // t() labels) and the member row (escape()d name/findings, t() state label).
+  'views/file-batch-history.ts': 3,
+  // Recent file operations panel (plans/203). Reviewed 2026-09-05: the scaffold
+  // (t() labels + fmtBytes/numeric usage) and the operation rows (escape()d
+  // id/name/state/target/date/findings, fmtBytes, t() labels).
+  'views/file-operation-history.ts': 2,
+  // "Use this copy" actions (plans/203). Reviewed 2026-09-05: one t()-only sink.
+  'views/file-result-actions.ts': 1,
+  // The detachable inspector controller (plans/208). Reviewed 2026-09-05: a column-bar
+  // button's glyph from icon() and the panelGripsHtml() grips - in-code markup only.
+  'views/design-inspector-float.ts': 2,
   // The spreadsheet (data) view. Reviewed 2026-08-07: the 4 sinks are the static page
   // scaffold (t() labels + static DOWNLOAD_TARGETS id/label), the limits banner
   // (escape()d LIMITS_HTML + escape()d truncated note), the sheet tabs (escape()d sheet
@@ -1615,7 +1638,9 @@ const R12_RATCHETS: Array<{ what: string; pin: number; count: (text: string) => 
     what: 'whole-value px border-radius literals',
     // 123 → 103 on 2026-09-04: semantic Lolly UI radius roles now cover
     // repeated tile, row, badge, dashboard-stat, and design-workspace shapes.
-    pin: 102,
+    // 102 → 101 on 2026-09-05: the convert workbench/history sheets use the
+    // derived --radius-sm/--radius-md roles instead of new 8px/12px literals.
+    pin: 101,
     count: (t) => (t.match(/border-radius:\s*\d+(?:\.\d+)?px\s*[;}!]/g) ?? []).length,
     fix: 'use var(--radius-xs|sm|md|lg) (derived from --radius) or var(--radius) for the base panel size',
   },
@@ -1628,7 +1653,9 @@ const R12_RATCHETS: Array<{ what: string; pin: number; count: (text: string) => 
     // 444 → 443 on 2026-09-03: `.be-logo-empty` took var(--fs-sm). An empty logo
     // slot says "Not set" in the muted register now (plan 182 section 4.2), so
     // the 1.6rem literal that drew a "+" glyph has nothing left to size.
-    pin: 443,
+    // 443 → 442 on 2026-09-05: the convert workbench, template chooser, profile,
+    // gallery, editor and inspector sheets moved onto var(--fs-2xs..xl).
+    pin: 442,
     count: (t) => (t.match(/font-size:\s*calc\(\s*[\d.]+(?:px|rem)\s*\*\s*var\(--a11y-fs\)\s*\)/g) ?? []).length,
     fix: 'use var(--fs-2xs..xl) - the multiplier is inside the token, so the largeText contract holds by construction',
   },

@@ -84,6 +84,8 @@ export interface PreflightContext {
   readonly sizeText: string;
   /** e.g. "3 mm". Null when the job carries no bleed setting at all. */
   readonly bleedText?: string | null;
+  /** Shell- or tool-specific checks that cannot live in the engine report. */
+  readonly additionalRows?: readonly PreflightRow[];
 }
 
 // ─── Copy ───────────────────────────────────────────────────────────────────
@@ -167,17 +169,21 @@ const exactPages = (report: PreflightReport): Count | undefined =>
  */
 export function preflightView(report: PreflightReport | null | undefined, ctx: PreflightContext): PreflightView {
   const findings: readonly Finding[] = report?.findings ?? [];
-  if (!report || findings.length === 0) {
+  const additionalRows = ctx.additionalRows ?? [];
+  if (findings.length === 0 && additionalRows.length === 0) {
     return { show: false, tone: 'clean', verdict: '', facts: [], rows: [] };
   }
 
-  const fix = findings.filter(f => f.severity === 'error' || f.severity === 'warn').length;
+  const fix = findings.filter(f => f.severity === 'error' || f.severity === 'warn').length
+    + additionalRows.filter(row => row.tone === 'error' || row.tone === 'warn').length;
   // Counted and NOT-COUNTED are different answers and are never summed into one
   // number. A job where the palette did not resolve, the size is not physical and
   // the stage says nothing used to read "5 things to know", identically to a job
   // where five quantities were successfully measured.
-  const gaps = findings.filter(f => !!f.needs).length;
-  const know = findings.length - fix - gaps;
+  const gaps = findings.filter(f => !!f.needs).length
+    + additionalRows.filter(row => row.tone === 'gap').length;
+  const know = findings.filter(f => f.severity !== 'error' && f.severity !== 'warn' && !f.needs).length
+    + additionalRows.filter(row => row.tone === 'note').length;
 
   // Facts first: the counted measurements. Counting IS the feature, so a clean
   // body is never empty - "nothing to fix" with no numbers under it would read as
@@ -187,9 +193,9 @@ export function preflightView(report: PreflightReport | null | undefined, ctx: P
   if (ctx.sizeText)    facts.push({ label: t('Size'), value: ctx.sizeText });
   if (ctx.bleedText)   facts.push({ label: t('Bleed'), value: ctx.bleedText });
 
-  const trim = areaCount(report, 'trim');
-  const bleedArea = areaCount(report, 'bleed');
-  const pages = exactPages(report);
+  const trim = report ? areaCount(report, 'trim') : undefined;
+  const bleedArea = report ? areaCount(report, 'bleed') : undefined;
+  const pages = report ? exactPages(report) : undefined;
   if (trim)      facts.push({ label: t('Trim'), value: areaText(trim.value) });
   if (bleedArea) facts.push({ label: t('With bleed'), value: areaText(bleedArea.value) });
   if (pages)     facts.push({ label: t('Pages'), value: String(pages.value) });
@@ -208,6 +214,7 @@ export function preflightView(report: PreflightReport | null | undefined, ctx: P
       id: String(f.id),
       text: messageFor(f),
     }));
+  rows.push(...additionalRows);
 
   // The summary carries the VERDICT only; the numbers live in the body. Keeping
   // counts out of the header stops it reflowing on every keystroke, and halves
@@ -245,7 +252,11 @@ export function preflightView(report: PreflightReport | null | undefined, ctx: P
  * backdrop / focus-trap come from {@link mountModal}. It is still a STATEMENT not a
  * setting, still last in the panel, and still never gates Download.
  */
-export function preflightRowHtml(): string {
+export function isPreflightEnabled(): boolean {
+  return isFlagOnSync(PREFLIGHT_FLAG);
+}
+
+export function preflightRowHtml(options: { force?: boolean } = {}): string {
   // A personal opt-in flag, default OFF (an individual exporting a PNG for a chat
   // message must never be ambushed by prepress findings). The profile's Feature
   // flags card turns it on; a control plane governs it through the ordinary flag
@@ -254,7 +265,7 @@ export function preflightRowHtml(): string {
   // synchronous mirror: this renders in the export panel, outside the
   // profile-aware views, and an absent mirror entry must resolve to the flag's
   // own opt-in default rather than failing open.
-  if (!isFlagOnSync(PREFLIGHT_FLAG)) return '';
+  if (!options.force && !isPreflightEnabled()) return '';
   return `
       <div class="section-card export-preflight" data-preflight-section style="display:none">
         <button type="button" class="section-card-head preflight-head preflight-open" data-action="preflight-open" aria-haspopup="dialog">
@@ -297,6 +308,10 @@ const METAPHOR_BY_ID: Record<string, IconName> = {
   'count.cuts-applies': 'grid', 'count.cuts-inert': 'grid', 'count.cuts-needs-stage': 'grid',
   'refuse.output-file-size': 'package',
   'export.experimental-watermark': 'imprint',
+  'design.text.overflow': 'resize',
+  'design.text.contrast-low': 'palette',
+  'design.text.contrast-review': 'palette',
+  'design.font.unembeddable': 'keyboard',
 };
 const METAPHOR_BY_PREFIX: ReadonlyArray<readonly [string, IconName]> = [
   ['count.pages.', 'document'],

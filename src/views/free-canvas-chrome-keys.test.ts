@@ -33,9 +33,20 @@ import { initFreeCanvas } from './free-canvas.ts';
 // ── jsdom bootstrap (same shape as free-canvas-flip.test.ts) ──────────────────
 const dom = new JSDOM('<!DOCTYPE html><body></body>');
 const W = dom.window as unknown as typeof globalThis & { MouseEvent: typeof MouseEvent; KeyboardEvent: typeof KeyboardEvent };
-for (const k of ['window', 'document', 'HTMLElement', 'KeyboardEvent', 'Event', 'MouseEvent', 'Node', 'getComputedStyle', 'MutationObserver']) {
+for (const k of ['window', 'document', 'HTMLElement', 'HTMLDialogElement', 'KeyboardEvent', 'Event', 'MouseEvent', 'Node', 'getComputedStyle', 'MutationObserver']) {
   (globalThis as Record<string, unknown>)[k] = (dom.window as unknown as Record<string, unknown>)[k];
 }
+Object.defineProperty(dom.window.HTMLDialogElement.prototype, 'showModal', {
+  configurable: true,
+  value(this: HTMLDialogElement) { this.setAttribute('open', ''); },
+});
+Object.defineProperty(dom.window.HTMLDialogElement.prototype, 'close', {
+  configurable: true,
+  value(this: HTMLDialogElement) {
+    this.removeAttribute('open');
+    this.dispatchEvent(new dom.window.Event('close'));
+  },
+});
 const rafQueue: Array<() => void> = [];
 (globalThis as Record<string, unknown>).requestAnimationFrame = (fn: FrameRequestCallback): number => {
   rafQueue.push(() => fn(0));
@@ -85,7 +96,7 @@ interface Fixture {
   destroy(): void;
 }
 
-function mount(initial: Box[]): Fixture {
+function mount(initial: Box[], design = false): Fixture {
   const viewEl = dom.window.document.createElement('div');
   const stageEl = dom.window.document.createElement('div');
   const canvasEl = dom.window.document.createElement('div');
@@ -109,8 +120,13 @@ function mount(initial: Box[]): Fixture {
     viewEl, stageEl, canvasEl,
     runtime: runtime as never,
     host: {} as never,
-    input: { id: 'boxes', canvas: canvasCfg() as never, fields: [] as never },
+    input: {
+      id: 'boxes',
+      canvas: canvasCfg() as never,
+      fields: ['bg', 'opacity', 'shape', 'radius', 'text'].map((id) => ({ id })) as never,
+    },
     nativeW: NATIVE, nativeH: NATIVE,
+    ...(design ? { chrome: {} as never } : {}),
   });
   frames();
   return {
@@ -244,6 +260,77 @@ test('an app-wide chord still travels from a marked root', () => {
 
   assert.ok(selectionCount(f) > 0, 'select-all still reached the canvas');
   root.remove();
+  f.destroy();
+});
+
+// ══ clipboard completion + discoverability ══════════════════════════════════
+
+test('Command/Ctrl+Alt+C/V pastes appearance without touching content or geometry', () => {
+  const source = { ...plainBox('source', 100, 100), bg: '#ff33aa', opacity: 0.45, radius: 18, text: 'Source' } as Box;
+  const target = {
+    ...plainBox('target', 700, 700), bg: '#223344', opacity: 1, radius: 2, text: 'Keep me',
+    start: 3, dur: 7, frame: 'slide-2', notes: 'private', hidden: true, locked: true,
+  } as Box;
+  const f = mount([source, target]);
+  selectAt(f, 150, 150);
+  pressFrom(f.stageEl, 'c', { meta: true, alt: true });
+  pressFrom(f.stageEl, 'a', { meta: true });
+  const before = f.commits();
+  pressFrom(f.stageEl, 'v', { meta: true, alt: true });
+
+  assert.equal(f.commits(), before + 1, 'a multi-selection paste is one undoable model write');
+  const got = f.boxes()[1]!;
+  assert.equal(got.bg, '#ff33aa');
+  assert.equal(got.opacity, 0.45);
+  assert.equal(got.radius, 18);
+  assert.equal(got.id, 'target');
+  assert.equal(got.x, 700);
+  assert.equal(got.y, 700);
+  assert.equal(got.text, 'Keep me');
+  assert.equal(got.start, 3);
+  assert.equal(got.dur, 7);
+  assert.equal(got.frame, 'slide-2');
+  assert.equal(got.notes, 'private');
+  assert.equal(got.hidden, true);
+  assert.equal(got.locked, true);
+  f.destroy();
+});
+
+test('native Cut writes the portable layout payload, then deletes in one commit', () => {
+  const f = mount([plainBox('a', 100, 100), plainBox('b', 700, 700)]);
+  selectAt(f, 150, 150);
+  let mime = '';
+  let payload = '';
+  const event = new W.Event('cut', { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'clipboardData', {
+    value: { setData(type: string, value: string) { mime = type; payload = value; } },
+  });
+  const before = f.commits();
+  document.dispatchEvent(event);
+
+  assert.equal(event.defaultPrevented, true);
+  assert.equal(mime, 'text/plain');
+  assert.match(payload, /^lolly\/layout-boxes:/);
+  assert.match(payload, /"id":"a"/);
+  assert.equal(f.commits(), before + 1);
+  assert.deepEqual(f.boxes().map((box) => box.id), ['b']);
+  f.destroy();
+});
+
+test('bare ? opens the Design shortcut sheet and Done restores its opener', () => {
+  const f = mount([], true);
+  const opener = document.createElement('button');
+  f.stageEl.appendChild(opener);
+  opener.focus();
+  pressFrom(opener, '?');
+
+  const dialog = document.querySelector<HTMLDialogElement>('.fc-shortcuts-modal');
+  assert.ok(dialog);
+  assert.equal(dialog.getAttribute('aria-label'), 'Design keyboard shortcuts');
+  assert.ok(dialog.querySelectorAll('kbd').length > 20);
+  (dialog.querySelector('.fc-shortcuts-actions button') as HTMLButtonElement).click();
+  assert.equal(document.querySelector('.fc-shortcuts-modal'), null);
+  assert.equal(document.activeElement, opener);
   f.destroy();
 });
 

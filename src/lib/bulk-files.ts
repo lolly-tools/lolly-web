@@ -17,6 +17,7 @@
  * The loop is foreground by design: it drives the runtime mounted in the current tool
  * view, so it cannot be a navigate-away background job. Callers show inline progress.
  */
+import { allocateFileName } from '@lolly-tools/core/file-v1';
 
 /** One output of a tool's exportFile hook (see engine ExportFileResult). */
 export interface BulkExportItem {
@@ -38,20 +39,12 @@ export async function collectBulkFiles(
 ): Promise<BulkFilesResult> {
   const entries: { name: string; bytes: Uint8Array }[] = [];
   const failed: string[] = [];
-  const used = new Map<string, number>();
+  const used = new Set<string>();
   for (let i = 0; i < files.length; i++) {
     onProgress?.(i, files.length, files[i]!.name);
     try {
       for (const it of await runOne(i)) {
-        let name = it.filename || files[i]!.name;
-        // Disambiguate repeats the way the single-tool export path does: storeZip
-        // rejects duplicate names, and two inputs can transform to the same one.
-        const n = used.get(name) ?? 0;
-        used.set(name, n + 1);
-        if (n) {
-          const dot = name.lastIndexOf('.');
-          name = dot > 0 ? `${name.slice(0, dot)}-${n + 1}${name.slice(dot)}` : `${name}-${n + 1}`;
-        }
+        const name = allocateFileName(it.filename || files[i]!.name, used);
         entries.push({ name, bytes: it.bytes instanceof Uint8Array ? it.bytes : new Uint8Array(it.bytes) });
       }
     } catch {

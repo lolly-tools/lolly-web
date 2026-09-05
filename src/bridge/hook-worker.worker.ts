@@ -70,9 +70,10 @@ export interface HookInitDoneMsg {
   compileError?: string;
 }
 export interface HookInvokeDoneMsg { t: 'invoke-done'; runId: number; callId: number; ok: boolean; patch?: unknown; error?: string }
+export interface HookReportMsg { t: 'report'; runId: number; callId: number; patch: Record<string, unknown> }
 export interface HookHostCallMsg { t: 'host-call'; runId: number; hostCallId: number; method: string; args: unknown[] }
 export interface HookLogMsg { t: 'log'; runId: number; entries: { level: string; msg: string; ctx?: unknown }[] }
-export type HookWorkerOut = HookInitDoneMsg | HookInvokeDoneMsg | HookHostCallMsg | HookLogMsg;
+export type HookWorkerOut = HookInitDoneMsg | HookInvokeDoneMsg | HookReportMsg | HookHostCallMsg | HookLogMsg;
 
 /** A transport the core posts through - the real worker `postMessage`, or a stub in a test. */
 export interface HookWorkerPort { post(msg: HookWorkerOut, transfer?: Transferable[]): void }
@@ -370,7 +371,11 @@ export function createHookWorkerCore(port: HookWorkerPort, opts: { hostCallSeq?:
         return;
       }
       // Re-attach the worker's host proxy - ctx crossed the wire WITHOUT it.
-      const ctx = { ...msg.ctx, host: run.host };
+      const ctx = { ...msg.ctx, host: run.host,
+        ...((msg.name === 'onInit' || msg.name === 'onInput') ? {
+          report: (patch: Record<string, unknown>) => port.post({ t: 'report', runId: msg.runId, callId: msg.callId, patch }),
+        } : {}),
+      };
       Promise.resolve()
         .then(() => fn(ctx))
         .then(

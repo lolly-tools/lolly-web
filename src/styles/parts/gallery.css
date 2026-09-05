@@ -97,7 +97,11 @@
 .personalize-nudge {
   position: fixed;
   z-index: 99990; /* under the top-bar cluster (99999) so the bar always wins a touch */
-  top: calc(3.4em + var(--safe-top) + var(--vv-top, 0px));
+  /* Clear the real shared chrome row rather than estimating it from this
+     card's inherited font size. `--chrome-top` already includes the safe-area
+     inset and `--chrome-h` grows with Large text, so the prompt cannot slide
+     under either the native Tauri switcher or the top-right controls. */
+  top: calc(var(--chrome-top) + var(--chrome-h) + var(--sp-4) + var(--vv-top, 0px));
   right: calc(2em + var(--vv-right, 0px));
   width: min(340px, calc(100vw - 2rem));
   padding: 15px 16px 14px;

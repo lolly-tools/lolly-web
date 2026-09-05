@@ -284,6 +284,23 @@ test('no uploads tab when the pick disallows upload', async () => {
 const { storeUserUpload } = await import('./picker.ts');
 const { LEXICON_VERSION } = await import('@lolly/engine');
 
+test('the real upload path refuses an oversized ZIP directory before storing an asset', async () => {
+  const { storeZip } = await import('@lolly/engine');
+  const bytes = storeZip(Array.from({ length: 801 }, (_, i) => ({ name: `${i}.txt`, bytes: new Uint8Array([65]) })));
+  const { host, stored } = makeUploadHost();
+  await assert.rejects(storeUserUpload(host as never, new File([bytes as BlobPart], 'many.zip'), { skipDupCheck: true }), /limit|maximum/);
+  assert.equal(stored.length, 0);
+});
+
+test('dotLottie ingestion bounds image-reference expansion through the real upload path', async () => {
+  const { storeZip } = await import('@lolly/engine');
+  const animation = { layers: [], assets: Array.from({ length: 1001 }, () => ({ p: 'a.png', u: 'images/', e: 0 })) };
+  const bytes = storeZip([{ name: 'animations/a.json', bytes: new TextEncoder().encode(JSON.stringify(animation)) }, { name: 'images/a.png', bytes: new Uint8Array([1]) }]);
+  const { host, stored } = makeUploadHost();
+  await assert.rejects(storeUserUpload(host as never, new File([bytes as BlobPart], 'many.lottie'), { skipDupCheck: true }), /too many image references/);
+  assert.equal(stored.length, 0);
+});
+
 interface StoredRecord { id: string; type: string; format: string; meta?: Record<string, unknown> }
 
 /** A host whose _uploadUserAsset CAPTURES the record, so a test reads what was stored. */

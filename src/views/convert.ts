@@ -13,12 +13,16 @@
  * transcoding (svg→eps/dxf), archives, catalog "Download as", provenance on the output.
  */
 import type { HostV1 } from '@lolly-tools/core/host-v1';
-import { sfntKind, sfntToWoff, woffToSfnt, gzip, gunzip, sniffContainer, encodeBmp, packTiff, readXlsx, writeXlsx, rowsToCsv, parseTableText, joinPageText } from '@lolly/engine';
+import { fontConversionTargets, sniffContainer } from '@lolly/engine';
+import { validateConvertFiles } from '../lib/file-conversion.ts';
+import { mountConvertWorkbench } from './convert-workbench.ts';
+import { confirmDialog } from '../components/confirm-dialog.ts';
+import { renderFileOperationHistory } from './file-operation-history.ts';
 // The AV column (plan 153 WP-H): the two FREE copy paths only - a lossless container
 // rewrite (transmux) and a lossless audio stream-copy (extract). Both are byte-lossless
 // and never re-encode; no transcode is offered here. mediabunny rides in lazily through
 // these engines, so nothing here enters the preload bundle.
-import { transmuxContainer, TRANSMUX_CONTAINERS, type TransmuxTarget } from '../lib/transmux.ts';
+import { TRANSMUX_CONTAINERS, type TransmuxTarget } from '../lib/transmux.ts';
 import type { ExtractAudioHost } from '../lib/extract-audio.ts';
 import { t } from '../i18n.ts';
 import { escape } from '../utils.ts';   // the single shared HTML escaper (R11) - never re-fork it
@@ -30,312 +34,9 @@ import { mountProfileFab } from '../components/profile-menu.ts';
 import '../styles/parts/platform.css';   // .platform-layout / .plat-header / .plat-title / .plat-sub
 import '../styles/parts/convert.css';    // async CSS chunk (lazy view - not on the landing)
 
-interface Target { id: string; label: string; ext: string; mime: string; render?: boolean; }
-
-// The raster matrix the shell export bridge (host.export.render) produces from a
-// rasterised source - the "amazing rendering engine" reused here so a converted file
-// reaches the whole matrix, not just its sibling container. Both an SVG and a raster
-// source rasterise to a <canvas> first (sourceToCanvas), then ride this path; the
-// engine owns the per-format encoders (png/jpg/webp/avif/tiff/bmp) plus the pdf/ico
-// wrappers. `render:true` routes the target through renderThroughEngine.
-const R = (id: string, label: string, ext: string, mime: string): Target => ({ id, label, ext, mime, render: true });
-const RASTER_OUT: Target[] = [
-  R('png', 'PNG (.png)', 'png', 'image/png'),
-  R('jpeg', 'JPEG (.jpg)', 'jpg', 'image/jpeg'),
-  R('webp', 'WebP (.webp)', 'webp', 'image/webp'),
-  R('avif', 'AVIF (.avif)', 'avif', 'image/avif'),
-  R('tiff', 'TIFF (.tiff)', 'tiff', 'image/tiff'),
-  R('bmp', 'BMP (.bmp)', 'bmp', 'image/bmp'),
-  R('pdf', 'PDF (.pdf)', 'pdf', 'application/pdf'),
-  R('ico', 'Icon (.ico)', 'ico', 'image/x-icon'),
-];
-
-/** The on-device targets each source kind can produce (the source format is filtered out by the caller). */
-function targetsFor(kind: string): Target[] {
-  switch (kind) {
-    case 'ttf': case 'otf': case 'woff':
-      return [
-        { id: 'ttf', label: 'TrueType (.ttf)', ext: 'ttf', mime: 'font/ttf' },
-        { id: 'otf', label: 'OpenType (.otf)', ext: 'otf', mime: 'font/otf' },
-        { id: 'woff', label: 'Web font (.woff)', ext: 'woff', mime: 'font/woff' },
-      ];
-    // An SVG reaches its compressed sibling AND the whole raster matrix (the engine
-    // rasterises it at its intrinsic size). We do NOT offer vector→vector transcoding
-    // (svg→eps/dxf/emf/wmf): the engine's vector writers walk a rendered tool canvas,
-    // not arbitrary source SVG, so those would misconvert - a follow-on (plans/84).
-    case 'svg': case 'svgz':
-      return [
-        kind === 'svg'
-          ? { id: 'svgz', label: 'Compressed SVG (.svgz)', ext: 'svgz', mime: 'image/svg+xml' }
-          : { id: 'svg', label: 'SVG (.svg)', ext: 'svg', mime: 'image/svg+xml' },
-        ...RASTER_OUT,
-      ];
-    // A raster can re-encode to any raster + wrap into PDF/ICO, but cannot become true vector.
-    case 'raster': return RASTER_OUT;
-    // Tabular data - every data format converts to every other (grid round-trip). The
-    // caller drops the source format. An .xlsx converts from its FIRST sheet.
-    case 'xlsx': case 'csv': case 'tsv': case 'json':
-      return DATA_OUT;
-    // Documents give up their CONTENT as Markdown (plans/139): a deck through the
-    // engine's read-model → deck-studio dialect, a Word file through docx-read, a
-    // PDF through its text layer. Lossy by design - this is the re-flow path, not
-    // the keep-the-design one (host.pptx.rebrand owns that).
-    case 'pptx': case 'docx': case 'pdf':
-      return [MD_OUT];
-    default: return [];
-  }
-}
-
-/** Markdown out. A deck/document carrying images downloads as a zip instead (the
- *  markdown at the root plus its `media/` files) - see markdownDownload. */
-const MD_OUT: Target = { id: 'md', label: 'Markdown (.md)', ext: 'md', mime: 'text/markdown' };
-
-/** Pages read for a pdf → markdown conversion (a 500-page manual must not queue
- *  500 page interpretations from one drop). */
-const MAX_PDF_PAGES = 200;
-
-/** The data-conversion targets (grid round-trip). */
-const DATA_OUT: Target[] = [
-  { id: 'csv', label: 'CSV (.csv)', ext: 'csv', mime: 'text/csv' },
-  { id: 'xlsx', label: 'Excel (.xlsx)', ext: 'xlsx', mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
-  { id: 'json', label: 'JSON (.json)', ext: 'json', mime: 'application/json' },
-  { id: 'tsv', label: 'TSV (.tsv)', ext: 'tsv', mime: 'text/tab-separated-values' },
-];
-
-function detectKind(bytes: Uint8Array, file: File): string {
-  const k = sfntKind(bytes);
-  if (k) return k;                                          // ttf/otf/woff/woff2
-  // Tabular data - an .xlsx is a zip (workbook inside), csv/tsv/json are text. Checked
-  // before svgz/raster: an .xlsx's PK-zip and a .json's braces must not fall through.
-  if (/\.xlsx$/i.test(file.name)
-    || (sniffContainer(bytes) === 'zip' && /application\/vnd\.openxmlformats-officedocument\.spreadsheetml/.test(file.type))) return 'xlsx';
-  // The other two OOXML packages, by the same declared-name-first rule. A file whose
-  // name says nothing is sniffed from its part map instead - see sniffOfficeZip.
-  if (/\.pptx$/i.test(file.name) || /officedocument\.presentationml/.test(file.type)) return 'pptx';
-  if (/\.docx$/i.test(file.name) || /officedocument\.wordprocessingml/.test(file.type)) return 'docx';
-  if (/\.tsv$/i.test(file.name)) return 'tsv';
-  if (sniffContainer(bytes) === 'gzip' || /\.svgz$/i.test(file.name)) return 'svgz';
-  const head = new TextDecoder('latin1').decode(bytes.subarray(0, 256));
-  if (head.startsWith('%PDF-') || /\.pdf$/i.test(file.name) || file.type === 'application/pdf') return 'pdf';
-  if (/<svg[\s>]/i.test(head) || /^\s*<\?xml/.test(head) || /\.svg$/i.test(file.name)) return 'svg';
-  if (/\.csv$/i.test(file.name) || /^text\/csv/.test(file.type)) return 'csv';
-  if (/\.json$/i.test(file.name) || (/^application\/json/.test(file.type) && /^\s*[[{]/.test(head))) return 'json';
-  if (/^image\//.test(file.type) || /\.(png|jpe?g|webp|gif|avif|bmp)$/i.test(file.name)) return 'raster';
-  // A video for the AV column. The kind is a coarse gate; the real capability check is
-  // probeVideo (mediabunny), which refuses anything the copy engines cannot read.
-  if (/^video\//.test(file.type) || /\.(mp4|m4v|mov|qt|mkv|webm)$/i.test(file.name)) return 'video';
-  return 'unknown';
-}
-
-/** An unnamed zip: the PART MAP says which office package it is, so ask the engine's
- *  own sniffers over a capped unzip. 'unknown' for any other archive. */
-async function sniffOfficeZip(bytes: Uint8Array): Promise<string> {
-  try {
-    const [{ inflatePptx }, { isPptx, isDocx }] = await Promise.all([
-      import('../bridge/pptx.ts'),
-      import('@lolly/engine'),
-    ]);
-    const parts = await inflatePptx(bytes);
-    if (isPptx(parts)) return 'pptx';
-    if (isDocx(parts)) return 'docx';
-  } catch { /* unreadable or over the caps - not a package we convert */ }
-  return 'unknown';
-}
-
-async function convert(bytes: Uint8Array, kind: string, target: Target, file: File): Promise<Blob> {
-  // Fonts - a pure container swap (engine codecs), never a render.
-  if (kind === 'ttf' || kind === 'otf' || kind === 'woff') {
-    if (target.id === 'woff' && kind !== 'woff') return new Blob([sfntToWoff(bytes) as BlobPart], { type: target.mime });
-    if ((target.id === 'ttf' || target.id === 'otf') && kind === 'woff') return new Blob([woffToSfnt(bytes) as BlobPart], { type: target.mime });
-    return new Blob([bytes as BlobPart], { type: target.mime });   // sfnt passthrough (ttf⇄otf) / same container
-  }
-  // SVG⇄SVGZ - exact-byte gzip, no render (keeps the credential + outlined text intact).
-  if (kind === 'svg' && target.id === 'svgz') return new Blob([gzip(bytes) as BlobPart], { type: target.mime });
-  if (kind === 'svgz' && target.id === 'svg') return new Blob([gunzip(bytes) as BlobPart], { type: target.mime });
-  // Tabular data - decode the source to a ragged grid (row 0 = header), re-encode to
-  // the target. Pure byte/text work, no canvas. An .xlsx reads its first sheet.
-  if (kind === 'xlsx' || kind === 'csv' || kind === 'tsv' || kind === 'json') {
-    const grid = sourceToGrid(kind, bytes);
-    return new Blob([gridToTarget(grid, target.id) as BlobPart], { type: target.mime });
-  }
-  // Documents → Markdown. The office packages go through the shared extractor (lazy:
-  // it pulls fflate + the engine readers); a document that carried images comes back
-  // as a zip of the markdown plus its media/ files, which the caller names .zip.
-  if (kind === 'pptx' || kind === 'docx') {
-    const { officeToMarkdown, markdownDownload } = await import('../lib/office-text.ts');
-    const content = await officeToMarkdown(bytes, file.name);
-    return markdownDownload(content, kind === 'pptx' ? 'deck.md' : 'doc.md');
-  }
-  // A PDF's text layer, page by page, through the SAME engine emitter the Unpack
-  // view's "Markdown" download uses. pdf-import pulls pdf-lib in at module scope, so
-  // it is imported here and nowhere else in this view.
-  if (kind === 'pdf') {
-    const { openPdfFile } = await import('./pdf-import.ts');
-    const handle = await openPdfFile(file);
-    const toText = handle.pageToText;
-    if (!toText) throw new Error('That PDF has no readable text layer.');
-    const count = Math.min(handle.pageCount, MAX_PDF_PAGES);
-    const pages = Array.from({ length: count }, (_, i) => toText.call(handle, i));
-    return new Blob([joinPageText(pages, { markdown: true })], { type: target.mime });
-  }
-  // Everything else: rasterise the source to a canvas, then encode that canvas straight
-  // to the target with the engine's own codecs. We hold the pixels already, so there is
-  // no reason to DOM-serialise them back through the tool-export path (dom-to-image
-  // stalls on a detached node anyway) - this is faster and never hangs.
-  if (target.render) return encodeFromCanvas(await sourceToCanvas(kind, bytes, file), target);
-  throw new Error('That conversion is not supported.');
-}
-
-// ── tabular data conversion (grid round-trip) ────────────────────────────────
-
-/** Decode a data source to a ragged grid (row 0 = header). xlsx→first sheet;
- *  csv/tsv→parseTableText; json→array-of-objects (keys become the header) or
- *  array-of-arrays. Throws a user-ready message on an unreadable source. Exported
- *  for the co-located round-trip test. */
-export function sourceToGrid(kind: string, bytes: Uint8Array): string[][] {
-  if (kind === 'xlsx') return readXlsx(bytes).rows;
-  if (kind === 'json') {
-    let parsed: unknown;
-    try { parsed = JSON.parse(new TextDecoder().decode(bytes)); }
-    catch { throw new Error('That JSON could not be parsed.'); }
-    if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('Expected a non-empty JSON array of rows.');
-    if (Array.isArray(parsed[0])) return (parsed as unknown[][]).map((r) => r.map((c) => String(c ?? '')));
-    // Array of objects → header = the union of keys in first-seen order.
-    const keys: string[] = [];
-    for (const row of parsed as Record<string, unknown>[]) for (const k of Object.keys(row ?? {})) if (!keys.includes(k)) keys.push(k);
-    return [keys, ...(parsed as Record<string, unknown>[]).map((row) => keys.map((k) => String(row?.[k] ?? '')))];
-  }
-  // csv / tsv (parseTableText auto-detects the delimiter + Markdown tables).
-  const table = parseTableText(new TextDecoder().decode(bytes));
-  if (!table) throw new Error('That file does not parse as CSV/TSV.');
-  return [table.columns, ...table.rows];
-}
-
-/** Re-encode a grid to the target data format. Returns bytes for xlsx, a string for
- *  the text formats (the Blob wraps either). Exported for the round-trip test. */
-export function gridToTarget(grid: string[][], targetId: string): Uint8Array | string {
-  switch (targetId) {
-    case 'csv':  return rowsToCsv(grid);
-    case 'tsv':  return grid.map((r) => r.map((c) => c.replace(/[\t\r\n]/g, ' ')).join('\t')).join('\n');
-    case 'xlsx': return writeXlsx({ rows: grid });
-    case 'json': {
-      const [header = [], ...body] = grid;
-      const objs = body.map((r) => Object.fromEntries(header.map((h, i) => [h, r[i] ?? ''])));
-      return JSON.stringify(objs, null, 2);
-    }
-    default: throw new Error('That conversion is not supported.');
-  }
-}
-
-/** Decode the source (SVG markup or a raster file) into a <canvas> at its intrinsic
- *  size. A canvas is a node the export bridge rasterises reliably - passing a bare
- *  <svg>/<img> root to dom-to-image can hang on its foreignObject image load. */
-async function sourceToCanvas(kind: string, bytes: Uint8Array, file: File): Promise<HTMLCanvasElement> {
-  const isSvg = kind === 'svg' || kind === 'svgz';
-  const raw = kind === 'svgz' ? gunzip(bytes) : bytes;
-  const mime = isSvg ? 'image/svg+xml' : (file.type || 'image/png');
-  // Intrinsic size - an SVG may lack width/height, so fall back to its viewBox, then a
-  // square default. A raster's natural size is authoritative.
-  let width = 512, height = 512;
-  if (isSvg) {
-    const svg = new DOMParser().parseFromString(new TextDecoder().decode(raw), 'image/svg+xml').documentElement;
-    const vb = (svg.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number).filter((n) => !Number.isNaN(n));
-    width  = parseFloat(svg.getAttribute('width')  || '') || (vb.length === 4 ? vb[2]! : 0) || 512;
-    height = parseFloat(svg.getAttribute('height') || '') || (vb.length === 4 ? vb[3]! : 0) || 512;
-  }
-  const objUrl = URL.createObjectURL(new Blob([raw as BlobPart], { type: mime }));
-  try {
-    const img = await new Promise<HTMLImageElement>((res, rej) => {
-      const im = new Image();
-      im.onload = () => res(im);
-      im.onerror = () => rej(new Error('Could not decode that file.'));
-      im.src = objUrl;
-    });
-    if (!isSvg) { width = img.naturalWidth || width; height = img.naturalHeight || height; }
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(width));
-    canvas.height = Math.max(1, Math.round(height));
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Could not get a canvas to render onto.');
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    return canvas;
-  } finally {
-    URL.revokeObjectURL(objUrl);
-  }
-}
-
-/** Encode a rasterised canvas straight to the target format. png/jpeg/webp/avif ride
- *  the browser's own `canvas.toBlob`; bmp/tiff use the engine writers on the raw RGBA;
- *  pdf wraps the image (jsPDF); ico wraps a ≤256px PNG. */
-async function encodeFromCanvas(canvas: HTMLCanvasElement, target: Target): Promise<Blob> {
-  switch (target.id) {
-    case 'png':  return canvasBlob(canvas, 'image/png');
-    case 'jpeg': return canvasBlob(canvas, 'image/jpeg', 0.92);
-    case 'webp': return canvasBlob(canvas, 'image/webp', 0.92);
-    case 'avif': return canvasBlob(canvas, 'image/avif', 0.6);
-    case 'bmp':  return new Blob([encodeBmp(rgbaOf(canvas), canvas.width, canvas.height) as BlobPart], { type: 'image/bmp' });
-    case 'tiff': return new Blob([packTiff(rgbaOf(canvas), { width: canvas.width, height: canvas.height, samplesPerPixel: 4, dpi: 96 }) as BlobPart], { type: 'image/tiff' });
-    case 'pdf':  return imageToPdf(canvas);
-    case 'ico':  return canvasToIco(canvas);
-    default:     throw new Error('That conversion is not supported.');
-  }
-}
-
-/** The canvas's interleaved top-down RGBA, as a plain Uint8Array the engine writers take. */
-function rgbaOf(canvas: HTMLCanvasElement): Uint8Array {
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Could not read the rendered pixels.');
-  const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-  return new Uint8Array(d.buffer, d.byteOffset, d.byteLength);
-}
-
-/** Promise wrapper over canvas.toBlob. When the browser can't encode the requested
- *  type it doesn't return null - the HTML spec makes it silently fall back to PNG - so
- *  we compare the RESULTING type and reject a mismatch rather than hand back a PNG
- *  wearing an .avif name (e.g. AVIF encode on an engine that lacks it). */
-function canvasBlob(canvas: HTMLCanvasElement, mime: string, quality?: number): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (b) => (b && b.size > 0 && b.type === mime)
-        ? resolve(b)
-        : reject(new Error(`This browser can’t encode ${mime.replace('image/', '').toUpperCase()}.`)),
-      mime, quality,
-    );
-  });
-}
-
-/** One image, one page, sized to the pixels (points). PNG so transparency survives. */
-async function imageToPdf(canvas: HTMLCanvasElement): Promise<Blob> {
-  const { jsPDF } = await import('jspdf');
-  const doc = new jsPDF({ unit: 'pt', format: [canvas.width, canvas.height], orientation: canvas.width >= canvas.height ? 'landscape' : 'portrait' });
-  const pw = doc.internal.pageSize.getWidth();
-  const ph = doc.internal.pageSize.getHeight();
-  doc.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, pw, ph);
-  return doc.output('blob');
-}
-
-/** ICO wrapping a PNG payload (modern icons allow PNG), downscaled to ≤256px. */
-async function canvasToIco(canvas: HTMLCanvasElement): Promise<Blob> {
-  const long = Math.max(canvas.width, canvas.height);
-  const scale = Math.min(1, 256 / long);
-  const w = Math.max(1, Math.round(canvas.width * scale));
-  const h = Math.max(1, Math.round(canvas.height * scale));
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
-  c.getContext('2d')?.drawImage(canvas, 0, 0, w, h);
-  const png = new Uint8Array(await (await canvasBlob(c, 'image/png')).arrayBuffer());
-  const out = new Uint8Array(22 + png.length);
-  const dv = new DataView(out.buffer);
-  dv.setUint16(2, 1, true);              // type: icon
-  dv.setUint16(4, 1, true);              // one image
-  out[6] = w >= 256 ? 0 : w;             // width  (0 encodes 256)
-  out[7] = h >= 256 ? 0 : h;             // height
-  dv.setUint16(10, 1, true);             // colour planes
-  dv.setUint16(12, 32, true);            // bits per pixel
-  dv.setUint32(14, png.length, true);    // payload size
-  dv.setUint32(18, 22, true);            // payload offset
-  out.set(png, 22);
-  return new Blob([out as BlobPart], { type: 'image/x-icon' });
-}
+import { targetsFor, detectKind, sniffOfficeZip } from '../lib/convert-codecs.ts';
+export { sourceToGrid, gridToTarget } from '../lib/convert-codecs.ts';
+export type { Target } from '../lib/convert-codecs.ts';
 
 // ── AV column: lossless copy paths only (plan 153 WP-H) ──────────────────────
 // Two FREE, byte-lossless copies for an uploaded video: a container rewrite
@@ -443,13 +144,12 @@ async function renderVideo(result: HTMLElement, bytes: Uint8Array, file: File, h
     result.innerHTML = `<p class="convert-none">${t('No on-device conversion is available for')} <b>${escape(file.name)}</b> ${t('yet')}.</p>`;
     return;
   }
-  const base = file.name.replace(/\.[^.]+$/, '') || 'converted';
   const muxBtns = muxTargets.map((tt) =>
     `<button type="button" class="btn convert-target" data-mux="${tt}">${t('Container')}: ${TRANSMUX_CONTAINERS[tt].ext.toUpperCase()} (.${TRANSMUX_CONTAINERS[tt].ext})</button>`).join('');
   const extractBtn = canExtract ? `<button type="button" class="btn convert-target" data-extract>${t('Extract audio…')}</button>` : '';
   result.innerHTML = `<p class="convert-file"><b>${escape(file.name)}</b> - ${t('convert to')}:</p>
     <div class="convert-targets">${muxBtns}${extractBtn}</div>
-    <p class="convert-note">${t('Container changes and audio extraction copy the media without re-encoding, on your device - so they are instant and lossless. Converting the video itself is not offered here.')}</p>
+    <p class="convert-note">${t('Container changes and audio extraction copy supported media tracks without re-encoding, on your device. Processing time depends on file size. Container metadata may change; video transcoding is not offered here.')}</p>
     <p class="convert-status" data-status></p>`;
   const status = result.querySelector<HTMLElement>('[data-status]')!;
 
@@ -462,11 +162,14 @@ async function renderVideo(result: HTMLElement, bytes: Uint8Array, file: File, h
       const target = btn.dataset.mux as TransmuxTarget;
       btn.disabled = true; status.textContent = t('Converting…');
       try {
-        const MB = await import('mediabunny');
-        const res = await transmuxContainer(new MB.BlobSource(new Blob([bytes as BlobPart])), target, { copyNote: t('Copying the media…') });
-        if (!res) throw new Error(t('That conversion is not supported.'));
-        await host.export.download(res.blob, `${base}.${res.ext}`);
-        status.textContent = `${t('Downloaded')} ${base}.${res.ext} (${fmtBytes(res.blob.size)}).`;
+        const { describeFile, runWebFileOperation } = await import('../lib/file-operation-adapter.ts');
+        const { localFileOperations } = await import('../lib/file-operation-store.ts');
+        const { runSavedFileOperation } = await import('../lib/saved-file-operation.ts');
+        const request = { version: 1 as const, operation: 'media.transmux', target, options: {} };
+        const outcome = await runSavedFileOperation(file, request, { store: localFileOperations, describe: describeFile, execute: runWebFileOperation });
+        window.dispatchEvent(new Event('lolly:file-operations-changed'));
+        if (!outcome.output) throw new Error(outcome.report.findings.find(f => f.severity === 'error')?.message || t('Conversion failed.'));
+        status.textContent = t('Copy saved in Recent file operations below. Review its report, then download it.');
       } catch (e) {
         status.textContent = (e as Error).message || t('Conversion failed.');
       } finally {
@@ -496,14 +199,16 @@ export async function mountConvert(viewEl: HTMLElement, host: HostV1, _params = 
     <div class="platform-layout convert-view">
       <header class="plat-header">
         <h1 class="plat-title">${t('Convert')}</h1>
-        <p class="plat-sub">${t('Change a file from one format to another, on your device. Nothing is uploaded.')}</p>
+        <p class="plat-sub">${t('A better fit for wherever your file goes next. Convert, resize and check your copy — all on your device.')}</p>
       </header>
       <div class="convert-drop" data-drop tabindex="0" role="button" aria-label="${t('Drop a file to convert')}">
-        <p>${t('Drop a font, image, SVG, video, document or deck here, or choose one.')}</p>
-        <button type="button" class="btn" data-pick>${t('Choose a file…')}</button>
-        <input type="file" hidden data-file accept=".ttf,.otf,.woff,.svg,.svgz,image/*,video/*,.mp4,.mov,.mkv,.webm,.pdf,.pptx,.docx">
+        <p>${t('Drop a file to get started, or a batch of images.')}</p>
+        <button type="button" class="btn" data-pick>${t('Choose files…')}</button>
+        <small>${t('Images, fonts, video, documents & data · up to 20 files · 128 MB per file')}</small>
+        <input type="file" hidden multiple data-file accept=".ttf,.otf,.woff,.woff2,.svg,.svgz,image/*,video/*,.mp4,.mov,.mkv,.webm,.pdf,.pptx,.docx,.xlsx,.csv,.tsv,.json">
       </div>
       <div class="convert-result" data-result hidden></div>
+      <section class="convert-result convert-history" data-history aria-label="${t('Recent file operations')}"></section>
     </div>`;
   // Reached as a tile OR a deep link - so it carries the full escape chrome (back
   // pill + always-home) rather than dead-ending anyone sent straight here, plus
@@ -516,52 +221,66 @@ export async function mountConvert(viewEl: HTMLElement, host: HostV1, _params = 
   const drop = viewEl.querySelector<HTMLElement>('[data-drop]')!;
   const fileInput = viewEl.querySelector<HTMLInputElement>('[data-file]')!;
   const result = viewEl.querySelector<HTMLElement>('[data-result]')!;
+  const history = viewEl.querySelector<HTMLElement>('[data-history]')!;
+  const refreshHistory = (): void => { void renderFileOperationHistory(history, host); };
+  window.addEventListener('lolly:file-operations-changed', refreshHistory);
+  refreshHistory();
+  let generation = 0;
+  let cleanupWorkbench: (() => void) | undefined;
+  const observer = new MutationObserver(() => {
+    if (!viewEl.contains(result) || !viewEl.isConnected) { generation++; cleanupWorkbench?.(); window.removeEventListener('lolly:file-operations-changed', refreshHistory); observer.disconnect(); }
+  });
+  observer.observe(viewEl.parentNode ?? viewEl, { childList: true, subtree: true });
 
   viewEl.querySelector('[data-pick]')?.addEventListener('click', () => fileInput.click());
-  drop.addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('button')) return; fileInput.click(); });
+  drop.addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('button,input')) return; fileInput.click(); });
+  drop.addEventListener('keydown', (e) => { if (e.target === drop && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); fileInput.click(); } });
   drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('is-over'); });
   drop.addEventListener('dragleave', () => drop.classList.remove('is-over'));
   drop.addEventListener('drop', (e) => {
     e.preventDefault(); drop.classList.remove('is-over');
-    const f = e.dataTransfer?.files?.[0]; if (f) void onFile(f);
+    const files = Array.from(e.dataTransfer?.files ?? []); if (files.length) void onFiles(files);
   });
-  fileInput.addEventListener('change', () => { const f = fileInput.files?.[0]; if (f) void onFile(f); });
+  fileInput.addEventListener('change', () => { const files = Array.from(fileInput.files ?? []); fileInput.value = ''; if (files.length) void onFiles(files); });
 
-  async function onFile(file: File): Promise<void> {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    let kind = detectKind(bytes, file);
-    // A zip whose name/type said nothing: its part map still names it.
-    if (kind === 'unknown' && sniffContainer(bytes) === 'zip') kind = await sniffOfficeZip(bytes);
-    // A video takes the AV column (its own async probe + copy paths), not the generic
-    // detect → target-list → download flow the file formats share.
-    if (kind === 'video') { await renderVideo(result, bytes, file, host); return; }
-    const targets = targetsFor(kind).filter((tt) => tt.id !== kind);   // never offer the source format
-    result.hidden = false;
-    if (!targets.length) {
-      result.innerHTML = `<p class="convert-none">${t('No on-device conversion is available for')} <b>${escape(file.name)}</b> ${t('yet')}.</p>`;
-      return;
+  async function onFiles(files: File[]): Promise<void> {
+    const current = ++generation;
+    if (result.querySelector('.convert-output')) {
+      const confirmed = await confirmDialog({ title: t('Start a new batch?'), message: t('Completed copies remain in Recent file operations on this device. Your originals are never changed.'), confirmLabel: t('Start new batch'), danger: false });
+      if (!confirmed || current !== generation) return;
     }
-    const base = file.name.replace(/\.[^.]+$/, '') || 'converted';
-    result.innerHTML = `<p class="convert-file"><b>${escape(file.name)}</b> - ${t('convert to')}:</p>
-      <div class="convert-targets">${targets.map((tt) => `<button type="button" class="btn convert-target" data-t="${tt.id}">${tt.label}</button>`).join('')}</div>
-      <p class="convert-status" data-status></p>`;
-    const status = result.querySelector<HTMLElement>('[data-status]')!;
-    result.querySelectorAll<HTMLButtonElement>('[data-t]').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const target = targets.find((tt) => tt.id === btn.dataset.t)!;
-        btn.disabled = true; status.textContent = t('Converting…');
-        try {
-          const out = await convert(bytes, kind, target, file);
-          // A document whose images came with it packs into a zip, so the name
-          // follows the produced blob rather than the target's own extension.
-          const ext = out.type === 'application/zip' ? 'zip' : target.ext;
-          await host.export.download(out, `${base}.${ext}`);
-          status.textContent = `${t('Downloaded')} ${base}.${ext} (${fmtBytes(out.size)}).`;
-        } catch (e) {
-          status.textContent = (e as Error).message || t('Conversion failed.');
-        } finally { btn.disabled = false; }
-      });
-    });
+    cleanupWorkbench?.(); cleanupWorkbench = undefined;
+    result.hidden = false;
+    result.innerHTML = `<p role="status">${t('Reading your files…')}</p>`;
+    try {
+      validateConvertFiles(files);
+      const sources = [];
+      for (const file of files) {
+        const bytes = new Uint8Array(await file.slice(0, 256 * 1024).arrayBuffer());
+        if (current !== generation) return;
+        let kind = detectKind(bytes, file);
+        if (kind === 'unknown' && sniffContainer(bytes) === 'zip') kind = await sniffOfficeZip(new Uint8Array(await file.arrayBuffer()));
+        if (current !== generation) return;
+        if (kind === 'video' && files.length === 1) {
+          const videoResult = document.createElement('div');
+          await renderVideo(videoResult, new Uint8Array(await file.arrayBuffer()), file, host);
+          if (current === generation) result.replaceChildren(videoResult);
+          return;
+        }
+        if (files.length > 1 && !['raster', 'svg', 'svgz'].includes(kind)) throw new Error('Batch conversion currently supports images. Choose one font, video, document or data file at a time.');
+        const legalFonts = fontConversionTargets(bytes);
+        const targets = targetsFor(kind).filter(target => target.id !== kind && (!['ttf', 'otf', 'woff'].includes(kind) || legalFonts.includes(target.id as 'ttf' | 'otf' | 'woff')));
+        if (!targets.length) throw new Error(`No on-device conversion is available for ${file.name} yet. The original has not been changed.`);
+        sources.push({ bytes, file, kind, targets });
+      }
+      if (current !== generation) return;
+      cleanupWorkbench = mountConvertWorkbench(result, sources, host);
+      drop.classList.add('has-files');
+    } catch (error) {
+      if (current !== generation) return;
+      result.innerHTML = '<p class="convert-error" role="alert"></p>';
+      result.firstElementChild!.textContent = error instanceof Error ? error.message : t('Could not read that file.');
+    }
   }
 
   // Dolphin's direct Convert verb arrives through the desktop event queue. The
@@ -569,11 +288,6 @@ export async function mountConvert(viewEl: HTMLElement, host: HostV1, _params = 
   // would have produced instead of growing a native-only converter path.
   const { takePendingConvertFile } = await import('../lib/drop-router.ts');
   const pending = takePendingConvertFile();
-  if (pending) await onFile(pending);
+  if (pending) await onFiles([pending]);
 }
 
-function fmtBytes(n: number): string {
-  if (!(n > 0)) return '0 B';
-  const u = ['B', 'KB', 'MB']; const i = Math.min(u.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
-  const v = n / Math.pow(1024, i); return `${i === 0 ? v : v.toFixed(1)} ${u[i]}`;
-}

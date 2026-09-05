@@ -100,6 +100,9 @@ export interface DesignTopbarOpts {
     subscribe(cb: (scale: number) => void): () => void;
   };
   timeline: { toggle(): void; isOpen(): boolean };
+  /** Live outcome gate. Static Design and Carousel keep motion chrome out of
+   * the primary workspace; Slides, Video and Screencast restore it in place. */
+  timelineEnabled?(): boolean;
   navigator: { toggle(): void; isOpen(): boolean };
   /**
    * The inspector column, when the host mounted one. OPTIONAL, and absent means no
@@ -338,7 +341,11 @@ export function mountDesignTopbar(opts: DesignTopbarOpts): DesignTopbar {
   const timelineBtn = mkBtn('timeline', t('Timeline'), GLYPH.timeline, { text: t('Timeline') });
   timelineBtn.setAttribute('aria-pressed', 'false');
   timelineBtn.setAttribute('data-tip', `${t('Timeline')} (${ALT_KEY}1)`);
-  timelineBtn.addEventListener('click', () => { opts.timeline.toggle(); syncToggles(); });
+  timelineBtn.addEventListener('click', () => {
+    if (opts.timelineEnabled?.() === false) return;
+    opts.timeline.toggle();
+    syncToggles();
+  });
   const navBtn = mkBtn('navigator', t('Navigator'), icon('dock'), { text: t('Navigator') });
   navBtn.setAttribute('aria-pressed', 'false');
   navBtn.setAttribute('data-tip', `${t('Navigator')} (${ALT_KEY}2)`);
@@ -616,6 +623,7 @@ export function mountDesignTopbar(opts: DesignTopbarOpts): DesignTopbar {
   };
   function onPanelKey(e: KeyboardEvent): void {
     if (!e.altKey || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    if (e.code === 'Digit1' && opts.timelineEnabled?.() === false) return;
     const run = PANEL_KEYS[e.code];
     if (!run || isTypingTarget(e.target as Element | null)) return;
     e.preventDefault();
@@ -700,9 +708,13 @@ export function mountDesignTopbar(opts: DesignTopbarOpts): DesignTopbar {
   const unsubZoom = opts.zoom.subscribe(setZoomLabel);
 
   function syncToggles(): void {
+    const hideTimeline = opts.timelineEnabled?.() === false;
+    const timelineVisibilityChanged = timelineBtn.hidden !== hideTimeline;
+    timelineBtn.hidden = hideTimeline;
     timelineBtn.setAttribute('aria-pressed', opts.timeline.isOpen() ? 'true' : 'false');
     navBtn.setAttribute('aria-pressed', opts.navigator.isOpen() ? 'true' : 'false');
     inspBtn?.setAttribute('aria-pressed', opts.inspector?.isOpen() ? 'true' : 'false');
+    if (timelineVisibilityChanged) syncDensity();
   }
 
   /**
@@ -796,10 +808,9 @@ export function mountDesignTopbar(opts: DesignTopbarOpts): DesignTopbar {
         { label: t('Zoom out'), glyph: icon('zoomOut'), run: () => opts.zoom.zoomBy(0.8) },
       );
     }
-    rows.push(
-      { label: t('Timeline'), glyph: GLYPH.timeline, checked: () => opts.timeline.isOpen(), run: () => opts.timeline.toggle() },
-      { label: t('Navigator'), glyph: icon('dock'), checked: () => opts.navigator.isOpen(), run: () => opts.navigator.toggle() },
-    );
+    if (opts.timelineEnabled?.() !== false)
+      rows.push({ label: t('Timeline'), glyph: GLYPH.timeline, checked: () => opts.timeline.isOpen(), run: () => opts.timeline.toggle() });
+    rows.push({ label: t('Navigator'), glyph: icon('dock'), checked: () => opts.navigator.isOpen(), run: () => opts.navigator.toggle() });
     if (opts.inspector) rows.push({ label: t('Inspector'), glyph: icon('sliders'), checked: () => !!opts.inspector?.isOpen(), run: () => opts.inspector?.toggle() });
     if (density === 'min') {
       rows.push({ label: t('Share'), glyph: icon('share'), run: () => opts.share() });

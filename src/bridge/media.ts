@@ -19,6 +19,7 @@
 
 import type { MediaAPI, MediaFrame } from '@lolly-tools/core/host-v1';
 import { cameraAvailable } from './capture-support.ts';
+import { trimMedia } from './media-trim.ts';
 
 type FrameCallback = (frame: MediaFrame) => void;
 
@@ -564,5 +565,8 @@ export function createMediaAPI(): WebMediaAPI {
     return null;
   }
 
-  return { isAvailable, start, stop, subscribe, armAnimSource, armPreferredCamera, renderFrameAt };
+  return {
+    isAvailable, start, stop, subscribe, armAnimSource, armPreferredCamera, renderFrameAt,
+    trim: (bytes, opts) => trimMedia(bytes, opts),
+  };
 }

@@ -75,7 +75,7 @@ function memDb() {
       const list = Array.isArray(names) ? names : [names];
       const tx = {
         objectStore: (s: string) => ({
-          get: (k: IDBValidKey) => db.get(s, k), put: (v: unknown, k?: IDBValidKey) => db.put(s, v, k),
+          get: (k: IDBValidKey) => db.get(s, k), put: (v: unknown, k?: IDBValidKey) => db.put(s, v, k), add: (v: unknown, k?: IDBValidKey) => db.put(s, v, k),
           delete: (k: IDBValidKey) => db.delete(s, k), getAll: () => db.getAll(s), getAllKeys: () => db.getAllKeys(s),
           clear: () => db.clear(s), count: () => db.count(s),
         }),

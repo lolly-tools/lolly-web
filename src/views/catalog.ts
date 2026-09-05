@@ -854,6 +854,8 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       menuItemHtml('open', icon('externalLink'), t('Details')),
       menuItemHtml('fav', icon('star'), favSet.has(base) ? t('Remove from favourites') : t('Add to favourites')),
       menuItemHtml('download', icon('download'), t('Download…')),
+      ref.source === 'user' ? menuItemHtml('convert-copy', icon('duplicate'), t('Convert a copy…')) : '',
+      isUser ? menuItemHtml('saved-versions', icon('duplicate'), t('Saved versions…')) : '',
       menuItemHtml('send', icon('upload'), t('Send to…')),
       menuItemHtml('share', icon('link'), t('Copy link')),
       menuItemHtml('select', icon('check'), selected.has(id) ? t('Deselect') : t('Select')),
@@ -884,6 +886,20 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     if (act === 'open') { openDetails(ref); return; }
     if (act === 'fav') { await toggleFavourite(id); return; }
     if (act === 'download') { await openAssetDownloadDialog(ref); return; }
+    if (act === 'saved-versions') { const { openAssetVersions } = await import('./asset-versions.ts'); await openAssetVersions(id, host, reload); return; }
+    if (act === 'convert-copy') {
+      try {
+        const { validateConvertFiles } = await import('../lib/file-conversion.ts');
+        const response = await fetch(ref.url);
+        if (!response.ok) throw new Error(t('Could not read this file.'));
+        // User uploads resolve to device-owned Blob URLs, never an arbitrary remote fetch.
+        const blob = await response.blob(); validateConvertFiles([blob]);
+        const { openFileInUtility } = await import('../lib/drop-router.ts');
+        const name = String(ref.meta?.name || ref.id.split('/').pop() || 'asset');
+        openFileInUtility('convert', new File([blob], name.includes('.') ? name : `${name}.${ref.format}`, { type: blob.type }));
+      } catch (error) { announce(error instanceof Error ? error.message : String(error), { assertive: true }); }
+      return;
+    }
     if (act === 'send') { await openSendDialog(ref); return; }
     if (act === 'share') {
       try { await navigator.clipboard.writeText(assetLink(ref)); announce(t('Link copied')); }

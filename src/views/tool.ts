@@ -20,6 +20,7 @@ import '../styles/parts/editor.css';
 import '../styles/parts/design-topbar.css';
 import '../styles/parts/design-navigator.css';
 import '../styles/parts/design-inspector.css';
+import '../styles/parts/design-guides.css';
 import '../styles/parts/document.css';
 import '../styles/parts/deck-editor.css';
 import '../styles/parts/tool-chrome.css';
@@ -101,7 +102,9 @@ import { isToolInstalled, installedFetchFile } from '../lib/installed-tools.ts';
 import { takeAutomationExportPassword } from '../lib/automation-export-secret.ts';
 import {
   DESIGN_INTENT_OPTIONS,
+  designNarrationEnabled,
   designOutcome,
+  designTimelineEnabled,
   inferDesignIntent,
   type DesignIntent,
 } from './design-workspace.ts';
@@ -144,8 +147,6 @@ import {
   isDocked,
   onDockChange,
   releaseDock,
-  requestDock,
-  showPanel,
 } from '../lib/edge-dock.ts';
 import { runTemplateScripts, waitForQuiescence } from '../lib/render-lifecycle.ts';
 import { playSfx } from '../lib/sfx.ts';
@@ -489,6 +490,8 @@ type VizModule = typeof import('../lib/viz-tool-mount.ts');
 export interface RunExportOpts {
   width?: number | string;
   height?: number | string;
+  quality?: number;
+  background?: string;
   /** The clip length was asked for (a link's ?seconds=, or the panel's typed value):
    *  a tool hook that lengthens a clip to its material must leave it alone. */
   durationUserSet?: boolean;
@@ -958,6 +961,7 @@ export async function mountTool(
           boxes: initialValues.boxes,
         })
       : 'general';
+  if (toolId === 'design') viewEl.dataset.designIntent = designIntent;
   let refreshDesignExperience = (_pickDefault = false): void => {
     /* armed after the export panel mounts */
   };
@@ -3601,6 +3605,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   if (toolId === 'design') {
     refreshDesignExperience = (pickDefault = false): void => {
       const outcome = currentDesignOutcome();
+      viewEl.dataset.designIntent = designIntent;
       actionsApi?.setExperience?.(outcome);
       // Choosing a new outcome is an explicit request for its natural deliverable.
       // A URL/session format remains authoritative on initial mount; a later template
@@ -4357,6 +4362,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     let designTopbar: import('./design-topbar.ts').DesignTopbar | null = null;
     let designNav: import('./design-navigator.ts').DesignNavigatorHandle | null = null;
     let designInspector: import('./design-inspector.ts').DesignInspectorHandle | null = null;
+    let designInspectorFloat: import('./design-inspector-float.ts').DesignInspectorFloatHandle | null = null;
 
     /**
      * Column open state is a DEVICE preference, not document data: it must never dirty the
@@ -4559,8 +4565,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           import('./design-topbar.ts'),
           import('./design-navigator.ts'),
           import('./design-inspector.ts'),
+          import('./design-inspector-float.ts'),
         ])
-          .then(([{ mountDesignTopbar }, { initDesignNavigator }, { initDesignInspector }]) => {
+          .then(([{ mountDesignTopbar }, { initDesignNavigator }, { initDesignInspector }, { wireDesignInspectorFloat }]) => {
             if (!viewEl.isConnected) return;
             const design = fc.design;
             openDesignMarkMenu = (anchor: HTMLElement) => design.openLollyMenu(anchor);
@@ -4585,8 +4592,8 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
             // panel INSIDE the canvas surface, beside the edge dock the export sheet was
             // already using - two columns over the artwork, one of them clipping it. It is now
             // an occupant of that one column (lib/edge-dock.ts) like everything else, so
-            // "the inspector is open" means "the inspector is docked", and `setInspectorOpen`
-            // is the single writer of that fact.
+            // "the inspector is open" means the same live panel is either in that column
+            // or in its persisted floating box. `setInspectorOpen` is the single writer.
             //
             // The column is the app's, not this view's: it can hand a panel back on its own
             // (the user undocks it, or the window drops below the mobile breakpoint, where the
@@ -4595,40 +4602,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
             const INSP_KEY = 'lolly-design-inspector';
             let inspectorOpen = false;
             const setInspectorOpen = (open: boolean): void => {
-              if (open) {
-                const insp = designInspector;
-                if (!insp) return; // the column has not mounted yet
-                if (!isDocked('inspector')) {
-                  inspectorOpen = requestDock('inspector', insp.el, {
-                    icon: icon('sliders'),
-                    label: t('Inspector'),
-                    // WHY THE PANEL LEFT decides whether a preference is written. A route
-                    // change and the mobile-breakpoint undock both hand the panel back, and
-                    // recording "closed" for either meant leaving the editor once turned the
-                    // inspector off for every session after it.
-                    onRelease: (reason) => {
-                      inspectorOpen = false;
-                      if (reason === 'user') writeColumnPref(INSP_KEY, false);
-                      designTopbar?.sync();
-                    },
-                  });
-                } else {
-                  // Already in the column, which is not the same as on the screen: it can be
-                  // behind a tab, or inside a collapsed rail. Asking for it again means show it.
-                  showPanel('inspector');
-                  inspectorOpen = true;
-                }
-              } else if (isDocked('inspector')) {
-                releaseDock('inspector'); // its onRelease records + syncs
-                return;
-              } else {
-                inspectorOpen = false;
-              }
-              // An ask the dock could not honour (below the mobile breakpoint the column does
-              // not exist) must NOT overwrite a desktop preference with "closed" - the user
-              // asked for it, the host simply had nowhere to put it.
-              if (inspectorOpen === open) writeColumnPref(INSP_KEY, open);
-              designTopbar?.sync();
+              designInspectorFloat?.setOpen(open);
             };
 
             // (a) The top bar. Every port is a live read off the overlay or this view; the
@@ -4688,6 +4662,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
                 toggle: () => design.toggleTimeline(),
                 isOpen: () => design.isTimelineOpen(),
               },
+              timelineEnabled: () => designTimelineEnabled(designIntent),
               navigator: {
                 toggle: () => {
                   const n = designNav;
@@ -4695,10 +4670,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
                 },
                 isOpen: () => !!designNav?.isOpen(),
               },
-              // The inspector's only show/hide control from outside the column (it carries a
-              // close button of its own, and nothing else could re-open it). The toggle is a
-              // dock request now, not a `setOpen` on the column: whether the panel is on
-              // screen is the one right-hand column's answer, not the panel's.
+              // The inspector's only show/hide control from outside the panel. Its detachable
+              // controller decides whether "open" restores the edge column or the floating
+              // box; the top bar only asks for the shared live surface.
               inspector: {
                 toggle: () => setInspectorOpen(!inspectorOpen),
                 isOpen: () => inspectorOpen,
@@ -4726,7 +4700,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
               // The deck-wide Narrate row (plans/180 section 8). Undefined where the overlay
               // offers no narration - no speech bridge, no frames - and then there is no row.
               narrate: design.narrationActions,
-              narrationEnabled: () => designIntent !== 'carousel',
+              narrationEnabled: () => designNarrationEnabled(designIntent),
               model: {
                 getInput: (id) => runtime.getModel().find((i) => i.id === id)?.value,
                 // Caught, not floated: the bar writes doc-level inputs the MANIFEST declares
@@ -4862,20 +4836,36 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
               // The Narrate button under the Speaker notes, and the document's own narration
               // settings. Absent means neither is drawn (plans/180 section 8).
               narration: design.narrationActions,
-              narrationEnabled: () => designIntent !== 'carousel',
+              narrationEnabled: () => designNarrationEnabled(designIntent),
               fonts: design.fonts,
+              // Document health asks the SAME registry vector export uses whether a
+              // rendered run has real font bytes. Kept lazy: opening Design without
+              // its inspector never pulls the font registry into this chunk.
+              resolveFont: async (style, text) => {
+                const { resolveVectorFont } = await import('../bridge/font-registry.ts');
+                return Boolean(await resolveVectorFont(style, text));
+              },
               voices: host.speech?.voices ? () => host.speech!.voices() : undefined,
               fields: design.fields,
               // The panel skips its whole render while closed, and it is built DETACHED - so
               // without this it was constructed "open" and rebuilt its full property column on
               // every selection change and every commit, for a node that was never in the
               // document. The dock's own setOpen(true) forces a fresh sync on the way in.
-              initiallyOpen: readColumnPref(INSP_KEY),
+              initiallyOpen: false,
               // The close button removes the column from the page, which drops focus to
               // <body>; the bar's toggle is the only way back in, so it takes the keyboard.
               onClose: () => {
                 setInspectorOpen(false);
                 designTopbar?.focusInspectorToggle();
+              },
+            });
+            designInspectorFloat = wireDesignInspectorFloat({
+              inspector: designInspector,
+              head: designInspector.el.querySelector<HTMLElement>('.fc-insp-headbar')!,
+              onOpenChange: (open, reason) => {
+                inspectorOpen = open;
+                if (reason === 'user') writeColumnPref(INSP_KEY, open);
+                designTopbar?.sync();
               },
             });
             // The object bar's Text / More / Dims / Stroke buttons reveal a section, and that
@@ -4888,8 +4878,8 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
                 designInspector?.reveal(section);
               },
             });
-            // Docked from the device-local preference, which defaults to open above 1180px -
-            // the same rule the navigator reads on the other edge.
+            // Restored from the device-local open preference. The detachable controller
+            // independently remembers whether that means the edge column or a float box.
             if (readColumnPref(INSP_KEY)) setInspectorOpen(true);
             // BOTH columns are mounted after the bar, and neither announces its state at
             // mount: the navigator fires `onOpenChange` only from its own setOpen, and the
@@ -4914,14 +4904,12 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
               } catch (e) {
                 console.error(e);
               }
-              // 'host': the view is being torn down, which is not the user closing the panel.
-              // The default reason would write "closed" to the device preference on every
-              // route change, so the inspector never came back on the next visit.
               try {
-                if (isDocked('inspector')) releaseDock('inspector', 'host');
+                designInspectorFloat?.destroy();
               } catch (e) {
                 console.error(e);
               }
+              designInspectorFloat = null;
               for (const part of [designInspector, designNav, designTopbar]) {
                 try {
                   part?.destroy();
@@ -5636,7 +5624,20 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       btn.classList.add('is-busy');
       btn.textContent = btn.dataset.busyLabel || t('Working…');
       try {
-        const res = await runtime.exportFile();
+        let transformOpts: Record<string, unknown> = {};
+        if (btn.hasAttribute('data-export-password')) {
+          const { askExportLock } = await import('../lib/export-lock.ts');
+          const lock = await askExportLock(t('this PDF'), true);
+          if (!lock.ok) {
+            btn.classList.remove('is-busy');
+            btn.textContent = btn.dataset.idleLabel!;
+            delete btn.dataset.busy;
+            return;
+          }
+          if (!lock.strongPassword) throw new Error(t('Enter a password to lock this PDF.'));
+          transformOpts = { password: lock.strongPassword };
+        }
+        const res = await runtime.exportFile(transformOpts);
         const items = Array.isArray(res) ? res : [res];
         if (items.length === 1) {
           const { bytes, mime, filename } = items[0]!;
@@ -5665,7 +5666,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           });
           const zip = storeZip(entries);
           await host.export.file(new Blob([zip as BlobPart], { type: 'application/zip' }), {
-            filename: 'embed-imprint-track.zip',
+            filename: btn.dataset.exportArchive || 'transformed-files.zip',
           });
         }
         btn.classList.remove('is-busy');
@@ -5834,8 +5835,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       const esc = (id: string): string =>
         typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id;
       if (
-        plan &&
-        plan.every((pt) => {
+        plan?.every((pt) => {
           // A frame patch targets the artboard PAGE element - its inline left/top are
           // global, exactly what the live drag wrote (plans/141 WP-A item 6). Members
           // that rode the frame have no patch: their frame-local style is unchanged.
@@ -5857,6 +5857,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       }
     }
 
+    let contentPainted = geomSkipped;
     if (!geomSkipped && hydrated !== lastPainted) {
       const gen = ++renderGen;
       // Paged docs scroll the whole document in the canvas surface; a full innerHTML
@@ -5953,6 +5954,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         }
         clearCanvasError();
         lastPainted = hydrated;
+        contentPainted = true;
         if (curBoxes) lastPaintedBoxes = curBoxes; // clean full paint refreshes the baseline (throw-safe: after the render body)
         if (fastPathOn && typeof window !== 'undefined') {
           const w = window as unknown as { __lollyGeomFastPath?: { skips: number; fulls: number } };
@@ -5973,6 +5975,11 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         showCanvasError();
       }
     }
+
+    // Mounted Design health must never inspect the previous DOM against a newer
+    // boxes model. The inspector invalidates on the synchronous model echo and only
+    // resumes its layout/contrast/font checks after this clean-paint signal.
+    if (contentPainted) canvasEl?.dispatchEvent(new CustomEvent('lolly-canvas-painted'));
 
     // The canvas just moved (or was rebuilt outright, taking every annotated node
     // with it) and the sidebar was re-synced a moment ago - so any remote focus ring
@@ -6334,6 +6341,38 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // param). Bind 'change' (not 'input') so the per-render innerHTML rebuild doesn't
   // fight focus mid-interaction; the template reflects each value so a repaint keeps it.
   if (canvasLayout && contentEl) {
+    // Canvas-layout tools have no sidebar, so an asset input must be reachable
+    // from the rendered tool itself. A template opts in with
+    // data-input-action="pick" + data-input-id="…". Optional declarative
+    // follow-ups let a picker switch modes or clear stale hand-drawn data after
+    // a successful choice without hard-coding any particular tool here.
+    contentEl.addEventListener('click', (e) => {
+      const ctl = (e.target as HTMLElement).closest<HTMLElement>(
+        '[data-input-action="pick"][data-input-id]'
+      );
+      if (!ctl) return;
+      const id = ctl.dataset.inputId;
+      const input = id ? runtime.getModel().find((item) => item.id === id) : undefined;
+      if (input?.control !== 'asset-picker') return;
+      e.preventDefault();
+      void (async () => {
+        const before = input.value;
+        await openAssetPickerInline(input);
+        const picked = runtime.getModel().find((item) => item.id === id)?.value;
+        if (!picked || picked === before) return;
+        const clearId = ctl.dataset.clearInput;
+        if (clearId) {
+          runtime.setInput(clearId, '');
+          markUserDirty(clearId);
+        }
+        const activateId = ctl.dataset.activateInput;
+        if (activateId) {
+          runtime.setInput(activateId, ctl.dataset.activateValue ?? true);
+          markUserDirty(activateId);
+        }
+      })();
+    });
+
     contentEl.addEventListener('change', (e) => {
       const ctl = (e.target as HTMLElement).closest<HTMLInputElement>('[data-input-id]');
       if (!ctl) return;

@@ -13,6 +13,19 @@ test('template chooser modal layers above the portalled edge dock', () => {
   assert.match(panel, /z-index:\s*100002/, 'the dialog stays above its scrim');
 });
 
+test('template preset chips remain legible and touch-sized on mobile', () => {
+  const css = readFileSync(new URL('../styles/template-chooser.css', import.meta.url), 'utf8');
+  assert.doesNotMatch(css, /font-size:\s*calc\(9px/, 'preset labels no longer render at 9px');
+  const mobile = css.slice(css.lastIndexOf('@media (max-width: 640px)'));
+  const preset = mobile.match(/\.tmpl-chooser-preset\s*\{[^}]*\}/)?.[0] ?? '';
+  assert.match(preset, /min-height:\s*44px/, 'preset buttons meet the mobile touch target');
+  assert.match(preset, /font-size:\s*var\(--fs-sm\)/, 'preset labels use the chrome type scale');
+  assert.ok(
+    css.lastIndexOf('@media (max-width: 640px)') > css.indexOf('.tmpl-chooser-preset {'),
+    'responsive overrides come after equal-specificity base rules',
+  );
+});
+
 // A manifest `templates[]` as it arrives off the loaded manifest (typed unknown[]).
 const RAW = [
   {
@@ -110,6 +123,7 @@ globalThis.document = dom.window.document;
 // finish() restores focus to the opener via an `instanceof HTMLElement` check - only the
 // tests that actually settle the chooser (close/select) reach it.
 globalThis.HTMLElement = dom.window.HTMLElement;
+globalThis.MutationObserver = dom.window.MutationObserver;
 globalThis.requestAnimationFrame = dom.window.requestAnimationFrame.bind(dom.window);
 globalThis.CSS = (dom.window.CSS ?? {}) as unknown as typeof globalThis.CSS;
 if (typeof (globalThis.CSS as { escape?: unknown })?.escape !== 'function') {
@@ -183,7 +197,42 @@ test('openTemplateChooser: eagerly renders a preview for every non-blank templat
     '.tmpl-chooser-tile[data-template-id="poster"] .tmpl-chooser-tile-media img.tmpl-chooser-tile-thumb',
   );
   assert.ok(img && img.src === THUMB, 'the live preview <img> replaced the glyph');
-  document.querySelector('.tmpl-chooser-modal')?.remove();
+  document.querySelector<HTMLButtonElement>('.tmpl-chooser-close')?.click();
+});
+
+test('openTemplateChooser: refreshes previews when the mounted brand scope arrives late', async () => {
+  document.body.innerHTML = '<div id="tool-content"></div>';
+  const brandRoot = document.getElementById('tool-content')!;
+  const values = { boxes: [{ id: 'a' }] };
+  const templates = parseTemplates([{ id: 'poster', name: 'Poster', values }]);
+  const brandThumb = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"><rect fill="red"/></svg>';
+  const getKeys: string[] = [];
+  const host = {
+    previews: {
+      get: async (key: string) => {
+        getKeys.push(key);
+        if (key.startsWith('template:')) {
+          brandRoot.style.setProperty('--brand-primary', '#d40000');
+        }
+        return {
+          sig: JSON.stringify(values),
+          thumb: key.startsWith('template@') ? brandThumb : THUMB,
+        };
+      },
+      put: async () => {},
+    },
+  } as never;
+
+  void openTemplateChooser({
+    toolName: 'Design', toolId: 'design', templates, host, formats: ['svg'],
+  });
+  for (let i = 0; i < 200 && !getKeys.some((key) => key.startsWith('template@')); i++) {
+    await new Promise(r => setTimeout(r, 0));
+  }
+  assert.ok(getKeys.some((key) => key.startsWith('template@')), 'the new brand gets its own preview namespace');
+  const img = document.querySelector<HTMLImageElement>('.tmpl-chooser-tile-media img');
+  assert.equal(img?.src, brandThumb, 'the late neutral result cannot overwrite the brand-correct preview');
+  document.querySelector<HTMLButtonElement>('.tmpl-chooser-close')?.click();
 });
 
 // ── The drain shares the main thread with a live mount ───────────────────────
@@ -227,7 +276,7 @@ test('openTemplateChooser: yields to idle before the render chunk and between re
     assert.ok(idleTimeouts.length >= 2, 'and a second yield separates the two renders');
     assert.ok(idleTimeouts.every(t => typeof t === 'number' && t > 0),
       'every yield carries a timeout, so a permanently busy tab still shows its previews');
-    document.querySelector('.tmpl-chooser-modal')?.remove();
+    document.querySelector<HTMLButtonElement>('.tmpl-chooser-close')?.click();
   } finally {
     if (realRic === undefined) delete (globalThis as { requestIdleCallback?: unknown }).requestIdleCallback;
     else (globalThis as { requestIdleCallback?: unknown }).requestIdleCallback = realRic;
@@ -260,7 +309,7 @@ test('openTemplateChooser: settling cancels the rest of the preview queue', asyn
   assert.deepEqual(seed, {}, 'closing resolves a blank seed');
   for (let i = 0; i < 50; i++) await new Promise(r => setTimeout(r, 0));
   assert.equal(getKeys.length, 1, 'the queued b/c previews were abandoned the moment the chooser settled');
-  document.querySelector('.tmpl-chooser-modal')?.remove();
+  document.querySelector<HTMLButtonElement>('.tmpl-chooser-close')?.click();
 });
 
 // ── onOpen: the navigate-away close handle ───────────────────────────────────
@@ -314,7 +363,7 @@ test('openTemplateChooser: with no host it renders glyph tiles and requests NO p
   assert.equal(getKeys.length, 0, 'offline (no host) never renders a live preview');
   const tile = document.querySelector('.tmpl-chooser-tile[data-template-id="poster"] .tmpl-chooser-tile-icon');
   assert.ok(tile, 'a glyph icon is shown as the fallback media');
-  document.querySelector('.tmpl-chooser-modal')?.remove();
+  document.querySelector<HTMLButtonElement>('.tmpl-chooser-close')?.click();
 });
 
 // ── Surface 1: user-template-only tools populate the chooser ──────────────────
@@ -335,7 +384,7 @@ test('openTemplateChooser: renders a user template (category "Your templates") a
   assert.ok(tile, 'the user template renders as a tile');
   assert.equal(tile!.dataset.category, 'Your templates', 'grouped under the Your templates category');
   assert.match(tile!.textContent ?? '', /My saved deck/, 'shows the saved template name');
-  document.querySelector('.tmpl-chooser-modal')?.remove();
+  document.querySelector<HTMLButtonElement>('.tmpl-chooser-close')?.click();
 });
 
 test('openTemplateChooser: "Your templates" shows as a filter chip beside built-in categories', async () => {
@@ -349,7 +398,7 @@ test('openTemplateChooser: "Your templates" shows as a filter chip beside built-
   await new Promise(r => setTimeout(r, 0));
   const chips = Array.from(document.querySelectorAll<HTMLElement>('.tmpl-chooser-filter')).map(c => c.dataset.filter);
   assert.ok(chips.includes('Your templates'), 'a Your templates filter chip is present alongside the built-in one');
-  document.querySelector('.tmpl-chooser-modal')?.remove();
+  document.querySelector<HTMLButtonElement>('.tmpl-chooser-close')?.click();
 });
 
 // ── Presets (plans/142): a template's curated variants ───────────────────────

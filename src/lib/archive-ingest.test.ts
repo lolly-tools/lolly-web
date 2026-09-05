@@ -15,10 +15,29 @@ import {
   isIgnoredUploadName,
   ArchiveIngestError,
   MAX_ARCHIVE_MEMBERS,
+  archiveBudgetFor, readUploadZip, readUploadArchiveBytes,
 } from './archive-ingest.ts';
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
+
+test('nested packages spend the enclosing archive budget', async () => {
+  const nested = storeZip([{ name: 'image.png', bytes: new Uint8Array(32) }]);
+  const parent = new File([storeZip([{ name: 'animation.lottie', bytes: nested }]) as BlobPart], 'assets.zip');
+  const [child] = await expandArchiveFiles([parent]);
+  assert.equal(archiveBudgetFor(child!).bytes, 256 * 1024 * 1024 - nested.length);
+  assert.equal(archiveBudgetFor(child!), archiveBudgetFor(child!));
+  assert.notEqual(archiveBudgetFor(parent), archiveBudgetFor(parent), 'a retried root file starts a fresh operation');
+  archiveBudgetFor(child!).bytes = 31;
+  assert.throws(() => readUploadZip(nested, archiveBudgetFor(child!)), /maximum|expands|limit/);
+});
+
+test('oversized archive is refused before arrayBuffer is called', async () => {
+  let read = false;
+  const file = { size: 321 * 1024 * 1024, arrayBuffer() { read = true; return Promise.resolve(new ArrayBuffer(0)); } } as File;
+  await assert.rejects(readUploadArchiveBytes(file), /input limit/);
+  assert.equal(read, false);
+});
 
 test('a plain zip explodes to its member files (dirs and empties dropped)', () => {
   const zip = storeZip([

@@ -1360,6 +1360,21 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
    over live once as `.section-card`/`.section-card-head`/`.section-card-icon`/
    `.section-card__hint` in disclosure.css. Only what's genuinely unique to a
    given card stays below under its own name. */
+.export-pkg {
+  gap: var(--sp-5);
+  container: export-package / inline-size;
+}
+.export-pkg-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-4);
+}
+.export-pkg .field-input { min-width: 0; }
+@container export-package (min-width: 390px) {
+  .export-pkg-grid { grid-template-columns: minmax(7rem, 1fr) minmax(0, 2fr); }
+  .export-pkg-name,
+  .export-pkg-dest { grid-column: 1 / -1; }
+}
 .export-cmyk select[data-action="cmyk-profile"] {
   font-variant-numeric: tabular-nums;   /* box: .field-select */
 }

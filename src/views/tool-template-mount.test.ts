@@ -75,6 +75,8 @@ function bodyAfter(src: string, head: string): string {
 }
 
 const CODE = stripComments(readFileSync(join(HERE, 'tool.ts'), 'utf8'));
+// The inspector's dock/float controller (plans/208): the column requests live here now.
+const INSPECTOR_FLOAT = stripComments(readFileSync(join(HERE, 'design-inspector-float.ts'), 'utf8'));
 const CHOOSER = stripComments(readFileSync(join(HERE, 'template-chooser.ts'), 'utf8'));
 
 test('nothing awaits the template chooser - the mount is never gated on a human click', () => {
@@ -302,27 +304,36 @@ test('every design chrome part is destroyed in the view teardown', () => {
 //      release path - not only the bar's toggle - is what records the state.
 
 test('the inspector takes a slot in the ONE right-hand column, and is never a stage child', () => {
-  const docked = CODE.match(/requestDock\('inspector'/g) ?? [];
+  // The dock request moved out of this view into the detachable controller
+  // (design-inspector-float.ts), which owns the edge-column / float-box choice. The
+  // invariants are the same; only where each one lives has changed.
+  const docked = INSPECTOR_FLOAT.match(/requestDock\('inspector'/g) ?? [];
   assert.equal(docked.length, 1, `the inspector is docked exactly once (found ${docked.length})`);
-  assert.match(CODE, /requestDock\('inspector', insp\.el/,
+  assert.equal((CODE.match(/requestDock\('inspector'/g) ?? []).length, 0,
+    'the view itself makes no dock request - the controller is the one writer');
+  assert.match(INSPECTOR_FLOAT, /requestDock\('inspector', panel,/,
     'the column element itself goes into the dock');
-  assert.match(CODE, /onRelease: \(reason\) => \{[\s\S]{0,200}?inspectorOpen = false;/,
+  assert.match(INSPECTOR_FLOAT, /const released = \(reason: DockReleaseReason\)[\s\S]{0,700}?notify\(false, /,
     'a release the dock initiates must clear the open flag, or the bar keeps claiming it is open');
   // …and it must only write the device preference for a release the USER asked for. A
   // route change and the mobile-breakpoint undock both hand the panel back, and recording
   // "closed" for either meant leaving the editor once turned the inspector off forever.
-  assert.match(CODE, /if \(reason === 'user'\) writeColumnPref\(INSP_KEY, false\)/,
+  assert.match(CODE, /if \(reason === 'user'\) writeColumnPref\(INSP_KEY, open\)/,
     'a host-driven release must not record a preference the user never set');
-  assert.match(CODE, /if \(isDocked\('inspector'\)\) releaseDock\('inspector', 'host'\)/,
-    'the view teardown takes it back out of a column that outlives the view, as the HOST');
-  assert.match(CODE, /initiallyOpen: readColumnPref\(INSP_KEY\)/,
-    'the panel is built detached: constructing it "open" made it rebuild itself on every '
-    + 'selection change for a node that was never in the document');
-  // Nothing in this view may put it on the stage - that IS the second column.
+  assert.match(INSPECTOR_FLOAT, /releaseAction = 'destroy';\s*releaseDock\('inspector', 'host'\)/,
+    'the controller teardown takes it back out of a column that outlives the view, as the HOST');
+  assert.match(CODE, /designInspectorFloat\?\.destroy\(\)/,
+    'the view teardown destroys the controller, which is what releases the column');
+  assert.match(CODE, /if \(readColumnPref\(INSP_KEY\)\) setInspectorOpen\(true\)/,
+    'the panel is built detached and opened from the device preference afterwards: '
+    + 'constructing it "open" made it rebuild itself on every selection change for a node '
+    + 'that was never in the document');
+  // Nothing may put it on the stage - that IS the second column.
   assert.ok(
     !/stageEl\.appendChild\(designInspector/.test(CODE) && !/stageEl\.append\(designInspector/.test(CODE),
     'the inspector is never appended to the stage',
   );
+  assert.ok(!/stageEl/.test(INSPECTOR_FLOAT), 'the controller never touches the stage either');
 });
 
 test('the stage reserves NO right band - the dock nudges the view instead', () => {
@@ -346,7 +357,9 @@ test('the Inspector toggle and the object bar\'s reveal both go through the dock
     + 'because closing removes the subtree that held focus');
   // Docked is not the same as visible: a docked panel can be behind a tab or inside a
   // collapsed rail, and the object bar's Text / More / Dims / Stroke were dead in both.
-  assert.match(CODE, /showPanel\('inspector'\)/,
+  assert.match(CODE, /const setInspectorOpen = \(open: boolean\): void => \{\s*designInspectorFloat\?\.setOpen\(open\);/,
+    'the single writer hands every open/close to the controller');
+  assert.match(INSPECTOR_FLOAT, /if \(open\) \{\s*if \(mode === 'edge'\) showPanel\('inspector'\)/,
     'asking for an already-docked inspector must bring it to the front');
 });
 

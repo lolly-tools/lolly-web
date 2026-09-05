@@ -79,6 +79,16 @@ export const DESIGN_INTENT_OPTIONS: ReadonlyArray<{ value: DesignIntent; label: 
   { value: 'screencast', label: 'YouTube screencast' },
 ];
 
+/** Narration is part of authored playback, not a static-design default. */
+export function designNarrationEnabled(intent: DesignIntent): boolean {
+  return intent === 'slides' || intent === 'video' || intent === 'screencast';
+}
+
+/** Keep time editing discoverable only for outcomes that can meaningfully play. */
+export function designTimelineEnabled(intent: DesignIntent): boolean {
+  return intent === 'slides' || intent === 'video' || intent === 'screencast';
+}
+
 export function designOutcome(intent: DesignIntent, boxes: unknown): DesignOutcome {
   const rows = Array.isArray(boxes) ? boxes as BoxLike[] : [];
   const pages = Math.max(1, rows.filter(b => String(b?.kind ?? '') === 'frame').length);

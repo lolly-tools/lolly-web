@@ -11,6 +11,7 @@ const contractFiles = [
   'design-topbar.css',
   'design-navigator.css',
   'design-inspector.css',
+  'design-guides.css',
   'timeline.css',
 ] as const;
 

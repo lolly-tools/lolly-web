@@ -26,6 +26,7 @@ export interface StorageModel {
   sessions: { bytes: number; count: number; sizes: Record<string, number>; list: SessionEntry[] };
   images: { bytes: number; count: number; list: AssetRef[] };
   cache: { bytes: number };
+  fileHistory?: { bytes: number };
   previews: PreviewsMeasure;
   /** Tools pinned "available offline" - their cached FILE bytes (lib/offline-pins.ts).
    *  Their prefetched catalog asset blobs are counted by the `cache` slice. */
@@ -84,6 +85,7 @@ export function reconciliationSentence(m: StorageModel): string {
     `Asset cache ${fmtBytes(m.cache.bytes)}`,
   ];
   if (m.previews.available) parts.push(`Tool previews ${fmtBytes(m.previews.bytes)}`);
+  if (m.fileHistory?.bytes) parts.push(`File results & versions ${fmtBytes(m.fileHistory.bytes)}`);
   if (m.pins.count) parts.push(`Available offline ${fmtBytes(m.pins.bytes)}`);
   if (m.speech.bytes) parts.push(`Voice models ${fmtBytes(m.speech.bytes)}`);
   if (m.upscale.bytes) parts.push(`Upscaling models ${fmtBytes(m.upscale.bytes)}`);

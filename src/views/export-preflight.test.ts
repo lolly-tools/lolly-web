@@ -34,6 +34,7 @@ import { preflight } from '@lolly/engine';
 // tests the surface as a user who turned it on sees it.
 test('preflight card is absent by default - the user (or governance) opts in', () => {
   assert.equal(preflightRowHtml(), '', 'flag off ⇒ no card markup at all');
+  assert.notEqual(preflightRowHtml({ force: true }), '', 'a tool may force its own assurance surface');
   overrideFlagInMemory(PREFLIGHT_FLAG.id, true);
   assert.notEqual(preflightRowHtml(), '');
 });
@@ -71,6 +72,23 @@ test('an empty report renders no card at all', () => {
   assert.equal(v.show, false);
   assert.deepEqual(v.rows, []);
   assert.deepEqual(v.facts, []);
+});
+
+test('shell-specific checks can drive the view without enabling generic preflight', () => {
+  const v = preflightView(null, {
+    ...CTX,
+    additionalRows: [
+      { id: 'design.text.overflow', tone: 'warn', text: 'Clipped.' },
+      { id: 'design.text.contrast-review', tone: 'gap', text: 'Review visually.' },
+    ],
+  });
+  assert.equal(v.show, true);
+  assert.equal(v.tone, 'fix');
+  assert.equal(v.verdict, '1 to fix, 1 not checked');
+  assert.deepEqual(v.rows.map((row) => row.id), [
+    'design.text.overflow',
+    'design.text.contrast-review',
+  ]);
 });
 
 test('the verdict states what there is to fix, and carries no counts of things', () => {

@@ -34,7 +34,7 @@ import { openDB as idbOpen, deleteDB as idbDelete } from 'idb';
 import type { IDBPDatabase } from 'idb';
 
 const DB_NAME = 'lolly';
-const DB_VERSION = 17;
+const DB_VERSION = 19;
 
 // How long to wait for the DB to open before giving up. A healthy open is
 // near-instant; this only trips when the connection is genuinely wedged.
@@ -231,6 +231,18 @@ function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
         // migration, so NOT in REQUIRED_STORES - its absence must never
         // escalate into wiping user data.
         db.createObjectStore('design-systems', { keyPath: 'id' });
+      }
+      if (oldVersion < 18) {
+        // Device-local file operation history. Outputs are never an evictable cache.
+        const operations = db.createObjectStore('file-operations', { keyPath: 'id' });
+        operations.createIndex('updatedAt', 'updatedAt');
+        db.createObjectStore('file-operation-blobs');
+        db.createObjectStore('user-asset-versions', { keyPath: ['assetId', 'version'] });
+      }
+      if (oldVersion < 19) {
+        // Complete batch membership, including files never started. Additive;
+        // absence must never trigger the destructive REQUIRED_STORES recovery.
+        db.createObjectStore('file-batches', { keyPath: 'id' });
       }
     },
     blocking() {

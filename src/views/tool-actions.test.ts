@@ -16,7 +16,7 @@
  *
  * Everything here is driven through the REAL renderActions against a jsdom canvas:
  * the assertions read the rendered DOM and the opts object the export actually
- * receives. The runtime/host stubs are inputs to the subject, not the subject - 
+ * receives. The runtime/host stubs are inputs to the subject, not the subject -
  * nothing asserts that a stub was called.
  *
  * NOT covered here (needs a browser): the live-capture path itself, MediaRecorder,
@@ -25,10 +25,11 @@
  *
  * Run directly:  node --test shells/web/src/views/tool-actions.test.ts
  */
-import { test } from 'node:test';
+
 import assert from 'node:assert/strict';
-import { registerHooks } from 'node:module';
 import { existsSync } from 'node:fs';
+import { registerHooks } from 'node:module';
+import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 
@@ -41,25 +42,50 @@ registerHooks({
       const js = new URL(spec, ctx.parentURL);
       if (!existsSync(fileURLToPath(js))) {
         const ts = new URL(spec.replace(/\.js$/, '.ts'), ctx.parentURL);
-        if (existsSync(fileURLToPath(ts))) return { url: ts.href, format: 'module-typescript', shortCircuit: true };
+        if (existsSync(fileURLToPath(ts)))
+          return { url: ts.href, format: 'module-typescript', shortCircuit: true };
       }
     }
     return next(spec, ctx);
   },
   load(url: string, ctx: unknown, next: (u: string, c: unknown) => unknown) {
-    if (url.endsWith('.css')) return { format: 'module', shortCircuit: true, source: 'export default {};' };
+    if (url.endsWith('.css'))
+      return { format: 'module', shortCircuit: true, source: 'export default {};' };
     return next(url, ctx);
   },
 } as Parameters<typeof registerHooks>[0]);
 
-const dom = new JSDOM('<!DOCTYPE html><body></body>', { pretendToBeVisual: true, url: 'https://example.test/' });
+const dom = new JSDOM('<!DOCTYPE html><body></body>', {
+  pretendToBeVisual: true,
+  url: 'https://example.test/',
+});
 for (const k of [
-  'window', 'document', 'HTMLElement', 'HTMLCanvasElement', 'Element', 'Node', 'Event', 'CustomEvent',
-  'MouseEvent', 'getComputedStyle', 'MutationObserver', 'customElements', 'Blob', 'location', 'localStorage',
+  'window',
+  'document',
+  'HTMLElement',
+  'HTMLCanvasElement',
+  'Element',
+  'Node',
+  'Event',
+  'CustomEvent',
+  'MouseEvent',
+  'getComputedStyle',
+  'MutationObserver',
+  'customElements',
+  'Blob',
+  'location',
+  'localStorage',
 ]) {
-  try { (globalThis as Record<string, unknown>)[k] = (dom.window as unknown as Record<string, unknown>)[k]; } catch { /* getter-only global */ }
+  try {
+    (globalThis as Record<string, unknown>)[k] = (dom.window as unknown as Record<string, unknown>)[
+      k
+    ];
+  } catch {
+    /* getter-only global */
+  }
 }
-globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => dom.window.requestAnimationFrame(cb)) as typeof requestAnimationFrame;
+globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) =>
+  dom.window.requestAnimationFrame(cb)) as typeof requestAnimationFrame;
 // jsdom 25's Blob has no arrayBuffer(), and the line above puts that Blob on the
 // global. Any export path that reads bytes back out of a finished blob therefore
 // threw, and the download handler's catch swallowed it: the multi-page fan-out
@@ -68,7 +94,9 @@ globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => dom.window.req
 // platform has (through jsdom's own FileReader) so the fan-out is exercised
 // rather than silently failing inside a green suite.
 {
-  const proto = dom.window.Blob.prototype as unknown as { arrayBuffer?: () => Promise<ArrayBuffer> };
+  const proto = dom.window.Blob.prototype as unknown as {
+    arrayBuffer?: () => Promise<ArrayBuffer>;
+  };
   if (!proto.arrayBuffer) {
     proto.arrayBuffer = function (this: Blob): Promise<ArrayBuffer> {
       return new Promise((resolve, reject) => {
@@ -84,18 +112,28 @@ globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => dom.window.req
 // tool-actions.ts probes recording support ONCE at module load (the VIDEO const)
 // and gates the whole animated-params row on it, so the probes have to answer
 // before the import below. This is capability plumbing, not the code under test.
-class FakeRecorder { static isTypeSupported(): boolean { return true; } }
+class FakeRecorder {
+  static isTypeSupported(): boolean {
+    return true;
+  }
+}
 (globalThis as Record<string, unknown>).MediaRecorder = FakeRecorder;
 (dom.window as unknown as Record<string, unknown>).MediaRecorder = FakeRecorder;
-(dom.window.HTMLCanvasElement.prototype as unknown as { captureStream: () => unknown }).captureStream = () => ({});
+(
+  dom.window.HTMLCanvasElement.prototype as unknown as { captureStream: () => unknown }
+).captureStream = () => ({});
 // jsdom has no 2D context; the TIFF probe (also module-load) calls getContext and
 // logs a "not implemented" wall of text otherwise. Returning null is the honest
 // answer - no readback - and only affects the TIFF format option, not this suite.
-(dom.window.HTMLCanvasElement.prototype as unknown as { getContext: () => null }).getContext = () => null;
+(dom.window.HTMLCanvasElement.prototype as unknown as { getContext: () => null }).getContext = () =>
+  null;
 // liveCaptureSupport() also needs a display-capture source, else the "Record live"
 // toggle is never rendered at all and test 4 would pass vacuously. Node has its own
 // read-only `navigator`, so the jsdom one has to be installed with defineProperty.
-Object.defineProperty(dom.window.navigator, 'mediaDevices', { value: { getDisplayMedia: () => Promise.resolve({}) }, configurable: true });
+Object.defineProperty(dom.window.navigator, 'mediaDevices', {
+  value: { getDisplayMedia: () => Promise.resolve({}) },
+  configurable: true,
+});
 Object.defineProperty(globalThis, 'navigator', { value: dom.window.navigator, configurable: true });
 
 const { renderActions, extFor } = await import('./tool-actions.ts');
@@ -138,16 +176,35 @@ interface Harness {
   stateWrites: () => Array<{ slot: string; data: Record<string, unknown> }>;
   /** Change a model value the way the sidebar would, then notify the panel. */
   setModel: (id: string, value: unknown) => void;
+  dispose: () => void;
 }
 
 /** Mount the export bar over a canvas that is (or isn't) a timed composition.
  *  `profile` installs a profile store on the host (absent by default, the way a
  *  host without one behaves). */
-function mount({ seqMs, clipMs = null, videoDuration = 12, formats = ['webm', 'mp4', 'png'], profile, model = [], toolId = 'sequence-studio', exportDefaults = {} }:
-  { seqMs: number | null; /** A bed's own length stamped as data-clip-ms (the audiogram). */ clipMs?: number | null; videoDuration?: number; formats?: string[]; profile?: Record<string, unknown>;
-    /** The URL-driven defaults tool.ts passes (a link's ?fps=/?seconds=/... arrive as `video`). */ exportDefaults?: Record<string, unknown>;
-    /** The runtime's input model - only the tests that read it pass one. */
-    model?: Array<Record<string, unknown>>; toolId?: string }): Harness {
+function mount({
+  seqMs,
+  clipMs = null,
+  videoDuration = 12,
+  formats = ['webm', 'mp4', 'png'],
+  profile,
+  model = [],
+  toolId = 'sequence-studio',
+  exportDefaults = {},
+}: {
+  seqMs: number | null /** A bed's own length stamped as data-clip-ms (the audiogram). */;
+  clipMs?: number | null;
+  videoDuration?: number;
+  formats?: string[];
+  profile?: Record<string, unknown>;
+  /** The URL-driven defaults tool.ts passes (a link's ?fps=/?seconds=/... arrive as `video`). */ exportDefaults?: Record<
+    string,
+    unknown
+  >;
+  /** The runtime's input model - only the tests that read it pass one. */
+  model?: Array<Record<string, unknown>>;
+  toolId?: string;
+}): Harness {
   const doc = dom.window.document;
   doc.body.innerHTML = '';
   const panel = doc.createElement('div');
@@ -168,22 +225,27 @@ function mount({ seqMs, clipMs = null, videoDuration = 12, formats = ['webm', 'm
 
   const seen: Array<{ format: string; opts: Record<string, unknown> }> = [];
   const manifest = {
-    id: toolId, name: 'Sequence Studio', version: '1.0.0', inputs: [],
+    id: toolId,
+    name: 'Sequence Studio',
+    version: '1.0.0',
+    inputs: [],
     render: { width: 1920, height: 1080, formats, video: { wait: 0, duration: videoDuration } },
   };
-  const live = model.map(i => ({ ...i }));
+  const live = model.map((i) => ({ ...i }));
   const subscribers: Array<() => void> = [];
   const inputWrites: Array<{ id: string; value: unknown }> = [];
   const runtime = {
     getModel: () => live,
     setInput: async (id: string, value: unknown) => {
       inputWrites.push({ id, value });
-      const item = live.find(i => i.id === id);
+      const item = live.find((i) => i.id === id);
       if (item) item.value = value;
-      subscribers.forEach(fn => fn());
+      subscribers.forEach((fn) => fn());
     },
     setInputNoHistory: async () => {},
-    subscribe: (fn: () => void) => { subscribers.push(fn); },
+    subscribe: (fn: () => void) => {
+      subscribers.push(fn);
+    },
     refresh: () => {},
     hasFrameHook: false,
     isLive: () => false,
@@ -200,62 +262,148 @@ function mount({ seqMs, clipMs = null, videoDuration = 12, formats = ['webm', 'm
   const host = {
     assets: { query: async () => [] },
     state: {
-      save: async (slot: string, data: Record<string, unknown>) => { stateWrites.push({ slot, data }); },
+      save: async (slot: string, data: Record<string, unknown>) => {
+        stateWrites.push({ slot, data });
+      },
       load: async () => null,
     },
-    export: { download: async (blob: Blob, name: string) => { saved.push({ name, blob }); } },
-    ...(profile ? {
-      profile: {
-        get: async () => ({ ...profile }),
-        set: async (p: Record<string, unknown>) => { profileWrites.push(p); },
+    export: {
+      download: async (blob: Blob, name: string) => {
+        saved.push({ name, blob });
       },
-    } : {}),
+    },
+    ...(profile
+      ? {
+          profile: {
+            get: async () => ({ ...profile }),
+            set: async (p: Record<string, unknown>) => {
+              profileWrites.push(p);
+            },
+          },
+        }
+      : {}),
   };
 
   const unscaledCalls: Array<{ shutter?: boolean; formats: string[] }> = [];
-  renderActions(
-    panel as never, manifest as never, runtime as never, canvas, host as never,
+  const actions = renderActions(
+    panel as never,
+    manifest as never,
+    runtime as never,
+    canvas,
+    host as never,
     () => {},
     (async (fn: () => unknown, o: { shutter?: boolean } = {}) => {
       const before = seen.length;
-      try { return await fn(); }
-      finally { unscaledCalls.push({ ...o, formats: seen.slice(before).map(e => e.format) }); }
+      try {
+        return await fn();
+      } finally {
+        unscaledCalls.push({ ...o, formats: seen.slice(before).map((e) => e.format) });
+      }
     }) as never,
-    exportDefaults as never,
+    exportDefaults as never
   );
 
   return {
-    panel, canvas, stage,
-    exports: () => seen.filter(e => 'durationUserSet' in e.opts),
+    panel,
+    canvas,
+    stage,
+    exports: () => seen.filter((e) => 'durationUserSet' in e.opts),
     unscaled: () => unscaledCalls,
-    downloads: () => seen.filter(e => typeof e.opts.onProgress === 'function'),
+    downloads: () => seen.filter((e) => typeof e.opts.onProgress === 'function'),
     renders: () => seen,
     duration: () => panel.querySelector('[data-action="video-duration"]') as HTMLInputElement,
     liveLabel: () => panel.querySelector('[data-live-capture]') as HTMLElement | null,
     framesRow: () => panel.querySelector('[data-seq-still-only]') as HTMLElement | null,
-    framesInput: () => panel.querySelector('[data-action="export-cuts"]') as HTMLInputElement | null,
+    framesInput: () =>
+      panel.querySelector('[data-action="export-cuts"]') as HTMLInputElement | null,
     setFormat: (f: string) => {
       const sel = panel.querySelector('[data-action="format"]') as HTMLSelectElement;
       sel.value = f;
       sel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
     },
-    download: () => (panel.querySelector('[data-action="download"]') as HTMLElement)
-      .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
+    download: () =>
+      (panel.querySelector('[data-action="download"]') as HTMLElement).dispatchEvent(
+        new dom.window.MouseEvent('click', { bubbles: true })
+      ),
     ask: () => panel.querySelector('.export-details-ask') as HTMLElement | null,
     saved: () => saved,
     profileWrites: () => profileWrites,
     inputWrites: () => inputWrites,
     stateWrites: () => stateWrites,
     setModel: (id: string, value: unknown) => {
-      const item = live.find(i => i.id === id);
+      const item = live.find((i) => i.id === id);
       if (item) item.value = value;
-      subscribers.forEach(fn => fn());
+      subscribers.forEach((fn) => fn());
     },
+    dispose: () => actions?.dispose?.(),
   };
 }
 
 /** Let the MutationObserver callback (a microtask) run. */
-const settle = (): Promise<void> => new Promise(r => setTimeout(r, 0));
+const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+test('Design runs mounted assurance only while Export is open', async () => {
+  const h = mount({
+    seqMs: null,
+    formats: ['png'],
+    toolId: 'design',
+    model: [
+      {
+        id: 'boxes',
+        value: [
+          {
+            id: 'title',
+            kind: 'text',
+            name: 'Headline',
+            text: 'A long headline',
+            x: 0,
+            y: 0,
+            w: 100,
+            h: 30,
+          },
+        ],
+      },
+    ],
+  });
+  const box = document.createElement('div');
+  box.className = 'lolly-box';
+  box.dataset.boxId = 'title';
+  box.style.backgroundColor = 'rgb(255, 255, 255)';
+  const text = document.createElement('div');
+  text.className = 'lolly-box-text';
+  text.style.color = 'rgb(0, 0, 0)';
+  text.style.fontFamily = 'sans-serif';
+  text.textContent = 'A long headline';
+  box.appendChild(text);
+  h.canvas.appendChild(box);
+  Object.defineProperties(box, {
+    clientWidth: { configurable: true, value: 100 },
+    clientHeight: { configurable: true, value: 30 },
+  });
+  Object.defineProperties(text, {
+    scrollWidth: { configurable: true, value: 180 },
+    scrollHeight: { configurable: true, value: 30 },
+  });
+
+  const card = h.panel.querySelector<HTMLElement>('[data-preflight-section]')!;
+  assert.ok(card, 'Design gets the assurance affordance without the generic preflight flag');
+  assert.equal(
+    card.style.display,
+    'none',
+    'mounted checks do not run behind a closed Export surface'
+  );
+
+  h.panel.dispatchEvent(new dom.window.CustomEvent('lolly:export-open'));
+  for (let attempt = 0; attempt < 20 && card.style.display === 'none'; attempt++) {
+    await settle();
+  }
+  assert.equal(card.style.display, 'flex');
+  assert.match(card.querySelector('[data-preflight-verdict]')!.textContent!, /to fix/);
+
+  h.panel.dispatchEvent(new dom.window.CustomEvent('lolly:export-close'));
+  assert.equal(card.style.display, 'none', 'closing Export clears the mounted audit result');
+  h.dispose();
+});
 
 // ── 1. the field is seeded from the timeline, not the manifest ───────────────
 
@@ -301,25 +449,39 @@ test('clip: a user edit wins over the bed length and reaches the export as durat
   h.duration().value = '6';
   h.duration().dispatchEvent(new dom.window.Event('input', { bubbles: true }));
   h.stage!.setAttribute('data-clip-ms', '90000');
-  await new Promise(r => setTimeout(r, 0));
+  await new Promise((r) => setTimeout(r, 0));
   assert.equal(h.duration().value, '6', 'the typed value is not re-seeded by a re-stamp');
 });
 
 // ── 1c. a link's video controls (?fps= ?seconds= ?wait= ?codec= ?vq=) ────────
 
 test('video params: a link seeds Duration, Start after and the Pro selects', () => {
-  const h = mount({ seqMs: 6000, videoDuration: 12, exportDefaults: { video: { fps: 60, seconds: 4, wait: 2, codec: 'h264', quality: 'best' } } });
-  assert.equal(h.duration().value, '4', 'seconds= beats the timeline-derived length: it is a deliberate instruction');
+  const h = mount({
+    seqMs: 6000,
+    videoDuration: 12,
+    exportDefaults: { video: { fps: 60, seconds: 4, wait: 2, codec: 'h264', quality: 'best' } },
+  });
+  assert.equal(
+    h.duration().value,
+    '4',
+    'seconds= beats the timeline-derived length: it is a deliberate instruction'
+  );
   assert.equal(h.panel.querySelector<HTMLInputElement>('[data-action="video-wait"]')!.value, '2');
   assert.equal(h.panel.querySelector<HTMLSelectElement>('[data-action="video-fps"]')!.value, '60');
-  assert.equal(h.panel.querySelector<HTMLSelectElement>('[data-action="video-codec"]')!.value, 'avc1.640033');
-  assert.equal(h.panel.querySelector<HTMLSelectElement>('[data-action="video-quality"]')!.value, 'best');
+  assert.equal(
+    h.panel.querySelector<HTMLSelectElement>('[data-action="video-codec"]')!.value,
+    'avc1.640033'
+  );
+  assert.equal(
+    h.panel.querySelector<HTMLSelectElement>('[data-action="video-quality"]')!.value,
+    'best'
+  );
 });
 
 test('video params: a seconds= link counts as user-set, so a re-stamped timeline does not re-seed it', async () => {
   const h = mount({ seqMs: 6000, exportDefaults: { video: { seconds: 4 } } });
   h.stage!.setAttribute('data-seq-ms', '9000');
-  await new Promise(r => setTimeout(r, 0));
+  await new Promise((r) => setTimeout(r, 0));
   assert.equal(h.duration().value, '4');
 });
 
@@ -380,7 +542,11 @@ test('durationUserSet reaches the export opts only after a user edit', async () 
   download.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
   await settle();
   assert.equal(h.exports().length, 1);
-  assert.equal(h.exports()[0]!.opts.durationUserSet, false, 'an auto-derived duration is NOT a user value');
+  assert.equal(
+    h.exports()[0]!.opts.durationUserSet,
+    false,
+    'an auto-derived duration is NOT a user value'
+  );
   assert.equal(h.exports()[0]!.opts.duration, 12);
 
   const d = h.duration();
@@ -431,9 +597,13 @@ test('a box ticked before the tool became a sequence cannot leave opts.live set'
   stage.setAttribute('data-seq-ms', '7000');
   h.canvas.appendChild(stage);
   await settle();
-  assert.equal((h.panel.querySelector('[data-action="video-live"]') as HTMLInputElement).checked, false);
-  (h.panel.querySelector('[data-action="download"]') as HTMLElement)
-    .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  assert.equal(
+    (h.panel.querySelector('[data-action="video-live"]') as HTMLInputElement).checked,
+    false
+  );
+  (h.panel.querySelector('[data-action="download"]') as HTMLElement).dispatchEvent(
+    new dom.window.MouseEvent('click', { bubbles: true })
+  );
   await settle();
   assert.notEqual(h.exports()[0]!.opts.live, true, 'the compositor must get the export');
   assert.equal(h.exports()[0]!.opts.duration, 7, 'and it still renders the timeline length');
@@ -454,12 +624,12 @@ test('Frames is absent for a tool that is not a timed composition', () => {
 });
 
 test('Frames is hidden for a sequence on a motion format', () => {
-  const h = mount({ seqMs: 6000, formats: ['webm', 'png'] });   // initial format = webm
+  const h = mount({ seqMs: 6000, formats: ['webm', 'png'] }); // initial format = webm
   assert.equal(h.framesRow()!.style.display, 'none', 'a video has frames by definition');
 });
 
 test('Frames is shown for a sequence on a still format, defaulting to 1', () => {
-  const h = mount({ seqMs: 6000, ...STILL });                    // initial format = png
+  const h = mount({ seqMs: 6000, ...STILL }); // initial format = png
   assert.equal(h.framesRow()!.style.display, 'flex');
   assert.equal(h.framesInput()!.value, '1', 'the default is the playhead frame');
   assert.equal(h.framesInput()!.min, '1');
@@ -501,7 +671,13 @@ test('the Frames value reaches the export opts as opts.cuts', async () => {
 });
 
 test('a nonsense Frames value coerces to 1, and the ceiling clamps', async () => {
-  for (const [typed, want] of [['', 1], ['0', 1], ['-3', 1], ['2.7', 2], ['999', 64]] as Array<[string, number]>) {
+  for (const [typed, want] of [
+    ['', 1],
+    ['0', 1],
+    ['-3', 1],
+    ['2.7', 2],
+    ['999', 64],
+  ] as Array<[string, number]>) {
     const h = mount({ seqMs: 6000, ...STILL });
     h.framesInput()!.value = typed;
     h.download();
@@ -552,7 +728,6 @@ test('the video container fallback still wins over the requested format', () => 
   assert.equal(extFor('mp4', new dom.window.Blob(['x'], { type: 'video/webm' })), 'webm');
 });
 
-
 // ── 7. the export shutter covers ANIMATED exports too ────────────────────────
 // It used to be gated `shutter: !isAnimated`, on the reasoning that an animated
 // format records the live canvas. That is true only of a LIVE take, which never
@@ -567,8 +742,10 @@ test('an animated export runs behind the shutter', async () => {
   h.setFormat('mp4');
   h.download();
   await settle();
-  assert.ok(h.unscaled().some(o => o.shutter === true && o.formats.includes('mp4')),
-    'the mp4 export itself must run inside a closed shutter');
+  assert.ok(
+    h.unscaled().some((o) => o.shutter === true && o.formats.includes('mp4')),
+    'the mp4 export itself must run inside a closed shutter'
+  );
 });
 
 test('a still export still runs behind the shutter', async () => {
@@ -576,23 +753,28 @@ test('a still export still runs behind the shutter', async () => {
   h.setFormat('png');
   h.download();
   await settle();
-  assert.ok(h.unscaled().some(o => o.shutter === true && o.formats.includes('png')),
-    'png keeps the behaviour it always had');
+  assert.ok(
+    h.unscaled().some((o) => o.shutter === true && o.formats.includes('png')),
+    'png keeps the behaviour it always had'
+  );
 });
 
 test('a LIVE take bypasses exportUnscaled entirely - the shutter would be filmed', async () => {
   const h = mount({ seqMs: null, formats: ['webm', 'png'] });
   h.setFormat('webm');
   const live = h.panel.querySelector('[data-action="video-live"]') as HTMLInputElement | null;
-  if (!live) return;                       // liveCaptureSupport() false in this env
+  if (!live) return; // liveCaptureSupport() false in this env
   live.checked = true;
   h.download();
   await settle();
   // A live take keeps the fit-to-stage scale AND films the screen, so the webm
-  // itself must not be produced inside a wrapper. (Other wrapped calls may exist - 
+  // itself must not be produced inside a wrapper. (Other wrapped calls may exist -
   // the export-history thumbnail capture wraps its own png.)
-  assert.equal(h.unscaled().some(o => o.formats.includes('webm')), false,
-    'the live take must not run inside exportUnscaled at all');
+  assert.equal(
+    h.unscaled().some((o) => o.formats.includes('webm')),
+    false,
+    'the live take must not run inside exportUnscaled at all'
+  );
 });
 
 // ── the pro float formats (exr/hdr) open only for a deep-capable tool ─────────
@@ -613,42 +795,69 @@ function formatOptionValues(opts: {
   const canvas = doc.createElement('div');
   doc.body.append(panel, canvas);
   const manifest = {
-    id: 'darkroom', name: 'Darkroom', version: '1.0.0', inputs: [],
+    id: 'darkroom',
+    name: 'Darkroom',
+    version: '1.0.0',
+    inputs: [],
     ...(opts.hooks ? { hooks: opts.hooks } : {}),
     render: { width: 1080, height: 1080, formats: opts.formats },
   };
   const runtime = {
-    getModel: () => [], setInput: async () => {}, setInputNoHistory: async () => {},
-    subscribe: () => {}, refresh: () => {}, hasFrameHook: false, isLive: () => false,
+    getModel: () => [],
+    setInput: async () => {},
+    setInputNoHistory: async () => {},
+    subscribe: () => {},
+    refresh: () => {},
+    hasFrameHook: false,
+    isLive: () => false,
     export: async () => new dom.window.Blob(['x']),
   };
   const host: Record<string, unknown> = {
-    assets: { query: async () => [] }, state: { save: async () => {} },
+    assets: { query: async () => [] },
+    state: { save: async () => {} },
     export: { download: async () => {} },
   };
   if (opts.codec) host.codec = { exr: async () => new Uint8Array() };
   renderActions(
-    panel as never, manifest as never, runtime as never, canvas, host as never,
-    () => {}, (async (fn: () => unknown) => fn()) as never, {},
+    panel as never,
+    manifest as never,
+    runtime as never,
+    canvas,
+    host as never,
+    () => {},
+    (async (fn: () => unknown) => fn()) as never,
+    {}
   );
-  return [...panel.querySelectorAll('[data-action="format"] option')]
-    .map(o => (o as HTMLOptionElement).value);
+  return [...panel.querySelectorAll('[data-action="format"] option')].map(
+    (o) => (o as HTMLOptionElement).value
+  );
 }
 
 test('exr/hdr are hidden for a plain tool (no exportStill hook)', () => {
   // Two ordinary survivors so a <select> renders (a single format needs no dropdown).
   const vals = formatOptionValues({ formats: ['png', 'jpg', 'exr', 'hdr'], codec: true });
   assert.ok(vals.includes('png') && vals.includes('jpg'), 'ordinary formats survive');
-  assert.ok(!vals.includes('exr') && !vals.includes('hdr'), 'a tool with no float master must not offer float formats');
+  assert.ok(
+    !vals.includes('exr') && !vals.includes('hdr'),
+    'a tool with no float master must not offer float formats'
+  );
 });
 
 test('exr/hdr are hidden when the shell has no host.codec, even with the hook', () => {
-  const vals = formatOptionValues({ formats: ['png', 'jpg', 'exr', 'hdr'], hooks: { exportStill: true }, codec: false });
+  const vals = formatOptionValues({
+    formats: ['png', 'jpg', 'exr', 'hdr'],
+    hooks: { exportStill: true },
+    codec: false,
+  });
   assert.ok(!vals.includes('exr') && !vals.includes('hdr'), 'no float producer → no float options');
 });
 
 test('exr/hdr open for a tool with exportStill + host.codec (Bitmap Studio on the web)', () => {
-  const vals = formatOptionValues({ formats: ['png', 'exr', 'hdr'], hooks: { exportStill: true }, codec: true });
+  const vals = formatOptionValues({
+    formats: ['png', 'exr', 'hdr'],
+    hooks: { exportStill: true },
+    codec: true,
+  });
   assert.ok(vals.includes('exr'), 'EXR is offered');
   assert.ok(vals.includes('hdr'), 'Radiance HDR is offered');
   assert.ok(vals.includes('png'), 'ordinary formats are unaffected');
@@ -667,7 +876,7 @@ test('exr/hdr open for a tool with exportStill + host.codec (Bitmap Studio on th
 function mountDims(
   layout?: string,
   render: Record<string, unknown> = {},
-  inputs: unknown[] = [],
+  inputs: unknown[] = []
 ): { canvas: HTMLElement; wField: HTMLInputElement; hField: HTMLInputElement } {
   const doc = dom.window.document;
   doc.body.innerHTML = '';
@@ -677,18 +886,42 @@ function mountDims(
   canvas.style.height = '1080px';
   doc.body.append(panel, canvas);
   const manifest = {
-    id: 'dims-probe', name: 'Dims Probe', version: '1.0.0', inputs,
-    render: { width: 1080, height: 1080, formats: ['png', 'svg'], ...(layout ? { layout } : {}), ...render },
+    id: 'dims-probe',
+    name: 'Dims Probe',
+    version: '1.0.0',
+    inputs,
+    render: {
+      width: 1080,
+      height: 1080,
+      formats: ['png', 'svg'],
+      ...(layout ? { layout } : {}),
+      ...render,
+    },
   };
   const runtime = {
-    getModel: () => [], setInput: async () => {}, setInputNoHistory: async () => {},
-    subscribe: () => {}, refresh: () => {}, hasFrameHook: false, isLive: () => false,
+    getModel: () => [],
+    setInput: async () => {},
+    setInputNoHistory: async () => {},
+    subscribe: () => {},
+    refresh: () => {},
+    hasFrameHook: false,
+    isLive: () => false,
     export: async () => new dom.window.Blob(['x']),
   };
-  const host = { assets: { query: async () => [] }, state: { save: async () => {} }, export: { download: async () => {} } };
+  const host = {
+    assets: { query: async () => [] },
+    state: { save: async () => {} },
+    export: { download: async () => {} },
+  };
   renderActions(
-    panel as never, manifest as never, runtime as never, canvas, host as never,
-    () => {}, (async (fn: () => unknown) => fn()) as never, {},
+    panel as never,
+    manifest as never,
+    runtime as never,
+    canvas,
+    host as never,
+    () => {},
+    (async (fn: () => unknown) => fn()) as never,
+    {}
   );
   return {
     canvas,
@@ -702,7 +935,11 @@ test('editor: a wider export size makes the artboard that exact size (no clamp)'
   wField.value = '1920';
   wField.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
   assert.equal(canvas.style.width, '1920px', 'the artboard takes the true export width');
-  assert.equal(canvas.style.height, '1080px', 'the untouched height stays put - no aspect distortion');
+  assert.equal(
+    canvas.style.height,
+    '1080px',
+    'the untouched height stays put - no aspect distortion'
+  );
 });
 
 test('preview tool: the same change is CLAMPED to the native render size', () => {
@@ -711,26 +948,44 @@ test('preview tool: the same change is CLAMPED to the native render size', () =>
   wField.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
   // previewScale = min(1, 1080/1920, 1080/1080) = 0.5625 → 1920*0.5625=1080, 1080*0.5625=608
   assert.equal(canvas.style.width, '1080px', 'the thumbnail longest side is capped at native');
-  assert.equal(canvas.style.height, '608px', 'the thumbnail keeps the requested aspect, scaled down');
+  assert.equal(
+    canvas.style.height,
+    '608px',
+    'the thumbnail keeps the requested aspect, scaled down'
+  );
 });
 
 test('fixed-canvas editor (Org Chart): artboard stays native-locked - keeps the clamp', () => {
   // canvas.fixedCanvas keeps connector geometry 1:1 with box coords, so the artboard must
   // NOT grow to the export size even though it is layout:'editor'. Same clamp as a preview.
-  const { canvas, wField } = mountDims('editor', {}, [{ id: 'boxes', type: 'blocks', canvas: { fixedCanvas: true } }]);
+  const { canvas, wField } = mountDims('editor', {}, [
+    { id: 'boxes', type: 'blocks', canvas: { fixedCanvas: true } },
+  ]);
   wField.value = '1920';
   wField.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
-  assert.equal(canvas.style.width, '1080px', 'a fixed-canvas editor is clamped, not resized to the export width');
+  assert.equal(
+    canvas.style.width,
+    '1080px',
+    'a fixed-canvas editor is clamped, not resized to the export width'
+  );
 });
 
 test('carousel editor (render.pages): the page strip owns the size - no 1:1 resize', () => {
   // A carousel editor sets render.pages; the canvas is the page strip, owned by syncStrip.
   // (Real carousel tools also set render.dims:false so the fields are hidden; here we prove
   // the sizing branch alone excludes them.) It must take the clamp, not the artboard path.
-  const { canvas, wField } = mountDims('editor', { pages: { count: 'n', width: 'w', height: 'h' } }, [{ id: 'boxes', type: 'blocks', canvas: {} }]);
+  const { canvas, wField } = mountDims(
+    'editor',
+    { pages: { count: 'n', width: 'w', height: 'h' } },
+    [{ id: 'boxes', type: 'blocks', canvas: {} }]
+  );
   wField.value = '1920';
   wField.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
-  assert.equal(canvas.style.width, '1080px', 'a carousel editor is clamped, not resized to the export width');
+  assert.equal(
+    canvas.style.width,
+    '1080px',
+    'a carousel editor is clamped, not resized to the export width'
+  );
 });
 
 // ── 9. per-artboard still fan-out for the Design frame primitive ──────────────
@@ -748,6 +1003,7 @@ function mountPaged(opts: {
   pages: number;
   render?: Record<string, unknown>;
   inputs?: unknown[];
+  toolId?: string;
   /** Frame ids to stamp as `data-frame-id`, page by page - what `?s=<id>` addresses.
    *  Omitted ⇒ unstamped pages, exactly as a plain render.pages carousel emits them. */
   ids?: Array<string | null>;
@@ -757,6 +1013,7 @@ function mountPaged(opts: {
   panel: HTMLElement;
   canvas: HTMLElement;
   pageExports: () => Array<{ format: string; opts: Record<string, unknown> }>;
+  handoutExports: () => Array<{ node: HTMLElement; opts: Record<string, unknown> }>;
   /** The `data-frame-id` of each per-page export target, in the order they ran. */
   pageIds: () => Array<string | null>;
   /** Filenames handed to host.export.download. */
@@ -777,15 +1034,24 @@ function mountPaged(opts: {
     canvas.appendChild(p);
   }
   const pageExports: Array<{ format: string; opts: Record<string, unknown> }> = [];
+  const handoutExports: Array<{ node: HTMLElement; opts: Record<string, unknown> }> = [];
   const pageIds: Array<string | null> = [];
   const downloads: string[] = [];
   const manifest = {
-    id: 'design', name: 'Design', version: '1.0.0', inputs: opts.inputs ?? [],
+    id: opts.toolId ?? 'design',
+    name: 'Design',
+    version: '1.0.0',
+    inputs: opts.inputs ?? [],
     render: { width: 1080, height: 1080, formats: ['png', 'svg', 'pdf'], ...(opts.render ?? {}) },
   };
   const runtime = {
-    getModel: () => [], setInput: async () => {}, setInputNoHistory: async () => {},
-    subscribe: () => {}, refresh: () => {}, hasFrameHook: false, isLive: () => false,
+    getModel: () => [],
+    setInput: async () => {},
+    setInputNoHistory: async () => {},
+    subscribe: () => {},
+    refresh: () => {},
+    hasFrameHook: false,
+    isLive: () => false,
     export: async (node: unknown, format: string, o: Record<string, unknown>) => {
       // Count only DOWNLOAD per-page exports, not the export-history thumbnail capture,
       // which (for render.paged) also targets the first [data-pdf-page] but sets thumbnail:true.
@@ -793,27 +1059,55 @@ function mountPaged(opts: {
         pageExports.push({ format, opts: { ...o } });
         pageIds.push((node as HTMLElement).getAttribute('data-frame-id'));
       }
+      if (
+        format === 'pdf' &&
+        (node as HTMLElement)?.matches?.('[data-design-notes-handout]') &&
+        o.thumbnail !== true
+      ) {
+        handoutExports.push({ node: node as HTMLElement, opts: { ...o } });
+      }
       return new dom.window.Blob(['x'], { type: 'image/png' });
     },
   };
   const host = {
-    assets: { query: async () => [] }, state: { save: async () => {} },
-    export: { download: async (_b: Blob, name: string) => { downloads.push(name); } },
+    assets: { query: async () => [] },
+    state: { save: async () => {} },
+    export: {
+      download: async (_b: Blob, name: string) => {
+        downloads.push(name);
+      },
+    },
   };
   renderActions(
-    panel as never, manifest as never, runtime as never, canvas, host as never,
-    () => {}, (async (fn: () => unknown) => fn()) as never, (opts.exportDefaults ?? {}) as never,
+    panel as never,
+    manifest as never,
+    runtime as never,
+    canvas,
+    host as never,
+    () => {},
+    (async (fn: () => unknown) => fn()) as never,
+    (opts.exportDefaults ?? {}) as never
   );
   const setFormat = (f: string) => {
     const sel = panel.querySelector('[data-action="format"]') as HTMLSelectElement | null;
-    if (sel) { sel.value = f; sel.dispatchEvent(new dom.window.Event('change', { bubbles: true })); }
+    if (sel) {
+      sel.value = f;
+      sel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    }
   };
   setFormat('png');
   return {
-    panel, canvas, setFormat, pageExports: () => pageExports,
-    pageIds: () => pageIds, downloads: () => downloads,
-    download: () => (panel.querySelector('[data-action="download"]') as HTMLElement)
-      .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
+    panel,
+    canvas,
+    setFormat,
+    pageExports: () => pageExports,
+    handoutExports: () => handoutExports,
+    pageIds: () => pageIds,
+    downloads: () => downloads,
+    download: () =>
+      (panel.querySelector('[data-action="download"]') as HTMLElement).dispatchEvent(
+        new dom.window.MouseEvent('click', { bubbles: true })
+      ),
   };
 }
 
@@ -823,7 +1117,11 @@ test('Design frame primitive: a multi-artboard doc fans a PNG out to one still p
   const h = mountPaged({ pages: 3, render: { layout: 'editor' }, inputs: FRAME_INPUT });
   h.download();
   await settle();
-  assert.equal(h.pageExports().length, 3, 'three artboards → three per-page still exports (zipped downstream)');
+  assert.equal(
+    h.pageExports().length,
+    3,
+    'three artboards → three per-page still exports (zipped downstream)'
+  );
   for (const e of h.pageExports()) assert.equal(e.format, 'png');
 });
 
@@ -831,23 +1129,39 @@ test('Design frame primitive: a single-artboard doc exports one flat still (stil
   const h = mountPaged({ pages: 1, render: { layout: 'editor' }, inputs: FRAME_INPUT });
   h.download();
   await settle();
-  assert.equal(h.pageExports().length, 1, 'one artboard → a single per-page still (no zip downstream)');
+  assert.equal(
+    h.pageExports().length,
+    1,
+    'one artboard → a single per-page still (no zip downstream)'
+  );
 });
 
 test('Design with NO frames (zero page els) stays a single flat export', async () => {
   const h = mountPaged({ pages: 0, render: { layout: 'editor' }, inputs: FRAME_INPUT });
   h.download();
   await settle();
-  assert.equal(h.pageExports().length, 0, 'no [data-pdf-page] → the flat whole-canvas path, never the fanout');
+  assert.equal(
+    h.pageExports().length,
+    0,
+    'no [data-pdf-page] → the flat whole-canvas path, never the fanout'
+  );
 });
 
 test('the frame arm requires canvas.frameField, not merely a boxes canvas (Org Chart is excluded)', async () => {
   // A fixed-canvas editor (org-chart) declares canvas but NO frameField. Even if page els
   // were somehow present, the gate must not fan out - it renders a single .artboard.
-  const h = mountPaged({ pages: 2, render: { layout: 'editor' }, inputs: [{ id: 'boxes', type: 'blocks', canvas: { fixedCanvas: true } }] });
+  const h = mountPaged({
+    pages: 2,
+    render: { layout: 'editor' },
+    inputs: [{ id: 'boxes', type: 'blocks', canvas: { fixedCanvas: true } }],
+  });
   h.download();
   await settle();
-  assert.equal(h.pageExports().length, 0, 'no frameField → hasFrames false → no per-artboard fanout');
+  assert.equal(
+    h.pageExports().length,
+    0,
+    'no frameField → hasFrames false → no per-artboard fanout'
+  );
 });
 
 test('render.paged (multi-page-pdf / doc-studio) is NOT admitted to the still fanout', async () => {
@@ -856,14 +1170,26 @@ test('render.paged (multi-page-pdf / doc-studio) is NOT admitted to the still fa
   const h = mountPaged({ pages: 4, render: { layout: 'document', paged: true }, inputs: [] });
   h.download();
   await settle();
-  assert.equal(h.pageExports().length, 0, 'render.paged stays a single whole-canvas file - never per-page stills');
+  assert.equal(
+    h.pageExports().length,
+    0,
+    'render.paged stays a single whole-canvas file - never per-page stills'
+  );
 });
 
 test('carousel-maker (render.pages) keeps fanning out unchanged', async () => {
-  const h = mountPaged({ pages: 2, render: { pages: { count: 'n', width: 'w', height: 'h' } }, inputs: [{ id: 'slides', type: 'blocks', canvas: {} }] });
+  const h = mountPaged({
+    pages: 2,
+    render: { pages: { count: 'n', width: 'w', height: 'h' } },
+    inputs: [{ id: 'slides', type: 'blocks', canvas: {} }],
+  });
   h.download();
   await settle();
-  assert.equal(h.pageExports().length, 2, 'render.pages fans out per page exactly as before the frame arm was added');
+  assert.equal(
+    h.pageExports().length,
+    2,
+    'render.pages fans out per page exactly as before the frame arm was added'
+  );
 });
 
 test('a framed still fanout drops the inert cuts opt from the per-page render', async () => {
@@ -873,7 +1199,68 @@ test('a framed still fanout drops the inert cuts opt from the per-page render', 
   const h = mountPaged({ pages: 2, render: { layout: 'editor' }, inputs: FRAME_INPUT });
   h.download();
   await settle();
-  for (const e of h.pageExports()) assert.equal('cuts' in e.opts, false, 'cuts is deleted from the per-artboard opts');
+  for (const e of h.pageExports())
+    assert.equal('cuts' in e.opts, false, 'cuts is deleted from the per-artboard opts');
+});
+
+test('Design offers speaker-note handouts only for standard PDF artboard documents', () => {
+  const h = mountPaged({
+    pages: 2,
+    render: { layout: 'editor', formats: ['png', 'pdf', 'pdf-cmyk'] },
+    inputs: FRAME_INPUT,
+  });
+  const row = h.panel.querySelector<HTMLElement>('[data-notes-handout-only]')!;
+  assert.ok(row);
+  assert.equal(row.style.display, 'none', 'PNG does not show a PDF layout option');
+  h.setFormat('pdf');
+  assert.equal(row.style.display, 'flex');
+  h.setFormat('pdf-cmyk');
+  assert.equal(
+    row.style.display,
+    'none',
+    'the single-page CMYK renderer must not promise a handout'
+  );
+
+  const flat = mountPaged({ pages: 0, render: { layout: 'editor' }, inputs: FRAME_INPUT });
+  flat.setFormat('pdf');
+  assert.equal(
+    flat.panel.querySelector<HTMLElement>('[data-notes-handout-only]')?.style.display,
+    'none',
+    'a frame-less canvas has no slides to lay out'
+  );
+
+  const other = mountPaged({
+    pages: 2,
+    toolId: 'carousel-maker',
+    render: { pages: { count: 'n', width: 'w', height: 'h' } },
+  });
+  other.setFormat('pdf');
+  assert.equal(other.panel.querySelector('[data-notes-handout-only]'), null);
+});
+
+test('checked speaker-note handout routes one temporary multi-page document through PDF export', async () => {
+  const h = mountPaged({ pages: 2, render: { layout: 'editor' }, inputs: FRAME_INPUT });
+  const pages = [...h.canvas.querySelectorAll<HTMLElement>('[data-pdf-page]')];
+  pages[0]!.style.cssText = 'width:1600px;height:900px';
+  pages[0]!.setAttribute('data-frame-name', 'Opening');
+  pages[0]!.setAttribute('data-frame-notes', 'Pause after the title.');
+  pages[1]!.style.cssText = 'width:1600px;height:900px';
+  pages[1]!.setAttribute('data-frame-name', 'Close');
+  h.setFormat('pdf');
+  const toggle = h.panel.querySelector<HTMLInputElement>('[data-action="pdf-notes-handout"]')!;
+  assert.equal(toggle.checked, false, 'ordinary PDF export is unchanged by default');
+  toggle.checked = true;
+  h.download();
+  await settle();
+  const exports = h.handoutExports();
+  assert.equal(exports.length, 1);
+  assert.equal(exports[0]!.node.querySelectorAll('[data-design-notes-handout-page]').length, 2);
+  assert.match(exports[0]!.node.textContent!, /Pause after the title\./);
+  assert.match(exports[0]!.node.textContent!, /No speaker notes\./);
+  assert.equal(exports[0]!.node.isConnected, false, 'temporary export DOM is disposed in finally');
+  assert.equal('width' in exports[0]!.opts, false, 'handout pages own their A4 dimensions');
+  assert.equal('height' in exports[0]!.opts, false);
+  assert.ok(h.downloads().some((name) => name.endsWith('-speaker-notes.pdf')));
 });
 
 // ── 10. print marks & bleed are OFF by default for RGB vector output ──────────
@@ -884,11 +1271,24 @@ test('a framed still fanout drops the inert cuts opt from the per-page render', 
 // export trim-sized with no marks - and physical units (mm + dpi) are a size
 // statement, never print intent.
 
-interface PrintDefaults { format?: string; bleed?: string; marks?: Record<string, boolean> | null; unit?: string; dpi?: number }
+interface PrintDefaults {
+  format?: string;
+  bleed?: string;
+  marks?: Record<string, boolean> | null;
+  unit?: string;
+  dpi?: number;
+}
 
 /** Mount the export bar for a plain (non-sequence) tool and expose the print card. */
-function mountPrintCard({ formats = ['png', 'pdf', 'svg', 'pdf-cmyk'], exportDefaults = {}, printMarks }:
-  { formats?: string[]; exportDefaults?: PrintDefaults; printMarks?: boolean } = {}) {
+function mountPrintCard({
+  formats = ['png', 'pdf', 'svg', 'pdf-cmyk'],
+  exportDefaults = {},
+  printMarks,
+}: {
+  formats?: string[];
+  exportDefaults?: PrintDefaults;
+  printMarks?: boolean;
+} = {}) {
   const doc = dom.window.document;
   doc.body.innerHTML = '';
   const panel = doc.createElement('div');
@@ -897,12 +1297,25 @@ function mountPrintCard({ formats = ['png', 'pdf', 'svg', 'pdf-cmyk'], exportDef
 
   const seen: Array<{ format: string; opts: Record<string, unknown> }> = [];
   const manifest = {
-    id: 'qr-code', name: 'QR Code', version: '1.0.0', inputs: [],
-    render: { width: 800, height: 600, formats, ...(printMarks === undefined ? {} : { printMarks }) },
+    id: 'qr-code',
+    name: 'QR Code',
+    version: '1.0.0',
+    inputs: [],
+    render: {
+      width: 800,
+      height: 600,
+      formats,
+      ...(printMarks === undefined ? {} : { printMarks }),
+    },
   };
   const runtime = {
-    getModel: () => [], setInput: async () => {}, setInputNoHistory: async () => {},
-    subscribe: () => {}, refresh: () => {}, hasFrameHook: false, isLive: () => false,
+    getModel: () => [],
+    setInput: async () => {},
+    setInputNoHistory: async () => {},
+    subscribe: () => {},
+    refresh: () => {},
+    hasFrameHook: false,
+    isLive: () => false,
     export: async (_node: unknown, format: string, opts: Record<string, unknown>) => {
       seen.push({ format, opts: { ...opts } });
       return new dom.window.Blob(['x'], { type: 'application/pdf' });
@@ -914,15 +1327,21 @@ function mountPrintCard({ formats = ['png', 'pdf', 'svg', 'pdf-cmyk'], exportDef
     export: { download: async () => {} },
   };
   renderActions(
-    panel as never, manifest as never, runtime as never, canvas, host as never,
-    () => {}, (async (fn: () => unknown) => fn()) as never, exportDefaults as never,
+    panel as never,
+    manifest as never,
+    runtime as never,
+    canvas,
+    host as never,
+    () => {},
+    (async (fn: () => unknown) => fn()) as never,
+    exportDefaults as never
   );
   return {
     panel,
     enable: () => panel.querySelector('[data-action="print-enable"]') as HTMLInputElement | null,
     card: () => panel.querySelector('.export-print') as HTMLElement | null,
     mark: (a: string) => panel.querySelector(`[data-action="${a}"]`) as HTMLInputElement,
-    downloads: () => seen.filter(e => typeof e.opts.onProgress === 'function'),
+    downloads: () => seen.filter((e) => typeof e.opts.onProgress === 'function'),
     setFormat: (f: string) => {
       const sel = panel.querySelector('[data-action="format"]') as HTMLSelectElement;
       sel.value = f;
@@ -933,8 +1352,10 @@ function mountPrintCard({ formats = ['png', 'pdf', 'svg', 'pdf-cmyk'], exportDef
       en.checked = on;
       en.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
     },
-    download: () => (panel.querySelector('[data-action="download"]') as HTMLElement)
-      .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
+    download: () =>
+      (panel.querySelector('[data-action="download"]') as HTMLElement).dispatchEvent(
+        new dom.window.MouseEvent('click', { bubbles: true })
+      ),
   };
 }
 
@@ -947,7 +1368,14 @@ test('an everyday PDF starts with the print card OFF and exports no bleed and no
   assert.equal(h.downloads().length, 1);
   assert.equal(h.downloads()[0]!.format, 'pdf');
   const opts = h.downloads()[0]!.opts;
-  for (const k of ['bleed', 'cropMarks', 'registrationMarks', 'bleedMarks', 'colorBars', 'provenance']) {
+  for (const k of [
+    'bleed',
+    'cropMarks',
+    'registrationMarks',
+    'bleedMarks',
+    'colorBars',
+    'provenance',
+  ]) {
     assert.equal(k in opts, false, `a default pdf export must not carry ${k}`);
   }
 });
@@ -992,20 +1420,30 @@ test('a manual toggle is an explicit request - it exports marks and survives for
   const h = mountPrintCard({ exportDefaults: { format: 'pdf' } });
   h.toggleEnable(true);
   h.setFormat('svg');
-  assert.equal(h.enable()!.checked, true, 'the user asked; the per-format auto-close must stand down');
+  assert.equal(
+    h.enable()!.checked,
+    true,
+    'the user asked; the per-format auto-close must stand down'
+  );
   h.download();
   await settle();
   const opts = h.downloads()[0]!.opts;
   assert.equal(opts.cropMarks, true);
   assert.equal(opts.bleed, '3mm');
-  assert.equal(opts.barStyle, 'rgb-swatches', 'RGB output paints brand swatches, not a CMYK verify bar');
+  assert.equal(
+    opts.barStyle,
+    'rgb-swatches',
+    'RGB output paints brand swatches, not a CMYK verify bar'
+  );
 });
 
 test('an explicit marks (link/save) default turns the card on for a plain pdf', () => {
-  const h = mountPrintCard({ exportDefaults: {
-    format: 'pdf',
-    marks: { crop: true, registration: false, bleed: false, colorBars: false, provenance: false },
-  } });
+  const h = mountPrintCard({
+    exportDefaults: {
+      format: 'pdf',
+      marks: { crop: true, registration: false, bleed: false, colorBars: false, provenance: false },
+    },
+  });
   assert.equal(h.enable()!.checked, true, '?marks= is an explicit request');
   assert.equal(h.mark('mark-crop').checked, true);
   assert.equal(h.mark('mark-reg').checked, false, 'the linked mark set restores exactly');
@@ -1014,7 +1452,10 @@ test('an explicit marks (link/save) default turns the card on for a plain pdf', 
 test('an explicit bleed (link/save) default turns the card on for a plain pdf', () => {
   const h = mountPrintCard({ exportDefaults: { format: 'pdf', bleed: '5mm' } });
   assert.equal(h.enable()!.checked, true, '?bleed= is an explicit request');
-  assert.equal((h.panel.querySelector('[data-action="print-bleed"]') as HTMLInputElement).value, '5');
+  assert.equal(
+    (h.panel.querySelector('[data-action="print-bleed"]') as HTMLInputElement).value,
+    '5'
+  );
 });
 
 test('physical units + dpi are NOT print intent', () => {
@@ -1026,7 +1467,11 @@ test('physical units + dpi are NOT print intent', () => {
 
 test('a manifest declaring render.printMarks: true IS print intent - the card defaults on', () => {
   const h = mountPrintCard({ exportDefaults: { format: 'pdf' }, printMarks: true });
-  assert.equal(h.enable()!.checked, true, 'declared intent covers the RGB print-capable formats too');
+  assert.equal(
+    h.enable()!.checked,
+    true,
+    'declared intent covers the RGB print-capable formats too'
+  );
   h.setFormat('svg');
   assert.equal(h.enable()!.checked, true);
   h.setFormat('png');
@@ -1051,7 +1496,12 @@ test('render.printMarks: false still hides the card entirely', () => {
 const SLIDE_IDS = ['intro', 'pricing', 'thanks'];
 
 test('?s= absent: every page still fans out, exactly as before the filter existed', async () => {
-  const h = mountPaged({ pages: 3, render: { layout: 'editor' }, inputs: FRAME_INPUT, ids: SLIDE_IDS });
+  const h = mountPaged({
+    pages: 3,
+    render: { layout: 'editor' },
+    inputs: FRAME_INPUT,
+    ids: SLIDE_IDS,
+  });
   h.download();
   await settle();
   assert.deepEqual(h.pageIds(), SLIDE_IDS);
@@ -1059,7 +1509,10 @@ test('?s= absent: every page still fans out, exactly as before the filter existe
 
 test('?s=2 exports ONLY that slide, as a single clean file (not a zip of one)', async () => {
   const h = mountPaged({
-    pages: 3, render: { layout: 'editor' }, inputs: FRAME_INPUT, ids: SLIDE_IDS,
+    pages: 3,
+    render: { layout: 'editor' },
+    inputs: FRAME_INPUT,
+    ids: SLIDE_IDS,
     exportDefaults: { format: 'png', filename: 'deck', slide: '2' },
   });
   h.download();
@@ -1070,7 +1523,10 @@ test('?s=2 exports ONLY that slide, as a single clean file (not a zip of one)', 
 
 test('?s=<frame id> addresses a slide wherever it sits (reorder-proof)', async () => {
   const h = mountPaged({
-    pages: 3, render: { layout: 'editor' }, inputs: FRAME_INPUT, ids: SLIDE_IDS,
+    pages: 3,
+    render: { layout: 'editor' },
+    inputs: FRAME_INPUT,
+    ids: SLIDE_IDS,
     exportDefaults: { format: 'png', slide: 'thanks' },
   });
   h.download();
@@ -1080,7 +1536,10 @@ test('?s=<frame id> addresses a slide wherever it sits (reorder-proof)', async (
 
 test('?s=2.3 - the build suffix still exports that whole slide (builds are presenter-only)', async () => {
   const h = mountPaged({
-    pages: 3, render: { layout: 'editor' }, inputs: FRAME_INPUT, ids: SLIDE_IDS,
+    pages: 3,
+    render: { layout: 'editor' },
+    inputs: FRAME_INPUT,
+    ids: SLIDE_IDS,
     exportDefaults: { format: 'png', slide: '2.3' },
   });
   h.download();
@@ -1091,7 +1550,10 @@ test('?s=2.3 - the build suffix still exports that whole slide (builds are prese
 test('an ?s= that names nothing exports the WHOLE deck - never a silent slide 1', async () => {
   for (const bad of ['9', '0', 'nope']) {
     const h = mountPaged({
-      pages: 3, render: { layout: 'editor' }, inputs: FRAME_INPUT, ids: SLIDE_IDS,
+      pages: 3,
+      render: { layout: 'editor' },
+      inputs: FRAME_INPUT,
+      ids: SLIDE_IDS,
       exportDefaults: { format: 'png', slide: bad },
     });
     h.download();
@@ -1103,7 +1565,11 @@ test('an ?s= that names nothing exports the WHOLE deck - never a silent slide 1'
 test('?s= on an unstamped paged tool still works positionally', async () => {
   // A carousel (render.pages) emits [data-pdf-page] without frame ids: a number is the
   // only address it can answer, and it must still answer it.
-  const h = mountPaged({ pages: 3, render: { pages: { count: 'n' } }, exportDefaults: { format: 'png', slide: '3' } });
+  const h = mountPaged({
+    pages: 3,
+    render: { pages: { count: 'n' } },
+    exportDefaults: { format: 'png', slide: '3' },
+  });
   h.download();
   await settle();
   assert.equal(h.pageExports().length, 1, 'the third page, and only it');
@@ -1124,12 +1590,19 @@ test('a shuttered export passes an abort signal, and its onCancel aborts THAT si
   assert.ok(signal instanceof AbortSignal, 'the export must be cancellable at all');
   assert.equal(signal.aborted, false);
 
-  const call = h.unscaled().find(c => c.shutter) as { onCancel?: () => void } | undefined;
-  assert.equal(typeof call?.onCancel, 'function', 'the shutter needs the abort to label its button Cancel');
+  const call = h.unscaled().find((c) => c.shutter) as { onCancel?: () => void } | undefined;
+  assert.equal(
+    typeof call?.onCancel,
+    'function',
+    'the shutter needs the abort to label its button Cancel'
+  );
   call!.onCancel!();
   assert.equal(signal.aborted, true, 'the button and the export must share one controller');
-  assert.equal((signal.reason as { name?: string })?.name, 'AbortError',
-    'the one shape every cancelled export path arrives in');
+  assert.equal(
+    (signal.reason as { name?: string })?.name,
+    'AbortError',
+    'the one shape every cancelled export path arrives in'
+  );
 });
 
 // ── 7. The provenance ask after a real export (plans/137 WP-E) ───────────────
@@ -1144,8 +1617,11 @@ test('a finished export offers the details ask once, and spends the flag', async
   const ask = h.ask();
   assert.ok(ask, 'the line must appear after the file has gone');
   assert.equal(ask!.querySelector('a')?.getAttribute('href'), '#/profile?focus=use-details');
-  assert.deepEqual(h.profileWrites(), [{ firstname: 'Ada', personalizeNudgeDismissed: true }],
-    'showing it retires the gallery toast for this profile - and keeps the rest of the profile');
+  assert.deepEqual(
+    h.profileWrites(),
+    [{ firstname: 'Ada', personalizeNudgeDismissed: true }],
+    'showing it retires the gallery toast for this profile - and keeps the rest of the profile'
+  );
 
   h.download();
   await settle();
@@ -1179,7 +1655,7 @@ test('a host with no profile store exports exactly as before', async () => {
 
 /** Index of the first element matching `sel` among the panel's direct children. */
 function rowIndex(panel: HTMLElement, sel: string): number {
-  return [...panel.children].findIndex(c => c.matches(sel));
+  return [...panel.children].findIndex((c) => c.matches(sel));
 }
 
 test('the timing row sits directly after dims and above the format cards', () => {
@@ -1192,19 +1668,30 @@ test('the timing row sits directly after dims and above the format cards', () =>
     const i = rowIndex(h.panel, later);
     if (i >= 0) assert.ok(i > timing, `${later} must rank below the timing row`);
   }
-  assert.equal(h.panel.querySelector('.export-settings [data-anim-params]'), null,
-    'and it has left the ancillary chip strip entirely');
+  assert.equal(
+    h.panel.querySelector('.export-settings [data-anim-params]'),
+    null,
+    'and it has left the ancillary chip strip entirely'
+  );
 });
 
 test('the timing labels read as words, with a help tip on the pair', () => {
   const h = mount({ seqMs: null, formats: ['webm', 'png'] });
   const row = h.panel.querySelector('[data-anim-params]') as HTMLElement;
-  assert.match(row.textContent ?? '', /Start after/, '"Wait" was jargon for a hold before recording');
+  assert.match(
+    row.textContent ?? '',
+    /Start after/,
+    '"Wait" was jargon for a hold before recording'
+  );
   assert.doesNotMatch(row.textContent ?? '', /\bWait\b/);
   assert.ok(row.querySelector('.help-tip-host .help-tip-btn'), 'the pair carries the standard (i)');
   const live = h.liveLabel()!;
   assert.ok(live.querySelector('.help-tip-btn'), 'Record live had only a title= - now a real tip');
-  assert.equal(live.getAttribute('title'), null, 'and the title is not left behind as a second copy');
+  assert.equal(
+    live.getAttribute('title'),
+    null,
+    'and the title is not left behind as a second copy'
+  );
 });
 
 // ── 12. Convert paths renders the help the engine already wrote (F18) ──────────
@@ -1219,27 +1706,73 @@ test('an export-option chip renders its engine help as the standard (i)', () => 
   const canvas = doc.createElement('div');
   doc.body.append(panel, canvas);
   const model = [
-    { id: 'convertPaths', label: 'Convert paths', type: 'boolean', group: 'export', control: 'checkbox',
-      value: true, help: 'Outline text as vector paths so SVG/PDF render identically.' },
-    { id: 'transparent', label: 'Transparent', type: 'boolean', group: 'export', control: 'checkbox', value: false },
+    {
+      id: 'convertPaths',
+      label: 'Convert paths',
+      type: 'boolean',
+      group: 'export',
+      control: 'checkbox',
+      value: true,
+      help: 'Outline text as vector paths so SVG/PDF render identically.',
+    },
+    {
+      id: 'transparent',
+      label: 'Transparent',
+      type: 'boolean',
+      group: 'export',
+      control: 'checkbox',
+      value: false,
+    },
   ];
   const runtime = {
-    getModel: () => model, setInput: async () => {}, setInputNoHistory: async () => {},
-    subscribe: () => {}, refresh: () => {}, hasFrameHook: false, isLive: () => false,
+    getModel: () => model,
+    setInput: async () => {},
+    setInputNoHistory: async () => {},
+    subscribe: () => {},
+    refresh: () => {},
+    hasFrameHook: false,
+    isLive: () => false,
     export: async () => new dom.window.Blob(['x']),
   };
-  const host = { assets: { query: async () => [] }, state: { save: async () => {} }, export: { download: async () => {} } };
+  const host = {
+    assets: { query: async () => [] },
+    state: { save: async () => {} },
+    export: { download: async () => {} },
+  };
   renderActions(
-    panel as never, { id: 't', name: 'T', version: '1.0.0', inputs: [], render: { width: 8, height: 8, formats: ['svg', 'png'] } } as never,
-    runtime as never, canvas, host as never, () => {}, (async (fn: () => unknown) => fn()) as never, {},
+    panel as never,
+    {
+      id: 't',
+      name: 'T',
+      version: '1.0.0',
+      inputs: [],
+      render: { width: 8, height: 8, formats: ['svg', 'png'] },
+    } as never,
+    runtime as never,
+    canvas,
+    host as never,
+    () => {},
+    (async (fn: () => unknown) => fn()) as never,
+    {}
   );
-  const chip = panel.querySelector('.export-option:has([data-input-id="convertPaths"])') as HTMLElement;
+  const chip = panel.querySelector(
+    '.export-option:has([data-input-id="convertPaths"])'
+  ) as HTMLElement;
   assert.ok(chip, 'the chip still renders');
-  assert.match(chip.textContent ?? '', /Convert paths/, 'the label is the engine\'s, unrelabelled');
+  assert.match(chip.textContent ?? '', /Convert paths/, "the label is the engine's, unrelabelled");
   assert.ok(chip.classList.contains('help-tip-host'), 'the chip anchors its own tip');
-  assert.match(chip.querySelector('.help-tip-pop')?.textContent ?? '', /Outline text as vector paths/);
-  const plain = panel.querySelector('.export-option:has([data-input-id="transparent"])') as HTMLElement;
-  assert.equal(plain.querySelector('.help-tip-btn'), null, 'an option with no help gets no empty (i)');
+  assert.match(
+    chip.querySelector('.help-tip-pop')?.textContent ?? '',
+    /Outline text as vector paths/
+  );
+  const plain = panel.querySelector(
+    '.export-option:has([data-input-id="transparent"])'
+  ) as HTMLElement;
+  assert.equal(
+    plain.querySelector('.help-tip-btn'),
+    null,
+    'an option with no help gets no empty (i)'
+  );
 });
 
 // ── 13. Destinations are ONE row, not a card per provider (F23) ───────────────
@@ -1250,7 +1783,9 @@ test('an export-option chip renders its engine help as the standard (i)', () => 
 test('every send destination shares one "Send to" row', async () => {
   const { registerSendTarget, unregisterSendTarget } = await import('../lib/send-target.ts');
   const mk = (kind: string, label: string) => ({
-    kind, label, available: () => true,
+    kind,
+    label,
+    available: () => true,
     actionLabel: () => `Send to ${label}`,
     send: async () => ({ label: 'done' }),
   });
@@ -1271,13 +1806,22 @@ test('every send destination shares one "Send to" row', async () => {
     assert.equal(head.getAttribute('aria-expanded'), 'true', 'the header opens it');
     assert.equal(bodyEl.style.display, 'flex');
     const btns = [...cards[0]!.querySelectorAll('[data-send-kind]')];
-    assert.deepEqual(btns.map(b => b.getAttribute('data-send-kind')), ['testcloud', 'testdrive'],
-      'the click delegation still keys off data-send-kind');
-    assert.deepEqual(btns.map(b => b.querySelector('span')?.textContent), ['Test Cloud', 'Test Drive'],
-      'each button is the provider NAME - the head already said "Send to"');
+    assert.deepEqual(
+      btns.map((b) => b.getAttribute('data-send-kind')),
+      ['testcloud', 'testdrive'],
+      'the click delegation still keys off data-send-kind'
+    );
+    assert.deepEqual(
+      btns.map((b) => b.querySelector('span')?.textContent),
+      ['Test Cloud', 'Test Drive'],
+      'each button is the provider NAME - the head already said "Send to"'
+    );
     assert.equal(cards[0]!.querySelectorAll('.export-send-row').length, 1, 'they wrap in one row');
-    assert.equal(cards[0]!.querySelectorAll('[data-send-status]').length, 2,
-      'and each keeps its own outcome line');
+    assert.equal(
+      cards[0]!.querySelectorAll('[data-send-status]').length,
+      2,
+      'and each keeps its own outcome line'
+    );
   } finally {
     unregisterSendTarget('testcloud');
     unregisterSendTarget('testdrive');
@@ -1289,13 +1833,27 @@ test('an organisation send credentials the exact export without changing a perso
   let orgSent = 0;
   let personalSent = 0;
   registerSendTarget({
-    id: 'org:archive', kind: 's3', scope: 'organization', sources: ['export'],
-    requiresCredential: true, label: 'Archive', available: () => true,
-    send: async () => { orgSent++; return { label: 'done' }; },
+    id: 'org:archive',
+    kind: 's3',
+    scope: 'organization',
+    sources: ['export'],
+    requiresCredential: true,
+    label: 'Archive',
+    available: () => true,
+    send: async () => {
+      orgSent++;
+      return { label: 'done' };
+    },
   });
   registerSendTarget({
-    id: 'personal:test', kind: 's3-personal-test', label: 'My storage', available: () => true,
-    send: async () => { personalSent++; return { label: 'done' }; },
+    id: 'personal:test',
+    kind: 's3-personal-test',
+    label: 'My storage',
+    available: () => true,
+    send: async () => {
+      personalSent++;
+      return { label: 'done' };
+    },
   });
   try {
     const h = mount({ seqMs: null, formats: ['png'] });
@@ -1307,7 +1865,11 @@ test('an organisation send credentials the exact export without changing a perso
     h.panel.querySelector<HTMLButtonElement>('[data-send-kind="personal:test"]')!.click();
     for (let i = 0; i < 5 && !personalSent; i++) await settle();
     assert.equal(personalSent, 1);
-    assert.equal(h.renders()[1]!.opts.c2pa, undefined, 'personal route keeps the person\'s export choice');
+    assert.equal(
+      h.renders()[1]!.opts.c2pa,
+      undefined,
+      "personal route keeps the person's export choice"
+    );
   } finally {
     unregisterSendTarget('org:archive');
     unregisterSendTarget('personal:test');
@@ -1331,29 +1893,45 @@ test('the credential lifetime label matches the profile view, translated', () =>
 // only for a format with an alpha channel to keep.
 
 const TRANSPARENT_INPUT = {
-  id: 'transparentBg', label: 'Transparent background', type: 'boolean', control: 'checkbox',
-  value: false, help: 'Remove the background fill so alpha-supporting formats keep transparency.',
+  id: 'transparentBg',
+  label: 'Transparent background',
+  type: 'boolean',
+  control: 'checkbox',
+  value: false,
+  help: 'Remove the background fill so alpha-supporting formats keep transparency.',
 };
 
 const mirror = (h: Harness): HTMLInputElement | null =>
   h.panel.querySelector('[data-action="transparent-bg"]');
 
 test('the transparency mirror renders only for a tool that has the input', () => {
-  assert.ok(mirror(mount({ seqMs: null, formats: ['png'], model: [TRANSPARENT_INPUT] })),
-    'a tool with render.transparentBg gets the chip');
-  assert.equal(mirror(mount({ seqMs: null, formats: ['png'] })), null,
-    'a tool without the input gets nothing');
+  assert.ok(
+    mirror(mount({ seqMs: null, formats: ['png'], model: [TRANSPARENT_INPUT] })),
+    'a tool with render.transparentBg gets the chip'
+  );
+  assert.equal(
+    mirror(mount({ seqMs: null, formats: ['png'] })),
+    null,
+    'a tool without the input gets nothing'
+  );
 });
 
 test('the mirror wears the engine label and its help tip', () => {
   const h = mount({ seqMs: null, formats: ['png'], model: [TRANSPARENT_INPUT] });
   const chip = mirror(h)!.closest('label') as HTMLElement;
   assert.match(chip.textContent ?? '', /Transparent background/);
-  assert.ok(chip.classList.contains('help-tip-host'), 'the engine help text is offered, not dropped');
+  assert.ok(
+    chip.classList.contains('help-tip-host'),
+    'the engine help text is offered, not dropped'
+  );
 });
 
 test('the mirror is shown for alpha formats and hidden for the rest', () => {
-  const h = mount({ seqMs: null, formats: ['png', 'jpg', 'svg', 'pdf'], model: [TRANSPARENT_INPUT] });
+  const h = mount({
+    seqMs: null,
+    formats: ['png', 'jpg', 'svg', 'pdf'],
+    model: [TRANSPARENT_INPUT],
+  });
   const chip = mirror(h)!.closest('label') as HTMLElement;
   assert.equal(chip.style.display, 'flex', 'png opens on it');
   h.setFormat('jpg');
@@ -1369,14 +1947,17 @@ test('ticking the mirror writes through to the one input it reflects', () => {
   const box = mirror(h)!;
   box.checked = true;
   box.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-  assert.deepEqual(h.inputWrites(), [{ id: 'transparentBg', value: true }],
-    'the sheet sets the input - it does not keep a second copy of the setting');
+  assert.deepEqual(
+    h.inputWrites(),
+    [{ id: 'transparentBg', value: true }],
+    'the sheet sets the input - it does not keep a second copy of the setting'
+  );
 });
 
 test('the sidebar moving the input re-syncs the mirror', () => {
   const h = mount({ seqMs: null, formats: ['png'], model: [TRANSPARENT_INPUT] });
   assert.equal(mirror(h)!.checked, false);
-  h.setModel('transparentBg', true);          // the sidebar toggle, from the panel's side
+  h.setModel('transparentBg', true); // the sidebar toggle, from the panel's side
   assert.equal(mirror(h)!.checked, true, 'the two views must agree');
   h.setModel('transparentBg', false);
   assert.equal(mirror(h)!.checked, false);
@@ -1395,7 +1976,7 @@ test('a finished download remembers the shape it was exported at', async () => {
   h.download();
   await settle();
 
-  const write = h.stateWrites().find(w => w.slot.startsWith('__xprefs__:'));
+  const write = h.stateWrites().find((w) => w.slot.startsWith('__xprefs__:'));
   assert.ok(write, 'the download path writes the remembered shape');
   assert.equal(write.slot, '__xprefs__:qr-code', 'one slot per tool');
   assert.deepEqual(write.data, { format: 'png', width: 1080, height: 1080, unit: 'px', dpi: 300 });
@@ -1403,7 +1984,10 @@ test('a finished download remembers the shape it was exported at', async () => {
 
 test('nothing is remembered when nothing was downloaded', () => {
   const h = mount({ seqMs: null, formats: ['png'], toolId: 'qr-code' });
-  assert.deepEqual(h.stateWrites().filter(w => w.slot.startsWith('__xprefs__:')), []);
+  assert.deepEqual(
+    h.stateWrites().filter((w) => w.slot.startsWith('__xprefs__:')),
+    []
+  );
 });
 
 // ── 17. Captions on a moving export (plans/180 section 4, M-B) ────────────────
@@ -1417,7 +2001,13 @@ test('nothing is remembered when nothing was downloaded', () => {
 
 /** A caption box as the design hook renders one: a `.lolly-box` carrying the
  *  preset's `caption` class, its timeline window, and the text in the usual child. */
-function addCaptionBox(stage: HTMLElement, startMs: number, durMs: number, text: string, opts: { ignored?: boolean; cls?: string } = {}): HTMLElement {
+function addCaptionBox(
+  stage: HTMLElement,
+  startMs: number,
+  durMs: number,
+  text: string,
+  opts: { ignored?: boolean; cls?: string } = {}
+): HTMLElement {
   const box = dom.window.document.createElement('div');
   box.className = `lolly-box ${opts.cls ?? 'caption'}`.trim();
   box.setAttribute('data-t-start', String(startMs));
@@ -1444,7 +2034,7 @@ const named = (h: Harness): Harness => {
 /** Wait for the export to finish handing a file over (the download path awaits a
  *  render, a zip and two dynamic imports, so one macrotask is not enough). */
 async function settleDownload(h: Harness): Promise<void> {
-  for (let i = 0; i < 200 && !h.saved().length; i++) await new Promise(r => setTimeout(r, 5));
+  for (let i = 0; i < 200 && !h.saved().length; i++) await new Promise((r) => setTimeout(r, 5));
   await settle();
 }
 
@@ -1487,7 +2077,11 @@ test('captions: nothing is embedded and nothing is zipped when neither option is
   h.download();
   await settleDownload(h);
   assert.equal(h.downloads().length, 1);
-  assert.equal(h.downloads()[0]!.opts.subtitlesVtt, undefined, 'the byte-identical guard: no track unless asked');
+  assert.equal(
+    h.downloads()[0]!.opts.subtitlesVtt,
+    undefined,
+    'the byte-identical guard: no track unless asked'
+  );
   assert.equal(h.saved()[0]!.name, `${STEM}.webm`, 'and one plain file, not a zip');
 });
 
@@ -1498,9 +2092,17 @@ test('captions: the embedded track is the VTT of the caption boxes on the stage'
   await settleDownload(h);
   const vtt = h.downloads()[0]!.opts.subtitlesVtt as string;
   assert.ok(vtt.startsWith('WEBVTT'), 'a real WebVTT document');
-  assert.match(vtt, /00:00:00\.500 --> 00:00:02\.300\nSlide one, spoken\./, 'first cue: start and start+dur, in film seconds');
+  assert.match(
+    vtt,
+    /00:00:00\.500 --> 00:00:02\.300\nSlide one, spoken\./,
+    'first cue: start and start+dur, in film seconds'
+  );
   assert.match(vtt, /00:00:02\.600 --> 00:00:04\.600\nAnd the second line\./, 'second cue');
-  assert.equal(h.saved()[0]!.name, `${STEM}.webm`, 'embedding alone leaves the download a single file');
+  assert.equal(
+    h.saved()[0]!.name,
+    `${STEM}.webm`,
+    'embedding alone leaves the download a single file'
+  );
 });
 
 test('captions: sidecar on ⇒ the download is a zip of the film, the .vtt and the .srt', async () => {
@@ -1513,11 +2115,18 @@ test('captions: sidecar on ⇒ the download is a zip of the film, the .vtt and t
   assert.equal(file.name, `${stem}.zip`, 'one download, so the sidecars ride a zip');
   const { unzipAsync } = await import('../lib/zip.ts');
   const entries = await unzipAsync(new Uint8Array(await file.blob.arrayBuffer()));
-  assert.deepEqual(Object.keys(entries).sort(), [`${stem}.srt`, `${stem}.vtt`, `${stem}.webm`],
-    'the film keeps its own name and extension; the captions sit beside it');
+  assert.deepEqual(
+    Object.keys(entries).sort(),
+    [`${stem}.srt`, `${stem}.vtt`, `${stem}.webm`],
+    'the film keeps its own name and extension; the captions sit beside it'
+  );
   const text = (name: string): string => new TextDecoder().decode(entries[name]!);
   assert.ok(text(`${stem}.vtt`).startsWith('WEBVTT'));
-  assert.match(text(`${stem}.srt`), /^1\n00:00:00,500 --> 00:00:02,300\nSlide one, spoken\./, 'SubRip: comma decimals, numbered');
+  assert.match(
+    text(`${stem}.srt`),
+    /^1\n00:00:00,500 --> 00:00:02,300\nSlide one, spoken\./,
+    'SubRip: comma decimals, numbered'
+  );
   assert.equal(text(`${stem}.webm`), 'x', 'the rendered bytes go in verbatim');
 });
 
@@ -1530,18 +2139,25 @@ test('captions: both options read ONE cue set - the track and the sidecar cannot
   const { unzipAsync } = await import('../lib/zip.ts');
   const stem = STEM;
   const entries = await unzipAsync(new Uint8Array(await h.saved()[0]!.blob.arrayBuffer()));
-  assert.equal(new TextDecoder().decode(entries[`${stem}.vtt`]!), h.downloads()[0]!.opts.subtitlesVtt,
-    'the same WebVTT document inside the file and beside it');
+  assert.equal(
+    new TextDecoder().decode(entries[`${stem}.vtt`]!),
+    h.downloads()[0]!.opts.subtitlesVtt,
+    'the same WebVTT document inside the file and beside it'
+  );
 });
 
 test('captions: a document with no caption boxes asks for nothing and ships nothing extra', async () => {
-  const h = named(mount({ seqMs: 8000, formats: ['mp4', 'webm'] }));   // a stage, but no captions on it
+  const h = named(mount({ seqMs: 8000, formats: ['mp4', 'webm'] })); // a stage, but no captions on it
   (h.panel.querySelector('[data-action="captions-embed"]') as HTMLInputElement).checked = true;
   (h.panel.querySelector('[data-action="captions-sidecar"]') as HTMLInputElement).checked = true;
   h.download();
   await settleDownload(h);
   assert.equal(h.downloads()[0]!.opts.subtitlesVtt, undefined, 'no cues, no track');
-  assert.equal(h.saved()[0]!.name, `${STEM}.webm`, 'and no zip around a file with nothing beside it');
+  assert.equal(
+    h.saved()[0]!.name,
+    `${STEM}.webm`,
+    'and no zip around a file with nothing beside it'
+  );
 });
 
 // The collector itself: what counts as a caption box, and how a cue is bounded.
@@ -1550,9 +2166,9 @@ test('stageCaptionCues reads the caption boxes and only those', async () => {
   const { stageCaptionCues } = await import('../bridge/sequence-render.ts');
   const h = mount({ seqMs: 10000, formats: ['mp4'] });
   addCaptionBox(h.stage!, 1000, 1000, 'One');
-  addCaptionBox(h.stage!, 3000, 1000, 'Two', { ignored: true });     // struck through - not drawn, not captioned
-  addCaptionBox(h.stage!, 5000, 1000, 'Three', { cls: 'callout' });  // an ordinary text box, not a caption
-  const plain = dom.window.document.createElement('div');            // a caption class with no timing at all
+  addCaptionBox(h.stage!, 3000, 1000, 'Two', { ignored: true }); // struck through - not drawn, not captioned
+  addCaptionBox(h.stage!, 5000, 1000, 'Three', { cls: 'callout' }); // an ordinary text box, not a caption
+  const plain = dom.window.document.createElement('div'); // a caption class with no timing at all
   plain.className = 'lolly-box caption';
   h.stage!.appendChild(plain);
   assert.deepEqual(stageCaptionCues(h.canvas), [{ start: 1, end: 2, text: 'One' }]);
@@ -1562,7 +2178,9 @@ test('stageCaptionCues collapses line breaks - a blank line would break the cue 
   const { stageCaptionCues } = await import('../bridge/sequence-render.ts');
   const h = mount({ seqMs: 10000, formats: ['mp4'] });
   addCaptionBox(h.stage!, 0, 2000, '  Two lines\n\n  of caption  ');
-  assert.deepEqual(stageCaptionCues(h.canvas), [{ start: 0, end: 2, text: 'Two lines of caption' }]);
+  assert.deepEqual(stageCaptionCues(h.canvas), [
+    { start: 0, end: 2, text: 'Two lines of caption' },
+  ]);
 });
 
 test('stageCaptionCues bounds every cue by the film, and sorts them', async () => {
@@ -1571,14 +2189,16 @@ test('stageCaptionCues bounds every cue by the film, and sorts them', async () =
   addCaptionBox(h.stage!, 3000, 5000, 'Runs past the end');
   addCaptionBox(h.stage!, 1000, 500, 'Earlier');
   const open = addCaptionBox(h.stage!, 2000, 500, 'Open ended');
-  open.removeAttribute('data-t-dur');           // no authored length ⇒ runs to the end, as drawn
+  open.removeAttribute('data-t-dur'); // no authored length ⇒ runs to the end, as drawn
   assert.deepEqual(stageCaptionCues(h.canvas), [
     { start: 1, end: 1.5, text: 'Earlier' },
     { start: 2, end: 4, text: 'Open ended' },
     { start: 3, end: 4, text: 'Runs past the end' },
   ]);
   // A shorter export truncates the film, so it truncates the captions with it.
-  assert.deepEqual(stageCaptionCues(h.canvas, { totalMs: 1400 }), [{ start: 1, end: 1.4, text: 'Earlier' }]);
+  assert.deepEqual(stageCaptionCues(h.canvas, { totalMs: 1400 }), [
+    { start: 1, end: 1.4, text: 'Earlier' },
+  ]);
   // And a cue the truncation leaves too short to read is dropped, not flashed.
   assert.deepEqual(stageCaptionCues(h.canvas, { totalMs: 1020 }), []);
 });

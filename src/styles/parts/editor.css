@@ -930,7 +930,7 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
   border: 1px solid hsl(var(--border)); background: hsl(var(--background)); color: inherit;
   font: inherit; text-align: left;
 }
-.fc-choreo-card svg { width: calc(16px * var(--a11y-fs)); height: calc(16px * var(--a11y-fs)); margin-bottom: 2px; }
+.fc-choreo-card svg { width: var(--fs-xl); height: var(--fs-xl); margin-bottom: 2px; }
 .fc-choreo-card:hover { border-color: hsl(var(--ring) / 0.5); }
 .fc-choreo-card[aria-checked="true"] { border-color: hsl(var(--primary)); background: hsl(var(--primary) / 0.08); }
 .fc-choreo-name { font-size: var(--fs-sm); font-weight: 600; }
@@ -1839,4 +1839,57 @@ button.fc-readout:empty { display: none; }
   .tool-stage:is(.fc-arming, .fc-connecting, .fc-lining, .fc-penning, .fc-node-editing, .is-grabbable) {
     touch-action: none;
   }
+}
+/* Outcome-aware disclosure: the Design overlay still owns one timeline, but a
+ * static design or carousel should not advertise a playback workflow in either
+ * copy of the canvas chrome. The top bar applies its own live gate because it
+ * can also fold this control into a menu. */
+.tool-view[data-design-intent="general"] .fc-btn-timeline,
+.tool-view[data-design-intent="carousel"] .fc-btn-timeline {
+  display: none;
+}
+
+/* ── Design keyboard shortcuts ───────────────────────────────────────────────
+   The timeline has a focused, timeline-only sheet. This is the canvas/document
+   inventory opened by `?` everywhere else and by the document menu. Native dialog
+   lifecycle comes from mountModal; only the compact grouped table is owned here. */
+.fc-shortcuts-modal .fc-shortcuts-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(720px, 86vw);
+  max-height: min(78vh, 760px);
+}
+.fc-shortcuts-title { margin: 0; font-size: var(--fs-xl); }
+.fc-shortcuts-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 28px;
+  overflow-y: auto;
+  padding-inline-end: 4px;
+}
+.fc-shortcuts-group h3 {
+  margin: 0 0 7px;
+  color: var(--ui-color-text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.fc-shortcuts-group table { width: 100%; border-collapse: collapse; }
+.fc-shortcuts-group td { padding: 4px 0; vertical-align: baseline; font-size: var(--fs-md); }
+.fc-shortcuts-keys { width: 1%; padding-inline-end: 12px !important; white-space: nowrap; }
+.fc-shortcuts-keys kbd {
+  display: inline-block;
+  padding: 2px 7px;
+  border: 1px solid var(--ui-color-border-default);
+  border-radius: var(--ui-radius-choice);
+  background: color-mix(in srgb, var(--ui-color-surface-muted) 60%, transparent);
+  font-family: var(--ui-type-mono-family);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.fc-shortcuts-actions { display: flex; justify-content: flex-end; }
+@media (max-width: 640px) {
+  .fc-shortcuts-groups { grid-template-columns: 1fr; }
 }

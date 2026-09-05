@@ -592,6 +592,11 @@
 }
 .profile-view .store-bar .seg[data-cat="sessions"] { background: hsl(var(--store-1)); }
 .profile-view .store-bar .seg[data-cat="images"]   { background: hsl(var(--store-2)); }
+.profile-view .store-bar .seg[data-cat="file-history"],
+.profile-view .store-chip-sw[data-cat="file-history"] { background: hsl(var(--store-5)); }
+.profile-view .store-manage[data-cat="file-history"] .store-manage-name { min-width: 0; overflow-wrap: anywhere; }
+.profile-view .store-manage[data-cat="file-history"] small { display: block; max-width: 52ch; font-size: var(--fs-sm); font-weight: 400; line-height: 1.5; }
+.profile-view .store-manage[data-cat="file-history"] .btn { min-height: 44px; white-space: normal; }
 .profile-view .store-bar .seg[data-cat="cache"]    { background: hsl(var(--store-3)); }
 .profile-view .store-bar .seg[data-cat="previews"] { background: hsl(var(--store-4)); }
 .profile-view .store-bar .seg[data-cat="pins"]     { background: hsl(var(--store-5)); }

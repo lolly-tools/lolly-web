@@ -65,6 +65,18 @@ jelly-button {
   --jelly-button-font-size: calc(.85rem * var(--a11y-fs));
   --jelly-button-height: calc(2.35rem * var(--a11y-fs));
   --jelly-button-min-width: 0;
+  /* Cap the HOST at the same height its shadow capsule uses. The component only
+     sizes the inner [part=button]; the host stays height:auto, so in a flex row
+     (align-items defaults to stretch) an engine is free to stretch the host - and
+     the blob canvas inside it, drawn at height:100% - to the whole row. Chromium
+     resolves the host to content height and never grows; some WebKit builds
+     stretch it, which is what turned the drop chooser's two buttons into full
+     dialog-height arches. An explicit host height reads the same variable every
+     size and variant already sets (small/medium/large, download-btn-jelly), so
+     this is byte-identical where it already worked and a hard cap where it did
+     not. */
+  height: var(--jelly-button-height);
+  box-sizing: border-box;
 }
 /* The shadow button is content-sized and sits at the inline start of its
    wrapper - so in a stretched host (flex rows) the capsule spans the host but
@@ -89,8 +101,20 @@ jelly-input {
 let loading: Promise<void> | null = null;
 let ready = false;
 
+// The WKWebView in the current macOS/iOS beta grows the jelly components' canvas
+// without bound - a measure-then-redraw feedback loop that scales each control up
+// until it fills the window (first seen as the drop chooser's two buttons ballooning
+// off-frame). A CSS height cap on the host does not stop a JS-driven growth loop, so
+// until the vendored component is verified against that WebKit the native shells
+// (Tauri desktop and mobile, both WKWebView) never turn Jelly on. The flag still
+// drives the web PWA, where the components render correctly. Remove this gate once
+// the component holds a fixed size under that WebKit.
+const NATIVE_WEBVIEW = typeof window !== 'undefined'
+  && typeof (window as { __TAURI_INTERNALS__?: { invoke?: unknown } }).__TAURI_INTERNALS__?.invoke === 'function';
+
 /** Whether the Jelly effects flag is on (sync read of the boot-hydrated mirror). */
 export function jellyEnabled(): boolean {
+  if (NATIVE_WEBVIEW) return false;
   return flagEnabledSync(JELLY_FLAG.id);
 }
 
@@ -114,6 +138,11 @@ export function jellyActive(): boolean {
  */
 export async function ensureJelly(on: boolean = jellyEnabled()): Promise<boolean> {
   if (!on) return false;
+  // The gate above only stops callers that read jellyEnabled(); the feature-flag
+  // toggle passes its new state in directly (profile.ts), so bar the native
+  // WebView here too - otherwise flipping the flag on desktop loads the bundle and
+  // the flag cards' own switches balloon. See NATIVE_WEBVIEW above.
+  if (NATIVE_WEBVIEW) return false;
   // No custom-element registry means no browser to define <jelly-*> in (a bare
   // jsdom test host is the everyday case). The bundle registers its elements at
   // import time, so importing it there throws and the answer is false either

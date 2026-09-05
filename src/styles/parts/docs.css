@@ -90,7 +90,7 @@
   justify-content: center;
   width: calc(38px * var(--a11y-fs));
   height: calc(38px * var(--a11y-fs));
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid hsl(var(--border));
   background: hsl(var(--background) / 0.85);
   color: hsl(var(--foreground));
@@ -287,7 +287,7 @@
   align-items: center;
   gap: 0.35rem;
   padding: 0.42rem 0.72rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid hsl(var(--border));
   background: hsl(var(--background) / 0.9);
   color: hsl(var(--foreground));
@@ -580,7 +580,7 @@
 .docs-content .fmt-dialog { border: 0; border-radius: 18px; padding: 0; width: min(94vw, 38rem); max-height: 88vh; overflow: auto; margin: auto; color: var(--dark); background: hsl(var(--popover)); box-shadow: 0 30px 80px hsl(var(--foreground) / .34); }
 .docs-content .fmt-dialog::backdrop { background: hsl(220 40% 6% / .5); backdrop-filter: blur(3px); }
 .docs-content .fmt-dialog-inner { padding: 1.75rem 1.75rem 1.6rem; position: relative; }
-.docs-content .fmt-dialog-x { position: absolute; top: .7rem; right: .7rem; border: 0; background: var(--pale); width: 1.9rem; height: 1.9rem; border-radius: 50%; cursor: pointer; color: var(--muted); font-size: calc(.82rem * var(--a11y-fs, 1)); line-height: 1; }
+.docs-content .fmt-dialog-x { position: absolute; top: .7rem; right: .7rem; border: 0; background: var(--pale); width: 1.9rem; height: 1.9rem; border-radius: var(--radius-round); cursor: pointer; color: var(--muted); font-size: calc(.82rem * var(--a11y-fs, 1)); line-height: 1; }
 .docs-content .fmt-dialog-x:hover { background: var(--border); }
 .docs-content .fmt-dialog-dir { display: inline-block; font-size: calc(.62rem * var(--a11y-fs, 1)); font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--green); background: hsl(var(--primary) / .14); padding: .3em .7em; border-radius: 1em; margin-bottom: .7rem; }
 .docs-content .fmt-dialog h3 { margin: 0; color: inherit; font-size: calc(1.55rem * var(--a11y-fs, 1)); line-height: 1.1; }
@@ -598,7 +598,7 @@
 .docs-content .fmt-dialog-feats { list-style: none; margin: 1.15rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: .4rem; }
 .docs-content .fmt-dialog-feats:empty { margin: 0; }
 .docs-content .fmt-dialog-feats li { font-size: calc(.72rem * var(--a11y-fs, 1)); font-weight: 700; color: inherit; background: var(--pale); border: 1px solid var(--border); padding: .32em .68em; border-radius: 1em; display: inline-flex; align-items: center; gap: .4em; }
-.docs-content .fmt-dialog-feats li::before { content: ''; width: .5em; height: .5em; border-radius: 50%; background: var(--green); flex: none; }
+.docs-content .fmt-dialog-feats li::before { content: ''; width: .5em; height: .5em; border-radius: var(--radius-round); background: var(--green); flex: none; }
 .docs-content .fmt-dialog-unsup { margin: 1.2rem 0 0; padding: .85rem 1rem; border-radius: 12px; background: hsl(20 99% 62% / .1); }
 .docs-content .fmt-dialog-unsup[hidden] { display: none; }
 .docs-content .fmt-dialog-unsup-label { display: block; font-size: calc(.62rem * var(--a11y-fs, 1)); font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--orange); margin-bottom: .5rem; }

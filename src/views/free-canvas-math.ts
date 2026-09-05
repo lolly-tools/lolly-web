@@ -1301,6 +1301,12 @@ interface SnapTarget {
   span?: [number, number];
 }
 
+/** Persistent document guide positions to add to the ordinary artboard/object targets. */
+export interface SnapLines {
+  x?: readonly number[];
+  y?: readonly number[];
+}
+
 interface SnapPick {
   d: number;
   line: number;
@@ -1323,7 +1329,7 @@ function pickSnap(edges: number[], targets: SnapTarget[], threshold: number): Sn
  * {minX,minY,maxX,maxY}. Returns { dx, dy, guides:[{x1,y1,x2,y2}] } - the extra
  * translation that lands an edge/centre on a target, plus guide segments.
  */
-export function snapMove(active: AABB, others: AABB[], canvas: Canvas, threshold: number): SnapMoveResult {
+export function snapMove(active: AABB, others: AABB[], canvas: Canvas, threshold: number, lines: SnapLines = {}): SnapMoveResult {
   const acx = (active.minX + active.maxX) / 2, acy = (active.minY + active.maxY) / 2;
   const xTargets: SnapTarget[] = [
     { v: 0, span: [0, canvas.h] }, { v: canvas.w / 2, span: [0, canvas.h] }, { v: canvas.w, span: [0, canvas.h] },
@@ -1338,6 +1344,8 @@ export function snapMove(active: AABB, others: AABB[], canvas: Canvas, threshold
     xTargets.push({ v: o.minX, span: yspan }, { v: ocx, span: yspan }, { v: o.maxX, span: yspan });
     yTargets.push({ v: o.minY, span: xspan }, { v: ocy, span: xspan }, { v: o.maxY, span: xspan });
   }
+  for (const x of lines.x ?? []) if (Number.isFinite(x)) xTargets.push({ v: x, span: [0, canvas.h] });
+  for (const y of lines.y ?? []) if (Number.isFinite(y)) yTargets.push({ v: y, span: [0, canvas.w] });
   const bx = pickSnap([active.minX, acx, active.maxX], xTargets, threshold);
   const by = pickSnap([active.minY, acy, active.maxY], yTargets, threshold);
   const guides: Guide[] = [];
@@ -1352,13 +1360,15 @@ export function snapMove(active: AABB, others: AABB[], canvas: Canvas, threshold
  * follows the pointer, so snapping the pointer aligns the moving edge).
  * Returns { x, y, guides }.
  */
-export function snapPoint(px: number, py: number, others: AABB[], canvas: Canvas, threshold: number): SnapPointResult {
+export function snapPoint(px: number, py: number, others: AABB[], canvas: Canvas, threshold: number, lines: SnapLines = {}): SnapPointResult {
   const xTargets: SnapTarget[] = [{ v: 0 }, { v: canvas.w / 2 }, { v: canvas.w }];
   const yTargets: SnapTarget[] = [{ v: 0 }, { v: canvas.h / 2 }, { v: canvas.h }];
   for (const o of others) {
     xTargets.push({ v: o.minX }, { v: (o.minX + o.maxX) / 2 }, { v: o.maxX });
     yTargets.push({ v: o.minY }, { v: (o.minY + o.maxY) / 2 }, { v: o.maxY });
   }
+  for (const x of lines.x ?? []) if (Number.isFinite(x)) xTargets.push({ v: x });
+  for (const y of lines.y ?? []) if (Number.isFinite(y)) yTargets.push({ v: y });
   const bx = pickSnap([px], xTargets, threshold);
   const by = pickSnap([py], yTargets, threshold);
   const guides: Guide[] = [];

@@ -699,6 +699,30 @@ test('a live outcome gate removes narration from a carousel without removing Pre
   f.bar.destroy();
 });
 
+test('a live outcome gate hides Timeline and disables its shortcut until playback is relevant', () => {
+  let enabled = false;
+  const f = fixture({ timelineEnabled: () => enabled });
+  const timeline = f.at('timeline');
+  assert.equal(timeline.hidden, true, 'static Design starts without motion chrome');
+  click(timeline);
+  assert.equal(timeline.getAttribute('aria-pressed'), 'false', 'a hidden control cannot be invoked programmatically');
+  const unavailableKey = new dom.window.KeyboardEvent('keydown', {
+    code: 'Digit1', altKey: true, bubbles: true, cancelable: true,
+  });
+  dom.window.document.body.dispatchEvent(unavailableKey);
+  assert.equal(timeline.getAttribute('aria-pressed'), 'false', 'Alt+1 is inert while Timeline is unavailable');
+  assert.equal(unavailableKey.defaultPrevented, false, 'an unavailable shortcut is not stolen from the host');
+
+  enabled = true;
+  f.bar.sync();
+  assert.equal(timeline.hidden, false, 'switching to Video/Slides restores the existing control');
+  dom.window.document.body.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
+    code: 'Digit1', altKey: true, bubbles: true, cancelable: true,
+  }));
+  assert.equal(timeline.getAttribute('aria-pressed'), 'true');
+  f.bar.destroy();
+});
+
 test('Narrate is greyed when there is nothing to narrate, and when there are no frames', () => {
   // Greyed rather than hidden: the way to get a narrated deck has to stay discoverable
   // from the menu that presents it, even on the slide before anyone typed a note. Which

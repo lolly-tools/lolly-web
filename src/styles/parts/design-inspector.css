@@ -6,10 +6,10 @@
    one-slot property panels, so every section is live at once and the selection
    decides which sections exist.
 
-   IT POSITIONS NOTHING (2026-09-02). The app has ONE right sidebar - the dock
-   column in lib/edge-dock.ts - and this panel fills the slot it is given there.
-   So no `position: absolute`, no fixed 280px, no z-index, no `--stage-reserve`
-   read: it is a plain block at 100% of its slot with its own internal scroll.
+   The property module positions nothing. The detachable controller either places
+   this same live panel in the app's ONE right sidebar or applies a persisted fixed
+   float box. No stage reserve is written in either mode: the dock nudges #view once,
+   while the floating mode intentionally overlays the workspace.
    The old version pinned itself to the right of `.tool-stage` AND reserved
    280px, which is exactly how the editor ended up showing two right-hand
    columns at once - this panel inside the stage, the export dock beside it.
@@ -46,6 +46,29 @@
   overscroll-behavior: contain;
 }
 
+/* The same live panel can leave the shared edge dock and float over the workspace.
+   Geometry is inline and persisted by design-inspector-float.ts; the dock still owns
+   every edge-docked dimension, so this mode never creates a second right sidebar. */
+@media (min-width: 641px) {
+  .fc-insp.is-floating {
+    position: fixed;
+    z-index: 80;
+    min-width: 300px;
+    min-height: 280px;
+    border: 1px solid var(--ui-color-border-default);
+    border-radius: var(--ui-radius-panel);
+    box-shadow: var(--ui-elevation-floating);
+  }
+  .fc-insp.is-maximized { border-radius: 0; }
+  .fc-insp.is-dragging,
+  .fc-insp.is-resizing { user-select: none; transition: none !important; }
+  .fc-insp.is-floating .panel-grip { display: block; }
+  .fc-insp-headbar { cursor: grab; touch-action: none; }
+  .fc-insp.is-dragging .fc-insp-headbar { cursor: grabbing; }
+}
+
+.fc-insp > .panel-grip { display: none; }
+
 /* Hidden via the element's own `hidden` (the module toggles `el.hidden`), which a
    `display: flex` above would otherwise beat. Stated once, here. */
 .fc-insp[hidden] { display: none; }
@@ -76,7 +99,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.fc-insp-close {
+.fc-insp-close,
+.fc-insp-tool {
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -90,9 +114,13 @@
   color: var(--ui-color-text-muted);
   cursor: pointer;
 }
-.fc-insp-close svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
-.fc-insp-close:hover { background: var(--ui-color-surface-muted); color: var(--ui-color-text-default); }
-.fc-insp-close:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 2px; }
+.fc-insp-close svg,
+.fc-insp-tool svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
+.fc-insp-close:hover,
+.fc-insp-tool:hover { background: var(--ui-color-surface-muted); color: var(--ui-color-text-default); }
+.fc-insp-close:focus-visible,
+.fc-insp-tool:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 2px; }
+.fc-insp-tools { display: inline-flex; align-items: center; gap: var(--sp-1); margin-inline-start: auto; }
 
 .fc-insp-scroll {
   flex: 1 1 auto;
@@ -231,6 +259,35 @@ html[data-a11y-motion="reduce"] .fc-insp-caret { transition: none; }
   color: var(--ui-color-text-muted);
   font-size: var(--fs-sm);
 }
+
+/* The same structural Design check MCP exposes, kept compact enough to lead the
+   Document group without turning the inspector into a report. It never blocks an
+   export; the authored-value findings are a status and the mount-only checks remain
+   in export preflight, where rendered evidence exists. */
+.fc-design-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  margin: var(--sp-3) var(--sp-4);
+  padding: var(--sp-3);
+  border: 1px solid var(--ui-color-border-default);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-color-surface-muted);
+  color: var(--ui-color-text-default);
+  font-size: var(--fs-sm);
+}
+.fc-design-check-icon { flex: none; display: inline-flex; color: var(--ui-color-text-muted); }
+.fc-design-check-icon svg { width: calc(17px * var(--a11y-fs)); height: calc(17px * var(--a11y-fs)); }
+.fc-design-check-copy { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.fc-design-check-copy strong { font-weight: 700; }
+.fc-design-check-copy > span { color: var(--ui-color-text-muted); }
+.fc-design-check-copy ul { margin: var(--sp-1) 0 0; padding-inline-start: var(--sp-5); }
+.fc-design-check[data-design-check="error"] {
+  border-color: hsl(var(--destructive) / 0.45);
+  background: hsl(var(--destructive) / 0.06);
+}
+.fc-design-check[data-design-check="error"] .fc-design-check-icon { color: hsl(var(--destructive)); }
+.fc-design-check[data-design-check="warn"] .fc-design-check-icon { color: var(--ui-color-action-primary); }
 
 /* ── keyboard focus ─────────────────────────────────────────────────────────── */
 

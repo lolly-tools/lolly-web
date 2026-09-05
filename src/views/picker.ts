@@ -31,6 +31,7 @@
 
 import '../styles/picker.css';   // async CSS chunk (lazy view - not on the landing)
 import { isHiddenSlot } from '../lib/batch-slots.ts';
+import { archiveBudgetFor, archiveMemberFile, readArchiveMembers, readUploadZip, readUploadArchiveBytes } from '../lib/archive-ingest.ts';
 import DOMPurify from 'dompurify';
 import { serializeUrlState, buildEmbedUrl, parseThemedAssetId, buildThemedAssetId, restyleIconTheme, sniffAnimatedRaster, sniffVideoContainer, parseTreatedAssetId, buildTreatedAssetId, treatmentFilterSvg, stripAssetModifiers, extractC2paStore, prepareC2paIngredientFromStore, stripMetadata, midiToZzfxm, bakeAssetRef, decodeBmp, isBmp, decodeIco, isIco, gunzip, packPng, analyzeTextSignals, LEXICON_VERSION, extractFileMetadata } from '@lolly/engine';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
@@ -3234,10 +3235,11 @@ function openWebcamCapture(host: PickerHost): Promise<AssetRef | null> {
 // self-contained. fflate (the shell's zip lib) is dynamic-imported - only paid for when
 // someone actually uploads a .lottie. Returns the animation JSON as text.
 async function dotLottieToJson(file: File): Promise<string> {
-  const { unzipSync, strFromU8 } = await import('fflate');
+  const strFromU8 = (bytes: Uint8Array): string => new TextDecoder().decode(bytes);
+  const budget = archiveBudgetFor(file);
   let entries: Record<string, Uint8Array>;
   try {
-    entries = unzipSync(new Uint8Array(await file.arrayBuffer()));
+    entries = Object.fromEntries(readUploadZip(await readUploadArchiveBytes(file), budget).map(e => [e.name, e.bytes]));
   } catch {
     throw new Error(t('That .lottie file couldn’t be opened (not a valid dotLottie archive).'));
   }
@@ -3252,15 +3254,24 @@ async function dotLottieToJson(file: File): Promise<string> {
   }
   animPath ??= names.find(n => /^animations\/.+\.json$/i.test(n)) ?? names.find(n => /\.json$/i.test(n) && n !== 'manifest.json');
   if (!animPath) throw new Error(t('That .lottie file has no animation inside.'));
+  const MAX_JSON_BYTES = 64 * 1024 * 1024;
+  if (entries[animPath]!.length > MAX_JSON_BYTES) throw new Error(t('That animation exceeds the 64 MB JSON limit.'));
   const data = JSON.parse(strFromU8(entries[animPath]!)) as { assets?: Array<Record<string, unknown>> };
+  let expandedSize = entries[animPath]!.length;
   // Inline embedded images (assets with e:0 that reference a file inside the zip) so
   // the animation renders once stored - otherwise those image refs would 404.
   if (Array.isArray(data.assets)) {
+    if (data.assets.length > 1000) throw new Error(t('That animation has too many image references.'));
     for (const a of data.assets) {
       if (!a || typeof a.p !== 'string' || a.e === 1) continue;
       const dir = typeof a.u === 'string' ? a.u.replace(/^\//, '') : '';
       const bytes = entries[dir + a.p] ?? entries['images/' + a.p] ?? entries[a.p];
       if (!bytes) continue;
+      const added = Math.ceil(bytes.length / 3) * 4 + 128;
+      expandedSize += added;
+      if (expandedSize > MAX_JSON_BYTES) throw new Error(t('That animation exceeds the 64 MB expanded JSON limit.'));
+      if (added > budget.bytes) throw new Error(t('That animation has exhausted the archive expansion limit.'));
+      budget.bytes -= added;
       const ext = a.p.toLowerCase();
       const mime = ext.endsWith('.png') ? 'image/png'
         : ext.endsWith('.svg') ? 'image/svg+xml'
@@ -3494,19 +3505,19 @@ export async function storeUserUpload(
   // duplicate check is skipped per entry so a re-imported archive never asks
   // fifty questions - identical entries simply store as copies.
   if (/\.zip$/i.test(file.name) && head4[0] === 0x50 && head4[1] === 0x4b) {
-    const { unzipSync } = await import('fflate');
-    const entries = unzipSync(new Uint8Array(await file.arrayBuffer()));
+    const budget = archiveBudgetFor(file);
+    const entries = readArchiveMembers(await readUploadArchiveBytes(file), file.name, budget);
     const MEDIA_RE = /\.(png|jpe?g|webp|apng|gif|avif|heic|heif|bmp|ico|svg|svgz|mp4|m4v|webm|mov|mp3|wav|ogg|oga|opus|m4a|aac|flac|mid|midi|json|lottie|pdf|txt|md|markdown|csv|tsv|xlsx)$/i;
     const CAP = 200;
     let last: AssetRef | null = null;
     let n = 0;
     let skipped = 0;
-    for (const [path, bytes] of Object.entries(entries)) {
+    for (const { name: path, bytes } of entries) {
       const nm = path.split('/').pop() || '';
       if (!nm || nm.startsWith('.') || path.includes('__MACOSX') || !bytes.length || !MEDIA_RE.test(nm)) continue;
       if (n >= CAP) { skipped++; continue; }
       try {
-        last = await storeUserUpload(host, new File([bytes as BlobPart], nm), { skipDupCheck: true });
+        last = await storeUserUpload(host, archiveMemberFile(bytes, nm, budget), { skipDupCheck: true });
         n++;
       } catch { skipped++; }
     }

@@ -55,6 +55,8 @@ import { stopAtmosphere } from '../lib/atmosphere.ts';
 import { syncNeuroDock } from '../components/neuro-dock.ts';
 import { saveBlob } from '../pro/zip.ts';
 import { exportBackup, importBackup } from '../data-transfer.ts';
+import { backupHistoryNote } from '../lib/backup-summary.ts';
+import { measureFileHistory } from '../lib/file-history-storage.ts';
 import { pinnedToolBytes, unpinAll, pinTool, unpinTool, pinRecords } from '../lib/offline-pins.ts';
 import type { PinRecord } from '../lib/offline-pins.ts';
 import { prefetchAssetsById, catalogDownloadSummary, catalogScopeSize, downloadCatalogScope } from '../catalog/sync.ts';
@@ -460,9 +462,15 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // because the list's own rows are hand-written (dividers and a group heading sit
   // between them) and two feature tests pin those call sites by name - keep the two
   // in step when a flag joins or leaves the list.
+  // Jelly effects render on a canvas the native shells' WebView grows without
+  // bound (lib/jelly.ts gates it off there), so the toggle would promise a look
+  // it cannot deliver - hide the whole row on any non-web shell. The web PWA
+  // keeps it.
+  const jellyHidden = isTauriShell();
   const LISTED_FLAGS = [
     ...CATEGORY_FLAGS,
-    JELLY_FLAG, WOBBLY_FLAG, WOBBLY_MESH_FLAG, PERFORMANCE_UI_FLAG, PERF_HUD_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG, PRIVATE_COLLAB_FLAG,
+    ...(jellyHidden ? [] : [JELLY_FLAG]),
+    WOBBLY_FLAG, WOBBLY_MESH_FLAG, PERFORMANCE_UI_FLAG, PERF_HUD_FLAG, STRIP_UPLOAD_META_FLAG, PREFLIGHT_FLAG, PRIVATE_COLLAB_FLAG,
     ...CONNECTOR_FLAGS,
   ];
   // The Feature-flags card's <ul> contents - a function so the jelly-flag toggle
@@ -478,7 +486,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
                 accommodation (Andy, plans/142 A11y-2) controlled from the
                 Accessibility card's Sound row. The flag object survives for
                 instance governance only. */''}
-            ${flagRow(JELLY_FLAG)}
+            ${jellyHidden ? '' : flagRow(JELLY_FLAG)}
             ${flagRow(WOBBLY_FLAG)}
             ${flagRow(WOBBLY_MESH_FLAG)}
             ${flagRow(PERFORMANCE_UI_FLAG)}
@@ -1389,7 +1397,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const estP = navigator.storage?.estimate
       ? navigator.storage.estimate().catch(() => null)
       : Promise.resolve(null);
-    const [estimate, sessions, sessionSizes, blobCacheBytes, allImages, imagesBytes, previews, pins, speech, upscale, matte, ocr, reword, aiDetect, durable] = await Promise.all([
+    const [estimate, sessions, sessionSizes, blobCacheBytes, allImages, imagesBytes, previews, pins, speech, upscale, matte, ocr, reword, aiDetect, durable, fileHistory] = await Promise.all([
       estP,
       host.state.list().catch((): SessionEntry[] => []),
       host.state.sizes!().catch((): Record<string, number> => ({})),
@@ -1405,6 +1413,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       rewordCacheBytes().catch(() => ({ bytes: 0, files: 0 })),
       aiDetectCacheBytes().catch(() => ({ bytes: 0, files: 0 })),
       durableCacheBytes().catch(() => ({ bytes: 0, files: 0 })),
+      measureFileHistory().catch(() => ({ bytes: 0 })),
     ]);
     const sessBytes = Object.values(sessionSizes).reduce((s, n) => s + n, 0);
     const cacheBytes = blobCacheBytes;
@@ -1413,7 +1422,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     // would render as broken tiles. Their bytes stay in the slice either way.
     const VISUAL = new Set(['raster', 'vector', 'video', 'lottie']);
     const imageList = allImages.filter(a => a.id !== HEADSHOT_ID && VISUAL.has(a.type));
-    const measured = sessBytes + imagesBytes + cacheBytes + previews.bytes + pins.bytes + speech.bytes + upscale.bytes + matte.bytes + ocr.bytes + reword.bytes + aiDetect.bytes + durable.bytes;
+    const measured = sessBytes + imagesBytes + cacheBytes + previews.bytes + pins.bytes + speech.bytes + upscale.bytes + matte.bytes + ocr.bytes + reword.bytes + aiDetect.bytes + durable.bytes + fileHistory.bytes;
     const hasEstimate = !!(estimate && estimate.usage != null);
     const usage: number | null = hasEstimate ? estimate!.usage! : null;
     const quota: number | null = (estimate && estimate.quota) || null;
@@ -1433,6 +1442,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       reword,
       aiDetect,
       durable,
+      fileHistory,
       measured, hasEstimate, usage, quota, overshoot, other, total,
     };
   }
@@ -1468,6 +1478,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         <div class="store-bar" id="store-bar">
           <button type="button" class="seg" data-cat="sessions" style="flex-grow:0"></button>
           <button type="button" class="seg" data-cat="images" style="flex-grow:0"></button>
+          <button type="button" class="seg" data-cat="file-history" style="flex-grow:0"></button>
           <button type="button" class="seg" data-cat="cache" style="flex-grow:0"></button>
           <button type="button" class="seg" data-cat="previews" style="flex-grow:0"${hasPrev ? '' : ' hidden'}></button>
           <button type="button" class="seg" data-cat="pins" style="flex-grow:0"${hasPins ? '' : ' hidden'}></button>
@@ -1485,6 +1496,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         <ul class="store-legend" role="list">
           <li><button type="button" class="store-chip" data-cat="sessions"><span class="store-chip-sw" data-cat="sessions"></span><span class="store-chip-name">${t('Saved sessions')}</span><span class="store-chip-val" data-size="sessions">-</span></button></li>
           <li><button type="button" class="store-chip" data-cat="images"><span class="store-chip-sw" data-cat="images"></span><span class="store-chip-name">${t('My images')}</span><span class="store-chip-val" data-size="images">-</span></button></li>
+          <li><button type="button" class="store-chip" data-cat="file-history"><span class="store-chip-sw" data-cat="file-history"></span><span class="store-chip-name">${t('File results & versions')}</span><span class="store-chip-val" data-size="file-history">-</span></button></li>
           <li><button type="button" class="store-chip" data-cat="cache"><span class="store-chip-sw" data-cat="cache"></span><span class="store-chip-name">${t('Asset cache')}</span><span class="store-chip-val" data-size="cache">-</span></button></li>
           ${hasPrev ? `<li><button type="button" class="store-chip" data-cat="previews"><span class="store-chip-sw" data-cat="previews"></span><span class="store-chip-name">${t('Tool previews')}</span><span class="store-chip-val" data-size="previews">-</span></button></li>` : ''}
           ${hasPins ? `<li><button type="button" class="store-chip" data-cat="pins"><span class="store-chip-sw" data-cat="pins"></span><span class="store-chip-name">${t('Available offline')}</span><span class="store-chip-val" data-size="pins">-</span></button></li>` : ''}
@@ -1503,6 +1515,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         <p class="store-footnote" id="store-footnote" hidden></p>
 
         <div class="store-manages">
+          <div class="store-manage store-manage--row" data-cat="file-history">
+            <span class="store-manage-name">${t('File results & versions')} <span class="storage-count" data-size-label="file-history">0 KB</span><br><small>${t('Saved copies and earlier asset bytes, including recoverable deleted assets. Included in data backups. Not a disposable cache.')}</small></span>
+            <a class="btn" href="#/convert">${t('Review & manage…')}</a>
+          </div>
           <details class="store-manage" data-cat="sessions">
             <summary class="store-manage-sum">${COLLAPSE_CHEV}<span>${t('Saved sessions')}</span> <span class="storage-count" data-count="sessions">0</span> <span class="storage-hint" data-size-hint="sessions">0 KB</span></summary>
             <div class="store-manage-body">
@@ -1611,13 +1627,19 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
   async function loadStorage() {
     if (storageLoaded) return;
+    const panel = viewEl.querySelector<HTMLElement>('#storage-body');
+    if (!panel) return;
+    const body: HTMLElement = panel;
     storageLoaded = true;
 
     let model = await measure();
+    // Import remounts Profile, and navigation can reuse viewEl for another
+    // route while storage estimates/IDB reads are outstanding. A late result
+    // belongs only to the exact panel that requested it.
+    if (!body.isConnected || viewEl.querySelector('#storage-body') !== body) return;
     let sessSort = 'size';
     const userImages = [...model.images.list]; // mutable mirror for the grid + lightbox
 
-    const body = viewEl.querySelector<HTMLElement>('#storage-body')!;
     body.innerHTML = renderSection(model, sessSort);
     // Content loaded async after the card opened - cascade it in like the catalog does
     // (silent: the shuffle already played when the section toggled open).
@@ -1674,6 +1696,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       const segs: Array<[string, number, string, boolean]> = [
         ['sessions', m.sessions.bytes, t('Saved sessions'), true],
         ['images', m.images.bytes, t('My images'), true],
+        ['file-history', m.fileHistory?.bytes ?? 0, t('File results & versions'), true],
         ['cache', m.cache.bytes, t('Asset cache'), true],
         ['previews', m.previews.bytes, t('Tool previews'), m.previews.available],
         ['pins', m.pins.bytes, t('Available offline'), m.pins.count > 0],
@@ -1698,6 +1721,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
 
       setText('[data-size="sessions"]', fmtBytes(m.sessions.bytes));
       setText('[data-size="images"]', fmtBytes(m.images.bytes));
+      setText('[data-size="file-history"]', fmtBytes(m.fileHistory?.bytes ?? 0));
+      setText('[data-size-label="file-history"]', fmtBytes(m.fileHistory?.bytes ?? 0));
       setText('[data-size="cache"]', fmtBytes(m.cache.bytes));
       setText('[data-size="previews"]', fmtBytes(m.previews.bytes));
       setText('[data-size="pins"]', fmtBytes(m.pins.bytes));
@@ -2071,11 +2096,12 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         announce(tRaw('Exported {sessions} and {images}', {
           sessions: summary.sessions === 1 ? t('1 session') : t('{n} sessions', { n: summary.sessions }),
           images: summary.userAssets === 1 ? t('1 image') : t('{n} images', { n: summary.userAssets }),
-        }));
+        }) + backupHistoryNote(summary));
         btn.textContent = t('Exported');
       } catch (err) {
         host.log?.('error', 'Data export failed', { error: String(err) });
         btn.textContent = t('Export failed');
+        announce(err instanceof Error ? err.message : t('Data export failed. Keep your local files and try again.'), { assertive: true });
       }
       setTimeout(() => { btn.textContent = prev; btn.disabled = false; }, 1800);
     });
@@ -2174,7 +2200,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           announce(tRaw('Data backup saved: {sessions}, {images}', {
             sessions: summary.sessions === 1 ? t('1 session') : t('{n} sessions', { n: summary.sessions }),
             images: summary.userAssets === 1 ? t('1 image') : t('{n} images', { n: summary.userAssets }),
-          }));
+          }) + backupHistoryNote(summary));
         } catch (err) {
           // The backup failing must not take the render down with it - it is a separate
           // deliverable, so it is reported and the job carries on.
@@ -2254,7 +2280,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         announce(tRaw('Imported {sessions} and {images}', {
           sessions: summary.sessions === 1 ? t('1 session') : t('{n} sessions', { n: summary.sessions }),
           images: summary.userAssets === 1 ? t('1 image') : t('{n} images', { n: summary.userAssets }),
-        }) + skipNote + failNote, summary.failedAssets ? { assertive: true } : undefined);
+        }) + skipNote + failNote + backupHistoryNote(summary), summary.failedAssets || summary.failedHistory ? { assertive: true } : undefined);
         await mountProfile(viewEl, host);
       });
     });
@@ -3276,7 +3302,7 @@ function clearIdbStores(storeNames: string[]) {
 function showImportDialog(onConfirm: () => Promise<void>) {
   const content = `
     <h3 id="import-dialog-title">${t('Import data?')}</h3>
-    <p>${t('This loads the profile, saved sessions, images and preferences from the file. Anything with the same name on this device is overwritten; everything else is kept.')}</p>
+    <p>${t('This imports your profile, sessions, uploaded assets, preferences and saved file history. Matching profile, session and asset IDs are updated; unrelated data is kept. Existing historical versions and result records are never overwritten. Keep the backup until every item is restored.')}</p>
     <p class="import-error" style="color:hsl(var(--destructive));font-size:13px;margin:0" hidden></p>
     <div class="clear-dialog-actions">
       <button class="btn" data-scope="import">${t('Import')}</button>

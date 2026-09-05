@@ -44,18 +44,19 @@
  * selection wrote speaker notes typed for one slide onto whatever the canvas had
  * selected by the time the caret left.
  *
- * LAYOUT: IT OWNS NONE OF IT (2026-09-02). The column is built DETACHED and positions
- * nothing. The app has ONE right sidebar - the dock column in lib/edge-dock.ts - and the
- * host puts this panel in a slot there, so the root is a plain block that fills whatever
- * slot it is given, `width()` is always 0 (the dock owns the width, and the one
+ * LAYOUT: THIS PROPERTY MODULE OWNS NONE OF IT. The column is built DETACHED and positions
+ * nothing. The host's `design-inspector-float.ts` controller either puts the same live
+ * panel in the app's one right sidebar or gives it a persisted floating box, so this
+ * root fills whatever berth it is given and `width()` is always 0 (the dock owns its width,
+ * and a floating panel overlays rather than reserving the stage). The one
  * `--dock-w` inset nudges the view), and nothing here writes `--stage-reserve-*` or
  * dispatches `canvas-resize`. Before this, the column absolutely positioned itself over
  * the stage AND reserved 280px, which is how the editor ended up with two right-hand
  * columns side by side - this one inside the stage, the export dock beside it.
  *
- * Being in a slot IS being open: the panel follows `onDockChange`, so the header's close
- * button (which reports through `onClose`) and the top bar's toggle can never disagree
- * about whether it is there. `setOpen` stays for the host and for a standalone mount.
+ * Being in a slot implies being open: the panel follows `onDockChange`, while its
+ * detachable controller keeps the floating case open explicitly. The header's close
+ * button and the top bar therefore still share one `setOpen` answer.
  *
  * EVERY GROUP COLLAPSES (2026-09-03). Each group is a `<section>` with a real button
  * header carrying `aria-expanded`, including the five that used to run as one flat list
@@ -88,6 +89,7 @@
 import { t, tRaw } from '../i18n.ts';
 import { escape } from '../utils.ts';
 import { parseVoiceBlend, KOKORO_DEFAULT_VOICE } from '../../../../engine/src/speech-text.ts';
+import { inspectDesignV1 } from '@lolly-tools/core';
 import type { SpeechVoiceInfo } from '@lolly-tools/core/host-v1';
 import { icon } from '../lib/icons.ts';
 import type { IconName } from '../lib/icons.ts';
@@ -109,6 +111,9 @@ import {
   appearModeOf, appearSummary, NARRATION_LEAD_IN_MS, NARRATION_TAIL_MS, resetAppearMemory, setAppear,
 } from '../lib/motion-model.ts';
 import type { AppearIntent, AppearMode } from '../lib/motion-model.ts';
+import { auditMountedDesign } from './design-mounted-audit.ts';
+import type { MountedDesignAudit, MountedFontStyle } from './design-mounted-audit.ts';
+import { mountedDesignFindingMessage } from './design-audit-copy.ts';
 
 /** The dock slot this column lives in - the app's one right sidebar. */
 const DOCK_ID = 'inspector';
@@ -181,6 +186,9 @@ export interface DesignInspectorOpts {
    *  host with no speech bridge; the picker then holds only the current value. */
   voices?: () => Promise<SpeechVoiceInfo[]>;
   fonts?: InspectorFonts;
+  /** Resolve a rendered run through the vector-export font registry. This is
+   * async because user/discovered webfonts may need their bytes checked. */
+  resolveFont?: (style: MountedFontStyle, text: string) => Promise<boolean>;
   /** The manifest's `boxes` field declarations - the source of every select's options. */
   fields?: unknown[];
   /** Open on mount (the host decides from viewport width + its device-local memory). */
@@ -395,6 +403,12 @@ const unwrapColor = (v: ColorFieldValue): string => (v && typeof v === 'object' 
 export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorHandle {
   const { canvasEl, model, selection, artboard, actions, fonts, narration } = opts;
   let voiceList: SpeechVoiceInfo[] | null = null;   // the bridge's voices, fetched once per column
+  let mountedAudit: MountedDesignAudit | null = null;
+  let mountedAuditKey = '';
+  let mountedAuditGeneration = 0;
+  let mountedAuditRevision = 0;
+  let boxesAuditKey = '';
+  let waitingForCanvasPaint = false;
   const cfg = model.cfg as Cfg;
   const frame = model.frame as InspFrameCfg | null;
   const fieldDefs = (opts.fields || []) as ChoiceField[];
@@ -863,12 +877,74 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
 
   // ── sections ────────────────────────────────────────────────────────────────
 
+  /** Renderer-neutral checks shared with MCP plus the last settled browser-layout
+   * audit. The latter is invalidated by a boxes change and only accepted again after
+   * the canvas announces its corresponding paint. */
+  function designHealthHtml(size: { w: number; h: number }): string {
+    const report = inspectDesignV1(model.getBoxes(), { width: size.w, height: size.h });
+    const errors = report.findings.filter((finding) => finding.severity === 'error');
+    const warnings = [
+      ...report.findings.filter((finding) => finding.severity === 'warn'),
+      ...(mountedAudit?.findings.filter((finding) => finding.severity === 'warn') ?? []),
+    ];
+    const manual = mountedAudit?.findings.filter((finding) => finding.severity === 'info') ?? [];
+    const review = [...errors, ...warnings, ...manual];
+    const knowCount = warnings.length + manual.length;
+    const tone = errors.length ? 'error' : (warnings.length || manual.length) ? 'warn' : 'clean';
+    const verdict = errors.length
+      ? t('{fix} to fix, {know} to know', { fix: errors.length, know: knowCount })
+      : knowCount === 1
+        ? t('One thing to know')
+        : knowCount > 1
+          ? t('{n} things to know', { n: knowCount })
+          : '';
+    const artboardLabel = report.summary.artboards === 1 ? t('Artboard') : t('Artboards');
+    const layerLabel = report.summary.layers === 1 ? t('Layer') : t('Layers');
+    const facts = `${report.summary.artboards} ${artboardLabel} · ${report.summary.layers} ${layerLabel}`;
+    const items = review.length
+      ? `<ul>${review.slice(0, 3).map((finding) => `<li>${escape(
+          'evidence' in finding ? mountedDesignFindingMessage(finding) : finding.message
+        )}</li>`).join('')}</ul>`
+      : '';
+    return `<div class="fc-design-check" data-design-check="${tone}" role="status">`
+      + `<span class="fc-design-check-icon">${icon(tone === 'error' ? 'alert' : 'checklist')}</span>`
+      + `<div class="fc-design-check-copy"><strong>${escape(t('Before you export'))}</strong>`
+      + `<span>${escape([facts, verdict].filter(Boolean).join(' · '))}</span>${items}</div></div>`;
+  }
+
+  function currentBoxesAuditKey(): string {
+    try { return JSON.stringify(model.getBoxes()); } catch { return String(model.getBoxes().length); }
+  }
+
+  /** Run only against a settled canvas. A model echo arrives before tool.ts's rAF
+   * paint, so a boxes change sets `waitingForCanvasPaint`; the explicit paint event
+   * below is what releases the audit. */
+  function scheduleMountedAudit(force = false): void {
+    if (!open || waitingForCanvasPaint || destroyed) return;
+    const key = `${boxesAuditKey}|${mountedAuditRevision}`;
+    if (!force && key === mountedAuditKey) return;
+    mountedAuditKey = key;
+    const generation = ++mountedAuditGeneration;
+    const size = canvasSize();
+    const report = inspectDesignV1(model.getBoxes(), { width: size.w, height: size.h });
+    void (async () => {
+      try { await document.fonts?.ready; } catch { /* the mounted layout still answers */ }
+      const result = await auditMountedDesign(canvasEl, report, { resolveFont: opts.resolveFont });
+      if (destroyed || generation !== mountedAuditGeneration || boxesAuditKey !== currentBoxesAuditKey()) return;
+      mountedAudit = result;
+      // Mounted findings are deliberately outside `signature()` (which hashes authored
+      // state). Force the one repaint that publishes this asynchronous browser answer.
+      sync(true);
+    })();
+  }
+
   function documentBody(): string {
     const size = canvasSize();
     const unit = documentUnit();
     const scale = CSS_PX_PER_UNIT[unit];
     const fmt = (n: number): string => String(Math.round(n / scale * 1000) / 1000);
-    return readRow(t('Canvas size'), `${fmt(size.w)} x ${fmt(size.h)} ${unit}`)
+    return designHealthHtml(size)
+      + readRow(t('Canvas size'), `${fmt(size.w)} x ${fmt(size.h)} ${unit}`)
       + docSelectRow(t('Document unit'), 'documentUnit', DOCUMENT_UNITS.map((u) => [u, u]))
       + docNumRow(t('Document DPI'), 'documentDpi', 300, {
         min: 36, max: 2400, step: 1, precision: 0, unit: 'dpi',
@@ -1347,6 +1423,7 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
     }).join('') || `<p class="fc-insp-hint">${t('Nothing selected')}</p>`;
     mountNums();
     wire();
+    if (g.secs.includes('document')) scheduleMountedAudit();
     // Put the user back on the control they were operating. `preventScroll` because a
     // restore is not a navigation: scrolling the column to it would move the rows the
     // pointer is over.
@@ -1582,7 +1659,7 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
     // Document's readout is the one value that is NOT in the model - it measures the
     // canvas - so it is hashed here and woken by the canvas's own `canvas-resize`.
     const size = g.secs.includes('document') ? canvasSize() : null;
-    const doc = size ? [model.getInput('background'), size.w, size.h] : [];
+    const doc = size ? [model.getInput('background'), size.w, size.h, model.getBoxes()] : [];
     // Narration status is the OTHER value no watched field carries: it is derived from
     // the `narration:<frameId>` clip's resolved asset meta, on a different row entirely.
     // Without it the Present section kept saying "Not narrated yet." after a successful
@@ -1779,7 +1856,18 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
 
   // ── mount ───────────────────────────────────────────────────────────────────
 
-  const unsubModel = model.subscribe(() => sync());
+  boxesAuditKey = currentBoxesAuditKey();
+  const unsubModel = model.subscribe(() => {
+    const next = currentBoxesAuditKey();
+    if (next !== boxesAuditKey) {
+      boxesAuditKey = next;
+      waitingForCanvasPaint = true;
+      mountedAudit = null;
+      mountedAuditKey = '';
+      mountedAuditGeneration++;
+    }
+    sync();
+  });
   const unsubSel = selection.onChange(() => sync());
   const unsubArt = artboard.onChange(() => sync());
   // Document's "Canvas size" is measured, not read from the model, so no model write
@@ -1789,8 +1877,20 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
   // canvas after a size change, and tool.ts's fitCanvas listens for it); the
   // ResizeObserver catches the changes nobody announces. Both land in the same memo,
   // so a resize that changes nothing visible costs one string compare.
-  const onCanvasResize = (): void => sync();
+  const onCanvasResize = (): void => {
+    mountedAudit = null;
+    mountedAuditKey = '';
+    mountedAuditRevision++;
+    sync();
+    scheduleMountedAudit();
+  };
+  const onCanvasPaint = (): void => {
+    waitingForCanvasPaint = false;
+    mountedAuditRevision++;
+    scheduleMountedAudit(true);
+  };
   canvasEl.addEventListener('canvas-resize', onCanvasResize);
+  canvasEl.addEventListener('lolly-canvas-painted', onCanvasPaint);
   // Being in a dock slot IS being open. The host docks and undocks this element (its own
   // close button asks it to, through `onClose`), and without this the panel could be put
   // in a slot while its internal state still said "closed" - an empty sidebar with a
@@ -1846,6 +1946,8 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
       }
       disarmSettle();
       canvasEl.removeEventListener('canvas-resize', onCanvasResize);
+      canvasEl.removeEventListener('lolly-canvas-painted', onCanvasPaint);
+      mountedAuditGeneration++;
       offDock();
       ro?.disconnect();
       unsubModel();

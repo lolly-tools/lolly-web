@@ -19,7 +19,7 @@ import {
   parseClipShape, parseRadialGradient, parseConicGradient, parseDropShadowFilter, type ConicGradient,
   splitCssArgs, parseGradientAngle, parseGradientStop, expandGradientStops,
   parseColor, interpolateColor, colorToSrgb8,
-  embedC2pa, exportActionSteps, C2PA_FORMATS, CAPTURE_SOURCE_TYPE, SCREEN_SOURCE_TYPE, extractC2paStore, prepareC2paIngredientFromStore, packTiff, encodeBmp, gzip, sfntKind, sfntToWoff, woffToSfnt, ENGINE_VERSION,
+  embedC2pa, exportActionSteps, C2PA_FORMATS, CAPTURE_SOURCE_TYPE, SCREEN_SOURCE_TYPE, extractC2paStore, prepareC2paIngredientFromStore, packTiff, encodeBmp, gzip, sfntKind, ENGINE_VERSION,
   buildExportMeta,
   embedWatermark, canCarryWatermark, LOSSLESS_STRENGTH,
   videoProvenanceTags, embedMp4Meta, embedWebmMeta,
@@ -556,14 +556,11 @@ export function createExportAPI(host: WebHost) {
       const name = opts.filename || 'file';
       const de = name.match(/\.(ttf|otf|woff)$/i)?.[1]?.toLowerCase();
       if (de) {
-        try {
-          const bytes = new Uint8Array(await blob.arrayBuffer());
-          const k = sfntKind(bytes);
-          let conv: Uint8Array | null = null;
-          if (de === 'woff' && (k === 'ttf' || k === 'otf')) conv = sfntToWoff(bytes);
-          else if ((de === 'ttf' || de === 'otf') && k === 'woff') conv = woffToSfnt(bytes);
-          if (conv) out = new Blob([conv as BlobPart], { type: `font/${de}` });
-        } catch { /* not a convertible font - deliver the bytes as-is */ }
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        if (sfntKind(bytes)) {
+          const { convertFontContainer } = await import('@lolly/engine');
+          out = new Blob([convertFontContainer(bytes, de) as BlobPart], { type: `font/${de}` });
+        }
       }
       await this.download(out, name);
     },

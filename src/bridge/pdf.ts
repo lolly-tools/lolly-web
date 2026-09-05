@@ -18,7 +18,7 @@
 
 export {
   PDF_LOAD_OPTS,
-  analyzePdf, stripPdf, compressPdf,
+  analyzePdf, stripPdf, compressPdf, organizePdf, stampPdf, lockPdf, parsePdfPageExpression,
   hasImageCodec, makeCanvas, canvasToJpeg,
   createPdfAPI,
 } from '../../../../packages/node-shell/src/pdf.ts';

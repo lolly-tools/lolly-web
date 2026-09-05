@@ -313,12 +313,14 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
     const root = document.createElement('div');
     root.className = 'tmpl-chooser-modal';
     document.body.appendChild(root);
+    let disposeOpenObservers = (): void => {};
     // The documented contract is "never rejects (close = {})" - make it structurally
     // true: any throw below (markup build, icon lookup, preview wiring) would REJECT
     // this promise and strand the caller's await, leaving the tool stuck on its
     // loading screen with an invisible empty modal (the :empty CSS hides the root).
     // Trade the whole chooser for a blank open instead.
     const settleBlank = (e: unknown): void => {
+      disposeOpenObservers();
       try { root.remove(); } catch { /* already gone */ }
       console.warn('template chooser failed - resolving blank', e);
       resolve({});
@@ -332,15 +334,22 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
     // the slots arrive asynchronously while the tool mounts underneath.
     let previewNs = 'template';
     let brandTagApplied = '';
-    const syncBrandScope = (): void => {
+    let appliedBrandVars = new Set<string>();
+    const syncBrandScope = (): boolean => {
       const vars = brandScopeVars();
       const tag = vars.length ? brandTag(vars) : '';
-      if (tag === brandTagApplied) return;
+      if (tag === brandTagApplied) return false;
       brandTagApplied = tag;
+      const nextNames = new Set(vars.map(([name]) => name));
+      for (const name of appliedBrandVars) {
+        if (!nextNames.has(name)) root.style.removeProperty(name);
+      }
       for (const [name, value] of vars) root.style.setProperty(name, value);
+      appliedBrandVars = nextNames;
       // No brand slots in force is the unbranded default: keep the bare namespace so an
       // install that never had a brand keeps the previews it has already cached.
       previewNs = tag ? `template@${tag}` : 'template';
+      return true;
     };
     syncBrandScope();
 
@@ -441,6 +450,7 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
     const finish = (values: Record<string, InputValue>): void => {
       if (settled) return;
       settled = true;
+      disposeOpenObservers();
       trap?.release();
       root.remove();
       if (opener instanceof HTMLElement) opener.focus();
@@ -550,6 +560,19 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
       const queue: string[] = [];
       const queued = new Set<string>();
       let draining = false;
+      // A brand can finish hydrating after early tiles have already rendered. Reset
+      // the queue under the new namespace so every visible preview agrees with the
+      // canvas; stale in-flight results are discarded by their captured tag.
+      const requeueAll = (): void => {
+        queue.length = 0;
+        queued.clear();
+        for (const template of opts.templates) {
+          if (template.id !== BLANK_ID) enqueue(template.id);
+        }
+      };
+      const refreshBrand = (): void => {
+        if (syncBrandScope()) requeueAll();
+      };
       const drain = async (): Promise<void> => {
         if (draining) return;
         draining = true;
@@ -567,12 +590,14 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
             // tile can easily be queued before the canvas has them. Cheap - a walk up one
             // inline style chain (C12; see brandScopeVars above).
             syncBrandScope();
+            const renderedBrandTag = brandTagApplied;
             try {
               const src = await renderFeaturedVariant(
                 host as Parameters<typeof renderFeaturedVariant>[0],
                 opts.toolId, formats, id, values as Record<string, unknown>, previewNs,
               );
-              if (settled || !src) continue;
+              refreshBrand();
+              if (settled || !src || renderedBrandTag !== brandTagApplied) continue;
               const media = root.querySelector<HTMLElement>(
                 `.tmpl-chooser-tile[data-template-id="${CSS.escape(id)}"] .tmpl-chooser-tile-media`,
               );
@@ -627,6 +652,23 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
       for (const tile of root.querySelectorAll<HTMLElement>('.tmpl-chooser-tile')) {
         if (tile.dataset.templateId !== BLANK_ID) io.observe(tile);
       }
+
+      // Observe the exact inline-style chain brandScopeVars reads. applyBrandVars
+      // settles asynchronously while the chooser is already open; this closes the
+      // race where the first cached previews were painted with neutral fallbacks and
+      // then remained there for the rest of the modal's lifetime.
+      const brandRoot = document.querySelector<HTMLElement>('#tool-content')
+        ?? document.querySelector<HTMLElement>('#tool-canvas');
+      const brandObserver = typeof MutationObserver !== 'undefined'
+        ? new MutationObserver(refreshBrand)
+        : null;
+      for (let node: HTMLElement | null = brandRoot; node; node = node.parentElement) {
+        brandObserver?.observe(node, { attributes: true, attributeFilter: ['style'] });
+      }
+      disposeOpenObservers = (): void => {
+        io.disconnect();
+        brandObserver?.disconnect();
+      };
     }
     } catch (e) { settleBlank(e); }
   });

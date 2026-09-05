@@ -10,83 +10,68 @@
  * This module never value-imports from ./tool.ts (that would create a runtime
  * cycle) - it only `import type`s the shell-side aliases it needs from there.
  */
-import {
-  serializeUrlState,
-  UNITS,
-  toCssPx,
-  CMYK_CONDITIONS,
-  DEFAULT_CMYK_CONDITION,
-  C2PA_FORMATS,
-  composeSong,
-  cuesToSrt,
-  cuesToVtt,
-  generatedSongSpec,
-  HDR_DEFAULTS,
-  VIDEO_CODEC_STRINGS,
-  preflight,
-  PRINT_MARK_FORMATS,
-  SEPARATING_FORMATS,
-  computeCost,
-  parseRateCard,
-  isRateCardError,
-  validateRateCard,
-  isNonAffineTransform,
-  selectFramePage,
-  frameFilterApplies,
-  LEXICON_VERSION,
-  deriveExportFilename,
-} from '@lolly/engine';
+
 import type {
+  CostWorking,
+  Count,
   Fact,
   PreflightInput,
   PreflightJob,
   PreflightManifest,
   PreflightSwatch,
   StageFacts,
-  Count,
-  CostWorking,
+} from '@lolly/engine';
+import {
+  C2PA_FORMATS,
+  CMYK_CONDITIONS,
+  composeSong,
+  computeCost,
+  cuesToSrt,
+  cuesToVtt,
+  DEFAULT_CMYK_CONDITION,
+  deriveExportFilename,
+  frameFilterApplies,
+  generatedSongSpec,
+  HDR_DEFAULTS,
+  isNonAffineTransform,
+  isRateCardError,
+  LEXICON_VERSION,
+  PRINT_MARK_FORMATS,
+  parseRateCard,
+  preflight,
+  SEPARATING_FORMATS,
+  selectFramePage,
+  serializeUrlState,
+  toCssPx,
+  UNITS,
+  VIDEO_CODEC_STRINGS,
+  validateRateCard,
 } from '@lolly/engine';
 import type { MoneyContext } from '@lolly-tools/core';
+import { inspectDesignV1 } from '@lolly-tools/core';
+import type { Disposer } from '@lolly-tools/core/extension-v1';
 import type { Profile } from '@lolly-tools/core/host-v1';
-import { escape, safeHref } from '../utils.js';
-import { currentLang, t, tRaw } from '../i18n.ts';
-import { icon } from '../lib/icons.ts';
-import { navigateTo } from '../nav.js';
+import type { InputValue } from '../../../../engine/src/inputs.js';
+import type { ToolManifest } from '../../../../engine/src/loader.js';
+import type { Unit } from '../../../../engine/src/units.js';
 import { announce } from '../a11y.js';
-import { livePalette } from '../lib/live-palette.ts';
+import { CENTRE_LOW } from '../bridge/audio-envelope.ts';
+import { _setExportNoticeSink } from '../bridge/export.ts';
+import { RASTER_DEFAULT_SCALE, SUPERSAMPLED_EXPORT_FORMATS } from '../bridge/export-scale.ts';
 import {
-  isOwnProfile,
-  ownDigest,
-  listEligible,
-  embedRowLabel,
-} from '../lib/press-profile-embed.ts';
-import { marksToCsv } from '../lib/print-marks-csv.ts';
-import { placedImageLabel, isVectorImageSrc } from '../lib/placed-image.ts';
-import { helpTip, wireHelpTips, linkHelpDescriptions } from '../components/help-tip.js';
-import { mountBodyPopover } from '../components/body-popover.ts';
-import { runTemplateScripts } from '../lib/render-lifecycle.ts';
-import { sendTargetId, sendTargetsFor } from '../lib/send-target.ts';
-import { markSyncDirty } from '../lib/sync-service.ts';
-import { loopRank } from '../lib/neurospicy.ts';
-import { songUrlToWavBlobUrl, renderSong } from '../lib/zzfxm-render.ts';
-import { pcmToWavBlob } from '../lib/pcm-wav.ts';
-import { modUrlToWavBlobUrl, isModuleFormat } from '../lib/mod-render.ts';
-import { aspectWarning } from './export-size.js';
-import { MAX_TIME_S } from './timeline-math.ts';
-import { buildStepsDropped, restMsOf } from '../lib/motion-model.ts';
-import { bumpMetric, recordFormat } from '../metrics.js';
-import {
-  videoSupport,
   audioSupport,
   cmykTiffSupport,
-  tiffSupport,
-  liveCaptureSupport,
   durableSupport,
+  liveCaptureSupport,
   proFormatSupport,
+  tiffSupport,
+  videoSupport,
 } from '../bridge/format-support.js';
-import { durableCardHtml, isDurableFmt, wireDurableConsent } from './export-durable-card.ts';
+import { mountBodyPopover } from '../components/body-popover.ts';
+import { helpTip, linkHelpDescriptions, wireHelpTips } from '../components/help-tip.js';
+import { currentLang, t, tRaw } from '../i18n.ts';
+import { openApprovalRequest } from '../lib/approval-request.ts';
 import { isAudioFormat as isAudioFmt } from '../lib/audio-encode.js';
-import { formatTriggerHtml, formatPanelHtml, wireFormatPicker } from './export-format-picker.ts';
 import {
   getAudioTake,
   onAudioTakeChange,
@@ -95,26 +80,46 @@ import {
   takeNativeExt,
 } from '../lib/audio-take.ts';
 import { formatCaptions } from '../lib/caption-format.ts';
-import { stashedTranscript } from '../lib/stt-job.ts';
-import { transcriptWordsOf, ttsWordsOf } from './timeline-captions.ts';
-import { isProFormat, formatOptionsHtml, depthFact, applyDepthFact } from './export-depth.ts';
-import {
-  preflightRowHtml,
-  preflightView,
-  applyPreflight,
-  wirePreflight,
-} from './export-preflight.ts';
-import { costPanelHtml, costView, applyCostPanel } from './cost-panel.ts';
-import type { CostAuthoringContext } from './cost-panel.ts';
-import { listRateCards, listCatalogRateCards, getRateCardBlob } from '../lib/rate-cards.ts';
-import { mountSlot, onExtensionsChanged, slotHasResolved } from '../lib/extensions.ts';
-import type { Disposer } from '@lolly-tools/core/extension-v1';
-import { RASTER_DEFAULT_SCALE, SUPERSAMPLED_EXPORT_FORMATS } from '../bridge/export-scale.ts';
-import { _setExportNoticeSink } from '../bridge/export.ts';
-import { CENTRE_LOW } from '../bridge/audio-envelope.ts';
-import { getExportPolicy, exportAffordance } from '../lib/export-policy.ts';
+import { stageDeckAsSequence, stagedDeckMs } from '../lib/deck-as-sequence.ts';
+import { exportAffordance, getExportPolicy } from '../lib/export-policy.ts';
 import { saveExportPrefs } from '../lib/export-prefs.ts';
-import { openApprovalRequest } from '../lib/approval-request.ts';
+import { mountSlot, onExtensionsChanged, slotHasResolved } from '../lib/extensions.ts';
+import { icon } from '../lib/icons.ts';
+import { livePalette } from '../lib/live-palette.ts';
+import { isModuleFormat, modUrlToWavBlobUrl } from '../lib/mod-render.ts';
+import { buildStepsDropped, restMsOf } from '../lib/motion-model.ts';
+import { loopRank } from '../lib/neurospicy.ts';
+import { pcmToWavBlob } from '../lib/pcm-wav.ts';
+import { isVectorImageSrc, placedImageLabel } from '../lib/placed-image.ts';
+import {
+  embedRowLabel,
+  isOwnProfile,
+  listEligible,
+  ownDigest,
+} from '../lib/press-profile-embed.ts';
+import { marksToCsv } from '../lib/print-marks-csv.ts';
+import { getRateCardBlob, listCatalogRateCards, listRateCards } from '../lib/rate-cards.ts';
+import { runTemplateScripts } from '../lib/render-lifecycle.ts';
+import { sendTargetId, sendTargetsFor } from '../lib/send-target.ts';
+import { stashedTranscript } from '../lib/stt-job.ts';
+import { markSyncDirty } from '../lib/sync-service.ts';
+import { convertLength, displayIn, roundIn, stepFor } from '../lib/unit-steps.ts';
+import { renderSong, songUrlToWavBlobUrl } from '../lib/zzfxm-render.ts';
+import { bumpMetric, recordFormat } from '../metrics.js';
+import { navigateTo } from '../nav.js';
+import { escape, safeHref } from '../utils.js';
+import type { CostAuthoringContext } from './cost-panel.ts';
+import { applyCostPanel, costPanelHtml, costView } from './cost-panel.ts';
+import { mountedDesignFindingMessage } from './design-audit-copy.ts';
+import { auditMountedDesign } from './design-mounted-audit.ts';
+import { applyDepthFact, depthFact, formatOptionsHtml, isProFormat } from './export-depth.ts';
+import {
+  applyExportDimensionFields,
+  convertExportDimensionFields,
+  type ExportDimensionUpdate,
+} from './export-dimension-fields.ts';
+import { durableCardHtml, isDurableFmt, wireDurableConsent } from './export-durable-card.ts';
+import { formatPanelHtml, formatTriggerHtml, wireFormatPicker } from './export-format-picker.ts';
 import {
   mp4BeforeWebm,
   packageFormatChoice,
@@ -122,40 +127,42 @@ import {
   saveAsBridge,
   saveAsButtonHtml,
 } from './export-package-options.ts';
+import type { PreflightRow } from './export-preflight.ts';
 import {
-  applyExportDimensionFields,
-  convertExportDimensionFields,
-  type ExportDimensionUpdate,
-} from './export-dimension-fields.ts';
-
-import type { InputValue } from '../../../../engine/src/inputs.js';
-import type { ToolManifest } from '../../../../engine/src/loader.js';
-import type { Unit } from '../../../../engine/src/units.js';
-import { stepFor, displayIn, convertLength, roundIn } from '../lib/unit-steps.ts';
-import { stageDeckAsSequence, stagedDeckMs } from '../lib/deck-as-sequence.ts';
+  applyPreflight,
+  isPreflightEnabled,
+  preflightRowHtml,
+  preflightView,
+  wirePreflight,
+} from './export-preflight.ts';
+import { aspectWarning } from './export-size.js';
+import { transcriptWordsOf, ttsWordsOf } from './timeline-captions.ts';
+import { MAX_TIME_S } from './timeline-math.ts';
 
 import type {
-  WebToolHost,
-  ToolRuntime,
-  PanelEl,
-  ExportUnscaled,
-  ExportDefaults,
   ActionsApi,
   ActionsExperience,
+  ExportDefaults,
   ExportExperience,
+  ExportUnscaled,
   IdentityStatus,
-  RunExportOpts,
+  PanelEl,
   PrintMarks,
+  RunExportOpts,
+  ToolRuntime,
+  WebToolHost,
 } from './tool.ts';
 
 import {
-  exportTargetNode,
-  flatExportNode,
   addScrubBehavior,
   captureThumbnail,
+  exportTargetNode,
+  flatExportNode,
   THUMB_CAPTURE_TIMEOUT_MS,
 } from './tool-action-helpers.ts';
-export { exportTargetNode, flatExportNode, captureThumbnail } from './tool-action-helpers.ts';
+
+export { captureThumbnail, exportTargetNode, flatExportNode } from './tool-action-helpers.ts';
+
 // Content Credentials default: the shared policy in lib/c2pa-policy.ts (also
 // applied by the offscreen batch/zip renderer, so zips sign like this button).
 // The C2PA card only renders for C2PA-capable formats, so it's a no-op for
@@ -1674,7 +1681,19 @@ function renderActions(
   // the settings, so it must sit under all of them or it would contradict a
   // control the user has not reached yet. Hidden until the engine's rules have
   // something true to say; see views/export-preflight.ts + refreshPreflight().
-  const preflightRow = preflightRowHtml();
+  const isDesignTool = manifest.id === 'design';
+  const notesHandoutRow =
+    isDesignTool && formats.includes('pdf')
+      ? `
+      <div class="section-card export-notes-handout" data-notes-handout-only style="display:${initialFmt === 'pdf' && canvasEl?.querySelector('[data-pdf-page]') ? 'flex' : 'none'}">
+        <label class="field-toggle">
+          <input type="checkbox" class="field-check" data-action="pdf-notes-handout">
+          <span class="notes-handout-head">${icon('transcript', { size: 18 })}<span>${escape(t('Speaker notes handout'))}</span></span>
+        </label>
+        <p class="print-hint">${escape(t('Makes a portrait PDF with each slide above its speaker notes. Long notes continue onto extra pages.'))}</p>
+      </div>`
+      : '';
+  const preflightRow = preflightRowHtml({ force: isDesignTool });
   // Tier 3.6 - "Cost, worked out from your rate card". After preflight (it consumes
   // preflight's counts) and above the buttons. Chrome only: data-export-hide, never a
   // pixel of the export. Rendered only for a costable job with a card and canShowMoney.
@@ -1833,7 +1852,7 @@ function renderActions(
       ${downloadRow}
       ${actions.includes('download') ? `<p class="export-degraded-note" data-export-degraded role="status" hidden style="margin:.2rem 0 0;color:hsl(var(--muted-foreground));font-size:12px;text-align:center"></p>` : ''}
     </div>
-    ${actions.includes('download') ? `${recordingRow}${filenameRow}${dimsRow}${timingRow}${aspectWarnRow}${fidelityWarnRow}${hdrRow}${cmykRow}${printRow}${pkgRow}${protectionRow}<div class="export-ingredient-note" data-ingredient-note hidden></div>${audioRow}${loudnessRow}${captionsRow}${settingsRow}${videoQualityRow}${sendRow}${preflightRow}${costRow}` : ''}
+    ${actions.includes('download') ? `${recordingRow}${filenameRow}${dimsRow}${timingRow}${aspectWarnRow}${fidelityWarnRow}${notesHandoutRow}${hdrRow}${cmykRow}${printRow}${pkgRow}${protectionRow}<div class="export-ingredient-note" data-ingredient-note hidden></div>${audioRow}${loudnessRow}${captionsRow}${settingsRow}${videoQualityRow}${sendRow}${preflightRow}${costRow}` : ''}
   `;
   void fillIngredientNote();
 
@@ -2589,6 +2608,21 @@ function renderActions(
         fmt === 'pdf' || fmt === 'pdf-cmyk' || fmt === 'zip' || isC2paFmt(fmt) || isImprintFmt(fmt);
       protectionEl.style.display = anyValid ? 'flex' : 'none';
     }
+    refreshNotesHandoutUi();
+  }
+
+  /** Design-only layout switch: a handout needs artboards and the multi-page RGB PDF path. */
+  function refreshNotesHandoutUi(): void {
+    const row = el!.querySelector<HTMLElement>('[data-notes-handout-only]');
+    if (!row) return;
+    const fmt = formatEl?.value ?? initialFmt;
+    const hasPages = !!canvasEl?.querySelector('[data-pdf-page]');
+    row.style.display = fmt === 'pdf' && hasPages ? 'flex' : 'none';
+    const input = row.querySelector<HTMLInputElement>('[data-action="pdf-notes-handout"]');
+    if (input) {
+      input.disabled = !hasPages;
+      if (!hasPages) input.checked = false;
+    }
   }
   // Whether the password field currently holds a value that came from ?password=
   // (a Standard-tier link lock). The Strong tier must NEVER reuse a URL-sourced
@@ -3087,9 +3121,10 @@ function renderActions(
   // settings a render would not use. The engine receives a plain object and never
   // touches the DOM.
   //
-  // STATIC ONLY. Nothing here renders, rasterises or exports: `preflight()` is
-  // pure and synchronous, and it runs on every input change through
-  // runtime.subscribe, so an async or rendering check must NOT land on this path.
+  // THE GENERIC RULE PATH IS STATIC ONLY. Nothing there renders, rasterises or
+  // exports: `preflight()` is pure and synchronous and runs on every input change.
+  // Design's mounted audit below is the explicit exception; it is async and is
+  // reached only from Export-open / settled-canvas events, never runtime.subscribe.
   //
   // The palette is the one genuinely async fact. It is resolved ONCE, off
   // host.tokens.colors() DIRECTLY - never livePalette, which silently substitutes
@@ -3176,6 +3211,80 @@ function renderActions(
     },
     inputs: manifest.inputs,
   };
+
+  // Design has renderer-neutral document checks plus mounted browser checks that
+  // cannot honestly live in the engine's generic preflight rules. Keep their
+  // lifetime tied to the Export surface: opening runs them, canvas paint refreshes
+  // them, and closing cancels/clears them. A closed Export panel pays nothing.
+  let designAuditRows: readonly PreflightRow[] = [];
+  let designAuditOpen = false;
+  let designAuditGeneration = 0;
+
+  const designTone = (severity: 'error' | 'warn' | 'info'): PreflightRow['tone'] =>
+    severity === 'error' ? 'error' : severity === 'warn' ? 'warn' : 'note';
+
+  async function refreshDesignAudit(): Promise<void> {
+    if (!isDesignTool || !designAuditOpen || !canvasEl) return;
+    const generation = ++designAuditGeneration;
+    const boxes = runtime.getModel().find((input) => input.id === 'boxes')?.value;
+    const rect = canvasEl.getBoundingClientRect();
+    const report = inspectDesignV1(boxes, {
+      width: rect.width || manifest.render.width,
+      height: rect.height || manifest.render.height,
+    });
+    const structuralRows: PreflightRow[] = report.findings.map((finding) => ({
+      id: finding.id,
+      tone: designTone(finding.severity),
+      text: finding.message,
+    }));
+    designAuditRows = structuralRows;
+    refreshPreflight();
+
+    try {
+      await document.fonts?.ready;
+    } catch {
+      /* mounted geometry still answers */
+    }
+    const mounted = await auditMountedDesign(canvasEl, report, {
+      resolveFont: async (style, text) => {
+        const { resolveVectorFont } = await import('../bridge/font-registry.ts');
+        return Boolean(await resolveVectorFont(style, text));
+      },
+    });
+    if (!designAuditOpen || generation !== designAuditGeneration) return;
+    designAuditRows = [
+      ...structuralRows,
+      ...mounted.findings.map(
+        (finding): PreflightRow => ({
+          id: finding.id,
+          tone: finding.id === 'design.text.contrast-review' ? 'gap' : designTone(finding.severity),
+          text: mountedDesignFindingMessage(finding),
+        })
+      ),
+    ];
+    refreshPreflight();
+  }
+
+  const onDesignExportOpen = (): void => {
+    designAuditOpen = true;
+    refreshNotesHandoutUi();
+    void refreshDesignAudit();
+  };
+  const onDesignExportClose = (): void => {
+    designAuditOpen = false;
+    designAuditGeneration++;
+    designAuditRows = [];
+    refreshPreflight();
+  };
+  const onDesignCanvasPaint = (): void => {
+    refreshNotesHandoutUi();
+    if (designAuditOpen) void refreshDesignAudit();
+  };
+  if (isDesignTool) {
+    el.addEventListener('lolly:export-open', onDesignExportOpen);
+    el.addEventListener('lolly:export-close', onDesignExportClose);
+    canvasEl?.addEventListener('lolly-canvas-painted', onDesignCanvasPaint);
+  }
 
   /** Assemble the job from the live panel, run the engine's rules, render the card. */
   function refreshPreflight(): void {
@@ -3300,10 +3409,11 @@ function renderActions(
     const report = preflight(job);
     applyPreflight(
       el,
-      preflightView(report, {
+      preflightView(isPreflightEnabled() ? report : null, {
         formatLabel: fmt ? fmtLabel(fmt) : '',
         sizeText,
         bleedText: on && bleedMm > 0 ? `${bleedMm} mm` : null,
+        additionalRows: designAuditRows,
       })
     );
     // The cost pass consumes the SAME counts. Async (it reads stored cards), so it is
@@ -3354,9 +3464,16 @@ function renderActions(
     });
   }
   // Re-attempt the mount whenever the registry changes (async bundle delivery).
-  // Unsubscribed, and the hydrated extension torn down, in `disposeCostSlot`.
+  // Unsubscribed, and the hydrated extension torn down, in `disposeActions`.
   const costSlotUnsub = onExtensionsChanged(() => tryMountCostSlot());
-  function disposeCostSlot(): void {
+  function disposeActions(): void {
+    if (isDesignTool) {
+      designAuditOpen = false;
+      designAuditGeneration++;
+      el?.removeEventListener('lolly:export-open', onDesignExportOpen);
+      el?.removeEventListener('lolly:export-close', onDesignExportClose);
+      canvasEl?.removeEventListener('lolly-canvas-painted', onDesignCanvasPaint);
+    }
     costSlotUnsub();
     try {
       costSlotDispose?.();
@@ -4470,6 +4587,12 @@ function renderActions(
         // write a corrupt asset (a .zip stored as if it were a png/svg/pdf).
         let downloadedIsZip = false;
         const framePages = framePick.kind === 'page' ? [pageEls[framePick.index]!] : pageEls;
+        const notesHandout =
+          fmt === 'pdf' &&
+          isDesignTool &&
+          framePages.length > 0 &&
+          !!el!.querySelector<HTMLInputElement>('[data-action="pdf-notes-handout"]')?.checked;
+        const outputBase = notesHandout ? `${filename}-speaker-notes` : filename;
         // A SCORM course package (plans/180 M-D1): not one render but a zip of them - every
         // artboard as a still, the narrated film with its caption sidecar, the fonts, the
         // manifest, the adapter and a launch page. bridge/export-scorm.ts owns the
@@ -4477,7 +4600,82 @@ function renderActions(
         // they go in as closures: photograph an artboard at its rest pose, and encode the
         // film. Placed BEFORE the still fan-out because it consumes the same pages for a
         // different purpose (a zip of loose images is not a course).
-        if (fmt === 'scorm') {
+        if (notesHandout) {
+          const [handoutModule, sequence] = await Promise.all([
+            import('./design-notes-handout.ts'),
+            import('../bridge/sequence-dom.ts'),
+          ]);
+          const { mountDesignNotesHandout, snapshotDesignHandoutSlide, waitForDesignNotesHandout } =
+            handoutModule;
+          const { applySequenceTime, restoreSequenceTime, beginAuthoredDom, OFF_CLASS } = sequence;
+          const handoutOpts: RunExportOpts & { cuts?: number } = { ...opts };
+          delete handoutOpts.width;
+          delete handoutOpts.height;
+          delete handoutOpts.cuts;
+          delete handoutOpts.bundleFormats;
+          downloadedBlob = await exportUnscaled(
+            async (report) => {
+              reportToShutter = report ?? null;
+              const previewUrls: string[] = [];
+              let handout: ReturnType<typeof mountDesignNotesHandout> | null = null;
+              const seqRoot = canvasEl;
+              const seqOff = seqRoot ? [...seqRoot.querySelectorAll<HTMLElement>('.seq-off')] : [];
+              seqOff.forEach((node) => { node.classList.remove('seq-off'); });
+              const releaseAuthored = seqRoot ? beginAuthoredDom(seqRoot) : null;
+              const slides: ReturnType<typeof snapshotDesignHandoutSlide>[] = [];
+              try {
+                try {
+                  for (let i = 0; i < framePages.length; i++) {
+                    exportAbort.signal.throwIfAborted();
+                    const page = framePages[i]!;
+                    if (seqRoot) {
+                      applySequenceTime(seqRoot, restMsOf(page));
+                      for (const node of seqRoot.querySelectorAll<HTMLElement>(`.${OFF_CLASS}`)) {
+                        node.classList.remove(OFF_CLASS);
+                      }
+                    }
+                    const slide = snapshotDesignHandoutSlide(page, i);
+                    // The PDF walker does not scale descendant text uniformly through an
+                    // ancestor transform. Photograph the slide once at a bounded native
+                    // resolution; the handout lays out its headings and notes separately.
+                    if (typeof window.URL?.createObjectURL === 'function') {
+                      const scale = Math.min(1, 1600 / slide.width, 1000 / slide.height);
+                      const previewOpts: RunExportOpts = {
+                        width: Math.max(1, Math.round(slide.width * scale)),
+                        height: Math.max(1, Math.round(slide.height * scale)),
+                        scale: 1,
+                        quality: 0.88,
+                        background: '#ffffff',
+                        thumbnail: true,
+                        embedMeta: false,
+                        c2pa: false,
+                        imprint: false,
+                        durable: false,
+                        signal: exportAbort.signal,
+                      };
+                      const preview = await runtime.export(page, 'jpg', previewOpts);
+                      slide.previewSrc = window.URL.createObjectURL(preview);
+                      previewUrls.push(slide.previewSrc);
+                    }
+                    slides.push(slide);
+                  }
+                } finally {
+                  if (seqRoot) restoreSequenceTime(seqRoot);
+                  releaseAuthored?.();
+                  seqOff.forEach((node) => { node.classList.add('seq-off'); });
+                }
+                handout = mountDesignNotesHandout(slides, { title: filename });
+                await waitForDesignNotesHandout(handout.root);
+                return await runtime.export(handout.root, 'pdf', handoutOpts);
+              } finally {
+                handout?.dispose();
+                previewUrls.forEach((url) => { window.URL.revokeObjectURL(url); });
+              }
+            },
+            { shutter: true, detail: t('Speaker notes handout'), onCancel: cancelExport }
+          );
+          await host.export.download(downloadedBlob, `${outputBase}.pdf`);
+        } else if (fmt === 'scorm') {
           const { buildScormPackage, collectScormFonts } = await import(
             '../bridge/export-scorm.ts'
           );
@@ -4857,7 +5055,7 @@ function renderActions(
             await recordExport({
               toolId: manifest.id,
               label: manifest.name,
-              filename,
+              filename: outputBase,
               format: fmt,
               thumb,
               query: serializeUrlState(runtime.getModel()),
@@ -4888,9 +5086,9 @@ function renderActions(
                 blob: downloadedBlob,
                 format: fmt,
                 toolId: manifest.id,
-                name: filename,
-                width: dimNum(opts.width),
-                height: dimNum(opts.height),
+                name: outputBase,
+                width: notesHandout ? 794 : dimNum(opts.width),
+                height: notesHandout ? 1123 : dimNum(opts.height),
               }
             );
           } catch {
@@ -4919,7 +5117,7 @@ function renderActions(
               {
                 blob: downloadedBlob,
                 format: downloadedIsZip ? 'zip' : fmt,
-                name: filename,
+                name: outputBase,
               }
             );
           } catch {
@@ -5084,8 +5282,9 @@ function renderActions(
     const fmt = formatEl?.value || initialFmt || formats[0] || '';
     const target = sendTargetsFor(fmt, 'export').find((tg) => sendTargetId(tg) === targetId);
     if (!target) return;
-    const status = [...el!.querySelectorAll<HTMLElement>('[data-send-status]')]
-      .find((candidate) => candidate.dataset.sendStatus === targetId);
+    const status = [...el!.querySelectorAll<HTMLElement>('[data-send-status]')].find(
+      (candidate) => candidate.dataset.sendStatus === targetId
+    );
     // Progress wording swaps the LABEL SPAN, not the button - the button also holds
     // the destination glyph, and writing textContent on it would delete that glyph
     // and never bring it back.
@@ -5291,18 +5490,18 @@ function renderActions(
     stopAudioPreview,
     sessionState: sessionSnapshot,
     getSlot: () => activeSlot,
-    dispose: disposeCostSlot,
+    dispose: disposeActions,
   };
 }
 
 export {
-  renderActions,
+  c2paDefaultOn,
   extFor,
   isCmykFmt,
   isPrintFmt,
-  printEnabled,
   marksToCsv,
-  c2paDefaultOn,
+  printEnabled,
   readBleed,
   readMarks,
+  renderActions,
 };

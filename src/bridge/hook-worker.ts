@@ -58,6 +58,7 @@ const invokeWaiters = new Map<string, {
   resolve: (v: unknown) => void;
   reject: (e: unknown) => void;
   timer: ReturnType<typeof setTimeout>;
+  report?: (patch: Record<string, unknown>) => void;
 }>(); // `runId:callId`
 
 /** Terminate one wedged/crashed Worker. Workers are deliberately per-mount: an
@@ -100,6 +101,7 @@ function onMessage(boundRunId: number, source: Worker, m: HookWorkerOut): void {
   // own dedicated Worker and cannot impersonate another run.
   if (m.runId !== boundRunId || workers.get(boundRunId) !== source) return;
   if (m.t === 'init-done') { initWaiters.get(m.runId)?.resolve(m); initWaiters.delete(m.runId); return; }
+  if (m.t === 'report') { invokeWaiters.get(`${m.runId}:${m.callId}`)?.report?.(m.patch); return; }
   if (m.t === 'invoke-done') {
     const key = `${m.runId}:${(m as HookInvokeDoneMsg).callId}`;
     const p = invokeWaiters.get(key);
@@ -239,7 +241,9 @@ function invokeInWorker(runId: number, name: WorkerHookName, ctx: unknown): Prom
   }
   const callId = ++callSeq;
   const key = `${runId}:${callId}`;
-  const { host: _omit, ...rest } = (ctx ?? {}) as Record<string, unknown> & { host?: unknown };
+  const { host: _omit, report, ...rest } = (ctx ?? {}) as Record<string, unknown> & {
+    host?: unknown; report?: (patch: Record<string, unknown>) => void;
+  };
   // An onFrame ctx carries `frame.data` (a Uint8ClampedArray); it crosses by
   // STRUCTURED CLONE, deliberately NOT a Transferable. media.ts fans ONE shared
   // MediaFrame object to every live subscriber synchronously (media.ts:74-77), so
@@ -253,7 +257,7 @@ function invokeInWorker(runId: number, name: WorkerHookName, ctx: unknown): Prom
         `${name} exceeded its ${WORKER_HOOK_BUDGET_MS[name]}ms isolated execution budget`,
       ));
     }, WORKER_HOOK_BUDGET_MS[name]);
-    invokeWaiters.set(key, { resolve, reject, timer });
+    invokeWaiters.set(key, { resolve, reject, timer, report });
     try {
       w.postMessage({ t: 'invoke', runId, callId, name, ctx: rest });
     } catch (error) {

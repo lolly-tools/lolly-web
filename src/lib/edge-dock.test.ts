@@ -553,7 +553,7 @@ test('every panel names itself through t() - the tab strip shows that label as b
   const sites: Array<[string, string, string]> = [
     ['the export sheet', join(here, 'export-panel-float.ts'), 'Export'],
     ['the player', join(here, 'audio-dock-singleton.ts'), 'Player'],
-    ['the Design inspector', join(here, '..', 'views', 'tool.ts'), 'Inspector'],
+    ['the Design inspector', join(here, '..', 'views', 'design-inspector-float.ts'), 'Inspector'],
     ['the transcript', join(here, '..', 'views', 'transcript-panel.ts'), 'Transcript'],
     ['the compact zoom bar', join(here, '..', 'views', 'tool-stage-nav.ts'), 'Zoom'],
   ];

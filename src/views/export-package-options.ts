@@ -2,7 +2,7 @@
 
 import { t } from '../i18n.ts';
 import { jellyActive } from '../lib/jelly.ts';
-import { escape } from '../utils.ts';
+import { escape as escapeHtml } from '../utils.ts';
 import { cancelSaveAsNext, requestSaveAsNext, saveFilePickerSupported } from '../bridge/export-save-picker.ts';
 
 const PACKAGE_INNER_FORMATS = ['svg', 'png', 'jpg', 'jpeg', 'webp'];
@@ -39,21 +39,29 @@ export function mp4BeforeWebm(formats: string[]): string[] {
 /** Package metadata controls, isolated from the already concentrated action view. */
 export function packageOptionsHtml(enabled: boolean, initialFormat: string | undefined, toolId: string): string {
   if (!enabled) return '';
-  const id = escape(toolId);
+  const id = escapeHtml(toolId);
   const visible = initialFormat === 'rpm' || initialFormat === 'tar.gz';
   return `
-    <div class="section-card export-pkg" data-rpm-only style="display:${visible ? 'flex' : 'none'};flex-direction:column;gap:6px">
-      <label style="display:flex;flex-direction:column;gap:2px;font-size:12px">Package name
-        <input type="text" data-action="pkg-name" value="${id}" spellcheck="false" style="width:100%"></label>
-      <div style="display:flex;gap:6px">
-        <label style="display:flex;flex-direction:column;gap:2px;font-size:12px;flex:1">Version
-          <input type="text" data-action="pkg-version" value="1.0" spellcheck="false" style="width:100%"></label>
-        <label style="display:flex;flex-direction:column;gap:2px;font-size:12px;flex:2">Licence (SPDX)
-          <input type="text" data-action="pkg-license" placeholder="e.g. CC-BY-4.0, MIT, OFL-1.1" spellcheck="false" style="width:100%"></label>
+    <div class="section-card export-pkg" data-rpm-only style="display:${visible ? 'flex' : 'none'}">
+      <div class="export-pkg-grid">
+        <label class="field-row export-pkg-name">
+          <span class="field-label">Package name</span>
+          <input class="field-input field-input--mono" type="text" data-action="pkg-name" value="${id}" autocomplete="off" autocapitalize="none" spellcheck="false">
+        </label>
+        <label class="field-row">
+          <span class="field-label">Version</span>
+          <input class="field-input field-input--mono" type="text" data-action="pkg-version" value="1.0" autocomplete="off" autocapitalize="none" spellcheck="false">
+        </label>
+        <label class="field-row">
+          <span class="field-label">Licence (SPDX)</span>
+          <input class="field-input field-input--mono" type="text" data-action="pkg-license" placeholder="e.g. CC-BY-4.0, MIT, OFL-1.1" autocomplete="off" autocapitalize="none" spellcheck="false">
+        </label>
+        <label class="field-row export-pkg-dest">
+          <span class="field-label">Install path</span>
+          <input class="field-input field-input--mono" type="text" data-action="pkg-dest" value="/usr/share/${id}" autocomplete="off" autocapitalize="none" spellcheck="false">
+        </label>
       </div>
-      <label style="display:flex;flex-direction:column;gap:2px;font-size:12px">Install path
-        <input type="text" data-action="pkg-dest" value="/usr/share/${id}" spellcheck="false" style="width:100%"></label>
-      <p class="pdfpass-hint">An installable RPM of the render (or a no-root .tar.gz). The install path is where it lands on the system.</p>
+      <p class="section-card__hint">An installable RPM of the render (or a no-root .tar.gz). The install path is where it lands on the system.</p>
     </div>`;
 }
 
@@ -82,7 +90,7 @@ export function saveAsBridge(): DesktopExportBridge | undefined {
 
 export function saveAsButtonHtml(show: boolean): string {
   if (!show) return '';
-  const label = `${escape(t('Save as'))}…`;
+  const label = `${escapeHtml(t('Save as'))}…`;
   return jellyActive()
     ? `<jelly-button variant="platinum" data-action="save-as" class="save-as-btn">${label}</jelly-button>`
     : `<button type="button" data-action="save-as" class="save-as-btn">${label}</button>`;

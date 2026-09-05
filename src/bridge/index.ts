@@ -68,6 +68,8 @@ interface WebHost extends HostV1 {
   /** The design systems this device holds (plans/186) - web-only host helper,
    *  not part of the tool-facing contract; tools see `host.tokens.list()`. */
   designSystems: DesignSystemRegistry;
+  /** Shell-owned portable history; never exposed as a tool capability. */
+  fileHistory: import('../lib/file-history-backup.ts').FileHistoryBackup;
 }
 
 /** One-shot memoiser for the lazy-facade loaders below: the first call starts the
@@ -129,6 +131,11 @@ export async function createBridge(): Promise<WebHost> {
   // Web-only host-UI helper (not in the tool-facing contract): cache of
   // profile-personalized gallery thumbnails. The gallery feature-detects it.
   host.previews = createPreviewsAPI(db);
+  const loadFileHistory = memo(async () => (await import('../lib/file-history-backup.ts')).createFileHistoryBackup(db));
+  host.fileHistory = {
+    export: async () => (await loadFileHistory()).export(),
+    restore: async snapshot => (await loadFileHistory()).restore(snapshot),
+  };
   // `pick` is attached below (line ~99), so the factory return is intentionally
   // missing it here; the cast reconciles that with the AssetsAPI-typed field.
   // Copy-on-write preservation of bytes a published design-system version pins
@@ -218,6 +225,9 @@ export async function createBridge(): Promise<WebHost> {
     analyze: async (bytes) => (await loadPdf()).analyze(bytes),
     strip: async (bytes) => (await loadPdf()).strip(bytes),
     compress: async (bytes, opts) => (await loadPdf()).compress!(bytes, opts),
+    organize: async (bytes, opts) => (await loadPdf()).organize!(bytes, opts),
+    stamp: async (bytes, opts) => (await loadPdf()).stamp!(bytes, opts),
+    lock: async (bytes, password) => (await loadPdf()).lock!(bytes, password),
     redact: async (bytes, opts) => (await import('./pdf-redact.ts')).redactPdf(bytes, opts, host),
     pages: async (bytes, opts) => (await import('./pdf-redact.ts')).pdfPages(bytes, opts, host),
   } as WebHost['pdf'];
@@ -307,6 +317,7 @@ export async function createBridge(): Promise<WebHost> {
     start: async (opts) => (await loadMedia()).start(opts),
     stop: () => { mediaImpl?.stop(); },
     subscribe: (cb, opts) => lazySubscribe(loadMedia, (m) => m.subscribe(cb, opts)),
+    trim: async (bytes, opts) => (await loadMedia()).trim!(bytes, opts),
     // Web-only extra (not on the portable MediaAPI): arm the animated frame source
     // (SVG markup / animated raster / video - see media.ts AnimSourceSpec) for the
     // next start(). Disarming with no impl is a no-op - nothing can be armed yet - 

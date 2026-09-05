@@ -286,6 +286,13 @@ import { deepActiveElement, isTypingTarget } from '../lib/typing-target.ts';
 import { BLEND_STYLES, HUE_ROUTES, isPolarSpace } from '../lib/blend-style.ts';
 import { attachWobble } from '../lib/wobble.ts';
 import { t, tRaw } from '../i18n.ts';
+import { openDesignShortcuts } from './design-shortcuts.ts';
+import { mountDesignGuides, type DesignGuidesHandle } from './design-guides.ts';
+import {
+  applyDesignStyle,
+  captureDesignStyle,
+  type DesignStyleSnapshot,
+} from './design-style-clipboard.ts';
 import type { ColorFieldValue } from '../components/color-field.ts';
 import {
   colorFieldHtml,
@@ -1986,6 +1993,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   /** The mark menu's row builder, published out of `buildToolbar` so `openLollyMenu`
    *  (design-ports) can spawn the SAME menu from the top bar's own mark. */
   let lollyMenuItems: (() => PopItem[]) | null = null;
+  let shortcutsModal: ReturnType<typeof openDesignShortcuts> | null = null;
+  /** One sheet at a time, whether it was opened from `?` or the document menu. */
+  const showShortcuts = (opener?: HTMLElement | null): void => {
+    if (shortcutsModal) return;
+    shortcutsModal = openDesignShortcuts({
+      opener,
+      onClose: () => { shortcutsModal = null; },
+    });
+  };
 
   // A row's identity is its OWN id, never its array position (plan 100 section 3): an index key
   // silently re-points at a different box the moment anything inserts above it - a peer's
@@ -2919,6 +2935,35 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   const guidesEl = document.createElement('div'); // snap/alignment guide lines
   guidesEl.className = 'fc-guides';
   overlay.appendChild(guidesEl);
+
+  // Design-only authored guides. Their compact top-level input means they follow the
+  // document through URL mode, .lolly files, undo and collaboration, while the visibility
+  // toggle remains a per-device editor preference. Other free-canvas tools declare no
+  // `guides` input and pay no DOM or event-listener cost.
+  const guideInput = designChrome
+    ? runtime.getModel().find((model) => model.id === 'guides')
+    : undefined;
+  const GUIDE_VISIBILITY_KEY = 'lolly-design-guides-visible';
+  const readGuideVisibility = (): boolean => {
+    try { return localStorage.getItem(GUIDE_VISIBILITY_KEY) !== 'false'; }
+    catch { return true; }
+  };
+  let authoringGuides: DesignGuidesHandle | null = guideInput
+    ? mountDesignGuides({
+        stageEl,
+        canvasEl,
+        read: () => runtime.getModel().find((model) => model.id === 'guides')?.value,
+        commit: (value) => {
+          onDirty?.('guides');
+          runtime.setInput('guides', value);
+        },
+        initiallyVisible: readGuideVisibility(),
+      })
+    : null;
+  const setGuidesVisible = (visible: boolean): void => {
+    authoringGuides?.setVisible(visible);
+    try { localStorage.setItem(GUIDE_VISIBILITY_KEY, String(visible)); } catch { /* best effort */ }
+  };
 
   // Frame name labels (Figma-style) - one small tab above each artboard's top-left that
   // NAMES it and selects the FRAME on click. This is the reliable way to "edit the frame
@@ -4364,6 +4409,36 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           run: () => openCssPanel(anchorEl()),
         });
       }
+      // Design's canvas keyboard used to be invisible while the timeline alone carried a
+      // `?` sheet. The document menu is the pointer/touch door onto that same inventory;
+      // a focused timeline keeps its own, more detailed sheet because its root consumes
+      // the key before this window-level handler sees it.
+      if (barMounted) {
+        if (items.length) items.push({ sep: true });
+        if (authoringGuides) {
+          items.push({
+            label: t('Rulers and guides'),
+            icon: icon(SVG.grid),
+            key: 'guides',
+            on: authoringGuides.isVisible(),
+            run: () => setGuidesVisible(!authoringGuides!.isVisible()),
+          });
+          if (authoringGuides.hasGuides()) {
+            items.push({
+              label: t('Remove all guides'),
+              icon: icon(SVG.trash),
+              key: 'clear-guides',
+              run: () => authoringGuides?.clear(),
+            });
+          }
+        }
+        items.push({
+          label: t('Keyboard shortcuts'),
+          icon: icon(SVG.info),
+          key: 'shortcuts',
+          run: () => showShortcuts(anchorEl()),
+        });
+      }
       // Slide transition (plan 112 M5): one compact cycling row - Slide → Fade → Morph.
       // The menu closes on click; reopening shows the new value (no live refresh needed).
       //
@@ -5164,6 +5239,24 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         icon: icon(SVG.dup),
         run: () => duplicateSelection(),
         disabled: !has,
+      },
+      {
+        label: t('Cut'),
+        icon: icon(SVG.scissors),
+        run: () => cutSelection(),
+        disabled: !has,
+      },
+      {
+        label: t('Copy style'),
+        icon: icon(SVG.dup),
+        run: () => copySelectionStyle(),
+        disabled: !has || !styleFields.length,
+      },
+      {
+        label: t('Paste style'),
+        icon: icon(SVG.pencil),
+        run: () => pasteSelectionStyle(),
+        disabled: !has || !styleClipboard,
       },
       {
         label: t('Delete'),
@@ -11778,6 +11871,45 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // (see onGlobalPaste). While editing text the browser's native text copy wins;
   // this only fires on the bare canvas with a selection.
   let objectClipboard: Box[] | null = null; // Array<box> - the in-memory fallback
+  let styleClipboard: DesignStyleSnapshot | null = null;
+  // Copy style is an ALLOW-LIST of fields the manifest declared as visual controls.
+  // Identity, geometry, content (text/image/path), artboard ownership, timing, notes,
+  // hidden/locked state, groups and z-order are absent by construction. Filtering the
+  // resolved/defaulted names through the block schema is important: a legacy tool must
+  // not acquire a field its URL wire cannot carry merely because this editor knows the
+  // conventional name.
+  const declaredBoxFields = new Set((input.fields || []).map((f) => f.id));
+  const styleFields = [...new Set([
+    cfg.fillField, cfg.gradField, cfg.opacityField, cfg.shapeField, cfg.radiusField,
+    cfg.fitField, cfg.imgPosField, cfg.blendField,
+    cfg.textColorField, cfg.fontSizeField, cfg.alignField, cfg.valignField,
+    cfg.weightField, cfg.fontField, cfg.lineHeightField, cfg.trackingField,
+    cfg.ligaturesField, cfg.alternatesField, cfg.padField, cfg.fitTextField,
+    cfg.strokeField, cfg.strokeWField, cfg.fillRuleField, cfg.strokeDashField,
+    cfg.strokeCapField, cfg.strokeJoinField, cfg.strokeDashArrayField,
+    cfg.dashFitField, cfg.headStartField, cfg.headEndField,
+    cfg.shadowField, cfg.shadowColorField, cfg.shadowXField, cfg.shadowYField,
+    cfg.shadowBlurField,
+  ].filter((f): f is string => !!f && declaredBoxFields.has(f)))];
+
+  /** Copy the first selected row's visual fields; multi-selection follows every paint panel. */
+  function copySelectionStyle(): void {
+    const boxes = getBoxes();
+    const first = selIndices(boxes)[0];
+    if (first == null || !styleFields.length) return;
+    styleClipboard = captureDesignStyle(boxes[first]!, styleFields);
+    flash(t('Style copied'));
+  }
+
+  /** Apply one style to the full selection in one model write / undo step. */
+  function pasteSelectionStyle(): void {
+    if (!styleClipboard || !selection.size) return;
+    const boxes = getBoxes();
+    const next = applyDesignStyle(boxes, selection, (b, i) => idOf(b, i), styleClipboard) as Box[];
+    commit(next);
+    flash(t('Style pasted'));
+  }
+
   let lastPointer: { x: number; y: number } | null = null; // last client {x,y} over the stage - paste placement
   function pasteAimedHere(): boolean {
     const ae = document.activeElement;
@@ -11820,6 +11952,34 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     } catch {
       /* clipboard write blocked - the in-memory copy still serves ⌘V */
     }
+  }
+  /** Copy's exact deep payload followed by one ordinary delete commit. */
+  function cutSelection(transfer?: DataTransfer | null): void {
+    const boxes = getBoxes();
+    const idx = selIndices(boxes);
+    if (!idx.length) return;
+    const picked = copyRows(boxes, idx);
+    objectClipboard = picked;
+    const encoded = FC_CLIP_PREFIX + JSON.stringify(picked);
+    try {
+      if (transfer) transfer.setData('text/plain', encoded);
+      else void navigator.clipboard?.writeText(encoded).catch(() => { /* in-memory fallback */ });
+    } catch {
+      /* the in-memory payload still makes a later paste work */
+    }
+    deleteSelection();
+  }
+  /** Native Cut keeps text fields native and owns the canvas only with a selection. */
+  function onCut(e: ClipboardEvent): void {
+    if (disposed || editing) return; // editing → native text cut
+    if (typingTarget() || !pasteAimedHere() || !selection.size) return;
+    if (timeCfg && !selectionLive(getBoxes())) {
+      e.preventDefault();
+      announce(t('This card is not on screen at the playhead. Go to it to edit it.'));
+      return;
+    }
+    e.preventDefault();
+    cutSelection(e.clipboardData);
   }
   /**
    * Duplicate a set of copied boxes at a +24,+24 offset (cascades on repeat paste),
@@ -12978,7 +13138,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       py,
       otherAABBs(getBoxes(), new Set<number>()) as MathAABB[],
       canvasWH(),
-      snapThreshNative()
+      snapThreshNative(),
+      authoringGuides?.snapTargets()
     );
     drawGuides(snap.guides);
     penPlaceNode(e, { x: snap.x, y: snap.y }, e.altKey);
@@ -13028,7 +13189,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       py,
       otherAABBs(getBoxes(), new Set<number>()) as MathAABB[],
       canvasWH(),
-      snapThreshNative()
+      snapThreshNative(),
+      authoringGuides?.snapTargets()
     );
     drawGuides(snap.guides);
     return { x: snap.x, y: snap.y };
@@ -13459,7 +13621,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           sy,
           otherAABBs(getBoxes(), new Set([indexOfId(getBoxes(), penEdit.id)])) as MathAABB[],
           canvasWH(),
-          snapThreshNative()
+          snapThreshNative(),
+          authoringGuides?.snapTargets()
         );
         sx = snap.x;
         sy = snap.y;
@@ -13502,7 +13665,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         px = gridRound(px);
         py = gridRound(py);
       } // land on grid
-      const snap = snapPoint(px, py, gesture.others as MathAABB[], canvasWH(), snapThreshNative());
+      const snap = snapPoint(
+        px,
+        py,
+        gesture.others as MathAABB[],
+        canvasWH(),
+        snapThreshNative(),
+        authoringGuides?.snapTargets()
+      );
       const corner = { x: snap.x, y: snap.y };
       drawGuides(snap.guides);
       gesture.corner = corner;
@@ -13533,7 +13703,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           cand as MathAABB,
           gesture.others as MathAABB[],
           canvasWH(),
-          snapThreshNative()
+          snapThreshNative(),
+          authoringGuides?.snapTargets()
         );
         mdx = dxN + snap.dx;
         mdy = dyN + snap.dy;
@@ -13566,7 +13737,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           py,
           gesture.others as MathAABB[],
           canvasWH(),
-          snapThreshNative()
+          snapThreshNative(),
+          authoringGuides?.snapTargets()
         );
         sdx += snap.x - nat.x;
         sdy += snap.y - nat.y;
@@ -14916,6 +15088,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   function renderChrome(): void {
     const boxes = getBoxes();
+    authoringGuides?.sync();
     paintChrome(boxes, null);
     // Keep the selected connector's highlight + inspector tracking any box move,
     // pan/zoom, or edit (drops the selection if its edge/box has gone).
@@ -15794,7 +15967,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (k === 'Delete' || k === 'Backspace') return true;
     if (k === 'Enter' || k === 'F2') return true;
     if (!(e.metaKey || e.ctrlKey)) return false;
-    return k === 'd' || k === 'D' || k === 'g' || k === 'G' || k === ']' || k === '[';
+    return k === 'x' || k === 'X' || k === 'd' || k === 'D' || k === 'g' || k === 'G'
+      || k === ']' || k === '[' || (e.altKey && (k === 'v' || k === 'V'));
   }
   /**
    * Chrome that puts focusable controls over the canvas opts out of the canvas keyboard
@@ -15935,6 +16109,25 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       }
     }
     if (typingTarget()) return;
+    // The canvas-wide sheet. A focused timeline returns at the top of this handler and
+    // keeps its own detailed `?` inventory; every other Design surface gets this one.
+    if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey && designChrome) {
+      e.preventDefault();
+      showShortcuts(document.activeElement as HTMLElement | null);
+      return;
+    }
+    if (
+      authoringGuides &&
+      e.shiftKey &&
+      !e.metaKey &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      (e.key === 'r' || e.key === 'R')
+    ) {
+      e.preventDefault();
+      setGuidesVisible(!authoringGuides.isVisible());
+      return;
+    }
     // ── THE ONE RULE, enforcement point 3 of 3: KEYBOARD ────────────────────────
     // Chrome suppression closes every POINTER path onto an off-playhead box; a nudge,
     // a Delete or a duplicate needs no chrome at all. Navigation stays live on purpose
@@ -15944,6 +16137,21 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       e.preventDefault();
       announce(t('This card is not on screen at the playhead. Go to it to edit it.'));
       return;
+    }
+    // Standard copy/paste-properties chord (Figma/Sketch): the in-memory snapshot means
+    // clipboard permission can never make the operation flaky. Copy is a read; Paste is
+    // covered by the off-playhead mutation gate immediately above.
+    if ((e.metaKey || e.ctrlKey) && e.altKey && !e.shiftKey) {
+      if ((e.key === 'c' || e.key === 'C') && selection.size) {
+        e.preventDefault();
+        copySelectionStyle();
+        return;
+      }
+      if ((e.key === 'v' || e.key === 'V') && selection.size && styleClipboard) {
+        e.preventDefault();
+        pasteSelectionStyle();
+        return;
+      }
     }
     // Flip the selection: Shift+H mirrors horizontally, Shift+V vertically (Figma/Sketch's
     // keys). Shift-qualified deliberately - bare V is already the Pointer tool below (the
@@ -16140,6 +16348,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   window.addEventListener('keydown', onKey);
   document.addEventListener('paste', onGlobalPaste);
   document.addEventListener('copy', onCopy);
+  document.addEventListener('cut', onCut);
   // Reposition chrome when the stage pans/zooms/resizes.
   // Geometry changed (pan/zoom/resize) - invalidate the metrics cache and mark the
   // frame scrim for repositioning (M2: paintChrome only moves the scrim when this is
@@ -16844,6 +17053,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       }
       document.removeEventListener('paste', onGlobalPaste);
       document.removeEventListener('copy', onCopy);
+      document.removeEventListener('cut', onCut);
       stageEl.removeEventListener('pointermove', onStagePointerMove);
       stageEl.removeEventListener('wheel', onStageMove);
       stageEl.removeEventListener('transitionend', onStageTransitionEnd);
@@ -16868,11 +17078,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // would leave them behind in a node this handle no longer owns.
       tlWantsRail = navWantsRail = false;
       applyRailMode();
+      authoringGuides?.destroy();
+      authoringGuides = null;
       overlay.remove();
       toolbarDock.remove();
       closePopover();
       closeMorePanel();
       closeEdgePanel();
+      shortcutsModal?.close();
       document.body.classList.remove('fc-manipulating');
     },
     uiState() {

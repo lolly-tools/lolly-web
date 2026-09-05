@@ -14,6 +14,12 @@ const enc = new TextEncoder();
 
 const GRID = [['Item', 'Cost'], ['Rent', '1200'], ['Food', '400']];
 
+test('JSON output refuses headings that would silently lose columns', () => {
+  assert.throws(() => gridToTarget([['name', 'name'], ['first', 'second']], 'json'), /unique/);
+  assert.throws(() => gridToTarget([['', 'value'], ['first', 'second']], 'json'), /non-empty/);
+  assert.throws(() => gridToTarget([['name'], ['first', 'second']], 'json'), /more cells/);
+});
+
 test('xlsx → grid → csv', () => {
   const xlsx = writeXlsx({ rows: GRID });
   const grid = sourceToGrid('xlsx', xlsx);
