@@ -17,6 +17,27 @@ export interface LinuxPackageExportOptions {
 
 type InnerRenderer = (node: Element, format: string) => Promise<Blob>;
 
+/**
+ * Seal files a tool holds into a Linux package and RETURN the bytes (.rpm or
+ * .tar.gz) - plan 197 M5. The tool's exportFile hook returns these, and the shell
+ * delivers them via export.file (the normal download path). Like file(), this
+ * NEVER watermarks or embeds provenance; the RPM header carries only honest
+ * packaging metadata. The engine owns the format. Mirrors the CLI bridge's pack().
+ */
+export async function buildExportPack(spec: import('@lolly-tools/core').ExportPackSpec): Promise<Uint8Array> {
+  const { buildLinuxPack, buildHomeTarball } = await import('@lolly/engine');
+  if (spec.target === 'tar.gz') return buildHomeTarball(spec.files ?? []);
+  return buildLinuxPack({
+    type: spec.type,
+    meta: { ...spec.meta },
+    ...(spec.fonts ? { fonts: spec.fonts } : {}),
+    ...(spec.foundry ? { foundry: spec.foundry } : {}),
+    ...(spec.appstream ? { appstream: spec.appstream } : {}),
+    ...(spec.icons ? { icons: spec.icons } : {}),
+    ...(spec.files ? { files: spec.files } : {}),
+  });
+}
+
 /** Render one artefact, then wrap it as an RPM or no-root home tarball. */
 export async function renderLinuxPackage(
   node: Element,

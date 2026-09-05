@@ -1174,7 +1174,7 @@ export async function mountTool(
           // Arms the navigate-away close. If teardown landed in the same tick as the
           // modal's own construction (the race the check exists for), close immediately
           // instead of leaving a reference nobody will ever call.
-          onOpen: close => { if (templatePickTornDown) close(); else templatePickClose = close; },
+          onOpen: (close) => { if (templatePickTornDown) close(); else templatePickClose = close; },
         });
       })().catch((e) => {
         host.log?.('warn', 'template chooser failed - opening blank: ' + String(e));
@@ -4302,7 +4302,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
             setDesignIntent(inferDesignIntent({ templateId, templateCategory: category }), true),
           // Same navigate-away teardown as the fresh-open chooser: _cleanup calls
           // templatePickClose so the modal never outlives the view.
-          onOpen: close => { if (templatePickTornDown) close(); else templatePickClose = close; },
+          onOpen: (close) => { if (templatePickTornDown) close(); else templatePickClose = close; },
         });
         const chosen = await pick;
         if (templatePickTornDown || !viewEl.isConnected) return;

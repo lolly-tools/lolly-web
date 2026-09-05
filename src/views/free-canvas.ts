@@ -8997,8 +8997,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const authorRow = p.querySelector<HTMLElement>('[data-prov="author"]');
       const contactRow = p.querySelector<HTMLElement>('[data-prov="contact"]');
       const note = p.querySelector<HTMLElement>('[data-prov="note"]');
-      // nosemgrep: lolly-href-escape-is-not-scheme-validation - editHref's only caller passes the literal '#/profile?focus=use-details' (views/tool.ts)
       const editLink = prov.editHref
+        // nosemgrep: lolly-href-escape-is-not-scheme-validation - editHref's only caller passes the literal '#/profile?focus=use-details' (views/tool.ts)
         ? ` <a href="${escapeHtml(prov.editHref)}">${t('Edit details')}</a>`
         : '';
       const paint = (optedIn: boolean, author: string, contact: string): void => {

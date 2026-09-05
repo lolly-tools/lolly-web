@@ -3,7 +3,7 @@
 import { t } from '../i18n.ts';
 import { jellyActive } from '../lib/jelly.ts';
 import { escape } from '../utils.ts';
-import { cancelSaveAsNext, requestSaveAsNext, saveFilePickerSupported } from '../bridge/export.ts';
+import { cancelSaveAsNext, requestSaveAsNext, saveFilePickerSupported } from '../bridge/export-save-picker.ts';
 
 const PACKAGE_INNER_FORMATS = ['svg', 'png', 'jpg', 'jpeg', 'webp'];
 
@@ -69,7 +69,7 @@ export function desktopExportBridge(): DesktopExportBridge | undefined {
 /**
  * Who answers "Save as…" here. The desktop shell registers its own native-dialog
  * seam; a browser with the File System Access API can put up the same dialog
- * (bridge/export.ts requestSaveAsNext), so it gets the button too. Neither ⇒
+ * (bridge/export-save-picker.ts requestSaveAsNext), so it gets the button too. Neither ⇒
  * undefined, and saveAsButtonHtml renders nothing - the button is a probe, never a
  * control that does the plain download while claiming to do something else.
  */

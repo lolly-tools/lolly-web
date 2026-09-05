@@ -50,7 +50,6 @@ import type { MoneyContext } from '@lolly-tools/core';
 import type { Profile } from '@lolly-tools/core/host-v1';
 import { escape, safeHref } from '../utils.js';
 import { currentLang, t, tRaw } from '../i18n.ts';
-import { fmtBytes } from '../lib/format.ts';
 import { icon } from '../lib/icons.ts';
 import { navigateTo } from '../nav.js';
 import { announce } from '../a11y.js';
@@ -83,9 +82,9 @@ import {
   tiffSupport,
   liveCaptureSupport,
   durableSupport,
-  probeDurableSupport,
   proFormatSupport,
 } from '../bridge/format-support.js';
+import { durableCardHtml, isDurableFmt, wireDurableConsent } from './export-durable-card.ts';
 import { isAudioFormat as isAudioFmt } from '../lib/audio-encode.js';
 import { formatTriggerHtml, formatPanelHtml, wireFormatPicker } from './export-format-picker.ts';
 import {
@@ -260,10 +259,6 @@ const isC2paFmt = (f: string | undefined): boolean =>
 const isImprintFmt = (f: string | undefined): boolean =>
   !!f &&
   ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff', 'bmp', 'pdf', 'pdf-cmyk', 'pptx'].includes(f);
-// Durable (neural TrustMark) embed is RASTER-ONLY - no pdf/pptx container path yet
-// (export.ts durableEmbedCanvas; see plans/28-durable-content-credentials.md).
-const isDurableFmt = (f: string | undefined): boolean =>
-  !!f && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff'].includes(f);
 // HDR (Rec.2100 PQ) export. Raster: PNG (cICP) + JPEG (PQ ICC) + AVIF (native nclx
 // colr) + TIFF (PQ ICC tag, archival). Video: mp4/webm carry a 10-bit PQ track with a
 // colr/nclx (Colour on WebM) box (plan 154 WP-2). WebP is excluded on purpose - it has
@@ -1113,42 +1108,16 @@ function renderActions(
       </div>`
     : '';
 
-  // Tier 2.67 - the DURABLE credential (opt-in): a neural TrustMark-format mark
-  // carrying Lolly's id, so the "made with Lolly" link survives a metadata strip
-  // and TrustMark-aware tools can recover it. OFF by default - unlike the pure-JS
-  // Imprint, this is a per-export neural encode PLUS a one-time model download
-  // (expensive performance-wise), so it's a deliberate opt-in. Raster only. The
-  // toggle round-trips into the URL as ?durable=1 (see views/tool.ts syncUrl).
-  //
-  // The card is BUILT for every durable-capable format but SHOWN only where a route
-  // to the model exists (bridge/format-support.ts's durableSupport): cached bytes,
-  // the same origin, or the models base a Tauri build points at. On the web that is
-  // true at once, exactly as before. Under Tauri it starts hidden and the async
-  // probe below reveals it once the model host answers - and leaves it hidden on a
-  // 404, so the toggle is never a no-op. The consent line under it states the
-  // one-time download the way the upscale and matte dialogs do.
+  // Tier 2.67 - the DURABLE credential (opt-in). The card, its help tip and the
+  // model-route probe all live in views/export-durable-card.ts; this view keeps
+  // only the live route flag, which refreshPrintUi reads for visibility.
   let durableRouteOk = durableSupport();
   const durableFmts = formats.filter(isDurableFmt);
-  const durableTip = durableFmts.length
-    ? helpTip(
-        t(
-          'Embeds a durable, invisible credential in the pixels with an on-device AI model, so a copy survives metadata stripping and re-encoding - and TrustMark-aware tools can read it too. Heavier than the Imprint (a neural pass plus a one-time model download), so it is off by default.'
-        ),
-        { href: '#/verify', text: t('Check a file →') }
-      )
-    : null;
-  const durableRow = durableFmts.length
-    ? `
-      <div class="section-card export-c2pa export-durable" data-durable-only style="display:${durableRouteOk && isDurableFmt(initialFmt) ? 'flex' : 'none'}">
-        <label class="c2pa-enable field-toggle help-tip-host">
-          <input type="checkbox" class="field-check" data-action="durable" ${exportDefaults.durable ? 'checked' : ''}>
-          <span class="c2pa-head">${icon('imprint', { className: 'c2pa-icon' })}<span>${t('Durable credential')}</span></span>
-          ${durableTip!.button}
-          ${durableTip!.pop}
-        </label>
-        <p class="c2pa-hint" data-durable-consent hidden></p>
-      </div>`
-    : '';
+  const durableRow = durableCardHtml({
+    present: durableFmts.length > 0,
+    visible: durableRouteOk && isDurableFmt(initialFmt),
+    checked: !!exportDefaults.durable,
+  });
 
   // HDR (Rec.2100 PQ) raster export - OPT-IN, off by default. Boosts the brand's
   // primary colours (the live palette) toward peak luminance so white text and
@@ -2744,26 +2713,15 @@ function renderActions(
     refreshPreflight();
     onUrlSync?.('durable');
   });
-  // Ask where the durable model can come from, then finish the card: reveal it if a
-  // shell that started hidden has a route, and say what the first durable export
-  // will cost. Two already-translated sentences, the matte dialog's own consent
-  // wording - the download itself still happens on that first export, on demand.
-  if (durableFmts.length) {
-    void probeDurableSupport().then((route) => {
-      if (route.available && !durableRouteOk) {
-        durableRouteOk = true;
-        refreshPrintUi(); // owns [data-durable-only] visibility for the live format
-      }
-      const line = el.querySelector<HTMLElement>('[data-durable-consent]');
-      if (!line || !route.available) return;
-      line.textContent = route.cached
-        ? t('This model is already downloaded - it runs on-device and your image is never uploaded.')
-        : t('The first run downloads a {size} model once. It runs on-device and your image is never uploaded.', {
-            size: fmtBytes(route.bytes),
-          });
-      line.hidden = false;
-    });
-  }
+  // Ask where the durable model can come from, then finish the card (the probe and
+  // the consent line are export-durable-card.ts): a shell that started hidden
+  // reveals the card once a route answers.
+  wireDurableConsent(el, durableFmts.length > 0, (available) => {
+    if (available && !durableRouteOk) {
+      durableRouteOk = true;
+      refreshPrintUi(); // owns [data-durable-only] visibility for the live format
+    }
+  });
   el.querySelector<HTMLInputElement>('[data-action="hdr"]')?.addEventListener('change', (e) => {
     // Reveal the dials when HDR is on, hide them when off (like the print card).
     const on = (e.target as HTMLInputElement).checked;

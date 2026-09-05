@@ -69,7 +69,8 @@ import { canRecord } from './format-support.ts';
 import type { AudioFormat, AudioPcm } from '../lib/audio-encode.ts';
 import { buildAudioTags } from '../lib/audio-tags.ts';
 import { chromePaintsOverLive, countToolMutations, createStaticChromeGuard, staticChromeFrameAction, staticChromeVerdict, type Box, type ChromeEl } from './frame-static.ts';
-import { renderLinuxPackage } from './export-linux-package.ts';
+import { buildExportPack, renderLinuxPackage } from './export-linux-package.ts';
+import { consumeSaveAsNext } from './export-save-picker.ts';
 import { packIco } from './ico-pack.ts';
 export { videoSupport, cmykTiffSupport, tiffSupport } from './format-support.ts';
 import type { ClipShape } from '../../../../engine/src/css-paint.ts';
@@ -456,64 +457,6 @@ async function getDomToImage(): Promise<DomToImage> {
 // never called by shipping code.
 export function __setDomToImageForTest(d: unknown): void { domToImageMore = (d as DomToImage | null) ?? null; }
 
-// ── "Save as…" in a browser (File System Access) ──────────────────────────────
-//
-// The desktop shell answers the export panel's Save As button with a native
-// dialog, through its own export override's __LOLLY_DESKTOP_EXPORT__ seam. A
-// Chromium browser can put the same dialog up with showSaveFilePicker, so the
-// panel offers the button there too - behind the probe below, so a browser
-// without the API renders no control it cannot honour. One-shot by construction,
-// exactly like the desktop seam: an ordinary Download after a cancelled Save As
-// must never surprise the user with a dialog.
-
-type SaveFilePicker = (opts: {
-  suggestedName?: string;
-  types?: Array<{ description?: string; accept: Record<string, string[]> }>;
-}) => Promise<{ createWritable(): Promise<{ write(data: Blob): Promise<void>; close(): Promise<void> }> }>;
-
-let saveAsNext = false;
-
-/** Can this browser put a real save dialog up? Chromium-family only today. */
-export function saveFilePickerSupported(): boolean {
-  return typeof window !== 'undefined'
-    && typeof (window as Window & { showSaveFilePicker?: SaveFilePicker }).showSaveFilePicker === 'function';
-}
-
-/** Send the NEXT download through the save dialog. No-op where unsupported, so a
- *  caller that skipped the probe still cannot arm a dialog that cannot open. */
-export function requestSaveAsNext(): void { saveAsNext = saveFilePickerSupported(); }
-
-/** Disarm it (the export panel calls this when its Save As is dismissed). */
-export function cancelSaveAsNext(): void { saveAsNext = false; }
-
-/**
- * Write `blob` through the browser's save dialog. Returns whether the delivery is
- * settled: a written file and a cancelled dialog both are (a cancel is an answer,
- * and quietly dropping the file into Downloads afterwards would contradict it).
- * False means the API refused the call - most often because a long render used up
- * the click's transient activation - and the caller should deliver the ordinary
- * way rather than leave the user with no file at all.
- */
-async function saveWithPicker(blob: Blob, filename: string): Promise<boolean> {
-  const picker = (window as Window & { showSaveFilePicker?: SaveFilePicker }).showSaveFilePicker;
-  if (typeof picker !== 'function') return false;
-  const ext = /\.[a-z0-9]+$/i.exec(filename)?.[0];
-  try {
-    const handle = await picker({
-      suggestedName: filename,
-      ...(ext && blob.type
-        ? { types: [{ description: `${ext.slice(1).toUpperCase()} file`, accept: { [blob.type]: [ext] } }] }
-        : {}),
-    });
-    const writable = await handle.createWritable();
-    await writable.write(blob);
-    await writable.close();
-    return true;
-  } catch (err) {
-    return (err as { name?: string })?.name === 'AbortError';
-  }
-}
-
 export function createExportAPI(host: WebHost) {
   _host = host;
   return {
@@ -588,10 +531,7 @@ export function createExportAPI(host: WebHost) {
       // Armed by the export panel's Save As button (requestSaveAsNext), and only
       // ever for one delivery. Falls through to the anchor path when the dialog
       // could not open, so a refused picker still saves the file.
-      if (saveAsNext) {
-        saveAsNext = false;
-        if (await saveWithPicker(blob, filename)) return;
-      }
+      if (await consumeSaveAsNext(blob, filename)) return;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -675,22 +615,10 @@ export function createExportAPI(host: WebHost) {
     },
 
     // Seal files a tool holds into a Linux package and RETURN the bytes (.rpm or
-    // .tar.gz) - plan 197 M5. The tool's exportFile hook returns these, and the
-    // shell delivers them via export.file (the normal download path). Like file(),
-    // this NEVER watermarks or embeds provenance; the RPM header carries only honest
-    // packaging metadata. The engine owns the format. Mirrors the CLI bridge's pack().
+    // .tar.gz) - plan 197 M5. The packaging itself lives in export-linux-package.ts,
+    // beside the render-then-wrap path the 'rpm'/'tar.gz' export formats take.
     async pack(spec: import('@lolly-tools/core').ExportPackSpec): Promise<Uint8Array> {
-      const { buildLinuxPack, buildHomeTarball } = await import('@lolly/engine');
-      if (spec.target === 'tar.gz') return buildHomeTarball(spec.files ?? []);
-      return buildLinuxPack({
-        type: spec.type,
-        meta: { ...spec.meta },
-        ...(spec.fonts ? { fonts: spec.fonts } : {}),
-        ...(spec.foundry ? { foundry: spec.foundry } : {}),
-        ...(spec.appstream ? { appstream: spec.appstream } : {}),
-        ...(spec.icons ? { icons: spec.icons } : {}),
-        ...(spec.files ? { files: spec.files } : {}),
-      });
+      return buildExportPack(spec);
     },
   };
 }

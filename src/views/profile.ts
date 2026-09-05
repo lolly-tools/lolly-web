@@ -34,7 +34,7 @@ import { langFabHtml, attachLangMenu } from '../components/lang-menu.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { staggerReveal } from '../lib/reveal.ts';
 import { soundSwitchHtml, wireSoundSwitch } from '../components/sound-toggle.ts';
-import { BATCH_SLOT_PREFIX, isHiddenSlot } from '../lib/batch-slots.ts';
+import { isHiddenSlot } from '../lib/batch-slots.ts';
 import { mountModal } from '../components/modal.ts';
 import type { ModalHandle } from '../components/modal.ts';
 import { startBatchExport } from '../lib/batch-job.ts';
@@ -84,18 +84,15 @@ import { registerUserFonts } from '../user-fonts.ts';
 import type { UserFontsHost } from '../user-fonts.ts';
 import { applyChromeBrandVars } from '../brand-vars.ts';
 import { confirmDialog, closeConfirmDialogs } from '../components/confirm-dialog.ts';
-import { relativeTime, fmtBytes, sessionRow } from '../folder-tiles.ts';
-import type { HostV1, Profile, AssetRef, ProfileAPI, AssetsAPI, StateEntry } from '@lolly-tools/core/host-v1';
+import { fmtBytes } from '../folder-tiles.ts';
+import type { HostV1, Profile, AssetRef, ProfileAPI, AssetsAPI } from '@lolly-tools/core/host-v1';
 import type { FeatureFlag } from '../feature-flags.ts';
+import { updaterGlobal, updatesRowHtml, wireUpdatesRow } from './profile-updates.ts';
+import { openImageLightbox, userImageThumb } from './profile-user-images.ts';
+import { fmtPct, reconciliationSentence, sessionRowsHtml } from './profile-storage-model.ts';
+import type { PreviewsMeasure, SessionEntry, SessionRowContext, StorageModel } from './profile-storage-model.ts';
 import { backHomeHtml, mountBackPill } from '../components/back-pill.ts';
 import { mountHomeFab } from '../components/home-fab.ts';
-
-/** A saved session as the web state bridge lists it - StateEntry plus the
- *  export filename and the thumbnail this view renders. */
-interface SessionEntry extends StateEntry {
-  filename?: string | null;
-  thumb?: string | null;
-}
 
 /** The slice of the tool-previews cache this view reads. */
 interface PreviewsSlice {
@@ -151,46 +148,6 @@ interface ProfileHost extends HostV1 {
   };
   identity: IdentityAPI;
   previews: PreviewsSlice;
-}
-
-interface PreviewsMeasure { bytes: number; count: number; available: boolean }
-interface StorageModel {
-  sessions: { bytes: number; count: number; sizes: Record<string, number>; list: SessionEntry[] };
-  images: { bytes: number; count: number; list: AssetRef[] };
-  cache: { bytes: number };
-  previews: PreviewsMeasure;
-  /** Tools pinned "available offline" - their cached FILE bytes (lib/offline-pins.ts).
-   *  Their prefetched catalog asset blobs are counted by the `cache` slice. */
-  pins: { bytes: number; count: number };
-  /** The on-device voice models (Kokoro, later Whisper) in the speech Cache
-   *  Storage buckets - filled by the 'speech' offline part OR the Script-audio
-   *  dialog's consent download, so this measures the caches, not a record. */
-  speech: { bytes: number; files: number };
-  /** On-device AI image models in their IndexedDB stores - filled by the matching
-   *  offline part OR the Upscale / Remove-background dialogs' on-demand download, so
-   *  these measure the stores, not a record (twin of `speech`). */
-  upscale: { bytes: number; files: number };
-  matte: { bytes: number; files: number };
-  ocr: { bytes: number; files: number };
-  /** The reword model's slice of the shared transformers bucket (plans/127) -
-   *  filled by the 'reword' offline part OR the humanize panel's consent
-   *  download, so this measures the cache, not a record (twin of `speech`). */
-  reword: { bytes: number; files: number };
-  /** The AI-text detector's slice (plans/126 WP-A) - filled by the verify /
-   *  catalog panel's consent download (cache-measured, twin of `reword`). */
-  aiDetect: { bytes: number; files: number };
-  /** The durable-credential encoder in the shared `trustmark-models` store -
-   *  filled by the 'durable' offline part OR the first durable export, so this
-   *  measures the store, not a record. Scoped to its own key: the deep-scan
-   *  decoders sharing that store stay in the meter's "Other" remainder. */
-  durable: { bytes: number; files: number };
-  measured: number;
-  hasEstimate: boolean;
-  usage: number | null;
-  quota: number | null;
-  overshoot: boolean;
-  other: number;
-  total: number;
 }
 
 // Friendly labels for the raw profile field keys.
@@ -335,29 +292,6 @@ const infoDot = (text: string): string => {
   );
   return `<span class="help-tip-host" style="display:inline-flex;vertical-align:middle">${tip.button}${pop}</span>`;
 };
-
-// ── App updates (plans/202 WP4.1) ────────────────────────────────────────────
-// The desktop shell publishes window.__lollyUpdater from
-// shells/tauri-desktop/bridge-overrides/updater.ts, which wraps
-// tauri-plugin-updater. That package is not importable here (the Tauri shells are
-// not npm workspaces), so this is a structural probe of the global, the same
-// shape lib/design-system/sources/website.ts uses for the native site fetch.
-// Absent in a browser, in the PWA and in the mobile app - and then no row is
-// rendered at all, rather than a button that cannot do anything.
-interface ShellUpdate {
-  version: string;
-  currentVersion: string;
-  notes: string;
-  download(onProgress: (received: number, total: number) => void): Promise<void>;
-  install(): Promise<void>;
-}
-interface ShellUpdater { check(): Promise<ShellUpdate | null> }
-
-function updaterGlobal(): ShellUpdater | null {
-  if (typeof window === 'undefined') return null;
-  const u = (window as { __lollyUpdater?: Partial<ShellUpdater> }).__lollyUpdater;
-  return u && typeof u.check === 'function' ? (u as ShellUpdater) : null;
-}
 
 // Briefly rings a #/profile?focus=<id> deep-link target (see the handler in
 // mountProfile) so the link visibly delivers, not just scrolls. Full motion: two
@@ -940,20 +874,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           </span>
         </div>
         ${canChangeInstance ? '' : `<p class="profile-appearance-sub">${t('Pointing at another Lolly instance needs the desktop app - a browser blocks a page from loading tools and assets across origins.')}</p>`}
-        ${/* App updates (plans/202 WP4.1). Shown only where the shell installed an
-              updater (the desktop app); a browser updates itself and the PWA
-              updates through the service worker, so there is nothing to offer and
-              no row. The Help menu's "Check for Updates" deep-links here with
-              ?check=updates, which runs the check on arrival. */ ''}
-        ${hasShellUpdater ? `
-        <div class="store-manage--row" id="updates-row">
-          <span class="store-manage-name" id="updates-status"></span>
-          <span style="display:flex;gap:8px">
-            <button type="button" class="btn" id="updates-check">${t('Check for updates')}</button>
-            <button type="button" class="btn" id="updates-download" hidden>${t('Download')}</button>
-            <button type="button" class="btn" id="updates-install" hidden>${t('Install and restart')}</button>
-          </span>
-        </div>` : ''}
+        ${/* App updates (plans/202 WP4.1) - the row and its wiring live in
+              views/profile-updates.ts. */ ''}
+        ${updatesRowHtml(hasShellUpdater)}
         </div>
       </details>
 
@@ -1439,18 +1362,12 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // ICONS.image (near-identical circle-radius/path-endpoint roundings of the same
   // Lucide "image" icon; component-audit rec 5).
   const SESS_PLACEHOLDER_ICON = icon('image', { strokeWidth: 1.8 });
+  // What profile-storage-model.ts's row renderers read out of this mount.
+  const sessRowCtx: SessionRowContext = { toolNameOf, placeholderIcon: SESS_PLACEHOLDER_ICON };
   // Honours the in-app Reduce motion pref as well as the OS one (lib/a11y-prefs.ts),
   // so the counter roll-up and the smooth panel scroll below calm down for a user
   // whose device never advertised a motion preference.
   const reduceMotion = () => prefersReducedMotion();
-
-  // Approximate, theme-agnostic byte formatting (KB/MB/GB) shared by the meter.
-  const fmtPct = (usage: number, quota: number | null) => {
-    if (!quota) return '0%';
-    const p = (usage / quota) * 100;
-    if (p < 0.1) return '<0.1%';
-    return p < 10 ? `${p.toFixed(1)}%` : `${Math.round(p)}%`;
-  };
 
   // Tool-previews cache: measurable (size()/list()) + clearable. Feature-detected so
   // an older/rebuilt bridge without host.previews just folds its bytes into "Other".
@@ -1518,68 +1435,6 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       durable,
       measured, hasEstimate, usage, quota, overshoot, other, total,
     };
-  }
-
-  // The one-read screen-reader overview (the bar itself stays interactive, not role=img).
-  function reconciliationSentence(m: StorageModel) {
-    const parts = [
-      `Saved sessions ${fmtBytes(m.sessions.bytes)}`,
-      `My images ${fmtBytes(m.images.bytes)}`,
-      `Asset cache ${fmtBytes(m.cache.bytes)}`,
-    ];
-    if (m.previews.available) parts.push(`Tool previews ${fmtBytes(m.previews.bytes)}`);
-    if (m.pins.count) parts.push(`Available offline ${fmtBytes(m.pins.bytes)}`);
-    if (m.speech.bytes) parts.push(`Voice models ${fmtBytes(m.speech.bytes)}`);
-    if (m.upscale.bytes) parts.push(`Upscaling models ${fmtBytes(m.upscale.bytes)}`);
-    if (m.matte.bytes) parts.push(`Background removal ${fmtBytes(m.matte.bytes)}`);
-    if (m.ocr.bytes) parts.push(`Text recognition ${fmtBytes(m.ocr.bytes)}`);
-    if (m.durable.bytes) parts.push(`Durable credential ${fmtBytes(m.durable.bytes)}`);
-    let s = m.hasEstimate
-      ? `Using ${fmtBytes(m.total)}: ${parts.join(', ')}`
-      : `Measured ${fmtBytes(m.measured)}: ${parts.join(', ')}`;
-    if (m.hasEstimate && m.other > 0) s += `, and about ${fmtBytes(m.other)} of other app data and overhead`;
-    s += (m.hasEstimate && m.quota) ? ` - ${fmtPct(m.usage!, m.quota)} of your ${fmtBytes(m.quota)} device budget.` : '.';
-    return s;
-  }
-
-  // One selectable, deletable session row. Largest-first by default. Built on
-  // folder-tiles.ts's sessionRow() - the shared row primitive behind this
-  // Storage manager list AND the gallery's per-tool history list
-  // (component-audit rec 6). Only this view's chrome (the select checkbox, the
-  // inline "batch" tag, the classes its own stylesheet keys off) lives here.
-  function renderSessRow(s: SessionEntry, bytes: number) {
-    const isBatch = String(s.slot).startsWith(BATCH_SLOT_PREFIX);
-    const label = s.label || s.filename || toolNameOf(s.toolId);
-    const subtitle = toolNameOf(s.toolId) + (s.updatedAt ? ` · ${relativeTime(s.updatedAt)}` : '');
-    return sessionRow(s, {
-      rowClass: 'store-sess',
-      rowAttrs: `data-slot="${escape(s.slot)}"`,
-      thumbClass: 'store-sess-thumb',
-      thumbImgAttrs: 'loading="lazy"',
-      emptyThumbContent: SESS_PLACEHOLDER_ICON,
-      emptyThumbClass: 'is-placeholder',
-      selectClass: 'store-sess-check',
-      selectLabel: tRaw('Select {name}', { name: label }),
-      metaClass: 'store-sess-meta',
-      titleClass: 'store-sess-label',
-      title: label,
-      batchTag: isBatch ? t('batch') : undefined,
-      batchTagClass: 'store-sess-tag',
-      subClass: 'store-sess-sub',
-      subtitle,
-      sizeBytes: bytes,
-      deleteAttr: `data-del-session="${escape(s.slot)}"`,
-      deleteClass: 'store-sess-del',
-      deleteLabel: tRaw('Delete {name}', { name: label }),
-    });
-  }
-  function sessionRowsHtml(m: StorageModel, sort: string) {
-    const sizes = m.sessions.sizes;
-    const rows = [...m.sessions.list];
-    if (sort === 'recent') rows.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
-    else rows.sort((a, b) => (sizes[b.slot] || 0) - (sizes[a.slot] || 0));
-    if (!rows.length) return `<li class="storage-empty">${t('No saved sessions yet.')}</li>`;
-    return rows.map(s => renderSessRow(s, sizes[s.slot] || 0)).join('');
   }
 
   // The whole section, rendered ONCE. applyMeter() then refreshes only the viz so an
@@ -1655,7 +1510,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
                 <label class="store-selall"><input type="checkbox" id="sess-selall"> ${t('Select all')}</label>
                 <button type="button" class="store-sort" data-sort="${sort}">${sort === 'recent' ? t('Recent ▾') : t('Largest first ▾')}</button>
               </div>
-              <ul class="store-sess-list" id="store-sess-list">${sessionRowsHtml(m, sort)}</ul>
+              <ul class="store-sess-list" id="store-sess-list">${sessionRowsHtml(m, sort, sessRowCtx)}</ul>
               <a class="store-manage-link" href="#/p">${t('Organise in Projects')} →</a>
             </div>
           </details>
@@ -2006,7 +1861,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       btn.textContent = sessSort === 'recent' ? t('Recent ▾') : t('Largest first ▾');
       const checked = new Set([...body.querySelectorAll<HTMLElement>('.store-sess-check:checked')].map(c => c.dataset.slot!));
       const list = body.querySelector('#store-sess-list');
-      if (list) list.innerHTML = sessionRowsHtml(model, sessSort);
+      if (list) list.innerHTML = sessionRowsHtml(model, sessSort, sessRowCtx);
       checked.forEach(slot => {
         const box = [...body.querySelectorAll<HTMLInputElement>('.store-sess-check')].find(c => c.dataset.slot === slot);
         if (box) box.checked = true;
@@ -2118,7 +1973,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       const view = (e.target as Element).closest<HTMLElement>('[data-view-userimg]');
       if (view) {
         const ref = userImages.find(a => a.id === view.dataset.viewUserimg);
-        if (ref) openImageLightbox(ref);
+        if (ref) openImageLightbox(ref, openProfileModals);
         return;
       }
       const btn = (e.target as Element).closest<HTMLButtonElement>('[data-delete-userimg]');
@@ -3137,81 +2992,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   offlineDetails?.addEventListener('toggle', () => { if (offlineDetails!.open) loadOffline(); });
   if (offlineDetails?.open) loadOffline();
 
-  // App updates (plans/202 WP4.1) - three buttons over one state machine, in the
-  // "Lolly instance" card. CONSENT TWICE, the models-fetch pattern: Check moves a
-  // few hundred bytes of JSON, Download moves the artifact and reports its real
-  // size as soon as the server states it, Install replaces the app and restarts.
-  // Nothing runs on mount unless the Help menu asked for it with ?check=updates.
-  if (shellUpdater) {
-    const statusEl = viewEl.querySelector<HTMLElement>('#updates-status');
-    const checkBtn = viewEl.querySelector<HTMLButtonElement>('#updates-check');
-    const downloadBtn = viewEl.querySelector<HTMLButtonElement>('#updates-download');
-    const installBtn = viewEl.querySelector<HTMLButtonElement>('#updates-install');
-    if (statusEl && checkBtn && downloadBtn && installBtn) {
-      const say = (text: string): void => { statusEl.textContent = text; };
-      let pending: ShellUpdate | null = null;
-      let busy = false;
-
-      const runCheck = async (): Promise<void> => {
-        if (busy) return;
-        busy = true;
-        checkBtn.disabled = true;
-        say(t('Checking…'));
-        try {
-          pending = await shellUpdater.check();
-          if (!pending) { say(t('Up to date')); return; }
-          // tRaw, not t: this goes into textContent, where an escaped entity
-          // would be shown literally.
-          say(tRaw('Update available: {version}', { version: pending.version }));
-          checkBtn.hidden = true;
-          downloadBtn.hidden = false;
-        } catch (e) {
-          // The endpoint, the signature check and an unpublished target all land
-          // here. Show what went wrong rather than claiming the app is current.
-          say((e as Error)?.message || String(e));
-        } finally {
-          busy = false;
-          checkBtn.disabled = false;
-        }
-      };
-
-      checkBtn.addEventListener('click', () => { void runCheck(); });
-
-      downloadBtn.addEventListener('click', () => {
-        if (busy || !pending) return;
-        busy = true;
-        downloadBtn.disabled = true;
-        const update = pending;
-        void update.download((received, total) => {
-          say(total > 0 ? `${fmtBytes(received)} / ${fmtBytes(total)}` : fmtBytes(received));
-        }).then(() => {
-          say(t('Downloaded'));
-          downloadBtn.hidden = true;
-          installBtn.hidden = false;
-        }).catch((e: Error) => {
-          say(e?.message || String(e));
-          downloadBtn.disabled = false;
-        }).finally(() => { busy = false; });
-      });
-
-      installBtn.addEventListener('click', () => {
-        if (busy || !pending) return;
-        busy = true;
-        installBtn.disabled = true;
-        // install() restarts the app, so a resolved promise is not expected. A
-        // rejection is, and it has to be readable.
-        void pending.install().catch((e: Error) => {
-          say(e?.message || String(e));
-          installBtn.disabled = false;
-          busy = false;
-        });
-      });
-
-      // The Help menu item routes here and asks for the check straight away, so
-      // "Check for Updates" checks instead of just showing a button.
-      if (new URLSearchParams(params).get('check') === 'updates') void runCheck();
-    }
-  }
+  // App updates (plans/202 WP4.1) - the three-button state machine in the "Lolly
+  // instance" card. Its whole implementation is views/profile-updates.ts.
+  wireUpdatesRow(viewEl, shellUpdater, params);
 
   // Hot folder (plans/174 #9) - desktop shells only; the boot module owns the
   // key and the invoke, this block is pure form wiring.
@@ -3470,68 +3253,6 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   };
 }
 
-
-function userImageThumb(ref: AssetRef) {
-  const name = String(ref.meta?.name ?? t('Image'));
-  // SVGs (logos/icons) shouldn't be cropped to fill - show the whole mark.
-  const isVector = ref.type === 'vector' || ref.format === 'svg';
-  // A lottie's url is JSON (no still image) - show a play-glyph stub, not a broken
-  // <img>. Its live preview surface is Design; here it's just manageable.
-  // A video plays itself, muted + looping; gif/apng/animated-webp animate in <img>.
-  const media = ref.type === 'lottie'
-    ? `<span class="userimg-thumb" style="display:flex;align-items:center;justify-content:center;font-size:2rem;color:var(--text-muted,#789)" aria-hidden="true">▶</span>`
-    : ref.type === 'video'
-      ? `<video class="userimg-thumb" src="${escape(ref.url)}" muted loop autoplay playsinline preload="metadata"></video>`
-      : `<img class="userimg-thumb${isVector ? ' is-vector' : ''}" src="${escape(ref.url)}" alt="${escape(name)}" loading="lazy">`;
-  return `
-    <div class="userimg-item" data-userimg="${escape(ref.id)}">
-      <button type="button" class="userimg-view" data-view-userimg="${escape(ref.id)}" title="${escape(name)}" aria-label="${escape(tRaw('View {name}', { name }))}">
-        ${media}
-      </button>
-      <button type="button" class="userimg-delete" data-delete-userimg="${escape(ref.id)}" title="${escape(t('Delete'))}" aria-label="${escape(tRaw('Delete {name}', { name }))}">&#x2715;</button>
-    </div>
-  `;
-}
-
-// Full-size preview overlay for a user image. Closes on backdrop click, the ✕,
-// or Escape. Mirrors the simple overlay pattern used by the clear-data dialog.
-function openImageLightbox(ref: AssetRef) {
-  const name = String(ref.meta?.name ?? t('Image'));
-  const isVector = ref.type === 'vector' || ref.format === 'svg';
-  const isLottie = ref.type === 'lottie';
-  const isVideo = ref.type === 'video';
-  // viewBox-only SVGs report no intrinsic size, so label them "SVG" rather than
-  // leaving the dimensions blank.
-  const dims = ref.width && ref.height ? `${ref.width} × ${ref.height}` : (isVector ? 'SVG' : (isLottie ? 'Lottie' : (isVideo ? 'Video' : '')));
-  // A lottie has no still frame to enlarge - show a play-glyph placeholder instead
-  // of a broken <img>. (Placing it in Design is where it actually plays.)
-  // A video plays full-size with controls; gif/apng/animated-webp enlarge as <img>.
-  const media = isLottie
-    ? `<div class="userimg-lightbox-img" style="display:flex;align-items:center;justify-content:center;min-width:220px;min-height:220px;font-size:5rem;color:var(--text-muted,#789)" aria-hidden="true">▶</div>`
-    : isVideo
-      ? `<video class="userimg-lightbox-img" src="${escape(ref.url)}" muted loop autoplay playsinline controls></video>`
-      : `<img class="userimg-lightbox-img${isVector ? ' is-vector' : ''}" src="${escape(ref.url)}" alt="${escape(name)}">`;
-
-  const content = `
-    <button type="button" class="userimg-lightbox-close" aria-label="${escape(t('Close'))}">&#x2715;</button>
-    ${media}
-    <div class="userimg-lightbox-caption">
-      <span class="userimg-lightbox-name">${escape(name)}</span>
-      ${dims ? `<span class="userimg-lightbox-dims">${escape(dims)}</span>` : ''}
-    </div>`;
-  const modal = mountModal<void>(content, {
-    className: 'userimg-lightbox',
-    ariaLabel: name,
-    initialFocus: (el) => el.querySelector<HTMLElement>('.userimg-lightbox-close'),
-    onClose: () => openProfileModals.delete(modal),
-  });
-  openProfileModals.add(modal);
-  // Close on the ✕; a click on the backdrop is already handled by mountModal's own
-  // hit-test (clicks on the image/caption itself land inside the dialog's box and don't).
-  modal.el.addEventListener('click', (e) => {
-    if ((e.target as Element).closest('.userimg-lightbox-close')) modal.close();
-  });
-}
 
 function clearIdbStores(storeNames: string[]) {
   return new Promise<void>((res, rej) => {
