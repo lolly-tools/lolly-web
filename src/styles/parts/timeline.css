@@ -161,6 +161,11 @@
   background: var(--brand-primary, hsl(var(--primary)));
   color: var(--brand-on-primary, hsl(var(--primary-foreground)));
 }
+.tl-screen.is-recording {
+  background: hsl(var(--destructive));
+  color: hsl(var(--primary-foreground));
+}
+.tl-mobile-tools { display: none; }
 .tl-play { width: calc(34px * var(--a11y-fs)); height: calc(34px * var(--a11y-fs)); border-radius: 11px; background: hsl(var(--muted)); }
 .tl-play svg { width: calc(17px * var(--a11y-fs)); height: calc(17px * var(--a11y-fs)); }
 .tl-play:hover:not(:disabled) { background: hsl(var(--accent)); }
@@ -189,6 +194,37 @@
   color: hsl(var(--primary-foreground));
 }
 .tl-cam.is-recording:hover:not(:disabled) { background: hsl(var(--destructive) / 0.85); }
+
+/* A phone gets a transport strip first, with the editing tools behind one
+   explicit expansion. This keeps the timeline useful without consuming half
+   the canvas or squeezing finger targets down to desktop sizes. */
+@media (pointer: coarse) and (max-width: 640px),
+       (pointer: coarse) and (max-height: 430px) {
+  .tl-panel {
+    height: 112px !important;
+    min-height: 112px;
+    max-height: 112px !important;
+  }
+  .tl-handle { display: none; }
+  .tl-bar {
+    min-height: 48px;
+    padding: 2px 6px;
+    gap: 5px;
+    overflow: hidden;
+  }
+  .tl-panel .tl-btn,
+  .tl-panel .tl-play { width: 44px; height: 44px; }
+  .tl-time { max-width: 62px; overflow: hidden; text-overflow: ellipsis; }
+  .tl-tools { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .tl-tools::-webkit-scrollbar { display: none; }
+  .tl-mobile-tools { display: inline-flex; }
+  .tl-panel:not(.is-mobile-tools-open) :is(
+    .tl-script, .tl-transcript, .tl-snap, .tl-onion,
+    .tl-zoom-out, .tl-zoom-in, .tl-fit, .tl-keys, .tl-kf-btn
+  ) { display: none; }
+  .tl-inspector { display: none; }
+  .tl-rec-note { position: absolute; left: 8px; right: 8px; bottom: 4px; }
+}
 /* The camera self-view during a video take: a small mirror in the stage's corner, its
    box in the EXPORT frame's aspect (set inline from frameSize), showing the recorder's
    already-cropped stream - what you see is what the file gets. Mirrored like a

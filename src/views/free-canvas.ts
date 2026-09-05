@@ -3377,9 +3377,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   /** The timeline's half of that request (the panel calls this as it opens/closes). */
   function dockRailForTimeline(on: boolean): void {
     // Desktop only, like the right edge-dock: a fixed left column is dead space on a
-    // phone, so below the shell's breakpoint the rail keeps its floating behaviour.
+    // phone OR a short touch landscape, where CSS turns this same rail into the
+    // horizontal palette above the timeline. Reserving that palette's full width
+    // as a left column can reduce the artboard to the safety floor.
     // Feature-detect matchMedia (absent under jsdom/CLI, where docking is harmless).
-    if (on && typeof window.matchMedia === 'function' && !window.matchMedia('(min-width: 641px)').matches) return;
+    if (on && typeof window.matchMedia === 'function' && window.matchMedia(
+      '(pointer: coarse) and (max-width: 640px), (pointer: coarse) and (max-height: 430px)'
+    ).matches) return;
     if (on === tlWantsRail) return;
     tlWantsRail = on;
     applyRailMode();
@@ -6064,11 +6068,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * function, so the top bar's Fit buttons and the stage's own keys can never frame two
    * different rectangles.
    */
-  function queryRect(what: 'content' | 'selection'): CanvasRect | null {
+  function queryRect(what: 'content' | 'selection' | 'active'): CanvasRect | null {
     const els: HTMLElement[] = [];
     if (what === 'content') {
       if (!frameCfg) return null;
       for (const el of canvasEl.querySelectorAll<HTMLElement>('.lolly-frame-page[data-frame-id]')) els.push(el);
+    } else if (what === 'active') {
+      const id = activeArtboardId();
+      if (!id) return null;
+      const el = canvasEl.querySelector<HTMLElement>(
+        `.lolly-frame-page[data-frame-id="${cssEscape(id)}"]`
+      );
+      if (el) els.push(el);
     } else {
       for (const id of selection) {
         const el = canvasEl.querySelector<HTMLElement>(`.lolly-frame-page[data-frame-id="${cssEscape(id)}"]`)
@@ -6090,7 +6101,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (disposed) return;
     const d = (e as CustomEvent).detail as { what?: unknown; rect?: unknown } | null;
     if (!d || typeof d !== 'object') return;
-    if (d.what !== 'content' && d.what !== 'selection') return;
+    if (d.what !== 'content' && d.what !== 'selection' && d.what !== 'active') return;
     const rect = queryRect(d.what);
     if (rect) (d as { rect: unknown }).rect = rect;
   }
@@ -9911,6 +9922,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       prevBoxStyle: boxEl ? boxEl.style.cssText : '',
       pending: {},
     };
+    stageEl.classList.add('is-text-editing');
     clearChrome();               // hide handles while typing (resets chrome node cache)
     hideCtxBar();
     closeMorePanel(); closePopover();
@@ -10021,6 +10033,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     done.el.removeAttribute('aria-label');
     done.el.classList.remove('fc-editing');
     done.boxEl?.classList.remove('fc-box-editing');
+    stageEl.classList.remove('is-text-editing');
     return done;
   }
   // Restore the pre-edit rendered view + inline styles (drops any pending-field

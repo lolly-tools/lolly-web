@@ -577,7 +577,11 @@ button.fc-nav-chip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-
   gap: var(--sp-2);
   padding: var(--sp-3) var(--sp-4) var(--sp-4);
   box-shadow: var(--edge), var(--shadow-2);
+  max-height: min(44vh, 320px);
 }
+/* A closed mobile navigator is a temporary sheet, not the column skin's 36px
+   collapsed rail. The top-bar Navigator action is the durable way back in. */
+.fc-nav--strip.is-collapsed { display: none; }
 .fc-nav--strip .fc-nav-body { overflow: hidden; }
 .fc-nav--strip .fc-nav-list {
   flex-direction: row;
@@ -597,6 +601,13 @@ button.fc-nav-chip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-
 .fc-nav--strip .fc-nav-main { align-items: center; text-align: center; }
 .fc-nav--strip .fc-nav-name { max-width: 88px; }
 .fc-nav--strip .fc-nav-row-menu { position: absolute; top: 0; inset-inline-end: 0; }
+
+@media (pointer: coarse) {
+  .fc-nav-toggle,
+  .fc-nav-row-menu,
+  .fc-nav-dot-btn { min-width: 44px; min-height: 44px; }
+  .fc-nav--strip .fc-nav-row { min-width: 88px; min-height: 74px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .fc-nav-row,

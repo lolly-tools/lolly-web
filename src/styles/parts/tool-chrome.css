@@ -828,6 +828,7 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   border: 1px solid hsl(var(--border));
   box-shadow: 0 12px 32px #00000038;
 }
+.fmt-pop-head { display: none; }
 .fmt-cat + .fmt-cat { margin-top: 10px; padding-top: 10px; border-top: 1px solid hsl(var(--border)); }
 .fmt-cat-head {
   padding: 0 2px 6px;
@@ -868,6 +869,66 @@ html[data-a11y-motion="reduce"] .url-budget-toast { animation: none; }
   color: inherit;
 }
 .fmt-chip[aria-pressed="true"] { border-color: hsl(var(--primary)); }
+.fmt-show-all {
+  width: 100%;
+  margin-top: var(--sp-5);
+  padding: 8px 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.fmt-show-all:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+.export-outcome-summary {
+  margin: 0 0 var(--sp-3);
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: hsl(var(--muted) / .65);
+  color: hsl(var(--muted-foreground));
+  font-size: var(--fs-sm);
+  line-height: 1.35;
+  text-align: left;
+}
+
+@media (max-width: 640px), (max-height: 430px) and (pointer: coarse) {
+  .export-popup .fmt-pop {
+    position: fixed;
+    inset: calc(var(--safe-top, 0px) + 10px) 10px calc(var(--safe-bottom, 0px) + var(--vv-bottom, 0px) + 10px);
+    z-index: 100004;
+    min-width: 0;
+    max-width: none;
+    max-height: none;
+    padding: 14px;
+    border-radius: calc(var(--radius) * 1.5);
+  }
+  .fmt-pop-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 44px;
+    margin: -6px -4px 10px;
+    padding: 0 4px 8px;
+    border-bottom: 1px solid hsl(var(--border));
+  }
+  .fmt-pop-head button {
+    width: 44px;
+    height: 44px;
+    border: 0;
+    border-radius: var(--radius);
+    background: transparent;
+    color: inherit;
+    font-size: 22px;
+  }
+  .fmt-chip { min-height: 44px; padding-inline: 14px; }
+  .fmt-show-all { min-height: 44px; }
+}
+
+@media (max-height: 430px) and (pointer: coarse) {
+  .export-popup .export-actions-dock { position: static; }
+}
 
 /* "Your recording" card (audio-capture tools) - the actual take's saves, above
    the card-image formats. */

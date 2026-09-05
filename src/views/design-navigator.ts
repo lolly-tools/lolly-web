@@ -736,6 +736,9 @@ export function initDesignNavigator(opts: DesignNavigatorOpts): DesignNavigatorH
   function selectFrame(id: string): void {
     selection.set([id]);
     artboard.focus(id);
+    // On a phone this navigator is a temporary bottom sheet, not permanent
+    // workspace. Once the requested artboard is on screen, give the canvas back.
+    if (skin === 'strip') setOpen(false);
   }
 
   // ── row menu ────────────────────────────────────────────────────────────────

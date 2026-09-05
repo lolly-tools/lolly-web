@@ -171,8 +171,11 @@ export interface DesignInspectorOpts {
    * Notes to voice (plans/180 section 8). Absent - a host with no speech bridge - and the
    * Present section keeps its notes textarea with no Narrate button under it, rather than
    * offering a button that cannot work.
-   */
+  */
   narration?: NarrationActions;
+  /** Live outcome gate. Unlike omitting `narration`, this may change while the
+   * document is mounted when the user changes the workspace outcome. */
+  narrationEnabled?(): boolean;
   /** The speech bridge's voice list, for the narration voice picker (Andy, 2026-09-03:
    *  "the voice should be a select like in the utility and Script audio"). Absent on a
    *  host with no speech bridge; the picker then holds only the current value. */
@@ -199,6 +202,8 @@ export interface DesignInspectorHandle {
   el: HTMLElement;
   setOpen(b: boolean): void;
   isOpen(): boolean;
+  /** Re-read live shell-only gates without waiting for a model mutation. */
+  sync(): void;
   /** Always 0: the dock column reserves the space, this panel reserves nothing. */
   width(): number;
   reveal(section: InspectorSection): void;
@@ -858,7 +863,7 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
    * in `narrationDwellMs`, so what the presenter waits and what the video renders agree.
    */
   function narrationDocRows(): string {
-    if (!narration) return '';
+    if (!narration || opts.narrationEnabled?.() === false) return '';
     return `<p class="fc-insp-hint">${t('Narration')}</p>`
       + docVoiceRows()
       + `<p class="fc-insp-hint">${t('English voices only.')}</p>`
@@ -1223,7 +1228,7 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
    * credential claiming a voice said nothing.
    */
   function narrateRows(b: Box): string {
-    if (!narration) return '';
+    if (!narration || opts.narrationEnabled?.() === false) return '';
     const id = String(b[cfg.idField ?? 'id'] ?? '');
     if (!id) return '';
     const st: NarrationStatus = narration.status(id);
@@ -1543,7 +1548,8 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
     // Without it the Present section kept saying "Not narrated yet." after a successful
     // narrate whose dwell floor happened to change nothing the field hash could see. The
     // navigator solved the same problem by putting the status into its own row memo.
-    const narr = narration && g.secs.includes('present')
+    const narrationOn = opts.narrationEnabled?.() !== false;
+    const narr = narration && narrationOn && g.secs.includes('present')
       ? g.ids.map((id) => narration.status(id)).join(',')
       : '';
     let json = '';
@@ -1763,6 +1769,7 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
     el,
     setOpen,
     isOpen: () => open,
+    sync: () => sync(true),
     width: () => 0,
     reveal(section: InspectorSection): void {
       // Remembered BEFORE focus moves, so Escape can hand the keyboard back to the

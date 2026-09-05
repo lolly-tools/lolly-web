@@ -290,6 +290,10 @@ interface ChooserOpts {
    * (a pick, Escape, or an earlier call) is a no-op, same as any other post-settle path.
    */
   onOpen?: (close: () => void) => void;
+  /** Reports the chosen starting point before its values are applied. The Design
+   * shell uses this lightweight metadata to select outcome-aware chrome/export
+   * defaults; the template seed itself remains ordinary input data. */
+  onPick?: (pick: { templateId: string | null; category?: string }) => void;
   /**
    * The seed for the "Blank canvas" tile. Defaults to `{}`, which opens the tool's
    * DEFAULT document; a tool whose default is a composed cover (Design, plan 179) hands
@@ -465,7 +469,11 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
 
     const pickTile = (tile: HTMLElement, presetId?: string): void => {
       const id = tile.dataset.templateId!;
-      if (id === BLANK_ID) { finish(opts.blankSeed ? opts.blankSeed() : {}); return; }
+      if (id === BLANK_ID) {
+        opts.onPick?.({ templateId: null });
+        finish(opts.blankSeed ? opts.blankSeed() : {});
+        return;
+      }
       // Reflect the fetch in the tile so a slow network doesn't read as a dead click.
       tile.setAttribute('aria-busy', 'true');
       // Fetch (or reuse) the template's external file, THEN resolve: the base seed,
@@ -474,6 +482,7 @@ export function openTemplateChooser(opts: ChooserOpts): Promise<Record<string, I
       void getFile(id).then(f => {
         if (!f) { finish({}); return; }
         const overlay = presetId ? f.presets.find(p => p.id === presetId)?.values : undefined;
+        opts.onPick?.({ templateId: id, category: byId.get(id)?.category });
         finish(overlay && Object.keys(overlay).length ? { ...f.values, ...overlay } : f.values);
       });
     };

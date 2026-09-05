@@ -22,7 +22,7 @@ globalThis.HTMLElement = dom.window.HTMLElement;
 globalThis.HTMLSelectElement = dom.window.HTMLSelectElement;
 globalThis.HTMLButtonElement = dom.window.HTMLButtonElement;
 
-const { formatCategory, formatTriggerHtml, formatPanelHtml, wireFormatPicker } =
+const { formatCategory, formatTriggerHtml, formatPanelHtml, formatPanelInnerHtml, wireFormatPicker } =
   await import('./export-format-picker.ts');
 
 const label = (f: string): string => f.toUpperCase();
@@ -73,6 +73,21 @@ test('dropdown: only non-empty categories render, every section visible, chips c
     holder.querySelector('[data-fmt="dxf"] svg')!.innerHTML,     // scissors (cut file)
     holder.querySelector('[data-fmt="png"] svg')!.innerHTML,     // category image glyph
   );
+});
+
+test('recommended view leads with the outcome formats and can disclose the complete set', () => {
+  const holder = document.createElement('div');
+  holder.innerHTML = formatPanelInnerHtml(['png', 'pdf', 'svg'], 'png', label, ['png', 'pdf']);
+  assert.equal(holder.querySelector('.fmt-cat-head')?.textContent, 'Recommended');
+  assert.deepEqual(
+    [...holder.querySelectorAll<HTMLElement>('.fmt-chip')].map(chip => chip.dataset.fmt),
+    ['png', 'pdf'],
+  );
+  assert.equal(holder.querySelector('[data-fmt-show-all]')?.textContent, 'All formats (3)');
+
+  holder.innerHTML = formatPanelInnerHtml(['png', 'pdf', 'svg'], 'png', label, ['png', 'pdf'], true);
+  assert.ok(holder.querySelector('[data-fmt="svg"]'), 'the expanded view restores non-recommended formats');
+  assert.equal(holder.querySelector('[data-fmt-show-all]'), null);
 });
 
 test('dropdown: an outside pointerdown closes it', () => {

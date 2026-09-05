@@ -578,6 +578,21 @@ test('with no narration port the Present section keeps the notes and grows no bu
   h.handle.destroy();
 });
 
+test('a live outcome gate hides carousel narration while keeping speaker notes', () => {
+  const n = narrationFake({ f1: 'pending' });
+  let enabled = true;
+  const h = mount(BOXES, { narration: n.port, narrationEnabled: () => enabled });
+  h.select(['f1']);
+  assert.ok(h.el.querySelector('[data-act="narrate"]'));
+  enabled = false;
+  h.handle.sync();
+  assert.equal(h.el.querySelector('[data-act="narrate"]'), null);
+  assert.ok(h.el.querySelector('[data-rows="present"] textarea[data-fld="notes"]'), 'notes remain ordinary document content');
+  h.select([]);
+  assert.equal(h.el.querySelector('[data-doc-voice], [data-doc="narrationVoice"]'), null, 'document narration settings are gone too');
+  h.handle.destroy();
+});
+
 test('the document narration settings write TOP-LEVEL inputs, never the selected rows', () => {
   const n = narrationFake();
   const h = mount(BOXES, { narration: n.port });

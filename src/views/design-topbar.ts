@@ -48,7 +48,7 @@
  */
 import { t } from '../i18n.ts';
 import { isTypingTarget } from '../lib/typing-target.ts';
-import { icon } from '../lib/icons.ts';
+import { icon, type IconName } from '../lib/icons.ts';
 import { LOLLY_MARK_SVG } from '../lib/lolly-mark.ts';
 import type { NarrationActions } from './design-ports.ts';
 
@@ -78,6 +78,13 @@ export interface DesignTopbarOpts {
     set(v: string): void;
     /** The auto-filename shown when the field is empty. */
     placeholder(): string;
+  };
+  /** The job this otherwise general canvas is helping finish. It changes shell
+   * guidance/defaults only; choosing one never rewrites document content. */
+  intent?: {
+    get(): string;
+    set(value: string): void;
+    options: ReadonlyArray<{ value: string; label: string }>;
   };
   /** Pan/zoom. All absolute ratios of native pixels (1 === 100%) - see the header. */
   zoom: {
@@ -124,8 +131,11 @@ export interface DesignTopbarOpts {
    * row does not appear at all, rather than appearing and failing on press. `ready()` is
    * a live read - false when no slide carries speaker notes - which greys the row instead
    * of letting a press start a job with nothing to say.
-   */
+  */
   narrate?: NarrationActions;
+  /** Live outcome gate: a LinkedIn carousel has no spoken playback surface, while
+   * slide/video outcomes may still use the same document's narration controls. */
+  narrationEnabled?(): boolean;
   /** Top-level (non-blocks) inputs - the bar reads/writes `autoAdvance` only. */
   model: { getInput(id: string): unknown; setInput(id: string, v: unknown): void };
   /** The kiosk `?loop` flag, which lives on the URL rather than in the model. */
@@ -181,6 +191,19 @@ const GLYPH = {
 
 /** The zoom menu's fixed stops, in absolute ratio. */
 const ZOOM_STOPS: Array<[number, string]> = [[0.5, '50%'], [1, '100%'], [2, '200%'], [4, '400%']];
+
+/** Keep the outcome legible after density hides its text label. A bare down-chevron
+ * looked like an unlabeled disclosure on phones, precisely where this control is the
+ * quickest way to correct an inferred outcome. */
+function intentGlyph(value: string): string {
+  const kind: IconName = value === 'slides' ? 'document'
+    : value === 'carousel' ? 'image'
+      : value === 'video' ? 'filmStrip'
+        : value === 'screencast' ? 'monitor'
+          : 'shapes';
+  return icon(kind, { className: 'dtb-intent-kind' })
+    + icon('chevronDown', { className: 'dtb-intent-caret' });
+}
 
 /** One row in a bar menu. `checked` present ⇒ the row is a checkbox and keeps the menu open. */
 /** The modifier's name for a tooltip hint: the Mac glyph, or the word everywhere else. */
@@ -263,6 +286,18 @@ export function mountDesignTopbar(opts: DesignTopbarOpts): DesignTopbar {
   }
   syncNameTip();
 
+  const intentBtn = opts.intent
+    ? mkBtn('intent', t('Design outcome'), intentGlyph(opts.intent.get()), {
+        cls: 'dtb-intent', text: opts.intent.options.find(o => o.value === opts.intent!.get())?.label ?? t('Design'),
+      })
+    : null;
+  if (intentBtn) {
+    intentBtn.setAttribute('aria-haspopup', 'menu');
+    intentBtn.setAttribute('aria-expanded', 'false');
+    intentBtn.addEventListener('click', () => toggleMenu(intentBtn, intentRows(), 'start'));
+    root.appendChild(intentBtn);
+  }
+
   // ── centre: history, zoom, panels ───────────────────────────────────────────
   const centre = doc.createElement('div');
   centre.className = 'dtb-centre';
@@ -337,7 +372,8 @@ export function mountDesignTopbar(opts: DesignTopbarOpts): DesignTopbar {
 
   const split = doc.createElement('div');
   split.className = 'dtb-split';
-  const presentBtn = mkBtn('present', t('Present'), icon('play'), { cls: 'dtb-split-main', text: t('Present') });
+  const presentLabel = (): string => opts.intent && opts.intent.get() !== 'slides' ? t('Preview') : t('Present');
+  const presentBtn = mkBtn('present', presentLabel(), icon('play'), { cls: 'dtb-split-main', text: presentLabel() });
   presentBtn.addEventListener('click', () => opts.present());
   const presentMenuBtn = mkBtn('present-menu', t('Present options'), icon('chevronDown'), { cls: 'dtb-split-caret' });
   presentMenuBtn.setAttribute('aria-haspopup', 'menu');
@@ -511,7 +547,7 @@ export function mountDesignTopbar(opts: DesignTopbarOpts): DesignTopbar {
   }
 
   function presentRows(): MenuRow[] {
-    const narrate = opts.narrate;
+    const narrate = opts.narrationEnabled?.() === false ? undefined : opts.narrate;
     return [
       {
         label: t('Present from this slide'),
@@ -557,6 +593,14 @@ export function mountDesignTopbar(opts: DesignTopbarOpts): DesignTopbar {
         run: () => opts.exportSheet({ format: 'mp4' }),
       },
     ];
+  }
+
+  function intentRows(): MenuRow[] {
+    return (opts.intent?.options ?? []).map(option => ({
+      label: option.label,
+      checked: () => opts.intent?.get() === option.value,
+      run: () => { opts.intent?.set(option.value); sync(); },
+    }));
   }
 
   // ── panel shortcuts ─────────────────────────────────────────────────────────
@@ -777,6 +821,19 @@ export function mountDesignTopbar(opts: DesignTopbarOpts): DesignTopbar {
     // The auto-filename when there is one, and a word rather than an empty grey box
     // when there is not - a nameless document still has to look like a document.
     nameInput.placeholder = opts.name.placeholder() || t('Untitled');
+    if (intentBtn && opts.intent) {
+      const label = opts.intent.options.find(o => o.value === opts.intent!.get())?.label ?? t('Design');
+      const span = intentBtn.querySelector<HTMLElement>('.dtb-label');
+      if (span) span.textContent = label;
+      const glyph = intentBtn.querySelector<HTMLElement>('.dtb-ic');
+      if (glyph) glyph.replaceWith(icBox('dtb-ic', intentGlyph(opts.intent.get())));
+      intentBtn.setAttribute('data-tip', t('Design outcome: {outcome}', { outcome: label }));
+    }
+    const nextPresentLabel = presentLabel();
+    presentBtn.setAttribute('aria-label', nextPresentLabel);
+    presentBtn.setAttribute('data-tip', nextPresentLabel);
+    const presentText = presentBtn.querySelector<HTMLElement>('.dtb-label');
+    if (presentText) presentText.textContent = nextPresentLabel;
     syncing = false;
     setZoomLabel(opts.zoom.actual());
     syncToggles();

@@ -1908,6 +1908,44 @@ test('a completed video take records the EXPORT frame and hands the clip to the 
   } finally { h.teardown(); TAKE_TIMING.countInMs = countIn; clock.restore(); }
 });
 
+test('screen recording uses the native screen source and lands as one timeline clip', async () => {
+  const fake = fakeHost();
+  const clock = fakeClock();
+  const h = mount([clip('a', 0, 5)], 40, RECORD_KINDS, { host: fake.host });
+  paintCanvasBoxes(h);
+  const adds: Array<Record<string, unknown>> = [];
+  h.root.addEventListener('tl-add', (e) => { adds.push((e as CustomEvent).detail as Record<string, unknown>); });
+  try {
+    seekTo(h, 1.5);
+    const screen = h.root.querySelector('.tl-screen') as HTMLButtonElement;
+    assert.equal(screen.hidden, false, 'a screen-capable recorder + clip kind offers the control');
+
+    const live = takeReaches(h.root, 'recording');
+    click(screen);
+    await live;
+
+    assert.equal(screen.getAttribute('aria-pressed'), 'true');
+    assert.equal(fake.meterRefs(), 0, 'screen capture does not open a separate sound-check microphone');
+    assert.equal(h.stageEl.querySelector('.tl-cam-view'), null, 'screen capture has no camera self-view');
+    assert.deepEqual(fake.lastRecordOpts(), {
+      source: 'screen', audio: true, systemAudio: true, video: true,
+      format: 'mp4', maxMs: TAKE_TIMING.videoMaxMs,
+    }, 'the host gets its native screen/window/tab capture request');
+
+    clock.set(103600);
+    const done = takeReaches(h.root, 'idle');
+    click(screen);
+    await done;
+
+    assert.equal(adds.length, 1, 'one saved screen take enters through the clip creation seam');
+    assert.equal(adds[0]!.kind, 'clip');
+    assert.equal(adds[0]!.atMs, 1500);
+    assert.equal(adds[0]!.durSec, 3.6);
+    const ref = adds[0]!.asset as { id: string };
+    assert.equal(fake.uploads().get(ref.id)?.type, 'video', 'stored as video even when the test recorder falls back to WebM');
+  } finally { h.teardown(); clock.restore(); }
+});
+
 test('re-taking over a selected take REPLACES its asset in one commit', async () => {
   const fake = fakeHost();
   const clock = fakeClock();
@@ -5227,15 +5265,15 @@ test('+Keyframe sits at the END of the transport cluster, and says when it can d
     const b = kfBtn(h);
     // The WHOLE cluster, in order - pinned end to end rather than by a slice, because
     // the position of this one button is the assertion. section 8's M2.6 pass moved it out of
-    // the additive trio (where M2.5 put it, reasoning it was the fourth thing the panel
-    // can ADD) to the tail, AFTER the keyboard sheet: `… zoom− zoom+ expand ⌨ ◇`.
+    // the additive/recording cluster to the tail, AFTER the keyboard sheet:
+    // `… zoom− zoom+ expand ⌨ ◇`.
     // The IDENTITY class only (`classList[1]`, the token `btn()` mints after `tl-btn`) - 
     // a state class like `.is-active` on the snap button is not part of the ordering.
     const cluster = Array.from(h.root.querySelectorAll<HTMLElement>('.tl-tools > .tl-btn'))
       .map((x) => x.classList[1]);
     assert.deepEqual(cluster, [
-      'tl-add', 'tl-mic', 'tl-cam', 'tl-script', 'tl-transcript', 'tl-split', 'tl-snap', 'tl-onion',
-      'tl-zoom-out', 'tl-zoom-in', 'tl-fit', 'tl-keys', 'tl-kf-btn',
+      'tl-screen', 'tl-add', 'tl-mic', 'tl-cam', 'tl-script', 'tl-transcript', 'tl-split', 'tl-snap', 'tl-onion',
+      'tl-zoom-out', 'tl-zoom-in', 'tl-fit', 'tl-keys', 'tl-mobile-tools', 'tl-kf-btn',
     ], 'the diamond is LAST - never back among +, mic, camera and script');
     assert.equal(cluster.at(-1), 'tl-kf-btn', 'and nothing may be appended after it');
     assert.ok(b.querySelector('svg'), 'it is the diamond glyph');

@@ -69,8 +69,17 @@ import { stepFor, displayIn, convertLength, roundIn } from '../lib/unit-steps.ts
 import { stageDeckAsSequence, stagedDeckMs } from '../lib/deck-as-sequence.ts';
 
 import type {
-  WebToolHost, ToolRuntime, PanelEl, ExportUnscaled, ExportDefaults,
-  ActionsApi, IdentityStatus, RunExportOpts, PrintMarks,
+  WebToolHost,
+  ToolRuntime,
+  PanelEl,
+  ExportUnscaled,
+  ExportDefaults,
+  ActionsApi,
+  ActionsExperience,
+  ExportExperience,
+  IdentityStatus,
+  RunExportOpts,
+  PrintMarks,
 } from './tool.ts';
 
 // Content Credentials default: the shared policy in lib/c2pa-policy.ts (also
@@ -260,7 +269,23 @@ type ProfileStore = { get(): Promise<Profile>; set?(profile: Profile): Promise<v
 
 // fitCanvas and exportUnscaled are passed in so refreshCanvasPreview and the
 // export actions can coordinate with the responsive-scaling logic in mountTool.
-function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: ToolRuntime, canvasEl: HTMLElement | null, host: WebToolHost, fitCanvas: () => void, exportUnscaled: ExportUnscaled, exportDefaults: ExportDefaults = {}, onUrlSync: ((key?: string) => void) | null = null, playShutter: () => void = () => {}, fileIntoFolder: string | null = null, returnTo = '/', initialSlot: string | null = null, reachedViaLink = false): ActionsApi | undefined {
+function renderActions(
+  el: PanelEl | null,
+  manifest: ToolManifest,
+  runtime: ToolRuntime,
+  canvasEl: HTMLElement | null,
+  host: WebToolHost,
+  fitCanvas: () => void,
+  exportUnscaled: ExportUnscaled,
+  exportDefaults: ExportDefaults = {},
+  onUrlSync: ((key?: string) => void) | null = null,
+  playShutter: () => void = () => {},
+  fileIntoFolder: string | null = null,
+  returnTo = '/',
+  initialSlot: string | null = null,
+  reachedViaLink = false,
+  experience: ActionsExperience = {}
+): ActionsApi | undefined {
   // The slot this editing session writes to. Seeded from a resumed `?slot=` session,
   // otherwise null until the first save mints one. Every subsequent save (the Save
   // button, the render-pill quick-Save, "Save & leave") reuses it so edits UPDATE the
@@ -324,8 +349,9 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     const filename = el?.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() ?? '';
     return {
       ...values,
-      __toolId:          manifest.id,
-      __toolVersion:     manifest.version,
+      ...(experience.sessionMeta?.() ?? {}),
+      __toolId: manifest.id,
+      __toolVersion: manifest.version,
       // The saved record's TITLE, which is the document name the author typed - the same
       // field the export sheet and the Design top bar both write (plan 179 M1). bridge/
       // state.ts maps `__label` onto the session record's label, which is what the
@@ -653,8 +679,10 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
             ${formatOptions}
           </select>
           ${formatTriggerHtml(initialFmt ?? formats[0] ?? '', fmtLabel)}
-          ${formatPanelHtml(formats, initialFmt ?? formats[0] ?? '', fmtLabel)}
-        ` : ''}
+          ${formatPanelHtml(formats, initialFmt ?? formats[0] ?? '', fmtLabel, experience.current?.().recommendedFormats)}
+        `
+            : ''
+        }
       </div>`;
 
   // Tier 2 - dimensions. The primary sizing control: full-width, prominent,
@@ -1277,7 +1305,10 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
       : `<button data-action="copy" class="copy-btn" title="Copy to clipboard">${CLIPBOARD_SVG}<span>Copy</span></button>`) : '';
   const saveBtn = actions.includes('save') ? saveBtnHtml() : '';
   // Download is the primary CTA - jelly mode gives it the accent-fill squish.
-  const downloadLabel = `Download${formats.length === 1 ? ' ' + fmtLabel(formats[0]!) : ''}`;
+  const initialExperience = experience.current?.() ?? {};
+  const downloadLabel =
+    initialExperience.downloadLabel ||
+    `Download${formats.length === 1 ? ' ' + fmtLabel(formats[0]!) : ''}`;
   // Consult the generic export-policy seam (src/lib/export-policy.ts): dormant - or a
   // deployment that withholds nothing - resolves to 'download' and the CTA below is
   // byte-identical to today. When a control plane withholds download but permits an
@@ -1303,8 +1334,8 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
         // pseudo-content off jelly hosts (it painted at the host corner, outside
         // the capsule), so the jelly label carries the arrow as plain text.
         : (jellyActive()
-          ? `<jelly-button data-action="download" class="download-btn-jelly">↓ ${downloadLabel}</jelly-button>`
-          : `<button data-action="download">${downloadLabel}</button>`);
+          ? `<jelly-button data-action="download" class="download-btn-jelly">↓ <span data-download-label>${escape(downloadLabel)}</span></jelly-button>`
+          : `<button data-action="download"><span data-download-label>${escape(downloadLabel)}</span></button>`);
   const blockedNote = (actions.includes('download') && affordance === 'blocked')
     ? `<p class="export-blocked-note" role="status" style="margin:.2rem 0 0;color:hsl(var(--muted-foreground));font-size:12px;text-align:center">${escape(t('Downloading is turned off for this tool on this instance.'))}</p>`
     : '';
@@ -1438,6 +1469,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // (Print PDF, MP4) are scrolled.
   el.innerHTML = `
     <div class="export-actions-dock">
+      <p class="export-outcome-summary" data-export-outcome${initialExperience.summary ? '' : ' hidden'}>${escape(initialExperience.summary ?? '')}</p>
       ${secondaryRow}
       ${downloadRow}
       ${actions.includes('download') ? `<p class="export-degraded-note" data-export-degraded role="status" hidden style="margin:.2rem 0 0;color:hsl(var(--muted-foreground));font-size:12px;text-align:center"></p>` : ''}
@@ -1509,7 +1541,9 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   const ditherEl      = el.querySelector<HTMLElement>('[data-gif-only]');
   const formatEl      = el.querySelector<HTMLSelectElement>('[data-action="format"]');
   // The grouped-category UI over the hidden select (trigger + accordion panel).
-  const formatPicker  = wireFormatPicker(el, formatEl, fmtLabel);
+  const formatPicker = wireFormatPicker(el, formatEl, fmtLabel, {
+    recommended: initialExperience.recommendedFormats,
+  });
   // The filename placeholder is derived from live input values plus the
   // provenance state, so it goes stale the moment either moves. Re-derive on
   // format/protection changes and every time the sheet opens (views/tool.ts
@@ -3011,6 +3045,17 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
     if (next !== cur) formatEl.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
+  function setExperience(next: ExportExperience): void {
+    formatPicker?.setRecommended(next.recommendedFormats ?? []);
+    const summary = el?.querySelector<HTMLElement>('[data-export-outcome]');
+    if (summary) {
+      summary.textContent = next.summary ?? '';
+      summary.hidden = !next.summary;
+    }
+    const label = el?.querySelector<HTMLElement>('[data-download-label]');
+    if (label && next.downloadLabel) label.textContent = next.downloadLabel;
+  }
+
   function setDims({ width, height, unit }: { width?: number; height?: number; unit?: string } = {}): void {
     if (manifest.render.dims === false) return;
     sizeUserSet = true;   // a size-select pick is the user setting the page size
@@ -4174,7 +4219,7 @@ function renderActions(el: PanelEl | null, manifest: ToolManifest, runtime: Tool
   // popup-close + tool-teardown paths silence an in-progress audio audition.
   // `sessionState` is the SAME snapshot a save writes, read (never written) by the beam
   // for its `__export_*` markers - the one place they exist outside this panel's DOM.
-  return { copy: performCopy, preview, save: performSave, setDims, setFormat, setFormats, stopAudioPreview, sessionState: sessionSnapshot, getSlot: () => activeSlot, dispose: disposeCostSlot };
+  return { copy: performCopy, preview, save: performSave, setDims, setFormat, setFormats, setExperience, stopAudioPreview, sessionState: sessionSnapshot, getSlot: () => activeSlot, dispose: disposeCostSlot };
 }
 
 // Adds scroll-to-change and click-drag-to-scrub to a number input.

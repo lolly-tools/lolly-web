@@ -47,6 +47,9 @@ export interface StageRect { x: number; y: number; w: number; h: number }
 export interface StageNavOpts {
   /** Union of every artboard page in the document; null when it has no artboards. */
   contentRect?: () => StageRect | null;
+  /** The current artboard. On compact touch screens Fit favours this over the
+   * unreadably small union of every page. */
+  activeRect?: () => StageRect | null;
   /** The current selection's AABB; null when nothing is selected. */
   selectionRect?: () => StageRect | null;
   /**
@@ -206,12 +209,24 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
     const v = parseFloat(stageEl.style.getPropertyValue(prop));
     return Number.isFinite(v) && v > 0 ? v : 0;
   }
+  const compactTouch = (): boolean => typeof matchMedia === 'function'
+    && matchMedia('(pointer: coarse) and (max-width: 640px), (pointer: coarse) and (max-height: 430px)').matches;
   function stageBox(): { left: number; top: number; right: number; bottom: number; width: number; height: number } {
     const sr = stageEl.getBoundingClientRect();
     const left = sr.left + reserveOf('--stage-reserve-left');
     const right = sr.right - reserveOf('--stage-reserve-right');
     const top = sr.top + reserveOf('--stage-reserve-top');
-    const bottom = sr.bottom - reserveOf('--stage-reserve-bottom');
+    let bottom = sr.bottom - reserveOf('--stage-reserve-bottom');
+    // The compact tool rail becomes a horizontal palette at the foot of a touch
+    // screen. It intentionally remains draggable chrome rather than claiming the
+    // timeline's reserve property, so account for its actual visible rectangle here.
+    if (compactTouch()) {
+      const rail = stageEl.querySelector<HTMLElement>('.fc-toolbar-dock');
+      if (rail && getComputedStyle(rail).display !== 'none') {
+        const rr = rail.getBoundingClientRect();
+        if (rr.height > 0 && rr.top < bottom && rr.bottom > sr.top) bottom = Math.min(bottom, rr.top - 8);
+      }
+    }
     // A stage narrower than the bands it carries (a phone with every panel open) would
     // hand back an inverted box, and a fit computed from it is nonsense. Fall back to the
     // whole stage - which is exactly what this module measured before the bands existed.
@@ -333,7 +348,7 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
   function fit(): void {
     reset();
     onFit?.();
-    const r = opts?.contentRect?.();
+    const r = (compactTouch() ? opts?.activeRect?.() : null) ?? opts?.contentRect?.();
     if (r) fitContent(r);
   }
 

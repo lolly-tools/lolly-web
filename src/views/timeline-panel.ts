@@ -1411,6 +1411,11 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
   let open = false;
   let disposed = false;
+  const compactPanel = (): boolean =>
+    typeof matchMedia === 'function' &&
+    matchMedia(
+      '(pointer: coarse) and (max-width: 640px), (pointer: coarse) and (max-height: 430px)'
+    ).matches;
   /**
    * The hold taken over the canvas while the panel is CLOSED (plans/179 T2), and the
    * closure that lifts it. Non-null means "this panel has handed the stage back to its
@@ -1526,6 +1531,8 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   // panel's shortcuts are unguessable by design - this is where they stop being so.
   const keysBtn = btn('tl-keys', t('Keyboard shortcuts'), icon('keyboard'));
   keysBtn.setAttribute('aria-haspopup', 'dialog');
+  const mobileToolsBtn = btn('tl-mobile-tools', t('More timeline tools'), icon('menuDots'));
+  mobileToolsBtn.setAttribute('aria-expanded', 'false');
 
   // ── record-in-place voiceover (track C) ──────────────────────────────────────
   // The button is only rendered when the SHELL can capture audio and the TOOL has
@@ -1546,6 +1553,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   // the mic (canRecordVideo).
   const camBtn = btn('tl-cam', t('Record a video'), icon('camera'));
   camBtn.hidden = true;
+  // Screen capture lands through the same clip-creation seam as a camera take.
+  // The browser-native picker chooses a screen/window/tab; no fake pre-picker UI.
+  const screenBtn = btn('tl-screen', t('Record screen'), icon('monitor'));
+  screenBtn.hidden = true;
 
   /**
    * "+Keyframe" - one of its TWO homes (plans/104 section 8's M2.5 revision).
@@ -1607,8 +1618,29 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   transport.append(playBtn, timeEl);
   const tools = document.createElement('div');
   tools.className = 'tl-tools';
+  // Display capture leads the recording cluster: in a screencast workspace the
+  // native screen/window/tab picker is the next step, not a secondary camera verb.
+  // It stays feature-detected and hidden on hosts without screen capture.
   // `kfBtn` LAST - the end of the left cluster, after the keyboard sheet (section 8's M2.6).
-  tools.append(addBtn, micBtn, camBtn, scriptBtn, transcriptBtn, splitBtn, snapBtn, onionBtn, zoomOutBtn, zoomInBtn, fitBtn, keysBtn, kfBtn);
+  // The mobile-only disclosure sits immediately before it so the existing desktop
+  // transport contract remains literal: no tool is ever appended after +Keyframe.
+  tools.append(
+    screenBtn,
+    addBtn,
+    micBtn,
+    camBtn,
+    scriptBtn,
+    transcriptBtn,
+    splitBtn,
+    snapBtn,
+    onionBtn,
+    zoomOutBtn,
+    zoomInBtn,
+    fitBtn,
+    keysBtn,
+    mobileToolsBtn,
+    kfBtn
+  );
   const inspector = document.createElement('div');
   inspector.className = 'tl-inspector';
   bar.append(transport, tools, rec, recNote, inspector);
@@ -7689,11 +7721,12 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   type TakePhase = 'idle' | 'countin' | 'recording' | 'saving';
   /** What the live take captures: the mic alone (a voiceover box) or camera + mic
    *  (a full-frame clip). Decided by the button pressed; read by every branch below. */
-  type TakeKind = 'audio' | 'video';
+  type TakeKind = 'audio' | 'video' | 'screen';
 
   let takePhase: TakePhase = 'idle';
   let takeKind: TakeKind = 'audio';
-  const takeMaxMs = (): number => (takeKind === 'video' ? TAKE_TIMING.videoMaxMs : TAKE_TIMING.maxMs);
+  const takeMaxMs = (): number =>
+    takeKind === 'audio' ? TAKE_TIMING.maxMs : TAKE_TIMING.videoMaxMs;
   let takeSession: RecordSession | null = null;
   let takeLevelOff: (() => void) | null = null;
   /** Microphone METER references this panel currently holds. A COUNT, not a boolean:
@@ -7775,7 +7808,21 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   function canRecordVideo(): boolean {
     const r = host.recorder;
     if (!r || typeof r.isAvailable !== 'function' || !clipKind()) return false;
-    try { return r.isAvailable('video'); } catch { return false; }
+    try {
+      return r.isAvailable('video');
+    } catch {
+      return false;
+    }
+  }
+
+  function canRecordScreen(): boolean {
+    const r = host.recorder;
+    if (!r || typeof r.isAvailable !== 'function' || !clipKind()) return false;
+    try {
+      return r.isAvailable('screen');
+    } catch {
+      return false;
+    }
   }
 
   // ── the camera self-view ──────────────────────────────────────────────────────
@@ -7882,6 +7929,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
 
   function syncMicBtn(): void {
     syncCamBtn();
+    syncScreenBtn();
     if (micBtn.hidden) return;
     const mine = takeKind === 'audio';
     const live = mine && (takePhase === 'recording' || takePhase === 'countin');
@@ -7912,6 +7960,23 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     camBtn.setAttribute('aria-pressed', live ? 'true' : 'false');
     camBtn.classList.toggle('is-recording', mine && takePhase === 'recording');
     camBtn.disabled = takePhase === 'saving' || (!mine && takePhase !== 'idle');
+  }
+
+  function syncScreenBtn(): void {
+    if (screenBtn.hidden) return;
+    const mine = takeKind === 'screen';
+    const live = mine && (takePhase === 'recording' || takePhase === 'countin');
+    const label =
+      mine && takePhase === 'saving'
+        ? t('Saving the take…')
+        : live
+          ? t('Stop recording')
+          : t('Record screen');
+    screenBtn.setAttribute('aria-label', label);
+    screenBtn.setAttribute('data-tip', label);
+    screenBtn.setAttribute('aria-pressed', live ? 'true' : 'false');
+    screenBtn.classList.toggle('is-recording', mine && takePhase === 'recording');
+    screenBtn.disabled = takePhase === 'saving' || (!mine && takePhase !== 'idle');
   }
 
   function paintLevel(level: AudioLevel): void {
@@ -7988,14 +8053,22 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   function failTake(err: unknown): void {
     const name = (err as { name?: string } | null)?.name || '';
     const video = takeKind === 'video';
+    const screen = takeKind === 'screen';
     endTake();
-    const msg = name === 'NotAllowedError' || name === 'SecurityError'
-      ? (video
-        ? t('Camera blocked. Allow camera and microphone access for this site, then try again.')
-        : t('Microphone blocked. Allow microphone access for this site, then try again.'))
-      : name === 'NotFoundError'
-        ? (video ? t('No camera found.') : t('No microphone found.'))
-        : t('Could not start recording.');
+    const msg =
+      name === 'NotAllowedError' || name === 'SecurityError'
+        ? screen
+          ? t('Screen sharing was cancelled.')
+          : video
+            ? t('Camera blocked. Allow camera and microphone access for this site, then try again.')
+            : t('Microphone blocked. Allow microphone access for this site, then try again.')
+        : name === 'NotFoundError'
+          ? screen
+            ? t('No screen was available to capture.')
+            : video
+              ? t('No camera found.')
+              : t('No microphone found.')
+          : t('Could not start recording.');
     setNote(msg);
     announce(msg, { assertive: true });
     host.log?.('warn', `timeline voiceover: ${name || String(err)}`);
@@ -8060,20 +8133,22 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     syncMicBtn();
     if (kind === 'video') showCamView();
 
-    // The sound check is where the PERMISSION PROMPT happens, deliberately before the
-    // count-in: a denial then costs a click, not a performance. It also gives the user
-    // a live level to check before the first beat.
-    try {
-      await recorder.meter.start();
-      takeMeterRefs++;
-    } catch (err) {
-      // A rejected start() took no reference (the meter drops it itself). Only report
-      // the failure if this take is still the live one.
-      if (!stale()) failTake(err);
-      return;
+    // Mic/camera takes get a sound check before count-in. Screen capture must go
+    // straight to the browser's native picker: opening a second microphone prompt
+    // first is both redundant and a common mobile failure mode.
+    if (kind !== 'screen') {
+      try {
+        await recorder.meter.start();
+        takeMeterRefs++;
+      } catch (err) {
+        // A rejected start() took no reference (the meter drops it itself). Only report
+        // the failure if this take is still the live one.
+        if (!stale()) failTake(err);
+        return;
+      }
+      if (stale()) { stopMeter(1); return; }
+      takeLevelOff = recorder.meter.subscribe(paintLevel);
     }
-    if (stale()) { stopMeter(1); return; }
-    takeLevelOff = recorder.meter.subscribe(paintLevel);
 
     // A re-take performs against the same picture as the take it replaces.
     if (takeReplaceId) {
@@ -8082,10 +8157,23 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       const at = i >= 0 ? boxTiming(rows[i]!, cfg).start : null;
       if (at != null) seekAuthored(at * 1000);
     }
-    announce(kind === 'video' ? t('Camera live. Counting in.') : t('Microphone live. Counting in.'));
-    await countIn();
-    if (stale()) { stopMeter(1); return; }
-    if (phase() !== 'countin') { endTake(); return; }
+    if (kind === 'screen') {
+      setNote(t('Choose a screen, window or browser tab to record.'));
+      announce(t('Choose a screen, window or browser tab to record.'));
+    } else {
+      announce(
+        kind === 'video' ? t('Camera live. Counting in.') : t('Microphone live. Counting in.')
+      );
+      await countIn();
+    }
+    if (stale()) {
+      if (kind !== 'screen') stopMeter(1);
+      return;
+    }
+    if (phase() !== 'countin') {
+      endTake();
+      return;
+    }
 
     let session: RecordSession;
     try {
@@ -8094,25 +8182,52 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       // shows the same picture. The front camera by default - a person recording a
       // message to colleagues faces the screen.
       const size = kind === 'video' ? (opts.frameSize?.() ?? null) : null;
-      session = await recorder.record(kind === 'video'
-        ? {
-          audio: true, video: true, maxMs: TAKE_TIMING.videoMaxMs, facingMode: 'user',
-          ...(size && size.w > 0 && size.h > 0 ? { frame: { width: Math.round(size.w), height: Math.round(size.h) } } : {}),
-        }
-        : { audio: true, video: false, maxMs: TAKE_TIMING.maxMs });
+      session = await recorder.record(
+        kind === 'screen'
+          ? {
+              source: 'screen',
+              audio: true,
+              systemAudio: true,
+              video: true,
+              format: 'mp4',
+              maxMs: TAKE_TIMING.videoMaxMs,
+            }
+          : kind === 'video'
+            ? {
+                audio: true,
+                video: true,
+                maxMs: TAKE_TIMING.videoMaxMs,
+                facingMode: 'user',
+                ...(size && size.w > 0 && size.h > 0
+                  ? { frame: { width: Math.round(size.w), height: Math.round(size.h) } }
+                  : {}),
+              }
+            : { audio: true, video: false, maxMs: TAKE_TIMING.maxMs }
+      );
     } catch (err) {
-      if (stale()) { stopMeter(1); return; }
+      if (stale()) {
+        if (kind !== 'screen') stopMeter(1);
+        return;
+      }
       failTake(err);
       return;
     }
     // Abandoned while the recorder was opening: the session exists, so release it.
     if (stale()) {
-      try { session.cancel(); } catch { /* already released */ }
-      stopMeter(1);
+      try {
+        session.cancel();
+      } catch {
+        /* already released */
+      }
+      if (kind !== 'screen') stopMeter(1);
       return;
     }
     if (phase() !== 'countin') {
-      try { session.cancel(); } catch { /* already released */ }
+      try {
+        session.cancel();
+      } catch {
+        /* already released */
+      }
       endTake();
       return;
     }
@@ -8122,20 +8237,31 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
     rec.classList.remove('is-countin');
     // The raw sound-check stream has done its job; the take's own levels drive the
     // meter from here, so the second microphone reference is released immediately.
-    try { takeLevelOff?.(); } catch { /* already unsubscribed */ }
+    try {
+      takeLevelOff?.();
+    } catch {
+      /* already unsubscribed */
+    }
     takeLevelOff = null;
-    stopMeter(1);   // exactly the one reference this take took, never another holder's
+    if (kind !== 'screen') stopMeter(1); // exactly the one reference this take took, never another holder's
     takeLevelOff = session.subscribe(paintLevel);
 
     takeStartSec = clock.t() / 1000;
     takeStartedAt = now();
     lastMuteAt = 0;
     muteComposition();
-    if (!clock.playing()) { clock.play(); syncPlayBtn(); }
+    if (!clock.playing()) {
+      clock.play();
+      syncPlayBtn();
+    }
     syncMicBtn();
-    announce(kind === 'video'
-      ? t('Recording. Press the camera button again to stop.')
-      : t('Recording. Press the microphone button again to stop.'));
+    announce(
+      kind === 'screen'
+        ? t('Screen recording started. Press the screen button again to stop.')
+        : kind === 'video'
+          ? t('Recording. Press the camera button again to stop.')
+          : t('Recording. Press the microphone button again to stop.')
+    );
     tickTake();
   }
 
@@ -8198,23 +8324,33 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       // store, i.e. BEFORE the model is patched. Abandon the save between those two steps
       // (navigate away, close the panel) and the old recording is gone while the box still
       // points at it. The delete happens below, after the commit has landed.
-      blob, ext, undefined, undefined,
+      blob,
+      ext,
+      undefined,
+      undefined,
       // The measured length, not the blob's - see note 1. This is what becomes
       // `data-audio-dur` and therefore what a trim can clamp against. A camera take
       // is typed VIDEO (the store's default), so the picker's filters and the seq
       // pack read it as a picture with sound.
-      takeKind === 'video' ? { durationMs: takeMs } : { audio: true, durationMs: takeMs },
+      takeKind !== 'audio' ? { durationMs: takeMs } : { audio: true, durationMs: takeMs }
     );
     // The take was abandoned while the bytes were being stored (the panel closed, the
     // timeline was toggled off, destroy()). Commit nothing - an audio box arriving in a
     // panel the user has left is an undo step for a take they cancelled - and leave the
     // replaced asset alone. The orphan take is harmless; a deleted one is not.
     if (disposed || seq !== takeSeq) return;
-    if (takeKind === 'video') { emitRecordedClip(ref, takeMs / 1000, takeStartSec); return; }
+    if (takeKind !== 'audio') {
+      emitRecordedClip(ref, takeMs / 1000, takeStartSec);
+      return;
+    }
     insertTake(ref, takeMs / 1000);
     // Committed. Only now is the superseded recording safe to drop.
     if (replaceId && prevId && prevId !== ref.id && prevId.startsWith('user/recording/')) {
-      try { await host.assets?._deleteUserAsset?.(prevId); } catch { /* orphan take is harmless */ }
+      try {
+        await host.assets?._deleteUserAsset?.(prevId);
+      } catch {
+        /* orphan take is harmless */
+      }
     }
   }
 
@@ -8967,12 +9103,18 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   // ── wiring ──────────────────────────────────────────────────────────────────
 
   playBtn.addEventListener('click', togglePlay);
+  mobileToolsBtn.addEventListener('click', () => {
+    const expanded = root.classList.toggle('is-mobile-tools-open');
+    mobileToolsBtn.setAttribute('aria-expanded', String(expanded));
+  });
   // Re-click closes, the way every other disclosure in the shell behaves.
   addBtn.addEventListener('click', () => { if (addMenu.isOpen()) addMenu.close(true); else addMenu.open(); });
   micBtn.addEventListener('click', () => toggleTake('audio'));
   micBtn.hidden = !canRecordVoiceover();
   camBtn.addEventListener('click', () => toggleTake('video'));
   camBtn.hidden = !canRecordVideo();
+  screenBtn.addEventListener('click', () => toggleTake('screen'));
+  screenBtn.hidden = !canRecordScreen();
   syncCamBtn();
   syncMicBtn();
   scriptBtn.addEventListener('click', () => { void openScriptVoiceover(); });
@@ -9173,7 +9315,10 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
       seqHold?.();
       seqHold = null;
       const stageH = stageEl.getBoundingClientRect().height || 0;
-      panelH = clampPanelH(panelH, stageH, chromeH());
+      // CSS makes this a fixed compact transport on a phone/short landscape.
+      // Reserve the height it ACTUALLY paints, not the remembered 190px desktop
+      // height; the stale reserve was shrinking a 16:9 artboard to a few pixels.
+      panelH = compactPanel() ? MIN_PANEL_H : clampPanelH(panelH, stageH, chromeH());
       root.style.height = `${panelH}px`;
       reserve(panelH + RESERVE_PAD);
       lastKey = '\u0000';

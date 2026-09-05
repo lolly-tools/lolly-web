@@ -61,6 +61,12 @@ import { parseEditorState, coerceUiState } from '../lib/editor-state.ts';
 import { fpsTick, startFrameFps, stopFrameFps } from '../lib/frame-fps.ts';
 import { getToolIntegrity } from '../catalog/integrity.ts';
 import { isToolInstalled, installedFetchFile } from '../lib/installed-tools.ts';
+import {
+  DESIGN_INTENT_OPTIONS,
+  designOutcome,
+  inferDesignIntent,
+  type DesignIntent,
+} from './design-workspace.ts';
 
 import { escape } from '../utils.ts';
 import { createHistory, cloneValue, describeRowChange } from './tool-history.ts';
@@ -304,6 +310,9 @@ export interface ActionsApi {
   /** Narrow the export format bar to a mode/effect select option's `formats`
    *  (see exportFormatDriver). Keeps the current pick when it survives. */
   setFormats?: (allowed: string[]) => void;
+  /** Refresh the Design outcome summary and focused format list after a template
+   * or outcome switch, without rebuilding the export sheet. */
+  setExperience?: (experience: ExportExperience) => void;
   stopAudioPreview?: () => void;
   /** The exact record a Save would write - input values plus the `__` markers (tool
    *  identity and the export bar's format/size/unit/DPI/profile/bleed/marks). Read by
@@ -318,6 +327,19 @@ export interface ActionsApi {
   /** Tear down the cost-authoring slot: unsubscribe the registry-change listener
    *  and run the hydrated extension's disposer. Called from mountTool's cleanup. */
   dispose?: () => void;
+}
+
+/** Optional outcome guidance layered over the generic export pipeline. */
+export interface ExportExperience {
+  recommendedFormats?: readonly string[];
+  summary?: string;
+  downloadLabel?: string;
+}
+
+/** Session-only metadata that belongs beside `__export_*`, never in tool inputs. */
+export interface ActionsExperience {
+  current?: () => ExportExperience;
+  sessionMeta?: () => Record<string, unknown>;
 }
 
 /** A shared monotonic bar-write guard (a holder object so shrinkUrl can share it). */
@@ -727,7 +749,35 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // of the encoders could not represent. Applied before `createRuntime` so the runtime
   // is BORN with it: a patch after mount would render twice and run `onInit` against
   // the wrong model.
-  if (carriedMount) initialValues = { ...initialValues, ...(carriedMount.values as Record<string, InputValue>) };
+  if (carriedMount)
+    initialValues = { ...initialValues, ...(carriedMount.values as Record<string, InputValue>) };
+
+  // Design is one canvas with several likely outcomes. This small UI-only intent
+  // selects chrome and export defaults; it never changes the engine render path.
+  // In particular, the Poster template intentionally remains `general`: modern
+  // posters are often digital, so no print semantics are inferred from that name.
+  let designIntent: DesignIntent =
+    toolId === 'design'
+      ? inferDesignIntent({
+          saved: initialValues.__workspace_intent,
+          templateId: templateParam,
+          boxes: initialValues.boxes,
+        })
+      : 'general';
+  let refreshDesignExperience = (_pickDefault = false): void => {
+    /* armed after the export panel mounts */
+  };
+  let syncDesignIntentChrome = (): void => {
+    /* armed with the Design top bar */
+  };
+  let applyDesignIntentLayout = (_outcome: ReturnType<typeof designOutcome>): void => {
+    /* armed with editor chrome */
+  };
+  const setDesignIntent = (intent: DesignIntent, pickDefault = false): void => {
+    if (toolId !== 'design') return;
+    designIntent = intent;
+    refreshDesignExperience(pickDefault);
+  };
 
   // A one-shot seed armed by the drop router's layered-import route (psd-import
   // stores the layer assets, then stashes the block rows + canvas size here).
@@ -872,19 +922,33 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
           // "Blank canvas" on a frame-based tool is the default document's artboards with
           // nothing on them, not the composed cover the default opens with (plan 179).
           blankSeed: () => {
-            type FrameInput = { id: string; type?: string; default?: unknown; canvas?: { frameKind?: string; kindField?: string } };
-            const inp = (tool.manifest.inputs as FrameInput[]).find((i) => i.type === 'blocks' && !!i.canvas?.frameKind);
-            const rows = Array.isArray(inp?.default) ? (inp!.default as Array<Record<string, unknown>>) : [];
+            type FrameInput = {
+              id: string;
+              type?: string;
+              default?: unknown;
+              canvas?: { frameKind?: string; kindField?: string };
+            };
+            const inp = (tool.manifest.inputs as FrameInput[]).find(
+              (i) => i.type === 'blocks' && !!i.canvas?.frameKind
+            );
+            const rows = Array.isArray(inp?.default)
+              ? (inp!.default as Array<Record<string, unknown>>)
+              : [];
             const kindField = inp?.canvas?.kindField ?? 'kind';
             const frames = rows.filter((r) => r && String(r[kindField]) === inp!.canvas!.frameKind);
             return frames.length ? { [inp!.id]: frames as unknown as InputValue } : {};
           },
+          onPick: ({ templateId, category }) =>
+            setDesignIntent(inferDesignIntent({ templateId, templateCategory: category }), true),
           // Arms the navigate-away close. If teardown landed in the same tick as the
           // modal's own construction (the race the check exists for), close immediately
           // instead of leaving a reference nobody will ever call.
-          onOpen: close => { if (templatePickTornDown) close(); else templatePickClose = close; },
+          onOpen: (close) => {
+            if (templatePickTornDown) close();
+            else templatePickClose = close;
+          },
         });
-      })().catch(e => {
+      })().catch((e) => {
         host.log?.('warn', 'template chooser failed - opening blank: ' + String(e));
         return {} as Record<string, InputValue>;
       });
@@ -1981,7 +2045,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // `detail.rect` by the time it returns; with no overlay mounted (every tool but the
     // canvas editors) or no artboards in the document it stays null, and Fit then does
     // exactly what it always did.
-    const askRect = (what: 'content' | 'selection') => (): { x: number; y: number; w: number; h: number } | null => {
+    const askRect = (what: 'content' | 'selection' | 'active') => (): { x: number; y: number; w: number; h: number } | null => {
       const detail: { what: string; rect: { x: number; y: number; w: number; h: number } | null } = { what, rect: null };
       try { stageEl.dispatchEvent(new CustomEvent('fc-query-rect', { detail })); } catch { return null; }
       return detail.rect;
@@ -2003,12 +2067,28 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // meant to be part of the right dock if it is opened, we don't need to recreate
     // those things in the top panel"). The mark menu opener is late-bound: the
     // free-canvas handle that owns the menu is created further down.
-    stageZoom = setupStageNav(stageEl, outerEl, canvasEl, nativeW, fitCanvas,
-      themeToggle, soundToggle, profileToggle, {
-        contentRect, selectionRect: askRect('selection'), hud: !designChrome,
+    stageZoom = setupStageNav(
+      stageEl,
+      outerEl,
+      canvasEl,
+      nativeW,
+      fitCanvas,
+      themeToggle,
+      soundToggle,
+      profileToggle,
+      {
+        contentRect,
+        activeRect: askRect('active'),
+        selectionRect: askRect('selection'),
+        hud: !designChrome,
         editorLayout: !!designChrome,
-        onMarkMenu: designChrome ? (anchor: HTMLElement) => { openDesignMarkMenu?.(anchor); } : undefined,
-      });
+        onMarkMenu: designChrome
+          ? (anchor: HTMLElement) => {
+              openDesignMarkMenu?.(anchor);
+            }
+          : undefined,
+      }
+    );
     // The Artboards navigator (free-canvas) asks the stage to frame one artboard by
     // dispatching `fc-focus-rect` with the frame's native rect - the overlay never
     // touches the pan/zoom transform itself. Wired here because only tool.ts holds the
@@ -2502,9 +2582,16 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // never overwrites it (see lib/export-prefs.ts for the precedence rule).
   const rememberedExport = await loadExportPrefs(host, toolId).catch(() => null);
 
+  const currentDesignOutcome = () =>
+    designOutcome(designIntent, runtime.getModel().find((i) => i.id === 'boxes')?.value);
+  const explicitExportFormat = urlFormat || (initialValues.__export_format as string | undefined);
+
   const exportDefaults: ExportDefaults = mergeExportPrefs({
     filename: urlFilename || (initialValues.__export_filename as string | undefined),
-    format:   urlFormat || (initialValues.__export_format as string | undefined),
+    // A named Design outcome is stronger than a generic per-tool remembered format,
+    // but never stronger than this link/session's explicit choice.
+    format:   explicitExportFormat ||
+      (toolId === 'design' ? currentDesignOutcome().defaultFormat : undefined),
     width:    urlWidth  || Number(initialValues.__export_width)  || sizeDims?.width  || undefined,
     height:   urlHeight || Number(initialValues.__export_height) || sizeDims?.height || undefined,
     unit:     urlUnit || (initialValues.__export_unit as string | undefined) || sizeDims?.unit || 'px',
@@ -2833,7 +2920,45 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     if (id) dirtyParams.add(id);
   }
 
-  const actionsApi = renderActions(actionsEl, tool.manifest, runtime, exportSourceNode, host, resetView, exportUnscaled, exportDefaults, syncUrl, playShutter, fileIntoFolder, returnTo, slot, reachedViaLink);
+  const actionsApi = renderActions(
+    actionsEl,
+    tool.manifest,
+    runtime,
+    exportSourceNode,
+    host,
+    resetView,
+    exportUnscaled,
+    exportDefaults,
+    syncUrl,
+    playShutter,
+    fileIntoFolder,
+    returnTo,
+    slot,
+    reachedViaLink,
+    toolId === 'design'
+      ? {
+          current: () => currentDesignOutcome(),
+          sessionMeta: () => ({ __workspace_intent: designIntent }),
+        }
+      : {}
+  );
+  if (toolId === 'design') {
+    refreshDesignExperience = (pickDefault = false): void => {
+      const outcome = currentDesignOutcome();
+      actionsApi?.setExperience?.(outcome);
+      if (pickDefault && outcome.defaultFormat) actionsApi?.setFormat?.(outcome.defaultFormat);
+      if (pickDefault) applyDesignIntentLayout(outcome);
+      syncDesignIntentChrome();
+    };
+    const offOutcome = runtime.subscribe(() => refreshDesignExperience(false));
+    if (typeof offOutcome === 'function') {
+      const prevOutcomeCleanup = viewEl._cleanup;
+      viewEl._cleanup = () => {
+        offOutcome();
+        prevOutcomeCleanup?.();
+      };
+    }
+  }
   // renderActions announces every completed download/copy/save - see
   // exportedSinceEdit above for why that quiets the unsaved-changes guards.
   actionsEl?.addEventListener('lolly:export-complete', () => { exportedSinceEdit = true; });
@@ -3350,9 +3475,14 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           templates,
           host,
           formats: tool.manifest.render?.formats,
+          onPick: ({ templateId, category }) =>
+            setDesignIntent(inferDesignIntent({ templateId, templateCategory: category }), true),
           // Same navigate-away teardown as the fresh-open chooser: _cleanup calls
           // templatePickClose so the modal never outlives the view.
-          onOpen: close => { if (templatePickTornDown) close(); else templatePickClose = close; },
+          onOpen: (close) => {
+            if (templatePickTornDown) close();
+            else templatePickClose = close;
+          },
         });
         const chosen = await pick;
         if (templatePickTornDown || !viewEl.isConnected) return;
@@ -3363,6 +3493,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           // image stubs would render black/placeholder; run the mount's resolve pass
           // once, mirroring the fresh-open seed path above.
           if (!templatePickTornDown && viewEl.isConnected) await runtime.resolveRefs();
+          refreshDesignExperience(true);
         }
       } catch (e) {
         host.log?.('warn', 'template chooser failed: ' + String(e));
@@ -3629,6 +3760,14 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
             // implementation of the naming rules.
             placeholder: () => viewEl.querySelector<HTMLInputElement>('[data-action="filename"]')?.placeholder || '',
           },
+          intent: {
+            get: () => designIntent,
+            set: (value) => {
+              const next = DESIGN_INTENT_OPTIONS.find((option) => option.value === value)?.value;
+              if (next) setDesignIntent(next, true);
+            },
+            options: DESIGN_INTENT_OPTIONS,
+          },
           zoom: {
             fitAll: () => { stageZoom?.fit(); },
             // Deliberately the overlay's own focus path (`fc-focus-rect`), not a rect this
@@ -3669,6 +3808,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           // The deck-wide Narrate row (plans/180 section 8). Undefined where the overlay
           // offers no narration - no speech bridge, no frames - and then there is no row.
           narrate: design.narrationActions,
+          narrationEnabled: () => designIntent !== 'carousel',
           model: {
             getInput: (id) => runtime.getModel().find(i => i.id === id)?.value,
             // Caught, not floated: the bar writes doc-level inputs the MANIFEST declares
@@ -3710,6 +3850,16 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           },
           activeFrameId: () => design.activeFrameId(),
         });
+        syncDesignIntentChrome = () => {
+          designTopbar?.sync();
+          designInspector?.sync();
+        };
+        applyDesignIntentLayout = (outcome) => {
+          if (outcome.openNavigator && !designNav?.isOpen()) designNav?.setOpen(true);
+          if (!outcome.openNavigator && designNav?.isOpen()) designNav.setOpen(false);
+          if (outcome.openTimeline !== design.isTimelineOpen()) design.toggleTimeline();
+        };
+        refreshDesignExperience(Boolean(templateParam));
         // No frame primitive at all: there is no deck here and never will be, so the
         // Present split is not disabled - it is not offered.
         if (!frameCfg) {
@@ -3743,6 +3893,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         const NAV_KEY = 'lolly-design-nav';
         designNav = initDesignNavigator({
           stageEl, canvasEl,
+          skin: window.matchMedia?.(
+            '(pointer: coarse) and (max-width: 640px), (pointer: coarse) and (max-height: 430px)'
+          ).matches ? 'strip' : 'column',
           model: design.model,
           selection: design.selection,
           artboard: design.artboard,
@@ -3755,6 +3908,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           onOpenChange: (open) => { writeColumnPref(NAV_KEY, open); designTopbar?.sync(); },
           onWidthChange: (px) => { navW = px; pushWidths(); },
         });
+        if (!slot && templateParam) applyDesignIntentLayout(currentDesignOutcome());
 
         // (c) The inspector column, then hand it to the overlay so the object bar's
         // Text / More / Dims / Stroke buttons reveal its sections instead of opening
@@ -3773,6 +3927,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
           // The Narrate button under the Speaker notes, and the document's own narration
           // settings. Absent means neither is drawn (plans/180 section 8).
           narration: design.narrationActions,
+          narrationEnabled: () => designIntent !== 'carousel',
           fonts: design.fonts,
           voices: host.speech?.voices ? () => host.speech!.voices() : undefined,
           fields: design.fields,
@@ -3802,7 +3957,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         // every toggle reading `aria-pressed="false"` over an open column: a screen
         // reader told the panel was off while it was on, and the pressed styling never
         // painted. One sync here, once all three exist, with the real state.
-        designTopbar?.sync();
+        syncDesignIntentChrome();
 
         const prevChromeCleanup = viewEl._cleanup;
         viewEl._cleanup = () => {
@@ -3822,6 +3977,8 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
             try { part?.destroy(); } catch (e) { console.error(e); }
           }
           designInspector = designNav = designTopbar = null;
+          syncDesignIntentChrome = () => {};
+          applyDesignIntentLayout = () => {};
           prevChromeCleanup?.();
         };
       }).catch((err: unknown) => console.error('[design] chrome failed to load:', err));
@@ -5776,4 +5933,3 @@ function showUnsavedDialog(onSave: (() => Promise<void> | void) | null, onLeave:
     else if (act === 'cancel') modal.close(undefined);
   });
 }
-

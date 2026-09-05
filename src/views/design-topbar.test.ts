@@ -206,6 +206,34 @@ test('the back-pill island is inserted verbatim, so mountBackPill still finds it
   f.bar.destroy();
 });
 
+test('the outcome switch keeps a meaningful icon when density hides its label', () => {
+  let intent = 'slides';
+  const f = fixture({
+    intent: {
+      get: () => intent,
+      set: value => { intent = value; },
+      options: [
+        { value: 'slides', label: 'Slides' },
+        { value: 'carousel', label: 'LinkedIn carousel' },
+      ],
+    },
+  });
+  const button = f.at('intent');
+  assert.equal(button.querySelector('.dtb-label')?.textContent, 'Slides');
+  assert.ok(button.querySelector('svg.dtb-intent-kind'), 'compact state has an outcome glyph');
+  assert.ok(button.querySelector('svg.dtb-intent-caret'), 'the glyph still advertises a menu');
+  click(button);
+  const carousel = f.rows().find(row => row.textContent?.includes('LinkedIn carousel'));
+  assert.ok(carousel);
+  click(carousel);
+  assert.equal(intent, 'carousel');
+  assert.equal(button.querySelector('.dtb-label')?.textContent, 'LinkedIn carousel');
+  assert.match(button.querySelector('svg.dtb-intent-kind')?.outerHTML ?? '', /<svg/);
+  assert.equal(f.at('present').querySelector('.dtb-label')?.textContent, 'Preview');
+  assert.equal(f.at('present').getAttribute('aria-label'), 'Preview');
+  f.bar.destroy();
+});
+
 // ── the geometry contract ─────────────────────────────────────────────────────
 
 test('reserves its own height on the stage and dispatches canvas-resize EXACTLY once', () => {
@@ -651,6 +679,23 @@ test('the Present menu grows a Narrate row that calls the port once, and only wi
   click(rows[2]!);
   assert.deepEqual(calls, ['all'], 'the deck-wide verb, exactly once');
   assert.equal(f.menu(), null, 'and an action row closes the menu');
+  f.bar.destroy();
+});
+
+test('a live outcome gate removes narration from a carousel without removing Present', () => {
+  let enabled = true;
+  const f = fixture({
+    narrationEnabled: () => enabled,
+    narrate: { narrateAll: () => {}, narrateFrame: () => {}, status: () => 'pending' as const },
+  });
+  click(f.at('present-menu'));
+  assert.ok(f.rows().some((row) => row.textContent === 'Narrate'));
+  click(f.at('present-menu')); // close before the outcome changes
+  enabled = false;
+  f.bar.sync();
+  click(f.at('present-menu'));
+  assert.equal(f.rows().some((row) => row.textContent === 'Narrate'), false);
+  assert.ok(f.rows().some((row) => row.textContent === 'Present from this slide'), 'presentation itself remains available');
   f.bar.destroy();
 });
 

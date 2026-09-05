@@ -95,7 +95,24 @@ function categoryHtml(cat: FormatCategory, members: string[], current: string, l
 }
 
 /** The dropdown's inner markup - only categories that actually have members. */
-export function formatPanelInnerHtml(formats: string[], current: string, label: LabelFn): string {
+export function formatPanelInnerHtml(
+  formats: string[], current: string, label: LabelFn,
+  recommended: readonly string[] = [], expanded = false,
+): string {
+  const rec = [...new Set(recommended)].filter(f => formats.includes(f));
+  if (rec.length && rec.length < formats.length && !expanded) {
+    // A saved/deep-linked format outside the current recommendation must stay
+    // visible: compact means focused, never "your active choice disappeared".
+    const members = rec.includes(current) || !formats.includes(current) ? rec : [current, ...rec];
+    const chips = members.map(f =>
+      `<button type="button" class="fmt-chip" data-fmt="${escape(f)}" aria-pressed="${f === current}">${icon(iconFor(f), { className: 'fmt-chip-ic', size: 13 })}${escape(label(f))}</button>`
+    ).join('');
+    return `<div class="fmt-cat fmt-cat--recommended" data-cat="recommended">
+      <div class="fmt-cat-head">${escape(t('Recommended'))}</div>
+      <div class="fmt-cat-body">${chips}</div>
+    </div>
+    <button type="button" class="fmt-show-all" data-fmt-show-all>${escape(t('All formats'))} (${formats.length})</button>`;
+  }
   const byCat = new Map<FormatCategory, string[]>();
   for (const f of formats) {
     const c = formatCategory(f);
@@ -107,13 +124,20 @@ export function formatPanelInnerHtml(formats: string[], current: string, label: 
     .join('');
 }
 
-export function formatPanelHtml(formats: string[], current: string, label: LabelFn): string {
-  return `<div class="fmt-pop" data-fmt-panel hidden>${formatPanelInnerHtml(formats, current, label)}</div>`;
+export function formatPanelHtml(
+  formats: string[], current: string, label: LabelFn, recommended: readonly string[] = [],
+): string {
+  return `<div class="fmt-pop" data-fmt-panel hidden>
+    <div class="fmt-pop-head"><strong>${escape(t('Export format'))}</strong><button type="button" data-fmt-close aria-label="${escape(t('Close'))}">×</button></div>
+    <div data-fmt-panel-body>${formatPanelInnerHtml(formats, current, label, recommended)}</div>
+  </div>`;
 }
 
 export interface FormatPickerApi {
   /** Rebuild the dropdown after a narrowing (setFormats) and re-sync the trigger. */
   refresh(formats: string[], current: string): void;
+  /** Change the compact first view without changing which formats are available. */
+  setRecommended(formats: readonly string[]): void;
 }
 
 /**
@@ -121,11 +145,21 @@ export interface FormatPickerApi {
  * export panel element holding all three. Returns null when the tool has a
  * single format (no select rendered).
  */
-export function wireFormatPicker(root: HTMLElement, select: HTMLSelectElement | null, label: LabelFn): FormatPickerApi | null {
+export function wireFormatPicker(
+  root: HTMLElement, select: HTMLSelectElement | null, label: LabelFn,
+  options: { recommended?: readonly string[] } = {},
+): FormatPickerApi | null {
   const trigger = root.querySelector<HTMLButtonElement>('[data-fmt-trigger]');
   const panel = root.querySelector<HTMLElement>('[data-fmt-panel]');
   if (!trigger || !panel || !select) return null;
   const doc = trigger.ownerDocument;
+  let recommended = [...(options.recommended ?? [])];
+  let expanded = false;
+
+  const body = (): HTMLElement => panel.querySelector<HTMLElement>('[data-fmt-panel-body]') ?? panel;
+  const paint = (formats: string[], current: string): void => {
+    body().innerHTML = formatPanelInnerHtml(formats, current, label, recommended, expanded);
+  };
 
   // Tapping anywhere outside the open dropdown closes it, like any menu.
   const onOutside = (e: Event): void => {
@@ -134,6 +168,10 @@ export function wireFormatPicker(root: HTMLElement, select: HTMLSelectElement | 
     setOpen(false);
   };
   const setOpen = (open: boolean): void => {
+    if (open) {
+      expanded = false;
+      paint([...select.options].map(o => o.value), select.value);
+    }
     panel.hidden = !open;
     trigger.setAttribute('aria-expanded', String(open));
     if (open) doc.addEventListener('pointerdown', onOutside, true);
@@ -152,6 +190,16 @@ export function wireFormatPicker(root: HTMLElement, select: HTMLSelectElement | 
   trigger.addEventListener('click', () => setOpen(panel.hidden));
 
   panel.addEventListener('click', (e) => {
+    if ((e.target as HTMLElement).closest('[data-fmt-close]')) {
+      setOpen(false);
+      trigger.focus();
+      return;
+    }
+    if ((e.target as HTMLElement).closest('[data-fmt-show-all]')) {
+      expanded = true;
+      paint([...select.options].map(o => o.value), select.value);
+      return;
+    }
     const chip = (e.target as HTMLElement).closest<HTMLButtonElement>('.fmt-chip');
     if (chip?.dataset.fmt) {
       select.value = chip.dataset.fmt;
@@ -180,7 +228,14 @@ export function wireFormatPicker(root: HTMLElement, select: HTMLSelectElement | 
 
   return {
     refresh(formats: string[], current: string): void {
-      panel.innerHTML = formatPanelInnerHtml(formats, current, label);
+      expanded = false;
+      paint(formats, current);
+      sync();
+    },
+    setRecommended(formats: readonly string[]): void {
+      recommended = [...formats];
+      expanded = false;
+      paint([...select.options].map(o => o.value), select.value);
       sync();
     },
   };

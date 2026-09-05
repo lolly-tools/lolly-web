@@ -148,6 +148,20 @@
 .dtb-name:hover { background: hsl(var(--muted)); }
 .dtb-name:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; background: hsl(var(--background)); }
 
+.dtb-intent {
+  flex: none;
+  padding-inline: var(--sp-3);
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+  font-size: var(--fs-sm);
+}
+.dtb-intent .dtb-ic { order: 2; align-items: center; gap: 1px; }
+.dtb-intent .dtb-ic svg { width: calc(13px * var(--a11y-fs)); height: calc(13px * var(--a11y-fs)); }
+.dtb-intent-kind { display: none !important; }
+.design-topbar[data-density="icons"] .dtb-intent-kind,
+.design-topbar[data-density="compact"] .dtb-intent-kind,
+.design-topbar[data-density="min"] .dtb-intent-kind { display: block !important; }
+
 .dtb-profile { display: inline-flex; align-items: center; margin-inline-start: var(--sp-2); }
 
 /* The avatar is the SHARED `.profile-link` (components/profile-menu.ts), which pins
