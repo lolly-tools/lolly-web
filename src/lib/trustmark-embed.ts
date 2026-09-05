@@ -10,8 +10,14 @@
  * import from the export path when opts.durable is set, so onnxruntime-web + the
  * encoder model stay out of the boot budget. The encoder ONNX is produced by the
  * Andy-run scripts/convert-trustmark-encoder-onnx.py (Adobe ships ONNX for decode
- * only) and fetched once from same-origin /models/trustmark/encoder_<V>.onnx,
- * then cached in IndexedDB - same fetch-once pattern as the decoders.
+ * only) and fetched once through lib/ort.ts's shared model fetcher - the SAME
+ * fetch-once-then-IndexedDB path the decoders and the upscale/matte/OCR families
+ * use, so it resolves against the models base (MODELS_BASE): same-origin
+ * `/models/trustmark/` on the web build, https://lolli.li on the Tauri shells,
+ * which is what makes a durable export possible on desktop and mobile at all.
+ * Its cache identity (store, dir, file, version, size) lives in
+ * lib/durable-model.ts so the offline manager, the storage meter and the export
+ * gate can name the same bytes without importing this ORT-heavy module.
  *
  * ── Verification ledger - the ALGORITHM IS PROVEN, the browser run is not ─────
  * A port of Adobe's `TrustMark.encode` (python/trustmark/trustmark.py):
@@ -41,22 +47,17 @@
  */
 
 import { buildLollyDurablePayload, TRUSTMARK_PAYLOAD_BITS } from '@lolly/engine';
-import { openDB } from '../bridge/db.ts';
-import { loadOrt, readResponseWithProgress, type FetchProgress } from './ort.ts';
-import { MODELS_BASE } from './models-base.ts';
+import { createDebugLogger, createModelFetcher, loadOrt, type FetchProgress } from './ort.ts';
+import {
+  DURABLE_ENCODER_CACHE_VERSION, DURABLE_ENCODER_FILE, DURABLE_MODEL_DIR, DURABLE_MODEL_STORE,
+} from './durable-model.ts';
 
-/** The encoder variant we embed with. Q (256px) matches the decoder the deep
- *  scan tries first, so a Q-embedded mark reads back on the existing decode path. */
-const ENCODER_FILE = 'encoder_Q.onnx';
 const MODEL_RESOLUTION = 256;
 /** Reference WM_STRENGTH for the Q variant (P would be ×1.25 - not used here). */
 const WM_STRENGTH = 1.0;
 /** Below this the mark can't survive; skip (matches the decoder's detection floor
  *  intent + engine canCarryWatermark). */
 const MIN_SIDE = 256;
-/** Bump if the encoder model is replaced (retrained release) - invalidates the
- *  IndexedDB cache so stale bytes are never reused. Independent of the decoder's. */
-const ENCODER_CACHE_VERSION = 1;
 const PROVIDERS = ['wasm'] as const;
 
 export interface DurableEmbedOptions {
@@ -67,46 +68,39 @@ export interface DurableEmbedOptions {
   cacheOnly?: boolean;
 }
 
-interface CachedModel { bytes: ArrayBuffer; version: number; cachedAt: number }
+// Opt-in tracer, the decoders' shape (lib/ort.ts createDebugLogger): turn it on
+// with localStorage.setItem('lolly:durable:debug', '1') or
+// window.__DURABLE_DEBUG__ = true to see the encoder fetch (cache hit, URL,
+// status) behind a durable export.
+const dbg = createDebugLogger({
+  tag: 'trustmark-embed', storageKey: 'lolly:durable:debug', globalFlag: '__DURABLE_DEBUG__',
+});
 
-async function fetchEncoderBytes(cacheOnly: boolean, onProgress?: (p: FetchProgress) => void): Promise<ArrayBuffer | null> {
-  try {
-    const db = await openDB();
-    const cached = await db.get('trustmark-models', ENCODER_FILE) as CachedModel | undefined;
-    if (cached && cached.version === ENCODER_CACHE_VERSION && cached.bytes?.byteLength) return cached.bytes;
-  } catch { /* IDB unavailable - fall through to network */ }
-  if (cacheOnly) return null;
-
-  const url = `${MODELS_BASE}/models/trustmark/${ENCODER_FILE}`;
-  let resp: Response;
-  try { resp = await fetch(url); } catch { return null; }
-  if (!resp.ok) return null; // not converted yet (Andy hasn't run the script) - a plain 404
-  const bytes = await readResponseWithProgress(resp, onProgress);
-  // Same SPA-fallback guard as the decoder fetch: a dev server answers a missing
-  // model with index.html (200); an ONNX protobuf never starts with '<'.
-  const contentType = resp.headers.get('content-type') || '';
-  const head = bytes.byteLength ? new Uint8Array(bytes, 0, 1)[0] : 0;
-  if (contentType.includes('text/html') || head === 0x3c) return null;
-  try {
-    const db = await openDB();
-    await db.put('trustmark-models', { bytes, version: ENCODER_CACHE_VERSION, cachedAt: Date.now() }, ENCODER_FILE);
-  } catch { /* best-effort cache */ }
-  return bytes;
-}
+// The shared fetch-once/IndexedDB-forever fetcher (lib/ort.ts) - identical body
+// to the hand-rolled one this replaced (IDB read, cacheOnly miss, MODELS_BASE
+// URL, 404/offline null, the SPA-fallback HTML guard, best-effort cache write),
+// now in one place with the decoder and image-model families. Its own cache
+// version, so replacing the encoder never invalidates the decoders.
+const fetchEncoderBytes = createModelFetcher({
+  store: DURABLE_MODEL_STORE,
+  dir: DURABLE_MODEL_DIR,
+  version: DURABLE_ENCODER_CACHE_VERSION,
+  dbg,
+});
 
 /**
  * Pre-fetch the durable-watermark ENCODER into IndexedDB so a user can download it
- * IN ADVANCE from the profile's offline section - it is otherwise lazy-only, fetched
- * on the first durable export. Best-effort: returns false on the routine 404 when the
- * encoder has not been converted yet (scripts/convert-trustmark-encoder-onnx.py), so a
- * miss must never fail the offline "Verify" part - exactly like prefetchContentSealModel.
- * Shares the 'trustmark-models' IDB store the deep-scan decoders use, so removePart('verify')
- * clears it too.
+ * IN ADVANCE from the profile's offline section ("Durable credential") - it is
+ * otherwise lazy-only, fetched on the first durable export. Best-effort: returns
+ * false on the routine 404 when the encoder is not served yet, so a miss reports
+ * itself instead of throwing. Shares the 'trustmark-models' IDB store with the
+ * deep-scan decoders, but keys are owned per part: removePart('durable') deletes
+ * this file, removePart('verify') deletes the decoder keys and leaves it.
  */
 export async function prefetchTrustmarkEncoder(
   opts: { onProgress?: (p: FetchProgress) => void } = {},
 ): Promise<boolean> {
-  return !!(await fetchEncoderBytes(false, opts.onProgress));
+  return !!(await fetchEncoderBytes(DURABLE_ENCODER_FILE, false, opts.onProgress));
 }
 
 type OrtModule = typeof import('onnxruntime-web');
@@ -115,7 +109,7 @@ let sessionPromise: Promise<InferenceSession | null> | null = null;
 async function getEncoderSession(ort: OrtModule, cacheOnly: boolean): Promise<InferenceSession | null> {
   if (sessionPromise) return sessionPromise;
   const p = (async (): Promise<InferenceSession | null> => {
-    const bytes = await fetchEncoderBytes(cacheOnly);
+    const bytes = await fetchEncoderBytes(DURABLE_ENCODER_FILE, cacheOnly);
     if (!bytes) return null;
     try {
       return await ort.InferenceSession.create(new Uint8Array(bytes), { executionProviders: [...PROVIDERS] });

@@ -28,10 +28,11 @@
  *
  * ONE RIGHT SIDEBAR. Every full-height panel the app can dock lives in THIS column -
  * the Neurospicy player, the Design inspector, the export sheet, the transcript - so a
- * view never grows a second right-hand column beside it. One or two full panels share
- * the vertical split they always had; three or more switch to a TAB STRIP, because a
- * third of a column each is not a usable panel. The compact zoom bar is not a full
- * panel: it is a fixed-height bar that always sits at the top, above the strip.
+ * view never grows a second right-hand column beside it. Unrelated pairs can share a
+ * vertical split, but Inspector + Export are tabs even by themselves: they are competing
+ * full-workflow surfaces, and half-height makes both harder to use. Three or more panels
+ * also use a TAB STRIP. The compact zoom bar is not a full panel: it is a fixed-height
+ * bar that always sits at the top, above the strip.
  *
  * `onDockChange` reports every occupancy change, so chrome outside this module (the
  * Design top bar, the stage zoom HUD) can follow what is docked without polling.
@@ -110,6 +111,13 @@ let geom: DockGeom = load();
 let col: HTMLElement | null = null;
 let body: HTMLElement | null = null;
 let preview: HTMLElement | null = null;
+// Docked panels scroll and clip their contents, so the ordinary `data-tip`
+// pseudo-element cannot promise to stay visible there. One body-level bubble
+// is deliberately owned by the dock and positioned against the hovered/focused
+// control. It is visual-only (the triggering control keeps its own accessible
+// name), never intercepts a pointer, and is removed with the column.
+let dockTooltip: HTMLElement | null = null;
+let dockTooltipTarget: HTMLElement | null = null;
 let resizeBound = false;
 const dockListeners = new Set<DockChangeListener>();
 let notifying = false;
@@ -156,12 +164,12 @@ function injectCss(): void {
   position: fixed; inset-block: 0 var(--design-timeline-h, 0px); inset-inline-end: 0; z-index: 9400;
   width: var(--dock-w, ${DEFAULT_W}px);
   display: flex; flex-direction: column;
-  background: hsl(var(--background)); 
-  box-shadow: -8px 0 24px -18px rgba(0,0,0,.5);
+  background: var(--ui-color-surface-canvas);
+  box-shadow: var(--ui-elevation-sheet);
 }
 /* Inset padding so each docked occupant reads as a distinct card/pane (the column
    background shows around it), not an edge-to-edge slab. */
-.edge-dock-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding: 8px; box-sizing: border-box; }
+.edge-dock-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding: var(--ui-space-control-block); box-sizing: border-box; }
 .edge-dock-slot { min-height: 0; overflow: auto; position: relative; }
 .edge-dock-slot--fill { flex: 1 1 auto; }
 /* A tabbed column mounts every panel and shows one. Stated so the slot's own display
@@ -173,33 +181,33 @@ function injectCss(): void {
    strip of four is a guessing game. */
 .edge-dock-tabs {
   flex: 0 0 auto; display: flex; gap: 2px; margin-block-end: 8px;
-  padding: 2px; border-radius: 8px; background: hsl(var(--muted) / .6);
+  padding: 2px; border-radius: var(--ui-radius-control); background: color-mix(in srgb, var(--ui-color-surface-muted) 60%, transparent);
   overflow-x: auto; scrollbar-width: none;
 }
 .edge-dock-tab {
   flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 4px;
-  padding: 4px 6px; border: 0; border-radius: 6px; cursor: pointer;
-  background: transparent; color: hsl(var(--muted-foreground));
+  padding: 4px 6px; border: 0; border-radius: var(--ui-radius-choice); cursor: pointer;
+  background: transparent; color: var(--ui-color-text-muted);
   font: inherit; font-size: calc(11px * var(--a11y-fs)); line-height: 1.2;
 }
-.edge-dock-tab:hover { color: hsl(var(--foreground)); }
+.edge-dock-tab:hover { color: var(--ui-color-text-default); }
 .edge-dock-tab[aria-selected="true"] {
-  background: hsl(var(--background)); color: hsl(var(--foreground));
-  box-shadow: 0 1px 2px hsl(var(--border) / .8);
+  background: var(--ui-color-surface-raised); color: var(--ui-color-text-default);
+  box-shadow: var(--ui-elevation-control);
 }
-.edge-dock-tab:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }
+.edge-dock-tab:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: -2px; }
 .edge-dock-tab-ic { flex: none; display: inline-flex; }
 .edge-dock-tab-ic svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
 .edge-dock-tab-lb { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A docked occupant is a pane now, not a floating pill/rounded card: drop its large
    outer radius to a small pane corner. Overrides the panel's own (pill or big) radius. */
-.edge-dock-slot > * { border-radius: 6px !important; }
+.edge-dock-slot > * { border-radius: var(--ui-radius-choice) !important; }
 /* The compact bar (zoom HUD): fixed height, sits at the top, centred, and does NOT
    stretch its child to fill (that override lives below, scoped away from it). */
 .edge-dock-slot--compact { flex: 0 0 auto; overflow: visible; display: flex; justify-content: center; padding: 0; }
 /* A gap (the column background) separates the compact bar from a panel below it - it
    has no resize divider, and the gap reads as "two panes". */
-.edge-dock-slot--compact:not(:last-child) { margin-block-end: 8px; }
+.edge-dock-slot--compact:not(:last-child) { margin-block-end: var(--ui-space-control-block); }
 .edge-dock-slot--compact > * {
   position: static !important; inset: auto !important; margin: 0 !important;
   height: auto !important; width: auto !important; max-width: 100% !important;
@@ -221,36 +229,118 @@ function injectCss(): void {
 }
 /* The grip takes the keyboard too (arrows resize, Enter puts the column away), so it
    has to paint a ring when focused. */
-.edge-dock-grip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }
+.edge-dock-grip:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: -2px; }
 .edge-dock-divider {
   flex: 0 0 auto; height: 8px; cursor: row-resize; touch-action: none;
   background:
-    linear-gradient(hsl(var(--border)), hsl(var(--border))) center / 28px 2px no-repeat;
+    linear-gradient(var(--ui-color-border-default), var(--ui-color-border-default)) center / 28px 2px no-repeat;
 }
 .edge-dock-collapse {
-  flex: 0 0 auto; height: 28px; border: 0; background: hsl(var(--muted));
-  color: hsl(var(--muted-foreground)); cursor: pointer; font: inherit;
+  flex: 0 0 auto; height: 28px; border: 0; background: var(--ui-color-surface-muted);
+  color: var(--ui-color-text-muted); cursor: pointer; font: inherit;
 }
 .edge-dock.is-collapsed .edge-dock-body { display: none; }
 .edge-dock-rail { display: none; flex-direction: column; align-items: center; gap: 6px; padding: 6px 0; }
 .edge-dock.is-collapsed .edge-dock-rail { display: flex; }
 .edge-dock-rail-btn {
-  width: 34px; height: 34px; border: 0; border-radius: 8px; cursor: pointer;
-  background: transparent; color: hsl(var(--foreground));
+  width: 34px; height: 34px; border: 0; border-radius: var(--ui-radius-control); cursor: pointer;
+  background: transparent; color: var(--ui-color-text-default);
   display: inline-flex; align-items: center; justify-content: center;
 }
-.edge-dock-rail-btn:hover { background: hsl(var(--muted)); }
+.edge-dock-rail-btn:hover { background: var(--ui-color-surface-muted); }
 .edge-dock-rail-btn svg { width: 18px; height: 18px; }
 .edge-dock-drop {
   position: fixed; inset-block: 0 var(--design-timeline-h, 0px); inset-inline-end: 0; width: var(--dock-w, ${DEFAULT_W}px);
   z-index: 9399; pointer-events: none;
-  background: hsl(var(--primary) / .08);
-  outline: 2px dashed hsl(var(--primary) / .5); outline-offset: -6px;
+  background: var(--ui-color-selection-surface);
+  outline: 2px dashed var(--ui-color-selection-border); outline-offset: -6px;
+}
+/* A dock panel is an overflow boundary. Tooltips belong above it, not inside
+   its scrollport, otherwise the leftmost Arrange button can show only the tail
+   of “Distribute horizontally”. The delegated body-level tooltip below uses
+   this same app vocabulary, while this selector suppresses the clipped
+   pseudo-element for the one active dock trigger. */
+.edge-dock [data-tip][data-dock-tip-managed]::before,
+.edge-dock [data-tip][data-dock-tip-managed]::after { display: none; }
+.edge-dock-tooltip {
+  position: fixed; z-index: 9501; pointer-events: none;
+  padding: 4px 8px; border-radius: var(--ui-radius-control);
+  background: var(--ui-color-text-default); color: var(--ui-color-surface-canvas);
+  box-shadow: var(--ui-elevation-floating);
+  font: 600 var(--ui-type-label) / 1 var(--ui-type-ui-family);
+  max-width: calc(100vw - 16px); white-space: normal; overflow-wrap: anywhere;
+  text-align: center;
 }
 @media (prefers-reduced-motion: no-preference) {
-  html[data-edge-dock]:not([data-a11y-motion="reduce"]) #view { transition: margin-inline-end .22s ease; }
+  html[data-edge-dock]:not([data-a11y-motion="reduce"]) #view { transition: margin-inline-end var(--ui-motion-navigation) var(--ui-motion-standard); }
 }`;
   document.head.appendChild(s);
+}
+
+function hideDockTooltip(): void {
+  if (dockTooltipTarget) delete dockTooltipTarget.dataset.dockTipManaged;
+  dockTooltipTarget = null;
+  if (dockTooltip) dockTooltip.hidden = true;
+}
+
+function onDockTooltipResize(): void { hideDockTooltip(); }
+
+/** Place the dock tooltip inside the viewport, preferring above the trigger and
+ * falling below only when the dock's top edge would clip it. */
+function showDockTooltip(target: HTMLElement): void {
+  const label = target.getAttribute('data-tip')?.trim();
+  if (!label || !col?.contains(target)) { hideDockTooltip(); return; }
+  if (!dockTooltip) {
+    dockTooltip = document.createElement('div');
+    dockTooltip.className = 'edge-dock-tooltip';
+    dockTooltip.setAttribute('role', 'tooltip');
+    dockTooltip.hidden = true;
+    document.body.appendChild(dockTooltip);
+  }
+  if (dockTooltipTarget && dockTooltipTarget !== target) delete dockTooltipTarget.dataset.dockTipManaged;
+  dockTooltipTarget = target;
+  target.dataset.dockTipManaged = '';
+  dockTooltip.textContent = label;
+  dockTooltip.hidden = false;
+  // Measure offscreen first: it avoids a visible 0,0 frame and lets a long
+  // label be clamped against either viewport edge rather than its scroll slot.
+  dockTooltip.style.left = '-9999px';
+  dockTooltip.style.top = '-9999px';
+  const anchor = target.getBoundingClientRect();
+  const bubble = dockTooltip.getBoundingClientRect();
+  const margin = 8;
+  const left = Math.max(margin, Math.min(anchor.left + anchor.width / 2 - bubble.width / 2, window.innerWidth - bubble.width - margin));
+  const above = anchor.top - bubble.height - margin;
+  const top = above >= margin ? above : Math.min(window.innerHeight - bubble.height - margin, anchor.bottom + margin);
+  dockTooltip.style.left = `${Math.round(left)}px`;
+  dockTooltip.style.top = `${Math.round(Math.max(margin, top))}px`;
+}
+
+function wireDockTooltips(root: HTMLElement): void {
+  const trigger = (node: EventTarget | null): HTMLElement | null =>
+    node && typeof (node as { closest?: unknown }).closest === 'function'
+      ? (node as HTMLElement).closest<HTMLElement>('[data-tip]') : null;
+  root.addEventListener('pointerover', (event) => {
+    const target = trigger(event.target);
+    if (target) showDockTooltip(target);
+  });
+  root.addEventListener('pointerout', (event) => {
+    const target = trigger(event.target);
+    if (target && target === dockTooltipTarget && !target.contains(event.relatedTarget as Node | null)) hideDockTooltip();
+  });
+  root.addEventListener('focusin', (event) => {
+    const target = trigger(event.target);
+    if (target) showDockTooltip(target);
+  });
+  root.addEventListener('focusout', () => {
+    queueMicrotask(() => {
+      if (!dockTooltipTarget || !dockTooltipTarget.matches(':focus')) hideDockTooltip();
+    });
+  });
+  // A scrolled trigger no longer has the geometry the bubble was placed from;
+  // hiding it is honest, and the next hover/focus repositions it precisely.
+  root.addEventListener('scroll', hideDockTooltip, true);
+  window.addEventListener('resize', onDockTooltipResize, { passive: true });
 }
 
 function ensureColumn(): void {
@@ -265,6 +355,7 @@ function ensureColumn(): void {
   // export panel removed the canvas selection. free-canvas reads this one attribute on
   // any chrome root that holds focusable controls over the canvas.
   col.setAttribute('data-canvas-keys', 'off');
+  wireDockTooltips(col);
 
   const grip = document.createElement('div');
   grip.className = 'edge-dock-grip resize-grip';
@@ -298,6 +389,10 @@ function ensureColumn(): void {
 
 function teardownColumn(): void {
   if (!col) return;
+  hideDockTooltip();
+  window.removeEventListener('resize', onDockTooltipResize);
+  dockTooltip?.remove();
+  dockTooltip = null;
   col.remove();
   col = null; body = null;
   document.documentElement.removeAttribute('data-edge-dock');
@@ -329,7 +424,12 @@ function relayout(): void {
   if (!present.length) { teardownColumn(); return; }
 
   const fulls = fullPanels();
-  const tabbed = fulls.length > 2;
+  // Design's Inspector and the export sheet are alternate right-side workflows, not a
+  // useful vertical pairing: the inspector needs room for property sections and export
+  // needs room for its format/options form. Keep the established split for other pairs
+  // (for example the player and transcript), but name this pair with the same tabs a
+  // crowded dock already uses.
+  const tabbed = fulls.length > 2 || (fulls.includes('inspector') && fulls.includes('export'));
 
   body.textContent = '';
   const slots = new Map<PanelId, HTMLElement>();

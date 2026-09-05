@@ -40,6 +40,9 @@
  */
 
 import { openDB } from './db.ts';
+// Static and safe: register-user-fonts only reaches THIS module through a dynamic
+// import, so there is no evaluation cycle, and the boot graph stays as it was.
+import { isFontOf } from '../lib/register-user-fonts.ts';
 import { resolveSuseFontUrl } from './text-svg.ts';
 import type { FontStyleSlice } from './text-svg.ts';
 import { discoverFontFaces } from './fontface-discovery.ts';
@@ -268,8 +271,19 @@ async function buildRegistry(): Promise<Map<string, RegistryFace[]>> {
     const records = await db.getAll('user-assets') as Array<{
       id: string; type: string; meta?: Record<string, unknown>;
     }>;
+    // Only the ACTIVE design system's faces resolve for vector export (plans/186
+    // section 3.2): two systems may both hold "Inter" under their own namespaces,
+    // and the one on screen is the one an outline must come from. The pointer is
+    // read straight off the profile KV store, the way this module already reads
+    // the user-assets store - it has no host. A device with no pointer yet is a
+    // legacy install whose rows all belong to `default`.
+    let systemId: string | null = null;
+    try {
+      const stored = await db.get('profile', 'active-design-system');
+      systemId = typeof stored === 'string' && stored ? stored : null;
+    } catch { systemId = null; }
     for (const r of records) {
-      if (r.type !== 'font' || !r.id.startsWith(USER_FONT_PREFIX)) continue;
+      if (r.type !== 'font' || !isFontOf(r.id, systemId)) continue;
       const family = String(r.meta?.family ?? '').trim();
       if (!family) continue;
       const key = family.toLowerCase();

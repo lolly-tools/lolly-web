@@ -33,13 +33,13 @@
  *     allowed. Never at boot.
  *   - A notification fires only when document.hidden, on a job reaching `done`.
  *     Clicking it focuses the tab.
- *   - Tauri gets a clearly-marked branch that (for now) no-ops to the web path;
- *     see notifyDone()/requestNotifyPermission().
+ *   - The channel is probed, not assumed: a shell that installs its own
+ *     `window.__lollyNotify` (the desktop app's notification plugin) gets that;
+ *     everything else uses the web Notification API. See shellNotify().
  */
 import { subscribe, jobsSnapshot, cancelJob, type Job, type JobStatus } from './jobs.ts';
 import { getFloatCluster } from './float-cluster.ts';
 import { t, tRaw } from '../i18n.ts';
-import { isTauriShell } from './instance-choice.ts';
 import { isFlagOnSync, perfHudOn, WOBBLY_FLAG } from '../feature-flags.ts';
 import type { WobbleHandle } from './wobble.ts';
 
@@ -347,15 +347,36 @@ function maybeRequestPermission(jobs: readonly Job[]): void {
   requestNotifyPermission();
 }
 
+/**
+ * The host shell's own notification channel, when it has one (plans/202 WP4.1).
+ *
+ * The Tauri desktop shell installs `window.__lollyNotify` from
+ * shells/tauri-desktop/bridge-overrides/notify.ts, which posts through
+ * tauri-plugin-notification - the real platform service, so the notice survives
+ * the window closing and carries the app's name and icon. That package cannot be
+ * imported here: the Tauri shells are not npm workspaces, so a static import
+ * breaks tsc and the web Vite build. A probe for the global costs nothing and
+ * upgrades the desktop app with no change at any call site.
+ *
+ * Absent everywhere else - a browser, the mobile shell, a desktop build where
+ * the plugin failed to load - and then the web Notification API below is the
+ * channel. That path works inside the Tauri webview too, so a missing global is
+ * a smaller notification, never no notification.
+ */
+interface ShellNotify {
+  request(): void;
+  send(title: string, body: string): void;
+}
+function shellNotify(): ShellNotify | null {
+  const n = (globalThis as { __lollyNotify?: Partial<ShellNotify> }).__lollyNotify;
+  return n && typeof n.request === 'function' && typeof n.send === 'function'
+    ? (n as ShellNotify)
+    : null;
+}
+
 function requestNotifyPermission(): void {
-  if (isTauriShell()) {
-    // TODO(plans/124 WP-F · Tauri): request via @tauri-apps/plugin-notification
-    // (isPermissionGranted/requestPermission). It is NOT statically importable in
-    // the web build - the Tauri shells are not npm workspaces, so the package is
-    // unresolvable here and a static import breaks tsc + the Vite build. Falling
-    // through to the web Notification API for now, which works inside the Tauri
-    // webview too, so desktop still gets a prompt.
-  }
+  const shell = shellNotify();
+  if (shell) { shell.request(); return; }
   try {
     if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
       void Notification.requestPermission();
@@ -378,10 +399,10 @@ function fireCompletionNotices(jobs: readonly Job[]): void {
 function notifyDone(job: Job): void {
   // In-tab: the toast's completed state is the whole story; no OS notification.
   if (typeof document !== 'undefined' && !document.hidden) return;
-  if (isTauriShell()) {
-    // TODO(plans/124 WP-F · Tauri): sendNotification() via the notification plugin
-    // (see requestNotifyPermission for why it isn't imported here). Web path below
-    // still fires inside the Tauri webview, so this is not a regression on desktop.
+  const shell = shellNotify();
+  if (shell) {
+    shell.send(job.title || tRaw('Job finished'), tRaw('Ready in Lolly.'));
+    return;
   }
   try {
     if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;

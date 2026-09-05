@@ -143,7 +143,7 @@ test('both re-anchor hooks are optional calls on a holder that stays null', () =
     // `refitStage` is the re-fit entry point since plan 179 C5 (at Fit it runs the full
     // fit - canvas, then the artboard union; a user-zoomed view is left alone). What is
     // pinned here is unchanged: ONE observer, the re-fit first, the re-anchor after it.
-    /const ro = new ResizeObserver\(\(\) => \{ refitStage\(\); collabReanchor\?\.\(\); \}\);/,
+    /const ro = new ResizeObserver\(\(\) => \{\s*refitStage\(\);\s*collabReanchor\?\.\(\);\s*\}\);/,
     'the stage ResizeObserver re-anchors the overlay after the canvas re-fits',
   );
   // The rAF paint: the canvas rebuild moves every rect the rings are anchored from.
@@ -160,7 +160,7 @@ test('both re-anchor hooks are optional calls on a holder that stays null', () =
 
 test('teardown runs from _cleanup, before the op plumbing detaches', () => {
   const cleanup = bodyAfter(CODE, 'viewEl._cleanup = () => {');
-  assert.match(cleanup, /collabTeardown\?\.\(\); collabTeardown = null;/,
+  assert.match(cleanup, /collabTeardown\?\.\(\);\s*collabTeardown = null;/,
     'a navigation away mid-collab must leave zero timers, listeners and frames behind');
   assert.ok(
     cleanup.indexOf('collabTeardown') < cleanup.indexOf('collab?.detach()'),
@@ -179,13 +179,13 @@ test('a navigation DURING the import cannot leak a live transport', () => {
   assert.match(BLOCK, /aborted = true;/);
   assert.match(BLOCK, /if \(aborted\) built\.teardown\(\);/,
     'and what lands after the abort is disposed on arrival');
-  assert.match(BLOCK, /else \{ mounted = built; collabReanchor = \(\) => built\.reanchor\(\); \}/);
+  assert.match(BLOCK, /else \{\s*mounted = built;\s*collabReanchor = \(\) => built\.reanchor\(\);\s*\}/);
 });
 
 test('a presence stack that fails to load costs the collab, never the tool', () => {
   assert.match(BLOCK, /catch \(e\) \{/);
   assert.match(BLOCK, /console\.warn\('\[lolly:collab\] presence failed to mount', e\);/);
-  assert.match(BLOCK, /try \{ collabHandle\.close\(\); \}/,
+  assert.match(BLOCK, /try \{\s*collabHandle\.close\(\);\s*\}/,
     'the transport is closed rather than left dangling');
   assert.match(BLOCK, /collabTeardown = null;/,
     'and the holder is cleared so _cleanup does not call a half-built teardown');

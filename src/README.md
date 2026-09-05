@@ -5,22 +5,22 @@ This file exists so you can find the code for a feature without reading all of i
 The counts below are GENERATED - `npm run build:web-src-readme`, checked in CI by `npm run check:web-src-readme`, so they cannot rot the way the hand-measured ones did. They convey proportion; don't cite them as an API.
 
 <!-- web-src-dirs:start -->
-Roughly 476,000 lines of TypeScript, tests included, and 44,000 lines of CSS.
+Roughly 493,000 lines of TypeScript, tests included, and 44,000 lines of CSS.
 
 | Directory | Source | Tests | CSS |
 |---|---|---|---|
-| `views/` | 106 files, 120,430 lines | 112 files, 47,922 lines | none |
-| `lib/` | 385 files, 101,670 lines | 245 files, 53,829 lines | 7 files, 1,098 lines |
-| `bridge/` | 93 files, 43,111 lines | 76 files, 18,873 lines | none |
-| `components/` | 45 files, 20,281 lines | 26 files, 8,941 lines | 2 files, 221 lines |
-| `collab/` | 18 files, 12,959 lines | 20 files, 13,682 lines | none |
+| `views/` | 115 files, 131,629 lines | 116 files, 48,280 lines | none |
+| `lib/` | 399 files, 104,557 lines | 259 files, 55,567 lines | 7 files, 1,098 lines |
+| `bridge/` | 95 files, 42,162 lines | 77 files, 19,308 lines | none |
+| `components/` | 45 files, 20,361 lines | 26 files, 8,957 lines | 2 files, 221 lines |
+| `collab/` | 18 files, 12,959 lines | 20 files, 13,683 lines | none |
 | `pro/` | 20 files, 7,906 lines | 10 files, 1,666 lines | 2 files, 1,210 lines |
-| `org/` | 16 files, 5,619 lines | 12 files, 3,678 lines | none |
-| `catalog/` | 2 files, 801 lines | 1 file, 86 lines | none |
+| `org/` | 17 files, 5,805 lines | 13 files, 3,820 lines | none |
+| `catalog/` | 2 files, 836 lines | 1 file, 86 lines | none |
 | `ext/` | 2 files, 136 lines | 1 file, 86 lines | none |
-| `styles/` | none | 4 files, 837 lines | 80 files, 41,163 lines |
+| `styles/` | none | 4 files, 837 lines | 80 files, 41,896 lines |
 
-Plus 41 `.ts`/`.js` files at the top level of `src/`, 13,580 lines all told, of which 16 are tests and 3 are ambient declarations. `main.ts` is 1,983 of that.
+Plus 42 `.ts`/`.js` files at the top level of `src/`, 14,596 lines all told, of which 17 are tests and 3 are ambient declarations. `main.ts` is 2,028 of that.
 <!-- web-src-dirs:end -->
 
 ## How do I find a feature
@@ -37,7 +37,7 @@ If the feature is about producing bytes rather than showing a screen, skip the v
 
 **`views/`**: one module per screen, each lazily imported by the `main.ts` switch, plus the sub-modules those screens split into. The routed entry points are `tool.ts`, `gallery.ts`, `catalog.ts`, `projects.ts`, `profile.ts`, `dashboard.ts`, `valid.ts` (the `/verify` Content Credentials check), `multi-edit.ts`, `start.ts` (the brand studio), `color-lab.ts`, `pdf-extract.ts` and `components.ts` (the browsable component library). Everything else in here is a piece of one of those: `tool-inputs.ts`, `tool-actions.ts`, `tool-stage-nav.ts` and `tool-types.ts` belong to the tool view; `free-canvas*.ts`, `timeline-panel.ts`, `deck-editor.ts`, `doc-editor.ts` and `rich-text.ts` are editor surfaces; `pdf-import.ts`, `pptx-import.ts`, `idml-import.ts` and `design-import.ts` are ingest paths; `picker.ts` is the asset picker that `host.assets.pick` lazily loads.
 
-**`bridge/`**: the web implementation of `HostV1`, one file per capability, composed by `index.ts`. Everything to do with turning a rendered DOM node into a file is here: `export.ts` and its satellites (`export-pdf-vector.ts`, `export-pdfx.ts`, `export-css.ts`, `export-image-meta.ts`, `export-pptx.ts`), `svg-ir.ts`, `text.ts` and `text-svg.ts` (HarfBuzz text-to-path), `font-registry.ts`, the `sequence-*.ts` and `video-encode*.ts` family for motion export, plus `state.ts`, `assets.ts`, `pdf.ts`, `pptx.ts`, `capture.ts`, `recorder.ts`, `media.ts`, `images.ts`, `audio.ts` and `viz.ts`. Four of these files are imported directly by `shells/cli` (`pdf.ts`, `pptx.ts`, `net.ts`, `svg-ir.ts`) and four are replaced wholesale at build time by the Tauri desktop shell (`state.ts`, `capture.ts`, `export.ts`, `capabilities-provided.ts`; the mobile shell overrides the same set minus `capture.ts`), so treat their public exports as a contract with other shells rather than as private.
+**`bridge/`**: the web implementation of `HostV1`, one file per capability, composed by `index.ts`. Everything to do with turning a rendered DOM node into a file is here: `export.ts` and its satellites (`export-pdf-vector.ts`, `export-pdfx.ts`, `export-css.ts`, `export-image-meta.ts`, `export-pptx.ts`), `svg-ir.ts`, `text.ts` and `text-svg.ts` (HarfBuzz text-to-path), `font-registry.ts`, the `sequence-*.ts` and `video-encode*.ts` family for motion export, plus `state.ts`, `assets.ts`, `pdf.ts`, `pptx.ts`, `capture.ts`, `recorder.ts`, `media.ts`, `images.ts`, `audio.ts` and `viz.ts`. Six of them are now re-export shims over `packages/node-shell/src/` (`pdf.ts`, `pdf-structure.ts`, `pptx.ts`, `net.ts`, `svg-ir.ts`, `text-svg.ts`) - the terminal shells run the same code, and plans/202 WP1.1 moved the implementations into the package so `shells/cli` no longer imports across the submodule boundary. Treat their public exports as a contract with other shells and edit the node-shell file, not the shim. Four more are replaced wholesale at build time by the Tauri desktop shell (`state.ts`, `capture.ts`, `export.ts`, `capabilities-provided.ts`; the mobile shell overrides the same set minus `capture.ts`), which puts their public exports under the same rule.
 
 **`lib/`**: 144 modules of shared helpers, and the part of the tree that is honestly **grep-first**. There is no hierarchy and no index; names are descriptive and that is the whole navigation story. Clusters worth knowing exist rather than discovering by accident: brand (`brand-editor.ts`, `brand-doc.ts`, `brand-logos.ts`, `brand-seal.ts`, `brand-studio-tabs.ts`), fonts (`font-utils.ts`, `google-fonts.ts`, `load-user-fonts.ts`, `register-user-fonts.ts`), audio and atmosphere (`audio-*.ts`, `ambience-*.ts`, `atmosphere.ts`, `butterchurn-viz.ts`), colour (`color-formats.ts`, `color-namer.ts`, `color-profiles.ts`, `display-gamut.ts`, `gamut-slider.ts`), policy and gating (`export-policy.ts`, `field-policy.ts`, `input-policy.ts`, `c2pa-policy.ts`), and the mount chokepoint `mount-runtime.ts`. When you want a helper, grep `lib/` for the noun before you write a new file.
 
@@ -58,22 +58,22 @@ Do not be ambushed by these. The largest source files, by line count:
 <!-- web-src-largest:start -->
 | Lines | File | Direct test coverage |
 |---|---|---|
-| 13,700 | `views/free-canvas.ts` | yes, nine `free-canvas-*.test.ts` files |
-| 11,286 | `bridge/export.ts` | yes, but mostly gated. `export-audio-bed.test.ts` imports `bedStartOffset` and `connectMusic` directly and always runs; the SVG and PDF emission is covered by ten `chromiumOrSkip()` suites (`export-m3`, `export-paint-order`, `export-stroke-paint`, `export-shadow-fidelity`, `export-pdf-shadow-fidelity`, `export-emf-eps-shadow`, `export-atomic-inline`, `export-backdrop-blur`, `export-form-controls`, `export-text-emission`) that esbuild-bundle the real `renderSvgFromHtml` and drive it in Chromium, and which **self-skip** when no Chromium is installed. `export-text-emission` is the newest and covers the `<path>`-vs-`<text>` decision layer specifically; unlike the SUSE-gated golden suite it is brand-independent, so it runs on `lolly-start` too. |
-| 9,367 | `views/timeline-panel.ts` | yes |
-| 6,811 | `views/catalog.ts` | partial - the selection model (visibility, filetype filter, search, favourites dedupe, selectable ids, prune) is extracted to `catalog-filter.ts` and covered by `catalog-filter.test.ts`; the 3,000-line `mountCatalog` body around it is not. |
-| 6,368 | `lib/brand-editor.ts` | none |
-| 5,780 | `views/tool.ts` | partial - the undo/redo model (coalescing, the byte-carrying filter, the cap, the redo chain) is extracted to `tool-history.ts` and covered by `tool-history.test.ts`; the rest of `mountTool` is not. |
-| 4,397 | `views/tool-actions.ts` | yes |
+| 16,892 | `views/free-canvas.ts` | yes, nine `free-canvas-*.test.ts` files |
+| 11,356 | `bridge/export.ts` | yes, but mostly gated. `export-audio-bed.test.ts` imports `bedStartOffset` and `connectMusic` directly and always runs; the SVG and PDF emission is covered by ten `chromiumOrSkip()` suites (`export-m3`, `export-paint-order`, `export-stroke-paint`, `export-shadow-fidelity`, `export-pdf-shadow-fidelity`, `export-emf-eps-shadow`, `export-atomic-inline`, `export-backdrop-blur`, `export-form-controls`, `export-text-emission`) that esbuild-bundle the real `renderSvgFromHtml` and drive it in Chromium, and which **self-skip** when no Chromium is installed. `export-text-emission` is the newest and covers the `<path>`-vs-`<text>` decision layer specifically; unlike the SUSE-gated golden suite it is brand-independent, so it runs on `lolly-start` too. |
+| 10,838 | `views/timeline-panel.ts` | yes |
+| 7,173 | `views/tool.ts` | partial - the undo/redo model (coalescing, the byte-carrying filter, the cap, the redo chain) is extracted to `tool-history.ts` and covered by `tool-history.test.ts`; the rest of `mountTool` is not. |
+| 7,096 | `views/catalog.ts` | partial - the selection model (visibility, filetype filter, search, favourites dedupe, selectable ids, prune) is extracted to `catalog-filter.ts` and covered by `catalog-filter.test.ts`; the 3,000-line `mountCatalog` body around it is not. |
+| 6,423 | `lib/brand-editor.ts` | none |
+| 5,351 | `views/tool-actions.ts` | yes |
 | 4,232 | `views/picker.ts` | partial - the format and embeddability rules are extracted to `picker-formats.ts` and covered by `picker-formats.test.ts`, plus `picker-initial-tab.test.ts`; the 3,000-line panel body is not. |
-| 3,960 | `views/valid.ts` | `valid-verdict.test.ts` only |
+| 4,145 | `views/valid.ts` | `valid-verdict.test.ts` only |
+| 4,043 | `views/tool-inputs.ts` | none |
+| 3,830 | `views/start.ts` | yes |
 | 3,656 | `views/color-lab.ts` | yes |
-| 3,442 | `views/profile.ts` | none |
+| 3,614 | `views/profile.ts` | none |
 | 3,286 | `views/projects.ts` | none |
-| 3,282 | `views/tool-inputs.ts` | none |
-| 3,273 | `views/gallery.ts` | none |
+| 3,284 | `views/gallery.ts` | none |
 | 3,146 | `bridge/sequence-render.ts` | yes |
-| 3,002 | `views/start.ts` | yes |
 | 2,675 | `views/deck-editor.ts` | yes |
 | 2,502 | `views/design-import.ts` | **none** |
 | 2,320 | `views/free-canvas-math.ts` | yes |

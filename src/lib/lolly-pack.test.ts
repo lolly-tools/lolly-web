@@ -61,6 +61,12 @@ const uploadBytes = new Uint8Array([137, 80, 78, 71, 1, 2, 3, 4, 5]);
 const catalogBytes = new Uint8Array([60, 115, 118, 103, 62]);          // "<svg>"
 const brandBytes = new Uint8Array([66, 82, 65, 78, 68]);               // "BRAND"
 
+function firstZipEntryName(bytes: Uint8Array): string {
+  assert.deepEqual([...bytes.slice(0, 4)], [0x50, 0x4b, 0x03, 0x04], 'ZIP begins with a local-file header');
+  const nameLength = bytes[26]! | (bytes[27]! << 8);
+  return new TextDecoder().decode(bytes.slice(30, 30 + nameLength));
+}
+
 function makeSession() {
   return {
     __toolId: 'demo-tool',
@@ -123,6 +129,7 @@ test('.lolly build → read round-trips the session and carries user + catalog b
 
   // Read back.
   const bytes = new Uint8Array(await blob.arrayBuffer());
+  assert.equal(firstZipEntryName(bytes), 'manifest.json', 'streaming preflight can identify the file immediately');
   const parsed = await readLollyFile(bytes);
   assert.deepEqual(parsed.session, makeSession(), 'session round-trips byte-for-byte');
   assert.ok(parsed.files[upload.path!], 'the upload bytes are in the archive');
@@ -275,6 +282,21 @@ test('.lolly import lands assets + session, rewriting user AND carried-library r
 
   const back = store.userStore.get(s.logo.id)!;
   assert.deepEqual([...new Uint8Array(await back.blob!.arrayBuffer())], [...userPng], 'bytes are byte-exact through the round trip');
+});
+
+test('.lolly import accepts an already-verified read and reports bounded progress', async () => {
+  const built = await buildLollyFile({
+    session: { logo: { source: 'user', id: 'user/upload/progress.png', url: '' } },
+    toolId: 'demo-tool',
+    userAssets: [{ id: 'user/upload/progress.png', type: 'raster', format: 'png', blob: new Blob([PNG(4)], { type: 'image/png' }) }],
+  });
+  const parsed = await readLollyFile(new Uint8Array(await built.blob.arrayBuffer()));
+  const progress: string[] = [];
+  const store = memHost();
+  await ingestLollyFile(parsed, store.host, {
+    onProgress: (p) => progress.push(`${p.phase}:${p.current}/${p.total}`),
+  });
+  assert.deepEqual(progress, ['assets:1/1', 'session:1/1']);
 });
 
 test('.lolly import dedups an asset already on the device (by checksum)', async () => {

@@ -18,6 +18,11 @@
  * there is only ever ONE on-device copy (the IDB one), never a duplicate SW-cache
  * copy - which is why this uses the model fetcher, not offline-manager's
  * downloadList (that would write an unread SW-cache bucket).
+ *
+ * The durable-credential encoder is MEASURED here too (durableCacheBytes /
+ * durableModelCached) but downloaded by lib/trustmark-embed.ts, which must stay
+ * dynamic-import-only. Its file names come from the pure lib/durable-model.ts, so
+ * this module can name the same bytes without dragging ORT onto the boot path.
  */
 
 import { createDebugLogger, createModelFetcher, type FetchProgress } from './ort.ts';
@@ -33,6 +38,9 @@ import {
 import {
   OCR_MODEL_STORE, OCR_MODEL_DIR, OCR_MODEL_CACHE_VERSION, OCR_MODEL_FILES, ocrModelsFor,
 } from './ocr-models.ts';
+import {
+  DURABLE_ENCODER_BYTES, DURABLE_ENCODER_FILE, DURABLE_MODEL_STORE,
+} from './durable-model.ts';
 import { isTauriShell } from './instance-choice.ts';
 
 const upscaleFetch = createModelFetcher({
@@ -68,6 +76,15 @@ export function upscaleOfflineFiles(): string[] {
  *  files (~30 MB), down from ~145 MB before the BiRefNet pair was removed. */
 export function matteOfflineFiles(): string[] {
   return matteModelsFor(isTauriShell()).map(m => MATTE_MODEL_FILES[m.id]);
+}
+
+/** The one file the durable-credential part vendors: the TrustMark ENCODER the
+ *  export toggle runs (lib/trustmark-embed.ts). A list of one, kept in this shape
+ *  so it reads like the other families and a second encoder variant (P) is a
+ *  one-line change. The DECODERS in the same IDB store belong to the separate
+ *  "Verify deep scan" part - see offline-manager's verifyModelKeys. */
+export function durableOfflineFiles(): string[] {
+  return [DURABLE_ENCODER_FILE];
 }
 
 /** The OCR files the offline part vendors: every staged model's THREE files - a
@@ -147,12 +164,24 @@ export function prefetchOcrModels(opts: { signal?: AbortSignal; onProgress?: OnP
 // exact declared sizes, so it never deserialises the multi-hundred-MB ArrayBuffers
 // just to weigh them. An aux file with no roster entry (the tiny face detector)
 // counts 0 and folds into the meter's honest "Other" remainder.
-async function modelStoreBytes(store: string, sizeByFile: Map<string, number>): Promise<{ bytes: number; files: number }> {
+//
+// `scoped` counts ONLY the keys the map names. A store with one owner counts every
+// key (the default); the shared 'trustmark-models' store holds two parts' files, so
+// the durable measurement scopes itself to its own encoder and leaves the deep-scan
+// decoders out of its row.
+async function modelStoreBytes(
+  store: string, sizeByFile: Map<string, number>, scoped = false,
+): Promise<{ bytes: number; files: number }> {
   try {
     const db = await openDB();
     const keys = await db.getAllKeys(store);
     let bytes = 0, files = 0;
-    for (const k of keys) { bytes += sizeByFile.get(String(k)) ?? 0; files++; }
+    for (const k of keys) {
+      const size = sizeByFile.get(String(k));
+      if (size === undefined && scoped) continue;
+      bytes += size ?? 0;
+      files++;
+    }
     return { bytes, files };
   } catch { return { bytes: 0, files: 0 }; }
 }
@@ -168,6 +197,24 @@ export function upscaleCacheBytes(): Promise<{ bytes: number; files: number }> {
 export function matteCacheBytes(): Promise<{ bytes: number; files: number }> {
   const sizeByFile = new Map(matteModelsFor(isTauriShell()).map(m => [MATTE_MODEL_FILES[m.id], m.approxBytes]));
   return modelStoreBytes(MATTE_MODEL_STORE, sizeByFile);
+}
+
+/** Bytes of the durable-credential encoder cached in `trustmark-models` IDB. Only
+ *  the encoder key is counted - the deep-scan decoders share the store and are the
+ *  Verify part's bytes, not this part's. */
+export function durableCacheBytes(): Promise<{ bytes: number; files: number }> {
+  return modelStoreBytes(DURABLE_MODEL_STORE, new Map([[DURABLE_ENCODER_FILE, DURABLE_ENCODER_BYTES]]), true);
+}
+
+/** Is the durable encoder on this device already? Reads only the store's KEYS, so
+ *  it never deserialises the ~33 MB blob just to answer - the same trick
+ *  trustmark.ts's readiness marker exists for. It cannot see the cache VERSION
+ *  (that lives inside the record), so a stale-version entry reads as present and
+ *  the next export re-fetches it; the export gate wants "is there a route", not
+ *  "are these bytes current". */
+export async function durableModelCached(): Promise<boolean> {
+  const { files } = await durableCacheBytes();
+  return files > 0;
 }
 
 /** Bytes of the offered OCR models cached in `ocr-models` IDB. approxBytes covers a

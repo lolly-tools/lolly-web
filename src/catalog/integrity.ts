@@ -2,7 +2,7 @@
 /**
  * Catalog integrity - web wiring for engine/src/catalog-integrity.ts.
  *
- * INERT BY DEFAULT: everything here no-ops unless the build pins a catalog
+ * UNSIGNED DEVELOPMENT BY DEFAULT: everything here no-ops unless the build pins a catalog
  * public key via the VITE_CATALOG_PUBLIC_KEY_JWK env var (a P-256 public JWK
  * JSON string - printed by `node scripts/sign-catalog.ts --gen-key`). No key
  * ships in this repo; pinning one is a per-deployment decision, made where the
@@ -30,6 +30,7 @@ declare global {
   // only exposes VITE_-prefixed vars, and this one is unset by default.
   interface ImportMetaEnv {
     readonly VITE_CATALOG_PUBLIC_KEY_JWK?: string;
+    readonly VITE_CATALOG_TRUST_MODE?: 'verified' | 'unsigned-dev';
   }
 }
 
@@ -39,6 +40,17 @@ declare global {
 // test file whose import graph touches the picker. Vite statically replaces
 // `import.meta.env.VITE_*` either way, so the built app still gets the pin.
 const PINNED_KEY: string = import.meta.env?.VITE_CATALOG_PUBLIC_KEY_JWK ?? '';
+const TRUST_MODE = import.meta.env?.VITE_CATALOG_TRUST_MODE ?? (PINNED_KEY ? 'verified' : 'unsigned-dev');
+
+if (TRUST_MODE !== 'verified' && TRUST_MODE !== 'unsigned-dev') {
+  throw new Error(`catalog integrity: unsupported trust mode "${String(TRUST_MODE)}"`);
+}
+if (TRUST_MODE === 'verified' && !PINNED_KEY) {
+  throw new Error('catalog integrity: verified mode has no pinned public key');
+}
+if (TRUST_MODE === 'unsigned-dev' && PINNED_KEY) {
+  throw new Error('catalog integrity: unsigned-dev mode must not carry a catalog public key');
+}
 
 let cached: Promise<ToolIntegrityOpts | null> | null = null;
 
@@ -47,7 +59,10 @@ let cached: Promise<ToolIntegrityOpts | null> | null = null;
 const crypto = () => import('../../../../engine/src/catalog-integrity.ts');
 
 async function load(): Promise<ToolIntegrityOpts | null> {
-  if (!PINNED_KEY) return null;
+  if (TRUST_MODE === 'unsigned-dev') {
+    markUnsignedDevelopmentBuild();
+    return null;
+  }
   const publicKey = await (await crypto()).importSpkiOrJwkPublicKey(PINNED_KEY);
   // Bypasses the service worker's /tools cache by construction (it's under
   // /catalog, which sw.js deliberately never caches; a remote-instance fetch is
@@ -61,6 +76,26 @@ async function load(): Promise<ToolIntegrityOpts | null> {
   }
   const envelope = await resp.json() as CatalogSignatureEnvelope;
   return { envelope, publicKey };
+}
+
+/** Make an unsigned production preview impossible to mistake for a release.
+ * The dev server is already visibly a developer surface, so the persistent
+ * badge is reserved for built/previewed artifacts. */
+function markUnsignedDevelopmentBuild(): void {
+  if (!import.meta.env?.PROD || typeof document === 'undefined' || !document.body) return;
+  document.documentElement.dataset.catalogTrust = 'unsigned-dev';
+  if (document.getElementById('lolly-unsigned-catalog')) return;
+  const badge = document.createElement('div');
+  badge.id = 'lolly-unsigned-catalog';
+  badge.setAttribute('role', 'status');
+  badge.textContent = 'Unsigned development catalog';
+  badge.style.cssText = [
+    'position:fixed', 'right:12px', 'bottom:12px', 'z-index:2147483647',
+    'padding:6px 10px', 'border-radius:999px', 'pointer-events:none',
+    'font:600 12px/1.2 system-ui,sans-serif', 'color:#fff',
+    'background:#8b1e1e', 'box-shadow:0 1px 4px rgba(0,0,0,.35)',
+  ].join(';');
+  document.body.appendChild(badge);
 }
 
 /**

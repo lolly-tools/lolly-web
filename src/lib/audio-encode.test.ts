@@ -481,6 +481,18 @@ test('renderAudioExport: a whole, unmodified source in the requested format pass
   assert.equal(decoded, 1, 'the source is decoded once, to learn its true length');
 });
 
+test('renderAudioExport: forceEncode honours explicit compression settings instead of passing matching bytes through', async () => {
+  const source = new Uint8Array([0x49, 0x44, 0x33, 3, 0, 0, 0, 0, 0, 0, 0, 0, 9, 9, 9]);
+  const blob = await renderAudioExport('mp3', {
+    audio: { url: 'blob:x' }, forceEncode: true, bitrate: 96_000,
+    fetchBytes: async () => source.buffer.slice(0) as ArrayBuffer,
+    decode: async () => tone(2304),
+  });
+  assert.equal(blob.type, 'audio/mpeg');
+  assert.notDeepEqual(await bytesOf(blob), source, 'an explicit re-encode must produce new encoded bytes');
+  assert.equal(sniffAudioFormat(await bytesOf(blob)), 'mp3');
+});
+
 test('renderAudioExport: a trimmed excerpt is a real encode of exactly that window', async () => {
   const src = tone(4 * RATE);
   const bytes = (await bytesOf(encodeWav(src, { sampleFormat: 'float32' }))).buffer as ArrayBuffer;

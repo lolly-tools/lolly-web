@@ -207,18 +207,21 @@ export const CAPABILITY_SECTIONS: CapSection[] = [
       { icon: ICONS.globe, title: 'Web PWA', shot: 'gallery', keywords: 'browser chrome safari firefox offline installable service worker', features: [
         { name: 'Installable & offline', desc: 'Works fully offline after the first load; installs as an app; auto-updates online.' },
       ] },
-      { icon: ICONS.desktop, title: 'Desktop', keywords: 'mac macos linux windows tauri native app', features: [
-        { name: 'macOS & Linux', desc: 'Native packages via Tauri - the same engine in a desktop shell.' },
+      { icon: ICONS.desktop, title: 'Desktop', keywords: 'mac macos linux windows tauri native app lolly document file association deep link uri', features: [
+        { name: 'macOS, Windows & Linux', desc: 'Native packages via Tauri - the same engine in a desktop shell.' },
+        { name: '.lolly belongs to Lolly', desc: 'The installer registers the document format, gives it Lolly artwork and opens a double-clicked file in the same importer as a drop.' },
+        { name: 'App links with every input', desc: '<code>lolly://</code> launches the installed app at any documented route with the same URL-mode parameters. The Share dialog writes one under <strong>Link options</strong>.' },
       ] },
       { icon: ICONS.desktop, title: 'At home on the Linux desktop', keywords: 'gnome kde plasma flatpak rpm tray eyedropper wallpaper search hot folder lolly file dbus portal', features: [
         { name: 'Pick colours from any window', desc: 'The eyedropper in every colour control reaches the whole screen through the desktop portal - grab a colour from a photo in another app.' },
-        { name: '.lolly files open like documents', desc: 'Double-click a shared .lolly in your file manager and it lands in the right tool; saved shares even show thumbnails in GNOME Files.' },
+        { name: 'Saved shares have thumbnails', desc: 'A shared .lolly lands in the right tool, and saved sessions can show their own thumbnails in GNOME Files.' },
         { name: 'Set a render as your wallpaper', desc: 'One entry in the send menu; your desktop previews and confirms before anything changes.' },
         { name: 'Search from the desktop', desc: 'Type a tool name in GNOME Activities or KRunner and Lolly answers, using the same vocabulary as in-app search.' },
         { name: 'Clipboard tray & hot folder', desc: 'A tray click turns a copied link into a QR code; a watched folder pulls new files straight into your uploads. The clipboard is read only when you click - never watched.' },
       ] },
-      { icon: ICONS.phone, title: 'Mobile', shot: 'incl-utility-card', keywords: 'ios android tauri app store native', features: [
+      { icon: ICONS.phone, title: 'Mobile', shot: 'incl-utility-card', keywords: 'ios android tauri app store native lolly document files open with deep link uri', features: [
         { name: 'iOS & Android', desc: 'Installable mobile packages via Tauri, with the touch-first UI.' },
+        { name: 'Open a .lolly from Files', desc: 'Tap or share a Lolly document from the system file manager and the app imports it directly.' },
       ] },
       { icon: ICONS.terminal, title: 'Command line', keywords: 'cli headless script ci pipeline stdout node npm', features: [
         { name: 'Headless render', desc: 'Run any tool from the CLI (jsdom + the same engine); write to a file or stdout.' },

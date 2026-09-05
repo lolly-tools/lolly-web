@@ -33,12 +33,12 @@
   gap: var(--sp-3);
   padding: var(--sp-3) var(--sp-5);
   padding-top: calc(var(--sp-3) + var(--safe-top));
-  background: hsl(var(--card) / 0.86);
+  background: color-mix(in srgb, var(--ui-color-surface-raised) 86%, transparent);
   -webkit-backdrop-filter: blur(16px) saturate(1.3);
   backdrop-filter: blur(16px) saturate(1.3);
-  color: hsl(var(--foreground));
-  border-bottom: 1px solid hsl(var(--border));
-  font-size: var(--fs-md);
+  color: var(--ui-color-text-default);
+  border-bottom: 1px solid var(--ui-color-border-default);
+  font-size: var(--ui-type-body);
 }
 
 /* The Home pill island ships its own corner pinning (parts/overrides.css). Inside
@@ -66,7 +66,7 @@
 .dtb-sep {
   inline-size: 1px;
   block-size: 20px;
-  background: hsl(var(--border));
+  background: var(--ui-color-border-default);
   margin-inline: var(--sp-2);
 }
 
@@ -92,11 +92,11 @@
   min-height: 30px;
   padding: var(--sp-2) var(--sp-4);
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: var(--ui-radius-control);
   background: transparent;
   color: inherit;
   font: inherit;
-  font-size: var(--fs-md);
+  font-size: var(--ui-type-body);
   line-height: 1;
   white-space: nowrap;
   cursor: pointer;
@@ -106,29 +106,29 @@
    glyph IS the type as far as a largeText reader is concerned. */
 .dtb-ic { display: inline-flex; }
 .dtb-ic svg { display: block; width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
-.dtb-btn:hover:not(:disabled) { background: hsl(var(--muted)); }
+.dtb-btn:hover:not(:disabled) { background: var(--ui-color-surface-muted); }
 .dtb-btn:active:not(:disabled) { filter: brightness(0.94); }
-.dtb-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.dtb-btn:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 2px; }
 .dtb-btn:disabled { opacity: 0.34; cursor: default; }
-.dtb-btn[aria-pressed="true"] { background: hsl(var(--primary) / 0.14); color: hsl(var(--primary)); }
-.dtb-btn[aria-expanded="true"] { background: hsl(var(--muted)); }
+.dtb-btn[aria-pressed="true"] { background: color-mix(in srgb, var(--ui-color-action-primary) 14%, transparent); color: var(--ui-color-action-primary); }
+.dtb-btn[aria-expanded="true"] { background: var(--ui-color-surface-muted); }
 
 /* The Lolly mark keeps its own artwork (a full-colour SVG, not a stroked glyph),
    so it gets a round, slightly larger box and no currentColor treatment. */
-.dtb-mark { padding: var(--sp-2); border-radius: var(--radius-round); }
+.dtb-mark { padding: var(--sp-2); border-radius: var(--ui-radius-choice-round); }
 .dtb-mark .dtb-ic svg { width: calc(24px * var(--a11y-fs)); height: calc(24px * var(--a11y-fs)); }
 
 .dtb-zoom-level { min-width: calc(52px * var(--a11y-fs)); font-variant-numeric: tabular-nums; }
 
 /* Export is the primary call to action; Present is its quieter neighbour, outlined
    so the split button still reads as one object against the bar. */
-.dtb-primary { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
-.dtb-primary:hover:not(:disabled) { background: hsl(var(--primary) / 0.86); }
+.dtb-primary { background: var(--ui-color-action-primary); color: var(--ui-color-action-on-primary); }
+.dtb-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--ui-color-action-primary) 86%, transparent); }
 
-.dtb-split { display: inline-flex; align-items: stretch; border: 1px solid hsl(var(--border)); border-radius: var(--radius-sm); overflow: hidden; }
+.dtb-split { display: inline-flex; align-items: stretch; border: 1px solid var(--ui-color-border-default); border-radius: var(--ui-radius-control); overflow: hidden; }
 .dtb-split .dtb-btn { border: 0; border-radius: 0; }
 .dtb-split-main { padding-inline-end: var(--sp-3); }
-.dtb-split .dtb-split-caret { padding-inline: var(--sp-2); border-inline-start: 1px solid hsl(var(--border)); }
+.dtb-split .dtb-split-caret { padding-inline: var(--sp-2); border-inline-start: 1px solid var(--ui-color-border-default); }
 .dtb-split .dtb-split-caret .dtb-ic svg { width: calc(14px * var(--a11y-fs)); height: calc(14px * var(--a11y-fs)); }
 
 .dtb-name {
@@ -136,24 +136,24 @@
   min-inline-size: 0;
   padding: var(--sp-2) var(--sp-4);
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: var(--ui-radius-control);
   background: transparent;
   color: inherit;
   font: inherit;
-  font-size: var(--fs-md);
+  font-size: var(--ui-type-body);
   font-weight: 600;
   text-overflow: ellipsis;
 }
-.dtb-name::placeholder { color: hsl(var(--muted-foreground)); font-weight: 400; }
-.dtb-name:hover { background: hsl(var(--muted)); }
-.dtb-name:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; background: hsl(var(--background)); }
+.dtb-name::placeholder { color: var(--ui-color-text-muted); font-weight: 400; }
+.dtb-name:hover { background: var(--ui-color-surface-muted); }
+.dtb-name:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 1px; background: var(--ui-color-surface-canvas); }
 
 .dtb-intent {
   flex: none;
   padding-inline: var(--sp-3);
-  background: hsl(var(--muted));
-  color: hsl(var(--muted-foreground));
-  font-size: var(--fs-sm);
+  background: var(--ui-color-surface-muted);
+  color: var(--ui-color-text-muted);
+  font-size: var(--ui-type-caption);
 }
 .dtb-intent .dtb-ic { order: 2; align-items: center; gap: 1px; }
 .dtb-intent .dtb-ic svg { width: calc(13px * var(--a11y-fs)); height: calc(13px * var(--a11y-fs)); }
@@ -185,7 +185,7 @@
   width: calc(28px * var(--a11y-fs));
   height: calc(28px * var(--a11y-fs));
   padding: 0;
-  border-radius: var(--radius-round);
+  border-radius: var(--ui-radius-choice-round);
   overflow: hidden;
   flex: none;
 }
@@ -213,11 +213,11 @@
   padding: var(--sp-2);
   display: flex;
   flex-direction: column;
-  background: hsl(var(--popover));
-  color: hsl(var(--popover-foreground));
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-3);
+  background: var(--ui-color-surface-overlay);
+  color: var(--ui-color-text-default);
+  border: 1px solid var(--ui-color-border-default);
+  border-radius: var(--ui-radius-panel);
+  box-shadow: var(--ui-elevation-floating);
   max-block-size: min(70vh, 480px);
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -228,16 +228,16 @@
   gap: var(--sp-4);
   padding: var(--sp-4) var(--sp-5);
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--ui-radius-control);
   background: transparent;
   color: inherit;
   font: inherit;
-  font-size: var(--fs-md);
+  font-size: var(--ui-type-body);
   text-align: start;
   cursor: pointer;
 }
-.dtb-menu-item:hover:not(:disabled):not([aria-disabled='true']) { background: hsl(var(--muted)); }
-.dtb-menu-item:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }
+.dtb-menu-item:hover:not(:disabled):not([aria-disabled='true']) { background: var(--ui-color-surface-muted); }
+.dtb-menu-item:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: -2px; }
 /* Greyed, but still focusable and still readable: a row is turned off with aria-disabled
    so the keyboard and a screen reader can still find it (design-topbar.ts says why). */
 .dtb-menu-item:disabled,
@@ -266,7 +266,7 @@
   transform: rotate(-45deg);
   opacity: 0;
 }
-.dtb-menu-item[aria-checked="true"] { color: hsl(var(--primary)); font-weight: 600; }
+.dtb-menu-item[aria-checked="true"] { color: var(--ui-color-action-primary); font-weight: 600; }
 .dtb-menu-item[aria-checked="true"]::after { opacity: 1; }
 
 /* ── breakpoints ───────────────────────────────────────────────────────────── */
@@ -307,6 +307,12 @@
    the hamburger; the name takes the freed width so it never truncates first. */
 .design-topbar[data-density="compact"] .dtb-name,
 .design-topbar[data-density="min"] .dtb-name { flex: 1 1 auto; }
+
+@media (pointer: coarse) {
+  .dtb-btn { min-width: 44px; min-height: 44px; }
+  .design-topbar .chrome-topleft button,
+  .design-topbar .chrome-topleft a { min-width: 44px; min-height: 44px; }
+}
 
 /* Hide-controls full preview (the `\` key, free-canvas.ts): the bar is chrome, so
    it goes with the rest of it. !important because the kill switch has to beat a

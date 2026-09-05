@@ -440,6 +440,29 @@
   .color-eyedropper { opacity: 1; }
 }
 .color-eyedropper svg { display: block; width: var(--fs-xl); height: var(--fs-xl); }
+.color-native-button {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--radius) * 1.5);
+  background: hsl(0 0% 100% / .18);
+  color: var(--color-input-fg, hsl(var(--foreground)));
+  cursor: pointer;
+  opacity: .82;
+}
+.color-native-button:hover { opacity: 1; background: hsl(0 0% 50% / .22); }
+.color-native-button:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.color-field--progressive .color-fine-toggle {
+  margin-top: 8px;
+  border-radius: var(--radius-pill);
+}
 .color-input--painted {
   background-image:
     linear-gradient(var(--color-input-bg), var(--color-input-bg)),

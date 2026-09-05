@@ -84,6 +84,37 @@ test('docking builds the column, sets --dock-w (persisted width) and the attribu
   assert.equal(ED.isDocked('neuro'), true);
 });
 
+test('dock navigation uses the Lolly UI semantic surface, selection and focus roles', () => {
+  reset();
+  ED.requestDock('neuro', panel('pn'));
+  const css = [...document.querySelectorAll('style')].map((s) => s.textContent ?? '').join('\n');
+  for (const role of [
+    '--ui-color-surface-canvas', '--ui-color-surface-muted', '--ui-color-surface-raised',
+    '--ui-color-selection-surface', '--ui-color-selection-border', '--ui-color-focus-ring',
+    '--ui-radius-control', '--ui-radius-choice', '--ui-elevation-sheet', '--ui-elevation-control',
+    '--ui-motion-navigation',
+  ]) assert.ok(css.includes(role), `dock chrome reads ${role}`);
+});
+
+test('a docked data-tip is portalled above the scroll slot, not clipped inside it', async () => {
+  reset();
+  const el = panel('pn');
+  const trigger = document.createElement('button');
+  trigger.setAttribute('data-tip', 'Distribute horizontally');
+  trigger.setAttribute('aria-label', 'Distribute horizontally');
+  el.appendChild(trigger);
+  ED.requestDock('inspector', el);
+  trigger.focus();
+  const tip = document.querySelector<HTMLElement>('.edge-dock-tooltip');
+  assert.ok(tip, 'the dock owns one body-level tooltip');
+  assert.equal(tip.textContent, 'Distribute horizontally');
+  assert.equal(tip.hidden, false);
+  assert.equal(trigger.dataset.dockTipManaged, '', 'the clipped pseudo-tooltip is suppressed only while portalled');
+  ED.releaseDock('inspector');
+  await Promise.resolve();
+  assert.equal(document.querySelector('.edge-dock-tooltip'), null, 'tearing down the final dock panel removes the portal');
+});
+
 test('releasing the last panel restores it and tears down to byte-identical idle', () => {
   reset();
   const el = panel('pn');
@@ -109,6 +140,20 @@ test('two panels stack player-over-export with one divider between', () => {
   assert.equal(slots[1]!.getAttribute('data-slot'), 'export');   // export below
   assert.equal(document.querySelectorAll('.edge-dock-divider').length, 1);
   assert.ok(slots[1]!.classList.contains('edge-dock-slot--fill'), 'bottom panel fills the remainder');
+});
+
+test('Inspector and Export use tabs even as the only two full panels', () => {
+  reset();
+  ED.requestDock('inspector', panel('pi'), { label: 'Inspector' });
+  ED.requestDock('export', panel('px'), { label: 'Export' });
+  const strip = document.querySelector<HTMLElement>('.edge-dock-tabs');
+  assert.ok(strip, 'the two competing right-side workflows use a tab strip');
+  assert.deepEqual(
+    [...strip.querySelectorAll<HTMLElement>('.edge-dock-tab')].map((tab) => tab.dataset.tab),
+    ['inspector', 'export'],
+  );
+  assert.equal(document.querySelectorAll('.edge-dock-divider').length, 0, 'no half-height split');
+  assert.deepEqual(visibleSlots(), ['export'], 'the panel most recently requested is visible');
 });
 
 test('a compact bar docks on TOP of the panels, fixed-height, with no divider above it', () => {

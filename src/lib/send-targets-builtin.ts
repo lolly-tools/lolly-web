@@ -12,13 +12,10 @@
  * alone is 25 KB) onto the boot graph for a capability that first matters when an
  * export panel opens - and for most builds, never.
  *
- * ORDERING, which the boot call used to guarantee and this one does not: registration
- * preceded initOrg(), so a deployment's control plane could re-register or WITHDRAW a
- * built-in kind (lib/send-target.ts is last-wins per kind) and have that stick. Now the
- * control plane registers during boot and this runs at the first export panel, so a
- * built-in would overwrite an instance's replacement of the same kind. No org code
- * registers a send target today - when one does, this function must learn to skip the
- * kinds the control plane already owns rather than blanket-registering.
+ * Organisation-owned targets use their own stable registry ids, so late built-in
+ * registration cannot replace them even when both use the same provider kind. This is
+ * intentional: an instance destination supplements rather than confiscates a person's
+ * own connection.
  *
  * Adding a provider = one driver module exposing a SendTarget (see
  * lib/google-drive.ts for the reference shape: config gate, popup OAuth via

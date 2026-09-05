@@ -34,6 +34,7 @@ import {
   frozenAssetId, readVersionIndex, sha256Hex, withVersionIndex,
 } from '../../../../engine/src/design-version.ts';
 import type { PinnedAsset, VersionEntry } from '../../../../engine/src/design-version.ts';
+import { designMaterialOf } from '../../../../engine/src/design-system.ts';
 import { installUserTokens } from './tokens.ts';
 
 /** Where preserved bytes live. Machine-owned: hidden from the user's library
@@ -102,7 +103,8 @@ export function createPinPreserver(
     //    manages directly; a frozen row is already a preserved copy. A write
     //    there is also the one event that can turn "no design system" into one,
     //    so it retires the negative answer below.
-    if (id.startsWith('user/tokens/')) { noHeadUntil = 0; return; }
+    const material = designMaterialOf(id);
+    if (material && (material.kind === 'tokens' || material.kind === 'version')) { noHeadUntil = 0; return; }
     if (!id.startsWith('user/') || id.startsWith(FROZEN_PREFIX)) return;
 
     // 2. The head document. Memoised in the tokens bridge whenever there IS one,

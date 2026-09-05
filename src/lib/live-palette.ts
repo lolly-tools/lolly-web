@@ -54,6 +54,10 @@ export function toPaletteEntry(s: LiveSwatch): PaletteEntry {
 // reuse the same resolved palette instead of re-fetching tokens each time.
 const cache = new WeakMap<object, Promise<readonly PaletteEntry[]>>();
 
+/** Drop the memoised palette for `host` - a design-system switch (plans/186
+ *  section 3.4) changes the answer under the same host object. */
+export function bustLivePalette(host: object): void { cache.delete(host); }
+
 /**
  * The active brand's palette (hex + CMYK), resolved from host.tokens.colors()
  * when available, else the tokenless PALETTE fallback. Never throws.

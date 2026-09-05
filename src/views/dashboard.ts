@@ -22,7 +22,7 @@
  * knows.
  *
  * Data sources (single sources of truth, imported, never duplicated):
- *   brand     → host.assets discovery (USER_TOKENS_ID) + host.tokens resolve/raw,
+ *   brand     → the active design system (lib/design-system/active.ts) + host.tokens resolve/raw,
  *               read-only: the hero's name/logo/primary and the token chips
  *   device    → lib/device-info.ts        (live session snapshot)
  *   activity  → metrics.ts + lib/activity-summary.ts
@@ -61,7 +61,7 @@ import { collectDevice, renderDeviceCards, renderDeviceStat, wireDeviceLive, fmt
 import { playSfx } from '../lib/sfx.ts';
 import { wireTabs } from '../lib/tabs.ts';
 import { soundSwitchHtml, wireSoundSwitch } from '../components/sound-toggle.ts';
-import { USER_TOKENS_ID } from '../bridge/tokens.ts';
+import { activeDesignSystemLabel, isUserDesignSystemActive } from '../lib/design-system/active.ts';
 import { applyBrandVars, brandRadiusValue, tokenValueToHex } from '../brand-vars.ts';
 import { listStudioTokens, formatStudioValue, gradientCss } from '../lib/token-studio.ts';
 import type { StudioToken } from '../lib/token-studio.ts';
@@ -78,6 +78,23 @@ import { mountProfileFab } from '../components/profile-menu.ts';
 // literal in this file, so the spotlight settings provider and applyDeepLink
 // read the same single source (dashboard-registry.test.ts pins it both ways).
 import { DASH_SECTIONS, dashFlag } from './dashboard-registry.ts';
+
+/** A compact personal shelf needs the catalogue's display name when it has one, but the
+ * lightweight dashboard index deliberately only promises the smaller CatalogTool shape. */
+type ShelfTool = CatalogTool & { name?: string };
+
+/**
+ * The user-facing part of a tool id for older/slim catalogue records that do not carry a
+ * display name. Kept pure so the Dashboard cannot accidentally link a stale favourite to
+ * a tool the current catalogue no longer contains.
+ */
+export function favouriteShelfTools(tools: readonly ShelfTool[], favourites: ReadonlySet<string>): ShelfTool[] {
+  return tools.filter((tool) => favourites.has(tool.id)).slice(0, 8);
+}
+
+export function shelfToolLabel(tool: ShelfTool): string {
+  return tool.name?.trim() || tool.id.split('-').map((part) => part ? part[0]!.toUpperCase() + part.slice(1) : '').join(' ');
+}
 
 // Chevron for a collapsible reference panel (rotates 90° when open via CSS).
 const COLLAPSE_CHEV = `<svg class="plat-section-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>`;
@@ -847,6 +864,10 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1, routePar
               ${sectionHead(t('Your activity'), 'dash-activity-h', t('Local-only counters - nothing here is recorded remotely.'))}
               <div class="dash-activity">${renderActivity(metrics, tools as Array<{ id: string } & Record<string, unknown>>)}</div>
             </section>
+            <section class="plat-section dash-section dash-card dash-yours" id="dash-yours" hidden>
+              ${sectionHead(t('Yours'), 'dash-yours-h', t('Your starred tools, ready to pick up where you left off. Recent creations and exports stay below.'))}
+              <div class="dash-yours-tools" data-yours-tools></div>
+            </section>
             <section class="plat-section dash-section dash-card dash-recent" id="dash-recent" data-flag="${escape(dashFlag('dash-recent'))}" hidden>
               ${sectionHead(t('Recent creations'), 'dash-recent-h', t('Your latest saved sessions - swipe the stack to browse, or use Open below.'))}
               <div class="dash-recent-mount" data-recent-stack></div>
@@ -944,18 +965,27 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1, routePar
       })._findMetaByType?.('tokens')) ?? null;
     } catch { /* discovery unavailable - show the unbranded pathway */ }
     const locked = await tokensApi?.isLocked?.().catch(() => false) ?? false;
+    // Who owns what is running, and what they called it (plans/186 section 3.3).
+    // The label is null on a device with no registry yet, which is what keeps the
+    // asset's own trimmed name below as the answer there.
+    const mine = await isUserDesignSystemActive(host).catch(() => false);
+    const recordLabel = await activeDesignSystemLabel(host).catch(() => null);
     if (!viewEl.contains(hero)) return;
 
     const metaId = rec?.id ?? '';
     const metaName = typeof rec?.meta?.name === 'string' && rec.meta.name ? rec.meta.name : rec?.name ?? '';
     const nameEl = hero.querySelector<HTMLElement>('[data-hero-name]');
-    if (nameEl) nameEl.textContent = metaName.replace(/\s+(brand\s+)?(design\s+)?tokens$/i, '').trim() || t('Your brand');
+    if (nameEl) {
+      nameEl.textContent = recordLabel
+        || metaName.replace(/\s+(brand\s+)?(design\s+)?tokens$/i, '').trim()
+        || t('Your brand');
+    }
 
     const statusEl = hero.querySelector<HTMLElement>('#dash-brand-status');
     if (statusEl) {
       statusEl.innerHTML = locked
         ? t('This build ships with a fixed brand - every tool, page and export already wears it.')
-        : metaId === USER_TOKENS_ID
+        : mine
           ? t('Your brand is installed - every tool, page and export wears it.')
           : metaId
             ? t('Running the catalogue’s built-in brand. Make it yours - pick a colour and Lolly derives the rest. It stays on this device.')
@@ -1253,6 +1283,25 @@ export async function mountDashboard(viewEl: HTMLElement, host: HostV1, routePar
   const myMount = (mountEl._dashMount = (mountEl._dashMount || 0) + 1);
   const isCurrent = <T extends Element>(node: T | null): node is T =>
     mountEl._dashMount === myMount && !!node && viewEl.contains(node);
+
+  // “Yours” is deliberately earned rather than a cold-start empty state: after someone
+  // has opened a few tools, their explicit stars become the fastest route back into work.
+  // Recent sessions and exports are independent shelves below, so a favourite remains
+  // useful even before it has a saved render thumbnail.
+  host.profile.get()
+    .then((profile) => {
+      if (metrics.toolOpens < 3) return;
+      const favourites = new Set(Array.isArray(profile.favourites) ? profile.favourites.filter((id): id is string => typeof id === 'string') : []);
+      const mine = favouriteShelfTools(tools as ShelfTool[], favourites);
+      const sec = viewEl.querySelector<HTMLElement>('#dash-yours');
+      const mount = viewEl.querySelector<HTMLElement>('[data-yours-tools]');
+      if (!isCurrent(mount) || !sec || !mine.length) return;
+      mount.innerHTML = mine.map((tool) =>
+        `<a class="dash-yours-tool" href="#/tool/${encodeURIComponent(tool.id)}">${icon('star')}<span>${escape(shelfToolLabel(tool))}</span></a>`,
+      ).join('');
+      sec.hidden = false;
+    })
+    .catch(() => { /* no profile store - the Dashboard stays useful without this convenience */ });
 
   // Recent creations: reuse the session preview thumbnails the
   // Projects/gallery tiles already cache (host.state.list().thumb); no

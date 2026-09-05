@@ -108,6 +108,7 @@ let toolSeq = 0;
  *  memoised by `id@version`, and two peers running the same tool is the premise. */
 function loopbackTool(id: string): LoadedTool {
   return {
+    trustClass: 'builtin-verified',
     manifest: {
       id, name: 'Loopback', version: '1.0.0', engineVersion: '^1.0.0', status: 'official',
       render: { width: 40, height: 40, formats: ['png'] },

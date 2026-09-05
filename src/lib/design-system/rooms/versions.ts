@@ -45,7 +45,7 @@ import {
   restoreLatestFrom, setActiveVersion, versionStorage,
 } from '../versions-io.ts';
 import type { VersionsIoCtx } from '../versions-io.ts';
-import { USER_TOKENS_ID } from '../../../bridge/tokens.ts';
+import { activeHeadId } from '../active.ts';
 import { fmtBytes } from '../../format.ts';
 import { escape } from '../../../utils.ts';
 import { announce } from '../../../a11y.ts';
@@ -126,7 +126,9 @@ export async function hasPublishableSystem(ctx: VersionsIoCtx): Promise<boolean>
   const head = await readHeadDoc(ctx).catch(() => null);
   if (readVersionIndex(head).versions.length) return true;
   const assets = ctx.host.assets as unknown as { _getBlob?(id: string): Promise<Blob | null> };
-  try { return !!(await assets._getBlob?.(USER_TOKENS_ID)); }
+  // The head of whatever design system is active - on a device that only has the
+  // shipped one, that is the legacy id and this answers exactly as it did.
+  try { return !!(await assets._getBlob?.(await activeHeadId(ctx.host))); }
   catch { return false; }
 }
 

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 /**
- * Portable brand pack - "hand your brand to someone else".
+ * Portable `.lolly` design-system pack - "hand your brand to someone else".
  *
  * Where data-transfer.ts moves a PERSON between devices, this moves a BRAND
- * between people: one `.zip` carrying the active design tokens, every locally
+ * between people: one `.lolly` carrying the active design tokens, every locally
  * installed font face (the actual woff2 bytes - the receiver renders your type
  * with zero network), and the brand-adjacent preferences (theme). Export it
  * from Profile → Adjust your brand or the #/start wizard; anyone loads it from
@@ -16,7 +16,7 @@
  * and unknown parts are counted, never silently dropped. Same fflate
  * worker/sync split, too.
  *
- * Import is merge-not-wipe: tokens install as `user/tokens/brand` (the same
+ * Import is merge-not-wipe: tokens install at the active head (the same
  * write path as the wizard), fonts land as `type:'font'` user assets (quota-
  * checked; a full disk skips a face, never aborts the pack), and the primary
  * face follows the pack's `font.brand` token automatically because that IS the
@@ -34,6 +34,13 @@
  *     renders against.
  * A pack from a system that never published carries none of these parts, and
  * loading it does exactly what it did before they existed.
+ *
+ * Both directions can now name WHICH design system they mean (plans/186 section
+ * 3.6). A pack is always written in the portable `user/fonts/…` / `user/logo/…`
+ * shape, whichever namespace it was exported from, so importing it is a re-key
+ * into the namespace it is written to, and the references follow the ids. Name
+ * nothing and both directions read and write the active system, byte for byte as
+ * they did before design systems could be told apart.
  */
 
 import { strToU8 } from 'fflate';
@@ -43,7 +50,8 @@ import {
   BUNDLE_HEADER, README_NAME, buildIntegrity, readJson, unzipBundle, verifyIntegrity,
   type BundleEntry,
 } from './lib/bundle.ts';
-import { installUserTokens, USER_TOKENS_ID, VersionExistsError } from './bridge/tokens.ts';
+import { installUserTokens, VersionExistsError } from './bridge/tokens.ts';
+import { activeHeadId } from './lib/design-system/active.ts';
 import { applyChromeBrandVars } from './brand-vars.ts';
 import { registerUserFonts, USER_FONT_PREFIX } from './user-fonts.ts';
 import { USER_LOGO_PREFIX, LOGO_DEFAULT_IDENTITY, parseLogoAssetId } from './lib/brand-logos.ts';
@@ -52,8 +60,11 @@ import {
   readVersionIndex, stripVersionIndex, versionAssetId, withVersionIndex,
 } from './lib/design-system/versions.ts';
 import type { PinnedAsset, VersionEntry, VersionIndex } from './lib/design-system/versions.ts';
-import { TOKEN_EXT } from '@lolly/engine';
+import { TOKEN_EXT, designMaterialOf, withDesignSystemIdentity } from '@lolly/engine';
+import type { DesignMaterialKind } from '@lolly/engine';
 import type { UserFontsHost } from './user-fonts.ts';
+import type { DesignSystemRecord, DesignSystemRegistry } from './lib/design-system/registry.ts';
+import { LOLLY_EXT, LOLLY_MIME } from './lib/lolly-pack.ts';
 
 export const BRAND_FORMAT = 'lolly-brand';
 /** 2 adds the `versions/` + `frozen/` parts (plans/97 section 6a); 3 adds the
@@ -86,6 +97,115 @@ const isKnownPart = (path: string): boolean =>
 export interface BrandTransferHost extends UserFontsHost {
   profile?: { get(): Promise<Record<string, unknown>> };
   log?: (level: string, message: string, meta?: unknown) => void;
+  /** The design systems this device holds (plans/186). Only a TARGETED import or
+   *  export needs it: without a target both directions read and write the active
+   *  system through activeHeadId, exactly as they did before records existed. */
+  designSystems?: DesignSystemRegistry;
+}
+
+/** The pack's `prefs.theme` values. A stored `suse` is the retired name for
+ *  `brand` and migrates on read, the same way theme.ts migrates it on apply. */
+const THEME_VALUES = new Set(['light', 'dark', 'brand']);
+const readPackTheme = (value: unknown): 'light' | 'dark' | 'brand' | null => {
+  const theme = value === 'suse' ? 'brand' : value;
+  return typeof theme === 'string' && THEME_VALUES.has(theme)
+    ? theme as 'light' | 'dark' | 'brand'
+    : null;
+};
+
+/** The legacy namespace every pack is written in, whatever system it came from. */
+const LEGACY_NS = 'user/';
+
+/**
+ * One design system as a re-key target: its record, its namespace, and the id
+ * renames a targeted import made.
+ *
+ * A pack is always written in the LEGACY shape (`user/fonts/…`, `user/logo/…`),
+ * so landing it in a namespaced system is a prefix swap - strip `user/`, prepend
+ * the record's namespace. For the migrated default the namespace IS `user/`, so
+ * the swap is the identity and a targeted import of the default writes precisely
+ * the ids an untargeted one would.
+ */
+interface ImportTarget {
+  record: DesignSystemRecord;
+  ns: string;
+  /** The old id → new id pairs actually minted, for the reference rewrite below.
+   *  Empty when the namespace is the legacy one, which is what keeps the default
+   *  system's documents untouched. */
+  map: Map<string, string>;
+}
+
+/** A legacy pack id in `ns`. Frozen bytes are content-keyed and SHARED between
+ *  systems, so they are never re-keyed (plans/186 section 3.2). */
+function nsId(ns: string, id: string): string {
+  if (id.startsWith(FROZEN_PREFIX) || !id.startsWith(LEGACY_NS)) return id;
+  return ns + id.slice(LEGACY_NS.length);
+}
+
+/** The reverse: one system's id back to the portable legacy shape, so a pack
+ *  exported from `user/ds/acme/` re-imports into whatever namespace it goes to. */
+function legacyId(ns: string, id: string): string {
+  if (!ns || ns === LEGACY_NS || !id.startsWith(ns)) return id;
+  return LEGACY_NS + id.slice(ns.length);
+}
+
+/** A pack id minted into the target's namespace, REMEMBERED so the references to
+ *  it are rewritten with it. Unchanged ids (the default system, whose namespace
+ *  is `user/`, and the shared frozen rows) are not recorded, which is what keeps
+ *  a targeted default import writing the same documents an untargeted one does. */
+function mintId(target: ImportTarget, id: string): string {
+  const next = nsId(target.ns, id);
+  if (next !== id) target.map.set(id, next);
+  return next;
+}
+
+const isRec = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** How one asset id is renamed. Returns the id unchanged when it stays put. */
+type Rekey = (id: string) => string;
+
+/**
+ * A tokens document with every renamed asset id rewritten under `$value`.
+ *
+ * Walked generically rather than at the known paths: the logo tokens live at
+ * `asset.logo.*` today, but a themed document nests them under a set name and
+ * nothing stops a system from putting an asset ref somewhere else entirely. A
+ * `$value` the rekey leaves alone is written back as it was, so the walk cannot
+ * invent a reference.
+ */
+function rewriteAssetRefs(node: unknown, rekey: Rekey): unknown {
+  const remap = (v: unknown): unknown =>
+    typeof v === 'string' ? rekey(v)
+      : Array.isArray(v) ? v.map(remap)
+        : v;
+  const walk = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(walk);
+    if (!isRec(value)) return value;
+    const out: Record<string, unknown> = {};
+    for (const [key, v] of Object.entries(value)) out[key] = key === '$value' ? remap(v) : walk(v);
+    return out;
+  };
+  return walk(node);
+}
+
+/** A version's pinned asset ids follow the same rename. `frozenId` does not: the
+ *  preserved bytes are shared by content. */
+const rekeyPin = (pin: PinnedAsset, rekey: Rekey): PinnedAsset => {
+  const id = rekey(pin.id);
+  return id === pin.id ? pin : { ...pin, id };
+};
+
+/** One entry's pins renamed, with the entry left alone when it has none. */
+const rekeyEntry = (entry: VersionEntry, rekey: Rekey): VersionEntry =>
+  entry.assets?.length ? { ...entry, assets: entry.assets.map(p => rekeyPin(p, rekey)) } : entry;
+
+/** The named record, or a refusal naming the system that is not here. Used by
+ *  both directions, so a bad target reads the same whichever way it was passed. */
+async function namedRecord(host: BrandTransferHost, system: string): Promise<DesignSystemRecord> {
+  const record = await host.designSystems?.get(system).catch(() => null) ?? null;
+  if (!record) throw new Error(`There is no design system “${system}” on this device.`);
+  return record;
 }
 
 interface BrandStorage {
@@ -119,6 +239,12 @@ export interface BrandImportSummary extends BrandPackSummary {
   packSignature?: 'verified' | 'unverified' | 'unsigned';
   /** The instance base the pack pointed this shell at, when it carried one. */
   packInstance?: string;
+  /** The pack's `prefs.theme`, HANDED BACK rather than applied - set only on a
+   *  targeted import. A design system that is not active must not repaint the
+   *  app, so the caller stores this on the record's `appearance` and the switch
+   *  applies it. An untargeted import writes localStorage as it always did and
+   *  leaves this undefined. */
+  theme?: 'light' | 'dark' | 'brand';
 }
 
 /** One stored face's manifest row: its full asset record sans blob, plus the
@@ -161,7 +287,7 @@ function brandReadme(summary: BrandPackSummary, label: string, filename: string)
     '',
     `A portable Lolly brand${label ? ` - ${label}` : ''}: design tokens, fonts and theme in one file.`,
     'Open Lolly, go to Profile → Adjust your brand → “Load a brand file…” (or the',
-    '#/start wizard) and choose this .zip. Everything installs on-device;',
+    '#/start wizard) and choose this .lolly. Everything installs on-device;',
     'nothing is uploaded anywhere.',
     '',
     "[ What's inside ]",
@@ -210,8 +336,11 @@ const readTokensBlob = async (host: BrandTransferHost, id: string): Promise<Reco
 async function activeTokensDoc(
   host: BrandTransferHost,
 ): Promise<{ doc: Record<string, unknown>; headId: string } | null> {
-  const user = await readTokensBlob(host, USER_TOKENS_ID);
-  if (user) return { doc: user, headId: USER_TOKENS_ID };
+  // The person's own head is the active design system's, which is only the
+  // legacy id while this device holds one system (plans/186 section 3.3).
+  const userHead = await activeHeadId(host);
+  const user = await readTokensBlob(host, userHead);
+  if (user) return { doc: user, headId: userHead };
   try {
     const meta = await (host.assets as unknown as {
       _findMetaByType(t: string): Promise<{ id: string } | null>;
@@ -223,31 +352,86 @@ async function activeTokensDoc(
 }
 
 /**
- * Pack the active brand into one zip Blob: tokens.json + fonts/* + prefs.json,
+ * A stored version payload as the pack should carry it. Untargeted the bytes
+ * travel verbatim, exactly as they always have. A targeted export normalises its
+ * asset refs the same way the head document's are, or the pack would name a
+ * namespace nobody else has. Unparseable bytes travel as they are: a version
+ * asset that is not JSON is already broken, and dropping it here would lose a
+ * published version over a rename.
+ */
+async function packVersionBytes(blob: Blob, rekey: Rekey | null): Promise<Uint8Array> {
+  const raw = new Uint8Array(await blob.arrayBuffer());
+  if (!rekey) return raw;
+  try {
+    return strToU8(JSON.stringify(rewriteAssetRefs(JSON.parse(await blob.text()), rekey), null, 2));
+  } catch { return raw; }
+}
+
+/**
+ * Pack a brand into one zip Blob: tokens.json + fonts/* + prefs.json,
  * integrity-mapped manifest, human README. `label` names the pack (defaults to
- * the profile's name, then 'My brand').
+ * the exported system's own name, then the profile's, then 'My brand').
+ *
+ * `system` names WHICH design system to export (plans/186). Without it the
+ * active one is exported through the same discovery every earlier version of
+ * this function used. With it, exactly that record's material travels - its
+ * head, and the font and logo rows the id grammar says are its - and the ids are
+ * normalised back to the legacy `user/fonts/…` / `user/logo/…` shape on the way
+ * into the zip. A pack is portable that way: it names no namespace of its own,
+ * so the importer re-keys it into whichever system it is imported into.
  */
 export async function exportBrandPack(
   { host, storage }: { host: BrandTransferHost; storage: BrandStorage },
-  opts: { label?: string } = {},
+  opts: { label?: string; system?: string } = {},
 ): Promise<{ blob: Blob; filename: string; summary: BrandPackSummary }> {
   const entries: Record<string, BundleEntry> = {};
 
-  const head = await activeTokensDoc(host);
+  const record = opts.system ? await namedRecord(host, opts.system) : null;
+  const ns = record?.ns ?? LEGACY_NS;
+  // Normalising is a pure property of the namespace prefix, so it needs no row
+  // list: anything under `user/ds/<id>/` is that system's, and everything else
+  // (frozen bytes, catalog ids) is already portable.
+  // Skipped rather than run as an identity rename when no system was named, so
+  // an ordinary export writes the bytes it always wrote.
+  const toLegacy: Rekey | null = record ? (id => legacyId(ns, id)) : null;
+  const head = record
+    ? { doc: await readTokensBlob(host, record.headId), headId: record.headId }
+    : await activeTokensDoc(host);
   const doc = head?.doc ?? null;
-  if (doc) entries['tokens.json'] = strToU8(JSON.stringify(doc, null, 2));
+  if (doc) {
+    entries['tokens.json'] = strToU8(
+      JSON.stringify(toLegacy ? rewriteAssetRefs(doc, toLegacy) : doc, null, 2));
+  }
+
+  /**
+   * Does this row belong in the pack, and under which id?
+   *
+   * Untargeted this is the legacy prefix test every export has made, verbatim.
+   * Targeted it is the record's own material, read from the id itself
+   * (`designMaterialOf`), normalised back to the legacy shape.
+   */
+  const packId = (id: string, kind: DesignMaterialKind): string | null => {
+    if (!record) {
+      const prefix = kind === 'font' ? USER_FONT_PREFIX : USER_LOGO_PREFIX;
+      return id.startsWith(prefix) ? id : null;
+    }
+    const material = designMaterialOf(id);
+    return material && material.systemId === record.id && material.kind === kind ? legacyId(ns, id) : null;
+  };
 
   // Every stored font face, bytes + full record (sans blob) for a faithful rebuild.
   const records = await host.assets._exportUserAssets().catch(() => []);
   const fontRows: FontRow[] = [];
   const families = new Set<string>();
   for (const r of records) {
-    if (r.type !== 'font' || !r.id.startsWith(USER_FONT_PREFIX) || !r.blob) continue;
-    const file = `fonts/${r.id.slice(USER_FONT_PREFIX.length).replace(/\//g, '-')}.woff2`;
+    if (r.type !== 'font' || !r.blob) continue;
+    const id = packId(r.id, 'font');
+    if (!id) continue;
+    const file = `fonts/${id.slice(USER_FONT_PREFIX.length).replace(/\//g, '-')}.woff2`;
     entries[file] = [new Uint8Array(await r.blob.arrayBuffer()), { level: 0 }]; // woff2 is already compressed
     const { blob: _blob, ...rest } = r as FontRow & { blob: Blob; type: string };
-    fontRows.push({ ...(rest as unknown as FontRow), file, mime: r.blob.type || 'font/woff2' });
-    families.add(String(r.meta?.family ?? r.meta?.name ?? r.id));
+    fontRows.push({ ...(rest as unknown as FontRow), id, file, mime: r.blob.type || 'font/woff2' });
+    families.add(String(r.meta?.family ?? r.meta?.name ?? id));
   }
   entries['fonts.json'] = strToU8(JSON.stringify(fontRows, null, 2));
 
@@ -261,15 +445,17 @@ export async function exportBrandPack(
   // slash-flattened name rather than being dropped.
   const logoRows: LogoRow[] = [];
   for (const r of records) {
-    if (!r.id.startsWith(USER_LOGO_PREFIX) || !r.blob) continue;
+    if (!r.blob) continue;
+    const id = packId(r.id, 'logo');
+    if (!id) continue;
     const fmt = String(r.meta?.format ?? 'png');
-    const parsed = parseLogoAssetId(r.id);
+    const parsed = parseLogoAssetId(id);
     const file = parsed && parsed.identity !== LOGO_DEFAULT_IDENTITY
       ? `logos/${parsed.identity}__${parsed.variant}.${fmt}`
-      : `logos/${r.id.slice(USER_LOGO_PREFIX.length).replace(/\//g, '-')}.${fmt}`;
+      : `logos/${id.slice(USER_LOGO_PREFIX.length).replace(/\//g, '-')}.${fmt}`;
     entries[file] = new Uint8Array(await r.blob.arrayBuffer());
     const { blob: _b, ...rest } = r as LogoRow & { blob: Blob; type: string };
-    logoRows.push({ ...(rest as unknown as LogoRow), file, format: fmt, mime: r.blob.type || 'image/png' });
+    logoRows.push({ ...(rest as unknown as LogoRow), id, file, format: fmt, mime: r.blob.type || 'image/png' });
   }
   entries['logos.json'] = strToU8(JSON.stringify(logoRows, null, 2));
 
@@ -284,7 +470,7 @@ export async function exportBrandPack(
   // A version is addressed relative to the head it belongs to, which is not always
   // the user id: a catalog-discovered design system publishes under its own
   // namespace, and looking for its versions under `user/…` would find nothing.
-  const headId = head?.headId ?? USER_TOKENS_ID;
+  const headId = head?.headId ?? await activeHeadId(host);
   const shipped: VersionEntry[] = [];
   const frozenIds = new Set<string>();
   for (const entry of ledger.versions) {
@@ -296,8 +482,8 @@ export async function exportBrandPack(
       host.log?.('warn', 'Skipped a published version with no readable tokens asset', { id });
       continue;
     }
-    entries[`versions/${entry.slug}.json`] = new Uint8Array(await blob.arrayBuffer());
-    shipped.push(entry);
+    entries[`versions/${entry.slug}.json`] = await packVersionBytes(blob, toLegacy);
+    shipped.push(toLegacy ? rekeyEntry(entry, toLegacy) : entry);
     for (const pin of entry.assets ?? []) if (pin.frozenId) frozenIds.add(pin.frozenId);
   }
   const frozenRows: FrozenRow[] = [];
@@ -342,11 +528,14 @@ export async function exportBrandPack(
   };
 
   const profile = await host.profile?.get().catch(() => null) ?? null;
+  // A named system names its own pack: the record's label is what the person
+  // called that design system, which beats the exporter's own name for it.
   const label = opts.label
+    || record?.label
     || [profile?.firstname, profile?.lastname].filter(Boolean).join(' ')
     || 'My brand';
   const date = new Date().toISOString().slice(0, 10);
-  const filename = `LollyBrand-${nameToken(label) || 'MyBrand'}-${date}.zip`;
+  const filename = `LollyBrand-${nameToken(label) || 'MyBrand'}-${date}${LOLLY_EXT}`;
 
   const manifest: Record<string, unknown> = {
     format: BRAND_FORMAT,
@@ -359,11 +548,14 @@ export async function exportBrandPack(
   };
   const integrity = await buildIntegrity(entries);
   if (integrity) manifest.integrity = integrity;
-  entries['manifest.json'] = strToU8(JSON.stringify(manifest, null, 2));
-  entries[README_NAME] = strToU8(brandReadme(summary, label, filename));
-
-  const zipped = await zipAsync(entries);
-  return { blob: new Blob([zipped as BlobPart], { type: 'application/zip' }), filename, summary };
+  // Intake routes from this first entry without inflating the font/resource
+  // payload. Older readers do not care about ZIP entry order.
+  const zipped = await zipAsync({
+    'manifest.json': strToU8(JSON.stringify(manifest, null, 2)),
+    [README_NAME]: strToU8(brandReadme(summary, label, filename)),
+    ...entries,
+  });
+  return { blob: new Blob([zipped as BlobPart], { type: LOLLY_MIME }), filename, summary };
 }
 
 /** Unzip helper shared with the views (start.ts sniffs the manifest before
@@ -418,16 +610,53 @@ function mergeLedgers(local: VersionIndex, added: VersionEntry[], packActive: st
 
 /**
  * Load a brand pack: verify, install the tokens doc, restore the font assets,
- * register the faces, apply the theme pref, repaint the chrome. Merge-only - 
+ * register the faces, apply the theme pref, repaint the chrome. Merge-only -
  * nothing outside the pack's own ids is touched.
+ *
+ * `opts.target` names the design system the pack is written INTO (plans/186 section
+ * 3.6). Without it every write goes where it always went - the active system's
+ * head, `user/fonts/…`, `user/logo/…`, the theme into localStorage, the chrome
+ * repainted - so an untargeted import is the path it was before records existed.
+ *
+ * With a target the pack is re-keyed on the way in: every font and logo id is
+ * rewritten from the portable `user/…` shape into the record's namespace, and
+ * the references to those ids are rewritten with them - the `$value`s in the
+ * head document and in each version payload, and the pinned ids in the version
+ * index. Frozen bytes keep their content-keyed id, because two systems that
+ * pinned identical bytes share one row.
+ *
+ * Two things a background targeted import deliberately does NOT do, because the system it
+ * writes is not necessarily the one on screen: it does not touch the theme in
+ * localStorage (the theme comes back on the summary, for the caller to store on
+ * the record) and it does not repaint the chrome or register the new faces. The
+ * switch that follows does both. When `activateInstance` is explicit, an
+ * instance pack may establish its catalog base while its tools are installed as
+ * part of that same foreground switch operation.
  */
 export async function importBrandPack(
   { host, storage }: { host: BrandTransferHost; storage: BrandStorage },
   bytes: ArrayBuffer | Uint8Array | Unzipped,
+  opts?: {
+    target?: { system: string };
+    /** The caller is importing a targeted system and switching to it as the
+     *  same committed operation. Let an instance pack establish its base before
+     *  its tools are cached; a background/for-later targeted import leaves the
+     *  current device connection untouched. */
+    activateInstance?: boolean;
+  },
 ): Promise<BrandImportSummary> {
   const files: Unzipped = (bytes instanceof ArrayBuffer || bytes instanceof Uint8Array)
     ? await unzipBrandBytes(bytes)
     : bytes;
+
+  const record = opts?.target ? await namedRecord(host, opts.target.system) : null;
+  const target: ImportTarget | null = record ? { record, ns: record.ns, map: new Map() } : null;
+  // Every rewrite below is a no-op without a target, and is SKIPPED rather than
+  // run as one: an untargeted import has to write the bytes it always wrote.
+  const map = target?.map;
+  const rekeyDoc = (doc: unknown): unknown => (map ? rewriteAssetRefs(doc, id => map.get(id) ?? id) : doc);
+  const rekeyVersion = (entry: VersionEntry): VersionEntry =>
+    (map ? rekeyEntry(entry, id => map.get(id) ?? id) : entry);
 
   const manifest = readJson(files, 'manifest.json');
   if (!manifest || manifest.format !== BRAND_FORMAT) {
@@ -453,9 +682,10 @@ export async function importBrandPack(
     if (!row?.id || !String(row.id).startsWith(USER_FONT_PREFIX) || !row.file) continue;
     const raw = files[row.file];
     if (!raw) continue;
+    const id = target ? mintId(target, String(row.id)) : String(row.id);
     try {
       await host.assets._uploadUserAsset({
-        id: row.id,
+        id,
         type: 'font',
         format: row.format || 'woff2',
         blob: new Blob([raw as BlobPart], { type: row.mime || 'font/woff2' }),
@@ -466,11 +696,15 @@ export async function importBrandPack(
       families.add(String(row.meta?.family ?? row.id));
     } catch (e) {
       summary.failedFonts++;
-      host.log?.('warn', 'Skipped restoring one font face (storage full?)', { id: String(row.id), error: String(e) });
+      host.log?.('warn', 'Skipped restoring one font face (storage full?)', { id, error: String(e) });
     }
   }
   summary.fontFamilies = families.size;
-  await registerUserFonts(host).catch(() => { /* faces load lazily at next boot */ });
+  // Only for the system this device is working in. A targeted import writes a
+  // system that may not be active, and the font registry is document-global:
+  // registering another system's faces now would put them in front of the active
+  // brand's. The switch registers them when it makes the system current.
+  if (!target) await registerUserFonts(host).catch(() => { /* faces load lazily at next boot */ });
 
   // Logos - restore each image asset before tokens land (asset.logo.* refs
   // resolve to assets that are already present). Row-id-driven, so old packs
@@ -481,9 +715,10 @@ export async function importBrandPack(
     if (!row?.id || !String(row.id).startsWith(USER_LOGO_PREFIX) || !row.file) continue;
     const raw = files[row.file];
     if (!raw) continue;
+    const id = target ? mintId(target, String(row.id)) : String(row.id);
     try {
       await host.assets._uploadUserAsset({
-        id: row.id,
+        id,
         type: (row.format === 'svg' ? 'vector' : 'raster'),
         format: row.format || 'png',
         blob: new Blob([raw as BlobPart], { type: row.mime || 'image/png' }),
@@ -492,7 +727,7 @@ export async function importBrandPack(
       });
       summary.logos++;
     } catch (e) {
-      host.log?.('warn', 'Skipped restoring one logo (storage full?)', { id: String(row.id), error: String(e) });
+      host.log?.('warn', 'Skipped restoring one logo (storage full?)', { id, error: String(e) });
     }
   }
 
@@ -537,7 +772,12 @@ export async function importBrandPack(
     return rest;
   };
 
-  const localHead = await readTokensBlob(host, USER_TOKENS_ID);
+  // Which head the writes go to, and whose version list they merge against.
+  // Untargeted that is the active system's (plans/186 section 3.3): an import
+  // adds to the system the person is working in. Targeted it is the named
+  // record's, whatever the device is currently showing.
+  const toSystem = target ? { system: target.record.id } : {};
+  const localHead = await readTokensBlob(host, target?.record.headId ?? await activeHeadId(host));
   const localIndex = readVersionIndex(localHead);
   const packIndex = readPackLedger(files);
   const added: VersionEntry[] = [];
@@ -550,13 +790,13 @@ export async function importBrandPack(
       // decides what a published name means, and this path cannot soften it.
       // The payload is stripped defensively: a version carries no ledger, and the
       // local list is the only one that could be authoritative here anyway.
-      await installUserTokens(host as Parameters<typeof installUserTokens>[0], stripVersionIndex(payload), {
-        label: entry.label,
-        versionSlug: entry.slug,
-        allowVersionWrite: true,
-      });
+      await installUserTokens(
+        host as Parameters<typeof installUserTokens>[0],
+        rekeyDoc(stripVersionIndex(payload)),
+        { label: entry.label, versionSlug: entry.slug, allowVersionWrite: true, ...toSystem },
+      );
       const pins = await Promise.all((entry.assets ?? []).map(p => usablePin(entry.slug, p)));
-      added.push({ ...entry, assets: pins });
+      added.push(rekeyVersion({ ...entry, assets: pins }));
       summary.versions++;
     } catch (e) {
       if (e instanceof VersionExistsError) summary.versionsSkipped++;
@@ -567,14 +807,22 @@ export async function importBrandPack(
   const doc = readJson(files, 'tokens.json');
   if (doc && typeof doc === 'object') {
     // The pack's document carries the PACK's ledger. Replace it with the merged
-    // one - local entries plus the versions that actually landed, oldest first - 
+    // one - local entries plus the versions that actually landed, oldest first -
     // or the receiver's own published history would be overwritten by a file
     // someone else exported. Untouched when neither side has a ledger, so an
     // unversioned pack installs the document exactly as it always did.
     const merged = mergeLedgers(localIndex, added, packIndex.active);
-    const payload = merged ? withVersionIndex(doc, merged) : doc;
+    // The pack may name a design system of its own. THIS DEVICE'S RECORD WINS:
+    // the person chose which system to write and what to call it here, and a
+    // document claiming another id would send every later read to a namespace
+    // this device does not hold.
+    const identified = target
+      ? withDesignSystemIdentity(rekeyDoc(doc), { id: target.record.id, label: target.record.label })
+      : doc;
+    const payload = merged ? withVersionIndex(identified, merged) : identified;
     await installUserTokens(host as Parameters<typeof installUserTokens>[0], payload, {
-      label: typeof manifest.label === 'string' ? manifest.label : 'Imported brand',
+      label: target?.record.label ?? (typeof manifest.label === 'string' ? manifest.label : 'Imported brand'),
+      ...toSystem,
     });
     summary.tokens = true;
   } else if (added.length) {
@@ -586,7 +834,7 @@ export async function importBrandPack(
     const merged = mergeLedgers(localIndex, added, packIndex.active);
     if (merged && localHead && typeof localHead === 'object') {
       await installUserTokens(
-        host as Parameters<typeof installUserTokens>[0], withVersionIndex(localHead, merged),
+        host as Parameters<typeof installUserTokens>[0], withVersionIndex(localHead, merged), { ...toSystem },
       );
     } else {
       // No head on either side: the versions are real assets belonging to a
@@ -597,12 +845,26 @@ export async function importBrandPack(
     }
   }
 
+  // The theme is device-wide, so a targeted import hands it back instead of
+  // applying it: writing localStorage here would re-theme the app on behalf of a
+  // design system the person may not even have switched to yet. The count is the
+  // same either way - the preference travelled, only its destination differs.
   const prefs = readJson(files, 'prefs.json') ?? {};
   for (const key of BRAND_PREF_KEYS) {
-    if (typeof prefs[key] === 'string') { storage.setItem(key, prefs[key]); summary.prefs++; }
+    if (typeof prefs[key] !== 'string') continue;
+    if (!target) storage.setItem(key, prefs[key]);
+    summary.prefs++;
+  }
+  if (target) {
+    const theme = readPackTheme(prefs.theme);
+    if (theme) summary.theme = theme;
   }
 
-  await applyChromeBrandVars(host as Parameters<typeof applyChromeBrandVars>[0]).catch(() => { /* cosmetic */ });
+  // Same reason: the chrome shows the ACTIVE system, and a targeted import has
+  // not switched to anything. The switch repaints.
+  if (!target) {
+    await applyChromeBrandVars(host as Parameters<typeof applyChromeBrandVars>[0]).catch(() => { /* cosmetic */ });
+  }
 
   // Instance-pack parts (plans/131): the brand's tools + catalog assets, plus
   // the instance base its community content comes from. All-or-nothing and
@@ -618,6 +880,11 @@ export async function importBrandPack(
     // have moved the base.
     const result = await importInstancePackParts(files, undefined, async ({ instance }) => {
       if (!instance) return;
+      // A TARGETED import writes a design system that may not be the active one
+      // (plans/186 section 3.6): its instance is recorded on the record and the
+      // switch applies it. Moving the base here would connect the shell to an
+      // instance whose design system is not on screen.
+      if (opts?.target && !opts.activateInstance) return;
       const { setInstanceBase } = await import('./lib/instance.ts');
       await setInstanceBase(instance).catch(e =>
         host.log?.('warn', "Couldn't set the pack's instance base", { error: String(e) }));

@@ -28,10 +28,10 @@
 .render-pill {
   display: none;            /* shown per breakpoint */
   align-items: stretch;
-  border-radius: calc(var(--radius)*1.5);
-  background: hsl(var(--primary));
-  color: hsl(var(--primary-foreground));
-  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.3);
+  border-radius: var(--ui-radius-pill);
+  background: var(--ui-color-action-primary);
+  color: var(--ui-color-action-on-primary);
+  box-shadow: var(--ui-elevation-floating);
   overflow: hidden;         /* clip the two halves to the pill's rounded ends */
   isolation: isolate;
 }
@@ -48,11 +48,11 @@
   font-weight: 700;
   padding: 13px 22px;
   cursor: pointer;
-  transition: background-color var(--dur-1) ease, color var(--dur-1) ease;
+  transition: background-color var(--ui-motion-feedback) var(--ui-motion-standard), color var(--ui-motion-feedback) var(--ui-motion-standard);
 }
 .render-pill-btn:hover { background: rgba(255, 255, 255, 0.14); }
 .render-pill-btn:active { background: rgba(0, 0, 0, 0.12); }
-.render-pill-btn:focus-visible { outline: 2px solid hsl(var(--primary-foreground)); outline-offset: -4px; border-radius: var(--radius-pill); }
+.render-pill-btn:focus-visible { outline: 2px solid var(--ui-color-action-on-primary); outline-offset: -4px; border-radius: var(--ui-radius-pill); }
 /* The arrow/check rides the same multiplier as the "Export"/"Save" word beside
    it - an icon paired with a growing label has to grow with it, or the pill
    reads as a big word next to a stale mark. The pill has no fixed height, so
@@ -108,12 +108,15 @@
    per-breakpoint and stays in the two blocks. */
 .export-popup-title {
   font-size: var(--fs-md); font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.06em; color: hsl(var(--muted-foreground));
+  letter-spacing: 0.06em; color: var(--ui-color-text-muted);
 }
 .export-popup-close {
   border: none; background: none; cursor: pointer; padding: var(--sp-2) var(--sp-4);
-  font-size: calc(18px * var(--a11y-fs)); line-height: 1; color: hsl(var(--muted-foreground));
+  border-radius: var(--ui-radius-control);
+  font-size: calc(18px * var(--a11y-fs)); line-height: 1; color: var(--ui-color-text-muted);
 }
+.export-popup-close:hover { background: var(--ui-color-surface-muted); color: var(--ui-color-text-default); }
+.export-popup-close:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 2px; }
 
 /* Desktop (>640px): the Render button lives bottom-left of the sidebar and the
    export panel expands as a NON-MODAL sticky sheet over the sidebar bottom - no
@@ -151,15 +154,14 @@
     backdrop-filter: blur(.5em);
     display: flex;
     flex-direction: column;
-    background: hsl(var(--card));
-    background: hsla(var(--card) / .7);
-    color: hsl(var(--card-foreground));
-    border-radius: 12px 12px 0 0;
-    border-top: 1px solid hsl(var(--border));
-    box-shadow: 0 .2rem .5rem 1px #0004, 0 -10px 36px #0002;
+    background: color-mix(in srgb, var(--ui-color-surface-raised) 70%, transparent);
+    color: var(--ui-color-text-default);
+    border-radius: var(--ui-radius-panel) var(--ui-radius-panel) 0 0;
+    border-top: 1px solid var(--ui-color-border-default);
+    box-shadow: var(--ui-elevation-sheet);
     pointer-events: auto;
     transform: translateY(110%);              /* tucked below the viewport when closed */
-    transition: transform var(--dur-2) ease;
+    transition: transform var(--ui-motion-overlay) var(--ui-motion-standard);
   }
   .tool-layout.export-open .export-popup { transform: translateY(0); }
   .export-popup-head {
@@ -195,9 +197,10 @@
   .export-popup-tool {
     display: inline-flex; align-items: center; justify-content: center;
     border: none; background: none; cursor: pointer; padding: var(--sp-2);
-    border-radius: var(--radius-sm); color: hsl(var(--muted-foreground));
+    border-radius: var(--ui-radius-control); color: var(--ui-color-text-muted);
   }
-  .export-popup-tool:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+  .export-popup-tool:hover { background: var(--ui-color-surface-muted); color: var(--ui-color-text-default); }
+  .export-popup-tool:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 2px; }
   .export-popup-tool svg { width: var(--fs-xl); height: var(--fs-xl); display: block; }
 
   /* Lifted off the dock into an explicitly-placed, resizable floating window. The
@@ -208,10 +211,10 @@
     right: auto; bottom: auto;
     max-height: none;
     transform: none;
-    border-radius: 12px;
+    border-radius: var(--ui-radius-panel);
     z-index: 80;
     opacity: 0; visibility: hidden; pointer-events: none;
-    transition: opacity .16s ease, visibility .16s ease;
+    transition: opacity var(--ui-motion-overlay) var(--ui-motion-standard), visibility var(--ui-motion-overlay) var(--ui-motion-standard);
   }
   .tool-layout.export-open .export-popup.is-floating {
     opacity: 1; visibility: visible; pointer-events: auto;
@@ -3993,3 +3996,16 @@ html[data-a11y-text="large"] .input-section--dense .input-section-body {
   }
 }
 }
+
+/* A link-shaped action inside a notice (a switch, a reload) - plans/186. */
+.tool-notice-link {
+  border: none;
+  background: none;
+  padding: 0;
+  margin-left: 0.25em;
+  font: inherit;
+  color: hsl(var(--primary));
+  text-decoration: underline;
+  cursor: pointer;
+}
+.tool-notice-link:hover { text-decoration: none; }

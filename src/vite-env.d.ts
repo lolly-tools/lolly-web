@@ -16,6 +16,8 @@ interface ImportMetaEnv {
   // loadable .lolly instance pack; unset means unsigned/dev. Read only by
   // lib/pack-store.ts (kept in sync with catalog/integrity.ts's PINNED_KEY).
   readonly VITE_CATALOG_PUBLIC_KEY_JWK?: string;
+  // `verified` on deployable builds; `unsigned-dev` on local build/preview.
+  readonly VITE_CATALOG_TRUST_MODE?: 'verified' | 'unsigned-dev';
 }
 
 interface ImportMeta {

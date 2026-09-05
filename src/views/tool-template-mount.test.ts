@@ -167,7 +167,7 @@ test('a navigate-away before the pick lands cannot patch a torn-down runtime', (
     'a navigate-away during the chunk load must skip opening the chooser entirely');
   assert.match(
     openCall,
-    /onOpen: close => \{ if \(templatePickTornDown\) close\(\); else templatePickClose = close; \}/,
+    /onOpen:\s*\(close\)\s*=>\s*\{\s*if \(templatePickTornDown\) close\(\);\s*else templatePickClose = close;\s*\}/,
     'the close handle is armed onto the holder - or fired immediately if teardown already landed',
   );
 
@@ -187,7 +187,7 @@ test('a navigate-away before the pick lands cannot patch a torn-down runtime', (
   // with the view - nothing else here would otherwise touch it.
   const cleanup = bodyAfter(CODE, 'viewEl._cleanup = () => {');
   assert.match(cleanup, /templatePickTornDown = true;/);
-  assert.match(cleanup, /templatePickClose\?\.\(\); templatePickClose = null;/);
+  assert.match(cleanup, /templatePickClose\?\.\(\);\s*templatePickClose = null;/);
 });
 
 // ── Surface 1: the chooser also opens for user-template-only tools ────────────
@@ -199,7 +199,7 @@ test('a navigate-away before the pick lands cannot patch a torn-down runtime', (
 test('the chooser gate opens on built-in OR user templates', () => {
   assert.match(
     CODE,
-    /else if \(!slot && !seededDirect && Object\.keys\(values\)\.length === 0 && \(!reachedViaLink \|\| templateParam === ''\)\) \{/,
+    /else if \(\s*!slot\s*&&\s*!seededDirect\s*&&\s*Object\.keys\(values\)\.length === 0\s*&&\s*\(!reachedViaLink \|\| templateParam === ''\)\s*\) \{/,
     'the gate condition dropped the hard hasTemplates requirement so a user-template-only tool reaches it'
     + ' (an EMPTY ?template= - the gallery card + New button - is an explicit chooser ask that overrides reachedViaLink)',
   );
@@ -216,7 +216,9 @@ test('the built-in fast path skips the user-template store read before mount', (
   // A tool WITH built-in templates always opens, so it must not pay the async store read on
   // the mount path - the count is guarded behind `if (!hasTemplates)`, and the chooser
   // promise below still fetches the user templates off the mount path as it always did.
-  const branch = bodyAfter(CODE, "else if (!slot && !seededDirect && Object.keys(values).length === 0 && (!reachedViaLink || templateParam === ''))");
+  const head = CODE.match(/else if \(\s*!slot\s*&&\s*!seededDirect\s*&&\s*Object\.keys\(values\)\.length === 0\s*&&\s*\(!reachedViaLink \|\| templateParam === ''\)\s*\)/)?.[0];
+  assert.ok(head, 'the blank-fresh-open chooser branch exists');
+  const branch = bodyAfter(CODE, head!);
   const countAt = branch.indexOf('hasUserTemplates = mine.length > 0;');
   assert.notEqual(countAt, -1, 'the user-template count is inside this branch');
   assert.match(branch.slice(0, countAt), /if \(!hasTemplates\) \{/,
@@ -336,9 +338,9 @@ test('the stage reserves NO right band - the dock nudges the view instead', () =
 test('the Inspector toggle and the object bar\'s reveal both go through the dock gate', () => {
   assert.match(CODE, /toggle: \(\) => setInspectorOpen\(!inspectorOpen\)/,
     'the bar\'s toggle is a dock request, not a setOpen on the panel');
-  assert.match(CODE, /reveal: \(section\) => \{ setInspectorOpen\(true\); designInspector\?\.reveal\(section\); \}/,
+  assert.match(CODE, /reveal: \(section\) => \{\s*setInspectorOpen\(true\);\s*designInspector\?\.reveal\(section\);\s*\}/,
     'the object bar can reveal a section while the column is out of the dock, so it asks for a slot first');
-  assert.match(CODE, /onClose: \(\) => \{ setInspectorOpen\(false\); designTopbar\?\.focusInspectorToggle\(\); \}/,
+  assert.match(CODE, /onClose: \(\) => \{\s*setInspectorOpen\(false\);\s*designTopbar\?\.focusInspectorToggle\(\);\s*\}/,
     'the column\'s own header close comes back to the one writer, or the toggle and the panel '
     + 'disagree - and it hands the keyboard to the only control that re-opens the panel, '
     + 'because closing removes the subtree that held focus');

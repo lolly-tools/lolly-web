@@ -165,6 +165,13 @@ export async function mountDataView(viewEl: HTMLElement, host: HostV1, _params =
     limitsEl.hidden = false;
     limitsEl.innerHTML = `<b>${escape(msg || t('That file could not be read.'))}</b>`;
   }
+
+  // A native double-click / Open With arrives through the universal router.
+  // Consume it only after this view is fully wired so it behaves exactly like a
+  // file picked or dropped on the utility itself (including worksheet tabs).
+  const { takePendingSpreadsheetFile } = await import('../lib/drop-router.ts');
+  const pending = takePendingSpreadsheetFile();
+  if (pending) await onFile(pending);
 }
 
 /** A ragged grid (row 0 = header) → the grid's {columns, rows} value. */

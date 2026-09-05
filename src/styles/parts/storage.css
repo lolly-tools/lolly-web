@@ -372,6 +372,8 @@
 .profile-view .store-chip-sw[data-cat="reword"] { background: hsl(var(--store-10, 75 50% 52%)); }
 .profile-view .store-bar .seg[data-cat="aidetect"],
 .profile-view .store-chip-sw[data-cat="aidetect"] { background: hsl(var(--store-11, 180 45% 48%)); }
+.profile-view .store-bar .seg[data-cat="durable"],
+.profile-view .store-chip-sw[data-cat="durable"] { background: hsl(var(--store-12, 8 62% 60%)); }
 
 /* `.segmented-control`/`.segmented-btn` (component audit rec 1) used to live here -
    a byte-for-byte duplicate of `.view-seg`/`.view-seg-btn` (styles/parts/gallery.css)

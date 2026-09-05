@@ -64,7 +64,12 @@ import {
   resolveDesignVersion, versionAssetId,
 } from '../../../../engine/src/design-version.ts';
 import { instanceFetch, instancePath } from '../lib/instance.ts';
-import type { TokensAPI, TokenSet } from '@lolly-tools/core/host-v1';
+import type { DesignSystemSummary, TokensAPI, TokenSet } from '@lolly-tools/core/host-v1';
+// The design systems this device holds and which one is active (plans/186). A
+// type-only import: the registry is handed in through the host slice, so a test's
+// narrow stub (no registry) keeps the legacy discovery below byte for byte.
+import type { DesignSystemRecord, DesignSystemRegistry } from '../lib/design-system/registry.ts';
+import { DEFAULT_DESIGN_SYSTEM_ID, SHIPPED_DESIGN_SYSTEM_ID, designSystemHeadId, designSystemNamespace } from '../../../../engine/src/design-system.ts';
 // The exclusion read lives in its own leaf module (not lib/brand-doc.ts, whose
 // engine-barrel import would drag studio code into this bridge's boot graph).
 import { getExcludedSwatches } from '../lib/brand-exclusions.ts';
@@ -90,6 +95,10 @@ interface TokensHost {
   /** Optional: the host log, used once per unreadable version (see forVersion).
    *  Optional so the narrow stub every test builds keeps satisfying this slice. */
   log?(level: string, message: string, ctx?: unknown): void;
+  /** Optional: the device's design-system registry (plans/186). With it, the head
+   *  is the ACTIVE record's head id; without it, discovery is the legacy
+   *  user-first scan, so every existing caller and test is unchanged. */
+  designSystems?: DesignSystemRegistry;
 }
 
 /** A document-shaped token surface: the HostV1 reads plus the raw document and
@@ -152,6 +161,18 @@ export interface WebTokensAPI extends TokensAPI {
    * render.
    */
   forVersion(slug: string): TokenDocSurface;
+  /** The design systems on this device (plans/186). Without a registry, one entry
+   *  describing the discovered head, so a caller never has to branch. */
+  list(): Promise<DesignSystemSummary[]>;
+  /** The active design system (plans/186); null only before anything resolves. */
+  active(): Promise<DesignSystemSummary | null>;
+  /** The active record itself - the web shell's full shape, for the studio and the
+   *  switcher. Null without a registry. */
+  activeRecord(): Promise<DesignSystemRecord | null>;
+  /** Drop caches. `lock: true` also drops the memoised build-lock verdict, which a
+   *  plain bust keeps on purpose (a build fact) - a design-system SWITCH is the one
+   *  event that must reset it. */
+  bust(opts?: { lock?: boolean }): void;
 }
 
 const ASSET_INDEX_URL = '/catalog/assets/index.json';
@@ -186,6 +207,11 @@ interface InstallTokensHost {
     _getUserRecord?(id: string): Promise<{ meta?: Record<string, unknown> } | null>;
   };
   tokens?: TokensAPI & { bust?(): void; isLocked?(): Promise<boolean> };
+  /** Optional: the design-system registry (plans/186). With it a head write goes
+   *  to the ACTIVE system's head (or `opts.system`'s), and a first install while
+   *  the shipped system is active creates the `default` record - which is what a
+   *  first install always did, now with a record to show for it. */
+  designSystems?: DesignSystemRegistry;
 }
 
 /** Thrown when a brand override is attempted on a locked (authoritative) brand.
@@ -237,6 +263,8 @@ export async function installUserTokens(
   host: InstallTokensHost, doc: unknown,
   opts: {
     label?: string; versionSlug?: string; allowVersionWrite?: boolean;
+    /** Which design system to write (plans/186). Default: the active one. */
+    system?: string;
     /**
      * Skip the quota guard on this write. For ONE caller: the copy-on-write
      * preserver repointing pins while a delete is in flight
@@ -252,16 +280,21 @@ export async function installUserTokens(
   if (typeof doc !== 'object' || doc === null || Array.isArray(doc)) {
     throw new Error('installUserTokens: expected a DTCG token document (a plain object)');
   }
+  const target = await writeTarget(host, opts.system, opts.label);
+  const headId = target.headId;
 
   if (!opts.versionSlug) {
     await host.assets._uploadUserAsset({
-      id: USER_TOKENS_ID,
+      id: headId,
       type: 'tokens',
       format: 'json',
       blob: new Blob([JSON.stringify(doc)], { type: 'application/json' }),
       version: '1.0.0',
-      meta: { name: await headName(host, opts.label) },
+      meta: { name: await headName(host, headId, opts.label ?? target.label) },
     }, { skipQuota: opts.skipQuota });
+    if (target.record && opts.label && opts.label !== target.record.label) {
+      await host.designSystems?.put({ ...target.record, label: opts.label }).catch(() => { /* label is cosmetic */ });
+    }
     // The web tokens API memoises the doc + per-theme sets (see createTokensAPI);
     // bust so nothing keeps serving the outgoing brand. Optional-chained: a host
     // without the tokens capability just installs for the next boot.
@@ -284,7 +317,7 @@ export async function installUserTokens(
   if (!host.assets._getBlob) {
     throw new Error('installUserTokens: a version write needs assets._getBlob to check the ledger');
   }
-  const headDoc = await readJsonBlob(await host.assets._getBlob(USER_TOKENS_ID).catch(() => null));
+  const headDoc = await readJsonBlob(await host.assets._getBlob(headId).catch(() => null));
   if (readVersionIndex(headDoc).versions.some(v => v.slug === slug)) throw new VersionExistsError(slug);
   // A version is a leaf of the head's history and never carries a ledger of its
   // own - a stale copy of the list would be a second source of truth the moment
@@ -294,7 +327,7 @@ export async function installUserTokens(
   }
 
   await host.assets._uploadUserAsset({
-    id: versionAssetId(USER_TOKENS_ID, slug),
+    id: versionAssetId(headId, slug),
     type: 'tokens',
     format: 'json',
     blob: new Blob([JSON.stringify(doc)], { type: 'application/json' }),
@@ -316,13 +349,53 @@ export async function installUserTokens(
  * had one - which is exactly what an unlabelled write produced before, so a
  * first install is unchanged.
  */
-async function headName(host: InstallTokensHost, label?: string): Promise<string> {
+async function headName(host: InstallTokensHost, headId: string, label?: string): Promise<string> {
   if (label) return label;
   try {
-    const prev = (await host.assets._getUserRecord?.(USER_TOKENS_ID))?.meta?.name;
+    const prev = (await host.assets._getUserRecord?.(headId))?.meta?.name;
     if (typeof prev === 'string' && prev) return prev;
   } catch { /* unreadable store - fall through to the default */ }
   return 'Brand tokens';
+}
+
+/**
+ * Where a head write goes (plans/186 section 3.3). Without a registry: the legacy
+ * id, as always. With one: `opts.system`'s head, else the active record's - and
+ * when the active record is the SHIPPED system (nothing of the person's yet),
+ * the `default` record is created and activated first, which is exactly what a
+ * first install used to mean when it shadowed the catalog. A record whose
+ * material is read-only (the material lock, section 3.5) refuses the write.
+ */
+async function writeTarget(
+  host: InstallTokensHost, system: string | undefined, label: string | undefined,
+): Promise<{ headId: string; label?: string; record: DesignSystemRecord | null }> {
+  const reg = host.designSystems;
+  if (!reg) return { headId: USER_TOKENS_ID, record: null };
+  let record = system ? await reg.get(system) : await reg.active();
+  if (system && !record) throw new Error(`installUserTokens: no design system “${system}” on this device`);
+  if (!record || record.source.kind === 'shipped') {
+    if (system) throw new Error('installUserTokens: the shipped design system is read-only');
+    const existing = await reg.get(DEFAULT_DESIGN_SYSTEM_ID);
+    const now = Date.now();
+    record = existing ?? {
+      id: DEFAULT_DESIGN_SYSTEM_ID,
+      label: label || 'My design system',
+      ns: designSystemNamespace(DEFAULT_DESIGN_SYSTEM_ID),
+      headId: designSystemHeadId(DEFAULT_DESIGN_SYSTEM_ID),
+      source: { kind: 'local' },
+      locked: false,
+      createdAt: now,
+      lastUsedAt: now,
+    };
+    if (!existing) await reg.put(record);
+    await reg.setActive(record.id);
+  }
+  // The material lock guards the ACTIVE-system write path - the studio's, which
+  // names no system. A write that names its target is the import, the sync or
+  // the copy bringing a system's own material down, and those are how a locked
+  // system gets its bytes in the first place.
+  if (record.locked && !system) throw new BrandLockedError();
+  return { headId: record.headId, label: record.label, record };
 }
 
 /** Parse a JSON blob, or null when there is nothing readable there. */
@@ -332,12 +405,28 @@ async function headName(host: InstallTokensHost, label?: string): Promise<string
  * the brand pack's tokens are the pack's to travel, not the file's.
  */
 export async function readUserDesignSystem(
-  host: { assets: { _getBlob(id: string): Promise<Blob | null>; _getUserRecord?(id: string): Promise<{ meta?: { name?: unknown } } | null> } },
-): Promise<{ doc: Record<string, unknown>; label?: string } | null> {
-  const doc = await readJsonBlob(await host.assets._getBlob(USER_TOKENS_ID).catch(() => null));
+  host: {
+    assets: { _getBlob(id: string): Promise<Blob | null>; _getUserRecord?(id: string): Promise<{ meta?: { name?: unknown } } | null> };
+    designSystems?: DesignSystemRegistry;
+  },
+): Promise<{ doc: Record<string, unknown>; label?: string; id?: string; source?: { kind: string; instance?: string } } | null> {
+  const record = await host.designSystems?.active().catch(() => null) ?? null;
+  if (record && record.source.kind === 'shipped') return null;
+  const headId = record?.headId || USER_TOKENS_ID;
+  const doc = await readJsonBlob(await host.assets._getBlob(headId).catch(() => null));
   if (!doc || typeof doc !== 'object') return null;
-  const name = (await host.assets._getUserRecord?.(USER_TOKENS_ID).catch(() => null))?.meta?.name;
-  return { doc: doc as Record<string, unknown>, ...(typeof name === 'string' && name ? { label: name } : {}) };
+  const name = record?.label || (await host.assets._getUserRecord?.(headId).catch(() => null))?.meta?.name;
+  // The identity a share file carries (plans/186 section 3.8): the id, and for a
+  // hosted system where it came from, so a recipient can add it by link.
+  const source = record
+    ? { kind: record.source.kind, ...(record.source.kind === 'hosted' ? { instance: record.source.instance } : {}) }
+    : undefined;
+  return {
+    doc: doc as Record<string, unknown>,
+    ...(typeof name === 'string' && name ? { label: name } : {}),
+    ...(record ? { id: record.id } : {}),
+    ...(source ? { source } : {}),
+  };
 }
 
 async function readJsonBlob(blob: Blob | null): Promise<unknown> {
@@ -435,6 +524,21 @@ function urlDesignVersion(): string | null {
   } catch { return null; }   // sandboxed / no location - the head, as always
 }
 
+/** What `list()`/`active()` answer WITHOUT a registry: one entry for the discovered
+ *  head - `default` for a user install, `shipped` for the catalog - so a caller
+ *  written against plans/186 works on a host that predates it. */
+function legacySummary(headId: string | null): DesignSystemSummary {
+  const user = !!headId && headId.startsWith('user/');
+  return {
+    id: user ? DEFAULT_DESIGN_SYSTEM_ID : SHIPPED_DESIGN_SYSTEM_ID,
+    label: user ? 'My design system' : 'Lolly',
+    source: user ? 'local' : 'shipped',
+    active: true,
+    locked: false,
+    headId,
+  };
+}
+
 export function createTokensAPI(host: TokensHost): WebTokensAPI {
   let catalogMetaPromise: Promise<TokensAssetMeta | null> | null = null;
 
@@ -509,6 +613,19 @@ export function createTokensAPI(host: TokensHost): WebTokensAPI {
     // unlocked profile must still be shadowed here).
     const catalog = await catalogTokensAsset();
     if (catalog?.brandLock) return catalog;
+    // With a registry (plans/186) the head is the ACTIVE record's, no scan: the
+    // shipped record means the catalog, any other record means its own head id.
+    // A record whose head bytes are gone (a half-finished remove) falls back to
+    // the catalog rather than rendering nothing.
+    const reg = host.designSystems;
+    if (reg) {
+      const record = await reg.active().catch(() => null);
+      if (record && record.source.kind !== 'shipped' && record.headId) {
+        const blob = await host.assets._getBlob(record.headId).catch(() => null);
+        if (blob) return { id: record.headId, formats: [] };
+      }
+      return catalog;
+    }
     // Unlocked: a USER install wins. _findMetaByType is user-first AND IDB-only
     // (the index fallback lives here in the bridge, not in it), so consult it for
     // a user asset and otherwise reuse the catalog asset already resolved above - 
@@ -623,14 +740,39 @@ export function createTokensAPI(host: TokensHost): WebTokensAPI {
       // second surface over the same document would re-read and re-resolve it.
       return slug === DESIGN_VERSION_LATEST ? head : versionSurface(slug);
     },
+    /** The device's design systems (see WebTokensAPI.list). */
+    async list() {
+      const reg = host.designSystems;
+      if (reg) {
+        const [records, activeId] = await Promise.all([reg.list(), reg.activeId()]);
+        return records.map(r => reg.summary(r, activeId));
+      }
+      const id = (await headAsset())?.id ?? null;
+      return [legacySummary(id)];
+    },
+    /** The active design system (see WebTokensAPI.active). */
+    async active() {
+      const reg = host.designSystems;
+      if (reg) {
+        const record = await reg.active().catch(() => null);
+        return record ? reg.summary(record, record.id) : null;
+      }
+      return legacySummary((await headAsset())?.id ?? null);
+    },
+    async activeRecord() {
+      return host.designSystems ? (await host.designSystems.active().catch(() => null)) : null;
+    },
     /** Drop caches (e.g. after the user imports their own tokens). The lock is a
-     *  build fact, not user state, so its cache survives a bust - but every
-     *  version surface goes, since a fresh ledger may repoint or retire one. */
-    bust() {
+     *  build fact, not user state, so its cache survives a plain bust - but every
+     *  version surface goes, since a fresh ledger may repoint or retire one. A
+     *  design-system switch passes `lock: true` (see WebTokensAPI.bust). */
+    bust(opts: { lock?: boolean } = {}) {
       head.bust();
       render.bust();
       versionSurfaces.clear();
       warned.clear();
+      if (opts.lock) catalogMetaPromise = null;
+      host.designSystems?.bust();
     },
   };
   return api;

@@ -46,7 +46,7 @@
  *  5. catalogue - brand asset uploads, sorted the same way the Catalogue view
  *                 sorts them (vector / image / audio / motion).
  *
- * Everything persists to the one `user/tokens/brand` install via the bridge's
+ * Everything persists to the active design system's head via the bridge's
  * single write chokepoint (installUserTokens → bust → the next get()/colors()/
  * resolve() re-reads). ONE save discipline (plan 97 section 6): every commit-level
  * action persists immediately and a session undo stack (Ctrl/Cmd+Z, scoped to
@@ -64,6 +64,7 @@ import '../styles/parts/brand-studio.css'; // every .be-* rule - rides this modu
 import '../styles/parts/tool.css';         // .help-tip-btn/-pop/-host - the shared chunk the tool
                                            // view and /profile already pull for the same primitive
 import './oklch-slice.css';                // the gamut chart's .okls-* rules (see oklch-slice.ts)
+import type { Unzipped } from 'fflate';
 import { deriveBrandTokens, createTokenSet, colorToHex, parseColor as parseCssColor, convertColor, colorToHexString, aliasPath, contrastRatio, apcaContrast, rampOklab, extractSvgColors, hexToOklch, formatOklch, parseOklch, deserializeCurve, RAMP_STEPS_MIN, RAMP_STEPS_MAX, SCHEME_KINDS, generateSchemeAccents, generateAnalogous,
   // `formatColor` is ALIASED: this module already imports a different one from
   // ./color-formats.ts (`formatColor('cmyk', hex)`), and letting the two share a
@@ -76,7 +77,8 @@ import { nameColor } from './color-namer.ts';
 import { palettePreviewSvgs } from './palette-preview.ts';
 import type { HostV1, TokenSet } from '@lolly-tools/core/host-v1';
 import type { WebTokensAPI } from '../bridge/tokens.ts';
-import { installUserTokens, USER_TOKENS_ID } from '../bridge/tokens.ts';
+import { installUserTokens } from '../bridge/tokens.ts';
+import { isUserDesignSystemActive } from './design-system/active.ts';
 import {
   isRec, prettify, walkSwatches, setSwatchValue, setSwatchName, deleteSwatch, addSwatch, setSwatchGroup, setSemanticRampAlias,
   setSwatchCmykLock, setSwatchSpotLock, getSwatchPrintOverride, primaryAnchorPath,
@@ -90,7 +92,7 @@ import { mountCurveEditor } from './curve-editor.ts';
 import type { CurveEditorHandle } from './curve-editor.ts';
 import { exportSwatches, type SwatchExportFormat } from './swatch-export.ts';
 import type { SpotColor, FinishKind } from '@lolly-tools/core/host-v1';
-import { applyChromeBrandVars, tokenValueToHex, brandRadiusValue } from '../brand-vars.ts';
+import { applyChromeBrandVars, tokenValueToHex, brandRadiusValue, brandSpaceValue } from '../brand-vars.ts';
 import { colorFieldHtml, wireColorField, setSwatches, refreshSwatches } from '../components/color-field.ts';
 import { STORAGE_FORMATS, formatColor, serializeColor, storageFormatOf } from './color-formats.ts';
 import type { StorageFormat } from './color-formats.ts';
@@ -107,7 +109,7 @@ import type { SlicePlane } from '@lolly/engine';
 import { swatchTile, tileLabel } from './swatches.ts';
 import {
   listUserFonts, installGoogleFont, installFontFromBytes, setPrimaryFont, setMonoFont, removeUserFont,
-  primaryFontFamily, monoFontFamily, setBrandRadius,
+  primaryFontFamily, monoFontFamily, setBrandRadius, setBrandSpace,
   setDisplayFont, setItalicFont, displayFontFamily, italicFontFamily,
 } from '../user-fonts.ts';
 import type { UserFontsHost, UserFontFamily, FontRole } from '../user-fonts.ts';
@@ -1100,7 +1102,7 @@ export interface BrandEditorHandle {
    *  since plan 97 M2; absent on a locked build, which writes nothing at all. */
   addColors?: (entries: ColorEntry[]) => number;
   exportPack: () => Promise<{ filename: string }>;
-  importPack: (file: File) => Promise<void>;
+  importPack: (source: File | Unzipped) => Promise<void>;
   /** Re-read the installed doc and repaint every panel - for a host that
    *  installed tokens through its own path (JSON/SVG import) underneath us. */
   reload: () => Promise<void>;
@@ -1184,9 +1186,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
   // considered default; the catalog's incidental step count isn't a user choice.
   let isUserBrand = false;
   try {
-    isUserBrand = (await (host.assets as unknown as {
-      _findMetaByType?(t: string): Promise<{ id: string } | null>;
-    })._findMetaByType?.('tokens'))?.id === USER_TOKENS_ID;
+    isUserBrand = await isUserDesignSystemActive(host);
   } catch { /* discovery unavailable - treat as not user-owned */ }
 
   // Derive-control state (separate from the edited doc - it RE-SEEDS on install).
@@ -1405,10 +1405,19 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         <div class="be-wing-body">
       <div class="be-colour">
         ${panelHead(t('Start from one colour'), t('Pick a colour and Lolly works out the ramps, both themes and every role. Click a step in the Neutral or Secondary ramp to anchor that shade. This is a preview until you replace the palette.'))}
+        ${/* The proposal already exists from the seed. Put the review decision
+              before the long visual workbench so a phone user can act within
+              one viewport; the button still opens the mandatory review card
+              and writes nothing by itself. */''}
+        <div class="be-gen-actions">
+          <button type="button" class="be-cta" data-be-replace-palette>${t('Replace palette')}</button>
+          <span class="be-gen-note">${t('Adds nothing on its own. You see exactly what changes first.')}</span>
+        </div>
+        <div class="be-review" data-be-review hidden></div>
         <div class="be-derive">
           <div class="be-colorpick">
             <span class="be-field-label">${t('Primary colour')}</span>
-            <div data-be-primary-field>${colorFieldHtml('be-primary', primary, { inline: true, modes: true })}</div>
+            <div data-be-primary-field>${colorFieldHtml('be-primary', primary, { inline: true, modes: true, progressive: true })}</div>
           </div>
           <div class="be-derive-controls">
             <label class="be-field"><span class="be-field-label">${t('Scheme')}</span>${segHtml('scheme', SCHEMES, scheme, t('Colour scheme'))}</label>
@@ -1429,6 +1438,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
         </div>
       </div>
 
+      <details class="be-generate-detail">
+        <summary>${t('Build the palette')}</summary>
       <div class="be-generate">
         ${panelHead(t('Build the palette'), t('Generate matching colours from the primary - pick a harmony, then <strong>+ Add</strong> the ones you want. Each comes pre-named; rename any of them later. See the whole palette on real graphics below.'))}
         <div class="be-field">
@@ -1467,21 +1478,8 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
           <div class="be-previews" data-be-previews></div>
         </div>
       </div>
+      </details>
 
-      ${/* Replace is the ONLY thing in this wing that writes. It opens a review
-            card first - the card is the review, and undo is the safety net, so
-            no confirm dialog stands here. */''}
-      <div class="be-gen-actions">
-        <button type="button" class="be-cta" data-be-replace-palette>${t('Replace palette')}</button>
-        <span class="be-gen-note">${t('Adds nothing on its own. You see exactly what changes first.')}</span>
-      </div>
-      ${/* NOT a live region. The card is a confirmation someone has to act on,
-            which is a FOCUS job - renderReview focuses its primary, and a screen
-            reader reads the card as that button's context. Adding aria-live on
-            top announced the whole subtree a second time, as a mutation. The
-            polite channel is still used here, through announce(), for the things
-            that are genuinely news rather than a thing to press. */''}
-      <div class="be-review" data-be-review hidden></div>
         </div>
       </details>
 
@@ -1733,13 +1731,22 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
 
       <div class="be-tab" data-be-tab-panel="tokens">
       <div class="be-panel be-radius-panel">
-        ${panelHead(t('Rounded corners'), t('One radius token - cards, buttons and panels across the app (and the tools that opt in) follow it.'))}
+        ${panelHead(t('Rounded corners'), t('One brand radius drives a full scale: fine controls use smaller steps, panels use the base, and the pill step becomes fully rounded. Set it to 0 for straight corners everywhere.'))}
         <div class="brand-radius-row">
           <span class="brand-radius-preview" data-be-radius-preview aria-hidden="true"></span>
           <input type="range" class="field-range brand-radius-slider" data-be-radius-slider min="0" max="1.5" step="0.05" aria-label="${escape(t('Corner radius'))}">
           <span class="brand-radius-value" data-be-radius-value></span>
         </div>
         <p class="be-err" data-be-radius-err role="alert" hidden></p>
+      </div>
+      <div class="be-panel be-space-panel">
+        ${panelHead(t('Spacing rhythm'), t('One base space token drives every Lolly gap: the compact steps, controls, panels and page margins all move together. This only writes <code>space.base</code> to your brand.'))}
+        <div class="brand-space-row">
+          <span class="brand-space-preview" data-be-space-preview aria-hidden="true"><i></i><i></i><i></i></span>
+          <input type="range" class="field-range brand-space-slider" data-be-space-slider min="0.25" max="1.5" step="0.05" aria-label="${escape(t('Base spacing'))}">
+          <span class="brand-space-value" data-be-space-value></span>
+        </div>
+        <p class="be-err" data-be-space-err role="alert" hidden></p>
       </div>
       <div class="be-panel be-tokens" data-be-tokens-mount></div>
       </div>
@@ -2207,7 +2214,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     primary = hex;
     const wrap = $('[data-be-primary-field]') as HTMLElement | null;
     if (wrap) {
-      wrap.innerHTML = colorFieldHtml('be-primary', hex, { inline: true, modes: true });
+      wrap.innerHTML = colorFieldHtml('be-primary', hex, { inline: true, modes: true, progressive: true });
       wireColorField(wrap, { onChange: onPrimaryFieldChange });
       refreshSwatches(wrap);
     }
@@ -2752,7 +2759,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     curveAnchorPrimary = primary;
     const wrap = $('[data-be-primary-field]') as HTMLElement | null;
     if (wrap) {
-      wrap.innerHTML = colorFieldHtml('be-primary', primary, { inline: true, modes: true });
+      wrap.innerHTML = colorFieldHtml('be-primary', primary, { inline: true, modes: true, progressive: true });
       wireColorField(wrap, { onChange: onPrimaryFieldChange });
     }
     // Overlay the re-loaded curves so the preview matches the doc's (curve-baked)
@@ -3136,7 +3143,9 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     // rather than as a popover that would overlap the rows below), `modes`,
     // whose value input IS the typed-value entry (hex, OKLCH, HSL, RGB, CMYK),
     // and `dials` - the L/C/H wheels the first pick is worth opening on.
-    mountEl.innerHTML = colorFieldHtml('be-edit-color', hex || '#888888', { inline: true, modes: true, dials: true });
+    mountEl.innerHTML = colorFieldHtml('be-edit-color', hex || '#888888', {
+      inline: true, modes: true, dials: true, progressive: pickHex !== null,
+    });
     wireColorField(mountEl, {
       onChange: (id, value) => {
         if (id !== 'be-edit-color') return;
@@ -3336,7 +3345,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     pickHex = hex;
     storedFmt = 'lch';
     renderStoredSeg();
-    if (storedRow) storedRow.hidden = false;
+    if (storedRow) storedRow.hidden = true;
     if (editorLockBadge) editorLockBadge.hidden = true;
     if (useasRow) useasRow.hidden = true;
     if (substDetails) { substDetails.open = false; substDetails.hidden = true; }
@@ -3347,6 +3356,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (editorCancelBtn) editorCancelBtn.hidden = false;
     editorEl.classList.add('is-pick');
     renderEditField(hex);
+    const fineToggle = editorEl.querySelector<HTMLButtonElement>('[data-color-fine-toggle]');
+    fineToggle?.addEventListener('click', () => {
+      if (storedRow) storedRow.hidden = fineToggle.getAttribute('aria-expanded') !== 'true';
+      reposition();
+    });
     editorChip?.style.setProperty('--sw', hex);
     if (nameInput) nameInput.value = nameColor(hex);
     pickSheet = typeof window !== 'undefined' && !!window.matchMedia?.('(max-width: 640px)')?.matches;
@@ -3355,7 +3369,7 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     editorEl.hidden = false;             // before positioning - the clamp measures offsetHeight
     if (pickSheet) { editorEl.style.left = ''; editorEl.style.top = ''; }
     else positionEditor(anchor);
-    nameInput?.focus();
+    editorEl.querySelector<HTMLInputElement>('[data-color-hex]')?.focus();
   };
   /** Commit the pick through the room's ONE add path, carrying the name the
    *  person typed. The add row is cleared the way it clears itself. */
@@ -6202,6 +6216,44 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     if (radiusPending) void setBrandRadius(fontsHost, radiusPending).catch(() => {});
   });
 
+  // ── Spacing rhythm (the Tokens tab) ─────────────────────────────────────
+  // The generated scale maps the default 0.5rem source to the existing
+  // 2/4/6/8/10/12/16/24px steps. This slider alters one source, not eight
+  // disconnected gap preferences, and persists only when the user touches it.
+  const spaceSlider = $('[data-be-space-slider]') as HTMLInputElement | null;
+  const spacePreview = $('[data-be-space-preview]') as HTMLElement | null;
+  const spaceValueEl = $('[data-be-space-value]') as HTMLElement | null;
+  const spaceErr = $('[data-be-space-err]') as HTMLElement | null;
+  void (async () => {
+    const current = await (tokens as { resolve?(ref: string): Promise<unknown> } | undefined)
+      ?.resolve?.('{space.base}').then(v => brandSpaceValue(v)).catch(() => null) ?? null;
+    const rem = current ? parseFloat(current) : .5;
+    if (spaceSlider) spaceSlider.value = String(rem);
+    if (spacePreview) spacePreview.style.setProperty('--brand-space-preview', `${rem}rem`);
+    if (spaceValueEl) spaceValueEl.textContent = `${rem}rem`;
+  })();
+  let spaceDebounce: ReturnType<typeof setTimeout> | undefined;
+  let spacePending: string | null = null;
+  spaceSlider?.addEventListener('input', () => {
+    const css = `${spaceSlider.value}rem`;
+    if (spacePreview) spacePreview.style.setProperty('--brand-space-preview', css);
+    if (spaceValueEl) spaceValueEl.textContent = css;
+    document.documentElement.style.setProperty('--space', css);
+    notify('tokens');
+    spacePending = css;
+    clearTimeout(spaceDebounce);
+    spaceDebounce = setTimeout(() => {
+      spacePending = null;
+      setBrandSpace(fontsHost, css).catch(err => {
+        if (spaceErr) { spaceErr.textContent = String((err as { message?: unknown })?.message ?? err); spaceErr.hidden = false; }
+      });
+    }, 400);
+  });
+  cleanups.push(() => {
+    clearTimeout(spaceDebounce);
+    if (spacePending) void setBrandSpace(fontsHost, spacePending).catch(() => {});
+  });
+
   // ── The three studio panels that live outside this file ──────────────────
   // Token editors, gradients and catalogue uploads (brand-studio-tabs.ts) - 
   // each gets the same narrow context: the live doc (getter - the Colour tab
@@ -6263,8 +6315,11 @@ export async function mountBrandEditor(root: HTMLElement, host: EditorHost, opts
     reseedFromDoc();
     repaintPalette(); await paintFonts(); await paintLogos(); void applyChromeBrandVars(host);
   };
-  const importPack = async (file: File): Promise<void> => {
-    const summary = await importBrandPack(transferHost, await file.arrayBuffer());
+  const importPack = async (source: File | Unzipped): Promise<void> => {
+    const summary = await importBrandPack(
+      transferHost,
+      typeof File !== 'undefined' && source instanceof File ? await source.arrayBuffer() : source as Unzipped,
+    );
     await reload();
     if (summary.packInstance) {
       // The pack chose the instance base - the first-run chooser must not re-ask.

@@ -127,7 +127,7 @@ test('every tool layout can reach it: the sidebar header button and the Lolly me
   // Home 2 - the chromeless editors, which have no sidebar header at all. The MENU
   // half is a real behavioural test (free-canvas-rail.test.ts, on the jsdom harness);
   // all that is left to pin here is that the view hands the action over.
-  assert.match(TOOL, /bulk: canBulk \? \(\) => \{ openBulk\(\); \} : undefined/,
+  assert.match(TOOL, /bulk:\s*canBulk\s*\?\s*\(\)\s*=>\s*\{\s*openBulk\(\);\s*\}\s*:\s*undefined/,
     'the editor rail must be handed the same action');
   assert.match(CANVAS, /bulk\?\(\): void;/, 'ToolbarActions must declare the optional bulk action');
 });
@@ -138,7 +138,7 @@ test('unsaved single-tool work is offered a save before the batch takes over', (
   // latest edits went out as an export counts as resolved, not unsaved (audit 167
   // F-A2 - exportedSinceEdit), so the guard stands down for it too.
   const fn = TOOL.slice(TOOL.indexOf('const openBulk'), TOOL.indexOf('const openBulk') + 700);
-  assert.match(fn, /if \(!hasInputs \|\| !userHasMadeChanges \|\| exportedSinceEdit\) \{ go\(\); return; \}/,
+  assert.match(fn, /if \(!hasInputs \|\| !userHasMadeChanges \|\| exportedSinceEdit\)\s*\{\s*go\(\);\s*return;\s*\}/,
     'a clean or export-resolved session leaves straight away');
   assert.match(fn, /showUnsavedDialog\(/, 'a dirty session gets the shared unsaved dialog');
 });

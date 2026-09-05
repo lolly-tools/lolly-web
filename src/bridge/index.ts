@@ -18,7 +18,8 @@ import { createStateAPI } from './state.ts';
 import { createProfileAPI } from './profile.ts';
 import { createPreviewsAPI } from './previews.ts';
 import { createAssetsAPI } from './assets.ts';
-import { createTokensAPI } from './tokens.ts';
+import { createTokensAPI, USER_TOKENS_ID } from './tokens.ts';
+import { createDesignSystemRegistry, type DesignSystemRegistry, type RegistryDb } from '../lib/design-system/registry.ts';
 import { createPinPreserver } from './version-assets.ts';
 import { createClipboardAPI } from './clipboard.ts';
 // export.ts (the 90 KB SVG/PDF/video bridge) and compose.ts (which statically pulls
@@ -64,6 +65,9 @@ interface WebHost extends HostV1 {
   readonly shell: 'web';
   identity: Awaited<ReturnType<typeof import('./identity.ts')['createIdentityAPI']>>;
   previews: ReturnType<typeof createPreviewsAPI>;
+  /** The design systems this device holds (plans/186) - web-only host helper,
+   *  not part of the tool-facing contract; tools see `host.tokens.list()`. */
+  designSystems: DesignSystemRegistry;
 }
 
 /** One-shot memoiser for the lazy-facade loaders below: the first call starts the
@@ -137,7 +141,20 @@ export async function createBridge(): Promise<WebHost> {
   host.assets = createAssetsAPI(db as unknown as Parameters<typeof createAssetsAPI>[0], {
     preservePinned: (id, o) => preservePinned?.(id, o) ?? Promise.resolve(),
   }) as unknown as WebHost['assets'];
-  host.tokens = createTokensAPI(host as unknown as Parameters<typeof createTokensAPI>[0]); // depends on assets (reads the brand tokens asset)
+  // The design-system registry (plans/186): which systems this device holds and
+  // which is active. Built BEFORE tokens, which reads the active record's head
+  // through the host slice; its probe closes over the assets bridge for the
+  // one-shot migration (the shipped catalog asset's name, the legacy head's).
+  host.designSystems = createDesignSystemRegistry(db as unknown as RegistryDb, {
+    catalogTokens: async () => {
+      const meta = await (host.assets as unknown as { _findMetaByType(t: string, o?: { catalogOnly?: boolean }): Promise<{ id: string; name?: string; brandLock?: boolean } | null> })
+        ._findMetaByType('tokens', { catalogOnly: true }).catch(() => null);
+      return meta ? { id: meta.id, name: meta.name, brandLock: meta.brandLock } : null;
+    },
+    legacyHead: async () => (host.assets as unknown as { _getUserRecord?(id: string): Promise<{ meta?: Record<string, unknown> } | null> })
+      ._getUserRecord?.(USER_TOKENS_ID).catch(() => null) ?? null,
+  });
+  host.tokens = createTokensAPI(host as unknown as Parameters<typeof createTokensAPI>[0]); // depends on assets (reads the brand tokens asset) + designSystems
   preservePinned = createPinPreserver(host as unknown as Parameters<typeof createPinPreserver>[0]);
   host.clipboard = createClipboardAPI();
 
@@ -155,6 +172,9 @@ export async function createBridge(): Promise<WebHost> {
     download: async (blob, filename) => (await loadExport()).download(blob, filename),
     file: async (blob, opts) => (await loadExport()).file(blob, opts),
     imprint: async (bytes, format, opts) => (await loadExport()).imprint(bytes, format, opts),
+    // Linux packaging (plan 197 M5). Must be on the facade or hooks can't see it -
+    // introspect() enumerates host.export's own methods to build the worker host proxy.
+    pack: async (spec) => (await loadExport()).pack!(spec),
   };
 
   // Lazy compose facade: compose renders CHILD tools through the same bridge, so it
@@ -581,6 +601,13 @@ export async function createBridge(): Promise<WebHost> {
 
   // The host is reachable to modules that run before any export (lib/host-ref.ts).
   setHostRef(host);
+  // The registry's one-shot migration runs here, inside the awaited bridge build,
+  // so everything after createBridge() - the fonts, the first chrome paint, the
+  // catalog sync - already sees the active design system (plans/186 section 4:
+  // the pointer has to be read before main.ts's first paint). Best-effort: a
+  // failed migration leaves the store empty and the tokens bridge on its legacy
+  // discovery, which is today's behaviour.
+  await host.designSystems.ensure().catch(() => { /* legacy discovery stands */ });
   return host;
 }
 

@@ -29,12 +29,12 @@ function panel(id: string): HTMLElement {
   return el;
 }
 
-test('two stacked panels share the height evenly when no split was ever dragged', () => {
-  ED.requestDock('inspector', panel('pi'));
+test('two unrelated stacked panels share the height evenly when no split was ever dragged', () => {
+  ED.requestDock('neuro', panel('pi'));
   const body = document.querySelector<HTMLElement>('.edge-dock-body')!;
   // jsdom lays nothing out: give the body a height so the split has something to share.
   Object.defineProperty(body, 'clientHeight', { value: 600, configurable: true });
-  ED.requestDock('export', panel('px'));
+  ED.requestDock('transcript', panel('px'));
   const top = body.querySelector<HTMLElement>('.edge-dock-slot:not(.edge-dock-slot--compact)')!;
   assert.equal(top.style.flex, '0 0 auto', 'the top slot is sized explicitly');
   assert.equal(top.style.height, '300px', 'an even share, not the top panel\'s content height');
@@ -43,8 +43,8 @@ test('two stacked panels share the height evenly when no split was ever dragged'
 test('a short column still gives each panel the minimum', () => {
   const body = document.querySelector<HTMLElement>('.edge-dock-body')!;
   Object.defineProperty(body, 'clientHeight', { value: 300, configurable: true });
-  ED.releaseDock('export');
-  ED.requestDock('export', document.getElementById('px')!);
+  ED.releaseDock('transcript');
+  ED.requestDock('transcript', document.getElementById('px')!);
   const top = body.querySelector<HTMLElement>('.edge-dock-slot:not(.edge-dock-slot--compact)')!;
   assert.equal(top.style.height, '200px', 'clamped to MIN_SLOT_H (200)');
 });

@@ -65,6 +65,7 @@ import type { WebProfileAPI } from '../bridge/profile.ts';
 import type { createAssetsAPI } from '../bridge/assets.ts';
 import type { WebTokensAPI } from '../bridge/tokens.ts';
 import type { PreviewsAPI, PreviewRecord } from '../bridge/previews.ts';
+import { activeDesignSystemSource } from '../lib/design-system/active.ts';
 
 /**
  * The slice of a catalog index entry that this view reads. Kept local: the index
@@ -2367,9 +2368,10 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   // ladder runs from here - after the unbranded answer, and after the search bar
   // has been claimed (the privacy strip measures that bar to pin itself).
   //
-  // Unbranded = token discovery still resolves the lolly-start placeholder
-  // (`lolly/tokens/brand`); once the user installs a brand, discovery returns
-  // `user/tokens/brand` and this never fires again. The check rides on the
+  // Unbranded = the shipped design system is the active one, or (with no
+  // registry to ask) token discovery still resolves the lolly-start placeholder
+  // `lolly/tokens/brand`; once the user installs a brand, neither is true and
+  // this never fires again. The placeholder check rides on the
   // SYNCED asset metadata, so it can resolve null on a pre-sync mount (the
   // boot fast-path paints from the cached tool index before the asset sync
   // lands - including the eviction case where IndexedDB was dropped but the
@@ -2391,29 +2393,38 @@ export async function mountGallery(viewEl: HTMLElement, host: GalleryHost, opts:
   void (async () => {
     let locked = false;
     let tokensId: string | undefined;
+    let source: string | null = null;
     try {
       // A LOCKED brand (brandLock - e.g. the SUSE build) is branded by decree:
       // there's no brand question to settle, so never greet it with the welcome
       // or the tips strip, whatever the placeholder check below resolves to.
       locked = !!(await host.tokens?.isLocked?.());
       if (!locked) {
-        tokensId = (await host.assets._findMetaByType('tokens'))?.id;
-        if (tokensId === undefined && galleryRoot?.isConnected) {
-          const resp = await instanceFetch(instancePath('/catalog/assets/index.json'));
-          if (resp.ok) {
-            const idx = await resp.json() as { assets?: Array<{ id?: string; type?: string }> };
-            tokensId = idx.assets?.find(a => a.type === 'tokens')?.id;
+        // With a design-system registry the answer is simply which system is
+        // active: the SHIPPED one means nothing of the person's is here yet
+        // (plans/186 section 3.3). Without one there is no record to read and
+        // the placeholder id below decides, exactly as it always has.
+        source = await activeDesignSystemSource(host);
+        if (!source) {
+          tokensId = (await host.assets._findMetaByType('tokens'))?.id;
+          if (tokensId === undefined && galleryRoot?.isConnected) {
+            const resp = await instanceFetch(instancePath('/catalog/assets/index.json'));
+            if (resp.ok) {
+              const idx = await resp.json() as { assets?: Array<{ id?: string; type?: string }> };
+              tokensId = idx.assets?.find(a => a.type === 'tokens')?.id;
+            }
           }
         }
       }
     } catch { /* IDB unavailable / offline - treat as branded; never block or nag here */ }
     if (!galleryRoot?.isConnected) return;
+    const unbranded = source ? source === 'shipped' : tokensId === 'lolly/tokens/brand';
     // Branded (or locked): no welcome to wait for, so the banner slot is free.
     // When no banner claims it, a first-run install gets the branded intro strip
     // (plans/140 S4) - same slot discipline, still one surface per visit. The
     // strip module gates itself out for installs with saved work and settles
     // when any tool opens.
-    if (locked || tokensId !== 'lolly/tokens/brand') {
+    if (locked || !unbranded) {
       // Orientation FIRST on a branded install (plans/170 WP-4, audit 167
       // F-A16): a colleague's very first visit reads "Your brand is loaded…"
       // before any banner rung - the privacy one-liner is one line and keeps

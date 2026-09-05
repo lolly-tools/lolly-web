@@ -32,10 +32,10 @@
   gap: var(--sp-3);
   padding: var(--sp-4) var(--sp-3) var(--sp-5);
   pointer-events: auto;
-  background: hsl(var(--card));
-  box-shadow: var(--edge);
-  color: hsl(var(--foreground));
-  font-size: var(--fs-md);
+  background: var(--ui-color-surface-raised);
+  box-shadow: var(--ui-edge-default);
+  color: var(--ui-color-text-default);
+  font-size: var(--ui-type-body);
   overflow: hidden;
 }
 .fc-nav.is-collapsed { width: 36px; padding-inline: var(--sp-2); }
@@ -73,8 +73,8 @@
   justify-items: center;
   gap: var(--sp-1);
   padding: var(--sp-2);
-  border-radius: var(--radius-md);
-  background: hsl(var(--muted) / 0.5);
+  border-radius: var(--ui-radius-panel);
+  background: color-mix(in srgb, var(--ui-color-surface-muted) 50%, transparent);
   box-shadow: none;
 }
 /* No grip (a docked rail has nowhere to drag to) and no dividers: a 3-column grid has
@@ -124,7 +124,7 @@
   height: 100%;
   z-index: 2;
 }
-.fc-nav-grip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }
+.fc-nav-grip:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: -2px; }
 
 /* Head: the list's name + the collapse control. The title hides in the rail, the
    button never does - it is the only way back out. */
@@ -141,7 +141,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -156,17 +156,17 @@
   height: calc(24px * var(--a11y-fs));
   padding: 0;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--ui-radius-control);
   background: none;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   cursor: pointer;
-  transition: background var(--dur-1), color var(--dur-1);
+  transition: background var(--ui-motion-feedback), color var(--ui-motion-feedback);
 }
 .fc-nav.is-collapsed .fc-nav-toggle { margin-inline: auto; }
 .fc-nav-toggle:hover,
-.fc-nav-row-menu:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+.fc-nav-row-menu:hover { background: var(--ui-color-surface-muted); color: var(--ui-color-text-default); }
 .fc-nav-toggle:focus-visible,
-.fc-nav-row-menu:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.fc-nav-row-menu:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 2px; }
 
 .fc-nav-body {
   flex: 1 1 auto;
@@ -181,7 +181,7 @@
 .fc-nav-empty {
   margin: 0;
   padding: var(--sp-4) var(--sp-2);
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   font-size: var(--fs-sm);
 }
 /* A document with boxes and no artboards (plans/184 R15): the one press that draws an
@@ -217,18 +217,18 @@
   gap: var(--sp-3);
   padding: var(--sp-2);
   border: 1px solid transparent;
-  border-radius: var(--radius-md);
+  border-radius: var(--ui-radius-panel);
   cursor: pointer;
-  color: hsl(var(--muted-foreground));
-  transition: background var(--dur-1), border-color var(--dur-1), color var(--dur-1);
+  color: var(--ui-color-text-muted);
+  transition: background var(--ui-motion-feedback), border-color var(--ui-motion-feedback), color var(--ui-motion-feedback);
 }
-.fc-nav-row:hover { background: hsl(var(--muted) / 0.6); color: hsl(var(--foreground)); }
+.fc-nav-row:hover { background: color-mix(in srgb, var(--ui-color-surface-muted) 60%, transparent); color: var(--ui-color-text-default); }
 .fc-nav-row.is-active {
-  background: hsl(var(--muted));
-  border-color: hsl(var(--primary));
-  color: hsl(var(--foreground));
+  background: var(--ui-color-selection-surface);
+  border-color: var(--ui-color-selection-border);
+  color: var(--ui-color-text-default);
 }
-.fc-nav-row:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.fc-nav-row:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 2px; }
 /* The board preview. The clone inside is letterboxed to the board's own aspect (frameThumb
    sizes it), so the slot centres it instead of pinning it top-left, and its ground is the
    muted surface rather than the app background: what shows here is "no board pixels", and
@@ -241,9 +241,9 @@
   width: 44px;
   height: 25px;
   overflow: hidden;
-  border-radius: var(--radius-xs);
-  background: hsl(var(--muted));
-  box-shadow: var(--edge-faint);
+  border-radius: var(--ui-radius-choice);
+  background: var(--ui-color-surface-muted);
+  box-shadow: var(--ui-edge-faint);
 }
 .fc-nav-thumb > * { pointer-events: none; }
 .fc-nav-idx {
@@ -253,7 +253,7 @@
   font-size: var(--fs-xs);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
 }
 .fc-nav-main {
   flex: 1 1 auto;
@@ -273,14 +273,14 @@
   width: 100%;
   min-width: 0;
   padding: var(--sp-1) var(--sp-2);
-  border: 1px solid hsl(var(--primary));
-  border-radius: var(--radius-xs);
-  background: hsl(var(--background));
-  color: hsl(var(--foreground));
+  border: 1px solid var(--ui-color-action-primary);
+  border-radius: var(--ui-radius-choice);
+  background: var(--ui-color-surface-canvas);
+  color: var(--ui-color-text-default);
   font: inherit;
   font-size: var(--fs-sm);
 }
-.fc-nav-name-input:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.fc-nav-name-input:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 1px; }
 .fc-nav-meta {
   display: flex;
   align-items: center;
@@ -293,8 +293,8 @@
   flex: none;
   width: calc(6px * var(--a11y-fs));
   height: calc(6px * var(--a11y-fs));
-  border-radius: var(--radius-round);
-  background: hsl(var(--primary));
+  border-radius: var(--ui-radius-choice-round);
+  background: var(--ui-color-action-primary);
 }
 /* Narration status (plans/180 section 8), on the same dot. Notes with no voice yet is
    a HOLLOW dot, so "waiting" and "done" differ in shape as well as in colour; stale is
@@ -302,7 +302,7 @@
    accessible name says the whole thing - see narrationLabel. */
 .fc-nav-dot[data-narration="pending"] {
   background: transparent;
-  box-shadow: var(--edge-strong);
+  box-shadow: var(--ui-edge-strong);
 }
 /* Stale carries a SHAPE as well as a tone: a DIAMOND, so the three answers differ by
    outline as well as by colour (WCAG 1.4.1) - filled circle for current, hollow circle
@@ -310,7 +310,7 @@
    is the one state the feature exists to surface. */
 .fc-nav-dot[data-narration="stale"] {
   background: hsl(var(--destructive));
-  border-radius: var(--radius-xs);
+  border-radius: var(--ui-radius-choice);
   transform: rotate(45deg);
   /* A hair larger, because a rotated square reads smaller than the circle beside it. */
   width: calc(7px * var(--a11y-fs));
@@ -318,9 +318,9 @@
 }
 .fc-nav-chip {
   padding: 0 var(--sp-2);
-  border-radius: var(--radius-pill);
-  background: hsl(var(--muted));
-  box-shadow: var(--edge-faint);
+  border-radius: var(--ui-radius-pill);
+  background: var(--ui-color-surface-muted);
+  box-shadow: var(--ui-edge-faint);
   font-size: var(--fs-2xs);
   line-height: 1.7;
   white-space: nowrap;
@@ -338,8 +338,8 @@ button.fc-nav-chip {
   color: inherit;
   cursor: pointer;
 }
-button.fc-nav-chip:hover { background: hsl(var(--muted-foreground) / 0.25); }
-button.fc-nav-chip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+button.fc-nav-chip:hover { background: color-mix(in srgb, var(--ui-color-text-muted) 25%, transparent); }
+button.fc-nav-chip:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 2px; }
 /* Dimmed when the value is the DECK's rather than this slide's own: the chip is showing
    what the document says, and the row has not answered for itself. */
 .fc-nav-chip--trans.is-inherited { opacity: 0.6; }
@@ -358,8 +358,8 @@ button.fc-nav-chip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-
   left: var(--sp-2);
   right: var(--sp-2);
   height: 2px;
-  border-radius: var(--radius-pill);
-  background: hsl(var(--primary));
+  border-radius: var(--ui-radius-pill);
+  background: var(--ui-color-action-primary);
 }
 .fc-nav-row.is-drop-before::before,
 .fc-nav-layer.is-drop-before::before { top: -2px; }
@@ -400,10 +400,10 @@ button.fc-nav-chip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-
   display: flex;
   flex-direction: column;
   padding: var(--sp-2);
-  border-radius: var(--radius-md);
-  background: hsl(var(--popover));
-  color: hsl(var(--popover-foreground));
-  box-shadow: var(--edge), var(--shadow-3);
+  border-radius: var(--ui-radius-panel);
+  background: var(--ui-color-surface-overlay);
+  color: var(--ui-color-text-default);
+  box-shadow: var(--ui-edge-default), var(--ui-elevation-floating);
 }
 .fc-nav-menu-item {
   display: flex;
@@ -411,7 +411,7 @@ button.fc-nav-chip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-
   gap: var(--sp-3);
   padding: var(--sp-2) var(--sp-3);
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--ui-radius-control);
   background: none;
   color: inherit;
   font: inherit;
@@ -419,8 +419,8 @@ button.fc-nav-chip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-
   text-align: start;
   cursor: pointer;
 }
-.fc-nav-menu-item:hover:not([disabled]) { background: hsl(var(--muted)); }
-.fc-nav-menu-item:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }
+.fc-nav-menu-item:hover:not([disabled]) { background: var(--ui-color-surface-muted); }
+.fc-nav-menu-item:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: -2px; }
 .fc-nav-menu-item[disabled] { opacity: 0.45; cursor: default; }
 /* "Move up" borrows the chevron "Move down" uses - one glyph, two directions. */
 .fc-nav-flip svg { transform: rotate(180deg); }
@@ -437,7 +437,7 @@ button.fc-nav-chip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
 }
 .fc-nav-layer-list {
   display: flex;
@@ -449,16 +449,16 @@ button.fc-nav-chip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-
   align-items: center;
   gap: var(--sp-3);
   padding: var(--sp-2);
-  border-radius: var(--radius-sm);
+  border-radius: var(--ui-radius-control);
   cursor: pointer;
-  color: hsl(var(--muted-foreground));
-  transition: background var(--dur-1), color var(--dur-1);
+  color: var(--ui-color-text-muted);
+  transition: background var(--ui-motion-feedback), color var(--ui-motion-feedback);
 }
-.fc-nav-layer:hover { background: hsl(var(--muted) / 0.6); color: hsl(var(--foreground)); }
-.fc-nav-layer.is-active { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
-.fc-nav-layer:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
-.fc-nav-layer-glyph { flex: none; display: inline-flex; color: hsl(var(--muted-foreground)); }
-.fc-nav-layer.is-active .fc-nav-layer-glyph { color: hsl(var(--primary)); }
+.fc-nav-layer:hover { background: color-mix(in srgb, var(--ui-color-surface-muted) 60%, transparent); color: var(--ui-color-text-default); }
+.fc-nav-layer.is-active { background: var(--ui-color-selection-surface); color: var(--ui-color-text-default); }
+.fc-nav-layer:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 2px; }
+.fc-nav-layer-glyph { flex: none; display: inline-flex; color: var(--ui-color-text-muted); }
+.fc-nav-layer.is-active .fc-nav-layer-glyph { color: var(--ui-color-action-primary); }
 .fc-nav-layer-name {
   flex: 1 1 auto;
   min-width: 0;
@@ -481,14 +481,14 @@ button.fc-nav-chip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-
 .fc-nav-layer-state {
   flex: none;
   font-size: var(--fs-2xs);
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   white-space: nowrap;
 }
 /* When a timed layer is (plans/184 R15) - the timeline's own seconds, aligned as numbers. */
 .fc-nav-layer-time {
   flex: none;
   font-size: var(--fs-2xs);
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -503,12 +503,12 @@ button.fc-nav-chip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-
   height: calc(22px * var(--a11y-fs));
   padding: 0;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--ui-radius-control);
   background: none;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   cursor: pointer;
   opacity: 0;
-  transition: opacity var(--dur-1), background var(--dur-1), color var(--dur-1);
+  transition: opacity var(--ui-motion-feedback), background var(--ui-motion-feedback), color var(--ui-motion-feedback);
 }
 .fc-nav-layer-btn svg { width: calc(14px * var(--a11y-fs)); height: calc(14px * var(--a11y-fs)); }
 /* Out of the way until the pointer is on the row - a column of eyes and padlocks is
@@ -517,9 +517,9 @@ button.fc-nav-chip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-
 .fc-nav-layer-btn:focus-visible,
 .fc-nav-layer-btn.is-on { opacity: 1; }
 .fc-nav-layer-btn:hover,
-.fc-nav-layer-btn.is-on { color: hsl(var(--foreground)); }
-.fc-nav-layer-btn:hover { background: hsl(var(--muted)); }
-.fc-nav-layer-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.fc-nav-layer-btn.is-on { color: var(--ui-color-text-default); }
+.fc-nav-layer-btn:hover { background: var(--ui-color-surface-muted); }
+.fc-nav-layer-btn:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 2px; }
 
 /* ── Collapsed rail ───────────────────────────────────────────────────────────
    Numbered dots, one per board: the list's identity survives the collapse, so
@@ -546,26 +546,26 @@ button.fc-nav-chip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-
   height: calc(24px * var(--a11y-fs));
   padding: 0;
   border: 1px solid transparent;
-  border-radius: var(--radius-round);
-  background: hsl(var(--muted));
-  color: hsl(var(--muted-foreground));
+  border-radius: var(--ui-radius-choice-round);
+  background: var(--ui-color-surface-muted);
+  color: var(--ui-color-text-muted);
   font: inherit;
   font-size: var(--fs-2xs);
   font-variant-numeric: tabular-nums;
   cursor: pointer;
-  transition: background var(--dur-1), border-color var(--dur-1), color var(--dur-1);
+  transition: background var(--ui-motion-feedback), border-color var(--ui-motion-feedback), color var(--ui-motion-feedback);
 }
-.fc-nav-dot-btn:hover { color: hsl(var(--foreground)); }
+.fc-nav-dot-btn:hover { color: var(--ui-color-text-default); }
 /* The active dot rings rather than fills: the brand fill pair is the shared
    .btn--primary recipe (buttons.css) and a dot is not a button in that sense -
    restating it here would fork the primitive (primitive-guards R2). */
 .fc-nav-dot-btn.is-active {
-  border-color: hsl(var(--primary));
-  background: hsl(var(--muted));
-  color: hsl(var(--foreground));
+  border-color: var(--ui-color-selection-border);
+  background: var(--ui-color-selection-surface);
+  color: var(--ui-color-text-default);
   font-weight: 700;
 }
-.fc-nav-dot-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.fc-nav-dot-btn:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 2px; }
 
 /* ── Strip skin (the mobile Artboards slot) ───────────────────────────────────
    The same rows, laid out along the bottom: thumbnail over number, no layers. */
@@ -576,7 +576,7 @@ button.fc-nav-chip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-
   flex-direction: column;
   gap: var(--sp-2);
   padding: var(--sp-3) var(--sp-4) var(--sp-4);
-  box-shadow: var(--edge), var(--shadow-2);
+  box-shadow: var(--ui-edge-default), var(--ui-elevation-panel);
   max-height: min(44vh, 320px);
 }
 /* A closed mobile navigator is a temporary sheet, not the column skin's 36px

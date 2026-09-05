@@ -121,6 +121,14 @@ interface ViewElement extends HTMLElement {
   _cleanup?: () => void;
 }
 
+/** The File Handling API's launch queue: an installed PWA opened through the OS
+ *  "Open with" menu receives its file handles here. Declared locally because
+ *  TypeScript's DOM library has no types for it, and only the Chromium family
+ *  defines it - the consumer below is installed behind a probe. */
+interface LaunchQueue {
+  setConsumer(consumer: (params: { files?: Array<{ getFile(): Promise<File> }> }) => void): void;
+}
+
 // A friendly hello for anyone who opens the console. Paired with the one-line
 // "ready" summary emitted once the catalog lands (see boot()), these are the only
 // two logs a normal production load prints: catalog/font diagnostics are dev-only
@@ -1306,6 +1314,23 @@ async function boot(): Promise<void> {
   // first viewport's preview art, so it waits for load + idle now (plans/155 Task 3.6,
   // the components/featured-row.ts pattern) - same work, after the paint that matters.
   catalogReady.then(() => afterLoadIdle(() => { void syncCorePrefetch(host as unknown as Parameters<typeof syncCorePrefetch>[0]); }));
+  // Hosted design systems (plans/186 section 3.6): once a day, and when the tab
+  // comes back to the front after a day away, ask each host whether its design
+  // system moved. Idle-scheduled and best-effort - a host that is away, or a
+  // browser build whose CSP cannot reach it, answers "unreachable" and nothing
+  // else changes. A change while a system is ACTIVE repaints through the switch.
+  const checkHosted = (): void => {
+    void import('./lib/design-system/hosted.ts').then(async m => {
+      const outcomes = await m.checkHostedDesignSystems(host as unknown as Parameters<typeof m.checkHostedDesignSystems>[0]);
+      const activeId = await (host as unknown as { designSystems?: { activeId(): Promise<string> } }).designSystems?.activeId();
+      if (activeId && outcomes[activeId] === 'updated') {
+        const { switchDesignSystem } = await import('./lib/design-system/switch.ts');
+        await switchDesignSystem(host as unknown as Parameters<typeof switchDesignSystem>[0], activeId, { route: parseRoute().name });
+      }
+    }).catch(() => { /* no registry on this host */ });
+  };
+  catalogReady.then(() => afterLoadIdle(checkHosted));
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkHosted(); });
   // Brand-lock reconcile for the Jelly default (see the provisional far above): the
   // assets are in IDB by now, so isLocked() is the memoised read its comment always
   // described, with no fetch of its own. Write the resolved answer into the flag
@@ -1515,7 +1540,27 @@ async function boot(): Promise<void> {
     m.initShareTargetIngest(host as unknown as Parameters<typeof m.initShareTargetIngest>[0]);
     // App Links (plan 171): a tapped https://lolly.tools/t/… link that opened the
     // Android app resolves to its in-app route. Feature-detected no-op elsewhere.
-    m.initDeepLinkIntake();
+    m.initDeepLinkIntake(host as unknown as Parameters<typeof m.initDeepLinkIntake>[0]);
+    // The installed PWA's own two doors (plan 202 WP4.3), both probes:
+    //   share target - the service worker parked the shared files and redirected
+    //     here; this drains that stash into the drop chooser.
+    //   file handlers - the OS "Open with" launch delivers its files on
+    //     launchQueue, which only Chromium-family browsers define. Same chooser,
+    //     so a .lolly opened from Finder asks the same question a dropped one does.
+    void m.initShareTargetFileIntake(host as unknown as Parameters<typeof m.initShareTargetFileIntake>[0]);
+    const launchQueue = (window as Window & { launchQueue?: LaunchQueue }).launchQueue;
+    if (typeof launchQueue?.setConsumer === 'function') {
+      launchQueue.setConsumer((params) => {
+        const handles = params?.files ?? [];
+        if (!handles.length) return;
+        void Promise.all(handles.map((handle) => handle.getFile()))
+          .then((files) => m.openDropChooser(
+            files.filter(Boolean),
+            host as unknown as Parameters<typeof m.openDropChooser>[1],
+          ))
+          .catch((err: unknown) => console.warn('[launch] could not read the opened file', err));
+      });
+    }
     // Desktop integration poll loop (plans/174): drains the native event queue -
     // double-clicked .lolly files, lolly:// links, tray/search activations, hot
     // folder arrivals. Installed HERE, after the first navigate, for the same reason

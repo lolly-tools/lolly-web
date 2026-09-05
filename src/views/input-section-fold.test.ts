@@ -57,7 +57,7 @@ test('a re-render takes the fold state from the live panel, not the default', ()
 });
 
 test('the section markup takes its open attribute from shouldOpenSection', () => {
-  assert.match(SRC, /shouldOpenSection\(\{ index: sectionIndex, wasOpen: openSections\.has\(sec\)/,
+  assert.match(SRC, /shouldOpenSection\(\{[\s\S]{0,160}?index:\s*sectionIndex,[\s\S]{0,80}?wasOpen:\s*openSections\.has\(sec\)/,
     'the <details> builder calls the decision function');
   assert.match(SRC, /<details class="input-section\$\{dense\}"\$\{open \? ' open' : ''\}/,
     'and nothing else decides `open` on an input section');

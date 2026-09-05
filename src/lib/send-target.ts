@@ -12,9 +12,8 @@
  *     Drive target only reports available() once a Google OAuth client id is
  *     configured (lib/google-drive.ts). Config presence IS the feature flag:
  *     no id, no button, byte-identical behaviour.
- *   - A deployment's optional control plane (src/org/) can register instance
- *     targets, or re-register a built-in kind to route it through instance
- *     policy - the same way it registers a session source.
+ *   - A deployment's optional control plane (src/org/) can register fixed,
+ *     organisation-owned targets beside the person's own connections.
  *
  * Provider `kind` ids deliberately reuse the lolly-work provider vocabulary
  * (PROVIDER_KINDS: 'gdrive', 'dropbox', 'o365', …) so the individual OAuth
@@ -23,10 +22,10 @@
  * side OAuth destinations for finished exports; the control plane's providers
  * are per-instance catalog sources.
  *
- * Multiple targets can be live at once (a person may connect Drive AND
- * Dropbox), so unlike session-source this registry holds a set - last
- * registration per kind wins, so a re-registering control plane replaces
- * rather than duplicates.
+ * Multiple targets can be live at once (including a personal S3 connection and
+ * several organisation-owned S3 destinations), so unlike session-source this
+ * registry holds a set. `id` is the destination identity; old drivers omit it
+ * and retain the original last-registration-per-kind behaviour.
  *
  * One user-facing gate sits over the whole set: a CONNECTOR_FLAGS kill switch
  * per provider kind (feature-flags.ts, all ON by default). sendTargetsFor()
@@ -58,13 +57,29 @@ export interface SendOutcome {
   label: string;
 }
 
+export type SendSource = 'export' | 'asset';
+
 export interface SendTarget {
+  /** Stable registry identity. Defaults to `kind` for existing personal
+   *  drivers. Organisation targets use an instance-scoped destination id so
+   *  they never replace a person's connection of the same provider kind. */
+  id?: string;
   /** Provider id, aligned with lolly-work's PROVIDER_KINDS ('gdrive', …). */
   kind: string;
+  /** Ownership boundary. Organisation targets are governed by instance policy,
+   *  so a personal connector kill-switch never silently withdraws them. */
+  scope?: 'personal' | 'organization';
   /** Short, already-localised provider name ("Google Drive"). */
   label: string;
   /** Export formats this target accepts (lowercase); absent = every format. */
   formats?: readonly string[];
+  /** Surfaces that may offer this destination. Absent = both, preserving the
+   *  original behaviour. Governed delivery is export-only: catalog assets are
+   *  not implicitly promoted into organisation publishing routes. */
+  sources?: readonly SendSource[];
+  /** Ask the export surface for a Lolly Content Credential on the exact bytes
+   *  it sends. Used by governed delivery's server-side provenance gate. */
+  requiresCredential?: boolean;
   /** Cheap render-time gate: is this target usable on this build/shell right
    *  now (config present, platform capable)? Never triggers auth or network. */
   available(): boolean;
@@ -92,22 +107,30 @@ export interface SendTarget {
 
 const targets = new Map<string, SendTarget>();
 
-/** Register (or replace, by kind) one destination. */
-export function registerSendTarget(t: SendTarget): void {
-  targets.set(t.kind, t);
+/** Stable identity used by DOM surfaces and registry operations. */
+export function sendTargetId(target: SendTarget): string {
+  return target.id ?? target.kind;
 }
 
-/** Remove one destination (an org policy withdrawing a built-in). */
-export function unregisterSendTarget(kind: string): void {
-  targets.delete(kind);
+/** Register (or replace, by stable id) one destination. */
+export function registerSendTarget(t: SendTarget): void {
+  targets.set(sendTargetId(t), t);
+}
+
+/** Remove one destination by its stable id (or kind for legacy drivers). */
+export function unregisterSendTarget(id: string): void {
+  targets.delete(id);
 }
 
 /** The destinations currently offered for one export format, in registration
  *  order. Empty (the default) = the export panel shows nothing. A provider the
  *  user switched off in Feature flags is excluded here, so no caller needs its
  *  own check. */
-export function sendTargetsFor(format: string): SendTarget[] {
+export function sendTargetsFor(format: string, source: SendSource = 'export'): SendTarget[] {
   const f = format.toLowerCase();
   return [...targets.values()].filter(t =>
-    connectorEnabled(t.kind) && t.available() && (!t.formats || t.formats.includes(f)));
+    (t.scope === 'organization' || connectorEnabled(t.kind)) &&
+    t.available() &&
+    (!t.sources || t.sources.includes(source)) &&
+    (!t.formats || t.formats.includes(f)));
 }

@@ -71,7 +71,9 @@ const {
   clearSpeechCaches, speechCacheBytes, TRANSFORMERS_CACHE, SPEECH_CACHE, ORT_HF_CACHE,
   downloadRewordFiles, downloadReword, clearRewordCaches, rewordCacheBytes,
   downloadAskFiles, downloadAsk, clearAskCaches, askCacheBytes,
+  trustmarkGroupSplit, verifyModelKeys,
 } = await import('./offline-manager.ts');
+const { DURABLE_ENCODER_FILE, DURABLE_ENCODER_PATH } = await import('./durable-model.ts');
 
 beforeEach(() => {
   cacheStore.clear();
@@ -427,5 +429,43 @@ describe('offline-manager: ask part (plans/103 M1)', () => {
       () => downloadAsk({ version: 'v1', groups: { app: [], ort: [], models: [] } }),
       /no embed model/,
     );
+  });
+});
+
+describe('offline-manager: the durable-credential part (plans/202 WP4.2)', () => {
+  // The encoder and the deep-scan decoders share one IndexedDB store and one
+  // manifest group. Two parts, one store, so each has to own its files by NAME:
+  // taking Verify off a device must leave a durable export working, and removing
+  // the durable model must not disarm the deep scan.
+
+  test('the manifest group splits into the two parts that share the store', () => {
+    const models = [
+      { url: '/models/trustmark/decoder_Q.onnx', size: 47_401_222 },
+      { url: '/models/trustmark/decoder_P.onnx', size: 47_400_467 },
+      { url: DURABLE_ENCODER_PATH, size: 34_603_555 },
+      { url: '/models/trustmark/resizer.onnx', size: 454 },
+    ];
+    const split = trustmarkGroupSplit(models);
+    assert.deepEqual(split.durable.map(f => f.url), [DURABLE_ENCODER_PATH]);
+    assert.deepEqual(split.verify.map(f => f.url), [
+      '/models/trustmark/decoder_Q.onnx',
+      '/models/trustmark/decoder_P.onnx',
+      '/models/trustmark/resizer.onnx',
+    ]);
+    // No file counted twice: the two rows in Profile must add up to the group.
+    const sum = (fs: { size: number }[]) => fs.reduce((n, f) => n + f.size, 0);
+    assert.equal(sum(split.verify) + sum(split.durable), sum(models));
+  });
+
+  test('a manifest with no encoder entry leaves the durable half empty', () => {
+    const split = trustmarkGroupSplit([{ url: '/models/trustmark/decoder_Q.onnx', size: 10 }]);
+    assert.deepEqual(split.durable, []);
+    assert.equal(split.verify.length, 1);
+  });
+
+  test('removing Verify keeps the durable encoder, and only the encoder', () => {
+    const keys = ['decoder_Q.onnx', 'decoder_P.onnx', 'resizer.onnx', '__ready__', DURABLE_ENCODER_FILE];
+    assert.deepEqual(verifyModelKeys(keys), ['decoder_Q.onnx', 'decoder_P.onnx', 'resizer.onnx', '__ready__']);
+    assert.ok(!verifyModelKeys(keys).includes(DURABLE_ENCODER_FILE));
   });
 });

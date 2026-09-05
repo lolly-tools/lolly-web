@@ -23,7 +23,7 @@
   color: hsl(var(--popover-foreground));
   border: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius) * 2);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--ui-elevation-overlay);
   display: flex;
   flex-direction: column;
   overflow: hidden;

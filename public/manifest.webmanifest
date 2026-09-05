@@ -33,6 +33,78 @@
     }
   ],
   "categories": ["productivity", "design"],
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  },
+  "file_handlers": [
+    {
+      "action": "/",
+      "launch_type": "single-client",
+      "accept": {
+        "application/vnd.lolly+zip": [".lolly"]
+      }
+    },
+    {
+      "action": "/",
+      "launch_type": "single-client",
+      "accept": {
+        "application/x-penpot": [".penpot"],
+        "application/x-figma": [".fig"],
+        "application/vnd.adobe.indesign-idml-package": [".idml"],
+        "application/illustrator": [".ai"],
+        "image/svg+xml": [".svg"],
+        "application/pdf": [".pdf"],
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+        "text/csv": [".csv"],
+        "text/tab-separated-values": [".tsv"],
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation": [".pptx"],
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [".docx"],
+        "image/vnd.adobe.photoshop": [".psd", ".psb"],
+        "image/x-xcf": [".xcf"]
+      }
+    }
+  ],
+  "protocol_handlers": [
+    {
+      "protocol": "web+lolly",
+      "url": "/?deep-link=%s"
+    }
+  ],
+  "share_target": {
+    "action": "/share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "files",
+          "accept": [
+            "application/vnd.lolly+zip",
+            ".lolly",
+            "image/*",
+            "video/*",
+            "audio/*",
+            "text/*",
+            "application/pdf",
+            "application/json",
+            "application/zip",
+            ".penpot",
+            ".fig",
+            ".idml",
+            ".ai",
+            ".psd",
+            ".xcf",
+            ".xlsx",
+            ".pptx",
+            ".docx"
+          ]
+        }
+      ]
+    }
+  },
   "shortcuts": [
     {
       "name": "New QR code",
@@ -43,7 +115,7 @@
     {
       "name": "Batch mode",
       "short_name": "Batch",
-      "url": "/pro",
+      "url": "/#/batch",
       "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ],

@@ -19,6 +19,30 @@
   padding: 3.25rem 1.25rem 5rem; /* top clears the fixed "Tools" pill */
 }
 
+/* Once a result exists, the upload surface becomes a compact utility header.
+   The evidence starts near the top instead of sitting below the large empty-state
+   drop zone; choosing another file remains one click away. */
+.valid-header-actions { display: none; flex-wrap: wrap; gap: 0.5rem; }
+.valid-layout.has-results { padding-top: 1.15rem; }
+.valid-layout.has-results .plat-header {
+  display: flex; align-items: center; gap: 0.8rem 1.2rem;
+  margin-bottom: 0.75rem;
+}
+.valid-layout.has-results .plat-title {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+.valid-layout.has-results .plat-header-text { display: none; }
+.valid-layout.has-results .valid-header-actions { display: flex; margin-left: auto; }
+.valid-layout.has-results .valid-intake { display: none; }
+.valid-layout.has-results.is-pasting .valid-intake { display: block; }
+.valid-layout.has-results.is-pasting .valid-drop,
+.valid-layout.has-results.is-pasting .valid-paste-open { display: none; }
+
+@media (min-width: 1440px) {
+  .verify-view .platform-layout { max-width: min(1680px, 96vw); }
+}
+
 .valid-drop {
   display: flex;
   flex-direction: column;
@@ -113,11 +137,18 @@
 .valid-top { display: grid; gap: 1.1rem; align-items: start; }
 @media (min-width: 640px) {
   .valid-top { grid-template-columns: minmax(200px, 22rem) 1fr; }
-  .valid-top > .valid-score { grid-column: 1 / -1; margin-top: 0; }
+  .valid-top > .valid-score-wrap { grid-column: 1 / -1; margin-top: 0; }
 }
 @media (min-width: 1080px) {
   .valid-top { grid-template-columns: minmax(200px, 22rem) 1fr minmax(210px, 320px); }
-  .valid-top > .valid-score { grid-column: auto; }
+  .valid-top > .valid-score-wrap { grid-column: auto; }
+}
+@media (min-width: 1440px) {
+  .valid-top { grid-template-columns: minmax(300px, 28rem) minmax(340px, 1fr) minmax(480px, 620px); gap: 1.4rem; }
+  .valid-top > .valid-score-wrap .valid-score {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(5.8rem, 1fr));
+  }
+  .valid-top > .valid-score-wrap .valid-score-pip { width: auto; }
 }
 .valid-hero { display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
 /* Icon + heading, grouped so the medallion reads as part of the verdict line
@@ -443,7 +474,12 @@
     background: hsl(var(--muted) / 0.22);
     padding: 1.4rem 1.5rem;
 }
-.valid-meta-head { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; }
+.valid-meta-head {
+  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  cursor: pointer; list-style: none; user-select: none;
+}
+.valid-meta-head::-webkit-details-marker { display: none; }
+.valid-meta-head:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 4px; border-radius: 0.35rem; }
 .valid-meta-head h3 {
   display: flex; align-items: center; gap: 0.5rem;
   margin: 0; font-size: calc(0.95rem * var(--a11y-fs)); font-weight: 650; letter-spacing: -0.01em;
@@ -454,6 +490,15 @@
   font-family: var(--font-mono); font-size: var(--fs-xs);
   color: hsl(var(--muted-foreground)); letter-spacing: 0.02em;
 }
+.valid-meta-sensitive {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  padding: 0.18rem 0.55rem; border-radius: var(--radius-pill);
+  border: 1px solid hsl(var(--vf-fail) / 0.34);
+  background: hsl(var(--vf-fail) / 0.11); color: hsl(var(--vf-fail));
+  font-size: var(--fs-xs); font-weight: 750; white-space: nowrap;
+}
+.valid-meta-sensitive svg { width: 0.9rem; height: 0.9rem; }
+.valid-meta-body { display: grid; gap: 0.75rem; margin-top: 0.9rem; }
 .valid-meta-note { margin: 0.45rem 0 0; font-size: var(--fs-sm); line-height: 1.5; color: hsl(var(--muted-foreground)); max-width: 68ch; }
 .valid-meta-note a { color: hsl(var(--primary)); text-underline-offset: 2px; }
 /* The "download a cleaned copy" action - deliberately just another inline text
@@ -510,6 +555,7 @@
 
 /* Location - a full-width offline world plot with the fix pinned. */
 .valid-meta-location { grid-column: 1 / -1; }
+.valid-meta-location-layout { display: grid; gap: 0.75rem; }
 .valid-locator {
   display: block; width: 100%; max-width: 560px; height: auto;
   margin: 0.1rem 0 0; border-radius: 0.7rem;
@@ -527,6 +573,13 @@
   display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 1.4rem;
   margin-top: 0.7rem;
 }
+.valid-meta-location-warning {
+  flex-basis: 100%; display: inline-flex; align-items: center; gap: 0.42rem;
+  width: fit-content; padding: 0.38rem 0.58rem; border-radius: 0.55rem;
+  background: hsl(var(--vf-fail) / 0.09); color: hsl(var(--foreground));
+  font-size: var(--fs-sm); font-weight: 650;
+}
+.valid-meta-location-warning svg { width: 1rem; height: 1rem; color: hsl(var(--vf-fail)); }
 .valid-meta-loc-item { display: inline-flex; align-items: baseline; gap: 0.5rem; }
 .valid-meta-loc-item .k { font-size: calc(0.62rem * var(--a11y-fs)); text-transform: uppercase; letter-spacing: 0.07em; color: hsl(var(--muted-foreground)); }
 .valid-meta-loc-item .v { font-family: var(--font-mono); font-size: var(--fs-sm); color: hsl(var(--vf-fail)); }
@@ -537,7 +590,16 @@
    drama), warn = amber glass - all floating off the card on a coloured glow -
    and not-applicable = a faded sheet of paper lying flat. The icon says WHICH
    check; the chip's material says its state. Pips arm in a staggered cascade. */
+.valid-score-wrap { min-width: 0; }
 .valid-score { list-style: none; margin: 1rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.valid-score-more {
+  display: none; width: 100%; margin-top: 0.7rem; padding: 0.55rem 0.75rem;
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius-pill);
+  background: hsl(var(--muted) / 0.38); color: hsl(var(--foreground));
+  font: inherit; font-size: var(--fs-sm); font-weight: 650; cursor: pointer;
+}
+.valid-score-more:hover { background: hsl(var(--accent)); }
+.valid-score-more:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
 
 .valid-score-pip {
   --g1: var(--muted); --g2: var(--muted); --ink: hsl(var(--muted-foreground)); --glow: transparent;
@@ -852,6 +914,26 @@
    column's width instead of the wide multi-up layout it gets full-bleed. */
 .valid-summary .valid-facts { grid-template-columns: 1fr; }
 
+/* A precise EXIF location is too important (and too spatial) to be squeezed
+   into masonry. It gets a report-width feature card; wide displays turn its
+   first column into a large offline map while the remaining EXIF groups flow
+   beside it. */
+.valid-meta-feature { min-width: 0; }
+@media (min-width: 1200px) {
+  .valid-meta-feature .valid-meta.has-map { padding: 1.55rem 1.7rem; }
+  .valid-meta-feature .valid-meta.has-map .valid-meta-note { max-width: 95ch; }
+  .valid-meta-feature .valid-meta.has-map .valid-meta-grid {
+    grid-template-columns: minmax(480px, 1.45fr) repeat(2, minmax(190px, 0.72fr));
+    gap: 1.5rem 2.25rem;
+  }
+  .valid-meta-feature .valid-meta.has-map .valid-meta-location {
+    grid-column: 1; grid-row: 1 / span 4;
+    padding-right: 1.5rem; border-right: 1px solid hsl(var(--border));
+  }
+  .valid-meta-feature .valid-meta.has-map .valid-locator { max-width: none; }
+  .valid-meta-feature .valid-meta.has-map .valid-meta-group--desc { grid-column: 2 / -1; }
+}
+
 /* "Made from" - the scalar-input digest (env.inputs), boxed as its own panel
    (matching change-history/assertion-log) so it reads as a peer section rather
    than a footnote of the summary card: monospace values, a swatch chip for
@@ -895,6 +977,23 @@
 }
 .valid-panel > h3 { display: flex; align-items: center; gap: 0.5rem; margin: 0; font-size: calc(0.95rem * var(--a11y-fs)); }
 .valid-panel > h3 svg { width: 1.05em; height: 1.05em; color: hsl(var(--muted-foreground)); }
+.valid-panel-summary {
+  display: flex; align-items: center; gap: 0.55rem;
+  min-width: 0; cursor: pointer; list-style: none; user-select: none;
+}
+.valid-panel-summary::-webkit-details-marker { display: none; }
+.valid-panel-summary:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 4px; border-radius: 0.35rem; }
+.valid-panel-summary-title { display: inline-flex; align-items: center; gap: 0.5rem; min-width: 0; font-size: calc(0.95rem * var(--a11y-fs)); font-weight: 700; }
+.valid-panel-summary-title svg { width: 1.05em; height: 1.05em; flex: 0 0 auto; color: hsl(var(--muted-foreground)); }
+.valid-panel-summary-meta {
+  margin-left: auto; min-width: 0; max-width: 55%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--font-mono); font-size: var(--fs-xs); color: hsl(var(--muted-foreground));
+}
+.valid-disclosure-chev { display: inline-flex; flex: 0 0 auto; color: hsl(var(--muted-foreground)); transition: transform var(--dur-1) ease; }
+.valid-disclosure-chev svg { width: 1rem; height: 1rem; }
+.valid-panel-disclosure[open] > summary .valid-disclosure-chev { transform: rotate(180deg); }
+.valid-panel-body { display: grid; gap: 0.7rem; min-width: 0; }
 
 /* ── Change history - the credential's recorded actions as a timeline. Each row
    is anchored by a colour-coded MAKER pill on the left: Lolly reads bold green
@@ -1068,6 +1167,42 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
    mini scorecard); the body holds the full report, borderless since the card
    already frames it. */
 .valid-reports-list { display: grid; gap: 0.75rem; }
+.valid-batch-overview {
+  display: grid; gap: 0.8rem; margin-bottom: 1rem; padding: 1rem;
+  border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+  background:
+    radial-gradient(100% 130% at 0% 0%, hsl(var(--primary) / 0.08), transparent 62%),
+    hsl(var(--card));
+  box-shadow: 0 18px 40px -34px hsl(0 0% 0% / 0.6);
+}
+.valid-batch-heading { display: flex; justify-content: space-between; gap: 0.8rem; align-items: baseline; }
+.valid-batch-heading > span { font-size: var(--fs-xs); font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: hsl(var(--muted-foreground)); }
+.valid-batch-heading > strong { font-family: var(--font-mono); font-size: var(--fs-sm); }
+.valid-batch-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.65rem; }
+.valid-batch-stat {
+  --batch-tone: var(--muted-foreground);
+  position: relative; overflow: hidden; isolation: isolate;
+  display: grid; gap: 0.12rem; justify-items: start; min-width: 0;
+  padding: 0.75rem 0.85rem; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * 0.85);
+  background: linear-gradient(160deg, hsl(var(--card)), hsl(var(--muted) / 0.55));
+  color: hsl(var(--foreground)); text-align: left; cursor: pointer;
+  box-shadow: inset 0 1px hsl(0 0% 100% / 0.25), 0 8px 18px -16px hsl(var(--batch-tone) / 0.65);
+  transition: translate var(--dur-1) ease, border-color var(--dur-1) ease, box-shadow var(--dur-1) ease;
+}
+.valid-batch-stat::before {
+  content: ''; position: absolute; inset: 0 auto 0 0; width: 3px;
+  background: hsl(var(--batch-tone)); opacity: 0.82;
+}
+.valid-batch-stat strong { font-size: calc(1.35rem * var(--a11y-fs)); line-height: 1; }
+.valid-batch-stat span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: hsl(var(--muted-foreground)); }
+.valid-batch-stat:hover:not(:disabled) { translate: 0 -2px; border-color: hsl(var(--batch-tone) / 0.48); }
+.valid-batch-stat.is-active { border-color: hsl(var(--batch-tone) / 0.62); box-shadow: inset 0 1px hsl(0 0% 100% / 0.32), 0 10px 24px -15px hsl(var(--batch-tone) / 0.72); }
+.valid-batch-stat:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.valid-batch-stat:disabled { cursor: default; opacity: 0.46; }
+.valid-batch-stat.is-good { --batch-tone: var(--vf-pass); }
+.valid-batch-stat.is-attention { --batch-tone: var(--vf-fail); }
+.valid-batch-stat.is-ai { --batch-tone: var(--vf-ai-1); }
+.valid-batch-stat.is-none { --batch-tone: var(--muted-foreground); }
 .valid-reports-bar {
   display: flex; align-items: center; justify-content: space-between;
   gap: 0.75rem; margin-bottom: 0.85rem;
@@ -1169,6 +1304,68 @@ box-shadow: inset 0 -.13em .5em currentcolor, 0 .2rem .5rem -.2rem #0002, 0 0 0 
 .valid-score--mini .valid-score-pip.is-fail { color: hsl(var(--vf-fail)); background: hsl(var(--vf-fail) / 0.16); }
 .valid-score--mini .valid-score-pip.is-warn { color: hsl(var(--vf-warn)); background: hsl(var(--vf-warn) / 0.18); }
 .valid-score--mini .valid-score-pip.is-na { color: hsl(var(--muted-foreground)); background: hsl(var(--muted) / 0.5); opacity: 0.6; }
+
+/* Phone hierarchy: preserve the tactile badge language, but show a decisive
+   first glance rather than every piece of evidence at once. Details remain a
+   single tap away, and batch rows keep only enough pips to support triage. */
+@media (max-width: 639px) {
+  .verify-view .platform-layout { max-width: 100%; padding-inline: 0.8rem; }
+  .valid-layout.has-results { padding-top: 4rem; }
+  .valid-layout.has-results .plat-header { align-items: flex-start; flex-wrap: wrap; }
+  .valid-layout.has-results .valid-header-actions { width: 100%; margin-left: 0; }
+  .valid-layout.has-results .valid-header-actions .btn { flex: 1 1 9rem; min-height: 42px; }
+  .valid-result { padding: 1rem; gap: 0.9rem; }
+  .valid-preview--lg,
+  .valid-preview--lg img,
+  .valid-preview--lg video { max-height: 17rem; }
+  .valid-hero-title { align-items: flex-start; gap: 0.7rem; }
+  .valid-hero-icon,
+  .valid-result.is-valid .valid-hero-icon,
+  .valid-result.is-trusted .valid-hero-icon,
+  .valid-result.is-lolly .valid-hero-icon,
+  .valid-result.is-delivered .valid-hero-icon { width: 4.25rem; height: 4.25rem; }
+  .valid-hero-vbadges { display: grid; grid-template-columns: 1fr; }
+  .valid-vbadge { width: 100%; }
+
+  .valid-score-wrap .valid-score {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55rem; margin-top: 0.35rem;
+  }
+  .valid-score-wrap .valid-score:not(.valid-score--mini) .valid-score-pip { width: auto; min-height: 6rem; }
+  .valid-score-wrap:not(.is-expanded) .valid-score:not(.valid-score--mini) > :nth-child(n + 5) { display: none; }
+  .valid-score-more { display: block; }
+
+  .valid-panel,
+  .valid-meta { padding: 0.85rem 0.9rem; box-shadow: 0 0.22rem 0.8rem hsl(0 0% 0% / 0.12); }
+  .valid-panel-summary { min-height: 2.25rem; }
+  .valid-meta-head {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+    min-height: 2.25rem;
+  }
+  .valid-meta-head h3 { grid-column: 1; }
+  .valid-meta-head .valid-meta-count { grid-column: 2; justify-self: end; }
+  .valid-meta-head .valid-disclosure-chev { grid-column: 3; }
+  .valid-meta-head .valid-meta-sensitive { grid-column: 1 / -1; grid-row: 2; justify-self: start; }
+  .valid-panel-summary-meta { max-width: 40%; }
+  .valid-meta-count { margin-left: auto; }
+  .valid-meta-body { margin-top: 0.75rem; }
+  .valid-meta-grid { grid-template-columns: minmax(0, 1fr); gap: 1.25rem; }
+  .valid-meta-group--desc { grid-column: auto; padding: 1rem; }
+  .valid-meta-location { grid-column: auto; }
+  .valid-meta-loc-read { align-items: flex-start; flex-direction: column; gap: 0.45rem; }
+
+  .valid-batch-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .valid-batch-stat.is-all { grid-column: 1 / -1; }
+  .valid-batch-stat span { white-space: normal; }
+  .valid-reports-bar { align-items: flex-start; flex-direction: column; }
+  .valid-reports-actions { width: 100%; }
+  .valid-reports-actions .btn { flex: 1 1 0; min-height: 40px; }
+  .valid-item-signer { display: none; }
+  .valid-item-summary .valid-score--mini { flex-basis: calc(100% - 2rem); order: 4; }
+  .valid-item-summary .valid-score--mini > :nth-child(n + 7) { display: none; }
+  .valid-item-chev { margin-left: auto; }
+  .valid-item-body { padding-inline: 0.65rem; }
+}
 
 /* ─── Content Credentials identity (profile) ────────────────────────────────
    Enrollment UI in the profile's Content Credentials section. Buttons reuse
@@ -1470,8 +1667,22 @@ mark.valid-hl--t5 { background: hsl(0 82% 55% / 0.48); }
 
 /* The score donut: a centred hero gauge with the rating inside the ring. Colour
    follows the band; the number wears text tokens, never the series colour. */
-.valid-tsig-gauge-wrap { display: flex; justify-content: center; margin: 0.55rem 0 0.3rem; }
+.valid-tsig-gauge-wrap { display: flex; align-items: center; justify-content: center; gap: 0.7rem; margin: 0.55rem 0 0.3rem; }
 .valid-tsig-gauge { width: calc(64px * var(--a11y-fs)); height: calc(64px * var(--a11y-fs)); }
+.valid-tsig-gauge-copy { display: grid; gap: 0.08rem; }
+.valid-tsig-gauge-copy strong { font-size: var(--fs-sm); }
+.valid-tsig-gauge-copy small { font-size: var(--fs-xs); color: hsl(var(--muted-foreground)); }
+.valid-tsig-details { min-width: 0; }
+.valid-tsig-details > summary {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.5rem 0; border-top: 1px solid hsl(var(--vf-ai-1) / 0.2);
+  cursor: pointer; list-style: none; user-select: none;
+  font-size: var(--fs-sm); font-weight: 700;
+}
+.valid-tsig-details > summary::-webkit-details-marker { display: none; }
+.valid-tsig-details > summary:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; border-radius: 0.35rem; }
+.valid-tsig-details-count { margin-left: auto; font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: 500; color: hsl(var(--muted-foreground)); }
+.valid-tsig-details-body { display: grid; gap: 0.25rem; min-width: 0; padding-bottom: 0.35rem; }
 .valid-tsig-gauge circle { fill: none; stroke-width: 6; }
 .valid-tsig-gauge-num { font-size: 17px; font-weight: 700; text-anchor: middle; fill: hsl(var(--foreground)); }
 .valid-tsig-gauge-den { font-size: 8.5px; text-anchor: middle; fill: hsl(var(--muted-foreground)); }

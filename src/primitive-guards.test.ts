@@ -162,27 +162,15 @@ const PRIMARY_FG = /(?:^|[;\s])color:\s*hsl\(var\(--primary-foreground\)\)/;
 const PRIMARY_FILL_ALLOWED: Record<string, number> = {
   'styles/parts/ask.css → .ask-q': 1,                                  // Ask user-question chat bubble (not a button)
   'pro/pro.css → .pro-fill-btn:hover': 1,                              // pro fill-tool hover state
-  'styles/parts/editor.css → .fc-btn.is-armed': 1,                     // flow-chart editor armed state
-  'styles/parts/editor.css → .fc-btn.fc-action-primary': 1,            // flow-chart editor primary action
-  // The Design top bar's Export CTA (plan 179 M1). It cannot join the alias list:
-  // design-topbar.css is UNLAYERED on purpose (its `.chrome-topleft` reset has to
-  // out-rank parts/overrides.css, which sits in the `overrides` layer), and an
-  // unlayered `.dtb-btn { background: transparent }` beats ANY layered rule
-  // regardless of specificity - so `.btn--primary` in the `primitives` layer can
-  // never reach this button. Same structural reason as .fc-action-primary above,
-  // one layer further out. 2026-09-02.
-  'styles/parts/design-topbar.css → .dtb-primary': 1,
   'styles/parts/gallery.css → .personalize-nudge-cta': 1,              // personalize nudge CTA
   'styles/parts/gallery.css → .gtile-continue': 1,                     // gallery tile continue pill
   'styles/parts/profile.css → .profile-view .profile-theme-pill': 1,   // Appearance theme pill active
   'styles/parts/storage.css → .clear-dialog-actions .btn.btn-go': 1,   // clear-gate go button
   'styles/parts/tool-chrome.css → .scrub-readout': 1,                  // select-scrub readout bubble
   'styles/parts/tool-chrome.css → .audio-preview.is-playing': 1,       // audio preview playing state
-  'styles/parts/tool.css → .render-pill': 1,                           // the Get|Save render pill
   'styles/parts/tool.css → .flatpickr-day.selected, .flatpickr-day.selected:hover': 1, // vendored flatpickr theme
   'styles/parts/tool.css → .block-add--prominent': 1,                  // blocks-input add button
   'styles/parts/tool.css → .embed-editor-actions .ee-apply': 1,        // embed editor apply button
-  'styles/parts/topbar.css → .profile-menu-count': 1,                  // profile menu count bubble
   'styles/parts/topbar.css → .history-fab-count': 1,                   // history FAB count bubble
   'styles/parts/welcome.css → .welcome-lang.is-active': 1,             // welcome language pill active
   'styles/picker.css → .tc-render': 1,                                 // picker tool-card render button
@@ -250,7 +238,9 @@ const INLINE_GLYPH_ALLOWED: Record<string, number> = {
   'views/catalog.ts': 23,   // +2 2026-08-18: INTERP_ICON + FIT_ICON zoom-pill glyphs (inline, like ZOOM_IN/OUT_ICON)
   'views/dashboard.ts': 5,
   'views/doc-editor.ts': 23,
-  'views/free-canvas.ts': 1,
+  // Moved verbatim from free-canvas.ts into its icon registry during the plan
+  // 198 seam extraction. One existing wrapper, no new glyph.
+  'views/free-canvas-icons.ts': 1,
   // The `svgIcon()` wrapper lifted out of free-canvas.ts with the shape/fit/align
   // field rows (plan 179 M1). It is that file's glyph wrapper copied VERBATIM - the
   // lifted builders emit markup free-canvas.ts's own tests compare byte-for-byte, and
@@ -828,7 +818,6 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // drained into a room that went away mid-paint. Nothing new is interpolated,
   // and the shared-tray option carries no markup at all.
   'lib/brand-editor.ts': 25,
-  'lib/brand-studio-tabs.ts': 9,
   // The tonal-curve editor's one sink is draw()'s full panel re-render. Reviewed
   // 2026-08-08: every interpolated value is either a constant (channel labels,
   // the curve glyph, viewBox numbers, role/tabindex), a NUMBER (aria-valuemin/max/
@@ -1032,7 +1021,11 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // disclaimer sentences, and the total/headline strings. Rule 6/9's honesty
   // sentences are t()-sourced, never raw money.
   'views/cost-panel.ts': 1,
-  'views/dashboard.ts': 11,
+  // 12 as of 2026-09-04: the storage-probe failure replacement is a fixed
+  // `cat-empty` paragraph containing only t('unavailable'). It adds no data
+  // interpolation; the ordinary storage renderer remains responsible for
+  // escaping measured/device values before it reaches its own sink.
+  'views/dashboard.ts': 12,
   'views/deck-editor.ts': 9,
   // 2 as of 2026-09-02 (new file: the Design editor's top bar, plan 179 M1). One is
   // the VERBATIM re-insert of the shell's own `backHomeHtml()` island, which the bar
@@ -1243,7 +1236,10 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // ADDS escaping rather than removing it (the two whose parameter is free text
   // off the page stay tRaw, and both are written to textContent); and the
   // extension-transport adapter was deleted outright in favour of the bridge's.
-  'views/start.ts': 9,
+  // +2 on 2026-09-04 (plans/186): the "Editing <label>" line under the studio header and
+  // the read-only page for a locked design system - the label is escape()d in both, the
+  // rest is t() copy and fixed links.
+  'views/start.ts': 11,
   // 1 as of 2026-08-09 (new template-chooser overlay, Design frame primitive). The
   // one innerHTML sink is the dialog scaffold: escapeHtml()'d toolName, static t()
   // markup, and the blankTile/groupsHtml composed-markup helpers; no raw input.
@@ -1310,7 +1306,10 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // 16 → 15, 2026-08-27: attrition - the sidebar's small lang-fab
   // (`group.insertAdjacentHTML('beforeend', langFabHtml())`) is gone; the canvas HUD's
   // profile avatar opens the consolidated menu, which carries the Language row.
-  'views/tool.ts': 15,
+  // +1 on 2026-09-04 (plans/186): the "Switched to <name>" notice inserted on a
+  // design-system switch (the "Made with" one rides the existing sidebar markup). The
+  // name is the record's label through escape(); the rest is t() copy and fixed ids.
+  'views/tool.ts': 16,
   // 21 as of 2026-07-31: +2 deep-scan watermark notes (trustmarkNoteHtml,
   // contentSealNoteHtml). Reviewed - every attacker-controlled value on this
   // page (decoded payload/message hex, schema, filenames, hex dumps of file
@@ -1394,6 +1393,15 @@ const RAW_HTML_ALLOWED: Record<string, number> = {
   // interpolated; the text stays in its (hidden) spans. A font file is the only
   // external input, and it is fetched from the registry, not from the document.
   'views/glyph-split-mount.ts': 1,
+  // 2 as of 2026-09-04 (new file: the Profile view's "Design systems" card, plans/186
+  // section 5). Both sinks render the card body: every record id and label goes through
+  // escape(), the source line is escape()d as a whole, and the rest is t() copy and
+  // icon() markup. Nothing a record carries reaches the sink raw.
+  'lib/design-system/design-systems-card.ts': 2,
+  // 10 as of 2026-09-04: the Tokens room adds one complete Lolly UI starter-role
+  // preview. Token paths, current values and controls all reach it through escape();
+  // its actual brand write stays in the delegated submit handler below the sink.
+  'lib/brand-studio-tabs.ts': 10,
 };
 
 test('R10: raw-HTML sinks are a pinned inventory, not a growing one', () => {
@@ -1576,7 +1584,9 @@ test('R14: _updateUserAssetMeta runs neither pin-preserver nor quota check, and 
 // REMAINS. Both directions fail on purpose: above the pin means a new literal
 // went in where a token exists (use var(--shadow-*)/var(--edge*)/var(--fs-*)/
 // var(--radius-*) - or add a token to chrome-tokens.json if a genuine new
-// recipe emerged); below the pin means someone migrated more - good - and the
+// recipe emerged); `--ui-edge` / `--ui-elevation` / `--ui-effect` are the
+// semantic aliases exported to Penpot, with the same status as their legacy
+// foundation names. Below the pin means someone migrated more - good - and the
 // pin ratchets DOWN with the commit, so the debt can never quietly regrow.
 //
 // Exclusions mirror the migration's own scope: docs.css + docs-landing.css are
@@ -1592,17 +1602,22 @@ const R12_CSS = CSS.filter(f => f.rel.startsWith('styles/') && !R12_EXCLUDE.has(
 const R12_RATCHETS: Array<{ what: string; pin: number; count: (text: string) => number; fix: string }> = [
   {
     what: 'box-shadow declarations with no chrome token in them',
-    pin: 349,
+    // 349 → 323 on 2026-09-04: semantic `--ui-*` elevation roles now power
+    // buttons, fields, shared surfaces, topbar popovers, and the repeated
+    // content-pattern tiles/rows rather than leaking compatibility shadows.
+    pin: 323,
     count: (t) => [...t.matchAll(/box-shadow:\s*([^;}]+)/g)]
       .map(m => m[1]!.trim())
-      .filter(v => v !== 'none' && !/var\(--(?:shadow|edge|ring-focus|bevel)/.test(v)).length,
-    fix: 'compose var(--edge*) + var(--shadow-1..5) (see styles/parts/surfaces.css), or add a real new recipe to shells/web/design/chrome-tokens.json',
+      .filter(v => v !== 'none' && !/var\(--(?:ui-(?:edge|elevation|effect)|shadow|edge|ring-focus|bevel)/.test(v)).length,
+    fix: 'compose the semantic var(--ui-edge*) + var(--ui-elevation-*) roles (see styles/parts/surfaces.css), or add a real new recipe to shells/web/design/chrome-tokens.json',
   },
   {
     what: 'whole-value px border-radius literals',
-    pin: 123,
+    // 123 → 103 on 2026-09-04: semantic Lolly UI radius roles now cover
+    // repeated tile, row, badge, dashboard-stat, and design-workspace shapes.
+    pin: 102,
     count: (t) => (t.match(/border-radius:\s*\d+(?:\.\d+)?px\s*[;}!]/g) ?? []).length,
-    fix: 'use var(--radius-xs|sm|md|lg) (3/6/10/14px) or var(--radius) for the 1rem panel size',
+    fix: 'use var(--radius-xs|sm|md|lg) (derived from --radius) or var(--radius) for the base panel size',
   },
   {
     what: 'font-size calc(<len> * var(--a11y-fs)) boilerplate',
@@ -1632,5 +1647,47 @@ test('R12 (plans/172): chrome-token literals only ever ratchet down', () => {
       `${r.what}: ${n} found, pin is ${r.pin} - a new literal appeared where a token exists. ${r.fix}`);
     assert.ok(n >= r.pin,
       `${r.what}: ${n} found, pin is ${r.pin} - migration progressed; ratchet the pin DOWN to ${n} in this test so the win is locked in`);
+  }
+});
+
+test('R12 (plans/188): app navigation reads semantic Lolly UI roles', () => {
+  const projects = CSS.find(f => f.rel === 'styles/parts/projects.css')?.text ?? '';
+  for (const role of [
+    '--ui-color-surface-muted', '--ui-color-border-default', '--ui-color-selection-surface',
+    '--ui-radius-panel', '--ui-radius-control', '--ui-elevation-control',
+    '--ui-motion-feedback', '--ui-motion-navigation',
+  ]) assert.ok(projects.includes(role), `projects.css: view toggle must read ${role}`);
+
+  const dock = TS.find(f => f.rel === 'lib/edge-dock.ts')?.text ?? '';
+  for (const role of [
+    '--ui-color-surface-canvas', '--ui-color-selection-border', '--ui-color-focus-ring',
+    '--ui-radius-choice', '--ui-elevation-sheet', '--ui-motion-standard',
+  ]) assert.ok(dock.includes(role), `edge-dock.ts: dock navigation must read ${role}`);
+});
+
+test('R13 (plans/188): reusable content patterns read semantic Lolly UI roles', () => {
+  const required: Array<[string, string[]]> = [
+    ['styles/parts/folders.css', [
+      '--ui-color-surface-raised', '--ui-color-border-default', '--ui-color-selection-surface',
+      '--ui-radius-card', '--ui-radius-choice-round', '--ui-elevation-control', '--ui-motion-feedback',
+    ]],
+    ['styles/parts/saved-list.css', [
+      '--ui-color-surface-canvas', '--ui-color-surface-muted', '--ui-color-selection-surface',
+      '--ui-radius-panel', '--ui-radius-choice-round', '--ui-motion-feedback',
+    ]],
+    ['styles/parts/projects.css', [
+      '--ui-color-selection-border', '--ui-color-text-muted', '--ui-radius-control',
+    ]],
+    ['styles/parts/dashboard.css', [
+      '--ui-color-surface-canvas', '--ui-color-surface-muted', '--ui-color-selection-surface',
+      '--ui-radius-panel', '--ui-radius-surface', '--ui-edge-strong',
+    ]],
+    ['styles/parts/profile.css', [
+      '--ui-color-selection-surface', '--ui-radius-panel', '--ui-radius-choice-round',
+    ]],
+  ];
+  for (const [rel, roles] of required) {
+    const text = CSS.find(f => f.rel === rel)?.text ?? '';
+    for (const role of roles) assert.ok(text.includes(role), `${rel}: reusable content patterns must read ${role}`);
   }
 });

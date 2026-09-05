@@ -5,12 +5,11 @@
  * Two faces of one room, decided by whether a design system is in force here - 
  * this device's own install or a real one shipped by the catalog, either way:
  *
- *  - EMPTY: three doors, one per first move - Pick a colour, Choose a face, Add
- *    a logo - each landing in its room with the control that makes the decision
- *    already open (plan 182 section 3a). Under them, one line: bring a file
- *    across, or go and explore the tools, because leaving is a legitimate
- *    answer. The doors replaced "Start from a file" / "Start from scratch",
- *    which named two ROUTES rather than two things a person could do.
+ *  - EMPTY: four equal doors for the material a person actually has - one
+ *    colour, an existing file, a face, or a logo. Each appears with the control
+ *    that makes the decision already open (plan 182 section 3a). This is a
+ *    mixing desk, not a setup funnel: an import is not more "complete" than one
+ *    colour, and nothing prevents another source being added later.
  *  - FURNISHED: what exists, at a glance - the palette, the type families, how
  *    many logo slots are filled, how many tokens there are. Every block is a
  *    door into its room. Counts, never a progress bar: nothing here is owed.
@@ -26,6 +25,7 @@ import { summarizeTokensDoc, createTokenSet } from '@lolly/engine';
 import type { HostV1 } from '@lolly-tools/core/host-v1';
 import { listLogos } from '../../brand-logos.ts';
 import { roleAssignments } from '../roles.ts';
+import { activeDesignSystemSource } from '../active.ts';
 import { reportOwnership, isNeutralRampKey, radiusValue, FONT_ROLES } from '../ownership.ts';
 import type { ColorRef, OwnershipReport } from '../ownership.ts';
 import { brandFontFamilies } from '../../register-user-fonts.ts';
@@ -221,8 +221,10 @@ export async function readOverview(host: OverviewHost): Promise<OverviewModel> {
   // installed it. bridge/tokens.ts resolves an unlocked catalog's own tokens doc
   // when there is no user install, so host.tokens below would answer with that
   // pack's full palette - and an "Nothing here yet" empty state over a painted
-  // Colours room is simply false. The one genuinely empty case is the starter
-  // placeholder, which is also the shell's own unbranded signal.
+  // Colours room is simply false. The genuinely empty cases are the SHIPPED
+  // design system being the active one (plans/186 section 3.3) and, with no
+  // registry to ask, the starter placeholder - the shell's own unbranded signal.
+  if ((await activeDesignSystemSource(host)) === 'shipped') return EMPTY_MODEL;
   let tokensId = '';
   try { tokensId = (await assets._findMetaByType?.('tokens'))?.id ?? ''; }
   catch { /* discovery unavailable - treat as not installed here */ }
@@ -411,7 +413,7 @@ function cardHtml(area: string, label: string, valueHtml: string, body = ''): st
  * very first write makes true whatever that write was.
  *
  * A design system whose every colour, face and mark is still what shipped has
- * nothing to show at a glance, so it gets the three doors instead of five cards
+ * nothing to show at a glance, so it gets the four material doors instead of five cards
  * counting other people's decisions (plan 182 section 3a). Radius counts: moving
  * it is a decision, even though it adds no material. A model with no ownership
  * report cannot be asked, and falls back to `furnished` exactly as before.
@@ -428,10 +430,9 @@ export function overviewHtml(model: OverviewModel | null): string {
   if (!model) return `<p class="ds-ov-loading">${t('Reading the design system…')}</p>`;
 
   if (!model.furnished || !hasOwnMaterial(model)) {
-    // One door per first move, in the order they cost: a colour is one press, a
-    // face is a search, a mark is a file. Each opens its room with the control
-    // that makes the decision already up - a door that only changed the room
-    // would leave the person to find the control themselves.
+    // One door per thing somebody might already have. A complete .lolly pack is
+    // as immediate as one colour; the in-between cases stay first-class and can
+    // be mixed freely. Each opens with its deciding control already up.
     return `
       <div class="ds-ov ds-ov--empty">
         <h2 class="ds-ov-title">${t('Nothing here yet')}</h2>
@@ -439,18 +440,14 @@ export function overviewHtml(model: OverviewModel | null): string {
         <div class="ds-ov-doors">
           ${doorHtml('color-pick', icon('palette'), t('Pick a colour'),
             t('It becomes the primary. Shades and roles can follow from it.'))}
+          ${doorHtml('file', icon('upload'), t('Bring a file'),
+            '.lolly · JSON · Penpot · PDF · SVG')}
           ${doorHtml('type-stage', icon('font'), t('Choose a face'),
             t('Google Fonts or a font file. Stays on this device.'))}
           ${doorHtml('logos', icon('shapes'), t('Add a logo'),
             t('Drop a mark; Lolly reads its shape and offers the right slot.'))}
         </div>
-        <p class="ds-ov-bring">${tRaw(
-          'Already have it somewhere? {file} - design tokens, a Penpot project, a PDF or an SVG. Or {tools} first.',
-          {
-            file: `<button type="button" class="ds-ov-inline" data-ds-door="file">${escape(t('Bring a file'))}</button>`,
-            tools: `<a class="ds-ov-inline" href="#/">${escape(t('explore the tools'))}</a>`,
-          },
-        )}</p>
+        <p class="ds-ov-bring">${t('Nothing installs until you choose one.')} <a class="ds-ov-inline" href="#/">${escape(t('Explore the tools'))}</a>.</p>
       </div>`;
   }
 

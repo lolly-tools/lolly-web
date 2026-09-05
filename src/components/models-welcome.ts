@@ -21,10 +21,13 @@
  * background removal uses, and the per-model downloaders (downloadMatte /
  * downloadUpscale / downloadOcr) cache into the IndexedDB stores the runtime
  * reads - so a completed run means the tools are genuinely ready offline. Only
- * these three (the cache-aligned image models) are pre-fetched here; voice/text
- * models download on first use, and everything stays reachable from Profile →
- * "Available offline". The run outlives this sheet, so closing it mid-download
- * hands off to the global toast cleanly.
+ * these three (the cache-aligned image models) are pre-fetched here; voice, text
+ * and the durable-credential encoder download on first use, and everything stays
+ * reachable from Profile → "Available offline" (the durable model has its own part
+ * there since plans/202 WP4.2 - it is an export option, not one of the three tools
+ * this sheet is about, so it deliberately stays off this first-run list). The run
+ * outlives this sheet, so closing it mid-download hands off to the global toast
+ * cleanly.
  */
 import '../styles/parts/models-welcome.css';
 import { t } from '../i18n.ts';

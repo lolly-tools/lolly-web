@@ -74,6 +74,9 @@ async function bundleHelpers(): Promise<string> {
       loader: 'ts',
     },
     bundle: true, write: false, format: 'iife', platform: 'browser', logLevel: 'silent',
+    // export.ts reaches a CSS side-effect import through a lazy chain (the durable
+    // probe in format-support.ts); esbuild has no output path here, so drop the sheets.
+    loader: { ".css": "empty" },
   });
   return out.outputFiles[0]!.text;
 }

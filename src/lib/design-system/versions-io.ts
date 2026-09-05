@@ -19,8 +19,8 @@
  *     sha256}`; the copy-on-write hook in bridge/version-assets.ts preserves the
  *     bytes if and when something would destroy them.
  *
- * Scope: WRITES are always the user's own design system (`user/tokens/brand` and
- * its siblings) - the thing the studio edits and publishes; this module never
+ * Scope: WRITES are always the user's own design system (the active record's
+ * head and its siblings) - the thing the studio edits and publishes; this never
  * writes a pack's namespace. READS are relative to whatever head the bridge
  * discovered, because a device whose system came from a pack has a
  * `<ns>/tokens/brand` head with its versions beside it, and reading those under
@@ -30,7 +30,8 @@
  */
 
 import type { HostV1 } from '@lolly-tools/core/host-v1';
-import { installUserTokens, USER_TOKENS_ID } from '../../bridge/tokens.ts';
+import { installUserTokens } from '../../bridge/tokens.ts';
+import { activeHeadId } from './active.ts';
 // User-facing throws: these reach a person through the panel, so they are chrome
 // strings. t() (not tRaw) with no params is the brand-logos.ts precedent.
 import { t } from '../../i18n.ts';
@@ -71,8 +72,8 @@ const tokensOf = (ctx: VersionsIoCtx): WebTokensAPI | undefined =>
   ctx.host.tokens as unknown as WebTokensAPI | undefined;
 
 /**
- * The asset id the head document was DISCOVERED at, which is not always
- * `user/tokens/brand`.
+ * The asset id the head document was DISCOVERED at, which is not always the head
+ * this module writes to.
  *
  * A version is addressed relative to its head (`<headId>/<slug>`), and a device
  * whose design system came from a pack has a `<ns>/tokens/brand` head with its
@@ -81,27 +82,30 @@ const tokensOf = (ctx: VersionsIoCtx): WebTokensAPI | undefined =>
  * "that version could not be read", the compat card diffs against nothing and
  * calls the whole system `added`, and the storage line reports zero bytes.
  *
- * Falls back to the user id when the bridge cannot say (a partial test host, an
- * unreachable store) - that is where this module's own writes go.
+ * Falls back to the active design system's head when the bridge cannot say (a
+ * partial test host, an unreachable store) - that is where this module's own
+ * writes go (plans/186 section 3.3).
  */
 async function headId(ctx: VersionsIoCtx): Promise<string> {
-  try { return (await tokensOf(ctx)?.headId?.()) || USER_TOKENS_ID; }
-  catch { return USER_TOKENS_ID; }
+  try { return (await tokensOf(ctx)?.headId?.()) || await activeHeadId(ctx.host); }
+  catch { return activeHeadId(ctx.host); }
 }
 
 /**
  * The ids one published version could live at, in the order worth trying: under
- * the head it was discovered relative to, then under the user head this module
- * writes to.
+ * the head it was discovered relative to, then under the head this module writes
+ * to.
  *
  * Both, because a publish MIGRATES the head. A studio whose system came from a
- * pack publishes into `user/tokens/brand/<slug>` and writes the ledger to the
- * user head, so from the next read on the discovered head is the user id while
- * the pack's own earlier versions still sit under the pack namespace.
+ * pack publishes into `<write head>/<slug>` and writes the ledger to that head,
+ * so from the next read on the discovered head is the write head while the
+ * pack's own earlier versions still sit under the pack namespace.
  */
 async function versionIdsOf(ctx: VersionsIoCtx, slug: string): Promise<string[]> {
-  const head = await headId(ctx);
-  const ids = head === USER_TOKENS_ID ? [head] : [head, USER_TOKENS_ID];
+  const [head, writeHead] = await Promise.all([headId(ctx), activeHeadId(ctx.host)]);
+  // One id whenever the two agree, which is every device with a single design
+  // system; the second read only exists for the pack case above.
+  const ids = head === writeHead ? [head] : [head, writeHead];
   return ids.map(id => versionAssetId(id, slug));
 }
 

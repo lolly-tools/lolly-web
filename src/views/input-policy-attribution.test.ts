@@ -133,7 +133,7 @@ test('an attribution pins the label static, the same way an authored notice does
   // The notice sits between label and field, which the floating-label offset math
   // cannot account for. A policy line uses that same slot, so it has to make the
   // same decision - missing this is a label painted over the control.
-  const line = SRC.match(/const isStaticLabel = .*/)?.[0];
-  assert.ok(line, 'isStaticLabel is one expression');
-  assert.match(line!, /Boolean\(policyNote\)/);
+  const expression = SRC.match(/const isStaticLabel\s*=[\s\S]*?Boolean\(policyNote\);/)?.[0];
+  assert.ok(expression, 'isStaticLabel includes the complete expression');
+  assert.match(expression!, /Boolean\(policyNote\)/);
 });

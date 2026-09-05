@@ -37,6 +37,14 @@
  *      (see networkFirstInfo and isShellNavigation). /ort/ (the ONNX runtime)
  *      is CACHE-FIRST out of its own bucket the same way (ORT_CACHE).
  *
+ *   6. The PWA share target (POST /share-target) → the ONE non-GET branch here.
+ *      An installed app is a share destination, and the OS delivers the shared
+ *      files as a form POST that no page can see. So the worker takes the
+ *      FormData, parks each file in SHARE_CACHE, and answers with a redirect to
+ *      the app; the page drains the stash on boot (drop-router.ts's
+ *      initShareTargetFileIntake) and sends the files through the same drop
+ *      chooser a dropped file gets. See receiveShare.
+ *
  * The catalog INDEX files (/catalog/tools|assets/index.json) need fresh data, so
  * they still bypass the service worker entirely (checked after the previews path).
  *
@@ -48,6 +56,8 @@
  * entries on activate (a one-time clear of anything already gone stale).
  */
 
+// v16: the PWA share target ships (plan 202 WP4.3) - one POST branch in fetch,
+// plus SHARE_CACHE on the activate keep-list.
 // v15: /catalog/previews/bundle.json changed FORMAT (plans/155 Task 2.4) - it went from
 // a 2.64 MB payload with each look's SVG inlined to a 29 KB manifest of look URLs, and
 // left PRECACHE_URLS with it. A format change is exactly what a generation bump is for:
@@ -64,7 +74,7 @@
 // gains a cache-first rule, and three page-owned unversioned buckets join
 // lolly-pins: lolly-app (pre-downloaded build assets), lolly-ort (the ONNX
 // runtime for /verify's deep scan), lolly-info (the /info docs site).
-const CACHE = 'lolly-v15';
+const CACHE = 'lolly-v16';
 
 // Tools pinned "available offline": the page writes /tools/<id>/* copies into
 // this SEPARATE, unversioned bucket (shells/web/src/lib/offline-pins.ts - keep
@@ -122,8 +132,21 @@ const INFO_CACHE = 'lolly-info';
 const TRANSFORMERS_CACHE = 'transformers-cache';
 const SPEECH_CACHE = 'lolly-speech';
 
+// The share-target inbox: files an OS share sheet posted to this app, waiting for
+// the page to pick them up (shells/web/src/lib/drop-router.ts SHARE_CACHE - keep
+// the two literals in sync). Written HERE (the only bucket this worker owns that
+// the page does not fill) and emptied by the page on the next boot. It joins the
+// keep-list because a share can arrive across a worker update, and losing the
+// handoff would drop the user's file with nothing to show for it.
+const SHARE_CACHE = 'lolly-share-inbox';
+
+// The path the manifest's share_target posts to, and the address the browser is
+// sent to afterwards (keep both in step with manifest.webmanifest).
+const SHARE_TARGET_PATH = '/share-target';
+const SHARE_REDIRECT = '/?share-target=1';
+
 // Every bucket that survives a CACHE-generation bump (activate's keep-list).
-const PERSISTENT_CACHES = [PIN_CACHE, INSTALLED_CACHE, APP_CACHE, ORT_CACHE, ORT_HF_CACHE, INFO_CACHE, TRANSFORMERS_CACHE, SPEECH_CACHE];
+const PERSISTENT_CACHES = [PIN_CACHE, INSTALLED_CACHE, APP_CACHE, ORT_CACHE, ORT_HF_CACHE, INFO_CACHE, TRANSFORMERS_CACHE, SPEECH_CACHE, SHARE_CACHE];
 
 // Stable key the app-shell document is cached under for the offline fallback.
 // Every SPA navigation (/, /pro, /tool/...) resolves to the same index.html, so
@@ -234,10 +257,17 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', event => {
   const { request } = event;
-  if (request.method !== 'GET') return;
-
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+
+  // The share target: the ONE non-GET request this worker answers. Checked before
+  // the GET gate below, and before every routing rule, because no other branch can
+  // ever match a POST.
+  if (request.method === 'POST' && url.pathname === SHARE_TARGET_PATH) {
+    event.respondWith(receiveShare(event));
+    return;
+  }
+  if (request.method !== 'GET') return;
 
   // Immutable hashed build assets + fonts: cache-first (safe - filenames are
   // content-hashed or stable). Checked BEFORE the bypass so /catalog/fonts/ is
@@ -304,6 +334,39 @@ self.addEventListener('fetch', event => {
   // response wins; nothing is written).
   event.respondWith(networkThenAppCache(event));
 });
+
+/**
+ * The share target. An OS share sheet POSTs the shared files as multipart form
+ * data to SHARE_TARGET_PATH; that request never reaches a page, so the worker is
+ * the only place that can read it. Each file is parked in SHARE_CACHE under a
+ * synthetic key, carrying its name in a header (percent-encoded, so a non-ASCII
+ * filename stays a legal header value), and the browser is redirected into the
+ * app - where drop-router.ts's initShareTargetFileIntake drains the stash and
+ * opens the ordinary drop chooser over it.
+ *
+ * A new share clears whatever an earlier one left: the stash is a handoff, not a
+ * queue, and the page always takes the whole of it. Any failure still redirects,
+ * because leaving the user on a blank POST response would be the worst outcome
+ * available - they arrive in the app with nothing imported instead.
+ */
+async function receiveShare(event) {
+  try {
+    const form = await event.request.formData();
+    const files = form.getAll('files').filter(f => f && typeof f.name === 'string' && typeof f.size === 'number');
+    const cache = await caches.open(SHARE_CACHE);
+    for (const key of await cache.keys()) await cache.delete(key);
+    let i = 0;
+    for (const file of files) {
+      await cache.put(`${SHARE_TARGET_PATH}/stash/${i++}`, new Response(file, {
+        headers: {
+          'content-type': file.type || 'application/octet-stream',
+          'x-lolly-share-name': encodeURIComponent(file.name || 'shared-file'),
+        },
+      }));
+    }
+  } catch { /* unreadable share - still open the app for them */ }
+  return Response.redirect(SHARE_REDIRECT, 303);
+}
 
 // Cache-first for immutable resources: serve the cached copy if present;
 // otherwise fetch, cache an ok response, and return it. The versioned CACHE is

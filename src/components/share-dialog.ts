@@ -19,6 +19,7 @@ import { shareSectionBuilders } from '../lib/share-sections.ts';
 import { jellyActive } from '../lib/jelly.ts';
 import type { LollySummary } from '../lib/lolly-pack.ts';
 import { AUTO_PACK_MIN, SHARE_WARN_LEN, BROWSER_HARD_CAP, type ShareFidelity } from '../lib/url-budget.ts';
+import { toLollyAppLink } from '../lib/deep-link.ts';
 
 /** The `.lolly` download vehicle (plans/114 Wave 2). Supplied by the tool view, which
  *  has the host + session the link builder never sees. `build(includeLicensed)` returns
@@ -43,7 +44,8 @@ export interface ShareDialogLolly {
 // where the ceiling is. Modern browsers accept far more than the old ~2000 guess in both
 // the address bar and on reopen, so SHARE_WARN_LEN is a comfort nudge (turn on "Shortest
 // link"); only past BROWSER_HARD_CAP is even a packed link impractical to pass around, and
-// there the verdict points at the .lolly file, which always opens complete.
+// there the verdict points at the .lolly file, whose manifest reports exactly
+// what is embedded and what still has to resolve by reference.
 
 // Bitmap formats copy to the clipboard as a PNG; text/html copy as text/rich text.
 // Vector (svg/pdf) and video formats have no useful clipboard form, so the
@@ -73,11 +75,17 @@ async function copyToClipboard(text: string): Promise<void> {
 function shareUrlFromParts(parts: readonly string[], toolId?: string): string {
   const qs = parts.join('&');
   const query = qs ? '?' + qs : '';
+  // A packaged Tauri page lives at http://tauri.localhost, which is an internal
+  // WebView origin and not a link another person can open. Native Lolly shares
+  // use the public address; the installed-app toggle below can then map that
+  // canonical address to lolly:// without maintaining a second URL grammar.
+  const native = !!(window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+  const origin = native ? 'https://lolly.tools' : window.location.origin;
   const id = toolId
     ?? window.location.pathname.match(/^\/t\/([^/?]+)/)?.[1]
     ?? window.location.hash.match(/^#\/tool\/([^/?]+)/)?.[1];
-  if (id) return `${window.location.origin}/t/${id}${query}`;
-  return window.location.origin + window.location.pathname + window.location.hash.split('?')[0] + query;
+  if (id) return `${origin}/t/${id}${query}`;
+  return origin + window.location.pathname + window.location.hash.split('?')[0] + query;
 }
 
 /** An input field (top-level, or a `blocks` sub-field) - we only need its type. */
@@ -195,10 +203,14 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
   const showImageNote = hasImageInput(manifest) && !fidelity;
   // Offer password-protection only when there's state to encrypt and WebCrypto is present.
   const encryptable = isEncryptAvailable() && !!baseQuery;
+  // A tool's canonical /t/<id> share URL always has an installed-app twin. Keep
+  // this checked through the same allowlisted converter the native intake uses;
+  // a fallback/non-Lolly caller never gets offered a scheme link it cannot open.
+  const appLinkable = !!toLollyAppLink(shareUrlFromParts(baseParts, toolId));
   // The "Link options" section holds shortest-link / password / pin-version. Only render it
   // when at least one of those can apply (shortest may still resolve async, so gate on
   // pack-availability rather than the not-yet-known packed length).
-  const showLinkOptions = !!version || encryptable || (isPackAvailable() && !!baseQuery);
+  const showLinkOptions = appLinkable || !!version || encryptable || (isPackAvailable() && !!baseQuery);
 
   const content = `
     <div class="share-dialog-body">
@@ -233,7 +245,8 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
       ${lolly ? `<div class="share-file" data-share-file>
         <div class="share-file-text">
           <strong>Send it as a file</strong>
-          <span class="share-file-note">A .lolly file carries the whole design - images and all - and always opens complete.</span>
+          <span class="share-file-note">A .lolly file carries the saved design and every file Lolly is allowed to include. Its exact size and any external references appear here when prepared.</span>
+          <span class="share-file-note" data-lolly-summary hidden></span>
         </div>
         <div class="share-file-btns">
           ${jellyActive()
@@ -255,6 +268,14 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
       <details class="share-section" data-link-options>
         <summary>Link options</summary>
         <div class="share-section-body">
+          ${appLinkable ? `
+          <label class="share-shortest" data-app-link-row>
+            <input type="checkbox" class="field-check" data-app-link>
+            <span class="share-shortest-text">
+              <strong>Open in the installed app</strong>
+              <span class="share-shortest-note">Uses <code>lolly://</code> with the same parameters. It needs Lolly installed. <a href="/info/build/url-mode.html#the-lolly-scheme" target="_blank" rel="noopener">URI guide</a></span>
+            </span>
+          </label>` : ''}
           <label class="share-shortest" data-shortest-row hidden>
             <input type="checkbox" class="field-check" data-shortest>
             <span class="share-shortest-text">
@@ -313,6 +334,7 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
   const shortestRow = dialog.querySelector<HTMLElement>('[data-shortest-row]')!;
   const shortestCb  = dialog.querySelector<HTMLInputElement>('[data-shortest]')!;
   const shortestNote = dialog.querySelector<HTMLElement>('[data-shortest-note]');
+  const appLinkCb   = dialog.querySelector<HTMLInputElement>('[data-app-link]');
   const warnEl      = dialog.querySelector<HTMLElement>('[data-share-warning]')!;
   // Packed token for the current state - filled in async once we know it helps.
   let packedToken: string | null = null;
@@ -356,7 +378,7 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
         : 'To send everything, reduce these elements.';
       warnEl.textContent = lost
         ? `⚠️ A link can't include ${describeLoss(lost)}, so it won't be there when someone opens this. ${remedy}`
-        : `⚠️ This link is very large (${bestLen.toLocaleString()} characters) - too long to reliably share. You can keep working, but ${lolly ? 'download the .lolly file below to share it' : canShareOtherwise ? 'share it on your network below' : 'reduce some elements'} - it carries everything and always opens complete.`;
+        : `⚠️ This link is very large (${bestLen.toLocaleString()} characters) - too long to reliably share. You can keep working, but ${lolly ? 'download the .lolly file below to share it with its files and a contents receipt' : canShareOtherwise ? 'share it on your network below' : 'reduce some elements'}.`;
     } else if (bestLen >= SHARE_WARN_LEN) {
       warnEl.hidden = false;
       warnEl.classList.add('is-warn');
@@ -403,7 +425,8 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
     const base = (encryptOn && encToken) ? [`${ENC_PARAM}=${encToken}`]
       : (shortestCb?.checked && packedToken) ? [`${PACK_PARAM}=${packedToken}`]
       : [...baseParts];
-    field.value = shareUrlFromParts([...base, ...flags], toolId);
+    const webUrl = shareUrlFromParts([...base, ...flags], toolId);
+    field.value = appLinkCb?.checked ? (toLollyAppLink(webUrl) ?? webUrl) : webUrl;
   };
 
   // Compute the packed form once. Only offer "Shortest link" when the codec is
@@ -423,6 +446,7 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
     }).catch(() => { /* leave the readable link */ });
   }
   shortestCb?.addEventListener('change', refresh);
+  appLinkCb?.addEventListener('change', refresh);
 
   // Password-protect: recompute the encrypted token as the password changes
   // (debounced - PBKDF2 is deliberately slow). The password never leaves the client;
@@ -483,7 +507,7 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
         const qrToken = readable == null ? null : await packQuery(readable, { qr: true });
         if (qrToken) link = link.replace(whole, `${sep}${PACK_PARAM}=${qrToken}`);
       }
-      link = link.replace(/^https?:\/\/[^/#?]*/, (origin) => origin.toUpperCase());
+      link = link.replace(/^(?:https?:\/\/[^/#?]*|lolly:\/\/)/i, (origin) => origin.toUpperCase());
     } catch { link = field.value; }
     const { navigateTo } = await import('../nav.ts');
     navigateTo(`#/tool/qr-code?url=${encodeURIComponent(link)}`);
@@ -500,6 +524,7 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
   });
 
   const licensedEl = dialog.querySelector<HTMLElement>('[data-lolly-licensed]');
+  const fileSummaryEl = dialog.querySelector<HTMLElement>('[data-lolly-summary]');
 
   // The "include the tool" toggle: revealed once the offer resolves (a `custom` tool -
   // a fork / private-brand tool a recipient likely lacks - defaults it checked). Its live
@@ -519,14 +544,14 @@ export function openShareDialog({ toolId, baseParts = [], manifest = {}, current
 
   const lollyBtn = dialog.querySelector<HTMLButtonElement>('[data-lolly-download]');
   if (lolly && lollyBtn) {
-    wireLollyDelivery(lolly, lollyBtn, licensedEl, (b, f) => lolly.save(b, f), includeTool,
+    wireLollyDelivery(lolly, lollyBtn, licensedEl, fileSummaryEl, (b, f) => lolly.save(b, f), includeTool,
       { idle: 'Download .lolly', done: 'Downloaded', fail: 'Could not build the file', verb: 'Download' });
   }
   const shareBtn = dialog.querySelector<HTMLButtonElement>('[data-lolly-share]');
   if (lolly?.share && shareBtn) {
     const share = lolly.share;
     // OS share sheet, with a download fallback when the sheet declines (no target).
-    wireLollyDelivery(lolly, shareBtn, licensedEl,
+    wireLollyDelivery(lolly, shareBtn, licensedEl, fileSummaryEl,
       async (b, f) => { if (!(await share(b, f))) await lolly.save(b, f); }, includeTool,
       { idle: 'Send to…', done: 'Shared', fail: 'Could not share', verb: 'Send' });
   }
@@ -572,6 +597,7 @@ function wireLollyDelivery(
   lolly: ShareDialogLolly,
   btn: HTMLButtonElement,
   licensedEl: HTMLElement | null,
+  summaryEl: HTMLElement | null,
   deliver: (blob: Blob, filename: string) => Promise<void>,
   includeTool: () => boolean,
   labels: DeliveryLabels,
@@ -580,6 +606,22 @@ function wireLollyDelivery(
   const done = () => { busy(false, labels.done); setTimeout(() => { btn.textContent = labels.idle; }, 1800); };
   const fail = () => busy(false, labels.fail);
   const run = (blob: Blob, filename: string) => deliver(blob, filename).then(done, fail);
+  const showSummary = (built: Awaited<ReturnType<ShareDialogLolly['build']>>): void => {
+    if (!summaryEl) return;
+    const bytes = built.blob.size;
+    const size = bytes < 1024 * 1024
+      ? `${Math.max(1, Math.round(bytes / 1024))} KB`
+      : `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+    const s = built.summary;
+    const bits = [
+      `${size} .lolly`,
+      `${s.assetCount} embedded ${s.assetCount === 1 ? 'file' : 'files'}`,
+      s.byReferenceCount ? `${s.byReferenceCount} external ${s.byReferenceCount === 1 ? 'reference' : 'references'}` : 'no external references',
+      s.toolFiles ? `tool included (${s.toolFiles} ${s.toolFiles === 1 ? 'file' : 'files'})` : 'tool by reference',
+    ];
+    summaryEl.textContent = bits.join(' · ');
+    summaryEl.hidden = false;
+  };
 
   btn.addEventListener('click', async () => {
     if (licensedEl) { licensedEl.hidden = true; licensedEl.textContent = ''; }
@@ -587,8 +629,9 @@ function wireLollyDelivery(
     const withTool = includeTool();
     let built: Awaited<ReturnType<ShareDialogLolly['build']>>;
     try { built = await lolly.build({ includeLicensed: false, includeTool: withTool }); } catch { fail(); return; }
+    showSummary(built);
     if (!built.summary.hasLicensed) { void run(built.blob, built.filename); return; }
-    offerLicensedChoice(built, lolly, licensedEl, busy, run, fail, withTool, labels);
+    offerLicensedChoice(built, lolly, licensedEl, busy, run, fail, showSummary, withTool, labels);
   });
 }
 
@@ -602,6 +645,7 @@ function offerLicensedChoice(
   busy: (on: boolean, label?: string) => void,
   run: (blob: Blob, filename: string) => Promise<void>,
   fail: () => void,
+  showSummary: (built: { blob: Blob; filename: string; summary: LollySummary }) => void,
   includeTool: boolean,
   labels: DeliveryLabels,
 ): void {
@@ -624,6 +668,10 @@ function offerLicensedChoice(
   licensedEl.querySelector<HTMLButtonElement>('[data-lolly-include]')!.addEventListener('click', async () => {
     licensedEl.hidden = true;
     busy(true, 'Preparing…');
-    try { const full = await lolly.build({ includeLicensed: true, includeTool }); await run(full.blob, full.filename); } catch { fail(); }
+    try {
+      const full = await lolly.build({ includeLicensed: true, includeTool });
+      showSummary(full);
+      await run(full.blob, full.filename);
+    } catch { fail(); }
   });
 }

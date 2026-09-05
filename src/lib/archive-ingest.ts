@@ -13,12 +13,18 @@
  */
 
 import { readZip, readTar, readTarGz, sniffContainer } from '@lolly/engine';
-import { classifyZipBytes } from './zip-classify.ts';
+import { classifyZipEntries } from './zip-classify.ts';
 
 /** Most members a single archive may explode into. */
 export const MAX_ARCHIVE_MEMBERS = 200;
 /** Aggregate uncompressed bytes an archive may expand to before we refuse it. */
 export const MAX_ARCHIVE_TOTAL_BYTES = 256 * 1024 * 1024;
+/** Bound directory/empty/bookkeeping records too, while allowing more than 200 useful files. */
+export const MAX_ARCHIVE_ZIP_ENTRIES = MAX_ARCHIVE_MEMBERS * 4;
+/** Payload plus bounded ZIP directory/header overhead. */
+const MAX_ZIP_ARCHIVE_BYTES = MAX_ARCHIVE_TOTAL_BYTES + 64 * 1024 * 1024;
+/** Payload cap plus the maximum tar header/padding overhead for 200 members. */
+const MAX_TAR_ARCHIVE_BYTES = MAX_ARCHIVE_TOTAL_BYTES + (MAX_ARCHIVE_MEMBERS + 2) * 512;
 
 export interface ArchiveMember {
   /** The member's path within the archive (directories stripped by the readers). */
@@ -59,8 +65,26 @@ export function readArchiveMembers(bytes: Uint8Array, filename: string): Archive
   let raw: { name: string; bytes: Uint8Array }[];
 
   if (kind === 'zip') {
-    // Never shred an office/OCF package that merely shares the PK magic.
-    const zipKind = classifyZipBytes(bytes);
+    try {
+      raw = readZip(bytes, {
+        maxInputBytes: MAX_ZIP_ARCHIVE_BYTES,
+        maxEntries: MAX_ARCHIVE_ZIP_ENTRIES,
+        maxEntryBytes: MAX_ARCHIVE_TOTAL_BYTES,
+        maxTotalBytes: MAX_ARCHIVE_TOTAL_BYTES,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (/entries; maximum|expands to|input is .* maximum/.test(message)) {
+        throw new ArchiveIngestError(
+          `That archive exceeds the ${MAX_ARCHIVE_MEMBERS}-file or 256 MB import limit - unpack it on your device first.`,
+        );
+      }
+      throw new ArchiveIngestError('That ZIP could not be read (it may be encrypted or use an unsupported format).');
+    }
+
+    // Never shred an office/OCF package that merely shares the PK magic. Reuse
+    // the bounded extraction above so classification cannot double peak memory.
+    const zipKind = classifyZipEntries(raw);
     if (zipKind !== 'archive') {
       throw new ArchiveIngestError(
         zipKind
@@ -68,12 +92,19 @@ export function readArchiveMembers(bytes: Uint8Array, filename: string): Archive
           : 'That ZIP could not be read (it may be encrypted or use an unsupported format).',
       );
     }
-    raw = readZip(bytes);
   } else if (kind === 'tar') {
     // TarFile carries `.data`; normalise to the shared { name, bytes } shape.
-    raw = readTar(bytes).map((f) => ({ name: f.name, bytes: f.data }));
+    raw = readTar(bytes, {
+      maxMembers: MAX_ARCHIVE_MEMBERS,
+      maxPayloadBytes: MAX_ARCHIVE_TOTAL_BYTES,
+      maxArchiveBytes: MAX_TAR_ARCHIVE_BYTES,
+    }).map((f) => ({ name: f.name, bytes: f.data }));
   } else if (kind === 'gzip' && isTarGzName(filename)) {
-    raw = readTarGz(bytes).map((f) => ({ name: f.name, bytes: f.data }));
+    raw = readTarGz(bytes, {
+      maxMembers: MAX_ARCHIVE_MEMBERS,
+      maxPayloadBytes: MAX_ARCHIVE_TOTAL_BYTES,
+      maxArchiveBytes: MAX_TAR_ARCHIVE_BYTES,
+    }).map((f) => ({ name: f.name, bytes: f.data }));
   } else {
     throw new ArchiveIngestError('That file is not a ZIP or tar archive.');
   }

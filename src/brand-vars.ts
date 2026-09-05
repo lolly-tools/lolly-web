@@ -61,6 +61,113 @@ interface BrandVarsHost {
   tokens?: BrandTokens;
 }
 
+// ── Lolly UI token overrides ────────────────────────────────────────────────
+// A design system may carry the optional `lolly.ui.*` set exported by the
+// component library. These are application SEMANTICS, distinct from a brand's
+// identity tokens: only this allowlist can alter the shell, every value is
+// validated before it reaches CSSOM, and a missing/invalid leaf removes the
+// inline override so the generated Lolly default wins again.
+export type UiTokenKind = 'color' | 'length' | 'shadow' | 'font' | 'duration' | 'easing' | 'number';
+const UI_SLOTS: ReadonlyArray<readonly [path: string, css: string, kind: UiTokenKind]> = [
+  ['color.text.default', '--ui-color-text-default', 'color'],
+  ['color.text.muted', '--ui-color-text-muted', 'color'],
+  ['color.surface.canvas', '--ui-color-surface-canvas', 'color'],
+  ['color.surface.raised', '--ui-color-surface-raised', 'color'],
+  ['color.surface.overlay', '--ui-color-surface-overlay', 'color'],
+  ['color.surface.muted', '--ui-color-surface-muted', 'color'],
+  ['color.action.primary', '--ui-color-action-primary', 'color'],
+  ['color.action.on-primary', '--ui-color-action-on-primary', 'color'],
+  ['color.selection.surface', '--ui-color-selection-surface', 'color'],
+  ['color.selection.border', '--ui-color-selection-border', 'color'],
+  ['color.border.default', '--ui-color-border-default', 'color'],
+  ['color.focus.ring', '--ui-color-focus-ring', 'color'],
+  ['space.control-inline', '--ui-space-control-inline', 'length'],
+  ['space.control-block', '--ui-space-control-block', 'length'],
+  ['space.panel', '--ui-space-panel', 'length'],
+  ['space.page', '--ui-space-page', 'length'],
+  ['radius.control', '--ui-radius-control', 'length'],
+  ['radius.choice', '--ui-radius-choice', 'length'],
+  ['radius.choice-round', '--ui-radius-choice-round', 'length'],
+  ['radius.surface', '--ui-radius-surface', 'length'],
+  ['radius.card', '--ui-radius-card', 'length'],
+  ['radius.panel', '--ui-radius-panel', 'length'],
+  ['radius.pill', '--ui-radius-pill', 'length'],
+  ['elevation.control', '--ui-elevation-control', 'shadow'],
+  ['elevation.panel', '--ui-elevation-panel', 'shadow'],
+  ['elevation.floating', '--ui-elevation-floating', 'shadow'],
+  ['elevation.sheet', '--ui-elevation-sheet', 'shadow'],
+  ['elevation.overlay', '--ui-elevation-overlay', 'shadow'],
+  ['edge.default', '--ui-edge-default', 'shadow'],
+  ['edge.faint', '--ui-edge-faint', 'shadow'],
+  ['edge.strong', '--ui-edge-strong', 'shadow'],
+  ['effect.bevel', '--ui-effect-bevel', 'shadow'],
+  ['effect.focus-halo', '--ui-effect-focus-halo', 'shadow'],
+  ['effect.selected', '--ui-effect-selected', 'shadow'],
+  ['type.body', '--ui-type-body', 'length'],
+  ['type.label', '--ui-type-label', 'length'],
+  ['type.title', '--ui-type-title', 'length'],
+  ['type.ui-family', '--ui-type-ui-family', 'font'],
+  ['type.mono-family', '--ui-type-mono-family', 'font'],
+  ['motion.feedback', '--ui-motion-feedback', 'duration'],
+  ['motion.overlay', '--ui-motion-overlay', 'duration'],
+  ['motion.navigation', '--ui-motion-navigation', 'duration'],
+  ['motion.standard', '--ui-motion-standard', 'easing'],
+  ['layer.chrome', '--ui-layer-chrome', 'number'],
+  ['layer.overlay', '--ui-layer-overlay', 'number'],
+  ['layer.toast', '--ui-layer-toast', 'number'],
+];
+
+const UI_LENGTH_RE = /^\d+(?:\.\d+)?(?:px|rem|em)$/;
+const UI_SIGNED_LENGTH_RE = /^-?\d+(?:\.\d+)?(?:px|rem|em)$/;
+const UI_DURATION_RE = /^\d+(?:\.\d+)?(?:ms|s)$/;
+const UI_HEX_RE = /^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/i;
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+function uiShadowValue(value: unknown): string | null {
+  const one = (raw: unknown): string | null => {
+    if (!isRecord(raw)) return null;
+    const x = typeof raw.offsetX === 'string' ? raw.offsetX.trim() : '';
+    const y = typeof raw.offsetY === 'string' ? raw.offsetY.trim() : '';
+    const blur = typeof raw.blur === 'string' ? raw.blur.trim() : '';
+    const spread = typeof raw.spread === 'string' ? raw.spread.trim() : '';
+    const color = typeof raw.color === 'string' ? raw.color.trim() : '';
+    if (![x, y, blur, spread].every(v => UI_SIGNED_LENGTH_RE.test(v)) || !UI_HEX_RE.test(color)) return null;
+    return `${x} ${y} ${blur} ${spread} ${color}`;
+  };
+  if (Array.isArray(value)) {
+    const values = value.map(one);
+    return values.length && values.every((v): v is string => v !== null) ? values.join(', ') : null;
+  }
+  return one(value);
+}
+
+/** The only conversion path from imported `lolly.ui.*` DTCG values into CSS. */
+export function uiTokenCssValue(kind: UiTokenKind, value: unknown): string | null {
+  if (isAlias(value)) return null;
+  switch (kind) {
+    case 'color': return tokenValueToHex(value);
+    case 'length': return typeof value === 'string' && UI_LENGTH_RE.test(value.trim()) ? value.trim() : null;
+    case 'shadow': return uiShadowValue(value);
+    case 'font': return brandFontStack(value, 'ui-sans-serif, system-ui, sans-serif');
+    case 'duration': return typeof value === 'string' && UI_DURATION_RE.test(value.trim()) ? value.trim() : null;
+    case 'easing': {
+      if (!Array.isArray(value) || value.length !== 4 || value.some(v => typeof v !== 'number' || !Number.isFinite(v) || v < -5 || v > 5)) return null;
+      return `cubic-bezier(${value.map(v => String(v).replace(/^0\./, '.')).join(', ')})`;
+    }
+    case 'number': return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100000 ? String(value) : null;
+  }
+}
+
+async function applyUiTokenOverrides(tokens: BrandTokens | undefined): Promise<void> {
+  if (typeof document === 'undefined') return;
+  const root = document.documentElement.style;
+  await Promise.all(UI_SLOTS.map(async ([path, css, kind]) => {
+    let value: string | null = null;
+    try { value = uiTokenCssValue(kind, await tokens?.resolve(`{lolly.ui.${path}}`)); } catch { /* missing is stock Lolly */ }
+    if (value) root.setProperty(css, value); else root.removeProperty(css);
+  }));
+}
+
 // ── Chrome (app UI) brand accent ─────────────────────────────────────────────
 // The second half of the contract: the SHELL's own chrome follows the brand's
 // primary. tokens.css hardcodes shadcn HSL-triple accents per theme; when the
@@ -163,6 +270,7 @@ async function applyBrandFonts(host: { tokens?: BrandTokens }): Promise<void> {
 // and fonts.
 
 const RADIUS_CACHE_KEY = 'brand-radius';
+const SPACE_CACHE_KEY = 'brand-space';
 
 // A DTCG dimension value as this app will ever emit or accept for --radius: a
 // non-negative number (optional decimal) in rem/px/em only. Same defense-in-
@@ -173,6 +281,14 @@ const RADIUS_RE = /^\d+(\.\d+)?(rem|px|em)$/;
 /** A resolved `shape.radius` token value → a safe CSS length, or null when it
  *  isn't one (missing slot, alias residue, or an unsafe/malformed string). */
 export function brandRadiusValue(value: unknown): string | null {
+  const v = typeof value === 'string' ? value.trim() : '';
+  return v && !isAlias(v) && RADIUS_RE.test(v) ? v : null;
+}
+
+/** A resolved `space.base` dimension → a safe CSS length, or null. Space and
+ * radius deliberately share the narrow dimension grammar: both values reach
+ * CSSOM, and imports must never turn a token string into an injection path. */
+export function brandSpaceValue(value: unknown): string | null {
   const v = typeof value === 'string' ? value.trim() : '';
   return v && !isAlias(v) && RADIUS_RE.test(v) ? v : null;
 }
@@ -190,6 +306,23 @@ async function applyBrandRadius(host: { tokens?: BrandTokens }): Promise<void> {
   } else {
     document.documentElement.style.removeProperty('--radius');
     try { localStorage.removeItem(RADIUS_CACHE_KEY); } catch { /* storage unavailable */ }
+  }
+}
+
+/** Resolve `space.base` into the single spacing rhythm that drives `--sp-*`.
+ * As with radius, a missing token removes only the inline override, restoring
+ * Lolly's own 8px default without mutating the underlying stylesheet. */
+async function applyBrandSpace(host: { tokens?: BrandTokens }): Promise<void> {
+  let space: string | null = null;
+  try {
+    space = brandSpaceValue(await host.tokens?.resolve('{space.base}'));
+  } catch { /* no tokens / broken doc → platform default */ }
+  if (space) {
+    document.documentElement.style.setProperty('--space', space);
+    try { localStorage.setItem(SPACE_CACHE_KEY, space); } catch { /* storage unavailable */ }
+  } else {
+    document.documentElement.style.removeProperty('--space');
+    try { localStorage.removeItem(SPACE_CACHE_KEY); } catch { /* storage unavailable */ }
   }
 }
 
@@ -750,6 +883,13 @@ function mirrorAccent(hex: string | null): void {
   } catch { /* storage unavailable - the live chrome is already right */ }
 }
 
+/** Which call of applyChromeBrandVars is the newest. Two paints in a row (a
+ *  design-system switch racing boot's own paint, or two quick switches) must
+ *  let the LATER one win everywhere, including the fire-and-forget logo tint
+ *  at the end, which used to be able to resolve last and paint the previous
+ *  system's favicon (plans/186 section 3.4 step 5). */
+let paintGeneration = 0;
+
 export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
   // Nothing here to do without a document (a DOM-free shell / test bridge) - 
   // and every branch below writes to documentElement, so bail before any of
@@ -757,6 +897,8 @@ export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
   // caller like setPrimaryFont must be able to await this unconditionally.
   if (typeof document === 'undefined') return;
   const root = document.documentElement.style;
+  const gen = ++paintGeneration;
+  const stale = (): boolean => gen !== paintGeneration;
 
   // `host.tokens` IS the render surface (plans/97 section 6a): the web bridge resolves
   // the version ladder behind its own reads, so chrome and the tool canvas below
@@ -769,17 +911,25 @@ export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
       return tokenValueToHex(await tk?.resolve(`{color.semantic.${slot}}`, { theme }));
     } catch { return null; }
   };
-  // Fonts and shape first, independently of the colour blocks below - a brand
-  // may declare font/shape tokens without semantic colour slots (the SUSE doc)
+  // Fonts, shape and spacing first, independently of the colour blocks below - a brand
+  // may declare these tokens without semantic colour slots (the SUSE doc)
   // or vice versa. Both are outside the Appearance pref below: a face and a
   // corner are what the design system says the app should LOOK like, and neither
   // is the app helping itself to a colour (lib/chrome-follow.ts).
   await applyBrandFonts({ tokens: tk }).catch(() => { /* never breaks boot */ });
   await applyBrandRadius({ tokens: tk }).catch(() => { /* never breaks boot */ });
+  await applyBrandSpace({ tokens: tk }).catch(() => { /* never breaks boot */ });
+  if (stale()) return;
   // "Interface follows the design system" (plan 182 section 5.6), off: every
   // chrome COLOUR this function paints is removed and the app's own accent
   // stands. Not a skip - a re-entry has to undo what an earlier one applied,
   // because this is also the path a flip of the pref repaints through.
+  // UI-token overrides are an explicit design-system decision, not the older
+  // “chrome follows brand colours” preference. Apply them before that colour
+  // branch so a profile can tune spacing/radius/elevation while retaining
+  // Lolly's stock accent if it chooses.
+  await applyUiTokenOverrides(tk).catch(() => { /* invalid/missing leaves keep stock aliases */ });
+  if (stale()) return;
   if (!chromeFollowsDesignSystem()) {
     applyChromeAccent({ primary: null, onPrimary: null }, { primary: null, onPrimary: null });
     root.removeProperty('--brand-primary');
@@ -799,6 +949,7 @@ export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
   try {
     warn = nearestWarmHex(await tk?.colors?.() ?? []);
   } catch { warn = null; }
+  if (stale()) return;
   if (warn) {
     root.setProperty('--brand-warn', warn.hex);
     root.setProperty('--brand-warn-ink', warn.ink);
@@ -811,6 +962,7 @@ export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
       resolveHex('primary', 'light'), resolveHex('on-primary', 'light'),
       resolveHex('primary', 'dark'), resolveHex('on-primary', 'dark'),
     ]);
+    if (stale()) return;
     applyChromeAccent({ primary: lp, onPrimary: lop }, { primary: dp, onPrimary: dop });
     // Expose the brand primary GLOBALLY on :root (not just the tool canvas that
     // applyBrandVars paints) so app chrome outside a tool - the gallery's
@@ -828,7 +980,7 @@ export async function applyChromeBrandVars(host: BrandVarsHost): Promise<void> {
     const primary = brandMarkPrimary(lp, dp);
     const hslHue = primary ? hexHslHue(primary) : null;
     if (hslHue == null) applyBrandLogo(null);
-    else void tintLogo(hslHue).then(applyBrandLogo).catch(() => applyBrandLogo(null));
+    else void tintLogo(hslHue).then(url => { if (!stale()) applyBrandLogo(url); }).catch(() => { if (!stale()) applyBrandLogo(null); });
   } catch { /* cosmetic only - never break boot */ }
 }
 

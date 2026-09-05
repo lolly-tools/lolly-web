@@ -458,6 +458,7 @@ let toolSeq = 0;
 
 function chainTool(id: string): LoadedTool {
   return {
+    trustClass: 'builtin-verified',
     manifest: {
       id, name: 'Track A chain', version: '1.4.0', engineVersion: '^1.0.0', status: 'official',
       render: { width: 40, height: 40, formats: ['png'] },

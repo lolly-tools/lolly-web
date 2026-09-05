@@ -20,7 +20,8 @@
  * so an uploaded SVG's markup is drawn, not executed.
  */
 
-import { installUserTokens, USER_TOKENS_ID } from '../bridge/tokens.ts';
+import { installUserTokens } from '../bridge/tokens.ts';
+import { activeHeadId } from './design-system/active.ts';
 import type { UserFontsHost } from '../user-fonts.ts';
 import { t, tRaw } from '../i18n.ts';
 
@@ -194,10 +195,12 @@ export function withLogoToken(
 // ── Bridge-backed I/O ─────────────────────────────────────────────────────────
 type LogoHost = UserFontsHost;
 
-/** The user's installed tokens doc, or an empty doc when none is installed yet. */
+/** The user's installed tokens doc, or an empty doc when none is installed yet.
+ *  Read at the ACTIVE design system's head (plans/186 section 3.3), which is the
+ *  same asset installUserTokens writes back to below. */
 async function userDoc(host: LogoHost): Promise<Rec> {
   try {
-    const blob = await host.assets._getBlob(USER_TOKENS_ID);
+    const blob = await host.assets._getBlob(await activeHeadId(host));
     if (blob) { const parsed = JSON.parse(await blob.text()); if (isRec(parsed)) return parsed; }
   } catch { /* no/corrupt doc - start from empty, same as the font path */ }
   return {};

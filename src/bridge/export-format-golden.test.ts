@@ -88,6 +88,9 @@ async function bundle(): Promise<string> {
       resolveDir: HERE, loader: 'ts',
     },
     bundle: true, write: false, format: 'esm', platform: 'browser',
+    // export.ts reaches a CSS side-effect import through a lazy chain (the durable
+    // probe in format-support.ts); esbuild has no output path here, so drop the sheets.
+    loader: { ".css": "empty" },
     target: 'esnext', logLevel: 'silent',
     plugins: [{
       // harfbuzzjs's dist/harfbuzz.js does `await import("module")` for a Node

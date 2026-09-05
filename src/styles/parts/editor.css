@@ -137,8 +137,8 @@ html:has(.tool-view.is-chrome-hidden) .edge-dock-drop { display: none !important
   top: var(--stage-reserve-top, 0px);
   padding-left: 0;
   justify-content: center;
-  background: hsl(var(--card));
-  border-right: 1px solid hsl(var(--border));
+  background: var(--ui-color-surface-raised);
+  border-right: 1px solid var(--ui-color-border-default);
   /* Short viewports scroll the column. align-items flips off `center` because a
      centred flex child taller than its container overflows BOTH ends and the top
      becomes unreachable; the toolbar's auto block margins centre it when it fits
@@ -183,13 +183,14 @@ html:has(.tool-view.is-chrome-hidden) .edge-dock-drop { display: none !important
   flex-direction: column;
   gap: 5px;
   padding: 4px 7px 7px;
-  border-radius: 16px;
-  background: hsl(var(--card));
-  box-shadow: var(--shadow-3), 0 0 0 1px hsl(var(--border));
+  border-radius: var(--ui-radius-panel);
+  background: var(--ui-color-surface-raised);
+  color: var(--ui-color-text-default);
+  box-shadow: var(--ui-elevation-floating), var(--ui-edge-default);
 }
 .fc-toolbar-dock.is-dragging .fc-toolbar {
   cursor: grabbing;
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.32), 0 0 0 1px hsl(var(--border));
+  box-shadow: var(--ui-elevation-overlay), var(--ui-edge-default);
 }
 
 /* Drag grip - two short bars at the top of the palette. Deliberately NOT a button:
@@ -209,9 +210,9 @@ html:has(.tool-view.is-chrome-hidden) .edge-dock-drop { display: none !important
   display: block;
   width: 16px; height: 2px;
   border-radius: 2px;
-  background: hsl(var(--border));
+  background: var(--ui-color-border-default);
 }
-.fc-toolbar:hover .fc-grip span { background: hsl(var(--muted-foreground) / 0.6); }
+.fc-toolbar:hover .fc-grip span { background: color-mix(in srgb, var(--ui-color-text-muted) 60%, transparent); }
 @media (pointer: coarse) { .fc-grip { height: 20px; } }
 
 /* Rail tooltips point INTO the canvas (to the RIGHT), overriding tooltip.css's centred-above
@@ -235,7 +236,7 @@ html:has(.tool-view.is-chrome-hidden) .edge-dock-drop { display: none !important
   right: auto;
   transform: translateY(-50%);
   border-color: transparent;
-  border-right-color: hsl(var(--foreground));
+  border-right-color: var(--ui-color-text-default);
 }
 .fc-toolbar [data-tip]:hover::after,
 .fc-toolbar [data-tip]:focus-visible::after { transform: translateY(-50%) translateX(0); }
@@ -257,7 +258,7 @@ html:has(.tool-view.is-chrome-hidden) .edge-dock-drop { display: none !important
   color: var(--lolly-mark, hsl(var(--lolly-accent)));
 }
 [data-theme="dark"] .fc-toolbar .fc-btn.fc-btn-lolly { --lolly-accent: 145 52% 60%; }
-.fc-toolbar .fc-btn.fc-btn-lolly:hover:not(:disabled) { background: hsl(var(--muted)); }
+.fc-toolbar .fc-btn.fc-btn-lolly:hover:not(:disabled) { background: var(--ui-color-surface-muted); }
 /* The mark is the rail's brand anchor - deliberately larger than the tool glyphs (nearly
    fills its 40px button), so it reads as the app's identity, not just another tool. */
 .fc-toolbar .fc-btn.fc-btn-lolly svg { width: calc(36px * var(--a11y-fs)); height: calc(36px * var(--a11y-fs)); }
@@ -306,10 +307,10 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
 .fc-btn {
   width: 40px; height: 40px; padding: 0;
   display: inline-flex; align-items: center; justify-content: center;
-  border: none; border-radius: var(--radius-md);
-  background: transparent; color: hsl(var(--foreground));
+  border: none; border-radius: var(--ui-radius-control);
+  background: transparent; color: var(--ui-color-text-default);
   cursor: pointer;
-  transition: background-color var(--dur-1) ease;
+  transition: background-color var(--ui-motion-feedback) var(--ui-motion-standard);
 }
 /* `hidden` must be restated here. base.css's `[hidden]{display:none}` sits in the `base`
    layer and this sheet is in `views`, which WINS on layer order regardless of
@@ -342,7 +343,7 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
    The SELECTION chrome below (handles, pen nodes, gradient stops) is excluded on
    purpose - those sizes are matched to screen-px hit tolerances owned by JS. */
 .fc-btn svg { width: calc(21px * var(--a11y-fs)); height: calc(21px * var(--a11y-fs)); }
-.fc-btn:hover:not(:disabled) { background: hsl(var(--muted)); }
+.fc-btn:hover:not(:disabled) { background: var(--ui-color-surface-muted); }
 /* Press feedback - a tactile down-state (audit A4#7). Brightness only, so it needs no reduced-motion guard.
    NOT on the colour button: its picker is a position:fixed popover INSIDE the button, and a
    `filter` on an ancestor makes that ancestor the containing block for fixed descendants
@@ -353,16 +354,16 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
    colour button presses its trigger instead, which contains no popover. */
 .fc-btn:active:not(:disabled):not(.fc-color-btn) { filter: brightness(0.92); }
 .fc-color-btn:active .color-trigger { filter: brightness(0.92); }
-.fc-btn:focus-visible { outline: 2px solid hsl(var(--primary)); outline-offset: 2px; }
+.fc-btn:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 2px; }
 /* Undo/redo dim out at the ends of history (same treatment as .history-btn). */
 .fc-btn:disabled { opacity: 0.3; cursor: default; }
-.fc-btn.is-armed { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
+.fc-btn.is-armed { background: var(--ui-color-action-primary); color: var(--ui-color-action-on-primary); }
 /* Primary actions (Export/Save/Copy/Share) - a touch more prominent than the plain
    tools: brand-accent icons, with Export filled as the lead call-to-action. */
-.fc-btn.fc-action { color: hsl(var(--primary)); }
-.fc-btn.fc-action:hover:not(:disabled) { background: hsl(var(--primary) / 0.12); }
-.fc-btn.fc-action-primary { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
-.fc-btn.fc-action-primary:hover:not(:disabled) { background: hsl(var(--primary) / 0.85); }
+.fc-btn.fc-action { color: var(--ui-color-action-primary); }
+.fc-btn.fc-action:hover:not(:disabled) { background: var(--ui-color-selection-surface); }
+.fc-btn.fc-action-primary { background: var(--ui-color-action-primary); color: var(--ui-color-action-on-primary); }
+.fc-btn.fc-action-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--ui-color-action-primary) 85%, transparent); }
 /* "Unsaved" cue mirrored from the render pill's Save button - --brand-warn, the
    active brand's own colour closest in hue to red/yellow (brand-vars.ts
    nearestWarmHex, recomputed on every brand change), falling back to the
@@ -370,8 +371,8 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
    Carousel Maker, Doc Studio - since they all build their toolbar via toolBtn(). */
 .fc-btn.fc-action-save.is-unsaved,
 .fc-btn.fc-action-save.is-unsaved:hover:not(:disabled) { background: var(--brand-warn, #b28727); color: var(--brand-warn-ink, #0c322c); }
-.fc-sep { height: 1px; background: hsl(var(--border)); margin: 3px 4px; }
-.fc-sep-v { display: inline-block; width: 1px; height: 20px; background: hsl(var(--border)); margin: 0 3px; }
+.fc-sep { height: 1px; background: var(--ui-color-border-default); margin: 3px 4px; }
+.fc-sep-v { display: inline-block; width: 1px; height: 20px; background: var(--ui-color-border-default); margin: 0 3px; }
 
 /* Toolbar popovers (add / arrange / align / context menu). These host no
    colour-picker (no position:fixed descendants), so the blur can sit on the
@@ -379,11 +380,11 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
    ::before technique the picker-hosting bars need. */
 .fc-popover {
   position: absolute; z-index: 24; min-width: 184px;
-  background: hsl(var(--card) / 0.82); color: hsl(var(--foreground));
+  background: color-mix(in srgb, var(--ui-color-surface-overlay) 82%, transparent); color: var(--ui-color-text-default);
   -webkit-backdrop-filter: blur(16px) saturate(1.3);
   backdrop-filter: blur(16px) saturate(1.3);
-  border: 1px solid hsl(var(--border)); border-radius: 12px;
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--ui-color-border-default); border-radius: var(--ui-radius-panel);
+  box-shadow: var(--ui-elevation-floating);
   padding: 5px; display: flex; flex-direction: column;
   /* The frame menu is ~36 rows; uncapped, the stage clipped its tail INVISIBLY -
      with the timeline open everything after "Add to the timeline" (the whole
@@ -411,7 +412,7 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
 .fc-import-mode { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin: 0 0 8px; }
 .fc-import-mode-opt {
   flex: 1 1 auto; display: flex; align-items: center; gap: 5px; white-space: nowrap;
-  padding: var(--sp-3) var(--sp-4); border: 1px solid hsl(var(--border)); border-radius: var(--radius-sm);
+  padding: var(--sp-3) var(--sp-4); border: 1px solid var(--ui-color-border-default); border-radius: var(--ui-radius-control);
   font-size: var(--fs-sm); cursor: pointer;
 }
 .fc-import-scenes-hint { margin: 0 0 10px; font-size: var(--fs-sm); line-height: 1.45; opacity: 0.82; }
@@ -427,19 +428,19 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
   display: flex; align-items: center; gap: 9px;
   border: none; background: transparent; color: inherit;
   font: inherit; font-size: calc(13.5px * var(--a11y-fs)); text-align: left;
-  padding: var(--sp-4) var(--sp-5); border-radius: 8px; cursor: pointer;
+  padding: var(--sp-4) var(--sp-5); border-radius: var(--ui-radius-control); cursor: pointer;
 }
-.fc-pop-item:hover:not(:disabled) { background: hsl(var(--muted)); }
+.fc-pop-item:hover:not(:disabled) { background: var(--ui-color-surface-muted); }
 /* Radio rows (the pen's spline type): the current one reads as chosen, not merely hovered,
    so it stays legible while the pointer is somewhere else in the list. */
-.fc-pop-item.is-on { color: hsl(var(--primary)); font-weight: 600; }
-.fc-pop-item.is-on::after { content: ''; margin-left: auto; width: 6px; height: 6px; border-radius: var(--radius-round); background: currentColor; }
+.fc-pop-item.is-on { color: var(--ui-color-action-primary); font-weight: 600; }
+.fc-pop-item.is-on::after { content: ''; margin-left: auto; width: 6px; height: 6px; border-radius: var(--ui-radius-choice-round); background: currentColor; }
 .fc-pop-item:disabled,
 .fc-pop-gitem:disabled{ opacity: 0.38; cursor: default; }
 .fc-pop-item.fc-pop-danger:hover:not(:disabled),
 .fc-cbtn.fc-danger:hover{ background: #ef4444; color: #ffffff; }
 .fc-pop-ic svg { width: var(--fs-xl); height: var(--fs-xl); display: block; }
-.fc-pop-sep { height: 1px; background: hsl(var(--border)); margin: 4px 2px; }
+.fc-pop-sep { height: 1px; background: var(--ui-color-border-default); margin: 4px 2px; }
 /* Icon-only action grid inside a popover (align = 3 cols, distribute = 2). Fixed-width
    columns so both grids share the same square button size and sit left-aligned. */
 .fc-pop-grid {
@@ -450,10 +451,10 @@ html[data-a11y-motion="reduce"] .fc-btn-lolly:focus-visible svg .lolly-mark__spi
 }
 .fc-pop-gitem {
   height: 34px; border: none; background: transparent; color: inherit;
-  border-radius: 8px; cursor: pointer;
+  border-radius: var(--ui-radius-control); cursor: pointer;
 }
 .fc-pop-gitem svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); display: block; }
-.fc-pop-gitem:hover:not(:disabled) { background: hsl(var(--muted)); }
+.fc-pop-gitem:hover:not(:disabled) { background: var(--ui-color-surface-muted); }
 /* Right-click context menu - longer, so cap its height and scroll. */
 .fc-context-menu { max-height: min(80vh, 560px); overflow-y: auto; min-width: 210px; }
 /* The boolean row is 4 across, which is wider than the align grid's 3 - let the menu
@@ -975,10 +976,13 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
 }
 
 /* Compact touch editors use a scrollable bottom palette. A vertical rail on a
-   short landscape viewport overflowed at both ends; on a portrait phone it also
-   hid the reading edge of the active artboard. */
+   390px-tall landscape viewport overflowed at both ends; on a portrait phone it
+   also hid the reading edge of the active artboard. */
 @media (pointer: coarse) and (max-width: 640px),
        (pointer: coarse) and (max-height: 430px) {
+  /* Design already puts Fit/zoom in the top bar's compact More menu. The editor
+     stage HUD cannot dock on mobile, so leaving it floating recreated the exact
+     right-edge obstruction the desktop dock removed. */
   .tool-layout.is-editor .tool-stage .stage-nav--editor { display: none !important; }
   .tool-layout.is-editor .tool-stage .fc-toolbar-dock {
     left: calc(8px + var(--vv-left, 0px)) !important;
@@ -1010,16 +1014,22 @@ html[data-a11y-motion="reduce"] .fc-toolbar .fc-btn { transition: none; }
     overflow-y: hidden;
     overscroll-behavior-inline: contain;
     scrollbar-width: none;
-    box-shadow: var(--shadow-3), 0 0 0 1px hsl(var(--border));
+    box-shadow: var(--ui-elevation-floating), var(--ui-edge-default);
   }
   .tool-layout.is-editor .tool-stage .fc-toolbar::-webkit-scrollbar { display: none; }
   .tool-layout.is-editor .tool-stage .fc-grip,
   .tool-layout.is-editor .tool-stage .fc-sep { display: none; }
 
+  /* The artboard navigator is a temporary bottom sheet at this size. Let it own
+     that edge while open; selecting an artboard closes it and restores the tool
+     rail immediately. Two independent floating rows in the same 154px produced
+     an accidental stack of buttons over the navigator thumbnails. */
   .tool-layout.is-editor .tool-stage:has(.fc-nav--strip:not(.is-collapsed)) .fc-toolbar-dock {
     display: none !important;
   }
 
+  /* While the keyboard is up, the text and its format bar are the task. Removing
+     the unrelated rails prevents the inline toolbar from being covered. */
   .tool-layout.is-editor .tool-stage.is-text-editing .fc-toolbar-dock,
   .tool-layout.is-editor .tool-stage.is-text-editing .stage-nav--editor,
   .tool-layout.is-editor .tool-stage.is-text-editing .fc-nav { display: none !important; }

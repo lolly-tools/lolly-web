@@ -61,13 +61,14 @@ import { prefetchAssetsById, catalogDownloadSummary, catalogScopeSize, downloadC
 import {
   fetchPrecacheManifest, fetchInfoManifest, docsFileList,
   downloadApp, downloadDocs, downloadVerify, downloadSpeech, downloadUpscale, downloadMatte, downloadOcr, downloadReword, downloadAsk, downloadAiDetect,
+  downloadDurable, trustmarkGroupSplit,
   recordCatalogDownload, partRecords, removePart, storageHeadroom, persistenceState, speechCacheBytes,
   rewordCacheBytes, aiDetectCacheBytes, clearAiDetectCaches,
 } from '../lib/offline-manager.ts';
 import type { OfflinePartId, PrecacheManifest, InfoManifest, DownloadProgress, PartState } from '../lib/offline-manager.ts';
 import { beginOfflineRun, cancelOfflineRun, offlineRunActive, offlineRunLine, subscribeOfflineRun } from '../lib/offline-run.ts';
 import type { OfflineRunHandle, OfflineRunLine } from '../lib/offline-run.ts';
-import { upscaleCacheBytes, matteCacheBytes, ocrCacheBytes } from '../lib/model-prefetch.ts';
+import { upscaleCacheBytes, matteCacheBytes, ocrCacheBytes, durableCacheBytes } from '../lib/model-prefetch.ts';
 import { toolSupport } from '../capabilities.ts';
 import { getInstanceBase } from '../lib/instance.ts';
 import { isTauriShell } from '../lib/instance-choice.ts';
@@ -178,6 +179,11 @@ interface StorageModel {
   /** The AI-text detector's slice (plans/126 WP-A) - filled by the verify /
    *  catalog panel's consent download (cache-measured, twin of `reword`). */
   aiDetect: { bytes: number; files: number };
+  /** The durable-credential encoder in the shared `trustmark-models` store -
+   *  filled by the 'durable' offline part OR the first durable export, so this
+   *  measures the store, not a record. Scoped to its own key: the deep-scan
+   *  decoders sharing that store stay in the meter's "Other" remainder. */
+  durable: { bytes: number; files: number };
   measured: number;
   hasEstimate: boolean;
   usage: number | null;
@@ -280,6 +286,9 @@ export interface ProfileNavSection {
 export const NAV_SECTIONS: ReadonlyArray<ProfileNavSection> = [
   { id: 'details-section', icon: 'user', label: 'Your details', keywords: 'name email headshot photo avatar personal' },
   { id: 'identity-section', icon: 'credentialShield', label: 'Content Credentials', keywords: 'c2pa credentials provenance verify signing identity certificate' },
+  // The design systems on this device (plans/186 section 5) - what every tool
+  // renders with, so it sits with "how the app dresses" rather than the plumbing.
+  { id: 'design-systems-section', icon: 'tokens', label: 'Design systems', keywords: 'design system brand tokens colours fonts logos switch hosted instance' },
   { id: 'appearance-section', icon: 'palette', label: 'Appearance', keywords: 'theme dark light mode colour color sound look' },
   { id: 'a11y-section', icon: 'eye', label: 'Accessibility', keywords: 'motion contrast large text previews comfort a11y reduce sound mute focus music neurospicy atmosphere' },
   // Sync across devices lives INSIDE this card (its own titled sub-block), so its
@@ -327,6 +336,29 @@ const infoDot = (text: string): string => {
   return `<span class="help-tip-host" style="display:inline-flex;vertical-align:middle">${tip.button}${pop}</span>`;
 };
 
+// ── App updates (plans/202 WP4.1) ────────────────────────────────────────────
+// The desktop shell publishes window.__lollyUpdater from
+// shells/tauri-desktop/bridge-overrides/updater.ts, which wraps
+// tauri-plugin-updater. That package is not importable here (the Tauri shells are
+// not npm workspaces), so this is a structural probe of the global, the same
+// shape lib/design-system/sources/website.ts uses for the native site fetch.
+// Absent in a browser, in the PWA and in the mobile app - and then no row is
+// rendered at all, rather than a button that cannot do anything.
+interface ShellUpdate {
+  version: string;
+  currentVersion: string;
+  notes: string;
+  download(onProgress: (received: number, total: number) => void): Promise<void>;
+  install(): Promise<void>;
+}
+interface ShellUpdater { check(): Promise<ShellUpdate | null> }
+
+function updaterGlobal(): ShellUpdater | null {
+  if (typeof window === 'undefined') return null;
+  const u = (window as { __lollyUpdater?: Partial<ShellUpdater> }).__lollyUpdater;
+  return u && typeof u.check === 'function' ? (u as ShellUpdater) : null;
+}
+
 // Briefly rings a #/profile?focus=<id> deep-link target (see the handler in
 // mountProfile) so the link visibly delivers, not just scrolls. Full motion: two
 // pulses of a soft ring (`.is-focus-pulse`, profile.css). Reduced motion: the ring
@@ -369,6 +401,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // '' = bundled with this app (the default everywhere but a Tauri shell that
   // connected elsewhere) - see components/instance-sheet.ts + lib/instance.ts.
   const instanceBase = getInstanceBase();
+  // The active design system's label for the card summary (plans/186); '' before
+  // the registry answers, which only a shell without one ever is.
+  const activeDesignSystemLabel = await (host as unknown as { tokens?: { active?(): Promise<{ label: string } | null> } }).tokens?.active?.().then(a => a?.label ?? '').catch(() => '') ?? '';
   // Instance-admin affordance - null unless the org session's role is admin/owner
   // (so it never renders on a plain deployment).
   const adminHref = orgAdminHref();
@@ -382,6 +417,12 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // the browser shows the current source read-only and says where to go instead.
   // Matches lib/instance-choice.ts's own gate on the first-run sheet.
   const canChangeInstance = isTauriShell();
+  // Does this shell carry a self-updater? Probed, never assumed from isTauriShell
+  // (plans/202 principle 5): the desktop shell installs window.__lollyUpdater from
+  // bridge-overrides/updater.ts, the mobile shell updates through its app store and
+  // installs nothing, and a browser has nothing to update. No global, no row.
+  const shellUpdater = updaterGlobal();
+  const hasShellUpdater = !!shellUpdater;
   // The headshot is a user asset; re-resolve it (the stored object URL goes stale
   // across reloads).
   const headshotRef = profile.headshot?.id ? await host.assets.get(profile.headshot!.id).catch(() => null) : null;
@@ -774,6 +815,11 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         <div class="profile-collapse-body section-card-body" id="identity-body">${skeletonRow()}</div>
       </details>
 
+      <details class="profile-card profile-collapse" id="design-systems-section"${startOpen('design-systems-section')}>
+        ${summaryRow('design-systems-section', t('Design systems'), escape(activeDesignSystemLabel))}
+        <div class="profile-collapse-body section-card-body" id="design-systems-body">${skeletonRow()}</div>
+      </details>
+
       <details class="profile-card profile-collapse profile-card--appearance" id="appearance-section"${startOpen('appearance-section')}>
         ${summaryRow('appearance-section', t('Appearance'), escape(themeLabel(activeTheme)))}
         <div class="profile-collapse-body section-card-body">
@@ -894,6 +940,20 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           </span>
         </div>
         ${canChangeInstance ? '' : `<p class="profile-appearance-sub">${t('Pointing at another Lolly instance needs the desktop app - a browser blocks a page from loading tools and assets across origins.')}</p>`}
+        ${/* App updates (plans/202 WP4.1). Shown only where the shell installed an
+              updater (the desktop app); a browser updates itself and the PWA
+              updates through the service worker, so there is nothing to offer and
+              no row. The Help menu's "Check for Updates" deep-links here with
+              ?check=updates, which runs the check on arrival. */ ''}
+        ${hasShellUpdater ? `
+        <div class="store-manage--row" id="updates-row">
+          <span class="store-manage-name" id="updates-status"></span>
+          <span style="display:flex;gap:8px">
+            <button type="button" class="btn" id="updates-check">${t('Check for updates')}</button>
+            <button type="button" class="btn" id="updates-download" hidden>${t('Download')}</button>
+            <button type="button" class="btn" id="updates-install" hidden>${t('Install and restart')}</button>
+          </span>
+        </div>` : ''}
         </div>
       </details>
 
@@ -1190,6 +1250,16 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   // left the organisation's ingredients behind - and then the same resync →
   // remount path as a successful connect, so the catalogue swap happens
   // identically either way.
+  // The design-systems card (plans/186 section 5): lazy like the credentials
+  // card - the list, the switch and the doors live in lib/design-system/.
+  {
+    const dsBody = viewEl.querySelector<HTMLElement>('#design-systems-body');
+    if (dsBody) {
+      void import('../lib/design-system/design-systems-card.ts')
+        .then(m => m.mountDesignSystemsCard(dsBody, host as unknown as Parameters<typeof m.mountDesignSystemsCard>[1]))
+        .catch(() => { dsBody.innerHTML = ''; });
+    }
+  }
   viewEl.querySelector('#instance-change-btn')?.addEventListener('click', async () => {
     await openInstanceSheet(host);
     await mountProfile(viewEl, host); // re-read getInstanceBase() into the row
@@ -1402,7 +1472,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const estP = navigator.storage?.estimate
       ? navigator.storage.estimate().catch(() => null)
       : Promise.resolve(null);
-    const [estimate, sessions, sessionSizes, blobCacheBytes, allImages, imagesBytes, previews, pins, speech, upscale, matte, ocr, reword, aiDetect] = await Promise.all([
+    const [estimate, sessions, sessionSizes, blobCacheBytes, allImages, imagesBytes, previews, pins, speech, upscale, matte, ocr, reword, aiDetect, durable] = await Promise.all([
       estP,
       host.state.list().catch((): SessionEntry[] => []),
       host.state.sizes!().catch((): Record<string, number> => ({})),
@@ -1417,6 +1487,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       ocrCacheBytes().catch(() => ({ bytes: 0, files: 0 })),
       rewordCacheBytes().catch(() => ({ bytes: 0, files: 0 })),
       aiDetectCacheBytes().catch(() => ({ bytes: 0, files: 0 })),
+      durableCacheBytes().catch(() => ({ bytes: 0, files: 0 })),
     ]);
     const sessBytes = Object.values(sessionSizes).reduce((s, n) => s + n, 0);
     const cacheBytes = blobCacheBytes;
@@ -1425,7 +1496,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     // would render as broken tiles. Their bytes stay in the slice either way.
     const VISUAL = new Set(['raster', 'vector', 'video', 'lottie']);
     const imageList = allImages.filter(a => a.id !== HEADSHOT_ID && VISUAL.has(a.type));
-    const measured = sessBytes + imagesBytes + cacheBytes + previews.bytes + pins.bytes + speech.bytes + upscale.bytes + matte.bytes + ocr.bytes + reword.bytes + aiDetect.bytes;
+    const measured = sessBytes + imagesBytes + cacheBytes + previews.bytes + pins.bytes + speech.bytes + upscale.bytes + matte.bytes + ocr.bytes + reword.bytes + aiDetect.bytes + durable.bytes;
     const hasEstimate = !!(estimate && estimate.usage != null);
     const usage: number | null = hasEstimate ? estimate!.usage! : null;
     const quota: number | null = (estimate && estimate.quota) || null;
@@ -1444,6 +1515,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       ocr,
       reword,
       aiDetect,
+      durable,
       measured, hasEstimate, usage, quota, overshoot, other, total,
     };
   }
@@ -1461,6 +1533,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     if (m.upscale.bytes) parts.push(`Upscaling models ${fmtBytes(m.upscale.bytes)}`);
     if (m.matte.bytes) parts.push(`Background removal ${fmtBytes(m.matte.bytes)}`);
     if (m.ocr.bytes) parts.push(`Text recognition ${fmtBytes(m.ocr.bytes)}`);
+    if (m.durable.bytes) parts.push(`Durable credential ${fmtBytes(m.durable.bytes)}`);
     let s = m.hasEstimate
       ? `Using ${fmtBytes(m.total)}: ${parts.join(', ')}`
       : `Measured ${fmtBytes(m.measured)}: ${parts.join(', ')}`;
@@ -1526,6 +1599,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const hasOcr = m.ocr.bytes > 0;
     const hasReword = m.reword.bytes > 0;
     const hasAiDetect = m.aiDetect.bytes > 0;
+    // The durable-credential encoder - present once a durable export or the offline
+    // part has fetched it. Scoped to its own key in the shared trustmark store.
+    const hasDurable = m.durable.bytes > 0;
     return `
       <section class="store-meter" aria-label="${escape(t('Storage on this device'))}">
         <header class="store-hero">
@@ -1546,6 +1622,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           <button type="button" class="seg" data-cat="ocr" style="flex-grow:0"${hasOcr ? '' : ' hidden'}></button>
           <button type="button" class="seg" data-cat="reword" style="flex-grow:0"${hasReword ? '' : ' hidden'}></button>
           <button type="button" class="seg" data-cat="aidetect" style="flex-grow:0"${hasAiDetect ? '' : ' hidden'}></button>
+          <button type="button" class="seg" data-cat="durable" style="flex-grow:0"${hasDurable ? '' : ' hidden'}></button>
           <span class="seg seg--other" data-cat="other" style="flex-grow:0" aria-hidden="true" hidden></span>
         </div>
         <p class="visually-hidden" id="store-aria-sentence"></p>
@@ -1562,6 +1639,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
           ${hasOcr ? `<li><button type="button" class="store-chip" data-cat="ocr"><span class="store-chip-sw" data-cat="ocr"></span><span class="store-chip-name">${t('Text recognition')}</span><span class="store-chip-val" data-size="ocr">-</span></button></li>` : ''}
           ${hasReword ? `<li><button type="button" class="store-chip" data-cat="reword"><span class="store-chip-sw" data-cat="reword"></span><span class="store-chip-name">${t('Rewriter model')}</span><span class="store-chip-val" data-size="reword">-</span></button></li>` : ''}
           ${hasAiDetect ? `<li><button type="button" class="store-chip" data-cat="aidetect"><span class="store-chip-sw" data-cat="aidetect"></span><span class="store-chip-name">${t('AI text detector')}</span><span class="store-chip-val" data-size="aidetect">-</span></button></li>` : ''}
+          ${hasDurable ? `<li><button type="button" class="store-chip" data-cat="durable"><span class="store-chip-sw" data-cat="durable"></span><span class="store-chip-name">${t('Durable credential')}</span><span class="store-chip-val" data-size="durable">-</span></button></li>` : ''}
           ${m.hasEstimate ? `<li><span class="store-chip store-chip--other"><span class="store-chip-sw is-hatch"></span><span class="store-chip-name">${t('Other')}</span><span class="store-chip-val" data-size="other">-</span>${infoDot(t('Your profile, internal indexes, the offline app cache and storage overhead - everything not itemised above. Calculated as total used minus the measured items. Clear it with "Clear all my data" below.'))}</span></li>` : ''}
         </ul>
 
@@ -1640,6 +1718,10 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
             <span class="store-manage-name">${t('AI text detector')} ${infoDot(t('The on-device detector behind the deeper AI-text check. Removing it frees the space; it downloads again with your consent when next used.'))} <span class="storage-count" data-size-label="aidetect">0 KB</span></span>
             <button type="button" id="clear-aidetect-btn" class="btn-link-danger">${t('Remove model')}</button>
           </div>` : ''}
+          ${hasDurable ? `<div class="store-manage store-manage--row" data-cat="durable">
+            <span class="store-manage-name">${t('Durable credential')} ${infoDot(t('The on-device model that hides the durable credential in exported pixels. Removing it frees the space; it downloads again with your consent when next used.'))} <span class="storage-count" data-size-label="durable">0 KB</span></span>
+            <button type="button" id="clear-durable-btn" class="btn-link-danger">${t('Remove model')}</button>
+          </div>` : ''}
         </div>
 
         <div class="storage-subsection">
@@ -1716,7 +1798,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     };
     function updateReclaim(m: StorageModel) {
       const el = body.querySelector('#store-reclaim');
-      if (el) el.innerHTML = t('Up to <strong>{n}</strong> can be freed here', { n: fmtBytes(m.cache.bytes + m.previews.bytes + m.pins.bytes + m.speech.bytes + m.upscale.bytes + m.matte.bytes + m.ocr.bytes + selectedSessionBytes()) });
+      if (el) el.innerHTML = t('Up to <strong>{n}</strong> can be freed here', { n: fmtBytes(m.cache.bytes + m.previews.bytes + m.pins.bytes + m.speech.bytes + m.upscale.bytes + m.matte.bytes + m.ocr.bytes + m.durable.bytes + selectedSessionBytes()) });
     }
 
     // Refresh ONLY the visualization (hero, segments, legend, quota, reclaim, aria,
@@ -1746,6 +1828,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         ['ocr', m.ocr.bytes, t('Text recognition'), m.ocr.bytes > 0],
         ['reword', m.reword.bytes, t('Rewriter model'), m.reword.bytes > 0],
         ['aidetect', m.aiDetect.bytes, t('AI text detector'), m.aiDetect.bytes > 0],
+        ['durable', m.durable.bytes, t('Durable credential'), m.durable.bytes > 0],
       ];
       for (const [cat, bytes, label, avail] of segs) {
         const seg = bar?.querySelector<HTMLElement>(`.seg[data-cat="${cat}"]`);
@@ -1769,6 +1852,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       setText('[data-size="ocr"]', fmtBytes(m.ocr.bytes));
       setText('[data-size="reword"]', fmtBytes(m.reword.bytes));
       setText('[data-size="aidetect"]', fmtBytes(m.aiDetect.bytes));
+      setText('[data-size="durable"]', fmtBytes(m.durable.bytes));
       setText('[data-size="other"]', `~${fmtBytes(m.other)}`);
       setText('[data-count="sessions"]', String(m.sessions.count));
       setText('[data-size-hint="sessions"]', fmtBytes(m.sessions.bytes));
@@ -1781,6 +1865,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       setText('[data-size-label="ocr"]', fmtBytes(m.ocr.bytes));
       setText('[data-size-label="reword"]', fmtBytes(m.reword.bytes));
       setText('[data-size-label="aidetect"]', fmtBytes(m.aiDetect.bytes));
+      setText('[data-size-label="durable"]', fmtBytes(m.durable.bytes));
       const imgCount = body.querySelector('#userimg-count');
       const imgSize = body.querySelector('#userimg-size');
       if (imgCount) imgCount.textContent = `${m.images.count}`;
@@ -1975,6 +2060,8 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       if (matteBtn) { await clearRegenerable(matteBtn, () => removePart('matte'), t('Removed background-removal models')); return; }
       const ocrBtn = (e.target as Element).closest<HTMLButtonElement>('#clear-ocr-btn');
       if (ocrBtn) { await clearRegenerable(ocrBtn, () => removePart('ocr'), t('Removed text-recognition models')); return; }
+      const durableBtn = (e.target as Element).closest<HTMLButtonElement>('#clear-durable-btn');
+      if (durableBtn) { await clearRegenerable(durableBtn, () => removePart('durable'), t('Removed the durable-credential model')); return; }
       const rewordBtn = (e.target as Element).closest<HTMLButtonElement>('#clear-reword-btn');
       if (rewordBtn) { await clearRegenerable(rewordBtn, () => removePart('reword'), t('Removed the rewriter model')); return; }
       const aiDetectBtn = (e.target as Element).closest<HTMLButtonElement>('#clear-aidetect-btn');
@@ -2385,7 +2472,9 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     const plannedBytes: Record<OfflinePartId, number> = {
       app: precache ? sum(precache.groups.app) : 0,
       docs: infoManifest ? sum(docsFileList(infoManifest, currentLang())) : 0,
-      verify: precache ? sum(precache.groups.ort) + sum(precache.groups.models) : 0,
+      // The trustmark models group carries BOTH parts' files, so each row prices its
+      // own half (offline-manager's trustmarkGroupSplit is the one rule).
+      verify: precache ? sum(precache.groups.ort) + sum(trustmarkGroupSplit(precache.groups.models).verify) : 0,
       catalog: catSummary?.totalBytes ?? 0,
       speech: precache ? sum(precache.groups.speech ?? []) + sum(precache.groups.ortHf ?? []) : 0,
       upscale: precache?.groups.upscale ? sum(precache.groups.upscale) : 0,
@@ -2398,13 +2487,17 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       ask: precache?.groups.embed?.length ? sum(precache.groups.embed) + sum(precache.groups.ortHf ?? []) : 0,
       // The AI-text detector (plans/126 WP-A) - same shared-runtime accounting.
       'ai-detect': precache?.groups.aiDetect?.length ? sum(precache.groups.aiDetect) + sum(precache.groups.ortHf ?? []) : 0,
+      // The durable-credential encoder. Manifest-driven like every other model part:
+      // a build whose model host does not list the encoder offers no row, rather than
+      // a Download button that fails.
+      durable: precache ? sum(trustmarkGroupSplit(precache.groups.models).durable) : 0,
     };
     // Model parts are release-versioned in IndexedDB (invalidated by their own
     // cache-version, not a manifest watermark), so they have no live manifest
     // version to go stale against - resyncOfflineParts never touches them.
     const liveVersion = (id: OfflinePartId): string | null =>
       id === 'docs' ? (infoManifest?.version ?? null)
-      : (id === 'upscale' || id === 'matte' || id === 'ocr') ? null
+      : (id === 'upscale' || id === 'matte' || id === 'ocr' || id === 'durable') ? null
       : (precache?.version ?? null);
 
     interface PartDef { id: OfflinePartId; name: string; desc: string; heavy?: boolean }
@@ -2417,6 +2510,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       { id: 'matte', name: t('Background removal'), desc: t('The on-device cut-out models for Remove background. Pull them down now (~{size}) and it runs offline, with no wait when you need it.', { size: fmtBytes(plannedBytes.matte) }), heavy: true },
       { id: 'ocr', name: t('Text recognition'), desc: t('The on-device OCR models for reading text out of images. Pull them down now (~{size}) and Copy text runs offline, with no wait when you need it.', { size: fmtBytes(plannedBytes.ocr) }), heavy: true },
       { id: 'verify', name: t('Verify deep scan'), desc: t('The on-device watermark scanner for the Verify page. Big - only worth it if you check content credentials away from a connection.'), heavy: true },
+      { id: 'durable', name: t('Durable credential'), desc: t('The on-device model that hides an invisible credential in exported pixels. Pull it down now (~{size}) and the first durable export starts straight away, with no wait.', { size: fmtBytes(plannedBytes.durable) }), heavy: true },
       // Only on builds carrying the staged model (plans/127) - the group is
       // empty on public/CI builds and the row would be a dead control.
       ...(precache?.groups.reword?.length ? [{
@@ -2684,6 +2778,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
       reword: !!precache && plannedBytes.reword > 0,
       ask: !!precache && plannedBytes.ask > 0,
       'ai-detect': !!precache && plannedBytes['ai-detect'] > 0,
+      durable: !!precache && plannedBytes.durable > 0,
     };
     const isStale = (id: OfflinePartId): boolean => {
       const rec = partState[id];
@@ -2737,7 +2832,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
     // sweep (hiding a multi-GB download inside one button misleads) - but the opt-in
     // checkbox below folds them in, with their combined size stated up front so it stays
     // honest. availableModelParts() filters to what THIS server actually offers.
-    const MODEL_PARTS = ['speech', 'upscale', 'matte', 'ocr', 'reword', 'ask', 'ai-detect', 'verify'] as const;
+    const MODEL_PARTS = ['speech', 'upscale', 'matte', 'ocr', 'reword', 'ask', 'ai-detect', 'verify', 'durable'] as const;
     const inclModels = (): boolean => !!body.querySelector<HTMLInputElement>('#odl-incl-models')?.checked;
     const availableModelParts = (): OfflinePartId[] => MODEL_PARTS.filter(id => partAvailable[id]);
     const modelsRow = body.querySelector<HTMLElement>('#odl-models-row');
@@ -2759,7 +2854,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         modelsSizeEl.textContent = modelsRemaining ? t('about {size}', { size: fmtBytes(modelsRemaining) })
           : modelIds.length ? t('all saved') : '';
       }
-      for (const id of ['app', 'docs', 'speech', 'upscale', 'matte', 'ocr', 'reword', 'ask', 'ai-detect', 'verify', 'catalog'] as const) syncPartRow(id);
+      for (const id of ['app', 'docs', 'speech', 'upscale', 'matte', 'ocr', 'reword', 'ask', 'ai-detect', 'verify', 'durable', 'catalog'] as const) syncPartRow(id);
       // A live run owns row enablement: syncPartRow reads storage state, so it
       // would re-enable rows the run just froze. This fires from async
       // re-pricing (tag chips, the recorded-scope restore) too, which is
@@ -2823,6 +2918,7 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
         else if (id === 'upscale') await downloadUpscale({ signal, onProgress });
         else if (id === 'matte') await downloadMatte({ signal, onProgress });
         else if (id === 'ocr') await downloadOcr({ signal, onProgress });
+        else if (id === 'durable') await downloadDurable({ signal, onProgress });
         else if (id === 'catalog') {
           const res = await downloadCatalogScope(syncHost, scope, { signal, onProgress });
           await recordCatalogDownload(scope, res.bytes, res.files);
@@ -3040,6 +3136,82 @@ export async function mountProfile(viewEl: HTMLElement, host: ProfileHost, param
   }
   offlineDetails?.addEventListener('toggle', () => { if (offlineDetails!.open) loadOffline(); });
   if (offlineDetails?.open) loadOffline();
+
+  // App updates (plans/202 WP4.1) - three buttons over one state machine, in the
+  // "Lolly instance" card. CONSENT TWICE, the models-fetch pattern: Check moves a
+  // few hundred bytes of JSON, Download moves the artifact and reports its real
+  // size as soon as the server states it, Install replaces the app and restarts.
+  // Nothing runs on mount unless the Help menu asked for it with ?check=updates.
+  if (shellUpdater) {
+    const statusEl = viewEl.querySelector<HTMLElement>('#updates-status');
+    const checkBtn = viewEl.querySelector<HTMLButtonElement>('#updates-check');
+    const downloadBtn = viewEl.querySelector<HTMLButtonElement>('#updates-download');
+    const installBtn = viewEl.querySelector<HTMLButtonElement>('#updates-install');
+    if (statusEl && checkBtn && downloadBtn && installBtn) {
+      const say = (text: string): void => { statusEl.textContent = text; };
+      let pending: ShellUpdate | null = null;
+      let busy = false;
+
+      const runCheck = async (): Promise<void> => {
+        if (busy) return;
+        busy = true;
+        checkBtn.disabled = true;
+        say(t('Checking…'));
+        try {
+          pending = await shellUpdater.check();
+          if (!pending) { say(t('Up to date')); return; }
+          // tRaw, not t: this goes into textContent, where an escaped entity
+          // would be shown literally.
+          say(tRaw('Update available: {version}', { version: pending.version }));
+          checkBtn.hidden = true;
+          downloadBtn.hidden = false;
+        } catch (e) {
+          // The endpoint, the signature check and an unpublished target all land
+          // here. Show what went wrong rather than claiming the app is current.
+          say((e as Error)?.message || String(e));
+        } finally {
+          busy = false;
+          checkBtn.disabled = false;
+        }
+      };
+
+      checkBtn.addEventListener('click', () => { void runCheck(); });
+
+      downloadBtn.addEventListener('click', () => {
+        if (busy || !pending) return;
+        busy = true;
+        downloadBtn.disabled = true;
+        const update = pending;
+        void update.download((received, total) => {
+          say(total > 0 ? `${fmtBytes(received)} / ${fmtBytes(total)}` : fmtBytes(received));
+        }).then(() => {
+          say(t('Downloaded'));
+          downloadBtn.hidden = true;
+          installBtn.hidden = false;
+        }).catch((e: Error) => {
+          say(e?.message || String(e));
+          downloadBtn.disabled = false;
+        }).finally(() => { busy = false; });
+      });
+
+      installBtn.addEventListener('click', () => {
+        if (busy || !pending) return;
+        busy = true;
+        installBtn.disabled = true;
+        // install() restarts the app, so a resolved promise is not expected. A
+        // rejection is, and it has to be readable.
+        void pending.install().catch((e: Error) => {
+          say(e?.message || String(e));
+          installBtn.disabled = false;
+          busy = false;
+        });
+      });
+
+      // The Help menu item routes here and asks for the check straight away, so
+      // "Check for Updates" checks instead of just showing a button.
+      if (new URLSearchParams(params).get('check') === 'updates') void runCheck();
+    }
+  }
 
   // Hot folder (plans/174 #9) - desktop shells only; the boot module owns the
   // key and the invoke, this block is pure form wiring.

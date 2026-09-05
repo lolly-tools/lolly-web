@@ -266,6 +266,10 @@ interface NumCellOpts {
 /** One number cell awaiting its slot: the markup goes in first, the control after. */
 interface NumSpec { key: string; pair?: string; opts: Parameters<typeof numField>[0] }
 
+const DOCUMENT_UNITS = ['px', 'mm', 'cm', 'in', 'pt'] as const;
+type DocumentUnit = (typeof DOCUMENT_UNITS)[number];
+const CSS_PX_PER_UNIT: Record<DocumentUnit, number> = { px: 1, mm: 96 / 25.4, cm: 96 / 2.54, in: 96, pt: 96 / 72 };
+
 /**
  * The M4 field names, resolved per instance rather than off `cfg` - they live on the
  * frame port, and a manifest that does not declare one leaves it undefined.
@@ -661,21 +665,34 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
         max: o.max,
         step: o.step,
         precision: o.precision,
-        onCommit: o.onCommit ?? ((v: number) => write(field, v)),
+        // Geometry is stored in CSS pixels even when a Design document is authored in
+        // millimetres/inches/etc. `dimCell` supplies `scale` for that display boundary;
+        // duration rows provide their own writer, so their millisecond scale stays intact.
+        onCommit: o.onCommit ?? ((v: number) => write(field, o.scale ? v * o.scale : v)),
         onPreview: o.pair ? (v: number) => mirrorRange(o.pair!, v) : undefined,
       },
     });
     return `<span class="num-slot" data-num-slot="${escape(key)}"></span>`;
   }
 
+  /** The persisted Design unit; absent only for a legacy/non-Design host. */
+  const documentUnit = (): DocumentUnit => {
+    const value = String(model.getInput('documentUnit') ?? 'px');
+    return (DOCUMENT_UNITS as readonly string[]).includes(value) ? value as DocumentUnit : 'px';
+  };
+
   /**
-   * One labelled number cell in a dims row: the axis letter, the number, the unit. One
-   * decimal of px is kept (plans/184 R10, R12): a typed `210mm` commits 793.7, not 794,
-   * so the board is A4 to the export bar and the PDF page; an integer still shows as one,
-   * and the arrow keys and the scrub still move by a whole pixel.
+   * One labelled geometry cell in the DOCUMENT's unit. Geometry remains stored in CSS px,
+   * but all Inspector X/Y/W/H fields speak the same unit as the size panel and export
+   * sheet; the scale on commit is the one conversion boundary. Fractional px survive.
    */
-  const dimCell = (label: string, field: string | undefined, value: number | 'mixed', o: NumCellOpts = {}): string =>
-    numCell(label, field, value, { unit: 'px', step: 1, precision: 1, ...o });
+  const dimCell = (label: string, field: string | undefined, value: number | 'mixed', o: NumCellOpts = {}): string => {
+    const unit = documentUnit();
+    const scale = CSS_PX_PER_UNIT[unit];
+    const shown = value === 'mixed' ? value : Math.round(value / scale * 1000) / 1000;
+    const step = unit === 'px' ? 1 : unit === 'in' ? 0.01 : unit === 'pt' ? 0.5 : 0.1;
+    return numCell(label, field, shown, { unit, step, precision: unit === 'px' ? 1 : 3, scale, ...o });
+  };
 
   /** A plain labelled row whose whole control is one number. `tip` is a helptip on the
    *  label - what this number does on the surface the person is looking at. */
@@ -753,6 +770,13 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
     `<label class="fc-row fc-row-toggle field-toggle"><span>${label}</span>`
     + `<input type="checkbox" class="field-check" data-doc="${escape(input)}" data-kind="bool"`
     + `${boolOf(model.getInput(input), false) ? ' checked' : ''}></label>`;
+
+  const docSelectRow = (label: string, input: string, options: ReadonlyArray<[string, string]>): string => {
+    const cur = String(model.getInput(input) ?? '');
+    return `<label class="fc-row"><span>${label}</span><select class="field-select" data-doc="${escape(input)}">`
+      + options.map(([value, text]) => `<option value="${escape(value)}"${value === cur ? ' selected' : ''}>${escape(text)}</option>`).join('')
+      + '</select></label>';
+  };
 
   /**
    * A document setting whose control is one number cell.
@@ -841,7 +865,19 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
 
   function documentBody(): string {
     const size = canvasSize();
-    return readRow(t('Canvas size'), `${size.w} x ${size.h} px`)
+    const unit = documentUnit();
+    const scale = CSS_PX_PER_UNIT[unit];
+    const fmt = (n: number): string => String(Math.round(n / scale * 1000) / 1000);
+    return readRow(t('Canvas size'), `${fmt(size.w)} x ${fmt(size.h)} ${unit}`)
+      + docSelectRow(t('Document unit'), 'documentUnit', DOCUMENT_UNITS.map((u) => [u, u]))
+      + docNumRow(t('Document DPI'), 'documentDpi', 300, {
+        min: 36, max: 2400, step: 1, precision: 0, unit: 'dpi',
+        onCommit: (dpi) => {
+          const next = Math.round(dpi);
+          model.setInput('documentDpi', next);
+          canvasEl.dispatchEvent(new CustomEvent('fc-document-dpi', { detail: next }));
+        },
+      })
       + `<div class="fc-row"><span>${t('Background')}</span><span class="fc-cfield">${colorField('fc-insp-bg', model.getInput('background'), t('Background'))}</span></div>`
       + narrationDocRows()
       + `<p class="fc-insp-hint">${t('Select something to edit its properties.')}</p>`;
@@ -1408,11 +1444,15 @@ export function initDesignInspector(opts: DesignInspectorOpts): DesignInspectorH
     // They write a top-level input, so they never travel through `write` and can never be
     // stamped onto the selected rows - see `docTextRow`. The number cells beside them
     // commit through their own `onCommit`, which is why only text and checkbox are here.
-    scroll.querySelectorAll<HTMLInputElement>('input[data-doc]').forEach((inp) => {
+    scroll.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input[data-doc], select[data-doc]').forEach((inp) => {
       inp.addEventListener('change', () => {
         const id = inp.dataset.doc;
         if (!id) return;
-        model.setInput(id, inp.dataset.kind === 'bool' ? inp.checked : inp.value.trim());
+        model.setInput(id, inp instanceof HTMLInputElement && inp.dataset.kind === 'bool' ? inp.checked : inp.value.trim());
+        // The size menu and export sheet are long-lived peers of this detached column;
+        // tell their canvas owner when a document setting changed here as well.
+        if (id === 'documentUnit') canvasEl.dispatchEvent(new CustomEvent('fc-document-unit', { detail: inp.value.trim() }));
+        if (id === 'documentDpi') canvasEl.dispatchEvent(new CustomEvent('fc-document-dpi', { detail: Number(inp.value) }));
       });
     });
 

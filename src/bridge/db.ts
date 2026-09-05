@@ -34,7 +34,7 @@ import { openDB as idbOpen, deleteDB as idbDelete } from 'idb';
 import type { IDBPDatabase } from 'idb';
 
 const DB_NAME = 'lolly';
-const DB_VERSION = 16;
+const DB_VERSION = 17;
 
 // How long to wait for the DB to open before giving up. A healthy open is
 // near-instant; this only trips when the connection is genuinely wedged.
@@ -221,6 +221,16 @@ function openOnce(timeoutMs = OPEN_TIMEOUT_MS): Promise<IDBPDatabase> {
         // out of the portable backup. Inert until DEPTH_STAGED flips, but it has
         // to exist before it does or every run re-downloads the weights.
         db.createObjectStore('depth-models');
+      }
+      if (oldVersion < 17) {
+        // The design systems this device holds (plans/186, lib/design-system/
+        // registry.ts): one small record per system - slug, label, namespace,
+        // head id, source - keyed by id. Which one is active is a key in the
+        // 'profile' KV store. The material itself stays in 'user-assets' and
+        // 'pack-files'; an empty registry is rebuilt from those by the one-shot
+        // migration, so NOT in REQUIRED_STORES - its absence must never
+        // escalate into wiping user data.
+        db.createObjectStore('design-systems', { keyPath: 'id' });
       }
     },
     blocking() {

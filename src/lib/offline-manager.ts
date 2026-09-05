@@ -21,6 +21,10 @@
  *             (precache.json `ort` group) into ORT_CACHE, plus the TrustMark /
  *             Content Seal models through their own IndexedDB fetchers
  *             (lib/trustmark.ts, lib/contentseal.ts). ~220 MB - opt-in.
+ *   durable - the TrustMark ENCODER behind the export panel's "Durable
+ *             credential" toggle (lib/trustmark-embed.ts), ~33 MB. It shares the
+ *             'trustmark-models' IDB store with verify's decoders, so the two
+ *             parts own their own KEYS there and neither clears the store.
  *   speech - the on-device voice models (Kokoro - plans/41-tts-stt-programme.md
  *             section 3): model/config/tokenizer files into transformers.js's OWN
  *             'transformers-cache' bucket under the exact request keys its hub
@@ -58,6 +62,10 @@ import { MODELS_BASE } from './models-base.ts';
 import { UPSCALE_MODEL_STORE, UPSCALE_MODEL_CACHE_VERSION } from './upscale-models.ts';
 import { MATTE_MODEL_STORE, MATTE_MODEL_CACHE_VERSION } from './matte-models.ts';
 import { OCR_MODEL_STORE, OCR_MODEL_CACHE_VERSION } from './ocr-models.ts';
+import {
+  DURABLE_ENCODER_BYTES, DURABLE_ENCODER_CACHE_VERSION, DURABLE_ENCODER_FILE, DURABLE_ENCODER_PATH,
+  DURABLE_MODEL_STORE,
+} from './durable-model.ts';
 
 /** The page-owned, unversioned Cache Storage buckets sw.js serves offline
  *  fallbacks from. Mirrored by sw.js (APP_CACHE / ORT_CACHE / INFO_CACHE
@@ -122,7 +130,7 @@ export interface InfoManifest {
   groups: { en: ManifestFile[]; shots: ManifestFile[]; audio?: ManifestFile[]; locales: Record<string, ManifestFile[]> };
 }
 
-export type OfflinePartId = 'app' | 'docs' | 'verify' | 'catalog' | 'speech' | 'upscale' | 'matte' | 'ocr' | 'reword' | 'ask' | 'ai-detect';
+export type OfflinePartId = 'app' | 'docs' | 'verify' | 'catalog' | 'speech' | 'upscale' | 'matte' | 'ocr' | 'reword' | 'ask' | 'ai-detect' | 'durable';
 
 /** What one downloaded part records. `version` is the manifest watermark the
  *  download completed against; resyncOfflineParts re-downloads the delta when
@@ -374,6 +382,26 @@ export async function downloadDocs(
   return rec;
 }
 
+/** Split the manifest's `models` group (everything under /models/trustmark/ plus
+ *  Content Seal) between the two parts that share the 'trustmark-models' store:
+ *  the durable-credential ENCODER, and everything else - the deep-scan decoders
+ *  and the resizer, which are the verify part's. Pure, so the sizes the profile
+ *  rows quote and the bytes each part actually fetches come from one rule. */
+export function trustmarkGroupSplit(
+  models: readonly ManifestFile[],
+): { verify: ManifestFile[]; durable: ManifestFile[] } {
+  const durable = models.filter(f => f.url === DURABLE_ENCODER_PATH);
+  return { verify: models.filter(f => f.url !== DURABLE_ENCODER_PATH), durable };
+}
+
+/** Which keys of the shared 'trustmark-models' store belong to the VERIFY part -
+ *  the decoders, the resizer and trustmark.ts's readiness marker, but never the
+ *  durable encoder. Removing Verify must not take the durable model with it (and
+ *  the reverse), the same shared-bucket rule the transformers cache follows. */
+export function verifyModelKeys(keys: readonly string[]): string[] {
+  return keys.filter(k => k !== DURABLE_ENCODER_FILE);
+}
+
 /**
  * Download the /verify deep-scan machinery: the ORT runtime into ORT_CACHE,
  * then the TrustMark + Content Seal models through their own IDB fetchers
@@ -391,7 +419,7 @@ export async function downloadVerify(
   // fetchers only learn sizes file by file, and a total that grows under the
   // bar makes it jump backwards. The running total takes over only if it ever
   // exceeds the plan (a bigger model shipped than the manifest knew).
-  const plannedModels = manifest.groups.models.reduce((n, f) => n + f.size, 0);
+  const plannedModels = trustmarkGroupSplit(manifest.groups.models).verify.reduce((n, f) => n + f.size, 0);
   let modelLoaded = 0;
   let modelTotal: number | null = 0;
   let ortLoaded = 0;
@@ -412,9 +440,8 @@ export async function downloadVerify(
   // Model downloads are the same fetch-once-into-IDB path the /verify header's
   // own "enable deep scan" button uses - one copy, shared consent.
   signal?.throwIfAborted();
-  const [{ prefetchTrustmarkModels }, { prefetchTrustmarkEncoder }, { prefetchContentSealModel }] = await Promise.all([
+  const [{ prefetchTrustmarkModels }, { prefetchContentSealModel }] = await Promise.all([
     import('./trustmark.ts'),
-    import('./trustmark-embed.ts'),
     import('./contentseal.ts'),
   ]);
   const onModel = (p: { loaded: number; total: number | null }): void => {
@@ -424,13 +451,11 @@ export async function downloadVerify(
   };
   const okTm = await prefetchTrustmarkModels({ onProgress: p => onModel({ loaded: p.loaded, total: p.total }) });
   signal?.throwIfAborted();
-  // Durable-watermark ENCODER: the one model NO part offered before - it was lazy-only,
-  // fetched on the first durable export. Best-effort (404s until converted, must not fail
-  // the part) and shares the 'trustmark-models' store the decoders use. Its bytes are
-  // already reserved in plannedModels (the vite `models` group includes encoder_Q.onnx),
-  // so this fills a slot the planned size already counts.
-  const encBase = modelLoaded;
-  await prefetchTrustmarkEncoder({ onProgress: p => onModel({ loaded: encBase + p.loaded, total: p.total === null || modelTotal === null ? null : encBase + p.total }) });
+  // The durable-watermark ENCODER is deliberately NOT fetched here any more: it is
+  // its own part (downloadDurable), so a user who only ever verifies files does not
+  // pay 33 MB for the export-side model, and the desktop shell can take the encoder
+  // without the 95 MB of decoders. Both parts still land in the same IDB store,
+  // keyed per part (verifyModelKeys).
   const modelBase = modelLoaded;
   signal?.throwIfAborted();
   // Best-effort: the Content Seal extractor is usually never vendored at all
@@ -793,6 +818,43 @@ export async function downloadMatte(opts: { signal?: AbortSignal; onProgress?: O
   return rec;
 }
 
+/**
+ * Download the durable-credential part - the TrustMark ENCODER the export panel's
+ * "Durable credential" toggle runs, into the shared `trustmark-models` IDB store.
+ *
+ * The same bytes the first durable export fetches on demand, so pulling them here
+ * means that export starts immediately (and works with no connection afterwards).
+ * On the Tauri shells it is the only way to get them ahead of time, and it is what
+ * makes the export toggle appear there at all - see bridge/format-support.ts's
+ * durable probe. Throws when the encoder is not served (a 404 on a build whose
+ * model host has not been given the file), so a part is never recorded as
+ * downloaded when nothing came down.
+ */
+export async function downloadDurable(opts: { signal?: AbortSignal; onProgress?: OnProgress } = {}): Promise<PartRecord> {
+  const { signal, onProgress } = opts;
+  const { prefetchTrustmarkEncoder } = await import('./trustmark-embed.ts');
+  let bytes = 0;
+  const ok = await prefetchTrustmarkEncoder({
+    onProgress: p => {
+      bytes = p.loaded;
+      onProgress?.({ loaded: p.loaded, total: p.total, done: 0, count: 1 });
+    },
+  });
+  signal?.throwIfAborted();
+  if (!ok) throw new Error('offline download: the durable-credential model is not available from this server');
+  const rec: PartRecord = {
+    at: new Date().toISOString(),
+    version: String(DURABLE_ENCODER_CACHE_VERSION),
+    // A cache hit (the file was already fetched by an export) reports no chunks at
+    // all, so the record falls back to the pinned served size rather than claiming
+    // a part of zero bytes.
+    bytes: bytes || DURABLE_ENCODER_BYTES,
+    files: 1,
+  };
+  await recordPart('durable', rec);
+  return rec;
+}
+
 /** Download the OCR part - every staged model's det + rec + dict into the
  *  `ocr-models` IDB store the runner reads. */
 export async function downloadOcr(opts: { signal?: AbortSignal; onProgress?: OnProgress } = {}): Promise<PartRecord> {
@@ -847,12 +909,18 @@ export async function removePart(id: OfflinePartId): Promise<void> {
     if (id === 'ask') await clearAskCaches({ keepOrtHf: others });
     if (id === 'ai-detect') await clearAiDetectCaches({ keepOrtHf: others });
   }
-  if (id === 'verify' || id === 'upscale' || id === 'matte' || id === 'ocr') {
+  if (id === 'verify' || id === 'upscale' || id === 'matte' || id === 'ocr' || id === 'durable') {
     try {
       const db = await openDB();
       if (id === 'verify') {
-        await db.clear('trustmark-models').catch(() => {});
+        // The decoders, the resizer and the readiness marker - but NOT the durable
+        // encoder sharing the store (verifyModelKeys). Removing the deep scan must
+        // not silently take the export-side model with it.
+        const keys = await db.getAllKeys(DURABLE_MODEL_STORE).catch(() => [] as IDBValidKey[]);
+        for (const k of verifyModelKeys(keys.map(String))) await db.delete(DURABLE_MODEL_STORE, k).catch(() => {});
         await db.clear('contentseal-models').catch(() => {});
+      } else if (id === 'durable') {
+        await db.delete(DURABLE_MODEL_STORE, DURABLE_ENCODER_FILE).catch(() => {});
       } else {
         const store = id === 'upscale' ? UPSCALE_MODEL_STORE : id === 'matte' ? MATTE_MODEL_STORE : OCR_MODEL_STORE;
         await db.clear(store).catch(() => {});

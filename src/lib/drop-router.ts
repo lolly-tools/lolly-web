@@ -55,13 +55,16 @@ import { tauriInvoke } from './nearby-boot.ts';
 import type { PickerHost } from '../views/picker.ts';
 import type { BeamPackHost } from './beam-pack.ts';
 import type { Unzipped } from 'fflate';
+import type { LollyPreview, LollySessionPreview } from './lolly-intake.ts';
+import type { LollyFileContents } from './lolly-pack.ts';
+import type { DesignSystemRegistry } from './design-system/registry.ts';
 
 type PickerModule = typeof import('../views/picker.ts');
 
 /** Everything the file-picker fallback should let through - a superset of the
  *  picker's UPLOAD_ACCEPT (that list deliberately excludes design formats). */
 const UNIVERSAL_ACCEPT =
-  '.fig,.penpot,.zip,.tar,.tgz,.gz,.svg,.idml,.indd,.pdf,.ai,.pptx,.docx,.psd,.psb,.xcf,image/*,video/*,audio/*,' +
+  '.fig,.penpot,.zip,.tar,.tgz,.gz,.svg,.idml,.indd,.pdf,.ai,.pptx,.docx,.xlsx,.csv,.tsv,.psd,.psb,.xcf,image/*,video/*,audio/*,' +
   '.mov,.json,.lottie,.mp3,.wav,.ogg,.m4a,.flac,.bmp,.ico,.cur,.svgz,.lolly';
 
 // Extension fallbacks for files whose MIME type the OS didn't fill in.
@@ -93,7 +96,7 @@ const JSON_EXT_RE = /\.json$/i;
 // is gated here too, not left to the zip-magic design sniff (which used to claim
 // it and error in Design); the Chart route decodes it sheet by sheet.
 const DATA_DROP_RE = /\.(csv|tsv|xlsx)$/i;
-const DATA_MIME_RE = /^text\/(csv|tab-separated-values)$/i;
+const DATA_MIME_RE = /^(?:text\/(?:csv|tab-separated-values)|application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet)$/i;
 // The engine's row-import cap (parseDataRows) - a bigger file is not a chart.
 const DATA_MAX_BYTES = 8 * 1024 * 1024;
 // A zipped tool folder: `tool.json` named in a local file header, at the archive root
@@ -130,6 +133,13 @@ export function takePendingDesignImport(): { file: File; scenes: boolean } | nul
 
 let pendingDesignSystemFile: File | null = null;
 
+/** Arm the Design System studio's one-shot file handoff. Kept beside the take
+ *  so Profile can wait until a file is actually chosen before creating its
+ *  destination system (cancel must be a true no-op). */
+export function setPendingDesignSystemFile(file: File): void {
+  pendingDesignSystemFile = file;
+}
+
 /**
  * Consume the file stashed by the "Use as the design system" route - single use,
  * cleared on read, never written to disk. `views/start.ts` reads it on mount and
@@ -161,7 +171,45 @@ export function takePendingToolFile(toolId: string): File | null {
   return f;
 }
 
+let pendingConvertFile: File | null = null;
+
+/** Consume a file sent directly to the dedicated Convert view. */
+export function takePendingConvertFile(): File | null {
+  const f = pendingConvertFile;
+  pendingConvertFile = null;
+  return f;
+}
+
+export type NativeUtilityTarget = 'strip-data' | 'convert' | 'redact';
+
+/**
+ * Direct desktop file-manager hand-off. Unlike openDropChooser this already
+ * carries the person's chosen verb, so asking the generic "what should Lolly
+ * do?" question again would discard that intent. The file is still only held
+ * in memory and each destination consumes it once on mount.
+ */
+export function openFileInUtility(target: NativeUtilityTarget, file: File): void {
+  if (target === 'convert') {
+    pendingConvertFile = file;
+    routeToConsumer('#/convert', /^#\/convert([?/]|$)/.test(window.location.hash));
+    return;
+  }
+  pendingToolFile = { toolId: target, file };
+  routeToConsumer(`#/tool/${target}`, onToolRoute(target));
+}
+
 let pendingToolSeed: { toolId: string; values: Record<string, unknown> } | null = null;
+
+let pendingSpreadsheetFile: File | null = null;
+
+/** Consume a spreadsheet handed to the universal opener - single use. The
+ *  dedicated #/data utility owns worksheet selection, editing and download, so
+ *  an OS-level "Open with Lolly" follows the same path as its gallery tile. */
+export function takePendingSpreadsheetFile(): File | null {
+  const f = pendingSpreadsheetFile;
+  pendingSpreadsheetFile = null;
+  return f;
+}
 
 /** Arm a one-shot initial-values seed for `toolId` - the layered-import route
  *  (psd-import) parses + stores layer assets BEFORE navigating, then stashes
@@ -197,9 +245,9 @@ export interface Sniff {
    *  a Penpot project, or a zip whose parts say design-system pack. Additive - 
    *  it never suppresses a route another flag already earned. */
   designSystem: boolean;
-  /** A `.lolly` share file (plans/114) - a saved session + its assets + provenance.
-   *  It IS a zip, so it must be recognised before the generic design/archive routes
-   *  claim it; it opens directly (no chooser), never "unpacks". */
+  /** A `.lolly` portable bundle. Its manifest later distinguishes a shared
+   *  session, design-system pack or instance pack. It IS a zip, so it must be
+   *  recognised before generic design/archive routes claim it. */
   lolly: boolean;
   /** A Word (.docx) document (plans/139): its route is content extraction. Optional,
    *  and an absent flag reads as false. */
@@ -209,8 +257,8 @@ export interface Sniff {
    *  A head-read heuristic like `designSystem`; `readToolZip` is the authoritative
    *  read, run when the user picks the route. Optional, absent reads as false. */
   tool?: boolean;
-  /** A table of data (.csv/.tsv/.xlsx): its route is the Chart tool, seeded with
-   *  the rows - the same decode the field's own data-source button performs.
+  /** A table of data (.csv/.tsv/.xlsx): its primary route is the on-device
+   *  Spreadsheet utility; Chart remains an optional second route.
    *  Optional, absent reads as false. */
   data?: boolean;
 }
@@ -478,9 +526,11 @@ export function dropChooserChoices(s: Sniff, ctx: ChooserContext): DialogChoice[
   if (single && s.docx) {
     choices.push({ id: 'extract', label: t('Extract content (Markdown)'), primary: true });
   }
-  // A table of data charts itself (plans/87): the rows go into Chart's data field.
-  if (single && s.data && ctx.has('chart')) {
-    choices.push({ id: 'chart', label: t('Chart the data'), primary: !choices.some((c) => c.primary) });
+  // A table opens in the dedicated on-device spreadsheet utility. Chart stays
+  // beside it when present, but never steals an OS-level spreadsheet open.
+  if (single && s.data) {
+    choices.push({ id: 'spreadsheet', label: t('Open in Spreadsheet'), primary: !choices.some((c) => c.primary) });
+    if (ctx.has('chart')) choices.push({ id: 'chart', label: t('Chart the data') });
   }
   if ((single && (s.media || s.textDoc) && !s.pdf && !s.pptx) || (!single && allIngestable)) {
     choices.push({ id: 'library', label: t('Add to your library'), primary: choices.length === 0 });
@@ -529,9 +579,9 @@ export function dropChooserMessage(s: Sniff, name: string, ctx: ChooserContext):
  * drops keep only the batch routes (library / verify) - the design and PDF routes
  * are single-file journeys.
  */
-/** Open a dropped/shared `.lolly`: land its assets + session (reusing the beam ingest
- *  via lib/lolly-pack.ts), then navigate into the tool at the imported session. Lazy
- *  import keeps the pack/ingest code off the drop cold path. */
+/** Open a dropped/shared `.lolly`: inspect its manifest, describe the operation, then
+ *  route the one selected payload through its canonical verified reader. Lazy imports
+ *  keep the pack/ingest code off the drop cold path. */
 /** True when unzipped `.lolly` parts are a BRAND/INSTANCE pack (plans/131)
  *  rather than a saved session - same container, routed by manifest format.
  *  Pure - exported for the co-located test. */
@@ -541,44 +591,57 @@ export function isBrandPackParts(manifest: { format?: unknown } | null): boolean
 
 /**
  * A brand/instance `.lolly` opened from the Open button (or dropped anywhere):
- * switch this install's brand WHOLE - tokens, fonts, logos, and for an
- * instance pack the brand tools + catalog + instance base too - with one
- * honest gate: when the person has BUILT a brand here (the editor writes every
- * brand change through the user tokens doc, so its presence is the signal),
- * confirm the replacement first. A factory-default install switches silently -
- * there is nothing of theirs to lose.
+ * create a separate named design system, import into its namespace, and switch
+ * to it. Existing systems remain. An instance pack additionally replaces the
+ * single installed brand-workspace tool/catalog overlay and its instance base;
+ * the manifest preflight states that device-wide effect before this is called.
  */
 async function importBrandLollyDrop(
   file: File, files: Unzipped, host: PickerHost,
 ): Promise<void> {
   const bt = await import('../brand-transfer.ts');
   const { readJson } = await import('./bundle.ts');
-  const manifest = readJson(files, 'manifest.json') as { label?: string } | null;
+  const manifest = readJson(files, 'manifest.json') as {
+    label?: string; pack?: { publisher?: string; version?: string; instance?: string };
+  } | null;
   const label = manifest?.label || file.name.replace(/\.lolly$/i, '');
 
-  const { USER_TOKENS_ID } = await import('../bridge/tokens.ts');
-  const assets = (host as unknown as { assets?: { _getBlob(id: string): Promise<Blob | null> } }).assets;
-  const tweaked = !!(await assets?._getBlob(USER_TOKENS_ID).catch(() => null));
-  if (tweaked) {
-    const ok = await confirmDialog({
-      title: t('Replace your brand?'),
-      message: tRaw('Loading “{name}” will replace the colours, fonts and logos you set up on this device.', { name: label }),
-      confirmLabel: t('Replace brand'),
-      danger: true,
-    });
-    if (!ok) return;
-  }
-
+  // A brand file is a NEW named design system, not a destructive synonym for
+  // "overwrite whichever system happens to be active". The preview already
+  // obtained explicit consent; create the destination only now, after that
+  // choice, and remove it again if the verified importer refuses the bundle.
+  const [{ createDesignSystem, removeDesignSystem }, { switchDesignSystem }] = await Promise.all([
+    import('./design-system/manage.ts'), import('./design-system/switch.ts'),
+  ]);
+  const record = await createDesignSystem(host as unknown as Parameters<typeof createDesignSystem>[0], {
+    label,
+    source: {
+      kind: 'file', fileName: file.name,
+      ...(manifest?.pack?.publisher ? { publisher: manifest.pack.publisher } : {}),
+      ...(manifest?.pack?.version ? { version: manifest.pack.version } : {}),
+      ...(manifest?.pack?.instance ? { instance: manifest.pack.instance } : {}),
+      signature: 'unsigned',
+    },
+  });
   try {
     const summary = await bt.importBrandPack(
       { host: host as unknown as Parameters<typeof bt.importBrandPack>[0]['host'], storage: localStorage },
       files,
+      { target: { system: record.id }, activateInstance: true },
     );
+    await (host as unknown as { designSystems: DesignSystemRegistry }).designSystems.put({
+      ...record,
+      source: {
+        kind: 'file', fileName: file.name,
+        ...(manifest?.pack?.publisher ? { publisher: manifest.pack.publisher } : {}),
+        ...(manifest?.pack?.version ? { version: manifest.pack.version } : {}),
+        ...(summary.packInstance ? { instance: summary.packInstance } : {}),
+        signature: summary.packSignature ?? 'unsigned',
+      },
+      ...(summary.theme ? { appearance: { theme: summary.theme } } : {}),
+    });
+    await switchDesignSystem(host as unknown as Parameters<typeof switchDesignSystem>[0], record.id, { noRemount: true });
     playSfx('drop');
-    // The pack may carry a theme pref; repainting from storage covers both
-    // "it did" and "keep what was there".
-    const { applyTheme } = await import('../theme.ts');
-    applyTheme(localStorage.getItem('theme') || 'light');
     if (summary.packInstance) {
       // The pack chose where community content comes from - that IS the
       // instance choice, so the first-run chooser must not re-ask.
@@ -592,35 +655,159 @@ async function importBrandLollyDrop(
       await it.mergeInstalledToolsIntoIndex().catch(() => { /* boot merge covers it */ });
       announce(tRaw('Brand switched to “{name}” - {n} tools installed.', { name: label, n: summary.packTools }));
     } else {
-      announce(tRaw('Brand switched to “{name}”.', { name: label }));
+      announce(tRaw('Added and switched to “{name}”.', { name: label }));
     }
-    // Repaint the current view whole so nothing keeps wearing the old brand.
-    window.dispatchEvent(new Event('lolly:remount'));
+    // Brand intake finishes at the switcher: it shows that the previous systems
+    // remain and gives a stable place to open/edit the one that just arrived.
+    const hash = '#/profile?focus=design-systems-section';
+    routeToConsumer(hash, window.location.hash === hash);
   } catch (err) {
+    await removeDesignSystem(host as unknown as Parameters<typeof removeDesignSystem>[0], record.id).catch(() => {});
     announce(tRaw('Could not load this brand file: {message}', { message: (err as Error).message }), { assertive: true });
   }
 }
 
-async function importLollyDrop(file: File, host: PickerHost): Promise<void> {
+function intakeBytesLabel(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} KB`;
+  const mb = n / (1024 * 1024);
+  return `${mb.toFixed(mb < 10 ? 1 : 0)} MB`;
+}
+
+function previewFacts(preview: LollyPreview): string {
+  const size = intakeBytesLabel(preview.fileBytes);
+  const pace = preview.sizeBand === 'large'
+    ? t(' This is a large bundle; keep Lolly open while it verifies and imports it.')
+    : preview.sizeBand === 'medium'
+      ? t(' It may take a moment to verify on this device.')
+      : '';
+  if (preview.kind === 'session') {
+    const content = [
+      preview.embeddedAssets === 1 ? t('1 embedded file') : t('{n} embedded files', { n: preview.embeddedAssets }),
+      preview.referencedAssets ? (preview.referencedAssets === 1 ? t('1 external reference') : t('{n} external references', { n: preview.referencedAssets })) : null,
+      preview.includesDesignSystem ? t('a design system') : null,
+      preview.includesTool ? t('the tool itself') : null,
+    ].filter(Boolean).join(' · ');
+    const tool = preview.toolId ? tRaw(' for {tool}', { tool: preview.toolId }) : '';
+    return tRaw('“{name}” is a {size} shared design{tool}. Opening it adds a new Project and {content}; it does not replace existing work.{pace}', {
+      name: preview.label, size, tool, content, pace,
+    });
+  }
+  const content = [
+    preview.tokens ? t('tokens') : null,
+    preview.fontFiles ? (preview.fontFiles === 1 ? t('1 font file') : t('{n} font files', { n: preview.fontFiles })) : null,
+    preview.logos ? (preview.logos === 1 ? t('1 logo') : t('{n} logos', { n: preview.logos })) : null,
+    preview.versions ? (preview.versions === 1 ? t('1 published version') : t('{n} published versions', { n: preview.versions })) : null,
+  ].filter(Boolean).join(' · ') || t('design-system material');
+  if (preview.kind === 'instance') {
+    return tRaw('“{name}” is a {size} brand workspace: {content}, {tools} tools and {assets} catalogue assets. It is added as a design system and replaces any previously loaded brand-workspace tools and catalogue.{pace}', {
+      name: preview.label, size, content, tools: preview.tools, assets: preview.catalogAssets, pace,
+    });
+  }
+  return tRaw('“{name}” is a {size} design-system pack: {content}. It is added as a separate design system and your existing systems remain.{pace}', {
+    name: preview.label, size, content, pace,
+  });
+}
+
+async function storageFact(preview: LollyPreview): Promise<string> {
   try {
+    const estimate = await navigator.storage?.estimate?.();
+    if (typeof estimate?.quota !== 'number' || typeof estimate.usage !== 'number') return '';
+    const free = Math.max(0, estimate.quota - estimate.usage);
+    // Session manifests declare the carried payload bytes. Brand manifests do
+    // not, so their compressed size is the only honest lower-bound available.
+    const needed = preview.kind === 'session'
+      ? Math.max(preview.fileBytes, preview.embeddedBytes)
+      : preview.fileBytes;
+    if (free >= needed * 1.25) return '';
+    return tRaw(' This device reports {free} free; the import needs at least about {needed}, so it may be refused without changing existing work.', {
+      free: intakeBytesLabel(free), needed: intakeBytesLabel(needed),
+    });
+  } catch { return ''; }
+}
+
+async function importCarriedDesignSystem(
+  file: File, preview: LollySessionPreview, contents: LollyFileContents, host: PickerHost,
+): Promise<void> {
+  if (!contents.designSystem || typeof contents.designSystem !== 'object' || Array.isArray(contents.designSystem)) {
+    announce(t('This shared design does not carry a design system.'), { assertive: true });
+    return;
+  }
+  const [{ createDesignSystem, removeDesignSystem }, { switchDesignSystem }, { installUserTokens }] = await Promise.all([
+    import('./design-system/manage.ts'), import('./design-system/switch.ts'), import('../bridge/tokens.ts'),
+  ]);
+  const label = preview.designSystemLabel || `${preview.label} design system`;
+  const record = await createDesignSystem(host as unknown as Parameters<typeof createDesignSystem>[0], {
+    label,
+    source: {
+      kind: 'file', fileName: file.name,
+      ...(preview.creator ? { publisher: preview.creator } : {}),
+      signature: 'unsigned',
+    },
+  });
+  try {
+    await installUserTokens(host as unknown as Parameters<typeof installUserTokens>[0], contents.designSystem, { system: record.id, label });
+    await switchDesignSystem(host as unknown as Parameters<typeof switchDesignSystem>[0], record.id, { noRemount: true });
+    announce(tRaw('Added and switched to “{name}”.', { name: label }));
+    const hash = '#/start';
+    routeToConsumer(hash, window.location.hash === hash);
+  } catch (err) {
+    await removeDesignSystem(host as unknown as Parameters<typeof removeDesignSystem>[0], record.id).catch(() => {});
+    throw err;
+  }
+}
+
+/**
+ * The one `.lolly` intake used by Open, drag/drop, native document-open and the
+ * contextual Design System picker. The context may recommend a capability, but
+ * only the manifest decides which capabilities exist.
+ */
+export async function openLollyFile(
+  file: File, host: PickerHost,
+  opts: { preferred?: 'session' | 'design-system' } = {},
+): Promise<void> {
+  try {
+    announce(tRaw('Inspecting {name}…', { name: file.name }));
+    const intake = await import('./lolly-intake.ts');
+    const preview = await intake.peekLollyFile(file);
+    const storage = await storageFact(preview);
+    const choices: DialogChoice[] = preview.kind === 'session'
+      ? [
+          { id: 'open-session', label: t('Open shared design'), primary: opts.preferred !== 'design-system' || !preview.includesDesignSystem },
+          ...(preview.includesDesignSystem
+            ? [{ id: 'use-design-system', label: t('Add its design system'), primary: opts.preferred === 'design-system' }] : []),
+        ]
+      : [{ id: 'use-brand', label: preview.kind === 'instance' ? t('Install brand workspace') : t('Add design system'), primary: true }];
+    const chosen = await choiceDialog({
+      title: preview.kind === 'session' ? t('Shared design')
+        : preview.kind === 'instance' ? t('Brand workspace') : t('Design system'),
+      message: previewFacts(preview) + storage, choices, tag: 'lolly-intake',
+    });
+    if (!chosen) return;
+    announce(tRaw('Verifying {name}…', { name: file.name }));
+    const loaded = await intake.loadLollyFile(file, preview);
+
+    if (loaded.kind !== 'session') {
+      await importBrandLollyDrop(file, loaded.files, host);
+      return;
+    }
+    if (chosen === 'use-design-system') {
+      await importCarriedDesignSystem(file, preview as LollySessionPreview, loaded.contents, host);
+      return;
+    }
     const lp = await import('./lolly-pack.ts');
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    // Same container, two payloads: a brand/instance pack (plans/131) routes
-    // to the brand importer; everything else is the saved-session path below.
-    try {
-      const bt = await import('../brand-transfer.ts');
-      const { readJson } = await import('./bundle.ts');
-      const parts = await bt.unzipBrandBytes(bytes);
-      if (isBrandPackParts(readJson(parts, 'manifest.json') as { format?: unknown } | null)) {
-        await importBrandLollyDrop(file, parts, host);
-        return;
-      }
-    } catch { /* not even a readable zip - let the session path report it */ }
     // A .lolly may carry the tool itself (plans/114 Wave 7). Provision it - behind a
     // "do you trust the author?" gate - BEFORE landing the session, so the session can
     // open. `available` is whether the session's tool can load here afterwards.
-    const available = await provisionLollyTool(bytes, lp);
-    const res = await lp.ingestLollyFile(bytes, host as unknown as BeamPackHost);
+    const available = await provisionLollyTool(loaded.contents, lp);
+    announce(loaded.contents.manifest.counts.assets
+      ? t('Importing {n} files…', { n: loaded.contents.manifest.counts.assets })
+      : t('Saving the shared design…'));
+    const res = await lp.ingestLollyFile(loaded.contents, host as unknown as BeamPackHost, {
+      onProgress: (progress) => announce(progress.phase === 'assets'
+        ? t('Importing file {current} of {total}…', { current: progress.current, total: progress.total })
+        : t('Saving the shared design…')),
+    });
     playSfx('drop');
     if (available) {
       announce(tRaw('Opened {name}', { name: file.name }));
@@ -636,6 +823,9 @@ async function importLollyDrop(file: File, host: PickerHost): Promise<void> {
   }
 }
 
+// Backwards-compatible private spelling for the existing drop/open call sites.
+const importLollyDrop = openLollyFile;
+
 /**
  * Provision a `.lolly`'s carried tool, if any, before its session lands. Returns whether
  * the session's tool can load here afterwards:
@@ -644,8 +834,7 @@ async function importLollyDrop(file: File, host: PickerHost): Promise<void> {
  *   - carried + not here → a "do you trust the author?" confirm (its code runs unsandboxed);
  *     Trust ⇒ install + surface it (true); Decline / unsupported (module hooks) ⇒ false.
  */
-async function provisionLollyTool(bytes: Uint8Array, lp: typeof import('./lolly-pack.ts')): Promise<boolean> {
-  const parsed = await lp.readLollyFile(bytes);
+async function provisionLollyTool(parsed: LollyFileContents, lp: typeof import('./lolly-pack.ts')): Promise<boolean> {
   const tool = lp.extractBundledTool(parsed);
   if (!tool) return true;   // travels by reference - same as before Wave 7
 
@@ -853,8 +1042,8 @@ export async function openDropChooser(
   // flight - don't mount a stale chooser next to (or after) the replacement's.
   if (opts.superseded?.()) return;
 
-  // A .lolly opens directly - it is unambiguous (a saved session + its assets), so it
-  // skips the chooser entirely and lands the user in the tool at the imported session.
+  // `.lolly` is a container family, so it owns a manifest-first preflight of its
+  // own: session, design system and instance pack have different consequences.
   if (s.lolly) { await importLollyDrop(first, host); return; }
   const allIngestable = files.every(
     (f) => isMediaFile(f) || picker.isPdfUpload(f) || picker.isPptxUpload(f)
@@ -932,6 +1121,10 @@ export async function openDropChooser(
     case 'compress':
       pendingToolFile = { toolId: 'compress-pdf', file: first };
       routeToConsumer('#/tool/compress-pdf', onToolRoute('compress-pdf'));
+      break;
+    case 'spreadsheet':
+      pendingSpreadsheetFile = first;
+      routeToConsumer('#/data', /^#\/data([?/]|$)/.test(window.location.hash));
       break;
     case 'chart': {
       // Rows → Chart's data field (a longtext taking CSV/TSV): the decode is the
@@ -1282,6 +1475,72 @@ export function initShareTargetIngest(host: PickerHost): void {
   poll(); // cold start: the launching intent was stashed before this JS booted
 }
 
+// ── installed-PWA handoffs (share target, protocol handler) ───────────────────
+
+/** The service worker's share-target inbox (public/sw.js SHARE_CACHE - keep the
+ *  two literals in sync) and the header it stamps each parked file's name into. */
+const SHARE_CACHE = 'lolly-share-inbox';
+const SHARE_NAME_HEADER = 'x-lolly-share-name';
+
+/**
+ * Read one query param off the launch URL and strip it from the address bar.
+ * The installed-app handoffs can only speak through that URL (a share target
+ * POSTs and the worker redirects; a protocol handler opens `/?deep-link=…`), and
+ * a param left in place would re-fire on reload and ride along in every copied
+ * link. Returns null when the param is not there.
+ */
+function takeLaunchParam(name: string): string | null {
+  const search = window.location.search;
+  if (!search) return null;
+  const params = new URLSearchParams(search);
+  const value = params.get(name);
+  if (value === null) return null;
+  params.delete(name);
+  const rest = params.toString();
+  try {
+    window.history.replaceState(
+      window.history.state, '',
+      `${window.location.pathname}${rest ? `?${rest}` : ''}${window.location.hash}`,
+    );
+  } catch { /* the param stays in the bar; the handoff itself already happened */ }
+  return value;
+}
+
+/**
+ * The web share-target intake: an OS share sheet posted files to this installed
+ * app, the service worker parked them in SHARE_CACHE and redirected here (see
+ * public/sw.js receiveShare). Drain the stash, rebuild each File from its parked
+ * response, and open the SAME chooser a dropped file gets.
+ *
+ * Drains unconditionally rather than only when the redirect's param is there: a
+ * browser is free to reshape that redirect, and a share sitting unclaimed in the
+ * bucket is the user's file gone missing. The stash is emptied as it is read, so
+ * a boot with nothing shared costs one cache open and stops.
+ *
+ * Call once at boot, after the first view has mounted (main.ts) - the same
+ * placement, and for the same reason, as initShareTargetIngest.
+ */
+export async function initShareTargetFileIntake(host: PickerHost): Promise<void> {
+  takeLaunchParam('share-target');
+  if (typeof caches === 'undefined') return;
+  const files: File[] = [];
+  try {
+    const cache = await caches.open(SHARE_CACHE);
+    for (const key of await cache.keys()) {
+      const held = await cache.match(key);
+      await cache.delete(key);
+      if (!held) continue;
+      const raw = held.headers.get(SHARE_NAME_HEADER) ?? '';
+      let name = 'shared-file';
+      try { name = decodeURIComponent(raw) || name; } catch { name = raw || name; }
+      files.push(new File([await held.blob()], name, { type: held.headers.get('content-type') ?? '' }));
+    }
+  } catch { return; /* no Cache Storage, or a partial read - nothing to hand over */ }
+  if (!files.length) return;
+  closeConfirmDialogs('drop-chooser');
+  await openDropChooser(files, host, { source: 'share-target' });
+}
+
 /** The App-Link half of the `LollyShare` interface (plan 171): MainActivity
  *  stashes a tapped ACTION_VIEW link, consumed on read. */
 interface LollyLinkBridge {
@@ -1294,7 +1553,9 @@ interface LollyLinkBridge {
  *  through the shared scheme mapper and is refused, with a warn, when it names no
  *  route the app owns. */
 export function routeDeliveredLink(raw: string): void {
-  if (/^lolly:/i.test(raw)) {
+  // `web+lolly:` is the same link in the spelling a browser gives an installed
+  // PWA (manifest protocol_handlers); deepLinkToHash reads both.
+  if (/^(?:web\+)?lolly:/i.test(raw)) {
     const hash = deepLinkToHash(raw);
     if (hash) routeToConsumer(hash, window.location.hash === hash);
     else console.warn('[deep-link] ignoring malformed lolly:// link', raw);
@@ -1307,19 +1568,47 @@ export function routeDeliveredLink(raw: string): void {
 }
 
 const MOBILE_LINK_POLL_MS = 1200;
+const MAX_MOBILE_OPEN_BYTES = 48 * 1024 * 1024;
+
+interface MobileOpenedFile {
+  name?: unknown;
+  mime?: unknown;
+  bytes?: unknown;
+}
+
+function mobileOpenedFile(raw: unknown): File | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const opened = raw as MobileOpenedFile;
+  const name = typeof opened.name === 'string' && opened.name ? opened.name : 'shared.lolly';
+  const mime = typeof opened.mime === 'string' ? opened.mime : '';
+  const bytes = opened.bytes;
+  if (!Array.isArray(bytes) && !(bytes instanceof Uint8Array)) return null;
+  const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes as number[]);
+  if (u8.length === 0 || u8.length > MAX_MOBILE_OPEN_BYTES) return null;
+  return new File([u8 as BlobPart], name, { type: mime });
+}
 
 /**
- * Deep-link intake for the native shells. Android: a tapped https://lolly.tools/t/…
- * (or /design) App Link, or a lolly:// link, opens the app and MainActivity stashes
- * it on the LollyShare bridge - same cold-poll + warm-event pattern as the share
- * target. iOS: the Rust side queues the lolly:// URLs the app is opened with
- * (RunEvent::Opened) and this drains that queue on the desktop poll loop's cadence,
- * retiring on the first "no such command" rejection - the desktop shell carries
- * the Tauri internals too, but has its own queue (linux-desktop-boot.ts), so one
- * rejection says this whole surface is absent. Feature-detected throughout, so a
- * no-op in the browser. Call once at boot (main.ts).
+ * Deep-link and document-open intake for the native shells. Android: a tapped
+ * https://lolly.tools/t/… (or /design) App Link or lolly:// link is stashed by
+ * MainActivity on the LollyShare bridge; an ACTION_VIEW .lolly document uses that
+ * bridge's existing shared-file slot and is handled by initShareTargetIngest.
+ * iOS: the Rust side queues links and captures an opened document's bounded bytes
+ * while its file URL is live. This drains that queue on the desktop poll loop's
+ * cadence and sends the file through the exact chooser a drop uses. It retires on
+ * the first "no such command" rejection - the desktop shell carries the Tauri
+ * internals too, but has its own queue (linux-desktop-boot.ts), so one rejection
+ * says this whole surface is absent. Feature-detected throughout, so a no-op in
+ * the browser. Call once at boot (main.ts).
+ *
+ * The browser has a fourth source: an installed PWA registers `web+lolly:`
+ * (manifest protocol_handlers - a web app may only claim a `web+` scheme) and the
+ * launch arrives as `/?deep-link=web+lolly://…`. That is read first, before any
+ * native bridge check, because it is the one source a plain browser tab can have.
  */
-export function initDeepLinkIntake(): void {
+export function initDeepLinkIntake(host: PickerHost): void {
+  const handed = takeLaunchParam('deep-link');
+  if (handed) routeDeliveredLink(handed);
   const bridge = (window as unknown as { LollyShare?: Partial<LollyLinkBridge> }).LollyShare;
   if (typeof bridge?.pendingDeepLink === 'function') {
     const link = bridge as LollyLinkBridge;
@@ -1339,10 +1628,19 @@ export function initDeepLinkIntake(): void {
     if (draining) return;
     draining = true;
     void invoke('mobile_poll_events')
-      .then((raw) => {
+      .then(async (raw) => {
         if (!Array.isArray(raw)) return;
         for (const e of raw as Array<{ kind?: unknown; value?: unknown }>) {
           if (e?.kind === 'deepLink' && typeof e.value === 'string') routeDeliveredLink(e.value);
+          if (e?.kind === 'openFileError' && typeof e.value === 'string') {
+            announce(tRaw('Could not read “{name}”, or it exceeds the 48 MB mobile document-open limit. Try Open inside Lolly for a larger file.', { name: e.value }), { assertive: true });
+          }
+          if (e?.kind === 'openFile' && typeof e.value === 'string' && /^\d+$/.test(e.value)) {
+            const file = mobileOpenedFile(await invoke('mobile_take_open_file', { token: e.value }));
+            if (!file) continue;
+            closeConfirmDialogs('drop-chooser');
+            await openDropChooser([file], host, { source: 'share-target' });
+          }
         }
       })
       .catch((e: unknown) => {

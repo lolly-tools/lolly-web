@@ -24,9 +24,9 @@
   min-height: 0;
   border-bottom: 0;
   font-size: var(--fs-md);
-  transition: background var(--dur-1);
+  transition: background var(--ui-motion-feedback);
   display: flex !important;
-  border-radius: 1.05em;
+  border-radius: var(--ui-radius-panel);
 }
 
 /* Collapsed/filtered rows must leave the layout entirely (not just go invisible)
@@ -56,15 +56,15 @@
   flex-shrink: 0;
   width: 48px;
   height: 48px;
-  border-radius: calc(var(--radius) / 2);
+  border-radius: var(--ui-radius-control);
   object-fit: contain;
-  background: hsl(var(--background));
+  background: var(--ui-color-surface-canvas);
   display: block;
 }
 
 .saved-thumb--empty {
   opacity: 0.3;
-  background: hsl(var(--muted));
+  background: var(--ui-color-surface-muted);
 }
 
 /* Batch sessions have no render thumbnail - show a package icon instead. */
@@ -72,14 +72,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: hsl(var(--muted));
-  color: hsl(var(--muted-foreground));
+  background: var(--ui-color-surface-muted);
+  color: var(--ui-color-text-muted);
 }
 .saved-thumb--batch svg { width: calc(24px * var(--a11y-fs)); height: calc(24px * var(--a11y-fs)); }
 /* Keep the user's session name verbatim (the row otherwise capitalizes). */
 .saved-row--batch h4 { text-transform: none; }
 
-.saved-row:hover { background: hsl(var(--accent)); }
+.saved-row:hover { background: var(--ui-color-selection-surface); }
 
 /* date-time + size stamp + delete icon: dim at rest, full on hover. .session-size
    and .saved-delete are now siblings of .saved-label (not nested inside it -
@@ -96,7 +96,7 @@
 
 .session-size {
   font-size: var(--fs-xs);
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   margin-left: auto;
   margin-right: 8px;
   white-space: nowrap;
@@ -143,12 +143,12 @@
   height: 24px;
   padding: 0;
   background: transparent;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   border: 1px solid transparent;
-  border-radius: var(--radius-round);
+  border-radius: var(--ui-radius-choice-round);
   font-size: var(--fs-xs);
   cursor: pointer;
-  transition: color var(--dur-1), border-color var(--dur-1), background var(--dur-1);
+  transition: color var(--ui-motion-feedback), border-color var(--ui-motion-feedback), background var(--ui-motion-feedback);
 }
 
 .saved-delete:hover {

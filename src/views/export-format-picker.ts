@@ -66,6 +66,7 @@ const FORMAT_ICON: Record<string, IconName> = {
   gif: 'animate', apng: 'animate', 'webp-anim': 'animate', 'svg-anim': 'animate',
   exr: 'sunburst', hdr: 'sunburst',                                 // high dynamic range
   zip: 'package',
+  rpm: 'package', 'tar.gz': 'package',                              // Linux packages (plan 197)
 };
 const CATEGORY_ICON: Record<FormatCategory, IconName> = {
   image: 'image', document: 'document', motion: 'filmStrip', audio: 'music', other: 'box',

@@ -80,6 +80,7 @@ import { mountBodyPopover, type BodyPopoverHandle } from '../components/body-pop
 import { backPillHtml, backHomeHtml, mountBackPill } from '../components/back-pill.ts';
 import { mountHomeFab } from '../components/home-fab.ts';
 import { mountThemeFab } from '../components/theme-toggle.ts';
+import { exportAppSurface } from '../lib/app-surface-export.ts';
 
 // A demo palette for the colour specimens (not the live brand).
 const DEMO: PaletteEntry[] = [
@@ -282,8 +283,10 @@ export async function mountComponents(viewEl: HTMLElement, host: HostV1, _params
       <h1 class="cl-title">${escape(t('Component library'))}</h1>
       <p class="cl-sub">${escape(t('Live samples of the shell’s components - common primitives first, then by view. Full inventory and unification notes: plans/76-component-audit.md.'))}</p>
       <nav class="cl-jump" aria-label="${escape(t('Jump to section'))}">${jump}</nav>
+      <button type="button" class="btn btn--primary cl-export-penpot" data-export-hide>${escape(t('Export Lolly UI to Penpot'))}</button>
     </header>
 
+    <main class="cl-library" data-lolly-ui-library>
     <section class="cl-recs" aria-label="${escape(t('Still open'))}">
       <h2>${escape(t('Still open'))}</h2>
       <p class="cl-recs-lede">${escape(t('The 2026-07 component audit is executed - the primitives below are what it produced. Per-recommendation history and each deliberate exception: plans/76-component-audit.md. Not yet done:'))}</p>
@@ -304,6 +307,7 @@ export async function mountComponents(viewEl: HTMLElement, host: HostV1, _params
           ${sec.items.map(item => specimenShell(item, n++)).join('')}
         </div>
       </section>`).join('')}
+    </main>
   `;
 
   // Fill each stage. A live component renders through its LIVE renderer; a markup
@@ -343,6 +347,31 @@ export async function mountComponents(viewEl: HTMLElement, host: HostV1, _params
   // a specimen in light, dark and brand.
   mountHomeFab(viewEl);
   mountThemeFab(viewEl.querySelector('.gallery-topright'), host);
+
+  // The library is deterministic sample content, not a user's project: it is
+  // the safe first app surface to make editable in Penpot. Other views/panels
+  // opt into the same helper only after they define their own redaction policy.
+  const exportBtn = viewEl.querySelector<HTMLButtonElement>('.cl-export-penpot');
+  const library = viewEl.querySelector<HTMLElement>('[data-lolly-ui-library]');
+  exportBtn?.addEventListener('click', async () => {
+    if (!library || exportBtn.disabled) return;
+    const label = exportBtn.textContent;
+    exportBtn.disabled = true;
+    exportBtn.textContent = t('Building Penpot file…');
+    try {
+      await exportAppSurface(host, library, {
+        name: t('Lolly UI library'), filename: 'lolly-ui-library',
+        // A computed colour, rather than `hsl(var(--background))`: the Penpot
+        // writer is intentionally DOM-free once it starts lowering the vector.
+        background: getComputedStyle(document.body).backgroundColor,
+      });
+    } catch (err) {
+      console.warn('[components] Penpot export failed', err);
+    } finally {
+      exportBtn.disabled = false;
+      exportBtn.textContent = label;
+    }
+  });
 
   armViewEnter(viewEl, '.tools-home, .cl-head, .cl-recs, .cl-section');
 }

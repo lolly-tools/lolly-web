@@ -59,14 +59,14 @@
   width: 100%;
   box-sizing: border-box;
   padding: 9px 10px;
-  color: hsl(var(--foreground));
-  background-color: hsl(var(--background));
+  color: var(--ui-color-text-default);
+  background-color: var(--ui-color-surface-canvas);
   border: 0;
-  border-radius: var(--radius);
-  box-shadow: inset 0 1px #fff1, 0 .1rem .3rem #0002;
+  border-radius: var(--ui-radius-panel);
+  box-shadow: var(--ui-effect-bevel), var(--ui-elevation-control);
   font: inherit;
   font-size: var(--fs-md);
-  transition: box-shadow var(--dur-1), background-color var(--dur-1), background-position var(--dur-1);
+  transition: box-shadow var(--ui-motion-feedback), background-color var(--ui-motion-feedback), background-position var(--ui-motion-feedback);
 }
 
 /* Width is the one thing a boxed field argues about most often - a toolbar cell
@@ -80,7 +80,7 @@
 .field-select--sm {
   padding: 5px 8px;
   font-size: var(--fs-md);
-  border-radius: calc(var(--radius) * .5);
+  border-radius: var(--ui-radius-control);
 }
 /* (`.field-select--sm`'s own chevron gutter is set AFTER the `.field-select`
    block below - same specificity, so it has to come later to win.) */
@@ -125,7 +125,7 @@
    a one-pixel promise that the thing opens downward. */
 .field-input:hover:not(:disabled),
 .field-select:hover:not(:disabled) {
-  box-shadow: inset 0 1px #fff2, 0 .12rem .4rem #0004;
+  box-shadow: var(--ui-effect-bevel), var(--ui-elevation-panel);
 }
 .field-select:hover:not(:disabled) { background-position: right 10px calc(50% + 1px); }
 
@@ -134,7 +134,7 @@
 .field-input:focus,
 .field-select:focus {
   outline: none;
-  box-shadow: inset 0 1px #fff2, var(--ring-focus);
+  box-shadow: var(--ui-effect-bevel), var(--ui-effect-focus-halo);
 }
 .field-select:focus { background-position: right 10px calc(50% + 1px); }
 
@@ -143,7 +143,7 @@
    on its own, for anything that adopts it outside the app shell. */
 .field-input:focus-visible,
 .field-select:focus-visible {
-  outline: 2px solid hsl(var(--ring));
+  outline: 2px solid var(--ui-color-focus-ring);
   outline-offset: 2px;
 }
 
@@ -159,7 +159,7 @@
   cursor: not-allowed;
 }
 
-.field-input::placeholder { color: hsl(var(--muted-foreground)); }
+.field-input::placeholder { color: var(--ui-color-text-muted); }
 
 /* Invalid, but only once the user has actually typed something wrong - never
    on an untouched empty required field. */
@@ -177,7 +177,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: .06em;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
 }
 
 /* A label + control stacked, the shape most call-sites hand-roll with an inline
@@ -212,17 +212,17 @@
   min-width: 0;
   box-sizing: border-box;
   padding-inline-start: var(--sp-3);
-  border-radius: calc(var(--radius) * .5);
-  background-color: hsl(var(--background));
+  border-radius: var(--ui-radius-control);
+  background-color: var(--ui-color-surface-canvas);
   /* The same object as `.field-input` above, through the chrome tokens rather than
      that block's older hand-written pair (plans/172: `--bevel` IS the white top
      highlight, `--shadow-1` the soft drop). Hover lifts, focus haloes, exactly as
      every other field here does. */
-  box-shadow: var(--bevel), var(--shadow-1);
-  transition: box-shadow var(--dur-1);
+  box-shadow: var(--ui-effect-bevel), var(--ui-elevation-control);
+  transition: box-shadow var(--ui-motion-feedback);
 }
-.num-field:hover { box-shadow: var(--bevel), var(--shadow-2); }
-.num-field:focus-within { box-shadow: var(--bevel), var(--ring-focus); }
+.num-field:hover { box-shadow: var(--ui-effect-bevel), var(--ui-elevation-panel); }
+.num-field:focus-within { box-shadow: var(--ui-effect-bevel), var(--ui-effect-focus-halo); }
 
 /* The handle. `ew-resize` is the promise that it drags; `touch-action: none`
    is what lets a touch drag reach the pointer handlers instead of scrolling
@@ -234,7 +234,7 @@
   align-items: center;
   justify-content: center;
   min-width: calc(11px * var(--a11y-fs));
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   font-size: var(--fs-xs);
   font-weight: 600;
   line-height: 1;
@@ -265,7 +265,7 @@
   padding: 5px 2px 5px 4px;
   border: 0;
   background: none;
-  color: hsl(var(--foreground));
+  color: var(--ui-color-text-default);
   font: inherit;
   font-size: var(--fs-md);
   font-variant-numeric: tabular-nums;
@@ -274,19 +274,19 @@
    it would draw a box within a box. */
 .num-field-in:focus,
 .num-field-in:focus-visible { outline: none; }
-.num-field-in::placeholder { color: hsl(var(--muted-foreground)); }
+.num-field-in::placeholder { color: var(--ui-color-text-muted); }
 
 .num-field-unit {
   flex: none;
   padding-inline-end: var(--sp-3);
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   font-size: var(--fs-xs);
   font-style: normal;
 }
 
 /* Live drag: the field brightens so the eye stays on the number it is changing
    while the pointer is somewhere else entirely. */
-.num-field.is-scrubbing { box-shadow: var(--bevel), var(--ring-focus); }
+.num-field.is-scrubbing { box-shadow: var(--ui-effect-bevel), var(--ui-effect-focus-halo); }
 
 @media (forced-colors: active) {
   .num-field { border: 1px solid ButtonBorder; }
@@ -322,7 +322,7 @@
      light / dark / brand, all under WCAG 1.4.11's 3:1 for a control boundary.
      A native checkbox got this right for free (Chrome draws #767676, 4.54:1);
      drawing our own means owning it. `--muted-foreground` at .75 measures
-     3.70 / 4.75 / 5.60. The CHECKED state is already fine - a `--primary` fill
+     3.70 / 4.75 / 5.60. The CHECKED state is already fine - an action-primary fill
      is 14.00 / 7.94 / 5.52 - so the failure was invisible until you looked for
      a box that wasn't ticked, which is exactly the case that matters. */
   border: 1.5px solid hsl(var(--muted-foreground) / .75);
@@ -332,16 +332,16 @@
   cursor: pointer;
   transition: background-color var(--dur-1), border-color var(--dur-1), box-shadow var(--dur-1);
 }
-.field-check { border-radius: calc(var(--radius) * .25); }
-.field-radio { border-radius: var(--radius-round); }
+.field-check { border-radius: var(--ui-radius-choice); }
+.field-radio { border-radius: var(--ui-radius-choice-round); }
 
 .field-check:hover:not(:disabled),
-.field-radio:hover:not(:disabled) { border-color: hsl(var(--primary) / .55); }
+.field-radio:hover:not(:disabled) { border-color: color-mix(in srgb, var(--ui-color-action-primary) 55%, transparent); }
 
 .field-check:checked,
 .field-radio:checked {
-  background-color: hsl(var(--primary));
-  border-color: hsl(var(--primary));
+  background-color: var(--ui-color-action-primary);
+  border-color: var(--ui-color-action-primary);
 }
 /* The tick and the dot ride the box, so the mark keeps its proportion inside
    the control at every factor. Both are centred by `background-position: center`
@@ -351,22 +351,23 @@
   background-image: var(--field-tick);
   background-size: var(--fs-xs);
 }
-/* The radio dot is drawn, not fetched - a radial-gradient can read the token
-   directly, so the dot is theme-correct with no second asset. */
+/* The radio dot is drawn, not fetched - a radial-gradient can read the semantic
+   on-primary role directly, so an app-token override reaches it without a
+   second asset. */
 .field-radio:checked {
-  background-image: radial-gradient(circle at center, hsl(var(--primary-foreground)) 0 var(--field-dot), transparent calc(var(--field-dot) + 0.5px));
+  background-image: radial-gradient(circle at center, var(--ui-color-action-on-primary) 0 var(--field-dot), transparent calc(var(--field-dot) + 0.5px));
 }
 
 .field-check:indeterminate {
-  background-color: hsl(var(--primary));
-  border-color: hsl(var(--primary));
-  background-image: linear-gradient(hsl(var(--primary-foreground)) 0 0);
+  background-color: var(--ui-color-action-primary);
+  border-color: var(--ui-color-action-primary);
+  background-image: linear-gradient(var(--ui-color-action-on-primary) 0 0);
   background-size: calc(8px * var(--a11y-fs)) calc(2px * var(--a11y-fs));
 }
 
 .field-check:focus-visible,
 .field-radio:focus-visible {
-  outline: 2px solid hsl(var(--ring));
+  outline: 2px solid var(--ui-color-focus-ring);
   outline-offset: 2px;
 }
 

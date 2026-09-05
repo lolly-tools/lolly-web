@@ -14,7 +14,7 @@
  */
 
 import type { HostV1 } from '@lolly-tools/core/host-v1';
-import { colorToHex, isAlias } from '@lolly/engine';
+import { colorToHex, createTokenSet, isAlias } from '@lolly/engine';
 import {
   listStudioTokens, addStudioToken, setStudioTokenValue, deleteStudioToken,
   defaultValueFor, gradientCss, resolveStopHex, formatStudioValue,
@@ -30,6 +30,9 @@ import { t, tRaw } from '../i18n.ts';
 import { escape } from '../utils.ts';
 import { announce } from '../a11y.ts';
 import { playSfx } from './sfx.ts';
+import { uiTokenCssValue } from '../brand-vars.ts';
+import type { UiTokenKind } from '../brand-vars.ts';
+import { listLollyUiTokens, lollyUiOverride, lollyUiTokenDocument, removeLollyUiOverride, setLollyUiOverride } from './lolly-ui-tokens.ts';
 
 export interface StudioTabCtx {
   host: HostV1;
@@ -76,6 +79,24 @@ const KIND_LABEL = new Map(TOKEN_KINDS.map(k => [k.id, k.label]));
 
 const pathAttr = (t: StudioToken): string => escape(t.path.join('␟')); // ␟ - never in a slug
 const pathFrom = (attr: string): string[] => attr.split('␟');
+
+const UI_KIND: Record<string, UiTokenKind> = {
+  color: 'color', spacing: 'length', borderRadius: 'length', fontSize: 'length', shadow: 'shadow',
+  fontFamilies: 'font', duration: 'duration', cubicBezier: 'easing', number: 'number',
+};
+const UI_STARTER_TOKENS = listLollyUiTokens();
+const uiPath = (path: readonly string[]): string => path.join('␟');
+const uiLabel = (path: readonly string[]): string => path.map(segment => segment.replace(/-/g, ' ')).join(' · ');
+const uiValueText = (value: unknown): string => typeof value === 'string' ? value : JSON.stringify(value);
+function parseUiValue(raw: string, kind: UiTokenKind): unknown {
+  if (kind === 'number') return Number(raw);
+  if (kind === 'shadow' || kind === 'easing') return JSON.parse(raw);
+  // A font-family default is normally a DTCG string array. Keep that portable
+  // form when it is shown as JSON, but let a person type a single family name
+  // without forcing brackets and quotes around it.
+  if (kind === 'font' && raw.trim().startsWith('[')) return JSON.parse(raw);
+  return raw.trim();
+}
 
 /** One token row's value editor, per kind. Every control carries the row's
  *  JSON path so one delegated listener serves them all. */
@@ -159,6 +180,7 @@ export function mountTokensPanel(mount: HTMLElement, ctx: StudioTabCtx): StudioP
       </div>
       <p class="be-neutrals-note">${t("Lolly's ink and paper. Tools use them until the design system has colours of its own.")}</p>
     </div>
+    <section class="be-ui-starter" data-be-ui-starter aria-labelledby="be-ui-starter-title"></section>
     ${panelHead(t('More tokens'), t('The rest of the system - spacing, sizing, stroke widths, opacity, rotation, plain numbers and shadows. Tools that read tokens follow these the way they follow the colours.'))}
     <div class="be-tok-list" data-tok-list></div>
     <form class="be-tok-add" data-tok-add>
@@ -202,6 +224,8 @@ export function mountTokensPanel(mount: HTMLElement, ctx: StudioTabCtx): StudioP
   const neutralsLabel = mount.querySelector<HTMLElement>('[data-be-neutrals-label]');
   const neutralsTiles = mount.querySelector<HTMLElement>('[data-be-neutrals-tiles]');
   const neutralsNote = mount.querySelector<HTMLElement>('.be-neutrals-note');
+  const uiStarter = mount.querySelector<HTMLElement>('[data-be-ui-starter]');
+  let openUiEditor = '';
   const renderNeutrals = (): void => {
     if (!neutralsEl) return;
     const steps = neutralSwatches(ctx);
@@ -227,8 +251,76 @@ export function mountTokensPanel(mount: HTMLElement, ctx: StudioTabCtx): StudioP
   };
   renderNeutrals();
 
+  /**
+   * The app's semantic role set is intentionally a preview, not a preset that
+   * quietly bloats every new brand. A role becomes owned only when its edited
+   * value is saved below. The stock value is resolved against the canonical
+   * Lolly document so an authored override is always a literal the live CSS
+   * projection can validate (rather than an alias into a foundation set the
+   * brand does not carry).
+   */
+  const renderUiStarter = (): void => {
+    if (!uiStarter) return;
+    const defaults = createTokenSet(lollyUiTokenDocument());
+    const groups = new Map<string, typeof UI_STARTER_TOKENS>();
+    let owned = 0;
+    for (const tok of UI_STARTER_TOKENS) {
+      const group = tok.path[0] ?? 'other';
+      const groupItems = groups.get(group) ?? [];
+      groupItems.push(tok); groups.set(group, groupItems);
+      if (lollyUiOverride(ctx.doc(), tok.path)) owned++;
+    }
+    uiStarter.innerHTML = `
+      <div class="be-ui-starter-head">
+        <div>
+          <p class="be-ui-starter-kicker">${t('Lolly UI starter roles')}</p>
+          <h3 class="be-ui-starter-title" id="be-ui-starter-title">${t('The tokens Lolly itself uses')}</h3>
+        </div>
+        <span class="be-ui-starter-count">${owned ? tRaw('{owned} of {total} owned', { owned, total: UI_STARTER_TOKENS.length }) : tRaw('{total} placeholders', { total: UI_STARTER_TOKENS.length })}</span>
+      </div>
+      <p class="be-ui-starter-note"><strong>${t('Preview only.')}</strong> ${t('These defaults power the Lolly app and travel in its Penpot UI library, but they are not added to your brand or token export. Change a value and save it to create just that owned `lolly.ui` token.')}</p>
+      <div class="be-ui-starter-groups">
+        ${[...groups.entries()].map(([group, tokens]) => `
+          <details class="be-ui-group" ${group === 'color' || tokens.some(tok => uiPath(tok.path) === openUiEditor) ? 'open' : ''}>
+            <summary><span>${escape(t(group.replace(/-/g, ' ')))}</span><span class="be-ui-group-count">${tokens.filter(tok => lollyUiOverride(ctx.doc(), tok.path)).length || t('defaults')}</span></summary>
+            <div class="be-ui-role-list">
+              ${tokens.map(tok => {
+                const key = uiPath(tok.path);
+                const own = lollyUiOverride(ctx.doc(), tok.path);
+                const kind = UI_KIND[tok.type];
+                const fallback = defaults.resolve(`lolly.ui.${tok.path.join('.')}`) ?? tok.value;
+                const current = own?.$value ?? own?.value ?? fallback;
+                const textValue = uiValueText(current);
+                const editing = openUiEditor === key;
+                return `<article class="be-ui-role${own ? ' is-owned' : ''}" data-ui-role="${escape(key)}">
+                  <div class="be-ui-role-meta">
+                    <span class="be-ui-role-name">${escape(uiLabel(tok.path))}</span>
+                    <code class="be-ui-role-path">lolly.ui.${escape(tok.path.join('.'))}</code>
+                  </div>
+                  <div class="be-ui-role-state"><span class="be-ui-role-value">${escape(textValue)}</span><span class="be-ui-role-badge">${own ? t('Brand override') : t('Lolly default')}</span></div>
+                  <div class="be-ui-role-actions">
+                    <button type="button" class="be-btn be-btn--sm" data-ui-customize="${escape(key)}">${editing ? t('Close editor') : own ? t('Edit') : t('Customize')}</button>
+                    ${own ? `<button type="button" class="be-btn be-btn--sm" data-ui-reset="${escape(key)}">${t('Reset')}</button>` : ''}
+                  </div>
+                  ${editing ? `<form class="be-ui-edit" data-ui-edit="${escape(key)}">
+                    <label>${escape(tRaw('New value for {name}', { name: uiLabel(tok.path) }))}
+                      ${kind === 'shadow' || kind === 'easing'
+                        ? `<textarea data-ui-value rows="3" spellcheck="false">${escape(textValue)}</textarea>`
+                        : `<input type="text" data-ui-value value="${escape(textValue)}" spellcheck="false" autocomplete="off">`}
+                    </label>
+                    <p>${t('This remains a placeholder until the value changes and you save it.')}</p>
+                    <button type="submit" class="be-cta" data-ui-save="${escape(key)}" disabled>${t('Save brand override')}</button>
+                  </form>` : ''}
+                </article>`;
+              }).join('')}
+            </div>
+          </details>`).join('')}
+      </div>`;
+  };
+
   const render = (): void => {
     renderNeutrals();
+    renderUiStarter();
     const all = listStudioTokens(ctx.doc()).filter(t => t.kind !== 'gradient');
     if (!all.length) {
       list.innerHTML = `<p class="be-tok-empty">${t('No extra tokens yet - most brands start with a spacing unit and a card shadow.')}</p>`;
@@ -249,6 +341,56 @@ export function mountTokensPanel(mount: HTMLElement, ctx: StudioTabCtx): StudioP
     wireShadowFields();
   };
   render();
+
+  uiStarter?.addEventListener('click', (e) => {
+    const target = e.target as HTMLElement;
+    const key = target.closest<HTMLButtonElement>('[data-ui-customize]')?.dataset.uiCustomize;
+    if (key) {
+      openUiEditor = openUiEditor === key ? '' : key;
+      renderUiStarter();
+      if (openUiEditor) uiStarter.querySelector<HTMLInputElement | HTMLTextAreaElement>('[data-ui-value]')?.focus();
+      return;
+    }
+    const reset = target.closest<HTMLButtonElement>('[data-ui-reset]')?.dataset.uiReset;
+    if (!reset) return;
+    const token = UI_STARTER_TOKENS.find(item => uiPath(item.path) === reset);
+    if (!token || !removeLollyUiOverride(ctx.doc(), token.path)) return;
+    openUiEditor = '';
+    renderUiStarter(); ctx.persist(true); ctx.notify();
+    announce(tRaw('{name} reset to the Lolly default', { name: uiLabel(token.path) }));
+  });
+  uiStarter?.addEventListener('input', (e) => {
+    const input = e.target as HTMLInputElement | HTMLTextAreaElement;
+    if (!input.matches('[data-ui-value]')) return;
+    const form = input.closest<HTMLFormElement>('[data-ui-edit]');
+    const key = form?.dataset.uiEdit;
+    const token = UI_STARTER_TOKENS.find(item => uiPath(item.path) === key);
+    const save = form?.querySelector<HTMLButtonElement>('[data-ui-save]');
+    if (!token || !save) return;
+    const own = lollyUiOverride(ctx.doc(), token.path);
+    const defaults = createTokenSet(lollyUiTokenDocument());
+    const initial = uiValueText(own?.$value ?? own?.value ?? defaults.resolve(`lolly.ui.${token.path.join('.')}`) ?? token.value);
+    save.disabled = input.value === initial;
+  });
+  uiStarter?.addEventListener('submit', (e) => {
+    const form = e.target as HTMLFormElement;
+    if (!form.matches('[data-ui-edit]')) return;
+    e.preventDefault();
+    const token = UI_STARTER_TOKENS.find(item => uiPath(item.path) === form.dataset.uiEdit);
+    const input = form.querySelector<HTMLInputElement | HTMLTextAreaElement>('[data-ui-value]');
+    const kind = token ? UI_KIND[token.type] : undefined;
+    if (!token || !input || !kind) return;
+    let value: unknown;
+    try { value = parseUiValue(input.value, kind); }
+    catch { showErr(t('Use valid JSON for this value.')); return; }
+    if (uiTokenCssValue(kind, value) == null) {
+      showErr(t('That value is not safe or usable by the Lolly UI.')); return;
+    }
+    setLollyUiOverride(ctx.doc(), token.path, token.type, value);
+    showErr(''); openUiEditor = '';
+    renderUiStarter(); ctx.persist(true); ctx.notify(); playSfx('click');
+    announce(tRaw('{name} saved as a brand override', { name: uiLabel(token.path) }));
+  });
 
   // One delegated commit for every editor control. Range/number commit on
   // input (they're cheap + atomic); text dimensions commit on change so a

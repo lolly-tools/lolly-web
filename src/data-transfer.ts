@@ -153,7 +153,7 @@ const PREF_KEYS = ['theme', 'sidebarWidth', 'ct-metrics'];
 // newer (forward-compatible) writer - left untouched and counted as `skipped` so
 // the round-trip is honest about what it didn't restore rather than silently
 // dropping it. `assets/blobs/*` is the open-ended image payload.
-const KNOWN_PARTS = new Set(['manifest.json', 'profile.json', 'sessions.json', 'assets.json', 'prefs.json']);
+const KNOWN_PARTS = new Set(['manifest.json', 'profile.json', 'sessions.json', 'assets.json', 'prefs.json', 'design-systems.json']);
 function isKnownPart(path: string): boolean {
   return KNOWN_PARTS.has(path) || path === README_NAME || path.startsWith('assets/blobs/');
 }
@@ -294,6 +294,18 @@ export async function exportBackup(
   }
   entries['sessions.json'] = strToU8(JSON.stringify(sessions, null, 2));
 
+  // The design-system records (plans/186 section 3.9): the material itself
+  // travels as user assets below; the records are what names it and says which
+  // one was active. The shipped record is this build's and is not carried.
+  try {
+    const registry = (host as { designSystems?: { list(): Promise<Array<{ id: string; source: { kind: string } }>>; activeId(): Promise<string> } }).designSystems;
+    if (registry) {
+      const [records, activeId] = await Promise.all([registry.list(), registry.activeId()]);
+      const own = records.filter(r => r.source.kind !== 'shipped');
+      if (own.length) entries['design-systems.json'] = strToU8(JSON.stringify({ active: activeId, records: own }, null, 2));
+    }
+  } catch { /* no registry on this host - the assets still carry the material */ }
+
   // Uploaded images - full records incl. the Blob; split the binary into its own
   // file and keep the rest (id/type/format/dims/version/meta) as metadata.
   const userAssets = await host.assets._exportUserAssets();
@@ -422,6 +434,25 @@ export async function importBackup(
   const sessions = readJson(files, 'sessions.json') ?? [];
   for (const s of sessions) {
     if (s && s.slot && s.data) { await host.state.save(s.slot, s.data, s.thumb ?? null); summary.sessions++; }
+  }
+
+  // Design-system records (plans/186 section 3.9), before the assets so a record's
+  // namespace exists by the time its rows land. Merge by id, the shipped record
+  // is never imported, and the bundle's active pointer is honoured only when
+  // this device has no design system of its own yet (a backup restores a device,
+  // it does not hijack one that is in use).
+  const dsPart = readJson(files, 'design-systems.json');
+  const registry = (host as { designSystems?: { list(): Promise<Array<{ id: string; source: { kind: string } }>>; put(r: unknown): Promise<void>; setActive(id: string): Promise<void>; get(id: string): Promise<unknown> } }).designSystems;
+  if (registry && dsPart && typeof dsPart === 'object' && Array.isArray(dsPart.records)) {
+    const before = await registry.list().catch(() => []);
+    const hadOwn = before.some(r => r.source.kind !== 'shipped');
+    for (const rec of dsPart.records) {
+      if (!rec || typeof rec.id !== 'string' || rec.id === 'shipped') continue;
+      try { await registry.put(rec); } catch { /* an invalid record is skipped */ }
+    }
+    if (!hadOwn && typeof dsPart.active === 'string' && dsPart.active !== 'shipped') {
+      try { await registry.setActive(dsPart.active); } catch { /* the pointer stays */ }
+    }
   }
 
   // Uploaded images - rebuild the Blob from its in-zip bytes + recorded MIME.

@@ -17,8 +17,18 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createHookWorkerCore,
+  lockDownAmbientCapabilities,
+  STRICT_AMBIENT_GLOBALS,
+  STRICT_NAVIGATOR_PROPERTIES,
   type HookWorkerOut, type HookInvokeDoneMsg, type HookInitDoneMsg, type HookHostCallMsg,
+  workerRpcMethods,
 } from './hook-worker.worker.ts';
+import {
+  getWorkerHookExecutor,
+  HookIsolationUnavailableError,
+  strictHostShape,
+  WORKER_HOOK_BUDGET_MS,
+} from './hook-worker.ts';
 
 const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
@@ -163,3 +173,70 @@ test('worker core: a compile error is reported so the client can fall back', asy
   assert.deepEqual(init.declared, [], 'no hooks are declared from a broken source');
 });
 
+test('worker core reports DOM export hooks that strict isolation must refuse', () => {
+  const { core, posted } = harness();
+  core.handle({
+    t: 'init', runId: 7,
+    hooksSource: 'function onInit(){return {}}; function beforeExport(){}; function exportStill(){}',
+    tokenDoc: null, tokenExcluded: [], hostShape: {}, seeds: {}, shell: 'web', capabilities: [],
+  });
+  const init = posted.find((m): m is HookInitDoneMsg => m.t === 'init-done');
+  assert.deepEqual(init?.declared, ['onInit']);
+  assert.deepEqual(init?.inRealmOnlyDeclared, ['beforeExport', 'exportStill']);
+});
+
+test('worker RPC authorization excludes methods omitted, seeded, or co-located', () => {
+  const allowed = workerRpcMethods({
+    assets: ['get'],
+    export: ['render', 'download'],
+    media: ['isAvailable', 'start'],
+    color: ['distinct'],
+  });
+  assert.deepEqual([...allowed].sort(), ['assets.get', 'export.download']);
+});
+
+test('strict host shape requires declared capabilities and hides privileged namespaces', () => {
+  const shape = strictHostShape({
+    assets: ['get', '_cacheBlob'],
+    ['net']: ['fetch'],
+    clipboard: ['write'],
+    recorder: ['record'],
+    export: ['download'],
+    profile: ['get'],
+  }, ['network']);
+  assert.deepEqual(shape, { assets: ['get'], ['net']: ['fetch'] });
+});
+
+test('strict worker lockdown removes ambient network, storage, and worker bypasses', () => {
+  const fake = Object.fromEntries(STRICT_AMBIENT_GLOBALS.map(name => [name, () => name])) as Record<string, unknown>;
+  fake.navigator = Object.fromEntries(STRICT_NAVIGATOR_PROPERTIES.map(name => [name, { name }]));
+  lockDownAmbientCapabilities(fake);
+  for (const name of STRICT_AMBIENT_GLOBALS) {
+    assert.equal(fake[name], undefined, `${name} is unavailable`);
+    const descriptor = Object.getOwnPropertyDescriptor(fake, name);
+    assert.equal(descriptor?.configurable, false, `${name} cannot be restored`);
+    assert.equal(descriptor?.writable, false, `${name} cannot be reassigned`);
+  }
+  for (const name of STRICT_NAVIGATOR_PROPERTIES) {
+    assert.equal((fake.navigator as Record<string, unknown>)[name], undefined, `navigator.${name} is unavailable`);
+  }
+});
+
+test('isolated execution budgets cover every worker hook', () => {
+  assert.deepEqual(Object.keys(WORKER_HOOK_BUDGET_MS).sort(), [
+    'exportFile', 'onFrame', 'onInit', 'onInput', 'onLevel',
+  ]);
+  assert.ok(Object.values(WORKER_HOOK_BUDGET_MS).every(ms => ms > 0 && ms <= 10_000));
+});
+
+test('strict worker executor fails closed when Worker is unavailable', async () => {
+  const executor = getWorkerHookExecutor({ allowInRealmFallback: false });
+  const tool = {
+    trustClass: 'sideloaded-consented',
+    hooksSource: 'function onInit(){ return {}; }',
+    manifest: { id: 'custom' },
+  } as Parameters<typeof executor>[0];
+  const host = { log() {} } as unknown as Parameters<typeof executor>[1];
+  await assert.rejects(executor(tool, host), (error: unknown) =>
+    error instanceof HookIsolationUnavailableError && error.code === 'isolation-unavailable');
+});

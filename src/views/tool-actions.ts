@@ -10,27 +10,63 @@
  * This module never value-imports from ./tool.ts (that would create a runtime
  * cycle) - it only `import type`s the shell-side aliases it needs from there.
  */
-import { serializeUrlState, UNITS, toCssPx, CMYK_CONDITIONS, DEFAULT_CMYK_CONDITION, C2PA_FORMATS, composeSong, cuesToSrt, cuesToVtt, generatedSongSpec, HDR_DEFAULTS, VIDEO_CODEC_STRINGS, preflight, PRINT_MARK_FORMATS, SEPARATING_FORMATS, computeCost, parseRateCard, isRateCardError, validateRateCard, isNonAffineTransform, selectFramePage, frameFilterApplies, LEXICON_VERSION, deriveExportFilename } from '@lolly/engine';
+import {
+  serializeUrlState,
+  UNITS,
+  toCssPx,
+  CMYK_CONDITIONS,
+  DEFAULT_CMYK_CONDITION,
+  C2PA_FORMATS,
+  composeSong,
+  cuesToSrt,
+  cuesToVtt,
+  generatedSongSpec,
+  HDR_DEFAULTS,
+  VIDEO_CODEC_STRINGS,
+  preflight,
+  PRINT_MARK_FORMATS,
+  SEPARATING_FORMATS,
+  computeCost,
+  parseRateCard,
+  isRateCardError,
+  validateRateCard,
+  isNonAffineTransform,
+  selectFramePage,
+  frameFilterApplies,
+  LEXICON_VERSION,
+  deriveExportFilename,
+} from '@lolly/engine';
 import type {
-  Fact, PreflightInput, PreflightJob, PreflightManifest, PreflightSwatch, StageFacts, Count, CostWorking,
+  Fact,
+  PreflightInput,
+  PreflightJob,
+  PreflightManifest,
+  PreflightSwatch,
+  StageFacts,
+  Count,
+  CostWorking,
 } from '@lolly/engine';
 import type { MoneyContext } from '@lolly-tools/core';
 import type { Profile } from '@lolly-tools/core/host-v1';
 import { escape, safeHref } from '../utils.js';
 import { currentLang, t, tRaw } from '../i18n.ts';
+import { fmtBytes } from '../lib/format.ts';
 import { icon } from '../lib/icons.ts';
 import { navigateTo } from '../nav.js';
 import { announce } from '../a11y.js';
 import { livePalette } from '../lib/live-palette.ts';
-import { isOwnProfile, ownDigest, listEligible, embedRowLabel } from '../lib/press-profile-embed.ts';
+import {
+  isOwnProfile,
+  ownDigest,
+  listEligible,
+  embedRowLabel,
+} from '../lib/press-profile-embed.ts';
 import { marksToCsv } from '../lib/print-marks-csv.ts';
 import { placedImageLabel, isVectorImageSrc } from '../lib/placed-image.ts';
 import { helpTip, wireHelpTips, linkHelpDescriptions } from '../components/help-tip.js';
 import { mountBodyPopover } from '../components/body-popover.ts';
-import { showScrubReadout, hideScrubReadout } from '../components/scrub-readout.js';
 import { runTemplateScripts } from '../lib/render-lifecycle.ts';
-import { playScrubTick } from '../lib/sfx.ts';
-import { sendTargetsFor } from '../lib/send-target.ts';
+import { sendTargetId, sendTargetsFor } from '../lib/send-target.ts';
 import { markSyncDirty } from '../lib/sync-service.ts';
 import { loopRank } from '../lib/neurospicy.ts';
 import { songUrlToWavBlobUrl, renderSong } from '../lib/zzfxm-render.ts';
@@ -40,15 +76,35 @@ import { aspectWarning } from './export-size.js';
 import { MAX_TIME_S } from './timeline-math.ts';
 import { buildStepsDropped, restMsOf } from '../lib/motion-model.ts';
 import { bumpMetric, recordFormat } from '../metrics.js';
-import { videoSupport, audioSupport, cmykTiffSupport, tiffSupport, liveCaptureSupport, durableSupport, proFormatSupport } from '../bridge/format-support.js';
+import {
+  videoSupport,
+  audioSupport,
+  cmykTiffSupport,
+  tiffSupport,
+  liveCaptureSupport,
+  durableSupport,
+  probeDurableSupport,
+  proFormatSupport,
+} from '../bridge/format-support.js';
 import { isAudioFormat as isAudioFmt } from '../lib/audio-encode.js';
 import { formatTriggerHtml, formatPanelHtml, wireFormatPicker } from './export-format-picker.ts';
-import { getAudioTake, onAudioTakeChange, saveTakeMp3, saveTakeNative, takeNativeExt } from '../lib/audio-take.ts';
+import {
+  getAudioTake,
+  onAudioTakeChange,
+  saveTakeMp3,
+  saveTakeNative,
+  takeNativeExt,
+} from '../lib/audio-take.ts';
 import { formatCaptions } from '../lib/caption-format.ts';
 import { stashedTranscript } from '../lib/stt-job.ts';
 import { transcriptWordsOf, ttsWordsOf } from './timeline-captions.ts';
 import { isProFormat, formatOptionsHtml, depthFact, applyDepthFact } from './export-depth.ts';
-import { preflightRowHtml, preflightView, applyPreflight, wirePreflight } from './export-preflight.ts';
+import {
+  preflightRowHtml,
+  preflightView,
+  applyPreflight,
+  wirePreflight,
+} from './export-preflight.ts';
 import { costPanelHtml, costView, applyCostPanel } from './cost-panel.ts';
 import type { CostAuthoringContext } from './cost-panel.ts';
 import { listRateCards, listCatalogRateCards, getRateCardBlob } from '../lib/rate-cards.ts';
@@ -60,10 +116,21 @@ import { CENTRE_LOW } from '../bridge/audio-envelope.ts';
 import { getExportPolicy, exportAffordance } from '../lib/export-policy.ts';
 import { saveExportPrefs } from '../lib/export-prefs.ts';
 import { openApprovalRequest } from '../lib/approval-request.ts';
+import {
+  mp4BeforeWebm,
+  packageFormatChoice,
+  packageOptionsHtml,
+  saveAsBridge,
+  saveAsButtonHtml,
+} from './export-package-options.ts';
+import {
+  applyExportDimensionFields,
+  convertExportDimensionFields,
+  type ExportDimensionUpdate,
+} from './export-dimension-fields.ts';
 
 import type { InputValue } from '../../../../engine/src/inputs.js';
 import type { ToolManifest } from '../../../../engine/src/loader.js';
-import type { Runtime } from '../../../../engine/src/runtime.js';
 import type { Unit } from '../../../../engine/src/units.js';
 import { stepFor, displayIn, convertLength, roundIn } from '../lib/unit-steps.ts';
 import { stageDeckAsSequence, stagedDeckMs } from '../lib/deck-as-sequence.ts';
@@ -82,35 +149,20 @@ import type {
   PrintMarks,
 } from './tool.ts';
 
+import {
+  exportTargetNode,
+  flatExportNode,
+  addScrubBehavior,
+  captureThumbnail,
+  THUMB_CAPTURE_TIMEOUT_MS,
+} from './tool-action-helpers.ts';
+export { exportTargetNode, flatExportNode, captureThumbnail } from './tool-action-helpers.ts';
 // Content Credentials default: the shared policy in lib/c2pa-policy.ts (also
 // applied by the offscreen batch/zip renderer, so zips sign like this button).
 // The C2PA card only renders for C2PA-capable formats, so it's a no-op for
 // graphic-less tools. Re-exported below for tool.ts.
 import { c2paDefaultOn } from '../lib/c2pa-policy.ts';
 import { jellyActive } from '../lib/jelly.ts';
-
-// Human-readable labels and file extensions for format identifiers that differ
-// Export-target opt-in (plan: sandbox render). A tool whose exported output is
-// NOT its whole canvas - e.g. a code sandbox whose rendered preview is transplanted
-// into a same-origin mirror node - marks that node with `data-export-root`; the
-// walker then rasterises the mirror instead of the IDE chrome. Inert by construction
-// for every other tool: no marker → querySelector null → the canvas itself is used.
-export const exportTargetNode = (c: HTMLElement | null): HTMLElement | null =>
-  c?.querySelector<HTMLElement>('[data-export-root]') ?? c;
-
-// Flat single-image paths (copy, send-to, thumbnails): with artboards in the doc,
-// capture the ACTIVE artboard's page rather than the whole canvas - the canvas rect
-// is just the pasteboard there, and would leak scratch boxes and sibling boards into
-// the shot (plans/142 WP-C). free-canvas stamps the active artboard's id on the
-// canvas (`data-fc-active-frame`). Multi-page paths (PDF / PPTX / the still
-// fan-out) keep exportTargetNode: their walkers need every [data-pdf-page].
-export const flatExportNode = (c: HTMLElement | null): HTMLElement | null => {
-  const root = c?.querySelector<HTMLElement>('[data-export-root]');
-  if (root) return root;
-  const fid = c?.dataset.fcActiveFrame;
-  const esc = (s: string): string => (typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(s) : s);
-  return (fid ? c!.querySelector<HTMLElement>(`[data-pdf-page][data-frame-id="${esc(fid)}"]`) : null) ?? c;
-};
 
 /** Structural mirror of the engine MediaFrame (not re-exported from the engine index) - the
  *  RGBA frame host.media.renderFrameAt hands the tool's onFrame during a deterministic export. */
@@ -121,32 +173,80 @@ type MediaFrameLike = { width: number; height: number; data: Uint8ClampedArray; 
  *  SubRip for the editors and platforms that only take `.srt`. Both are built from
  *  the SAME cues, so the file beside the video and the track inside it always say
  *  the same words at the same moments. */
-interface CaptionText { vtt: string; srt: string }
+interface CaptionText {
+  vtt: string;
+  srt: string;
+}
 
+// Human-readable labels and file extensions for format identifiers that differ
 // from their raw string (e.g. "pdf-cmyk" → "Print PDF" / ".pdf").
-const FMT_LABEL: Record<string, string> = { 'pdf-cmyk': 'Print PDF', 'cmyk-tiff': 'Print TIFF', tiff: 'TIFF', 'jpeg': 'JPG', 'webm': 'WebM', 'mp4': 'MP4', apng: 'aPNG', 'webp-anim': 'Animated WebP', 'svg-anim': 'Animated SVG',
-  emf: 'EMF (old)', eps: 'EPS', 'eps-cmyk': 'EPS (CMYK)', dxf: 'DXF (cut file)', pptx: 'PowerPoint', penpot: 'Penpot', docx: 'Word', odt: 'OpenDocument', ics: 'Calendar', vcf: 'vCard', ico: 'Icon', zip: 'ZIP', csv: 'CSV', json: 'JSON',
+const FMT_LABEL: Record<string, string> = {
+  'pdf-cmyk': 'Print PDF',
+  'cmyk-tiff': 'Print TIFF',
+  tiff: 'TIFF',
+  jpeg: 'JPG',
+  webm: 'WebM',
+  mp4: 'MP4',
+  apng: 'aPNG',
+  'webp-anim': 'Animated WebP',
+  'svg-anim': 'Animated SVG',
+  emf: 'EMF (old)',
+  eps: 'EPS',
+  'eps-cmyk': 'EPS (CMYK)',
+  dxf: 'DXF (cut file)',
+  pptx: 'PowerPoint',
+  penpot: 'Penpot',
+  docx: 'Word',
+  odt: 'OpenDocument',
+  ics: 'Calendar',
+  vcf: 'vCard',
+  ico: 'Icon',
+  zip: 'ZIP',
+  csv: 'CSV',
+  json: 'JSON',
   // A SCORM course package (plans/180 M-D1) - a zip an LMS imports. The qualifier is
   // there because "SCORM" alone means nothing to anyone who has not been sent to one.
   scorm: 'SCORM (LMS)',
   // Palette exchange (color-palette): a design-tokens JSON, CSS/SCSS variable
   // blocks, a GIMP palette, and a binary Adobe swatch file. extFor falls back to
   // the format id for each (blob MIME isn't mp4/webm/zip), so no FMT_EXT entry.
-  css: 'CSS', scss: 'SCSS', gpl: 'GIMP palette', ase: 'Adobe swatches',
+  css: 'CSS',
+  scss: 'SCSS',
+  gpl: 'GIMP palette',
+  ase: 'Adobe swatches',
   // Audio only. Opus ships in a WebM container, so the label says so rather than
   // leaving a download named .webm looking like a video.
-  wav: 'WAV', mp3: 'MP3', m4a: 'M4A (AAC)', opus: 'Opus (WebM)' };
+  wav: 'WAV',
+  mp3: 'MP3',
+  m4a: 'M4A (AAC)',
+  opus: 'Opus (WebM)',
+  // Linux packages (plan 197 M6): an installable RPM of the render, and the no-root tarball.
+  rpm: 'RPM',
+  'tar.gz': 'Tarball',
+};
 // `penpot` is spelled out rather than left to extFor's fallback: the archive IS a
 // zip, and only its `application/x-penpot` blob type keeps the MIME sniff below from
 // renaming the download to .zip - which Penpot's own Import will not take.
 // `scorm` IS a zip and wants the .zip extension (an LMS import takes one); the branch
 // below names the file itself, so this entry only covers any other path that asks.
-const FMT_EXT: Record<string, string>   = { 'pdf-cmyk': 'pdf', 'cmyk-tiff': 'tiff', 'jpeg': 'jpg', 'eps-cmyk': 'eps', 'webp-anim': 'webp', 'svg-anim': 'svg', penpot: 'penpot', scorm: 'zip' };
+const FMT_EXT: Record<string, string> = {
+  'pdf-cmyk': 'pdf',
+  'cmyk-tiff': 'tiff',
+  jpeg: 'jpg',
+  'eps-cmyk': 'eps',
+  'webp-anim': 'webp',
+  'svg-anim': 'svg',
+  penpot: 'penpot',
+  scorm: 'zip',
+  rpm: 'rpm',
+  'tar.gz': 'tar.gz',
+};
 // Animated WebP is credentialed via the still-'webp' path (renderFormat maps
-// webp-anim→webp before stamping), but the engine's C2PA_FORMATS lists only 'webp' - 
+// webp-anim→webp before stamping), but the engine's C2PA_FORMATS lists only 'webp' -
 // so treat webp-anim as stampable in the UI gating too, else the toggle/card would be
 // hidden and opts.c2pa never set, silently dropping the default provenance.
-const isC2paFmt = (f: string | undefined): boolean => !!f && (C2PA_FORMATS.includes(f) || f === 'webp-anim');
+const isC2paFmt = (f: string | undefined): boolean =>
+  !!f && (C2PA_FORMATS.includes(f) || f === 'webp-anim');
 
 // The durable in-pixel watermark embeds two ways: the standalone raster encoders
 // (renderRaster/renderBitmap/renderTiff's opts.imprint branch), and - for the
@@ -157,29 +257,40 @@ const isC2paFmt = (f: string | undefined): boolean => !!f && (C2PA_FORMATS.inclu
 // is gated on whether a mark was actually applied, never on this list, so no
 // over-claim (see export.ts stampC2pa). Mirrors the deep-link gate in views/tool.ts.
 // Zip carries the flag through to its bundled raster + container members.
-const isImprintFmt = (f: string | undefined): boolean => !!f && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff', 'bmp', 'pdf', 'pdf-cmyk', 'pptx'].includes(f);
+const isImprintFmt = (f: string | undefined): boolean =>
+  !!f &&
+  ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff', 'bmp', 'pdf', 'pdf-cmyk', 'pptx'].includes(f);
 // Durable (neural TrustMark) embed is RASTER-ONLY - no pdf/pptx container path yet
 // (export.ts durableEmbedCanvas; see plans/28-durable-content-credentials.md).
-const isDurableFmt = (f: string | undefined): boolean => !!f && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff'].includes(f);
+const isDurableFmt = (f: string | undefined): boolean =>
+  !!f && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff'].includes(f);
 // HDR (Rec.2100 PQ) export. Raster: PNG (cICP) + JPEG (PQ ICC) + AVIF (native nclx
 // colr) + TIFF (PQ ICC tag, archival). Video: mp4/webm carry a 10-bit PQ track with a
 // colr/nclx (Colour on WebM) box (plan 154 WP-2). WebP is excluded on purpose - it has
 // no working HDR decode path, so a PQ WebP would just look dark.
-const isHdrFmt = (f: string | undefined): boolean => !!f && ['png', 'jpg', 'jpeg', 'avif', 'tiff', 'mp4', 'webm'].includes(f);
+const isHdrFmt = (f: string | undefined): boolean =>
+  !!f && ['png', 'jpg', 'jpeg', 'avif', 'tiff', 'mp4', 'webm'].includes(f);
 
 // Print marks & bleed apply to the three print formats (pdf / pdf-cmyk / cmyk-tiff).
 // Defaults when the user turns the card on; the CSV tokens (crop,reg,bleed,bars)
 // match the engine's `marks` URL param (engine/src/url-mode.js parseMarks). Bleed is
 // carried as a dimension string. The Color profile (press condition) card applies to
 // the two CMYK formats.
-const DEFAULT_PRINT_MARKS: PrintMarks = { crop: true, registration: true, bleed: true, colorBars: false, provenance: true };
+const DEFAULT_PRINT_MARKS: PrintMarks = {
+  crop: true,
+  registration: true,
+  bleed: true,
+  colorBars: false,
+  provenance: true,
+};
 // Both read the ENGINE's tables (engine/src/preflight.ts) rather than restating
 // the literals. The card that OFFERS bleed and the check that reports it missing
 // have to agree by construction: two copies is how "the panel hides the bleed card
 // but the URL still carries bleed" happens. `isCmykFmt` is the two formats that
 // build a process separation AND emit through the panel's Color profile card, i.e.
 // the separating set minus eps-cmyk, which this panel does not offer settings for.
-const isCmykFmt  = (f: string | undefined): boolean => SEPARATING_FORMATS.has(f ?? '') && f !== 'eps-cmyk';
+const isCmykFmt = (f: string | undefined): boolean =>
+  SEPARATING_FORMATS.has(f ?? '') && f !== 'eps-cmyk';
 const isPrintFmt = (f: string | undefined): boolean => PRINT_MARK_FORMATS.has(f ?? '');
 // Print INTENT is narrower than print CAPABILITY. Every PRINT_MARK_FORMATS member
 // can CARRY bleed and marks (that is what keeps the card on offer for pdf/svg/eps),
@@ -195,27 +306,50 @@ const isPressFmt = (f: string | undefined): boolean => SEPARATING_FORMATS.has(f 
 // to read a stored CSV back and so dropped print marks entirely).
 
 // Read the Print marks card from an export-panel element `el` (empty when off).
-const printEnabled  = (el: Element | null | undefined): boolean => Boolean(el?.querySelector<HTMLInputElement>('[data-action="print-enable"]')?.checked);
+const printEnabled = (el: Element | null | undefined): boolean =>
+  Boolean(el?.querySelector<HTMLInputElement>('[data-action="print-enable"]')?.checked);
 function readBleed(el: Element | null | undefined): string {
   if (!printEnabled(el)) return '';
-  const mm = parseFloat(el?.querySelector<HTMLInputElement>('[data-action="print-bleed"]')?.value ?? '');
+  const mm = parseFloat(
+    el?.querySelector<HTMLInputElement>('[data-action="print-bleed"]')?.value ?? ''
+  );
   return mm > 0 ? `${mm}mm` : '';
 }
 function readMarks(el: Element | null | undefined): string {
   if (!printEnabled(el)) return '';
   return marksToCsv({
-    crop:         el?.querySelector<HTMLInputElement>('[data-action="mark-crop"]')?.checked,
+    crop: el?.querySelector<HTMLInputElement>('[data-action="mark-crop"]')?.checked,
     registration: el?.querySelector<HTMLInputElement>('[data-action="mark-reg"]')?.checked,
-    bleed:        el?.querySelector<HTMLInputElement>('[data-action="mark-bleed"]')?.checked,
-    colorBars:    el?.querySelector<HTMLInputElement>('[data-action="mark-bars"]')?.checked,
-    provenance:   el?.querySelector<HTMLInputElement>('[data-action="mark-prov"]')?.checked,
+    bleed: el?.querySelector<HTMLInputElement>('[data-action="mark-bleed"]')?.checked,
+    colorBars: el?.querySelector<HTMLInputElement>('[data-action="mark-bars"]')?.checked,
+    provenance: el?.querySelector<HTMLInputElement>('[data-action="mark-prov"]')?.checked,
   });
 }
 
 // Visual formats a ZIP export bundles (data/text and video are excluded). The
 // shell passes these as opts.bundleFormats; the export bridge renders each and
 // archives them (see renderZip).
-const ZIP_BUNDLE = new Set(['png', 'jpg', 'jpeg', 'webp', 'webp-anim', 'avif', 'svg', 'svg-anim', 'emf', 'eps', 'eps-cmyk', 'dxf', 'pdf', 'pdf-cmyk', 'cmyk-tiff', 'tiff', 'gif', 'apng', 'ico']);
+const ZIP_BUNDLE = new Set([
+  'png',
+  'jpg',
+  'jpeg',
+  'webp',
+  'webp-anim',
+  'avif',
+  'svg',
+  'svg-anim',
+  'emf',
+  'eps',
+  'eps-cmyk',
+  'dxf',
+  'pdf',
+  'pdf-cmyk',
+  'cmyk-tiff',
+  'tiff',
+  'gif',
+  'apng',
+  'ico',
+]);
 
 // Which video containers this browser can actually produce (MediaRecorder OR the
 // WebCodecs probe - see videoSupport). Read per call, NOT snapshotted at module
@@ -226,21 +360,27 @@ const ZIP_BUNDLE = new Set(['png', 'jpg', 'jpeg', 'webp', 'webp-anim', 'avif', '
 const CMYK_TIFF_OK = cmykTiffSupport();
 const TIFF_OK = tiffSupport();
 const keepFormat = (f: string, deepExportOk = false): boolean =>
-  f === 'webm' ? videoSupport().webm
-  : f === 'mp4' ? videoSupport().mp4
-  // wav/mp3 are pure JS and always pass; m4a/opus need the platform's WebCodecs
-  // AudioEncoder, so they are hidden where it cannot produce them.
-  : isAudioFmt(f) ? audioSupport()[f]
-  : f === 'cmyk-tiff' ? CMYK_TIFF_OK
-  : f === 'tiff' ? TIFF_OK
-  // The pro float formats (exr/hdr) reach the picker two ways: the generic Node
-  // float rasteriser (proFormatSupport - false on the web), OR a tool that owns
-  // them through an exportStill hook computed in float via host.codec (bitmap
-  // studio). `deepExportOk` is that second, tool-specific producer - the runtime
-  // routes exr/hdr to exportStill before the 8-bit DOM path (runtime.ts:752), so
-  // where a tool can genuinely originate the float master the option is honest.
-  : isProFormat(f) ? (proFormatSupport() || deepExportOk)
-  : true;
+  f === 'webm'
+    ? videoSupport().webm
+    : f === 'mp4'
+      ? videoSupport().mp4
+      : // wav/mp3 are pure JS and always pass; m4a/opus need the platform's WebCodecs
+        // AudioEncoder, so they are hidden where it cannot produce them.
+        isAudioFmt(f)
+        ? audioSupport()[f]
+        : f === 'cmyk-tiff'
+          ? CMYK_TIFF_OK
+          : f === 'tiff'
+            ? TIFF_OK
+            : // The pro float formats (exr/hdr) reach the picker two ways: the generic Node
+              // float rasteriser (proFormatSupport - false on the web), OR a tool that owns
+              // them through an exportStill hook computed in float via host.codec (bitmap
+              // studio). `deepExportOk` is that second, tool-specific producer - the runtime
+              // routes exr/hdr to exportStill before the 8-bit DOM path (runtime.ts:752), so
+              // where a tool can genuinely originate the float master the option is honest.
+              isProFormat(f)
+              ? proFormatSupport() || deepExportOk
+              : true;
 
 const fmtLabel = (f: string): string => FMT_LABEL[f] ?? f.toUpperCase();
 
@@ -251,13 +391,16 @@ function extFor(fmt: string, blob: Blob | null | undefined): string {
   // Audio first: an .m4a IS an MP4 container and Opus audio IS a WebM one, so the
   // MIME sniff below would rename both to their video extension.
   if (isAudioFmt(fmt)) return fmt === 'opus' ? 'webm' : fmt;
-  if (t.includes('mp4'))  return 'mp4';
+  // Packages: a .tar.gz blob is 'application/gzip', which contains "zip" - so it must
+  // return before the zip sniff below or it would download as ".zip".
+  if (fmt === 'rpm' || fmt === 'tar.gz') return FMT_EXT[fmt] ?? fmt;
+  if (t.includes('mp4')) return 'mp4';
   if (t.includes('webm')) return 'webm';
   // A contact sheet (cuts > 1) of a still format comes back as a ZIP of N members,
   // so the requested format id says 'png' while the bytes are an archive. Same rule
   // as the video fallback above: the Blob wins, or the user downloads a sheet.png
   // that no image viewer can open.
-  if (t.includes('zip'))  return 'zip';
+  if (t.includes('zip')) return 'zip';
   return FMT_EXT[fmt] ?? fmt;
 }
 
@@ -310,7 +453,7 @@ function renderActions(
   // (canvas.fixedCanvas - connector geometry stays native-locked). Keeping the two in lock-
   // step is what makes the export-bar and rail size paths agree. See refreshCanvasPreview.
   const canvasBlocksInput = manifest.inputs?.find(
-    (i) => i.type === 'blocks' && (i as { canvas?: unknown }).canvas,
+    (i) => i.type === 'blocks' && (i as { canvas?: unknown }).canvas
   ) as { canvas?: { fixedCanvas?: boolean } } | undefined;
   const artboardFollowsDims =
     manifest.render.layout === 'editor' &&
@@ -334,19 +477,23 @@ function renderActions(
   // and the save-only bar for input-less tools). Jelly mode swaps in a neutral
   // <jelly-button>; the `save-btn` class stays for the icon-collapse @container
   // rules, which are class-keyed, and carries no box paint of its own.
-  const saveBtnHtml = () => jellyActive()
-    ? `<jelly-button variant="platinum" data-action="save" data-sfx="save" class="save-btn" title="Save to your library">${SAVE_SVG}<span data-save-label>Save</span></jelly-button>`
-    : `<button data-action="save" data-sfx="save" class="save-btn" title="Save to your library">${SAVE_SVG}<span data-save-label>Save</span></button>`;
+  const saveBtnHtml = () =>
+    jellyActive()
+      ? `<jelly-button variant="platinum" data-action="save" data-sfx="save" class="save-btn" title="Save to your library">${SAVE_SVG}<span data-save-label>Save</span></jelly-button>`
+      : `<button data-action="save" data-sfx="save" class="save-btn" title="Save to your library">${SAVE_SVG}<span data-save-label>Save</span></button>`;
 
   // The exact payload a save persists - live input values plus the `__` markers
   // (tool identity + export settings). Shared by performSave and the "Make
   // variants" action so a variant is byte-for-byte a normal saved session.
   function sessionSnapshot(): Record<string, unknown> & { __export_format: string } {
-    const values: Record<string, InputValue> = Object.fromEntries(runtime.getModel().map(i => [i.id, i.value]));
+    const values: Record<string, InputValue> = Object.fromEntries(
+      runtime.getModel().map((i) => [i.id, i.value])
+    );
     // The effective export format (user-selected, or the tool's default). Drives
     // a vector (SVG) thumbnail for vector tools - see captureThumbnail.
     const fmt = el?.querySelector<HTMLSelectElement>('[data-action="format"]')?.value ?? '';
-    const filename = el?.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() ?? '';
+    const filename =
+      el?.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() ?? '';
     return {
       ...values,
       ...(experience.sessionMeta?.() ?? {}),
@@ -357,16 +504,20 @@ function renderActions(
       // state.ts maps `__label` onto the session record's label, which is what the
       // Projects tiles and the session list show; `undefined` (never '') leaves the
       // existing auto-label alone, so an unnamed document keeps the title it always had.
-      __label:           filename || undefined,
+      __label: filename || undefined,
       __export_filename: filename,
-      __export_format:   fmt,
-      __export_width:    el?.querySelector<HTMLInputElement>('[data-action="export-width"]')?.value ?? '',
-      __export_height:   el?.querySelector<HTMLInputElement>('[data-action="export-height"]')?.value ?? '',
-      __export_unit:     el?.querySelector<HTMLSelectElement>('[data-action="export-unit"]')?.value ?? 'px',
-      __export_dpi:      el?.querySelector<HTMLInputElement>('[data-action="export-dpi"]')?.value ?? '',
-      __export_profile:  el?.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.value ?? '',
-      __export_bleed:    readBleed(el),
-      __export_marks:    readMarks(el),
+      __export_format: fmt,
+      __export_width:
+        el?.querySelector<HTMLInputElement>('[data-action="export-width"]')?.value ?? '',
+      __export_height:
+        el?.querySelector<HTMLInputElement>('[data-action="export-height"]')?.value ?? '',
+      __export_unit:
+        el?.querySelector<HTMLSelectElement>('[data-action="export-unit"]')?.value ?? 'px',
+      __export_dpi: el?.querySelector<HTMLInputElement>('[data-action="export-dpi"]')?.value ?? '',
+      __export_profile:
+        el?.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.value ?? '',
+      __export_bleed: readBleed(el),
+      __export_marks: readMarks(el),
     };
   }
 
@@ -376,22 +527,26 @@ function renderActions(
   // button stuck on "Saving…" silently, which made "Save & leave" appear to do
   // nothing (and then click a now-disabled button - a no-op). The thumbnail is
   // best-effort (captureThumbnail swallows its own errors), so it never blocks a save.
-  async function performSave(saveBtnEl?: HTMLElement | null, opts?: { folderId?: string | null }): Promise<boolean> {
-    // Either the native <button> or its jelly-mode <jelly-button> stand-in - 
+  async function performSave(
+    saveBtnEl?: HTMLElement | null,
+    opts?: { folderId?: string | null }
+  ): Promise<boolean> {
+    // Either the native <button> or its jelly-mode <jelly-button> stand-in -
     // disabling goes through the ATTRIBUTE, which both honour (jelly-button
     // observes it and syncs its shadow button).
-    const btn = (saveBtnEl ?? el?.querySelector('[data-action="save"]')) as HTMLButtonElement | null;
+    const btn = (saveBtnEl ??
+      el?.querySelector('[data-action="save"]')) as HTMLButtonElement | null;
     if (!btn || btn.dataset.saving) return false;
     const label = btn.querySelector<HTMLElement>('[data-save-label]') ?? btn;
-    const idle  = label.textContent;
+    const idle = label.textContent;
     btn.dataset.saving = '1';
     btn.toggleAttribute('disabled', true);
     label.textContent = 'Saving…';
     try {
       // Reuse the session's slot after the first save (or when resuming an existing
       // session) so a re-save updates it in place; only mint a new slot the first time.
-      const slot  = activeSlot || `${manifest.id}:${Date.now()}`;
-      const data  = sessionSnapshot();
+      const slot = activeSlot || `${manifest.id}:${Date.now()}`;
+      const data = sessionSnapshot();
       // Durable FIRST. The thumbnail is best-effort decoration, but it used to be
       // AWAITED ahead of the write - so in a throttled tab (hidden or occluded:
       // rAF frozen, waitForQuiescence stalled) the put trailed the click by up to
@@ -400,16 +555,21 @@ function renderActions(
       // F-A3's root cause). Now the record is written in milliseconds; the
       // thumbnail patches it below, whenever it arrives.
       await host.state.save(slot, data, null);
-      markSyncDirty();   // device sync (plans/138): a saved session is a change to push (no-op if sync is off)
+      markSyncDirty(); // device sync (plans/138): a saved session is a change to push (no-op if sync is off)
       // Background thumbnail patch. captureThumbnail swallows its own errors, and
       // the race caps a render that never quiesces. The generation check keeps a
       // slow capture from clobbering a NEWER re-save's data with this older data.
       const gen = ++saveGen;
       void Promise.race([
         captureThumbnail(manifest, canvasEl, runtime, exportUnscaled, data.__export_format),
-        new Promise<null>(resolve => setTimeout(() => resolve(null), THUMB_CAPTURE_TIMEOUT_MS)),
-      ]).then((thumb) => (thumb && gen === saveGen ? host.state.save(slot, data, thumb) : undefined))
-        .catch(() => { /* the thumbnail is an extra - the session is already saved */ });
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), THUMB_CAPTURE_TIMEOUT_MS)),
+      ])
+        .then((thumb) =>
+          thumb && gen === saveGen ? host.state.save(slot, data, thumb) : undefined
+        )
+        .catch(() => {
+          /* the thumbnail is an extra - the session is already saved */
+        });
       // Remember the slot so the next save updates THIS session rather than creating a
       // duplicate (see activeSlot above). Set before filing so a fresh first-save is
       // both filed into its folder AND pinned as the active slot for later edits.
@@ -419,18 +579,22 @@ function renderActions(
       // absent (the plain button / programmatic saves) fall back to the folder the Projects
       // "+ New tool" flow claimed at mount (fileIntoFolder). `moveItem(slot, null)` is a
       // no-op, so an explicit "root" choice simply doesn't file. One-shot, best-effort.
-      const target = opts && 'folderId' in opts ? opts.folderId ?? null : fileIntoFolder;
+      const target = opts && 'folderId' in opts ? (opts.folderId ?? null) : fileIntoFolder;
       if (target) {
         try {
           const { createFolderStore } = await import('../folders.js');
-          await createFolderStore(host as unknown as Parameters<typeof createFolderStore>[0]).moveItem(slot, target, 'session');
-        } catch (e) { /* filing is best-effort */ }
+          await createFolderStore(
+            host as unknown as Parameters<typeof createFolderStore>[0]
+          ).moveItem(slot, target, 'session');
+        } catch (e) {
+          /* filing is best-effort */
+        }
       }
       fileIntoFolder = null;
       label.textContent = 'Saved';
       announce('Saved');
       exportCompleted();
-      return true;                              // leave the button as-is; the caller navigates away
+      return true; // leave the button as-is; the caller navigates away
     } catch (e) {
       console.error('Save failed:', e);
       label.textContent = idle;
@@ -453,7 +617,13 @@ function renderActions(
       delete btn.dataset.saving;
     }, 1500);
     void import('../lib/undo-toast.ts').then(({ showUndoToast }) =>
-      showUndoToast({ message: t('Saved'), actionLabel: t('Open Projects'), undo: () => navigateTo('#/p'), duration: 6000 }));
+      showUndoToast({
+        message: t('Saved'),
+        actionLabel: t('Open Projects'),
+        undo: () => navigateTo('#/p'),
+        duration: 6000,
+      })
+    );
   }
 
   // plans/142 W2 (Andy's call): the quick Save follows the Save dialog's lead -
@@ -474,7 +644,9 @@ function renderActions(
         if (store.folderOfRef(await store.list(), activeSlot)) return null;
       }
       return remembered;
-    } catch { return null; }
+    } catch {
+      return null;
+    }
   }
 
   if (manifest.render.export === false) {
@@ -485,27 +657,43 @@ function renderActions(
     // NOT persist the user's file bytes to storage (Save would write them to
     // IndexedDB, contradicting the "nothing is stored/uploaded" promise).
     const optedOut = Array.isArray(manifest.render.actions) && manifest.render.actions.length === 0;
-    if (!hasInputs || optedOut) { el.innerHTML = ''; return {}; }
+    if (!hasInputs || optedOut) {
+      el.innerHTML = '';
+      return {};
+    }
     el.innerHTML = `<div class="export-action-buttons">${saveBtnHtml()}${copyUrlBtn}</div>`;
-    el.querySelector<HTMLButtonElement>('[data-action="save"]')!.addEventListener('click', async function (this: HTMLButtonElement) {
-      const qsFolder = await quickSaveFolder();
-      if (await performSave(this, qsFolder ? { folderId: qsFolder } : undefined)) settleSaveButton(this);
-    });
+    el.querySelector<HTMLButtonElement>('[data-action="save"]')!.addEventListener(
+      'click',
+      async function (this: HTMLButtonElement) {
+        const qsFolder = await quickSaveFolder();
+        if (await performSave(this, qsFolder ? { folderId: qsFolder } : undefined))
+          settleSaveButton(this);
+      }
+    );
     return { save: performSave, getSlot: () => activeSlot };
   }
 
-  const actions    = manifest.render.actions ?? ['copy', 'download', 'save'];
-  const exportOpts = runtime.getModel().filter(i => i.group === 'export' && i.control === 'checkbox');
-  const isAnimatedFmt = (f: string | undefined): boolean => f === 'webm' || f === 'mp4' || f === 'gif' || f === 'apng' || f === 'webp-anim' || f === 'svg-anim';
+  const actions = manifest.render.actions ?? ['copy', 'download', 'save'];
+  const exportOpts = runtime
+    .getModel()
+    .filter((i) => i.group === 'export' && i.control === 'checkbox');
+  const isAnimatedFmt = (f: string | undefined): boolean =>
+    f === 'webm' ||
+    f === 'mp4' ||
+    f === 'gif' ||
+    f === 'apng' ||
+    f === 'webp-anim' ||
+    f === 'svg-anim';
   // True video containers only - gif/apng are animated but can't carry audio.
-  const isVideoFmt    = (f: string | undefined): boolean => f === 'webm' || f === 'mp4';
+  const isVideoFmt = (f: string | undefined): boolean => f === 'webm' || f === 'mp4';
   // Mirrors VECTOR_FORMATS in engine/src/inputs.js - formats where text→path
   // outlining (the 'Convert paths' toggle) applies. Bitmap formats don't.
-  const isVectorFmt   = (f: string | undefined): boolean => f === 'svg' || f === 'pdf' || f === 'pdf-cmyk';
+  const isVectorFmt = (f: string | undefined): boolean =>
+    f === 'svg' || f === 'pdf' || f === 'pdf-cmyk';
   // Formats that carry an alpha channel, and so have something to be transparent
   // ABOUT. Gates the transparency mirror below: a JPEG, a PDF page or a video frame
   // has no alpha to keep, so offering the toggle there would promise nothing.
-  const isAlphaFmt    = (f: string | undefined): boolean =>
+  const isAlphaFmt = (f: string | undefined): boolean =>
     !!f && ['png', 'webp', 'avif', 'svg', 'svgz', 'apng', 'webp-anim', 'svg-anim'].includes(f);
   // Show only the video containers this browser can produce (Safari→mp4, Firefox→webm,
   // recent Chrome→both); non-video formats always pass. See keepFormat / videoSupport.
@@ -513,48 +701,49 @@ function renderActions(
   // float formats (exr/hdr) on-device even without the Node float rasteriser - so the
   // Pro <optgroup> opens for it here (e.g. Bitmap Studio's EXR/Radiance masters).
   const toolDeepExport = !!manifest.hooks?.exportStill && !!host.codec;
-  const capFormats    = manifest.render.formats.filter(f => keepFormat(f, toolDeepExport));
+  const capFormats = manifest.render.formats.filter((f) => keepFormat(f, toolDeepExport));
   // Org format policy (lib/export-policy.ts formatsFor): a cooperative narrowing
   // overlay, exactly like a choice input's allow list - intersected with the
   // capability-filtered set, applied only when at least one declared format
   // survives (a stale/foreign list never renders an empty select), and dormant
   // (undefined) with no control plane. The server enforces the same set on its
   // own render path; this is honest UI, not the boundary.
-  const orgFormats    = getExportPolicy()?.formatsFor(manifest.id);
-  const orgAllow      = orgFormats && new Set(orgFormats.map(f => (f === 'jpeg' ? 'jpg' : f)));
-  const orgNarrowed   = orgAllow ? capFormats.filter(f => orgAllow.has(f)) : capFormats;
+  const orgFormats = getExportPolicy()?.formatsFor(manifest.id);
+  const orgAllow = orgFormats && new Set(orgFormats.map((f) => (f === 'jpeg' ? 'jpg' : f)));
+  const orgNarrowed = orgAllow ? capFormats.filter((f) => orgAllow.has(f)) : capFormats;
   // WP-B Decision 1: MP4 leads WebM in the select where BOTH survive keepFormat - its
   // C2PA credential is standard bmff, WebM's is Lolly's own mapping. This lifts mp4 to
   // just before webm and moves nothing else, so initialFmt (which falls back to
   // formats[0]) defaults to mp4 wherever mp4 actually probed supported; a webm-only or
   // mp4-only tool is untouched. WebM stays for transparency (WP-G) and Firefox.
-  const mp4BeforeWebm = (fmts: string[]): string[] => {
-    const i = fmts.indexOf('mp4'), j = fmts.indexOf('webm');
-    if (i === -1 || j === -1 || i < j) return fmts;   // not both present, or already mp4-first
-    const out = fmts.filter(f => f !== 'mp4');
-    out.splice(out.indexOf('webm'), 0, 'mp4');
-    return out;
-  };
-  const formats       = mp4BeforeWebm(orgNarrowed.length ? orgNarrowed : capFormats);
-  const hasAnimated   = formats.some(isAnimatedFmt);
+  const baseFormats = mp4BeforeWebm(orgNarrowed.length ? orgNarrowed : capFormats);
+  const packageChoice = packageFormatChoice(baseFormats);
+  const { formats, innerFormat: pkgInner, enabled: canPackage } = packageChoice;
+  const hasAnimated = formats.some(isAnimatedFmt);
   // matchExportFormat: default the export to a dropped file's OWN format (a JPEG →
   // jpg) until the user picks one. Reads AssetRef.format off the flagged input.
-  const matchFmtInput = (manifest.inputs || []).find((i) => (i as { matchExportFormat?: boolean }).matchExportFormat);
+  const matchFmtInput = (manifest.inputs || []).find(
+    (i) => (i as { matchExportFormat?: boolean }).matchExportFormat
+  );
   const assetExportFormat = (): string | null => {
     if (!matchFmtInput) return null;
-    const v = runtime.getModel().find((m) => m.id === matchFmtInput.id)?.value as { format?: string } | null | undefined;
-    let f = (v && typeof v === 'object' && v.format) ? String(v.format).toLowerCase() : '';
+    const v = runtime.getModel().find((m) => m.id === matchFmtInput.id)?.value as
+      | { format?: string }
+      | null
+      | undefined;
+    let f = v && typeof v === 'object' && v.format ? String(v.format).toLowerCase() : '';
     if (f === 'jpeg') f = 'jpg';
     return f && formats.includes(f) ? f : null;
   };
   // A ?format= link or a saved session (exportDefaults.format) is an explicit choice
   // and wins; otherwise follow the upload's format, falling back to the first format.
-  const initialFmt    = (exportDefaults.format && formats.includes(exportDefaults.format))
-    ? exportDefaults.format
-    : (assetExportFormat() || formats[0]);
+  const initialFmt =
+    exportDefaults.format && formats.includes(exportDefaults.format)
+      ? exportDefaults.format
+      : assetExportFormat() || formats[0];
   const videoDefaults = (manifest.render.video ?? {}) as { wait?: number; duration?: number };
   // A link's ?wait= / ?seconds= (exportDefaults.video) seed the fields the way ?format= seeds the picker.
-  const defaultWait     = exportDefaults.video?.wait ?? videoDefaults.wait ?? 1;
+  const defaultWait = exportDefaults.video?.wait ?? videoDefaults.wait ?? 1;
 
   // ── Timed compositions (Sequence Studio) ───────────────────────────────────
   // A timed artboard carries [data-sequence] plus data-seq-ms="<derived length>",
@@ -564,14 +753,21 @@ function renderActions(
   // timeline - so the export bar takes its duration FROM the timeline instead, and
   // keeps following it as clips are trimmed/added, until the user types their own
   // value (see durationUserSet below).
-  const seqStageEl = (): HTMLElement | null => !canvasEl ? null
-    : (canvasEl.matches?.('[data-sequence]') ? canvasEl : canvasEl.querySelector<HTMLElement>('[data-sequence]'));
+  const seqStageEl = (): HTMLElement | null =>
+    !canvasEl
+      ? null
+      : canvasEl.matches?.('[data-sequence]')
+        ? canvasEl
+        : canvasEl.querySelector<HTMLElement>('[data-sequence]');
   /** The live timeline length in seconds, or null when this isn't a timed composition. */
   const seqDurationS = (): number | null => {
     const stage = seqStageEl();
     if (!stage) return null;
-    const msEl = stage.matches?.('[data-seq-ms]') ? stage
-      : (stage.querySelector<HTMLElement>('[data-seq-ms]') ?? canvasEl?.querySelector<HTMLElement>('[data-seq-ms]') ?? null);
+    const msEl = stage.matches?.('[data-seq-ms]')
+      ? stage
+      : (stage.querySelector<HTMLElement>('[data-seq-ms]') ??
+        canvasEl?.querySelector<HTMLElement>('[data-seq-ms]') ??
+        null);
     const ms = parseFloat(msEl?.getAttribute('data-seq-ms') ?? '');
     if (!Number.isFinite(ms) || ms <= 0) return null;
     // Centisecond precision: exact for whole-second timelines, and never rounds a
@@ -585,7 +781,9 @@ function renderActions(
    *  the field still read the manifest's 8 s (Andy, 2026-09-03: the duration may
    *  grow, but it has to be seen and settable at export). */
   const clipDurationS = (): number | null => {
-    const el = canvasEl?.matches?.('[data-clip-ms]') ? canvasEl : canvasEl?.querySelector<HTMLElement>('[data-clip-ms]');
+    const el = canvasEl?.matches?.('[data-clip-ms]')
+      ? canvasEl
+      : canvasEl?.querySelector<HTMLElement>('[data-clip-ms]');
     const ms = parseFloat(el?.getAttribute('data-clip-ms') ?? '');
     if (!Number.isFinite(ms) || ms <= 0) return null;
     return Math.min(MAX_TIME_S, Math.max(0.1, Math.round(ms / 10) / 100));
@@ -593,7 +791,9 @@ function renderActions(
   /** The bed in-point in seconds a tool stamps on its stage as data-audio-start
    *  (0 when it doesn't, or the value is unusable) - see the export handler. */
   const stageAudioStart = (): number => {
-    const elS = canvasEl?.matches?.('[data-audio-start]') ? canvasEl : canvasEl?.querySelector<HTMLElement>('[data-audio-start]');
+    const elS = canvasEl?.matches?.('[data-audio-start]')
+      ? canvasEl
+      : canvasEl?.querySelector<HTMLElement>('[data-audio-start]');
     const s = parseFloat(elS?.getAttribute('data-audio-start') ?? '');
     return Number.isFinite(s) && s > 0 ? s : 0;
   };
@@ -606,7 +806,8 @@ function renderActions(
   // a [data-sequence] stage: those route motion export through the compositor,
   // whereas an animated tool renders its own frames via __lollyFrameRender.
   const animDurationS = (): number | null => {
-    const a = (window as unknown as { __lollyAnim?: { active?: boolean; loopMs?: number } }).__lollyAnim;
+    const a = (window as unknown as { __lollyAnim?: { active?: boolean; loopMs?: number } })
+      .__lollyAnim;
     if (!a || a.active === false) return null;
     const ms = Number(a.loopMs);
     if (!Number.isFinite(ms) || ms <= 0) return null;
@@ -614,11 +815,16 @@ function renderActions(
   };
   const seqInitialDuration = seqDurationS();
   const animInitialDuration = seqInitialDuration != null ? null : animDurationS();
-  const defaultDuration = exportDefaults.video?.seconds ?? seqInitialDuration ?? animInitialDuration ?? videoDefaults.duration ?? 5;
+  const defaultDuration =
+    exportDefaults.video?.seconds ??
+    seqInitialDuration ??
+    animInitialDuration ??
+    videoDefaults.duration ??
+    5;
   // A sequence (or a long animation loop) can legitimately run far past the 60s the
   // recording field allows for ordinary "record the animation for a while" tools, so
   // it takes the timeline's own ceiling (1 hour). Non-timed tools keep the 60s cap.
-  const durationMax = (seqInitialDuration != null || animInitialDuration != null) ? MAX_TIME_S : 60;
+  const durationMax = seqInitialDuration != null || animInitialDuration != null ? MAX_TIME_S : 60;
 
   // Directional glyphs that live inside the dimension inputs: ↔ marks width,
   // ↕ marks height, so the two fields read as "wide × tall" without labels.
@@ -629,7 +835,9 @@ function renderActions(
   // value pre-selects the ephemeral-lifetime picker in the protection card.
   // Hoisted above autoFilename because the name suffix reads the same defaults.
   const c2paInitOn = exportDefaults.c2pa ? exportDefaults.c2pa.on : c2paDefaultOn(manifest);
-  const c2paInitDays = [7, 30, 90, 365].includes(exportDefaults.c2pa?.days as number) ? exportDefaults.c2pa!.days : 30;
+  const c2paInitDays = [7, 30, 90, 365].includes(exportDefaults.c2pa?.days as number)
+    ? exportDefaults.c2pa!.days
+    : 30;
 
   // Will this export carry provenance? Reads the live protection checkboxes once
   // they exist; before the panel paints it falls back to the same defaults the
@@ -638,9 +846,11 @@ function renderActions(
     const fmt = el?.querySelector<HTMLSelectElement>('[data-action="format"]')?.value ?? initialFmt;
     const c2 = el?.querySelector<HTMLInputElement>('[data-action="pdf-c2pa"]');
     const im = el?.querySelector<HTMLInputElement>('[data-action="imprint"]');
-    const c2On = c2 ? c2.checked : (formats.some(isC2paFmt) && c2paInitOn);
-    const imOn = im ? im.checked : (formats.some(isImprintFmt) && exportDefaults.imprint !== false);
-    return (c2On && (isC2paFmt(fmt) || fmt === 'zip')) || (imOn && (isImprintFmt(fmt) || fmt === 'zip'));
+    const c2On = c2 ? c2.checked : formats.some(isC2paFmt) && c2paInitOn;
+    const imOn = im ? im.checked : formats.some(isImprintFmt) && exportDefaults.imprint !== false;
+    return (
+      (c2On && (isC2paFmt(fmt) || fmt === 'zip')) || (imOn && (isImprintFmt(fmt) || fmt === 'zip'))
+    );
   };
 
   // Content-derived auto filename (plans/140 S1): render.filenameFrom names the
@@ -650,7 +860,11 @@ function renderActions(
   // A file that will carry provenance gets a "-lolly" suffix: the name itself
   // tells a recipient there is a credential to check on #/verify.
   const autoFilename = (): string => {
-    const base = deriveExportFilename(manifest, Object.fromEntries(runtime.getModel().map(i => [i.id, i.value]))) || manifest.name;
+    const base =
+      deriveExportFilename(
+        manifest,
+        Object.fromEntries(runtime.getModel().map((i) => [i.id, i.value]))
+      ) || manifest.name;
     return provenanceOn() && !/-lolly$/i.test(base) ? `${base}-lolly` : base;
   };
 
@@ -674,7 +888,9 @@ function renderActions(
       <div class="filename-extension">
         <input type="text" class="export-filename" data-action="filename"
               value="${escape(exportDefaults.filename ?? '')}" placeholder="${escape(autoFilename())}" spellcheck="false">
-        ${formats.length > 1 ? `
+        ${
+          formats.length > 1
+            ? `
           <select data-action="format" aria-label="Export format" hidden aria-hidden="true" tabindex="-1">
             ${formatOptions}
           </select>
@@ -688,8 +904,10 @@ function renderActions(
   // Tier 2 - dimensions. The primary sizing control: full-width, prominent,
   // with the directional icon inside each field.
   const initUnit = exportDefaults.unit ?? 'px';
-  const initDpi  = exportDefaults.dpi ?? 300;
-  const dimsRow = manifest.render.dims !== false ? `
+  const initDpi = exportDefaults.dpi ?? 300;
+  const dimsRow =
+    manifest.render.dims !== false
+      ? `
       <div class="export-dims">
         <div class="dim-field">
           ${ICON_W}
@@ -701,25 +919,31 @@ function renderActions(
           <input type="number" data-action="export-height" data-scrub aria-label="Height"
                  value="${exportDefaults.height ?? manifest.render.height}" min="1" max="100000" step="any">
         </div>
-        ${manifest.render.units === false ? '' : `
+        ${
+          manifest.render.units === false
+            ? ''
+            : `
         <select class="dim-unit" data-action="export-unit" aria-label="Units"
                 title="Units for width & height. Physical units (mm/cm/in/pt) export at the right size for print - PDF as a true page, raster at the chosen DPI.">
-          ${UNITS.map(u => `<option value="${u}" ${u === initUnit ? 'selected' : ''}>${u}</option>`).join('')}
+          ${UNITS.map((u) => `<option value="${u}" ${u === initUnit ? 'selected' : ''}>${u}</option>`).join('')}
         </select>
         <label class="dim-dpi" data-dpi-field style="display:${initUnit === 'px' ? 'none' : 'inline-flex'}"
                title="Raster resolution for physical units (ignored for vector formats).">
           <input type="number" data-action="export-dpi" value="${initDpi}" min="36" max="1200" step="1" aria-label="DPI">
           <span>DPI</span>
-        </label>`}
-      </div>` : '';
+        </label>`
+        }
+      </div>`
+      : '';
 
   // Editor-only aspect-ratio guard (manifest.render.aspectWarning). A hidden alert
   // beside the dimension controls, shown when the chosen page size falls outside the
   // tool's supported orientation band - see updateAspectWarning(). Never exported.
   const ICON_WARN = `<svg class="aspect-warn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
-  const aspectWarnRow = (manifest.render.aspectWarning && manifest.render.dims !== false)
-    ? `<div class="export-aspect-warning" data-aspect-warning role="alert" hidden>${ICON_WARN}<span data-aspect-warning-text></span></div>`
-    : '';
+  const aspectWarnRow =
+    manifest.render.aspectWarning && manifest.render.dims !== false
+      ? `<div class="export-aspect-warning" data-aspect-warning role="alert" hidden>${ICON_WARN}<span data-aspect-warning-text></span></div>`
+      : '';
 
   // Export-fidelity guard. Some CSS the canvas can paint has no equivalent in the
   // chosen output format, and until now it simply vanished from the file with nothing
@@ -733,24 +957,33 @@ function renderActions(
   // setting reads as deliberate; revealed only when "Print PDF" (pdf-cmyk) is the
   // chosen format. Options come from the engine's CMYK_CONDITIONS registry.
   const ICON_DROP = `<svg class="cmyk-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.7s6.5 7 6.5 11.8a6.5 6.5 0 0 1-13 0C5.5 9.7 12 2.7 12 2.7z"/></svg>`;
-  const hasCmyk     = formats.includes('pdf-cmyk') || formats.includes('cmyk-tiff');
-  const initProfile = (exportDefaults.profile && (CMYK_CONDITIONS as Record<string, unknown>)[exportDefaults.profile])
-    ? exportDefaults.profile : DEFAULT_CMYK_CONDITION;
+  const hasCmyk = formats.includes('pdf-cmyk') || formats.includes('cmyk-tiff');
+  const initProfile =
+    exportDefaults.profile && (CMYK_CONDITIONS as Record<string, unknown>)[exportDefaults.profile]
+      ? exportDefaults.profile
+      : DEFAULT_CMYK_CONDITION;
   const cmykOptions = Object.entries(CMYK_CONDITIONS)
-    .map(([key, c]) => `<option value="${escape(key)}" ${key === initProfile ? 'selected' : ''}>${escape((c as { info?: string }).info)}</option>`)
+    .map(
+      ([key, c]) =>
+        `<option value="${escape(key)}" ${key === initProfile ? 'selected' : ''}>${escape((c as { info?: string }).info)}</option>`
+    )
     .join('');
   // The full explanation lives under the info icon (helpTip), not as a wall of body
   // text - same affordance as the C2PA / Imprint rows.
-  const cmykTip = hasCmyk ? helpTip(
-    "Names the CMYK press standard your printer targets: the Print PDF's output intent, the Print TIFF's metadata (the pixels stay untagged DeviceCMYK). An Embed row carries a profile from this device inside the PDF, which is what PDF/X-4 conformance needs; the file then claims it unless something else in the export can't (RGB artwork, the credit-text stamp, a strong password)."
-  ) : null;
-  const cmykRow = hasCmyk ? `
+  const cmykTip = hasCmyk
+    ? helpTip(
+        "Names the CMYK press standard your printer targets: the Print PDF's output intent, the Print TIFF's metadata (the pixels stay untagged DeviceCMYK). An Embed row carries a profile from this device inside the PDF, which is what PDF/X-4 conformance needs; the file then claims it unless something else in the export can't (RGB artwork, the credit-text stamp, a strong password)."
+      )
+    : null;
+  const cmykRow = hasCmyk
+    ? `
       <div class="section-card export-cmyk" data-cmyk-only style="display:${isCmykFmt(initialFmt) ? 'flex' : 'none'}">
         <span class="cmyk-head help-tip-host">${ICON_DROP}<span>Color profile</span>${cmykTip!.button}${cmykTip!.pop}</span>
         <select class="field-select" data-action="cmyk-profile" aria-label="CMYK press profile">
           ${cmykOptions}
         </select>
-      </div>` : '';
+      </div>`
+    : '';
 
   // Tier 2.6 - PDF password (standard "PDF" only). A non-empty value locks the
   // exported PDF on open (jsPDF standard security handler, copy/modify restricted).
@@ -774,8 +1007,10 @@ function renderActions(
   const hasPdf = formats.includes('pdf');
   const hasZip = formats.includes('zip');
   const pdfPassInitOpen = Boolean(exportDefaults.password);
-  const pdfPassRow = (hasPdf || hasZip) ? `
-      <div class="section-card export-pdfpass${pdfPassInitOpen ? ' is-open' : ''}" data-pdf-only style="display:${(initialFmt === 'pdf' || initialFmt === 'zip') ? 'flex' : 'none'}">
+  const pdfPassRow =
+    hasPdf || hasZip
+      ? `
+      <div class="section-card export-pdfpass${pdfPassInitOpen ? ' is-open' : ''}" data-pdf-only style="display:${initialFmt === 'pdf' || initialFmt === 'zip' ? 'flex' : 'none'}">
         <button type="button" class="pdfpass-head" data-action="pdfpass-toggle" aria-expanded="${pdfPassInitOpen}">${ICON_LOCK}<span>Password protect</span></button>
         <div class="pdfpass-body" data-pdfpass-body style="display:${pdfPassInitOpen ? 'flex' : 'none'}">
           <input type="password" data-action="pdf-password" autocomplete="new-password" spellcheck="false"
@@ -787,7 +1022,10 @@ function renderActions(
           </select>
           <p class="pdfpass-hint" data-pdfpass-hint>Requires this password to open the PDF. A basic 40-bit lock - it opens in any PDF app and travels in a share link, so treat it as a deterrent, not protection for confidential files.</p>
         </div>
-      </div>` : '';
+      </div>`
+      : '';
+
+  const pkgRow = packageOptionsHtml(canPackage, initialFmt, manifest.id);
 
   // Tier 2.65 - Content Credentials, shown for every stampable container
   // (engine C2PA_FORMATS: pdf, png/apng, jpg, gif, svg, tiff, webp, mp4, webm).
@@ -805,12 +1043,15 @@ function renderActions(
   // reads as just "C2PA Credentials" + a toggle. The tip links to OUR on-device
   // /verify page (not the Adobe-run contentcredentials.org checker) so people can
   // confirm their own exports here.
-  const c2paTip = c2paFormats.length ? helpTip(
-    'Embeds a signed C2PA manifest recording that this file was made with Lolly - plus your name when profile details are on. '
-    + 'Signed on-device, so viewers show it as an unverified credential unless you enrol a verified identity (Profile → Content Credentials).',
-    { href: '#/verify', text: 'Check a file →' }
-  ) : null;
-  const c2paRow = c2paFormats.length ? `
+  const c2paTip = c2paFormats.length
+    ? helpTip(
+        'Embeds a signed C2PA manifest recording that this file was made with Lolly - plus your name when profile details are on. ' +
+          'Signed on-device, so viewers show it as an unverified credential unless you enrol a verified identity (Profile → Content Credentials).',
+        { href: '#/verify', text: 'Check a file →' }
+      )
+    : null;
+  const c2paRow = c2paFormats.length
+    ? `
       <div class="section-card export-c2pa" data-c2pa-only style="display:${isC2paFmt(initialFmt) || initialFmt === 'zip' ? 'flex' : 'none'}">
         <label class="c2pa-enable field-toggle help-tip-host">
           <input type="checkbox" class="field-check" data-action="pdf-c2pa" ${c2paInitOn ? 'checked' : ''}>
@@ -822,11 +1063,12 @@ function renderActions(
         <div class="c2pa-life" data-c2pa-life>
           <label class="c2pa-life-pick"><span class="c2pa-life-label">${escape(t('Verified for'))}</span>
             <select class="field-select field-select--sm field-select--auto" data-action="c2pa-days" aria-label="Credential lifetime">
-              ${[7, 30, 90, 365].map(d => `<option value="${d}"${d === c2paInitDays ? ' selected' : ''}>${d} days</option>`).join('')}
+              ${[7, 30, 90, 365].map((d) => `<option value="${d}"${d === c2paInitDays ? ' selected' : ''}>${d} days</option>`).join('')}
             </select>
           </label>
         </div>
-      </div>` : '';
+      </div>`
+    : '';
 
   // Tier 2.66 - the Lolly pixel imprint (engine pixel-watermark.ts): a durable,
   // imperceptible mark mixed into the exported pixels. It completes the provenance
@@ -842,13 +1084,25 @@ function renderActions(
   // your own photos) therefore carries no detectable Imprint even with it on - so
   // say so rather than let the toggle over-promise. It rides baked content:
   // rotated or CSS-filtered elements, effect layers, inline SVG art, rendered charts.
-  const containerImprintFmt = imprintFmts.some((f) => f === 'pptx' || f === 'pdf' || f === 'pdf-cmyk');
-  const imprintTip = imprintFmts.length ? helpTip(
-    t('Hides the Lolly Imprint - a durable, invisible watermark - in the image pixels. It survives re-encoding and screenshots, so any copy of the file can be recognised later.')
-    + (containerImprintFmt ? ' ' + t('It rides embedded raster images, not the vector shapes and text - a slide or page built only of headings, boxes and a vector logo has no pixels to carry it.') : ''),
-    { href: '#/verify', text: t('Check a file →') }
-  ) : null;
-  const imprintRow = imprintFmts.length ? `
+  const containerImprintFmt = imprintFmts.some(
+    (f) => f === 'pptx' || f === 'pdf' || f === 'pdf-cmyk'
+  );
+  const imprintTip = imprintFmts.length
+    ? helpTip(
+        t(
+          'Hides the Lolly Imprint - a durable, invisible watermark - in the image pixels. It survives re-encoding and screenshots, so any copy of the file can be recognised later.'
+        ) +
+          (containerImprintFmt
+            ? ' ' +
+              t(
+                'It rides embedded raster images, not the vector shapes and text - a slide or page built only of headings, boxes and a vector logo has no pixels to carry it.'
+              )
+            : ''),
+        { href: '#/verify', text: t('Check a file →') }
+      )
+    : null;
+  const imprintRow = imprintFmts.length
+    ? `
       <div class="section-card export-c2pa export-imprint" data-imprint-only style="display:${isImprintFmt(initialFmt) || initialFmt === 'zip' ? 'flex' : 'none'}">
         <label class="c2pa-enable field-toggle help-tip-host">
           <input type="checkbox" class="field-check" data-action="imprint" ${exportDefaults.imprint !== false ? 'checked' : ''}>
@@ -856,7 +1110,8 @@ function renderActions(
           ${imprintTip!.button}
           ${imprintTip!.pop}
         </label>
-      </div>` : '';
+      </div>`
+    : '';
 
   // Tier 2.67 - the DURABLE credential (opt-in): a neural TrustMark-format mark
   // carrying Lolly's id, so the "made with Lolly" link survives a metadata strip
@@ -864,22 +1119,36 @@ function renderActions(
   // Imprint, this is a per-export neural encode PLUS a one-time model download
   // (expensive performance-wise), so it's a deliberate opt-in. Raster only. The
   // toggle round-trips into the URL as ?durable=1 (see views/tool.ts syncUrl).
-  // Hidden entirely where the neural embed can't work offline (Tauri desktop/mobile - 
-  // no origin to fetch the ~33 MB model from), so the toggle never shows as a no-op.
-  const durableFmts = durableSupport() ? formats.filter(isDurableFmt) : [];
-  const durableTip = durableFmts.length ? helpTip(
-    t('Embeds a durable, invisible credential in the pixels with an on-device AI model, so a copy survives metadata stripping and re-encoding - and TrustMark-aware tools can read it too. Heavier than the Imprint (a neural pass plus a one-time model download), so it is off by default.'),
-    { href: '#/verify', text: t('Check a file →') }
-  ) : null;
-  const durableRow = durableFmts.length ? `
-      <div class="section-card export-c2pa export-durable" data-durable-only style="display:${isDurableFmt(initialFmt) ? 'flex' : 'none'}">
+  //
+  // The card is BUILT for every durable-capable format but SHOWN only where a route
+  // to the model exists (bridge/format-support.ts's durableSupport): cached bytes,
+  // the same origin, or the models base a Tauri build points at. On the web that is
+  // true at once, exactly as before. Under Tauri it starts hidden and the async
+  // probe below reveals it once the model host answers - and leaves it hidden on a
+  // 404, so the toggle is never a no-op. The consent line under it states the
+  // one-time download the way the upscale and matte dialogs do.
+  let durableRouteOk = durableSupport();
+  const durableFmts = formats.filter(isDurableFmt);
+  const durableTip = durableFmts.length
+    ? helpTip(
+        t(
+          'Embeds a durable, invisible credential in the pixels with an on-device AI model, so a copy survives metadata stripping and re-encoding - and TrustMark-aware tools can read it too. Heavier than the Imprint (a neural pass plus a one-time model download), so it is off by default.'
+        ),
+        { href: '#/verify', text: t('Check a file →') }
+      )
+    : null;
+  const durableRow = durableFmts.length
+    ? `
+      <div class="section-card export-c2pa export-durable" data-durable-only style="display:${durableRouteOk && isDurableFmt(initialFmt) ? 'flex' : 'none'}">
         <label class="c2pa-enable field-toggle help-tip-host">
           <input type="checkbox" class="field-check" data-action="durable" ${exportDefaults.durable ? 'checked' : ''}>
           <span class="c2pa-head">${icon('imprint', { className: 'c2pa-icon' })}<span>${t('Durable credential')}</span></span>
           ${durableTip!.button}
           ${durableTip!.pop}
         </label>
-      </div>` : '';
+        <p class="c2pa-hint" data-durable-consent hidden></p>
+      </div>`
+    : '';
 
   // HDR (Rec.2100 PQ) raster export - OPT-IN, off by default. Boosts the brand's
   // primary colours (the live palette) toward peak luminance so white text and
@@ -887,18 +1156,30 @@ function renderActions(
   // normal image. Raster only (png/jpeg today). Round-trips into the URL as
   // ?hdr=1 (see views/tool.ts syncUrl + engine/src/hdr.ts).
   const hdrFmts = formats.filter(isHdrFmt);
-  const hdrTip = hdrFmts.length ? helpTip(
-    t('HDR (Rec.2100 PQ) boosts your brand colours and white text toward peak brightness so they glow on HDR-capable screens - Safari/Preview on Apple devices, Chrome on an HDR display - while dark areas stay dark. IMPORTANT: only use it where the destination supports HDR. Many platforms (social media, messaging apps, some websites) re-encode uploads and strip the HDR signal, which can leave the image looking dark or washed out. On an ordinary SDR screen it still shows as a normal image.'),
-  ) : null;
+  const hdrTip = hdrFmts.length
+    ? helpTip(
+        t(
+          'HDR (Rec.2100 PQ) boosts your brand colours and white text toward peak brightness so they glow on HDR-capable screens - Safari/Preview on Apple devices, Chrome on an HDR display - while dark areas stay dark. IMPORTANT: only use it where the destination supports HDR. Many platforms (social media, messaging apps, some websites) re-encode uploads and strip the HDR signal, which can leave the image looking dark or washed out. On an ordinary SDR screen it still shows as a normal image.'
+        )
+      )
+    : null;
   // Author dials - seeded from a tuned ?hdr= value, else the engine defaults. The
   // body reveals when the toggle is on (like the print card). All four map onto
   // hdrBoostToPQ knobs in the bridge (see export.ts hdrTune): White = peak nits,
   // Reach = how far down the tones the glow spreads, Dark lift = how much darks
   // brighten (0 keeps them dark), Focus = colour richness of the boost.
   const hdrTune = exportDefaults.hdrTune ?? HDR_DEFAULTS;
-  const hdrSlider = (action: string, label: string, min: number, max: number, step: number, val: number): string =>
+  const hdrSlider = (
+    action: string,
+    label: string,
+    min: number,
+    max: number,
+    step: number,
+    val: number
+  ): string =>
     `<label class="hdr-slider"><span>${t(label)}</span><input type="range" class="field-range" data-action="${action}" min="${min}" max="${max}" step="${step}" value="${val}"></label>`;
-  const hdrRow = hdrFmts.length ? `
+  const hdrRow = hdrFmts.length
+    ? `
       <div class="section-card export-hdr" data-hdr-only style="display:${isHdrFmt(initialFmt) ? 'flex' : 'none'}">
         <label class="hdr-enable field-toggle help-tip-host">
           <input type="checkbox" class="field-check" data-action="hdr" ${exportDefaults.hdr ? 'checked' : ''}>
@@ -912,7 +1193,8 @@ function renderActions(
           ${hdrSlider('hdr-lift', 'Dark lift', 0, 100, 5, hdrTune.lift)}
           ${hdrSlider('hdr-focus', 'Focus', 0, 100, 5, hdrTune.richness)}
         </div>
-      </div>` : '';
+      </div>`
+    : '';
 
   // Tier 2.7 - print marks & bleed (pdf / pdf-cmyk / cmyk-tiff). An opt-in card
   // (master checkbox) so ordinary output stays trim-sized; turning it on reveals a
@@ -922,7 +1204,7 @@ function renderActions(
   // Print finishing applies to a single trim-sized artwork; tools that emit
   // per-page boxes (multi-page PDF) opt out via render.printMarks:false so the
   // card isn't shown promising marks the multi-page export path doesn't apply.
-  const hasPrint     = (hasPdf || hasCmyk) && manifest.render.printMarks !== false;
+  const hasPrint = (hasPdf || hasCmyk) && manifest.render.printMarks !== false;
   // Marks & bleed default ON only where there is PRINT INTENT: picking a separating
   // press format (Print PDF / Print TIFF / CMYK EPS), a manifest that declares
   // render.printMarks: true, or an explicit bleed/marks preference from a link/save.
@@ -931,16 +1213,24 @@ function renderActions(
   // trim-sized and unmarked until the user asks. Physical units alone never count
   // as print intent (see isPressFmt above).
   const declaresPrintIntent = manifest.render.printMarks === true;
-  const printIntentFmt = (f: string | undefined): boolean => isPressFmt(f) || (declaresPrintIntent && isPrintFmt(f));
-  const printInitOn  = Boolean(exportDefaults.bleed || exportDefaults.marks) || printIntentFmt(initialFmt);
-  const printInitMm  = exportDefaults.bleed ? (parseFloat(exportDefaults.bleed) || 3) : 3;
+  const printIntentFmt = (f: string | undefined): boolean =>
+    isPressFmt(f) || (declaresPrintIntent && isPrintFmt(f));
+  const printInitOn =
+    Boolean(exportDefaults.bleed || exportDefaults.marks) || printIntentFmt(initialFmt);
+  const printInitMm = exportDefaults.bleed ? parseFloat(exportDefaults.bleed) || 3 : 3;
   // Colour bars default ON for the CMYK print formats (the press uses them as a
   // control strip), OFF for the RGB pdf. An explicit marks default (link/save) wins.
   // 'Stamp details' (provenance) is always pre-checked: the credit stamp is on by
   // default whenever the print-marks card is enabled, regardless of any remembered
   // marks state. The other marks still restore from saved/linked defaults.
-  const pim          = { ...DEFAULT_PRINT_MARKS, colorBars: isCmykFmt(initialFmt), ...(exportDefaults.marks || {}), provenance: true };
-  const printRow = hasPrint ? `
+  const pim = {
+    ...DEFAULT_PRINT_MARKS,
+    colorBars: isCmykFmt(initialFmt),
+    ...(exportDefaults.marks || {}),
+    provenance: true,
+  };
+  const printRow = hasPrint
+    ? `
       <div class="section-card export-print" data-printmarks-only style="display:${isPrintFmt(initialFmt) ? 'flex' : 'none'}">
         <label class="print-enable field-toggle">
           <input type="checkbox" class="field-check" data-action="print-enable" ${printInitOn ? 'checked' : ''}>
@@ -961,7 +1251,8 @@ function renderActions(
           </div>
           <p class="print-hint">Adds bleed and the chosen marks for a print shop; the artwork is scaled to fill the bleed. Registration marks print on all four plates in the Print PDF and Print TIFF. (An open-password can't be combined with marks.)</p>
         </div>
-      </div>` : '';
+      </div>`
+    : '';
 
   // Tier 2.8 - "Content protection": one collapsed disclosure folding the
   // provenance/protection cards (password, C2PA, Imprint) so the panel shows one
@@ -978,19 +1269,29 @@ function renderActions(
   // linked imprint/durable flag - so a share link still surfaces its setting without
   // an extra click. The mere default-on C2PA state (c2paInitOn) does NOT open it, so
   // the common case shows a single tidy collapsed header.
-  const protectionOpen = pdfPassInitOpen || Boolean(exportDefaults.c2pa) || Boolean(exportDefaults.imprint) || Boolean(exportDefaults.durable);
+  const protectionOpen =
+    pdfPassInitOpen ||
+    Boolean(exportDefaults.c2pa) ||
+    Boolean(exportDefaults.imprint) ||
+    Boolean(exportDefaults.durable);
   // Matches the canonical per-format predicates the inner cards already use
-  // (isC2paFmt/isImprintFmt, plus the password card's pdf/pdf-cmyk/zip set) - 
+  // (isC2paFmt/isImprintFmt, plus the password card's pdf/pdf-cmyk/zip set) -
   // never loosened, just OR'd together to decide the outer wrapper.
-  const protectionVisibleInitial = (initialFmt === 'pdf' || initialFmt === 'pdf-cmyk' || initialFmt === 'zip')
-    || isC2paFmt(initialFmt) || isImprintFmt(initialFmt);
-  const protectionRow = hasProtection ? `
+  const protectionVisibleInitial =
+    initialFmt === 'pdf' ||
+    initialFmt === 'pdf-cmyk' ||
+    initialFmt === 'zip' ||
+    isC2paFmt(initialFmt) ||
+    isImprintFmt(initialFmt);
+  const protectionRow = hasProtection
+    ? `
       <div class="section-card export-protection${protectionOpen ? ' is-open' : ''}" data-protection-section style="display:${protectionVisibleInitial ? 'flex' : 'none'}">
         <button type="button" class="protection-head" data-action="protection-toggle" aria-expanded="${protectionOpen}">${icon('shield', { className: 'protection-icon' })}<span>${t('Content protection')}</span></button>
         <div class="protection-body" data-protection-body style="display:${protectionOpen ? 'flex' : 'none'}">
           ${pdfPassRow}${c2paRow}${imprintRow}${durableRow}
         </div>
-      </div>` : '';
+      </div>`
+    : '';
 
   // Tier 3 - ancillary settings. Everything optional (transparent bg, dithering)
   // lives in one wrapping chip cluster so the panel reads consistently no matter
@@ -1002,19 +1303,21 @@ function renderActions(
   // whose jargon had an answer written for it that nobody could read. Render it as
   // the same (i) affordance the sidebar and the cards above use. The LABEL still
   // comes from the engine, untouched.
-  const optionChips = exportOpts.map(i => {
-    // 'Convert paths' only affects vector output, so its chip is gated to the
-    // selected format (hidden for png/jpg/etc). Other export options are global.
-    const vectorOnly = i.id === 'convertPaths';
-    const hide = vectorOnly && !isVectorFmt(initialFmt);
-    const tip = i.help ? helpTip(i.help) : null;
-    return `
+  const optionChips = exportOpts
+    .map((i) => {
+      // 'Convert paths' only affects vector output, so its chip is gated to the
+      // selected format (hidden for png/jpg/etc). Other export options are global.
+      const vectorOnly = i.id === 'convertPaths';
+      const hide = vectorOnly && !isVectorFmt(initialFmt);
+      const tip = i.help ? helpTip(i.help) : null;
+      return `
         <label class="export-option${tip ? ' help-tip-host' : ''}"${vectorOnly ? ' data-vector-only' : ''}${hide ? ' style="display:none"' : ''}>
           <input type="checkbox" class="field-check" data-input-id="${escape(i.id)}" ${i.value ? 'checked' : ''}>
           ${escape(i.label ?? i.id)}
           ${tip ? `${tip.button}${tip.pop}` : ''}
         </label>`;
-  }).join('');
+    })
+    .join('');
 
   // F22 (plans/163) - transparency, mirrored from the sidebar.
   //
@@ -1030,15 +1333,19 @@ function renderActions(
   // it (asset-export calls it "No background"); either way it is the same input id and
   // the same checkbox. The type test keeps the mirror honest if one is ever declared as
   // something other than a boolean.
-  const transparentInput = runtime.getModel().find(i => i.id === 'transparentBg' && i.type === 'boolean');
+  const transparentInput = runtime
+    .getModel()
+    .find((i) => i.id === 'transparentBg' && i.type === 'boolean');
   const transparentTip = transparentInput?.help ? helpTip(transparentInput.help) : null;
-  const transparentChip = transparentInput ? `
+  const transparentChip = transparentInput
+    ? `
         <label class="export-option${transparentTip ? ' help-tip-host' : ''}" data-alpha-only
                style="display:${isAlphaFmt(initialFmt) ? 'flex' : 'none'}">
           <input type="checkbox" class="field-check" data-action="transparent-bg" ${transparentInput.value ? 'checked' : ''}>
           ${escape(transparentInput.label ?? transparentInput.id)}
           ${transparentTip ? `${transparentTip.button}${transparentTip.pop}` : ''}
-        </label>` : '';
+        </label>`
+    : '';
   // Tier 2.1 - timing (animated formats only). How long the clip runs, and how long
   // to hold before recording starts, are size-like decisions: for a video the length
   // is the first thing anyone changes. So the row sits directly under the dimensions
@@ -1047,13 +1354,23 @@ function renderActions(
   // the GIF-only quality dial for the same take. Nothing else moves: the data-actions,
   // the [data-anim-params] / [data-gif-only] / [data-video-only] hooks and the
   // per-format show/hide handlers are the same ones as before.
-  const timingTip = hasAnimated ? helpTip(t(
-    'Start after holds the canvas still for a moment before recording begins, so animations and fonts settle first. Duration is how long the finished clip runs.'
-  )) : null;
-  const liveTip = hasAnimated && liveCaptureSupport() ? helpTip(t(
-    'Records the on-screen preview in real time through a screen share, so motion matches exactly what you see. Pick this tab in the share dialog and keep it visible for the whole take.'
-  )) : null;
-  const timingRow = hasAnimated ? `
+  const timingTip = hasAnimated
+    ? helpTip(
+        t(
+          'Start after holds the canvas still for a moment before recording begins, so animations and fonts settle first. Duration is how long the finished clip runs.'
+        )
+      )
+    : null;
+  const liveTip =
+    hasAnimated && liveCaptureSupport()
+      ? helpTip(
+          t(
+            'Records the on-screen preview in real time through a screen share, so motion matches exactly what you see. Pick this tab in the share dialog and keep it visible for the whole take.'
+          )
+        )
+      : null;
+  const timingRow = hasAnimated
+    ? `
         <div class="video-params" data-anim-params style="display:${isAnimatedFmt(initialFmt) ? 'flex' : 'none'}">
           <span class="vp-field help-tip-host"><span>${escape(t('Start after'))}</span>
             <input type="number" data-action="video-wait" value="${defaultWait}" min="0" max="30" step="0.5"
@@ -1066,29 +1383,34 @@ function renderActions(
             <input type="checkbox" class="field-check" data-action="gif-dither">
             Dither
           </label>
-          ${liveTip ? `<label class="gif-dither-toggle help-tip-host" data-video-only data-live-capture
+          ${
+            liveTip
+              ? `<label class="gif-dither-toggle help-tip-host" data-video-only data-live-capture
                  style="display:${isVideoFmt(initialFmt) ? 'flex' : 'none'}">
             <input type="checkbox" class="field-check" data-action="video-live">
             ${escape(t('Record live'))}
             ${liveTip.button}${liveTip.pop}
-          </label>` : ''}
+          </label>`
+              : ''
+          }
           ${runtime.hasFrameHook ? `<span class="vp-live-hint" style="flex-basis:100%;font-size:11px;opacity:.7;margin-top:2px">Records the live feed - start <strong>Go&nbsp;live</strong> on the canvas first.</span>` : ''}
-        </div>` : '';
+        </div>`
+    : '';
   // Audio track card - webm/mp4 only. An optional catalog music bed (type:
   // 'audio', suse/music/*) muxed into the recording; it plays for the clip
   // duration, looping when the clip outlasts the track. Options are filled
   // async from host.assets.query once per mount (see below) - the selection is
   // popup-local like wait/duration, never serialized into URLs or share links.
   const ICON_NOTE = `<svg class="audio-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`;
-  const ICON_PLAY  = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.14v13.72a1 1 0 0 0 1.53.85l10.79-6.86a1 1 0 0 0 0-1.7L9.53 4.29A1 1 0 0 0 8 5.14z"/></svg>`;
+  const ICON_PLAY = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.14v13.72a1 1 0 0 0 1.53.85l10.79-6.86a1 1 0 0 0 0-1.7L9.53 4.29A1 1 0 0 0 8 5.14z"/></svg>`;
   const ICON_PAUSE = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6.5" y="5" width="4" height="14" rx="1.2"/><rect x="13.5" y="5" width="4" height="14" rx="1.2"/></svg>`;
   const hasVideo = formats.some(isVideoFmt);
   // The "plays for the clip duration, loops as needed, WebM/MP4 only" note moves
   // behind the same inline (i) tip the sidebar's input helpers use, so the card
   // stays compact - heading + track picker, with the explanation on demand.
-  const audioTip = hasVideo ? helpTip(
-    'Plays under the clip for its full duration, looping as needed. WebM and MP4 only.'
-  ) : null;
+  const audioTip = hasVideo
+    ? helpTip('Plays under the clip for its full duration, looping as needed. WebM and MP4 only.')
+    : null;
   // A tool with its own audio slot (assetType 'audio', e.g. the audiogram) always
   // contributes that audio to the export (resolved live from the sidebar pick), and
   // the card becomes two rows: the tool's audio with a level slider, plus an
@@ -1096,13 +1418,21 @@ function renderActions(
   // while the tool audio plays - full at the top and tail (section 6.1). "Generate music"
   // composes a seeded ZzFXM tune on-device (engine composeSong → render worker →
   // transient WAV). Tools without an audio slot keep the single-bed card.
-  const hasToolAudioInput = runtime.getModel().some(i => i.type === 'asset' && i.assetType === 'audio');
-  const toolAudioTip = hasToolAudioInput && hasVideo ? helpTip(
-    t('Always included when the tool has audio picked. WebM and MP4 only.')
-  ) : null;
-  const mixTip = hasToolAudioInput && hasVideo ? helpTip(
-    t('Plays at full volume before and after this tool’s audio and eases to the centre volume underneath it.')
-  ) : null;
+  const hasToolAudioInput = runtime
+    .getModel()
+    .some((i) => i.type === 'asset' && i.assetType === 'audio');
+  const toolAudioTip =
+    hasToolAudioInput && hasVideo
+      ? helpTip(t('Always included when the tool has audio picked. WebM and MP4 only.'))
+      : null;
+  const mixTip =
+    hasToolAudioInput && hasVideo
+      ? helpTip(
+          t(
+            'Plays at full volume before and after this tool’s audio and eases to the centre volume underneath it.'
+          )
+        )
+      : null;
   const bedPickHtml = `
         <div class="audio-pick">
           <select class="field-select" data-action="video-audio" aria-label="${hasToolAudioInput ? escape(t('Mix-in track')) : 'Audio track'}"
@@ -1117,7 +1447,10 @@ function renderActions(
           <label>Fade in <input type="number" data-action="audio-fadein" min="0" max="5" step="0.5" value="1"><span>s</span></label>
           <label>Fade out <input type="number" data-action="audio-fadeout" min="0" max="5" step="0.5" value="1.5"><span>s</span></label>
         </div>`;
-  const audioRow = !hasVideo ? '' : hasToolAudioInput ? `
+  const audioRow = !hasVideo
+    ? ''
+    : hasToolAudioInput
+      ? `
       <div class="export-audio" data-video-only style="display:${isVideoFmt(initialFmt) ? 'flex' : 'none'}">
         <span class="audio-head help-tip-host">${ICON_NOTE}<span>${escape(t('This tool’s audio'))}</span>${toolAudioTip!.button}${toolAudioTip!.pop}</span>
         <div class="audio-fade">
@@ -1135,7 +1468,8 @@ function renderActions(
             </select>
           </label>
         </div>
-      </div>` : `
+      </div>`
+      : `
       <div class="export-audio" data-video-only style="display:${isVideoFmt(initialFmt) ? 'flex' : 'none'}">
         <span class="audio-head help-tip-host">${ICON_NOTE}<span>Audio track</span>${audioTip!.button}${audioTip!.pop}</span>
         ${bedPickHtml}
@@ -1149,7 +1483,9 @@ function renderActions(
   // one gain before the always-on true-peak limiter. Off by default so existing
   // projects keep their levels; the labels state real platform targets in the
   // correct unit, which almost nobody shipping does.
-  const loudnessRow = !hasVideo ? '' : `
+  const loudnessRow = !hasVideo
+    ? ''
+    : `
       <div class="export-audio export-loudness" data-video-only style="display:${isVideoFmt(initialFmt) ? 'flex' : 'none'}">
         <label>${escape(t('Loudness'))}
           <select class="field-select" data-action="audio-normalize" aria-label="${escape(t('Loudness'))}"
@@ -1178,10 +1514,16 @@ function renderActions(
   //
   // Every option is off-by-default for MP4 and adds nothing to a document with no
   // caption boxes and no cached transcript, so an untouched export is unchanged.
-  const captionsTip = hasVideo ? helpTip(t(
-    'Captions drawn on the canvas are always part of the picture. An embedded track can be switched off by the viewer’s player; the sidecar files are the ones an editor or a video platform will accept.'
-  )) : null;
-  const captionsRow = !hasVideo ? '' : `
+  const captionsTip = hasVideo
+    ? helpTip(
+        t(
+          'Captions drawn on the canvas are always part of the picture. An embedded track can be switched off by the viewer’s player; the sidecar files are the ones an editor or a video platform will accept.'
+        )
+      )
+    : null;
+  const captionsRow = !hasVideo
+    ? ''
+    : `
       <div class="export-audio export-captions" data-video-only style="display:${isVideoFmt(initialFmt) ? 'flex' : 'none'}">
         <span class="audio-head help-tip-host">${icon('transcript', { className: 'audio-icon' })}<span>${escape(t('Captions'))}</span>${captionsTip!.button}${captionsTip!.pop}</span>
         <div class="audio-fade">
@@ -1207,7 +1549,9 @@ function renderActions(
   // the auto ladder / encoder config. Every control is optional - an untouched export
   // takes Balanced + the auto ladder + the encoder defaults, byte-for-byte as before.
   const ICON_SLIDERS = icon('sliders', { size: 14 });
-  const videoQualityRow = !hasVideo ? '' : `
+  const videoQualityRow = !hasVideo
+    ? ''
+    : `
       <div class="export-video-quality" data-video-only style="display:${isVideoFmt(initialFmt) ? 'flex' : 'none'}">
         <label class="vp-field vq-main"><span>${escape(t('Quality'))}</span>
           <select class="field-select field-select--sm" data-action="video-quality" aria-label="${escape(t('Video quality'))}">
@@ -1257,26 +1601,31 @@ function renderActions(
 
   // Full-page chip - HTML export only. Drops the fixed-size tool-canvas frame so
   // the saved page fills the whole browser window instead of a centred card.
-  const hasHtml  = formats.includes('html');
-  const htmlChip = hasHtml ? `
+  const hasHtml = formats.includes('html');
+  const htmlChip = hasHtml
+    ? `
         <label class="export-option" data-html-only style="display:${initialFmt === 'html' ? 'flex' : 'none'}"
                title="Drop the fixed-size canvas frame so the saved page fills the whole window.">
           <input type="checkbox" class="field-check" data-action="full-page" ${exportDefaults.nostage ? 'checked' : ''}>
           Full page
-        </label>` : '';
+        </label>`
+    : '';
   // Outline-fonts chip - EMF only. EMF keeps text LIVE by default (real GDI text
   // records, editable in Office / Google Drawings); this forces the old
   // text-as-paths output for when exact glyphs matter more than editability.
-  const hasEmf  = formats.includes('emf');
-  const emfChip = hasEmf ? `
+  const hasEmf = formats.includes('emf');
+  const emfChip = hasEmf
+    ? `
         <label class="export-option" data-emf-only style="display:${initialFmt === 'emf' ? 'flex' : 'none'}"
                title="${escape(t('Convert text to vector outlines so it looks identical everywhere. Off, text stays editable in Office and Google Slides but uses whatever fonts that device has.'))}">
           <input type="checkbox" class="field-check" data-action="emf-outline">
           ${t('Outline fonts')}
-        </label>` : '';
-  const settingsRow = (transparentChip || optionChips || htmlChip || emfChip)
-    ? `<div class="export-settings">${transparentChip}${optionChips}${htmlChip}${emfChip}</div>`
+        </label>`
     : '';
+  const settingsRow =
+    transparentChip || optionChips || htmlChip || emfChip
+      ? `<div class="export-settings">${transparentChip}${optionChips}${htmlChip}${emfChip}</div>`
+      : '';
 
   // Cloud send destinations - the PROVIDER-AGNOSTIC send-target seam
   // (lib/send-target.ts): each built-in is dormant without its own config (e.g.
@@ -1300,9 +1649,10 @@ function renderActions(
   // the primary CTA, alone on its own full-width line at the very bottom.
   const CLIPBOARD_SVG = `<svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>`;
   const copyBtn = actions.includes('copy')
-    ? (jellyActive()
+    ? jellyActive()
       ? `<jelly-button variant="platinum" data-action="copy" class="copy-btn" title="Copy to clipboard" label="Copy">${CLIPBOARD_SVG}<span>Copy</span></jelly-button>`
-      : `<button data-action="copy" class="copy-btn" title="Copy to clipboard">${CLIPBOARD_SVG}<span>Copy</span></button>`) : '';
+      : `<button data-action="copy" class="copy-btn" title="Copy to clipboard">${CLIPBOARD_SVG}<span>Copy</span></button>`
+    : '';
   const saveBtn = actions.includes('save') ? saveBtnHtml() : '';
   // Download is the primary CTA - jelly mode gives it the accent-fill squish.
   const initialExperience = experience.current?.() ?? {};
@@ -1317,7 +1667,9 @@ function renderActions(
   // dead button. Gated on actions.includes('download') so a tool with no download
   // action is unaffected. The view holds no control-plane knowledge: it asks the seam
   // what it may offer, and routes "Request approval" through the generic opener.
-  const affordance = actions.includes('download') ? exportAffordance(getExportPolicy()) : 'download';
+  const affordance = actions.includes('download')
+    ? exportAffordance(getExportPolicy())
+    : 'download';
   // Same primary-CTA slot as Download, so it takes the same prominent jelly
   // recipe under the flag (the .download-btn-jelly class is a size/weight hook,
   // not download-specific); the delegated [data-action] handler is unchanged.
@@ -1330,15 +1682,24 @@ function renderActions(
       ? requestApprovalBtn
       : affordance === 'blocked'
         ? ''
-        // The native button's ↓ affordance is a ::before glyph; the bridge strips
-        // pseudo-content off jelly hosts (it painted at the host corner, outside
-        // the capsule), so the jelly label carries the arrow as plain text.
-        : (jellyActive()
+        : // The native button's ↓ affordance is a ::before glyph; the bridge strips
+          // pseudo-content off jelly hosts (it painted at the host corner, outside
+          // the capsule), so the jelly label carries the arrow as plain text.
+          jellyActive()
           ? `<jelly-button data-action="download" class="download-btn-jelly">↓ <span data-download-label>${escape(downloadLabel)}</span></jelly-button>`
-          : `<button data-action="download"><span data-download-label>${escape(downloadLabel)}</span></button>`);
-  const blockedNote = (actions.includes('download') && affordance === 'blocked')
-    ? `<p class="export-blocked-note" role="status" style="margin:.2rem 0 0;color:hsl(var(--muted-foreground));font-size:12px;text-align:center">${escape(t('Downloading is turned off for this tool on this instance.'))}</p>`
-    : '';
+          : `<button data-action="download"><span data-download-label>${escape(downloadLabel)}</span></button>`;
+  // The Tauri desktop export override registers this one-shot seam, and a browser
+  // with the File System Access API answers it the same way (saveAsBridge). Where
+  // neither can, nothing renders: the fast Downloads action stays the single CTA,
+  // and the secondary file-dialog path is a quiet addition beside it.
+  const desktopExport = saveAsBridge();
+  const saveAsBtn = saveAsButtonHtml(
+    Boolean(desktopExport && downloadBtn && affordance === 'download')
+  );
+  const blockedNote =
+    actions.includes('download') && affordance === 'blocked'
+      ? `<p class="export-blocked-note" role="status" style="margin:.2rem 0 0;color:hsl(var(--muted-foreground));font-size:12px;text-align:center">${escape(t('Downloading is turned off for this tool on this instance.'))}</p>`
+      : '';
   // Tier 3.5 - "Before you export". LAST of the cards, below every setting and
   // immediately above the buttons: it is not a setting, it is a statement ABOUT
   // the settings, so it must sit under all of them or it would contradict a
@@ -1350,7 +1711,9 @@ function renderActions(
   // pixel of the export. Rendered only for a costable job with a card and canShowMoney.
   const costRow = costPanelHtml();
   const secondaryRow = `<div class="export-action-buttons">${copyBtn}${saveBtn}${copyUrlBtn}</div>`;
-  const downloadRow = downloadBtn ? `<div class="export-action-buttons">${downloadBtn}</div>` : blockedNote;
+  const downloadRow = downloadBtn
+    ? `<div class="export-action-buttons">${saveAsBtn}${downloadBtn}</div>`
+    : blockedNote;
 
   // Audio-capture tools (render.capture:'audio'): the recording is the deliverable,
   // and the format list below only covers the share CARD - so the sheet leads with
@@ -1358,11 +1721,13 @@ function renderActions(
   // views/record-control.ts). Before any take exists it says plainly what the
   // Download below saves, closing the "Export is not my recording" trap.
   const isAudioCaptureTool = manifest.render.capture === 'audio';
-  const recordingRow = isAudioCaptureTool ? `
+  const recordingRow = isAudioCaptureTool
+    ? `
       <div class="section-card export-recording" data-recording-row>
         <span class="c2pa-head">${icon('mic', { className: 'c2pa-icon' })}<span>${escape(t('Your recording'))}</span></span>
         <div class="export-recording-body" data-recording-body></div>
-      </div>` : '';
+      </div>`
+    : '';
 
   // The panel host (#tool-actions) is present for every export-capable tool that
   // reaches here; guard the type for strict null-safety (never null in practice).
@@ -1378,34 +1743,55 @@ function renderActions(
   async function fillIngredientNote(): Promise<void> {
     const slot = el?.querySelector<HTMLElement>('[data-ingredient-note]');
     if (!slot) return;
-    const ids = [...new Set(runtime.getModel()
-      .filter((i) => i.type === 'asset' && typeof i.value === 'string' && i.value)
-      .map((i) => String(i.value)))];
+    const ids = [
+      ...new Set(
+        runtime
+          .getModel()
+          .filter((i) => i.type === 'asset' && typeof i.value === 'string' && i.value)
+          .map((i) => String(i.value))
+      ),
+    ];
     if (!ids.length) return;
     const declared: string[] = [];
     const flagged: string[] = [];
     for (const id of ids) {
       try {
         const ref = await host.assets.get(id);
-        const meta = (ref.meta ?? {}) as { name?: unknown; aiGenerated?: unknown; aiSignals?: { v?: number; band?: string } };
+        const meta = (ref.meta ?? {}) as {
+          name?: unknown;
+          aiGenerated?: unknown;
+          aiSignals?: { v?: number; band?: string };
+        };
         const name = String(meta.name ?? id);
         if (meta.aiGenerated === 'full' || meta.aiGenerated === 'partial') declared.push(name);
-        else if (meta.aiSignals && meta.aiSignals.v === LEXICON_VERSION
-          && (meta.aiSignals.band === 'notable' || meta.aiSignals.band === 'strong')) flagged.push(name);
-      } catch { /* a missing asset has nothing to disclose */ }
+        else if (
+          meta.aiSignals &&
+          meta.aiSignals.v === LEXICON_VERSION &&
+          (meta.aiSignals.band === 'notable' || meta.aiSignals.band === 'strong')
+        )
+          flagged.push(name);
+      } catch {
+        /* a missing asset has nothing to disclose */
+      }
     }
     if (!declared.length && !flagged.length) return;
     slot.replaceChildren();
     if (declared.length) {
       const line = document.createElement('p');
       line.className = 'guide-fact';
-      line.textContent = tRaw("AI-declared ingredient in this design: {names}. The export's own credential declares this AI origin, signed and machine-readable.", { names: declared.join(', ') });
+      line.textContent = tRaw(
+        "AI-declared ingredient in this design: {names}. The export's own credential declares this AI origin, signed and machine-readable.",
+        { names: declared.join(', ') }
+      );
       slot.appendChild(line);
     }
     if (flagged.length) {
       const line = document.createElement('p');
       line.className = 'guide-hint';
-      line.textContent = tRaw('An ingredient carries AI-writing signals: {names}. A signal, not proof - review it in the catalogue before this file travels.', { names: flagged.join(', ') });
+      line.textContent = tRaw(
+        'An ingredient carries AI-writing signals: {names}. A signal, not proof - review it in the catalogue before this file travels.',
+        { names: flagged.join(', ') }
+      );
       slot.appendChild(line);
     }
     slot.hidden = false;
@@ -1452,10 +1838,14 @@ function renderActions(
     try {
       if (localStorage.getItem(REOPEN_NOTE_KEY)) return;
       localStorage.setItem(REOPEN_NOTE_KEY, '1');
-    } catch { return; }
+    } catch {
+      return;
+    }
     const line = document.createElement('p');
     line.className = 'export-details-ask';
-    line.textContent = t('This file remembers how it was made - drop it on Lolly anytime to reopen it.');
+    line.textContent = t(
+      'This file remembers how it was made - drop it on Lolly anytime to reopen it.'
+    );
     const link = document.createElement('a');
     link.href = '#/verify';
     link.textContent = t('See for yourself');
@@ -1474,7 +1864,7 @@ function renderActions(
       ${downloadRow}
       ${actions.includes('download') ? `<p class="export-degraded-note" data-export-degraded role="status" hidden style="margin:.2rem 0 0;color:hsl(var(--muted-foreground));font-size:12px;text-align:center"></p>` : ''}
     </div>
-    ${actions.includes('download') ? `${recordingRow}${filenameRow}${dimsRow}${timingRow}${aspectWarnRow}${fidelityWarnRow}${hdrRow}${cmykRow}${printRow}${protectionRow}<div class="export-ingredient-note" data-ingredient-note hidden></div>${audioRow}${loudnessRow}${captionsRow}${settingsRow}${videoQualityRow}${sendRow}${preflightRow}${costRow}` : ''}
+    ${actions.includes('download') ? `${recordingRow}${filenameRow}${dimsRow}${timingRow}${aspectWarnRow}${fidelityWarnRow}${hdrRow}${cmykRow}${printRow}${pkgRow}${protectionRow}<div class="export-ingredient-note" data-ingredient-note hidden></div>${audioRow}${loudnessRow}${captionsRow}${settingsRow}${videoQualityRow}${sendRow}${preflightRow}${costRow}` : ''}
   `;
   void fillIngredientNote();
 
@@ -1483,7 +1873,8 @@ function renderActions(
   // the same signed paths the stage's post-record bar uses.
   if (isAudioCaptureTool) {
     const recBody = el.querySelector<HTMLElement>('[data-recording-body]');
-    const fmtSize = (n: number): string => n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
+    const fmtSize = (n: number): string =>
+      n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
     const paintRecording = (): void => {
       if (!recBody) return;
       const take = getAudioTake();
@@ -1504,23 +1895,34 @@ function renderActions(
       const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-action]');
       const take = getAudioTake();
       if (!btn || !take) return;
-      if (btn.dataset.action === 'take-native') { void saveTakeNative(host, take); return; }
+      if (btn.dataset.action === 'take-native') {
+        void saveTakeNative(host, take);
+        return;
+      }
       if (btn.dataset.action === 'take-mp3') {
         const was = btn.textContent;
-        btn.disabled = true; btn.textContent = t('Encoding…');
-        try { await saveTakeMp3(host, take); }
-        catch (err) {
-          host.log('warn', 'export-sheet mp3 transcode failed - saving the native container', { error: String(err) });
+        btn.disabled = true;
+        btn.textContent = t('Encoding…');
+        try {
+          await saveTakeMp3(host, take);
+        } catch (err) {
+          host.log('warn', 'export-sheet mp3 transcode failed - saving the native container', {
+            error: String(err),
+          });
           void saveTakeNative(host, take);
+        } finally {
+          btn.disabled = false;
+          btn.textContent = was;
         }
-        finally { btn.disabled = false; btn.textContent = was; }
       }
     });
   }
 
-  exportOpts.forEach(i => {
-    el.querySelector<HTMLInputElement>(`[data-input-id="${escape(i.id)}"]`)
-      ?.addEventListener('change', ({ target }) => runtime.setInput(i.id, (target as HTMLInputElement).checked));
+  exportOpts.forEach((i) => {
+    el.querySelector<HTMLInputElement>(`[data-input-id="${escape(i.id)}"]`)?.addEventListener(
+      'change',
+      ({ target }) => runtime.setInput(i.id, (target as HTMLInputElement).checked)
+    );
   });
 
   // The transparency mirror, wired BOTH ways against the one input it reflects.
@@ -1531,15 +1933,19 @@ function renderActions(
   // event, so there is no loop between the two views.
   const transparentEl = el.querySelector<HTMLInputElement>('[data-action="transparent-bg"]');
   if (transparentEl) {
-    transparentEl.addEventListener('change', () => runtime.setInput('transparentBg', transparentEl.checked));
+    transparentEl.addEventListener('change', () =>
+      runtime.setInput('transparentBg', transparentEl.checked)
+    );
     runtime.subscribe(() => {
-      transparentEl.checked = Boolean(runtime.getModel().find(i => i.id === 'transparentBg')?.value);
+      transparentEl.checked = Boolean(
+        runtime.getModel().find((i) => i.id === 'transparentBg')?.value
+      );
     });
   }
 
-  const animParamsEl  = el.querySelector<HTMLElement>('[data-anim-params]');
-  const ditherEl      = el.querySelector<HTMLElement>('[data-gif-only]');
-  const formatEl      = el.querySelector<HTMLSelectElement>('[data-action="format"]');
+  const animParamsEl = el.querySelector<HTMLElement>('[data-anim-params]');
+  const ditherEl = el.querySelector<HTMLElement>('[data-gif-only]');
+  const formatEl = el.querySelector<HTMLSelectElement>('[data-action="format"]');
   // The grouped-category UI over the hidden select (trigger + accordion panel).
   const formatPicker = wireFormatPicker(el, formatEl, fmtLabel, {
     recommended: initialExperience.recommendedFormats,
@@ -1549,15 +1955,18 @@ function renderActions(
   // format/protection changes and every time the sheet opens (views/tool.ts
   // dispatches 'lolly:export-open' on the panel).
   const filenameInputEl = el.querySelector<HTMLInputElement>('[data-action="filename"]');
-  const refreshFilenamePlaceholder = (): void => { if (filenameInputEl) filenameInputEl.placeholder = autoFilename(); };
+  const refreshFilenamePlaceholder = (): void => {
+    if (filenameInputEl) filenameInputEl.placeholder = autoFilename();
+  };
   formatEl?.addEventListener('change', refreshFilenamePlaceholder);
-  el.querySelectorAll<HTMLInputElement>('[data-action="pdf-c2pa"], [data-action="imprint"]')
-    .forEach(cb => cb.addEventListener('change', refreshFilenamePlaceholder));
+  el.querySelectorAll<HTMLInputElement>(
+    '[data-action="pdf-c2pa"], [data-action="imprint"]'
+  ).forEach((cb) => cb.addEventListener('change', refreshFilenamePlaceholder));
   el.addEventListener('lolly:export-open', refreshFilenamePlaceholder);
-  const aspectWarnEl  = el.querySelector<HTMLElement>('[data-aspect-warning]');
+  const aspectWarnEl = el.querySelector<HTMLElement>('[data-aspect-warning]');
   const fidelityWarnEl = el.querySelector<HTMLElement>('[data-fidelity-warning]');
-  const durationEl    = el.querySelector<HTMLInputElement>('[data-action="video-duration"]');
-  const liveLabelEl   = el.querySelector<HTMLElement>('[data-live-capture]');
+  const durationEl = el.querySelector<HTMLInputElement>('[data-action="video-duration"]');
+  const liveLabelEl = el.querySelector<HTMLElement>('[data-live-capture]');
   // Seed the Pro-settings selects from a link's ?fps= / ?codec= / ?vq= (exportDefaults.video).
   // Only a value the select actually offers is applied; an odd fps (say 45) still reaches
   // the auto-export through tool.ts, it just cannot be shown here.
@@ -1566,7 +1975,7 @@ function renderActions(
     const seed = (sel: string, value: string | null | undefined): void => {
       if (value == null) return;
       const s = el.querySelector<HTMLSelectElement>(sel);
-      if (s && [...s.options].some(o => o.value === value)) s.value = value;
+      if (s && [...s.options].some((o) => o.value === value)) s.value = value;
     };
     if (v) {
       seed('[data-action="video-fps"]', v.fps != null ? String(v.fps) : null);
@@ -1587,7 +1996,7 @@ function renderActions(
   // (below) rather than baked into the panel HTML, because a canvas can BECOME a
   // sequence after mount (the MutationObserver path the Duration field already
   // uses) and a control that is merely hidden would still answer querySelector.
-  const CUTS_MAX = 64;   // a contact sheet is for human review; the engine clamps too
+  const CUTS_MAX = 64; // a contact sheet is for human review; the engine clamps too
   const isStillFmt = (f: string | undefined): boolean =>
     !!f && ['png', 'jpg', 'jpeg', 'webp', 'svg', 'pdf'].includes(f);
   const hasStillFmt = formats.some(isStillFmt);
@@ -1603,16 +2012,21 @@ function renderActions(
   function syncFramesUi(isSeq: boolean): void {
     if (!hasStillFmt || !actions.includes('download')) return;
     let row = el!.querySelector<HTMLElement>('[data-seq-still-only]');
-    if (!isSeq) { row?.remove(); return; }
+    if (!isSeq) {
+      row?.remove();
+      return;
+    }
     if (!row) {
       // Sits with the sizing controls: it is a "how much comes out" dial, like dims.
-      const anchor = el!.querySelector<HTMLElement>('[data-aspect-warning]')
-        ?? el!.querySelector<HTMLElement>('.export-dims')
-        ?? el!.querySelector<HTMLElement>('.filename-extension');
+      const anchor =
+        el!.querySelector<HTMLElement>('[data-aspect-warning]') ??
+        el!.querySelector<HTMLElement>('.export-dims') ??
+        el!.querySelector<HTMLElement>('.filename-extension');
       const frag = document.createElement('div');
       frag.innerHTML = framesRowHtml.trim();
       row = frag.firstElementChild as HTMLElement;
-      if (anchor) anchor.after(row); else el!.prepend(row);
+      if (anchor) anchor.after(row);
+      else el!.prepend(row);
     }
     row.style.display = isStillFmt(formatEl?.value ?? initialFmt) ? 'flex' : 'none';
   }
@@ -1633,8 +2047,12 @@ function renderActions(
   // A `seconds` carried by the link is the same deliberate instruction as a typed
   // value, so it starts the flag set and the derived-length re-sync never overrides it.
   let durationUserSet = exportDefaults.video?.seconds != null;
-  durationEl?.addEventListener('input',  () => { durationUserSet = true; });
-  durationEl?.addEventListener('change', () => { durationUserSet = true; });
+  durationEl?.addEventListener('input', () => {
+    durationUserSet = true;
+  });
+  durationEl?.addEventListener('change', () => {
+    durationUserSet = true;
+  });
 
   // Re-seed the Duration field (and its ceiling) from the live timeline. Called at
   // mount and from the MutationObserver below, i.e. every time the artboard's
@@ -1642,15 +2060,15 @@ function renderActions(
   // disabled or re-ordered for a sequence.
   function syncSequenceUi(): void {
     const isSeq = !!seqStageEl();
-    const secs  = seqDurationS();
+    const secs = seqDurationS();
     // An animated tool (window.__lollyAnim) seeds Duration from its loop when this
     // isn't a sequence; the sequence timeline wins if a tool were somehow both.
     const animSecs = isSeq ? null : animDurationS();
     // A bed's own length (data-clip-ms) seeds Duration too, but does not make the
     // tool a "timed composition": Record live stays offered, as it always was here.
     const clipSecs = isSeq || animSecs != null ? null : clipDurationS();
-    const derived  = secs ?? animSecs ?? clipSecs;
-    const timed    = isSeq || animSecs != null;
+    const derived = secs ?? animSecs ?? clipSecs;
+    const timed = isSeq || animSecs != null;
     if (durationEl) {
       // A timeline (or a long animation loop) may legitimately outrun the 60s
       // recording cap - take the 1-hour ceiling while it's timed, restore 60s if it
@@ -1692,8 +2110,12 @@ function renderActions(
   // lives as long as canvasEl does (same lifetime as the runtime.subscribe above);
   // there is no teardown seam here and none is needed - the node goes with the mount.
   if (canvasEl && (durationEl || liveLabelEl || hasStillFmt)) {
-    new MutationObserver(() => syncSequenceUi())
-      .observe(canvasEl, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-seq-ms', 'data-sequence', 'data-clip-ms'] });
+    new MutationObserver(() => syncSequenceUi()).observe(canvasEl, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ['data-seq-ms', 'data-sequence', 'data-clip-ms'],
+    });
   }
   syncSequenceUi();
 
@@ -1706,31 +2128,39 @@ function renderActions(
   const cmykSel = el.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]');
   if (cmykSel) {
     const askedOwn = isOwnProfile(exportDefaults.profile);
-    listEligible(host as never, 'CMYK').then(rows => {
-      for (const e of rows) {
+    listEligible(host as never, 'CMYK')
+      .then((rows) => {
+        for (const e of rows) {
+          const o = document.createElement('option');
+          o.value = `own:${e.digest}`;
+          o.textContent = embedRowLabel(e);
+          cmykSel.append(o);
+        }
+        if (!askedOwn) return;
+        // A link carries bare `own` (a digest is device-local): one eligible profile
+        // resolves it, several or none does not - and guessing would let storage
+        // order decide what a file DECLARES. Unresolved, the export embeds nothing
+        // and declares nothing rather than falling back to a condition nobody chose,
+        // so the row must SAY that instead of promising an embed: it stays selected
+        // (the link still round-trips, and nothing is refused) but it is named after
+        // the outcome, not the intention.
+        const asked =
+          ownDigest(exportDefaults.profile ?? '') ?? (rows.length === 1 ? rows[0]!.digest : null);
+        if (asked && rows.some((r) => r.digest === asked)) {
+          cmykSel.value = `own:${asked}`;
+          return;
+        }
         const o = document.createElement('option');
-        o.value = `own:${e.digest}`;
-        o.textContent = embedRowLabel(e);
+        o.value = 'own';
+        o.textContent = rows.length
+          ? 'Choose which profile to embed'
+          : 'No profile on this device to embed';
         cmykSel.append(o);
-      }
-      if (!askedOwn) return;
-      // A link carries bare `own` (a digest is device-local): one eligible profile
-      // resolves it, several or none does not - and guessing would let storage
-      // order decide what a file DECLARES. Unresolved, the export embeds nothing
-      // and declares nothing rather than falling back to a condition nobody chose,
-      // so the row must SAY that instead of promising an embed: it stays selected
-      // (the link still round-trips, and nothing is refused) but it is named after
-      // the outcome, not the intention.
-      const asked = ownDigest(exportDefaults.profile ?? '') ?? (rows.length === 1 ? rows[0]!.digest : null);
-      if (asked && rows.some(r => r.digest === asked)) { cmykSel.value = `own:${asked}`; return; }
-      const o = document.createElement('option');
-      o.value = 'own';
-      o.textContent = rows.length
-        ? 'Choose which profile to embed'
-        : 'No profile on this device to embed';
-      cmykSel.append(o);
-      cmykSel.value = 'own';
-    }).catch(() => { /* no profile store on this host - the registry rows stand alone */ });
+        cmykSel.value = 'own';
+      })
+      .catch(() => {
+        /* no profile store on this host - the registry rows stand alone */
+      });
   }
 
   // Fill the audio-track select from the catalog (music beds, type: 'audio').
@@ -1739,62 +2169,78 @@ function renderActions(
   // select simply keeps its "None" option.
   const audioSel = el.querySelector<HTMLSelectElement>('[data-action="video-audio"]');
   if (audioSel) {
-    host.assets.query({ type: 'audio' }).then(tracks => {
-      const tagsOf = (t: typeof tracks[number]): string[] => (t.meta?.tags as string[] | undefined) ?? [];
-      const isLoop = (t: typeof tracks[number]): boolean => tagsOf(t).includes('neurospicy') || tagsOf(t).includes('loop');
-      const byName = (a: typeof tracks[number], b: typeof tracks[number]): number => String(a.meta?.name ?? a.id).localeCompare(String(b.meta?.name ?? b.id));
-      const opt = (t: typeof tracks[number]): HTMLOptionElement => {
-        const o = document.createElement('option');
-        o.value = t.id;
-        o.textContent = String(t.meta?.name ?? t.id.split('/').pop() ?? '');
-        return o;
-      };
-      // Focus loops FIRST - any FEATURED_LOOPS up top via loopRank, the rest alphabetical
-      // - then the licensed music beds below.
-      const loops = tracks.filter(isLoop).sort((a, b) => loopRank(a.id) - loopRank(b.id) || byName(a, b));
-      if (loops.length) {
-        const grp = document.createElement('optgroup');
-        grp.label = 'Focus loops (Neurospicy)';
-        loops.forEach(t => grp.appendChild(opt(t)));
-        audioSel.appendChild(grp);
-      }
-      const music = tracks.filter(t => !isLoop(t)).sort(byName);
-      if (music.length) {
-        const grp2 = document.createElement('optgroup');
-        grp2.label = 'Music beds';
-        music.forEach(t => grp2.appendChild(opt(t)));
-        audioSel.appendChild(grp2);
-      }
-      // The user's own audio uploads (incl. Script-audio TTS clips) - the catalog
-      // query lists library assets only, so the user store is appended explicitly.
-      // Sequenced after the catalog groups so the order is stable.
-      const listUser = (host.assets as unknown as { _listUserAssets?: () => Promise<{ id: string; type: string; meta?: Record<string, unknown> }[]> })._listUserAssets;
-      return listUser?.call(host.assets).then(all => {
-        const ups = all.filter(a => a.type === 'audio');
-        if (!ups.length) return;
-        const grp3 = document.createElement('optgroup');
-        grp3.label = t('Your uploads');
-        for (const a of ups) {
+    host.assets
+      .query({ type: 'audio' })
+      .then((tracks) => {
+        const tagsOf = (t: (typeof tracks)[number]): string[] =>
+          (t.meta?.tags as string[] | undefined) ?? [];
+        const isLoop = (t: (typeof tracks)[number]): boolean =>
+          tagsOf(t).includes('neurospicy') || tagsOf(t).includes('loop');
+        const byName = (a: (typeof tracks)[number], b: (typeof tracks)[number]): number =>
+          String(a.meta?.name ?? a.id).localeCompare(String(b.meta?.name ?? b.id));
+        const opt = (t: (typeof tracks)[number]): HTMLOptionElement => {
           const o = document.createElement('option');
-          o.value = a.id;
-          o.textContent = String(a.meta?.name ?? a.id.split('/').pop() ?? '');
-          grp3.appendChild(o);
+          o.value = t.id;
+          o.textContent = String(t.meta?.name ?? t.id.split('/').pop() ?? '');
+          return o;
+        };
+        // Focus loops FIRST - any FEATURED_LOOPS up top via loopRank, the rest alphabetical
+        // - then the licensed music beds below.
+        const loops = tracks
+          .filter(isLoop)
+          .sort((a, b) => loopRank(a.id) - loopRank(b.id) || byName(a, b));
+        if (loops.length) {
+          const grp = document.createElement('optgroup');
+          grp.label = 'Focus loops (Neurospicy)';
+          loops.forEach((t) => grp.appendChild(opt(t)));
+          audioSel.appendChild(grp);
         }
-        audioSel.appendChild(grp3);
+        const music = tracks.filter((t) => !isLoop(t)).sort(byName);
+        if (music.length) {
+          const grp2 = document.createElement('optgroup');
+          grp2.label = 'Music beds';
+          music.forEach((t) => grp2.appendChild(opt(t)));
+          audioSel.appendChild(grp2);
+        }
+        // The user's own audio uploads (incl. Script-audio TTS clips) - the catalog
+        // query lists library assets only, so the user store is appended explicitly.
+        // Sequenced after the catalog groups so the order is stable.
+        const listUser = (
+          host.assets as unknown as {
+            _listUserAssets?: () => Promise<
+              { id: string; type: string; meta?: Record<string, unknown> }[]
+            >;
+          }
+        )._listUserAssets;
+        return listUser?.call(host.assets).then((all) => {
+          const ups = all.filter((a) => a.type === 'audio');
+          if (!ups.length) return;
+          const grp3 = document.createElement('optgroup');
+          grp3.label = t('Your uploads');
+          for (const a of ups) {
+            const o = document.createElement('option');
+            o.value = a.id;
+            o.textContent = String(a.meta?.name ?? a.id.split('/').pop() ?? '');
+            grp3.appendChild(o);
+          }
+          audioSel.appendChild(grp3);
+        });
+      })
+      .catch(() => {
+        /* pre-sync/offline - leave "None" only */
       });
-    }).catch(() => { /* pre-sync/offline - leave "None" only */ });
   }
 
   // The tool's own audio slot (assetType 'audio'), read LIVE from the model so the
   // popup always reflects the current sidebar pick. Returns the narrow ref shape
   // the bed paths need; null when the slot is empty or the tool has none.
   const toolAudioRef = (): { id?: string; url?: string; format?: string } | null => {
-    const v = runtime.getModel().find(i => i.type === 'asset' && i.assetType === 'audio')?.value;
+    const v = runtime.getModel().find((i) => i.type === 'asset' && i.assetType === 'audio')?.value;
     if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
     const r = v as { id?: unknown; url?: unknown; format?: unknown };
     const ref = {
-      id:     typeof r.id === 'string' ? r.id : undefined,
-      url:    typeof r.url === 'string' ? r.url : undefined,
+      id: typeof r.id === 'string' ? r.id : undefined,
+      url: typeof r.url === 'string' ? r.url : undefined,
       format: typeof r.format === 'string' ? r.format : undefined,
     };
     return ref.id || ref.url ? ref : null;
@@ -1809,7 +2255,9 @@ function renderActions(
       try {
         const r = await host.assets.get(ref.id);
         if (r?.url) return { url: r.url, format: r.format };
-      } catch { /* not in the store (transient ref) - fall back to its own url */ }
+      } catch {
+        /* not in the store (transient ref) - fall back to its own url */
+      }
     }
     return ref.url ? { url: ref.url, format: ref.format } : null;
   }
@@ -1831,9 +2279,13 @@ function renderActions(
     const ref = toolAudioRef();
     if (!ref) return null;
     const assetId = ref.id ?? '';
-    let words = assetId && host.assets?.get
-      ? await host.assets.get(assetId).then(r => ttsWordsOf(r?.meta) ?? transcriptWordsOf(r?.meta), () => null)
-      : null;
+    let words =
+      assetId && host.assets?.get
+        ? await host.assets.get(assetId).then(
+            (r) => ttsWordsOf(r?.meta) ?? transcriptWordsOf(r?.meta),
+            () => null
+          )
+        : null;
     if (!words) words = stashedTranscript(assetId, ref.url ?? '');
     if (!words?.length) return null;
     const transcript = { words, granularity: 'word' as const };
@@ -1859,7 +2311,10 @@ function renderActions(
       // so it is loaded on demand rather than from the panel's own graph.
       const { stageCaptionCues } = await import('../bridge/sequence-render.ts');
       const p = videoParams();
-      const cues = stageCaptionCues(canvasEl, p.durationUserSet ? { totalMs: p.duration * 1000 } : {});
+      const cues = stageCaptionCues(
+        canvasEl,
+        p.durationUserSet ? { totalMs: p.duration * 1000 } : {}
+      );
       if (cues.length) return { vtt: cuesToVtt(cues), srt: cuesToSrt(cues) };
     }
     return stageAudioStart() === 0 ? await toolTranscriptText() : null;
@@ -1871,8 +2326,8 @@ function renderActions(
   // `zzfxm:<seed>` asset id resolves through - so a seed rolled here names the same
   // tune in a share link and in the CLI.
   let genSeed = (Math.random() * 0x7fffffff) >>> 0;
-  let genWavUrl: string | null = null;   // cached preview WAV blob URL
-  let genWavKey = '';                    // "seed:targetSec" the cache was rendered for
+  let genWavUrl: string | null = null; // cached preview WAV blob URL
+  let genWavKey = ''; // "seed:targetSec" the cache was rendered for
   const genDur = (): number => Math.max(8, Math.min(90, videoParams().duration));
   async function generatedWavUrl(targetSec: number): Promise<string> {
     const key = `${genSeed}:${targetSec}`;
@@ -1891,8 +2346,8 @@ function renderActions(
   // (same on-demand fetch+cache the export uses), and reset whenever the choice
   // changes. Preview plays once at natural length; export still loops to the clip.
   const audioPreviewBtn = el.querySelector<HTMLButtonElement>('[data-action="audio-preview"]');
-  let previewAudio: HTMLAudioElement | null = null;   // lazily-created HTMLAudioElement
-  let previewSrcId: string | null = null;   // asset id currently loaded into previewAudio
+  let previewAudio: HTMLAudioElement | null = null; // lazily-created HTMLAudioElement
+  let previewSrcId: string | null = null; // asset id currently loaded into previewAudio
   const setAudioPreviewPlaying = (playing: boolean): void => {
     if (!audioPreviewBtn) return;
     audioPreviewBtn.innerHTML = playing ? ICON_PAUSE : ICON_PLAY;
@@ -1901,7 +2356,13 @@ function renderActions(
     audioPreviewBtn.title = label;
     audioPreviewBtn.setAttribute('aria-label', label);
   };
-  const stopAudioPreview = (): void => { try { previewAudio?.pause(); } catch { /* not started */ } };
+  const stopAudioPreview = (): void => {
+    try {
+      previewAudio?.pause();
+    } catch {
+      /* not started */
+    }
+  };
   const syncAudioPreviewEnabled = (): void => {
     if (audioPreviewBtn) audioPreviewBtn.disabled = !(audioSel && audioSel.value);
   };
@@ -1914,9 +2375,17 @@ function renderActions(
   // chosen - with "None" they are dead controls, so they stay hidden.
   const syncTrackExtras = (): void => {
     const on = !!audioSel?.value;
-    el.querySelectorAll<HTMLElement>('[data-track-extras]').forEach(x => { x.style.display = on ? '' : 'none'; });
+    el.querySelectorAll<HTMLElement>('[data-track-extras]').forEach((x) => {
+      x.style.display = on ? '' : 'none';
+    });
   };
-  audioSel?.addEventListener('change', () => { stopAudioPreview(); previewSrcId = null; syncAudioPreviewEnabled(); syncAudioRegenVisible(); syncTrackExtras(); });
+  audioSel?.addEventListener('change', () => {
+    stopAudioPreview();
+    previewSrcId = null;
+    syncAudioPreviewEnabled();
+    syncAudioRegenVisible();
+    syncTrackExtras();
+  });
   syncTrackExtras();
   if (audioPreviewBtn) {
     audioPreviewBtn.addEventListener('click', async () => {
@@ -1925,19 +2394,24 @@ function renderActions(
       // Key the loaded source so a regenerated tune reloads instead of replaying
       // the stale bytes; catalog/user ids key as themselves.
       const srcKey = id === '__generate__' ? `__generate__:${genSeed}:${genDur()}` : id;
-      if (previewAudio && previewSrcId === srcKey && !previewAudio.paused) { stopAudioPreview(); return; }
+      if (previewAudio && previewSrcId === srcKey && !previewAudio.paused) {
+        stopAudioPreview();
+        return;
+      }
       try {
         if (!previewAudio) {
           previewAudio = new Audio();
           previewAudio.preload = 'auto';
-          previewAudio.addEventListener('play',  () => setAudioPreviewPlaying(true));
+          previewAudio.addEventListener('play', () => setAudioPreviewPlaying(true));
           previewAudio.addEventListener('pause', () => setAudioPreviewPlaying(false));
           previewAudio.addEventListener('ended', () => setAudioPreviewPlaying(false));
         }
         if (previewSrcId !== srcKey) {
           audioPreviewBtn.classList.add('is-loading');
-          const url = id === '__generate__' ? await generatedWavUrl(genDur())
-            : (await host.assets.get(id)).url;
+          const url =
+            id === '__generate__'
+              ? await generatedWavUrl(genDur())
+              : (await host.assets.get(id)).url;
           if (!url) throw new Error('no track to preview');
           previewAudio.src = url;
           previewSrcId = srcKey;
@@ -1985,7 +2459,7 @@ function renderActions(
   const syncPrintDefault = (fmt: string): void => {
     if (marksUserSet) return;
     const en = el.querySelector<HTMLInputElement>('[data-action="print-enable"]');
-    if (en) en.checked = printIntentFmt(fmt);   // refreshPrintUi (called next) reveals/hides the body
+    if (en) en.checked = printIntentFmt(fmt); // refreshPrintUi (called next) reveals/hides the body
   };
 
   // The embedded-caption box follows the CONTAINER until the user has an opinion
@@ -1994,8 +2468,12 @@ function renderActions(
   // and WebM is on. One touch of the checkbox ends the following for this panel, the
   // way marksUserSet ends the print-marks default.
   let captionsEmbedUserSet = false;
-  el.querySelector<HTMLInputElement>('[data-action="captions-embed"]')
-    ?.addEventListener('change', () => { captionsEmbedUserSet = true; });
+  el.querySelector<HTMLInputElement>('[data-action="captions-embed"]')?.addEventListener(
+    'change',
+    () => {
+      captionsEmbedUserSet = true;
+    }
+  );
   const syncCaptionsUi = (fmt: string): void => {
     const embed = el.querySelector<HTMLInputElement>('[data-action="captions-embed"]');
     if (embed && !captionsEmbedUserSet) embed.checked = fmt === 'webm';
@@ -2009,34 +2487,51 @@ function renderActions(
       const fmt = formatEl.value;
       syncCaptionsUi(fmt);
       if (animParamsEl) animParamsEl.style.display = isAnimatedFmt(fmt) ? 'flex' : 'none';
-      if (ditherEl)     ditherEl.style.display     = fmt === 'gif'  ? 'flex' : 'none';
-      el.querySelectorAll<HTMLElement>('[data-vector-only]').forEach(c => { c.style.display = isVectorFmt(fmt) ? 'flex' : 'none'; });
-      el.querySelectorAll<HTMLElement>('[data-alpha-only]').forEach(c => { c.style.display = isAlphaFmt(fmt) ? 'flex' : 'none'; });
+      if (ditherEl) ditherEl.style.display = fmt === 'gif' ? 'flex' : 'none';
+      el.querySelectorAll<HTMLElement>('[data-vector-only]').forEach((c) => {
+        c.style.display = isVectorFmt(fmt) ? 'flex' : 'none';
+      });
+      el.querySelectorAll<HTMLElement>('[data-alpha-only]').forEach((c) => {
+        c.style.display = isAlphaFmt(fmt) ? 'flex' : 'none';
+      });
       // `data-suppressed` wins over the video-format test: syncSequenceUi sets it on
       // "Record live" for a timed composition, and without this check switching format
       // would hand the control straight back.
-      el.querySelectorAll<HTMLElement>('[data-video-only]').forEach(c => {
-        c.style.display = (isVideoFmt(fmt) && c.dataset.suppressed !== '1') ? 'flex' : 'none';
+      el.querySelectorAll<HTMLElement>('[data-video-only]').forEach((c) => {
+        c.style.display = isVideoFmt(fmt) && c.dataset.suppressed !== '1' ? 'flex' : 'none';
       });
       // Contact sheets are a STILL-format affordance; the same handler owns them, so
       // the Frames row can't survive a switch to a motion format. It only exists at
       // all while the artboard is a sequence (syncFramesUi), so this is a no-op
       // everywhere else - no data-suppressed flag needed, nothing to fight over.
-      el.querySelectorAll<HTMLElement>('[data-seq-still-only]').forEach(c => { c.style.display = isStillFmt(fmt) ? 'flex' : 'none'; });
-      if (!isVideoFmt(fmt)) stopAudioPreview();   // the audio card is hidden - don't keep a preview playing under it
-      el.querySelectorAll<HTMLElement>('[data-html-only]').forEach(c => { c.style.display = fmt === 'html' ? 'flex' : 'none'; });
-      el.querySelectorAll<HTMLElement>('[data-emf-only]').forEach(c => { c.style.display = fmt === 'emf' ? 'flex' : 'none'; });
+      el.querySelectorAll<HTMLElement>('[data-seq-still-only]').forEach((c) => {
+        c.style.display = isStillFmt(fmt) ? 'flex' : 'none';
+      });
+      if (!isVideoFmt(fmt)) stopAudioPreview(); // the audio card is hidden - don't keep a preview playing under it
+      el.querySelectorAll<HTMLElement>('[data-html-only]').forEach((c) => {
+        c.style.display = fmt === 'html' ? 'flex' : 'none';
+      });
+      el.querySelectorAll<HTMLElement>('[data-emf-only]').forEach((c) => {
+        c.style.display = fmt === 'emf' ? 'flex' : 'none';
+      });
+      el.querySelectorAll<HTMLElement>('[data-rpm-only]').forEach((c) => {
+        c.style.display = fmt === 'rpm' || fmt === 'tar.gz' ? 'flex' : 'none';
+      });
       renderSendTargets(fmt);
-      el.querySelectorAll<HTMLElement>('[data-cmyk-only]').forEach(c => { c.style.display = isCmykFmt(fmt) ? 'flex' : 'none'; });
-      el.querySelectorAll<HTMLElement>('[data-printmarks-only]').forEach(c => { c.style.display = isPrintFmt(fmt) ? 'flex' : 'none'; });
+      el.querySelectorAll<HTMLElement>('[data-cmyk-only]').forEach((c) => {
+        c.style.display = isCmykFmt(fmt) ? 'flex' : 'none';
+      });
+      el.querySelectorAll<HTMLElement>('[data-printmarks-only]').forEach((c) => {
+        c.style.display = isPrintFmt(fmt) ? 'flex' : 'none';
+      });
       syncBarsDefault(fmt);
-      syncPrintDefault(fmt);   // open the marks card for a CMYK press format, close it otherwise
-      updateFidelityWarning();  // only SVG/HTML keep a frosted panel
+      syncPrintDefault(fmt); // open the marks card for a CMYK press format, close it otherwise
+      updateFidelityWarning(); // only SVG/HTML keep a frosted panel
       refreshPrintUi(); // owns [data-pdf-only] (password) visibility - see below
       refreshDepthFact();
-      refreshPreflight();   // the format is the single biggest input to every check
+      refreshPreflight(); // the format is the single biggest input to every check
       onUrlSync?.('format');
-      onUrlSync?.('marks');  // bars may have flipped with the format
+      onUrlSync?.('marks'); // bars may have flipped with the format
     });
   }
 
@@ -2048,14 +2543,16 @@ function renderActions(
   if (formatEl && matchFmtInput) {
     let formatLocked = !!exportDefaults.format;
     let autoSetting = false;
-    formatEl.addEventListener('change', () => { if (!autoSetting) formatLocked = true; });
+    formatEl.addEventListener('change', () => {
+      if (!autoSetting) formatLocked = true;
+    });
     runtime.subscribe(() => {
       if (formatLocked) return;
       const f = assetExportFormat();
       if (f && f !== formatEl.value) {
         autoSetting = true;
         formatEl.value = f;
-        formatEl.dispatchEvent(new Event('change', { bubbles: true }));  // runs the per-format UI refresh above
+        formatEl.dispatchEvent(new Event('change', { bubbles: true })); // runs the per-format UI refresh above
         autoSetting = false;
       }
     });
@@ -2069,31 +2566,46 @@ function renderActions(
   // source. See views/export-depth.ts for the derivation.
   function refreshDepthFact(): void {
     const fmt = formatEl?.value ?? initialFmt;
-    const hdr = el!.querySelector<HTMLInputElement>('[data-action="hdr"]')?.checked ?? exportDefaults.hdr;
+    const hdr =
+      el!.querySelector<HTMLInputElement>('[data-action="hdr"]')?.checked ?? exportDefaults.hdr;
     applyDepthFact(el, depthFact(fmt, { hdr: !!hdr, depth: exportDefaults.depth }));
   }
 
   // Print marks card: reveal its body when enabled, and hide the open-password
   // card while it's on (marks/bleed route through pdf-lib, which can't encrypt).
   function refreshPrintUi(): void {
-    const on  = el!.querySelector<HTMLInputElement>('[data-action="print-enable"]')?.checked;
+    const on = el!.querySelector<HTMLInputElement>('[data-action="print-enable"]')?.checked;
     const fmt = formatEl?.value ?? initialFmt;
     const body = el!.querySelector<HTMLElement>('[data-print-body]');
     if (body) body.style.display = on ? 'flex' : 'none';
     // The lock card serves the RGB `pdf` AND the print `pdf-cmyk` (the strong AES tier
     // composes with CMYK/marks) AND the `zip` bundle (whole-zip encryption);
     // refreshLockTier() constrains/rewords which tiers apply in the current context.
-    el!.querySelectorAll<HTMLElement>('[data-pdf-only]').forEach(c => { c.style.display = (fmt === 'pdf' || fmt === 'pdf-cmyk' || fmt === 'zip') ? 'flex' : 'none'; });
+    el!.querySelectorAll<HTMLElement>('[data-pdf-only]').forEach((c) => {
+      c.style.display = fmt === 'pdf' || fmt === 'pdf-cmyk' || fmt === 'zip' ? 'flex' : 'none';
+    });
     refreshLockTier();
     // Content Credentials follow the stampable-container set, independent of
     // the print card (marks + credential compose fine - the stamp runs last).
     // Shown for zip too: bundled members are stamped individually. The webm
     // caveat sentence only shows for webm (no external viewer reads it there).
-    el!.querySelectorAll<HTMLElement>('[data-c2pa-only]').forEach(c => { c.style.display = (isC2paFmt(fmt) || fmt === 'zip') ? 'flex' : 'none'; });
-    el!.querySelectorAll<HTMLElement>('[data-imprint-only]').forEach(c => { c.style.display = (isImprintFmt(fmt) || fmt === 'zip') ? 'flex' : 'none'; });
-    el!.querySelectorAll<HTMLElement>('[data-durable-only]').forEach(c => { c.style.display = isDurableFmt(fmt) ? 'flex' : 'none'; });
-    el!.querySelectorAll<HTMLElement>('[data-hdr-only]').forEach(c => { c.style.display = isHdrFmt(fmt) ? 'flex' : 'none'; });
-    el!.querySelectorAll<HTMLElement>('[data-c2pa-webm]').forEach(c => { c.style.display = fmt === 'webm' ? 'block' : 'none'; });
+    el!.querySelectorAll<HTMLElement>('[data-c2pa-only]').forEach((c) => {
+      c.style.display = isC2paFmt(fmt) || fmt === 'zip' ? 'flex' : 'none';
+    });
+    el!.querySelectorAll<HTMLElement>('[data-imprint-only]').forEach((c) => {
+      c.style.display = isImprintFmt(fmt) || fmt === 'zip' ? 'flex' : 'none';
+    });
+    el!.querySelectorAll<HTMLElement>('[data-durable-only]').forEach((c) => {
+      // durableRouteOk is the probe's answer (see the card above): a shell with no
+      // route to the encoder keeps the card hidden whatever the format is.
+      c.style.display = durableRouteOk && isDurableFmt(fmt) ? 'flex' : 'none';
+    });
+    el!.querySelectorAll<HTMLElement>('[data-hdr-only]').forEach((c) => {
+      c.style.display = isHdrFmt(fmt) ? 'flex' : 'none';
+    });
+    el!.querySelectorAll<HTMLElement>('[data-c2pa-webm]').forEach((c) => {
+      c.style.display = fmt === 'webm' ? 'block' : 'none';
+    });
     // The "Content protection" wrapper itself: hidden when none of its four inner
     // cards apply to the selected format (e.g. a text/data format like csv/json/ics),
     // so an always-collapsed, permanently-empty header never shows. Each inner card
@@ -2104,8 +2616,8 @@ function renderActions(
     if (protectionEl) {
       // Print marks live in their own section now (data-printmarks-only), so the
       // protection wrapper's visibility does NOT include isPrintFmt.
-      const anyValid = (fmt === 'pdf' || fmt === 'pdf-cmyk' || fmt === 'zip')
-        || isC2paFmt(fmt) || isImprintFmt(fmt);
+      const anyValid =
+        fmt === 'pdf' || fmt === 'pdf-cmyk' || fmt === 'zip' || isC2paFmt(fmt) || isImprintFmt(fmt);
       protectionEl.style.display = anyValid ? 'flex' : 'none';
     }
   }
@@ -2120,18 +2632,23 @@ function renderActions(
   // built into an unfinished document - so it works only on a plain RGB `pdf` with
   // no print finishing. Strong = AES-256 encrypt-last, which composes with CMYK /
   // marks / pdf-cmyk. When Standard can't apply we disable it and fall to Strong.
-  const STD_LOCK_HINT = 'Requires this password to open the PDF. A basic 40-bit lock - it opens in any PDF app and travels in a share link, so treat it as a deterrent, not protection for confidential files.';
-  const STRONG_LOCK_HINT = 'AES-256 encryption (PDF 2.0). The recipient must type this exact password to open - it is never included in a link and can’t be recovered if lost. It opens only in newer PDF apps (Acrobat / Preview from ~2018 on); older apps may report the file as damaged.';
+  const STD_LOCK_HINT =
+    'Requires this password to open the PDF. A basic 40-bit lock - it opens in any PDF app and travels in a share link, so treat it as a deterrent, not protection for confidential files.';
+  const STRONG_LOCK_HINT =
+    'AES-256 encryption (PDF 2.0). The recipient must type this exact password to open - it is never included in a link and can’t be recovered if lost. It opens only in newer PDF apps (Acrobat / Preview from ~2018 on); older apps may report the file as damaged.';
   // ZIP variants - same two tiers, different reach: standard = PKWARE ZipCrypto
   // (opens anywhere incl. Windows Explorer, weak); strong = WinZip AES-256.
-  const STD_ZIP_HINT = 'Locks the ZIP with a password. Traditional Zip encryption - it opens in any unzip tool including Windows Explorer, and travels in a share link, so treat it as a deterrent, not protection for confidential files.';
-  const STRONG_ZIP_HINT = 'AES-256 ZIP encryption. The recipient must type this exact password - it is never included in a link and can’t be recovered if lost. It opens in 7-Zip, Keka, WinZip or macOS Archive Utility, but NOT Windows Explorer’s built-in extract.';
+  const STD_ZIP_HINT =
+    'Locks the ZIP with a password. Traditional Zip encryption - it opens in any unzip tool including Windows Explorer, and travels in a share link, so treat it as a deterrent, not protection for confidential files.';
+  const STRONG_ZIP_HINT =
+    'AES-256 ZIP encryption. The recipient must type this exact password - it is never included in a link and can’t be recovered if lost. It opens in 7-Zip, Keka, WinZip or macOS Archive Utility, but NOT Windows Explorer’s built-in extract.';
   function refreshLockTier(): void {
     const tierEl = el!.querySelector<HTMLSelectElement>('[data-action="pdf-lock-tier"]');
     if (!tierEl) return;
     const fmt = formatEl?.value ?? initialFmt;
     const isZip = fmt === 'zip';
-    const marksOn = el!.querySelector<HTMLInputElement>('[data-action="print-enable"]')?.checked ?? false;
+    const marksOn =
+      el!.querySelector<HTMLInputElement>('[data-action="print-enable"]')?.checked ?? false;
     // ZIP: both tiers always apply. PDF: RC4 "standard" needs a plain RGB pdf with no
     // finishing pass; print / CMYK / crop-marks force the strong (encrypt-last) tier.
     const standardOk = isZip || (fmt === 'pdf' && !marksOn);
@@ -2139,121 +2656,206 @@ function renderActions(
     const strongOpt = tierEl.querySelector<HTMLOptionElement>('option[value="strong"]');
     if (stdOpt) {
       stdOpt.disabled = !standardOk;
-      stdOpt.textContent = isZip ? 'Standard lock - opens in any unzip tool' : 'Standard lock - opens in any PDF app';
+      stdOpt.textContent = isZip
+        ? 'Standard lock - opens in any unzip tool'
+        : 'Standard lock - opens in any PDF app';
     }
-    if (strongOpt) strongOpt.textContent = isZip ? 'Strong · AES-256 - 7-Zip / Keka / macOS' : 'Strong · AES-256 - newer apps only ⓘ';
+    if (strongOpt)
+      strongOpt.textContent = isZip
+        ? 'Strong · AES-256 - 7-Zip / Keka / macOS'
+        : 'Strong · AES-256 - newer apps only ⓘ';
     if (!standardOk) tierEl.value = 'strong';
     // Never let a URL-prefilled password become a STRONG key: clear it the moment
     // the tier is strong (whether force-flipped here or picked by the user).
     if (tierEl.value === 'strong' && pwFromUrl) {
       const pwEl = el!.querySelector<HTMLInputElement>('[data-action="pdf-password"]');
-      if (pwEl?.value) { pwEl.value = ''; onUrlSync?.('password'); }
+      if (pwEl?.value) {
+        pwEl.value = '';
+        onUrlSync?.('password');
+      }
       pwFromUrl = false;
     }
     const hintEl = el!.querySelector<HTMLElement>('[data-pdfpass-hint]');
     if (hintEl) {
       const strong = tierEl.value === 'strong';
       hintEl.textContent = isZip
-        ? (strong ? STRONG_ZIP_HINT : STD_ZIP_HINT)
+        ? strong
+          ? STRONG_ZIP_HINT
+          : STD_ZIP_HINT
         : strong
-          ? (standardOk ? '' : 'Print, CMYK and crop-marked PDFs use the strong lock. ') + STRONG_LOCK_HINT
+          ? (standardOk ? '' : 'Print, CMYK and crop-marked PDFs use the strong lock. ') +
+            STRONG_LOCK_HINT
           : STD_LOCK_HINT;
     }
   }
   // Each of these changes a setting preflight reports on (bleed, the mark set),
   // and none of them had a fidelity-warning equivalent to ride - so they take the
   // refresh explicitly, or the card would keep stating the previous bleed.
-  el.querySelector<HTMLInputElement>('[data-action="print-enable"]')?.addEventListener('change', () => {
-    marksUserSet = true;   // a manual toggle stops the per-format auto open/close
-    refreshPrintUi(); refreshPreflight(); onUrlSync?.('bleed'); onUrlSync?.('marks');
-  });
-  el.querySelector<HTMLInputElement>('[data-action="print-bleed"]')?.addEventListener('input', () => { refreshPreflight(); onUrlSync?.('bleed'); });
-  ['mark-crop', 'mark-reg', 'mark-bleed', 'mark-bars', 'mark-prov'].forEach(a =>
-    el.querySelector<HTMLInputElement>(`[data-action="${a}"]`)?.addEventListener('change', () => {
-      if (a === 'mark-bars') barsUserSet = true;  // stop auto-tracking once chosen
-      refreshPreflight();   // the mark set changes the bleed/media boxes
+  el.querySelector<HTMLInputElement>('[data-action="print-enable"]')?.addEventListener(
+    'change',
+    () => {
+      marksUserSet = true; // a manual toggle stops the per-format auto open/close
+      refreshPrintUi();
+      refreshPreflight();
+      onUrlSync?.('bleed');
       onUrlSync?.('marks');
-    }));
+    }
+  );
+  el.querySelector<HTMLInputElement>('[data-action="print-bleed"]')?.addEventListener(
+    'input',
+    () => {
+      refreshPreflight();
+      onUrlSync?.('bleed');
+    }
+  );
+  ['mark-crop', 'mark-reg', 'mark-bleed', 'mark-bars', 'mark-prov'].forEach((a) =>
+    el.querySelector<HTMLInputElement>(`[data-action="${a}"]`)?.addEventListener('change', () => {
+      if (a === 'mark-bars') barsUserSet = true; // stop auto-tracking once chosen
+      refreshPreflight(); // the mark set changes the bleed/media boxes
+      onUrlSync?.('marks');
+    })
+  );
   refreshPrintUi(); // initial state (e.g. card pre-opened from a shared link)
   refreshDepthFact(); // renders nothing unless a deep/gain-map path is already selected
 
   // Colour profile (CMYK press condition) - print-PDF only; persists via URL/save.
-  el.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.addEventListener('change', () => { refreshPreflight(); onUrlSync?.('profile'); });
+  el.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.addEventListener(
+    'change',
+    () => {
+      refreshPreflight();
+      onUrlSync?.('profile');
+    }
+  );
 
-  el.querySelector<HTMLInputElement>('[data-action="filename"]')?.addEventListener('input', () => onUrlSync?.('filename'));
+  el.querySelector<HTMLInputElement>('[data-action="filename"]')?.addEventListener('input', () =>
+    onUrlSync?.('filename')
+  );
 
   // Full-page HTML export toggle ("no stage") - round-trips through the URL as ?nostage.
-  el.querySelector<HTMLInputElement>('[data-action="full-page"]')?.addEventListener('change', () => onUrlSync?.('nostage'));
+  el.querySelector<HTMLInputElement>('[data-action="full-page"]')?.addEventListener('change', () =>
+    onUrlSync?.('nostage')
+  );
 
   // Pixel-watermark toggle - round-trips through the URL as ?imprint=1 (see syncUrl).
-  el.querySelector<HTMLInputElement>('[data-action="imprint"]')?.addEventListener('change', () => onUrlSync?.('imprint'));
-  el.querySelector<HTMLInputElement>('[data-action="durable"]')?.addEventListener('change', () => { refreshPreflight(); onUrlSync?.('durable'); });
+  el.querySelector<HTMLInputElement>('[data-action="imprint"]')?.addEventListener('change', () =>
+    onUrlSync?.('imprint')
+  );
+  el.querySelector<HTMLInputElement>('[data-action="durable"]')?.addEventListener('change', () => {
+    refreshPreflight();
+    onUrlSync?.('durable');
+  });
+  // Ask where the durable model can come from, then finish the card: reveal it if a
+  // shell that started hidden has a route, and say what the first durable export
+  // will cost. Two already-translated sentences, the matte dialog's own consent
+  // wording - the download itself still happens on that first export, on demand.
+  if (durableFmts.length) {
+    void probeDurableSupport().then((route) => {
+      if (route.available && !durableRouteOk) {
+        durableRouteOk = true;
+        refreshPrintUi(); // owns [data-durable-only] visibility for the live format
+      }
+      const line = el.querySelector<HTMLElement>('[data-durable-consent]');
+      if (!line || !route.available) return;
+      line.textContent = route.cached
+        ? t('This model is already downloaded - it runs on-device and your image is never uploaded.')
+        : t('The first run downloads a {size} model once. It runs on-device and your image is never uploaded.', {
+            size: fmtBytes(route.bytes),
+          });
+      line.hidden = false;
+    });
+  }
   el.querySelector<HTMLInputElement>('[data-action="hdr"]')?.addEventListener('change', (e) => {
     // Reveal the dials when HDR is on, hide them when off (like the print card).
     const on = (e.target as HTMLInputElement).checked;
     const body = el.querySelector<HTMLElement>('[data-hdr-body]');
     if (body) body.style.display = on ? 'grid' : 'none';
-    refreshDepthFact();   // HDR is what makes the PNG deep / the JPEG a gain map
-    refreshPreflight();   // HDR on a format that cannot carry it is a warning
+    refreshDepthFact(); // HDR is what makes the PNG deep / the JPEG a gain map
+    refreshPreflight(); // HDR on a format that cannot carry it is a warning
     onUrlSync?.('hdr');
   });
   for (const a of ['hdr-peak', 'hdr-reach', 'hdr-lift', 'hdr-focus']) {
-    el.querySelector<HTMLInputElement>(`[data-action="${a}"]`)?.addEventListener('input', () => onUrlSync?.('hdr'));
+    el.querySelector<HTMLInputElement>(`[data-action="${a}"]`)?.addEventListener('input', () =>
+      onUrlSync?.('hdr')
+    );
   }
 
   // PDF open-password - clear-text in the URL by design (see pdfPassRow). Syncs on
   // input so a crafted/edited link round-trips; syncUrl gates it to the pdf format.
-  el.querySelector<HTMLInputElement>('[data-action="pdf-password"]')?.addEventListener('input', () => { pwFromUrl = false; onUrlSync?.('password'); });
+  el.querySelector<HTMLInputElement>('[data-action="pdf-password"]')?.addEventListener(
+    'input',
+    () => {
+      pwFromUrl = false;
+      onUrlSync?.('password');
+    }
+  );
 
   // Password protect disclosure - the header toggles the body open/closed (purely
   // visual; the input value still drives export). Focus the field on expand.
-  el.querySelector<HTMLButtonElement>('[data-action="pdfpass-toggle"]')?.addEventListener('click', () => {
-    const card = el!.querySelector('.export-pdfpass');
-    const open = card?.classList.toggle('is-open') ?? false;
-    const body = el!.querySelector<HTMLElement>('[data-pdfpass-body]');
-    if (body) body.style.display = open ? 'flex' : 'none';
-    el!.querySelector('[data-action="pdfpass-toggle"]')?.setAttribute('aria-expanded', String(open));
-    if (open) el!.querySelector<HTMLInputElement>('[data-action="pdf-password"]')?.focus();
-  });
+  el.querySelector<HTMLButtonElement>('[data-action="pdfpass-toggle"]')?.addEventListener(
+    'click',
+    () => {
+      const card = el!.querySelector('.export-pdfpass');
+      const open = card?.classList.toggle('is-open') ?? false;
+      const body = el!.querySelector<HTMLElement>('[data-pdfpass-body]');
+      if (body) body.style.display = open ? 'flex' : 'none';
+      el!
+        .querySelector('[data-action="pdfpass-toggle"]')
+        ?.setAttribute('aria-expanded', String(open));
+      if (open) el!.querySelector<HTMLInputElement>('[data-action="pdf-password"]')?.focus();
+    }
+  );
 
   // WP-B "Pro settings" disclosure - same idiom as the password card: the header toggles
   // the body open/closed (purely visual; the selects drive export whether open or not).
-  el.querySelector<HTMLButtonElement>('[data-action="prosettings-toggle"]')?.addEventListener('click', () => {
-    const card = el!.querySelector('.export-pro-settings');
-    const open = card?.classList.toggle('is-open') ?? false;
-    const body = el!.querySelector<HTMLElement>('[data-prosettings-body]');
-    if (body) body.style.display = open ? 'flex' : 'none';
-    el!.querySelector('[data-action="prosettings-toggle"]')?.setAttribute('aria-expanded', String(open));
-  });
+  el.querySelector<HTMLButtonElement>('[data-action="prosettings-toggle"]')?.addEventListener(
+    'click',
+    () => {
+      const card = el!.querySelector('.export-pro-settings');
+      const open = card?.classList.toggle('is-open') ?? false;
+      const body = el!.querySelector<HTMLElement>('[data-prosettings-body]');
+      if (body) body.style.display = open ? 'flex' : 'none';
+      el!
+        .querySelector('[data-action="prosettings-toggle"]')
+        ?.setAttribute('aria-expanded', String(open));
+    }
+  );
 
   // "Content protection" disclosure - the outer header toggles the whole group of
   // four provenance/protection cards open/closed. Purely visual, same idiom as the
   // password card's own toggle above: nothing inside changes state or export
   // behaviour, and each inner card's own disclosure (password, print marks) keeps
   // working independently once the group is open.
-  el.querySelector<HTMLButtonElement>('[data-action="protection-toggle"]')?.addEventListener('click', () => {
-    const card = el!.querySelector('.export-protection');
-    const open = card?.classList.toggle('is-open') ?? false;
-    const body = el!.querySelector<HTMLElement>('[data-protection-body]');
-    if (body) body.style.display = open ? 'flex' : 'none';
-    el!.querySelector('[data-action="protection-toggle"]')?.setAttribute('aria-expanded', String(open));
-  });
+  el.querySelector<HTMLButtonElement>('[data-action="protection-toggle"]')?.addEventListener(
+    'click',
+    () => {
+      const card = el!.querySelector('.export-protection');
+      const open = card?.classList.toggle('is-open') ?? false;
+      const body = el!.querySelector<HTMLElement>('[data-protection-body]');
+      if (body) body.style.display = open ? 'flex' : 'none';
+      el!
+        .querySelector('[data-action="protection-toggle"]')
+        ?.setAttribute('aria-expanded', String(open));
+    }
+  );
 
   // Encryption-tier switch: refresh the hint/constraints, re-evaluate the C2PA
   // exclusion, and re-sync the URL - the strong tier is deliberately never written
   // to a link, so switching to it drops any ?password= that was there.
-  el.querySelector<HTMLSelectElement>('[data-action="pdf-lock-tier"]')?.addEventListener('change', () => {
-    refreshLockTier();
-    refreshC2paUi('tier');
-    onUrlSync?.('password');
-  });
+  el.querySelector<HTMLSelectElement>('[data-action="pdf-lock-tier"]')?.addEventListener(
+    'change',
+    () => {
+      refreshLockTier();
+      refreshC2paUi('tier');
+      onUrlSync?.('password');
+    }
+  );
 
   // Content Credentials ↔ open-password exclusion: an encrypted PDF can't take
   // the C2PA incremental update, so whichever is active disables the other
   // (mirrors the marks-vs-password exclusion in refreshPrintUi). Checking the
   // box clears a typed password; a typed password (or a ?password= link - the
   // initial call below) unchecks the box and wins over a tool's render.c2pa.
-  const c2paEl    = el.querySelector<HTMLInputElement>('[data-action="pdf-c2pa"]');
+  const c2paEl = el.querySelector<HTMLInputElement>('[data-action="pdf-c2pa"]');
   const pdfPassEl = el.querySelector<HTMLInputElement>('[data-action="pdf-password"]');
   function refreshC2paUi(changed?: string): void {
     if (!c2paEl) return;
@@ -2271,7 +2873,7 @@ function renderActions(
       onUrlSync?.('password');
     }
     if (pdfPassEl.value) c2paEl.checked = false;
-    c2paEl.disabled    = Boolean(pdfPassEl.value);
+    c2paEl.disabled = Boolean(pdfPassEl.value);
     // The exclusion is one-directional on purpose: while a password is typed the
     // C2PA box is disabled (above), but the password field itself is NEVER disabled.
     // Disabling it here deadlocked the panel - C2PA is default-ON for a normal PDF,
@@ -2290,7 +2892,7 @@ function renderActions(
   // the document dismiss listener is dropped in mountTool's cleanup). Hover
   // reveal is pure CSS.
   wireHelpTips(el);
-  wirePreflight(el);   // the "Before you export" control opens its details modal
+  wirePreflight(el); // the "Before you export" control opens its details modal
   linkHelpDescriptions(el);
 
   // Credential lifetime: the 7/30/90/365 select only makes sense for the
@@ -2301,7 +2903,11 @@ function renderActions(
     const lifeEl = el!.querySelector<HTMLElement>('[data-c2pa-life]');
     if (!lifeEl) return;
     let s: IdentityStatus | null | undefined = null;
-    try { s = await host.identity?.status(); } catch { /* CA/bridge absent - keep the picker */ }
+    try {
+      s = await host.identity?.status();
+    } catch {
+      /* CA/bridge absent - keep the picker */
+    }
     if (!s?.enrolled || s.expired) return;
     const until = s.notAfter ? new Date(s.notAfter).toLocaleDateString() : '';
     const renew = (s.daysLeft ?? Infinity) < 7 ? ' <a href="#/profile">Renew soon</a>' : '';
@@ -2312,10 +2918,17 @@ function renderActions(
   // is an exported pixel - the token-cost readout can't drift from the real raster
   // resolution the way a physical unit + DPI would. Force px explicitly, not just by
   // the selector's absence, so the invariant holds regardless of DOM state.
-  const dimUnit = (): string => manifest.render.units === false
-    ? 'px'
-    : (el!.querySelector<HTMLSelectElement>('[data-action="export-unit"]')?.value || 'px');
-  const dimDpi  = (): number => { const n = parseInt(el!.querySelector<HTMLInputElement>('[data-action="export-dpi"]')?.value ?? '', 10); return n > 0 ? n : 300; };
+  const dimUnit = (): string =>
+    manifest.render.units === false
+      ? 'px'
+      : el!.querySelector<HTMLSelectElement>('[data-action="export-unit"]')?.value || 'px';
+  const dimDpi = (): number => {
+    const n = parseInt(
+      el!.querySelector<HTMLInputElement>('[data-action="export-dpi"]')?.value ?? '',
+      10
+    );
+    return n > 0 ? n : 300;
+  };
   /** A stored px length as the bar shows it in the active unit - one rounding, shared by
    *  every reader, so "is this field still showing the stored size" is a string compare. */
   const dispDim = (px: number): string => String(displayIn(px, dimUnit()));
@@ -2329,15 +2942,24 @@ function renderActions(
   // still at the manifest numbers is a REAL 1200 x 900 mm export (exportDims below
   // qualifies the field value with the active unit), so reading it as the tool's
   // pixel canvas would under-report by a factor of twelve.
-  let sizeUserSet = exportDefaults.width != null || exportDefaults.height != null ||
+  let sizeUserSet =
+    exportDefaults.width != null ||
+    exportDefaults.height != null ||
     (exportDefaults.unit != null && exportDefaults.unit !== 'px');
   // Ephemeral-credential lifetime pick; null when an enrolled identity replaced
   // the select (the cert window rules then) - export.js defaults absent to 30.
-  const c2paDaysVal = (): number | null => { const n = Number(el!.querySelector<HTMLSelectElement>('[data-action="c2pa-days"]')?.value); return [7, 30, 90, 365].includes(n) ? n : null; };
+  const c2paDaysVal = (): number | null => {
+    const n = Number(el!.querySelector<HTMLSelectElement>('[data-action="c2pa-days"]')?.value);
+    return [7, 30, 90, 365].includes(n) ? n : null;
+  };
   // Raw numeric values the user typed, in the active unit.
   function rawDims(): { w: number | undefined; h: number | undefined } {
-    const w = parseFloat(el!.querySelector<HTMLInputElement>('[data-action="export-width"]')?.value ?? '');
-    const h = parseFloat(el!.querySelector<HTMLInputElement>('[data-action="export-height"]')?.value ?? '');
+    const w = parseFloat(
+      el!.querySelector<HTMLInputElement>('[data-action="export-width"]')?.value ?? ''
+    );
+    const h = parseFloat(
+      el!.querySelector<HTMLInputElement>('[data-action="export-height"]')?.value ?? ''
+    );
     return { w: w > 0 ? w : undefined, h: h > 0 ? h : undefined };
   }
 
@@ -2349,8 +2971,12 @@ function renderActions(
     }
     const { w, h } = rawDims();
     const u = dimUnit();
-    const q = (v: number | undefined): string | number | undefined => ((v ?? 0) > 0 ? (u !== 'px' ? `${v}${u}` : v) : undefined);
-    const out: { width?: number | string; height?: number | string; dpi?: number } = { width: q(w), height: q(h) };
+    const q = (v: number | undefined): string | number | undefined =>
+      (v ?? 0) > 0 ? (u !== 'px' ? `${v}${u}` : v) : undefined;
+    const out: { width?: number | string; height?: number | string; dpi?: number } = {
+      width: q(w),
+      height: q(h),
+    };
     if (u !== 'px') out.dpi = dimDpi();
     return out;
   }
@@ -2359,7 +2985,8 @@ function renderActions(
   function previewPx(): { width: number | undefined; height: number | undefined } {
     const { w, h } = rawDims();
     const u = dimUnit();
-    const toPx = (v: number | undefined): number | undefined => ((v ?? 0) > 0 ? (u === 'px' ? v : toCssPx({ value: v!, unit: u as Unit })) : undefined);
+    const toPx = (v: number | undefined): number | undefined =>
+      (v ?? 0) > 0 ? (u === 'px' ? v : toCssPx({ value: v!, unit: u as Unit })) : undefined;
     return { width: toPx(w), height: toPx(h) };
   }
 
@@ -2376,7 +3003,7 @@ function renderActions(
   }
 
   // Export-fidelity guard: does the canvas paint anything the chosen format cannot
-  // carry? Today that is `backdrop-filter` (frosted glass). Only SVG can express it - 
+  // carry? Today that is `backdrop-filter` (frosted glass). Only SVG can express it -
   // the walker rebuilds the backdrop by cloning, clipping and blurring what is behind
   // the panel. Every raster format goes through a DOM serialiser that puts the node in
   // a <foreignObject>, where the backdrop is by definition outside the subtree and the
@@ -2435,11 +3062,16 @@ function renderActions(
     // carries whichever sentences apply rather than the first one that matched.
     const parts: string[] = [];
     if (fmt && !FROST_OK_FORMATS.has(fmt) && canvasUsesBackdropFilter()) {
-      parts.push(`This design uses a frosted glass effect. ${fmt.toUpperCase()} exports can’t keep the blur, so the panel exports without it.`);
+      parts.push(
+        `This design uses a frosted glass effect. ${fmt.toUpperCase()} exports can’t keep the blur, so the panel exports without it.`
+      );
     }
     if (fmt && VECTOR_FORMATS.has(fmt) && canvasHasPerspectivePose()) {
-      parts.push(t('Tilted layers export as images inside this {fmt}. Everything else stays vector.',
-        { fmt: fmt.toUpperCase() }));
+      parts.push(
+        t('Tilted layers export as images inside this {fmt}. Everything else stays vector.', {
+          fmt: fmt.toUpperCase(),
+        })
+      );
     }
     const msg = parts.join(' ');
     fidelityWarnEl.querySelector<HTMLElement>('[data-fidelity-warning-text]')!.textContent = msg;
@@ -2457,15 +3089,20 @@ function renderActions(
   // so an ordinary PDF stays trim-sized with no marks.
   function printOpts(): RunExportOpts {
     if (!printEnabled(el)) return {};
-    const mm = parseFloat(el!.querySelector<HTMLInputElement>('[data-action="print-bleed"]')?.value ?? '');
+    const mm = parseFloat(
+      el!.querySelector<HTMLInputElement>('[data-action="print-bleed"]')?.value ?? ''
+    );
     return {
       bleed: mm > 0 ? `${mm}mm` : undefined,
-      cropMarks:         el!.querySelector<HTMLInputElement>('[data-action="mark-crop"]')?.checked ?? false,
-      registrationMarks: el!.querySelector<HTMLInputElement>('[data-action="mark-reg"]')?.checked ?? false,
-      bleedMarks:        el!.querySelector<HTMLInputElement>('[data-action="mark-bleed"]')?.checked ?? false,
-      colorBars:         el!.querySelector<HTMLInputElement>('[data-action="mark-bars"]')?.checked ?? false,
-      provenance:        el!.querySelector<HTMLInputElement>('[data-action="mark-prov"]')?.checked ?? false,
-      barRadiusPt:       brandBarRadiusPt(),
+      cropMarks: el!.querySelector<HTMLInputElement>('[data-action="mark-crop"]')?.checked ?? false,
+      registrationMarks:
+        el!.querySelector<HTMLInputElement>('[data-action="mark-reg"]')?.checked ?? false,
+      bleedMarks:
+        el!.querySelector<HTMLInputElement>('[data-action="mark-bleed"]')?.checked ?? false,
+      colorBars: el!.querySelector<HTMLInputElement>('[data-action="mark-bars"]')?.checked ?? false,
+      provenance:
+        el!.querySelector<HTMLInputElement>('[data-action="mark-prov"]')?.checked ?? false,
+      barRadiusPt: brandBarRadiusPt(),
     };
   }
 
@@ -2474,12 +3111,13 @@ function renderActions(
   // - where the runtime brand block applies it - falling back to the document root,
   // and converts px→pt (72/96). 0 (or an unparseable/none value) keeps sharp cells.
   function brandBarRadiusPt(): number {
-    const src = el?.closest('.tool-layout')?.querySelector('#tool-canvas') ?? document.documentElement;
+    const src =
+      el?.closest('.tool-layout')?.querySelector('#tool-canvas') ?? document.documentElement;
     const raw = getComputedStyle(src).getPropertyValue('--radius').trim();
     const n = parseFloat(raw);
     if (!Number.isFinite(n) || n <= 0) return 0;
-    const px = /rem\s*$/.test(raw) ? n * 16 : n;   // rem→px (root 16px) or already px
-    return px * 0.75;                               // px→pt
+    const px = /rem\s*$/.test(raw) ? n * 16 : n; // rem→px (root 16px) or already px
+    return px * 0.75; // px→pt
   }
 
   // ── Preflight: "Before you export" ────────────────────────────────────────
@@ -2505,10 +3143,21 @@ function renderActions(
   void (async () => {
     try {
       const colors = await host.tokens?.colors?.();
-      if (!Array.isArray(colors) || colors.length === 0) return;   // stays 'not-resolved'
-      palette = { known: true, value: colors.map(s => ({ path: s.path, name: s.name, spot: s.spot ?? null, cmyk: s.cmyk ?? undefined, hex: s.value })) };
+      if (!Array.isArray(colors) || colors.length === 0) return; // stays 'not-resolved'
+      palette = {
+        known: true,
+        value: colors.map((s) => ({
+          path: s.path,
+          name: s.name,
+          spot: s.spot ?? null,
+          cmyk: s.cmyk ?? undefined,
+          hex: s.value,
+        })),
+      };
       refreshPreflight();
-    } catch { /* stays 'not-resolved' - never a fabricated empty palette */ }
+    } catch {
+      /* stays 'not-resolved' - never a fabricated empty palette */
+    }
   })();
 
   /** DOM truths, the only channel through which the stage reaches the engine. */
@@ -2521,7 +3170,9 @@ function renderActions(
     // never a render. Only images with real intrinsic pixels + a rendered box.
     const rect = canvasEl.getBoundingClientRect();
     const rasterImages = [...canvasEl.querySelectorAll('img')].flatMap((el) => {
-      const nW = el.naturalWidth, nH = el.naturalHeight, b = el.getBoundingClientRect();
+      const nW = el.naturalWidth,
+        nH = el.naturalHeight,
+        b = el.getBoundingClientRect();
       if (!(nW > 0) || !(nH > 0) || !(b.width > 0) || !(b.height > 0)) return [];
       const src = el.currentSrc || el.src || '';
       // A placed SVG is VECTOR: it carries through PDF/SVG export as vector (or a
@@ -2606,10 +3257,17 @@ function renderActions(
     // four times too small. A fixed-dims tool (`dims === false`) is exempt: it passes
     // the manifest size explicitly, which IS a request, so no scale applies - and so
     // is every vector/PDF format, which never reaches `rasterStyle`.
-    const supersampled = manifest.render.dims !== false && !typed && SUPERSAMPLED_EXPORT_FORMATS.has(fmt.toLowerCase());
+    const supersampled =
+      manifest.render.dims !== false &&
+      !typed &&
+      SUPERSAMPLED_EXPORT_FORMATS.has(fmt.toLowerCase());
     const canvasScale = supersampled ? RASTER_DEFAULT_SCALE : 1;
-    const width  = manifestSize ? { value: manifest.render.width * canvasScale,  unit: 'px' as Unit } : { value: w!, unit };
-    const height = manifestSize ? { value: manifest.render.height * canvasScale, unit: 'px' as Unit } : { value: h!, unit };
+    const width = manifestSize
+      ? { value: manifest.render.width * canvasScale, unit: 'px' as Unit }
+      : { value: w!, unit };
+    const height = manifestSize
+      ? { value: manifest.render.height * canvasScale, unit: 'px' as Unit }
+      : { value: h!, unit };
     // `unitDeclared` is true only when the SOURCE spelled a unit out - here, when
     // the panel offers the unit selector AND the value in the field is the one the
     // user put there. False makes the engine refuse to derive an area rather than
@@ -2617,7 +3275,9 @@ function renderActions(
     const unitDeclared = !manifestSize && manifest.render.units !== false;
 
     const on = printEnabled(el);
-    const bleedMm = parseFloat(el!.querySelector<HTMLInputElement>('[data-action="print-bleed"]')?.value ?? '');
+    const bleedMm = parseFloat(
+      el!.querySelector<HTMLInputElement>('[data-action="print-bleed"]')?.value ?? ''
+    );
     const marks = printOpts();
     const job: PreflightJob = {
       source: 'web',
@@ -2634,7 +3294,18 @@ function renderActions(
         // unknown. (A batch-snapshot row, which carries none of them, is the case
         // that must report `{ known:false, why:'not-carried' }`.)
         bleed: { known: true, value: on && bleedMm > 0 ? { value: bleedMm, unit: 'mm' } : null },
-        marks: { known: true, value: on ? { crop: marks.cropMarks, registration: marks.registrationMarks, bleed: marks.bleedMarks, colorBars: marks.colorBars, provenance: marks.provenance } : null },
+        marks: {
+          known: true,
+          value: on
+            ? {
+                crop: marks.cropMarks,
+                registration: marks.registrationMarks,
+                bleed: marks.bleedMarks,
+                colorBars: marks.colorBars,
+                provenance: marks.provenance,
+              }
+            : null,
+        },
         // The reserved `profile` param is the PRESS CONDITION, not a user profile.
         //
         // Reported ONLY when the setting is actually in force. The Color profile
@@ -2646,10 +3317,14 @@ function renderActions(
         // was inventing the setting.
         pressProfile: {
           known: true,
-          value: isCmykFmt(fmt) ? (el!.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.value || null) : null,
+          value: isCmykFmt(fmt)
+            ? el!.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.value || null
+            : null,
         },
         cuts: cutsValue(),
-        password: Boolean(el!.querySelector<HTMLInputElement>('[data-action="pdf-password"]')?.value),
+        password: Boolean(
+          el!.querySelector<HTMLInputElement>('[data-action="pdf-password"]')?.value
+        ),
         durable: el!.querySelector<HTMLInputElement>('[data-action="durable"]')?.checked ?? false,
         hdr: el!.querySelector<HTMLInputElement>('[data-action="hdr"]')?.checked ?? false,
       },
@@ -2661,13 +3336,18 @@ function renderActions(
     // by construction: a manifest-sourced size shows as the pixel canvas it is.
     const sizeText = manifestSize
       ? `${manifest.render.width * canvasScale} × ${manifest.render.height * canvasScale} px`
-      : (unit === 'px' ? `${w} × ${h} px` : tRaw('{w} × {h} {unit} at {dpi} DPI', { w: String(w), h: String(h), unit, dpi }));
+      : unit === 'px'
+        ? `${w} × ${h} px`
+        : tRaw('{w} × {h} {unit} at {dpi} DPI', { w: String(w), h: String(h), unit, dpi });
     const report = preflight(job);
-    applyPreflight(el, preflightView(report, {
-      formatLabel: fmt ? fmtLabel(fmt) : '',
-      sizeText,
-      bleedText: on && bleedMm > 0 ? `${bleedMm} mm` : null,
-    }));
+    applyPreflight(
+      el,
+      preflightView(report, {
+        formatLabel: fmt ? fmtLabel(fmt) : '',
+        sizeText,
+        bleedText: on && bleedMm > 0 ? `${bleedMm} mm` : null,
+      })
+    );
     // The cost pass consumes the SAME counts. Async (it reads stored cards), so it is
     // fired and forgotten off the latest counts; a stale in-flight pass is harmless
     // because each call re-reads the current selection and rewrites the card.
@@ -2708,27 +3388,41 @@ function renderActions(
     const rcHost = host as unknown as Parameters<typeof listRateCards>[0];
     void mountSlot<CostAuthoringContext>('cost-authoring', slotEl, {
       host: rcHost,
-      onChange: () => { void refreshCost(); },
-    }).then(d => { costSlotDispose = d; });
+      onChange: () => {
+        void refreshCost();
+      },
+    }).then((d) => {
+      costSlotDispose = d;
+    });
   }
   // Re-attempt the mount whenever the registry changes (async bundle delivery).
   // Unsubscribed, and the hydrated extension torn down, in `disposeCostSlot`.
   const costSlotUnsub = onExtensionsChanged(() => tryMountCostSlot());
   function disposeCostSlot(): void {
     costSlotUnsub();
-    try { costSlotDispose?.(); } catch (e) { console.error(e); }
+    try {
+      costSlotDispose?.();
+    } catch (e) {
+      console.error(e);
+    }
     costSlotDispose = undefined;
   }
 
   // The QuantityKinds a rate card can actually price - used to decide whether the job
   // is "costable" at all, so the panel never appears on a plain logo PNG.
   const PRICEABLE_KINDS = new Set<Count['kind']>([
-    'processPlates', 'spotPlates', 'finishPlates', 'sheets', 'area', 'pages',
-    'variantRows', 'outputFiles',
+    'processPlates',
+    'spotPlates',
+    'finishPlates',
+    'sheets',
+    'area',
+    'pages',
+    'variantRows',
+    'outputFiles',
   ]);
 
   async function refreshCost(): Promise<void> {
-    const costable = lastCounts.some(c => PRICEABLE_KINDS.has(c.kind));
+    const costable = lastCounts.some((c) => PRICEABLE_KINDS.has(c.kind));
     // The stored cards on THIS device. A link carries none - a card is never a URL
     // param - so possession is always a local fact. `WebToolHost.assets` carries the
     // `_*UserAsset` methods at runtime (same cast the rate-cards manager uses).
@@ -2746,8 +3440,13 @@ function renderActions(
     // src/ext/cost-authoring.ts, off the default path.)
     tryMountCostSlot();
     const cards = await listRateCards(rcHost).catch(() => []);
-    const selected = cards[0]
-      ?? (await listCatalogRateCards(host as unknown as Parameters<typeof listCatalogRateCards>[0]).catch(() => []))[0];
+    const selected =
+      cards[0] ??
+      (
+        await listCatalogRateCards(
+          host as unknown as Parameters<typeof listCatalogRateCards>[0]
+        ).catch(() => [])
+      )[0];
     // most-recently-added / first catalog card; a full picker is future work
 
     // Resolve + cost the selected card. The figure is still gated by `costView` →
@@ -2767,13 +3466,16 @@ function renderActions(
       useExpiredAnyway: costUseExpired,
     };
 
-    applyCostPanel(el, costView(working, {
-      costable,
-      money,
-      issuerName: selected?.issuerName,
-      issued: selected?.issued,
-      validUntil: selected?.validUntil,
-    }));
+    applyCostPanel(
+      el,
+      costView(working, {
+        costable,
+        money,
+        issuerName: selected?.issuerName,
+        issued: selected?.issued,
+        validUntil: selected?.validUntil,
+      })
+    );
     wireCostActions();
   }
 
@@ -2782,7 +3484,9 @@ function renderActions(
   async function resolveCard(entry: { digest: string; catalogUrl?: string }) {
     let blob: Blob | null = null;
     if (entry.catalogUrl) {
-      blob = await fetch(entry.catalogUrl).then(r => (r.ok ? r.blob() : null)).catch(() => null);
+      blob = await fetch(entry.catalogUrl)
+        .then((r) => (r.ok ? r.blob() : null))
+        .catch(() => null);
     } else {
       const rcHost = host as unknown as Parameters<typeof getRateCardBlob>[0];
       blob = await getRateCardBlob(rcHost, entry.digest).catch(() => null);
@@ -2801,10 +3505,12 @@ function renderActions(
       costRevealed = true;
       void refreshCost();
     });
-    el!.querySelector<HTMLButtonElement>('[data-cost-use-expired]')?.addEventListener('click', () => {
-      costUseExpired = true;
-      void refreshCost();
-    });
+    el!
+      .querySelector<HTMLButtonElement>('[data-cost-use-expired]')
+      ?.addEventListener('click', () => {
+        costUseExpired = true;
+        void refreshCost();
+      });
   }
 
   // Same wiring as updateFidelityWarning, for the same reason: a sidebar edit can
@@ -2814,35 +3520,53 @@ function renderActions(
   runtime.subscribe(() => refreshPreflight());
   refreshPreflight();
 
-  function videoParams(): { wait: number; duration: number; fps: number | undefined; live: boolean; durationUserSet: boolean;
-      videoQuality?: 'smaller' | 'balanced' | 'best'; videoCodec?: string; bitrateMode?: 'variable' | 'constant';
-      hardwareAcceleration?: 'no-preference' | 'prefer-hardware' | 'prefer-software' } {
-    const wait     = parseFloat(el!.querySelector<HTMLInputElement>('[data-action="video-wait"]')?.value ?? '')     ?? 1;
-    const duration = parseFloat(el!.querySelector<HTMLInputElement>('[data-action="video-duration"]')?.value ?? '') ?? 5;
-    const fpsSel   = el!.querySelector<HTMLSelectElement>('[data-action="video-fps"]')?.value ?? '';
-    const qSel     = el!.querySelector<HTMLSelectElement>('[data-action="video-quality"]')?.value ?? '';
-    const codecSel = el!.querySelector<HTMLSelectElement>('[data-action="video-codec"]')?.value ?? '';
-    const brmSel   = el!.querySelector<HTMLSelectElement>('[data-action="video-bitratemode"]')?.value ?? '';
-    const hwSel    = el!.querySelector<HTMLSelectElement>('[data-action="video-hwaccel"]')?.value ?? '';
-    const fpsNum   = Number(fpsSel);
+  function videoParams(): {
+    wait: number;
+    duration: number;
+    fps: number | undefined;
+    live: boolean;
+    durationUserSet: boolean;
+    videoQuality?: 'smaller' | 'balanced' | 'best';
+    videoCodec?: string;
+    bitrateMode?: 'variable' | 'constant';
+    hardwareAcceleration?: 'no-preference' | 'prefer-hardware' | 'prefer-software';
+  } {
+    const wait =
+      parseFloat(el!.querySelector<HTMLInputElement>('[data-action="video-wait"]')?.value ?? '') ??
+      1;
+    const duration =
+      parseFloat(
+        el!.querySelector<HTMLInputElement>('[data-action="video-duration"]')?.value ?? ''
+      ) ?? 5;
+    const fpsSel = el!.querySelector<HTMLSelectElement>('[data-action="video-fps"]')?.value ?? '';
+    const qSel = el!.querySelector<HTMLSelectElement>('[data-action="video-quality"]')?.value ?? '';
+    const codecSel =
+      el!.querySelector<HTMLSelectElement>('[data-action="video-codec"]')?.value ?? '';
+    const brmSel =
+      el!.querySelector<HTMLSelectElement>('[data-action="video-bitratemode"]')?.value ?? '';
+    const hwSel =
+      el!.querySelector<HTMLSelectElement>('[data-action="video-hwaccel"]')?.value ?? '';
+    const fpsNum = Number(fpsSel);
     return {
-      wait:     isFinite(wait)     ? Math.max(0,  wait)     : 1,
+      wait: isFinite(wait) ? Math.max(0, wait) : 1,
       duration: isFinite(duration) ? Math.max(0.5, duration) : 5,
       // Frame-rate select (24/25/30/50/60), the WP-B replacement for the old webm-only
       // 60fps checkbox. 'Auto' (empty) leaves fps unset, so each format keeps its default.
-      fps:      fpsSel && Number.isFinite(fpsNum) ? fpsNum : undefined,
+      fps: fpsSel && Number.isFinite(fpsNum) ? fpsNum : undefined,
       // WP-B pro-settings: the quality stop drives the bitrate authority; the codec /
       // rate-mode / encoder knobs override the auto ladder + encoder config. Each is
       // undefined unless the user moved it off 'Auto', so a default export is unchanged.
-      videoQuality: qSel === 'smaller' || qSel === 'best' ? qSel : qSel === 'balanced' ? 'balanced' : undefined,
-      videoCodec:   codecSel || undefined,
-      bitrateMode:  brmSel === 'constant' ? 'constant' : undefined,
-      hardwareAcceleration: hwSel === 'prefer-hardware' || hwSel === 'prefer-software' ? hwSel : undefined,
+      videoQuality:
+        qSel === 'smaller' || qSel === 'best' ? qSel : qSel === 'balanced' ? 'balanced' : undefined,
+      videoCodec: codecSel || undefined,
+      bitrateMode: brmSel === 'constant' ? 'constant' : undefined,
+      hardwareAcceleration:
+        hwSel === 'prefer-hardware' || hwSel === 'prefer-software' ? hwSel : undefined,
       // "Record live" (webm/mp4): capture the on-screen preview via a screen share
       // instead of the offline render - see bridge/live-capture.ts. Popup-local.
       // Offered for timed compositions too - the compositor is the default, live
       // capture the low-power alternative the user may deliberately pick.
-      live:     el!.querySelector<HTMLInputElement>('[data-action="video-live"]')?.checked ?? false,
+      live: el!.querySelector<HTMLInputElement>('[data-action="video-live"]')?.checked ?? false,
       // The cross-agent contract: true only when the user typed their own duration,
       // so a tool hook can safely overwrite an auto-derived one with the timeline's
       // length (`if (!ctx.opts.durationUserSet) ctx.opts.duration = derived`).
@@ -2862,13 +3586,17 @@ function renderActions(
   const canvasCfg = (canvasBlocksInput as { canvas?: Record<string, unknown> } | undefined)?.canvas;
   const canvasInputId = (canvasBlocksInput as { id?: string } | undefined)?.id;
   const artFrameField = typeof canvasCfg?.frameField === 'string' ? canvasCfg.frameField : '';
-  interface ArtInfo { id: string; w: number; h: number }
+  interface ArtInfo {
+    id: string;
+    w: number;
+    h: number;
+  }
   let artActive: { sel: ArtInfo | null; timed: ArtInfo | null } | null = null;
   const hasArtboards = (): boolean => !!(artActive && (artActive.sel || artActive.timed));
   const artTarget = (): ArtInfo | null => {
     if (!artActive) return null;
     const fmt = formatEl?.value ?? formats[0] ?? '';
-    return (isAnimatedFmt(fmt) && artActive.timed) ? artActive.timed : artActive.sel;
+    return isAnimatedFmt(fmt) && artActive.timed ? artActive.timed : artActive.sel;
   };
   // Mirror-write: show the target artboard's size in the bar's current unit WITHOUT
   // declaring a user size - no sizeUserSet, no URL churn, no canvas resize.
@@ -2886,13 +3614,15 @@ function renderActions(
     artActive = ((e as CustomEvent).detail as typeof artActive) ?? null;
     reflectArtboardDims();
   });
-  formatEl?.addEventListener('change', () => { if (hasArtboards()) reflectArtboardDims(); });
+  formatEl?.addEventListener('change', () => {
+    if (hasArtboards()) reflectArtboardDims();
+  });
 
   // Preview the export aspect ratio on the canvas, then re-fit to the stage.
   function refreshCanvasPreview(): void {
     updateAspectWarning(); // first, so it reflects current fields even when dims are incomplete
     updateFidelityWarning();
-    refreshPreflight();    // width / height / unit / DPI all flow through here
+    refreshPreflight(); // width / height / unit / DPI all flow through here
     const { width: w, height: h } = previewPx();
     if (!((w ?? 0) > 0 && (h ?? 0) > 0)) return;
     // When the artboard FOLLOWS the export size (see artboardFollowsDims) the canvas IS the
@@ -2910,14 +3640,14 @@ function renderActions(
       const previewScale = artboardFollowsDims
         ? 1
         : Math.min(1, manifest.render.width / w!, manifest.render.height / h!);
-      canvasEl!.style.width  = Math.round(w! * previewScale) + 'px';
+      canvasEl!.style.width = Math.round(w! * previewScale) + 'px';
       canvasEl!.style.height = Math.round(h! * previewScale) + 'px';
       fitCanvas();
     }
     // If the tool declares width/height inputs, sync dims so hooks can recompute layout.
     const model = runtime.getModel();
-    const hasW = model.some(i => i.id === 'width');
-    const hasH = model.some(i => i.id === 'height');
+    const hasW = model.some((i) => i.id === 'width');
+    const hasH = model.some((i) => i.id === 'height');
     if (hasW || hasH) {
       // Chain to avoid concurrent hook executions on the shared model. Use the UNWRAPPED
       // setter (runtime.setInputNoHistory, installed by mountTool) - NOT the history-
@@ -2929,7 +3659,9 @@ function renderActions(
       // runtime) so this can never throw at boot.
       const setDims = runtime.setInputNoHistory || runtime.setInput;
       const p = hasW ? setDims('width', w!) : Promise.resolve();
-      p.then(() => { if (hasH) setDims('height', h!); });
+      p.then(() => {
+        if (hasH) setDims('height', h!);
+      });
       // subscriber fires runTemplateScripts + syncUrl after each setInput
     } else {
       runTemplateScripts(canvasEl!);
@@ -2963,14 +3695,25 @@ function renderActions(
   // Label the floating scrub readout with the value + current unit (e.g. "1024 px",
   // "210 mm") so a drag reads clearly even with the cursor/finger over the field.
   // (dimUnit() is defined above with the other dimension helpers.)
-  ([
-    [el.querySelector<HTMLInputElement>('[data-action="export-width"]'),  'w'],
-    [el.querySelector<HTMLInputElement>('[data-action="export-height"]'), 'h'],
-  ] as [HTMLInputElement | null, string][]).forEach(([inp, key]) => {
+  (
+    [
+      [el.querySelector<HTMLInputElement>('[data-action="export-width"]'), 'w'],
+      [el.querySelector<HTMLInputElement>('[data-action="export-height"]'), 'h'],
+    ] as [HTMLInputElement | null, string][]
+  ).forEach(([inp, key]) => {
     if (!inp) return;
-    const onDimChange = () => { sizeUserSet = true; onUrlSync?.(key); refreshCanvasPreview(); invalidatePreview(); pulseCanvasResize(); };
+    const onDimChange = () => {
+      sizeUserSet = true;
+      onUrlSync?.(key);
+      refreshCanvasPreview();
+      invalidatePreview();
+      pulseCanvasResize();
+    };
     inp.addEventListener('input', onDimChange);
-    addScrubBehavior(inp, onDimChange, { format: v => `${v} ${dimUnit()}`, step: () => stepFor(dimUnit()) });
+    addScrubBehavior(inp, onDimChange, {
+      format: (v) => `${v} ${dimUnit()}`,
+      step: () => stepFor(dimUnit()),
+    });
   });
 
   // A committed bar edit resizes the ACTIVE artboard only (plans/142 WP-B replaced
@@ -2978,7 +3721,8 @@ function renderActions(
   // moves the frame origin. No artboards → return, the single-artboard path applies.
   let artResizing = false;
   function resizeArtboardFromDims(): void {
-    if (artResizing || !artFrameField || !canvasInputId || manifest.render.layout !== 'editor') return;
+    if (artResizing || !artFrameField || !canvasInputId || manifest.render.layout !== 'editor')
+      return;
     const tgt = artTarget();
     if (!tgt) return; // no artboards → the single-artboard path applies
     const kindField = typeof canvasCfg?.kindField === 'string' ? canvasCfg.kindField : 'kind';
@@ -3001,19 +3745,30 @@ function renderActions(
     const pxH = toPx(h, tgt.h, hEl?.value);
     if (pxW < 1 || pxH < 1) return;
     if (tgt.w === pxW && tgt.h === pxH) return; // already this size
-    const boxes = (runtime.getModel().find(i => i.id === canvasInputId)?.value as Array<Record<string, InputValue>> | undefined) ?? [];
+    const boxes =
+      (runtime.getModel().find((i) => i.id === canvasInputId)?.value as
+        | Array<Record<string, InputValue>>
+        | undefined) ?? [];
     artResizing = true;
     try {
-      const next = boxes.map(b => (b && String(b[kindField]) === frameKind && String(b[idField]) === tgt.id)
-        ? { ...b, [wField]: pxW, [hField]: pxH }
-        : b);
+      const next = boxes.map((b) =>
+        b && String(b[kindField]) === frameKind && String(b[idField]) === tgt.id
+          ? { ...b, [wField]: pxW, [hField]: pxH }
+          : b
+      );
       runtime.setInput(canvasInputId, next as unknown as InputValue);
-    } finally { artResizing = false; }
+    } finally {
+      artResizing = false;
+    }
   }
-  ([
+  [
     el.querySelector<HTMLInputElement>('[data-action="export-width"]'),
     el.querySelector<HTMLInputElement>('[data-action="export-height"]'),
-  ]).forEach(inp => inp?.addEventListener('change', () => { resizeArtboardFromDims(); }));
+  ].forEach((inp) =>
+    inp?.addEventListener('change', () => {
+      resizeArtboardFromDims();
+    })
+  );
 
   // Apply a {width,height,unit} from a size-select option to the export-bar fields,
   // so choosing a size sets the actual exported page size. Refreshes the preview +
@@ -3035,9 +3790,9 @@ function renderActions(
   }
   function setFormats(allowed: string[]): void {
     if (!formatEl) return;
-    const allow = new Set(allowed.map(f => (f === 'jpeg' ? 'jpg' : f)));
-    let narrowed = formats.filter(f => allow.has(f));
-    if (!narrowed.length) narrowed = formats;         // never render an empty selector
+    const allow = new Set(allowed.map((f) => (f === 'jpeg' ? 'jpg' : f)));
+    let narrowed = formats.filter((f) => allow.has(f));
+    if (!narrowed.length) narrowed = formats; // never render an empty selector
     const cur = formatEl.value;
     const next = narrowed.includes(cur) ? cur : narrowed[0]!;
     formatEl.innerHTML = formatOptionsHtml(narrowed, next, fmtLabel);
@@ -3056,49 +3811,55 @@ function renderActions(
     if (label && next.downloadLabel) label.textContent = next.downloadLabel;
   }
 
-  function setDims({ width, height, unit }: { width?: number; height?: number; unit?: string } = {}): void {
+  function setDims(update: ExportDimensionUpdate = {}): void {
     if (manifest.render.dims === false) return;
-    sizeUserSet = true;   // a size-select pick is the user setting the page size
-    const uEl = el!.querySelector<HTMLSelectElement>('[data-action="export-unit"]');
-    if (uEl && unit) {
-      uEl.value = unit;
-      const dpiField = el!.querySelector<HTMLElement>('[data-dpi-field]');
-      if (dpiField) dpiField.style.display = unit === 'px' ? 'none' : 'inline-flex';
-    }
-    const wEl = el!.querySelector<HTMLInputElement>('[data-action="export-width"]');
-    const hEl = el!.querySelector<HTMLInputElement>('[data-action="export-height"]');
-    if (wEl && (width ?? 0) > 0) wEl.value = String(width);
-    if (hEl && (height ?? 0) > 0) hEl.value = String(height);
+    sizeUserSet = true; // a size-select pick is the user setting the page size
+    curUnit = applyExportDimensionFields(el!, curUnit, update);
     refreshCanvasPreview();
     invalidatePreview();
     pulseCanvasResize();
-    onUrlSync?.('unit'); onUrlSync?.('w'); onUrlSync?.('h');
+    onUrlSync?.('unit');
+    onUrlSync?.('w');
+    onUrlSync?.('h');
+    if ((update.dpi ?? 0) > 0) onUrlSync?.('dpi');
   }
 
   // Unit switch keeps the physical size: convert the typed values to the new
   // unit, toggle the DPI field, refresh the preview, and sync the URL.
   const unitSel = el.querySelector<HTMLSelectElement>('[data-action="export-unit"]');
-  const dpiFieldEl = el.querySelector<HTMLElement>('[data-dpi-field]');
   let curUnit = initUnit;
   unitSel?.addEventListener('change', () => {
-    sizeUserSet = true;   // choosing mm/in over px IS declaring a physical size
+    sizeUserSet = true; // choosing mm/in over px IS declaring a physical size
     const to = unitSel.value;
-    const wEl = el!.querySelector<HTMLInputElement>('[data-action="export-width"]');
-    const hEl = el!.querySelector<HTMLInputElement>('[data-action="export-height"]');
-    const conv = (v: string): string => { const n = parseFloat(v); return n > 0 ? String(roundIn(convertLength(n, curUnit, to), to)) : v; };
-    if (wEl) wEl.value = conv(wEl.value);
-    if (hEl) hEl.value = conv(hEl.value);
+    convertExportDimensionFields(el!, curUnit, to);
     curUnit = to;
     // An artboard's stored px size is the source of truth: re-read it rather than
     // converting the rounded text, so switching units back and forth never drifts.
     if (hasArtboards()) reflectArtboardDims();
-    if (dpiFieldEl) dpiFieldEl.style.display = (to === 'px') ? 'none' : 'inline-flex';
-    onUrlSync?.('unit'); onUrlSync?.('w'); onUrlSync?.('h');
+    // Design has one document unit, not an export-only preference. Keep the saved
+    // document model and its size menu in step when the export panel is the place
+    // a person changes units.
+    if (manifest.id === 'design') {
+      void runtime.setInput('documentUnit', to);
+      canvasEl?.dispatchEvent(new CustomEvent('fc-document-unit', { detail: to }));
+    }
+    onUrlSync?.('unit');
+    onUrlSync?.('w');
+    onUrlSync?.('h');
     refreshCanvasPreview();
     invalidatePreview();
     pulseCanvasResize();
   });
-  el.querySelector<HTMLInputElement>('[data-action="export-dpi"]')?.addEventListener('input', () => { onUrlSync?.('dpi'); invalidatePreview(); });
+  el.querySelector<HTMLInputElement>('[data-action="export-dpi"]')?.addEventListener(
+    'input',
+    (e) => {
+      const dpi = Math.round(Number((e.target as HTMLInputElement).value));
+      if (manifest.id === 'design' && dpi >= 36 && dpi <= 2400)
+        void runtime.setInput('documentDpi', dpi);
+      onUrlSync?.('dpi');
+      invalidatePreview();
+    }
+  );
 
   el.querySelector<HTMLButtonElement>('[data-action="copy"]')?.addEventListener('click', () => {
     // performCopy drives the camera-shutter itself (fullscreen on mobile), per
@@ -3106,23 +3867,25 @@ function renderActions(
     // shutter - like exports do - while keeping the clipboard write in the user
     // gesture by handing the shutter-delayed blob promise to ClipboardItem; the
     // text/html paths play it as parallel feedback (they have no such resize).
-    performCopy().then((res) => {
-      bumpMetric('imagesCopied');
-      // Honest feedback: on browsers without image-clipboard support the bridge
-      // downloads the file instead, so don't claim it was copied.
-      announce(res?.method === 'download'
-        ? 'Clipboard image not supported here - downloaded instead'
-        : 'Copied to clipboard');
-      exportCompleted();
-    }).catch(err => console.error('Copy failed:', err));
+    performCopy()
+      .then((res) => {
+        bumpMetric('imagesCopied');
+        // Honest feedback: on browsers without image-clipboard support the bridge
+        // downloads the file instead, so don't claim it was copied.
+        announce(
+          res?.method === 'download'
+            ? 'Clipboard image not supported here - downloaded instead'
+            : 'Copied to clipboard'
+        );
+        exportCompleted();
+      })
+      .catch((err) => console.error('Copy failed:', err));
   });
 
   // Copies the current render to the clipboard. Shared by the Copy button and
   // the `?copy` URL action. `fmtOverride` honours `?format=<format>&copy`.
   async function performCopy(fmtOverride?: string): Promise<{ method: string } | void> {
-    const fmt = fmtOverride
-      || formatEl?.value
-      || (formats.includes('png') ? 'png' : formats[0]!);
+    const fmt = fmtOverride || formatEl?.value || (formats.includes('png') ? 'png' : formats[0]!);
 
     // Universal copy, by format:
     //   • txt / md   → plain text
@@ -3131,71 +3894,88 @@ function renderActions(
     // so a paste always yields something useful whatever format is selected.
     const TEXT_FORMATS = new Set(['txt', 'md', 'markdown']);
     if (TEXT_FORMATS.has(fmt)) {
-      playShutter();   // parallel capture feedback - writeText must stay in-gesture
-      const blob = await exportUnscaled(() => runtime.export(flatExportNode(canvasEl), fmt, exportDims()));
+      playShutter(); // parallel capture feedback - writeText must stay in-gesture
+      const blob = await exportUnscaled(() =>
+        runtime.export(flatExportNode(canvasEl), fmt, exportDims())
+      );
       await host.clipboard.writeText(await blob.text());
       return;
     }
 
     if (fmt === 'html') {
-      playShutter();   // parallel capture feedback - no off-screen resize to hide here
+      playShutter(); // parallel capture feedback - no off-screen resize to hide here
       // Clone the canvas, then scrub everything email clients strip or ignore.
       const clone = canvasEl!.cloneNode(true) as HTMLElement;
-      clone.querySelectorAll<HTMLElement>('[data-canvas-input]').forEach(el => el.removeAttribute('data-canvas-input'));
-      clone.querySelectorAll('script').forEach(el => el.remove());
+      clone
+        .querySelectorAll<HTMLElement>('[data-canvas-input]')
+        .forEach((el) => el.removeAttribute('data-canvas-input'));
+      clone.querySelectorAll('script').forEach((el) => el.remove());
       // <style> blocks - email clients (Gmail etc.) strip them; the template
       // already carries full inline styles so these are pure character waste.
-      clone.querySelectorAll('style').forEach(el => el.remove());
+      clone.querySelectorAll('style').forEach((el) => el.remove());
       // Annotation comment markers (<!-- ci:id -->) - invisible, ~30 chars each.
       const walker = document.createTreeWalker(clone, NodeFilter.SHOW_COMMENT);
       const comments: Comment[] = [];
       let commentNode: Node | null;
       while ((commentNode = walker.nextNode())) comments.push(commentNode as Comment);
-      comments.forEach(n => n.parentNode?.removeChild(n));
+      comments.forEach((n) => n.parentNode?.removeChild(n));
 
       // Wrap the async blob-URL → data-URL conversion in a Promise so ClipboardItem
       // receives it while navigator.clipboard.write() is still in gesture context.
       const htmlBlobPromise = (async () => {
         // Email signatures display at ≤200px, so cap encoding there; html tools
         // needing larger images can raise this in their own beforeExport hook.
-        await Promise.all([...clone.querySelectorAll('img')].map(async img => {
-          const src = img.getAttribute('src');
-          if (!src?.startsWith('blob:')) return;
-          try {
-            const dataUrl = await new Promise<string>((res, rej) => {
-              const bmp = new Image();
-              bmp.onload = () => {
-                const MAX = 200;
-                const scale = Math.min(1, MAX / Math.max(bmp.naturalWidth, bmp.naturalHeight));
-                const w = Math.round(bmp.naturalWidth * scale);
-                const h = Math.round(bmp.naturalHeight * scale);
-                const c = document.createElement('canvas');
-                c.width = w; c.height = h;
-                const ctx = c.getContext('2d')!;
-                ctx.fillStyle = '#ffffff';
-                ctx.fillRect(0, 0, w, h);
-                ctx.drawImage(bmp, 0, 0, w, h);
-                res(c.toDataURL('image/jpeg', 0.75));
-              };
-              bmp.onerror = rej;
-              bmp.src = src;
-            });
-            img.src = dataUrl;
-          } catch { /* leave as-is if conversion fails */ }
-        }));
+        await Promise.all(
+          [...clone.querySelectorAll('img')].map(async (img) => {
+            const src = img.getAttribute('src');
+            if (!src?.startsWith('blob:')) return;
+            try {
+              const dataUrl = await new Promise<string>((res, rej) => {
+                const bmp = new Image();
+                bmp.onload = () => {
+                  const MAX = 200;
+                  const scale = Math.min(1, MAX / Math.max(bmp.naturalWidth, bmp.naturalHeight));
+                  const w = Math.round(bmp.naturalWidth * scale);
+                  const h = Math.round(bmp.naturalHeight * scale);
+                  const c = document.createElement('canvas');
+                  c.width = w;
+                  c.height = h;
+                  const ctx = c.getContext('2d')!;
+                  ctx.fillStyle = '#ffffff';
+                  ctx.fillRect(0, 0, w, h);
+                  ctx.drawImage(bmp, 0, 0, w, h);
+                  res(c.toDataURL('image/jpeg', 0.75));
+                };
+                bmp.onerror = rej;
+                bmp.src = src;
+              });
+              img.src = dataUrl;
+            } catch {
+              /* leave as-is if conversion fails */
+            }
+          })
+        );
         return new Blob([clone.innerHTML], { type: 'text/html' });
       })();
 
       if (navigator.clipboard?.write && window.ClipboardItem) {
         try {
-          const textBlob = htmlBlobPromise.then(b => b.text().then(
-            t => { const d = document.createElement('div'); d.innerHTML = t; return new Blob([d.textContent ?? ''], { type: 'text/plain' }); }
-          ));
-          await navigator.clipboard.write([new ClipboardItem({ 'text/html': htmlBlobPromise, 'text/plain': textBlob })]);
+          const textBlob = htmlBlobPromise.then((b) =>
+            b.text().then((t) => {
+              const d = document.createElement('div');
+              d.innerHTML = t;
+              return new Blob([d.textContent ?? ''], { type: 'text/plain' });
+            })
+          );
+          await navigator.clipboard.write([
+            new ClipboardItem({ 'text/html': htmlBlobPromise, 'text/plain': textBlob }),
+          ]);
           return;
-        } catch { /* fall through to the bridge path */ }
+        } catch {
+          /* fall through to the bridge path */
+        }
       }
-      await host.clipboard.writeHtml(await htmlBlobPromise.then(b => b.text()));
+      await host.clipboard.writeHtml(await htmlBlobPromise.then((b) => b.text()));
       return;
     }
 
@@ -3206,12 +3986,17 @@ function renderActions(
     // it first (awaiting before write() loses the gesture and the browser silently
     // denies the write; deferring the blob inside the promise is the cross-browser
     // pattern that survives the ~shutter delay). One export feeds both paths.
-    const blobPromise = exportUnscaled(() => runtime.export(flatExportNode(canvasEl), 'png', exportDims()), { shutter: true });
+    const blobPromise = exportUnscaled(
+      () => runtime.export(flatExportNode(canvasEl), 'png', exportDims()),
+      { shutter: true }
+    );
     if (navigator.clipboard?.write && window.ClipboardItem) {
       try {
         await navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise })]);
         return { method: 'clipboard' };
-      } catch { /* fall through to the bridge path - blobPromise has already resolved */ }
+      } catch {
+        /* fall through to the bridge path - blobPromise has already resolved */
+      }
     }
     // Bridge path: image clipboard write unavailable (e.g. older Firefox) - this
     // returns { method: 'download' } when it falls back to saving the file instead.
@@ -3222,777 +4007,1039 @@ function renderActions(
   // policy withheld download but permits a request - see `affordance` above). Routes
   // through the generic opener seam (src/lib/approval-request.ts), which a control
   // plane registers to open the approval dialog; the view stays control-plane-unaware.
-  el.querySelector<HTMLButtonElement>('[data-action="request-approval"]')?.addEventListener('click', () => {
-    openApprovalRequest({ toolId: manifest.id, title: manifest.name });
+  el.querySelector<HTMLButtonElement>('[data-action="request-approval"]')?.addEventListener(
+    'click',
+    () => {
+      openApprovalRequest({ toolId: manifest.id, title: manifest.name });
+    }
+  );
+
+  el.querySelector<HTMLButtonElement>('[data-action="save-as"]')?.addEventListener('click', () => {
+    desktopExport?.requestSaveAs();
+    el.querySelector<HTMLButtonElement>('[data-action="download"]')?.click();
   });
 
-  el.querySelector<HTMLButtonElement>('[data-action="download"]')?.addEventListener('click', async (e) => {
-    // Native <button> or jelly-mode <jelly-button> - disable via the attribute,
-    // which both honour (jelly syncs it onto its shadow button).
-    const btn  = e.currentTarget as HTMLButtonElement;
-    const prev = btn.textContent;
-    btn.toggleAttribute('disabled', true);
-    btn.setAttribute('aria-busy', 'true');
+  el.querySelector<HTMLButtonElement>('[data-action="download"]')?.addEventListener(
+    'click',
+    async (e) => {
+      // Native <button> or jelly-mode <jelly-button> - disable via the attribute,
+      // which both honour (jelly syncs it onto its shadow button).
+      const btn = e.currentTarget as HTMLButtonElement;
+      const prev = btn.textContent;
+      btn.toggleAttribute('disabled', true);
+      btn.setAttribute('aria-busy', 'true');
 
-    const fmt        = formatEl?.value ?? formats[0]!;
-    // Carousel / paged tool: a STILL-image download becomes one image PER PAGE, zipped.
-    // (PDF already fans out to a multi-page document via renderMultiPagePdf; animated /
-    // html / zip formats keep their own paths.) Each [data-pdf-page] frame is exported
-    // at its own measured size - width/height dims are stripped so a re-sized page still
-    // exports at its true pixel size rather than the static render dimensions.
-    // Gate on the carousel-specific render.pages - NOT render.paged, which also marks
-    // multi-page-pdf / doc-studio, whose SVG export must stay a single whole-canvas file.
-    // Also admit the Design frame primitive: an editor-layout tool whose
-    // boxes input declares canvas.frameField emits one [data-pdf-page] per ARTBOARD (frame
-    // box). A no-frames Design doc renders a single .artboard with zero [data-pdf-page], so
-    // pageEls stays empty and it correctly falls through to a single flat export. Mirrors
-    // tool.ts's frameCfg derivation (render.layout==='editor' && canvas.frameField).
-    const framesCanvas = manifest.render.layout === 'editor'
-      ? (manifest.inputs?.find(
-          (i) => i.type === 'blocks' && (i as { canvas?: unknown }).canvas,
-        ) as { canvas?: { frameField?: string } } | undefined)?.canvas
-      : undefined;
-    const hasFrames = !!framesCanvas?.frameField;
-    const pageEls = (manifest.render.pages || hasFrames) && canvasEl
-      ? [...canvasEl.querySelectorAll<HTMLElement>('[data-pdf-page]')] : [];
-    // The `?s=` STILL-EXPORT FILTER (plan 112 section 10): `?s=2&format=png` renders just
-    // that one slide, which is what makes a Design deck's slides individually linkable
-    // (and buys per-slide embeds/OG later). The address is resolved by the ENGINE
-    // (frame-address.ts) against the ids these pages carry, so the CLI's own `s=` picks
-    // the same page from the same string - one meaning, two transports, no shell logic to
-    // drift. Absent ⇒ 'none' ⇒ the fan-out below is byte-identical to before this existed.
-    // An address that names nothing is NOT collapsed to "the first page": the whole deck
-    // exports and the mismatch is announced, so nobody mistakes slide 1 for slide 9.
-    // `frameFilterApplies` is a no-op guard HERE (the fan-out branch below already
-    // excludes every format it names) - it is called anyway so web and CLI ask the
-    // engine the same question rather than each carrying their own format list.
-    const framePick = frameFilterApplies(fmt)
-      ? selectFramePage(pageEls.map((p) => p.getAttribute('data-frame-id')), exportDefaults.slide)
-      : ({ kind: 'none' } as const);
-    // A click deck exported as a moving picture (plans/184 R3). With no timeline of its
-    // own the whole stage rendered for the export's duration - slide one, five seconds,
-    // then nothing - and no "deck as video" action existed. For this export only, the
-    // slides go onto a temporary timeline in order (each its own dwell, else the export's
-    // duration) and the deck's slide transition becomes the junction between them; the
-    // DOM is restored in `finally`, so the document itself never changes. A `?s=` pick
-    // (one slide) keeps its single-frame render, and a document that already has a
-    // timeline keeps its own timing.
-    let unstageDeck: (() => void) | null = null;
-    if (isAnimatedFmt(fmt) && fmt !== 'svg-anim' && pageEls.length >= 2 && framePick.kind !== 'page' && canvasEl && !canvasEl.querySelector('[data-sequence]')) {
-      const dwellMs = Math.round(videoParams().duration * 1000);
-      unstageDeck = stageDeckAsSequence(canvasEl, { dwellMs });
-      if (unstageDeck) {
-        host.log('info', `export: ${pageEls.length} slides placed in order for this ${fmt} (${Math.round(stagedDeckMs(canvasEl, dwellMs) / 100) / 10}s) - each slide's own dwell, else the Duration field as the dwell. The document is unchanged.`);
-      }
-    }
-    const isAnimated = isAnimatedFmt(fmt);
-    const isGif      = fmt === 'gif';
-
-    let liveTake = false;
-    if (isAnimated) {
-      const { wait, duration, fps, live } = videoParams();
-      const totalS = wait + duration;
-      liveTake = live && isVideoFmt(fmt);
-      btn.textContent = isGif
-        ? `Encoding GIF… ${totalS}s`
-        : liveTake
-          ? `Recording live… ${duration}s`   // no wait phase - capture starts once the stage is located
-          : fps === 60
-            ? `Rendering 60fps… ${totalS}s+`
-            : `Recording… ${totalS}s`;
-      // A build step is a CLICK, and a video has nobody to click it. Rather than invent
-      // a pace for the fragments - which would put words on screen at a speed nobody
-      // chose - every box is drawn and the count of unseen steps is said out loud, so
-      // the author can reach for "Place in order" and time them deliberately
-      // (plans/179 M4). English, like every other export log: host.log is console-only.
-      const dropped = buildStepsDropped(canvasEl);
-      if (dropped > 0) {
-        host.log('warn', `export: ${dropped} build step${dropped === 1 ? '' : 's'} cannot be clicked in a moving export, so every box is drawn from the start. Use "Place in order" in the timeline to give them times.`);
-      }
-    } else {
-      // Slow non-animated exports (CMYK TIFF, high-DPI raster, PDF) previously froze
-      // on a disabled button with no signal. Show progress and tell assistive tech.
-      btn.textContent = 'Exporting…';
-    }
-    announce('Exporting…');
-
-    // Surface the export-quality degradations the bridge would otherwise only
-    // console.log (host.log is console-only): the frame rate was lowered to fit the
-    // buffer, the clip was truncated, or a sped-up clip's audio was dropped. The
-    // bridge calls this sink synchronously as it degrades; we announce each once
-    // (a: aria-live) and paint them onto the card when the export settles (b). The
-    // sink is registered only for THIS export and cleared in the finally below, so
-    // a Save/Send that shares runtime.export never inherits a stale listener.
-    const degradeNote = el!.querySelector<HTMLElement>('[data-export-degraded]');
-    if (degradeNote) { degradeNote.hidden = true; degradeNote.textContent = ''; }
-    const degradedNotes: string[] = [];
-    _setExportNoticeSink((msg) => {
-      if (degradedNotes.includes(msg)) return;   // per-clip mutes can repeat the same line
-      degradedNotes.push(msg);
-      announce(msg);
-    });
-
-    // Any zzfxm/tracker track is rendered to a transient WAV blob URL below (the
-    // tool audio and a mix-in bed can each mint one); revoke them once the export
-    // has consumed them (declared out here so the catch can free them too).
-    const wavBlobUrls: string[] = [];
-    const trackBlobUrl = (url: string): string => { wavBlobUrls.push(url); return url; };
-    const revokeTrackUrls = (): void => { for (const u of wavBlobUrls.splice(0)) URL.revokeObjectURL(u); };
-    try {
-      // Resolve the chosen catalog audio track (if any) to a plain fetchable
-      // URL before the recording starts - the export bridge stays catalog-
-      // agnostic, and a missing/undownloadable track fails here in the UI
-      // instead of mid-record. On-demand tier fetches + caches the bytes.
-      let audioOpt: { audio?: NonNullable<RunExportOpts['audio']> } = {};
-      // ZzFXM songs and tracker modules have no playable audio file - render them
-      // to a transient WAV blob URL so the URL-driven muxer paths consume them
-      // exactly like an encoded loop. (mod → libopenmpt, zzfxm → the synth.)
-      const toWavIfNeeded = async (r: { url: string; format?: string }): Promise<string> =>
-        r.format === 'zzfxm' ? trackBlobUrl(await songUrlToWavBlobUrl(r.url))
-        : isModuleFormat(r.format) ? trackBlobUrl(await modUrlToWavBlobUrl(r.url))
-        : r.url;
-      if (isAudioFmt(fmt) && hasToolAudioInput) {
-        // Audio-only export: the deliverable is the tool's OWN clip from the
-        // in-point it draws from, and nothing else. No bed, no gain, no fade - 
-        // the tool applies no processing to the samples, and any envelope here
-        // would defeat the untouched-source pass-through in lib/audio-encode.ts.
-        const ref = await resolveToolAudio();
-        if (ref) audioOpt = { audio: { id: toolAudioRef()?.id, url: await toWavIfNeeded(ref), volume: 1, start: stageAudioStart() } };
-      } else if (isVideoFmt(fmt)) {
-        const audioId = el!.querySelector<HTMLSelectElement>('[data-action="video-audio"]')?.value;
-        const numCtl = (a: string, dflt: number): number => {
-          const v = el!.querySelector<HTMLInputElement>(`[data-action="${a}"]`)?.value;
-          return v != null && v !== '' ? (Number(v) || 0) : dflt;
-        };
-        // The popup's track choice ('' | __generate__ | asset id) → a fetchable URL.
-        const resolveTrack = async (): Promise<{ url: string; id: string } | null> => {
-          if (!audioId) return null;
-          if (audioId === '__generate__') {
-            // A fresh worker render at THIS clip's length - the seed keeps it the
-            // same tune the user auditioned, just arranged to fit.
-            const pcm = await renderSong(composeSong(generatedSongSpec(genSeed, genDur())));
-            return { url: trackBlobUrl(URL.createObjectURL(pcmToWavBlob(pcm))), id: `zzfxm-generated-${genSeed}` };
-          }
-          return { url: await toWavIfNeeded(await host.assets.get(audioId)), id: audioId };
-        };
-        const fadeIn  = numCtl('audio-fadein', 0);
-        const fadeOut = numCtl('audio-fadeout', 0);
-        if (hasToolAudioInput) {
-          // Two-row card (section 6.1): the tool's own audio is ALWAYS the primary track
-          // (read live - an emptied slot exports silent), the popup's pick is the
-          // optional mix-in bed whose centre level sets its gain under the voice.
-          const ref = await resolveToolAudio();
-          const toolUrl = ref ? await toWavIfNeeded(ref) : null;
-          const bed = await resolveTrack();
-          const level = Math.max(0, Math.min(100, numCtl('audio-tool-level', 100))) / 100;
-          const centreSel = el!.querySelector<HTMLSelectElement>('[data-action="audio-centre"]')?.value ?? 'low';
-          const centre = centreSel === 'off' ? 0 : centreSel === 'full' ? 1 : CENTRE_LOW;
-          if (toolUrl) {
-            // In-point: a tool whose visuals begin partway into its own clip (the
-            // audiogram's "Start at") stamps that offset on its stage as
-            // data-audio-start, the same read-the-stage contract as data-seq-ms - 
-            // so the soundtrack starts where the picture does instead of at 0:00.
-            // A property of the tool's OWN clip, so it applies only here, never to
-            // a mix-in or standalone bed that knows nothing about the in-point.
-            audioOpt = { audio: {
-              id: toolAudioRef()?.id, url: toolUrl, volume: level, start: stageAudioStart(),
-              ...(bed ? { mix: { id: bed.id, url: bed.url, centre, fadeIn, fadeOut } } : {}),
-            } };
-          } else if (bed) {
-            // Empty tool slot: the mix-in track stands alone, today's single-bed shape.
-            audioOpt = { audio: { id: bed.id, url: bed.url, fadeIn, fadeOut, volume: 1, duck: 1, start: 0 } };
-          }
-        } else if (audioId) {
-          // Single-bed card - unchanged behaviour for tools without their own audio.
-          const bed = await resolveTrack();
-          const volume  = Math.max(0, Math.min(100, numCtl('audio-volume', 100))) / 100;
-          const duck    = Math.max(0, Math.min(100, numCtl('audio-duck', 100))) / 100;
-          if (bed) audioOpt = { audio: { id: bed.id, url: bed.url, fadeIn, fadeOut, volume, duck, start: 0 } };
+      const fmt = formatEl?.value ?? formats[0]!;
+      // Carousel / paged tool: a STILL-image download becomes one image PER PAGE, zipped.
+      // (PDF already fans out to a multi-page document via renderMultiPagePdf; animated /
+      // html / zip formats keep their own paths.) Each [data-pdf-page] frame is exported
+      // at its own measured size - width/height dims are stripped so a re-sized page still
+      // exports at its true pixel size rather than the static render dimensions.
+      // Gate on the carousel-specific render.pages - NOT render.paged, which also marks
+      // multi-page-pdf / doc-studio, whose SVG export must stay a single whole-canvas file.
+      // Also admit the Design frame primitive: an editor-layout tool whose
+      // boxes input declares canvas.frameField emits one [data-pdf-page] per ARTBOARD (frame
+      // box). A no-frames Design doc renders a single .artboard with zero [data-pdf-page], so
+      // pageEls stays empty and it correctly falls through to a single flat export. Mirrors
+      // tool.ts's frameCfg derivation (render.layout==='editor' && canvas.frameField).
+      const framesCanvas =
+        manifest.render.layout === 'editor'
+          ? (
+              manifest.inputs?.find(
+                (i) => i.type === 'blocks' && (i as { canvas?: unknown }).canvas
+              ) as { canvas?: { frameField?: string } } | undefined
+            )?.canvas
+          : undefined;
+      const hasFrames = !!framesCanvas?.frameField;
+      const pageEls =
+        (manifest.render.pages || hasFrames) && canvasEl
+          ? [...canvasEl.querySelectorAll<HTMLElement>('[data-pdf-page]')]
+          : [];
+      // The `?s=` STILL-EXPORT FILTER (plan 112 section 10): `?s=2&format=png` renders just
+      // that one slide, which is what makes a Design deck's slides individually linkable
+      // (and buys per-slide embeds/OG later). The address is resolved by the ENGINE
+      // (frame-address.ts) against the ids these pages carry, so the CLI's own `s=` picks
+      // the same page from the same string - one meaning, two transports, no shell logic to
+      // drift. Absent ⇒ 'none' ⇒ the fan-out below is byte-identical to before this existed.
+      // An address that names nothing is NOT collapsed to "the first page": the whole deck
+      // exports and the mismatch is announced, so nobody mistakes slide 1 for slide 9.
+      // `frameFilterApplies` is a no-op guard HERE (the fan-out branch below already
+      // excludes every format it names) - it is called anyway so web and CLI ask the
+      // engine the same question rather than each carrying their own format list.
+      const framePick = frameFilterApplies(fmt)
+        ? selectFramePage(
+            pageEls.map((p) => p.getAttribute('data-frame-id')),
+            exportDefaults.slide
+          )
+        : ({ kind: 'none' } as const);
+      // A click deck exported as a moving picture (plans/184 R3). With no timeline of its
+      // own the whole stage rendered for the export's duration - slide one, five seconds,
+      // then nothing - and no "deck as video" action existed. For this export only, the
+      // slides go onto a temporary timeline in order (each its own dwell, else the export's
+      // duration) and the deck's slide transition becomes the junction between them; the
+      // DOM is restored in `finally`, so the document itself never changes. A `?s=` pick
+      // (one slide) keeps its single-frame render, and a document that already has a
+      // timeline keeps its own timing.
+      let unstageDeck: (() => void) | null = null;
+      if (
+        isAnimatedFmt(fmt) &&
+        fmt !== 'svg-anim' &&
+        pageEls.length >= 2 &&
+        framePick.kind !== 'page' &&
+        canvasEl &&
+        !canvasEl.querySelector('[data-sequence]')
+      ) {
+        const dwellMs = Math.round(videoParams().duration * 1000);
+        unstageDeck = stageDeckAsSequence(canvasEl, { dwellMs });
+        if (unstageDeck) {
+          host.log(
+            'info',
+            `export: ${pageEls.length} slides placed in order for this ${fmt} (${Math.round(stagedDeckMs(canvasEl, dwellMs) / 100) / 10}s) - each slide's own dwell, else the Duration field as the dwell. The document is unchanged.`
+          );
         }
       }
-      // Surface progress on the button for slow non-animated exports - the CMYK
-      // TIFF pass and the SVG/PDF vector walk emit onProgress, which was being
-      // discarded (the label sat on a static "Exporting…"). Throttle to integer
-      // percent so a per-row callback can't thrash the DOM. Animated formats keep
-      // their own time-based label (guarded by isAnimated).
-      let lastExportPct = -1;
-      // The shutter's status block wants the same numbers. exportUnscaled hands
-      // its `report` sink to the function it wraps, so this is latched there (the
-      // opts object is built before the wrap) and stays null for an export that
-      // runs without a shutter, e.g. a live take.
-      let reportToShutter: ((done: number, total: number) => void) | null = null;
-      // Cancellation for this export (engine 1.141 ExportOpts.signal). Handed to the
-      // shutter's status block as onCancel, which makes its one button a real Cancel:
-      // the frame loops, the CMYK row pass, the vector walks and the sequence
-      // compositor poll the signal and reject with an AbortError, which the catch below
-      // reads as "cancelled", not "failed". A format with no yield point ignores it and
-      // we discard its result.
-      const exportAbort = new AbortController();
-      const cancelExport = (): void => exportAbort.abort();
-      // The live brand palette (host.tokens, cached) - not the tokenless PALETTE
-      // fallback - so CMYK ink substitution always matches the active profile's
-      // real brand (SUSE's measured inks, or whichever catalog is mounted).
-      const brandPalette = await livePalette(host);
-      // Read one HDR slider's value (falls back to its default if the slider isn't
-      // rendered for this format/tool).
-      const hdrDial = (action: string, def: number): number => {
-        const v = Number(el!.querySelector<HTMLInputElement>(`[data-action="${action}"]`)?.value);
-        return Number.isFinite(v) ? v : def;
+      const isAnimated = isAnimatedFmt(fmt);
+      const isGif = fmt === 'gif';
+
+      let liveTake = false;
+      if (isAnimated) {
+        const { wait, duration, fps, live } = videoParams();
+        const totalS = wait + duration;
+        liveTake = live && isVideoFmt(fmt);
+        btn.textContent = isGif
+          ? `Encoding GIF… ${totalS}s`
+          : liveTake
+            ? `Recording live… ${duration}s` // no wait phase - capture starts once the stage is located
+            : fps === 60
+              ? `Rendering 60fps… ${totalS}s+`
+              : `Recording… ${totalS}s`;
+        // A build step is a CLICK, and a video has nobody to click it. Rather than invent
+        // a pace for the fragments - which would put words on screen at a speed nobody
+        // chose - every box is drawn and the count of unseen steps is said out loud, so
+        // the author can reach for "Place in order" and time them deliberately
+        // (plans/179 M4). English, like every other export log: host.log is console-only.
+        const dropped = buildStepsDropped(canvasEl);
+        if (dropped > 0) {
+          host.log(
+            'warn',
+            `export: ${dropped} build step${dropped === 1 ? '' : 's'} cannot be clicked in a moving export, so every box is drawn from the start. Use "Place in order" in the timeline to give them times.`
+          );
+        }
+      } else {
+        // Slow non-animated exports (CMYK TIFF, high-DPI raster, PDF) previously froze
+        // on a disabled button with no signal. Show progress and tell assistive tech.
+        btn.textContent = 'Exporting…';
+      }
+      announce('Exporting…');
+
+      // Surface the export-quality degradations the bridge would otherwise only
+      // console.log (host.log is console-only): the frame rate was lowered to fit the
+      // buffer, the clip was truncated, or a sped-up clip's audio was dropped. The
+      // bridge calls this sink synchronously as it degrades; we announce each once
+      // (a: aria-live) and paint them onto the card when the export settles (b). The
+      // sink is registered only for THIS export and cleared in the finally below, so
+      // a Save/Send that shares runtime.export never inherits a stale listener.
+      const degradeNote = el!.querySelector<HTMLElement>('[data-export-degraded]');
+      if (degradeNote) {
+        degradeNote.hidden = true;
+        degradeNote.textContent = '';
+      }
+      const degradedNotes: string[] = [];
+      _setExportNoticeSink((msg) => {
+        if (degradedNotes.includes(msg)) return; // per-clip mutes can repeat the same line
+        degradedNotes.push(msg);
+        announce(msg);
+      });
+
+      // Any zzfxm/tracker track is rendered to a transient WAV blob URL below (the
+      // tool audio and a mix-in bed can each mint one); revoke them once the export
+      // has consumed them (declared out here so the catch can free them too).
+      const wavBlobUrls: string[] = [];
+      const trackBlobUrl = (url: string): string => {
+        wavBlobUrls.push(url);
+        return url;
       };
-      // Captions for a moving export (plans/180 section 4). Serialised ONCE and used
-      // by both options below, so the track inside the file and the files beside it
-      // can never disagree. Read only when at least one option is on and only for a
-      // video format, so every other export does no work and ships no extra bytes;
-      // the burned-in caption boxes are unaffected either way.
-      const wantEmbed = isVideoFmt(fmt) && (el!.querySelector<HTMLInputElement>('[data-action="captions-embed"]')?.checked ?? false);
-      const wantSidecar = isVideoFmt(fmt) && (el!.querySelector<HTMLInputElement>('[data-action="captions-sidecar"]')?.checked ?? false);
-      const captions = wantEmbed || wantSidecar ? await captionText() : null;
-      const softCaptionsVtt = wantEmbed && captions ? captions.vtt : undefined;
-      const sidecarCaptions = wantSidecar && captions ? captions : null;
-      // RunExportOpts plus the durationUserSet contract flag: it belongs to the
-      // sequence path (the tool hook reads ctx.opts.durationUserSet), not to the
-      // generic shell-wide export options, so it's carried as a local widening
-      // rather than pushed into the shared interface. subtitlesVtt (WP-F) rides the
-      // same local widening - the bridge ExportOpts declares it; RunExportOpts need not.
-      const opts: RunExportOpts & { durationUserSet?: boolean; cuts?: number; subtitlesVtt?: string } & typeof audioOpt = {
-        ...exportDims(),
-        signal: exportAbort.signal,
-        onProgress: (done, total) => {
-          // Live take: (done, total) is a seconds countdown from the recorder. The
-          // button is the one status surface guaranteed OUTSIDE the capture - the
-          // in-page pill is skipped when the stage leaves it no capture-safe spot.
-          if (liveTake) {
-            if (total > 0) btn.textContent = `Recording live… ${done}s`;
-            return;
-          }
-          // The status block over the sealed shutter gets EVERY format's progress,
-          // animated included: the button label below deliberately skips those, and
-          // a multi-minute video encode is exactly the export the sealed screen had
-          // nothing to say about.
-          reportToShutter?.(done, total);
-          if (isAnimated || total <= 0) return;
-          const pct = Math.floor((done / total) * 100);
-          if (pct === lastExportPct) return;
-          lastExportPct = pct;
-          btn.textContent = `Exporting… ${pct}%`;
-        },
-        ...(isAnimated ? videoParams() : {}),
-        // A staged click deck (plans/184 R3): the Duration field is each slide's dwell,
-        // not the video's total - the total is the slides added up, which the compositor
-        // reads off the stamped data-seq-ms when the duration is NOT flagged user-set.
-        // Flagged, it would truncate a two-slide deck to one slide's length.
-        ...(unstageDeck ? { durationUserSet: false } : {}),
-        // Contact sheet - `opts.cuts` is the pinned cross-agent name the export
-        // bridge reads. Passed only when the Frames control is actually mounted
-        // (a timed composition) AND the format is a still: every other export omits
-        // it entirely, so the single-playhead-frame default path is untouched.
-        ...(isStillFmt(fmt) && el!.querySelector('[data-seq-still-only]') ? { cuts: cutsValue() } : {}),
-        ...audioOpt,
-        ...(softCaptionsVtt ? { subtitlesVtt: softCaptionsVtt } : {}),   // the embedded caption track (video only)
-        ...(isGif ? { dither: el!.querySelector<HTMLInputElement>('[data-action="gif-dither"]')?.checked ?? false } : {}),
-        ...(fmt === 'html' ? { fullPage: el!.querySelector<HTMLInputElement>('[data-action="full-page"]')?.checked ?? false } : {}),
-        // EMF text mode: live GDI text records by default; the "Outline fonts"
-        // chip forces the old text-as-paths output (same values as CLI --text).
-        ...(fmt === 'emf' && el!.querySelector<HTMLInputElement>('[data-action="emf-outline"]')?.checked ? { text: 'outline' as const } : {}),
-        ...(isPrintFmt(fmt) ? { ...printOpts(), barStyle: SEPARATING_FORMATS.has(fmt) ? 'cmyk-verify' as const : 'rgb-swatches' as const } : {}),
-        // The brand palette drives the colour bar for EVERY print format now, not just
-        // CMYK: the CMYK paths ALSO do exact brand-swatch matching against it (see
-        // buildCmykPaletteMap in bridge/export.ts), while the RGB paths (PDF/SVG/EPS)
-        // use it only to paint the brand colours as RGB swatches (barStyle above).
-        ...(isPrintFmt(fmt) ? { palette: brandPalette } : {}),
-        ...(isCmykFmt(fmt) ? {
-          colorProfile: el!.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.value || DEFAULT_CMYK_CONDITION,
-        } : {}),
-        ...(() => {
-          const pw = el!.querySelector<HTMLInputElement>('[data-action="pdf-password"]')?.value;
-          if (!pw) return {};
-          const strong = el!.querySelector<HTMLSelectElement>('[data-action="pdf-lock-tier"]')?.value === 'strong';
-          // Strong (AES-256, encrypt-last) composes with RGB pdf AND print pdf-cmyk;
-          // the 40-bit standard lock is jsPDF-native and RGB-pdf only.
-          if (strong && (fmt === 'pdf' || fmt === 'pdf-cmyk')) return { strongPassword: pw };
-          if (fmt === 'pdf') return { password: pw };
-          return {};
-        })(),
-        ...(isC2paFmt(fmt) && el!.querySelector<HTMLInputElement>('[data-action="pdf-c2pa"]')?.checked
-          ? { c2pa: true, ...(c2paDaysVal() ? { c2paDays: c2paDaysVal()! } : {}) }
-          : {}),
-        // Pixel watermark - the popup toggle (seeded by ?imprint=); the bridge
-        // applies it only to raster formats, so it's harmless to pass through for
-        // others / zip members. A tool with no raster format renders no toggle - 
-        // fall back to the link default.
-        ...((el!.querySelector<HTMLInputElement>('[data-action="imprint"]')?.checked ?? exportDefaults.imprint) ? { imprint: true } : {}),
-        ...((el!.querySelector<HTMLInputElement>('[data-action="durable"]')?.checked ?? exportDefaults.durable) ? { durable: true } : {}),
-        // Normalize loudness: the select's target LKFS, absent when Off.
-        ...((): { normalize?: number } => {
-          const v = el!.querySelector<HTMLSelectElement>('[data-action="audio-normalize"]')?.value;
-          const n = v && v !== 'off' ? Number(v) : Number.NaN;
-          return Number.isFinite(n) ? { normalize: n } : {};
-        })(),
-        // HDR (Rec.2100 PQ) - opt-in; passes the live brand palette as the colours
-        // to boost + the author's slider dials. The bridge applies it to raster
-        // (png/jpeg/avif/tiff) and the 10-bit video containers (mp4/webm, plan 154 WP-2);
-        // a harmless pass-through for any other format.
-        ...((el!.querySelector<HTMLInputElement>('[data-action="hdr"]')?.checked ?? exportDefaults.hdr)
-          ? {
-              hdr: true, palette: brandPalette,
-              hdrPeakNits: hdrDial('hdr-peak', HDR_DEFAULTS.peakNits),
-              hdrReach:    hdrDial('hdr-reach', HDR_DEFAULTS.reach),
-              hdrLift:     hdrDial('hdr-lift', HDR_DEFAULTS.lift),
-              hdrRichness: hdrDial('hdr-focus', HDR_DEFAULTS.richness),
+      const revokeTrackUrls = (): void => {
+        for (const u of wavBlobUrls.splice(0)) URL.revokeObjectURL(u);
+      };
+      try {
+        // Resolve the chosen catalog audio track (if any) to a plain fetchable
+        // URL before the recording starts - the export bridge stays catalog-
+        // agnostic, and a missing/undownloadable track fails here in the UI
+        // instead of mid-record. On-demand tier fetches + caches the bytes.
+        let audioOpt: { audio?: NonNullable<RunExportOpts['audio']> } = {};
+        // ZzFXM songs and tracker modules have no playable audio file - render them
+        // to a transient WAV blob URL so the URL-driven muxer paths consume them
+        // exactly like an encoded loop. (mod → libopenmpt, zzfxm → the synth.)
+        const toWavIfNeeded = async (r: { url: string; format?: string }): Promise<string> =>
+          r.format === 'zzfxm'
+            ? trackBlobUrl(await songUrlToWavBlobUrl(r.url))
+            : isModuleFormat(r.format)
+              ? trackBlobUrl(await modUrlToWavBlobUrl(r.url))
+              : r.url;
+        if (isAudioFmt(fmt) && hasToolAudioInput) {
+          // Audio-only export: the deliverable is the tool's OWN clip from the
+          // in-point it draws from, and nothing else. No bed, no gain, no fade -
+          // the tool applies no processing to the samples, and any envelope here
+          // would defeat the untouched-source pass-through in lib/audio-encode.ts.
+          const ref = await resolveToolAudio();
+          if (ref)
+            audioOpt = {
+              audio: {
+                id: toolAudioRef()?.id,
+                url: await toWavIfNeeded(ref),
+                volume: 1,
+                start: stageAudioStart(),
+              },
+            };
+        } else if (isVideoFmt(fmt)) {
+          const audioId = el!.querySelector<HTMLSelectElement>(
+            '[data-action="video-audio"]'
+          )?.value;
+          const numCtl = (a: string, dflt: number): number => {
+            const v = el!.querySelector<HTMLInputElement>(`[data-action="${a}"]`)?.value;
+            return v != null && v !== '' ? Number(v) || 0 : dflt;
+          };
+          // The popup's track choice ('' | __generate__ | asset id) → a fetchable URL.
+          const resolveTrack = async (): Promise<{ url: string; id: string } | null> => {
+            if (!audioId) return null;
+            if (audioId === '__generate__') {
+              // A fresh worker render at THIS clip's length - the seed keeps it the
+              // same tune the user auditioned, just arranged to fit.
+              const pcm = await renderSong(composeSong(generatedSongSpec(genSeed, genDur())));
+              return {
+                url: trackBlobUrl(URL.createObjectURL(pcmToWavBlob(pcm))),
+                id: `zzfxm-generated-${genSeed}`,
+              };
             }
-          : {}),
-        // Requested bit depth from the link (?depth=8/16/float). There is no panel
-        // control for it - a depth request rides the URL and passes straight
-        // through; the export bridge is where depth-follows-provenance is applied.
-        ...(exportDefaults.depth ? { depth: exportDefaults.depth } : {}),
-        ...(fmt === 'zip' ? {
-          ...printOpts(),   // bundled pdf / pdf-cmyk get marks & bleed; rasters ignore them
-          palette: brandPalette,
-          colorProfile: el!.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.value || DEFAULT_CMYK_CONDITION,
-          filename: el!.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() || autoFilename(),
-          bundleFormats: formats.filter(f => ZIP_BUNDLE.has(f)),
-          // Members re-enter renderFormat with these opts, so each stampable
-          // bundled file gets its own credential; the zip container never does.
-          ...(el!.querySelector<HTMLInputElement>('[data-action="pdf-c2pa"]')?.checked
-            ? { c2pa: true, ...(c2paDaysVal() ? { c2paDays: c2paDaysVal()! } : {}) }
+            return { url: await toWavIfNeeded(await host.assets.get(audioId)), id: audioId };
+          };
+          const fadeIn = numCtl('audio-fadein', 0);
+          const fadeOut = numCtl('audio-fadeout', 0);
+          if (hasToolAudioInput) {
+            // Two-row card (section 6.1): the tool's own audio is ALWAYS the primary track
+            // (read live - an emptied slot exports silent), the popup's pick is the
+            // optional mix-in bed whose centre level sets its gain under the voice.
+            const ref = await resolveToolAudio();
+            const toolUrl = ref ? await toWavIfNeeded(ref) : null;
+            const bed = await resolveTrack();
+            const level = Math.max(0, Math.min(100, numCtl('audio-tool-level', 100))) / 100;
+            const centreSel =
+              el!.querySelector<HTMLSelectElement>('[data-action="audio-centre"]')?.value ?? 'low';
+            const centre = centreSel === 'off' ? 0 : centreSel === 'full' ? 1 : CENTRE_LOW;
+            if (toolUrl) {
+              // In-point: a tool whose visuals begin partway into its own clip (the
+              // audiogram's "Start at") stamps that offset on its stage as
+              // data-audio-start, the same read-the-stage contract as data-seq-ms -
+              // so the soundtrack starts where the picture does instead of at 0:00.
+              // A property of the tool's OWN clip, so it applies only here, never to
+              // a mix-in or standalone bed that knows nothing about the in-point.
+              audioOpt = {
+                audio: {
+                  id: toolAudioRef()?.id,
+                  url: toolUrl,
+                  volume: level,
+                  start: stageAudioStart(),
+                  ...(bed ? { mix: { id: bed.id, url: bed.url, centre, fadeIn, fadeOut } } : {}),
+                },
+              };
+            } else if (bed) {
+              // Empty tool slot: the mix-in track stands alone, today's single-bed shape.
+              audioOpt = {
+                audio: { id: bed.id, url: bed.url, fadeIn, fadeOut, volume: 1, duck: 1, start: 0 },
+              };
+            }
+          } else if (audioId) {
+            // Single-bed card - unchanged behaviour for tools without their own audio.
+            const bed = await resolveTrack();
+            const volume = Math.max(0, Math.min(100, numCtl('audio-volume', 100))) / 100;
+            const duck = Math.max(0, Math.min(100, numCtl('audio-duck', 100))) / 100;
+            if (bed)
+              audioOpt = {
+                audio: { id: bed.id, url: bed.url, fadeIn, fadeOut, volume, duck, start: 0 },
+              };
+          }
+        }
+        // Surface progress on the button for slow non-animated exports - the CMYK
+        // TIFF pass and the SVG/PDF vector walk emit onProgress, which was being
+        // discarded (the label sat on a static "Exporting…"). Throttle to integer
+        // percent so a per-row callback can't thrash the DOM. Animated formats keep
+        // their own time-based label (guarded by isAnimated).
+        let lastExportPct = -1;
+        // The shutter's status block wants the same numbers. exportUnscaled hands
+        // its `report` sink to the function it wraps, so this is latched there (the
+        // opts object is built before the wrap) and stays null for an export that
+        // runs without a shutter, e.g. a live take.
+        let reportToShutter: ((done: number, total: number) => void) | null = null;
+        // Cancellation for this export (engine 1.141 ExportOpts.signal). Handed to the
+        // shutter's status block as onCancel, which makes its one button a real Cancel:
+        // the frame loops, the CMYK row pass, the vector walks and the sequence
+        // compositor poll the signal and reject with an AbortError, which the catch below
+        // reads as "cancelled", not "failed". A format with no yield point ignores it and
+        // we discard its result.
+        const exportAbort = new AbortController();
+        const cancelExport = (): void => exportAbort.abort();
+        // The live brand palette (host.tokens, cached) - not the tokenless PALETTE
+        // fallback - so CMYK ink substitution always matches the active profile's
+        // real brand (SUSE's measured inks, or whichever catalog is mounted).
+        const brandPalette = await livePalette(host);
+        // Read one HDR slider's value (falls back to its default if the slider isn't
+        // rendered for this format/tool).
+        const hdrDial = (action: string, def: number): number => {
+          const v = Number(el!.querySelector<HTMLInputElement>(`[data-action="${action}"]`)?.value);
+          return Number.isFinite(v) ? v : def;
+        };
+        // Captions for a moving export (plans/180 section 4). Serialised ONCE and used
+        // by both options below, so the track inside the file and the files beside it
+        // can never disagree. Read only when at least one option is on and only for a
+        // video format, so every other export does no work and ships no extra bytes;
+        // the burned-in caption boxes are unaffected either way.
+        const wantEmbed =
+          isVideoFmt(fmt) &&
+          (el!.querySelector<HTMLInputElement>('[data-action="captions-embed"]')?.checked ?? false);
+        const wantSidecar =
+          isVideoFmt(fmt) &&
+          (el!.querySelector<HTMLInputElement>('[data-action="captions-sidecar"]')?.checked ??
+            false);
+        const captions = wantEmbed || wantSidecar ? await captionText() : null;
+        const softCaptionsVtt = wantEmbed && captions ? captions.vtt : undefined;
+        const sidecarCaptions = wantSidecar && captions ? captions : null;
+        // RunExportOpts plus the durationUserSet contract flag: it belongs to the
+        // sequence path (the tool hook reads ctx.opts.durationUserSet), not to the
+        // generic shell-wide export options, so it's carried as a local widening
+        // rather than pushed into the shared interface. subtitlesVtt (WP-F) rides the
+        // same local widening - the bridge ExportOpts declares it; RunExportOpts need not.
+        const opts: RunExportOpts & {
+          durationUserSet?: boolean;
+          cuts?: number;
+          subtitlesVtt?: string;
+        } & typeof audioOpt = {
+          ...exportDims(),
+          signal: exportAbort.signal,
+          onProgress: (done, total) => {
+            // Live take: (done, total) is a seconds countdown from the recorder. The
+            // button is the one status surface guaranteed OUTSIDE the capture - the
+            // in-page pill is skipped when the stage leaves it no capture-safe spot.
+            if (liveTake) {
+              if (total > 0) btn.textContent = `Recording live… ${done}s`;
+              return;
+            }
+            // The status block over the sealed shutter gets EVERY format's progress,
+            // animated included: the button label below deliberately skips those, and
+            // a multi-minute video encode is exactly the export the sealed screen had
+            // nothing to say about.
+            reportToShutter?.(done, total);
+            if (isAnimated || total <= 0) return;
+            const pct = Math.floor((done / total) * 100);
+            if (pct === lastExportPct) return;
+            lastExportPct = pct;
+            btn.textContent = `Exporting… ${pct}%`;
+          },
+          ...(isAnimated ? videoParams() : {}),
+          // A staged click deck (plans/184 R3): the Duration field is each slide's dwell,
+          // not the video's total - the total is the slides added up, which the compositor
+          // reads off the stamped data-seq-ms when the duration is NOT flagged user-set.
+          // Flagged, it would truncate a two-slide deck to one slide's length.
+          ...(unstageDeck ? { durationUserSet: false } : {}),
+          // Contact sheet - `opts.cuts` is the pinned cross-agent name the export
+          // bridge reads. Passed only when the Frames control is actually mounted
+          // (a timed composition) AND the format is a still: every other export omits
+          // it entirely, so the single-playhead-frame default path is untouched.
+          ...(isStillFmt(fmt) && el!.querySelector('[data-seq-still-only]')
+            ? { cuts: cutsValue() }
             : {}),
-          // Whole-zip lock: standard = ZipCrypto, strong = AES-256 (renderZip strips
-          // these off the per-member opts so members aren't double-locked).
+          ...audioOpt,
+          ...(softCaptionsVtt ? { subtitlesVtt: softCaptionsVtt } : {}), // the embedded caption track (video only)
+          ...(isGif
+            ? {
+                dither:
+                  el!.querySelector<HTMLInputElement>('[data-action="gif-dither"]')?.checked ??
+                  false,
+              }
+            : {}),
+          ...(fmt === 'html'
+            ? {
+                fullPage:
+                  el!.querySelector<HTMLInputElement>('[data-action="full-page"]')?.checked ??
+                  false,
+              }
+            : {}),
+          // EMF text mode: live GDI text records by default; the "Outline fonts"
+          // chip forces the old text-as-paths output (same values as CLI --text).
+          ...(fmt === 'emf' &&
+          el!.querySelector<HTMLInputElement>('[data-action="emf-outline"]')?.checked
+            ? { text: 'outline' as const }
+            : {}),
+          ...(isPrintFmt(fmt)
+            ? {
+                ...printOpts(),
+                barStyle: SEPARATING_FORMATS.has(fmt)
+                  ? ('cmyk-verify' as const)
+                  : ('rgb-swatches' as const),
+              }
+            : {}),
+          // The brand palette drives the colour bar for EVERY print format now, not just
+          // CMYK: the CMYK paths ALSO do exact brand-swatch matching against it (see
+          // buildCmykPaletteMap in bridge/export.ts), while the RGB paths (PDF/SVG/EPS)
+          // use it only to paint the brand colours as RGB swatches (barStyle above).
+          ...(isPrintFmt(fmt) ? { palette: brandPalette } : {}),
+          ...(isCmykFmt(fmt)
+            ? {
+                colorProfile:
+                  el!.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.value ||
+                  DEFAULT_CMYK_CONDITION,
+              }
+            : {}),
           ...(() => {
             const pw = el!.querySelector<HTMLInputElement>('[data-action="pdf-password"]')?.value;
             if (!pw) return {};
-            return el!.querySelector<HTMLSelectElement>('[data-action="pdf-lock-tier"]')?.value === 'strong'
-              ? { strongPassword: pw } : { password: pw };
+            const strong =
+              el!.querySelector<HTMLSelectElement>('[data-action="pdf-lock-tier"]')?.value ===
+              'strong';
+            // Strong (AES-256, encrypt-last) composes with RGB pdf AND print pdf-cmyk;
+            // the 40-bit standard lock is jsPDF-native and RGB-pdf only.
+            if (strong && (fmt === 'pdf' || fmt === 'pdf-cmyk')) return { strongPassword: pw };
+            if (fmt === 'pdf') return { password: pw };
+            return {};
           })(),
-        } : {}),
-      };
-      const filename = el!.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() || autoFilename();
-      // The exact bytes handed to host.export.download - hashed into the export-
-      // history record below so /verify can later match a file back to this device.
-      let downloadedBlob: Blob | null = null;
-      // A multi-page export downloads a ZIP bundle, not a single render. Flag it so the
-      // 'renders' auto-save skips it: saving the zip under the per-page format tag would
-      // write a corrupt asset (a .zip stored as if it were a png/svg/pdf).
-      let downloadedIsZip = false;
-      const framePages = framePick.kind === 'page' ? [pageEls[framePick.index]!] : pageEls;
-      // A SCORM course package (plans/180 M-D1): not one render but a zip of them - every
-      // artboard as a still, the narrated film with its caption sidecar, the fonts, the
-      // manifest, the adapter and a launch page. bridge/export-scorm.ts owns the
-      // packaging; this branch owns the two things only the live app can do, which is why
-      // they go in as closures: photograph an artboard at its rest pose, and encode the
-      // film. Placed BEFORE the still fan-out because it consumes the same pages for a
-      // different purpose (a zip of loose images is not a course).
-      if (fmt === 'scorm') {
-        const { buildScormPackage, collectScormFonts } = await import('../bridge/export-scorm.ts');
-        const { narrationSlicesFromModel } = await import('../lib/narration.ts');
-        const { applySequenceTime, restoreSequenceTime, beginAuthoredDom, OFF_CLASS } =
-          await import('../bridge/sequence-dom.ts');
-        // SVG where the deck is vector, PNG otherwise - the tool's own format list decides,
-        // exactly as the docs-shot pipeline does.
-        const stillFmt = formats.includes('svg') ? 'svg' : 'png';
-        // Same stage discipline as the fan-out below: lift the playhead's `.seq-off`, hold
-        // ONE set of authored styles across every page, and put both back afterwards. The
-        // film renderer needs the stage handed back first, so the release is a closure that
-        // can be called twice.
-        const seqOff = canvasEl ? [...canvasEl.querySelectorAll<HTMLElement>('.seq-off')] : [];
-        seqOff.forEach((o) => o.classList.remove('seq-off'));
-        const seqRoot = canvasEl;
-        const releaseAuthored = seqRoot ? beginAuthoredDom(seqRoot) : null;
-        let stageHeld = true;
-        const releaseStage = (): void => {
-          if (!stageHeld) return;
-          stageHeld = false;
-          if (seqRoot) restoreSequenceTime(seqRoot);
-          releaseAuthored?.();
-          seqOff.forEach((o) => o.classList.add('seq-off'));
+          // Linux package (plan 197 M6): the panel's name/version/licence/install-path
+          // become the RPM metadata; pkgInner is the render put inside the package.
+          ...(fmt === 'rpm' || fmt === 'tar.gz'
+            ? {
+                pkg: {
+                  name:
+                    el!
+                      .querySelector<HTMLInputElement>('[data-action="pkg-name"]')
+                      ?.value?.trim() || manifest.id,
+                  version:
+                    el!
+                      .querySelector<HTMLInputElement>('[data-action="pkg-version"]')
+                      ?.value?.trim() || '1.0',
+                  license:
+                    el!
+                      .querySelector<HTMLInputElement>('[data-action="pkg-license"]')
+                      ?.value?.trim() || undefined,
+                  dest:
+                    el!
+                      .querySelector<HTMLInputElement>('[data-action="pkg-dest"]')
+                      ?.value?.trim() || undefined,
+                  innerFormat: pkgInner || undefined,
+                },
+              }
+            : {}),
+          ...(isC2paFmt(fmt) &&
+          el!.querySelector<HTMLInputElement>('[data-action="pdf-c2pa"]')?.checked
+            ? { c2pa: true, ...(c2paDaysVal() ? { c2paDays: c2paDaysVal()! } : {}) }
+            : {}),
+          // Pixel watermark - the popup toggle (seeded by ?imprint=); the bridge
+          // applies it only to raster formats, so it's harmless to pass through for
+          // others / zip members. A tool with no raster format renders no toggle -
+          // fall back to the link default.
+          ...((el!.querySelector<HTMLInputElement>('[data-action="imprint"]')?.checked ??
+          exportDefaults.imprint)
+            ? { imprint: true }
+            : {}),
+          ...((el!.querySelector<HTMLInputElement>('[data-action="durable"]')?.checked ??
+          exportDefaults.durable)
+            ? { durable: true }
+            : {}),
+          // Normalize loudness: the select's target LKFS, absent when Off.
+          ...((): { normalize?: number } => {
+            const v = el!.querySelector<HTMLSelectElement>(
+              '[data-action="audio-normalize"]'
+            )?.value;
+            const n = v && v !== 'off' ? Number(v) : Number.NaN;
+            return Number.isFinite(n) ? { normalize: n } : {};
+          })(),
+          // HDR (Rec.2100 PQ) - opt-in; passes the live brand palette as the colours
+          // to boost + the author's slider dials. The bridge applies it to raster
+          // (png/jpeg/avif/tiff) and the 10-bit video containers (mp4/webm, plan 154 WP-2);
+          // a harmless pass-through for any other format.
+          ...((el!.querySelector<HTMLInputElement>('[data-action="hdr"]')?.checked ??
+          exportDefaults.hdr)
+            ? {
+                hdr: true,
+                palette: brandPalette,
+                hdrPeakNits: hdrDial('hdr-peak', HDR_DEFAULTS.peakNits),
+                hdrReach: hdrDial('hdr-reach', HDR_DEFAULTS.reach),
+                hdrLift: hdrDial('hdr-lift', HDR_DEFAULTS.lift),
+                hdrRichness: hdrDial('hdr-focus', HDR_DEFAULTS.richness),
+              }
+            : {}),
+          // Requested bit depth from the link (?depth=8/16/float). There is no panel
+          // control for it - a depth request rides the URL and passes straight
+          // through; the export bridge is where depth-follows-provenance is applied.
+          ...(exportDefaults.depth ? { depth: exportDefaults.depth } : {}),
+          ...(fmt === 'zip'
+            ? {
+                ...printOpts(), // bundled pdf / pdf-cmyk get marks & bleed; rasters ignore them
+                palette: brandPalette,
+                colorProfile:
+                  el!.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.value ||
+                  DEFAULT_CMYK_CONDITION,
+                filename:
+                  el!.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() ||
+                  autoFilename(),
+                bundleFormats: formats.filter((f) => ZIP_BUNDLE.has(f)),
+                // Members re-enter renderFormat with these opts, so each stampable
+                // bundled file gets its own credential; the zip container never does.
+                ...(el!.querySelector<HTMLInputElement>('[data-action="pdf-c2pa"]')?.checked
+                  ? { c2pa: true, ...(c2paDaysVal() ? { c2paDays: c2paDaysVal()! } : {}) }
+                  : {}),
+                // Whole-zip lock: standard = ZipCrypto, strong = AES-256 (renderZip strips
+                // these off the per-member opts so members aren't double-locked).
+                ...(() => {
+                  const pw = el!.querySelector<HTMLInputElement>(
+                    '[data-action="pdf-password"]'
+                  )?.value;
+                  if (!pw) return {};
+                  return el!.querySelector<HTMLSelectElement>('[data-action="pdf-lock-tier"]')
+                    ?.value === 'strong'
+                    ? { strongPassword: pw }
+                    : { password: pw };
+                })(),
+              }
+            : {}),
         };
-        // A deck is NARRATED when a page holds an audio marker. A bed lives on the
-        // pasteboard, outside every page, so it does not make a deck narrated by itself.
-        const narrated = !!canvasEl?.querySelector('[data-pdf-page] [data-audio-src]');
-        const filmFmt = formats.includes('mp4') ? 'mp4' : formats.includes('webm') ? 'webm' : null;
-        const scormPages: HTMLElement[] = pageEls.length ? pageEls : (canvasEl ? [canvasEl] : []);
-        let pkg: Awaited<ReturnType<typeof buildScormPackage>>;
-        try {
-          pkg = await exportUnscaled(async (report) => buildScormPackage({
-            title: filename,
-            lang: currentLang(),
-            // The engine has no i18n, so the launch page's own words arrive from here or
-            // the package ships English chrome under a non-English `<html lang>`.
-            // The three templated ones go through t() with NO params on purpose: the
-            // catalog string keeps its {n}/{total}/{title} for the launch page's own
-            // one-line substitution, which is the only place the numbers exist.
-            labels: {
-              previous: t('Previous'),
-              next: t('Next'),
-              slide: t('Slide {n}'),
-              slideOf: t('Slide {n} of {total}'),
-              captions: t('Captions'),
-              video: t('{title} video'),
-            },
-            // T4: the caption sidecar cut from each clip's OWN word timings, clamped to
-            // its slide. Without it the package's .vtt existed only when the burned-in
-            // caption boxes did, so deleting them (or narrating with captions off) sent
-            // an uncaptioned video into an LMS while the exact timings sat unused on
-            // every narration clip.
-            narration: narrationSlicesFromModel(runtime.getModel()),
-            signal: exportAbort.signal,
-            onProgress: (done, total) => { report?.(done, total); },
-            slides: scormPages.map((page) => ({
-              el: page,
-              notes: page.getAttribute('data-frame-notes') || undefined,
-              alt: page.getAttribute('data-frame-name') || undefined,
-            })),
-            fonts: await collectScormFonts(canvasEl),
-            renderStill: async (el) => {
-              // AT REST, not mid-entrance - the fan-out's rule, and for the same reason:
-              // a page whose boxes fade in over 400 ms photographs half-transparent.
-              if (seqRoot) {
-                applySequenceTime(seqRoot, restMsOf(el));
-                for (const o of seqRoot.querySelectorAll<HTMLElement>(`.${OFF_CLASS}`)) {
-                  o.classList.remove(OFF_CLASS);
-                }
-              }
-              const node = el as HTMLElement;
-              const blob = await runtime.export(node, stillFmt, {
-                ...opts, width: node.offsetWidth, height: node.offsetHeight,
-              });
-              return { bytes: new Uint8Array(await blob.arrayBuffer()), ext: stillFmt === 'svg' ? 'svg' : 'png' };
-            },
-            renderFilm: narrated && filmFmt ? async () => {
-              // The compositor poses the document itself, so hand the stage back before it
-              // runs rather than filming through this branch's still-life scaffolding.
-              releaseStage();
-              // `live` is dropped deliberately: "Record live" films the screen, and a
-              // course package wants the deterministic render at full quality.
-              const { live: _live, ...vp } = videoParams();
-              const blob = await runtime.export(exportTargetNode(canvasEl), filmFmt, { ...opts, ...vp });
-              return {
-                bytes: new Uint8Array(await blob.arrayBuffer()),
-                ext: filmFmt,
-                // The same cues the moving export ships (plans/180 section 4): the timed
-                // composition's own caption boxes, else the tool audio's cached word
-                // timings. Never a second pass over audio we synthesised.
-                captionsVtt: (await captionText())?.vtt,
-              };
-            } : null,
-          }), { shutter: true, detail: fmtLabel(fmt), onCancel: cancelExport });
-        } finally {
-          releaseStage();
-        }
-        downloadedBlob = pkg.blob;
-        // A course package is an archive, not a render: the 'renders' auto-save must not
-        // store it under the format tag, exactly as the multi-page zip must not.
-        downloadedIsZip = true;
-        await host.export.download(pkg.blob, `${filename}-scorm.zip`);
-      } else if (pageEls.length >= 1 && !isAnimated && fmt !== 'pdf' && fmt !== 'zip' && fmt !== 'html' && fmt !== 'pptx' && fmt !== 'penpot') {
-        if (framePick.kind === 'unmatched') {
-          const why = tRaw('No slide matches ?s={s}. Exporting every slide.', { s: framePick.address.raw });
-          console.warn(`[export] ${why}`);
-          announce(why, { assertive: true });
-        }
-        // Export EACH page frame as its own still image, at that frame's own layout size
-        // (offsetWidth/Height - transform-independent, and the true possibly-resized page
-        // size, not the tool's static render dims). One page → a single file; several → a zip.
-        if (framePages.length > 1) btn.textContent = `Exporting ${framePages.length} pages…`;
-        const pageOpts: RunExportOpts & { durationUserSet?: boolean; cuts?: number } = { ...opts };
-        delete pageOpts.bundleFormats;
-        // Per-artboard stills fan out one image per frame; a cuts=N contact sheet only
-        // applies to a whole [data-sequence] stage (the .lolly-frames wrapper), so it is
-        // inert on an individual [data-pdf-page]. Drop it so a framed timed doc's per-slide
-        // export can never carry a stray cuts opt into the page-level render.
-        delete pageOpts.cuts;
-        // A timed slideshow (frames-as-scenes) gates off-playhead artboards with
-        // `.seq-off` (display:none, timeline.css) so only the current slide shows live.
-        // A per-artboard still export must lift that first, or every non-current frame
-        // photographs BLANK. Strip it across the whole canvas for the export window and
-        // restore in `finally` (mirrors sequence-render.ts's photograph-time strip; the
-        // class name is the CSS contract - OFF_CLASS in bridge/sequence-dom.ts).
-        const seqOff = canvasEl ? [...canvasEl.querySelectorAll<HTMLElement>('.seq-off')] : [];
-        seqOff.forEach((o) => o.classList.remove('seq-off'));
-        // Loaded here rather than at the top of the file: the timeline composer is a
-        // large module and only a framed, timed document ever reaches this branch.
-        const { applySequenceTime, restoreSequenceTime, beginAuthoredDom, OFF_CLASS } =
-          await import('../bridge/sequence-dom.ts');
-        // THE DOCUMENT IS THE ROOT, never a single page. The applier reads two of its
-        // rules off the whole stage: a frames-as-scenes document opts OUT of depth and
-        // tilt entirely, and what says so are the `[data-pdf-page]` elements themselves -
-        // which are not descendants of any one page - while `data-seq-ms`, the length an
-        // open-ended box is measured against, is stamped on the `.lolly-frames` root.
-        // Handed one page, the composition answered both questions the other way from
-        // the preview and the video compositor: it projected a lifted box through a
-        // camera they refuse, at a perspective measured off the wrong element. One
-        // session over the canvas, driven to each page's own rest moment, asks the same
-        // questions they do - and it keeps ONE set of authored styles across the whole
-        // fan-out, which is what `createSequenceTime` exists to do.
-        const seqRoot = canvasEl;
-        // The editor's own playhead stands down for the length of the export, so the
-        // styles this session captures as authored are the author's and not the pose the
-        // timeline happened to be holding. The same scope every other photographer opens.
-        const releaseAuthored = seqRoot ? beginAuthoredDom(seqRoot) : null;
-        let files: Array<{ name: string; blob: Blob }>;
-        try {
-          files = await exportUnscaled(async (report) => {
-            const out: Array<{ name: string; blob: Blob }> = [];
-            for (let i = 0; i < framePages.length; i++) {
-              const el = framePages[i]!;
-              // Pages are the honest unit of progress here - each one is a whole
-              // render, and only the last of them reports any sub-progress. It is
-              // also the cancel point: a still page render has no yield point of its
-              // own, so this is what stops a 40-page fan-out part way.
-              report?.(i, framePages.length);
-              exportAbort.signal.throwIfAborted();
-              // AT REST, not mid-entrance. Lifting `.seq-off` above only decides which
-              // artboards are on stage; it says nothing about WHEN each one is
-              // photographed, so a page whose boxes fade in over 400 ms came out as a
-              // page of half-transparent boxes. Compose the document at this page's own
-              // rest moment first - the moment every enter on it has finished, which
-              // restMsOf works out from the page's own timing attributes (plans/179 M4).
-              if (seqRoot) {
-                applySequenceTime(seqRoot, restMsOf(el));
-                // THE APPLIER DOES NOT DECIDE VISIBILITY ON THIS PATH. It hides every box
-                // whose half-open window does not contain that moment - including,
-                // inside the page it was just asked to pose, the two bullets that have
-                // already had their turn. A still of an artboard draws everything ON it:
-                // that is what the strip above decided for the pages, it is what a
-                // moving export says out loud through `buildStepsDropped` for the
-                // fragments, and it is what this export did before it learned about
-                // time. So the POSE is kept and the hiding is lifted again, every page,
-                // before the shot.
-                for (const o of seqRoot.querySelectorAll<HTMLElement>(`.${OFF_CLASS}`)) {
-                  o.classList.remove(OFF_CLASS);
-                }
-              }
-              const pb = await runtime.export(el, fmt, { ...pageOpts, width: el.offsetWidth, height: el.offsetHeight });
-              out.push({ name: `${filename}-${i + 1}.${extFor(fmt, pb)}`, blob: pb });
-            }
-            return out;
-          }, { shutter: true, detail: fmtLabel(fmt), onCancel: cancelExport });
-        } finally {
-          // Reverse order of the two scopes above: hand the composition back first (it
-          // also lifts every `.seq-off` it wrote), then the playhead, then put the
-          // artboards that were genuinely off the playhead back off it.
-          if (seqRoot) restoreSequenceTime(seqRoot);
-          releaseAuthored?.();
-          seqOff.forEach((o) => o.classList.add('seq-off'));
-        }
-        if (files.length === 1) {
-          downloadedBlob = files[0]!.blob;
-          await host.export.download(files[0]!.blob, `${filename}.${extFor(fmt, files[0]!.blob)}`);
-        } else {
-          const { buildZip } = await import('../pro/zip.ts');
-          const zipBlob = await buildZip(files, { zipName: filename });
-          downloadedBlob = zipBlob;
-          downloadedIsZip = true;
-          await host.export.download(zipBlob, `${filename}.zip`);
-        }
-      } else {
-        // A LIVE take must keep the fit-to-stage scale. exportUnscaled blows the
-        // canvas up to native size for the entire recording, so the user would watch
-        // a clipped canvas while the capture crops to a viewport slice. Instead,
-        // record the preview exactly as displayed: the recorder's sizing/bitrate
-        // math already reads the on-screen rect times dpr. A live take also films
-        // the SCREEN, so the shutter would appear in the take. Both reasons point
-        // the same way, so the ternary below keeps live out of exportUnscaled
-        // entirely.
-        //
-        // EVERY OTHER export gets the shutter, animated included (Andy, 2026-07-27).
-        // This used to be `shutter: !isAnimated`, based on the idea that an animated
-        // format "records the live canvas over seconds" - true only of a live take,
-        // which never reaches this branch. Every other motion path composites
-        // OFF-SCREEN: the sequence compositor rasterises static layers once and draws
-        // into its own canvas, renderRecord/renderTopTail draw to theirs, renderVideo
-        // replays onto an offscreen canvas, and a [data-capture-stream] tool captures
-        // its own canvas's backing store, which an overlay cannot reach.
-        // `.export-shutter` is also a SIBLING of #tool-canvas-outer, while every
-        // capture targets #tool-canvas or below, so it is outside the captured
-        // subtree either way. The shake is real for video too: exportUnscaled strips
-        // the transform and resizes to full export dimensions, and a lottie layer
-        // visibly steps frame-by-frame during a sequence render. The iris is built
-        // to hold (see the CSS): it stays closed for the variable export time, while
-        // the export popup keeps showing progress underneath it.
-        const drvNode = exportTargetNode(canvasEl);
-        // Deterministic animated-source render (Andy's "right side of the render line"): the
-        // preview plays the effect live, but the final render walks the SOURCE frame-by-frame
-        // through the same effect. Register the per-frame drive the export frame loop awaits
-        // (createFrameSource → node.__lollyFrameDrive), and PAUSE the live repaint loop (not
-        // stop - the source stays armed so renderFrameAt keeps working) so a real-time frame
-        // can't clobber the exact frame being captured. renderFrameAt returns null for a
-        // camera (not deterministically re-samplable), so this cleanly no-ops there. Only the
-        // deterministic path (not the screen-share liveTake) needs it.
-        const liveDrive = !liveTake && runtime.isLive() && !!drvNode;
-        if (liveDrive) {
-          const media = host.media as unknown as { renderFrameAt?: (tMs: number) => Promise<MediaFrameLike | null> };
-          (drvNode as unknown as { __lollyFrameDrive?: unknown }).__lollyFrameDrive = async (t: number, durMs: number) => {
-            const mf = media.renderFrameAt ? await media.renderFrameAt(t * durMs) : null;
-            if (!mf) return;                                    // camera / unseekable → leave the base
-            const html = await runtime.applyFrameForExport(mf);
-            if (html != null) drvNode!.innerHTML = html;        // paint the exact frame before capture
+        const filename =
+          el!.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() ||
+          autoFilename();
+        // The exact bytes handed to host.export.download - hashed into the export-
+        // history record below so /verify can later match a file back to this device.
+        let downloadedBlob: Blob | null = null;
+        // A multi-page export downloads a ZIP bundle, not a single render. Flag it so the
+        // 'renders' auto-save skips it: saving the zip under the per-page format tag would
+        // write a corrupt asset (a .zip stored as if it were a png/svg/pdf).
+        let downloadedIsZip = false;
+        const framePages = framePick.kind === 'page' ? [pageEls[framePick.index]!] : pageEls;
+        // A SCORM course package (plans/180 M-D1): not one render but a zip of them - every
+        // artboard as a still, the narrated film with its caption sidecar, the fonts, the
+        // manifest, the adapter and a launch page. bridge/export-scorm.ts owns the
+        // packaging; this branch owns the two things only the live app can do, which is why
+        // they go in as closures: photograph an artboard at its rest pose, and encode the
+        // film. Placed BEFORE the still fan-out because it consumes the same pages for a
+        // different purpose (a zip of loose images is not a course).
+        if (fmt === 'scorm') {
+          const { buildScormPackage, collectScormFonts } = await import(
+            '../bridge/export-scorm.ts'
+          );
+          const { narrationSlicesFromModel } = await import('../lib/narration.ts');
+          const { applySequenceTime, restoreSequenceTime, beginAuthoredDom, OFF_CLASS } =
+            await import('../bridge/sequence-dom.ts');
+          // SVG where the deck is vector, PNG otherwise - the tool's own format list decides,
+          // exactly as the docs-shot pipeline does.
+          const stillFmt = formats.includes('svg') ? 'svg' : 'png';
+          // Same stage discipline as the fan-out below: lift the playhead's `.seq-off`, hold
+          // ONE set of authored styles across every page, and put both back afterwards. The
+          // film renderer needs the stage handed back first, so the release is a closure that
+          // can be called twice.
+          const seqOff = canvasEl ? [...canvasEl.querySelectorAll<HTMLElement>('.seq-off')] : [];
+          seqOff.forEach((o) => o.classList.remove('seq-off'));
+          const seqRoot = canvasEl;
+          const releaseAuthored = seqRoot ? beginAuthoredDom(seqRoot) : null;
+          let stageHeld = true;
+          const releaseStage = (): void => {
+            if (!stageHeld) return;
+            stageHeld = false;
+            if (seqRoot) restoreSequenceTime(seqRoot);
+            releaseAuthored?.();
+            seqOff.forEach((o) => o.classList.add('seq-off'));
           };
-          runtime.pauseLive();
-        }
-        const blob = await (async (): Promise<Blob> => {
+          // A deck is NARRATED when a page holds an audio marker. A bed lives on the
+          // pasteboard, outside every page, so it does not make a deck narrated by itself.
+          const narrated = !!canvasEl?.querySelector('[data-pdf-page] [data-audio-src]');
+          const filmFmt = formats.includes('mp4')
+            ? 'mp4'
+            : formats.includes('webm')
+              ? 'webm'
+              : null;
+          const scormPages: HTMLElement[] = pageEls.length ? pageEls : canvasEl ? [canvasEl] : [];
+          let pkg: Awaited<ReturnType<typeof buildScormPackage>>;
           try {
-            return liveTake
-              ? await runtime.export(drvNode, fmt, opts)
-              : await exportUnscaled((report) => {
-                  reportToShutter = report ?? null;   // read by opts.onProgress above
-                  return runtime.export(drvNode, fmt, opts);
-                }, { shutter: true, detail: fmtLabel(fmt), onCancel: cancelExport });
+            pkg = await exportUnscaled(
+              async (report) =>
+                buildScormPackage({
+                  title: filename,
+                  lang: currentLang(),
+                  // The engine has no i18n, so the launch page's own words arrive from here or
+                  // the package ships English chrome under a non-English `<html lang>`.
+                  // The three templated ones go through t() with NO params on purpose: the
+                  // catalog string keeps its {n}/{total}/{title} for the launch page's own
+                  // one-line substitution, which is the only place the numbers exist.
+                  labels: {
+                    previous: t('Previous'),
+                    next: t('Next'),
+                    slide: t('Slide {n}'),
+                    slideOf: t('Slide {n} of {total}'),
+                    captions: t('Captions'),
+                    video: t('{title} video'),
+                  },
+                  // T4: the caption sidecar cut from each clip's OWN word timings, clamped to
+                  // its slide. Without it the package's .vtt existed only when the burned-in
+                  // caption boxes did, so deleting them (or narrating with captions off) sent
+                  // an uncaptioned video into an LMS while the exact timings sat unused on
+                  // every narration clip.
+                  narration: narrationSlicesFromModel(runtime.getModel()),
+                  signal: exportAbort.signal,
+                  onProgress: (done, total) => {
+                    report?.(done, total);
+                  },
+                  slides: scormPages.map((page) => ({
+                    el: page,
+                    notes: page.getAttribute('data-frame-notes') || undefined,
+                    alt: page.getAttribute('data-frame-name') || undefined,
+                  })),
+                  fonts: await collectScormFonts(canvasEl),
+                  renderStill: async (el) => {
+                    // AT REST, not mid-entrance - the fan-out's rule, and for the same reason:
+                    // a page whose boxes fade in over 400 ms photographs half-transparent.
+                    if (seqRoot) {
+                      applySequenceTime(seqRoot, restMsOf(el));
+                      for (const o of seqRoot.querySelectorAll<HTMLElement>(`.${OFF_CLASS}`)) {
+                        o.classList.remove(OFF_CLASS);
+                      }
+                    }
+                    const node = el as HTMLElement;
+                    const blob = await runtime.export(node, stillFmt, {
+                      ...opts,
+                      width: node.offsetWidth,
+                      height: node.offsetHeight,
+                    });
+                    return {
+                      bytes: new Uint8Array(await blob.arrayBuffer()),
+                      ext: stillFmt === 'svg' ? 'svg' : 'png',
+                    };
+                  },
+                  renderFilm:
+                    narrated && filmFmt
+                      ? async () => {
+                          // The compositor poses the document itself, so hand the stage back before it
+                          // runs rather than filming through this branch's still-life scaffolding.
+                          releaseStage();
+                          // `live` is dropped deliberately: "Record live" films the screen, and a
+                          // course package wants the deterministic render at full quality.
+                          const { live: _live, ...vp } = videoParams();
+                          const blob = await runtime.export(exportTargetNode(canvasEl), filmFmt, {
+                            ...opts,
+                            ...vp,
+                          });
+                          return {
+                            bytes: new Uint8Array(await blob.arrayBuffer()),
+                            ext: filmFmt,
+                            // The same cues the moving export ships (plans/180 section 4): the timed
+                            // composition's own caption boxes, else the tool audio's cached word
+                            // timings. Never a second pass over audio we synthesised.
+                            captionsVtt: (await captionText())?.vtt,
+                          };
+                        }
+                      : null,
+                }),
+              { shutter: true, detail: fmtLabel(fmt), onCancel: cancelExport }
+            );
           } finally {
-            if (liveDrive) {
-              delete (drvNode as unknown as { __lollyFrameDrive?: unknown }).__lollyFrameDrive;
-              runtime.resumeLive();
-              runtime.refresh();                                // restore the live preview
+            releaseStage();
+          }
+          downloadedBlob = pkg.blob;
+          // A course package is an archive, not a render: the 'renders' auto-save must not
+          // store it under the format tag, exactly as the multi-page zip must not.
+          downloadedIsZip = true;
+          await host.export.download(pkg.blob, `${filename}-scorm.zip`);
+        } else if (
+          pageEls.length >= 1 &&
+          !isAnimated &&
+          fmt !== 'pdf' &&
+          fmt !== 'zip' &&
+          fmt !== 'html' &&
+          fmt !== 'pptx' &&
+          fmt !== 'penpot' &&
+          fmt !== 'rpm' &&
+          fmt !== 'tar.gz'
+        ) {
+          if (framePick.kind === 'unmatched') {
+            const why = tRaw('No slide matches ?s={s}. Exporting every slide.', {
+              s: framePick.address.raw,
+            });
+            console.warn(`[export] ${why}`);
+            announce(why, { assertive: true });
+          }
+          // Export EACH page frame as its own still image, at that frame's own layout size
+          // (offsetWidth/Height - transform-independent, and the true possibly-resized page
+          // size, not the tool's static render dims). One page → a single file; several → a zip.
+          if (framePages.length > 1) btn.textContent = `Exporting ${framePages.length} pages…`;
+          const pageOpts: RunExportOpts & { durationUserSet?: boolean; cuts?: number } = {
+            ...opts,
+          };
+          delete pageOpts.bundleFormats;
+          // Per-artboard stills fan out one image per frame; a cuts=N contact sheet only
+          // applies to a whole [data-sequence] stage (the .lolly-frames wrapper), so it is
+          // inert on an individual [data-pdf-page]. Drop it so a framed timed doc's per-slide
+          // export can never carry a stray cuts opt into the page-level render.
+          delete pageOpts.cuts;
+          // A timed slideshow (frames-as-scenes) gates off-playhead artboards with
+          // `.seq-off` (display:none, timeline.css) so only the current slide shows live.
+          // A per-artboard still export must lift that first, or every non-current frame
+          // photographs BLANK. Strip it across the whole canvas for the export window and
+          // restore in `finally` (mirrors sequence-render.ts's photograph-time strip; the
+          // class name is the CSS contract - OFF_CLASS in bridge/sequence-dom.ts).
+          const seqOff = canvasEl ? [...canvasEl.querySelectorAll<HTMLElement>('.seq-off')] : [];
+          seqOff.forEach((o) => o.classList.remove('seq-off'));
+          // Loaded here rather than at the top of the file: the timeline composer is a
+          // large module and only a framed, timed document ever reaches this branch.
+          const { applySequenceTime, restoreSequenceTime, beginAuthoredDom, OFF_CLASS } =
+            await import('../bridge/sequence-dom.ts');
+          // THE DOCUMENT IS THE ROOT, never a single page. The applier reads two of its
+          // rules off the whole stage: a frames-as-scenes document opts OUT of depth and
+          // tilt entirely, and what says so are the `[data-pdf-page]` elements themselves -
+          // which are not descendants of any one page - while `data-seq-ms`, the length an
+          // open-ended box is measured against, is stamped on the `.lolly-frames` root.
+          // Handed one page, the composition answered both questions the other way from
+          // the preview and the video compositor: it projected a lifted box through a
+          // camera they refuse, at a perspective measured off the wrong element. One
+          // session over the canvas, driven to each page's own rest moment, asks the same
+          // questions they do - and it keeps ONE set of authored styles across the whole
+          // fan-out, which is what `createSequenceTime` exists to do.
+          const seqRoot = canvasEl;
+          // The editor's own playhead stands down for the length of the export, so the
+          // styles this session captures as authored are the author's and not the pose the
+          // timeline happened to be holding. The same scope every other photographer opens.
+          const releaseAuthored = seqRoot ? beginAuthoredDom(seqRoot) : null;
+          let files: Array<{ name: string; blob: Blob }>;
+          try {
+            files = await exportUnscaled(
+              async (report) => {
+                const out: Array<{ name: string; blob: Blob }> = [];
+                for (let i = 0; i < framePages.length; i++) {
+                  const el = framePages[i]!;
+                  // Pages are the honest unit of progress here - each one is a whole
+                  // render, and only the last of them reports any sub-progress. It is
+                  // also the cancel point: a still page render has no yield point of its
+                  // own, so this is what stops a 40-page fan-out part way.
+                  report?.(i, framePages.length);
+                  exportAbort.signal.throwIfAborted();
+                  // AT REST, not mid-entrance. Lifting `.seq-off` above only decides which
+                  // artboards are on stage; it says nothing about WHEN each one is
+                  // photographed, so a page whose boxes fade in over 400 ms came out as a
+                  // page of half-transparent boxes. Compose the document at this page's own
+                  // rest moment first - the moment every enter on it has finished, which
+                  // restMsOf works out from the page's own timing attributes (plans/179 M4).
+                  if (seqRoot) {
+                    applySequenceTime(seqRoot, restMsOf(el));
+                    // THE APPLIER DOES NOT DECIDE VISIBILITY ON THIS PATH. It hides every box
+                    // whose half-open window does not contain that moment - including,
+                    // inside the page it was just asked to pose, the two bullets that have
+                    // already had their turn. A still of an artboard draws everything ON it:
+                    // that is what the strip above decided for the pages, it is what a
+                    // moving export says out loud through `buildStepsDropped` for the
+                    // fragments, and it is what this export did before it learned about
+                    // time. So the POSE is kept and the hiding is lifted again, every page,
+                    // before the shot.
+                    for (const o of seqRoot.querySelectorAll<HTMLElement>(`.${OFF_CLASS}`)) {
+                      o.classList.remove(OFF_CLASS);
+                    }
+                  }
+                  const pb = await runtime.export(el, fmt, {
+                    ...pageOpts,
+                    width: el.offsetWidth,
+                    height: el.offsetHeight,
+                  });
+                  out.push({ name: `${filename}-${i + 1}.${extFor(fmt, pb)}`, blob: pb });
+                }
+                return out;
+              },
+              { shutter: true, detail: fmtLabel(fmt), onCancel: cancelExport }
+            );
+          } finally {
+            // Reverse order of the two scopes above: hand the composition back first (it
+            // also lifts every `.seq-off` it wrote), then the playhead, then put the
+            // artboards that were genuinely off the playhead back off it.
+            if (seqRoot) restoreSequenceTime(seqRoot);
+            releaseAuthored?.();
+            seqOff.forEach((o) => o.classList.add('seq-off'));
+          }
+          if (files.length === 1) {
+            downloadedBlob = files[0]!.blob;
+            await host.export.download(
+              files[0]!.blob,
+              `${filename}.${extFor(fmt, files[0]!.blob)}`
+            );
+          } else {
+            const { buildZip } = await import('../pro/zip.ts');
+            const zipBlob = await buildZip(files, { zipName: filename });
+            downloadedBlob = zipBlob;
+            downloadedIsZip = true;
+            await host.export.download(zipBlob, `${filename}.zip`);
+          }
+        } else {
+          // A LIVE take must keep the fit-to-stage scale. exportUnscaled blows the
+          // canvas up to native size for the entire recording, so the user would watch
+          // a clipped canvas while the capture crops to a viewport slice. Instead,
+          // record the preview exactly as displayed: the recorder's sizing/bitrate
+          // math already reads the on-screen rect times dpr. A live take also films
+          // the SCREEN, so the shutter would appear in the take. Both reasons point
+          // the same way, so the ternary below keeps live out of exportUnscaled
+          // entirely.
+          //
+          // EVERY OTHER export gets the shutter, animated included (Andy, 2026-07-27).
+          // This used to be `shutter: !isAnimated`, based on the idea that an animated
+          // format "records the live canvas over seconds" - true only of a live take,
+          // which never reaches this branch. Every other motion path composites
+          // OFF-SCREEN: the sequence compositor rasterises static layers once and draws
+          // into its own canvas, renderRecord/renderTopTail draw to theirs, renderVideo
+          // replays onto an offscreen canvas, and a [data-capture-stream] tool captures
+          // its own canvas's backing store, which an overlay cannot reach.
+          // `.export-shutter` is also a SIBLING of #tool-canvas-outer, while every
+          // capture targets #tool-canvas or below, so it is outside the captured
+          // subtree either way. The shake is real for video too: exportUnscaled strips
+          // the transform and resizes to full export dimensions, and a lottie layer
+          // visibly steps frame-by-frame during a sequence render. The iris is built
+          // to hold (see the CSS): it stays closed for the variable export time, while
+          // the export popup keeps showing progress underneath it.
+          const drvNode = exportTargetNode(canvasEl);
+          // Deterministic animated-source render (Andy's "right side of the render line"): the
+          // preview plays the effect live, but the final render walks the SOURCE frame-by-frame
+          // through the same effect. Register the per-frame drive the export frame loop awaits
+          // (createFrameSource → node.__lollyFrameDrive), and PAUSE the live repaint loop (not
+          // stop - the source stays armed so renderFrameAt keeps working) so a real-time frame
+          // can't clobber the exact frame being captured. renderFrameAt returns null for a
+          // camera (not deterministically re-samplable), so this cleanly no-ops there. Only the
+          // deterministic path (not the screen-share liveTake) needs it.
+          const liveDrive = !liveTake && runtime.isLive() && !!drvNode;
+          if (liveDrive) {
+            const media = host.media as unknown as {
+              renderFrameAt?: (tMs: number) => Promise<MediaFrameLike | null>;
+            };
+            (drvNode as unknown as { __lollyFrameDrive?: unknown }).__lollyFrameDrive = async (
+              t: number,
+              durMs: number
+            ) => {
+              const mf = media.renderFrameAt ? await media.renderFrameAt(t * durMs) : null;
+              if (!mf) return; // camera / unseekable → leave the base
+              const html = await runtime.applyFrameForExport(mf);
+              if (html != null) drvNode!.innerHTML = html; // paint the exact frame before capture
+            };
+            runtime.pauseLive();
+          }
+          const blob = await (async (): Promise<Blob> => {
+            try {
+              return liveTake
+                ? await runtime.export(drvNode, fmt, opts)
+                : await exportUnscaled(
+                    (report) => {
+                      reportToShutter = report ?? null; // read by opts.onProgress above
+                      return runtime.export(drvNode, fmt, opts);
+                    },
+                    { shutter: true, detail: fmtLabel(fmt), onCancel: cancelExport }
+                  );
+            } finally {
+              if (liveDrive) {
+                delete (drvNode as unknown as { __lollyFrameDrive?: unknown }).__lollyFrameDrive;
+                runtime.resumeLive();
+                runtime.refresh(); // restore the live preview
+              }
             }
+          })();
+          // Sidecar captions (plans/180 section 4, layer 3). A render is ONE Blob and a
+          // browser download is one file, so the only way to hand over the video and its
+          // caption files together is a small zip - the same shape the multi-page fan-out
+          // above already downloads. The video keeps its own bytes verbatim inside it,
+          // credential included; the .vtt and the .srt are the cues the film was captioned
+          // from. Off ⇒ the plain single file, unchanged.
+          if (sidecarCaptions) {
+            const { zipAsync } = await import('../lib/zip.ts');
+            const enc = new TextEncoder();
+            const zipped = await zipAsync({
+              [`${filename}.${extFor(fmt, blob)}`]: new Uint8Array(await blob.arrayBuffer()),
+              [`${filename}.vtt`]: enc.encode(sidecarCaptions.vtt),
+              [`${filename}.srt`]: enc.encode(sidecarCaptions.srt),
+            });
+            const zipBlob = new Blob([zipped as BlobPart], { type: 'application/zip' });
+            downloadedBlob = zipBlob;
+            downloadedIsZip = true;
+            await host.export.download(zipBlob, `${filename}.zip`);
+          } else {
+            downloadedBlob = blob;
+            await host.export.download(blob, `${filename}.${extFor(fmt, blob)}`);
+          }
+        }
+        revokeTrackUrls();
+        bumpMetric('filesRendered');
+        recordFormat(fmt); // local usage metric
+        // L3 (plans/163) - remember the format and size this was exported at, so the
+        // next fresh mount of this tool opens on them. Best-effort and non-blocking,
+        // like the history record and the library copy below: the file has already
+        // reached the user, and a lost write only costs the memory. No UI, no switch -
+        // the tool's defaults just get better with use. Explicit values (a link's
+        // params, a resumed session) still win on the way back in; see
+        // lib/export-prefs.ts.
+        {
+          const { w: lastW, h: lastH } = rawDims();
+          void saveExportPrefs(host, manifest.id, {
+            format: fmt,
+            width: lastW,
+            height: lastH,
+            unit: dimUnit(),
+            dpi: dimDpi(),
+          });
+        }
+        // Log the download to the export history (Dashboard "Latest exports"). Best-effort,
+        // non-blocking: a thumbnail of what was exported + enough state to reopen it.
+        void (async () => {
+          try {
+            const { recordExport, hashBlob } = await import('../lib/export-history.ts');
+            const thumb = await captureThumbnail(
+              manifest,
+              canvasEl,
+              runtime,
+              exportUnscaled,
+              fmt,
+              false
+            );
+            // Hash the exact downloaded bytes so /verify can match a file back here.
+            const contentHash = downloadedBlob ? await hashBlob(downloadedBlob) : undefined;
+            await recordExport({
+              toolId: manifest.id,
+              label: manifest.name,
+              filename,
+              format: fmt,
+              thumb,
+              query: serializeUrlState(runtime.getModel()),
+              at: Date.now(),
+              ...(contentHash ? { contentHash } : {}),
+            });
+          } catch {
+            /* history is best-effort */
           }
         })();
-        // Sidecar captions (plans/180 section 4, layer 3). A render is ONE Blob and a
-        // browser download is one file, so the only way to hand over the video and its
-        // caption files together is a small zip - the same shape the multi-page fan-out
-        // above already downloads. The video keeps its own bytes verbatim inside it,
-        // credential included; the .vtt and the .srt are the cues the film was captioned
-        // from. Off ⇒ the plain single file, unchanged.
-        if (sidecarCaptions) {
-          const { zipAsync } = await import('../lib/zip.ts');
-          const enc = new TextEncoder();
-          const zipped = await zipAsync({
-            [`${filename}.${extFor(fmt, blob)}`]: new Uint8Array(await blob.arrayBuffer()),
-            [`${filename}.vtt`]: enc.encode(sidecarCaptions.vtt),
-            [`${filename}.srt`]: enc.encode(sidecarCaptions.srt),
-          });
-          const zipBlob = new Blob([zipped as BlobPart], { type: 'application/zip' });
-          downloadedBlob = zipBlob;
-          downloadedIsZip = true;
-          await host.export.download(zipBlob, `${filename}.zip`);
-        } else {
-          downloadedBlob = blob;
-          await host.export.download(blob, `${filename}.${extFor(fmt, blob)}`);
+        // Auto-save the SAME credentialed bytes into the personal library (the
+        // 'renders' tag). Best-effort + non-blocking: the file has already reached
+        // the user. Deduped by checksum and gated by the profile toggle inside the
+        // helper; large/video renders confirm first (the download is never gated).
+        void (async () => {
+          try {
+            if (!downloadedBlob || downloadedIsZip) return;
+            const { saveRenderToLibrary } = await import('../lib/save-render.ts');
+            const dimNum = (v: number | string | undefined): number | undefined => {
+              const n = typeof v === 'string' ? Number(v) : v;
+              return typeof n === 'number' && Number.isFinite(n) && n > 0
+                ? Math.round(n)
+                : undefined;
+            };
+            await saveRenderToLibrary(
+              host as unknown as Parameters<typeof saveRenderToLibrary>[0],
+              {
+                blob: downloadedBlob,
+                format: fmt,
+                toolId: manifest.id,
+                name: filename,
+                width: dimNum(opts.width),
+                height: dimNum(opts.height),
+              }
+            );
+          } catch {
+            /* saving to the library is best-effort */
+          }
+        })();
+        // Export home (plans/138 A1): if the user pinned a cloud as their export
+        // home, this same file ALSO auto-sends there over the send-target driver.
+        // Best-effort + non-blocking; the send runs as a light job so the global
+        // toast carries its progress and the resulting link.
+        void (async () => {
+          try {
+            if (!downloadedBlob) return;
+            // autoSendToExportHome resolves the pinned cloud through the same
+            // sendTargetsFor() registry the panel renders from, and finding nothing there
+            // is indistinguishable from "not connected on this device" - it returns
+            // silently. So wait for the panel's own on-demand driver load (memoised;
+            // long resolved by the time anyone has exported) rather than reading a
+            // registry that may not be filled yet.
+            const [{ autoSendToExportHome }] = await Promise.all([
+              import('../lib/export-home.ts'),
+              sendTargetsReady,
+            ]);
+            await autoSendToExportHome(
+              host as unknown as Parameters<typeof autoSendToExportHome>[0],
+              {
+                blob: downloadedBlob,
+                format: downloadedIsZip ? 'zip' : fmt,
+                name: filename,
+              }
+            );
+          } catch {
+            /* the export home is best-effort - the download already succeeded */
+          }
+        })();
+      } catch (err) {
+        revokeTrackUrls();
+        // Cancelled, not broken: nothing was downloaded or saved, so say so quietly and
+        // put the button back. The shutter was already restored by exportUnscaled's own
+        // finally. 'AbortError' is the one shape every path arrives in - the sequence
+        // compositor maps its SEQ_ABORTED onto it.
+        if ((err as { name?: string })?.name === 'AbortError') {
+          btn.removeAttribute('aria-busy');
+          btn.textContent = prev;
+          btn.toggleAttribute('disabled', false);
+          announce(t('Export cancelled'));
+          return;
         }
-      }
-      revokeTrackUrls();
-      bumpMetric('filesRendered'); recordFormat(fmt); // local usage metric
-      // L3 (plans/163) - remember the format and size this was exported at, so the
-      // next fresh mount of this tool opens on them. Best-effort and non-blocking,
-      // like the history record and the library copy below: the file has already
-      // reached the user, and a lost write only costs the memory. No UI, no switch -
-      // the tool's defaults just get better with use. Explicit values (a link's
-      // params, a resumed session) still win on the way back in; see
-      // lib/export-prefs.ts.
-      {
-        const { w: lastW, h: lastH } = rawDims();
-        void saveExportPrefs(host, manifest.id, {
-          format: fmt, width: lastW, height: lastH, unit: dimUnit(), dpi: dimDpi(),
-        });
-      }
-      // Log the download to the export history (Dashboard "Latest exports"). Best-effort,
-      // non-blocking: a thumbnail of what was exported + enough state to reopen it.
-      void (async () => {
-        try {
-          const { recordExport, hashBlob } = await import('../lib/export-history.ts');
-          const thumb = await captureThumbnail(manifest, canvasEl, runtime, exportUnscaled, fmt, false);
-          // Hash the exact downloaded bytes so /verify can match a file back here.
-          const contentHash = downloadedBlob ? await hashBlob(downloadedBlob) : undefined;
-          await recordExport({ toolId: manifest.id, label: manifest.name, filename, format: fmt, thumb, query: serializeUrlState(runtime.getModel()), at: Date.now(), ...(contentHash ? { contentHash } : {}) });
-        } catch { /* history is best-effort */ }
-      })();
-      // Auto-save the SAME credentialed bytes into the personal library (the
-      // 'renders' tag). Best-effort + non-blocking: the file has already reached
-      // the user. Deduped by checksum and gated by the profile toggle inside the
-      // helper; large/video renders confirm first (the download is never gated).
-      void (async () => {
-        try {
-          if (!downloadedBlob || downloadedIsZip) return;
-          const { saveRenderToLibrary } = await import('../lib/save-render.ts');
-          const dimNum = (v: number | string | undefined): number | undefined => {
-            const n = typeof v === 'string' ? Number(v) : v;
-            return typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.round(n) : undefined;
-          };
-          await saveRenderToLibrary(host as unknown as Parameters<typeof saveRenderToLibrary>[0], {
-            blob: downloadedBlob,
-            format: fmt,
-            toolId: manifest.id,
-            name: filename,
-            width: dimNum(opts.width),
-            height: dimNum(opts.height),
-          });
-        } catch { /* saving to the library is best-effort */ }
-      })();
-      // Export home (plans/138 A1): if the user pinned a cloud as their export
-      // home, this same file ALSO auto-sends there over the send-target driver.
-      // Best-effort + non-blocking; the send runs as a light job so the global
-      // toast carries its progress and the resulting link.
-      void (async () => {
-        try {
-          if (!downloadedBlob) return;
-          // autoSendToExportHome resolves the pinned cloud through the same
-          // sendTargetsFor() registry the panel renders from, and finding nothing there
-          // is indistinguishable from "not connected on this device" - it returns
-          // silently. So wait for the panel's own on-demand driver load (memoised;
-          // long resolved by the time anyone has exported) rather than reading a
-          // registry that may not be filled yet.
-          const [{ autoSendToExportHome }] = await Promise.all([
-            import('../lib/export-home.ts'),
-            sendTargetsReady,
-          ]);
-          await autoSendToExportHome(host as unknown as Parameters<typeof autoSendToExportHome>[0], {
-            blob: downloadedBlob,
-            format: downloadedIsZip ? 'zip' : fmt,
-            name: filename,
-          });
-        } catch { /* the export home is best-effort - the download already succeeded */ }
-      })();
-    } catch (err) {
-      revokeTrackUrls();
-      // Cancelled, not broken: nothing was downloaded or saved, so say so quietly and
-      // put the button back. The shutter was already restored by exportUnscaled's own
-      // finally. 'AbortError' is the one shape every path arrives in - the sequence
-      // compositor maps its SEQ_ABORTED onto it.
-      if ((err as { name?: string })?.name === 'AbortError') {
+        console.error('Export failed:', err);
         btn.removeAttribute('aria-busy');
-        btn.textContent = prev;
-        btn.toggleAttribute('disabled', false);
-        announce(t('Export cancelled'));
+        // Surface WHY so users don't just retry the same doomed export.
+        const raw = String((err as { message?: string })?.message || '');
+        const why = /too large|maximum|exceeds|canvas size|dimensions/i.test(raw)
+          ? 'Too large - reduce size or DPI'
+          : /not supported|unsupported|no encoder|mime|codec/i.test(raw)
+            ? `Can’t export ${fmt} in this browser`
+            : raw && raw.length <= 48
+              ? raw
+              : 'Export failed - try again';
+        btn.textContent = why;
+        announce(why, { assertive: true });
+        setTimeout(() => {
+          btn.textContent = prev;
+          btn.toggleAttribute('disabled', false);
+        }, 3500);
         return;
+      } finally {
+        // Save As is armed before the shared render begins. If the render fails
+        // before host.export.download consumes it, never let that one-shot choice
+        // leak into a later ordinary Download.
+        desktopExport?.cancelSaveAs();
+        // The staged click deck goes back exactly (plans/184 R3) - before anything else
+        // reads the canvas, and whether the export finished, failed or was cancelled.
+        unstageDeck?.();
+        unstageDeck = null;
+        // Always release the module-global sink, whatever exit the export took.
+        _setExportNoticeSink(null);
       }
-      console.error('Export failed:', err);
+
       btn.removeAttribute('aria-busy');
-      // Surface WHY so users don't just retry the same doomed export.
-      const raw = String((err as { message?: string })?.message || '');
-      const why = /too large|maximum|exceeds|canvas size|dimensions/i.test(raw) ? 'Too large - reduce size or DPI'
-        : /not supported|unsupported|no encoder|mime|codec/i.test(raw) ? `Can’t export ${fmt} in this browser`
-        : (raw && raw.length <= 48) ? raw
-        : 'Export failed - try again';
-      btn.textContent = why;
-      announce(why, { assertive: true });
-      setTimeout(() => { btn.textContent = prev; btn.toggleAttribute('disabled', false); }, 3500);
-      return;
-    } finally {
-      // The staged click deck goes back exactly (plans/184 R3) - before anything else
-      // reads the canvas, and whether the export finished, failed or was cancelled.
-      unstageDeck?.(); unstageDeck = null;
-      // Always release the module-global sink, whatever exit the export took.
-      _setExportNoticeSink(null);
+      btn.textContent = prev;
+      btn.toggleAttribute('disabled', false);
+      announce('Export complete');
+      // (b) A calm, visible line on the card for each degradation, honest not alarmed.
+      if (degradeNote && degradedNotes.length) {
+        degradeNote.textContent = degradedNotes.join(' ');
+        degradeNote.hidden = false;
+      }
+      exportCompleted();
+      void offerDetailsAsk()
+        .then((shown) => {
+          if (!shown) offerReopenNote();
+        })
+        .catch(() => {
+          /* the ask is an extra, never a failure path */
+        });
     }
+  );
 
-    btn.removeAttribute('aria-busy');
-    btn.textContent = prev;
-    btn.toggleAttribute('disabled', false);
-    announce('Export complete');
-    // (b) A calm, visible line on the card for each degradation, honest not alarmed.
-    if (degradeNote && degradedNotes.length) {
-      degradeNote.textContent = degradedNotes.join(' ');
-      degradeNote.hidden = false;
+  el.querySelector<HTMLButtonElement>('[data-action="save"]')?.addEventListener(
+    'click',
+    async function (this: HTMLButtonElement) {
+      const qsFolder = await quickSaveFolder();
+      if (await performSave(this, qsFolder ? { folderId: qsFolder } : undefined))
+        settleSaveButton(this);
     }
-    exportCompleted();
-    void offerDetailsAsk()
-      .then((shown) => { if (!shown) offerReopenNote(); })
-      .catch(() => { /* the ask is an extra, never a failure path */ });
-  });
-
-  el.querySelector<HTMLButtonElement>('[data-action="save"]')?.addEventListener('click', async function (this: HTMLButtonElement) {
-    const qsFolder = await quickSaveFolder();
-    if (await performSave(this, qsFolder ? { folderId: qsFolder } : undefined)) settleSaveButton(this);
-  });
+  );
 
   // Cloud send destinations (the send-target seam). The card list is rebuilt
   // per format; ONE delegated click handler on the container survives the
@@ -4016,15 +5063,21 @@ function renderActions(
     // status span and the delegated click handling are unchanged. The button now shows
     // the provider NAME rather than the target's own actionLabel ("Send to Google
     // Drive"), which would repeat the head next to it.
-    box.innerHTML = offered.length ? `
+    box.innerHTML = offered.length
+      ? `
       <div class="section-card export-send${sendOpen ? ' is-open' : ''}">
         <button type="button" class="protection-head" data-action="send-toggle" aria-expanded="${sendOpen}">${icon('share', { className: 'c2pa-icon' })}<span>${escape(t('Send to'))}</span></button>
         <div class="export-send-row" data-send-body style="display:${sendOpen ? 'flex' : 'none'}">
-          ${offered.map(tg => `
-          <button type="button" data-send-kind="${escape(tg.kind)}"${tg.hint ? ` title="${escape(tg.hint)}"` : ''}>${icon('upload', { size: 14 })}<span>${escape(tg.label)}</span></button>
-          <span class="send-status" data-send-status="${escape(tg.kind)}" role="status"></span>`).join('')}
+          ${offered
+            .map(
+              (tg) => `
+          <button type="button" data-send-kind="${escape(sendTargetId(tg))}"${tg.hint ? ` title="${escape(tg.hint)}"` : ''}>${icon('upload', { size: 14 })}<span>${escape(tg.label)}</span></button>
+          <span class="send-status" data-send-status="${escape(sendTargetId(tg))}" role="status"></span>`
+            )
+            .join('')}
         </div>
-      </div>` : '';
+      </div>`
+      : '';
     // The container outlives its contents (it is emitted unconditionally so late
     // registration has somewhere to land), so it carries the empty state itself: no
     // destination for this format ⇒ nothing in the panel, exactly as when the row
@@ -4048,9 +5101,11 @@ function renderActions(
   // handler cannot run before the panel is mounted.
   const sendTargetsReady = actions.includes('download')
     ? import('../lib/send-targets-builtin.ts')
-      .then(m => m.ensureBuiltinSendTargets())
-      .then(() => renderSendTargets(formatEl?.value || initialFmt || formats[0] || ''))
-      .catch((err: unknown) => { console.error('Send destinations unavailable:', err); })
+        .then((m) => m.ensureBuiltinSendTargets())
+        .then(() => renderSendTargets(formatEl?.value || initialFmt || formats[0] || ''))
+        .catch((err: unknown) => {
+          console.error('Send destinations unavailable:', err);
+        })
     : Promise.resolve();
   el.querySelector<HTMLElement>('[data-send-targets]')?.addEventListener('click', async (ev) => {
     // The header toggle rides the same delegated listener (the card is rebuilt
@@ -4063,13 +5118,16 @@ function renderActions(
       if (bodyEl) bodyEl.style.display = sendOpen ? 'flex' : 'none';
       return;
     }
-    const btn = (ev.target as HTMLElement).closest?.('[data-send-kind]') as HTMLButtonElement | null;
+    const btn = (ev.target as HTMLElement).closest?.(
+      '[data-send-kind]'
+    ) as HTMLButtonElement | null;
     if (!btn || btn.hasAttribute('disabled')) return;
-    const kind = btn.dataset.sendKind!;
+    const targetId = btn.dataset.sendKind!;
     const fmt = formatEl?.value || initialFmt || formats[0] || '';
-    const target = sendTargetsFor(fmt).find(tg => tg.kind === kind);
+    const target = sendTargetsFor(fmt, 'export').find((tg) => sendTargetId(tg) === targetId);
     if (!target) return;
-    const status = el!.querySelector<HTMLElement>(`[data-send-status="${CSS.escape(kind)}"]`);
+    const status = [...el!.querySelectorAll<HTMLElement>('[data-send-status]')]
+      .find((candidate) => candidate.dataset.sendStatus === targetId);
     // Progress wording swaps the LABEL SPAN, not the button - the button also holds
     // the destination glyph, and writing textContent on it would delete that glyph
     // and never bring it back.
@@ -4078,7 +5136,9 @@ function renderActions(
     btn.toggleAttribute('disabled', true);
     btn.setAttribute('aria-busy', 'true');
     try {
-      const name = el!.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() || autoFilename();
+      const name =
+        el!.querySelector<HTMLInputElement>('[data-action="filename"]')?.value.trim() ||
+        autoFilename();
       // Destination first, bytes second: a target with a `prepare` (Penpot's
       // project + file-name picker) asks BEFORE anything renders, so the
       // question arrives while this is still a choice rather than after a wait
@@ -4096,30 +5156,53 @@ function renderActions(
       label.textContent = t('Rendering…');
       const opts = {
         ...exportDims(),
-        ...(fmt === 'emf' && el!.querySelector<HTMLInputElement>('[data-action="emf-outline"]')?.checked ? { text: 'outline' as const } : {}),
+        ...(target.requiresCredential
+          ? { c2pa: true, ...(c2paDaysVal() ? { c2paDays: c2paDaysVal()! } : {}) }
+          : {}),
+        ...(fmt === 'emf' &&
+        el!.querySelector<HTMLInputElement>('[data-action="emf-outline"]')?.checked
+          ? { text: 'outline' as const }
+          : {}),
       };
       // Multi-page/animated sends keep the whole canvas (their walkers need every
       // [data-pdf-page]); flat single-image sends target the active artboard.
-      const multiPage = fmt === 'pdf' || fmt === 'pdf-cmyk' || fmt === 'pptx' || fmt === 'penpot' || fmt === 'docx' || fmt === 'odt' || isAnimatedFmt(fmt);
+      const multiPage =
+        fmt === 'pdf' ||
+        fmt === 'pdf-cmyk' ||
+        fmt === 'pptx' ||
+        fmt === 'penpot' ||
+        fmt === 'docx' ||
+        fmt === 'odt' ||
+        isAnimatedFmt(fmt);
       const sendNode = multiPage ? exportTargetNode(canvasEl) : flatExportNode(canvasEl);
-      const blob = await exportUnscaled(() => runtime.export(sendNode, fmt, opts), { shutter: true });
+      const blob = await exportUnscaled(() => runtime.export(sendNode, fmt, opts), {
+        shutter: true,
+      });
       label.textContent = t('Sending…');
-      const out = await target.send({ bytes: new Uint8Array(await blob.arrayBuffer()), name, format: fmt, mime: blob.type, choice });
+      const out = await target.send({
+        bytes: new Uint8Array(await blob.arrayBuffer()),
+        name,
+        format: fmt,
+        mime: blob.type,
+        choice,
+      });
       if (status) {
         // The driver's url is REMOTE-SOURCED (an upload service's response), so it
         // must pass the scheme gate before it renders as a link - a bad one
         // degrades to the plain label.
-        status.innerHTML = out.url && safeHref(out.url)
-          // nosemgrep: lolly-href-escape-is-not-scheme-validation - safeHref()-gated in the guard above
-          ? `<a href="${escape(out.url)}" target="_blank" rel="noopener">${escape(out.label)}</a>`
-          : escape(out.label);
+        status.innerHTML =
+          out.url && safeHref(out.url)
+            ? // nosemgrep: lolly-href-escape-is-not-scheme-validation - safeHref()-gated in the guard above
+              `<a href="${escape(out.url)}" target="_blank" rel="noopener">${escape(out.label)}</a>`
+            : escape(out.label);
       }
       bumpMetric('filesRendered');
       announce(`Sent to ${target.label}`);
     } catch (err) {
-      console.error(`Send to ${kind} failed:`, err);
+      console.error(`Send to ${targetId} failed:`, err);
       const msg = String((err as Error)?.message || '');
-      if (status) status.textContent = msg && msg.length <= 120 ? msg : t('Send failed - try again');
+      if (status)
+        status.textContent = msg && msg.length <= 120 ? msg : t('Send failed - try again');
       announce('Send failed', { assertive: true });
     } finally {
       btn.removeAttribute('aria-busy');
@@ -4134,7 +5217,7 @@ function renderActions(
   // a how-many dropdown (a 2–8 quick-pick - multi-edit's grid holds far more now,
   // but a dropdown of one tool's variants stays short; for a big fan-out use the
   // gallery's multi-select "Make copies"); picking a count
-  // persists the CURRENT live state into that many fresh sessions (labelled A…H - 
+  // persists the CURRENT live state into that many fresh sessions (labelled A…H -
   // the same payload + slot shape performSave writes, so they're ordinary saved
   // sessions everywhere) and jumps straight into multi-edit with them side by
   // side. The active session's own slot is untouched: variants are copies, so
@@ -4147,13 +5230,19 @@ function renderActions(
       multiBtn.disabled = true;
       multiBtn.setAttribute('aria-busy', 'true');
       try {
-        const data  = sessionSnapshot();
+        const data = sessionSnapshot();
         // One thumbnail serves every copy - they start identical.
-        const thumb = await captureThumbnail(manifest, canvasEl, runtime, exportUnscaled, data.__export_format);
+        const thumb = await captureThumbnail(
+          manifest,
+          canvasEl,
+          runtime,
+          exportUnscaled,
+          data.__export_format
+        );
         const stamp = Date.now();
         const slots: string[] = [];
         for (let i = 0; i < count; i++) {
-          const slot = `${manifest.id}:${stamp + i}`;   // ms offset keeps the minted slots unique
+          const slot = `${manifest.id}:${stamp + i}`; // ms offset keeps the minted slots unique
           await host.state.save(slot, { ...data, __label: String.fromCharCode(65 + i) }, thumb);
           slots.push(slot);
         }
@@ -4169,28 +5258,40 @@ function renderActions(
         delete multiBtn.dataset.saving;
       }
     };
-    const menu = mountBodyPopover(multiBtn, (pop) => {
-      pop.innerHTML = `
+    const menu = mountBodyPopover(
+      multiBtn,
+      (pop) => {
+        pop.innerHTML = `
         <div class="multi-edit-menu-head">${t('How many copies?')}</div>
-        <div class="multi-edit-menu-counts">${[2, 3, 4, 5, 6, 7, 8].map(n =>
-          `<button type="button" class="multi-edit-count" role="menuitem" data-count="${n}">${n}</button>`).join('')}</div>`;
-      pop.querySelectorAll<HTMLButtonElement>('[data-count]').forEach(b => b.addEventListener('click', () => {
-        menu.close();
-        void makeVariants(Number(b.dataset.count));
-      }));
-      return pop.querySelector<HTMLElement>('[data-count]');
-    }, {
-      className: 'multi-edit-menu',
-      ariaLabel: t('Make variants'),
-      // Left-aligned under the trigger (the default is right-aligned - built for
-      // the top-right chrome; this trigger sits in the LEFT sidebar).
-      position(pop, anchor) {
-        const r = anchor.getBoundingClientRect();
-        pop.style.top  = `${Math.round(r.bottom + 8)}px`;
-        pop.style.left = `${Math.max(8, Math.round(r.left))}px`;
+        <div class="multi-edit-menu-counts">${[2, 3, 4, 5, 6, 7, 8]
+          .map(
+            (n) =>
+              `<button type="button" class="multi-edit-count" role="menuitem" data-count="${n}">${n}</button>`
+          )
+          .join('')}</div>`;
+        pop.querySelectorAll<HTMLButtonElement>('[data-count]').forEach((b) =>
+          b.addEventListener('click', () => {
+            menu.close();
+            void makeVariants(Number(b.dataset.count));
+          })
+        );
+        return pop.querySelector<HTMLElement>('[data-count]');
       },
+      {
+        className: 'multi-edit-menu',
+        ariaLabel: t('Make variants'),
+        // Left-aligned under the trigger (the default is right-aligned - built for
+        // the top-right chrome; this trigger sits in the LEFT sidebar).
+        position(pop, anchor) {
+          const r = anchor.getBoundingClientRect();
+          pop.style.top = `${Math.round(r.bottom + 8)}px`;
+          pop.style.left = `${Math.max(8, Math.round(r.left))}px`;
+        },
+      }
+    );
+    multiBtn.addEventListener('click', () => {
+      menu.isOpen() ? menu.close(true) : menu.open();
     });
-    multiBtn.addEventListener('click', () => { menu.isOpen() ? menu.close(true) : menu.open(); });
   }
 
   // Apply the initial (or restored) dimensions to the canvas preview immediately.
@@ -4207,7 +5308,9 @@ function renderActions(
     if (previewing) return;
     previewing = true;
     try {
-      const fmt = (manifest.render.preview as { format?: string } | undefined)?.format || manifest.render.formats[0]!;
+      const fmt =
+        (manifest.render.preview as { format?: string } | undefined)?.format ||
+        manifest.render.formats[0]!;
       await exportUnscaled(() => runtime.export(exportTargetNode(canvasEl), fmt, exportDims()));
     } finally {
       previewing = false;
@@ -4219,223 +5322,29 @@ function renderActions(
   // popup-close + tool-teardown paths silence an in-progress audio audition.
   // `sessionState` is the SAME snapshot a save writes, read (never written) by the beam
   // for its `__export_*` markers - the one place they exist outside this panel's DOM.
-  return { copy: performCopy, preview, save: performSave, setDims, setFormat, setFormats, setExperience, stopAudioPreview, sessionState: sessionSnapshot, getSlot: () => activeSlot, dispose: disposeCostSlot };
+  return {
+    copy: performCopy,
+    preview,
+    save: performSave,
+    setDims,
+    setFormat,
+    setFormats,
+    setExperience,
+    stopAudioPreview,
+    sessionState: sessionSnapshot,
+    getSlot: () => activeSlot,
+    dispose: disposeCostSlot,
+  };
 }
 
-// Adds scroll-to-change and click-drag-to-scrub to a number input.
-// Dragging uses Pointer Lock once the threshold is crossed so the cursor
-// wraps across screen edges and movement is truly unbounded.
-// onChange fires after every value change from either interaction.
-// opts.format(value) returns the label shown in the floating readout that
-// appears while dragging (defaults to the bare value) - see scrub-readout.js.
-// opts.step() is one tick's worth in the field's current unit (default 1) - read per
-// event, since the export bar's unit select can change under a live field; the value
-// is kept to that step's decimals, so a mm field scrubs by 0.1 and an in field by 0.01.
-function addScrubBehavior(inputEl: HTMLInputElement, onChange: () => void, opts: { format?: (value: string) => string; step?: () => number } = {}): void {
-  const format = opts.format ?? ((v: string) => String(v));
-  const stepNow = (): number => { const s = opts.step?.(); return s != null && s > 0 && Number.isFinite(s) ? s : 1; };
-  const read   = (v: string): number => parseFloat(v) || 0;
-  const getMin = () => parseFloat(inputEl.min) || 1;
-  const getMax = () => parseFloat(inputEl.max) || 99999;
-  /** Snapped to the step and written with the step's decimals, so 0.1 + 0.2 is '0.3'. */
-  const fmt    = (v: number): string => { const s = stepNow(); const dec = s >= 1 ? 0 : Math.min(6, (String(s).split('.')[1] ?? '').length); const out = (Math.round(v / s) * s).toFixed(dec); return dec ? out.replace(/\.?0+$/, '') : out; };
-  const clamp  = (v: number): number => Math.min(getMax(), Math.max(getMin(), v));
-
-  inputEl.addEventListener('wheel', e => {
-    // Only hijack the wheel to scrub the value when the field is focused; otherwise
-    // let the event bubble so the surrounding panel scrolls past it normally.
-    if (document.activeElement !== inputEl) return;
-    e.preventDefault();
-    const step = (e.shiftKey ? 10 : 1) * stepNow();
-    inputEl.value = fmt(clamp(read(inputEl.value) + (e.deltaY < 0 ? step : -step)));
-    onChange();
-  }, { passive: false });
-
-  let dragging    = false;
-  let wasDragging = false;
-  let activeId: number | null = null;   // the one pointer currently driving a drag
-
-  inputEl.addEventListener('pointerdown', e => {
-    if (e.button !== 0) return;
-    // One scrub at a time: a second finger landing on the field mustn't reset the
-    // baseline of the drag already in progress (it drove jumpy values on touch).
-    if (activeId !== null) return;
-    activeId = e.pointerId;
-    const startX   = e.clientX;
-    const startVal = read(inputEl.value);
-    // Touch can't lock the pointer, so the value stays hidden under the finger - 
-    // track the readout above the touch point; otherwise anchor it to the field.
-    const isTouch  = e.pointerType === 'touch';
-    let   accumulated = 0; // total delta once pointer lock is active
-    let   lastScrubVal = String(startVal); // last value we ticked on, so we tick per step
-    dragging = false;
-    inputEl.setPointerCapture(e.pointerId);
-
-    // Float the live value clear of the cursor/finger while dragging.
-    function showReadout(ev: PointerEvent): void {
-      const text = format(inputEl.value);
-      if (isTouch) showScrubReadout({ text, finger: { x: ev.clientX, y: ev.clientY } });
-      else showScrubReadout({ text, anchorEl: inputEl });
-    }
-
-    function onMove(e: PointerEvent): void {
-      if (e.pointerId !== activeId) return;   // ignore any other pointer
-      if (!dragging) {
-        if (Math.abs(e.clientX - startX) < 4) return;
-        dragging = true;
-        document.body.style.cursor = 'ew-resize';
-        // Request pointer lock so the cursor wraps at screen edges.
-        // unadjustedMovement removes OS pointer acceleration for 1:1 scrubbing.
-        // Skipped for touch (unsupported) - the clientX fallback drives it there.
-        if (!isTouch) {
-          const req = inputEl.requestPointerLock?.({ unadjustedMovement: true });
-          if (req instanceof Promise) {
-            req.catch(() => inputEl.requestPointerLock?.());
-          }
-        }
-      }
-
-      const step = (e.shiftKey ? 10 : 1) * stepNow();
-      if (document.pointerLockElement === inputEl) {
-        // Locked: accumulate raw movementX - no screen-edge limit.
-        accumulated += e.movementX * step;
-        inputEl.value = fmt(clamp(startVal + accumulated));
-      } else {
-        // Lock not yet active (or unavailable): fall back to clientX delta.
-        const dx = e.clientX - startX;
-        inputEl.value = fmt(clamp(startVal + dx * step));
-        // Keep accumulated in sync so the switch to locked mode is smooth.
-        accumulated = read(inputEl.value) - startVal;
-      }
-      if (inputEl.value !== lastScrubVal) { lastScrubVal = inputEl.value; playScrubTick(); } // detent per step
-      onChange();
-      showReadout(e);
-    }
-
-    function onUp(e?: PointerEvent): void {
-      // pointerup/cancel carry an event (ignore other pointers); onLockChange
-      // calls onUp() with no argument to force a release.
-      if (e && e.pointerId !== activeId) return;
-      inputEl.removeEventListener('pointermove',   onMove);
-      inputEl.removeEventListener('pointerup',     onUp);
-      inputEl.removeEventListener('pointercancel', onUp);
-      document.removeEventListener('pointerlockchange', onLockChange);
-      if (document.pointerLockElement === inputEl) document.exitPointerLock();
-      document.body.style.cursor = '';
-      hideScrubReadout();
-      if (dragging) {
-        wasDragging = true;
-        setTimeout(() => { wasDragging = false; }, 50);
-      }
-      dragging = false;
-      activeId = null;
-    }
-
-    function onLockChange(): void {
-      // Escape key or other external release - stop dragging cleanly.
-      if (document.pointerLockElement !== inputEl) onUp();
-    }
-
-    inputEl.addEventListener('pointermove',   onMove);
-    inputEl.addEventListener('pointerup',     onUp);
-    inputEl.addEventListener('pointercancel', onUp);
-    document.addEventListener('pointerlockchange', onLockChange);
-  });
-
-  // Suppress the click-to-focus that follows a drag so the cursor doesn't jump into text mode.
-  inputEl.addEventListener('click', e => {
-    if (wasDragging) { e.preventDefault(); inputEl.blur(); }
-  });
-}
-
-// Cap on a vector thumbnail's raw SVG size. Dense vector output (e.g. a halftone
-// with thousands of dots) can serialise to megabytes; above this we fall back to
-// the raster path so a single thumbnail never bloats storage unbounded.
-const SVG_THUMB_MAX_BYTES = 1_500_000;
-// Upper bound on how long a save waits for its (best-effort) thumbnail render. Generous - 
-// a normal capture is well under a second - so it only ever fires on a render that has
-// genuinely stalled, in which case the save proceeds thumbnail-less rather than hanging.
-const THUMB_CAPTURE_TIMEOUT_MS = 8000;
-
-async function captureThumbnail(manifest: ToolManifest, canvasEl: HTMLElement | null, runtime: Runtime, exportUnscaled: ExportUnscaled, format = '', shutter = true): Promise<string | null> {
-  // Capture at the canvas's ACTUAL laid-out aspect, not the manifest default. A reflow tool
-  // (e.g. color-block) sizes its canvas to the ?width/height it was loaded with, so a wide /
-  // tall / banner look must be captured at THAT aspect - exporting it into the default square
-  // scales it non-uniformly and it comes out stretched. offsetWidth/Height are transform-
-  // independent (unaffected by the editor's zoom), the same basis the paged-page capture and
-  // the offscreen renderVariantAt dims use; the manifest is the fallback when the node has no
-  // box yet. For a default-size session this equals the manifest, so nothing else changes.
-  // A paged tool's canvas is EVERY page stacked (battlecards' four cards make a
-  // 1:3 strip) - as a tile that squashes into an unrecognisable ribbon. The
-  // thumbnail should be what one card/page looks like, so capture the FIRST
-  // [data-pdf-page] box at its own laid-out size instead of the whole document.
-  const firstPage = manifest.render.paged === true
-    ? canvasEl?.querySelector<HTMLElement>('[data-pdf-page]') ?? null : null;
-  if (firstPage) canvasEl = firstPage;
-  else {
-    // A framed doc's thumbnail is its ACTIVE artboard for the same reason - the whole
-    // canvas is pasteboard + scattered boards, squashed and half-empty as a tile
-    // (plans/142 WP-C). No frames, no export-root → flatExportNode returns canvasEl.
-    const flat = flatExportNode(canvasEl);
-    if (flat && flat !== canvasEl) canvasEl = flat;
-  }
-
-  const nw = canvasEl?.offsetWidth  || manifest.render.width  || 600;
-  const nh = canvasEl?.offsetHeight || manifest.render.height || 600;
-
-  // Vector thumbnail: when the effective export format is SVG (the user picked it,
-  // or it's the tool's default), capture an SVG data-URL instead of a PNG. SVG is
-  // resolution-independent - it renders in the gallery's <img> and stays crisp at
-  // any card size. renderSvg() inlines blob-URLs and vector tools outline their
-  // text, so the SVG is self-contained and safe in an <img> sandbox. Falls through
-  // to the raster path on failure or if the SVG is pathologically large.
-  //
-  // A gallery tile is just a screenshot, and a *vector* screenshot stays crisp at any
-  // size - so preview generation (scripts/build-previews.ts) sets __lollyForceVectorThumb
-  // to take this branch for ANY tool, even one that doesn't offer SVG *export*. The
-  // walker (renderSvgFromHtml) vectorises any HTML/CSS canvas; a hiccup or an oversized
-  // (dense) result falls through to the pixel-faithful raster path below. Real user
-  // saves never set the flag, so their thumbnail still tracks the chosen export format.
-  const forceVector = !!(globalThis as { __lollyForceVectorThumb?: boolean }).__lollyForceVectorThumb;
-  if (format === 'svg' || forceVector) {
-    try {
-      const blob = await exportUnscaled(
-        () => runtime.export(exportTargetNode(canvasEl), 'svg', { width: nw, height: nh, embedMeta: false, thumbnail: true }),
-        { shutter },
-      );
-      const svg = await blob.text();
-      if (svg && svg.length <= SVG_THUMB_MAX_BYTES) {
-        return `data:image/svg+xml,${encodeURIComponent(svg)}`;
-      }
-    } catch { /* fall through to the raster path */ }
-  }
-
-  // Raster thumbnail (default): a PNG sized for the gallery's preview-forward hero
-  // (shown up to a full card column wide, at 2× for retina). Storage isn't a
-  // concern for the single most-recent session per tool.
-  try {
-    const maxW = 720;
-    const maxH = 560;
-    const scale = Math.min(maxW / nw, maxH / nh);
-    const tw = Math.max(1, Math.round(nw * scale));
-    const th = Math.max(1, Math.round(nh * scale));
-    // Mask the brief full-res resize with the shutter - the thumbnail is a fast
-    // single PNG frame, so the shutter fully covers it for every tool.
-    const blob = await exportUnscaled(
-      // thumbnail:true lets expensive hooks (e.g. url-shot's capture) reuse the
-      // last render on the canvas instead of re-running a slow capture.
-      () => runtime.export(exportTargetNode(canvasEl), 'png', { width: tw, height: th, embedMeta: false, thumbnail: true }),
-      { shutter },
-    );
-    return await new Promise<string | null>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload  = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  } catch {
-    return null;
-  }
-}
-
-export { renderActions, captureThumbnail, extFor, isCmykFmt, isPrintFmt, printEnabled, marksToCsv, c2paDefaultOn, readBleed, readMarks };
+export {
+  renderActions,
+  extFor,
+  isCmykFmt,
+  isPrintFmt,
+  printEnabled,
+  marksToCsv,
+  c2paDefaultOn,
+  readBleed,
+  readMarks,
+};

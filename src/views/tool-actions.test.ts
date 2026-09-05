@@ -118,6 +118,8 @@ interface Harness {
   /** Every DOWNLOAD export, any format. `onProgress` is the discriminator: the
    *  download builds it, the export-history thumbnail capture doesn't. */
   downloads: () => Array<{ format: string; opts: Record<string, unknown> }>;
+  /** Every runtime export, including a provider send. */
+  renders: () => Array<{ format: string; opts: Record<string, unknown> }>;
   /** The "Frames" (contact sheet) row, or null when it isn't in the panel at all. */
   framesRow: () => HTMLElement | null;
   framesInput: () => HTMLInputElement | null;
@@ -227,6 +229,7 @@ function mount({ seqMs, clipMs = null, videoDuration = 12, formats = ['webm', 'm
     exports: () => seen.filter(e => 'durationUserSet' in e.opts),
     unscaled: () => unscaledCalls,
     downloads: () => seen.filter(e => typeof e.opts.onProgress === 'function'),
+    renders: () => seen,
     duration: () => panel.querySelector('[data-action="video-duration"]') as HTMLInputElement,
     liveLabel: () => panel.querySelector('[data-live-capture]') as HTMLElement | null,
     framesRow: () => panel.querySelector('[data-seq-still-only]') as HTMLElement | null,
@@ -635,7 +638,8 @@ function formatOptionValues(opts: {
 test('exr/hdr are hidden for a plain tool (no exportStill hook)', () => {
   // Two ordinary survivors so a <select> renders (a single format needs no dropdown).
   const vals = formatOptionValues({ formats: ['png', 'jpg', 'exr', 'hdr'], codec: true });
-  assert.deepEqual(vals, ['png', 'jpg'], 'a tool with no float master must not offer the float formats');
+  assert.ok(vals.includes('png') && vals.includes('jpg'), 'ordinary formats survive');
+  assert.ok(!vals.includes('exr') && !vals.includes('hdr'), 'a tool with no float master must not offer float formats');
 });
 
 test('exr/hdr are hidden when the shell has no host.codec, even with the hook', () => {
@@ -1277,6 +1281,36 @@ test('every send destination shares one "Send to" row', async () => {
   } finally {
     unregisterSendTarget('testcloud');
     unregisterSendTarget('testdrive');
+  }
+});
+
+test('an organisation send credentials the exact export without changing a personal send', async () => {
+  const { registerSendTarget, unregisterSendTarget } = await import('../lib/send-target.ts');
+  let orgSent = 0;
+  let personalSent = 0;
+  registerSendTarget({
+    id: 'org:archive', kind: 's3', scope: 'organization', sources: ['export'],
+    requiresCredential: true, label: 'Archive', available: () => true,
+    send: async () => { orgSent++; return { label: 'done' }; },
+  });
+  registerSendTarget({
+    id: 'personal:test', kind: 's3-personal-test', label: 'My storage', available: () => true,
+    send: async () => { personalSent++; return { label: 'done' }; },
+  });
+  try {
+    const h = mount({ seqMs: null, formats: ['png'] });
+    h.panel.querySelector<HTMLButtonElement>('[data-send-kind="org:archive"]')!.click();
+    for (let i = 0; i < 5 && !orgSent; i++) await settle();
+    assert.equal(orgSent, 1);
+    assert.equal(h.renders()[0]!.opts.c2pa, true, 'governed route gets a Content Credential');
+
+    h.panel.querySelector<HTMLButtonElement>('[data-send-kind="personal:test"]')!.click();
+    for (let i = 0; i < 5 && !personalSent; i++) await settle();
+    assert.equal(personalSent, 1);
+    assert.equal(h.renders()[1]!.opts.c2pa, undefined, 'personal route keeps the person\'s export choice');
+  } finally {
+    unregisterSendTarget('org:archive');
+    unregisterSendTarget('personal:test');
   }
 });
 

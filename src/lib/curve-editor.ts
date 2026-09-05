@@ -205,7 +205,8 @@ export function mountCurveEditor(mount: HTMLElement, opts: CurveEditorOptions): 
       .map(hex => `<span class="be-curve-cell" style="background:${escape(hex)}"></span>`).join('');
     const toggle = CHANNELS.map(c =>
       `<button type="button" class="be-curve-ch${c.id === channel ? ' is-active' : ''}" data-ch="${c.id}"
-         aria-pressed="${c.id === channel}" title="${escape(channelTitle(c.id))}">${c.label}</button>`).join('');
+         aria-pressed="${c.id === channel}" aria-label="${escape(channelTitle(c.id))}"
+         title="${escape(channelTitle(c.id))}">${c.label}</button>`).join('');
 
     mount.innerHTML = `
       <div class="be-curve-toolbar" role="group" aria-label="${escape('Curve channel')}">${toggle}
@@ -387,7 +388,7 @@ export function cloneCurve(curve: ColorCurve): ColorCurve {
 }
 
 const channelTitle = (ch: Channel): string =>
-  ch === 'L' ? 'Lightness' : ch === 'C' ? 'Chroma' : 'Hue';
+  ch === 'L' ? 'Lightness (L)' : ch === 'C' ? 'Chroma (C)' : 'Hue (H)';
 
 const axisLabel = (ch: Channel, r: Range): string =>
   ch === 'H' ? '0–360°' : `${r.min}–${r.max}`;

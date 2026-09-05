@@ -86,6 +86,9 @@ export function attachProfileMenu(
       <button type="button" class="profile-menu-item" role="menuitem" data-act="lang" aria-haspopup="menu" aria-expanded="false">
         <span>${t('Language')}</span><span class="profile-menu-count">${escape(LANG_META[currentLang()].nativeName)}</span>
       </button>
+      <a class="profile-menu-item" role="menuitem" href="#/profile?focus=design-systems-section" data-act="design-system">
+        <span>${t('Design system')}</span><span class="profile-menu-count" data-ds-label></span>
+      </a>
       <a class="profile-menu-item" role="menuitem" href="#/start" data-act="brand">
         <span>${t('Set up your brand')}</span>
         ${CHEVRON}
@@ -148,6 +151,13 @@ export function attachProfileMenu(
     // wizard entry shows always - a branded user re-running it is a supported
     // path (it overwrites the user tokens).
     el.querySelector('[data-act="home"]')?.addEventListener('click', () => pop.close());
+    // The active design system's label (plans/186): read async, filled in place,
+    // so the row costs the menu nothing at open. The row opens the Profile card
+    // that lists and switches them.
+    el.querySelector('[data-act="design-system"]')?.addEventListener('click', () => pop.close());
+    void (host as unknown as { tokens?: { active?(): Promise<{ label: string } | null> } }).tokens?.active?.()
+      .then(a => { const slot = el.querySelector<HTMLElement>('[data-ds-label]'); if (slot && a) slot.textContent = a.label; })
+      .catch(() => { /* no registry - the row still opens the card */ });
     el.querySelector('[data-act="brand"]')?.addEventListener('click', () => pop.close());
     el.querySelector('[data-act="settings"]')?.addEventListener('click', () => pop.close());
 

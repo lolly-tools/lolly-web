@@ -10,7 +10,23 @@
  * This module never value-imports from ./tool.ts (that would create a runtime
  * cycle) - it only `import type`s the shell-side aliases it needs from there.
  */
-import { parseUrlState, serializeUrlState, buildEmbedUrl, parseToolUrl, parseDataRows, DEFAULT_FILE_MAX_BYTES, bakeAssetRef, parseColor, colorToHexString, normalizeTableValue, looksLikeTable, parseTableText, toTsv, toHtmlTable, readXlsx } from '@lolly/engine';
+import {
+  parseUrlState,
+  serializeUrlState,
+  buildEmbedUrl,
+  parseToolUrl,
+  parseDataRows,
+  DEFAULT_FILE_MAX_BYTES,
+  bakeAssetRef,
+  parseColor,
+  colorToHexString,
+  normalizeTableValue,
+  looksLikeTable,
+  parseTableText,
+  toTsv,
+  toHtmlTable,
+  readXlsx,
+} from '@lolly/engine';
 import type { TableValue } from '@lolly/engine';
 import { tableBodyCellHtml, tableColumnEditor, wantsGhostRow } from './table-cells.ts';
 import { createToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
@@ -20,7 +36,11 @@ import { mountModal } from '../components/modal.ts';
 import { announce } from '../a11y.js';
 import { colorFieldHtml, wireColorField } from '../components/color-field.js';
 import { helpTip, wireHelpTips, linkHelpDescriptions } from '../components/help-tip.js';
-import { customSliderHtml, mountCustomSlider, SLIDER_DRAG_EVENT } from '../components/custom-slider.ts';
+import {
+  customSliderHtml,
+  mountCustomSlider,
+  SLIDER_DRAG_EVENT,
+} from '../components/custom-slider.ts';
 import { canSkipInputsRebuild } from './inputs-sync.js';
 import { jellyActive, jellyEnabled } from '../lib/jelly.ts';
 import { trapFocus, type FocusTrap } from '../lib/focus-trap.ts';
@@ -36,8 +56,14 @@ import { icon, hasIcon, type IconName } from '../lib/icons.ts';
 import { getInputPolicy } from '../lib/input-policy.ts';
 import type { InputPolicy } from '../lib/input-policy.ts';
 import {
-  nestingActive, nestingConfig, deriveBlockKeys, blockParentIndex,
-  blockTreeOrder, blockReparentMove, buildRefOptions, materializeRefTarget,
+  nestingActive,
+  nestingConfig,
+  deriveBlockKeys,
+  blockParentIndex,
+  blockTreeOrder,
+  blockReparentMove,
+  buildRefOptions,
+  materializeRefTarget,
 } from './block-tree.js';
 import { getTool } from '../bridge/tool-loader.js';
 import { brandFontFamilies } from '../user-fonts.ts';
@@ -46,7 +72,12 @@ import { mountSidebarLiveControls } from './live-controls.ts';
 import flatpickr from 'flatpickr';
 
 import type { AssetRef, ComposeAPI, InputFile } from '@lolly-tools/core/host-v1';
-import type { InputModelItem, InputValue, InputSpec, BlockFieldSpec } from '../../../../engine/src/inputs.js';
+import type {
+  InputModelItem,
+  InputValue,
+  InputSpec,
+  BlockFieldSpec,
+} from '../../../../engine/src/inputs.js';
 import type { LoadedTool } from '../../../../engine/src/loader.js';
 import type { Runtime } from '../../../../engine/src/runtime.js';
 
@@ -64,7 +95,9 @@ import type { WebToolHost, PanelEl, EmbedDescribe, FlatpickrHost } from './tool.
 // so "snap the canvas to this image" flows through the one size pipeline.
 function setExportSize(w: number, h: number): void {
   const set = (action: string, val: string): void => {
-    const inp = document.querySelector<HTMLInputElement | HTMLSelectElement>(`[data-action="${action}"]`);
+    const inp = document.querySelector<HTMLInputElement | HTMLSelectElement>(
+      `[data-action="${action}"]`
+    );
     if (!inp) return;
     inp.value = val;
     inp.dispatchEvent(new Event('input', { bubbles: true }));
@@ -92,23 +125,36 @@ export function stopSlotPreview(): void {
   if (!slotPreview) return;
   const { audio, btn } = slotPreview;
   slotPreview = null;
-  try { audio.pause(); audio.src = ''; } catch { /* detached */ }
+  try {
+    audio.pause();
+    audio.src = '';
+  } catch {
+    /* detached */
+  }
   btn.classList.remove('is-playing');
   btn.textContent = '▶ Preview';
 }
 function toggleSlotPreview(btn: HTMLElement): void {
-  if (slotPreview && slotPreview.btn === btn) { stopSlotPreview(); return; }
+  if (slotPreview && slotPreview.btn === btn) {
+    stopSlotPreview();
+    return;
+  }
   stopSlotPreview();
   const url = btn.dataset.mediaUrl;
   if (!url) return;
   const audio = new Audio(url);
   audio.addEventListener('ended', stopSlotPreview);
   audio.addEventListener('error', stopSlotPreview);
-  audio.play().then(() => {
-    btn.classList.add('is-playing');
-    btn.textContent = '⏸ Stop';
-    slotPreview = { audio, btn };
-  }).catch(() => { /* autoplay blocked or an undecodable container - leave the label */ });
+  audio
+    .play()
+    .then(() => {
+      btn.classList.add('is-playing');
+      btn.textContent = '⏸ Stop';
+      slotPreview = { audio, btn };
+    })
+    .catch(() => {
+      /* autoplay blocked or an undecodable container - leave the label */
+    });
 }
 
 /** Row copy/paste buffer for blocks with `rowActions`. Module-scoped so it survives the
@@ -128,18 +174,30 @@ let tablePasteRoute: ((e: ClipboardEvent) => void) | null = null;
 document.addEventListener('paste', (e) => {
   if (e.defaultPrevented || !tablePasteRoute) return;
   const t = e.target instanceof Element ? e.target : null;
-  if (t?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
+  if (t?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])'))
+    return;
   tablePasteRoute(e);
 });
 
 /** The two-step block-remove button arms itself with these expandos. */
-interface ConfirmButton extends HTMLElement { _armed?: boolean; _disarm?: (() => void) | null; }
+interface ConfirmButton extends HTMLElement {
+  _armed?: boolean;
+  _disarm?: (() => void) | null;
+}
 /** A block drag handle flags the click that trails a drag. */
-interface DragHandle extends HTMLElement { _dragJustHappened?: boolean; }
+interface DragHandle extends HTMLElement {
+  _dragJustHappened?: boolean;
+}
 /** The active block drag-reorder gesture, or null when none is running. */
-interface BlockDrag { inputId: string; from: number; intent: 'before' | 'after' | 'inside' | null; over: number | null; }
+interface BlockDrag {
+  inputId: string;
+  from: number;
+  intent: 'before' | 'after' | 'inside' | null;
+  over: number | null;
+}
 
-export const asStr = (v: InputValue | undefined): string | undefined => (typeof v === 'string' ? v : undefined);
+export const asStr = (v: InputValue | undefined): string | undefined =>
+  typeof v === 'string' ? v : undefined;
 
 // Set to true while a custom slider is being dragged so renderInputs
 // doesn't rebuild the sidebar (killing pointer capture mid-drag).
@@ -178,7 +236,10 @@ async function fileToRef(file: File): Promise<InputFile> {
 // so arrival is consistent: top-aligned (clear of the sticky header via the row's
 // scroll-margin), smooth unless reduce-motion. `control` may be the control itself
 // or any node inside its row/block.
-function scrollToControl(control: Element | null | undefined, { pulse = true }: { pulse?: boolean } = {}): void {
+function scrollToControl(
+  control: Element | null | undefined,
+  { pulse = true }: { pulse?: boolean } = {}
+): void {
   if (!control) return;
   const row = control.closest('.input-row, .block-item') || control;
   // A folded section hides its rows, so scrolling to one inside a closed fold would
@@ -188,11 +249,11 @@ function scrollToControl(control: Element | null | undefined, { pulse = true }: 
   row.scrollIntoView({ block: 'start', behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
   if (!pulse) return;
   row.classList.remove('is-target');
-  void (row as HTMLElement).offsetWidth;      // restart the keyframe if it's mid-flight
+  void (row as HTMLElement).offsetWidth; // restart the keyframe if it's mid-flight
   row.classList.add('is-target');
   const done = () => row.classList.remove('is-target');
   row.addEventListener('animationend', done, { once: true });
-  setTimeout(done, 700);                       // fallback if the keyframe is reduce-motion-zeroed
+  setTimeout(done, 700); // fallback if the keyframe is reduce-motion-zeroed
 }
 
 // Reveal a block's fields with a brief height tween when it expands. The resting
@@ -209,7 +270,10 @@ function revealBlockFields(item: Element): void {
   // in a single reflow the moment they un-hide; only opacity/transform (which never
   // affect layout) animate, so nothing moves a pixel after settle.
   fields.animate(
-    [{ opacity: 0, transform: 'translateY(-4px)' }, { opacity: 1, transform: 'none' }],
+    [
+      { opacity: 0, transform: 'translateY(-4px)' },
+      { opacity: 1, transform: 'none' },
+    ],
     { duration: 120, easing: 'ease-out' }
   );
 }
@@ -235,7 +299,7 @@ function toggleBlock(item: Element, collapsed: boolean): void {
 // focus mode. Blocks with no text field (headshot, blank) just expand + scroll.
 function focusSidebarBlock(blocksEl: Element, index: number | string): void {
   const items = [...blocksEl.querySelectorAll<HTMLElement>('.block-item.is-typed')];
-  const target = items.find(b => b.dataset.blockIndex === String(index));
+  const target = items.find((b) => b.dataset.blockIndex === String(index));
   if (!target) return;
 
   for (const b of items) toggleBlock(b, b !== target);
@@ -252,7 +316,11 @@ function focusSidebarBlock(blocksEl: Element, index: number | string): void {
   if (field) {
     field.focus();
     const end = field.value?.length ?? 0;
-    try { field.setSelectionRange(end, end); } catch { /* non-text field */ }
+    try {
+      field.setSelectionRange(end, end);
+    } catch {
+      /* non-text field */
+    }
   }
 }
 
@@ -270,11 +338,16 @@ function focusBlockFirstField(panel: PanelEl, blockId: string, index: number): v
   // into the "\30 " identifier escape, which is a needless round-trip here).
   const item = wrap?.querySelector(`.block-item[data-block-index="${index}"]`);
   const field = item?.querySelector<HTMLInputElement | HTMLTextAreaElement>(
-    '.block-fields input.block-field:not([type]), .block-fields textarea.block-field');
+    '.block-fields input.block-field:not([type]), .block-fields textarea.block-field'
+  );
   if (!field) return;
   field.focus();
   const end = field.value?.length ?? 0;
-  try { field.setSelectionRange(end, end); } catch { /* not a text field after all */ }
+  try {
+    field.setSelectionRange(end, end);
+  } catch {
+    /* not a text field after all */
+  }
 }
 
 /**
@@ -285,8 +358,19 @@ function focusBlockFirstField(panel: PanelEl, blockId: string, index: number): v
  * edited field already shows. In that case (canSkipInputsRebuild) the rebuild is
  * skipped entirely. Returns the model to remember as the new baseline.
  */
-function syncInputs(el: PanelEl, model: InputModelItem[], prevModel: InputModelItem[] | null | undefined, runtime: Runtime, host: WebToolHost, onDirty?: (id: string) => void, toolId?: string): InputModelItem[] {
-  if (canSkipInputsRebuild(el, model, prevModel)) { patchEditedBlockPreview(el); return model; }
+function syncInputs(
+  el: PanelEl,
+  model: InputModelItem[],
+  prevModel: InputModelItem[] | null | undefined,
+  runtime: Runtime,
+  host: WebToolHost,
+  onDirty?: (id: string) => void,
+  toolId?: string
+): InputModelItem[] {
+  if (canSkipInputsRebuild(el, model, prevModel)) {
+    patchEditedBlockPreview(el);
+    return model;
+  }
   renderInputs(el, model, runtime, host, onDirty, toolId);
   return model;
 }
@@ -314,8 +398,9 @@ function patchEditedBlockPreview(panel: PanelEl): void {
   // A block text field renders with no `type` attribute; a textarea is its
   // multiline form. Range/number/checkbox/colour carry a type and are excluded.
   const fields = item!.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
-    '.block-fields input.block-field:not([type]), .block-fields textarea.block-field');
-  preview.textContent = [...fields].map(f => (f.value ?? '').trim()).find(Boolean) ?? '';
+    '.block-fields input.block-field:not([type]), .block-fields textarea.block-field'
+  );
+  preview.textContent = [...fields].map((f) => (f.value ?? '').trim()).find(Boolean) ?? '';
 }
 
 /**
@@ -325,7 +410,10 @@ function patchEditedBlockPreview(panel: PanelEl): void {
  * (text, slider, colour…) has no in-UI "restrict to a set", so it locks to its
  * value and the server enforces the allow-set. Pure - exported for tests.
  */
-export function policyLocksControl(control: InputModelItem['control'], policy: InputPolicy | undefined): boolean {
+export function policyLocksControl(
+  control: InputModelItem['control'],
+  policy: InputPolicy | undefined
+): boolean {
   if (!policy) return false;
   if (policy.mode === 'locked') return true;
   if (policy.mode === 'choice') return control !== 'select';
@@ -363,9 +451,23 @@ const _dropChains = new Map<string, Promise<void>>();
 // and the canvas drop zone (setupCanvasBlocksDrop, e.g. logo-wall) so both surfaces
 // accept a pile of files identically and serialise through _dropChains - a drop onto
 // the canvas and one onto the sidebar can't read the same base array and clobber.
-function makeBlocksDropper({ runtime, host, input, onDirty }: {
-  runtime: Runtime; host: WebToolHost; input: InputSpec; onDirty?: (id: string) => void;
-}): { accept: string; plural: string; addFiles: (fileList: FileList | File[] | null | undefined) => Promise<void> } {
+function makeBlocksDropper({
+  runtime,
+  host,
+  input,
+  onDirty,
+  signal,
+}: {
+  runtime: Runtime;
+  host: WebToolHost;
+  input: InputSpec;
+  onDirty?: (id: string) => void;
+  signal?: AbortSignal;
+}): {
+  accept: string;
+  plural: string;
+  addFiles: (fileList: FileList | File[] | null | undefined) => Promise<void>;
+} {
   const blockId = input.id;
   const field = input.dropToAdd!.field;
 
@@ -378,7 +480,7 @@ function makeBlocksDropper({ runtime, host, input, onDirty }: {
     const t = (file.type || '').toLowerCase();
     if (!accept || accept === '*' || accept === '*/*') return true;
     if (!t) return accept.includes('/*');
-    return accept.split(',').some(a => {
+    return accept.split(',').some((a) => {
       a = a.trim().toLowerCase();
       return a.endsWith('/*') ? t.startsWith(a.slice(0, -1)) : t === a;
     });
@@ -390,26 +492,35 @@ function makeBlocksDropper({ runtime, host, input, onDirty }: {
   const singular = plural.replace(/s$/, '');
 
   const commit = async (fileList: File[]): Promise<void> => {
+    if (signal?.aborted) return;
     const all = Array.from(fileList || []);
     const files = all.filter(accepted);
-    if (all.length && !files.length) { announce(`Those don't look like ${plural}.`, { assertive: true }); return; }
+    if (all.length && !files.length) {
+      announce(`Those don't look like ${plural}.`, { assertive: true });
+      return;
+    }
     if (!files.length) return;
     const made: Record<string, InputValue>[] = [];
     for (const file of files) {
+      if (signal?.aborted) return;
       try {
-        const ref = await storeUserUpload(host as unknown as Parameters<typeof storeUserUpload>[0], file);
+        const ref = await storeUserUpload(
+          host as unknown as Parameters<typeof storeUserUpload>[0],
+          file
+        );
+        if (signal?.aborted) return;
         const block = newBlockRow(input);
-        if (field in block) block[field] = ref;   // declared-fields-only, as before
+        if (field in block) block[field] = ref; // declared-fields-only, as before
         made.push(block);
       } catch (e) {
         host.log?.('warn', `drop-to-add: couldn't add ${file.name}`, { error: String(e) });
         announce(`Couldn't add ${file.name}.`, { assertive: true });
       }
     }
-    if (!made.length) return;
+    if (!made.length || signal?.aborted) return;
     // Re-read the live array at commit time: an earlier drop (or another edit) may
     // have changed it while our uploads were in flight.
-    const live = runtime.getModel().find(i => i.id === blockId)?.value;
+    const live = runtime.getModel().find((i) => i.id === blockId)?.value;
     const base = Array.isArray(live) ? live : [];
     runtime.setInput(blockId, [...base, ...made]);
     onDirty?.(blockId);
@@ -421,9 +532,13 @@ function makeBlocksDropper({ runtime, host, input, onDirty }: {
   // previous one has committed. Snapshot the files NOW: commit runs a microtask
   // later, by which time a change handler's `value = ''` may have emptied the list.
   const addFiles = (fileList: FileList | File[] | null | undefined): Promise<void> => {
+    if (signal?.aborted) return Promise.resolve();
     const snapshot = Array.from(fileList || []);
     const next = (_dropChains.get(blockId) || Promise.resolve()).then(() => commit(snapshot));
-    _dropChains.set(blockId, next.catch(() => {}));
+    _dropChains.set(
+      blockId,
+      next.catch(() => {})
+    );
     return next;
   };
 
@@ -446,10 +561,17 @@ const inSheetMode = (): boolean =>
  * sheet opens on the tool's primary controls instead of every input at once.
  * Pure - exported for tests.
  */
-export function shouldOpenSection(
-  { index, wasOpen, firstRender, sheetMode }:
-  { index: number; wasOpen: boolean; firstRender: boolean; sheetMode: boolean },
-): boolean {
+export function shouldOpenSection({
+  index,
+  wasOpen,
+  firstRender,
+  sheetMode,
+}: {
+  index: number;
+  wasOpen: boolean;
+  firstRender: boolean;
+  sheetMode: boolean;
+}): boolean {
   return wasOpen || (firstRender && sheetMode && index === 0);
 }
 
@@ -466,14 +588,23 @@ export function shouldOpenSection(
  * Pure - exported for tests.
  */
 export function compactOptionGrid(labels: string[]): boolean {
-  return labels.length > 4 && labels.every(l => l.length <= 16);
+  return labels.length > 4 && labels.every((l) => l.length <= 16);
 }
 
-function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, host: WebToolHost, onDirty?: (id: string) => void, toolId?: string): void {
+function renderInputs(
+  el: PanelEl,
+  model: InputModelItem[],
+  runtime: Runtime,
+  host: WebToolHost,
+  onDirty?: (id: string) => void,
+  toolId?: string
+): void {
   // Generic input-policy overlay for the mounted tool (empty/no-op by default).
   const policyFor = (id: string): InputPolicy | undefined => getInputPolicy(toolId, id);
-  const modelValues: Record<string, InputValue> = Object.fromEntries(model.map(i => [i.id, i.value]));
-  const panelModel = model.filter(i => {
+  const modelValues: Record<string, InputValue> = Object.fromEntries(
+    model.map((i) => [i.id, i.value])
+  );
+  const panelModel = model.filter((i) => {
     if (i.group === 'export') return false;
     // A control-plane "hidden" input drops from the sidebar entirely (never
     // rendered). This is a rendering overlay - the model still carries the input.
@@ -482,7 +613,8 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // A showIf value may be a single value or an array of accepted values
     // (render if the current value is any of them).
     return Object.entries(i.showIf).every(([k, v]) =>
-      Array.isArray(v) ? v.includes(modelValues[k] as InputValue) : modelValues[k] === v);
+      Array.isArray(v) ? v.includes(modelValues[k] as InputValue) : modelValues[k] === v
+    );
   });
 
   // The block-row handlers below build the value they commit from the input's
@@ -495,7 +627,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // table wiring already re-read live for exactly this reason. Falls back to
   // the snapshot only if an id is somehow absent from the runtime model.
   const liveInput = (id: string | undefined): InputModelItem | undefined =>
-    runtime.getModel().find(i => i.id === id) ?? panelModel.find(i => i.id === id);
+    runtime.getModel().find((i) => i.id === id) ?? panelModel.find((i) => i.id === id);
 
   // `attachTo` (schema): an input whose control rides INSIDE a sibling's row
   // rather than taking its own labelled row - a compact modifier that belongs to
@@ -503,26 +635,26 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // panelModel, not model, so a target hidden by its own showIf releases its
   // attachments back into ordinary rows rather than silently swallowing them.
   const attachedTo = (i: InputModelItem): string | null =>
-    i.attachTo && panelModel.some(t => t.id === i.attachTo && t.id !== i.id) ? i.attachTo : null;
+    i.attachTo && panelModel.some((t) => t.id === i.attachTo && t.id !== i.id) ? i.attachTo : null;
   const attachments = new Map<string, InputModelItem[]>();
   for (const i of panelModel) {
     const target = attachedTo(i);
     if (!target) continue;
     attachments.set(target, [...(attachments.get(target) ?? []), i]);
   }
-  const rowModel = panelModel.filter(i => !attachedTo(i));
+  const rowModel = panelModel.filter((i) => !attachedTo(i));
 
-  const active       = document.activeElement as HTMLElement | null;
-  const focusId      = active?.dataset?.inputId;
+  const active = document.activeElement as HTMLElement | null;
+  const focusId = active?.dataset?.inputId;
   const blockFocusId = active?.dataset?.fieldId;
   // Vector number fields can't use data-input-id (that's the container) or
   // data-field-id (the blocks handler claims those), so restore them by
   // "<inputId>::<fieldId>".
-  const vecFocusKey  = active?.classList?.contains('vec-num')
+  const vecFocusKey = active?.classList?.contains('vec-num')
     ? `${(active.closest('[data-input-id]') as HTMLElement | null)?.dataset.inputId}::${active.dataset.vecField}`
     : null;
-  const selStart     = (active as HTMLInputElement | null)?.selectionStart;
-  const selEnd       = (active as HTMLInputElement | null)?.selectionEnd;
+  const selStart = (active as HTMLInputElement | null)?.selectionStart;
+  const selEnd = (active as HTMLInputElement | null)?.selectionEnd;
   // A popped-out table's cells live in a floating panel, OUTSIDE this root. The
   // rebuild below makes a fresh duplicate of that grid in the sidebar, so the
   // by-field-id restore would find the duplicate and yank the caret out of the
@@ -538,11 +670,11 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // and stays an ordinary sibling, which is correct - its framing isn't the colour's.
   const indexOf = (id: string): string | null => id.match(/(\d+)$/)?.[1] ?? null;
   const isSubControl = (input: InputModelItem, prev: InputModelItem | null): boolean =>
-    !!prev
-    && input.control === 'vector'
-    && (prev.control === 'color-picker' || prev.control === 'palette-picker')
-    && indexOf(input.id) !== null
-    && indexOf(input.id) === indexOf(prev.id);
+    !!prev &&
+    input.control === 'vector' &&
+    (prev.control === 'color-picker' || prev.control === 'palette-picker') &&
+    indexOf(input.id) !== null &&
+    indexOf(input.id) === indexOf(prev.id);
 
   const renderOneInput = (input: InputModelItem, prev: InputModelItem | null): string => {
     const isCheckbox = input.control === 'checkbox';
@@ -572,14 +704,21 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // hide the real <input>/<textarea> in shadow DOM, so the floating-label CSS
     // (which keys on `:has(input…)` / `:not(:placeholder-shown)` in the light DOM)
     // can't see them. Pin those rows to a static label above the field instead.
-    const isJellyField = jellyActive() && (input.control === 'text-input' || input.control === 'textarea');
+    const isJellyField =
+      jellyActive() && (input.control === 'text-input' || input.control === 'textarea');
     // file-picker is static too: its hidden <input type=file> otherwise matches the
     // floating-label :has() chain (tool.css), which paints the label OVER the trigger.
     // A notice row is static too: the notice sits between label and field, which
     // the floating-label offset math (tool.css) cannot account for.
-    const isStaticLabel = input.control === 'datetime-local-input' || input.control === 'table' || input.control === 'file-picker' || isJellyField || Boolean(input.notice) || Boolean(policyNote);
+    const isStaticLabel =
+      input.control === 'datetime-local-input' ||
+      input.control === 'table' ||
+      input.control === 'file-picker' ||
+      isJellyField ||
+      Boolean(input.notice) ||
+      Boolean(policyNote);
     // Composite controls hold MANY interactive elements. A wrapping <label> makes the
-    // browser forward any dead-space click to the label's first labelable descendant - 
+    // browser forward any dead-space click to the label's first labelable descendant -
     // so a `blocks` input forwards gap / pill-body / near-miss clicks to block #0's
     // collapse chevron (the reported "clicking the 2nd scene expands the 1st"), and a
     // `vector` input forwards to its first number field. Wrap these in a <div role=group>
@@ -587,13 +726,20 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // A badged OR segmented select renders as a radiogroup of buttons (see controlHtml).
     // Treat it like other composites: a wrapping <label> would proxy dead-space clicks to
     // the first option button, and the caption must be aria-labelledby, not a <label for>.
-    const isBadgedSelect = input.control === 'select'
-      && ((input.options ?? []).some(o => (o as { badge?: string }).badge) || input.display === 'segmented');
-    const isComposite = isBadgedSelect || ['blocks', 'vector', 'asset-picker', 'file-picker', 'color-picker', 'table'].includes(input.control);
+    const isBadgedSelect =
+      input.control === 'select' &&
+      ((input.options ?? []).some((o) => (o as { badge?: string }).badge) ||
+        input.display === 'segmented');
+    const isComposite =
+      isBadgedSelect ||
+      ['blocks', 'vector', 'asset-picker', 'file-picker', 'color-picker', 'table'].includes(
+        input.control
+      );
     const cls = `input-row${isCheckbox ? ' input-row--checkbox' : ''}${isPill ? ' input-row--pill' : ''}${isStaticLabel ? ' input-row--static-label' : ''}${isSubControl(input, prev) ? ' input-row--sub' : ''}`;
-    const valueTag = input.control === 'slider'
-      ? ` <span class="input-value">${parseFloat(String(input.value ?? 0))}</span>`
-      : '';
+    const valueTag =
+      input.control === 'slider'
+        ? ` <span class="input-value">${parseFloat(String(input.value ?? 0))}</span>`
+        : '';
     const labelId = `irow-label-${escape(input.id)}`;
     // Help moves behind an info button (see help-tip.js). The label id rides on the
     // text span only, so a composite's aria-labelledby never absorbs "More info".
@@ -608,31 +754,36 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // already escaped (escape() / t()), and both escape quotes, so the join is
     // safe in this attribute and must not be escaped twice.
     const chipLabel = [escape(pol?.note ?? ''), policyNote].filter(Boolean).join('. ');
-    const lockChip = managed && pol?.note
-      ? `<span class="input-lock-chip" data-tip="${escape(pol.note)}" aria-label="${chipLabel}" tabindex="0" style="display:inline-flex;align-items:center;margin-inline-start:.35rem;vertical-align:middle;color:hsl(var(--muted-foreground))">${icon('lock', { size: 12, strokeWidth: 2 })}</span>`
-      : '';
+    const lockChip =
+      managed && pol?.note
+        ? `<span class="input-lock-chip" data-tip="${escape(pol.note)}" aria-label="${chipLabel}" tabindex="0" style="display:inline-flex;align-items:center;margin-inline-start:.35rem;vertical-align:middle;color:hsl(var(--muted-foreground))">${icon('lock', { size: 12, strokeWidth: 2 })}</span>`
+        : '';
     const labelText = `<span class="input-label-text"${isComposite ? ` id="${labelId}"` : ''}>${escape(input.label ?? input.id)}${valueTag}</span>`;
     // Unified "Add data" affordance (plan 87): a text/longtext input that declares
     // `dataSource` gets a small button beside its label to fill the field from a file
     // or a catalog text/boilerplate asset. Not on a locked input.
-    const dataSrcBtn = (!locks && input.dataSource && (input.control === 'textarea' || input.control === 'text-input'))
-      ? `<button type="button" class="input-data-src" data-data-source="${escape(input.id)}" title="Add data from a file or your library" aria-label="Add data">${icon('filePlus', { size: 13, strokeWidth: 2 })}</button>`
-      : '';
+    const dataSrcBtn =
+      !locks && input.dataSource && (input.control === 'textarea' || input.control === 'text-input')
+        ? `<button type="button" class="input-data-src" data-data-source="${escape(input.id)}" title="Add data from a file or your library" aria-label="Add data">${icon('filePlus', { size: 13, strokeWidth: 2 })}</button>`
+        : '';
     const label = `<span class="input-label">${labelText}${lockChip}${ht ? ht.button : ''}${dataSrcBtn}</span>`;
     // Always-visible fine print between label and control - the consent-gate
     // disclosure slot (unlike help, which hides behind the info button).
     // aria-hidden keeps it out of the wrapping <label>'s accessible NAME;
     // linkHelpDescriptions points the control's aria-describedby at it, so
     // assistive tech reads it as a description instead.
-    const noticeText = [input.notice ? escape(input.notice) : '', policyNote].filter(Boolean).join(' ');
+    const noticeText = [input.notice ? escape(input.notice) : '', policyNote]
+      .filter(Boolean)
+      .join(' ');
     const notice = noticeText
       ? `<span class="input-notice" id="inotice-${escape(input.id)}" aria-hidden="true">${noticeText}</span>`
       : '';
     // A locked input displays the policy VALUE (when one is given) in place of the
     // model's stored value - a render-only substitution, so the model is untouched.
-    const renderInput: InputModelItem = (pol?.mode === 'locked' && pol.value !== undefined)
-      ? { ...input, value: pol.value as InputValue }
-      : input;
+    const renderInput: InputModelItem =
+      pol?.mode === 'locked' && pol.value !== undefined
+        ? { ...input, value: pol.value as InputValue }
+        : input;
     // Anything attached to this input leads its control, wrapped in a flex row.
     // Wrapping (rather than splicing markup into the target's own control) keeps
     // this agnostic about what the target control IS - no asset-picker internals
@@ -642,11 +793,12 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // settings zone, not as a lead column - so the card keeps its source→preview→
     // settings hierarchy. Every other control still gets the generic .input-attached
     // flex row, agnostic about what it wraps.
-    const rawControl = renderInput.control === 'asset-picker'
-      ? controlHtml(renderInput, modelValues, pol, lead)
-      : lead
-        ? `<div class="input-attached">${lead}${controlHtml(renderInput, modelValues, pol)}</div>`
-        : controlHtml(renderInput, modelValues, pol);
+    const rawControl =
+      renderInput.control === 'asset-picker'
+        ? controlHtml(renderInput, modelValues, pol, lead)
+        : lead
+          ? `<div class="input-attached">${lead}${controlHtml(renderInput, modelValues, pol)}</div>`
+          : controlHtml(renderInput, modelValues, pol);
     // A locked control renders inert + dimmed: `inert` drops it from focus + events,
     // `pointer-events:none` covers pointer input for controls that don't honour
     // inert. Cooperative only - the server is the hard gate (locked values 422).
@@ -655,19 +807,23 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       : rawControl;
     const help = ht ? ht.pop : '';
     if (isCheckbox) return `<label class="${cls}">${control}${label}${notice}${help}</label>`;
-    if (isComposite) return `<div class="${cls}" role="group" aria-labelledby="${labelId}">${label}${notice}${control}${help}</div>`;
+    if (isComposite)
+      return `<div class="${cls}" role="group" aria-labelledby="${labelId}">${label}${notice}${control}${help}</div>`;
     return `<label class="${cls}">${label}${notice}${control}${help}</label>`;
   };
 
   const openSections = new Set(
-    [...el.querySelectorAll('.input-section[open] .input-section-summary')].map(s => s.textContent)
+    [...el.querySelectorAll('.input-section[open] .input-section-summary')].map(
+      (s) => s.textContent
+    )
   );
 
   // Folded blocks carry no model value, so capture which are collapsed and re-apply
   // once the panel HTML is regenerated. Tree blocks key by their stable derived id
   // (data-block-key) so fold state follows a card across a drag-reparent reorder;
   // others key by array index as before.
-  const foldKey = (b: HTMLElement): string => `${(b.closest('.blocks-input') as HTMLElement | null)?.dataset.inputId}:${b.dataset.blockKey || b.dataset.blockIndex}`;
+  const foldKey = (b: HTMLElement): string =>
+    `${(b.closest('.blocks-input') as HTMLElement | null)?.dataset.inputId}:${b.dataset.blockKey || b.dataset.blockIndex}`;
   const collapsedBlocks = new Set(
     [...el.querySelectorAll<HTMLElement>('.block-item.is-collapsed')].map(foldKey)
   );
@@ -691,29 +847,44 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // reading `.render` off an undefined manifest threw "Cannot read properties of
     // undefined (reading 'render')" and took the whole /multi view down (2+ sessions
     // sharing an input). renderInputs must tolerate a manifest-less runtime.
-    ((runtime.manifest?.render) as { denseSections?: string[] } | undefined)?.denseSections ?? [],
+    (runtime.manifest?.render as { denseSections?: string[] } | undefined)?.denseSections ?? []
   );
-  let pillbarOpen = false;   // a run of consecutive `display:'pill'` booleans, wrapped
-  const isPillInput = (i: InputModelItem): boolean => i.control === 'checkbox' && i.display === 'pill';
-  const closePillbar = (): void => { if (pillbarOpen) { parts.push('</div>'); pillbarOpen = false; } };
+  let pillbarOpen = false; // a run of consecutive `display:'pill'` booleans, wrapped
+  const isPillInput = (i: InputModelItem): boolean =>
+    i.control === 'checkbox' && i.display === 'pill';
+  const closePillbar = (): void => {
+    if (pillbarOpen) {
+      parts.push('</div>');
+      pillbarOpen = false;
+    }
+  };
   for (const input of rowModel) {
     const sec = input.section ?? null;
     if (sec !== openSection) {
-      closePillbar();   // a chip bar never spans a section boundary
+      closePillbar(); // a chip bar never spans a section boundary
       if (openSection !== null) parts.push('</div></details>');
       if (sec !== null) {
         sectionIndex++;
-        const open = shouldOpenSection({ index: sectionIndex, wasOpen: openSections.has(sec), firstRender, sheetMode });
+        const open = shouldOpenSection({
+          index: sectionIndex,
+          wasOpen: openSections.has(sec),
+          firstRender,
+          sheetMode,
+        });
         const dense = denseSections.has(sec) ? ' input-section--dense' : '';
-        parts.push(`<details class="input-section${dense}"${open ? ' open' : ''}><summary class="input-section-summary">${escape(sec)}</summary><div class="input-section-body">`);
+        parts.push(
+          `<details class="input-section${dense}"${open ? ' open' : ''}><summary class="input-section-summary">${escape(sec)}</summary><div class="input-section-body">`
+        );
       }
       openSection = sec;
-      prevInput = null;   // a section break ends any pairing
+      prevInput = null; // a section break ends any pairing
     }
     // Open a chip bar around a run of pills; close it the moment a non-pill follows.
     const pill = isPillInput(input);
-    if (pill && !pillbarOpen) { parts.push('<div class="input-pillbar" role="group">'); pillbarOpen = true; }
-    else if (!pill && pillbarOpen) closePillbar();
+    if (pill && !pillbarOpen) {
+      parts.push('<div class="input-pillbar" role="group">');
+      pillbarOpen = true;
+    } else if (!pill && pillbarOpen) closePillbar();
     parts.push(renderOneInput(input, prevInput));
     prevInput = input;
   }
@@ -725,9 +896,11 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // →renderInputs); destroying the closing instance synchronously corrupts its config
   // mid-callback and throws. The new instances are distinct elements, so the deferred
   // destroy of the old ones never touches them.
-  const staleFps = [...el.querySelectorAll<FlatpickrHost>('.fp-datetime')].map(c => c._flatpickr).filter(Boolean);
+  const staleFps = [...el.querySelectorAll<FlatpickrHost>('.fp-datetime')]
+    .map((c) => c._flatpickr)
+    .filter(Boolean);
   el.innerHTML = parts.join('');
-  if (staleFps.length) queueMicrotask(() => staleFps.forEach(fp => fp!.destroy()));
+  if (staleFps.length) queueMicrotask(() => staleFps.forEach((fp) => fp!.destroy()));
 
   const collapseBlock = (item: Element): void => {
     item.classList.add('is-collapsed');
@@ -743,7 +916,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   if (firstRender) {
     el.querySelectorAll('.block-item.is-typed').forEach(collapseBlock);
   } else if (collapsedBlocks.size) {
-    el.querySelectorAll<HTMLElement>('.block-item.is-typed').forEach(item => {
+    el.querySelectorAll<HTMLElement>('.block-item.is-typed').forEach((item) => {
       if (collapsedBlocks.has(foldKey(item))) collapseBlock(item);
     });
   }
@@ -753,11 +926,12 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // Called after the fold-restore pass above and after every fold change (chevron,
   // header click, the pill itself) so the label never goes stale.
   const syncCollapseAllPills = (): void => {
-    el.querySelectorAll('.blocks-input').forEach(wrap => {
+    el.querySelectorAll('.blocks-input').forEach((wrap) => {
       const pill = wrap.querySelector<HTMLElement>('[data-blocks-collapse-all]');
       if (!pill) return;
       const blocks = [...wrap.querySelectorAll('.block-item.is-typed')];
-      const allFolded = blocks.length > 0 && blocks.every(b => b.classList.contains('is-collapsed'));
+      const allFolded =
+        blocks.length > 0 && blocks.every((b) => b.classList.contains('is-collapsed'));
       pill.dataset.mode = allFolded ? 'expand' : 'collapse';
       pill.textContent = allFolded ? 'Expand all' : 'Collapse all';
       pill.setAttribute('aria-label', allFolded ? 'Expand all blocks' : 'Collapse all blocks');
@@ -776,7 +950,9 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   }
 
   if (blockFocusId && !focusFloating) {
-    const restored = el.querySelector<HTMLInputElement>(`[data-field-id="${CSS.escape(blockFocusId)}"]`);
+    const restored = el.querySelector<HTMLInputElement>(
+      `[data-field-id="${CSS.escape(blockFocusId)}"]`
+    );
     if (restored) {
       restored.focus();
       if (selStart != null && restored.setSelectionRange) {
@@ -793,9 +969,9 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     restored?.focus(); // number inputs expose no caret to restore
   }
 
-  el.querySelectorAll<HTMLElement>('[data-input-id]').forEach(control => {
-    const id    = control.dataset.inputId!;
-    const input = panelModel.find(i => i.id === id);
+  el.querySelectorAll<HTMLElement>('[data-input-id]').forEach((control) => {
+    const id = control.dataset.inputId!;
+    const input = panelModel.find((i) => i.id === id);
 
     if (input?.control === 'slider') {
       setupCustomSlider(control, runtime, id, onDirty);
@@ -810,36 +986,51 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
         const curVal = input.value as AssetRef | null;
         const curToolUrl = asStr(asRow(curVal?.meta as InputValue | undefined).toolUrl);
         if (curToolUrl && host.compose?.renderUrl) {
-          const intent = await askLollyIntent(asStr(asRow(curVal?.meta as InputValue | undefined).name));
+          const intent = await askLollyIntent(
+            asStr(asRow(curVal?.meta as InputValue | undefined).name)
+          );
           if (!intent) return;
           if (intent === 'edit') {
-            const edited = await openEmbedEditor(host, { editUrl: curToolUrl, slotLabel: input.label ?? input.id });
-            if (edited) { runtime.setInput(id, edited); onDirty?.(id); }
+            const edited = await openEmbedEditor(host, {
+              editUrl: curToolUrl,
+              slotLabel: input.label ?? input.id,
+            });
+            if (edited) {
+              runtime.setInput(id, edited);
+              onDirty?.(id);
+            }
             return;
           }
         }
         const ref = await host.assets.pick({
-          title:       `Choose ${input.label ?? input.id}`,
-          type:        input.assetType === 'any' ? undefined : (input.assetType as AssetRef['type'] | undefined),
+          title: `Choose ${input.label ?? input.id}`,
+          type:
+            input.assetType === 'any'
+              ? undefined
+              : (input.assetType as AssetRef['type'] | undefined),
           // Capability-driven widening, not a per-tool special case: an `image`
-          // slot on a tool that can CONSUME moving pictures (an onFrame hook - 
+          // slot on a tool that can CONSUME moving pictures (an onFrame hook -
           // the live frame loop plays a video pick through the effect) also
           // offers video uploads. A still-image tool's slot is unchanged.
-          motion:      runtime.hasFrameHook === true,
-          tags:        (input.filter?.tags as string[] | undefined),
-          namespace:   (input.filter?.namespace as string | undefined),
+          motion: runtime.hasFrameHook === true,
+          tags: input.filter?.tags as string[] | undefined,
+          namespace: input.filter?.namespace as string | undefined,
           allowUpload: input.allowUpload === true,
-          current:     curVal?.id,
+          current: curVal?.id,
           // A slot already holding a Lolly render gets an "edit the tool you're
           // using" banner in the picker (its inputs pre-filled), alongside the
           // normal choose-a-different-image grids.
-          currentToolUrl:  curToolUrl,
+          currentToolUrl: curToolUrl,
           currentToolName: asStr(asRow(curVal?.meta as InputValue | undefined).name),
           // Picking a tool in the picker opens its inputs first (configure → insert),
           // reusing the same in-place editor the "from <tool>" Edit badge uses.
-          editTool:    (toolUrl: string, mode = 'insert') => openEmbedEditor(host, { editUrl: toolUrl, slotLabel: input.label ?? input.id, mode }),
+          editTool: (toolUrl: string, mode = 'insert') =>
+            openEmbedEditor(host, { editUrl: toolUrl, slotLabel: input.label ?? input.id, mode }),
         } as Parameters<WebToolHost['assets']['pick']>[0]);
-        if (ref) { runtime.setInput(id, ref); onDirty?.(id); }
+        if (ref) {
+          runtime.setInput(id, ref);
+          onDirty?.(id);
+        }
       });
       // Drag-in from the Catalog / asset picker (plans/132 WP-F): a tile drag
       // carries its asset id as `text/lolly-asset`; dropping it here fills the
@@ -856,19 +1047,23 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
         e.preventDefault();
         control.classList.remove('is-dragover');
         const dropped = await host.assets.get(assetId).catch(() => null);
-        if (dropped) { runtime.setInput(id, dropped); onDirty?.(id); }
+        if (dropped) {
+          runtime.setInput(id, dropped);
+          onDirty?.(id);
+        }
       });
       // The preview tile is part of the same control - clicking the image/waveform
       // opens the picker too, reusing the trigger's handler (incl. the Lolly
       // edit-or-replace flow) rather than duplicating it.
-      control.closest('.asset-picker-row')
+      control
+        .closest('.asset-picker-row')
         ?.querySelector<HTMLElement>('.asset-picker-thumb-inline')
         ?.addEventListener('click', () => control.click());
       return;
     }
 
     if (input?.control === 'file-picker') {
-      const native  = control.querySelector<HTMLInputElement>('.file-native');
+      const native = control.querySelector<HTMLInputElement>('.file-native');
       const trigger = control.querySelector<HTMLButtonElement>('.file-trigger');
       const multiple = control.dataset.multiple === '1';
       const cap = input.maxSize ?? DEFAULT_FILE_MAX_BYTES;
@@ -881,8 +1076,10 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
         return await fileToRef(file);
       };
       const currentRefs = (): InputFile[] => {
-        const v = runtime.getModel().find(i => i.id === id)?.value;
-        return (Array.isArray(v) ? v : []).filter((r): r is InputFile => Boolean(r && typeof r === 'object' && (r as InputFile).__file));
+        const v = runtime.getModel().find((i) => i.id === id)?.value;
+        return (Array.isArray(v) ? v : []).filter((r): r is InputFile =>
+          Boolean(r && typeof r === 'object' && (r as InputFile).__file)
+        );
       };
       if (multiple) {
         // Batch: APPEND every accepted file to the array value; each row's × removes
@@ -890,7 +1087,9 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
         const addFiles = async (files: FileList | File[] | null | undefined): Promise<void> => {
           const list = files ? Array.from(files) : [];
           if (!list.length) return;
-          const added = (await Promise.all(list.map(toRef))).filter((r): r is InputFile => Boolean(r));
+          const added = (await Promise.all(list.map(toRef))).filter((r): r is InputFile =>
+            Boolean(r)
+          );
           if (native) native.value = '';
           if (!added.length) return;
           runtime.setInput(id, [...currentRefs(), ...added]);
@@ -899,22 +1098,40 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
         trigger?.addEventListener('click', () => native?.click());
         native?.addEventListener('change', () => void addFiles(native.files));
         control.addEventListener('click', (e) => {
-          const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.file-clear[data-file-index]');
+          const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(
+            '.file-clear[data-file-index]'
+          );
           if (!btn) return;
           const idx = Number(btn.dataset.fileIndex);
           const refs = currentRefs();
           const gone = refs[idx];
           if (gone && asRow(gone).url) URL.revokeObjectURL(asRow(gone).url as string);
-          runtime.setInput(id, refs.filter((_, i) => i !== idx));
+          runtime.setInput(
+            id,
+            refs.filter((_, i) => i !== idx)
+          );
           onDirty?.(id);
         });
         let dragDepthM = 0;
-        const setDragM = (on: boolean): void => { control.classList.toggle('is-dragover', on); };
-        control.addEventListener('dragenter', (e) => { e.preventDefault(); dragDepthM++; setDragM(true); });
+        const setDragM = (on: boolean): void => {
+          control.classList.toggle('is-dragover', on);
+        };
+        control.addEventListener('dragenter', (e) => {
+          e.preventDefault();
+          dragDepthM++;
+          setDragM(true);
+        });
         control.addEventListener('dragover', (e) => e.preventDefault());
-        control.addEventListener('dragleave', () => { if (--dragDepthM <= 0) { dragDepthM = 0; setDragM(false); } });
+        control.addEventListener('dragleave', () => {
+          if (--dragDepthM <= 0) {
+            dragDepthM = 0;
+            setDragM(false);
+          }
+        });
         control.addEventListener('drop', (e) => {
-          e.preventDefault(); dragDepthM = 0; setDragM(false);
+          e.preventDefault();
+          dragDepthM = 0;
+          setDragM(false);
           void addFiles(e.dataTransfer?.files);
         });
         return;
@@ -922,7 +1139,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       const clearer = control.querySelector<HTMLButtonElement>('.file-clear');
       // Revoke the previous preview object URL so picking a new file doesn't leak.
       const revokePrev = () => {
-        const prev = runtime.getModel().find(i => i.id === id)?.value;
+        const prev = runtime.getModel().find((i) => i.id === id)?.value;
         const prevUrl = asRow(prev).url;
         if (prevUrl) URL.revokeObjectURL(prevUrl as string);
       };
@@ -938,16 +1155,31 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
         onDirty?.(id);
       };
       trigger?.addEventListener('click', () => native?.click());
-      clearer?.addEventListener('click', () => { revokePrev(); runtime.setInput(id, null); onDirty?.(id); });
+      clearer?.addEventListener('click', () => {
+        revokePrev();
+        runtime.setInput(id, null);
+        onDirty?.(id);
+      });
       native?.addEventListener('change', () => void loadFile(native.files && native.files[0]));
       // The trigger's dashed border promises a drop area (house rule: dashed means
       // droppable), so the control must actually take a drop. Depth-counted so
       // enter/leave over children don't flicker the highlight.
       let dragDepth = 0;
-      const setDrag = (on: boolean): void => { control.classList.toggle('is-dragover', on); };
-      control.addEventListener('dragenter', (e) => { e.preventDefault(); dragDepth++; setDrag(true); });
+      const setDrag = (on: boolean): void => {
+        control.classList.toggle('is-dragover', on);
+      };
+      control.addEventListener('dragenter', (e) => {
+        e.preventDefault();
+        dragDepth++;
+        setDrag(true);
+      });
       control.addEventListener('dragover', (e) => e.preventDefault());
-      control.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; setDrag(false); } });
+      control.addEventListener('dragleave', () => {
+        if (--dragDepth <= 0) {
+          dragDepth = 0;
+          setDrag(false);
+        }
+      });
       control.addEventListener('drop', (e) => {
         e.preventDefault();
         dragDepth = 0;
@@ -984,12 +1216,16 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // open and the element upgraded synchronously (jellyActive ⇒ bundle loaded).
     // maxlength isn't observed by jelly, so it's applied here from data-maxlength.
     if (control.tagName === 'JELLY-INPUT' || control.tagName === 'JELLY-TEXTAREA') {
-      const inner = control.shadowRoot?.querySelector<HTMLInputElement | HTMLTextAreaElement>('input, textarea');
+      const inner = control.shadowRoot?.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+        'input, textarea'
+      );
       if (inner) {
         const ml = Number(control.getAttribute('data-maxlength') || '');
         if (ml > 0) inner.maxLength = ml;
         if (control.tagName === 'JELLY-TEXTAREA') installTablePaste(inner as HTMLTextAreaElement);
-        inner.addEventListener('input', () => runtime.setInput(id, (control as unknown as { value: string }).value));
+        inner.addEventListener('input', () =>
+          runtime.setInput(id, (control as unknown as { value: string }).value)
+        );
       }
       return;
     }
@@ -1006,19 +1242,19 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     });
   });
 
-  el.querySelectorAll<FlatpickrHost>('.fp-datetime').forEach(control => {
-    const id       = control.dataset.inputId!;
-    const initVal  = control.dataset.fpValue || null;
+  el.querySelectorAll<FlatpickrHost>('.fp-datetime').forEach((control) => {
+    const id = control.dataset.inputId!;
+    const initVal = control.dataset.fpValue || null;
     const existing = control._flatpickr;
     if (existing) existing.destroy();
     flatpickr(control, {
-      enableTime:    true,
-      dateFormat:    'Y-m-dTH:i',
-      altInput:      true,
-      altFormat:     'D j M Y h:iK',
-      defaultDate:   initVal || undefined,
-      allowInput:    false,
-      time_24hr:     true,
+      enableTime: true,
+      dateFormat: 'Y-m-dTH:i',
+      altInput: true,
+      altFormat: 'D j M Y h:iK',
+      defaultDate: initVal || undefined,
+      allowInput: false,
+      time_24hr: true,
       disableMobile: true,
       onReady(_: Date[], __: string, fp: { altInput?: HTMLInputElement }) {
         if (fp.altInput) fp.altInput.placeholder = control.placeholder || 'Live - current time';
@@ -1034,7 +1270,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     });
   });
 
-  el.querySelectorAll<HTMLElement>('[data-clear-id]').forEach(btn => {
+  el.querySelectorAll<HTMLElement>('[data-clear-id]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const clearId = btn.dataset.clearId!;
       runtime.setInput(clearId, null);
@@ -1048,21 +1284,22 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // Opt-in "fit canvas to the placed image/video" - writes the export-size channel
   // (the same [data-action="export-*"] inputs the filter-* auto-fit scripts and the
   // manual Width/Height fields drive).
-  el.querySelectorAll<HTMLElement>('[data-fit-id]').forEach(btn => {
+  el.querySelectorAll<HTMLElement>('[data-fit-id]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const w = Number(btn.dataset.fitW), h = Number(btn.dataset.fitH);
+      const w = Number(btn.dataset.fitW),
+        h = Number(btn.dataset.fitH);
       if (w > 0 && h > 0) setExportSize(w, h);
     });
   });
   // Opt-in "match export length to the placed clip's duration".
-  el.querySelectorAll<HTMLElement>('[data-matchdur-id]').forEach(btn => {
+  el.querySelectorAll<HTMLElement>('[data-matchdur-id]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const ms = Number(btn.dataset.durMs);
       if (ms > 0) setExportDuration(ms / 1000);
     });
   });
   // In-tool sound preview: play/pause the placed clip via a detached <audio>.
-  el.querySelectorAll<HTMLElement>('[data-preview-id]').forEach(btn => {
+  el.querySelectorAll<HTMLElement>('[data-preview-id]').forEach((btn) => {
     btn.addEventListener('click', () => toggleSlotPreview(btn));
   });
 
@@ -1070,7 +1307,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // ARIA radio keys (arrows/Home/End, Space/Enter) commit the option through the
   // normal input path; the change re-renders the panel (which reveals that option's
   // showIf-gated inputs) and the by-id focus restore returns to the checked button.
-  el.querySelectorAll<HTMLElement>('[data-badge-select]').forEach(group => {
+  el.querySelectorAll<HTMLElement>('[data-badge-select]').forEach((group) => {
     const id = group.dataset.badgeSelect!;
     const opts = [...group.querySelectorAll<HTMLElement>('.badge-select-opt')];
     const pick = (btn: HTMLElement | undefined): void => {
@@ -1087,21 +1324,28 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
         else if (k === 'ArrowUp' || k === 'ArrowLeft') ni = (idx - 1 + opts.length) % opts.length;
         else if (k === 'Home') ni = 0;
         else if (k === 'End') ni = opts.length - 1;
-        else if (k === ' ' || k === 'Enter') { e.preventDefault(); pick(btn); return; }
-        if (ni >= 0) { e.preventDefault(); pick(opts[ni]); }
+        else if (k === ' ' || k === 'Enter') {
+          e.preventDefault();
+          pick(btn);
+          return;
+        }
+        if (ni >= 0) {
+          e.preventDefault();
+          pick(opts[ni]);
+        }
       });
     });
   });
 
   // icon-toggle: one button that CYCLES its select's options (see the schema's
   // select branch). Two options make it a toggle, which is the intended use.
-  el.querySelectorAll<HTMLElement>('[data-toggle-id]').forEach(btn => {
+  el.querySelectorAll<HTMLElement>('[data-toggle-id]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const toggleId = btn.dataset.toggleId!;
-      const item = model.find(i => i.id === toggleId);
+      const item = model.find((i) => i.id === toggleId);
       const opts = item?.options ?? [];
       if (!opts.length) return;
-      const at = opts.findIndex(o => o.value === item!.value);
+      const at = opts.findIndex((o) => o.value === item!.value);
       runtime.setInput(toggleId, opts[(at + 1) % opts.length]!.value);
       onDirty?.(toggleId);
     });
@@ -1110,14 +1354,20 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // Edit a Lolly-sourced image in place: re-open the source tool's own inputs
   // (pre-filled from the asset's stored embed URL), tweak, and re-apply the new
   // render to this same slot. Only present when the asset carries meta.toolUrl.
-  el.querySelectorAll<HTMLElement>('[data-edit-id]').forEach(btn => {
+  el.querySelectorAll<HTMLElement>('[data-edit-id]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      const editId  = btn.dataset.editId!;
-      const cur     = panelModel.find(i => i.id === editId);
+      const editId = btn.dataset.editId!;
+      const cur = panelModel.find((i) => i.id === editId);
       const toolUrl = asStr(asRow(asRow(cur?.value).meta).toolUrl);
       if (!toolUrl || !host.compose?.renderUrl) return;
-      const ref = await openEmbedEditor(host, { editUrl: toolUrl, slotLabel: cur!.label ?? editId });
-      if (ref) { runtime.setInput(editId, ref); onDirty?.(editId); }
+      const ref = await openEmbedEditor(host, {
+        editUrl: toolUrl,
+        slotLabel: cur!.label ?? editId,
+      });
+      if (ref) {
+        runtime.setInput(editId, ref);
+        onDirty?.(editId);
+      }
     });
   });
 
@@ -1125,20 +1375,27 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // two ways back to the source when meta.bakedFrom survived baking: Edit re-opens
   // the source tool's inputs (rebake: true - the apply re-freezes, never un-bakes),
   // Re-bake re-renders the same URL and freezes it again in one click.
-  el.querySelectorAll<HTMLElement>('[data-baked-edit-id]').forEach(btn => {
+  el.querySelectorAll<HTMLElement>('[data-baked-edit-id]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      const editId    = btn.dataset.bakedEditId!;
-      const cur       = panelModel.find(i => i.id === editId);
+      const editId = btn.dataset.bakedEditId!;
+      const cur = panelModel.find((i) => i.id === editId);
       const bakedFrom = asStr(asRow(asRow(cur?.value).meta).bakedFrom);
       if (!bakedFrom || !host.compose?.renderUrl) return;
-      const ref = await openEmbedEditor(host, { editUrl: bakedFrom, slotLabel: cur!.label ?? editId, rebake: true });
-      if (ref) { runtime.setInput(editId, ref); onDirty?.(editId); }
+      const ref = await openEmbedEditor(host, {
+        editUrl: bakedFrom,
+        slotLabel: cur!.label ?? editId,
+        rebake: true,
+      });
+      if (ref) {
+        runtime.setInput(editId, ref);
+        onDirty?.(editId);
+      }
     });
   });
-  el.querySelectorAll<HTMLButtonElement>('[data-rebake-id]').forEach(btn => {
+  el.querySelectorAll<HTMLButtonElement>('[data-rebake-id]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      const editId    = btn.dataset.rebakeId!;
-      const cur       = panelModel.find(i => i.id === editId);
+      const editId = btn.dataset.rebakeId!;
+      const cur = panelModel.find((i) => i.id === editId);
       const bakedFrom = asStr(asRow(asRow(cur?.value).meta).bakedFrom);
       if (!bakedFrom || !host.compose?.renderUrl) return;
       const label = btn.textContent;
@@ -1147,8 +1404,10 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       const ref = await rebakeFromUrl(host, bakedFrom);
       btn.disabled = false;
       btn.textContent = label;
-      if (ref) { runtime.setInput(editId, ref); onDirty?.(editId); }
-      else showRebakeError(btn);
+      if (ref) {
+        runtime.setInput(editId, ref);
+        onDirty?.(editId);
+      } else showRebakeError(btn);
     });
   });
 
@@ -1160,20 +1419,34 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // shape is a top-level-input contract (resolveTokenRefs), not a row value.
   wireColorField(el, {
     onChange: (inputId: string, value: InputValue) => {
-      if (!inputId.includes(':')) { runtime.setInput(inputId, value); onDirty?.(inputId); return; }
+      if (!inputId.includes(':')) {
+        runtime.setInput(inputId, value);
+        onDirty?.(inputId);
+        return;
+      }
       const parts = inputId.split(':');
-      const blockId = parts[0]!, idx = parseInt(parts[1]!, 10), fieldId = parts[2]!;
+      const blockId = parts[0]!,
+        idx = parseInt(parts[1]!, 10),
+        fieldId = parts[2]!;
       const inp = liveInput(blockId);
       if (!inp) return;
-      const arr = (Array.isArray(inp.value) ? inp.value : []).map(x => ({ ...asRow(x) }));
+      const arr = (Array.isArray(inp.value) ? inp.value : []).map((x) => ({ ...asRow(x) }));
       const row = arr[idx] ?? (arr[idx] = {});
       const o = value as { ref?: unknown; value?: unknown };
-      row[fieldId] = (value && typeof value === 'object' && typeof o.ref === 'string' ? String(o.value ?? '') : value) as InputValue;
+      row[fieldId] = (
+        value && typeof value === 'object' && typeof o.ref === 'string'
+          ? String(o.value ?? '')
+          : value
+      ) as InputValue;
       runtime.setInput(blockId, arr);
       onDirty?.(blockId);
     },
-    onInteractStart: () => { _sliderDragging = true; },
-    onInteractEnd: () => { _sliderDragging = false; },
+    onInteractStart: () => {
+      _sliderDragging = true;
+    },
+    onInteractEnd: () => {
+      _sliderDragging = false;
+    },
   });
 
   // On-demand help: delegated tap/Escape/outside-click wiring is attached once and
@@ -1182,7 +1455,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   linkHelpDescriptions(el);
 
   // Block field changes
-  el.querySelectorAll<HTMLInputElement>('[data-field-id]').forEach(field => {
+  el.querySelectorAll<HTMLInputElement>('[data-field-id]').forEach((field) => {
     // Table cells carry data-field-id only for rebuild-deferral + focus
     // restoration; their value path is the table wiring below, not blocks.
     if (field.closest('.table-input')) return;
@@ -1200,19 +1473,23 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       // is never true for text/textarea/select, so this only ever guards numbers.
       if (!isJellySwitch && field.validity?.badInput) return;
       const parts = field.dataset.fieldId!.split(':');
-      const blockId = parts[0]!, idx = parseInt(parts[1]!, 10), fieldId = parts[2]!;
+      const blockId = parts[0]!,
+        idx = parseInt(parts[1]!, 10),
+        fieldId = parts[2]!;
       const inp = liveInput(blockId);
       if (!inp) return;
-      let arr = (Array.isArray(inp.value) ? inp.value : []).map(x => ({ ...asRow(x) }));
+      let arr = (Array.isArray(inp.value) ? inp.value : []).map((x) => ({ ...asRow(x) }));
       const row = arr[idx] ?? (arr[idx] = {});
       const value: InputValue = isJellySwitch
         ? (field as unknown as { checked: boolean }).checked
-        : field.type === 'checkbox' ? field.checked : field.value;
+        : field.type === 'checkbox'
+          ? field.checked
+          : field.value;
       row[fieldId] = value;
       // Picking a parent from a reference dropdown anchors the target to a durable
       // id, so the link can't drift if rows are later reordered/added (same as the
       // drag-reparent path). Only for a same-input tree parent ref.
-      const fdef = (inp.fields ?? []).find(f => f.id === fieldId);
+      const fdef = (inp.fields ?? []).find((f) => f.id === fieldId);
       if (value && fdef?.optionsFrom && inp.nesting && fieldId === nestingConfig(inp).parentField) {
         arr = materializeRefTarget(arr, String(value), nestingConfig(inp));
       }
@@ -1225,7 +1502,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // from the cell inputs rather than trusting `panelModel`: cell typing defers
   // the panel rebuild (like block fields), so the closure's model snapshot can
   // lag behind edits made since the last repaint.
-  el.querySelectorAll<HTMLElement>('.table-input').forEach(wrap => {
+  el.querySelectorAll<HTMLElement>('.table-input').forEach((wrap) => {
     const tid = wrap.dataset.tableId!;
     // The virtualized data-grid mount (present only past TABLE_VIRTUALIZE_ROWS). When
     // it's used, `read()` sources from the grid's live value instead of the DOM cells;
@@ -1234,21 +1511,37 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     const vgrid = wrap.querySelector<HTMLElement>('[data-table-vgrid]');
     let gridHandle: import('../components/data-grid.ts').DataGridHandle | null = null;
     const modelValue = (): TableValue =>
-      normalizeTableValue(runtime.getModel().find(i => i.id === tid)?.value) ?? { columns: [], rows: [] };
-    const read = (): TableValue => gridHandle
-      ? gridHandle.getValue()
-      : vgrid
-        ? modelValue()                          // grid not mounted yet - never read the empty DOM
-        : ({
-            columns: [...wrap.querySelectorAll<HTMLInputElement>('thead .table-cell')].map(h => h.value),
-            // The placeholder row joins the value the moment any of its cells has
-            // content; until then it is display-only and dropped here.
-            rows: [...wrap.querySelectorAll('tbody tr')].filter(tr =>
-              !tr.hasAttribute('data-table-ghost')
-              || [...tr.querySelectorAll<HTMLInputElement>('.table-cell')].some(c => c.value.trim() !== '')).map(tr =>
-              [...tr.querySelectorAll<HTMLInputElement>('.table-cell')].map(c => c.value)),
-          });
-    const commit = (t: TableValue): void => { void runtime.setInput(tid, t); onDirty?.(tid); };
+      normalizeTableValue(runtime.getModel().find((i) => i.id === tid)?.value) ?? {
+        columns: [],
+        rows: [],
+      };
+    const read = (): TableValue =>
+      gridHandle
+        ? gridHandle.getValue()
+        : vgrid
+          ? modelValue() // grid not mounted yet - never read the empty DOM
+          : {
+              columns: [...wrap.querySelectorAll<HTMLInputElement>('thead .table-cell')].map(
+                (h) => h.value
+              ),
+              // The placeholder row joins the value the moment any of its cells has
+              // content; until then it is display-only and dropped here.
+              rows: [...wrap.querySelectorAll('tbody tr')]
+                .filter(
+                  (tr) =>
+                    !tr.hasAttribute('data-table-ghost') ||
+                    [...tr.querySelectorAll<HTMLInputElement>('.table-cell')].some(
+                      (c) => c.value.trim() !== ''
+                    )
+                )
+                .map((tr) =>
+                  [...tr.querySelectorAll<HTMLInputElement>('.table-cell')].map((c) => c.value)
+                ),
+            };
+    const commit = (t: TableValue): void => {
+      void runtime.setInput(tid, t);
+      onDirty?.(tid);
+    };
 
     if (vgrid) {
       // Lazy-mount the virtualized grid; its own edits commit through the same path,
@@ -1265,14 +1558,18 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
           },
         });
         const saved = tableGridScroll.get(tid);
-        if (saved) { const vp = vgrid.querySelector<HTMLElement>('.dg-viewport'); if (vp) vp.scrollTop = saved; }
+        if (saved) {
+          const vp = vgrid.querySelector<HTMLElement>('.dg-viewport');
+          if (vp) vp.scrollTop = saved;
+        }
       });
     } else {
-      const wireDelRow = (btn: HTMLButtonElement): void => btn.addEventListener('click', () => {
-        const t = read();
-        t.rows.splice(Number(btn.dataset.tableDelRow), 1);
-        commit(t);
-      });
+      const wireDelRow = (btn: HTMLButtonElement): void =>
+        btn.addEventListener('click', () => {
+          const t = read();
+          t.rows.splice(Number(btn.dataset.tableDelRow), 1);
+          commit(t);
+        });
       // Cell edits defer the panel rebuild (so focus stays put), which means the
       // blank placeholder row cannot wait for a repaint to become real when it
       // gains content: it promotes itself in place - ghost marker off, delete
@@ -1291,20 +1588,38 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
         const cols = read().columns;
         const ghostTr = document.createElement('tr');
         ghostTr.setAttribute('data-table-ghost', '');
-        ghostTr.innerHTML = cols.map((_c, ci) =>
-          tableBodyCellHtml('', ri + 1, ci, cols, tableColumnEditor(editors, ci), `${tid}:t:${ri + 1}:${ci}`)).join('')
-          + '<td class="table-rowctl"></td>';
+        ghostTr.innerHTML =
+          cols
+            .map((_c, ci) =>
+              tableBodyCellHtml(
+                '',
+                ri + 1,
+                ci,
+                cols,
+                tableColumnEditor(editors, ci),
+                `${tid}:t:${ri + 1}:${ci}`
+              )
+            )
+            .join('') + '<td class="table-rowctl"></td>';
         tr.after(ghostTr);
         wireCells(ghostTr);
       };
       const maybePromote = (cell: Element): void => {
         const tr = cell.closest('tr');
         if (!tr?.hasAttribute('data-table-ghost')) return;
-        if ([...tr.querySelectorAll<HTMLInputElement>('.table-cell')].some(c => c.value.trim() !== '')) promote(tr);
+        if (
+          [...tr.querySelectorAll<HTMLInputElement>('.table-cell')].some(
+            (c) => c.value.trim() !== ''
+          )
+        )
+          promote(tr);
       };
       const wireCells = (root: ParentNode): void => {
-        root.querySelectorAll<HTMLInputElement>('.table-cell').forEach(cell => {
-          cell.addEventListener('input', () => { maybePromote(cell); commit(read()); });
+        root.querySelectorAll<HTMLInputElement>('.table-cell').forEach((cell) => {
+          cell.addEventListener('input', () => {
+            maybePromote(cell);
+            commit(read());
+          });
         });
         // An `emoji` column's cells are buttons (manifest columnEditors), so they
         // never fire `input`: the popover writes the button's native `value` and the
@@ -1314,7 +1629,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
         // rebuild restores the caret by data-field-id and the popover has just
         // taken focus into itself. The glyph is written in place too - a deferred
         // rebuild would otherwise leave the button showing "Pick" after a pick.
-        root.querySelectorAll<HTMLButtonElement>('[data-emoji-cell]').forEach(btn => {
+        root.querySelectorAll<HTMLButtonElement>('[data-emoji-cell]').forEach((btn) => {
           btn.addEventListener('click', () => {
             void import('../components/emoji-picker.ts').then(({ openEmojiPopover }) =>
               openEmojiPopover(btn, (emoji) => {
@@ -1323,7 +1638,8 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
                 maybePromote(btn);
                 btn.focus();
                 commit(read());
-              }));
+              })
+            );
           });
         });
       };
@@ -1337,31 +1653,40 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       const r = t.rows.length;
       t.rows.push(t.columns.map(() => ''));
       // Land the caret in the new row's first cell once the rebuilt markup exists.
-      void runtime.setInput(tid, t).then(() => requestAnimationFrame(() =>
-        el.querySelector<HTMLInputElement>(`[data-field-id="${CSS.escape(`${tid}:t:${r}:0`)}"]`)?.focus()));
+      void runtime
+        .setInput(tid, t)
+        .then(() =>
+          requestAnimationFrame(() =>
+            el
+              .querySelector<HTMLInputElement>(`[data-field-id="${CSS.escape(`${tid}:t:${r}:0`)}"]`)
+              ?.focus()
+          )
+        );
       onDirty?.(tid);
     });
     wrap.querySelector('[data-table-add-col]')?.addEventListener('click', () => {
       const t = read();
       t.columns.push(`Column ${t.columns.length + 1}`);
-      t.rows.forEach(r => r.push(''));
+      t.rows.forEach((r) => r.push(''));
       if (!t.rows.length) t.rows.push(t.columns.map(() => '')); // first column seeds a first row
       commit(t);
     });
-    wrap.querySelectorAll<HTMLButtonElement>('[data-table-del-row]').forEach(btn =>
+    wrap.querySelectorAll<HTMLButtonElement>('[data-table-del-row]').forEach((btn) =>
       btn.addEventListener('click', () => {
         const t = read();
         t.rows.splice(Number(btn.dataset.tableDelRow), 1);
         commit(t);
-      }));
-    wrap.querySelectorAll<HTMLButtonElement>('[data-table-del-col]').forEach(btn =>
+      })
+    );
+    wrap.querySelectorAll<HTMLButtonElement>('[data-table-del-col]').forEach((btn) =>
       btn.addEventListener('click', () => {
         const t = read();
         const c = Number(btn.dataset.tableDelCol);
         t.columns.splice(c, 1);
-        t.rows.forEach(r => r.splice(c, 1));
+        t.rows.forEach((r) => r.splice(c, 1));
         commit(t);
-      }));
+      })
+    );
 
     // Paste anywhere in the grid: a multi-cell clipboard replaces the WHOLE
     // table - the spreadsheet is the batch editor, a paste is "here's the new
@@ -1407,14 +1732,16 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // wrapper into a new panel at the same geometry (tablePops, module scope).
     const openPanel = (geom?: Partial<CSSStyleDeclaration>, refocus?: string): void => {
       void import('../lib/float-panel.ts').then(({ popOut }) => {
-        const inp = panelModel.find(i => i.id === tid);
+        const inp = panelModel.find((i) => i.id === tid);
         const panel = popOut(wrap, {
           title: inp?.label ?? 'Table',
           // Inside the tool layout, not <body>: the wiring above queries the
           // wrapper through this view's root, and fixed-position still floats
           // here (no transform/filter ancestor between it and the viewport).
           mount: (el.closest('.tool-layout') as HTMLElement | null) ?? undefined,
-          onClose: () => { if (tablePops.get(tid) === panel) tablePops.delete(tid); },
+          onClose: () => {
+            if (tablePops.get(tid) === panel) tablePops.delete(tid);
+          },
         });
         if (!panel) return;
         if (geom) Object.assign(panel.root.style, geom);
@@ -1424,10 +1751,13 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
         // skipped it (focusFloating), and without this the rebuild that cost the
         // user their panel would cost them their place in it too.
         if (refocus) {
-          const cell = wrap.querySelector<HTMLTextAreaElement>(`[data-field-id="${CSS.escape(refocus)}"]`);
+          const cell = wrap.querySelector<HTMLTextAreaElement>(
+            `[data-field-id="${CSS.escape(refocus)}"]`
+          );
           if (cell) {
             cell.focus();
-            if (selStart != null && cell.setSelectionRange) cell.setSelectionRange(selStart, selEnd!);
+            if (selStart != null && cell.setSelectionRange)
+              cell.setSelectionRange(selStart, selEnd!);
           }
         }
       });
@@ -1441,7 +1771,10 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     }
     wrap.querySelector('[data-table-pop]')?.addEventListener('click', () => {
       const cur = tablePops.get(tid);
-      if (cur) { cur.close(); return; }
+      if (cur) {
+        cur.close();
+        return;
+      }
       openPanel();
     });
 
@@ -1450,14 +1783,20 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     wrap.querySelector('[data-table-copy]')?.addEventListener('click', async () => {
       const t = read();
       try {
-        await navigator.clipboard.write([new ClipboardItem({
-          'text/plain': new Blob([toTsv(t)], { type: 'text/plain' }),
-          'text/html': new Blob([toHtmlTable(t)], { type: 'text/html' }),
-        })]);
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'text/plain': new Blob([toTsv(t)], { type: 'text/plain' }),
+            'text/html': new Blob([toHtmlTable(t)], { type: 'text/html' }),
+          }),
+        ]);
         announce('Table copied');
       } catch {
-        try { await navigator.clipboard.writeText(toTsv(t)); announce('Table copied'); }
-        catch { announce('Clipboard unavailable'); }
+        try {
+          await navigator.clipboard.writeText(toTsv(t));
+          announce('Table copied');
+        } catch {
+          announce('Clipboard unavailable');
+        }
       }
     });
   });
@@ -1465,7 +1804,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // "+ Add" (and each typed add-menu option) appends a block. Typed menus carry
   // data-block-add-type, which seeds the discriminator; fields start at their
   // declared defaults so a new block renders cleanly rather than all-blank.
-  el.querySelectorAll<HTMLButtonElement>('[data-block-add]').forEach(btn => {
+  el.querySelectorAll<HTMLButtonElement>('[data-block-add]').forEach((btn) => {
     btn.addEventListener('click', () => {
       if (btn.disabled) return;
       const blockId = btn.dataset.blockAdd!;
@@ -1482,7 +1821,8 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       // land the caret in the new block's first editable field - you asked for a
       // row, you get somewhere to type. rAF, because the rebuild happens in the
       // model subscriber and the new markup has to exist first.
-      void runtime.setInput(blockId, [...arr, block])
+      void runtime
+        .setInput(blockId, [...arr, block])
         .then(() => requestAnimationFrame(() => focusBlockFirstField(el, blockId, index)));
       onDirty?.(blockId);
     });
@@ -1494,20 +1834,25 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       `<h2 class="modal-title">Paste Markdown</h2>` +
       `<p class="modal-msg">You have ${count} slide${count === 1 ? '' : 's'} already. Replace them with the pasted deck, or add the pasted slides to the end?</p>` +
       `<div class="modal-actions">` +
-        `<button type="button" class="btn modal-cancel" data-act="cancel">Cancel</button>` +
-        `<button type="button" class="btn" data-act="add">Add to slides</button>` +
-        `<button type="button" class="btn modal-primary" data-act="replace">Replace slides</button>` +
+      `<button type="button" class="btn modal-cancel" data-act="cancel">Cancel</button>` +
+      `<button type="button" class="btn" data-act="add">Add to slides</button>` +
+      `<button type="button" class="btn modal-primary" data-act="replace">Replace slides</button>` +
       `</div>`;
-    return new Promise<'replace' | 'add' | null>(resolve => {
+    return new Promise<'replace' | 'add' | null>((resolve) => {
       const modal = mountModal<'replace' | 'add' | null>(content, {
         className: 'modal',
         ariaLabel: 'Paste Markdown',
         cancelValue: null,
-        initialFocus: dlg => dlg.querySelector<HTMLElement>('[data-act="replace"]'),
-        onClose: r => resolve(r ?? null),
+        initialFocus: (dlg) => dlg.querySelector<HTMLElement>('[data-act="replace"]'),
+        onClose: (r) => resolve(r ?? null),
       });
-      modal.el.querySelectorAll<HTMLButtonElement>('[data-act]').forEach(b =>
-        b.addEventListener('click', () => modal.close(b.dataset.act === 'cancel' ? null : (b.dataset.act as 'replace' | 'add'))));
+      modal.el
+        .querySelectorAll<HTMLButtonElement>('[data-act]')
+        .forEach((b) =>
+          b.addEventListener('click', () =>
+            modal.close(b.dataset.act === 'cancel' ? null : (b.dataset.act as 'replace' | 'add'))
+          )
+        );
     });
   }
 
@@ -1515,49 +1860,74 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // actions: split into one block per heading (lib/markdown.splitMarkdownIntoBlocks),
   // then replace or append (asking when the list isn't empty). Returns a status the
   // caller flashes on the control.
-  async function applyMarkdown(md: string, blockId: string, inp: InputModelItem): Promise<'ok' | 'empty' | 'cancel'> {
+  async function applyMarkdown(
+    md: string,
+    blockId: string,
+    inp: InputModelItem
+  ): Promise<'ok' | 'empty' | 'cancel'> {
     if (!md.trim()) return 'empty';
     const sections = splitMarkdownIntoBlocks(md);
     if (!sections.length) return 'empty';
-    const has = (fid: string): boolean => (inp.fields ?? []).some(f => f.id === fid);
+    const has = (fid: string): boolean => (inp.fields ?? []).some((f) => f.id === fid);
     // The block must have somewhere to put the prose - a `body` (or at least a `heading`).
     if (!has('body') && !has('heading')) return 'empty';
-    const made = sections.map(sec => {
+    const made = sections.map((sec) => {
       const block = newBlockRow(inp);
       if (has('kind')) block.kind = 'text';
       if (has('heading')) block.heading = sec.heading;
       if (has('body')) block.body = sec.body;
       return block;
     });
-    const cur = runtime.getModel().find(i => i.id === blockId)?.value;
-    const base = Array.isArray(cur) ? cur : (Array.isArray(inp.value) ? inp.value : []);
+    const cur = runtime.getModel().find((i) => i.id === blockId)?.value;
+    const base = Array.isArray(cur) ? cur : Array.isArray(inp.value) ? inp.value : [];
     let mode: 'replace' | 'add' = 'replace';
-    if (base.length) { const choice = await askPasteMode(base.length); if (!choice) return 'cancel'; mode = choice; }
+    if (base.length) {
+      const choice = await askPasteMode(base.length);
+      if (!choice) return 'cancel';
+      mode = choice;
+    }
     runtime.setInput(blockId, mode === 'add' ? [...base, ...made] : made);
     onDirty?.(blockId);
     return 'ok';
   }
   // CSV / JSON → block rows via the engine's parseDataRows (column→field mapping), then
   // replace or append. The importData counterpart to applyMarkdown.
-  async function applyData(text: string, inp: InputModelItem, format?: 'csv' | 'json'): Promise<'ok' | 'empty' | 'cancel'> {
+  async function applyData(
+    text: string,
+    inp: InputModelItem,
+    format?: 'csv' | 'json'
+  ): Promise<'ok' | 'empty' | 'cancel'> {
     const cfg = (inp as { importData?: { columns?: Record<string, unknown> } }).importData ?? {};
     const fields = inp.fields ?? [];
     try {
-      const { rows, truncated } = parseDataRows(text, { fields, format, columns: cfg.columns as Record<string, string> | undefined });
+      const { rows, truncated } = parseDataRows(text, {
+        fields,
+        format,
+        columns: cfg.columns as Record<string, string> | undefined,
+      });
       if (!rows.length) return 'empty';
-      const filled = rows.map(r => {
+      const filled = rows.map((r) => {
         const b = newBlockRow(inp);
-        for (const f of fields) { const v = (r as Record<string, InputValue>)[f.id]; if (v !== '' && v != null) b[f.id] = v; }
+        for (const f of fields) {
+          const v = (r as Record<string, InputValue>)[f.id];
+          if (v !== '' && v != null) b[f.id] = v;
+        }
         return b;
       });
-      const live = runtime.getModel().find(i => i.id === inp.id)?.value;
+      const live = runtime.getModel().find((i) => i.id === inp.id)?.value;
       const base = Array.isArray(live) ? live : [];
       let mode: 'replace' | 'add' = 'replace';
-      if (base.length) { const choice = await askPasteMode(base.length); if (!choice) return 'cancel'; mode = choice; }
+      if (base.length) {
+        const choice = await askPasteMode(base.length);
+        if (!choice) return 'cancel';
+        mode = choice;
+      }
       runtime.setInput(inp.id, mode === 'add' ? [...base, ...filled] : filled);
       onDirty?.(inp.id);
       const n = filled.length;
-      announce(`Imported ${n} ${n === 1 ? 'row' : 'rows'}${truncated ? ' (capped to the first ' + n + ')' : ''}.`);
+      announce(
+        `Imported ${n} ${n === 1 ? 'row' : 'rows'}${truncated ? ' (capped to the first ' + n + ')' : ''}.`
+      );
       return 'ok';
     } catch (e) {
       host.log?.('warn', 'data import failed', { error: String(e) });
@@ -1571,13 +1941,17 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // quotes. Row 0 becomes the header, matching a pasted CSV.
   function rowsToCsv(rows: string[][]): string {
     const cell = (v: string): string => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-    return rows.map(r => r.map(cell).join(',')).join('\n');
+    return rows.map((r) => r.map(cell).join(',')).join('\n');
   }
 
   // Detect what the pasted/uploaded text IS (Markdown vs CSV vs JSON) among the importers
   // this input enables, and route it. A file's extension wins; otherwise the content is
   // sniffed (`{`/`[` → JSON; headings/`---`/bullets/pipes → Markdown; commas → CSV).
-  async function routeImport(text: string, inp: InputModelItem, filename?: string): Promise<'ok' | 'empty' | 'cancel'> {
+  async function routeImport(
+    text: string,
+    inp: InputModelItem,
+    filename?: string
+  ): Promise<'ok' | 'empty' | 'cancel'> {
     const s = text.trim();
     if (!s) return 'empty';
     const canMd = (inp as { mdPaste?: boolean }).mdPaste === true;
@@ -1598,28 +1972,42 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   const ioFlash = (btn: HTMLElement, status: 'ok' | 'empty' | 'cancel'): void => {
     if (status === 'cancel') return;
     const cls = status === 'ok' ? 'is-ok' : 'is-empty';
-    btn.classList.add(cls); window.setTimeout(() => btn.classList.remove(cls), 1100);
+    btn.classList.add(cls);
+    window.setTimeout(() => btn.classList.remove(cls), 1100);
   };
   const uploadAccept = (inp: InputModelItem): string => {
     const parts: string[] = [];
-    if ((inp as { mdPaste?: boolean }).mdPaste === true) parts.push('.md', '.markdown', '.mdown', '.txt', '.text', 'text/markdown', 'text/plain');
-    if ((inp as { importData?: unknown }).importData) parts.push('.csv', '.json', '.xlsx', 'text/csv', 'application/json', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    if ((inp as { mdPaste?: boolean }).mdPaste === true)
+      parts.push('.md', '.markdown', '.mdown', '.txt', '.text', 'text/markdown', 'text/plain');
+    if ((inp as { importData?: unknown }).importData)
+      parts.push(
+        '.csv',
+        '.json',
+        '.xlsx',
+        'text/csv',
+        'application/json',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      );
     return parts.join(',');
   };
 
   // "Paste" - read the clipboard, detect its format, route it.
-  el.querySelectorAll<HTMLButtonElement>('[data-blocks-io-paste]').forEach(btn => {
+  el.querySelectorAll<HTMLButtonElement>('[data-blocks-io-paste]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      const inp = panelModel.find(i => i.id === btn.dataset.blocksIoPaste);
+      const inp = panelModel.find((i) => i.id === btn.dataset.blocksIoPaste);
       if (!inp) return;
       let text = '';
-      try { text = await navigator.clipboard.readText(); } catch { /* denied / unsupported */ }
+      try {
+        text = await navigator.clipboard.readText();
+      } catch {
+        /* denied / unsupported */
+      }
       ioFlash(btn, await routeImport(text, inp));
     });
   });
   // "Upload" - pick a Markdown / CSV / JSON file, detect its format, route it.
-  el.querySelectorAll<HTMLButtonElement>('[data-blocks-io-upload]').forEach(btn => {
-    const inp = panelModel.find(i => i.id === btn.dataset.blocksIoUpload);
+  el.querySelectorAll<HTMLButtonElement>('[data-blocks-io-upload]').forEach((btn) => {
+    const inp = panelModel.find((i) => i.id === btn.dataset.blocksIoUpload);
     if (!inp) return;
     const native = document.createElement('input');
     native.type = 'file';
@@ -1638,13 +2026,19 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
           const { rows } = readXlsx(new Uint8Array(await file.arrayBuffer()));
           ioFlash(btn, await applyData(rowsToCsv(rows), inp, 'csv'));
         } catch (e) {
-          announce((e as { message?: string })?.message || 'Could not read that spreadsheet.', { assertive: true });
+          announce((e as { message?: string })?.message || 'Could not read that spreadsheet.', {
+            assertive: true,
+          });
           ioFlash(btn, 'empty');
         }
         return;
       }
       let text = '';
-      try { text = await file.text(); } catch { /* unreadable */ }
+      try {
+        text = await file.text();
+      } catch {
+        /* unreadable */
+      }
       ioFlash(btn, await routeImport(text, inp, file.name));
     });
   });
@@ -1654,9 +2048,9 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // The value is written through the control's own `input` event, so it syncs to the
   // runtime exactly like typing (no direct model poke). Lazy chunk - the picker loads
   // only on first use.
-  el.querySelectorAll<HTMLButtonElement>('[data-data-source]').forEach(btn => {
+  el.querySelectorAll<HTMLButtonElement>('[data-data-source]').forEach((btn) => {
     const id = btn.dataset.dataSource!;
-    const inp = panelModel.find(i => i.id === id);
+    const inp = panelModel.find((i) => i.id === id);
     if (!inp) return;
     btn.addEventListener('click', async () => {
       const { openDataSource } = await import('../lib/data-source.ts');
@@ -1685,61 +2079,89 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // and appends one block per file (the image in the named asset field, every
   // other field at its default). It reuses the picker's upload path, so SVGs are
   // sanitised and big rasters downscaled exactly like a single "+ Add" upload.
-  panelModel.filter(i => i.control === 'blocks' && i.dropToAdd?.field).forEach(input => {
-    const blockId = input.id;
-    const field = input.dropToAdd!.field;
-    if (!(input.fields ?? []).some(f => f.id === field && f.type === 'asset')) return;
-    const wrap = el.querySelector<HTMLElement>(`.blocks-input[data-input-id="${CSS.escape(blockId)}"]`);
-    const list = wrap?.querySelector<HTMLElement>('.blocks-list');
-    if (!wrap || !list) return;
-    wrap.classList.add('blocks-input--droppable');
+  panelModel
+    .filter((i) => i.control === 'blocks' && i.dropToAdd?.field)
+    .forEach((input) => {
+      const blockId = input.id;
+      const field = input.dropToAdd!.field;
+      if (!(input.fields ?? []).some((f) => f.id === field && f.type === 'asset')) return;
+      const wrap = el.querySelector<HTMLElement>(
+        `.blocks-input[data-input-id="${CSS.escape(blockId)}"]`
+      );
+      const list = wrap?.querySelector<HTMLElement>('.blocks-list');
+      if (!wrap || !list) return;
+      wrap.classList.add('blocks-input--droppable');
 
-    // The committer (upload each file → append one block per file) is shared with
-    // the canvas drop zone (setupCanvasBlocksDrop), so both surfaces behave alike
-    // and serialise through _dropChains.
-    const { accept, plural, addFiles } = makeBlocksDropper({ runtime, host, input, onDirty });
+      // The committer (upload each file → append one block per file) is shared with
+      // the canvas drop zone (setupCanvasBlocksDrop), so both surfaces behave alike
+      // and serialise through _dropChains.
+      const { accept, plural, addFiles } = makeBlocksDropper({ runtime, host, input, onDirty });
 
-    // Hidden multi-file input, opened by the drop hint - so "select several files"
-    // works alongside drag-and-drop.
-    const native = document.createElement('input');
-    native.type = 'file';
-    native.multiple = true;
-    native.accept = accept;
-    native.style.display = 'none';
-    wrap.appendChild(native);
-    native.addEventListener('change', () => { addFiles(native.files); native.value = ''; });
+      // Hidden multi-file input, opened by the drop hint - so "select several files"
+      // works alongside drag-and-drop.
+      const native = document.createElement('input');
+      native.type = 'file';
+      native.multiple = true;
+      native.accept = accept;
+      native.style.display = 'none';
+      wrap.appendChild(native);
+      native.addEventListener('change', () => {
+        addFiles(native.files);
+        native.value = '';
+      });
 
-    // A persistent drop hint that doubles as a "choose files" button - it stays
-    // put once blocks exist (just with shorter text) so adding more is always one
-    // drop or click away, alongside the per-row "+ Add".
-    const hasItems = !!list.querySelector('.block-item');
-    const hint = document.createElement('button');
-    hint.type = 'button';
-    hint.className = 'blocks-drop-hint';
-    hint.textContent = hasItems
-      ? `Drop or click to add more ${plural}`
-      : `Drop ${plural} here, or click to choose files`;
-    hint.addEventListener('click', () => native.click());
-    list.appendChild(hint);
+      // A persistent drop hint that doubles as a "choose files" button - it stays
+      // put once blocks exist (just with shorter text) so adding more is always one
+      // drop or click away, alongside the per-row "+ Add".
+      const hasItems = !!list.querySelector('.block-item');
+      const hint = document.createElement('button');
+      hint.type = 'button';
+      hint.className = 'blocks-drop-hint';
+      hint.textContent = hasItems
+        ? `Drop or click to add more ${plural}`
+        : `Drop ${plural} here, or click to choose files`;
+      hint.addEventListener('click', () => native.click());
+      list.appendChild(hint);
 
-    let depth = 0;
-    const setDrag = (on: boolean) => wrap.classList.toggle('is-file-dragover', on);
-    const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types || []).includes('Files');
-    list.addEventListener('dragenter', (e) => { if (!hasFiles(e)) return; e.preventDefault(); depth++; setDrag(true); });
-    list.addEventListener('dragover', (e) => { if (!hasFiles(e)) return; e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; });
-    list.addEventListener('dragleave', (e) => { e.preventDefault(); if (--depth <= 0) { depth = 0; setDrag(false); } });
-    list.addEventListener('drop', (e) => { e.preventDefault(); depth = 0; setDrag(false); addFiles(e.dataTransfer?.files); });
-  });
-
+      let depth = 0;
+      const setDrag = (on: boolean) => wrap.classList.toggle('is-file-dragover', on);
+      const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types || []).includes('Files');
+      list.addEventListener('dragenter', (e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        depth++;
+        setDrag(true);
+      });
+      list.addEventListener('dragover', (e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+      });
+      list.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        if (--depth <= 0) {
+          depth = 0;
+          setDrag(false);
+        }
+      });
+      list.addEventListener('drop', (e) => {
+        e.preventDefault();
+        depth = 0;
+        setDrag(false);
+        addFiles(e.dataTransfer?.files);
+      });
+    });
 
   // Typed add-menu: toggle the option list; one open at a time.
-  el.querySelectorAll<HTMLElement>('[data-block-add-toggle]').forEach(btn => {
+  el.querySelectorAll<HTMLElement>('[data-block-add-toggle]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const menu = btn.closest('.block-add-menu')?.querySelector<HTMLElement>('.block-add-options');
       if (!menu) return;
       const willOpen = menu.hidden;
-      el.querySelectorAll<HTMLElement>('.block-add-options').forEach(m => { if (m !== menu) m.hidden = true; });
+      el.querySelectorAll<HTMLElement>('.block-add-options').forEach((m) => {
+        if (m !== menu) m.hidden = true;
+      });
       menu.hidden = !willOpen;
       btn.setAttribute('aria-expanded', String(willOpen));
     });
@@ -1747,13 +2169,13 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
 
   // Per-block asset (image) fields delegate to the host picker, mirroring the
   // top-level asset-picker control but writing into the block array.
-  el.querySelectorAll<HTMLElement>('[data-block-asset]').forEach(btn => {
+  el.querySelectorAll<HTMLElement>('[data-block-asset]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const [blockId = '', idxStr = '', fId = ''] = (btn.dataset.blockAsset ?? '').split(':');
       const idx = parseInt(idxStr, 10);
       const inp = liveInput(blockId);
       if (!inp) return;
-      const f: Partial<BlockFieldSpec> = (inp.fields ?? []).find(x => x.id === fId) ?? {};
+      const f: Partial<BlockFieldSpec> = (inp.fields ?? []).find((x) => x.id === fId) ?? {};
       const cur = Array.isArray(inp.value) ? asRow(inp.value[idx])[fId] : null;
       // Same choice-first flow as the top-level slot: a block image that's a
       // live Lolly render offers "edit it" before "replace it".
@@ -1762,9 +2184,12 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
         const intent = await askLollyIntent(asStr(asRow(asRow(cur).meta).name));
         if (!intent) return;
         if (intent === 'edit') {
-          const edited = await openEmbedEditor(host, { editUrl: curToolUrl, slotLabel: f.label ?? fId });
+          const edited = await openEmbedEditor(host, {
+            editUrl: curToolUrl,
+            slotLabel: f.label ?? fId,
+          });
           if (!edited) return;
-          const arr2 = (Array.isArray(inp.value) ? inp.value : []).map(x => ({ ...asRow(x) }));
+          const arr2 = (Array.isArray(inp.value) ? inp.value : []).map((x) => ({ ...asRow(x) }));
           const row2 = arr2[idx] ?? (arr2[idx] = {});
           row2[fId] = edited;
           runtime.setInput(blockId, arr2);
@@ -1773,20 +2198,21 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
         }
       }
       const ref = await host.assets.pick({
-        title:       `Choose ${f.label ?? fId}`,
-        type:        f.assetType === 'any' ? undefined : f.assetType,
-        tags:        f.filter?.tags,
-        namespace:   f.filter?.namespace,
+        title: `Choose ${f.label ?? fId}`,
+        type: f.assetType === 'any' ? undefined : f.assetType,
+        tags: f.filter?.tags,
+        namespace: f.filter?.namespace,
         allowUpload: f.allowUpload === true,
-        current:     asStr(asRow(cur).id),
+        current: asStr(asRow(cur).id),
         // Mirror the top-level slot: a block image that's already a Lolly render
         // offers its edit-in-place banner inside the picker too.
-        currentToolUrl:  curToolUrl,
+        currentToolUrl: curToolUrl,
         currentToolName: asStr(asRow(asRow(cur).meta).name),
-        editTool:    (toolUrl: string, mode = 'insert') => openEmbedEditor(host, { editUrl: toolUrl, slotLabel: f.label ?? fId, mode }),
+        editTool: (toolUrl: string, mode = 'insert') =>
+          openEmbedEditor(host, { editUrl: toolUrl, slotLabel: f.label ?? fId, mode }),
       } as Parameters<typeof host.assets.pick>[0]);
       if (!ref) return;
-      const arr = (Array.isArray(inp.value) ? inp.value : []).map(x => ({ ...asRow(x) }));
+      const arr = (Array.isArray(inp.value) ? inp.value : []).map((x) => ({ ...asRow(x) }));
       const row = arr[idx] ?? (arr[idx] = {});
       row[fId] = ref;
       runtime.setInput(blockId, arr);
@@ -1794,13 +2220,13 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     });
   });
 
-  el.querySelectorAll<HTMLElement>('[data-block-asset-clear]').forEach(btn => {
+  el.querySelectorAll<HTMLElement>('[data-block-asset-clear]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const [blockId = '', idxStr = '', fId = ''] = (btn.dataset.blockAssetClear ?? '').split(':');
       const idx = parseInt(idxStr, 10);
       const inp = liveInput(blockId);
       if (!inp) return;
-      const arr = (Array.isArray(inp.value) ? inp.value : []).map(x => ({ ...asRow(x) }));
+      const arr = (Array.isArray(inp.value) ? inp.value : []).map((x) => ({ ...asRow(x) }));
       const row = arr[idx];
       if (row) row[fId] = null;
       runtime.setInput(blockId, arr);
@@ -1810,19 +2236,19 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
 
   // Edit a Lolly-sourced block image in place (same flow as the top-level
   // data-edit-id handler, but writing back into the block array).
-  el.querySelectorAll<HTMLElement>('[data-block-asset-edit]').forEach(btn => {
+  el.querySelectorAll<HTMLElement>('[data-block-asset-edit]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const [blockId = '', idxStr = '', fId = ''] = (btn.dataset.blockAssetEdit ?? '').split(':');
       const idx = parseInt(idxStr, 10);
       const inp = liveInput(blockId);
       if (!inp) return;
-      const cur     = Array.isArray(inp.value) ? asRow(inp.value[idx])[fId] : null;
+      const cur = Array.isArray(inp.value) ? asRow(inp.value[idx])[fId] : null;
       const toolUrl = asStr(asRow(asRow(cur).meta).toolUrl);
       if (!toolUrl || !host.compose?.renderUrl) return;
-      const f: Partial<BlockFieldSpec> = (inp.fields ?? []).find(x => x.id === fId) ?? {};
+      const f: Partial<BlockFieldSpec> = (inp.fields ?? []).find((x) => x.id === fId) ?? {};
       const ref = await openEmbedEditor(host, { editUrl: toolUrl, slotLabel: f.label ?? fId });
       if (!ref) return;
-      const arr = (Array.isArray(inp.value) ? inp.value : []).map(x => ({ ...asRow(x) }));
+      const arr = (Array.isArray(inp.value) ? inp.value : []).map((x) => ({ ...asRow(x) }));
       const row = arr[idx] ?? (arr[idx] = {});
       row[fId] = ref;
       runtime.setInput(blockId, arr);
@@ -1834,39 +2260,46 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // data-rebake-id handlers, but writing back into the block array): ❄ Edit
   // re-opens the source via meta.bakedFrom and commits a RE-baked ref; ↻ Re-bake
   // re-renders + freezes in one click.
-  el.querySelectorAll<HTMLElement>('[data-block-baked-edit]').forEach(btn => {
+  el.querySelectorAll<HTMLElement>('[data-block-baked-edit]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const [blockId = '', idxStr = '', fId = ''] = (btn.dataset.blockBakedEdit ?? '').split(':');
       const idx = parseInt(idxStr, 10);
       const inp = liveInput(blockId);
       if (!inp) return;
-      const cur       = Array.isArray(inp.value) ? asRow(inp.value[idx])[fId] : null;
+      const cur = Array.isArray(inp.value) ? asRow(inp.value[idx])[fId] : null;
       const bakedFrom = asStr(asRow(asRow(cur).meta).bakedFrom);
       if (!bakedFrom || !host.compose?.renderUrl) return;
-      const f: Partial<BlockFieldSpec> = (inp.fields ?? []).find(x => x.id === fId) ?? {};
-      const ref = await openEmbedEditor(host, { editUrl: bakedFrom, slotLabel: f.label ?? fId, rebake: true });
+      const f: Partial<BlockFieldSpec> = (inp.fields ?? []).find((x) => x.id === fId) ?? {};
+      const ref = await openEmbedEditor(host, {
+        editUrl: bakedFrom,
+        slotLabel: f.label ?? fId,
+        rebake: true,
+      });
       if (!ref) return;
-      const arr = (Array.isArray(inp.value) ? inp.value : []).map(x => ({ ...asRow(x) }));
+      const arr = (Array.isArray(inp.value) ? inp.value : []).map((x) => ({ ...asRow(x) }));
       const row = arr[idx] ?? (arr[idx] = {});
       row[fId] = ref;
       runtime.setInput(blockId, arr);
       onDirty?.(blockId);
     });
   });
-  el.querySelectorAll<HTMLButtonElement>('[data-block-rebake]').forEach(btn => {
+  el.querySelectorAll<HTMLButtonElement>('[data-block-rebake]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const [blockId = '', idxStr = '', fId = ''] = (btn.dataset.blockRebake ?? '').split(':');
       const idx = parseInt(idxStr, 10);
       const inp = liveInput(blockId);
       if (!inp) return;
-      const cur       = Array.isArray(inp.value) ? asRow(inp.value[idx])[fId] : null;
+      const cur = Array.isArray(inp.value) ? asRow(inp.value[idx])[fId] : null;
       const bakedFrom = asStr(asRow(asRow(cur).meta).bakedFrom);
       if (!bakedFrom || !host.compose?.renderUrl) return;
       btn.disabled = true;
       const ref = await rebakeFromUrl(host, bakedFrom);
       btn.disabled = false;
-      if (!ref) { showRebakeError(btn); return; }
-      const arr = (Array.isArray(inp.value) ? inp.value : []).map(x => ({ ...asRow(x) }));
+      if (!ref) {
+        showRebakeError(btn);
+        return;
+      }
+      const arr = (Array.isArray(inp.value) ? inp.value : []).map((x) => ({ ...asRow(x) }));
       const row = arr[idx] ?? (arr[idx] = {});
       row[fId] = ref;
       runtime.setInput(blockId, arr);
@@ -1876,9 +2309,13 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
 
   // Block range sliders: hold the sidebar steady while dragging (the canvas
   // still updates live), exactly like the top-level custom slider / vector scrub.
-  el.querySelectorAll<HTMLInputElement>('.block-range-input').forEach(r => {
-    const hold = () => { _sliderDragging = true; };
-    const release = () => { _sliderDragging = false; };
+  el.querySelectorAll<HTMLInputElement>('.block-range-input').forEach((r) => {
+    const hold = () => {
+      _sliderDragging = true;
+    };
+    const release = () => {
+      _sliderDragging = false;
+    };
     // Upgraded (custom-slider.ts): the input is hidden and never sees the gesture,
     // so the slider relays it. Kept alongside the pointer pair below, which is
     // still the path for a plain native range.
@@ -1895,7 +2332,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // Remove is a two-step confirm so a stray click can't drop a block: the first
   // click arms the button ("Delete?"); a second click within 3s (or while armed)
   // commits. Clicking elsewhere - or the timeout - disarms it.
-  el.querySelectorAll<ConfirmButton>('[data-block-remove]').forEach(btn => {
+  el.querySelectorAll<ConfirmButton>('[data-block-remove]').forEach((btn) => {
     // Confirm only for typed (card) blocks; compact name/value rows keep their
     // immediate delete (a "Delete?" label would stretch their tight grid cells).
     const confirms = !!btn.closest('.block-item.is-typed');
@@ -1910,13 +2347,22 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     };
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (!confirms) { commit(); return; }
-      if (btn._armed) { btn._disarm?.(); commit(); return; }
+      if (!confirms) {
+        commit();
+        return;
+      }
+      if (btn._armed) {
+        btn._disarm?.();
+        commit();
+        return;
+      }
       btn._armed = true;
       btn.classList.add('is-confirming');
       const original = btn.innerHTML;
       btn.innerHTML = 'Delete?';
-      const away = (ev: PointerEvent) => { if (!btn.contains(ev.target as Node)) btn._disarm?.(); };
+      const away = (ev: PointerEvent) => {
+        if (!btn.contains(ev.target as Node)) btn._disarm?.();
+      };
       const t = setTimeout(() => btn._disarm?.(), 3000);
       btn._disarm = () => {
         btn._armed = false;
@@ -1933,12 +2379,14 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
 
   // Per-row copy / paste / clear (blocks with `rowActions`). All three commit through the
   // same setInput path as remove, so undo / URL / determinism are unaffected.
-  const rowOf = (btn: HTMLElement): { blockId: string; idx: number; inp: InputModelItem | undefined } => {
+  const rowOf = (
+    btn: HTMLElement
+  ): { blockId: string; idx: number; inp: InputModelItem | undefined } => {
     const blockId = btn.dataset.blockInput!;
     const idx = parseInt(btn.dataset.blockIndex ?? '', 10);
     return { blockId, idx, inp: liveInput(blockId) };
   };
-  el.querySelectorAll<HTMLButtonElement>('[data-block-copy]').forEach(btn => {
+  el.querySelectorAll<HTMLButtonElement>('[data-block-copy]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const { idx, inp } = rowOf(btn);
@@ -1946,17 +2394,20 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       if (!row || typeof row !== 'object') return;
       blockRowClipboard = { ...(row as Record<string, InputValue>) };
       btn.classList.add('is-done');
-      setTimeout(() => btn.classList.remove('is-done'), 700);   // brief "copied" tick
+      setTimeout(() => btn.classList.remove('is-done'), 700); // brief "copied" tick
     });
   });
-  el.querySelectorAll<HTMLButtonElement>('[data-block-paste]').forEach(btn => {
+  el.querySelectorAll<HTMLButtonElement>('[data-block-paste]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (!blockRowClipboard) return;                          // nothing copied yet → no-op
+      if (!blockRowClipboard) return; // nothing copied yet → no-op
       const { blockId, idx, inp } = rowOf(btn);
       if (!inp || !Array.isArray(inp.value)) return;
       const arr = [...inp.value];
-      const cur = (arr[idx] && typeof arr[idx] === 'object') ? { ...(arr[idx] as Record<string, InputValue>) } : {};
+      const cur =
+        arr[idx] && typeof arr[idx] === 'object'
+          ? { ...(arr[idx] as Record<string, InputValue>) }
+          : {};
       // Only paste values for fields THIS input declares - never inject a key from a copy
       // taken in a differently-shaped block.
       for (const f of inp.fields ?? []) {
@@ -1967,7 +2418,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       onDirty?.(blockId);
     });
   });
-  el.querySelectorAll<HTMLButtonElement>('[data-block-clear]').forEach(btn => {
+  el.querySelectorAll<HTMLButtonElement>('[data-block-clear]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const { blockId, idx, inp } = rowOf(btn);
@@ -1986,11 +2437,12 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // input (input.nesting active) the drop zone splits into before / after / inside,
   // so a card can be moved, re-nested or reordered in one gesture; the dragged
   // card's parent reference is updated and its whole subtree travels with it.
-  const clearDropMarks = () => el
-    .querySelectorAll('.drag-over, .drop-before, .drop-after, .drop-inside')
-    .forEach(n => n.classList.remove('drag-over', 'drop-before', 'drop-after', 'drop-inside'));
+  const clearDropMarks = () =>
+    el
+      .querySelectorAll('.drag-over, .drop-before, .drop-after, .drop-inside')
+      .forEach((n) => n.classList.remove('drag-over', 'drop-before', 'drop-after', 'drop-inside'));
 
-  el.querySelectorAll<HTMLElement>('.block-item.is-typed').forEach(item => {
+  el.querySelectorAll<HTMLElement>('.block-item.is-typed').forEach((item) => {
     const head = item.querySelector<DragHandle>('[data-block-handle]');
     if (!head) return;
     const blockId = head.dataset.blockInput!;
@@ -2002,30 +2454,42 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     const zoneIntent = (e: DragEvent): 'before' | 'after' | 'inside' => {
       const r = item.getBoundingClientRect();
       const rel = (e.clientY - r.top) / Math.max(1, r.height);
-      return rel < 0.30 ? 'before' : rel > 0.70 ? 'after' : 'inside';
+      return rel < 0.3 ? 'before' : rel > 0.7 ? 'after' : 'inside';
     };
 
     head.addEventListener('dragstart', (e) => {
       _blockDrag = { inputId: blockId, from: idx, intent: null, over: null };
       e.dataTransfer!.effectAllowed = 'move';
-      try { e.dataTransfer!.setData('text/plain', String(idx)); } catch { /* Safari */ }
+      try {
+        e.dataTransfer!.setData('text/plain', String(idx));
+      } catch {
+        /* Safari */
+      }
       item.classList.add('is-dragging');
     });
     head.addEventListener('dragend', () => {
       item.classList.remove('is-dragging');
       clearDropMarks();
-      _blockDrag = null;   // clear even on a cancelled drag (no drop fired) so it can't go stale
+      _blockDrag = null; // clear even on a cancelled drag (no drop fired) so it can't go stale
       // A real drag suppresses the trailing click, but flag it anyway so a drag that
       // the browser rounds to a click can't also expand the pill (see head click below).
       head._dragJustHappened = true;
-      setTimeout(() => { head._dragJustHappened = false; }, 0);
+      setTimeout(() => {
+        head._dragJustHappened = false;
+      }, 0);
     });
     item.addEventListener('dragover', (e) => {
       if (!_blockDrag || _blockDrag.inputId !== blockId) return;
       e.preventDefault();
       e.dataTransfer!.dropEffect = 'move';
-      if (!treeMode) { item.classList.toggle('drag-over', idx !== _blockDrag!.from); return; }
-      if (idx === _blockDrag!.from) { item.classList.remove('drop-before', 'drop-after', 'drop-inside'); return; }
+      if (!treeMode) {
+        item.classList.toggle('drag-over', idx !== _blockDrag!.from);
+        return;
+      }
+      if (idx === _blockDrag!.from) {
+        item.classList.remove('drop-before', 'drop-after', 'drop-inside');
+        return;
+      }
       const intent = zoneIntent(e);
       _blockDrag!.intent = intent;
       _blockDrag!.over = idx;
@@ -2033,11 +2497,15 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       item.classList.toggle('drop-after', intent === 'after');
       item.classList.toggle('drop-inside', intent === 'inside');
     });
-    item.addEventListener('dragleave', () => item.classList.remove('drag-over', 'drop-before', 'drop-after', 'drop-inside'));
+    item.addEventListener('dragleave', () =>
+      item.classList.remove('drag-over', 'drop-before', 'drop-after', 'drop-inside')
+    );
     item.addEventListener('drop', (e) => {
       if (!_blockDrag || _blockDrag.inputId !== blockId) return;
       e.preventDefault();
-      const from = _blockDrag.from, to = idx, intent = _blockDrag.intent || zoneIntent(e);
+      const from = _blockDrag.from,
+        to = idx,
+        intent = _blockDrag.intent || zoneIntent(e);
       clearDropMarks();
       _blockDrag = null;
       const inp = liveInput(blockId);
@@ -2046,8 +2514,10 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
       if (from < 0 || from >= arr.length) return;
       let next: InputValue[] | null;
       if (treeMode) {
-        next = blockReparentMove(arr as BlockRow[], from, to, intent, nestingConfig(inp)) as InputValue[] | null;
-        if (!next) return;                      // no-op / illegal (e.g. into own subtree)
+        next = blockReparentMove(arr as BlockRow[], from, to, intent, nestingConfig(inp)) as
+          | InputValue[]
+          | null;
+        if (!next) return; // no-op / illegal (e.g. into own subtree)
       } else {
         if (from === to) return;
         next = [...arr];
@@ -2063,7 +2533,7 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
     // keeps the chevron's aria/title and the open animation in lockstep.
     const collapse = item.querySelector('[data-block-collapse]');
     collapse?.addEventListener('click', (e) => {
-      e.stopPropagation();                 // don't reach the header's expand/drag
+      e.stopPropagation(); // don't reach the header's expand/drag
       const folded = !item.classList.contains('is-collapsed');
       toggleBlock(item, folded);
       syncCollapseAllPills();
@@ -2089,12 +2559,12 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   // "Collapse all / Expand all" pill: fold or unfold every block in its group at
   // once - pure DOM toggle like the per-block chevron (renderInputs re-applies the
   // fold state across rebuilds), so no model change and no re-render.
-  el.querySelectorAll<HTMLElement>('[data-blocks-collapse-all]').forEach(pill => {
+  el.querySelectorAll<HTMLElement>('[data-blocks-collapse-all]').forEach((pill) => {
     pill.addEventListener('click', (e) => {
       e.stopPropagation();
       const wrap = pill.closest('.blocks-input')!;
       const fold = pill.dataset.mode !== 'expand';
-      wrap.querySelectorAll('.block-item.is-typed').forEach(item => toggleBlock(item, fold));
+      wrap.querySelectorAll('.block-item.is-typed').forEach((item) => toggleBlock(item, fold));
       syncCollapseAllPills();
       // Expanding many at once: surface the first so the change is visible.
       if (!fold) {
@@ -2110,7 +2580,10 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   el._colorPopoverDismiss = (e: MouseEvent) => {
     const t = e.target as HTMLElement;
     if (!t.closest('.color-picker-field') && !t.closest('.color-popover')) {
-      el.querySelectorAll<HTMLElement>('.color-popover:not([hidden])').forEach(p => { p.hidden = true; p.style.cssText = ''; });
+      el.querySelectorAll<HTMLElement>('.color-popover:not([hidden])').forEach((p) => {
+        p.hidden = true;
+        p.style.cssText = '';
+      });
     }
   };
   document.addEventListener('click', el._colorPopoverDismiss, true);
@@ -2122,7 +2595,9 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   }
   el._blockMenuDismiss = (e: MouseEvent) => {
     if (!(e.target as HTMLElement).closest('.block-add-menu')) {
-      el.querySelectorAll<HTMLElement>('.block-add-options:not([hidden])').forEach(m => { m.hidden = true; });
+      el.querySelectorAll<HTMLElement>('.block-add-options:not([hidden])').forEach((m) => {
+        m.hidden = true;
+      });
     }
   };
   document.addEventListener('click', el._blockMenuDismiss, true);
@@ -2153,14 +2628,15 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
         if (Array.isArray(v)) {
           for (const row of v) {
             for (const cell of Object.values((row ?? {}) as Record<string, unknown>)) {
-              if (cell && typeof cell === 'object' && (cell as AssetRef).id === id) return cell as AssetRef;
+              if (cell && typeof cell === 'object' && (cell as AssetRef).id === id)
+                return cell as AssetRef;
             }
           }
         }
       }
       return undefined;
     },
-    () => el.isConnected,
+    () => el.isConnected
   );
 
   // NOTE: legacy rows are given their stable ids at MOUNT (lib/row-id.ts's
@@ -2173,15 +2649,18 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
   el._inputsDispose = () => {
     el._audioThumbs?.destroy();
     el._audioThumbs = undefined;
-    if (el._colorPopoverDismiss) document.removeEventListener('click', el._colorPopoverDismiss, true);
-    if (el._blockMenuDismiss)    document.removeEventListener('click', el._blockMenuDismiss, true);
-    if (el._helpTipDismiss)      document.removeEventListener('click', el._helpTipDismiss, true);
+    if (el._colorPopoverDismiss)
+      document.removeEventListener('click', el._colorPopoverDismiss, true);
+    if (el._blockMenuDismiss) document.removeEventListener('click', el._blockMenuDismiss, true);
+    if (el._helpTipDismiss) document.removeEventListener('click', el._helpTipDismiss, true);
     // flatpickr appends its calendar to <body> and registers document/window
     // listeners released only by destroy(). Deferred to a microtask (same reasoning
     // as the re-render path above): a dispose reachable from flatpickr's own
     // onClose must not destroy the closing instance mid-callback.
-    const fps = [...el.querySelectorAll<FlatpickrHost>('.fp-datetime')].map(c => c._flatpickr).filter(Boolean);
-    if (fps.length) queueMicrotask(() => fps.forEach(fp => fp!.destroy()));
+    const fps = [...el.querySelectorAll<FlatpickrHost>('.fp-datetime')]
+      .map((c) => c._flatpickr)
+      .filter(Boolean);
+    if (fps.length) queueMicrotask(() => fps.forEach((fp) => fp!.destroy()));
   };
 
   // Live frame-source controls (Play + Go live) for an onFrame tool: re-inject
@@ -2197,18 +2676,26 @@ function renderInputs(el: PanelEl, model: InputModelItem[], runtime: Runtime, ho
 function blockFieldDefault(f: BlockFieldSpec): InputValue {
   if (f.default !== undefined) return f.default;
   switch (f.type) {
-    case 'number':  return f.min ?? 0;
-    case 'select':  return f.options?.[0]?.value ?? '';
-    case 'boolean': return false;
-    case 'asset':   return null;
-    default:        return '';
+    case 'number':
+      return f.min ?? 0;
+    case 'select':
+      return f.options?.[0]?.value ?? '';
+    case 'boolean':
+      return false;
+    case 'asset':
+      return null;
+    default:
+      return '';
   }
 }
 
 /** A freshly created `blocks` row: every declared sub-field at its default, plus the
  *  stable id a row now carries from birth (`rowIdField` - one definition, in
  *  lib/row-id.ts, shared with the canvas and the collab projection). */
-function newBlockRow(inp: { fields?: BlockFieldSpec[]; canvas?: Record<string, unknown> }): Record<string, InputValue> {
+function newBlockRow(inp: {
+  fields?: BlockFieldSpec[];
+  canvas?: Record<string, unknown>;
+}): Record<string, InputValue> {
   const row: Record<string, InputValue> = {};
   for (const f of inp.fields ?? []) row[f.id] = blockFieldDefault(f);
   row[rowIdField(inp)] = ulid();
@@ -2238,10 +2725,14 @@ function attachedControlHtml(input: InputModelItem): string {
   if (input.display !== 'icon-toggle') return controlHtml(input);
   const opts = input.options ?? [];
   if (!opts.length) return '';
-  const at = Math.max(0, opts.findIndex(o => o.value === input.value));
+  const at = Math.max(
+    0,
+    opts.findIndex((o) => o.value === input.value)
+  );
   const cur = opts[at]!;
   const next = opts[(at + 1) % opts.length]!;
-  const glyph = cur.icon && hasIcon(cur.icon) ? icon(cur.icon, { size: 16 }) : escape(cur.label ?? cur.value);
+  const glyph =
+    cur.icon && hasIcon(cur.icon) ? icon(cur.icon, { size: 16 }) : escape(cur.label ?? cur.value);
   const title = `${input.label ?? input.id}: ${cur.label ?? cur.value} - switch to ${next.label ?? next.value}`;
   // Jelly soft-body icon button (flag-gated). Its inner <button> click is
   // composed, so it bubbles to the host and the [data-toggle-id] click handler
@@ -2265,8 +2756,13 @@ const TABLE_VIRTUALIZE_ROWS = 50;
 // cycle so a cell edit doesn't fling the grid back to the top.
 const tableGridScroll = new Map<string, number>();
 
-function controlHtml(input: InputModelItem, modelValues: Record<string, InputValue> = {}, policy?: InputPolicy, attachedHtml = ''): string {
-  const id  = escape(input.id);
+function controlHtml(
+  input: InputModelItem,
+  modelValues: Record<string, InputValue> = {},
+  policy?: InputPolicy,
+  attachedHtml = ''
+): string {
+  const id = escape(input.id);
   const val = escape(input.value ?? '');
   switch (input.control) {
     case 'textarea':
@@ -2281,18 +2777,31 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       // rangeWhen lets a slider's bounds depend on another input (e.g. per-pose
       // limits): the first entry whose `when` matches the current model wins,
       // overriding min/max/step. Mirrors showIf, matched against modelValues.
-      const rangeWhen = (input as { rangeWhen?: { when?: Record<string, InputValue>; min?: number; max?: number; step?: number }[] }).rangeWhen;
+      const rangeWhen = (
+        input as {
+          rangeWhen?: {
+            when?: Record<string, InputValue>;
+            min?: number;
+            max?: number;
+            step?: number;
+          }[];
+        }
+      ).rangeWhen;
       const rw = Array.isArray(rangeWhen)
-        ? rangeWhen.find(r => Object.entries(r.when ?? {}).every(([k, v]) => modelValues[k] === v))
+        ? rangeWhen.find((r) =>
+            Object.entries(r.when ?? {}).every(([k, v]) => modelValues[k] === v)
+          )
         : null;
-      const min  = rw?.min  ?? input.min  ?? 0;
-      const max  = rw?.max  ?? input.max  ?? 100;
+      const min = rw?.min ?? input.min ?? 0;
+      const max = rw?.max ?? input.max ?? 100;
       const step = rw?.step ?? input.step ?? 1;
       // The value is clamped into the active range by customSliderHtml, so a
       // leftover out-of-range value (e.g. carried from another pose, before the
       // hook snaps it back) can't push the thumb/fill past the track.
       return customSliderHtml({
-        min, max, step,
+        min,
+        max,
+        step,
         value: parseFloat(String(input.value ?? min)),
         unit: input.unit ?? input.suffix ?? '',
         label: input.label ?? id,
@@ -2309,10 +2818,18 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       // brandFonts: append every font the user added to their brand as extra options
       // (de-duped against the manifest's own), so a font picker lists the whole brand
       // type kit - mirrors the same flag on a `blocks` select sub-field.
-      let selOpts = (input.options ?? []).map(o => ({ value: String(o.value), label: String(o.label ?? o.value), badge: (o as { badge?: string }).badge ? String((o as { badge?: string }).badge) : '' }));
+      let selOpts = (input.options ?? []).map((o) => ({
+        value: String(o.value),
+        label: String(o.label ?? o.value),
+        badge: (o as { badge?: string }).badge ? String((o as { badge?: string }).badge) : '',
+      }));
       if (input.brandFonts) {
-        const seen = new Set(selOpts.map(o => o.value));
-        for (const fam of brandFontFamilies()) if (!seen.has(fam)) { selOpts.push({ value: fam, label: fam, badge: '' }); seen.add(fam); }
+        const seen = new Set(selOpts.map((o) => o.value));
+        for (const fam of brandFontFamilies())
+          if (!seen.has(fam)) {
+            selOpts.push({ value: fam, label: fam, badge: '' });
+            seen.add(fam);
+          }
       }
       // Control-plane `choice`: narrow the options to the allowed set (a rendering
       // overlay - the model is untouched; the server enforces the same set). Only
@@ -2320,7 +2837,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       // list never renders an unusable empty select.
       if (policy?.mode === 'choice' && policy.allow?.length) {
         const allow = new Set(policy.allow.map(String));
-        const restricted = selOpts.filter(o => allow.has(o.value));
+        const restricted = selOpts.filter((o) => allow.has(o.value));
         if (restricted.length) selOpts = restricted;
       }
       // Badged picker: when ANY option carries a `badge`, render a radiogroup of
@@ -2335,35 +2852,48 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       // (Hue/Saturation/Luminance). The badge pill is already per-option-conditional,
       // so a badge-less segmented select renders as plain labelled tabs.
       const segmented = input.display === 'segmented';
-      if (segmented || selOpts.some(o => o.badge)) {
+      if (segmented || selOpts.some((o) => o.badge)) {
         const cur = String(input.value ?? '');
-        const btns = selOpts.map(o => {
-          const on = o.value === cur;
-          // vector/raster pills draw the export picker's format glyphs (svg → penTool,
-          // png → image) instead of the word, so the pill and the export chip agree on
-          // what each output kind looks like; the word survives as title + aria-label.
-          // Any other badge string still prints as text.
-          const glyph: IconName | undefined = o.badge === 'vector' ? 'penTool' : o.badge === 'raster' ? 'image' : undefined;
-          const pill = !o.badge ? ''
-            : glyph
-              ? `<span class="badge-select-pill badge-select-pill--icon" data-badge="${escape(o.badge)}" role="img" aria-label="${escape(o.badge)}" title="${escape(o.badge)}">${icon(glyph, { size: 12 })}</span>`
-              : `<span class="badge-select-pill" data-badge="${escape(o.badge)}">${escape(o.badge)}</span>`;
-          return `<button type="button" role="radio" class="badge-select-opt${on ? ' is-on' : ''}"`
-            + ` data-badge-value="${escape(o.value)}" aria-checked="${on ? 'true' : 'false'}"`
-            + ` tabindex="${on ? '0' : '-1'}"${on ? ` data-input-id="${id}"` : ''}>`
-            + `<span class="badge-select-label">${escape(o.label)}</span>`
-            + pill
-            + `</button>`;
-        }).join('');
+        const btns = selOpts
+          .map((o) => {
+            const on = o.value === cur;
+            // vector/raster pills draw the export picker's format glyphs (svg → penTool,
+            // png → image) instead of the word, so the pill and the export chip agree on
+            // what each output kind looks like; the word survives as title + aria-label.
+            // Any other badge string still prints as text.
+            const glyph: IconName | undefined =
+              o.badge === 'vector' ? 'penTool' : o.badge === 'raster' ? 'image' : undefined;
+            const pill = !o.badge
+              ? ''
+              : glyph
+                ? `<span class="badge-select-pill badge-select-pill--icon" data-badge="${escape(o.badge)}" role="img" aria-label="${escape(o.badge)}" title="${escape(o.badge)}">${icon(glyph, { size: 12 })}</span>`
+                : `<span class="badge-select-pill" data-badge="${escape(o.badge)}">${escape(o.badge)}</span>`;
+            return (
+              `<button type="button" role="radio" class="badge-select-opt${on ? ' is-on' : ''}"` +
+              ` data-badge-value="${escape(o.value)}" aria-checked="${on ? 'true' : 'false'}"` +
+              ` tabindex="${on ? '0' : '-1'}"${on ? ` data-input-id="${id}"` : ''}>` +
+              `<span class="badge-select-label">${escape(o.label)}</span>` +
+              pill +
+              `</button>`
+            );
+          })
+          .join('');
         // A long list of short labels lays out two-up (compactOptionGrid). The
         // segmented variant is already a single row, so it never takes it.
-        const compact = !segmented && compactOptionGrid(selOpts.map(o => o.label));
-        const variant = segmented ? ' badge-select--segmented' : compact ? ' badge-select--compact' : '';
+        const compact = !segmented && compactOptionGrid(selOpts.map((o) => o.label));
+        const variant = segmented
+          ? ' badge-select--segmented'
+          : compact
+            ? ' badge-select--compact'
+            : '';
         return `<div class="badge-select${variant}" role="radiogroup" data-badge-select="${id}" aria-label="${escape(input.label ?? id)}">${btns}</div>`;
       }
-      return `<select data-input-id="${id}">${selOpts.map(o =>
-        `<option value="${escape(o.value)}" ${o.value === String(input.value ?? '') ? 'selected' : ''}>${escape(o.label)}</option>`
-      ).join('')}</select>`;
+      return `<select data-input-id="${id}">${selOpts
+        .map(
+          (o) =>
+            `<option value="${escape(o.value)}" ${o.value === String(input.value ?? '') ? 'selected' : ''}>${escape(o.label)}</option>`
+        )
+        .join('')}</select>`;
     }
     case 'checkbox':
       // Jelly effects: plain boolean rows render the soft-body switch. Pill-display
@@ -2381,34 +2911,36 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       return `<input type="text" data-input-id="${id}" value="${val}" placeholder="(palette picker: stub)">`;
     case 'asset-picker': {
       const v = input.value as AssetRef | null;
-      const currentLabel = asRow(v?.meta as InputValue | undefined).name ?? v?.id ?? 'Choose asset…';
+      const currentLabel =
+        asRow(v?.meta as InputValue | undefined).name ?? v?.id ?? 'Choose asset…';
       const hasValue = Boolean(input.value);
       // A selected asset carries a resolved blob: URL (see runtime resolveAssetRefs)
       // - show it as a small preview so the picked image is visible at a glance.
       // A lottie ref's URL is the animation JSON (unrenderable in <img>), so it
       // gets a play-glyph stub instead.
       const thumbUrl = v?.url;
-      const thumb = v?.type === 'lottie'
-        ? `<span class="asset-picker-thumb-inline asset-picker-thumb-lottie" aria-hidden="true">&#9654;</span>`
-        // An audio ref's URL is an .mp3/.opus/.xm - an <img> at it can only ever
-        // render the browser's broken-image icon. Same trap the picker and catalog
-        // grids had; this is the THIRD renderer, so the audio branch has to be added
-        // wherever a thumbnail is chosen by type, not just where it was first noticed.
-        // The glyph is the honest placeholder; the tile upgrades to the real waveform
-        // once peaks exist (mountAudioThumbs finds it by [data-audio-thumb]).
-        : v?.type === 'audio'
-          ? `<span class="asset-picker-thumb-inline asset-picker-thumb-audio"
+      const thumb =
+        v?.type === 'lottie'
+          ? `<span class="asset-picker-thumb-inline asset-picker-thumb-lottie" aria-hidden="true">&#9654;</span>`
+          : // An audio ref's URL is an .mp3/.opus/.xm - an <img> at it can only ever
+            // render the browser's broken-image icon. Same trap the picker and catalog
+            // grids had; this is the THIRD renderer, so the audio branch has to be added
+            // wherever a thumbnail is chosen by type, not just where it was first noticed.
+            // The glyph is the honest placeholder; the tile upgrades to the real waveform
+            // once peaks exist (mountAudioThumbs finds it by [data-audio-thumb]).
+            v?.type === 'audio'
+            ? `<span class="asset-picker-thumb-inline asset-picker-thumb-audio"
                    data-audio-thumb="${escape(v.id)}"
                    data-audio-fp="${escape(peaksFingerprint(v))}"
                    aria-hidden="true">${audioThumbPlaceholder({})}</span>`
-          // A video URL in an <img> is a broken-image icon (same trap as audio). A
-          // muted <video> at #t=0.1 paints a real poster frame in the same tile.
-          : v?.type === 'video' && thumbUrl
-            ? `<video class="asset-picker-thumb-inline" src="${escape(thumbUrl)}#t=0.1" muted playsinline preload="metadata" aria-hidden="true"></video>`
-            : thumbUrl
-              ? `<img class="asset-picker-thumb-inline" src="${escape(thumbUrl)}" alt="">`
-              : '';
-      // An image minted from a pasted Lolly link keeps its origin in meta.toolUrl - 
+            : // A video URL in an <img> is a broken-image icon (same trap as audio). A
+              // muted <video> at #t=0.1 paints a real poster frame in the same tile.
+              v?.type === 'video' && thumbUrl
+              ? `<video class="asset-picker-thumb-inline" src="${escape(thumbUrl)}#t=0.1" muted playsinline preload="metadata" aria-hidden="true"></video>`
+              : thumbUrl
+                ? `<img class="asset-picker-thumb-inline" src="${escape(thumbUrl)}" alt="">`
+                : '';
+      // An image minted from a pasted Lolly link keeps its origin in meta.toolUrl -
       // the canonical, re-renderable embed URL (see compose.renderUrl). Surface that
       // provenance and an Edit affordance that re-opens the source tool's own inputs
       // (openEmbedEditor) so the editor can tweak it and re-apply. Plain library /
@@ -2426,39 +2958,67 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       // PREVIEW the sound in-tool. Ingest already stamps ref.meta.{width,height,
       // durationMs} (picker.ts), so no re-probe. They reuse existing channels - the
       // export size/length inputs and a detached <audio> - see the handlers below.
-      const sW = Number(metaRow.width), sH = Number(metaRow.height), sDur = Number(metaRow.durationMs);
+      const sW = Number(metaRow.width),
+        sH = Number(metaRow.height),
+        sDur = Number(metaRow.durationMs);
       const at = input.assetType;
       const isImgSlot = at === 'raster' || at === 'image' || at === 'vector';
       const isVidSlot = at === 'video' || v?.type === 'video';
       const isAudSlot = at === 'audio' || v?.type === 'audio';
       const slotBtns: string[] = [];
       if (hasValue && (isImgSlot || isVidSlot) && sW > 0 && sH > 0)
-        slotBtns.push(`<button type="button" class="slot-act" data-fit-id="${id}" data-fit-w="${sW}" data-fit-h="${sH}" title="Set the canvas to ${sW}×${sH}px">⤡ ${isVidSlot ? 'Match size' : 'Fit canvas'}</button>`);
+        slotBtns.push(
+          `<button type="button" class="slot-act" data-fit-id="${id}" data-fit-w="${sW}" data-fit-h="${sH}" title="Set the canvas to ${sW}×${sH}px">⤡ ${isVidSlot ? 'Match size' : 'Fit canvas'}</button>`
+        );
       if (hasValue && (isVidSlot || isAudSlot) && sDur > 0)
-        slotBtns.push(`<button type="button" class="slot-act" data-matchdur-id="${id}" data-dur-ms="${sDur}" title="Set the export length to ${(sDur / 1000).toFixed(1)}s">⏱ Match length</button>`);
+        slotBtns.push(
+          `<button type="button" class="slot-act" data-matchdur-id="${id}" data-dur-ms="${sDur}" title="Set the export length to ${(sDur / 1000).toFixed(1)}s">⏱ Match length</button>`
+        );
       if (hasValue && (isVidSlot || isAudSlot) && v?.url)
-        slotBtns.push(`<button type="button" class="slot-act slot-play" data-preview-id="${id}" data-media-url="${escape(v.url)}" aria-label="Preview the sound">▶ Preview</button>`);
+        slotBtns.push(
+          `<button type="button" class="slot-act slot-play" data-preview-id="${id}" data-media-url="${escape(v.url)}" aria-label="Preview the sound">▶ Preview</button>`
+        );
       // The card reads top-to-bottom as a hierarchy: a SOURCE tab row (this pick
       // tab, plus Use camera / Play which live-controls.ts drops in beside it), then
       // a PREVIEW area, then a SETTINGS row. The tab names the source ("Use image");
       // the caption under the preview names the loaded asset.
-      const kind = isAudSlot ? 'audio' : isVidSlot ? 'video'
-        : (at === 'lottie' || v?.type === 'lottie') ? 'animation'
-        : (at === 'raster' || at === 'image' || at === 'vector') ? 'image' : 'asset';
-      const pickLabel = kind === 'audio' ? 'Use audio'
-        : kind === 'video' ? 'Use video'
-        : kind === 'animation' ? 'Use animation'
-        : kind === 'image' ? 'Use image'
-        : hasValue ? 'Change' : 'Choose…';
-      const sourceIcon = icon(kind === 'audio' ? 'music' : kind === 'video' ? 'play' : 'image', { size: 15 });
-      const spark = fromTool ? '<span class="asset-lolly-spark" aria-hidden="true">&#10022;</span> ' : '';
+      const kind = isAudSlot
+        ? 'audio'
+        : isVidSlot
+          ? 'video'
+          : at === 'lottie' || v?.type === 'lottie'
+            ? 'animation'
+            : at === 'raster' || at === 'image' || at === 'vector'
+              ? 'image'
+              : 'asset';
+      const pickLabel =
+        kind === 'audio'
+          ? 'Use audio'
+          : kind === 'video'
+            ? 'Use video'
+            : kind === 'animation'
+              ? 'Use animation'
+              : kind === 'image'
+                ? 'Use image'
+                : hasValue
+                  ? 'Change'
+                  : 'Choose…';
+      const sourceIcon = icon(kind === 'audio' ? 'music' : kind === 'video' ? 'play' : 'image', {
+        size: 15,
+      });
+      const spark = fromTool
+        ? '<span class="asset-lolly-spark" aria-hidden="true">&#10022;</span> '
+        : '';
       // Settings zone: the attached fit/cover toggle (attachTo - always an asset
       // fit-toggle in the catalog) + the opt-in slot actions (Fit canvas / Match
       // length / Preview). Both belong to the card, below the preview.
       const settingsBits: string[] = [];
       if (attachedHtml) settingsBits.push(attachedHtml);
-      if (slotBtns.length) settingsBits.push(`<div class="slot-actions">${slotBtns.join('')}</div>`);
-      const settings = settingsBits.length ? `<div class="asset-slot-settings">${settingsBits.join('')}</div>` : '';
+      if (slotBtns.length)
+        settingsBits.push(`<div class="slot-actions">${slotBtns.join('')}</div>`);
+      const settings = settingsBits.length
+        ? `<div class="asset-slot-settings">${settingsBits.join('')}</div>`
+        : '';
       // A Lolly-backed slot reads differently at a glance (is-lolly: brand-tinted
       // preview + a ✦ spark on the caption) so "this image is live, not a file"
       // is visible before clicking - the click then offers edit-or-replace.
@@ -2466,20 +3026,36 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
         <div class="asset-slot-source">
           <button type="button" class="asset-picker-trigger asset-slot-tab${hasValue ? ' is-active' : ''}" data-input-id="${id}">${sourceIcon}<span class="asset-slot-tab-label">${escape(pickLabel)}</span></button>
         </div>
-        ${hasValue ? `<div class="asset-slot-preview">
+        ${
+          hasValue
+            ? `<div class="asset-slot-preview">
           ${thumb}
           <button type="button" class="asset-clear" data-clear-id="${id}" aria-label="Clear selection">&#x2715;</button>
         </div>
-        <div class="asset-slot-caption" title="${escape(currentLabel)}">${spark}${escape(currentLabel)}</div>` : ''}
+        <div class="asset-slot-caption" title="${escape(currentLabel)}">${spark}${escape(currentLabel)}</div>`
+            : ''
+        }
         ${settings}
-      </div>${fromTool ? `<div class="asset-from-tool">
+      </div>${
+        fromTool
+          ? `<div class="asset-from-tool">
         <span class="asset-from-tool-label"><span class="asset-from-tool-spark" aria-hidden="true">&#10022;</span> from <strong>${escape(fromTool)}</strong></span>
         <button type="button" class="asset-edit" data-edit-id="${id}">Edit</button>
-      </div>` : ''}${bakedName ? `<div class="asset-from-tool asset-from-tool--baked">
+      </div>`
+          : ''
+      }${
+        bakedName
+          ? `<div class="asset-from-tool asset-from-tool--baked">
         <span class="asset-from-tool-label"><span class="asset-from-tool-spark" aria-hidden="true">&#10052;</span> baked from <strong>${escape(bakedName)}</strong></span>
-        ${canRebake ? `<button type="button" class="asset-edit" data-baked-edit-id="${id}">Edit</button>
-        <button type="button" class="asset-edit" data-rebake-id="${id}">Re-bake</button>` : ''}
-      </div>` : ''}`;
+        ${
+          canRebake
+            ? `<button type="button" class="asset-edit" data-baked-edit-id="${id}">Edit</button>
+        <button type="button" class="asset-edit" data-rebake-id="${id}">Re-bake</button>`
+            : ''
+        }
+      </div>`
+          : ''
+      }`;
     }
     case 'file-picker': {
       // A picked file is a FileRef (bytes + metadata) the hook transforms; the
@@ -2494,8 +3070,8 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       if (input.multiple) {
         // A batch input holds an ARRAY of FileRefs (empty when none). The trigger adds
         // more; each chosen file lists with its own remove-×.
-        const refs = (Array.isArray(input.value) ? input.value : []).filter(
-          (v): v is InputFile => Boolean(v && typeof v === 'object' && (v as InputFile).__file),
+        const refs = (Array.isArray(input.value) ? input.value : []).filter((v): v is InputFile =>
+          Boolean(v && typeof v === 'object' && (v as InputFile).__file)
         );
         return `<div class="file-picker" data-input-id="${id}" data-multiple="1">
           <input type="file" class="file-native" ${accept ? `accept="${escape(accept)}"` : ''} multiple hidden>
@@ -2503,7 +3079,10 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
           ${refs.length ? `<div class="file-list">${refs.map((r, i) => chosenRow(r, i)).join('')}</div>` : ''}
         </div>`;
       }
-      const ref = input.value && typeof input.value === 'object' && (input.value as InputFile).__file ? (input.value as InputFile) : null;
+      const ref =
+        input.value && typeof input.value === 'object' && (input.value as InputFile).__file
+          ? (input.value as InputFile)
+          : null;
       return `<div class="file-picker" data-input-id="${id}">
         <input type="file" class="file-native" ${accept ? `accept="${escape(accept)}"` : ''} hidden>
         <button type="button" class="file-trigger">${ref ? 'Replace file…' : 'Choose file…'}</button>
@@ -2522,16 +3101,36 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       // field handler, which skips anything inside .table-input.
       const t = normalizeTableValue(input.value) ?? { columns: [], rows: [] };
       const cellAttrs = (r: number, c: number): string => `data-field-id="${id}:t:${r}:${c}"`;
-      const head = t.columns.map((c, ci) => `<th>
+      const head = t.columns
+        .map(
+          (c, ci) => `<th>
           <input class="table-cell table-cell--head" ${cellAttrs(-1, ci)} value="${escape(c)}" aria-label="Column ${ci + 1} heading">
           <button type="button" class="table-del-col" data-table-del-col="${ci}" aria-label="Remove column ${escape(c || String(ci + 1))}">&#x2715;</button>
-        </th>`).join('');
+        </th>`
+        )
+        .join('');
       // Per-column editors (manifest `columnEditors`, matched to columns by
       // position). Presentation only: whichever editor writes a cell, the stored
       // value is the same plain string, so URL mode and the CLI never see this.
-      const body = t.rows.map((row, ri) => `<tr>${row.map((cell, ci) =>
-          tableBodyCellHtml(cell, ri, ci, t.columns, tableColumnEditor(input.columnEditors, ci), `${input.id}:t:${ri}:${ci}`)).join('')
-        }<td class="table-rowctl"><button type="button" class="table-del-row" data-table-del-row="${ri}" aria-label="Remove row ${ri + 1}">&#x2715;</button></td></tr>`).join('');
+      const body = t.rows
+        .map(
+          (row, ri) =>
+            `<tr>${row
+              .map((cell, ci) =>
+                tableBodyCellHtml(
+                  cell,
+                  ri,
+                  ci,
+                  t.columns,
+                  tableColumnEditor(input.columnEditors, ci),
+                  `${input.id}:t:${ri}:${ci}`
+                )
+              )
+              .join(
+                ''
+              )}<td class="table-rowctl"><button type="button" class="table-del-row" data-table-del-row="${ri}" aria-label="Remove row ${ri + 1}">&#x2715;</button></td></tr>`
+        )
+        .join('');
       // A blank placeholder row always waits below the filled rows (and IS the
       // first row of an empty table). It renders past the value at the next row
       // index, so when typing makes it real the rebuilt cell keeps the same
@@ -2539,9 +3138,18 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       // while every cell is empty, so an untouched placeholder never reaches the
       // value or the share link. No delete button - there is nothing to remove.
       const ghost = wantsGhostRow(t.rows)
-        ? `<tr data-table-ghost>${t.columns.map((_c, ci) =>
-            tableBodyCellHtml('', t.rows.length, ci, t.columns, tableColumnEditor(input.columnEditors, ci), `${input.id}:t:${t.rows.length}:${ci}`)).join('')
-          }<td class="table-rowctl"></td></tr>`
+        ? `<tr data-table-ghost>${t.columns
+            .map((_c, ci) =>
+              tableBodyCellHtml(
+                '',
+                t.rows.length,
+                ci,
+                t.columns,
+                tableColumnEditor(input.columnEditors, ci),
+                `${input.id}:t:${t.rows.length}:${ci}`
+              )
+            )
+            .join('')}<td class="table-rowctl"></td></tr>`
         : '';
       // Past the threshold, a big table renders the virtualized data-grid (mounted in
       // the wiring pass below) instead of a full <table> of live cells - same
@@ -2556,7 +3164,7 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       // The pop-out sits at the grid's top-right corner, not in the toolbar
       // below: it acts on the TABLE, and in a sidebar that toolbar can be a long
       // scroll away from the header you were reading when you decided the grid
-      // was too cramped. Its own bar rather than an overlay on the corner cell - 
+      // was too cramped. Its own bar rather than an overlay on the corner cell -
       // the last column's remove-× already lives there.
       return `<div class="table-input" data-table-id="${id}" data-column-editors="${(input.columnEditors ?? []).join(',')}">
         <div class="table-headbar">
@@ -2574,18 +3182,19 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       </div>`;
     }
     case 'blocks': {
-      const items   = Array.isArray(input.value) ? input.value : [];
-      const fields  = input.fields ?? [];
+      const items = Array.isArray(input.value) ? input.value : [];
+      const fields = input.fields ?? [];
       // addMenu turns "+ Add" into a typed menu and makes one sub-field the
       // block's fixed discriminator (shown as a head label, not an editable
       // control). Other sub-fields can opt into per-type visibility via showFor.
-      const addMenu  = input.addMenu || null;
-      const discr    = addMenu ? fields.find(f => f.id === addMenu.field) : null;
+      const addMenu = input.addMenu || null;
+      const discr = addMenu ? fields.find((f) => f.id === addMenu.field) : null;
       const typeOpts = discr?.options ?? [];
-      const typeLabel = (v: InputValue | null | undefined): unknown => typeOpts.find(o => o.value === v)?.label ?? (v ?? '');
+      const typeLabel = (v: InputValue | null | undefined): unknown =>
+        typeOpts.find((o) => o.value === v)?.label ?? v ?? '';
 
       // Stack a label above a control inside a typed block; plain controls
-      // (untyped blocks) render bare to keep the legacy compact row layout - 
+      // (untyped blocks) render bare to keep the legacy compact row layout -
       // unless the input opts in with `labelledFields` (e.g. logo-wall, whose
       // optional per-logo controls aren't self-evident).
       const labelEach = !!(addMenu || input.labelledFields);
@@ -2601,9 +3210,11 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
           const glyph = icon(f.icon, { size: 15, strokeWidth: 2 });
           if (f.help) {
             const ht = helpTip(`${f.label ?? f.id} - ${f.help}`);
-            return `<div class="block-control block-control--ico${cls}">`
-              + `<button type="button" class="help-tip-btn block-control-ico" aria-label="${name}" aria-expanded="false" aria-controls="${ht.id}">${glyph}</button>`
-              + `${inner}${ht.pop}</div>`;
+            return (
+              `<div class="block-control block-control--ico${cls}">` +
+              `<button type="button" class="help-tip-btn block-control-ico" aria-label="${name}" aria-expanded="false" aria-controls="${ht.id}">${glyph}</button>` +
+              `${inner}${ht.pop}</div>`
+            );
           }
           return `<div class="block-control block-control--ico${cls}"><span class="block-control-ico" title="${name}" aria-hidden="true">${glyph}</span>${inner}</div>`;
         }
@@ -2616,13 +3227,19 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       // control can depend on both another block field and a global toggle.
       const blockShowIf = (f: BlockFieldSpec, item: BlockRow): boolean => {
         if (!f.showIf) return true;
-        return Object.entries(f.showIf).every(([k, v]) =>
-          ((item && k in item) ? item[k] : modelValues[k]) === v);
+        return Object.entries(f.showIf).every(
+          ([k, v]) => (item && k in item ? item[k] : modelValues[k]) === v
+        );
       };
 
-      const blockField = (f: BlockFieldSpec, item: BlockRow, idx: number, typeVal: InputValue | null | undefined): string => {
+      const blockField = (
+        f: BlockFieldSpec,
+        item: BlockRow,
+        idx: number,
+        typeVal: InputValue | null | undefined
+      ): string => {
         const fieldId = `${id}:${idx}:${escape(f.id)}`;
-        if (addMenu && f.id === addMenu.field) return '';                 // discriminator → head label
+        if (addMenu && f.id === addMenu.field) return ''; // discriminator → head label
         if (Array.isArray(f.showFor) && !f.showFor.includes(typeVal as string)) return '';
         if (!blockShowIf(f, item)) return '';
 
@@ -2636,27 +3253,42 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
             of: f.optionsFrom,
             ownerInputId: input.id,
             idx,
-            getRows: (inId: string) => (Array.isArray(modelValues[inId]) ? modelValues[inId] : []) as BlockRow[],
+            getRows: (inId: string) =>
+              (Array.isArray(modelValues[inId]) ? modelValues[inId] : []) as BlockRow[],
             ownerNestingCfg: input.nesting ? nestingConfig(input) : null,
           });
           if (freeText) {
             // Combobox - pick an existing target or type a new id (kanban columns).
             const listId = `dl-${id}-${idx}-${escape(f.id)}`;
-            const dlOpts = options.map(o => `<option value="${escape(o.value)}">${escape(o.label)}</option>`).join('');
-            return labelled(f, `<input class="block-field block-field--ref" list="${listId}" data-field-id="${fieldId}"
+            const dlOpts = options
+              .map((o) => `<option value="${escape(o.value)}">${escape(o.label)}</option>`)
+              .join('');
+            return labelled(
+              f,
+              `<input class="block-field block-field--ref" list="${listId}" data-field-id="${fieldId}"
               value="${escape(cur)}" placeholder="${escape(f.placeholder ?? emptyLabel ?? '- none -')}"
-              aria-label="${escape(f.label ?? f.id)}"><datalist id="${listId}">${dlOpts}</datalist>`);
+              aria-label="${escape(f.label ?? f.id)}"><datalist id="${listId}">${dlOpts}</datalist>`
+            );
           }
           // Strict select. A stored value matching no current row is surfaced as a
           // selected "(unknown)" option rather than silently dropped - so a stale or
           // mistyped reference is visible instead of just "the link didn't work".
-          const known = options.some(o => o.value === cur);
+          const known = options.some((o) => o.value === cur);
           const empty = `<option value=""${cur === '' ? ' selected' : ''}>${escape(emptyLabel ?? '- none -')}</option>`;
-          const unknown = (cur !== '' && !known)
-            ? `<option value="${escape(cur)}" selected>${escape(cur)} (unknown)</option>` : '';
-          const opts = options.map(o =>
-            `<option value="${escape(o.value)}"${o.value === cur ? ' selected' : ''}>${escape(o.label)}</option>`).join('');
-          return labelled(f, `<select class="block-field block-field--ref" data-field-id="${fieldId}" aria-label="${escape(f.label ?? f.id)}">${empty}${unknown}${opts}</select>`);
+          const unknown =
+            cur !== '' && !known
+              ? `<option value="${escape(cur)}" selected>${escape(cur)} (unknown)</option>`
+              : '';
+          const opts = options
+            .map(
+              (o) =>
+                `<option value="${escape(o.value)}"${o.value === cur ? ' selected' : ''}>${escape(o.label)}</option>`
+            )
+            .join('');
+          return labelled(
+            f,
+            `<select class="block-field block-field--ref" data-field-id="${fieldId}" aria-label="${escape(f.label ?? f.id)}">${empty}${unknown}${opts}</select>`
+          );
         }
 
         if (f.type === 'boolean') {
@@ -2684,7 +3316,10 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
           // lazy token-aware swatches) - `block` spans the popover across the
           // sidebar and wireColorField's onChange routes the composite id back
           // into this block's row (see the ':' route in the wiring below).
-          return labelled(f, colorFieldHtml(fieldId, String(item[f.id] ?? '').trim(), { block: true }));
+          return labelled(
+            f,
+            colorFieldHtml(fieldId, String(item[f.id] ?? '').trim(), { block: true })
+          );
         }
 
         if (f.type === 'select') {
@@ -2692,28 +3327,50 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
           // brandFonts: append every font the user added to their brand as extra
           // options (de-duped against the manifest's own), so a font picker lists
           // the whole brand type kit, not just a hardcoded pair.
-          let choices = (f.options ?? []).map(o => ({ value: String(o.value), label: String(o.label ?? o.value) }));
+          let choices = (f.options ?? []).map((o) => ({
+            value: String(o.value),
+            label: String(o.label ?? o.value),
+          }));
           if (f.brandFonts) {
-            const seen = new Set(choices.map(o => o.value));
-            for (const fam of brandFontFamilies()) if (!seen.has(fam)) { choices.push({ value: fam, label: fam }); seen.add(fam); }
+            const seen = new Set(choices.map((o) => o.value));
+            for (const fam of brandFontFamilies())
+              if (!seen.has(fam)) {
+                choices.push({ value: fam, label: fam });
+                seen.add(fam);
+              }
           }
-          const opts = choices.map(o =>
-            `<option value="${escape(o.value)}" ${o.value === cur ? 'selected' : ''}>${escape(o.label)}</option>`).join('');
-          return labelled(f, `<select class="block-field" data-field-id="${fieldId}" aria-label="${escape(f.label ?? f.id)}">${opts}</select>`);
+          const opts = choices
+            .map(
+              (o) =>
+                `<option value="${escape(o.value)}" ${o.value === cur ? 'selected' : ''}>${escape(o.label)}</option>`
+            )
+            .join('');
+          return labelled(
+            f,
+            `<select class="block-field" data-field-id="${fieldId}" aria-label="${escape(f.label ?? f.id)}">${opts}</select>`
+          );
         }
 
         if (f.type === 'number') {
-          const min = f.min ?? 0, max = f.max ?? 1, step = f.step ?? 0.01;
+          const min = f.min ?? 0,
+            max = f.max ?? 1,
+            step = f.step ?? 0.01;
           const cur = item[f.id] ?? f.default ?? min;
           // display:'slider' → range track; otherwise a plain number input that shows
           // the value and accepts decimals (e.g. 1.3, 0.5). Mirrors the top-level
           // number-vs-slider convention so block fields read consistently.
           if (f.display === 'slider') {
-            return labelled(f, `<input type="range" class="field-range block-field block-range-input" data-field-id="${fieldId}"
-              min="${min}" max="${max}" step="${step}" value="${escape(cur)}" aria-label="${escape(f.label ?? f.id)}">`);
+            return labelled(
+              f,
+              `<input type="range" class="field-range block-field block-range-input" data-field-id="${fieldId}"
+              min="${min}" max="${max}" step="${step}" value="${escape(cur)}" aria-label="${escape(f.label ?? f.id)}">`
+            );
           }
-          return labelled(f, `<input type="number" class="block-field block-number-input" data-field-id="${fieldId}"
-            min="${min}" max="${max}" step="${step}" value="${escape(cur)}" inputmode="decimal" aria-label="${escape(f.label ?? f.id)}">`);
+          return labelled(
+            f,
+            `<input type="number" class="block-field block-number-input" data-field-id="${fieldId}"
+            min="${min}" max="${max}" step="${step}" value="${escape(cur)}" inputmode="decimal" aria-label="${escape(f.label ?? f.id)}">`
+          );
         }
 
         if (f.type === 'asset') {
@@ -2722,25 +3379,38 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
           // A block image pasted from a Lolly link is re-editable too (mirrors the
           // top-level asset-picker case): a ✦ Edit button keyed on the same field id
           // the picker/clear handlers use re-opens the source tool (openEmbedEditor).
-          const fromTool = asRow(ref.meta).toolUrl ? (asRow(ref.meta).name ?? 'a Lolly tool') : null;
+          const fromTool = asRow(ref.meta).toolUrl
+            ? (asRow(ref.meta).name ?? 'a Lolly tool')
+            : null;
           // A BAKED block image (meta.baked, no toolUrl - mirrors the top-level ❄
           // row): ❄ Edit re-opens the source tool (re-baking on apply) and ↻
           // Re-bake re-renders + freezes in place. Only when meta.bakedFrom survived.
-          const bakedName = asRow(ref.meta).baked === true ? (asRow(ref.meta).name ?? 'a Lolly tool') : null;
+          const bakedName =
+            asRow(ref.meta).baked === true ? (asRow(ref.meta).name ?? 'a Lolly tool') : null;
           const canRebake = bakedName !== null && typeof asRow(ref.meta).bakedFrom === 'string';
           // A lottie ref's URL is JSON - show a play-glyph + name, not a dead <img>.
-          const trigger = !has ? `<span>&#43; ${escape(f.label ?? 'Image')}</span>`
-            : ref.type === 'lottie' ? `<span class="block-asset-lottie"><span aria-hidden="true">&#9654;</span> ${escape(asRow(ref.meta).name ?? ref.id)}</span>`
-            : `<img src="${escape(ref.url)}" alt="">`;
-          return labelled(f, `<div class="block-asset${fromTool ? ' is-lolly' : ''}">
+          const trigger = !has
+            ? `<span>&#43; ${escape(f.label ?? 'Image')}</span>`
+            : ref.type === 'lottie'
+              ? `<span class="block-asset-lottie"><span aria-hidden="true">&#9654;</span> ${escape(asRow(ref.meta).name ?? ref.id)}</span>`
+              : `<img src="${escape(ref.url)}" alt="">`;
+          return labelled(
+            f,
+            `<div class="block-asset${fromTool ? ' is-lolly' : ''}">
             <button type="button" class="block-asset-trigger" data-block-asset="${fieldId}" aria-label="${escape(f.label ?? f.id)}">
               ${trigger}
             </button>
             ${fromTool ? `<button type="button" class="block-asset-edit" data-block-asset-edit="${fieldId}" title="Edit - from ${escape(fromTool)}" aria-label="Edit image, from ${escape(fromTool)}">&#10022;</button>` : ''}
-            ${canRebake ? `<button type="button" class="block-asset-edit block-asset-edit--baked" data-block-baked-edit="${fieldId}" title="Edit - baked from ${escape(bakedName)}" aria-label="Edit image, baked from ${escape(bakedName)}">&#10052;</button>
-            <button type="button" class="block-asset-edit block-asset-edit--baked" data-block-rebake="${fieldId}" title="Re-bake - from ${escape(bakedName)}" aria-label="Re-bake image from ${escape(bakedName)}">&#8635;</button>` : ''}
+            ${
+              canRebake
+                ? `<button type="button" class="block-asset-edit block-asset-edit--baked" data-block-baked-edit="${fieldId}" title="Edit - baked from ${escape(bakedName)}" aria-label="Edit image, baked from ${escape(bakedName)}">&#10052;</button>
+            <button type="button" class="block-asset-edit block-asset-edit--baked" data-block-rebake="${fieldId}" title="Re-bake - from ${escape(bakedName)}" aria-label="Re-bake image from ${escape(bakedName)}">&#8635;</button>`
+                : ''
+            }
             ${has ? `<button type="button" class="block-asset-clear" data-block-asset-clear="${fieldId}" aria-label="Remove ${escape(f.label ?? 'image')}">&#x2715;</button>` : ''}
-          </div>`, ' block-control--full');
+          </div>`,
+            ' block-control--full'
+          );
         }
 
         // A field can opt into a multi-line textarea for specific block kinds
@@ -2760,7 +3430,10 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
           aria-label="${escape(f.label ?? f.id)}">`;
       };
 
-      const removeBtn = (idx: number, label: unknown): string => `<button type="button" class="block-remove" draggable="false"
+      const removeBtn = (
+        idx: number,
+        label: unknown
+      ): string => `<button type="button" class="block-remove" draggable="false"
         data-block-remove data-block-input="${id}" data-block-index="${idx}"
         aria-label="Remove ${escape(label || 'block')}" title="Remove">&#x2715;</button>`;
 
@@ -2780,19 +3453,29 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       // Opt-in per-row copy / paste / clear (schema `rowActions`) - sits next to collapse +
       // remove. Copy buffers this row's values; Paste writes the buffer onto another row (so
       // two rows can be made identical); Clear resets the row to its field defaults.
-      const COPY_SVG = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
-      const PASTE_SVG = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="6" y="2" width="4" height="3" rx="1" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
-      const CLEAR_SVG = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M12 8a4 4 0 1 1-1.17-2.83M12 3.5V6H9.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-      const rowActs = (idx: number): string => !input.rowActions ? '' :
-        `<button type="button" class="block-act" data-block-copy data-block-input="${id}" data-block-index="${idx}" draggable="false" aria-label="Copy values" title="Copy values">${COPY_SVG}</button>`
-        + `<button type="button" class="block-act" data-block-paste data-block-input="${id}" data-block-index="${idx}" draggable="false" aria-label="Paste values" title="Paste values">${PASTE_SVG}</button>`
-        + `<button type="button" class="block-act" data-block-clear data-block-input="${id}" data-block-index="${idx}" draggable="false" aria-label="Clear to defaults" title="Clear (reset to defaults)">${CLEAR_SVG}</button>`;
+      const COPY_SVG =
+        '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 5.5V4A1.5 1.5 0 0 0 9 2.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
+      const PASTE_SVG =
+        '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="6" y="2" width="4" height="3" rx="1" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
+      const CLEAR_SVG =
+        '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M12 8a4 4 0 1 1-1.17-2.83M12 3.5V6H9.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      const rowActs = (idx: number): string =>
+        !input.rowActions
+          ? ''
+          : `<button type="button" class="block-act" data-block-copy data-block-input="${id}" data-block-index="${idx}" draggable="false" aria-label="Copy values" title="Copy values">${COPY_SVG}</button>` +
+            `<button type="button" class="block-act" data-block-paste data-block-input="${id}" data-block-index="${idx}" draggable="false" aria-label="Paste values" title="Paste values">${PASTE_SVG}</button>` +
+            `<button type="button" class="block-act" data-block-clear data-block-input="${id}" data-block-index="${idx}" draggable="false" aria-label="Clear to defaults" title="Clear (reset to defaults)">${CLEAR_SVG}</button>`;
 
       // Collapsed-pill summary: the first non-empty text field, plus the first
       // valid colour field as a dot - so a folded block stays identifiable.
       // Both respect the active type's showFor visibility.
-      const visibleFor = (f: BlockFieldSpec, typeVal: InputValue | null | undefined, item: BlockRow): boolean =>
-        !(Array.isArray(f.showFor) && !f.showFor.includes(typeVal as string)) && blockShowIf(f, item);
+      const visibleFor = (
+        f: BlockFieldSpec,
+        typeVal: InputValue | null | undefined,
+        item: BlockRow
+      ): boolean =>
+        !(Array.isArray(f.showFor) && !f.showFor.includes(typeVal as string)) &&
+        blockShowIf(f, item);
       const previewOf = (item: BlockRow, typeVal: InputValue | null | undefined): string => {
         for (const f of fields) {
           if (addMenu && f.id === addMenu.field) continue;
@@ -2831,9 +3514,14 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       const nesting = nestingActive(input, modelValues);
       const nestCfg = nesting ? nestingConfig(input) : null;
 
-      const itemHtml = (item: BlockRow, idx: number, depth = 0, key: string | null = null): string => {
+      const itemHtml = (
+        item: BlockRow,
+        idx: number,
+        depth = 0,
+        key: string | null = null
+      ): string => {
         const typeVal = addMenu ? item[addMenu.field] : null;
-        const inner = fields.map(f => blockField(f, item, idx, typeVal)).join('');
+        const inner = fields.map((f) => blockField(f, item, idx, typeVal)).join('');
         const sw = swatchOf(item, typeVal);
         const swatch = sw ? `<span class="block-head-swatch" style="background:${sw}"></span>` : '';
         const preview = `<span class="block-head-preview">${escape(previewOf(item, typeVal))}</span>`;
@@ -2846,7 +3534,8 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
         const label = addMenu ? typeLabel(typeVal) : '';
         const rowCls = addMenu ? '' : ' block-item--row';
         const nestAttrs = nesting
-          ? ` data-block-nested data-block-key="${escape(key ?? '')}" style="--block-depth:${depth}"` : '';
+          ? ` data-block-nested data-block-key="${escape(key ?? '')}" style="--block-depth:${depth}"`
+          : '';
         const nestCls = nesting ? ` is-nestable${depth > 0 ? ' is-child' : ''}` : '';
         const title = nesting ? 'Drag to move, nest or reorder' : 'Drag to reorder';
         return `<div class="block-item is-typed${rowCls}${nestCls}" data-block-type="${escape(typeVal ?? '')}" data-block-index="${idx}"${nestAttrs}>
@@ -2866,19 +3555,23 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
         const rows = items as BlockRow[];
         const keys = deriveBlockKeys(rows, nestCfg!);
         const order = blockTreeOrder(rows, blockParentIndex(rows, keys, nestCfg!.parentField));
-        itemsHtml = order.map(e => itemHtml(asRow(rows[e.idx]), e.idx, e.depth, keys[e.idx]!)).join('');
+        itemsHtml = order
+          .map((e) => itemHtml(asRow(rows[e.idx]), e.idx, e.depth, keys[e.idx]!))
+          .join('');
       } else {
         itemsHtml = items.map((it, i) => itemHtml(asRow(it), i)).join('');
       }
 
       let adder: string;
       if (addMenu) {
-        const opts = typeOpts.map(o => {
-          const used = items.some(it => asRow(it)[addMenu.field] === o.value);
-          const disabled = used && !o.repeatable;
-          return `<button type="button" class="block-add-option" data-block-add="${id}"
+        const opts = typeOpts
+          .map((o) => {
+            const used = items.some((it) => asRow(it)[addMenu.field] === o.value);
+            const disabled = used && !o.repeatable;
+            return `<button type="button" class="block-add-option" data-block-add="${id}"
             data-block-add-type="${escape(o.value)}"${disabled ? ' disabled' : ''}>${escape(o.label ?? o.value)}</button>`;
-        }).join('');
+          })
+          .join('');
         adder = `<div class="block-add-menu">
           <button type="button" class="block-add block-add--prominent" data-block-add-toggle="${id}" aria-haspopup="true" aria-expanded="false">&#43; ${escape(addMenu.label ?? 'Add')}</button>
           <div class="block-add-options" hidden>${opts}</div>
@@ -2894,18 +3587,24 @@ function controlHtml(input: InputModelItem, modelValues: Record<string, InputVal
       // The "Collapse all" pill is a quiet tidy-up affordance and stays right.
       const canMd = input.mdPaste === true;
       const canData = !!(input as { importData?: unknown }).importData;
-      const kinds = [canMd ? 'Markdown' : '', canData ? 'CSV/JSON' : ''].filter(Boolean).join(' or ');
-      const quickGroup = (canMd || canData)
-        ? `<div class="blocks-quick-group">` +
+      const kinds = [canMd ? 'Markdown' : '', canData ? 'CSV/JSON' : '']
+        .filter(Boolean)
+        .join(' or ');
+      const quickGroup =
+        canMd || canData
+          ? `<div class="blocks-quick-group">` +
             `<button type="button" class="blocks-quick blocks-io" data-blocks-io-paste="${id}" aria-label="Paste ${kinds} from the clipboard" title="Paste ${kinds} from the clipboard"><span class="blocks-quick-ic" aria-hidden="true">&#182;</span> Paste</button>` +
             `<button type="button" class="blocks-quick blocks-io" data-blocks-io-upload="${id}" aria-label="Upload a ${kinds} file" title="Upload a ${kinds} file from your device"><span class="blocks-quick-ic" aria-hidden="true">&#8615;</span> Upload</button>` +
-          `</div>`
-        : '';
-      const collapsePill = items.length > 1
-        ? `<button type="button" class="blocks-collapse-all" data-blocks-collapse-all="${id}" data-mode="collapse" aria-label="Collapse all blocks">Collapse all</button>`
-        : '';
-      const toolbar = (quickGroup || collapsePill)
-        ? `<div class="blocks-toolbar${quickGroup ? ' blocks-toolbar--quick' : ''}">${quickGroup}${collapsePill}</div>` : '';
+            `</div>`
+          : '';
+      const collapsePill =
+        items.length > 1
+          ? `<button type="button" class="blocks-collapse-all" data-blocks-collapse-all="${id}" data-mode="collapse" aria-label="Collapse all blocks">Collapse all</button>`
+          : '';
+      const toolbar =
+        quickGroup || collapsePill
+          ? `<div class="blocks-toolbar${quickGroup ? ' blocks-toolbar--quick' : ''}">${quickGroup}${collapsePill}</div>`
+          : '';
       return `<div class="blocks-input blocks-input--cards${addMenu ? ' blocks-input--typed' : ''}${nesting ? ' blocks-input--tree' : ''}" data-input-id="${id}">
         ${toolbar}
         <div class="blocks-list">${itemsHtml}</div>
@@ -2963,7 +3662,10 @@ function showRebakeError(btn: HTMLElement): void {
   const row = btn.closest('.asset-from-tool, .block-asset');
   if (!row) return;
   row.parentElement?.querySelector('.asset-rebake-error')?.remove();
-  row.insertAdjacentHTML('afterend', `<p class="asset-picker-error asset-rebake-error">Couldn't re-bake this image - the source render failed.</p>`);
+  row.insertAdjacentHTML(
+    'afterend',
+    `<p class="asset-picker-error asset-rebake-error">Couldn't re-bake this image - the source render failed.</p>`
+  );
 }
 
 /**
@@ -2978,7 +3680,7 @@ function showRebakeError(btn: HTMLElement): void {
  *
  * Reuse, not reinvention: the source tool's controls are driven by a throwaway
  * runtime via the SAME renderInputs/syncInputs the main sidebar uses, and every
- * preview + the final commit go through host.compose.renderUrl(buildEmbedUrl(…)) - 
+ * preview + the final commit go through host.compose.renderUrl(buildEmbedUrl(…)) -
  * the SAME minting the paste flow uses. So the re-applied asset round-trips through
  * URL mode + saved sessions exactly like the original; provenance is just the URL
  * we already persist, nothing new is stored.
@@ -2986,7 +3688,15 @@ function showRebakeError(btn: HTMLElement): void {
  * `rebake` (a baked slot editing via its meta.bakedFrom): the commit wraps the
  * fresh render with bakeAssetRef, so editing a frozen image never un-bakes it.
  */
-async function openEmbedEditor(host: WebToolHost, { editUrl, slotLabel, mode = 'edit', rebake = false }: { editUrl?: string; slotLabel?: string; mode?: string; rebake?: boolean } = {}): Promise<AssetRef | null> {
+async function openEmbedEditor(
+  host: WebToolHost,
+  {
+    editUrl,
+    slotLabel,
+    mode = 'edit',
+    rebake = false,
+  }: { editUrl?: string; slotLabel?: string; mode?: string; rebake?: boolean } = {}
+): Promise<AssetRef | null> {
   if (!host.compose?.renderUrl) return null;
   const parsed = parseToolUrl(editUrl);
   if (!parsed) return null;
@@ -3001,16 +3711,19 @@ async function openEmbedEditor(host: WebToolHost, { editUrl, slotLabel, mode = '
     return null; // unknown tool / bad link → silently no-op (button shouldn't have shown)
   }
 
-  return new Promise<AssetRef | null>(resolve => {
+  return new Promise<AssetRef | null>((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'embed-editor-overlay';
-    const fmtOptions = desc!.formats.map(f =>
-      `<option value="${escape(f)}"${f === desc!.format ? ' selected' : ''}>${escape(f.toUpperCase())}</option>`
-    ).join('');
+    const fmtOptions = desc!.formats
+      .map(
+        (f) =>
+          `<option value="${escape(f)}"${f === desc!.format ? ' selected' : ''}>${escape(f.toUpperCase())}</option>`
+      )
+      .join('');
     const titleSlot = escape(slotLabel ?? 'image');
     // 'insert' = filling an empty slot from the picker's Tools/Saved list; 'edit' =
     // re-opening an already-placed Lolly asset via its "from <tool>" badge.
-    const titleVerb  = mode === 'insert' ? 'New' : 'Edit';
+    const titleVerb = mode === 'insert' ? 'New' : 'Edit';
     const applyLabel = mode === 'insert' ? 'Insert' : 'Re-apply to slot';
     overlay.innerHTML = `
       <div class="embed-editor-backdrop" aria-hidden="true"></div>
@@ -3038,25 +3751,25 @@ async function openEmbedEditor(host: WebToolHost, { editUrl, slotLabel, mode = '
           </div>
         </div>
       </div>`;
-    // Return focus to whatever opened the editor (the Edit button) when it closes - 
+    // Return focus to whatever opened the editor (the Edit button) when it closes -
     // matches the picker / export-panel convention so keyboard + AT users keep their
     // place rather than being dropped on <body> behind the (now-removed) scrim.
     const opener = document.activeElement;
     document.body.appendChild(overlay);
 
-    const inputsEl  = overlay.querySelector<PanelEl>('.ee-inputs')!;
-    const fmtSel    = overlay.querySelector<HTMLSelectElement>('.ee-format')!;
-    const wEl       = overlay.querySelector<HTMLInputElement>('.ee-w')!;
-    const hEl       = overlay.querySelector<HTMLInputElement>('.ee-h')!;
+    const inputsEl = overlay.querySelector<PanelEl>('.ee-inputs')!;
+    const fmtSel = overlay.querySelector<HTMLSelectElement>('.ee-format')!;
+    const wEl = overlay.querySelector<HTMLInputElement>('.ee-w')!;
+    const hEl = overlay.querySelector<HTMLInputElement>('.ee-h')!;
     const previewEl = overlay.querySelector<HTMLElement>('.ee-preview')!;
-    const applyBtn  = overlay.querySelector<HTMLButtonElement>('.ee-apply')!;
+    const applyBtn = overlay.querySelector<HTMLButtonElement>('.ee-apply')!;
     // Move focus into the dialog so it's not stranded on the obscured Edit trigger,
     // and contain Tab within it (inert the page behind; backdrop stays clickable).
     overlay.querySelector<HTMLElement>('.embed-editor-close')?.focus();
     const trap: FocusTrap = trapFocus(overlay);
 
-    let pending: AssetRef | null = null;   // the AssetRef "Re-apply" will commit
-    let renderSeq = 0;    // drop a stale render when controls change again
+    let pending: AssetRef | null = null; // the AssetRef "Re-apply" will commit
+    let renderSeq = 0; // drop a stale render when controls change again
     let prevModel: InputModelItem[] | undefined;
 
     // Re-serialise the child's inputs to a canonical embed URL and re-render the
@@ -3074,13 +3787,15 @@ async function openEmbedEditor(host: WebToolHost, { editUrl, slotLabel, mode = '
       previewEl.innerHTML = `<div class="asset-picker-loading">Rendering…</div>`;
       const query = serializeUrlState(child.getModel());
       const url = buildEmbedUrl({ toolId: parsed.toolId, format: fmtSel.value, query });
-      const ref = url ? await host.compose!.renderUrl!(url, {
-        format: fmtSel.value,
-        width:  parseInt(wEl.value, 10) || undefined,
-        height: parseInt(hEl.value, 10) || undefined,
-        unit:   desc!.unit ?? undefined,
-        dpi:    desc!.dpi ?? undefined,
-      } as Parameters<NonNullable<ComposeAPI['renderUrl']>>[1]).catch(() => null) : null;
+      const ref = url
+        ? await host.compose!.renderUrl!(url, {
+            format: fmtSel.value,
+            width: parseInt(wEl.value, 10) || undefined,
+            height: parseInt(hEl.value, 10) || undefined,
+            unit: desc!.unit ?? undefined,
+            dpi: desc!.dpi ?? undefined,
+          } as Parameters<NonNullable<ComposeAPI['renderUrl']>>[1]).catch(() => null)
+        : null;
       if (seq !== renderSeq) return; // a newer change supersedes this render
       if (!ref) {
         previewEl.innerHTML = `<p class="asset-picker-error">Couldn't render this - the inputs may be too large to re-apply as a link.</p>`;
@@ -3092,13 +3807,17 @@ async function openEmbedEditor(host: WebToolHost, { editUrl, slotLabel, mode = '
     };
 
     let debounce: ReturnType<typeof setTimeout> | undefined;
-    const schedulePreview = () => { clearTimeout(debounce); debounce = setTimeout(renderPreview, 300); };
+    const schedulePreview = () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(renderPreview, 300);
+    };
 
     // The child runtime drives the source tool's input panel (the very same
     // renderInputs/syncInputs path as the main sidebar). subscribe fires once
     // immediately (initial render + first preview) and on every later change.
     child.subscribe(({ model }) => {
-      if (!_sliderDragging) prevModel = syncInputs(inputsEl, model, prevModel, child, host, () => {});
+      if (!_sliderDragging)
+        prevModel = syncInputs(inputsEl, model, prevModel, child, host, () => {});
       schedulePreview();
     });
 
@@ -3107,35 +3826,44 @@ async function openEmbedEditor(host: WebToolHost, { editUrl, slotLabel, mode = '
       clearTimeout(debounce);
       renderSeq++; // invalidate any in-flight preview render so it can't write to the detached overlay
       document.removeEventListener('keydown', onKey);
-      NAV_EVENTS.forEach(ev => window.removeEventListener(ev, onNav));
+      NAV_EVENTS.forEach((ev) => window.removeEventListener(ev, onNav));
       // Everything renderInputs parked outside the panel's subtree - the document-
-      // level capture dismissers + the child flatpickrs' body-level calendars - 
+      // level capture dismissers + the child flatpickrs' body-level calendars -
       // in one aggregate call (mirrors mountTool's _cleanup).
       inputsEl._inputsDispose?.();
       overlay.remove();
       if (opener instanceof HTMLElement) opener.focus();
       resolve(value);
     };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); close(null); } };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        close(null);
+      }
+    };
     document.addEventListener('keydown', onKey);
-    // A route change under the open editor (browser Back, an in-app link) cancels it - 
+    // A route change under the open editor (browser Back, an in-app link) cancels it -
     // the body-mounted overlay must never outlive the view that spawned it, and the
     // trap's inert background must be released (NAV_EVENTS contract, utils.ts).
     const onNav = (): void => close(null);
-    NAV_EVENTS.forEach(ev => window.addEventListener(ev, onNav));
+    NAV_EVENTS.forEach((ev) => window.addEventListener(ev, onNav));
 
     overlay.querySelector('.embed-editor-backdrop')!.addEventListener('click', () => close(null));
     overlay.querySelector('.embed-editor-close')!.addEventListener('click', () => close(null));
     overlay.querySelector('.ee-cancel')!.addEventListener('click', () => close(null));
     applyBtn.addEventListener('click', () => {
       if (!pending) return;
-      if (!rebake) { close(pending); return; }
+      if (!rebake) {
+        close(pending);
+        return;
+      }
       // A baked slot keeps its baked-ness: freeze the fresh render before
       // committing. A render the engine refuses to bake (grown past the size
-      // ceiling) keeps the dialog open with the failed-preview error style - 
+      // ceiling) keeps the dialog open with the failed-preview error style -
       // shrink it and re-apply, or cancel to keep the current bytes.
-      try { close(bakeAssetRef(pending)); }
-      catch {
+      try {
+        close(bakeAssetRef(pending));
+      } catch {
         previewEl.innerHTML = `<p class="asset-picker-error">This render is too large to freeze - make it smaller, or cancel to keep the current image.</p>`;
         applyBtn.disabled = true;
         pending = null;
@@ -3151,10 +3879,18 @@ async function openEmbedEditor(host: WebToolHost, { editUrl, slotLabel, mode = '
 // object. Each field can be typed into, or its label dragged horizontally to
 // scrub (Figma-style). Scrubbing sets _sliderDragging so the sidebar isn't
 // rebuilt mid-drag; the canvas still updates live via the runtime subscriber.
-function setupVectorControl(container: HTMLElement, runtime: Runtime, id: string, onDirty: ((id: string) => void) | undefined, input: InputModelItem): void {
+function setupVectorControl(
+  container: HTMLElement,
+  runtime: Runtime,
+  id: string,
+  onDirty: ((id: string) => void) | undefined,
+  input: InputModelItem
+): void {
   const fields = input.fields ?? [];
   const nums = new Map<string, HTMLInputElement>();
-  container.querySelectorAll<HTMLInputElement>('.vec-num').forEach(n => nums.set(n.dataset.vecField!, n));
+  container
+    .querySelectorAll<HTMLInputElement>('.vec-num')
+    .forEach((n) => nums.set(n.dataset.vecField!, n));
 
   const commit = () => {
     const obj: Record<string, InputValue> = {};
@@ -3165,26 +3901,26 @@ function setupVectorControl(container: HTMLElement, runtime: Runtime, id: string
       // The unparseable-field fallback reads the LIVE model, not this render's
       // `input` snapshot - the same staleness rule as the block-row handlers.
       obj[f.id] = Number.isNaN(n)
-        ? (asRow(runtime.getModel().find(i => i.id === id)?.value)[f.id] ?? f.default ?? 0)
+        ? (asRow(runtime.getModel().find((i) => i.id === id)?.value)[f.id] ?? f.default ?? 0)
         : n;
     }
     runtime.setInput(id, obj);
     onDirty?.(id);
   };
 
-  nums.forEach(el => el.addEventListener('input', commit));
+  nums.forEach((el) => el.addEventListener('input', commit));
 
   // The whole field is the scrub surface, not just the symbol - drag anywhere on
   // a value to change it (Figma-style); the symbol is only a visual cue. A plain
   // click (no movement past the threshold) falls through to focus the <input> for
   // typing. Pointer Lock kicks in once dragging starts so the cursor wraps at
   // screen edges and a wide range (e.g. zoom) isn't capped by the sidebar width.
-  container.querySelectorAll<HTMLElement>('.vec-field').forEach(fieldEl => {
+  container.querySelectorAll<HTMLElement>('.vec-field').forEach((fieldEl) => {
     const fieldId = fieldEl.querySelector<HTMLElement>('.vec-scrub')?.dataset.vecScrub;
-    const f  = fields.find(x => x.id === fieldId);
+    const f = fields.find((x) => x.id === fieldId);
     const el = fieldId ? nums.get(fieldId) : undefined;
     if (!f || !el) return;
-    const step  = f.step ?? 1;
+    const step = f.step ?? 1;
     const clamp = (v: number): number => {
       if (f.min !== undefined) v = Math.max(f.min, v);
       if (f.max !== undefined) v = Math.min(f.max, v);
@@ -3192,13 +3928,13 @@ function setupVectorControl(container: HTMLElement, runtime: Runtime, id: string
     };
     let wasDragging = false;
 
-    fieldEl.addEventListener('pointerdown', e => {
+    fieldEl.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
-      const startX   = e.clientX;
+      const startX = e.clientX;
       const startVal = Number(el.value) || 0;
-      let   accumulated = 0;   // total pixel delta once pointer lock is active
-      let   dragging    = false;
-      let   lastVecVal  = String(startVal); // last value we ticked on, so we tick per step
+      let accumulated = 0; // total pixel delta once pointer lock is active
+      let dragging = false;
+      let lastVecVal = String(startVal); // last value we ticked on, so we tick per step
 
       function onMove(ev: PointerEvent): void {
         if (!dragging) {
@@ -3206,8 +3942,8 @@ function setupVectorControl(container: HTMLElement, runtime: Runtime, id: string
           // so the field stays typeable.
           if (Math.abs(ev.clientX - startX) < 4) return;
           dragging = true;
-          _sliderDragging = true;         // keep the sidebar from rebuilding mid-drag
-          el!.blur();                      // leave any text-edit mode
+          _sliderDragging = true; // keep the sidebar from rebuilding mid-drag
+          el!.blur(); // leave any text-edit mode
           document.body.style.cursor = 'ew-resize';
           fieldEl.setPointerCapture(e.pointerId);
           const req = fieldEl.requestPointerLock?.({ unadjustedMovement: true });
@@ -3216,8 +3952,11 @@ function setupVectorControl(container: HTMLElement, runtime: Runtime, id: string
         if (document.pointerLockElement === fieldEl) accumulated += ev.movementX;
         else accumulated = ev.clientX - startX; // keep in sync for the switch to locked mode
         el!.value = String(clamp(startVal + Math.round(accumulated / 4) * step)); // ~1 step / 4px
-        if (el!.value !== lastVecVal) { lastVecVal = el!.value; playScrubTick(); } // detent per step
-        commit();                          // live: canvas re-hydrates, sidebar held
+        if (el!.value !== lastVecVal) {
+          lastVecVal = el!.value;
+          playScrubTick();
+        } // detent per step
+        commit(); // live: canvas re-hydrates, sidebar held
       }
 
       function onUp(): void {
@@ -3230,8 +3969,10 @@ function setupVectorControl(container: HTMLElement, runtime: Runtime, id: string
         if (dragging) {
           _sliderDragging = false;
           wasDragging = true;
-          setTimeout(() => { wasDragging = false; }, 50);
-          commit();                        // final commit now re-renders the sidebar
+          setTimeout(() => {
+            wasDragging = false;
+          }, 50);
+          commit(); // final commit now re-renders the sidebar
         }
       }
 
@@ -3248,13 +3989,21 @@ function setupVectorControl(container: HTMLElement, runtime: Runtime, id: string
 
     // Suppress the click-to-focus that follows a drag so the caret doesn't jump
     // into the field after scrubbing.
-    fieldEl.addEventListener('click', e => {
-      if (wasDragging) { e.preventDefault(); el!.blur(); }
+    fieldEl.addEventListener('click', (e) => {
+      if (wasDragging) {
+        e.preventDefault();
+        el!.blur();
+      }
     });
   });
 }
 
-function setupCustomSlider(el: HTMLElement, runtime: Runtime, id: string, onDirty?: (id: string) => void): void {
+function setupCustomSlider(
+  el: HTMLElement,
+  runtime: Runtime,
+  id: string,
+  onDirty?: (id: string) => void
+): void {
   // Live numeric readout next to the label. The panel rebuild is suppressed during a
   // slider drag (_sliderDragging), so update this span directly or it stalls mid-drag.
   const valueOut = el.closest('.input-row')?.querySelector<HTMLElement>('.input-value');
@@ -3273,9 +4022,21 @@ function setupCustomSlider(el: HTMLElement, runtime: Runtime, id: string, onDirt
     },
     // The panel must not rebuild under a drag - it would replace the element the
     // pointer is captured on.
-    onDragStart() { _sliderDragging = true; },
-    onDragEnd() { _sliderDragging = false; },
+    onDragStart() {
+      _sliderDragging = true;
+    },
+    onDragEnd() {
+      _sliderDragging = false;
+    },
   });
 }
 
-export { syncInputs, openEmbedEditor, scrollToControl, focusSidebarBlock, fileToRef, fmtBytes, makeBlocksDropper };
+export {
+  syncInputs,
+  openEmbedEditor,
+  scrollToControl,
+  focusSidebarBlock,
+  fileToRef,
+  fmtBytes,
+  makeBlocksDropper,
+};

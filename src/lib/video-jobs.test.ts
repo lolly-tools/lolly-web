@@ -28,7 +28,7 @@ globalThis.document = dom.window.document;
 
 const {
   runFramePipeline, MatteAlphaSmoother, lumaHistogram, histogramDelta, SCENE_CUT_THRESHOLD,
-  evenFloor, roundCropRect, cropFrame, videoProvenanceFor, runVideoJob, matteOutputFrames,
+  evenFloor, roundCropRect, cropFrame, videoProvenanceFor, runVideoJob, transcodeVideo, matteOutputFrames,
   lutCreditText, lutCreditParameters,
   extrapolateEstimate, scaledEvenDims, MATTE_MAX_OUTPUT_FRAMES,
   resizeFrameRGBA, makeChromaKeyOp, CHROMA_DEFAULT_KEY, clampMatteLongEdge, MATTE_MAX_INPUT_LONG_EDGE,
@@ -354,6 +354,46 @@ test('runVideoJob: a cancel before any output resolves null and saves nothing', 
   assert.equal(ref, null);
   assert.equal(uploaded.length, 0);
   assert.equal(cap.calls.length, 0);
+});
+
+test('transcodeVideo honours the requested container, fps and bitrate without saving a catalogue copy', async () => {
+  const reader = fakeReader(3, 5, 7);
+  const writer = fakeWriter('webm');
+  let plan: Record<string, unknown> | undefined;
+  const out = await transcodeVideo('blob:clip', { format: 'webm', fps: 24, bitrate: 3_500_000 }, {}, {
+    fetchBytes: async () => ({ blob: new Blob(['src']), bytes: new Uint8Array([1, 2, 3]) }),
+    openReader: async (_blob, fps) => { assert.equal(fps, 24); return reader; },
+    openVideoWriter: async (p) => { plan = p as unknown as Record<string, unknown>; return writer; },
+    hasAudio: async () => false,
+    decodeAudio: async () => null,
+  });
+  assert.equal(out?.format, 'webm');
+  assert.equal(out?.fps, 12, 'the decoder-resolved cadence is reported for provenance');
+  assert.equal(out?.bitrate, 3_500_000);
+  assert.equal(plan?.format, 'webm');
+  assert.equal(plan?.bitrate, 3_500_000);
+  assert.equal(plan?.width, 4, 'odd dimensions are made encoder-safe');
+  assert.equal(plan?.height, 6);
+});
+
+test('transcodeVideo rejects a writer that returns a different container', async () => {
+  await assert.rejects(() => transcodeVideo('blob:clip', { format: 'webm', fps: 0, bitrate: 2_000_000 }, {}, {
+    fetchBytes: async () => ({ blob: new Blob(['src']), bytes: new Uint8Array([1, 2, 3]) }),
+    openReader: async () => fakeReader(1),
+    openVideoWriter: async () => fakeWriter('mp4'),
+    hasAudio: async () => false,
+    decodeAudio: async () => null,
+  }), /MP4 instead of WEBM/);
+});
+
+test('transcodeVideo refuses to silently mute a source whose audio cannot be preserved', async () => {
+  await assert.rejects(() => transcodeVideo('blob:clip', { format: 'mp4', fps: 0 }, {}, {
+    fetchBytes: async () => ({ blob: new Blob(['src']), bytes: new Uint8Array([1, 2, 3]) }),
+    openReader: async () => fakeReader(1),
+    openVideoWriter: async () => fakeWriter('mp4'),
+    hasAudio: async () => true,
+    decodeAudio: async () => null,
+  }), /stopped instead of making a muted file/);
 });
 
 // ── caps + estimate helpers ────────────────────────────────────────────────────

@@ -538,13 +538,15 @@ export function setupStageNav(stageEl: HTMLElement, outerEl: HTMLElement, canvas
     // keys and their Shift siblings ('+' is Shift+'=' and '_' is Shift+'-' on
     // most layouts); the moment Meta/Ctrl/Alt is down the key is the browser's,
     // the same rule timeline-panel.ts's onKey applies to its bindings.
-    // TODO(tauri): the Tauri webviews ship no native page-zoom UI, so on desktop
-    // Cmd+= currently falls through to nothing there. Whole-UI zoom needs the
-    // shell to wire WebviewWindow.setZoom (plus the
-    // core:webview:allow-set-webview-zoom capability) behind these chords - 
-    // neither shell has any zoom hook today (checked bridge-overrides/ and
-    // src-tauri/, 2026-08-10). Web is the priority; do NOT re-capture the chords
-    // here as a workaround.
+    // The desktop shell now answers those chords itself (plans/202 WP4.1). A wry
+    // webview ships no page-zoom UI, so Cmd/Ctrl += - 0 used to fall through to
+    // nothing there; the View > Zoom menu items in
+    // shells/tauri-desktop/src-tauri/src/menu.rs carry the accelerators and call
+    // bridge-overrides/zoom.ts, which drives WebviewWindow.setZoom under the
+    // core:webview:allow-set-webview-zoom capability, clamps to 0.5-3 and saves
+    // the factor in the profile. The mobile shell still has no zoom hook. Nothing
+    // changes here either way: the chords stay the host's, and this handler must
+    // never re-capture them.
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.code === 'Space' && !isTyping()) { spaceDown = true; stageEl.classList.add('is-grabbable'); return; }
     if (isTyping()) return;

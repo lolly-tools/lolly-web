@@ -119,59 +119,59 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  background: hsl(var(--card));
-  color: hsl(var(--card-foreground));
-  border: 1px solid hsl(var(--border));
-  border-radius: calc(var(--radius) * 1.4);
-  box-shadow: 0 12px 32px hsl(0 0% 0% / 0.24);
+  background: var(--ui-color-surface-raised);
+  color: var(--ui-color-text-default);
+  border: 1px solid var(--ui-color-border-default);
+  border-radius: var(--ui-radius-card);
+  box-shadow: var(--ui-elevation-floating);
 }
 @media (prefers-reduced-motion: no-preference) {
-  .profile-menu { animation: profile-menu-in .14s ease both; transform-origin: top right; }
+  .profile-menu { animation: profile-menu-in var(--ui-motion-overlay) var(--ui-motion-standard) both; transform-origin: top right; }
 }
 @keyframes profile-menu-in { from { opacity: 0; transform: translateY(-6px) scale(.98); } to { opacity: 1; transform: none; } }
 
 .profile-menu-theme {
   display: flex; gap: 2px; padding: 3px; margin-bottom: 4px;
-  border: 1px solid hsl(var(--border)); border-radius: var(--radius-pill); background: hsl(var(--muted) / 0.5);
+  border: 1px solid var(--ui-color-border-default); border-radius: var(--ui-radius-pill); background: color-mix(in srgb, var(--ui-color-surface-muted) 50%, transparent);
 }
 .profile-menu-seg {
   flex: 1; display: flex; align-items: center; justify-content: center;
-  padding: 8px 6px; border: 0; border-radius: var(--radius-pill);
-  background: transparent; color: hsl(var(--muted-foreground));
+  padding: 8px 6px; border: 0; border-radius: var(--ui-radius-pill);
+  background: transparent; color: var(--ui-color-text-muted);
   font: inherit; line-height: 1.2; cursor: pointer;
-  transition: background var(--dur-1), color var(--dur-1);
+  transition: background var(--ui-motion-feedback), color var(--ui-motion-feedback);
 }
 .profile-menu-seg svg { width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
-.profile-menu-seg:hover { color: hsl(var(--foreground)); }
+.profile-menu-seg:hover { color: var(--ui-color-text-default); }
 .profile-menu-seg[aria-checked="true"] {
-  background: hsl(var(--card)); color: hsl(var(--foreground)); box-shadow: var(--shadow-1);
+  background: var(--ui-color-surface-raised); color: var(--ui-color-text-default); box-shadow: var(--ui-elevation-control);
 }
-.profile-menu-seg:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.profile-menu-seg:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 2px; }
 
 /* The unified Sound + Neurospicy switch, folded into the menu between the theme
    group and the nav rows. The control styles itself (sound-toggle.ts injects its
    CSS); this only gives it row padding + a divider to match the menu items. */
 .profile-menu-sound {
   padding: 9px 12px; margin-bottom: 4px;
-  border-bottom: 1px solid hsl(var(--border));
+  border-bottom: 1px solid var(--ui-color-border-default);
 }
 
 .profile-menu-item {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  width: 100%; padding: 11px 12px; border: 0; border-radius: var(--radius);
-  background: transparent; color: hsl(var(--foreground));
+  width: 100%; padding: 11px 12px; border: 0; border-radius: var(--ui-radius-panel);
+  background: transparent; color: var(--ui-color-text-default);
   font: inherit; font-size: var(--fs-lg); font-weight: 500; text-align: left; text-decoration: none;
   cursor: pointer;
 }
-.profile-menu-item:hover { background: hsl(var(--accent)); }
-.profile-menu-item:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }
-.profile-menu-item svg { color: hsl(var(--muted-foreground)); flex: none; }
+.profile-menu-item:hover { background: var(--ui-color-surface-muted); }
+.profile-menu-item:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: -2px; }
+.profile-menu-item svg { color: var(--ui-color-text-muted); flex: none; }
 .profile-menu-count {
   /* Box scales with the numeral inside it - see .history-fab-count. */
   min-width: calc(20px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); padding: 0 6px;
   display: inline-flex; align-items: center; justify-content: center;
   font-size: var(--fs-xs); font-weight: 700; line-height: 1;
-  color: hsl(var(--primary-foreground)); background: hsl(var(--primary)); border-radius: var(--radius);
+  color: var(--ui-color-action-on-primary); background: var(--ui-color-action-primary); border-radius: var(--ui-radius-panel);
 }
 /* box shape (utilities.css) stays as-is; background/color/backdrop-filter/
    transition come from the shared .btn--glass alias (buttons.css), which loads
@@ -284,20 +284,20 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  background: hsl(var(--card));
-  color: hsl(var(--card-foreground));
-  border: 1px solid hsl(var(--border));
-  border-radius: calc(var(--radius) * 1.4);
-  box-shadow: 0 12px 32px hsl(0 0% 0% / 0.24);
+  background: var(--ui-color-surface-raised);
+  color: var(--ui-color-text-default);
+  border: 1px solid var(--ui-color-border-default);
+  border-radius: var(--ui-radius-card);
+  box-shadow: var(--ui-elevation-floating);
 }
 @media (prefers-reduced-motion: no-preference) {
-  .lang-menu { animation: profile-menu-in .14s ease both; transform-origin: top right; }
+  .lang-menu { animation: profile-menu-in var(--ui-motion-overlay) var(--ui-motion-standard) both; transform-origin: top right; }
 }
 .lang-menu-list { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .lang-menu-item {
   display: flex; align-items: center; gap: 10px;
-  width: 100%; padding: 8px 10px; border: 0; border-radius: var(--radius);
-  background: transparent; color: hsl(var(--foreground));
+  width: 100%; padding: 8px 10px; border: 0; border-radius: var(--ui-radius-panel);
+  background: transparent; color: var(--ui-color-text-default);
   font: inherit; font-size: calc(13.5px * var(--a11y-fs)); font-weight: 500; text-align: left; cursor: pointer;
 }
 /* Flag garnish beside each language - the emoji flags are natively rounded; the
@@ -312,11 +312,11 @@
   filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.35));
 }
 .lang-menu-name { flex: 1 1 auto; min-width: 0; }
-.lang-menu-item:hover { background: hsl(var(--accent)); }
-.lang-menu-item:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }
+.lang-menu-item:hover { background: var(--ui-color-surface-muted); }
+.lang-menu-item:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: -2px; }
 .lang-menu-item[aria-checked="true"] {
-  background: hsl(var(--primary) / 0.12);
-  color: hsl(var(--primary));
+  background: var(--ui-color-selection-surface);
+  color: var(--ui-color-action-primary);
   font-weight: 700;
 }
 /* Sort toggle at the top of the menu - Speakers (default) vs A–Z. Styles
@@ -324,20 +324,20 @@
    components.css); the menu's own padding/gap handles spacing beyond the 4px. */
 .lang-sort-tabs {
   display: flex; gap: 2px; padding: 3px; margin-bottom: 4px; flex: none;
-  background: hsl(var(--muted) / .5); border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--ui-color-surface-muted) 50%, transparent); border-radius: var(--ui-radius-pill);
 }
 /* nowrap + auto basis (vs the colour tabs' 1 1 0) so a long translated
    "Speakers" widens its pill instead of wrapping or clipping. */
 .lang-sort-tab {
   flex: 1 1 auto; white-space: nowrap; padding: 4px 8px; border: 0; cursor: pointer;
-  background: transparent; color: hsl(var(--muted-foreground));
+  background: transparent; color: var(--ui-color-text-muted);
   font-family: var(--font-mono); font-size: calc(10.5px * var(--a11y-fs)); letter-spacing: .04em;
-  border-radius: var(--radius-pill); transition: background var(--dur-1), color var(--dur-1);
+  border-radius: var(--ui-radius-pill); transition: background var(--ui-motion-feedback), color var(--ui-motion-feedback);
 }
-.lang-sort-tab:hover { color: hsl(var(--foreground)); }
+.lang-sort-tab:hover { color: var(--ui-color-text-default); }
 .lang-sort-tab[aria-selected="true"] {
-  background: hsl(var(--card)); color: hsl(var(--foreground)); font-weight: 700;
-  box-shadow: 0 1px 2px hsl(0 0% 0% / .12);
+  background: var(--ui-color-surface-raised); color: var(--ui-color-text-default); font-weight: 700;
+  box-shadow: var(--ui-elevation-control);
 }
 
 
@@ -353,7 +353,7 @@
   .lang-menu-item { justify-content: center; gap: 0; padding: 8px 6px; }
 }
 
-.lang-sort-tab:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.lang-sort-tab:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 1px; }
 
 
 /* ── Touch hit-areas (plans/132 wave 2) ──────────────────────────────────────

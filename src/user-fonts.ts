@@ -14,16 +14,17 @@
  * applyBrandFonts (brand-vars.ts) already reads to set `--font-brand` on
  * <html> for the app chrome, every tool canvas and the offscreen export
  * mounts. Setting a primary here merges the token into the active doc and
- * re-installs it as `user/tokens/brand`; there is always exactly one primary
- * while any font is installed.
+ * re-installs it at the active design system's head; there is always exactly one
+ * primary while any font is installed.
  *
  * Faces load into the document via the FontFace API at boot
  * (registerUserFonts, called from main.ts) and immediately after an install,
  * so a newly-added family is usable without a reload.
  */
 
-import { installUserTokens, USER_TOKENS_ID } from './bridge/tokens.ts';
-import { applyChromeBrandVars, brandRadiusValue } from './brand-vars.ts';
+import { installUserTokens } from './bridge/tokens.ts';
+import { activeHeadId } from './lib/design-system/active.ts';
+import { applyChromeBrandVars, brandRadiusValue, brandSpaceValue } from './brand-vars.ts';
 import { bustFontRegistry } from './bridge/font-registry.ts';
 import { REGISTERED, USER_FONT_PREFIX, brandFontFamilies, registerUserFonts, setBrandFontFamilyCache } from './lib/register-user-fonts.ts';
 import { fetchGoogleFont, GOOGLE_FAMILY_RE } from './lib/google-fonts.ts';
@@ -172,8 +173,37 @@ export function withRadiusToken(doc: unknown, value: string | null): Record<stri
   const src = (typeof doc === 'object' && doc !== null && !Array.isArray(doc)) ? doc as Record<string, unknown> : {};
   const out: Record<string, unknown> = structuredClone(src);
   const target = fontTargetOf(out);
-  if (value) target.shape = { radius: { $type: 'dimension', $value: value } };
-  else delete target.shape;
+  const shape = (typeof target.shape === 'object' && target.shape !== null)
+    ? target.shape as Record<string, unknown> : {};
+  if (value) {
+    shape.radius = { $type: 'dimension', $value: value };
+    target.shape = shape;
+  } else {
+    delete shape.radius;
+    if (Object.keys(shape).filter(k => !k.startsWith('$')).length) target.shape = shape;
+    else delete target.shape;
+  }
+  return out;
+}
+
+/** Merge (or clear) the single spacing-rhythm source, `space.base`, while
+ * preserving an imported design system's other spacing tokens. `--sp-*` is
+ * generated from this source, so this is the app-facing counterpart of
+ * shape.radius rather than eight unrelated per-gap preferences. */
+export function withSpaceToken(doc: unknown, value: string | null): Record<string, unknown> {
+  const src = (typeof doc === 'object' && doc !== null && !Array.isArray(doc)) ? doc as Record<string, unknown> : {};
+  const out: Record<string, unknown> = structuredClone(src);
+  const target = fontTargetOf(out);
+  const space = (typeof target.space === 'object' && target.space !== null)
+    ? target.space as Record<string, unknown> : {};
+  if (value) {
+    space.base = { $type: 'dimension', $value: value };
+    target.space = space;
+  } else {
+    delete space.base;
+    if (Object.keys(space).filter(k => !k.startsWith('$')).length) target.space = space;
+    else delete target.space;
+  }
   return out;
 }
 
@@ -187,6 +217,15 @@ export function withRadiusToken(doc: unknown, value: string | null): Record<stri
 export async function setBrandRadius(host: UserFontsHost, value: string | null): Promise<void> {
   if (value && !brandRadiusValue(value)) throw new Error(`"${value}" isn't a plain CSS length (e.g. "0.5rem").`);
   const doc = withRadiusToken(await primaryBaseDoc(host), value);
+  await installUserTokens(host as Parameters<typeof installUserTokens>[0], doc, { label: 'My brand' });
+  await applyChromeBrandVars(host as Parameters<typeof applyChromeBrandVars>[0]).catch(() => {});
+}
+
+/** Set (or clear) `space.base`, install it through the standard user-tokens
+ * asset, and repaint the app's generated spacing scale immediately. */
+export async function setBrandSpace(host: UserFontsHost, value: string | null): Promise<void> {
+  if (value && !brandSpaceValue(value)) throw new Error(`"${value}" isn't a plain CSS length (e.g. "0.5rem").`);
+  const doc = withSpaceToken(await primaryBaseDoc(host), value);
   await installUserTokens(host as Parameters<typeof installUserTokens>[0], doc, { label: 'My brand' });
   await applyChromeBrandVars(host as Parameters<typeof applyChromeBrandVars>[0]).catch(() => {});
 }
@@ -213,10 +252,11 @@ export async function carryUserFontTokens(
 
 /** The active tokens doc as raw JSON: the user's installed doc when present,
  *  else null (setting a primary font on a catalog-branded install copies the
- *  catalog doc first - see primaryBaseDoc). */
+ *  catalog doc first - see primaryBaseDoc). The head belongs to whichever design
+ *  system is active (plans/186 section 3.3), not to one well-known id. */
 async function userTokensDoc(host: UserFontsHost): Promise<Record<string, unknown> | null> {
   try {
-    const blob = await host.assets._getBlob(USER_TOKENS_ID);
+    const blob = await host.assets._getBlob(await activeHeadId(host));
     if (!blob) return null;
     const doc: unknown = JSON.parse(await blob.text());
     return (typeof doc === 'object' && doc !== null) ? doc as Record<string, unknown> : null;

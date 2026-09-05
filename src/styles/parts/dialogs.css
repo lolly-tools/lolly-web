@@ -11,12 +11,12 @@
      `* { margin: 0 }` reset (e.g. event-name-badge), which pins the modal to the
      top-left. Re-assert at class specificity so it stays centred inside tools. */
   margin: auto;
-  border-radius: calc(var(--radius) * 1.2); background: hsl(var(--card)); color: hsl(var(--foreground));
+  border-radius: var(--ui-radius-card); background: var(--ui-color-surface-raised); color: var(--ui-color-text-default);
   box-shadow: 0 24px 64px hsl(0 0% 0% / 0.4);
 }
 .modal::backdrop { background: hsl(0 0% 0% / 0.42); }
 .modal-title { margin: 0 0 8px; font-size: var(--fs-xl); font-weight: 700; }
-.modal-msg { margin: 0 0 18px; font-size: var(--fs-md); line-height: 1.5; color: hsl(var(--muted-foreground)); }
+.modal-msg { margin: 0 0 18px; font-size: var(--fs-md); line-height: 1.5; color: var(--ui-color-text-muted); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 /* Scoped (two-class) so it beats the generic .btn base by specificity. Fill
    (background/color) + hover are aliased in parts/buttons.css's .btn--danger list. */

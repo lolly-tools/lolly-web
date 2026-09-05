@@ -901,7 +901,7 @@ function triggerAria(label: string, name: string, hex: string): string {
   return label ? `${label}: ${value}` : `Colour: ${value}`;
 }
 
-export function colorFieldHtml(id: string, value: unknown, { float = false, swatchesOnly = false, block = false, inline = false, modes = false, dials, name: nameOverride, label = '' }: { float?: boolean; swatchesOnly?: boolean; block?: boolean; inline?: boolean; modes?: boolean; dials?: boolean; name?: string; label?: string } = {}): string {
+export function colorFieldHtml(id: string, value: unknown, { float = false, swatchesOnly = false, block = false, inline = false, modes = false, dials, progressive = false, name: nameOverride, label = '' }: { float?: boolean; swatchesOnly?: boolean; block?: boolean; inline?: boolean; modes?: boolean; dials?: boolean; progressive?: boolean; name?: string; label?: string } = {}): string {
   const rawVal = toHex(value) ?? '';
   const isTransparent = String(rawVal).trim().toLowerCase() === 'transparent';
   // Seeding is strictly WIDENED: anything the engine's parseColor accepts (hex,
@@ -977,7 +977,25 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
   // wireColorField re-parses it with the engine's strict parseColor, which is why
   // the hidden native input is now WRITE-ONLY - it is the OS picker's own control
   // and can only speak `#rrggbb`, so it cannot be the authority.
-  const cls = `color-picker-field${float ? ' color-field--float' : ''}${block ? ' block-color-field' : ''}${inline ? ' color-field--inline' : ''}`;
+  // A first-contact inline picker should feel like choosing a colour, not
+  // opening a colour-science console. Its editable value and two visual pick
+  // routes stay in sight; modes, dials and opacity wait behind Fine-tune. The
+  // ordinary inline editor remains byte-for-byte expanded unless its caller
+  // explicitly opts into this progressive pose.
+  const progressiveInline = inline && progressive;
+  const inputRow = `<div class="color-input-wrap"${painted ? ` style="${Object.entries(colorInputPaint(shown)).map(([k, v]) => `${k}:${v}`).join(';')}"` : ''}>
+      ${/* NO maxlength: this field takes any CSS colour ('rebeccapurple',
+            'color(display-p3 1 0 0)'), and the 9-character hex cap silently
+            truncated every one of them mid-paste. What it SHOWS is still a hex
+            where there are no space tabs to say otherwise - see writeValueField. */''}
+      <input type="text" class="color-input${painted ? ' color-input--painted' : ''}${shown.length > LONG_VALUE ? ' color-input--long' : ''}" data-color-hex="${eid}"
+             value="${escape(shown)}" placeholder="${modes ? 'colour value' : '#rrggbbaa'}" title="${escape(shown)}"
+             spellcheck="false" autocomplete="off" aria-label="Colour value">
+      <button type="button" class="color-eyedropper" data-color-eyedropper="${eid}" aria-label="Pick a colour from your screen" title="Pick a colour from your screen">${EYEDROPPER_ICON}</button>
+      ${progressiveInline ? `<button type="button" class="color-native-button" data-color-native-button="${eid}" aria-label="Open colour picker" title="Open colour picker">${icon('palette', { size: 16 })}</button>` : ''}
+      </div>`;
+  const fineToggle = `<button type="button" class="color-fine-toggle" data-color-fine-toggle="${eid}" aria-expanded="false">${icon('sliders', { size: 13 })}<span>${escape(t('Fine-tune'))}</span>${icon('chevronDown', { className: 'color-fine-chev', size: 14 })}</button>`;
+  const cls = `color-picker-field${float ? ' color-field--float' : ''}${block ? ' block-color-field' : ''}${inline ? ' color-field--inline' : ''}${progressiveInline ? ' color-field--progressive' : ''}`;
   return `<div class="${cls}" data-color-field="${eid}" data-color-canon="${escape(canon)}"${label ? ` data-color-label="${escape(label)}"` : ''}>
     ${inline ? '' : `<button type="button" class="color-trigger" data-color-trigger="${eid}" aria-haspopup="true" aria-expanded="false" aria-label="${escape(triggerAria(label, name, hex))}">
       <span class="${previewClass}" ${previewBg} aria-hidden="true"></span>
@@ -993,18 +1011,9 @@ export function colorFieldHtml(id: string, value: unknown, { float = false, swat
         // swatch, so the grid is the whole first screen and the fine controls
         // (value/eyedropper/sliders/alpha) wait behind the Fine-tune fold below.
         : '<div class="color-swatches"></div>'}
-      ${swatchesOnly ? '' : `${inline ? '' : `<button type="button" class="color-fine-toggle" data-color-fine-toggle="${eid}" aria-expanded="false">${icon('sliders', { size: 13 })}<span>${escape(t('Fine-tune'))}</span>${icon('chevronDown', { className: 'color-fine-chev', size: 14 })}</button>`}
-      <div class="color-fine"${inline ? '' : ' data-color-fine hidden'}>
-      <div class="color-input-wrap"${painted ? ` style="${Object.entries(colorInputPaint(shown)).map(([k, v]) => `${k}:${v}`).join(';')}"` : ''}>
-      ${/* NO maxlength: this field takes any CSS colour ('rebeccapurple',
-            'color(display-p3 1 0 0)'), and the 9-character hex cap silently
-            truncated every one of them mid-paste. What it SHOWS is still a hex
-            where there are no space tabs to say otherwise - see writeValueField. */''}
-      <input type="text" class="color-input${painted ? ' color-input--painted' : ''}${shown.length > LONG_VALUE ? ' color-input--long' : ''}" data-color-hex="${eid}"
-             value="${escape(shown)}" placeholder="${modes ? 'colour value' : '#rrggbbaa'}" title="${escape(shown)}"
-             spellcheck="false" autocomplete="off" aria-label="Colour value">
-      <button type="button" class="color-eyedropper" data-color-eyedropper="${eid}" aria-label="Pick a colour from your screen" title="Pick a colour from your screen">${EYEDROPPER_ICON}</button>
-      </div>
+      ${swatchesOnly ? '' : `${progressiveInline ? inputRow : ''}${(!inline || progressiveInline) ? fineToggle : ''}
+      <div class="color-fine"${(!inline || progressiveInline) ? ' data-color-fine hidden' : ''}>
+      ${progressiveInline ? '' : inputRow}
       ${modes
         ? colorModesHtml(eid, seed, st.lastHue, st.mode, wantDials)
         // The whole fine section is gated by the Fine-tune fold in a popover, so
@@ -1932,8 +1941,15 @@ export function wireColorField(scope: HTMLElement, { onChange = () => {}, onInte
   });
 
   // ── Native colour input ──────────────────────────────────────────────────────
-  // Write-only in practice (it is display:none and the shell never opens the OS
-  // picker), but if a host does surface it, a change is a real edit.
+  // The progressive inline pose surfaces a button for this OS picker; the input
+  // itself remains visually hidden so browser-native chrome never disrupts the
+  // component layout. Every other pose continues to treat it as write-only.
+  scope.querySelectorAll<HTMLButtonElement>('[data-color-native-button]').forEach(btn => {
+    const field = btn.closest<HTMLElement>('[data-color-field]');
+    const native = field?.querySelector<HTMLInputElement>('input.color-popover-native');
+    if (!native) { btn.remove(); return; }
+    btn.addEventListener('click', () => native.click());
+  });
   scope.querySelectorAll<HTMLInputElement>('input.color-popover-native[data-input-id]').forEach(native => {
     const field = native.closest<HTMLElement>('[data-color-field]');
     if (!field) return;
@@ -2062,6 +2078,8 @@ export interface MountColorFieldOpts {
   modes?: boolean;
   /** Show the conic dials. Defaults to `inline` - a float popover can opt in. */
   dials?: boolean;
+  /** Keep an inline first-contact field compact until Fine-tune is opened. */
+  progressive?: boolean;
   onInteractStart?(): void;
   onInteractEnd?(): void;
 }
@@ -2078,6 +2096,7 @@ export interface MountColorFieldOpts {
 export function mountColorField(container: HTMLElement, id: string, opts: MountColorFieldOpts): HTMLElement {
   container.innerHTML = colorFieldHtml(id, opts.value ?? '', {
     float: opts.float, swatchesOnly: opts.swatchesOnly, inline: opts.inline, modes: opts.modes, dials: opts.dials,
+    progressive: opts.progressive,
   });
   wireColorField(container, {
     // A token-backed swatch emits a token value OBJECT ({ ref, value }) so the sidebar can keep

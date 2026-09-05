@@ -133,7 +133,7 @@
     "5": {
       "$type": "shadow",
       "$value": {
-        "color": "#00000052",
+        "color": "#0000004d",
         "offsetX": "0px",
         "offsetY": "24px",
         "blur": "60px",
@@ -141,7 +141,7 @@
       },
       "$extensions": {
         "tools.lolly": {
-          "css": "0 24px 60px hsl(0 0% 0% / .32)"
+          "css": "0 24px 60px hsl(0 0% 0% / .3)"
         }
       }
     }
@@ -198,35 +198,72 @@
     }
   },
   "radius": {
-    "$description": "radius sub-scale - --radius (1rem) stays the card/panel size above this",
+    "$description": "Radius scale derived from the design system's shape.radius source (--radius). Zero makes every Lolly UI corner square; any non-zero base turns the high 999× step into a pill/round treatment.",
     "xs": {
       "$type": "dimension",
-      "$value": "3px"
+      "$value": "4px",
+      "$extensions": {
+        "tools.lolly": {
+          "css": "calc(var(--radius) * .25)",
+          "derivedFrom": "shape.radius",
+          "multiplier": 0.25
+        }
+      }
     },
     "sm": {
       "$type": "dimension",
-      "$value": "6px"
+      "$value": "8px",
+      "$extensions": {
+        "tools.lolly": {
+          "css": "calc(var(--radius) * .5)",
+          "derivedFrom": "shape.radius",
+          "multiplier": 0.5
+        }
+      }
     },
     "md": {
       "$type": "dimension",
-      "$value": "10px"
+      "$value": "12px",
+      "$extensions": {
+        "tools.lolly": {
+          "css": "calc(var(--radius) * .75)",
+          "derivedFrom": "shape.radius",
+          "multiplier": 0.75
+        }
+      }
     },
     "lg": {
       "$type": "dimension",
-      "$value": "14px"
+      "$value": "16px",
+      "$extensions": {
+        "tools.lolly": {
+          "css": "var(--radius)",
+          "derivedFrom": "shape.radius",
+          "multiplier": 1
+        }
+      }
     },
     "pill": {
       "$type": "dimension",
-      "$value": "999px"
+      "$value": "999px",
+      "$extensions": {
+        "tools.lolly": {
+          "css": "calc(var(--radius) * 999)",
+          "derivedFrom": "shape.radius",
+          "multiplier": 999
+        }
+      }
     },
     "round": {
       "$type": "dimension",
-      "$value": "50%",
       "$extensions": {
         "tools.lolly": {
-          "css": "50%"
+          "css": "calc(var(--radius) * 999)",
+          "derivedFrom": "shape.radius",
+          "multiplier": 999
         }
-      }
+      },
+      "$value": "999px"
     }
   },
   "fs": {
@@ -262,38 +299,46 @@
     }
   },
   "sp": {
-    "$description": "space - the 2px grid the gap population already sits on",
+    "$description": "Spacing scale derived from the design system's space.base source (--space). The default base is 8px; changing one token retunes every Lolly chrome gap proportionally.",
     "1": {
       "$type": "dimension",
-      "$value": "2px"
+      "$value": "2px",
+      "$extensions": { "tools.lolly": { "css": "calc(var(--space) * .25)", "derivedFrom": "space.base", "multiplier": 0.25 } }
     },
     "2": {
       "$type": "dimension",
-      "$value": "4px"
+      "$value": "4px",
+      "$extensions": { "tools.lolly": { "css": "calc(var(--space) * .5)", "derivedFrom": "space.base", "multiplier": 0.5 } }
     },
     "3": {
       "$type": "dimension",
-      "$value": "6px"
+      "$value": "6px",
+      "$extensions": { "tools.lolly": { "css": "calc(var(--space) * .75)", "derivedFrom": "space.base", "multiplier": 0.75 } }
     },
     "4": {
       "$type": "dimension",
-      "$value": "8px"
+      "$value": "8px",
+      "$extensions": { "tools.lolly": { "css": "var(--space)", "derivedFrom": "space.base", "multiplier": 1 } }
     },
     "5": {
       "$type": "dimension",
-      "$value": "10px"
+      "$value": "10px",
+      "$extensions": { "tools.lolly": { "css": "calc(var(--space) * 1.25)", "derivedFrom": "space.base", "multiplier": 1.25 } }
     },
     "6": {
       "$type": "dimension",
-      "$value": "12px"
+      "$value": "12px",
+      "$extensions": { "tools.lolly": { "css": "calc(var(--space) * 1.5)", "derivedFrom": "space.base", "multiplier": 1.5 } }
     },
     "7": {
       "$type": "dimension",
-      "$value": "16px"
+      "$value": "16px",
+      "$extensions": { "tools.lolly": { "css": "calc(var(--space) * 2)", "derivedFrom": "space.base", "multiplier": 2 } }
     },
     "8": {
       "$type": "dimension",
-      "$value": "24px"
+      "$value": "24px",
+      "$extensions": { "tools.lolly": { "css": "calc(var(--space) * 3)", "derivedFrom": "space.base", "multiplier": 3 } }
     }
   },
   "dur": {

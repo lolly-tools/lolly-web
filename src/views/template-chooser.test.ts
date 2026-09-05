@@ -1,8 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { openTemplateChooser, parseTemplates, templateValuesById } from './template-chooser.ts';
+
+test('template chooser modal layers above the portalled edge dock', () => {
+  const css = readFileSync(new URL('../styles/template-chooser.css', import.meta.url), 'utf8');
+  const backdrop = css.match(/\.tmpl-chooser-backdrop\s*\{[^}]*\}/)?.[0] ?? '';
+  const panel = css.match(/\.tmpl-chooser-panel\s*\{[^}]*\}/)?.[0] ?? '';
+  assert.match(backdrop, /z-index:\s*100001/, 'the scrim covers the dock and blocks its controls');
+  assert.match(panel, /z-index:\s*100002/, 'the dialog stays above its scrim');
+});
 
 // A manifest `templates[]` as it arrives off the loaded manifest (typed unknown[]).
 const RAW = [

@@ -15,10 +15,12 @@ function env(overrides: Partial<LinuxDesktopEnv> = {}): {
   env: LinuxDesktopEnv;
   navigated: string[];
   opened: File[][];
+  utilities: Array<{ target: string; file: File }>;
   invoked: Array<{ cmd: string; args?: Record<string, unknown> }>;
 } {
   const navigated: string[] = [];
   const opened: File[][] = [];
+  const utilities: Array<{ target: string; file: File }> = [];
   const invoked: Array<{ cmd: string; args?: Record<string, unknown> }> = [];
   const e: LinuxDesktopEnv = {
     invoke: async (cmd, args) => {
@@ -28,9 +30,10 @@ function env(overrides: Partial<LinuxDesktopEnv> = {}): {
     },
     navigate: (h) => navigated.push(h),
     openFiles: async (f) => { opened.push(f); },
+    openUtilityFile: async (target, file) => { utilities.push({ target, file }); },
     ...overrides,
   };
-  return { env: e, navigated, opened, invoked };
+  return { env: e, navigated, opened, utilities, invoked };
 }
 
 test('deepLinkToHash: lolly:// URLs become the app hash, junk becomes null', () => {
@@ -68,6 +71,21 @@ test('hotfolderFile takes the same path as openFile; non-lolly files get no inve
   await routeEvents([{ kind: 'hotfolderFile', value: '/inbox/photo.jpg' }], e);
   assert.equal(opened[0]![0]!.name, 'photo.jpg');
   assert.equal(opened[0]![0]!.type, '');
+});
+
+test('a file-manager utility event preserves its chosen safe verb and selected file', async () => {
+  const { env: e, opened, utilities, invoked } = env();
+  await routeEvents([
+    { kind: 'openUtilityFile', value: '/home/x/photo.png', target: 'strip-data' },
+    { kind: 'openUtilityFile', value: '/home/x/private.pdf', target: 'redact' },
+    { kind: 'openUtilityFile', value: '/home/x/unsafe.png', target: '../tool/evil' },
+  ], e);
+  assert.deepEqual(utilities.map((u) => [u.target, u.file.name]), [
+    ['strip-data', 'photo.png'],
+    ['redact', 'private.pdf'],
+  ]);
+  assert.equal(opened.length, 0, 'direct verbs do not reopen the generic chooser');
+  assert.equal(invoked.length, 3, 'every path is still checked by desktop_read_file');
 });
 
 test('a failed read routes nothing and never throws the loop down', async () => {

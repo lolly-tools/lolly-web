@@ -59,6 +59,7 @@ const { getInputPolicy, _clearInputPoliciesForTests } = await import('../lib/inp
 const ORG_CONFIG_KEY = 'lolly:org-config:same-origin';
 const { getExportPolicy, exportAffordance, _clearExportPolicyForTests } = await import('../lib/export-policy.ts');
 const { openApprovalRequest, _clearApprovalOpenerForTests } = await import('../lib/approval-request.ts');
+const { registerSendTarget, sendTargetId, sendTargetsFor, unregisterSendTarget } = await import('../lib/send-target.ts');
 
 function reset(): void {
   _resetOrgForTests();
@@ -189,6 +190,35 @@ test('member org-config populates the generic field-policy registry', async () =
   assert.equal(orgConfig()?.instance.name, 'Acme');
   assert.equal(orgSession()?.kind, 'member');
   assert.equal(orgAdminHref(), '/admin', 'admin role exposes the console href');
+});
+
+test('member org-config adds fixed delivery beside a personal target, then session loss withdraws only the org target', async () => {
+  reset();
+  registerSendTarget({
+    kind: 's3', label: 'My S3', available: () => true,
+    send: async () => ({ label: 'done' }),
+  });
+  try {
+    controlPlane({
+      mode: 'open', session: 'member',
+      orgConfig: {
+        instance: { name: 'Acme' }, inboxUnread: 0,
+        destinations: [{
+          id: 'archive', kind: 's3', label: 'Acme archive', formats: ['png'],
+          maxBytes: 1024, visibility: 'private',
+        }],
+      },
+    });
+    await initOrg();
+    assert.deepEqual(sendTargetsFor('png').map(sendTargetId), ['s3', 'org:archive']);
+
+    controlPlane({ mode: 'open', session: 'guest' });
+    await initOrg();
+    assert.deepEqual(sendTargetsFor('png').map(sendTargetId), ['s3']);
+  } finally {
+    _resetOrgForTests();
+    unregisterSendTarget('s3');
+  }
 });
 
 test('orgAdminHref is null for a non-admin member and when dormant', async () => {

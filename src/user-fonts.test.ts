@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import {
   withBrandFontToken, familyFromTokenValue, listUserFonts, removeUserFont,
   setPrimaryFont, primaryFontFamily, USER_FONT_PREFIX,
-  withRadiusToken, setBrandRadius, installGoogleFont, installFontFromBytes,
+  withRadiusToken, setBrandRadius, withSpaceToken, setBrandSpace, installGoogleFont, installFontFromBytes,
 } from './user-fonts.ts';
 import type { UserFontsHost } from './user-fonts.ts';
 import { BrandLockedError } from './bridge/tokens.ts';
@@ -49,6 +49,18 @@ test('layered doc ($themes): the token lands in the base SET, not top-level', ()
   const set = withBrandFontToken(doc, 'Sora');
   assert.deepEqual((set.base as any).font.brand.$value, ['Sora']);
   assert.equal((set as any).font, undefined);
+});
+
+test('radius and spacing source writes retain unrelated imported siblings', () => {
+  const doc = { shape: { cornerStyle: { $type: 'string', $value: 'soft' } }, space: { content: { $type: 'dimension', $value: '2rem' } } };
+  const withRadius = withRadiusToken(doc, '.5rem');
+  const withSpace = withSpaceToken(withRadius, '.5rem');
+  assert.equal((withSpace.shape as any).cornerStyle.$value, 'soft');
+  assert.equal((withSpace.shape as any).radius.$value, '.5rem');
+  assert.equal((withSpace.space as any).content.$value, '2rem');
+  assert.equal((withSpace.space as any).base.$value, '.5rem');
+  const cleared = withSpaceToken(withRadius, null);
+  assert.equal((cleared.space as any).content.$value, '2rem');
 });
 
 // ── withRadiusToken ──────────────────────────────────────────────────────────
@@ -95,7 +107,7 @@ function memoryHost(): UserFontsHost & { store: Map<string, any> } {
       async _getBlob(id: string) { return store.get(id)?.blob ?? null; },
     },
     tokens: {
-      // Resolve {font.brand} / {shape.radius} from the installed user doc - 
+      // Resolve the source slots from the installed user doc -
       // the live bridge's discovery order, reduced to the slice these flows
       // exercise (both live at the doc's top level or under 'base', per
       // fontTargetOf's layered-vs-plain-DTCG resolution).
@@ -105,6 +117,7 @@ function memoryHost(): UserFontsHost & { store: Map<string, any> } {
         const doc = JSON.parse(await blob.text());
         if (ref === '{font.brand}') return doc?.font?.brand?.$value ?? doc?.base?.font?.brand?.$value;
         if (ref === '{shape.radius}') return doc?.shape?.radius?.$value ?? doc?.base?.shape?.radius?.$value;
+        if (ref === '{space.base}') return doc?.space?.base?.$value ?? doc?.base?.space?.base?.$value;
         return undefined;
       },
       bust() { /* nothing cached here */ },
@@ -166,6 +179,20 @@ test('setBrandRadius preserves an existing font.brand token (independent slots)'
   await setBrandRadius(host, '1.25rem');
   assert.equal(await primaryFontFamily(host), 'Inter');
   assert.equal(await host.tokens!.resolve('{shape.radius}'), '1.25rem');
+});
+
+test('setBrandSpace installs a source token and clears cleanly', async () => {
+  const host = memoryHost();
+  await setBrandSpace(host, '0.75rem');
+  assert.equal(await host.tokens!.resolve('{space.base}'), '0.75rem');
+  await setBrandSpace(host, null);
+  assert.equal(await host.tokens!.resolve('{space.base}'), undefined);
+});
+
+test('setBrandSpace rejects a value that could smuggle CSS', async () => {
+  const host = memoryHost();
+  await assert.rejects(() => setBrandSpace(host, '8px; background:url(//evil)'));
+  assert.equal(await host.tokens!.resolve('{space.base}'), undefined);
 });
 
 test('removing the primary family promotes the next installed one', async () => {

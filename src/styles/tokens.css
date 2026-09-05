@@ -299,19 +299,19 @@
   --shadow-2: 0 4px 14px hsl(0 0% 0% / .18);
   --shadow-3: 0 8px 28px hsl(0 0% 0% / .22);
   --shadow-4: 0 12px 36px hsl(0 0% 0% / .26);
-  --shadow-5: 0 24px 60px hsl(0 0% 0% / .32);
+  --shadow-5: 0 24px 60px hsl(0 0% 0% / .3);
   /* glass top-light */
   --bevel: inset 0 1px hsl(0 0% 100% / .1);
   /* focus rings */
   --ring-focus: 0 0 0 3px hsl(var(--ring) / .15);
   --ring-focus-strong: 0 0 0 2px hsl(var(--primary) / .35);
-  /* radius sub-scale - --radius (1rem) stays the card/panel size above this */
-  --radius-xs: 3px;
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 14px;
-  --radius-pill: 999px;
-  --radius-round: 50%;
+  /* Radius scale derived from the design system's shape.radius source (--radius). Zero makes every Lolly UI corner square; any non-zero base turns the high 999× step into a pill/round treatment. */
+  --radius-xs: calc(var(--radius) * .25);
+  --radius-sm: calc(var(--radius) * .5);
+  --radius-md: calc(var(--radius) * .75);
+  --radius-lg: var(--radius);
+  --radius-pill: calc(var(--radius) * 999);
+  --radius-round: calc(var(--radius) * 999);
   /* chrome type scale - pre-multiplied by --a11y-fs (the sanctioned home for the largeText multiplier: scaled once, at declaration) */
   --fs-2xs: calc(10px * var(--a11y-fs));
   --fs-xs: calc(11px * var(--a11y-fs));
@@ -319,15 +319,15 @@
   --fs-md: calc(13px * var(--a11y-fs));
   --fs-lg: calc(14px * var(--a11y-fs));
   --fs-xl: calc(16px * var(--a11y-fs));
-  /* space - the 2px grid the gap population already sits on */
-  --sp-1: 2px;
-  --sp-2: 4px;
-  --sp-3: 6px;
-  --sp-4: 8px;
-  --sp-5: 10px;
-  --sp-6: 12px;
-  --sp-7: 16px;
-  --sp-8: 24px;
+  /* Spacing scale derived from the design system's space.base source (--space). The default base is 8px; changing one token retunes every Lolly chrome gap proportionally. */
+  --sp-1: calc(var(--space) * .25);
+  --sp-2: calc(var(--space) * .5);
+  --sp-3: calc(var(--space) * .75);
+  --sp-4: var(--space);
+  --sp-5: calc(var(--space) * 1.25);
+  --sp-6: calc(var(--space) * 1.5);
+  --sp-7: calc(var(--space) * 2);
+  --sp-8: calc(var(--space) * 3);
   /* motion */
   --dur-1: .12s;
   --dur-2: .18s;
@@ -341,6 +341,60 @@
   --z-max: 100;
 }
 /* @generated-chrome-tokens end */
+
+/* Semantic app-token aliases. Generated from ui-semantics.json by
+   scripts/gen-chrome-tokens.ts. New shared components consume these names;
+   legacy --sp/--radius/--shadow names remain supported during migration. */
+/* @generated-ui-semantics start */
+:root {
+  --ui-color-text-default: hsl(var(--foreground));
+  --ui-color-text-muted: hsl(var(--muted-foreground));
+  --ui-color-surface-canvas: hsl(var(--background));
+  --ui-color-surface-raised: hsl(var(--card));
+  --ui-color-surface-overlay: hsl(var(--popover));
+  --ui-color-surface-muted: hsl(var(--muted));
+  --ui-color-action-primary: hsl(var(--primary));
+  --ui-color-action-on-primary: hsl(var(--primary-foreground));
+  --ui-color-selection-surface: hsl(var(--primary) / .12);
+  --ui-color-selection-border: hsl(var(--primary));
+  --ui-color-border-default: hsl(var(--border));
+  --ui-color-focus-ring: hsl(var(--ring));
+  --ui-space-control-inline: var(--sp-4);
+  --ui-space-control-block: var(--sp-3);
+  --ui-space-panel: var(--sp-7);
+  --ui-space-page: var(--sp-8);
+  --ui-radius-control: var(--radius-sm);
+  --ui-radius-choice: var(--radius-xs);
+  --ui-radius-choice-round: var(--radius-round);
+  --ui-radius-surface: var(--radius-lg);
+  --ui-radius-card: calc(var(--radius) * 1.25);
+  --ui-radius-panel: var(--radius);
+  --ui-radius-pill: var(--radius-pill);
+  --ui-elevation-control: var(--shadow-1);
+  --ui-elevation-panel: var(--shadow-2);
+  --ui-elevation-floating: var(--shadow-3);
+  --ui-elevation-sheet: var(--shadow-4);
+  --ui-elevation-overlay: var(--shadow-5);
+  --ui-edge-default: var(--edge);
+  --ui-edge-faint: var(--edge-faint);
+  --ui-edge-strong: var(--edge-strong);
+  --ui-effect-bevel: var(--bevel);
+  --ui-effect-focus-halo: var(--ring-focus);
+  --ui-effect-selected: inset 0 0 0 1px hsl(var(--primary) / .20);
+  --ui-type-body: var(--fs-md);
+  --ui-type-label: var(--fs-sm);
+  --ui-type-title: var(--fs-lg);
+  --ui-type-ui-family: var(--font-brand);
+  --ui-type-mono-family: var(--font-mono);
+  --ui-motion-feedback: var(--dur-1);
+  --ui-motion-overlay: var(--dur-2);
+  --ui-motion-navigation: var(--dur-3);
+  --ui-motion-standard: var(--ease-out);
+  --ui-layer-chrome: var(--z-chrome);
+  --ui-layer-overlay: var(--z-overlay);
+  --ui-layer-toast: var(--z-toast);
+}
+/* @generated-ui-semantics end */
 
 /* ─── Light ─────────────────────────────────────────────────────────────── */
 :root,
@@ -397,6 +451,7 @@
   --store-other:            205 10% 62%;
 
   --radius:                 1rem;
+  --space:                  8px;
 }
 
 /* ─── Dark ───────────────────────────────────────────────────────────────── */
@@ -446,6 +501,7 @@
   --store-other:            215 12% 46%;
 
   --radius:                 1rem;
+  --space:                  8px;
 }
 
 /* ─── Brand (mid-toned, palette-driven) ─────────────────────────────────────
@@ -503,6 +559,7 @@
   --store-other:            171 16% 54%;
 
   --radius:                 1rem;
+  --space:                  8px;
 }
 
 /* ─── High contrast (opt-in) ─────────────────────────────────────────────────

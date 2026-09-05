@@ -126,9 +126,9 @@
    not a surface, and shouldn't look like another card laid on top of them. */
 .tile-marquee {
   position: fixed; z-index: 8000; pointer-events: none;
-  border: 1px solid hsl(var(--primary));
-  background: hsl(var(--primary) / 0.12);
-  border-radius: calc(var(--radius) * 0.5);
+  border: 1px solid var(--ui-color-selection-border);
+  background: var(--ui-color-selection-surface);
+  border-radius: var(--ui-radius-control);
 }
 /* Kill text selection while a box is live - otherwise the drag paints the page blue
    as it crosses card captions. Scoped to the marqueeing view root (the module puts the
@@ -484,4 +484,3 @@ html[data-a11y-motion="reduce"] .profile-link .profile-link-mark .lolly-mark__sp
   box-shadow: 0 2px 10px #0005, inset 0 0 0 1px #ffffff30;
 }
 .swatch-name-tip.is-shown { opacity: 1; }
-

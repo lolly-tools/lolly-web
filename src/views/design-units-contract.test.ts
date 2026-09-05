@@ -26,6 +26,7 @@ import { stepFor, decimalsFor, displayIn, convertLength, roundIn } from '../lib/
 
 const here = dirname(fileURLToPath(import.meta.url));
 const src = (rel: string): string => readFileSync(join(here, rel), 'utf8');
+const designManifest = (): Record<string, unknown> => JSON.parse(readFileSync(join(here, '../../../../community/design/tool.json'), 'utf8')) as Record<string, unknown>;
 
 /** Every `['Name', w, h]` triple of one preset table. */
 function presets(source: string, name: string): Array<[string, number, number]> {
@@ -93,7 +94,29 @@ test('units: export size fields and URL w/h are read as decimals', () => {
     assert.equal(new RegExp(`parseInt\\([^;]*${field}`).test(ta), false, `tool-actions reads ${field} with parseFloat`);
     assert.equal(new RegExp(`parseInt\\([^;]*${field}`).test(tool), false, `tool.ts reads ${field} with parseFloat`);
   }
-  const scrub = ta.slice(ta.indexOf('function addScrubBehavior('));
+  const scrub = src('./tool-action-helpers.ts');
   assert.equal(/parseInt\(inputEl\.value/.test(scrub), false, 'the scrub reads the field with parseFloat');
   assert.match(scrub, /opts\.step\?\.\(\)/, 'the scrub takes a per-unit step');
+});
+
+test('units: Design persists one document unit and DPI, and mirrors them to export', () => {
+  const manifest = designManifest();
+  const inputs = manifest.inputs as Array<{ id: string; default: unknown }>;
+  assert.deepEqual(inputs.find(i => i.id === 'documentUnit')?.default, 'px');
+  assert.deepEqual(inputs.find(i => i.id === 'documentDpi')?.default, 300);
+
+  const fc = src('./free-canvas.ts');
+  const actions = src('./tool-actions.ts');
+  const dimensionFields = src('./export-dimension-fields.ts');
+  const inspector = src('./design-inspector.ts');
+  assert.match(fc, /setDocumentSettings\?\(settings:/, 'the canvas has a shell callback for shared unit/DPI state');
+  assert.match(fc, /runtime\.setInput\('documentUnit', unit\)/, 'changing the size-panel unit persists in the document');
+  assert.match(fc, /runtime\.setInput\('documentDpi', next\)/, 'changing DPI persists in the document');
+  assert.match(fc, /const pxW = toUnitVal\(w, unit, 'px'\)/, 'artboard dimensions retain fractional CSS pixels');
+  assert.match(dimensionFields, /export interface ExportDimensionUpdate[\s\S]*dpi\?: number/, 'the dimension seam accepts the document DPI');
+  assert.match(actions, /applyExportDimensionFields\(el!, curUnit, update\)/, 'the export bar applies dimensions through the typed seam');
+  assert.match(inspector, /const DOCUMENT_UNITS = \['px', 'mm', 'cm', 'in', 'pt'\]/, 'the Inspector exposes the document unit vocabulary');
+  assert.match(inspector, /docSelectRow\(t\('Document unit'\), 'documentUnit'/, 'the Inspector can change the persisted document unit');
+  assert.match(inspector, /docNumRow\(t\('Document DPI'\), 'documentDpi'/, 'the Inspector can change the persisted document DPI');
+  assert.match(inspector, /write\(field, o\.scale \? v \* o\.scale : v\)/, 'Inspector geometry converts its displayed document unit back to CSS px once');
 });

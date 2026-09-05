@@ -27,6 +27,9 @@ const SW_SRC = fileURLToPath(new URL('../public/sw.js', import.meta.url));
 /** Minimal in-memory stand-in for one Cache instance. */
 class FakeCache {
   entries = new Map<string, string>();
+  /** Response headers stored beside the body - the share-target stash keys each
+   *  file's name off one, so the round-trip has to survive the cache. */
+  meta = new Map<string, Record<string, string>>();
   /** Keys stored BEFORE the isolation headers shipped: their response carries no
    *  cross-origin-embedder-policy, the same form as the stale runtime entries the
    *  worker must refetch (sw.js isolationCompatible, 2026-09-02). */
@@ -38,30 +41,41 @@ class FakeCache {
   async match(req: { url?: string } | string) {
     const key = this.key(req);
     const body = this.entries.get(key);
-    return body === undefined ? undefined : makeResponse(body, { coep: !this.stale.has(key) });
+    return body === undefined
+      ? undefined
+      : makeResponse(body, { coep: !this.stale.has(key), headers: this.meta.get(key) });
   }
-  async put(req: { url?: string } | string, res: { _body: string }) {
+  async put(req: { url?: string } | string, res: { _body: string; _headers?: Record<string, string> }) {
     const key = typeof req === 'string' ? req : (req.url ?? '');
     this.entries.set(key, res._body);
+    if (res._headers) this.meta.set(key, res._headers);
     this.stale.delete(key);
   }
   async delete(req: { url?: string } | string) {
     const key = this.key(req);
     this.stale.delete(key);
+    this.meta.delete(key);
     return this.entries.delete(key);
   }
+  /** Request-shaped keys, the way Cache.keys() answers - the share stash walks them. */
+  async keys() { return [...this.entries.keys()].map((url) => ({ url })); }
   async addAll(urls: string[]) { for (const u of urls) this.entries.set(u, `precached:${u}`); }
   async add(url: string) { this.entries.set(url, `precached:${url}`); }
 }
 
 /** A network response carries today's headers (isolation included); `coep: false`
  *  models a response stored before those headers existed. */
-function makeResponse(body: string, init: { status?: number; coep?: boolean } = {}) {
+function makeResponse(body: string, init: { status?: number; coep?: boolean; headers?: Record<string, string> } = {}) {
   const status = init.status ?? 200;
   const names = new Set(init.coep === false ? ['content-type'] : ['content-type', 'cross-origin-embedder-policy']);
+  const extra = init.headers ?? {};
+  for (const n of Object.keys(extra)) names.add(n.toLowerCase());
   return {
-    _body: body, status, ok: status >= 200 && status < 300,
-    headers: { has: (n: string) => names.has(n.toLowerCase()) },
+    _body: body, status, ok: status >= 200 && status < 300, _headers: extra,
+    headers: {
+      has: (n: string) => names.has(n.toLowerCase()),
+      get: (n: string) => extra[n.toLowerCase()] ?? null,
+    },
     clone() { return this; },
   };
 }
@@ -112,7 +126,19 @@ function loadServiceWorker(): Harness {
       const body = server.get(path);
       return body === undefined ? makeResponse('not found', { status: 404 }) : makeResponse(body);
     },
-    Response: function (body: string, init: { status?: number } = {}) { return makeResponse(body, init); },
+    // The worker constructs responses from a string (the offline sentinel) and
+    // from a shared file (the share-target stash), and redirects the share POST
+    // back into the app - so the stand-in carries a body reader and `redirect`.
+    Response: Object.assign(
+      function (body: string | SharedFile, init: { status?: number; headers?: Record<string, string> } = {}) {
+        return makeResponse(typeof body === 'string' ? body : body._body, init);
+      },
+      {
+        redirect(url: string, status = 302) {
+          return { ...makeResponse('', { status }), _redirect: url };
+        },
+      },
+    ),
     URL, setTimeout, clearTimeout, Promise, console,
   };
   runInContext(src, createContext(sandbox));
@@ -149,6 +175,25 @@ async function drive(h: Harness, url: string, mode: string): Promise<string | nu
   const body = (await out.responded)._body;
   await Promise.allSettled(background);
   return body;
+}
+
+/** A file as an OS share sheet hands it over: name, type, size, and its bytes. */
+interface SharedFile { name: string; type: string; size: number; _body: string }
+const sharedFile = (name: string, type: string, body: string): SharedFile =>
+  ({ name, type, size: body.length, _body: body });
+
+/** Drive one share-target POST through the fetch handler and return its response
+ *  (the redirect the worker answers with), or null when the handler declined. */
+async function share(h: Harness, files: SharedFile[], path = '/share-target') {
+  const request = {
+    method: 'POST',
+    url: `https://lolly.tools${path}`,
+    mode: 'navigate',
+    formData: async () => ({ getAll: (field: string) => (field === 'files' ? files : []) }),
+  };
+  const out: { responded: Promise<{ _redirect?: string; status: number }> | null } = { responded: null };
+  h.fetchHandler({ request, respondWith: (p: Promise<{ _redirect?: string; status: number }>) => { out.responded = p; }, waitUntil: () => {} });
+  return out.responded ? await out.responded : null;
 }
 
 /** Drive one navigation through the fetch handler and return the served body. */
@@ -464,6 +509,66 @@ describe('service worker: the offline-download buckets', () => {
     assert.equal(await subresource(h, 'https://lolly.tools/assets/lazy-view-abc123.js'), 'CHUNK');
     assert.equal(await subresource(h, 'https://lolly.tools/fonts/Outfit-latin%5Bwght%5D.woff2'), 'FONT',
       '/fonts/ must have an offline path - before v13 it had no rule at all');
+  });
+});
+
+describe('service worker: the PWA share target', () => {
+  const stash = (h: Harness): FakeCache | undefined => h.caches.get('lolly-share-inbox');
+
+  test('a shared file is parked with its name and the browser is sent to the app', async () => {
+    const h = loadServiceWorker();
+    const res = await share(h, [sharedFile('Q3 deck.pptx', 'application/vnd.ms-x', 'DECK_BYTES')]);
+    assert.equal(res?.status, 303, 'a share POST is answered with a redirect, never a page');
+    assert.equal(res?._redirect, '/?share-target=1', 'and it opens the app, where the page drains the stash');
+
+    const parked = stash(h);
+    assert.deepEqual([...(parked?.entries.keys() ?? [])], ['/share-target/stash/0']);
+    assert.equal(parked?.entries.get('/share-target/stash/0'), 'DECK_BYTES');
+    const held = await parked?.match('/share-target/stash/0');
+    assert.equal(held?.headers.get('x-lolly-share-name'), 'Q3%20deck.pptx',
+      'the filename rides a header, percent-encoded so a non-ASCII name stays a legal header value');
+    assert.equal(held?.headers.get('content-type'), 'application/vnd.ms-x');
+  });
+
+  test('several files are parked in order; the next share replaces them', async () => {
+    const h = loadServiceWorker();
+    await share(h, [sharedFile('a.png', 'image/png', 'A'), sharedFile('b.png', 'image/png', 'B')]);
+    assert.deepEqual([...(stash(h)?.entries.keys() ?? [])],
+      ['/share-target/stash/0', '/share-target/stash/1']);
+
+    await share(h, [sharedFile('c.png', 'image/png', 'C')]);
+    assert.deepEqual([...(stash(h)?.entries.entries() ?? [])], [['/share-target/stash/0', 'C']],
+      'the stash is a handoff, not a queue - the page always takes the whole of it');
+  });
+
+  test('a share carrying no file still opens the app', async () => {
+    // Sharing a plain link or note posts the same form with no `files` part. The
+    // worker must not leave the browser sitting on an empty POST response.
+    const h = loadServiceWorker();
+    const res = await share(h, []);
+    assert.equal(res?._redirect, '/?share-target=1');
+    assert.equal(stash(h)?.entries.size ?? 0, 0);
+  });
+
+  test('only a POST to the share path is a share', async () => {
+    const h = loadServiceWorker();
+    h.server.set('/', 'APP_SHELL');
+    h.server.set('/share-target', 'APP_SHELL');
+    // A GET of the same path is an ordinary navigation, and a POST anywhere else
+    // is left to the network - the handler must decline it.
+    assert.equal(await navigate(h, 'https://lolly.tools/share-target'), 'APP_SHELL');
+    assert.equal(stash(h), undefined, 'a GET writes nothing to the inbox');
+    assert.equal(await share(h, [sharedFile('a.png', 'image/png', 'A')], '/api/anything'), null,
+      'the worker answers no other POST');
+  });
+
+  test('a share survives a worker update', async () => {
+    // The stash is written by the worker and read by the page on the next boot,
+    // so a generation bump in between must not throw the file away.
+    const h = loadServiceWorker();
+    await share(h, [sharedFile('a.png', 'image/png', 'A')]);
+    await h.activate();
+    assert.equal(stash(h)?.entries.get('/share-target/stash/0'), 'A');
   });
 });
 

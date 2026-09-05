@@ -96,6 +96,7 @@ import { rewordAvailable } from '../lib/reworder.ts';
 // pasted.txt); the verification itself always re-sniffs the bytes.
 import { sniffFormat } from '../../../../engine/src/c2pa-extract.ts';
 import { LOLLY_MARK_SVG } from '../lib/lolly-mark.ts';
+import { appendScoreToggle } from './valid-score-toggle.ts';
 
 // Trust anchors: the pinned Lolly CA root (identity for Lolly-signed assets)
 // plus the vendored C2PA trust list (Google/Gemini, the camera makers, Bria,
@@ -163,8 +164,18 @@ function miniScorePipHtml(it: ScorecardItem): string {
 }
 
 function scorecardHtml(report: VerifyReport, watermark?: Watermark, extra?: ScorecardItem[]): string {
-  return `<ul class="valid-score" aria-label="${escape(t('Verification checks at a glance'))}">${scorecardModel(report, watermark, extra).map(scorecardPipHtml).join('')}</ul>`;
+  const items = scorecardModel(report, watermark, extra);
+  const more = items.length > 4
+    ? `<button type="button" class="valid-score-more" data-score-toggle data-score-count="${items.length}" aria-expanded="false">${t('Show all {n} checks', { n: items.length })}</button>`
+    : '';
+  return `<div class="valid-score-wrap"><ul class="valid-score" aria-label="${escape(t('Verification checks at a glance'))}">${items.map(scorecardPipHtml).join('')}</ul>${more}</div>`;
 }
+
+// Evidence cards arrive open when the display can comfortably hold a report,
+// but start as labelled disclosure rows on a phone. The content remains ordinary
+// <details>, so a reader can always reverse that default.
+const disclosureOpenAttr = (): string =>
+  typeof window !== 'undefined' && window.matchMedia('(min-width: 700px)').matches ? ' open' : '';
 
 function checkRow(c: Check, i = 0): string {
   const cls = c.ok ? 'ok' : isExpectedRow(c) ? 'info' : 'bad';
@@ -466,21 +477,27 @@ function renderMetadata(meta: FileMetadata | undefined, preview: Preview | undef
   const locationBlock = meta.gps ? `
     <section class="valid-meta-location">
       <h4>${svgIcon('mapPin')}<span>${t('Location')}</span></h4>
-      ${renderLocator(meta.gps.lat, meta.gps.lon)}
-      <div class="valid-meta-loc-read">
-        ${loc.map((f) => `<span class="valid-meta-loc-item"><span class="k">${escape(f.label)}</span><span class="v">${escape(f.value)}</span></span>`).join('')}
-        ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - engine file-metadata.ts builds mapUrl as a literal 'https://www.openstreetmap.org/…' prefix over numeric EXIF lat/lon (toFixed), so no EXIF string reaches the scheme */ ''}
-        ${meta.mapUrl ? `<a class="valid-meta-map" href="${escape(meta.mapUrl)}" target="_blank" rel="noopener noreferrer">OpenStreetMap ↗</a>` : ''}
+      <div class="valid-meta-location-layout">
+        ${renderLocator(meta.gps.lat, meta.gps.lon)}
+        <div class="valid-meta-loc-read">
+          <span class="valid-meta-location-warning">${svgIcon('eye')}<span>${t('This file contains a precise location')}</span></span>
+          ${loc.map((f) => `<span class="valid-meta-loc-item"><span class="k">${escape(f.label)}</span><span class="v">${escape(f.value)}</span></span>`).join('')}
+          ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - engine file-metadata.ts builds mapUrl as a literal 'https://www.openstreetmap.org/…' prefix over numeric EXIF lat/lon (toFixed), so no EXIF string reaches the scheme */ ''}
+          ${meta.mapUrl ? `<a class="valid-meta-map" href="${escape(meta.mapUrl)}" target="_blank" rel="noopener noreferrer">OpenStreetMap ↗</a>` : ''}
+        </div>
       </div>
     </section>` : '';
   return `
-    <section class="valid-meta">
-      <div class="valid-meta-head">
+    <details class="valid-meta valid-panel-disclosure${meta.gps ? ' has-map' : ''}"${disclosureOpenAttr()}>
+      <summary class="valid-meta-head">
         <h3>${svgIcon('eye')}<span>${t('Embedded metadata')}</span></h3>
+        ${meta.gps ? `<span class="valid-meta-sensitive">${svgIcon('mapPin')}<span>${t('GPS recorded')}</span></span>` : ''}
         <span class="valid-meta-count">${n === 1 ? t('1 field') : t('{n} fields', { n })}${meta.format ? ` · ${escape(meta.format)}` : ''}</span>
-      </div>
-      ${mediaPreviewHtml(preview, 'sm')}
-      <p class="valid-meta-note">${t("Read on this device from the file's own bytes - the EXIF, XMP and container data it carries wherever it travels.")}${sensitive ? ` ${t('Values that can identify a person, place or device are marked.')}` : ''} ${isStrippableFormat(meta.format)
+        <span class="valid-disclosure-chev" aria-hidden="true">${ICON_CHEVRON}</span>
+      </summary>
+      <div class="valid-meta-body">
+        ${mediaPreviewHtml(preview, 'sm')}
+        <p class="valid-meta-note">${t("Read on this device from the file's own bytes - the EXIF, XMP and container data it carries wherever it travels.")}${sensitive ? ` ${t('Values that can identify a person, place or device are marked.')}` : ''} ${isStrippableFormat(meta.format)
     ? tRaw('{button} or use the {link} tool for more control.', {
         button: `<button type="button" class="valid-clean-link" data-clean-copy="${fileIndex}" data-clean-format="${escape(meta.format)}">${t('Download a cleaned copy')}</button>`,
         link: `<a href="#/tool/strip-data">${t('Hidden Data')}</a>`,
@@ -488,11 +505,12 @@ function renderMetadata(meta: FileMetadata | undefined, preview: Preview | undef
     : tRaw('Remove it with the {link} tool.', { link: `<a href="#/tool/strip-data">${t('Hidden Data')}</a>` })}${isRedactableFormat(meta.format)
     ? ` ${tRaw('To remove content the pixels themselves show, use the {link} tool.', { link: `<a href="#/tool/redact">${t('Redact')}</a>` })}`
     : ''}</p>
-      <div class="valid-meta-grid">
-        ${locationBlock}
-        ${groups.map((x) => section(x.g, t(META_GROUP_LABEL[x.g]), META_GROUP_ICON[x.g], x.items.map(row).join(''))).join('')}
+        <div class="valid-meta-grid">
+          ${locationBlock}
+          ${groups.map((x) => section(x.g, t(META_GROUP_LABEL[x.g]), META_GROUP_ICON[x.g], x.items.map(row).join(''))).join('')}
+        </div>
       </div>
-    </section>`;
+    </details>`;
 }
 
 // ── AI-generated flag ───────────────────────────────────────────────────────
@@ -714,12 +732,12 @@ function tsigGaugeSvg(score: number, band: TextSignalPanel['band']): string {
   const n = Math.max(0, Math.min(100, Math.round(score)));
   const c = 2 * Math.PI * 26;
   const on = (n / 100) * c;
-  return `<div class="valid-tsig-gauge-wrap"><svg class="valid-tsig-gauge" viewBox="0 0 64 64" role="img" aria-label="${escape(tRaw('Signal score {n} of 100', { n }))}" data-band="${escape(band)}">`
+  return `<div class="valid-tsig-gauge-wrap"><svg class="valid-tsig-gauge" viewBox="0 0 64 64" role="img" aria-label="${escape(tRaw('AI-writing evidence score {n} of 100 - heuristic, not a probability', { n }))}" data-band="${escape(band)}">`
     + '<circle class="valid-tsig-gauge-track" cx="32" cy="32" r="26"/>'
     + `<circle class="valid-tsig-gauge-fill" cx="32" cy="32" r="26" stroke-dasharray="${on.toFixed(2)} ${c.toFixed(2)}"/>`
     + `<text class="valid-tsig-gauge-num" x="32" y="34">${n}</text>`
     + '<text class="valid-tsig-gauge-den" x="32" y="45">/100</text>'
-    + '</svg></div>';
+    + `</svg><span class="valid-tsig-gauge-copy"><strong>${t('AI-writing evidence')}</strong><small>${t('Heuristic score · not a probability')}</small></span></div>`;
 }
 
 /** The word for a temperature bucket, for the mark tooltips: names the grade so
@@ -889,14 +907,23 @@ function textSignalsHtml(panel: TextSignalPanel | undefined): string {
         <strong>${escape(heading[panel.band])} <span class="valid-tsig-band" data-band="${escape(panel.band)}">${escape(bandLabel[panel.band])}</span></strong>
         ${wm}
         ${tsigGaugeSvg(panel.score, panel.band)}
-        ${heatbar}
-        ${extract}
-        ${rows ? `<ul class="valid-aidecl-list">${rows}</ul>` : ''}
-        ${guess}
-        ${cands}
-        ${noMarker}
         ${modelSlot}
-        ${panel.facts ? tsigFactsHtml(panel.facts) : ''}
+        <details class="valid-tsig-details valid-panel-disclosure"${disclosureOpenAttr()}>
+          <summary>
+            <span>${t('Review the evidence')}</span>
+            <span class="valid-tsig-details-count">${t('{n} findings', { n: panel.rows.length })}</span>
+            <span class="valid-disclosure-chev" aria-hidden="true">${ICON_CHEVRON}</span>
+          </summary>
+          <div class="valid-tsig-details-body">
+            ${heatbar}
+            ${extract}
+            ${rows ? `<ul class="valid-aidecl-list">${rows}</ul>` : ''}
+            ${guess}
+            ${cands}
+            ${noMarker}
+            ${panel.facts ? tsigFactsHtml(panel.facts) : ''}
+          </div>
+        </details>
         <span class="valid-aidecl-note${panel.band === 'strong' ? ' guide-warn' : panel.band === 'notable' ? ' guide-hint' : ''}">${escape(panel.summary)} ${t('It reads the text for tells; it cannot see a declaration, and a declaration in the credential is the stronger signal.')}</span>
       </div>
       <span class="valid-aidecl-tag" aria-hidden="true">${t('AI?')}</span>
@@ -1543,10 +1570,14 @@ export function stepsHtml(report: VerifyReport): string {
       </li>`;
   }).join('');
   return `
-    <div class="valid-steps valid-panel">
-      <h3>${svgIcon('clock')}<span>${t('Change history')}</span></h3>
+    <details class="valid-steps valid-panel valid-panel-disclosure"${disclosureOpenAttr()}>
+      <summary class="valid-panel-summary">
+        <span class="valid-panel-summary-title">${svgIcon('clock')}<span>${t('Change history')}</span></span>
+        <span class="valid-panel-summary-meta">${t('{n} steps', { n: acts.length })}</span>
+        <span class="valid-disclosure-chev" aria-hidden="true">${ICON_CHEVRON}</span>
+      </summary>
       <ol class="valid-steps-list">${rows}</ol>
-    </div>`;
+    </details>`;
 }
 
 // The assertion/validation log, boxed as a panel matching Change history - the raw,
@@ -1557,10 +1588,14 @@ export function stepsHtml(report: VerifyReport): string {
 function checksHtml(report: VerifyReport): string {
   if (!report.checks.length) return '';
   return `
-    <div class="valid-checks-panel valid-panel">
-      <h3>${svgIcon('checklist')}<span>${t('Assertion log')}</span></h3>
+    <details class="valid-checks-panel valid-panel valid-panel-disclosure"${disclosureOpenAttr()}>
+      <summary class="valid-panel-summary">
+        <span class="valid-panel-summary-title">${svgIcon('checklist')}<span>${t('Assertion log')}</span></span>
+        <span class="valid-panel-summary-meta">${t('{n} checks', { n: report.checks.length })}</span>
+        <span class="valid-disclosure-chev" aria-hidden="true">${ICON_CHEVRON}</span>
+      </summary>
       <ul class="valid-checks">${report.checks.map(checkRow).join('')}</ul>
-    </div>`;
+    </details>`;
 }
 
 // ── Uploaded-media preview ──────────────────────────────────────────────────
@@ -1711,16 +1746,25 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
           ${fact(t('C2PA version'), report.specVersion ?? null, 'checklist')}
         </dl>` : '';
   const summaryBlock = `
-      <div class="valid-summary valid-panel">
-        <p class="valid-file"><strong>${escape(fileName)}</strong>${formatChip(report.format)}${report.reason ? ` - ${escape(report.reason)}` : ''}</p>
-        ${selfnoteBlock}
-        ${factsBlock}
-      </div>`;
-  // Embedded metadata joins the same flowing panel set (not a separate full-width
-  // section below it) so a short card can settle into whatever column has room
-  // instead of always trailing after a long change-history/assertion-log panel.
+      <details class="valid-summary valid-panel valid-panel-disclosure"${disclosureOpenAttr()}>
+        <summary class="valid-panel-summary">
+          <span class="valid-panel-summary-title">${svgIcon('document')}<span>${t('File & credential details')}</span></span>
+          <span class="valid-panel-summary-meta">${escape(fileName)}</span>
+          <span class="valid-disclosure-chev" aria-hidden="true">${ICON_CHEVRON}</span>
+        </summary>
+        <div class="valid-panel-body">
+          <p class="valid-file"><strong>${escape(fileName)}</strong>${formatChip(report.format)}${report.reason ? ` - ${escape(report.reason)}` : ''}</p>
+          ${selfnoteBlock}
+          ${factsBlock}
+        </div>
+      </details>`;
+  // Metadata normally joins the flowing evidence cards. A GPS-bearing file earns
+  // a full-width feature surface below them: on wide displays its offline map can
+  // sit beside the rest of the EXIF readout instead of shrinking into a column.
   const metaBlock = renderMetadata(meta, preview, fileIndex);
-  const panelsBlock = `<div class="valid-panels">${summaryBlock}${madeFromBlock}${scriptBlock}${stepsBlock}${checksBlock}${metaBlock}</div>`;
+  const metaInMasonry = meta?.gps ? '' : metaBlock;
+  const mappedMeta = meta?.gps ? `<div class="valid-meta-feature">${metaBlock}</div>` : '';
+  const panelsBlock = `<div class="valid-panels">${summaryBlock}${madeFromBlock}${scriptBlock}${stepsBlock}${checksBlock}${metaInMasonry}</div>${mappedMeta}`;
   // The two "key validations" + the signed-by caption shown under the "Made with
   // Lolly" pill - only for the flagship lolly hero; every other good state keeps
   // the single prose sub + identityLine above.
@@ -1885,6 +1929,7 @@ function renderReportBody(fileName: string, report: VerifyReport, meta: FileMeta
 }
 
 const MASONRY_BREAKPOINT = '(min-width: 780px)';
+const MASONRY_WIDE_BREAKPOINT = '(min-width: 1400px)';
 
 // True masonry: each card lands in whichever column is CURRENTLY shortest, not
 // wherever a fixed CSS column-count's strictly-sequential fill would put it.
@@ -1900,7 +1945,9 @@ const MASONRY_BREAKPOINT = '(min-width: 780px)';
 // original order to rebuild from, not whatever order cards ended up in last time.
 function layoutMasonry(container: HTMLElement): void {
   if (!container.offsetParent) return; // closed <details> body - re-runs once opened (see wireMasonry)
-  const cols = window.matchMedia(MASONRY_BREAKPOINT).matches ? 2 : 1;
+  const cols = window.matchMedia(MASONRY_WIDE_BREAKPOINT).matches
+    ? 3
+    : window.matchMedia(MASONRY_BREAKPOINT).matches ? 2 : 1;
   if (container.dataset.masonryCols === String(cols)) return;
   const cards = Array.from(container.querySelectorAll<HTMLElement>('.valid-panel, .valid-meta'));
   if (!cards.length) return;
@@ -1945,12 +1992,20 @@ function wireMasonry(viewEl: HTMLElement, reportEl: HTMLElement): void {
     const details = e.target as HTMLElement;
     if ((details as HTMLDetailsElement).open) details.querySelectorAll<HTMLElement>('.valid-panels').forEach(layoutMasonry);
   }, true);
-  const mq = window.matchMedia(MASONRY_BREAKPOINT);
-  mq.addEventListener('change', relayout);
+  const queries = [window.matchMedia(MASONRY_BREAKPOINT), window.matchMedia(MASONRY_WIDE_BREAKPOINT)];
+  queries.forEach((mq) => mq.addEventListener('change', relayout));
+  const disclosureMq = window.matchMedia('(min-width: 700px)');
+  const syncDisclosures = (): void => {
+    reportEl.querySelectorAll<HTMLDetailsElement>('.valid-panel-disclosure').forEach((details) => {
+      details.open = disclosureMq.matches;
+    });
+  };
+  disclosureMq.addEventListener('change', syncDisclosures);
   const prev = (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup;
   (viewEl as HTMLElement & { _cleanup?: () => void })._cleanup = () => {
     prev?.();
-    mq.removeEventListener('change', relayout);
+    queries.forEach((mq) => mq.removeEventListener('change', relayout));
+    disclosureMq.removeEventListener('change', syncDisclosures);
   };
 }
 
@@ -2070,31 +2125,37 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
         <div class="plat-header-text">
           <p class="plat-sub">${t("Check a file's Content Credentials - the signed C2PA manifest Lolly embeds on export. Answers whether it was genuinely made with Lolly, by whom, and where. On-device; nothing is uploaded.")}</p>
         </div>
+        <div class="valid-header-actions" aria-label="${escape(t('Verify another item'))}">
+          <button type="button" class="btn" data-check-more>${t('Choose other files')}</button>
+          <button type="button" class="btn" data-result-paste>${t('Paste text')}</button>
+        </div>
       </header>
 
-      <div class="valid-drop" data-drop tabindex="0" role="button" aria-label="${escape(t('Choose or drop files to verify'))}">
-        <input type="file" multiple accept=".pdf,.pptx,.docx,.png,.apng,.jpg,.jpeg,.gif,.svg,.tif,.tiff,.webp,.avif,.mp4,.m4v,.mov,.m4a,.webm,.mkv,.mp3,.wav,.opus,.html,.htm,.js,.css,.md,.txt,application/pdf,${PPTX_MIME},${DOCX_MIME},image/png,image/jpeg,image/gif,image/svg+xml,image/tiff,image/webp,image/avif,video/mp4,video/webm,video/x-matroska,audio/mp4,audio/mpeg,audio/wav,audio/x-wav,.ogg,audio/ogg,audio/opus,text/*" hidden>
-        <span class="valid-drop-icon" aria-hidden="true">${ICON_SHIELD}</span>
-        <!-- Two leads, both rendered, one shown per pointer type (valid.css): a coarse
-             pointer gets the tap affordance, a mouse keeps the drop sentence. The zone
-             is ITSELF the button (role=button above), so this is its visible label, not
-             a nested control - no second tab stop, no double picker on click. -->
-        <span class="btn btn--primary valid-drop-cta">${t('Choose files')}</span>
-        <strong class="valid-drop-lead">${t('Drop files here')}</strong>
-        <span class="valid-drop-hint">${verifyFormatChips()}</span>
-        <span>${t('Check one or several at once, or paste source text - a C2PA credential can travel inside an HTML document or plain text')}</span>
-      </div>
+      <div class="valid-intake">
+        <div class="valid-drop" data-drop tabindex="0" role="button" aria-label="${escape(t('Choose or drop files to verify'))}">
+          <input type="file" multiple accept=".pdf,.pptx,.docx,.png,.apng,.jpg,.jpeg,.gif,.svg,.tif,.tiff,.webp,.avif,.mp4,.m4v,.mov,.m4a,.webm,.mkv,.mp3,.wav,.opus,.html,.htm,.js,.css,.md,.txt,application/pdf,${PPTX_MIME},${DOCX_MIME},image/png,image/jpeg,image/gif,image/svg+xml,image/tiff,image/webp,image/avif,video/mp4,video/webm,video/x-matroska,audio/mp4,audio/mpeg,audio/wav,audio/x-wav,.ogg,audio/ogg,audio/opus,text/*" hidden>
+          <span class="valid-drop-icon" aria-hidden="true">${ICON_SHIELD}</span>
+          <!-- Two leads, both rendered, one shown per pointer type (valid.css): a coarse
+               pointer gets the tap affordance, a mouse keeps the drop sentence. The zone
+               is ITSELF the button (role=button above), so this is its visible label, not
+               a nested control - no second tab stop, no double picker on click. -->
+          <span class="btn btn--primary valid-drop-cta">${t('Choose files')}</span>
+          <strong class="valid-drop-lead">${t('Drop files here')}</strong>
+          <span class="valid-drop-hint">${verifyFormatChips()}</span>
+          <span>${t('Check one or several at once, or paste source text - a C2PA credential can travel inside an HTML document or plain text')}</span>
+        </div>
 
-      <div class="valid-paste">
-        <button type="button" class="btn valid-paste-open" data-paste-open aria-expanded="false" aria-controls="valid-paste-panel">${t('Paste text')}</button>
-        <div class="valid-paste-panel" id="valid-paste-panel" data-paste-panel hidden>
-          <label class="valid-paste-label" for="valid-paste-text">${t('Paste the text, markup or source you want to check')}</label>
-          <textarea id="valid-paste-text" class="valid-paste-text" data-paste-text rows="8" spellcheck="false" autocomplete="off"></textarea>
-          <div class="valid-paste-actions">
-            <button type="button" class="btn valid-paste-verify" data-paste-verify>${t('Verify this text')}</button>
-            <button type="button" class="btn valid-paste-cancel" data-paste-cancel>${t('Cancel')}</button>
+        <div class="valid-paste">
+          <button type="button" class="btn valid-paste-open" data-paste-open aria-expanded="false" aria-controls="valid-paste-panel">${t('Paste text')}</button>
+          <div class="valid-paste-panel" id="valid-paste-panel" data-paste-panel hidden>
+            <label class="valid-paste-label" for="valid-paste-text">${t('Paste the text, markup or source you want to check')}</label>
+            <textarea id="valid-paste-text" class="valid-paste-text" data-paste-text rows="8" spellcheck="false" autocomplete="off"></textarea>
+            <div class="valid-paste-actions">
+              <button type="button" class="btn valid-paste-verify" data-paste-verify>${t('Verify this text')}</button>
+              <button type="button" class="btn valid-paste-cancel" data-paste-cancel>${t('Cancel')}</button>
+            </div>
+            <p class="valid-paste-foot">${t('The text is checked on this device, exactly as pasted. Invisible characters matter here - a C2PA text credential is made of them - so paste rather than retype.')}</p>
           </div>
-          <p class="valid-paste-foot">${t('The text is checked on this device, exactly as pasted. Invisible characters matter here - a C2PA text credential is made of them - so paste rather than retype.')}</p>
         </div>
       </div>
 
@@ -2111,6 +2172,11 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   const drop = viewEl.querySelector<HTMLElement>('[data-drop]')!;
   const input = drop.querySelector<HTMLInputElement>('input[type="file"]')!;
   const reportEl = viewEl.querySelector<HTMLElement>('[data-report]')!;
+  const layoutEl = viewEl.querySelector<HTMLElement>('.valid-layout')!;
+  const enterResultMode = (): void => {
+    layoutEl.classList.add('has-results');
+    layoutEl.classList.remove('is-pasting');
+  };
   wireMasonry(viewEl, reportEl);
 
   // The view's own liveness. A watermark job outlives this view by design (WP-F),
@@ -2460,9 +2526,19 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     const pipHtml = tag(scorecardPipHtml(pip, 0));
     if (scoreList) {
       place(scoreList, pipHtml);
+      const wrap = scoreList.closest<HTMLElement>('.valid-score-wrap');
+      let toggle = wrap?.querySelector<HTMLButtonElement>('[data-score-toggle]');
+      const count = scoreList.children.length;
+      if (!toggle && count > 4 && wrap) {
+        toggle = appendScoreToggle(wrap, count, t('Show all {n} checks', { n: count }));
+      }
+      if (toggle) {
+        toggle.dataset.scoreCount = String(count);
+        if (toggle.getAttribute('aria-expanded') !== 'true') toggle.textContent = t('Show all {n} checks', { n: count });
+      }
     } else {
       deepscanEl.insertAdjacentHTML('beforebegin',
-        `<ul class="valid-score" aria-label="${escape(t('Verification checks at a glance'))}">${pipHtml}</ul>`);
+        `<div class="valid-score-wrap"><ul class="valid-score" aria-label="${escape(t('Verification checks at a glance'))}">${pipHtml}</ul></div>`);
     }
     // Mirror into the collapsed row's MINI scorecard (multi-file cards only - 
     // single-file reports have no summary), so a hit shows in the summary without
@@ -2973,6 +3049,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     pendingSourceUrl = null;
     pendingPasted = false;
     scannedKeys.clear(); // fresh batch - allow each file to be scanned again
+    enterResultMode();
     reportEl.hidden = false;
 
     // One file reads exactly as before - the full report inline, no collapse chrome.
@@ -3005,10 +3082,35 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     }
 
     // Several files → a stack of collapsible reports. Default collapsed so the whole
-    // batch reads as a column of highlight bars; expand any one for its full report.
+    // batch reads as a triage surface first, then a column of highlight bars. The
+    // counters are filters as well as a summary: useful with three files, essential
+    // with thirty, and still compact enough to stay above the fold on a phone.
     reportEl.innerHTML = `
+      <section class="valid-batch-overview" aria-label="${escape(t('Batch overview'))}">
+        <div class="valid-batch-heading">
+          <span>${t('Batch overview')}</span>
+          <strong data-batch-progress aria-live="polite">${t('Checking 0 of {n}', { n: list.length })}</strong>
+        </div>
+        <div class="valid-batch-stats" role="group" aria-label="${escape(t('Filter these files'))}">
+          <button type="button" class="valid-batch-stat is-all is-active" data-batch-filter="all" aria-pressed="true">
+            <strong>${list.length}</strong><span>${t('All files')}</span>
+          </button>
+          <button type="button" class="valid-batch-stat is-good" data-batch-filter="good" aria-pressed="false" disabled>
+            <strong data-batch-good>0</strong><span>${t('Intact')}</span>
+          </button>
+          <button type="button" class="valid-batch-stat is-attention" data-batch-filter="attention" aria-pressed="false" disabled>
+            <strong data-batch-attention>0</strong><span>${t('Needs attention')}</span>
+          </button>
+          <button type="button" class="valid-batch-stat is-ai" data-batch-filter="ai" aria-pressed="false" disabled>
+            <strong data-batch-ai>0</strong><span>${t('AI signals')}</span>
+          </button>
+          <button type="button" class="valid-batch-stat is-none" data-batch-filter="none" aria-pressed="false" disabled>
+            <strong data-batch-none>0</strong><span>${t('No credential')}</span>
+          </button>
+        </div>
+      </section>
       <div class="valid-reports-bar">
-        <span class="valid-reports-count">${t('{n} files', { n: list.length })}</span>
+        <span class="valid-reports-count">${t('Review files')}</span>
         <div class="valid-reports-actions">
           <button type="button" class="btn valid-reports-toggle" data-expand>${t('Expand all')}</button>
           <button type="button" class="btn valid-reports-toggle" data-collapse>${t('Collapse all')}</button>
@@ -3016,7 +3118,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       </div>
       <div class="valid-reports-list"></div>`;
     const listEl = reportEl.querySelector<HTMLElement>('.valid-reports-list')!;
-    const setAll = (open: boolean): void => listEl.querySelectorAll('details').forEach((d) => { d.open = open; });
+    const setAll = (open: boolean): void => listEl.querySelectorAll<HTMLDetailsElement>(':scope > details:not([hidden])').forEach((d) => { d.open = open; });
     reportEl.querySelector('[data-expand]')!.addEventListener('click', () => setAll(true));
     reportEl.querySelector('[data-collapse]')!.addEventListener('click', () => setAll(false));
 
@@ -3036,6 +3138,53 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
       listEl.appendChild(card);
       return card;
     });
+
+    type BatchFilter = 'all' | 'good' | 'attention' | 'ai' | 'none';
+    const batchCounts = { done: 0, good: 0, attention: 0, ai: 0, none: 0 };
+    let activeFilter: BatchFilter = 'all';
+    const matchesFilter = (card: HTMLElement, filter: BatchFilter): boolean => {
+      if (filter === 'all') return true;
+      if (filter === 'good') return card.dataset.batchTone === 'good';
+      if (filter === 'attention') return card.dataset.batchTone === 'bad' || card.dataset.batchTone === 'warn';
+      if (filter === 'ai') return card.dataset.batchAi === '1';
+      return card.dataset.batchCredential === '0';
+    };
+    const applyBatchFilter = (): void => {
+      cards.forEach((card) => { card.hidden = !matchesFilter(card, activeFilter); });
+      reportEl.querySelectorAll<HTMLButtonElement>('[data-batch-filter]').forEach((button) => {
+        const active = button.dataset.batchFilter === activeFilter;
+        button.classList.toggle('is-active', active);
+        button.setAttribute('aria-pressed', String(active));
+      });
+    };
+    const paintBatchOverview = (): void => {
+      const value = (selector: string, n: number): void => {
+        const el = reportEl.querySelector<HTMLElement>(selector);
+        if (el) el.textContent = String(n);
+      };
+      value('[data-batch-good]', batchCounts.good);
+      value('[data-batch-attention]', batchCounts.attention);
+      value('[data-batch-ai]', batchCounts.ai);
+      value('[data-batch-none]', batchCounts.none);
+      const progress = reportEl.querySelector<HTMLElement>('[data-batch-progress]');
+      if (progress) progress.textContent = batchCounts.done === list.length
+        ? t('{n} files ready', { n: list.length })
+        : t('Checking {done} of {n}', { done: batchCounts.done, n: list.length });
+      const enableWhen = (filter: BatchFilter, n: number): void => {
+        const button = reportEl.querySelector<HTMLButtonElement>(`[data-batch-filter="${filter}"]`);
+        if (button) button.disabled = n === 0;
+      };
+      enableWhen('good', batchCounts.good);
+      enableWhen('attention', batchCounts.attention);
+      enableWhen('ai', batchCounts.ai);
+      enableWhen('none', batchCounts.none);
+    };
+    reportEl.querySelector('.valid-batch-stats')!.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-batch-filter]');
+      if (!button || button.disabled) return;
+      activeFilter = (button.dataset.batchFilter ?? 'all') as BatchFilter;
+      applyBatchFilter();
+    });
     reportEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
     let allValid = true, anyAi = false, anyLolly = false;
@@ -3048,12 +3197,27 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
         // the good (green) stripe, matching its badge - not the neutral grey.
         const cardTone = noCredentialSignal(report, watermark, mine) ? 'good' : stateTone(report);
         card.className = `valid-item is-${cardTone}`;
+        card.dataset.batchTone = cardTone;
+        card.dataset.batchAi = report.aiGenerated || meta?.ai ? '1' : '0';
+        card.dataset.batchCredential = report.found ? '1' : '0';
         card.innerHTML = `<summary class="valid-item-summary">${summaryInner(file.name, report, meta, watermark, seal, mine)}</summary>` +
           `<div class="valid-item-body">${renderReportBody(file.name, report, meta, makePreview(file, report, snippet), i, watermark, mine, seal, notesFor(report, i), textSignals, ocrReady)}</div>`;
+        if (cardTone === 'good') batchCounts.good++;
+        else if (cardTone === 'bad' || cardTone === 'warn') batchCounts.attention++;
+        if (card.dataset.batchAi === '1') batchCounts.ai++;
+        if (!report.found) batchCounts.none++;
       } else {
         card.className = 'valid-item is-bad';
+        card.dataset.batchTone = 'bad';
+        card.dataset.batchAi = '0';
+        card.dataset.batchCredential = '0';
         card.innerHTML = errorSummary(file.name, error!);
+        batchCounts.attention++;
+        batchCounts.none++;
       }
+      batchCounts.done++;
+      paintBatchOverview();
+      applyBatchFilter();
       if (report?.state !== 'valid') allValid = false;
       if (report?.aiGenerated || meta?.ai) anyAi = true;
       if (report?.madeWithLolly) anyLolly = true;
@@ -3671,6 +3835,15 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
 
   wireLampScroll(reportEl);
   reportEl.addEventListener('click', (e) => {
+    const scoreToggle = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-score-toggle]');
+    if (scoreToggle) {
+      const wrap = scoreToggle.closest('.valid-score-wrap');
+      const expanded = !wrap?.classList.contains('is-expanded');
+      wrap?.classList.toggle('is-expanded', expanded);
+      scoreToggle.setAttribute('aria-expanded', String(expanded));
+      const count = Number(scoreToggle.dataset.scoreCount ?? 0);
+      scoreToggle.textContent = expanded ? t('Show fewer checks') : t('Show all {n} checks', { n: count });
+    }
     const ocr = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-ocr-read]');
     if (ocr) void readImageText(ocr);
     const ask = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-ask-cred]');
@@ -3823,7 +3996,10 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     pastePanel.hidden = !open;
     pasteOpen.setAttribute('aria-expanded', String(open));
     if (open) pasteText.focus();
-    else if (restoreFocus) pasteOpen.focus();
+    else {
+      layoutEl.classList.remove('is-pasting');
+      if (restoreFocus) pasteOpen.focus();
+    }
   };
   pasteOpen.addEventListener('click', () => setPasteOpen(pastePanel.hidden));
   viewEl.querySelector<HTMLButtonElement>('[data-paste-cancel]')!
@@ -3841,6 +4017,13 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
     e.preventDefault();
     setPasteOpen(false, true);
   });
+  viewEl.querySelector<HTMLButtonElement>('[data-check-more]')!
+    .addEventListener('click', () => { input.value = ''; input.click(); });
+  viewEl.querySelector<HTMLButtonElement>('[data-result-paste]')!
+    .addEventListener('click', () => {
+      layoutEl.classList.add('is-pasting');
+      setPasteOpen(true);
+    });
 
   // A cross-page image drag carries text/uri-list (and text/html with the <img>),
   // never the pixels. Fetching the URL is the only way to get bytes - it happens
@@ -3848,6 +4031,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   // always work, and a cross-origin server that refuses CORS gets a plain
   // explanation instead of dead air.
   const sayVerifyProblem = (msg: string): void => {
+    enterResultMode();
     reportEl.hidden = false;
     reportEl.innerHTML = `<div class="valid-reports-list"><p class="valid-busy">${escape(msg)}</p></div>`;
     playSfx('warn');
@@ -3856,6 +4040,7 @@ export async function mountValid(viewEl: HTMLElement, host: HostV1, params = '')
   /** Fetch a URL's bytes and run them through the normal verify path. */
   async function verifyFromUrl(url: string, onFail: (host: string) => string): Promise<void> {
     const name = decodeURIComponent(new URL(url, location.origin).pathname.split('/').pop() || 'image');
+    enterResultMode();
     reportEl.hidden = false;
     reportEl.innerHTML = `<div class="valid-reports-list">${checkingHtml(t('Checking {name}…', { name }))}</div>`;
     try {

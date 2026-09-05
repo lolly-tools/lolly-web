@@ -45,6 +45,11 @@ import { registerApprovalOpener } from '../lib/approval-request.ts';
 import { registerSessionSource } from '../lib/session-source.ts';
 import { registerNearbyProvider } from '../lib/nearby.ts';
 import { createOrgNearbyProvider } from './nearby-source.ts';
+import {
+  applyOrgDeliveryTargets,
+  clearOrgDeliveryTargets,
+  type OrgDeliveryDestination,
+} from './delivery-targets.ts';
 import { setInjectedTools } from '../lib/injected-tools.ts';
 import { setOrgGovernanceResolver, type FlagGovernance } from './governance.ts';
 // The probe half of this seam, in its own leaf so boot can run it without loading
@@ -168,6 +173,9 @@ export interface OrgConfig {
    *  declarative UI chrome (banners). Absent ⇒ no instance opinion; each descriptor
    *  is DATA the shell renders, never code. flag/resource kinds ride other seams. */
   injectables?: Injectable[];
+  /** Fixed organisation-owned outbound targets already filtered for this
+   *  caller. Provider options and credentials never enter the shell. */
+  destinations?: OrgDeliveryDestination[];
   telemetry?: { level?: string; attribution?: unknown; consented?: boolean };
   inboxUnread?: number;
   policyVersion?: string | number;
@@ -662,6 +670,10 @@ export async function initOrgWithAuth(auth: AuthConfig): Promise<OrgState | null
   try {
     session = await fetchSession();
     const isMember = session?.kind === 'member';
+    // A session change must withdraw the previous member's fixed targets before
+    // any early gate/return. A successful member load installs its fresh (or
+    // bounded-cache) projection below.
+    clearOrgDeliveryTargets();
 
     // Install identity (the covenant's device half): the per-device id joins
     // x-lolly-client exactly while a member session exists - so the org-config
@@ -715,6 +727,10 @@ export async function initOrgWithAuth(auth: AuthConfig): Promise<OrgState | null
       // gallery registry (pure data, beside the apply* group); chrome descriptors
       // are DOM-mounted lazily after emit() below. Dormant when the list is absent.
       applyInjectables(orgConfigState);
+      applyOrgDeliveryTargets(
+        orgConfigState?.destinations,
+        orgConfigState?.instance?.name || t('your organisation'),
+      );
       unregisterApprovalOpener?.();
       unregisterApprovalOpener = registerApprovalOpener((rctx) => {
         import('./approval-dialog.ts')
@@ -901,6 +917,7 @@ export function _resetOrgForTests(): void {
   unregisterCollabShareSection = null;
   unregisterCollabOpener?.();
   unregisterCollabOpener = null;
+  clearOrgDeliveryTargets();
   clearInputPolicies();
   setInputPolicyFailClosed(null);
   setExportPolicy(undefined);

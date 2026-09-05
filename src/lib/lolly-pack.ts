@@ -189,8 +189,10 @@ export interface LollyManifest {
   fonts?: LollyFontEntry[];
   /** The tool's own files, when the sender chose to carry it (Wave 7 / plans 114). */
   bundledTool?: LollyBundledTool;
-  /** Present when `design-system.json` travels: the sender's design system by name. */
-  designSystem?: { label?: string };
+  /** Present when `design-system.json` travels: the sender's design system by name,
+   *  and (plans/186 section 3.8) its id and where it came from - a hosted system
+   *  names its instance so the recipient can add it by link and keep it current. */
+  designSystem?: { label?: string; id?: string; source?: { kind: string; instance?: string } };
   integrity?: Record<string, string> | null;
 }
 
@@ -254,7 +256,7 @@ export interface LollyBuildInput {
   /** The sender's design system (the user tokens document) and its name, carried as
    *  `design-system.json` so the receiving studio can install the same look. Omit when
    *  the sender has none of their own. */
-  designSystem?: { doc: unknown; label?: string } | null;
+  designSystem?: { doc: unknown; label?: string; id?: string; source?: { kind: string; instance?: string } } | null;
 }
 
 export interface LollyBuildResult {
@@ -480,13 +482,21 @@ export async function buildLollyFile(input: LollyBuildInput): Promise<LollyBuild
     assets,
     ...(input.fonts?.length ? { fonts: [...input.fonts] } : {}),
     ...(bundledTool ? { bundledTool } : {}),
-    ...(designSystem ? { designSystem: { ...(designSystem.label ? { label: designSystem.label } : {}) } } : {}),
+    ...(designSystem ? { designSystem: {
+      ...(designSystem.label ? { label: designSystem.label } : {}),
+      ...(designSystem.id ? { id: designSystem.id } : {}),
+      ...(designSystem.source ? { source: designSystem.source } : {}),
+    } } : {}),
     ...(integrity ? { integrity } : {}),
   };
-  entries['manifest.json'] = strToU8(JSON.stringify(manifest, null, 2));
-  entries[README_NAME] = strToU8(lollyReadme(manifest, summary));
-
-  const zipped = await zipAsync(entries);
+  // Put the routing manifest first. The universal intake can then describe a
+  // multi-hundred-megabyte file after reading only its first ZIP entry instead
+  // of scanning past every embedded video before it can ask what to do.
+  const zipped = await zipAsync({
+    'manifest.json': strToU8(JSON.stringify(manifest, null, 2)),
+    [README_NAME]: strToU8(lollyReadme(manifest, summary)),
+    ...entries,
+  });
   const filename = `${safeBase(input.name || input.toolId)}${LOLLY_EXT}`;
   const blob = new Blob([zipped as BlobPart], { type: LOLLY_MIME });
   return { blob, filename, manifest, summary };
@@ -633,6 +643,13 @@ export interface LollyIngestResult {
   session: unknown;
 }
 
+export interface LollyIngestProgress {
+  phase: 'assets' | 'session';
+  current: number;
+  total: number;
+  label?: string;
+}
+
 /**
  * Rewrite a session's asset refs to the receiver-local ids a `.lolly` import minted.
  * Generalises the beam's user-only `rewriteSessionAssetRefs`: a `.lolly` carries
@@ -677,15 +694,22 @@ function mintLollySlot(toolId: string, taken: ReadonlySet<string>): string {
  * library) to the receiver-local ids and saves it as a new slot - never overwriting.
  *
  * `host` is the beam host slice (the shell casts its web host to it, as `beam-session.ts`
- * does). No tool CODE ever travels - the session resolves its tool from the local catalog,
- * so a `.lolly` for a not-yet-installed tool simply lands as a saved session.
+ * does). A file may carry its tool, but the intake layer handles that separate trust and
+ * installation decision before calling this data-only session ingest. A file without the
+ * tool still lands as a saved session when its referenced tool is unavailable.
  */
 export async function ingestLollyFile(
-  bytes: ArrayBuffer | Uint8Array,
+  source: ArrayBuffer | Uint8Array | LollyFileContents,
   host: BeamPackHost,
-  opts: { sanitizeSvg?: BeamSvgSanitiser } = {},
+  opts: { sanitizeSvg?: BeamSvgSanitiser; onProgress?: (progress: LollyIngestProgress) => void } = {},
 ): Promise<LollyIngestResult> {
-  const { manifest, session, files } = await readLollyFile(bytes);
+  // The universal intake has already parsed + integrity-verified the bundle in
+  // order to describe it before committing. Accept that result directly so an
+  // opened `.lolly` is never inflated a second time merely to begin ingest.
+  const parsed = source instanceof ArrayBuffer || source instanceof Uint8Array
+    ? await readLollyFile(source)
+    : source;
+  const { manifest, session, files } = parsed;
 
   const ctx = createBeamIngest(host, {
     ...(manifest.creator?.name ? { fromName: manifest.creator.name } : {}),
@@ -723,7 +747,8 @@ export async function ingestLollyFile(
   let imported = 0;
   let deduped = 0;
   try {
-    for (const it of items) {
+    for (const [itemIndex, it] of items.entries()) {
+      opts.onProgress?.({ phase: 'assets', current: itemIndex + 1, total: items.length, label: it.label });
       const r = await ingestBeamItem({ id: it.id, label: it.label, bytes: it.bytes, checksum: it.checksum }, it.blob, ctx);
       if (r.kind === 'asset') { if (r.deduped) deduped++; else imported++; }
     }
@@ -731,6 +756,7 @@ export async function ingestLollyFile(
     const taken = new Set((await host.state.list()).map(r => r.slot));
     const slot = mintLollySlot(manifest.tool.id, taken);
     const thumb = typeof manifest.thumb === 'string' ? manifest.thumb : null;
+    opts.onProgress?.({ phase: 'session', current: 1, total: 1 });
     await host.state.save(slot, rewritten as object, thumb);
     return { slot, toolId: manifest.tool.id, imported, deduped, session: rewritten };
   } catch (err) {

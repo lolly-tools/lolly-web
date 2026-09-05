@@ -91,24 +91,17 @@ interface RouteBase {
  * `pack` and `penpot` stop at identification. The Penpot branch runs several
  * more scans over the same entries, so it keeps them and nothing unzips twice.
  *
- * The pack branch carries `files` too, and TODAY'S CALLER DOES NOT USE THEM:
- * installing a pack is `editor.importPack(file)`, which re-reads the File and
- * inflates it again inside `importBrandPack`, because that is where the pack's
- * integrity map is verified. One archive, two inflates - bounded by
- * `ZIP_MAX_BYTES` and worth removing the day `brand-transfer.ts` can be handed
- * entries it has already been given. Until then this comment is the honest
- * version of the claim that used to sit here.
+ * The pack branch carries `files` too, and its caller hands those same parts to
+ * importBrandPack for integrity verification: one bounded inflate, not a sniff
+ * inflate followed by an import inflate. `.lolly` is deliberately absent: it is
+ * a container family, and every UI entry point sends it through
+ * lib/lolly-intake.ts before this design-file router is asked anything.
  */
 export type DesignFileRoute =
   | (RouteBase & { kind: 'svg' })
   | (RouteBase & { kind: 'pack'; files: Unzipped })
   | (RouteBase & { kind: 'penpot'; files: Unzipped })
   | (RouteBase & { kind: 'tokens'; extraction: TokensExtraction })
-  /** A `.lolly` SHARE file (lib/lolly-pack.ts): a saved session. `extraction` is the
-   *  design system it carries as `design-system.json`, null for a file written before
-   *  that part existed or by a sender with no design system of their own. `fonts` and
-   *  `toolId` are the manifest's, for the view to say what else is in there. */
-  | (RouteBase & { kind: 'lolly-share'; files: Unzipped; extraction: TokensExtraction | null; fonts: number; toolId: string | null })
   | { kind: 'refused'; reason: DesignFileRefusal; limit?: number; detail?: string };
 
 const SVG_NAME = /\.svg$/i;
@@ -271,25 +264,6 @@ export async function routeDesignFile(
     const manifest = readManifest(files);
     if (manifest?.format === 'lolly-brand') return { kind: 'pack', label, files };
     if (manifest?.type === 'penpot/export-files') return { kind: 'penpot', label, files };
-    // A shared session (`lolly-share`). Its design system, when it carries one, is an
-    // ordinary tokens document; the view sends it down the same path a tokens JSON takes.
-    if (manifest?.format === 'lolly-share') {
-      const m = manifest as { designSystem?: { label?: string }; fonts?: unknown; tool?: { id?: unknown } };
-      const part = files['design-system.json'];
-      let extraction: TokensExtraction | null = null;
-      if (part) {
-        try { extraction = coerceTokensDoc(JSON.parse(strFromU8(part))); } catch { extraction = null; }
-        if (extraction && !extraction.doc) extraction = null;
-      }
-      return {
-        kind: 'lolly-share',
-        label: (typeof m.designSystem?.label === 'string' && m.designSystem.label) || label,
-        files, extraction,
-        fonts: Array.isArray(m.fonts) ? m.fonts.length : 0,
-        toolId: typeof m.tool?.id === 'string' ? m.tool.id : null,
-      };
-    }
-
     // Neither manifest - the plain zip of loose token-set files.
     const extraction = tokenSetFilesFromZip(files);
     return extraction.doc

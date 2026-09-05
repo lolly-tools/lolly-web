@@ -449,8 +449,8 @@ let cached: Promise<VizPalette> | null = null;
 
 /**
  * The session's visualizer palette - derived from the loaded brand's tokens once,
- * then cached (a brand swap reloads the shell, so there's no invalidation path to
- * keep). A tokenless host resolves to the SUSE-shaped fallback immediately.
+ * then cached; a design-system switch calls invalidateVizPalette (plans/186
+ * section 3.4). A tokenless host resolves to the SUSE-shaped fallback immediately.
  */
 export function vizPalette(host?: VizPaletteHost): Promise<VizPalette> {
   const accent = liveAccentHex();

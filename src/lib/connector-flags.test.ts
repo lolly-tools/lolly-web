@@ -69,6 +69,17 @@ test('a kind with no flag (an instance-registered target) is never gated', () =>
   }
 });
 
+test('a personal connector choice does not withdraw an organisation-owned target of the same kind', () => {
+  registerSendTarget({ ...mk('gdrive'), id: 'org:archive', scope: 'organization', label: 'Archive' });
+  try {
+    overrideFlagInMemory('conn-gdrive', false);
+    assert.deepEqual(sendTargetsFor('svg').map((t) => t.label), ['Archive']);
+  } finally {
+    overrideFlagInMemory('conn-gdrive', true);
+    unregisterSendTarget('org:archive');
+  }
+});
+
 test('every built-in send target has a kill switch (drift guard on the real registration list)', () => {
   const dir = fileURLToPath(new URL('.', import.meta.url));
   const builtin = readFileSync(`${dir}send-targets-builtin.ts`, 'utf8');

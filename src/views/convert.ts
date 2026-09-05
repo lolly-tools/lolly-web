@@ -563,6 +563,13 @@ export async function mountConvert(viewEl: HTMLElement, host: HostV1, _params = 
       });
     });
   }
+
+  // Dolphin's direct Convert verb arrives through the desktop event queue. The
+  // view owns all sniffing/target selection, so consume the same File the picker
+  // would have produced instead of growing a native-only converter path.
+  const { takePendingConvertFile } = await import('../lib/drop-router.ts');
+  const pending = takePendingConvertFile();
+  if (pending) await onFile(pending);
 }
 
 function fmtBytes(n: number): string {

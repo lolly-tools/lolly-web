@@ -71,6 +71,10 @@ const MAX_PAIRS = 18;  // enough variety; keeps the pair-building bounded
 
 let chipPairsPromise: Promise<ReadonlyArray<readonly [string, string]>> | null = null;
 
+/** Drop the session's chip pairs so the next burst reads the current design
+ *  system's colours (plans/186 section 3.4). */
+export function bustChipPairs(): void { chipPairsPromise = null; }
+
 /** Fisher–Yates, in place. */
 function shuffle<T>(arr: T[]): T[] {
   for (let i = arr.length - 1; i > 0; i--) {

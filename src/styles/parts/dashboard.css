@@ -101,6 +101,22 @@
 .dash-section { padding: 1.4rem; }
 .dash-section.dash-device { padding-bottom: 1.5rem; }
 
+/* ── Yours ──────────────────────────────────────────────────────────────────
+   The personal shelf is intentionally a small set of direct links, not another gallery:
+   recent creations and exports already carry visual stacks below it. These are the tools
+   the person explicitly starred, visible only once there is enough activity to make the
+   Dashboard feel personal rather than promotional. */
+.dash-yours-tools { display: flex; flex-wrap: wrap; gap: .55rem; }
+.dash-yours-tool {
+  display: inline-flex; align-items: center; gap: .42rem; min-width: 0;
+  padding: .55rem .72rem; border: 1px solid var(--ui-color-border-default); border-radius: var(--ui-radius-pill);
+  background: color-mix(in srgb, var(--ui-color-surface-muted) 45%, transparent); color: var(--ui-color-text-default); text-decoration: none;
+  font-size: var(--fs-sm); font-weight: 650;
+}
+.dash-yours-tool:hover { background: var(--ui-color-surface-muted); color: var(--ui-color-action-primary); text-decoration: none; }
+.dash-yours-tool:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 2px; }
+.dash-yours-tool svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); color: var(--ui-color-action-primary); flex: none; }
+
 .dash-sec-head { margin: 0 0 1.05rem; }
 .dash-sec-title { margin: 0; font-size: calc(.95rem * var(--a11y-fs)); font-weight: 700; letter-spacing: -.01em; }
 .dash-sec-desc {
@@ -312,8 +328,8 @@
 .dash-donut-arc { stroke: hsl(var(--primary)); transition: stroke-dasharray 0.7s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .dash-store-donut-c { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 .dash-store-donut-c strong { font-size: calc(1.7rem * var(--a11y-fs)); font-weight: 700; letter-spacing: -0.02em; }
-.dash-store-donut-c span { font-size: var(--fs-md); color: hsl(var(--muted-foreground)); margin-top: 0.1rem; }
-.dash-store-donut-c em { font-size: var(--fs-xs); font-style: normal; font-weight: 700; color: hsl(var(--primary)); margin-top: 0.28rem; letter-spacing: 0.02em; }
+.dash-store-donut-c span { font-size: var(--fs-md); color: var(--ui-color-text-muted); margin-top: 0.1rem; }
+.dash-store-donut-c em { font-size: var(--fs-xs); font-style: normal; font-weight: 700; color: var(--ui-color-action-primary); margin-top: 0.28rem; letter-spacing: 0.02em; }
 @media (prefers-reduced-motion: reduce) { .dash-donut-arc { transition: none; } }
 
 /* ── This device - a full-width collapsible section. Six big readouts, the machine
@@ -326,27 +342,27 @@
   position: relative; overflow: hidden;
   display: flex; flex-direction: column; gap: .18rem;
   padding: .9rem 1rem; min-height: 82px;
-  background: hsl(var(--background)); border: 1px solid hsl(var(--border));
-  border-radius: var(--radius);
+  background: var(--ui-color-surface-canvas); border: 1px solid var(--ui-color-border-default);
+  border-radius: var(--ui-radius-panel);
 }
-.dash-dev-stat.is-skeleton { background: hsl(var(--muted) / .4); border-style: dashed; }
-.dash-dev-stat-icon { position: absolute; top: .75rem; right: .8rem; width: calc(22px * var(--a11y-fs)); height: calc(22px * var(--a11y-fs)); color: hsl(var(--muted-foreground) / .5); }
+.dash-dev-stat.is-skeleton { background: color-mix(in srgb, var(--ui-color-surface-muted) 40%, transparent); border-style: dashed; }
+.dash-dev-stat-icon { position: absolute; top: .75rem; right: .8rem; width: calc(22px * var(--a11y-fs)); height: calc(22px * var(--a11y-fs)); color: color-mix(in srgb, var(--ui-color-text-muted) 50%, transparent); }
 .dash-dev-stat-icon svg { width: 100%; height: 100%; display: block; }
-.dash-dev-stat-label { font-size: calc(.58rem * var(--a11y-fs)); text-transform: uppercase; letter-spacing: .14em; color: hsl(var(--muted-foreground)); }
+.dash-dev-stat-label { font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: .14em; color: var(--ui-color-text-muted); }
 .dash-dev-stat-value { font-size: calc(1.15rem * var(--a11y-fs)); font-weight: 700; line-height: 1.15; word-break: break-word; padding-right: 1.4rem; }
 .dash-dev-stat-value.is-mono { letter-spacing: -.01em; }
-.dash-dev-stat-sub { font-size: var(--fs-xs); color: hsl(var(--muted-foreground)); }
+.dash-dev-stat-sub { font-size: var(--fs-xs); color: var(--ui-color-text-muted); }
 /* The machine is the star - green spine, bigger value, primary-tinted panel. */
-.dash-dev-hero .dash-dev-stat:first-child { background: hsl(var(--primary) / .06); border-color: hsl(var(--primary) / .35); }
+.dash-dev-hero .dash-dev-stat:first-child { background: color-mix(in srgb, var(--ui-color-selection-surface) 50%, transparent); border-color: color-mix(in srgb, var(--ui-color-selection-border) 35%, transparent); }
 .dash-dev-hero .dash-dev-stat:first-child .dash-dev-stat-value { font-size: calc(1.45rem * var(--a11y-fs)); }
-.dash-dev-hero .dash-dev-stat:first-child .dash-dev-stat-icon { color: hsl(var(--primary) / .6); }
+.dash-dev-hero .dash-dev-stat:first-child .dash-dev-stat-icon { color: color-mix(in srgb, var(--ui-color-action-primary) 60%, transparent); }
 
 /* Summary vs. detail - the two box kinds in "This device" read differently on sight.
    SUMMARY (the hero readouts) are FILLED chips: solid muted panel, borderless, the
    headline glance. DETAIL (the full card grid below) are OUTLINED: no fill, a hairline
    border and an underlined title - a reference spec-sheet that recedes behind the glance. */
 .dash-device .dash-dev-stat {
-  background: hsl(var(--muted) / .55);
+  background: color-mix(in srgb, var(--ui-color-surface-muted) 55%, transparent);
   border-color: transparent;
 }
 .dash-device .dash-dev-cards .plat-client-card {
@@ -376,7 +392,7 @@
    sizing stays here. */
 .dashboard-view .activity-split { display: grid; grid-template-columns: 1fr; gap: 1.1rem; }
 .dashboard-view .activity-grid { grid-template-columns: repeat(auto-fit, minmax(74px, 1fr)); }
-.dashboard-view .activity-stat { padding: .7rem .4rem; border-radius: var(--radius); background: hsl(var(--muted) / .5); }
+.dashboard-view .activity-stat { padding: .7rem .4rem; border-radius: var(--ui-radius-panel); background: color-mix(in srgb, var(--ui-color-surface-muted) 50%, transparent); }
 .dashboard-view .activity-num { font-size: calc(1.5rem * var(--a11y-fs)); }
 .dashboard-view .activity-label { font-size: calc(.6rem * var(--a11y-fs)); }
 .dashboard-view .activity-block { margin: 0; }
@@ -385,27 +401,27 @@
 .dashboard-view .fmt-track { height: .5rem; border-radius: var(--radius-pill); }
 .dashboard-view .fmt-fill { border-radius: var(--radius-pill); }
 .dashboard-view .activity-meta { font-size: var(--fs-md); margin: 1rem 0 0; }
-.dashboard-view .activity-meta .activity-fav { color: hsl(var(--primary)); font-weight: 650; }
+.dashboard-view .activity-meta .activity-fav { color: var(--ui-color-action-primary); font-weight: 650; }
 .dashboard-view .activity-meta .activity-fav::after { content: " →"; opacity: .6; }
 .dashboard-view .storage-hint-text { margin: 0; color: hsl(var(--muted-foreground)); font-size: var(--fs-lg); line-height: 1.6; }
 
 /* ── Storage glance - a read-only composition bar. */
 .dash-store-headline { margin: 0 0 .65rem; font-size: calc(.95rem * var(--a11y-fs)); }
 .dash-store-headline strong { font-weight: 700; }
-.dash-store-bar { display: flex; gap: var(--sp-1); height: .8rem; border-radius: var(--radius-pill); overflow: hidden; background: hsl(var(--muted)); box-shadow: inset 0 0 0 1px hsl(var(--border) / .6); }
+.dash-store-bar { display: flex; gap: var(--sp-1); height: .8rem; border-radius: var(--ui-radius-pill); overflow: hidden; background: var(--ui-color-surface-muted); box-shadow: var(--ui-edge-faint); }
 .dash-store-seg { display: block; min-width: 3px; }
-.dash-store-seg--sessions { background: hsl(var(--primary)); }
+.dash-store-seg--sessions { background: var(--ui-color-action-primary); }
 .dash-store-seg--images   { background: #2453ff; }
 .dash-store-seg--cache    { background: #fe7c3f; }
 .dash-store-seg--previews { background: #90ebcd; }
 .dash-store-seg--other    { background: hsl(var(--muted-foreground) / .4); }
-.dash-store-legend { display: flex; flex-wrap: wrap; gap: .35rem 1rem; margin: .7rem 0 0; font-size: calc(.74rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.dash-store-legend { display: flex; flex-wrap: wrap; gap: .35rem 1rem; margin: .7rem 0 0; font-size: calc(.74rem * var(--a11y-fs)); color: var(--ui-color-text-muted); }
 .dash-store-key { display: inline-flex; align-items: center; gap: .4rem; }
-.dash-store-key strong { color: hsl(var(--foreground)); font-variant-numeric: tabular-nums; font-weight: 650; }
+.dash-store-key strong { color: var(--ui-color-text-default); font-variant-numeric: tabular-nums; font-weight: 650; }
 /* Inset hairline so a pale segment colour (e.g. the mint previews swatch) stays
    distinguishable from a near-white card in light theme. */
-.dash-store-dot { width: .7rem; height: .7rem; border-radius: var(--radius-xs); flex: 0 0 auto; box-shadow: var(--edge-strong); }
-.dash-store-note { margin: .85rem 0 0; font-size: calc(.74rem * var(--a11y-fs)); color: hsl(var(--muted-foreground)); line-height: 1.5; }
+.dash-store-dot { width: .7rem; height: .7rem; border-radius: var(--ui-radius-choice); flex: 0 0 auto; box-shadow: var(--ui-edge-strong); }
+.dash-store-note { margin: .85rem 0 0; font-size: calc(.74rem * var(--a11y-fs)); color: var(--ui-color-text-muted); line-height: 1.5; }
 
 /* ── Colour palette - the compact ink ribbon. Each family is a labelled row of
    thin bars; hover/focus drives the mono readout, click copies the hex. */
@@ -487,16 +503,16 @@
 .dash-token {
   display: flex; align-items: center; gap: .75rem; min-width: 0;
   padding: .6rem .8rem;
-  background: hsl(var(--background)); border: 1px solid hsl(var(--border));
-  border-radius: var(--radius);
+  background: var(--ui-color-surface-canvas); border: 1px solid var(--ui-color-border-default);
+  border-radius: var(--ui-radius-panel);
 }
 .dash-token-preview { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; width: 44px; min-height: 28px; }
 .dash-token-preview:empty { display: none; }
 .dash-token-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: .1rem; }
 .dash-token-name { font-size: var(--fs-md); font-weight: 650; line-height: 1.25; overflow-wrap: anywhere; }
-.dash-token-kind { font-family: var(--font-mono); font-size: calc(.58rem * var(--a11y-fs)); text-transform: uppercase; letter-spacing: .12em; color: hsl(var(--muted-foreground)); }
+.dash-token-kind { font-family: var(--font-mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: .12em; color: var(--ui-color-text-muted); }
 .dash-token-value {
-  flex: 0 0 auto; font-family: var(--font-mono); font-size: var(--fs-xs); color: hsl(var(--muted-foreground));
+  flex: 0 0 auto; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--ui-color-text-muted);
   max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 /* Kind previews - every inline value is validated before it reaches a style
@@ -506,12 +522,12 @@
    opacity; the needle points at the rotation; shadow/gradient render verbatim. */
 .dash-token-shape {
   display: block; width: 26px; height: 26px;
-  background: hsl(var(--primary) / .16); border: 1px solid hsl(var(--primary) / .55);
+  background: var(--ui-color-selection-surface); border: 1px solid color-mix(in srgb, var(--ui-color-selection-border) 55%, transparent);
 }
-.dash-token-bar { display: block; width: 44px; height: 6px; border-radius: var(--radius-pill); background: hsl(var(--muted)); overflow: hidden; }
-.dash-token-bar i { display: block; height: 100%; max-width: 100%; border-radius: var(--radius-pill); background: hsl(var(--primary)); }
+.dash-token-bar { display: block; width: 44px; height: 6px; border-radius: var(--ui-radius-pill); background: var(--ui-color-surface-muted); overflow: hidden; }
+.dash-token-bar i { display: block; height: 100%; max-width: 100%; border-radius: var(--ui-radius-pill); background: var(--ui-color-action-primary); }
 .dash-token-rule { display: flex; align-items: center; width: 44px; min-height: 16px; }
-.dash-token-rule i { display: block; width: 100%; max-height: 14px; border-radius: 1px; background: hsl(var(--foreground) / .8); }
+.dash-token-rule i { display: block; width: 100%; max-height: 14px; border-radius: var(--ui-radius-choice); background: color-mix(in srgb, var(--ui-color-text-default) 80%, transparent); }
 .dash-token-alpha {
   display: block; width: 26px; height: 26px; border-radius: var(--radius-sm); overflow: hidden;
   background-color: hsl(var(--card));
@@ -520,7 +536,7 @@
   box-shadow: var(--edge);
 }
 .dash-token-alpha i { display: block; width: 100%; height: 100%; background: var(--brand-primary, hsl(var(--primary))); }
-.dash-token-rot { position: relative; width: 26px; height: 26px; border: 1px solid hsl(var(--border)); border-radius: var(--radius-round); }
+.dash-token-rot { position: relative; width: 26px; height: 26px; border: 1px solid var(--ui-color-border-default); border-radius: var(--ui-radius-choice-round); }
 .dash-token-rot i {
   position: absolute; left: calc(50% - 1px); top: calc(50% - 9px);
   width: 2px; height: 9px; border-radius: 1px;
@@ -528,8 +544,8 @@
 }
 /* Shadow chips carry the token's real box-shadow inline (it replaces this
    rule's none), so the outline is a border the inline style can't erase. */
-.dash-token-shadow { display: block; width: 26px; height: 26px; border-radius: var(--radius-sm); background: hsl(var(--card)); border: 1px solid hsl(var(--border)); }
-.dash-token-grad { display: block; width: 44px; height: 26px; border-radius: var(--radius-sm); box-shadow: var(--edge-faint); }
+.dash-token-shadow { display: block; width: 26px; height: 26px; border-radius: var(--ui-radius-control); background: var(--ui-color-surface-raised); border: 1px solid var(--ui-color-border-default); }
+.dash-token-grad { display: block; width: 44px; height: 26px; border-radius: var(--ui-radius-control); box-shadow: var(--ui-edge-faint); }
 
 /* ── Capabilities - each sub-section is a full-width banner (one big icon +
       title/desc), then a grid of boxes that FILL the row; a box previews its modal
@@ -585,8 +601,8 @@
 }
 .dash-cap-empty {
   margin: .2rem 0 0; padding: 1.4rem 1rem; text-align: center;
-  color: hsl(var(--muted-foreground)); font-size: var(--fs-lg);
-  border: 1px dashed hsl(var(--border)); border-radius: var(--radius-lg);
+  color: var(--ui-color-text-muted); font-size: var(--fs-lg);
+  border: 1px dashed var(--ui-color-border-default); border-radius: var(--ui-radius-surface);
 }
 /* The filter hides cards and whole sections with [hidden]. The UA's
    `[hidden] { display: none }` is a plain type-less rule, so the class rules

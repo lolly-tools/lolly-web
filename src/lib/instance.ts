@@ -11,23 +11,20 @@
  * syncCatalog, so no main.ts wiring is needed).
  *
  * Fetch routing: under Tauri (window.__TAURI_INTERNALS__) a cross-origin
- * instance fetch goes through the tauri-plugin-http Rust client - the WebView's
- * own fetch would be CORS-bound, and both Tauri shells register
- * tauri_plugin_http::init() with an `https://*:*` allow scope in their
- * capabilities/default.json. Everywhere else (browser PWA, or same-origin URLs
- * under Tauri) it is plain window.fetch - which means a browser pointed at a
- * cross-origin instance needs that deployment to serve CORS headers.
+ * instance fetch goes through the bounded native `remote_fetch` command - the
+ * WebView's own fetch would be CORS-bound. That command accepts only HTTPS,
+ * pins public DNS answers, rechecks redirects and caps metadata/body sizes.
+ * Everywhere else (browser PWA, or same-origin URLs under Tauri) it is plain
+ * window.fetch - which means a browser pointed at a cross-origin instance needs
+ * that deployment to serve CORS headers.
  *
- * `https://*:*` is deliberately ANY https host/port, not scoped to LAN/private
- * ranges: a "Lolly instance" is any Lolly deployment the user names, which is
- * just as often a hosted/cloud one as a device on the same network - narrowing
- * the capability scope would break the ordinary case. The connect flow's own
- * copy (components/instance-sheet.ts) carries the trust warning instead
- * ("connect only to instances you trust"), since normalizeInstanceBase below
- * only validates well-formedness (https, no embedded credentials) - it isn't,
- * and isn't meant to be, an allowlist of trusted hosts.
+ * A "Lolly instance" can be any public deployment the user names, so this is
+ * not a fixed host allowlist. Private, loopback, link-local, metadata and
+ * reserved address space are deliberately refused at the native boundary. The
+ * connect flow still carries the trust warning because public does not mean
+ * trustworthy.
  *
- * The plugin-http guest binding is re-implemented minimally below via
+ * The native command binding is implemented minimally below via
  * __TAURI_INTERNALS__.invoke rather than imported: this file is bundled by the
  * web shell's Vite (where @tauri-apps/* is not a dependency) AND by the Tauri
  * shells' Vite (which roots at ../web), so a static import would break the web
@@ -38,7 +35,7 @@
  *   - sw.js returns early for every cross-origin request (`url.origin !==
  *     self.location.origin`), so the /tools/ network-first cache, the
  *     /catalog/previews/ stale-while-revalidate cache and the PIN_CACHE
- *     fallback never see instance traffic (Tauri plugin-http requests bypass
+ *     fallback never see instance traffic (Tauri native requests bypass
  *     the SW entirely, by construction). Remote-instance mode therefore
  *     degrades offline to the SW default for cross-origin: the app shell and
  *     same-origin chrome still load, the tool INDEX falls back to its
@@ -76,7 +73,7 @@ const INSTALL_ID_KEY = 'install-id';
 /** Key of the stored instance session cookie pair (`lw_session=…`) - the
  *  NATIVE shells' session store. A browser keeps the deployment's cookie in
  *  its own jar; the Tauri Rust client has no jar, so the device-code sign-in
- *  (org/index.ts) parks the pair here and tauriHttpFetch attaches it - to the
+ *  (org/index.ts) parks the pair here and tauriRemoteFetch attaches it - to the
  *  instance base origin ONLY, never to any other URL this transport fetches. */
 const INSTANCE_SESSION_KEY = 'instance-session';
 
@@ -201,7 +198,7 @@ export async function clearInstallId(): Promise<void> {
 // ── Stored instance session (native shells; browsers keep their own cookie) ──
 
 /** Persist (or with null clear) the session cookie pair the device-code
- *  sign-in collected. Loaded by initInstanceBase; attached by tauriHttpFetch
+ *  sign-in collected. Loaded by initInstanceBase; attached by tauriRemoteFetch
  *  to instance-base-origin requests only. */
 export async function setInstanceSession(cookiePair: string | null): Promise<void> {
   instanceSession = cookiePair && /^lw_session=[^;\s]+$/.test(cookiePair) ? cookiePair : null;
@@ -230,8 +227,9 @@ export function instancePath(p: string): string {
 }
 
 /**
- * fetch() for instance-base traffic: tauri-plugin-http for cross-origin URLs
- * under Tauri (CORS-free, scope-checked in Rust), window.fetch otherwise.
+ * fetch() for instance-base traffic: a bounded native command for cross-origin
+ * URLs under Tauri (CORS-free, HTTPS/public-address checked in Rust),
+ * window.fetch otherwise.
  *
  * A loaded instance pack (lib/pack-store.ts) overlays this - CATALOG paths
  * only: pack asset/font files answer by canonical path BEFORE any transport,
@@ -256,7 +254,7 @@ export function instanceFetch(input: string | URL, init?: RequestInit): Promise<
 }
 
 function transportFetch(url: string, init?: RequestInit): Promise<Response> {
-  if (hasTauriInternals() && isCrossOrigin(url)) return tauriHttpFetch(url, withClientHeader(init));
+  if (hasTauriInternals() && isCrossOrigin(url)) return tauriRemoteFetch(url, withClientHeader(init));
   return fetch(url, isCrossOrigin(url) ? init : withClientHeader(init));
 }
 
@@ -323,7 +321,7 @@ export function clientHeaderValue(): string {
   return installTag ? `${core} install/${installTag}` : core;
 }
 
-// ── Tauri plugin-http guest binding (minimal) ────────────────────────────────
+// ── Narrow Tauri remote-fetch command binding ───────────────────────────────
 
 interface TauriInternals {
   invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T>;
@@ -345,7 +343,7 @@ function isCrossOrigin(url: string): boolean {
 
 /**
  * True when a fetch of `url` from this shell goes through the browser's own CORS
- * checks: a cross-origin URL outside Tauri (whose plugin-http transport is
+ * checks: a cross-origin URL outside Tauri (whose native transport is
  * CORS-free). A caller that adds request headers uses it to stay within the
  * CORS-safelisted set: a non-safelisted header (If-None-Match, If-Modified-Since,
  * x-lolly-client) turns a simple GET into a preflighted one, and a static host
@@ -355,20 +353,19 @@ export function usesBrowserCors(url: string): boolean {
   return isCrossOrigin(url) && !hasTauriInternals();
 }
 
-/** What plugin:http|fetch_send resolves with (see @tauri-apps/plugin-http dist-js). */
-interface TauriFetchSendResponse {
+/** The bounded Rust command's serialisable response. */
+interface TauriRemoteFetchResponse {
   status: number;
   statusText: string;
   url: string;
   headers: Array<[string, string]>;
-  rid: number;
+  body: number[] | ArrayBuffer;
 }
 
 /**
- * Mirror of @tauri-apps/plugin-http's fetch(), reduced to what instance traffic
- * needs (whole-body responses, no streaming/abort). Protocol per the plugin's
- * guest binding: fetch → fetch_send → fetch_read_body chunks, each chunk's LAST
- * byte a close flag (1 = done, payload discarded; 0 = data, payload = rest).
+ * Whole-body adapter for the native boundary. Rust owns protocol, redirect,
+ * DNS/IP, header and byte validation; this side preserves the browser Response
+ * shape used throughout the shared shell.
  */
 /** Whether `url` sits on the configured instance base's origin - the ONLY
  *  place the stored session pair may travel. instanceFetch also carries
@@ -384,7 +381,7 @@ function isInstanceOrigin(url: string): boolean {
   }
 }
 
-async function tauriHttpFetch(url: string, init?: RequestInit): Promise<Response> {
+async function tauriRemoteFetch(url: string, init?: RequestInit): Promise<Response> {
   const { invoke } = (window as unknown as { __TAURI_INTERNALS__: TauriInternals }).__TAURI_INTERNALS__;
   const req = new Request(url, init);
   // The Rust client has no cookie jar: attach the parked session pair to
@@ -394,33 +391,15 @@ async function tauriHttpFetch(url: string, init?: RequestInit): Promise<Response
     req.headers.set('cookie', instanceSession);
   }
   const bodyBuf = await req.arrayBuffer();
-  const rid = await invoke<number>('plugin:http|fetch', {
-    clientConfig: {
+  const resp = await invoke<TauriRemoteFetchResponse>('remote_fetch', {
+    request: {
       method: req.method,
       url: req.url,
       headers: Array.from(req.headers.entries()),
-      data: bodyBuf.byteLength ? Array.from(new Uint8Array(bodyBuf)) : null,
+      body: bodyBuf.byteLength ? Array.from(new Uint8Array(bodyBuf)) : null,
     },
   });
-  const resp = await invoke<TauriFetchSendResponse>('plugin:http|fetch_send', { rid });
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const data = await invoke<number[] | ArrayBuffer>('plugin:http|fetch_read_body', { rid: resp.rid });
-    const bytes = data instanceof ArrayBuffer ? new Uint8Array(data) : Uint8Array.from(data);
-    if (!bytes.length || bytes[bytes.length - 1] === 1) break;
-    if (bytes.length > 1) {
-      const chunk = bytes.slice(0, -1);
-      chunks.push(chunk);
-      total += chunk.length;
-    }
-  }
-  const body = new Uint8Array(total);
-  let off = 0;
-  for (const c of chunks) {
-    body.set(c, off);
-    off += c.length;
-  }
+  const body = resp.body instanceof ArrayBuffer ? new Uint8Array(resp.body) : Uint8Array.from(resp.body);
   // Null-body statuses (fetch spec) - Response() throws if handed bytes for them.
   const nullBody = [101, 103, 204, 205, 304].includes(resp.status);
   const out = new Response(nullBody ? null : body, {

@@ -56,14 +56,13 @@
 .view-toggle {
   display: inline-flex; gap: 2px; padding: 3px; box-sizing: border-box;
   min-height: var(--chrome-h); align-items: center;
-  border: 1px solid hsl(var(--border)); border-radius: var(--radius); background: hsl(var(--muted) / 0.65);backdrop-filter: blur(5px);
+  border: 1px solid var(--ui-color-border-default); border-radius: var(--ui-radius-panel); background: color-mix(in srgb, var(--ui-color-surface-muted) 65%, transparent); backdrop-filter: blur(5px);
 }
 .view-toggle-opt {
   display: inline-flex; align-items: center;
-  padding: 6px; border-radius: calc(var(--radius)*.8); font-size: var(--fs-md); font-weight: 600; line-height: 1.4;
-  color: hsl(var(--muted-foreground)); text-decoration: none; transition: background var(--dur-1), color var(--dur-1);
-    text-shadow: 0 1px #fff3;
-    color: hsl(var(--card-foreground));}
+  padding: 6px; border-radius: var(--ui-radius-control); font-size: var(--ui-type-body); font-weight: 600; line-height: 1.4;
+  color: var(--ui-color-text-default); text-decoration: none; transition: background var(--ui-motion-feedback), color var(--ui-motion-feedback);
+}
 /* Each tab holds an icon + a label. BOTH show on desktop (Andy, 2026-08-20 -
    the tabs must be identifiable by glyph on every form factor); under 640px
    topbar.css hides the label and the toggle shrinks to the icons alone.
@@ -76,8 +75,8 @@
    authored weight on the active one (stroke-width in viewBox units - these are
    24-unit Lucide strokes, so 1 here is half the authored 2). Both cues ease
    (durations hand-tuned) so a tab switch reads as one soft emphasis shift. */
-.view-toggle-ic { transition: opacity 0.43s; }
-.view-toggle-ic svg { transition: stroke-width 0.13s, transform var(--dur-3);  }
+.view-toggle-ic { transition: opacity var(--ui-motion-navigation); }
+.view-toggle-ic svg { transition: stroke-width var(--ui-motion-feedback), transform var(--ui-motion-navigation);  }
 
 .view-toggle-opt {font-weight:500; }
 
@@ -92,9 +91,9 @@
    so a fixed 18px would mean largeText does nothing at all for getting around the
    app on a phone. */
 .view-toggle-ic svg { display: block; width: calc(18px * var(--a11y-fs)); height: calc(18px * var(--a11y-fs)); }
-.view-toggle-opt:hover { color: hsl(var(--foreground)); }
+.view-toggle-opt:hover { color: var(--ui-color-text-default); }
 .view-toggle-opt.is-active {
-  background: hsl(var(--accent)); color: hsl(var(--foreground)); box-shadow: var(--shadow-1);
+  background: var(--ui-color-selection-surface); color: var(--ui-color-text-default); box-shadow: var(--ui-elevation-control);
 }
 /* Jelly effects mode (lib/jelly.ts): ONE persistent <jelly-segmented> pill,
    mounted at body level by syncJellyNavToggle (view-toggle.ts) so it lives
@@ -116,9 +115,9 @@
      wrapper IS the track surface - giving the inactive-tab area the blurred
      backdrop a canvas fill can't produce. */
   padding: 3px;
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius-pill);
-  background: hsl(var(--muted) / 0.65);
+  border: 1px solid var(--ui-color-border-default);
+  border-radius: var(--ui-radius-pill);
+  background: color-mix(in srgb, var(--ui-color-surface-muted) 65%, transparent);
   backdrop-filter: blur(5px);
   -webkit-backdrop-filter: blur(5px);
 }
@@ -190,22 +189,22 @@
 }
 .projects-list .folder-tile {
   width: 100%; border: 0; border-radius: 0; background: transparent; box-shadow: none;
-  border-bottom: 1px solid hsl(var(--border) / 0.7);
+  border-bottom: 1px solid color-mix(in srgb, var(--ui-color-border-default) 70%, transparent);
 }
-.projects-list .folder-tile:hover { background: hsl(var(--muted) / 0.55); border-color: hsl(var(--border) / 0.7); box-shadow: none; }
-.projects-list .folder-tile.is-selected { background: hsl(var(--primary) / 0.1); box-shadow: none; }
-.projects-list .folder-tile.is-selected:hover { background: hsl(var(--primary) / 0.14); }
-.projects-list .folder-tile.is-drop { background: hsl(var(--primary) / 0.08); box-shadow: inset 0 0 0 2px hsl(var(--primary) / 0.5); }
+.projects-list .folder-tile:hover { background: color-mix(in srgb, var(--ui-color-surface-muted) 55%, transparent); border-color: color-mix(in srgb, var(--ui-color-border-default) 70%, transparent); box-shadow: none; }
+.projects-list .folder-tile.is-selected { background: color-mix(in srgb, var(--ui-color-selection-surface) 84%, transparent); box-shadow: none; }
+.projects-list .folder-tile.is-selected:hover { background: color-mix(in srgb, var(--ui-color-selection-surface) 100%, transparent); }
+.projects-list .folder-tile.is-drop { background: color-mix(in srgb, var(--ui-color-selection-surface) 67%, transparent); border-color: color-mix(in srgb, var(--ui-color-selection-border) 50%, transparent); box-shadow: var(--ui-effect-selected); }
 .projects-list .folder-tile .tile-primary {
   display: grid; grid-template-columns: var(--list-chip) minmax(0, 1fr) var(--list-cols);
   align-items: center; column-gap: 14px; padding: 5px var(--list-gutter) 5px 12px; box-sizing: border-box;
 }
 .projects-list .tile-cols { display: contents; }
-.projects-list .tile-col { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(11.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.projects-list .tile-col { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(11.5px * var(--a11y-fs)); color: var(--ui-color-text-muted); }
 /* The 52×40 cover chip - sessions, images, create/batch/trash glyph boxes. */
 .projects-list .tile-cover, .projects-list .tile-cover--create, .projects-list .tile-cover--batch {
   width: var(--list-chip); height: calc(40px * var(--a11y-fs)); aspect-ratio: auto; margin: 0; overflow: hidden;
-  border-radius: calc(var(--radius) / 1.6); border: 1px solid hsl(var(--border));
+  border-radius: var(--ui-radius-control); border: 1px solid var(--ui-color-border-default);
 }
 .projects-list .tile-cover--create svg, .projects-list .tile-cover--batch svg { width: calc(20px * var(--a11y-fs)); height: calc(20px * var(--a11y-fs)); }
 /* The folder silhouette scaled to the chip: a 5px tab over a 35px body, mosaic
@@ -242,15 +241,15 @@
   display: flex; flex-direction: column; align-items: center; gap: 6px;
   padding: 4rem 1rem 2.5rem; text-align: center;
 }
-.projects-blank-icon svg { width: calc(44px * var(--a11y-fs)); height: calc(44px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); opacity: 0.45; }
+.projects-blank-icon svg { width: calc(44px * var(--a11y-fs)); height: calc(44px * var(--a11y-fs)); color: var(--ui-color-text-muted); opacity: 0.45; }
 .projects-blank-title { margin: 8px 0 0; font-size: calc(15px * var(--a11y-fs)); font-weight: 650; }
-.projects-blank-sub { margin: 0; font-size: calc(12.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.projects-blank-sub { margin: 0; font-size: calc(12.5px * var(--a11y-fs)); color: var(--ui-color-text-muted); }
 .projects-blank-actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; justify-content: center; }
 .projects-blank-actions .btn { padding: 9px 16px; }
 
 /* Search / tools results wrap each hit as [tile][location crumb]: in list mode the
    row separator belongs under the crumb, not between the two. */
-.projects-list .projects-result { border-bottom: 1px solid hsl(var(--border) / 0.7); padding-bottom: 4px; }
+.projects-list .projects-result { border-bottom: 1px solid color-mix(in srgb, var(--ui-color-border-default) 70%, transparent); padding-bottom: 4px; }
 .projects-list .projects-result .folder-tile { border-bottom: 0; }
 /* Narrow screens drop the Kind/Size columns (Name + Modified stay legible), and
    the Name track keeps the width: the fixed parts shrink with the screen. */
@@ -268,18 +267,18 @@
    The field itself is the shell's persistent bar (components/search-bar.ts,
    plans/99 M1 - gallery.css owns its chrome); this block styles only the
    in-body results chrome. */
-.projects-search-status { margin: 0.6rem 0 0; font-size: calc(12.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
+.projects-search-status { margin: 0.6rem 0 0; font-size: calc(12.5px * var(--a11y-fs)); color: var(--ui-color-text-muted); }
 .projects-search-grid { padding-top: 0.7rem; }
 
 /* A search hit = the normal tile + a breadcrumb of where it lives. */
 .projects-result { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .projects-result-path {
   display: inline-flex; align-items: center; gap: 5px; max-width: 100%;
-  padding: 2px 6px; border: 0; border-radius: calc(var(--radius) / 1.4);
-  background: transparent; color: hsl(var(--muted-foreground));
+  padding: 2px 6px; border: 0; border-radius: var(--ui-radius-control);
+  background: transparent; color: var(--ui-color-text-muted);
   font: inherit; font-size: calc(11.5px * var(--a11y-fs)); line-height: 1.3; text-align: left; cursor: pointer;
 }
-button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+button.projects-result-path:hover { background: var(--ui-color-surface-muted); color: var(--ui-color-text-default); }
 .projects-result-path--static { cursor: default; }
 .projects-result-path svg { width: var(--fs-sm); height: var(--fs-sm); flex: none; opacity: 0.8; }
 .projects-result-path span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -314,14 +313,14 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
    NO divider border: it's one continuous transparent panel flowing straight into the
    label, so the whole tile is just a quiet outline. Solid, not dashed: a dashed
    border is the app's DROP-AREA signal and these accept nothing. */
-.folder-tile--create { border-color: hsl(var(--border) / 0.7); background: transparent; }
-.folder-tile--create:hover { border-color: hsl(var(--primary) / 0.7); background: hsl(var(--primary) / 0.04); }
+.folder-tile--create { border-color: color-mix(in srgb, var(--ui-color-border-default) 70%, transparent); background: transparent; }
+.folder-tile--create:hover { border-color: color-mix(in srgb, var(--ui-color-action-primary) 70%, transparent); background: color-mix(in srgb, var(--ui-color-selection-surface) 34%, transparent); }
 .tile-cover--create {
   display: flex; align-items: center; justify-content: center; height: 90px;   /* compact, matches folder tiles */
-  color: hsl(var(--muted-foreground)); background: transparent;
+  color: var(--ui-color-text-muted); background: transparent;
   border-bottom: 0;   /* override the base .tile-cover divider - create tiles are seamless */
 }
-.folder-tile--create:hover .tile-cover--create { color: hsl(var(--primary)); }
+.folder-tile--create:hover .tile-cover--create { color: var(--ui-color-action-primary); }
 .tile-cover--create svg { width: calc(30px * var(--a11y-fs)); height: calc(30px * var(--a11y-fs)); }
 
 /* Breadcrumb trail above a folder's header - links each ancestor back up the tree. */
@@ -590,22 +589,22 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
   align-items: center; column-gap: 14px;
   padding: 2px var(--list-gutter) 2px 12px; box-sizing: border-box;
   font-size: calc(11.5px * var(--a11y-fs));
-  border-top: 1px solid hsl(var(--border)); border-bottom: 1px solid hsl(var(--border));
+  border-top: 1px solid var(--ui-color-border-default); border-bottom: 1px solid var(--ui-color-border-default);
 }
 .projects-listhead::before { content: ''; }   /* the chip column - nothing to label */
 .listhead-name { min-width: 0; display: flex; align-items: center; gap: 8px; }
 .listhead-col {
   border: 0; background: none; padding: 4px 6px; margin: 0 -6px; cursor: pointer;
   font: inherit; font-size: inherit; font-weight: 600; text-align: left;
-  color: hsl(var(--muted-foreground));
-  border-radius: var(--radius); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ui-color-text-muted);
+  border-radius: var(--ui-radius-control); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   display: inline-flex; align-items: center; gap: 3px;
 }
-.listhead-col:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
-.listhead-col.is-on { color: hsl(var(--foreground)); }
+.listhead-col:hover { background: var(--ui-color-surface-muted); color: var(--ui-color-text-default); }
+.listhead-col.is-on { color: var(--ui-color-text-default); }
 /* A sort with no column of its own (Date added) is still named in the header,
    so the list never reads as unsorted. */
-.listhead-sortnote { font-size: var(--fs-xs); color: hsl(var(--muted-foreground)); font-weight: 500; white-space: nowrap; }
+.listhead-sortnote { font-size: var(--fs-xs); color: var(--ui-color-text-muted); font-weight: 500; white-space: nowrap; }
 
 /* "My library" label over the loose-session block at the root (plans/170
    keeping-model naming): a full-width grid row between the folder tiles and
@@ -617,5 +616,5 @@ button.projects-result-path:hover { background: hsl(var(--muted)); color: hsl(va
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
 }

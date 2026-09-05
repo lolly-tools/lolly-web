@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { storeZip, writeEpub, writeOdt, writeXlsx, writeDocx } from '@lolly/engine';
-import { classifyZipBytes, classifyZipName, classifyZipContainer } from './zip-classify.ts';
+import { classifyZipBytes, classifyZipName, classifyZipContainer, classifyZipEntries } from './zip-classify.ts';
 
 const enc = new TextEncoder();
 const file = (name: string, type = '') => ({ name, type });
@@ -75,6 +75,10 @@ test('a plain multi-file zip classifies as archive', () => {
     { name: 'data/points.csv', bytes: enc.encode('a,b\n1,2') },
   ]);
   assert.equal(classifyZipBytes(zip), 'archive');
+  assert.equal(classifyZipEntries([
+    { name: 'readme.txt', bytes: enc.encode('hello') },
+    { name: 'data/points.csv', bytes: enc.encode('a,b\n1,2') },
+  ]), 'archive');
 });
 
 test('an unknown OOXML family is NOT treated as a plain archive', () => {

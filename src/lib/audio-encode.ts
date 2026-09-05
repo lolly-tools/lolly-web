@@ -567,6 +567,10 @@ export interface AudioExportRequest {
   duration?: number;
   bitrate?: number;
   sampleFormat?: WavSampleFormat;
+  /** Re-encode even when the source container already matches `format`.
+   *  Download-as uses this when the user explicitly chose compression settings;
+   *  absent/false keeps the normal byte-exact pass-through rule. */
+  forceEncode?: boolean;
   /** Container metadata tags (buildAudioTags output). Written by the mediabunny-Output
    *  encoders (aac/ogg/flac; m4a/opus pending - see AudioMuxerLike.setMetadataTags)
    *  and by the mp3 path (a hand-built ID3v2.3 block). wav is tagged separately by
@@ -624,7 +628,7 @@ export async function renderAudioExport(
   const fadeOut = Math.max(0, req.audio?.fadeOut ?? 0);
   const untouched = from === 0 && to === totalFrames && volume === 1 && !fadeIn && !fadeOut;
 
-  if (untouched && sniffAudioFormat(bytes) === format) {
+  if (untouched && !req.forceEncode && sniffAudioFormat(bytes) === format) {
     // The user asked for the file they already have. Hand back the source bytes.
     return new Blob([bytes as BlobPart], { type: AUDIO_MIME[format] });
   }

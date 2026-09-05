@@ -23,7 +23,7 @@ const POLL_MS = 1200;
 const MAX_EVENTS_PER_POLL = 16;
 const MAX_FILE_BYTES = 512 * 1024 * 1024; // mirrors MAX_RESTORE_ENTRY_BYTES
 
-interface RawEvent { kind?: unknown; value?: unknown }
+interface RawEvent { kind?: unknown; value?: unknown; target?: unknown }
 
 export interface LinuxDesktopEnv {
   invoke: TauriInvoke;
@@ -31,6 +31,10 @@ export interface LinuxDesktopEnv {
   clearInterval?: (h: unknown) => void;
   navigate?: (hash: string) => void;
   openFiles?: (files: File[]) => Promise<void>;
+  openUtilityFile?: (
+    target: import('./drop-router.ts').NativeUtilityTarget,
+    file: File,
+  ) => Promise<void> | void;
 }
 
 // The lolly:// grammar lives in deep-link.ts, shared with the Android and iOS
@@ -38,7 +42,7 @@ export interface LinuxDesktopEnv {
 export { deepLinkToHash };
 
 function fileNameOf(path: string): string {
-  const base = path.split('/').pop() ?? 'file';
+  const base = path.split(/[\\/]/).pop() ?? 'file';
   return base || 'file';
 }
 
@@ -48,6 +52,7 @@ export async function routeEvents(raw: unknown, env: LinuxDesktopEnv): Promise<v
   for (const e of (raw as RawEvent[]).slice(0, MAX_EVENTS_PER_POLL)) {
     const kind = typeof e?.kind === 'string' ? e.kind : '';
     const value = typeof e?.value === 'string' ? e.value : '';
+    const target = typeof e?.target === 'string' ? e.target : '';
     if (!kind || !value) continue;
     try {
       if (kind === 'navigate') {
@@ -58,14 +63,21 @@ export async function routeEvents(raw: unknown, env: LinuxDesktopEnv): Promise<v
         const hash = deepLinkToHash(value);
         if (hash) env.navigate?.(hash);
         else console.warn('[desktop] ignoring malformed deep link', value);
-      } else if (kind === 'openFile' || kind === 'hotfolderFile') {
+      } else if (kind === 'openFile' || kind === 'hotfolderFile' || kind === 'openUtilityFile') {
         const bytes = (await env.invoke('desktop_read_file', { path: value })) as unknown;
         if (!(bytes instanceof Array) && !(bytes instanceof Uint8Array)) continue;
         const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes as number[]);
         if (u8.length === 0 || u8.length > MAX_FILE_BYTES) continue;
         const name = fileNameOf(value);
         const type = /\.lolly$/i.test(name) ? 'application/vnd.lolly+zip' : '';
-        await env.openFiles?.([new File([u8 as BlobPart], name, { type })]);
+        const file = new File([u8 as BlobPart], name, { type });
+        if (kind === 'openUtilityFile') {
+          if (target === 'strip-data' || target === 'convert' || target === 'redact') {
+            await env.openUtilityFile?.(target, file);
+          }
+        } else {
+          await env.openFiles?.([file]);
+        }
       }
     } catch (err) {
       console.warn('[desktop] event routing failed', kind, err);
@@ -116,6 +128,12 @@ export function installLinuxDesktopBoot(host: PickerHost, env?: Partial<LinuxDes
       (async (files) => {
         const m = await import('./drop-router.ts');
         await m.openDropChooser(files, host);
+      }),
+    openUtilityFile:
+      env?.openUtilityFile ??
+      (async (target, file) => {
+        const m = await import('./drop-router.ts');
+        m.openFileInUtility(target, file);
       }),
   };
   // One accent read at boot - not a subscription; the pref surface that wants

@@ -227,6 +227,22 @@ test('a popover field folds every fine control behind Fine-tune, sliders visible
   assert.equal(fine.hidden, true, 'and closes it again');
 });
 
+test('a progressive inline field keeps the first choice simple and reveals expert controls', () => {
+  const { field } = mount('#7c3aed', { inline: true, modes: true, dials: true, progressive: true });
+  const value = valueInput(field);
+  const fine = field.querySelector<HTMLElement>('[data-color-fine]')!;
+  const toggle = field.querySelector<HTMLButtonElement>('[data-color-fine-toggle]')!;
+  assert.ok(value, 'the editable value remains immediately available');
+  assert.equal(fine.contains(value), false, 'the first choice is not hidden with expert controls');
+  assert.equal(fine.hidden, true);
+  assert.ok(fine.querySelector('[role="tablist"]'), 'colour-space modes wait behind Fine-tune');
+  assert.ok(fine.querySelector('.color-dials'), 'dials wait behind Fine-tune');
+  assert.ok(field.querySelector('[data-color-native-button]'), 'the visual OS picker remains one press away');
+  toggle.click();
+  assert.equal(fine.hidden, false);
+  assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+});
+
 // ── Trap 2: the dials are no longer gated on `inline` ────────────────────────
 
 test('dials follow their own option, defaulting to inline', () => {

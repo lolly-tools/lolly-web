@@ -210,7 +210,7 @@ export async function loopbackVia(
   return {
     redirectUri: `http://${opts.host ?? '127.0.0.1'}:${port}/oauth-return`,
     async run(url: string): Promise<OAuthReturn> {
-      await inv.invoke('plugin:shell|open', { path: url });
+      await inv.invoke('oauth_open', { raw: url });
       const search = await inv.invoke<string>('oauth_wait', { port, timeoutMs: AUTH_TIMEOUT_MS });
       return { hash: '', search };
     },

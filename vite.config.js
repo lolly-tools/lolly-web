@@ -12,6 +12,28 @@ const webDir = dirname(fileURLToPath(import.meta.url));
 // Repo root is two directories up from shells/web/.
 const repoRoot = resolve(webDir, '..', '..');
 
+// A normal `vite build` remains useful for local preview/testing and produces an
+// explicitly unsigned-development artifact. Deployments must go through
+// `npm run build:web:release`, which sets this flag after signing the active
+// catalog. Keep the assertion in Vite as a second gate so no alternate release
+// wrapper can accidentally emit an unsigned app.
+const catalogTrustMode = process.env.VITE_CATALOG_TRUST_MODE?.trim() || 'unsigned-dev';
+if (!['verified', 'unsigned-dev'].includes(catalogTrustMode)) {
+  throw new Error(`vite.config: invalid VITE_CATALOG_TRUST_MODE "${catalogTrustMode}"`);
+}
+if (process.env.LOLLY_RELEASE_BUILD === '1') {
+  if (catalogTrustMode !== 'verified') {
+    throw new Error('vite.config: release builds require VITE_CATALOG_TRUST_MODE=verified');
+  }
+  if (!process.env.VITE_CATALOG_PUBLIC_KEY_JWK?.trim()) {
+    throw new Error('vite.config: release builds require VITE_CATALOG_PUBLIC_KEY_JWK');
+  }
+  const envelope = resolve(repoRoot, 'catalog/tools/index.sig.json');
+  if (!existsSync(envelope)) {
+    throw new Error('vite.config: release catalog signature is missing; run scripts/sign-catalog.ts first');
+  }
+}
+
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js':   'application/javascript',

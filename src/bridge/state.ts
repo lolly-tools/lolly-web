@@ -39,6 +39,10 @@ interface StateRecord {
    *  Optional so records written before versioning still type-check on read. */
   formatVersion?: number;
   engineVersion?: string;
+  /** Which design system the session was made with (plans/186 section 3.8) - the
+   *  active record's id and label at save time. Optional: rows written before
+   *  this existed, and devices with no registry, have none. */
+  designSystem?: { id: string; label: string };
 }
 
 /** Where migrateSessionRecord reports a record from a newer app build. */
@@ -50,6 +54,9 @@ function stateLog(level: 'warn' | 'info', message: string, meta?: Record<string,
 export interface StateDb {
   put(store: 'state', record: StateRecord): Promise<unknown>;
   get(store: 'state', slot: string): Promise<StateRecord | undefined>;
+  /** The two reads the design-system stamp makes (plans/186); both optional on a
+   *  narrow test stub, which then saves unstamped records as before. */
+  get(store: 'profile' | 'design-systems', key: string): Promise<unknown>;
   getAll(store: 'state'): Promise<StateRecord[]>;
   delete(store: 'state', slot: string): Promise<void>;
 }
@@ -64,6 +71,22 @@ export interface WebStateAPI extends StateAPI {
   /** Blob keys (id:format:version) referenced across all saved sessions - 
    *  used by sync to avoid evicting on-demand blobs a session still needs. */
   _getAssetRefs(): Promise<Set<string>>;
+}
+
+/**
+ * Which design system a session was made with (plans/186 section 3.8): the
+ * active record's id and label, read straight off the same database so the
+ * bridge needs no host. Absent on a device with no registry yet, and never a
+ * reason for a save to fail.
+ */
+async function activeDesignSystemStamp(db: StateDb): Promise<{ designSystem?: { id: string; label: string } }> {
+  try {
+    const id = await db.get('profile', 'active-design-system');
+    if (typeof id !== 'string' || !id) return {};
+    const record = await db.get('design-systems', id) as { id?: string; label?: string } | undefined;
+    if (!record || typeof record.label !== 'string') return {};
+    return { designSystem: { id, label: record.label } };
+  } catch { return {}; }
 }
 
 export function createStateAPI(db: StateDb): WebStateAPI {
@@ -84,6 +107,7 @@ export function createStateAPI(db: StateDb): WebStateAPI {
         updatedAt: now,
         createdAt: prior?.createdAt ?? now,
         ...sessionVersionStamp(),
+        ...(await activeDesignSystemStamp(db)),
       };
       await db.put('state', record);
     },
@@ -108,6 +132,7 @@ export function createStateAPI(db: StateDb): WebStateAPI {
         thumb: r.thumb ?? null,
         updatedAt: r.updatedAt,
         ...(r.createdAt ? { createdAt: r.createdAt } : {}),
+        ...(r.designSystem ? { designSystem: r.designSystem } : {}),
       }));
     },
 

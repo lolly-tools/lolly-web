@@ -7,7 +7,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { hexToHslTriple, chromeBrandCss, brandThemeCss, brandFontStack, brandRadiusValue, brandMarkHue, brandMarkPrimary, lollyMarkCss, highContrastAccent, apcaLcAbs, HC_TARGET_LC } from './brand-vars.ts';
+import { hexToHslTriple, chromeBrandCss, brandThemeCss, brandFontStack, brandRadiusValue, brandSpaceValue, brandMarkHue, brandMarkPrimary, lollyMarkCss, highContrastAccent, apcaLcAbs, HC_TARGET_LC, uiTokenCssValue } from './brand-vars.ts';
 import { apcaContrast } from '../../../engine/src/color-tools.ts';
 import { hexToOklch } from '../../../engine/src/brand-derive.ts';
 
@@ -57,6 +57,34 @@ test('brandRadiusValue rejects anything that isn\'t a bare length', () => {
   assert.equal(brandRadiusValue('1vw'), null); // unit not in the allowed set
   assert.equal(brandRadiusValue('-1rem'), null); // negative - meaningless for a radius
   assert.equal(brandRadiusValue(-1), null); // wrong type entirely (a number, not a string)
+});
+
+test('brandSpaceValue accepts the same safe dimension grammar as radius', () => {
+  assert.equal(brandSpaceValue('0.5rem'), '0.5rem');
+  assert.equal(brandSpaceValue('8px'), '8px');
+  assert.equal(brandSpaceValue('{space.base}'), null);
+  assert.equal(brandSpaceValue('8px; color:red'), null);
+  assert.equal(brandSpaceValue('-4px'), null);
+});
+
+test('UI-token CSS values accept only the supported DTCG shapes', () => {
+  assert.equal(uiTokenCssValue('color', '#30ba78'), '#30ba78');
+  assert.equal(uiTokenCssValue('length', '14px'), '14px');
+  assert.equal(uiTokenCssValue('length', 'calc(4px + 1px)'), null);
+  assert.equal(uiTokenCssValue('duration', '180ms'), '180ms');
+  assert.equal(uiTokenCssValue('duration', 'var(--dur-2)'), null);
+  assert.equal(uiTokenCssValue('easing', [0.32, 0.72, 0, 1]), 'cubic-bezier(.32, .72, 0, 1)');
+  assert.equal(uiTokenCssValue('easing', [0, 0, 0]), null);
+  assert.equal(uiTokenCssValue('number', 50), '50');
+  assert.equal(uiTokenCssValue('number', -1), null);
+  assert.equal(
+    uiTokenCssValue('shadow', { color: '#00000042', offsetX: '0px', offsetY: '4px', blur: '14px', spread: '0px' }),
+    '0px 4px 14px 0px #00000042',
+  );
+  assert.equal(
+    uiTokenCssValue('shadow', { color: 'url(https://bad.example)', offsetX: '0px', offsetY: '0px', blur: '0px', spread: '0px' }),
+    null,
+  );
 });
 
 test('hexToHslTriple produces shadcn "H S% L%" triples', () => {

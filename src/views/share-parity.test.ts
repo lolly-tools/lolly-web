@@ -67,7 +67,7 @@ function shareParams(): Set<string> {
   const out = new Set<string>();
   // Both encodings used in the body: `parts.push(\`name=...\`)` and the bare
   // presence flag `parts.push('name')` / `parts.push('name=0')`.
-  for (const m of body.matchAll(/parts\.push\(`([a-z_]+)=/g)) out.add(m[1]!);
+  for (const m of body.matchAll(/parts\.push\(\s*`([a-z_]+)=/g)) out.add(m[1]!);
   for (const m of body.matchAll(/parts\.push\('([a-z_]+)(?:=[^']*)?'\)/g)) out.add(m[1]!);
   return out;
 }

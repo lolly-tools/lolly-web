@@ -33,6 +33,27 @@ type CreateRuntime = typeof createRuntime;
 // One shared Worker-isolated executor (a singleton Worker under it), built lazily
 // the first time an opted-in tool mounts. Falls back to in-realm on any failure.
 let workerExecutor: HookExecutor | null = null;
+let strictWorkerExecutor: HookExecutor | null = null;
+
+function needsStrictIsolation(tool: Parameters<CreateRuntime>[0]): boolean {
+  return tool.trustClass === 'sideloaded-consented' || tool.trustClass === 'remote-untrusted';
+}
+
+function withHookPolicy(
+  tool: Parameters<CreateRuntime>[0],
+  opts: Parameters<CreateRuntime>[3] | undefined,
+  interactive: boolean,
+): Parameters<CreateRuntime>[3] | undefined {
+  if (needsStrictIsolation(tool)) {
+    strictWorkerExecutor ??= getWorkerHookExecutor({ allowInRealmFallback: false });
+    return { ...(opts ?? {}), hookExecutor: strictWorkerExecutor };
+  }
+  if (interactive && typeof Worker !== 'undefined' && wantsWorkerHooks(tool.manifest.id, tool.manifest.isolate)) {
+    workerExecutor ??= getWorkerHookExecutor();
+    return { ...(opts ?? {}), hookExecutor: workerExecutor };
+  }
+  return opts;
+}
 
 /**
  * Should this mount run its hooks in a Worker (plans/86-worker-isolation-hooks.md
@@ -63,7 +84,7 @@ function wantsWorkerHooks(id: string, isolate: boolean | undefined): boolean {
  */
 export const createToolRuntime: CreateRuntime = async (tool, host, initialState, opts) => {
   await installToolApis(host as Parameters<typeof installToolApis>[0]);
-  return createRuntime(tool, host, initialState, opts);
+  return createRuntime(tool, host, initialState, withHookPolicy(tool, opts, false));
 };
 
 /**
@@ -76,9 +97,5 @@ export const createToolRuntime: CreateRuntime = async (tool, host, initialState,
  */
 export const createInteractiveToolRuntime: CreateRuntime = async (tool, host, initialState, opts) => {
   await installToolApis(host as Parameters<typeof installToolApis>[0]);
-  if (typeof Worker !== 'undefined' && wantsWorkerHooks(tool.manifest.id, tool.manifest.isolate)) {
-    workerExecutor ??= getWorkerHookExecutor();
-    opts = { ...(opts ?? {}), hookExecutor: workerExecutor };
-  }
-  return createRuntime(tool, host, initialState, opts);
+  return createRuntime(tool, host, initialState, withHookPolicy(tool, opts, true));
 };

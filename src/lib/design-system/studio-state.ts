@@ -64,7 +64,15 @@ export interface StudioStateOptions {
    * not read to the caller as a failed write.
    */
   afterInstall?: () => void | Promise<void>;
-  /** Asset label recorded with the installed tokens (bridge default when absent). */
+  /**
+   * Rename the design system on every install this studio makes.
+   *
+   * Absent for the studio's own callers, and that is the point: a label here is
+   * forwarded to the write chokepoint each time, so passing one for a routine
+   * save renames the system on every commit (plans/186 section 3.3). Pass it
+   * only when the install IS a rename; with none, the chokepoint keeps the name
+   * already on the record and names a first install itself.
+   */
   label?: string;
 }
 

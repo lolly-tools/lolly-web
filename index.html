@@ -164,6 +164,12 @@
         var r = localStorage.getItem('brand-radius');
         if (r) document.documentElement.style.setProperty('--radius', r);
       } catch (e) { /* corrupt cache - boot JS rewrites it */ }
+      // And the base spacing rhythm. The generated --sp-* scale reads this
+      // one value, so it too must land before the first paint.
+      try {
+        var s = localStorage.getItem('brand-space');
+        if (s) document.documentElement.style.setProperty('--space', s);
+      } catch (e) { /* corrupt cache - boot JS rewrites it */ }
       // Accessibility prefs (lib/a11y-prefs.ts is canonical; this is its FOUC
       // mirror): set the gating attributes before CSS paints so large text /
       // high contrast don't flash the regular look for a beat.

@@ -1144,12 +1144,20 @@ export async function alphaVideoWriter(
 /** A normal-video writer over the streaming WebCodecs mux (crop/upscale). Keeps
  *  `audio` (a decoded AudioBuffer) when the encoder can carry it. */
 export async function videoEncodeWriter(
-  plan: { width: number; height: number; fps: number; bitrate: number; audio?: AudioBufferLike | null },
+  plan: {
+    width: number; height: number; fps: number; bitrate: number;
+    audio?: AudioBufferLike | null;
+    /** Requested output container. Existing edit jobs default to MP4; Download as
+     *  passes the user's explicit MP4/WebM choice. */
+    format?: 'mp4' | 'webm';
+    /** Refuse a muted result when the source is known to contain audio. */
+    requireAudio?: boolean;
+  },
 ): Promise<VideoFrameWriter> {
   const { createStreamingMux } = await import('../bridge/video-encode-core.ts');
   const { pickWebCodecsVideo, pickWebCodecsAudio } = await import('../bridge/video-shared.ts');
   const { codecAdjustedBitrate } = await import('../bridge/video-mime.ts');
-  const pick = await pickWebCodecsVideo('mp4', plan.width, plan.height, plan.fps, plan.bitrate);
+  const pick = await pickWebCodecsVideo(plan.format ?? 'mp4', plan.width, plan.height, plan.fps, plan.bitrate);
   if (!pick) throw new Error(t("This browser can't encode video."));
   // The incoming bitrate is the H.264-equivalent target; trim to the picked codec's
   // efficiency so an AV1/HEVC job is not encoded at the wasteful H.264 rate.
@@ -1161,6 +1169,8 @@ export async function videoEncodeWriter(
     const ac = await pickWebCodecsAudio(pick.container, plan.audio.sampleRate, chans, 128_000);
     if (ac) {
       audioDecl = { channels: [], sampleRate: plan.audio.sampleRate, numberOfChannels: chans, codec: ac.codec, muxCodec: ac.muxCodec, bitrate: 128_000 };
+    } else if (plan.requireAudio) {
+      throw new Error(t("This browser can't preserve the video's audio in that format."));
     }
   }
 
@@ -1195,7 +1205,12 @@ export async function videoEncodeWriter(
     },
     async finalize(): Promise<WriterResult> {
       if (audioDecl && plan.audio) {
-        try { await mux.addAudio(plan.audio); } catch { /* drop audio rather than fail the whole job */ }
+        try { await mux.addAudio(plan.audio); }
+        catch (err) {
+          if (plan.requireAudio) throw err;
+          // Edit jobs retain their historical best-effort behaviour: video is more
+          // useful than no result if an optional audio encode fails.
+        }
       }
       const blob = await mux.finalize();
       return { blob, format: pick.container, width: plan.width, height: plan.height };
@@ -1335,7 +1350,10 @@ export interface VideoJobDeps {
   openMatteWriter?: (format: 'webp' | 'png' | 'gif', fps: number) => VideoFrameWriter;
   /** The transparent-VIDEO writer (matte → alpha WebM/Matroska with sound). */
   openAlphaVideoWriter?: (plan: AlphaWriterPlan) => Promise<VideoFrameWriter>;
-  openVideoWriter?: (plan: { width: number; height: number; fps: number; bitrate: number; audio?: AudioBufferLike | null }) => Promise<VideoFrameWriter>;
+  openVideoWriter?: (plan: {
+    width: number; height: number; fps: number; bitrate: number;
+    audio?: AudioBufferLike | null; format?: 'mp4' | 'webm'; requireAudio?: boolean;
+  }) => Promise<VideoFrameWriter>;
   decodeAudio?: (bytes: ArrayBuffer) => Promise<AudioBufferLike | null>;
   /** Decode only a WINDOW of the source's audio (the bounded path a range takes). */
   decodeAudioRange?: (blob: Blob, range: VideoRange) => Promise<AudioBufferLike | null>;
@@ -1432,6 +1450,79 @@ async function defaultFetchBytes(source: VideoJobSource): Promise<{ blob: Blob; 
     blob = await res.blob();
   }
   return { blob, bytes: new Uint8Array(await blob.arrayBuffer()) };
+}
+
+/** Options for a container conversion that downloads a file instead of adding a
+ *  derived asset to the catalogue. `fps <= 0` preserves the source cadence. */
+export interface VideoTranscodeOptions {
+  format: 'mp4' | 'webm';
+  fps: number;
+  /** Exact bits/s. Absent lets the quality stop scale against the decoder-resolved
+   *  dimensions and source cadence instead of guessing before the file is opened. */
+  bitrate?: number;
+  quality?: 'smaller' | 'balanced' | 'best';
+}
+
+export interface VideoTranscodeDeps extends Pick<VideoJobDeps, 'fetchBytes' | 'openReader' | 'openVideoWriter' | 'decodeAudio'> {
+  hasAudio?: (blob: Blob) => Promise<boolean>;
+}
+
+/** Ask the container, not AudioContext, whether a source track exists. A null
+ * decode can then mean "unsupported" without being mistaken for "silent". */
+async function sourceHasAudio(blob: Blob): Promise<boolean> {
+  const m = await import('mediabunny');
+  const input = new m.Input({ formats: [m.MP4, m.QTFF, m.WEBM, m.MATROSKA], source: new m.BlobSource(blob) });
+  try { return Boolean(await input.getPrimaryAudioTrack()); }
+  finally { input.dispose?.(); }
+}
+
+/** Decode and re-encode a video into the requested container without saving an
+ *  intermediate catalogue asset. Provenance is deliberately a delivery concern:
+ *  the caller stamps the returned bytes with the source as an ingredient before
+ *  download, using the same shared derived-asset path as image/audio conversion. */
+export async function transcodeVideo(
+  source: VideoJobSource, opts: VideoTranscodeOptions,
+  ctx: PipelineCtx = {}, deps: VideoTranscodeDeps = {},
+): Promise<(WriterResult & { fps: number; bitrate: number }) | null> {
+  const { blob, bytes } = await (deps.fetchBytes ?? defaultFetchBytes)(source);
+  if (bytes.byteLength > VIDEO_JOB_MAX_SOURCE_BYTES) {
+    throw new Error(t('This video is too large to process in the browser.'));
+  }
+
+  const reader = await (deps.openReader ?? mediabunnyFrameReader)(blob, opts.fps);
+  const durationSec = reader.sourceDurationSec ?? (reader.frameCount / Math.max(1, reader.fps));
+  const refusal = videoJobRefusal('trim', {
+    longEdge: Math.max(reader.width, reader.height), durationSec, bytes: bytes.byteLength,
+  });
+  if (refusal) { await reader.close(); throw new Error(refusal); }
+
+  const { bppForQuality, videoBitrate } = await import('../bridge/video-mime.ts');
+  const bitrate = opts.bitrate ?? videoBitrate(
+    evenFloor(reader.width), evenFloor(reader.height), reader.fps,
+    bppForQuality(opts.quality ?? 'balanced'),
+  );
+
+  let writer: VideoFrameWriter;
+  try {
+    const hasAudio = await (deps.hasAudio ?? sourceHasAudio)(blob);
+    const audio = await (deps.decodeAudio ?? decodeSourceAudio)(toArrayBuffer(bytes));
+    if (hasAudio && !audio) throw new Error(t("This browser can't decode the video's audio, so conversion was stopped instead of making a muted file."));
+    writer = await (deps.openVideoWriter ?? videoEncodeWriter)({
+      width: evenFloor(reader.width), height: evenFloor(reader.height),
+      fps: reader.fps, bitrate, audio, format: opts.format, requireAudio: hasAudio,
+    });
+  } catch (err) {
+    await reader.close();
+    throw err;
+  }
+  const piped = await runFramePipeline(reader, (frame) => frame, writer, ctx);
+  if (piped.cancelled || !piped.result) return null;
+  if (piped.result.format !== opts.format) {
+    throw new Error(t('The encoder produced {actual} instead of {requested}.', {
+      actual: piped.result.format.toUpperCase(), requested: opts.format.toUpperCase(),
+    }));
+  }
+  return { ...piped.result, fps: reader.fps, bitrate };
 }
 
 /**

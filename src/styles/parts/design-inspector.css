@@ -39,9 +39,9 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: hsl(var(--card));
-  color: hsl(var(--foreground));
-  font-size: var(--fs-md);
+  background: var(--ui-color-surface-raised);
+  color: var(--ui-color-text-default);
+  font-size: var(--ui-type-body);
   /* It is its own scroll container - never the stage's, and never the dock's. */
   overscroll-behavior: contain;
 }
@@ -61,7 +61,7 @@
   align-items: center;
   gap: var(--sp-2);
   padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4);
-  border-bottom: 1px solid hsl(var(--border));
+  border-bottom: 1px solid var(--ui-color-border-default);
 }
 .fc-insp-coltitle {
   flex: 1 1 auto;
@@ -71,7 +71,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -85,14 +85,14 @@
   height: calc(24px * var(--a11y-fs));
   padding: 0;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--ui-radius-control);
   background: none;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   cursor: pointer;
 }
 .fc-insp-close svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
-.fc-insp-close:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
-.fc-insp-close:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.fc-insp-close:hover { background: var(--ui-color-surface-muted); color: var(--ui-color-text-default); }
+.fc-insp-close:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 2px; }
 
 .fc-insp-scroll {
   flex: 1 1 auto;
@@ -107,7 +107,7 @@
 
 /* ── sections ───────────────────────────────────────────────────────────────── */
 
-.fc-insp-sec { border-bottom: 1px solid hsl(var(--border) / 0.7); }
+.fc-insp-sec { border-bottom: 1px solid color-mix(in srgb, var(--ui-color-border-default) 70%, transparent); }
 .fc-insp-sec:last-child { border-bottom: 0; }
 
 /* The header is a real <button>: keyboard reachable, `aria-expanded` carries the
@@ -120,7 +120,7 @@
   padding: var(--sp-3) var(--sp-4);
   border: 0;
   background: transparent;
-  color: hsl(var(--foreground));
+  color: var(--ui-color-text-default);
   font: inherit;
   font-size: var(--fs-sm);
   font-weight: 600;
@@ -129,13 +129,13 @@
   text-align: start;
   cursor: pointer;
 }
-.fc-insp-head:hover { background: hsl(var(--muted) / 0.6); }
-.fc-insp-head:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }
+.fc-insp-head:hover { background: color-mix(in srgb, var(--ui-color-surface-muted) 60%, transparent); }
+.fc-insp-head:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: -2px; }
 .fc-insp-head svg {
   flex: none;
   width: calc(15px * var(--a11y-fs));
   height: calc(15px * var(--a11y-fs));
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
 }
 .fc-insp-head > span { flex: 1 1 auto; min-width: 0; }
 
@@ -151,7 +151,7 @@
   transform: rotate(45deg);
   transform-origin: center;
   opacity: 0.55;
-  transition: transform var(--dur-1) var(--ease-out);
+  transition: transform var(--ui-motion-feedback) var(--ui-motion-standard);
 }
 .fc-insp-head[aria-expanded="false"] .fc-insp-caret { transform: rotate(-45deg); }
 @media (prefers-reduced-motion: reduce) { .fc-insp-caret { transition: none; } }
@@ -198,7 +198,7 @@ html[data-a11y-motion="reduce"] .fc-insp-caret { transition: none; }
 .fc-insp-read > b {
   flex: 1 1 auto;
   text-align: end;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -211,12 +211,12 @@ html[data-a11y-motion="reduce"] .fc-insp-caret { transition: none; }
 .fc-insp .fc-dims-ic {
   flex: none;
   display: inline-flex;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
 }
 .fc-insp .fc-dims-ic svg { width: calc(15px * var(--a11y-fs)); height: calc(15px * var(--a11y-fs)); }
 
 .fc-insp-area { display: flex; flex-direction: column; gap: var(--sp-1); }
-.fc-insp-area > span { color: hsl(var(--muted-foreground)); }
+.fc-insp-area > span { color: var(--ui-color-text-muted); }
 .fc-insp-area textarea { width: 100%; box-sizing: border-box; resize: vertical; }
 
 /* A door onto something that is not a field: the picker, the timeline. Full width,
@@ -228,7 +228,7 @@ html[data-a11y-motion="reduce"] .fc-insp-caret { transition: none; }
 .fc-insp-hint {
   margin: 0;
   padding: var(--sp-4);
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   font-size: var(--fs-sm);
 }
 
@@ -242,8 +242,8 @@ html[data-a11y-motion="reduce"] .fc-insp-caret { transition: none; }
    from fields.css; `.fc-seg-btn` and `.fc-cbtn` have none, so it is stated here,
    scoped to the column, rather than forked into the shared editor sheet.
    `--ring` is a token, so light, dark and the contrast maps all follow. */
-.fc-insp .fc-seg-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -1px; }
-.fc-insp .fc-cbtn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.fc-insp .fc-seg-btn:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: -1px; }
+.fc-insp .fc-cbtn:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 1px; }
 
 /* ── Appears (plans/179 M4) ─────────────────────────────────────────────────── */
 
@@ -262,14 +262,14 @@ html[data-a11y-motion="reduce"] .fc-insp-caret { transition: none; }
   align-items: baseline;
   gap: 4px;
   padding: 2px var(--sp-2);
-  border-radius: var(--radius-pill);
-  background: hsl(var(--muted));
-  color: hsl(var(--foreground));
+  border-radius: var(--ui-radius-pill);
+  background: var(--ui-color-surface-muted);
+  color: var(--ui-color-text-default);
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
 }
 .fc-insp-chip > i {
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   font-style: normal;
 }
 
@@ -284,15 +284,15 @@ html[data-a11y-motion="reduce"] .fc-insp-caret { transition: none; }
   width: calc(30px * var(--a11y-fs));
   height: calc(30px * var(--a11y-fs));
   padding: 0;
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius-sm);
-  background: hsl(var(--background));
-  color: hsl(var(--foreground));
+  border: 1px solid var(--ui-color-border-default);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-color-surface-canvas);
+  color: var(--ui-color-text-default);
   cursor: pointer;
 }
 .fc-insp-arr svg { width: calc(17px * var(--a11y-fs)); height: calc(17px * var(--a11y-fs)); }
-.fc-insp-arr:hover:not(:disabled) { background: hsl(var(--muted)); }
-.fc-insp-arr:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.fc-insp-arr:hover:not(:disabled) { background: var(--ui-color-surface-muted); }
+.fc-insp-arr:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 2px; }
 /* Disabled, not hidden: distribute needs three, group needs two, and a control that
    VANISHES at two boxes and reappears at three teaches nothing. The dim says why. */
 .fc-insp-arr:disabled { opacity: 0.4; cursor: not-allowed; }

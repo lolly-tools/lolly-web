@@ -285,12 +285,28 @@ test('B3: the source picker has a visible way out, and its file tile says it in 
   const src = await readFile(new URL('../../views/start.ts', import.meta.url), 'utf8');
   assert.match(src, /class="start-import-close" data-ds-src-close/,
     'the dialog carries a close control, not just Escape and a backdrop tap');
-  assert.match(src, /\[data-ds-src-close\]'\)\) \{ closeImport\(\)/,
+  assert.match(src, /\[data-ds-src-close\]'\)\) \{[\s\S]{0,80}closeImport\(\)/,
     'and the delegate the picker already has routes it');
-  assert.match(src, /t\('A tokens JSON, a Penpot project, an SVG or a Lolly pack\.'\)/,
-    'the file tile names things people recognise; the formats live on its own chips');
+  assert.match(src, /t\('A \.lolly file, tokens JSON, a Penpot project or an SVG\.'\)/,
+    'the file tile leads with the preferred .lolly format in plain words');
   assert.ok(!src.includes('DTCG or Tokens Studio JSON, a Penpot project'),
     'the format-jargon note is gone from the tile');
+});
+
+test('Profile file entry opens the file stage and its controls survive modal reparenting', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const [start, card] = await Promise.all([
+    readFile(new URL('../../views/start.ts', import.meta.url), 'utf8'),
+    readFile(new URL('./design-systems-card.ts', import.meta.url), 'utf8'),
+  ]);
+  assert.match(card, /#\/start\?source=file&rename=1/,
+    'Profile hands a file request directly to the file stage, where .lolly is visible');
+  assert.match(start, /const importFile = importPanel\.querySelector<[^>]+>\('\.start-import-file'\)!/,
+    'the file input is found from the stable panel after the dialog reparents it');
+  assert.match(start, /const dropEl = importPanel\.querySelector<[^>]+>\('\[data-start-import-drop\]'\)!/,
+    'the drop target is found from the same stable panel');
+  assert.doesNotMatch(start, /viewEl\.querySelector<[^>]+>\('\.start-import-file'\)!/,
+    'a routed-open dialog must not make the view-root lookup null again');
 });
 
 test('B4: one Home in the studio - the FAB stands down when the pill already is one', async () => {

@@ -25,7 +25,7 @@
  */
 
 import { escape, safeHref } from '../utils.ts';
-import { sendTargetsFor } from '../lib/send-target.ts';
+import { sendTargetId, sendTargetsFor } from '../lib/send-target.ts';
 import { isHiddenSlot } from '../lib/batch-slots.ts';
 import {
   matchesType as matchesTypeRule,
@@ -309,6 +309,7 @@ const catalogAddedText = (ref: AssetRef): string => {
 // A safe, readable download filename from an asset's name (or id), + extension.
 function downloadName(ref: AssetRef, ext: string): string {
   const base = String(ref.meta?.name ?? ref.id.split('/').pop() ?? 'asset')
+    .replace(/\.[a-z0-9]+$/i, '')
     .replace(/[^\w.\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'asset';
   return `${base}.${ext}`;
 }
@@ -882,7 +883,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     if (!ref) return;
     if (act === 'open') { openDetails(ref); return; }
     if (act === 'fav') { await toggleFavourite(id); return; }
-    if (act === 'download') { await openDownloadDialog(ref); return; }
+    if (act === 'download') { await openAssetDownloadDialog(ref); return; }
     if (act === 'send') { await openSendDialog(ref); return; }
     if (act === 'share') {
       try { await navigator.clipboard.writeText(assetLink(ref)); announce(t('Link copied')); }
@@ -2378,9 +2379,10 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     // Raster photos get the bitmap sibling: a colour-treatment strip (greyscale/duotone) that
     // washes the preview live and bakes into the download - mirroring the category grid.
     const treatable = ref.type === 'raster' && !ref.meta?._placeholder && photoTreatments.length > 0;
-    // Anything with a styler (vector/themable icon, or a treatable photo) offers a Download…
-    // dialog rather than a bare download.
-    const configurable = isVector(ref) || isThemable(ref) || treatable;
+    // Every still/audio/video has a real Download-as pipeline. Original remains the
+    // one-click default; conversion controls only appear after opening the dialog.
+    const configurable = isVector(ref) || isThemable(ref) || (ref.type === 'raster' && !ref.meta?.animated)
+      || ref.type === 'audio' || ref.type === 'video';
     // Honour a theme from a shared link (initialTheme) if it's valid, else the first pairing.
     let dTheme: string | null = themable
       ? ((initialTheme && iconThemes.some(t => t.id === initialTheme) ? initialTheme : iconThemes[0]?.id) ?? null)
@@ -4254,9 +4256,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
         return;
       }
       if (act === 'download') {
-        if (isVector(ref) || isThemable(ref)) await openDownloadDialog(ref, dTheme);
-        else if (treatable) await openPhotoDownloadDialog(ref, dTreatment);
-        else await directDownload(ref);
+        await openAssetDownloadDialog(ref, dTheme, dTreatment);
       }
       else if (act === 'send') { await openSendDialog(ref); }
       else if (act === 'darkroom') {
@@ -5720,7 +5720,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       await ensureBuiltinSendTargets();
     } catch (err) { console.error('Send destinations unavailable:', err); }
     if (!mounted) return;
-    const offered = sendTargetsFor(format);
+    const offered = sendTargetsFor(format, 'asset');
 
     closeDownloadDialog();
     const content = `
@@ -5729,7 +5729,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       <div class="cat-dl-section">
         <span class="cat-dl-label">${t('Send to')}</span>
         <div class="cat-send-row">
-          ${offered.map(tg => `<button type="button" class="btn" data-send-kind="${escape(tg.kind)}"${tg.hint ? ` title="${escape(tg.hint)}"` : ''}>${icon('upload', { size: 14 })}<span>${escape(tg.label)}</span></button>`).join('')}
+          ${offered.map(tg => `<button type="button" class="btn" data-send-kind="${escape(sendTargetId(tg))}"${tg.hint ? ` title="${escape(tg.hint)}"` : ''}>${icon('upload', { size: 14 })}<span>${escape(tg.label)}</span></button>`).join('')}
         </div>
         <p class="cat-send-status" role="status"></p>
       </div>` : `
@@ -5751,7 +5751,7 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
       if (el.closest('.cat-dl-cancel')) { closeDownloadDialog(); return; }
       const btn = el.closest<HTMLButtonElement>('[data-send-kind]');
       if (!btn || btn.hasAttribute('disabled')) return;
-      const target = sendTargetsFor(format).find(tg => tg.kind === btn.dataset.sendKind);
+      const target = sendTargetsFor(format, 'asset').find(tg => sendTargetId(tg) === btn.dataset.sendKind);
       if (!target) return;
       const status = dlg.querySelector<HTMLElement>('.cat-send-status');
       // Swap the label span, not the button - it also holds the glyph.
@@ -6262,32 +6262,62 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
     return { svg: wrapRasterWithTreatment({ href, width: w, height: h, treatment: def }), w, h };
   }
 
-  // Raster photo: a small dialog to (optionally) apply a colour treatment via the photo
-  // styler, then download as PNG / JPG / WebP. The bitmap sibling of openDownloadDialog - 
-  // the preview washes live via the injected CSS filter (no re-encode until download); the
-  // chosen treatment is baked into the exported bytes. "Original" downloads the source as-is.
+  // Raster "Download as": Original is byte-exact; choosing PNG/JPG/WebP always
+  // runs a real encoder and checks the resulting container before naming it. The
+  // common path is intentionally short (format + quality preset). Exact quality,
+  // sizing and GPS metadata live in a clearly-labelled advanced disclosure.
   async function openPhotoDownloadDialog(ref: AssetRef, initialTreatment?: string | null): Promise<void> {
-    if (ref.type !== 'raster' || photoTreatments.length === 0) { await directDownload(ref); return; }
-    ensureTreatmentDefs();
-    let treatmentId: string | null = initialTreatment && photoTreatments.some(t => t.id === initialTreatment) ? initialTreatment : null;
+    if (ref.type !== 'raster' || ref.meta?.animated) { await directDownload(ref); return; }
+    const hasTreatments = photoTreatments.length > 0;
+    if (hasTreatments) ensureTreatmentDefs();
+    let treatmentId: string | null = hasTreatments && initialTreatment && photoTreatments.some(t => t.id === initialTreatment)
+      ? initialTreatment : null;
     const name = String(ref.meta?.name ?? ref.id);
+    const sourceFormat = String(ref.format || 'file').toLowerCase();
+    const webpSupported = (() => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        return canvas.toDataURL('image/webp').startsWith('data:image/webp');
+      } catch { return false; }
+    })();
 
     closeDownloadDialog();
     const content = `
       <h2 class="cat-dl-title">${t('Download {name}', { name })}</h2>
       <div class="cat-dl-preview"><img alt="" class="cat-dl-img" src="${escape(ref.url)}"></div>
-      <div class="cat-dl-section">
+      ${hasTreatments ? `<div class="cat-dl-section">
         <span class="cat-dl-label">${t('Colour')}</span>
         ${treatmentSwatchRow(treatmentId)}
-      </div>
+      </div>` : ''}
       <div class="cat-dl-section">
         <span class="cat-dl-label">${t('Format')}</span>
-        <div class="cat-dl-fmt" role="radiogroup" aria-label="${escape(t('Format'))}">
-          <label class="field-toggle"><input type="radio" class="field-radio" name="cat-dl-fmt" value="png" checked> PNG <span class="cat-dl-hint">${t('lossless')}</span></label>
-          <label class="field-toggle"><input type="radio" class="field-radio" name="cat-dl-fmt" value="jpg"> JPG <span class="cat-dl-hint">${t('smaller')}</span></label>
-          <label class="field-toggle"><input type="radio" class="field-radio" name="cat-dl-fmt" value="webp"> WebP <span class="cat-dl-hint">${t('modern')}</span></label>
-        </div>
+        <select class="field-select cat-dl-select" name="cat-dl-fmt" aria-label="${escape(t('Format'))}">
+          <option value="original">${t('Original')} (${escape(sourceFormat.toUpperCase())})</option>
+          <option value="png">PNG · ${t('lossless')}</option>
+          <option value="jpg">JPG · ${t('smaller')}</option>
+          ${webpSupported ? `<option value="webp">WebP · ${t('modern')}</option>` : ''}
+        </select>
       </div>
+      <div class="cat-dl-section cat-dl-quality-row" data-lossy-control hidden>
+        <label class="cat-dl-field"><span class="cat-dl-label">${t('Quality')}</span>
+          <select class="field-select cat-dl-select" name="cat-dl-quality">
+            <option value="balanced">${t('Balanced')}</option>
+            <option value="smaller">${t('Smaller file')}</option>
+            <option value="best">${t('Best quality')}</option>
+          </select>
+        </label>
+      </div>
+      <details class="cat-dl-advanced" data-convert-control hidden>
+        <summary>${t('Advanced settings')}</summary>
+        <div class="cat-dl-advanced-grid">
+          <label class="cat-dl-field" data-lossy-control hidden><span>${t('Exact quality')}</span><span class="cat-dl-unit"><input class="field-input" name="cat-dl-exact-quality" type="number" min="1" max="100" placeholder="85">%</span></label>
+          <label class="cat-dl-field"><span>${t('Maximum edge')}</span><span class="cat-dl-unit"><input class="field-input" name="cat-dl-max-edge" type="number" min="1" max="16384" placeholder="${t('Original')}"> px</span></label>
+          <label class="field-toggle cat-dl-check"><input type="checkbox" class="field-checkbox" name="cat-dl-gps"> ${t('Keep location metadata')}</label>
+        </div>
+      </details>
+      <p class="cat-dl-provenance">${t('Conversions are made on this device. The source Content Credential is kept in the new file’s provenance chain.')}</p>
+      <p class="cat-dl-status" aria-live="polite"></p>
       <div class="cat-dl-actions">
         <button type="button" class="btn cat-dl-cancel">${t('Cancel')}</button>
         <button type="button" class="btn cat-dl-go modal-primary">${t('Download')}</button>
@@ -6303,48 +6333,303 @@ export async function mountCatalog(viewEl: HTMLElement, hostIn: HostV1, params =
 
     const imgEl = dlg.querySelector<HTMLImageElement>('.cat-dl-img')!;
     const applyPreview = (): void => { imgEl.style.filter = treatmentId ? `url(#${TREATMENT_FILTER_PREFIX}${treatmentId})` : ''; };
+    const formatSelect = dlg.querySelector<HTMLSelectElement>('[name="cat-dl-fmt"]')!;
+    const syncConvertControls = (): void => {
+      const converting = formatSelect.value !== 'original' || Boolean(treatmentId);
+      dlg.querySelectorAll<HTMLElement>('[data-convert-control]').forEach(el => { el.hidden = !converting; });
+      const effectiveFormat = formatSelect.value === 'original' ? sourceFormat : formatSelect.value;
+      const lossy = converting && (effectiveFormat === 'jpg' || effectiveFormat === 'jpeg' || effectiveFormat === 'webp');
+      dlg.querySelectorAll<HTMLElement>('[data-lossy-control]').forEach(el => { el.hidden = !lossy; });
+    };
     applyPreview();
-    const fmt = (): string => (dlg.querySelector<HTMLInputElement>('input[name="cat-dl-fmt"]:checked')?.value ?? 'png');
+    syncConvertControls();
+    formatSelect.addEventListener('change', syncConvertControls);
 
     dlg.addEventListener('click', async (e) => {
-      const t = e.target as HTMLElement;
-      const treatBtn = t.closest<HTMLElement>('.cat-dl-treat');
+      const target = e.target as HTMLElement;
+      const treatBtn = target.closest<HTMLElement>('.cat-dl-treat');
       if (treatBtn) {
         treatmentId = treatBtn.dataset.treatment || null;
         dlg.querySelectorAll<HTMLElement>('.cat-dl-treat').forEach(b => {
           const on = b === treatBtn; b.classList.toggle('is-active', on); b.setAttribute('aria-pressed', String(on));
         });
         applyPreview();
+        syncConvertControls();
         return;
       }
-      if (t.closest('.cat-dl-cancel')) { closeDownloadDialog(); return; }
-      if (t.closest('.cat-dl-go')) {
+      if (target.closest('.cat-dl-cancel')) { closeDownloadDialog(); return; }
+      if (target.closest('.cat-dl-go')) {
+        const go = dlg.querySelector<HTMLButtonElement>('.cat-dl-go')!;
+        const status = dlg.querySelector<HTMLElement>('.cat-dl-status')!;
+        go.disabled = true;
+        status.textContent = t('Preparing download…');
         try {
-          const f = fmt();
-          const wrap = treatmentId ? await treatedWrapperSvg(ref, treatmentId) : null;
-          if (!wrap) {
-            // Original (or an unresolvable treatment) → the source bytes, untouched
-            // (directDownload still chains a credentialed user upload's provenance).
+          const mod = await import('../lib/catalog-download.ts');
+          const chosen = dlg.querySelector<HTMLSelectElement>('[name="cat-dl-fmt"]')?.value ?? 'original';
+          const sourceImageFormat = mod.imageDownloadFormat(sourceFormat);
+          if (chosen === 'original' && !treatmentId) {
             await directDownload(ref);
-          } else {
-            const mime = f === 'jpg' ? 'image/jpeg' : f === 'webp' ? 'image/webp' : 'image/png';
-            const blob = await svgToRaster(wrap.svg, wrap.w, wrap.h, mime);
-            const def = photoTreatments.find(x => x.id === treatmentId);
-            const label = String(def?.label ?? treatmentId);
-            const outFmt = f === 'jpg' ? 'jpg' : f;
-            await downloadSigned(ref, blob, outFmt, downloadName(ref, outFmt), {
-              edits: [
-                { action: 'c2pa.color_adjustments', description: `Applied the '${label}' colour treatment` },
-                { action: 'c2pa.converted', description: `Rendered to ${outFmt.toUpperCase()} at ${wrap.w}×${wrap.h}px` },
-              ],
-              detail: { treatment: label },
-              dims: `${wrap.w}×${wrap.h}`,
-            });
+            closeDownloadDialog();
+            return;
           }
-        } catch (err) { host.log?.('error', 'Catalog photo download failed', { id: ref.id, error: String(err) }); }
-        closeDownloadDialog();
+          const f = (chosen === 'original' ? (sourceImageFormat ?? 'png') : chosen) as import('../lib/catalog-download.ts').ImageDownloadFormat;
+          const preset = (dlg.querySelector<HTMLSelectElement>('[name="cat-dl-quality"]')?.value ?? 'balanced') as import('../lib/catalog-download.ts').DownloadQuality;
+          const exactRaw = dlg.querySelector<HTMLInputElement>('[name="cat-dl-exact-quality"]')?.value;
+          const maxEdgeRaw = dlg.querySelector<HTMLInputElement>('[name="cat-dl-max-edge"]')?.value;
+          const quality = mod.imageQualityValue(preset, exactRaw ? Number(exactRaw) : undefined);
+          const maxEdge = maxEdgeRaw ? Number(maxEdgeRaw) : undefined;
+          const keepGps = dlg.querySelector<HTMLInputElement>('[name="cat-dl-gps"]')?.checked === true;
+          const wrap = treatmentId ? await treatedWrapperSvg(ref, treatmentId) : null;
+          let converted: { blob: Blob; format: import('../lib/catalog-download.ts').ImageDownloadFormat; width: number; height: number };
+          if (wrap) {
+            const scale = maxEdge && maxEdge > 0 && Math.max(wrap.w, wrap.h) > maxEdge
+              ? maxEdge / Math.max(wrap.w, wrap.h) : 1;
+            const width = Math.max(1, Math.round(wrap.w * scale));
+            const height = Math.max(1, Math.round(wrap.h * scale));
+            const blob = await svgToRaster(wrap.svg, width, height, mod.imageDownloadMime(f), quality);
+            const actual = mod.imageDownloadFormat(blob.type);
+            if (actual !== f) throw new Error(t('This browser returned {actual} instead of {requested}.', {
+              actual: blob.type || t('an unknown format'), requested: mod.imageDownloadMime(f),
+            }));
+            converted = { blob, format: actual, width, height };
+          } else {
+            const source = await (await fetch(ref.url)).blob();
+            converted = await mod.transcodeCatalogImage(host.images, source, { format: f, quality, maxEdge, keepGps });
+          }
+          const def = treatmentId ? photoTreatments.find(x => x.id === treatmentId) : null;
+          const label = def ? String(def.label ?? def.id) : '';
+          const resized = Boolean(maxEdge && ref.width && ref.height && Math.max(ref.width, ref.height) > maxEdge);
+          const edits: C2paActionInput[] = [
+            ...(label ? [{ action: 'c2pa.color_adjustments', description: `Applied the '${label}' colour treatment` } as C2paActionInput] : []),
+            ...(resized ? [{ action: 'c2pa.resized', description: `Resized to ${converted.width}×${converted.height}px` } as C2paActionInput] : []),
+            { action: 'c2pa.converted', description: `Encoded to ${converted.format.toUpperCase()} at ${converted.width}×${converted.height}px` },
+          ];
+          await downloadSigned(ref, converted.blob, converted.format, downloadName(ref, converted.format), {
+            edits,
+            detail: {
+              ...(label ? { treatment: label } : {}),
+              quality: `${Math.round(quality * 100)}%`,
+              ...(maxEdge ? { maximumEdge: `${Math.round(maxEdge)}px` } : {}),
+              locationMetadata: keepGps ? 'kept' : 'removed',
+            },
+            dims: `${converted.width}×${converted.height}`,
+            requireCredential: true,
+          });
+          closeDownloadDialog();
+        } catch (err) {
+          host.log?.('error', 'Catalog photo download failed', { id: ref.id, error: String(err) });
+          status.textContent = err instanceof Error ? err.message : t('Could not prepare this download.');
+          go.disabled = false;
+        }
       }
     });
+  }
+
+  /** Audio download-as keeps the first choice deliberately boring: Original is
+   *  byte-exact. A selected container is decoded and re-encoded on-device; the
+   *  quality stop is approachable, while exact bitrate/sample depth are one
+   *  discoverable disclosure away. */
+  async function openAudioDownloadDialog(ref: AssetRef): Promise<void> {
+    const [formatSupport, audio] = await Promise.all([
+      import('../bridge/format-support.ts'), import('../lib/audio-encode.ts'),
+    ]);
+    await formatSupport.probeWebCodecsAudioSupport();
+    const sourceFormat = String(ref.format || 'file').toLowerCase();
+    if (!audio.isAudioFormat(sourceFormat)) { await directDownload(ref); return; }
+    const support = formatSupport.audioSupport();
+    const labels: Record<import('../lib/audio-encode.ts').AudioFormat, string> = {
+      wav: 'WAV · lossless', mp3: 'MP3 · compatible', m4a: 'M4A · AAC',
+      aac: 'AAC · stream', opus: 'Opus · WebM', ogg: 'Ogg · Opus', flac: 'FLAC · lossless',
+    };
+    const formats = audio.AUDIO_FORMATS.filter(f => support[f]);
+    const name = String(ref.meta?.name ?? ref.id);
+    closeDownloadDialog();
+    const content = `
+      <h2 class="cat-dl-title">${t('Download {name}', { name })}</h2>
+      <div class="cat-dl-media-mark" aria-hidden="true">${CAT_ICONS.audio}</div>
+      <div class="cat-dl-section">
+        <label class="cat-dl-field"><span class="cat-dl-label">${t('Format')}</span>
+          <select class="field-select cat-dl-select" name="cat-dl-fmt">
+            <option value="original">${t('Original')} (${escape(sourceFormat.toUpperCase())})</option>
+            ${formats.map(f => `<option value="${f}">${escape(labels[f])}</option>`).join('')}
+          </select>
+        </label>
+      </div>
+      <div class="cat-dl-section" data-lossy-control hidden>
+        <label class="cat-dl-field"><span class="cat-dl-label">${t('Quality')}</span>
+          <select class="field-select cat-dl-select" name="cat-dl-quality">
+            <option value="balanced">${t('Balanced')}</option>
+            <option value="smaller">${t('Smaller file')}</option>
+            <option value="best">${t('Best quality')}</option>
+          </select>
+        </label>
+      </div>
+      <details class="cat-dl-advanced" data-advanced-control hidden>
+        <summary>${t('Advanced settings')}</summary>
+        <div class="cat-dl-advanced-grid">
+          <label class="cat-dl-field" data-lossy-control hidden><span>${t('Exact bitrate')}</span><span class="cat-dl-unit"><input class="field-input" name="cat-dl-bitrate" type="number" min="32" max="512" placeholder="192"> kbps</span></label>
+          <label class="cat-dl-field" data-wav-control hidden><span>${t('WAV sample format')}</span>
+            <select class="field-select" name="cat-dl-sample">
+              <option value="int16">16-bit PCM</option><option value="float32">32-bit float</option>
+            </select>
+          </label>
+        </div>
+      </details>
+      <p class="cat-dl-provenance">${t('Conversion happens on this device. The source Content Credential is kept as an ingredient in the new file.')}</p>
+      <p class="cat-dl-status" aria-live="polite"></p>
+      <div class="cat-dl-actions"><button type="button" class="btn cat-dl-cancel">${t('Cancel')}</button><button type="button" class="btn cat-dl-go modal-primary">${t('Download')}</button></div>`;
+    const modal = mountModal(content, {
+      className: 'cat-dl', initialFocus: el => el.querySelector<HTMLElement>('.cat-dl-go'),
+      onClose: () => { dlDialog = null; dlModal = null; },
+    });
+    const dlg = modal.el;
+    dlDialog = dlg;
+    dlModal = modal;
+    const formatSelect = dlg.querySelector<HTMLSelectElement>('[name="cat-dl-fmt"]')!;
+    const syncConvertControls = (): void => {
+      const f = formatSelect.value;
+      const converting = f !== 'original';
+      const lossy = converting && f !== 'wav' && f !== 'flac';
+      dlg.querySelectorAll<HTMLElement>('[data-lossy-control]').forEach(el => { el.hidden = !lossy; });
+      dlg.querySelectorAll<HTMLElement>('[data-wav-control]').forEach(el => { el.hidden = f !== 'wav'; });
+      dlg.querySelectorAll<HTMLElement>('[data-advanced-control]').forEach(el => { el.hidden = !converting || f === 'flac'; });
+    };
+    formatSelect.addEventListener('change', syncConvertControls);
+    syncConvertControls();
+    dlg.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement;
+      if (target.closest('.cat-dl-cancel')) { closeDownloadDialog(); return; }
+      if (!target.closest('.cat-dl-go')) return;
+      const chosen = dlg.querySelector<HTMLSelectElement>('[name="cat-dl-fmt"]')?.value ?? 'original';
+      if (chosen === 'original') { closeDownloadDialog(); void directDownload(ref); return; }
+      if (!audio.isAudioFormat(chosen)) return;
+      const preset = (dlg.querySelector<HTMLSelectElement>('[name="cat-dl-quality"]')?.value ?? 'balanced') as import('../lib/catalog-download.ts').DownloadQuality;
+      const exact = dlg.querySelector<HTMLInputElement>('[name="cat-dl-bitrate"]')?.value;
+      const sample = (dlg.querySelector<HTMLSelectElement>('[name="cat-dl-sample"]')?.value ?? 'int16') as import('../../../../engine/src/wav.ts').WavSampleFormat;
+      closeDownloadDialog();
+      const job = startJob({ title: t('Converting audio') });
+      void (async () => {
+        await job.started;
+        try {
+          const mod = await import('../lib/catalog-download.ts');
+          const bitrate = mod.audioBitrateValue(preset, exact ? Number(exact) : undefined);
+          const result = await mod.transcodeCatalogAudio(ref.url, {
+            format: chosen, bitrate, ...(chosen === 'wav' ? { sampleFormat: sample } : {}),
+          });
+          await downloadSigned(ref, result.blob, result.format, downloadName(ref, result.format), {
+            edits: [{ action: 'c2pa.converted', description: `Transcoded to ${result.format.toUpperCase()}${chosen === 'wav' ? ` (${sample})` : ` at ${Math.round(bitrate / 1000)} kbps`}` }],
+            detail: {
+              format: result.format.toUpperCase(),
+              ...(chosen === 'wav' ? { sampleFormat: sample } : { bitrate: `${Math.round(bitrate / 1000)} kbps` }),
+            },
+            requireCredential: true,
+          });
+          job.finish();
+        } catch (err) {
+          host.log?.('error', 'Catalog audio conversion failed', { id: ref.id, error: String(err) });
+          job.fail(err);
+        }
+      })();
+    });
+  }
+
+  /** Video download-as uses the existing streaming decoder/muxer: source cadence
+   *  by default, three approachable quality stops, exact FPS/bitrate for experts.
+   *  The heavy-job queue keeps concurrent transcodes from exhausting the tab. */
+  async function openVideoDownloadDialog(ref: AssetRef): Promise<void> {
+    const formatSupport = await import('../bridge/format-support.ts');
+    await formatSupport.probeWebCodecsVideoSupport();
+    const support = formatSupport.videoSupport();
+    const targets = (['mp4', 'webm'] as const).filter(f => support[f]);
+    if (!targets.length) { await directDownload(ref); return; }
+    const sourceFormat = String(ref.format || 'file').toLowerCase();
+    const name = String(ref.meta?.name ?? ref.id);
+    closeDownloadDialog();
+    const content = `
+      <h2 class="cat-dl-title">${t('Download {name}', { name })}</h2>
+      <div class="cat-dl-media-mark" aria-hidden="true">${CAT_ICONS.motion}</div>
+      <div class="cat-dl-section"><label class="cat-dl-field"><span class="cat-dl-label">${t('Format')}</span>
+        <select class="field-select cat-dl-select" name="cat-dl-fmt">
+          <option value="original">${t('Original')} (${escape(sourceFormat.toUpperCase())})</option>
+          ${targets.map(f => `<option value="${f}">${f.toUpperCase()} · ${f === 'mp4' ? t('compatible') : t('open format')}</option>`).join('')}
+        </select>
+      </label></div>
+      <div class="cat-dl-section" data-convert-control hidden><label class="cat-dl-field"><span class="cat-dl-label">${t('Quality')}</span>
+        <select class="field-select cat-dl-select" name="cat-dl-quality"><option value="balanced">${t('Balanced')}</option><option value="smaller">${t('Smaller file')}</option><option value="best">${t('Best quality')}</option></select>
+      </label></div>
+      <details class="cat-dl-advanced" data-convert-control hidden><summary>${t('Advanced settings')}</summary><div class="cat-dl-advanced-grid">
+        <label class="cat-dl-field"><span>${t('Frame rate')}</span><span class="cat-dl-unit"><input class="field-input" name="cat-dl-fps" type="number" min="1" max="60" placeholder="${t('Source')}"> fps</span></label>
+        <label class="cat-dl-field"><span>${t('Exact bitrate')}</span><span class="cat-dl-unit"><input class="field-input" name="cat-dl-bitrate" type="number" min="1" max="24" step="0.1" placeholder="${t('Automatic')}"> Mbps</span></label>
+      </div><p class="cat-dl-fineprint">${t('On-device conversion supports clips up to 2 minutes and 4K.')}</p></details>
+      <p class="cat-dl-provenance">${t('The source Content Credential and edit history are carried into the transcoded file.')}</p>
+      <div class="cat-dl-actions"><button type="button" class="btn cat-dl-cancel">${t('Cancel')}</button><button type="button" class="btn cat-dl-go modal-primary">${t('Download')}</button></div>`;
+    const modal = mountModal(content, {
+      className: 'cat-dl', initialFocus: el => el.querySelector<HTMLElement>('.cat-dl-go'),
+      onClose: () => { dlDialog = null; dlModal = null; },
+    });
+    const dlg = modal.el;
+    dlDialog = dlg;
+    dlModal = modal;
+    const formatSelect = dlg.querySelector<HTMLSelectElement>('[name="cat-dl-fmt"]')!;
+    const syncConvertControls = (): void => {
+      dlg.querySelectorAll<HTMLElement>('[data-convert-control]').forEach(el => { el.hidden = formatSelect.value === 'original'; });
+    };
+    formatSelect.addEventListener('change', syncConvertControls);
+    syncConvertControls();
+    dlg.addEventListener('click', (event) => {
+      const target = event.target as HTMLElement;
+      if (target.closest('.cat-dl-cancel')) { closeDownloadDialog(); return; }
+      if (!target.closest('.cat-dl-go')) return;
+      const chosen = dlg.querySelector<HTMLSelectElement>('[name="cat-dl-fmt"]')?.value ?? 'original';
+      if (chosen === 'original') { closeDownloadDialog(); void directDownload(ref); return; }
+      if (chosen !== 'mp4' && chosen !== 'webm') return;
+      const preset = (dlg.querySelector<HTMLSelectElement>('[name="cat-dl-quality"]')?.value ?? 'balanced') as import('../bridge/video-mime.ts').VideoQuality;
+      const fpsRaw = dlg.querySelector<HTMLInputElement>('[name="cat-dl-fps"]')?.value;
+      const bitrateRaw = dlg.querySelector<HTMLInputElement>('[name="cat-dl-bitrate"]')?.value;
+      const fps = fpsRaw ? Math.max(1, Math.min(60, Number(fpsRaw))) : 0;
+      const controller = new AbortController();
+      closeDownloadDialog();
+      const job = startJob({ title: t('Converting video'), cancel: () => controller.abort() });
+      void (async () => {
+        await job.started;
+        if (job.cancelled) return;
+        try {
+          const [{ videoBitrateValue }, { transcodeVideo }] = await Promise.all([
+            import('../lib/catalog-download.ts'), import('../lib/video-jobs.ts'),
+          ]);
+          const bitrate = bitrateRaw
+            ? videoBitrateValue(ref.width ?? 1280, ref.height ?? 720, fps || 30, preset, Number(bitrateRaw))
+            : undefined;
+          const result = await transcodeVideo(ref, { format: chosen, fps, bitrate, quality: preset }, {
+            isCancelled: () => job.cancelled || controller.signal.aborted,
+            onProgress: (done, total) => job.progress(done, total, t('Encoding frames')),
+          });
+          if (!result || job.cancelled) return;
+          await downloadSigned(ref, result.blob, result.format, downloadName(ref, result.format), {
+            edits: [{ action: 'c2pa.converted', description: `Transcoded to ${result.format.toUpperCase()} at ${Number(result.fps.toFixed(2))} fps and ${(result.bitrate / 1_000_000).toFixed(1)} Mbps` }],
+            detail: { format: result.format.toUpperCase(), frameRate: `${Number(result.fps.toFixed(2))} fps`, bitrate: `${(result.bitrate / 1_000_000).toFixed(1)} Mbps` },
+            dims: `${result.width}×${result.height}`,
+            requireCredential: true,
+          });
+          job.finish();
+        } catch (err) {
+          host.log?.('error', 'Catalog video conversion failed', { id: ref.id, error: String(err) });
+          job.fail(err);
+        }
+      })();
+    });
+  }
+
+  /** One routing rule for tiles and the details modal, so no entry point can
+   *  accidentally bypass a selected conversion format. */
+  async function openAssetDownloadDialog(
+    ref: AssetRef, initialTheme?: string | null, initialTreatment?: string | null,
+  ): Promise<void> {
+    if (isVector(ref) || isThemable(ref)) return openDownloadDialog(ref, initialTheme);
+    if (ref.type === 'raster') return openPhotoDownloadDialog(ref, initialTreatment);
+    if (ref.type === 'audio') return openAudioDownloadDialog(ref);
+    if (ref.type === 'video') return openVideoDownloadDialog(ref);
+    return directDownload(ref);
   }
 
   // ── wiring ───────────────────────────────────────────────────────────────────

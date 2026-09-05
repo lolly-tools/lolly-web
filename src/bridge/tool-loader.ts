@@ -43,7 +43,9 @@ export async function getTool(toolId: string): Promise<LoadedTool> {
   // network path with the signed-catalog check as before.
   const promise = isToolInstalled(toolId).catch(() => false).then((installed) =>
     installed
-      ? loadTool(toolId, installedFetchFile(toolId), { lang: currentLang() })
+      ? loadTool(toolId, installedFetchFile(toolId), {
+          lang: currentLang(), trustClass: 'sideloaded-consented',
+        })
       : getToolIntegrity().then((integrity) =>
           loadTool(toolId, makeFetchFile(toolId), { lang: currentLang(), integrity: integrity ?? undefined })));
   toolCache.set(toolId, promise);

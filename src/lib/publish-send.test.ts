@@ -5,7 +5,7 @@
  * Headless: connections ride provider-connections' memory-only mode (no IDB in
  * node), the network is a stubbed global fetch, and the loopback leg gets a
  * recording fake transport - the Rust side's contract (oauth_listen → port,
- * shell open, oauth_wait → query string) is what the fake speaks.
+ * narrow Rust OAuth opener, oauth_wait → query string) is what the fake speaks.
  */
 
 import { test, beforeEach, afterEach } from 'node:test';
@@ -56,8 +56,8 @@ test('loopbackVia: binds first, opens the system browser, hands back the query',
   assert.equal(via.redirectUri, 'http://127.0.0.1:49152/oauth-return');
   const ret = await via.run('https://provider.example/authorize?x=1');
   assert.equal(ret.search, 'code=abc&state=xyz');
-  assert.deepEqual(invokes.map(i => i.cmd), ['oauth_listen', 'plugin:shell|open', 'oauth_wait']);
-  assert.equal(invokes[1]!.args?.path, 'https://provider.example/authorize?x=1');
+  assert.deepEqual(invokes.map(i => i.cmd), ['oauth_listen', 'oauth_open', 'oauth_wait']);
+  assert.equal(invokes[1]!.args?.raw, 'https://provider.example/authorize?x=1');
 });
 
 test('loopbackVia: the host and port options reach the Rust contract (WP4b)', async () => {

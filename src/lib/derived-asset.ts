@@ -15,8 +15,9 @@
  * WP-E, "Use as a new image") is the SAME path rather than a second one that
  * drifts. The catalog view now calls in here too.
  *
- * Signing is best-effort by design: a stamping failure ships the unsigned bytes
- * with a warning. A credential hiccup must never lose the user their edit.
+ * Signing is best-effort by default: a stamping failure ships the unsigned bytes
+ * with a warning. Callers that promise a provenance-preserving conversion can set
+ * `requireCredential`; those fail visibly instead of silently shipping a broken chain.
  */
 import {
   C2PA_FORMATS, prepareC2paIngredient, prepareC2paIngredientFromStore,
@@ -47,6 +48,9 @@ export interface DerivedSignInputs {
   dims?: string;
   /** Skips a refetch when the caller already holds the source bytes. */
   sourceBytes?: Uint8Array;
+  /** Fail the operation if a stampable derivative cannot receive its new Content
+   *  Credential. Used by Download as, whose UI explicitly promises preservation. */
+  requireCredential?: boolean;
 }
 
 /** Formats embedC2pa can stamp (png/jpg/webp/gif/svg/tiff/pdf/…). */
@@ -97,7 +101,10 @@ export async function sourceIngredients(
 export async function signDerived(
   host: DerivedHost, ref: AssetRef, blob: Blob, format: string, o: DerivedSignInputs,
 ): Promise<Blob> {
-  if (!STAMPABLE_FORMATS.has(format)) return blob;
+  if (!STAMPABLE_FORMATS.has(format)) {
+    if (o.requireCredential) throw new Error(`Content Credentials are not supported for ${format.toUpperCase()}.`);
+    return blob;
+  }
   try {
     // Lazily reach the 90 KB export bridge - a derivation is always a user
     // gesture, so this never runs on the gallery/boot path.
@@ -124,6 +131,7 @@ export async function signDerived(
     });
   } catch (err) {
     host.log?.('warn', 'Derived asset: Content Credentials not attached', { id: ref.id, error: String(err) });
+    if (o.requireCredential) throw err;
     return blob;
   }
 }

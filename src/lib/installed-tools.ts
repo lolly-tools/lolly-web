@@ -238,7 +238,10 @@ export async function installTool(input: InstallToolInput): Promise<InstalledToo
     const safeRel = safeToolRelPath(rel);
     if (!safeRel) continue;
     const type = contentTypeFor(safeRel);
-    const url = instancePath(`/tools/${id}/${safeRel}`);
+    // A BARE root-relative key (plans/186 section 3.7, the plan-131 follow-up): an
+    // installed tool's files are addressed by tool path alone, so switching the
+    // instance base (a design-system switch does that) never orphans them.
+    const url = `/tools/${id}/${safeRel}`;
     await cache.put(url, new Response(new Blob([data as BlobPart], { type }), {
       status: 200,
       headers: { 'content-type': type, 'content-length': String(data.length) },
@@ -286,7 +289,11 @@ export async function uninstallTool(id: string): Promise<void> {
 export function installedFetchFile(toolId: string): (path: string) => Promise<string> {
   return async (path: string) => {
     if (!('caches' in globalThis)) throw new Error('tool-not-found');
-    const resp = await caches.match(instancePath(`/tools/${path}`), { cacheName: INSTALLED_CACHE });
+    // Bare key first; then the base-prefixed key a tool installed before the keys
+    // went bare was written under, so an existing sideload keeps working until it
+    // is reinstalled.
+    const resp = await caches.match(`/tools/${path}`, { cacheName: INSTALLED_CACHE })
+      ?? await caches.match(instancePath(`/tools/${path}`), { cacheName: INSTALLED_CACHE });
     if (!resp) throw new Error('tool-not-found');
     return resp.text();
   };

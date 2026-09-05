@@ -1108,7 +1108,7 @@ button.cat-download { font: inherit; cursor: pointer; }
 /* ── Download dialog (icon styler + SVG/PNG size) ── */
 .cat-dl {
   border: none; border-radius: calc(var(--radius) * 1.4); padding: 20px;
-  width: min(420px, calc(100vw - 32px)); background: hsl(var(--card)); color: hsl(var(--foreground));
+  width: min(460px, calc(100vw - 32px)); background: hsl(var(--card)); color: hsl(var(--foreground));
   box-shadow: 0 1.5rem 4rem #0007;
 }
 .cat-dl::backdrop { background: #0008; }
@@ -1136,7 +1136,39 @@ button.cat-download { font: inherit; cursor: pointer; }
 .cat-dl-fmt { display: flex; gap: var(--sp-7); font-size: var(--fs-lg); }
 .cat-dl-fmt .field-toggle { gap: var(--sp-3); }
 .cat-dl-hint { color: hsl(var(--muted-foreground)); font-size: var(--fs-sm); }
+.cat-dl-select { width: 100%; }
+.cat-dl-field { display: grid; gap: var(--sp-2); font-size: var(--fs-sm); }
+.cat-dl-field > span:first-child:not(.cat-dl-label) { font-weight: 650; }
+.cat-dl-unit { display: flex; align-items: center; gap: var(--sp-2); color: hsl(var(--muted-foreground)); }
+.cat-dl-unit .field-input { min-width: 0; width: 100%; color: hsl(var(--foreground)); }
+.cat-dl-advanced {
+  margin: 0 0 var(--sp-5); border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+  background: hsl(var(--muted) / .24); overflow: clip;
+}
+.cat-dl-advanced > summary {
+  padding: var(--sp-4); cursor: pointer; font-size: var(--fs-sm); font-weight: 700;
+  list-style-position: inside;
+}
+.cat-dl-advanced[open] > summary { border-bottom: 1px solid hsl(var(--border)); }
+.cat-dl-advanced-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-5); padding: var(--sp-5); }
+.cat-dl-check { grid-column: 1 / -1; }
+.cat-dl-provenance, .cat-dl-fineprint, .cat-dl-status {
+  margin: 0 0 var(--sp-4); color: hsl(var(--muted-foreground)); font-size: var(--fs-sm); line-height: 1.4;
+}
+.cat-dl-provenance { padding-left: 22px; position: relative; }
+.cat-dl-provenance::before { content: '✓'; position: absolute; left: 2px; color: hsl(var(--primary)); font-weight: 800; }
+.cat-dl-status:empty { display: none; }
+.cat-dl-media-mark {
+  display: grid; place-items: center; width: 72px; height: 72px; margin: 0 auto var(--sp-6);
+  border-radius: var(--radius-round); color: hsl(var(--primary)); background: hsl(var(--primary) / .1);
+}
+.cat-dl-media-mark svg { width: 34px; height: 34px; }
 .cat-dl-actions { display: flex; justify-content: flex-end; gap: var(--sp-4); margin-top: 4px; }
+
+@media (max-width: 520px) {
+  .cat-dl-advanced-grid { grid-template-columns: 1fr; }
+  .cat-dl-check { grid-column: auto; }
+}
 
 /* "Send to…" dialog (stored-asset sends, plans/129): provider buttons + one status line. */
 .cat-send-row { display: flex; flex-wrap: wrap; gap: var(--sp-3); }

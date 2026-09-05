@@ -67,9 +67,16 @@
   align-items: center;
   gap: 10px;
   align-self: flex-start;
+  width: fit-content;
   margin-bottom: 10px;
 }
 .start-back-row .start-back { margin-bottom: 0; }
+/* The global profile/language cluster is physically top-right even in RTL.
+   Keep the escape row on the opposite edge so neither can cover the other. */
+html[dir="rtl"] .start-back-row {
+  align-self: flex-end;
+  margin-right: auto;
+}
 /* The always-home FAB that twins the language FAB in this view's top-right
    cluster is shared chrome now - its box + glass live in topbar.css/.home-fab
    (components/home-fab.ts), so nothing about it is styled here. */
@@ -107,6 +114,15 @@
   line-height: 1.2;
 }
 .start-sub { font-size: calc(12.5px * var(--a11y-fs)); line-height: 1.5; flex: 1 1 26ch; }
+.start-ds { display: inline-flex; align-items: center; gap: .35rem; flex: 0 1 auto; }
+.start-ds-name {
+  width: min(16rem, 44vw); min-width: 7rem; padding: .16rem .38rem;
+  border: 1px solid hsl(var(--input)); border-radius: var(--ui-radius-control);
+  background: hsl(var(--background) / .72); color: hsl(var(--foreground));
+  font: inherit; font-size: inherit; font-weight: 650; outline: none;
+}
+.start-ds-name:focus { border-color: hsl(var(--ring) / .65); box-shadow: var(--ui-effect-focus-halo); }
+.start-ds-lock { color: hsl(var(--muted-foreground)); font-size: var(--fs-xs); }
 /* Short screens: the sentence goes entirely - the tabs already say where we are. */
 @media (max-height: 720px) {
   .start-sub { display: none; }
@@ -124,20 +140,27 @@
 .ds-shell {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "rooms" "main" "actions";
   gap: 14px;
   align-items: start;
 }
 @media (min-width: 900px) {
-  .ds-shell { grid-template-columns: 13.5rem minmax(0, 1fr); gap: 20px; }
+  .ds-shell {
+    grid-template-columns: 13.5rem minmax(0, 1fr);
+    grid-template-areas: "rail main";
+    gap: 20px;
+  }
 }
 
-.ds-rail { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.ds-rail { min-width: 0; }
 /* Phones: the rail folds to a wrapping chip strip under the header. Only the
-   CHIPS pin (the wayfinding); the action buttons scroll away with the page -
-   pinning both ate a fifth of a phone screen. */
+   CHIPS pin (the wayfinding); display:contents makes the nav a grid sibling of
+   the tall room, so its sticky boundary is the whole studio rather than a short
+   rail wrapper. The action buttons remain after the room and scroll normally. */
 @media (max-width: 899px) {
-  .ds-rail { gap: 6px; }
-  .ds-rooms {
+  .ds-rail { display: contents; }
+  .ds-room-nav {
+    grid-area: rooms;
     position: sticky;
     top: 0;
     z-index: 15; /* under the swatch popover (30) and the palette sheet (50) */
@@ -145,9 +168,21 @@
     background: hsl(var(--background) / 0.92);
     backdrop-filter: blur(8px);
   }
+  .ds-main { grid-area: main; }
+  .ds-rail-actions { grid-area: actions; }
 }
 @media (min-width: 900px) {
-  .ds-rail { position: sticky; top: 14px; max-height: calc(100dvh - 28px); overflow-y: auto; }
+  .ds-rail {
+    grid-area: rail;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    position: sticky;
+    top: 14px;
+    max-height: calc(100dvh - 28px);
+    overflow-y: auto;
+  }
+  .ds-main { grid-area: main; }
 }
 
 .ds-rooms {
@@ -290,10 +325,24 @@
   color: hsl(var(--foreground));
   font: inherit;
   cursor: pointer;
-  transition: background var(--dur-1), box-shadow var(--dur-1);
+  transition: background var(--dur-1), box-shadow var(--dur-1), transform var(--dur-1);
 }
 .ds-ov-door:hover,
-.ds-ov-card:hover { background: hsl(var(--muted) / 0.5); box-shadow: 0 2px 10px -6px hsl(var(--foreground) / 0.4); }
+.ds-ov-card:hover {
+  background: hsl(var(--muted) / 0.5);
+  box-shadow: var(--ui-elevation-floating);
+  transform: translateY(-2px);
+}
+.ds-ov-door:focus-visible,
+.ds-ov-card:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 3px; }
+/* The two fastest starts carry a quiet tint. Neither is the "recommended"
+   route: one colour and a complete file are equally valid first material. */
+.ds-ov-door[data-ds-door="color-pick"],
+.ds-ov-door[data-ds-door="file"] {
+  background:
+    linear-gradient(145deg, hsl(var(--primary) / .11), transparent 64%),
+    hsl(var(--card));
+}
 .ds-ov-door-ic {
   display: grid;
   place-items: center;

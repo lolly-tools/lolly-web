@@ -94,6 +94,16 @@
   color: hsl(var(--muted-foreground));
   text-align: right;
 }
+.brand-space-row { display: flex; align-items: center; gap: var(--sp-6); margin-top: 0.2rem; }
+.brand-space-preview {
+  --brand-space-preview: .5rem;
+  display: inline-flex; align-items: center; justify-content: center; gap: calc(var(--brand-space-preview) * .5);
+  flex: 0 0 auto; width: 32px; height: 32px; padding: calc(var(--brand-space-preview) * .5);
+  border: 1px solid hsl(var(--border)); border-radius: var(--ui-radius-control); background: hsl(var(--muted) / .45);
+}
+.brand-space-preview i { display: block; flex: 1 1 0; height: 100%; background: hsl(var(--primary)); border-radius: calc(var(--radius) * .2); }
+.brand-space-slider { flex: 1 1 auto; min-width: 0; }
+.brand-space-value { flex: 0 0 auto; min-width: 7.5ch; font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--fs-sm); }
 
 /* Derive: the Primary picker leads full-width, then controls + live preview. */
 .be-derive { display: grid; gap: 1.1rem; }
@@ -781,6 +791,18 @@ background-image:
    confirm dialog on this path) and undo is the safety net behind it. */
 .be-gen-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .8rem; }
 .be-gen-note { font-size: var(--fs-xs); color: hsl(var(--muted-foreground)); }
+.be-generate-detail {
+  padding-top: .85rem;
+  border-top: 1px solid hsl(var(--border) / .7);
+}
+.be-generate-detail > summary {
+  width: fit-content;
+  color: hsl(var(--muted-foreground));
+  font-size: var(--fs-sm);
+  font-weight: 650;
+  cursor: pointer;
+}
+.be-generate-detail[open] > summary { margin-bottom: 1rem; color: hsl(var(--foreground)); }
 .be-review { display: grid; gap: .6rem; padding: .8rem .9rem; border: 1px solid hsl(var(--border)); border-radius: calc(var(--radius) * .7); background: hsl(var(--muted) / .35); }
 .be-review[hidden] { display: none; }
 .be-review-title { margin: 0; font-size: var(--fs-sm); font-weight: 700; color: hsl(var(--foreground)); }
@@ -1447,6 +1469,56 @@ background-image:
 .be-neutrals-open { margin-inline-start: auto; }
 .be-neutrals-note { margin: 0; font-size: var(--fs-sm); color: hsl(var(--muted-foreground)); }
 .be-neutrals-note[hidden] { display: none; }
+
+/* ── Tokens tab: Lolly's own UI starter roles.
+   This is intentionally an *unowned* preview, not a one-click preset. The
+   system's complete semantic scale remains visible and Penpot-exportable while
+   a brand stays clean; only a changed-and-saved field creates its matching
+   `lolly.ui.*` leaf. The quiet default/owned badge makes that boundary legible
+   without treating a useful starting point as an empty state. */
+.be-ui-starter {
+  display: grid; gap: .75rem; margin: 0 0 1.35rem; padding: 1rem;
+  border: 1px solid hsl(var(--border)); border-radius: var(--ui-radius-surface, var(--radius));
+  background: linear-gradient(135deg, hsl(var(--primary) / .08), transparent 52%), hsl(var(--card));
+  box-shadow: var(--ui-edge-faint);
+}
+.be-ui-starter-head { display: flex; align-items: start; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
+.be-ui-starter-kicker { margin: 0 0 .16rem; font-size: var(--fs-2xs); font-weight: 800; letter-spacing: .075em; text-transform: uppercase; color: hsl(var(--primary)); }
+.be-ui-starter-title { margin: 0; font-size: var(--fs-xl); line-height: 1.25; }
+.be-ui-starter-count, .be-ui-role-badge, .be-ui-group-count {
+  display: inline-flex; align-items: center; min-height: 1.45rem; padding-inline: .48rem;
+  border-radius: var(--radius-pill); font-size: var(--fs-2xs); font-weight: 700; white-space: nowrap;
+}
+.be-ui-starter-count { background: hsl(var(--primary) / .13); color: hsl(var(--foreground)); }
+.be-ui-starter-note { margin: 0; max-width: 76ch; font-size: var(--fs-sm); line-height: 1.55; color: hsl(var(--muted-foreground)); }
+.be-ui-starter-note strong { color: hsl(var(--foreground)); }
+.be-ui-starter-groups { display: grid; gap: .4rem; }
+.be-ui-group { border: 1px solid hsl(var(--border) / .8); border-radius: calc(var(--radius) * .65); background: hsl(var(--background) / .55); overflow: clip; }
+.be-ui-group > summary { display: flex; align-items: center; gap: .55rem; min-height: 2.6rem; padding: .45rem .65rem; cursor: pointer; list-style: none; font-size: var(--fs-sm); font-weight: 700; text-transform: capitalize; }
+.be-ui-group > summary::-webkit-details-marker { display: none; }
+.be-ui-group > summary::before { content: '›'; font-size: 1.15em; color: hsl(var(--muted-foreground)); transition: rotate var(--dur-1); }
+.be-ui-group[open] > summary::before { rotate: 90deg; }
+.be-ui-group-count { margin-inline-start: auto; background: hsl(var(--muted)); color: hsl(var(--muted-foreground)); text-transform: none; }
+.be-ui-role-list { display: grid; gap: .45rem; padding: 0 .55rem .55rem; }
+.be-ui-role { display: grid; grid-template-columns: minmax(10rem, 1fr) minmax(12rem, 1.2fr) auto; gap: .45rem .7rem; align-items: center; padding: .6rem; border-radius: calc(var(--radius) * .5); background: hsl(var(--muted) / .36); }
+.be-ui-role.is-owned { background: hsl(var(--primary) / .10); box-shadow: var(--ui-effect-selected); }
+.be-ui-role-meta, .be-ui-role-state { display: grid; gap: .16rem; min-width: 0; }
+.be-ui-role-name { font-size: var(--fs-sm); font-weight: 700; text-transform: capitalize; }
+.be-ui-role-path, .be-ui-role-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: var(--fs-2xs); color: hsl(var(--muted-foreground)); }
+.be-ui-role-state { justify-items: start; }
+.be-ui-role-badge { background: hsl(var(--background) / .75); color: hsl(var(--muted-foreground)); }
+.be-ui-role.is-owned .be-ui-role-badge { background: hsl(var(--primary) / .17); color: hsl(var(--foreground)); }
+.be-ui-role-actions { display: inline-flex; gap: .35rem; justify-content: end; flex-wrap: wrap; }
+.be-ui-edit { grid-column: 1 / -1; display: grid; gap: .45rem; padding-top: .35rem; border-top: 1px solid hsl(var(--border) / .8); }
+.be-ui-edit label { display: grid; gap: .3rem; font-size: var(--fs-xs); font-weight: 700; color: hsl(var(--foreground)); }
+.be-ui-edit input, .be-ui-edit textarea { width: 100%; min-width: 0; padding: .42rem .55rem; border: 1px solid hsl(var(--input)); border-radius: calc(var(--radius) * .45); background: hsl(var(--background)); color: hsl(var(--foreground)); font: inherit; font-family: var(--font-mono); font-size: var(--fs-xs); line-height: 1.45; outline: none; resize: vertical; }
+.be-ui-edit input:focus, .be-ui-edit textarea:focus { border-color: hsl(var(--ring) / .65); box-shadow: var(--ui-effect-focus-halo); }
+.be-ui-edit p { margin: 0; font-size: var(--fs-2xs); color: hsl(var(--muted-foreground)); }
+.be-ui-edit .be-cta { justify-self: start; min-height: 2.2rem; }
+@media (max-width: 620px) {
+  .be-ui-role { grid-template-columns: 1fr; }
+  .be-ui-role-actions { justify-content: start; }
+}
 
 /* ── Tokens tab: grouped rows, one editor per kind. */
 .be-tok-list { display: grid; gap: 1rem; margin-bottom: 1rem; }

@@ -49,6 +49,7 @@ async function bundle(): Promise<string> {
       resolveDir: HERE, loader: 'ts',
     },
     bundle: true, write: false, format: 'iife', platform: 'browser', logLevel: 'silent',
+    loader: { '.css': 'empty' },
   });
   bundleCache = out.outputFiles[0]!.text;
   return bundleCache;

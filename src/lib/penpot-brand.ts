@@ -14,6 +14,7 @@
 import type { PenpotIrTypography, PenpotPaletteColor } from '../../../../engine/src/penpot-file.ts';
 import { familyFromTokenValue, fontGroupOf } from '../user-fonts.ts';
 import { getHostRef } from './host-ref.ts';
+import { withLollyUiTokens } from './lolly-ui-tokens.ts';
 
 export interface PenpotBrand {
   /** The effective DTCG / Tokens-Studio document, unresolved (host.tokens.raw()). */
@@ -109,8 +110,12 @@ export async function brandForPenpot(): Promise<PenpotBrand> {
       const { _host } = await import('../bridge/export.ts');
       host = _host as typeof host;
     }
-    return await brandFromTokens(host?.tokens ?? null, host?.assets ?? null);
+    const brand = await brandFromTokens(host?.tokens ?? null, host?.assets ?? null);
+    // The raw brand remains the source for palette/font resolution above; the
+    // archive gets it PLUS the Lolly UI vocabulary so app-surface files and
+    // ordinary tool sends open against the same token contract.
+    return { ...brand, tokens: withLollyUiTokens(brand.tokens) };
   } catch {
-    return { ...EMPTY };
+    return { ...EMPTY, tokens: withLollyUiTokens(null) };
   }
 }

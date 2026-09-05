@@ -53,23 +53,60 @@
 // destroys work.
 
 import {
-  boxRect, withRect, boxCorners, rectCentre, boxAABB,
-  moveBoxes, resizeRect, alignBoxes, distributeBoxes, reorderZ,
-  seedBox, normDragRect, snapAngle, normAngle, clampBoxToCanvas, selectionAABB,
-  snapMove, snapPoint, scaleGroup, rotateGroup, num,
-  edgeWaypoints, edgeNested, roundedEdgePath, smoothEdgePath,
-  edgeArrowHead, edgeHeadInset, isEdgePoint, edgeEndRect,
+  boxRect,
+  withRect,
+  boxCorners,
+  rectCentre,
+  boxAABB,
+  moveBoxes,
+  resizeRect,
+  alignBoxes,
+  distributeBoxes,
+  reorderZ,
+  seedBox,
+  normDragRect,
+  snapAngle,
+  normAngle,
+  clampBoxToCanvas,
+  selectionAABB,
+  snapMove,
+  snapPoint,
+  scaleGroup,
+  rotateGroup,
+  num,
+  edgeWaypoints,
+  edgeNested,
+  roundedEdgePath,
+  smoothEdgePath,
+  edgeArrowHead,
+  edgeHeadInset,
+  isEdgePoint,
+  edgeEndRect,
   // plan 96 P3/P5 - a BOUND path is drawn by connector management, through the engine's
   // ONE routed-line renderer and its ONE kind→route mapping, so the live overlay, the
   // committed render and a headless CLI cannot disagree about where the line goes.
-  routedLineSvg, pathRouteStyle, formatEdgePoint,
-  gradientLine, gradientPosAt, gradientAngleAt, resolveFrame,
-  sequenceFramesInOrder, framesAreSequenced, parseDashArray, formatDashArray,
-  pathEndPoints, pathEndTangents,
+  routedLineSvg,
+  pathRouteStyle,
+  formatEdgePoint,
+  gradientLine,
+  gradientPosAt,
+  gradientAngleAt,
+  resolveFrame,
+  sequenceFramesInOrder,
+  framesAreSequenced,
+  parseDashArray,
+  formatDashArray,
+  pathEndPoints,
+  pathEndTangents,
   // Lift layers (plans/104 section 7): the pure box synthesis. The ENUMERATION is the
   // engine's (`enumerateSvgLayers`) and is fetched lazily with the dialog, because a
   // tag scanner has no business in the chunk of every editor that never lifts.
-  isSvgImageRef, liftRows, applyLift, liftCanCrop, liftCropScale, LIFT_STRENGTH,
+  isSvgImageRef,
+  liftRows,
+  applyLift,
+  liftCanCrop,
+  liftCropScale,
+  LIFT_STRENGTH,
   layoutArtboards,
   // plans/104 section 6.5 - the chrome's half of "the canvas edits what the canvas shows":
   // a box the playhead has posed gets its outline and handles placed at the POSE.
@@ -78,10 +115,26 @@ import {
   // happens to the children of a deleted one (A7), a deep duplicate (A8), the explicit
   // page `order` every creating/deleting path now writes (A9), and the marquee's
   // fully-enclosed rule for pages (A13).
-  activeFrameIdFor, framesInPageOrder, nextFrameOrder, seedFrameOrders, renumberFrameOrder,
-  rehomeChildrenOfDeletedFrames, duplicateFrameWithChildren, filterMarqueeFrames,
+  activeFrameIdFor,
+  framesInPageOrder,
+  nextFrameOrder,
+  seedFrameOrders,
+  renumberFrameOrder,
+  rehomeChildrenOfDeletedFrames,
+  duplicateFrameWithChildren,
+  filterMarqueeFrames,
 } from './free-canvas-math.ts';
-import type { ZOp, AlignEdge, Axis, AABB as MathAABB, Rect as MathRect, EdgeRect, Box, SeqPose, FrameFields } from './free-canvas-math.ts';
+import type {
+  ZOp,
+  AlignEdge,
+  Axis,
+  AABB as MathAABB,
+  Rect as MathRect,
+  EdgeRect,
+  Box,
+  SeqPose,
+  FrameFields,
+} from './free-canvas-math.ts';
 // Phase-A spatial-index pick: grid-accelerated on large docs, identical result to the
 // linear hitTest/marqueeHit on small ones (plans/98 section 6.1; proven in canvas-scene.test.ts).
 import { pickTopmost, pickMarquee } from './canvas-scene.ts';
@@ -89,45 +142,116 @@ import { pickTopmost, pickMarquee } from './canvas-scene.ts';
 // talks to this overlay through. Type-only - `design-ports.ts` is a contract file with
 // no runtime, so importing it costs nothing in the editor chunk.
 import type {
-  ArtboardPort, CanvasRect, DesignCanvasPorts, DesignChromeOpts, FramePort,
-  InspectorActions, ModelPort, NarrationStatus, NavigatorActions, SelectionPort,
+  ArtboardPort,
+  CanvasRect,
+  DesignCanvasPorts,
+  DesignChromeOpts,
+  FramePort,
+  InspectorActions,
+  ModelPort,
+  NarrationStatus,
+  NavigatorActions,
+  SelectionPort,
 } from './design-ports.ts';
 // plans/180 M-A: the PURE half of notes-to-voice - the field map, the status read and
 // the frame walk. Everything that downloads a model or writes a clip is behind the
 // lazy import in `narrateDeck` below, so this costs the editor chunk a few hundred bytes.
 import {
-  DESIGN_NARRATION_FIELDS, narrationFrames as narrationFramesOf, narrationStatusFor,
+  DESIGN_NARRATION_FIELDS,
+  narrationFrames as narrationFramesOf,
+  narrationStatusFor,
   reanchorNarration,
-  type NarrationFields, type NarrationTiming,
+  type NarrationFields,
+  type NarrationTiming,
 } from '../lib/narration.ts';
 // plans/179 M3 (a): the pure row builders these panels used to keep private copies of.
 // One implementation, shared with the inspector column - see the module header for why
 // `wireSegs`'s `onSet` is required rather than defaulted to a `setField` closure.
 import {
-  dimsCell, frameThumb, iconRow, opt, posGridHtml, segHtml, segRow,
-  shadowChoicesFrom, shapeChoicesFrom, tiltRow, wireSegs,
+  dimsCell,
+  frameThumb,
+  iconRow,
+  opt,
+  posGridHtml,
+  segHtml,
+  segRow,
+  shadowChoicesFrom,
+  shapeChoicesFrom,
+  tiltRow,
+  wireSegs,
 } from './free-canvas-fields.ts';
 import {
   toCssPx,
-  parseColor, colorToHexString, interpolateColor,
-  parseGradientSpec, formatGradientSpec, gradientSpecToCss, MAX_GRADIENT_STOPS,
+  parseColor,
+  colorToHexString,
+  interpolateColor,
+  parseGradientSpec,
+  formatGradientSpec,
+  gradientSpecToCss,
+  MAX_GRADIENT_STOPS,
 } from '@lolly/engine';
 import type { GradientSpec } from '@lolly/engine';
-import type { BooleanOpName, VectorFieldConfig, VectorOpFailure, VectorOpResult } from './vector-ops.ts';
-import {
-  booleanBoxes, boxOutlineKind, offsetBoxes, pathToBox, replaceBoxes, simplifyBoxes, strokeBoxesToPath,
+import type {
+  BooleanOpName,
+  VectorFieldConfig,
+  VectorOpFailure,
+  VectorOpResult,
 } from './vector-ops.ts';
-import type { AuthoredPath, Continuity, Cubic, HyperbezierSolution, SplineKind, SplineNode } from '@lolly/engine';
+import {
+  booleanBoxes,
+  boxOutlineKind,
+  offsetBoxes,
+  pathToBox,
+  replaceBoxes,
+  simplifyBoxes,
+  strokeBoxesToPath,
+} from './vector-ops.ts';
+import type {
+  AuthoredPath,
+  Continuity,
+  Cubic,
+  HyperbezierSolution,
+  SplineKind,
+  SplineNode,
+} from '@lolly/engine';
 import type { PenFrame } from './free-canvas-pen.ts';
 import type { OutlineGroup } from './outline-text.ts';
 import {
-  PEN_DEFAULT_KIND, PEN_KINDS, alignPoints, closesOnClick, convertKind, decodePathContours,
-  defaultContinuity, deleteNodes, denormNodes, distributePoints, dragHandle, encodePathField,
-  encodePathFields, frameToLocal, handlePoint, insertNodeOnCurve, kindReadsHandles,
-  localToFrame, lowerAuthored, type InsertResult, type NodeAlignEdge, type PenPointRef,
-  moveNodes, nearestOnPath, nodeAt, normNodes, pathPaintIsVisible, pathPaintSeed,
-  penCommitFromNative, penFrame, pickPathPaint, pullHandles,
-  refitFrame, resolveDrawnInk, setNodeContinuity,
+  PEN_DEFAULT_KIND,
+  PEN_KINDS,
+  alignPoints,
+  closesOnClick,
+  convertKind,
+  decodePathContours,
+  defaultContinuity,
+  deleteNodes,
+  denormNodes,
+  distributePoints,
+  dragHandle,
+  encodePathField,
+  encodePathFields,
+  frameToLocal,
+  handlePoint,
+  insertNodeOnCurve,
+  kindReadsHandles,
+  localToFrame,
+  lowerAuthored,
+  type InsertResult,
+  type NodeAlignEdge,
+  type PenPointRef,
+  moveNodes,
+  nearestOnPath,
+  nodeAt,
+  normNodes,
+  pathPaintIsVisible,
+  pathPaintSeed,
+  penCommitFromNative,
+  penFrame,
+  pickPathPaint,
+  pullHandles,
+  refitFrame,
+  resolveDrawnInk,
+  setNodeContinuity,
 } from './free-canvas-pen.ts';
 import type { PathPaintFields } from './free-canvas-pen.ts';
 // Type-only (erased at build): the timeline modules are LAZY - importing their types
@@ -163,95 +287,190 @@ import { BLEND_STYLES, HUE_ROUTES, isPolarSpace } from '../lib/blend-style.ts';
 import { attachWobble } from '../lib/wobble.ts';
 import { t, tRaw } from '../i18n.ts';
 import type { ColorFieldValue } from '../components/color-field.ts';
-import { colorFieldHtml, wireColorField, resolveColorVar, colorVarLabel } from '../components/color-field.ts';
+import {
+  colorFieldHtml,
+  wireColorField,
+  resolveColorVar,
+  colorVarLabel,
+} from '../components/color-field.ts';
 // The app-wide "black or white, whichever reads on this" rule (see its own doc comment) -
 // deliberately the same one the chrome accent and every colour surface flip with.
 import { contrastText } from '../brand-vars.ts';
 import {
-  charsFromDom, htmlFromChars, markdownFromChars,
-  rangeHasFlag, setFlag, setColor, rangeColor, wordRangeAt, allBulleted, toggleBullets,
-  setWeight, rangeWeight, allNumbered, toggleNumbers, clearFormatting,
+  charsFromDom,
+  htmlFromChars,
+  markdownFromChars,
+  rangeHasFlag,
+  setFlag,
+  setColor,
+  rangeColor,
+  wordRangeAt,
+  allBulleted,
+  toggleBullets,
+  setWeight,
+  rangeWeight,
+  allNumbered,
+  toggleNumbers,
+  clearFormatting,
 } from './rich-text.ts';
 
+import { SVG, icon } from './free-canvas-icons.ts';
 // ── local types ───────────────────────────────────────────────────────────────
 // `Box` (a flat per-tool record, field names configured via cfg.*Field) is imported from
 // free-canvas-math.ts so the overlay and the pure geometry share one honest type
 // (`{ [key: string]: InputValue | undefined }`).
-interface Point { x: number; y: number }
-interface Rect { x: number; y: number; w: number; h: number; rot?: number }
-interface AABB { minX: number; minY: number; maxX: number; maxY: number; w?: number; h?: number }
-interface Bounds { minX: number; minY: number; maxX: number; maxY: number }
-interface Canvas { w: number; h: number }
-interface Metrics { cr: DOMRect; sr: DOMRect; scale: number }
+interface Point {
+  x: number;
+  y: number;
+}
+interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  rot?: number;
+}
+interface AABB {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  w?: number;
+  h?: number;
+}
+interface Bounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+interface Canvas {
+  w: number;
+  h: number;
+}
+interface Metrics {
+  cr: DOMRect;
+  sr: DOMRect;
+  scale: number;
+}
 type HandleName = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 type Corner = 'nw' | 'ne' | 'se' | 'sw';
 
 /** One entry of a `canvas.addKinds` list - a "kind" the add-box menu can create. */
-interface AddKind { id: string; label?: string; seed?: Box }
+interface AddKind {
+  id: string;
+  label?: string;
+  seed?: Box;
+}
 
 /** The subset of a blocks-field declaration the editor reads: the font select's
  *  declared options drive the typography menus, so the editor writes exactly the
  *  wire values the tool's hooks.js understands (e.g. 'SUSE'/'SUSE Mono' on the
  *  SUSE profile, 'sans'/'mono' on lolly-start). */
-interface BlockFieldDef { id: string; default?: unknown; options?: Array<{ value?: unknown; label?: string }> }
-interface FontOption { value: string; label: string }
+interface BlockFieldDef {
+  id: string;
+  default?: unknown;
+  options?: Array<{ value?: unknown; label?: string }>;
+}
+interface FontOption {
+  value: string;
+  label: string;
+}
 
 /** The free-form per-tool `canvas` schema block (from the manifest). */
 interface CanvasCfg {
   idField?: string;
-  xField?: string; yField?: string; wField?: string; hField?: string;
+  xField?: string;
+  yField?: string;
+  wField?: string;
+  hField?: string;
   rotationField?: string;
-  fillField?: string; gradField?: string; opacityField?: string; shapeField?: string;
-  radiusField?: string; imageField?: string; fitField?: string; imgPosField?: string;
-  blendField?: string; textField?: string; textColorField?: string;
-  fontSizeField?: string; alignField?: string; valignField?: string;
-  weightField?: string; fontField?: string; lineHeightField?: string;
-  trackingField?: string; ligaturesField?: string; alternatesField?: string;
-  padField?: string; fitTextField?: string; groupField?: string; clipField?: string;
-  shadowField?: string; shadowColorField?: string;
-  shadowXField?: string; shadowYField?: string; shadowBlurField?: string;
+  fillField?: string;
+  gradField?: string;
+  opacityField?: string;
+  shapeField?: string;
+  radiusField?: string;
+  imageField?: string;
+  fitField?: string;
+  imgPosField?: string;
+  blendField?: string;
+  textField?: string;
+  textColorField?: string;
+  fontSizeField?: string;
+  alignField?: string;
+  valignField?: string;
+  weightField?: string;
+  fontField?: string;
+  lineHeightField?: string;
+  trackingField?: string;
+  ligaturesField?: string;
+  alternatesField?: string;
+  padField?: string;
+  fitTextField?: string;
+  groupField?: string;
+  clipField?: string;
+  shadowField?: string;
+  shadowColorField?: string;
+  shadowXField?: string;
+  shadowYField?: string;
+  shadowBlurField?: string;
   /** Vector sub-fields (the `boxes` fields Stage C appends: an authored path plus its
    *  stroke paint and fill rule). `pathField` is the FEATURE FLAG for the whole
    *  vector-operations section of the context menu - a tool that declares no path
    *  sub-field has nowhere to put a boolean result, so it is not offered one. Every
    *  entry degrades to "absent", never to "throws", on a manifest that predates them. */
-  pathField?: string; strokeField?: string; strokeWField?: string; fillRuleField?: string;
+  pathField?: string;
+  strokeField?: string;
+  strokeWField?: string;
+  fillRuleField?: string;
   /** Stroke DECORATION sub-fields (appended after the timeline block): a dash-style
    *  keyword plus the line cap and join. Keywords, not authored dash arrays - see the
    *  hook's `dashArrayFor` for why the compact URL form cannot carry a comma. */
-  strokeDashField?: string; strokeCapField?: string; strokeJoinField?: string;
+  strokeDashField?: string;
+  strokeCapField?: string;
+  strokeJoinField?: string;
   /** Power-user dash sub-fields (plan 96 P0). `strokeDashArrayField` holds the AUTHORED
    *  pattern as a SPACE-separated numeric string ("6 4") - a string, not a list, because a
    *  block sub-field is one scalar and space is the one separator the compact blocks URL
    *  survives (see lib/blocks-url.ts; a comma would split the row). It WINS over the
    *  keyword style when set. `dashFitField` is the boolean "fit the pattern to the path's
    *  corners" (Illustrator's corner-aligned dashes), applied by the tool's hook. */
-  strokeDashArrayField?: string; dashFitField?: string;
+  strokeDashArrayField?: string;
+  dashFitField?: string;
   /** PATH DECORATION sub-fields (plan 96 P0 - the unified path primitive). An arrowhead
    *  shape at each end of an authored path, drawn at its end tangents: none · triangle ·
    *  open · circle · diamond · bar, the same vocabulary the connector heads use, because
    *  a spline, a line and a connector are one primitive that carries one decoration set. */
-  headStartField?: string; headEndField?: string;
+  headStartField?: string;
+  headEndField?: string;
   /** PATH ENDPOINT BINDING (plan 96 P0). The id of the box each end is attached to, `''`
    *  for a free end. Model only at this stage: nothing reads them yet - P3 adds the bind
    *  gesture and hands a bound path to connector routing. Declared now so the fields ship
    *  in the manifests' wire order before anything depends on them. */
-  bindStartField?: string; bindEndField?: string;
+  bindStartField?: string;
+  bindEndField?: string;
   /** PATH ROUTE OVERRIDE (plan 96 P3). A bound path's route is normally read off its own
    *  spline kind; six kinds cannot name the engine's thirteen routes, so this field carries
    *  the explicit one (elbow-src, curved-v, arc-wide …). '' = auto. It is also what makes
    *  the plan-90 edge migration lossless. */
   routeField?: string;
-  /** The class the tool's hook puts on its committed BOUND-PATH `<svg>` (plan 96 P5) - 
+  /** The class the tool's hook puts on its committed BOUND-PATH `<svg>` (plan 96 P5) -
    *  hidden for the duration of a drag so the live overlay does not double up with the
    *  stale committed one. Named here for the same reason `canvas.connect.layerClass` was:
    *  only the manifest knows what its own hook emits. */
   pathLayerClass?: string;
   /** Timeline time-model sub-fields (phase 1: schema/manifest only - inert until a
    *  timeline panel mounts and reads them; see engine 1.65.0 CHANGELOG entry). */
-  startField?: string; durField?: string; clipInField?: string; speedField?: string;
-  enterField?: string; exitField?: string; enterMsField?: string; exitMsField?: string;
-  muteField?: string; laneField?: string;
+  startField?: string;
+  durField?: string;
+  clipInField?: string;
+  speedField?: string;
+  enterField?: string;
+  exitField?: string;
+  enterMsField?: string;
+  exitMsField?: string;
+  muteField?: string;
+  laneField?: string;
   /** OPTIONAL time sub-field: the A/V link (detached audio). Absent on a tool that does
    *  not offer detach - the ten-field time check below does NOT include it. */
   linkField?: string;
@@ -269,13 +488,17 @@ interface CanvasCfg {
   labelField?: string;
   /** OPTIONAL time sub-fields: the authored geometry curve for each preset. Absent
    *  leaves every preset on its built-in curve, so they sit outside that same check. */
-  enterEaseField?: string; exitEaseField?: string;
+  enterEaseField?: string;
+  exitEaseField?: string;
   /** OPTIONAL, same terms (plans/175 WP-A): split-text animation - tier, unit gap
    *  (ms) and dealt order. Absent means no text-animation rows anywhere. */
-  splitField?: string; staggerField?: string; splitOrderField?: string;
+  splitField?: string;
+  staggerField?: string;
+  splitOrderField?: string;
   /** OPTIONAL, same terms (plans/175 WP-B): the while-on-screen hold effect and
    *  its rate. Absent means no hold rows anywhere. */
-  holdField?: string; holdRateField?: string;
+  holdField?: string;
+  holdRateField?: string;
   /** OPTIONAL, same terms: the box's KEYFRAME TRACK (plans/104 section 5.1). Absent means the
    *  tool is not keyframable - and, in `timeline-math`, that a split/trim/join has no
    *  track to rebase. */
@@ -290,7 +513,8 @@ interface CanvasCfg {
    *  channel replaces the field for its segment, so a writer that carries one carries
    *  all three. Absent means the tool has no tilt to offer, and the More panel's
    *  "Perspective tilt" rows are simply not drawn. */
-  rxField?: string; ryField?: string;
+  rxField?: string;
+  ryField?: string;
   minSize?: number;
   addKinds?: AddKind[];
   import?: unknown;
@@ -319,16 +543,16 @@ type EditorMode = 'select' | 'create' | 'pen' | 'line';
 
 /** `canvas.connect` - how the editor authors + stores connector edges. */
 interface ConnectCfg {
-  input: string;            // input id of the connectors blocks array
-  fromField?: string;       // edge field holding the source box id (default 'from')
-  toField?: string;         // edge field holding the target box id (default 'to')
+  input: string; // input id of the connectors blocks array
+  fromField?: string; // edge field holding the source box id (default 'from')
+  toField?: string; // edge field holding the target box id (default 'to')
   styleField?: string;
   arrowField?: string;
-  headField?: string;       // edge field for the arrowhead SHAPE (triangle/open/circle/diamond/bar)
+  headField?: string; // edge field for the arrowhead SHAPE (triangle/open/circle/diamond/bar)
   colorField?: string;
   dashField?: string;
   widthField?: string;
-  layerClass?: string;      // class of the tool's rendered connector <svg> (hidden mid-drag)
+  layerClass?: string; // class of the tool's rendered connector <svg> (hidden mid-drag)
   defaultStyle?: string;
   defaultArrow?: string;
   defaultHead?: string;
@@ -340,27 +564,62 @@ interface ConnectCfg {
  *  manifest may omit are typed as string but can be `undefined` at runtime; every
  *  read/write is guarded (setField no-ops on a falsy field), so this stays faithful. */
 interface FieldCfg {
-  idField: string; xField: string; yField: string; wField: string; hField: string;
+  idField: string;
+  xField: string;
+  yField: string;
+  wField: string;
+  hField: string;
   rotationField: string;
-  fillField: string; gradField: string; opacityField: string; shapeField: string;
-  radiusField: string; imageField: string; fitField: string; imgPosField: string;
-  blendField: string; textField: string; textColorField: string;
-  fontSizeField: string; alignField: string; valignField: string;
-  weightField: string; fontField: string; lineHeightField: string;
-  trackingField: string; ligaturesField: string; alternatesField: string;
-  padField: string; fitTextField: string; groupField: string; clipField: string;
-  shadowField: string; shadowColorField: string;
-  shadowXField: string; shadowYField: string; shadowBlurField: string;
+  fillField: string;
+  gradField: string;
+  opacityField: string;
+  shapeField: string;
+  radiusField: string;
+  imageField: string;
+  fitField: string;
+  imgPosField: string;
+  blendField: string;
+  textField: string;
+  textColorField: string;
+  fontSizeField: string;
+  alignField: string;
+  valignField: string;
+  weightField: string;
+  fontField: string;
+  lineHeightField: string;
+  trackingField: string;
+  ligaturesField: string;
+  alternatesField: string;
+  padField: string;
+  fitTextField: string;
+  groupField: string;
+  clipField: string;
+  shadowField: string;
+  shadowColorField: string;
+  shadowXField: string;
+  shadowYField: string;
+  shadowBlurField: string;
   kindField: string;
-  pathField: string; strokeField: string; strokeWField: string; fillRuleField: string;
-  strokeDashField: string; strokeCapField: string; strokeJoinField: string;
-  strokeDashArrayField: string; dashFitField: string;
-  headStartField: string; headEndField: string;
-  bindStartField: string; bindEndField: string;
+  pathField: string;
+  strokeField: string;
+  strokeWField: string;
+  fillRuleField: string;
+  strokeDashField: string;
+  strokeCapField: string;
+  strokeJoinField: string;
+  strokeDashArrayField: string;
+  dashFitField: string;
+  headStartField: string;
+  headEndField: string;
+  bindStartField: string;
+  bindEndField: string;
   routeField: string;
 }
 
-interface ModelItem { id: string; value: any }
+interface ModelItem {
+  id: string;
+  value: any;
+}
 interface RuntimeApi {
   getModel(): ModelItem[];
   setInput(id: string, value: any): void;
@@ -431,7 +690,12 @@ interface InitFreeCanvasOpts {
   editTool?(url: string, mode?: string): Promise<any>;
   setCanvasSize?(w: number, h: number, unit?: string): void;
   /** Keeps Design's persisted document unit/DPI and the export bar in lockstep. */
-  setDocumentSettings?(settings: { unit: string; dpi: number; width?: number; height?: number }): void;
+  setDocumentSettings?(settings: {
+    unit: string;
+    dpi: number;
+    width?: number;
+    height?: number;
+  }): void;
   info?: DocInfo;
   history?: HistoryApi;
   actions?: ToolbarActions;
@@ -462,9 +726,9 @@ interface InitFreeCanvasOpts {
 }
 
 interface PagesCfg {
-  countField: string;   // input id: page count
-  widthField: string;   // input id: page width (px)
-  heightField: string;  // input id: page height (px)
+  countField: string; // input id: page count
+  widthField: string; // input id: page width (px)
+  heightField: string; // input id: page height (px)
   min: number;
   max: number;
 }
@@ -501,10 +765,10 @@ interface ToolbarActions {
   /** Open the frames as a fullscreen deck (plan 112); absent = not a frame tool. The
    *  optional id starts the deck ON that artboard (plans/179 M2's "Present from here"). */
   present?(atFrameId?: string): void;
-  newFromTemplate?(): void;          // re-open the Start template chooser mid-session (plans/142 WP-1); absent = tool has no templates
-  bulk?(): void;                     // hand this template to /batch (plans/147 M1); absent = the batch can't run this tool
-  canSave?: boolean;                 // omit the Save icon for tools that don't persist a session
-  dirtyRef?: HTMLElement | null;     // element whose `is-unsaved` class the Save icon mirrors
+  newFromTemplate?(): void; // re-open the Start template chooser mid-session (plans/142 WP-1); absent = tool has no templates
+  bulk?(): void; // hand this template to /batch (plans/147 M1); absent = the batch can't run this tool
+  canSave?: boolean; // omit the Save icon for tools that don't persist a session
+  dirtyRef?: HTMLElement | null; // element whose `is-unsaved` class the Save icon mirrors
 }
 
 interface FreeCanvasHandle {
@@ -551,22 +815,57 @@ interface FmtRefs {
 type FmtBar = HTMLDivElement & { _refs?: FmtRefs };
 
 // Popover item shapes (separator / icon-grid / action row).
-interface PopGridItem { label: string; icon?: string; run(): void; disabled?: boolean; danger?: boolean; keepOpen?: boolean }
-interface PopSep { sep: true; grid?: undefined }
-interface PopGrid { sep?: undefined; grid: PopGridItem[]; cols?: number }
+interface PopGridItem {
+  label: string;
+  icon?: string;
+  run(): void;
+  disabled?: boolean;
+  danger?: boolean;
+  keepOpen?: boolean;
+}
+interface PopSep {
+  sep: true;
+  grid?: undefined;
+}
+interface PopGrid {
+  sep?: undefined;
+  grid: PopGridItem[];
+  cols?: number;
+}
 // `key` tags the rendered row with `data-pop="<key>"` so a long-lived menu can be
 // refreshed in place - the undo/redo pair stays open while you step back, and its
 // enabled state has to follow the history stack rather than the moment it opened.
 // `on` makes a row a RADIO rather than a command - set it (even to false) and the row
 // reports `aria-checked` and paints its current state. Used by the pen's spline-type menu,
 // where the point of opening it is to see which type you are already on.
-interface PopAction { sep?: undefined; grid?: undefined; label: string; icon?: string; run(): void; disabled?: boolean; danger?: boolean; keepOpen?: boolean; key?: string; on?: boolean }
+interface PopAction {
+  sep?: undefined;
+  grid?: undefined;
+  label: string;
+  icon?: string;
+  run(): void;
+  disabled?: boolean;
+  danger?: boolean;
+  keepOpen?: boolean;
+  key?: string;
+  on?: boolean;
+}
 type PopItem = PopSep | PopGrid | PopAction;
 
 // Gesture state - filled in by beginGesture with pointerId/startClient.
-interface GestureBase { pointerId: number; startClient: Point; origin?: Point }
-interface TapGesture extends GestureBase { type: 'tap' }
-interface MarqueeGesture extends GestureBase { type: 'marquee'; origin: Point; additive: boolean }
+interface GestureBase {
+  pointerId: number;
+  startClient: Point;
+  origin?: Point;
+}
+interface TapGesture extends GestureBase {
+  type: 'tap';
+}
+interface MarqueeGesture extends GestureBase {
+  type: 'marquee';
+  origin: Point;
+  additive: boolean;
+}
 /**
  * CAMERA PAN (plans/104 section 8) - a drag on the EMPTY stage while a camera is selected and
  * running. It takes the gesture the marquee would otherwise have had, which is the
@@ -581,7 +880,12 @@ interface MarqueeGesture extends GestureBase { type: 'marquee'; origin: Point; a
  * divided by the zoom. Writing client px straight into the model instead made the same
  * drag move the shot half as far at 50 % and twice as far at 200 %.
  */
-interface CamPanGesture extends GestureBase { type: 'campan'; client: Point; dx: number; dy: number }
+interface CamPanGesture extends GestureBase {
+  type: 'campan';
+  client: Point;
+  dx: number;
+  dy: number;
+}
 /**
  * The CAMERA TILT drag (plans/104 section 8, P2): shift + empty-stage drag, the chord section 8
  * reserved at M2.5 ("shift-drag reserved for tilt (P2)") and P2 finally spends.
@@ -593,39 +897,127 @@ interface CamPanGesture extends GestureBase { type: 'campan'; client: Point; dx:
  * camera four times as far at 25 % zoom as at 100 %, which is a dial whose gearing
  * depends on how far you happen to be zoomed out.
  */
-interface CamTiltGesture extends GestureBase { type: 'camtilt'; client: Point; dx: number; dy: number }
-interface CreateGesture extends GestureBase { type: 'create'; origin: Point; seed: Box; others: AABB[]; corner?: Point }
+interface CamTiltGesture extends GestureBase {
+  type: 'camtilt';
+  client: Point;
+  dx: number;
+  dy: number;
+}
+interface CreateGesture extends GestureBase {
+  type: 'create';
+  origin: Point;
+  seed: Box;
+  others: AABB[];
+  corner?: Point;
+}
 // Line tool - one drag draws a TWO-NODE authored path (plan 96 P2; it made a connector
 // edge under plan 90). Both ends are plain canvas points: a line is a path box like any
 // pen shape, and attaching an end to a box is P3's bind gesture, not a side effect of
 // releasing over one.
-interface LineGesture extends GestureBase { type: 'line'; origin: Point; to?: Point }
+interface LineGesture extends GestureBase {
+  type: 'line';
+  origin: Point;
+  to?: Point;
+}
 // `narrow` is plan 179 C4: a plain click on a member of a multi-selection means "just this
 // one", but the very same press also starts the drag of the WHOLE selection - so the answer
 // cannot be given until the pointer comes up without having moved. The ids under the click
 // ride along until then; a real drag drops them untouched.
-interface MoveGesture extends GestureBase { type: 'move'; start: Map<number, Rect>; sel: number[]; selAABB: AABB | null; others: AABB[]; moveDelta?: { dx: number; dy: number }; narrow?: string[] }
-interface ResizeGesture extends GestureBase { type: 'resize'; index: number; handle: HandleName; startRect: Rect; others: AABB[]; liveRect?: Rect }
-interface RotateGesture extends GestureBase { type: 'rotate'; index: number; startRect: Rect; centerClient: Point; pointerStartDeg: number; liveRect?: Rect }
-interface GScaleGesture extends GestureBase { type: 'gscale'; sel: number[]; startBoxes: Box[]; anchor: Point; origDist: number; liveBoxes?: Box[] }
-interface GRotateGesture extends GestureBase { type: 'grotate'; sel: number[]; startBoxes: Box[]; centre: Point; centerClient: Point; pointerStartDeg: number; liveBoxes?: Box[] }
+interface MoveGesture extends GestureBase {
+  type: 'move';
+  start: Map<number, Rect>;
+  sel: number[];
+  selAABB: AABB | null;
+  others: AABB[];
+  moveDelta?: { dx: number; dy: number };
+  narrow?: string[];
+}
+interface ResizeGesture extends GestureBase {
+  type: 'resize';
+  index: number;
+  handle: HandleName;
+  startRect: Rect;
+  others: AABB[];
+  liveRect?: Rect;
+}
+interface RotateGesture extends GestureBase {
+  type: 'rotate';
+  index: number;
+  startRect: Rect;
+  centerClient: Point;
+  pointerStartDeg: number;
+  liveRect?: Rect;
+}
+interface GScaleGesture extends GestureBase {
+  type: 'gscale';
+  sel: number[];
+  startBoxes: Box[];
+  anchor: Point;
+  origDist: number;
+  liveBoxes?: Box[];
+}
+interface GRotateGesture extends GestureBase {
+  type: 'grotate';
+  sel: number[];
+  startBoxes: Box[];
+  centre: Point;
+  centerClient: Point;
+  pointerStartDeg: number;
+  liveBoxes?: Box[];
+}
 // Pen tool (Stage D). Drawing is `pendraw` - one gesture per NODE, not one per path, since
 // the path itself is a draft that outlives any single press (see `penDraft`). The other
 // three belong to node-edit mode on an already-committed path box.
-interface PenDrawGesture extends GestureBase { type: 'pendraw'; origin: Point; index: number }
+interface PenDrawGesture extends GestureBase {
+  type: 'pendraw';
+  origin: Point;
+  index: number;
+}
 interface PenNodeGesture extends GestureBase {
-  type: 'pennode'; origin: Point; indices: number[]; start: SplineNode[]; moved?: boolean;
+  type: 'pennode';
+  origin: Point;
+  indices: number[];
+  start: SplineNode[];
+  moved?: boolean;
   /** plan 96 P3 - which END of the path is being dragged, when exactly one END node is.
    *  Set at press; drives the bind affordance during the drag and the write on drop. */
   bindEnd?: 'start' | 'end';
 }
-interface PenHandleGesture extends GestureBase { type: 'penhandle'; origin: Point; index: number; which: 'in' | 'out'; moved?: boolean }
-interface PenMarqueeGesture extends GestureBase { type: 'penmarquee'; origin: Point; additive: boolean }
+interface PenHandleGesture extends GestureBase {
+  type: 'penhandle';
+  origin: Point;
+  index: number;
+  which: 'in' | 'out';
+  moved?: boolean;
+}
+interface PenMarqueeGesture extends GestureBase {
+  type: 'penmarquee';
+  origin: Point;
+  additive: boolean;
+}
 /** One contour's slice of the combined node-edit path: how many nodes it owns, and the
  *  kind + closed flag to restore when the flat run is split back into real contours. */
-interface PenPart { count: number; kind: SplineKind; closed: boolean }
-type Gesture = TapGesture | MarqueeGesture | CamPanGesture | CamTiltGesture | CreateGesture | MoveGesture | ResizeGesture | RotateGesture
-  | GScaleGesture | GRotateGesture | PenDrawGesture | PenNodeGesture | PenHandleGesture | PenMarqueeGesture | LineGesture;
+interface PenPart {
+  count: number;
+  kind: SplineKind;
+  closed: boolean;
+}
+type Gesture =
+  | TapGesture
+  | MarqueeGesture
+  | CamPanGesture
+  | CamTiltGesture
+  | CreateGesture
+  | MoveGesture
+  | ResizeGesture
+  | RotateGesture
+  | GScaleGesture
+  | GRotateGesture
+  | PenDrawGesture
+  | PenNodeGesture
+  | PenHandleGesture
+  | PenMarqueeGesture
+  | LineGesture;
 type FilledBaseFields = 'pointerId' | 'startClient';
 type GestureInit =
   | Omit<TapGesture, FilledBaseFields>
@@ -645,226 +1037,7 @@ type GestureInit =
   | Omit<LineGesture, FilledBaseFields>;
 
 const HANDLES: HandleName[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
-const SNAP_PX = 6;          // snap threshold in SCREEN px
-const SVG = {
-  add: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
-  // Present - a play triangle (open the frames as a fullscreen deck, plan 112).
-  present: '<path d="M8 5v14l11-7z"/>',
-  // Code - angle brackets (open the Custom CSS editor, plan 112 M4).
-  code: '<polyline points="8 6 3 11 8 16"/><polyline points="16 6 21 11 16 16"/>',
-  // Templates - a 2×2 tile grid, echoing the Start chooser's tile layout (plans/142).
-  templates: '<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/>',
-  // Rows - a ruled sheet (hand this template to /batch, plans/147 M1). The same
-  // glyph lib/icons.ts registers as `table`, since it is the same idea in both homes.
-  rows: '<path d="M12 3v18"/><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/>',
-  // Notes - a lined note card (open the speaker-notes panel, plan 112 M5).
-  notes: '<rect x="4" y="4" width="16" height="16" rx="2"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/>',
-  // Undo/redo - same glyphs as the sidebar header's history buttons (tool.js).
-  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5 5.5 5.5 0 0 1-5.5 5.5H11"/>',
-  redo: '<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5 5.5 5.5 0 0 0 9.5 20H13"/>',
-  // Z-order family - a filled "object" square + a direction arrow; the front/back
-  // pair add an edge bar (the top/bottom of the stack) to read as "all the way".
-  // Object below the arrow = moving up (forward/front); above it = moving down.
-  front: '<rect x="6" y="13" width="12" height="8" rx="2" fill="currentColor" stroke="none"/><path d="M3 3h18"/><path d="M12 10V6"/><path d="m8.5 9.5 3.5-3.5 3.5 3.5"/>',
-  align: '<line x1="3" y1="4" x2="3" y2="20"/><rect x="6" y="7" width="12" height="4" rx="1"/><rect x="6" y="14" width="7" height="4" rx="1"/>',
-  // Line tool - a diagonal shaft ending in an arrowhead (draw a line or arrow).
-  line: '<path d="M5 19 L19 5"/><path d="M12 5h7v7"/>',
-  // Snap-to-grid toggle - a magnet in a box (snapping = magnetic pull to the grid).
-  grid: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 15.5V11a3 3 0 0 1 6 0v4.5"/><path d="M7.5 15.5h3"/><path d="M13.5 15.5h3"/>',
-  // Auto-arrange the connected cards into a tidy hierarchy.
-  tidy: '<rect x="9" y="3" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><path d="M12 8v3"/><path d="M6 16v-2a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v2"/>',
-  dup: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
-  // "+Keyframe" - the same diamond lib/icons.ts's `keyframe` draws, because it is the
-  // same action wearing the same glyph in its other home (the timeline transport).
-  // plans/104 section 8's M2.5 revision: TWO homes, ONE action.
-  keyframe: '<path d="M12 3 21 12 12 21 3 12Z"/>',
-  // The camera add-kind (plans/104 section 5.4) - the same body-and-lens the icon registry's
-  // `camera` draws, so the rail, the timeline menu and the inspector group agree.
-  camera: '<path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L19 6h0a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/>',
-  trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
-  image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>',
-  more: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
-  size: '<path d="M9 3H5a2 2 0 0 0-2 2v4"/><path d="M15 3h4a2 2 0 0 1 2 2v4"/><path d="M15 21h4a2 2 0 0 0 2-2v-4"/><path d="M9 21H5a2 2 0 0 1-2-2v-4"/>',
-  // Pages/carousel - a centre "page" card flanked by two peeking page edges.
-  pages: '<rect x="8" y="4" width="8" height="16" rx="2"/><path d="M4.5 7v10"/><path d="M19.5 7v10"/>',
-  // Frame add-kind + the Frames reorder rail button - the Figma artboard "#" (two
-  // pairs of ledger lines running past the edges).
-  frame: '<path d="M8 3v18M16 3v18M3 8h18M3 16h18"/>',
-  // Drag handle in the Frames reorder list - the classic six-dot grip.
-  grip: '<circle cx="9" cy="7" r="1.2" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="9" cy="17" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="7" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="15" cy="17" r="1.2" fill="currentColor" stroke="none"/>',
-  chevUp: '<polyline points="6 15 12 9 18 15"/>',
-  chevDown: '<polyline points="6 9 12 15 18 9"/>',
-  chevLeft: '<polyline points="15 18 9 12 15 6"/>',
-  chevRight: '<polyline points="9 18 15 12 9 6"/>',
-  minus: '<line x1="5" y1="12" x2="19" y2="12"/>',
-  editText: '<path d="M4 7V5h16v2"/><path d="M9 19h6"/><path d="M12 5v14"/>',
-  // Pencil - the "edit text" action (replaces the old 'T' glyph on the object bar).
-  pencil: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
-  // Type glyph - the Text add-kind + the "Aa" text panel.
-  type: '<polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/>',
-  boxKind: '<rect x="3" y="5" width="18" height="14" rx="2.5"/>',
-  // Animation (Lottie) add-kind - a play triangle inside a rounded frame, echoing the picker's "▶ LOTTIE" badge.
-  anim: '<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M10 9l5 3-5 3z"/>',
-  // Video add-kind - a film clap/frame with a play triangle (a fatter play than `anim`).
-  video: '<rect x="2" y="5" width="15" height="14" rx="2.5"/><path d="M17 9l5-3v12l-5-3z"/><path d="M7 9.5l4 2.5-4 2.5z"/>',
-  // Timeline rail toggle - a plus feeding three forward chevrons: add a moment, then run
-  // it forward over time (Andy's chosen metaphor, 2026-08-20). Replaced the staggered clip
-  // bars, which read as a comb/toaster at rail size.
-  timeline: '<path d="M4 9v6"/><path d="M1 12h6"/><path d="M9 6.5l5 5.5-5 5.5"/><path d="M13 6.5l5 5.5-5 5.5"/><path d="M17 6.5l5 5.5-5 5.5"/>',
-  // Sequence add-kinds: a clip (film strip), a sound (level bars), a nested Lolly tool (spark).
-  clipKind: '<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M8 5v14"/><path d="M16 5v14"/>',
-  audioKind: '<path d="M4 10v4"/><path d="M8 7v10"/><path d="M12 4v16"/><path d="M16 8v8"/><path d="M20 11v2"/>',
-  toolKind: '<path d="M4 20 14 10"/><path d="m16.5 3.5 1.4 3.6 3.6 1.4-3.6 1.4-1.4 3.6-1.4-3.6L11.5 8.5l3.6-1.4z"/>',
-  info: '<circle cx="12" cy="12" r="9"/><line x1="11" y1="11.5" x2="12" y2="11.5"/><line x1="12" y1="11.5" x2="12" y2="16"/><circle cx="12" cy="8" r="0.7" fill="currentColor" stroke="none"/>',
-  // Import a design file (Figma SVG / Penpot) - an arrow rising UP out of a tray
-  // (upload/import, not download: the arrowhead apexes at the top, not the tray).
-  importFile: '<path d="M12 3v10"/><polyline points="8 7 12 3 16 7"/><path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>',
-  // Primary editor-rail action glyphs (Export / Save / Share; Copy reuses `dup`).
-  exportUp: '<line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>',
-  save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 14 8"/>',
-  // Generic share glyph (three linked nodes) - the action is broader than a link now:
-  // a .lolly file or a private collab, not just a URL.
-  share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/>',
-  // Shape glyphs for the segmented shape control.
-  shRect: '<rect x="4" y="6" width="16" height="12"/>',
-  shRounded: '<rect x="4" y="6" width="16" height="12" rx="4.5"/>',
-  shPill: '<rect x="3" y="7.5" width="18" height="9" rx="4.5"/>',
-  shEllipse: '<ellipse cx="12" cy="12" rx="9" ry="7"/>',
-  shCircle: '<circle cx="12" cy="12" r="8"/>',
-  // Image-fit glyphs.
-  fitContain: '<rect x="3" y="4.5" width="18" height="15" rx="1.5"/><rect x="8" y="8.5" width="8" height="7" rx="1"/>',
-  fitCover: '<rect x="3" y="4.5" width="18" height="15" rx="1.5"/><path d="M3 16l4.5-3.5L11 15l3-2.2L21 18"/><circle cx="8.5" cy="9" r="1.2"/>',
-  fitFill: '<rect x="3" y="4.5" width="18" height="15" rx="1.5"/><polyline points="8 9 5.5 12 8 15"/><polyline points="16 9 18.5 12 16 15"/>',
-  fitPos: '<rect x="3" y="4.5" width="18" height="15" rx="1.5"/><circle cx="8" cy="8.5" r="1"/><circle cx="12" cy="8.5" r="1"/><circle cx="16" cy="8.5" r="1"/><circle cx="8" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="16" cy="12" r="1"/><circle cx="8" cy="15.5" r="1"/><circle cx="12" cy="15.5" r="1"/><circle cx="16" cy="15.5" r="1"/>',
-  radius: '<path d="M5 19V9a4 4 0 0 1 4-4h10"/><line x1="5" y1="19" x2="5" y2="21"/><line x1="3" y1="19" x2="5" y2="19"/>',
-  opacity: '<rect x="3.5" y="3.5" width="17" height="17" rx="2.5"/><path d="M12 3.5v17"/><path d="M12 5.5h6.5M12 8.5h8M12 11.5h8M12 14.5h8M12 17.5h6.5"/>',
-  blend: '<circle cx="9" cy="12" r="6"/><circle cx="15" cy="12" r="6" opacity="0.5"/>',
-  shadowIc: '<rect x="3.5" y="3.5" width="12" height="12" rx="2.5"/><path d="M8.5 20.5h10a2 2 0 0 0 2-2v-10" opacity="0.45"/>',
-  // Position (4-way move) + rotate glyphs for the position & size panel.
-  move: '<polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/>',
-  rotate: '<path d="M21 12a9 9 0 1 1-3-6.7"/><polyline points="21 3 21 8 16 8"/>',
-  forward: '<rect x="6" y="13" width="12" height="8" rx="2" fill="currentColor" stroke="none"/><path d="M12 10V4"/><path d="m8.5 7.5 3.5-3.5 3.5 3.5"/>',
-  backward: '<rect x="6" y="3" width="12" height="8" rx="2" fill="currentColor" stroke="none"/><path d="M12 14v6"/><path d="m8.5 16.5 3.5 3.5 3.5-3.5"/>',
-  back: '<rect x="6" y="3" width="12" height="8" rx="2" fill="currentColor" stroke="none"/><path d="M3 21h18"/><path d="M12 14v4"/><path d="m8.5 14.5 3.5 3.5 3.5-3.5"/>',
-  alignL: '<line x1="4" y1="3.5" x2="4" y2="20.5"/><rect x="7" y="5.5" width="13" height="4.5" rx="1"/><rect x="7" y="14" width="8" height="4.5" rx="1"/>',
-  alignC: '<line x1="12" y1="3.5" x2="12" y2="20.5"/><rect x="5" y="5.5" width="14" height="4.5" rx="1"/><rect x="8" y="14" width="8" height="4.5" rx="1"/>',
-  alignR: '<line x1="20" y1="3.5" x2="20" y2="20.5"/><rect x="4" y="5.5" width="13" height="4.5" rx="1"/><rect x="9" y="14" width="8" height="4.5" rx="1"/>',
-  alignT: '<line x1="3.5" y1="4" x2="20.5" y2="4"/><rect x="5.5" y="7" width="4.5" height="13" rx="1"/><rect x="14" y="7" width="4.5" height="8" rx="1"/>',
-  alignM: '<line x1="3.5" y1="12" x2="20.5" y2="12"/><rect x="5.5" y="5" width="4.5" height="14" rx="1"/><rect x="14" y="8" width="4.5" height="8" rx="1"/>',
-  alignB: '<line x1="3.5" y1="20" x2="20.5" y2="20"/><rect x="5.5" y="4" width="4.5" height="13" rx="1"/><rect x="14" y="9" width="4.5" height="8" rx="1"/>',
-  distH: '<line x1="4" y1="3.5" x2="4" y2="20.5"/><line x1="20" y1="3.5" x2="20" y2="20.5"/><rect x="9" y="7" width="6" height="10" rx="1"/>',
-  distV: '<line x1="3.5" y1="4" x2="20.5" y2="4"/><line x1="3.5" y1="20" x2="20.5" y2="20"/><rect x="7" y="9" width="10" height="6" rx="1"/>',
-  // Flip (mirror) - two arrowheads facing across a dashed mirror axis: one side solid, the
-  // other its outline reflection, so the glyph reads as "turn this over about the line". The
-  // pair shares one axis line and one triangle, rotated 90deg between them, so they read as a set.
-  flipH: '<line x1="12" y1="2.5" x2="12" y2="21.5" stroke-dasharray="3 2.5"/><path d="M9.2 5 3.8 12l5.4 7z" fill="currentColor" stroke="none"/><path d="M14.8 5 20.2 12l-5.4 7z"/>',
-  flipV: '<line x1="2.5" y1="12" x2="21.5" y2="12" stroke-dasharray="3 2.5"/><path d="M5 9.2 12 3.8l7 5.4z" fill="currentColor" stroke="none"/><path d="M5 14.8 12 20.2l7-5.4z"/>',
-  group: '<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="6.5" y="6.5" width="5" height="5" rx="1"/><rect x="12.5" y="12.5" width="5" height="5" rx="1"/>',
-  ungroup: '<rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/>',
-  clip: '<rect x="3" y="3" width="12" height="12" rx="2"/><circle cx="15.5" cy="15.5" r="5.5"/>',
-  unclip: '<rect x="3" y="3" width="9" height="9" rx="2"/><circle cx="16.5" cy="16.5" r="4.5"/>',
-  // Boolean family - the Illustrator/Figma pictograms: two overlapping squares, A at
-  // (4,4)-(14,14) and B at (10,10)-(20,20), with the SURVIVING region filled and the
-  // discarded one left as a faint outline. Same two squares in all four, so the icons
-  // read as one set and the difference between them is only ever what's solid.
-  boolUnion: '<path d="M4 4h10v6h6v10H10v-6H4z" fill="currentColor" stroke="none"/>',
-  boolSubtract: '<path d="M4 4h10v6h-4v4H4z" fill="currentColor" stroke="none"/><rect x="10" y="10" width="10" height="10" opacity="0.4"/>',
-  boolIntersect: '<rect x="4" y="4" width="10" height="10" opacity="0.4"/><rect x="10" y="10" width="10" height="10" opacity="0.4"/><rect x="10" y="10" width="4" height="4" fill="currentColor" stroke="none"/>',
-  boolExclude: '<path d="M4 4h10v6h6v10H10v-6H4zM10 10h4v4h-4z" fill="currentColor" stroke="none" fill-rule="evenodd"/>',
-  // Outline stroke - a band between two concentric outlines (the stroke, now a shape).
-  outlineStroke: '<path d="M3 5h18v14H3zM7 9h10v6H7z" fill="currentColor" stroke="none" fill-rule="evenodd"/>',
-  // Offset path - the shape, plus a dashed larger copy of it standing off the edge.
-  offsetPath: '<rect x="7" y="9" width="10" height="6" rx="1.5"/><rect x="3.5" y="5.5" width="17" height="13" rx="4" stroke-dasharray="3 2.5" opacity="0.75"/>',
-  // Simplify - one smooth curve with only its two end nodes left on it.
-  simplify: '<path d="M4 17c4-11 12-11 16 0"/><circle cx="4" cy="17" r="1.8" fill="currentColor" stroke="none"/><circle cx="20" cy="17" r="1.8" fill="currentColor" stroke="none"/>',
-  outlineText: '<path d="M5 7V4h14v3M12 4v12"/><path d="M9 20h6"/><rect x="10.2" y="14.2" width="3.6" height="3.6" fill="none"/>',
-  // Lift layers (plans/104 section 7) - the three-plate stack, with the top plate standing
-  // OFF the other two: the glyph says "one drawing, several plates, one of them
-  // raised", which is exactly what the action does. The plates are the same isometric
-  // diamond the `group`/`ungroup` pair already uses, so the family reads as one set.
-  liftLayers: '<path d="m12 2 8 4.5-8 4.5-8-4.5z"/><path d="m4 13 8 4.5 8-4.5"/><path d="m4 17 8 4.5 8-4.5"/>',
-  // Choreograph (plans/104 P4) - the lifted stack, now MOVING: three plates stepping up
-  // the frame with the arc they travel drawn over them. Deliberately the same rounded
-  // plate `boxKind` draws, so "these layers" and "these layers, in motion" read as a pair.
-  choreo: '<rect x="2.5" y="15" width="6" height="5.5" rx="1.3"/><rect x="9" y="12" width="6" height="5.5" rx="1.3"/><rect x="15.5" y="9" width="6" height="5.5" rx="1.3"/><path d="M3 11c3.5-6 10.5-8.5 17-6.5"/><polyline points="17.6 2.4 20.5 4.6 18.6 7.2"/>',
-  // Pointer - the arrow cursor itself, outlined to sit with the rest of the line-art rail.
-  // The one glyph in here that names a TOOL by drawing the cursor it gives you.
-  pointer: '<path d="M5 2.8l10.9 10.9h-4.8l2.8 6-2.5 1.1-2.8-6L5 18.3z"/>',
-  // Pen - the vector PEN TOOL: the wedge nib with its slit, the anchor point it drops,
-  // and the blade trailing behind. Deliberately NOT the `pencil` glyph, which already
-  // means "edit this box's text" on the object bar. The previous glyph was a fountain
-  // pen, which reads as "write/draw freehand" - the one thing this mode does not do;
-  // the anchor circle is what says "click to place points" at a glance.
-  pen: '<path d="m12 19 7-7 3 3-7 7-3-3z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="m2 2 7.586 7.586"/><circle cx="11" cy="11" r="2"/>',
-  // Edit points - a bezier-pen metaphor: three filled anchor squares on a straight path
-  // run, with a curved handle joining two hollow control points below (Andy's chosen
-  // metaphor, 2026-08-20).
-  nodes: '<path d="M4 5h16"/><rect x="2" y="3" width="4" height="4" rx="1" fill="currentColor" stroke="none"/><rect x="10" y="3" width="4" height="4" rx="1" fill="currentColor" stroke="none"/><rect x="18" y="3" width="4" height="4" rx="1" fill="currentColor" stroke="none"/><path d="M5 18C5 11 19 11 19 18"/><circle cx="5" cy="18" r="2.2"/><circle cx="19" cy="18" r="2.2"/>',
-  // Continuity - the same node with the same two arms, changing only how they relate:
-  // hinged (corner), collinear (smooth), collinear and equal (symmetric).
-  contCorner: '<path d="M5 19 12 12l7 3"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/>',
-  contSmooth: '<path d="M4 15h8"/><path d="M12 15h8"/><circle cx="12" cy="15" r="2.4" fill="currentColor" stroke="none"/><circle cx="4" cy="15" r="1.4"/><circle cx="20" cy="15" r="1.4"/>',
-  contSymmetric: '<path d="M6 15h12"/><circle cx="12" cy="15" r="2.4" fill="currentColor" stroke="none"/><circle cx="6" cy="15" r="1.4"/><circle cx="18" cy="15" r="1.4"/><path d="M6 19v2"/><path d="M18 19v2"/><path d="M6 20h12"/>',
-  // Leave node-editing (the mode's explicit exit, mirroring how a text edit is committed).
-  penDone: '<polyline points="4 13 9 18 20 6"/>',
-  // Closed path - a loop whose ends have met, with the join node called out.
-  penClose: '<path d="M12 5c5 0 7 3 7 7s-2 7-7 7-7-3-7-7 2-7 7-7z"/><circle cx="12" cy="5" r="2.2" fill="currentColor" stroke="none"/>',
-  // Stroke - two rules of different weight, which is what the panel behind it sets.
-  strokeIc: '<path d="M4 8h16" stroke-width="4.5"/><path d="M4 16h16" stroke-width="1.3"/>',
-  // Gradient: a square whose fill ramps, plus the two stop dots the canvas handles are.
-  // Drawn with a gradient def rather than hatching so the button reads as what it does
-  // even at 16px (the `icon()` wrapper only sets stroke, so the fill is declared here).
-  gradIc: '<defs><linearGradient id="fcGradIc" x1="0" y1="0" x2="1" y2="0">'
-    + '<stop offset="0" stop-color="currentColor" stop-opacity="0.85"/>'
-    + '<stop offset="1" stop-color="currentColor" stop-opacity="0.08"/></linearGradient></defs>'
-    + '<rect x="3.5" y="6" width="17" height="12" rx="2.5" fill="url(#fcGradIc)" stroke-width="1.4"/>'
-    + '<circle cx="7" cy="12" r="1.6" fill="currentColor" stroke="none"/>'
-    + '<circle cx="17" cy="12" r="1.6" fill="none" stroke-width="1.4"/>',
-  // Stroke style: one rule, drawn in the style it names. The per-path dash/cap overrides
-  // the wrapper's round cap, so each glyph IS a sample of the thing it selects.
-  dashSolid: '<path d="M3 12h18" stroke-width="2.6"/>',
-  dashDashed: '<path d="M3 12h18" stroke-width="2.6" stroke-dasharray="6 4"/>',
-  dashDotted: '<path d="M3.5 12h17" stroke-width="3" stroke-dasharray="0 5"/>',
-  // Line ends + corners: a fat stub / elbow drawn WITH the cap or join it selects, so
-  // the difference between the three is visible rather than described.
-  capButt: '<path d="M7 12h10" stroke-width="7" stroke-linecap="butt"/><path d="M7 5.5v13M17 5.5v13" stroke-width="1" opacity="0.5"/>',
-  capRound: '<path d="M7 12h10" stroke-width="7" stroke-linecap="round"/><path d="M7 5.5v13M17 5.5v13" stroke-width="1" opacity="0.5"/>',
-  capSquare: '<path d="M7 12h10" stroke-width="7" stroke-linecap="square"/><path d="M7 5.5v13M17 5.5v13" stroke-width="1" opacity="0.5"/>',
-  joinMiter: '<path d="M6 19V9l7-6" stroke-width="5" stroke-linejoin="miter" stroke-linecap="butt"/>',
-  joinRound: '<path d="M6 19V9l7-6" stroke-width="5" stroke-linejoin="round" stroke-linecap="butt"/>',
-  joinBevel: '<path d="M6 19V9l7-6" stroke-width="5" stroke-linejoin="bevel" stroke-linecap="butt"/>',
-  // Fill rule - the same two-contour shape, filled by each rule: non-zero fills the
-  // inner ring too (same winding), even-odd leaves it as a hole.
-  ruleNonzero: '<path d="M4 5h16v14H4zM9 9h6v6H9z" fill="currentColor" stroke="none"/>',
-  ruleEvenOdd: '<path d="M4 5h16v14H4zM9 9h6v6H9z" fill="currentColor" stroke="none" fill-rule="evenodd"/>',
-  // Text alignment (lines of ragged copy) - distinct from the object-align icons.
-  textL: '<line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="18" x2="17" y2="18"/>',
-  textC: '<line x1="4" y1="6" x2="20" y2="6"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="5.5" y1="18" x2="18.5" y2="18"/>',
-  textR: '<line x1="4" y1="6" x2="20" y2="6"/><line x1="10" y1="12" x2="20" y2="12"/><line x1="7" y1="18" x2="20" y2="18"/>',
-  textT: '<line x1="4" y1="4" x2="20" y2="4"/><line x1="6" y1="9" x2="18" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/>',
-  textM: '<line x1="6" y1="8" x2="18" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="6" y1="16" x2="18" y2="16"/>',
-  textB: '<line x1="4" y1="20" x2="20" y2="20"/><line x1="6" y1="15" x2="18" y2="15"/><line x1="8" y1="11" x2="16" y2="11"/>',
-  // Reset text formatting - a capital T with a diagonal slash through it.
-  resetColor: '<line x1="6" y1="6" x2="18" y2="6"/><line x1="12" y1="6" x2="12" y2="18"/><line x1="4.5" y1="20" x2="19.5" y2="4"/>',
-  // Bulleted list - three dotted rows (a list, not a lone bullet).
-  bulletList: '<circle cx="4.5" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1.5" fill="currentColor" stroke="none"/><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/>',
-  // Scissors - cut the subject out (host.matte "Remove background").
-  scissors: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/>',
-  // A plain tick. Used ONLY as the decorative bullet of the Lift layers plan list,
-  // which is why it is aria-hidden there: the list is a preview of what will happen,
-  // not a set of controls, so the mark must not be announced as a checked state.
-  check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
-  // The two rows the Design mark menu grows once the top bar owns the document actions
-  // (plans/179 M1). Contrast for Theme, a speaker for Interface sounds: each row is a
-  // proxy that clicks the toggle the tool view already built, so the glyph is the only
-  // thing this file needs to know about them.
-  theme: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none"/>',
-  sound: '<path d="M4 9.5h3L11 6v12l-4-3.5H4z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6"/><path d="M18 6.7a7.5 7.5 0 0 1 0 10.6"/>',
-};
-
-function icon(paths: string): string {
-  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
-}
+const SNAP_PX = 6;
 
 // ── the floating rail's position ──────────────────────────────────────────────
 
@@ -886,14 +1059,15 @@ export function clampRailPos(
   want: { left: number; top: number },
   rail: { w: number; h: number },
   stage: { w: number; h: number },
-  o: { pad?: number; reserveBottom?: number; reserveLeft?: number } = {},
+  o: { pad?: number; reserveBottom?: number; reserveLeft?: number } = {}
 ): { left: number; top: number } {
   const pad = o.pad ?? 8;
   // An unmeasurable stage (a not-yet-laid-out ResizeObserver delivery, a stage that has
   // gone display:none on navigation) must not be clamped against: every axis would
   // collapse to `pad` and the remembered position would be silently lost. Hand the
   // wanted position straight back - placePopover guards the same way.
-  if (!(stage.w > 0) || !(stage.h > 0)) return { left: Math.round(want.left), top: Math.round(want.top) };
+  if (!(stage.w > 0) || !(stage.h > 0))
+    return { left: Math.round(want.left), top: Math.round(want.top) };
   const minLeft = pad + Math.max(0, o.reserveLeft ?? 0);
   const maxLeft = Math.max(minLeft, stage.w - rail.w - pad);
   const maxTop = Math.max(pad, stage.h - rail.h - pad - Math.max(0, o.reserveBottom ?? 0));
@@ -920,7 +1094,7 @@ export function placePopover(
   pop: { w: number; h: number },
   stage: { w: number; h: number },
   gap = 8,
-  pad = 6,
+  pad = 6
 ): { left: number; top: number } {
   const rightSide = anchor.right + gap;
   const leftSide = anchor.left - gap - pop.w;
@@ -930,7 +1104,7 @@ export function placePopover(
   if (!(stage.w > 0) || !(stage.h > 0)) return { left: rightSide, top: Math.max(pad, anchor.top) };
   // Flip only if the left side is genuinely better: on a stage too narrow for either,
   // stay on the preferred side and let the clamp do what it can.
-  const left = (rightSide + pop.w > stage.w - pad && leftSide >= pad) ? leftSide : rightSide;
+  const left = rightSide + pop.w > stage.w - pad && leftSide >= pad ? leftSide : rightSide;
   const maxTop = Math.max(pad, stage.h - pop.h - pad);
   return {
     left: Math.round(Math.max(pad, Math.min(left, Math.max(pad, stage.w - pop.w - pad)))),
@@ -941,10 +1115,19 @@ export function placePopover(
 // ── the contextual bar's position ─────────────────────────────────────────────
 
 /** A stage-relative box, in stage px. */
-interface StageBox { left: number; top: number; right: number; bottom: number }
+interface StageBox {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
 
 /** The top-chrome-row band the contextual bar is pinned into, in stage-relative px. */
-export interface CtxTopBand { lo: number; hi: number; top: number }
+export interface CtxTopBand {
+  lo: number;
+  hi: number;
+  top: number;
+}
 
 /**
  * The free horizontal band on the top-chrome row where the contextual bar sits.
@@ -988,7 +1171,12 @@ export function stageBlockers(els: Array<HTMLElement | null | undefined>, sr: DO
     const r = el.getBoundingClientRect();
     if (r.width <= 0 || r.height <= 0) continue;
     if (r.bottom <= sr.top) continue;
-    out.push({ left: r.left - sr.left, top: r.top - sr.top, right: r.right - sr.left, bottom: r.bottom - sr.top });
+    out.push({
+      left: r.left - sr.left,
+      top: r.top - sr.top,
+      right: r.right - sr.left,
+      bottom: r.bottom - sr.top,
+    });
   }
   return out;
 }
@@ -996,7 +1184,7 @@ export function stageBlockers(els: Array<HTMLElement | null | undefined>, sr: DO
 export function ctxTopBand(
   stage: { w: number; h: number },
   blockers: StageBox[] = [],
-  o: { pad?: number; gap?: number; reserve?: { top?: number; left?: number; right?: number } } = {},
+  o: { pad?: number; gap?: number; reserve?: { top?: number; left?: number; right?: number } } = {}
 ): CtxTopBand {
   const pad = o.pad ?? 6;
   const gap = o.gap ?? 8;
@@ -1021,8 +1209,9 @@ export function ctxTopBand(
   const top = live.length ? Math.max(rt + pad, Math.min(...live.map((b) => b.top))) : rt + pad;
   const cx = stage.w / 2;
   for (const b of live) {
-    if ((b.left + b.right) / 2 <= cx) lo = Math.max(lo, b.right + gap);   // back pill, left
-    else hi = Math.min(hi, b.left - gap);                                  // zoom HUD, right
+    if ((b.left + b.right) / 2 <= cx)
+      lo = Math.max(lo, b.right + gap); // back pill, left
+    else hi = Math.min(hi, b.left - gap); // zoom HUD, right
   }
   return { lo, hi: Math.max(lo, hi), top };
 }
@@ -1051,8 +1240,15 @@ let railSession: { left: number; top: number } | null = null;
 // stops at Extrabold (both profiles' hooks.js + the vector exporter cap it the
 // same way; mono detection lives in isMonoFont inside initFreeCanvas).
 const WEIGHT_CHOICES: Array<[string, string]> = [
-  ['100', 'Thin'], ['200', 'Extra light'], ['300', 'Light'], ['400', 'Regular'],
-  ['500', 'Medium'], ['600', 'Semibold'], ['700', 'Bold'], ['800', 'Extrabold'], ['900', 'Black'],
+  ['100', 'Thin'],
+  ['200', 'Extra light'],
+  ['300', 'Light'],
+  ['400', 'Regular'],
+  ['500', 'Medium'],
+  ['600', 'Semibold'],
+  ['700', 'Bold'],
+  ['800', 'Extrabold'],
+  ['900', 'Black'],
 ];
 // Fallback font menu for editor tools whose manifest doesn't declare a font
 // select - the historical hard-coded pair, so such tools keep working unchanged.
@@ -1067,9 +1263,9 @@ const FALLBACK_FONT_OPTIONS: FontOption[] = [
 // stack from the value itself (fontStackFor inside initFreeCanvas).
 const FONT_STACK: Record<string, string> = {
   'SUSE Mono': "'SUSE Mono', ui-monospace, SFMono-Regular, monospace",
-  'SUSE': "'SUSE', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
-  'mono': 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-  'sans': "var(--font-brand, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif)",
+  SUSE: "'SUSE', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+  mono: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+  sans: "var(--font-brand, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif)",
 };
 /**
  * The arrowhead vocabulary (plan 96 P1) - EXACTLY the strings `edgeArrowHead` in
@@ -1079,8 +1275,12 @@ const FONT_STACK: Record<string, string> = {
  * closed rather than free text.
  */
 const HEAD_CHOICES: Array<[string, string]> = [
-  ['none', 'None'], ['triangle', 'Arrow'], ['open', 'Open arrow'],
-  ['circle', 'Circle'], ['diamond', 'Diamond'], ['bar', 'Bar'],
+  ['none', 'None'],
+  ['triangle', 'Arrow'],
+  ['open', 'Open arrow'],
+  ['circle', 'Circle'],
+  ['diamond', 'Diamond'],
+  ['bar', 'Bar'],
 ];
 /**
  * The route choices a BOUND path offers (plan 96 P3), in the engine's own order. '' is
@@ -1092,11 +1292,18 @@ const HEAD_CHOICES: Array<[string, string]> = [
 const ROUTE_CHOICES: Array<[string, string]> = [
   ['', 'Auto, from the spline type'],
   ['straight', 'Straight'],
-  ['elbow', 'Elbow, auto'], ['elbow-v', 'Elbow, vertical'], ['elbow-h', 'Elbow, horizontal'],
-  ['elbow-src', 'Elbow, bend at the start'], ['elbow-tgt', 'Elbow, bend at the end'],
-  ['curved', 'Curved, auto S'], ['curved-v', 'Curved, vertical S'], ['curved-h', 'Curved, horizontal S'],
-  ['arc', 'Arc, bow'], ['arc-wide', 'Arc, wide bow'],
-  ['arc-flip', 'Arc, reverse bow'], ['arc-flip-wide', 'Arc, wide reverse bow'],
+  ['elbow', 'Elbow, auto'],
+  ['elbow-v', 'Elbow, vertical'],
+  ['elbow-h', 'Elbow, horizontal'],
+  ['elbow-src', 'Elbow, bend at the start'],
+  ['elbow-tgt', 'Elbow, bend at the end'],
+  ['curved', 'Curved, auto S'],
+  ['curved-v', 'Curved, vertical S'],
+  ['curved-h', 'Curved, horizontal S'],
+  ['arc', 'Arc, bow'],
+  ['arc-wide', 'Arc, wide bow'],
+  ['arc-flip', 'Arc, reverse bow'],
+  ['arc-flip-wide', 'Arc, wide reverse bow'],
 ];
 /**
  * The Choreograph showcases (plans/104 P4), in the generator's own `SHOWCASE_IDS` order.
@@ -1109,13 +1316,55 @@ const ROUTE_CHOICES: Array<[string, string]> = [
  * tests/choreograph.test.ts and the co-located UI test pin the two id lists and these six
  * lengths equal, so the copy cannot drift.
  */
-export const CHOREO_SHOWCASES: ReadonlyArray<{ id: ShowcaseId; label: string; sub: string; ms: number; icon: string }> = [
-  { id: 'buildup', label: t('Buildup'), sub: t('Assemble from nothing'), ms: 3000, icon: SVG.front },
-  { id: 'deconstruct', label: t('Deconstruct'), sub: t('Fly apart at the end'), ms: 2500, icon: SVG.ungroup },
-  { id: 'loop', label: t('The Loop'), sub: t('Assemble, hold, fly apart - cycles as a GIF'), ms: 6000, icon: SVG.rotate },
-  { id: 'hero', label: t('Hero arc'), sub: t('Explode, fly through, come home'), ms: 6000, icon: SVG.choreo },
-  { id: 'trench', label: t('Trench run'), sub: t('A small lift, the camera flies between'), ms: 5000, icon: SVG.camera },
-  { id: 'scan', label: t('Map-scan'), sub: t('Hardly raised, the camera scans the page'), ms: 8000, icon: SVG.move },
+export const CHOREO_SHOWCASES: ReadonlyArray<{
+  id: ShowcaseId;
+  label: string;
+  sub: string;
+  ms: number;
+  icon: string;
+}> = [
+  {
+    id: 'buildup',
+    label: t('Buildup'),
+    sub: t('Assemble from nothing'),
+    ms: 3000,
+    icon: SVG.front,
+  },
+  {
+    id: 'deconstruct',
+    label: t('Deconstruct'),
+    sub: t('Fly apart at the end'),
+    ms: 2500,
+    icon: SVG.ungroup,
+  },
+  {
+    id: 'loop',
+    label: t('The Loop'),
+    sub: t('Assemble, hold, fly apart - cycles as a GIF'),
+    ms: 6000,
+    icon: SVG.rotate,
+  },
+  {
+    id: 'hero',
+    label: t('Hero arc'),
+    sub: t('Explode, fly through, come home'),
+    ms: 6000,
+    icon: SVG.choreo,
+  },
+  {
+    id: 'trench',
+    label: t('Trench run'),
+    sub: t('A small lift, the camera flies between'),
+    ms: 5000,
+    icon: SVG.camera,
+  },
+  {
+    id: 'scan',
+    label: t('Map-scan'),
+    sub: t('Hardly raised, the camera scans the page'),
+    ms: 8000,
+    icon: SVG.move,
+  },
 ];
 
 /**
@@ -1141,7 +1390,7 @@ function featureSettings(ligOn: boolean, altOn: boolean): string {
   const feat: string[] = [];
   if (!ligOn) feat.push('"liga" 0', '"clig" 0');
   if (altOn) feat.push('"salt" 1');
-  return feat.join(', ');   // '' = browser default (ligatures on, no alternates)
+  return feat.join(', '); // '' = browser default (ligatures on, no alternates)
 }
 // A short, unambiguous marker for layout objects copied INSIDE the editor. The
 // serialized boxes ride the OS clipboard behind it, so ⌘V pastes (duplicates)
@@ -1159,12 +1408,35 @@ function boolOf(v: any, dflt: boolean): boolean {
   return dflt;
 }
 // Flex mappings for the align/valign live preview - must mirror hooks.js boxCss.
-const H_JUSTIFY: Record<string, string> = { left: 'flex-start', center: 'center', right: 'flex-end' };
+const H_JUSTIFY: Record<string, string> = {
+  left: 'flex-start',
+  center: 'center',
+  right: 'flex-end',
+};
 const V_ALIGN: Record<string, string> = { top: 'flex-start', middle: 'center', bottom: 'flex-end' };
 
 export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
-  const { viewEl, stageEl, canvasEl, runtime, host, input, nativeW, nativeH, onDirty, editTool, setCanvasSize, setDocumentSettings, info, history, actions, pages, chrome: designChrome, frame: frameCfg } = opts;
-  let dirtyObserver: MutationObserver | null = null;   // mirrors the Save icon's unsaved cue (see buildToolbar/actions)
+  const {
+    viewEl,
+    stageEl,
+    canvasEl,
+    runtime,
+    host,
+    input,
+    nativeW,
+    nativeH,
+    onDirty,
+    editTool,
+    setCanvasSize,
+    setDocumentSettings,
+    info,
+    history,
+    actions,
+    pages,
+    chrome: designChrome,
+    frame: frameCfg,
+  } = opts;
+  let dirtyObserver: MutationObserver | null = null; // mirrors the Save icon's unsaved cue (see buildToolbar/actions)
   // The artboard is resizable, so read its CURRENT declared size (not the mount-time
   // nativeW/H) everywhere geometry depends on the canvas dimensions.
   const canvasWH = (): Canvas => ({
@@ -1173,20 +1445,42 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   });
   const cv: CanvasCfg = input.canvas || {};
   const blockId = input.id;
-  const cfg = ({
+  const cfg = {
     idField: cv.idField || 'id',
-    xField: cv.xField || 'x', yField: cv.yField || 'y',
-    wField: cv.wField || 'w', hField: cv.hField || 'h',
+    xField: cv.xField || 'x',
+    yField: cv.yField || 'y',
+    wField: cv.wField || 'w',
+    hField: cv.hField || 'h',
     rotationField: cv.rotationField || 'rot',
-    fillField: cv.fillField, gradField: cv.gradField, opacityField: cv.opacityField, shapeField: cv.shapeField,
-    radiusField: cv.radiusField, imageField: cv.imageField, fitField: cv.fitField, imgPosField: cv.imgPosField,
-    blendField: cv.blendField, textField: cv.textField, textColorField: cv.textColorField,
-    fontSizeField: cv.fontSizeField, alignField: cv.alignField, valignField: cv.valignField,
-    weightField: cv.weightField, fontField: cv.fontField, lineHeightField: cv.lineHeightField,
-    trackingField: cv.trackingField, ligaturesField: cv.ligaturesField, alternatesField: cv.alternatesField,
-    padField: cv.padField, fitTextField: cv.fitTextField, groupField: cv.groupField, clipField: cv.clipField,
-    shadowField: cv.shadowField, shadowColorField: cv.shadowColorField,
-    shadowXField: cv.shadowXField, shadowYField: cv.shadowYField, shadowBlurField: cv.shadowBlurField,
+    fillField: cv.fillField,
+    gradField: cv.gradField,
+    opacityField: cv.opacityField,
+    shapeField: cv.shapeField,
+    radiusField: cv.radiusField,
+    imageField: cv.imageField,
+    fitField: cv.fitField,
+    imgPosField: cv.imgPosField,
+    blendField: cv.blendField,
+    textField: cv.textField,
+    textColorField: cv.textColorField,
+    fontSizeField: cv.fontSizeField,
+    alignField: cv.alignField,
+    valignField: cv.valignField,
+    weightField: cv.weightField,
+    fontField: cv.fontField,
+    lineHeightField: cv.lineHeightField,
+    trackingField: cv.trackingField,
+    ligaturesField: cv.ligaturesField,
+    alternatesField: cv.alternatesField,
+    padField: cv.padField,
+    fitTextField: cv.fitTextField,
+    groupField: cv.groupField,
+    clipField: cv.clipField,
+    shadowField: cv.shadowField,
+    shadowColorField: cv.shadowColorField,
+    shadowXField: cv.shadowXField,
+    shadowYField: cv.shadowYField,
+    shadowBlurField: cv.shadowBlurField,
     kindField: 'kind',
     // `pathField` is left un-defaulted on purpose: it is the feature flag, so a manifest
     // that omits it must resolve to undefined. The other three DO default, to the same
@@ -1211,7 +1505,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     bindStartField: cv.bindStartField || 'bindStart',
     bindEndField: cv.bindEndField || 'bindEnd',
     routeField: cv.routeField || 'route',
-  }) as FieldCfg;
+  } as FieldCfg;
   // The vector operations' own field view. `cfg` is a superset of `VectorFieldConfig`
   // and vector-ops resolves each name defensively (a non-string falls back to the
   // Design default), so the resolved config is handed over unchanged.
@@ -1220,7 +1514,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // Plan 96's path decorations are DECLARED, not defaulted-into-existence: the field names
   // above default (so the reads are simple), but a tool that never named them in its canvas
   // block has a hooks.js that cannot draw an arrowhead or an authored dash pattern, and
-  // authoring one into its boxes would store a decoration the render silently ignores - 
+  // authoring one into its boxes would store a decoration the render silently ignores -
   // worse, one the compact URL drops on the way out because the field is undeclared. Every
   // `pathField` tool shipping today declares the head set - both Design packs, and
   // Sequence Studio since its 1.3.0 (fields headStart/headEnd, canvas headStartField/
@@ -1240,12 +1534,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // offered no flip and is byte-identical - like `pathField` gates the vector section.
   const FLIP_H_FIELD = 'flipH';
   const FLIP_V_FIELD = 'flipV';
-  const canFlip = (input.fields || []).some((f) => f.id === FLIP_H_FIELD)
-    && (input.fields || []).some((f) => f.id === FLIP_V_FIELD);
+  const canFlip =
+    (input.fields || []).some((f) => f.id === FLIP_H_FIELD) &&
+    (input.fields || []).some((f) => f.id === FLIP_V_FIELD);
   /** The committed bound-path layer's class, hidden while a drag re-routes it live. */
   const boundLayerClass = cv.pathLayerClass || 'lolly-connectors';
   const hasDashArrayCfg = !!cv.strokeDashArrayField;
-  const unwrapColor = (v: ColorFieldValue) => (v && typeof v === 'object' && 'value' in v ? v.value : v);
+  const unwrapColor = (v: ColorFieldValue) =>
+    v && typeof v === 'object' && 'value' in v ? v.value : v;
   const minSize = cv.minSize ?? 8;
   // ── Manifest-driven typography ────────────────────────────────────────────────
   // The Text panel + format-bar font menus are built from the tool's OWN declared
@@ -1253,9 +1549,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // exactly the wire values the tool's hooks.js understands under any profile
   // (SUSE: 'SUSE'/'SUSE Mono'; lolly-start: 'sans'/'mono'). Tools without a font
   // field declaration fall back to the historical hard-coded pair.
-  const fontFieldDef = cfg.fontField ? (input.fields || []).find((f) => f.id === cfg.fontField) : undefined;
-  const fontOptions: FontOption[] = (fontFieldDef?.options?.length ? fontFieldDef.options : FALLBACK_FONT_OPTIONS)
-    .map((o) => ({ value: String(o.value ?? ''), label: String(o.label || o.value || '') }));
+  const fontFieldDef = cfg.fontField
+    ? (input.fields || []).find((f) => f.id === cfg.fontField)
+    : undefined;
+  const fontOptions: FontOption[] = (
+    fontFieldDef?.options?.length ? fontFieldDef.options : FALLBACK_FONT_OPTIONS
+  ).map((o) => ({ value: String(o.value ?? ''), label: String(o.label || o.value || '') }));
   const defaultFont = String(fontFieldDef?.default || fontOptions[0]!.value);
   // Mono detection mirrors hooks.js weightOf (/mono/i on the wire value; the label
   // covers manifests whose values don't self-describe). Mono cuts rarely ship a
@@ -1271,26 +1570,37 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // declared options derive one from the value (leading family + a generic tail);
   // unknown/empty values preview as the manifest's default font, mirroring
   // hooks.js fontFamily's fallback.
-  const stackOf = (s: string): string => FONT_STACK[s] || (isMonoFont(s)
-    ? `'${s}', ui-monospace, SFMono-Regular, monospace`
-    : `'${s}', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif`);
+  const stackOf = (s: string): string =>
+    FONT_STACK[s] ||
+    (isMonoFont(s)
+      ? `'${s}', ui-monospace, SFMono-Regular, monospace`
+      : `'${s}', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif`);
   const fontStackFor = (v: any): string => {
     const s = String(v ?? '');
     // Installed user-font families count too: hooks.js already paints any brand
     // font the kit carries, so the format-bar overlay must preview it rather
     // than coercing the preview to the default face.
     return s && (fontOptions.some((o) => o.value === s) || brandFontFamilies().includes(s))
-      ? stackOf(s) : stackOf(defaultFont);
+      ? stackOf(s)
+      : stackOf(defaultFont);
   };
-  const fontOptionsHtml = (cur?: any): string => fontOptions.map((o) =>
-    `<option value="${escapeHtml(o.value)}"${String(cur) === o.value ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('');
+  const fontOptionsHtml = (cur?: any): string =>
+    fontOptions
+      .map(
+        (o) =>
+          `<option value="${escapeHtml(o.value)}"${String(cur) === o.value ? ' selected' : ''}>${escapeHtml(o.label)}</option>`
+      )
+      .join('');
   // ── Manifest-driven shape control ─────────────────────────────────────────────
   // The "More" panel's shape segment is built from the tool's OWN declared shape
   // options - NOT a fixed list - so a tool only ever offers shapes its hooks.js can
   // render (e.g. `circle` is Design only; Carousel/Org-chart/Record don't
   // declare it, so it never shows there and can't produce a broken square). A known
   // value gets its glyph; anything else falls back to its label text.
-  const shapeChoices: Array<[string, string, string?]> = shapeChoicesFrom(input.fields, cfg.shapeField);
+  const shapeChoices: Array<[string, string, string?]> = shapeChoicesFrom(
+    input.fields,
+    cfg.shapeField
+  );
   // ── Manifest-driven SHADOW control, for the same reason ──────────────────────
   // The shadow segments were a fixed four (`none`/`box`/`text`/`content`) while the
   // manifests had moved on: Design and Sequence Studio both declare a fifth,
@@ -1303,8 +1613,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // manifests that DON'T declare `depth` (carousel-maker, org-chart, record) from
   // offering a target their hooks cannot render.
   const shadowChoices: Array<[string, string]> = shadowChoicesFrom(input.fields, cfg.shadowField);
-  const addKinds: AddKind[] = Array.isArray(cv.addKinds) && cv.addKinds.length
-    ? cv.addKinds : [{ id: 'box', label: 'Box', seed: {} }];
+  const addKinds: AddKind[] =
+    Array.isArray(cv.addKinds) && cv.addKinds.length
+      ? cv.addKinds
+      : [{ id: 'box', label: 'Box', seed: {} }];
   // Opt-in design-file import (Figma SVG / Penpot). Falsy for Design, whose
   // canvas config has no `import` key - so its toolbar is unchanged.
   const importCfg = cv.import || null;
@@ -1325,7 +1637,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     return {
       fonts: {
         defaultFamily: defaultFont,
-        ...(monoOpt ? { monoFamily: monoOpt.value, monoMaxWeight: maxWeightFor(monoOpt.value) } : {}),
+        ...(monoOpt
+          ? { monoFamily: monoOpt.value, monoMaxWeight: maxWeightFor(monoOpt.value) }
+          : {}),
         // Every family the shell can actually resolve - the manifest's own wire
         // values plus installed user fonts - passes through mapFontFamily
         // verbatim instead of bucketing to the two-family vocabulary.
@@ -1342,19 +1656,26 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // input that stores {from,to} edges; the overlay authors them and draws a live
   // preview, but the tool's hooks.js owns the actual routed line geometry. Falsy for
   // every other editor tool, so their toolbars/gestures are unchanged.
-  const connectCfg: ConnectCfg | null = cv.connect && cv.connect.input ? {
-    input: cv.connect.input,
-    fromField: cv.connect.fromField || 'from',
-    toField: cv.connect.toField || 'to',
-    styleField: cv.connect.styleField, arrowField: cv.connect.arrowField, headField: cv.connect.headField,
-    colorField: cv.connect.colorField, dashField: cv.connect.dashField, widthField: cv.connect.widthField,
-    layerClass: cv.connect.layerClass || 'oc-connectors',
-    defaultStyle: cv.connect.defaultStyle || 'elbow',
-    defaultArrow: cv.connect.defaultArrow || 'end',
-    defaultHead: cv.connect.defaultHead || 'triangle',
-    defaultColor: cv.connect.defaultColor || '#94a3b8',
-    defaultWidth: cv.connect.defaultWidth ?? 2.5,
-  } : null;
+  const connectCfg: ConnectCfg | null =
+    cv.connect && cv.connect.input
+      ? {
+          input: cv.connect.input,
+          fromField: cv.connect.fromField || 'from',
+          toField: cv.connect.toField || 'to',
+          styleField: cv.connect.styleField,
+          arrowField: cv.connect.arrowField,
+          headField: cv.connect.headField,
+          colorField: cv.connect.colorField,
+          dashField: cv.connect.dashField,
+          widthField: cv.connect.widthField,
+          layerClass: cv.connect.layerClass || 'oc-connectors',
+          defaultStyle: cv.connect.defaultStyle || 'elbow',
+          defaultArrow: cv.connect.defaultArrow || 'end',
+          defaultHead: cv.connect.defaultHead || 'triangle',
+          defaultColor: cv.connect.defaultColor || '#94a3b8',
+          defaultWidth: cv.connect.defaultWidth ?? 2.5,
+        }
+      : null;
   // Opt-in TIME model (phase 1). A tool is "time-capable" only when its canvas config
   // maps ALL TEN time sub-fields - a partial mapping would give the panel somewhere to
   // read from but nowhere to write, so it is treated as absent.
@@ -1369,62 +1690,79 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   //
   // `idField` comes from the resolved cfg: the panel keys clips by the box id FIELD,
   // exactly as the overlay's selection does.
-  const timeCfg: TimeCfg | null = (cv.startField && cv.durField && cv.clipInField && cv.speedField
-    && cv.enterField && cv.exitField && cv.enterMsField && cv.exitMsField && cv.muteField && cv.laneField)
-    ? {
-      startField: cv.startField, durField: cv.durField, clipInField: cv.clipInField,
-      speedField: cv.speedField, enterField: cv.enterField, exitField: cv.exitField,
-      enterMsField: cv.enterMsField, exitMsField: cv.exitMsField, muteField: cv.muteField,
-      laneField: cv.laneField, idField: cfg.idField,
-      // OPTIONAL, and deliberately outside the ten-field presence check above: a tool
-      // that declares no link sub-field is still fully time-capable, it just never
-      // offers "Detach audio" (progressive capability). Both shipping time-capable
-      // tools declare it today - Sequence Studio, and Design since its 1.12.0
-      // (`linkOf`) - so this is a live gate for the next tool to opt in, not a
-      // description of one that exists.
-      linkField: cv.linkField || '',
-      // Same optional terms: the clip-volume sub-field (plans/165 WP-1).
-      gainField: cv.gainField || '',
-      panField: cv.panField || '',
-      duckField: cv.duckField || '',
-      pitchField: cv.pitchField || '',
-      varispeedField: cv.varispeedField || '',
-      fxField: cv.fxField || '',
-      // And the reversible-cut / strikethrough flag (plans/174, transcript-driven
-      // editing). A tool that declares no `ignored` sub-field never offers the
-      // Transcript panel's strike gesture - the same progressive gate as the rest.
-      ignoredField: cv.ignoredField || '',
-      labelField: cv.labelField || '',
-      // Also optional, for the same reason: the authored easing curves are additive on
-      // top of a time model that was complete without them, so a manifest that declares
-      // no ease sub-fields keeps every preset on its built-in curve.
-      enterEaseField: cv.enterEaseField || '',
-      exitEaseField: cv.exitEaseField || '',
-      // Same again: split-text animation (plans/175 WP-A) - a manifest without the
-      // three sub-fields simply never grows the "Animate text by" rows.
-      splitField: cv.splitField || '',
-      staggerField: cv.staggerField || '',
-      splitOrderField: cv.splitOrderField || '',
-      holdField: cv.holdField || '',
-      holdRateField: cv.holdRateField || '',
-      textField: cv.textField || '',
-      // Same again: a shared group collapses overlays onto one panel lane row
-      // (generated captions), and a tool without a group field never groups.
-      groupField: cv.groupField || '',
-      // And again: the keyframe track. It is the ONE field a split/trim-in/join
-      // rebases instead of copying (plans/104 section 5.6) - a tool that declares none is
-      // simply not keyframable, and every rebase branch in timeline-math is inert.
-      kfField: cv.kfField || '',
-      // And the depth field, for the one thing the time math needs it for: a `z`
-      // keyframe REPLACES it for its segment (section 5.2), so writing an honest full pose
-      // means knowing what the unkeyed value is.
-      zField: cv.zField || '',
-      // And the two tilt fields on the same terms, for the same one thing (P2.1): an
-      // `rx`/`ry` keyframe REPLACES the field for its segment, so a full pose written
-      // without knowing the unkeyed angle would flatten a board the user had posed.
-      rxField: cv.rxField || '',
-      ryField: cv.ryField || '',
-    } : null;
+  const timeCfg: TimeCfg | null =
+    cv.startField &&
+    cv.durField &&
+    cv.clipInField &&
+    cv.speedField &&
+    cv.enterField &&
+    cv.exitField &&
+    cv.enterMsField &&
+    cv.exitMsField &&
+    cv.muteField &&
+    cv.laneField
+      ? {
+          startField: cv.startField,
+          durField: cv.durField,
+          clipInField: cv.clipInField,
+          speedField: cv.speedField,
+          enterField: cv.enterField,
+          exitField: cv.exitField,
+          enterMsField: cv.enterMsField,
+          exitMsField: cv.exitMsField,
+          muteField: cv.muteField,
+          laneField: cv.laneField,
+          idField: cfg.idField,
+          // OPTIONAL, and deliberately outside the ten-field presence check above: a tool
+          // that declares no link sub-field is still fully time-capable, it just never
+          // offers "Detach audio" (progressive capability). Both shipping time-capable
+          // tools declare it today - Sequence Studio, and Design since its 1.12.0
+          // (`linkOf`) - so this is a live gate for the next tool to opt in, not a
+          // description of one that exists.
+          linkField: cv.linkField || '',
+          // Same optional terms: the clip-volume sub-field (plans/165 WP-1).
+          gainField: cv.gainField || '',
+          panField: cv.panField || '',
+          duckField: cv.duckField || '',
+          pitchField: cv.pitchField || '',
+          varispeedField: cv.varispeedField || '',
+          fxField: cv.fxField || '',
+          // And the reversible-cut / strikethrough flag (plans/174, transcript-driven
+          // editing). A tool that declares no `ignored` sub-field never offers the
+          // Transcript panel's strike gesture - the same progressive gate as the rest.
+          ignoredField: cv.ignoredField || '',
+          labelField: cv.labelField || '',
+          // Also optional, for the same reason: the authored easing curves are additive on
+          // top of a time model that was complete without them, so a manifest that declares
+          // no ease sub-fields keeps every preset on its built-in curve.
+          enterEaseField: cv.enterEaseField || '',
+          exitEaseField: cv.exitEaseField || '',
+          // Same again: split-text animation (plans/175 WP-A) - a manifest without the
+          // three sub-fields simply never grows the "Animate text by" rows.
+          splitField: cv.splitField || '',
+          staggerField: cv.staggerField || '',
+          splitOrderField: cv.splitOrderField || '',
+          holdField: cv.holdField || '',
+          holdRateField: cv.holdRateField || '',
+          textField: cv.textField || '',
+          // Same again: a shared group collapses overlays onto one panel lane row
+          // (generated captions), and a tool without a group field never groups.
+          groupField: cv.groupField || '',
+          // And again: the keyframe track. It is the ONE field a split/trim-in/join
+          // rebases instead of copying (plans/104 section 5.6) - a tool that declares none is
+          // simply not keyframable, and every rebase branch in timeline-math is inert.
+          kfField: cv.kfField || '',
+          // And the depth field, for the one thing the time math needs it for: a `z`
+          // keyframe REPLACES it for its segment (section 5.2), so writing an honest full pose
+          // means knowing what the unkeyed value is.
+          zField: cv.zField || '',
+          // And the two tilt fields on the same terms, for the same one thing (P2.1): an
+          // `rx`/`ry` keyframe REPLACES the field for its segment, so a full pose written
+          // without knowing the unkeyed angle would flatten a board the user had posed.
+          rxField: cv.rxField || '',
+          ryField: cv.ryField || '',
+        }
+      : null;
   // Can this tool import a design AS timed scenes (frames → timeline clips) at all?
   // Time-capable + import-capable. Design qualifies (it declares the time model), so it
   // OFFERS the "as scenes vs replace the board" choice (plans/104 section 337) - on the drop
@@ -1433,19 +1771,24 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // Whether SCENES is the DEFAULT: only a manifest that still declares `import.mode:
   // 'scenes'`. Design does NOT (that opt-in flipped every import, plans/104 section 337), so
   // Design defaults to replacing the board and asks per-import.
-  const importScenesMode: boolean = importSceneCapable
-    && (importCfg as { mode?: unknown }).mode === 'scenes';
+  const importScenesMode: boolean =
+    importSceneCapable && (importCfg as { mode?: unknown }).mode === 'scenes';
   // Can this tool lay a document's pages out as ARTBOARDS - one frame per page, slide
   // or board, each page's parts editable inside it? Import-capable + the frame
   // primitive. Design qualifies; like scenes, it is offered per import, never assumed.
   const importArtboardCapable: boolean = !!(importCfg && frameCfg);
   type ImportMode = 'board' | 'artboards' | 'scenes';
   /** What each import mode does, in one line under the choice. */
-  const importHint = (mode: ImportMode): string => mode === 'scenes'
-    ? t('Every frame becomes its own scene on the timeline, ready for timing tweaks, music and voiceover.')
-    : mode === 'artboards'
-      ? t('Every page or slide becomes its own artboard, side by side, with its parts still editable.')
-      : t('One page replaces the board. A multi-page document asks which page.');
+  const importHint = (mode: ImportMode): string =>
+    mode === 'scenes'
+      ? t(
+          'Every frame becomes its own scene on the timeline, ready for timing tweaks, music and voiceover.'
+        )
+      : mode === 'artboards'
+        ? t(
+            'Every page or slide becomes its own artboard, side by side, with its parts still editable.'
+          )
+        : t('One page replaces the board. A multi-page document asks which page.');
   // A function, not a literal: TypeScript narrows `let m: ImportMode = cond ? 'a' : 'b'`
   // to those two members, which makes the panel's third radio unreachable at the type
   // level even though the user can pick it.
@@ -1456,11 +1799,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   let gridOn = !!(cv.grid && cv.grid.default !== false);
 
   // ── state ──────────────────────────────────────────────────────────────────
-  let selection = new Set<string>();   // box ids
+  let selection = new Set<string>(); // box ids
   // Selection change-notifier for the timeline panel. `selection` is assigned from ~20
   // sites, but EVERY one of them reaches paintChrome (directly via renderChrome /
   // renderChromeLive, or via commit → runtime.subscribe → scheduleSync), so the fire
-  // lives in exactly one place (top of paintChrome) and is guarded by a signature - 
+  // lives in exactly one place (top of paintChrome) and is guarded by a signature -
   // a repaint with an unchanged selection is not a change. No write site is touched.
   // Listeners take the new ids (design-ports' SelectionPort). The timeline's own port
   // declares `(cb: () => void)`, which a handler ignoring the argument satisfies, so both
@@ -1473,7 +1816,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (k === selNotifyKey) return;
     selNotifyKey = k;
     const ids = [...selection];
-    for (const f of [...selListeners]) { try { f(ids); } catch (e) { console.error(e); } }
+    for (const f of [...selListeners]) {
+      try {
+        f(ids);
+      } catch (e) {
+        console.error(e);
+      }
+    }
   }
   /**
    * THE selection port (plans/179 M2 (a)). One object, handed to the timeline panel AND
@@ -1482,10 +1831,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    */
   const selectionPort: SelectionPort = {
     get: () => [...selection],
-    set: (ids: string[]) => { selection = new Set(ids); renderChrome(); },
-    onChange: (cb: (ids: string[]) => void) => { selListeners.add(cb); return () => { selListeners.delete(cb); }; },
+    set: (ids: string[]) => {
+      selection = new Set(ids);
+      renderChrome();
+    },
+    onChange: (cb: (ids: string[]) => void) => {
+      selListeners.add(cb);
+      return () => {
+        selListeners.delete(cb);
+      };
+    },
   };
-  let multiTapMode = false;            // touch: taps ADD to the selection (Group/Align need ≥2)
+  let multiTapMode = false; // touch: taps ADD to the selection (Group/Align need ≥2)
   /**
    * THE tool mode - see `setMode`. Every mode used to be its own boolean, which is exactly
    * why they could all be true at once.
@@ -1497,22 +1854,22 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // wants to keep - so a real mode would fight that invariant. Mutually exclusive with the
   // other tools: picking pen/create/connect (or the plain pointer) clears it.
   let nodeToolActive = false;
-  let armedKind: AddKind | null = null;        // the create gesture's seed; set iff mode === 'create'
-  let gesture: Gesture | null = null;          // active pointer gesture
+  let armedKind: AddKind | null = null; // the create gesture's seed; set iff mode === 'create'
+  let gesture: Gesture | null = null; // active pointer gesture
   // The pointerType of the last press ON THE CANVAS. A touch laptop reports `pointer:
   // coarse` for the whole document while the user is on the trackpad (see
   // timeline-panel.ts's EDGE_PX_COARSE), so anything that MOVES the canvas asks the event
   // rather than the media query - a trackpad user must never have the stage zoom under them.
   let lastPointerKind = '';
-  let editing: EditingState | null = null;     // { id, el, prev } while editing a box's text inline
+  let editing: EditingState | null = null; // { id, el, prev } while editing a box's text inline
   let disposed = false;
-  let bindHover: string | null = null;          // the box an end node would attach to on drop
-  let liveConnectHidden = false;                // the tool's real bound-path layer is hidden mid-drag
-  let selectedEdges = new Set<string>();        // connector ids being inspected (click / shift-click / marquee)
-  let edgePanel: HTMLElement | null = null;     // the connector-properties popover
-  let hoverEdge: string | null = null;          // connector id under the cursor (hover affordance)
+  let bindHover: string | null = null; // the box an end node would attach to on drop
+  let liveConnectHidden = false; // the tool's real bound-path layer is hidden mid-drag
+  let selectedEdges = new Set<string>(); // connector ids being inspected (click / shift-click / marquee)
+  let edgePanel: HTMLElement | null = null; // the connector-properties popover
+  let hoverEdge: string | null = null; // connector id under the cursor (hover affordance)
   let hoverRaf = 0;
-  let lastMenuAt: Point = { x: 0, y: 0 };       // where the context menu was last opened (client px)
+  let lastMenuAt: Point = { x: 0, y: 0 }; // where the context menu was last opened (client px)
 
   // ── pen tool state (Stage D) ────────────────────────────────────────────────
   // Two things, never both: `mode === 'pen'` DRAWS a new path; `penEdit` edits a committed
@@ -1526,8 +1883,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // undo) cannot disturb a draft that is not in the model. The single commit reads
   // `getBoxes()` at commit time, so it appends to whatever the array is by then rather
   // than to a stale snapshot.
-  let penDraft: AuthoredPath | null = null;      // nodes in NATIVE px; null = not drawing
-  let penCursor: Point | null = null;            // live end of the segment under the cursor
+  let penDraft: AuthoredPath | null = null; // nodes in NATIVE px; null = not drawing
+  let penCursor: Point | null = null; // live end of the segment under the cursor
   // ALL of a field's contours are edited at once (a boolean with a hole, or outlined text
   // that is one path box of many glyph contours). They share ONE box-local coordinate space
   // (one frame), so `path` is a COMBINED AuthoredPath whose `nodes` are every contour's nodes
@@ -1540,7 +1897,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // handle display + default continuity correctly). A single-contour box has one part and is
   // byte-identical to the old single-`path` model. All DENORMALISED to box-local px.
   let penEdit: { id: string; path: AuthoredPath; parts: PenPart[]; frame: PenFrame } | null = null;
-  let penSel = new Set<number>();                // selected node indices while editing
+  let penSel = new Set<number>(); // selected node indices while editing
   // Selected CONTROL POINTS (handles) while editing - keys `${nodeIndex}:in` / `:out`.
   // Built by shift-clicking a handle; align/distribute operate on nodes ∪ these. Kept
   // separate from penSel so a handle is a point in its own right, not tied to its node.
@@ -1552,9 +1909,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // re-converged from the chord-bend guess costs an O(n) Newton run per pointermove; warm,
   // it costs one or two steps. This is exactly what `toCubics`' `warm` parameter is for.
   let penWarm: HyperbezierSolution | null = null;
-  const PEN_HIT_PX = 9;                          // grab radius for a node/handle, SCREEN px
-  const PEN_CURVE_PX = 7;                        // "on the curve" band for insert, SCREEN px
-  const PEN_PULL_MIN = 3;                        // drag past this and a click became a handle PULL, SCREEN px
+  const PEN_HIT_PX = 9; // grab radius for a node/handle, SCREEN px
+  const PEN_CURVE_PX = 7; // "on the curve" band for insert, SCREEN px
+  const PEN_PULL_MIN = 3; // drag past this and a click became a handle PULL, SCREEN px
   // Alt during a `pendraw` drag BREAKS the handle pair, and latches for the rest of that
   // drag rather than being read fresh each move: a break is a declaration about the node,
   // not a per-frame state, and reading it live makes the corner flicker back to smooth on
@@ -1568,8 +1925,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   let penLastPaint: Box | null = null;
   /** The canvas config's paint sub-field names, as the pure pen helpers want them. */
   const penPaintFields: PathPaintFields = {
-    fill: cfg.fillField, stroke: cfg.strokeField,
-    strokeW: cfg.strokeWField, fillRule: cfg.fillRuleField,
+    fill: cfg.fillField,
+    stroke: cfg.strokeField,
+    strokeW: cfg.strokeWField,
+    fillRule: cfg.fillRuleField,
   };
 
   // ── model access ─────────────────────────────────────────────────────────
@@ -1583,8 +1942,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   /** The frame-primitive field names as the pure artboard helpers want them. Only
    *  meaningful with `frameCfg`; every caller is gated on it. */
   const frameFields = (): FrameFields => ({
-    idField: cfg.idField, kindField: cfg.kindField,
-    xField: cfg.xField, yField: cfg.yField, wField: cfg.wField, hField: cfg.hField,
+    idField: cfg.idField,
+    kindField: cfg.kindField,
+    xField: cfg.xField,
+    yField: cfg.yField,
+    wField: cfg.wField,
+    hField: cfg.hField,
     frameField: frameCfg?.frameField || 'frame',
     orderField: frameCfg?.orderField || 'order',
     frameKind: frameCfg?.frameKind || 'frame',
@@ -1617,7 +1980,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   /** Which control the mark menu is hanging off (see `anchorEl` in buildToolbar) - out
    *  here for the same dead-zone reason, and so `openLollyMenu` can claim it. */
   let lollyAnchor: HTMLElement | null = null;
-  const setLollyAnchor = (el: HTMLElement): void => { lollyAnchor = el; };
+  const setLollyAnchor = (el: HTMLElement): void => {
+    lollyAnchor = el;
+  };
   /** The mark menu's row builder, published out of `buildToolbar` so `openLollyMenu`
    *  (design-ports) can spawn the SAME menu from the top bar's own mark. */
   let lollyMenuItems: (() => PopItem[]) | null = null;
@@ -1638,15 +2003,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (v != null && v !== '') return String(v);
     return hasIdField ? '' : String(i);
   };
-  const selIndices = (boxes: Box[]): number[] => boxes.reduce<number[]>((a, b, i) => (selection.has(idOf(b, i)) ? (a.push(i), a) : a), []);
-  const indexOfId = (boxes: Box[], id: string | undefined): number => boxes.findIndex((b, i) => idOf(b, i) === id);
-  const groupOf = (b: Box | undefined): string => (cfg.groupField && b && b[cfg.groupField] ? String(b[cfg.groupField]) : '');
-  const groupMemberIds = (boxes: Box[], g: string): string[] => boxes.reduce<string[]>((a, b, i) => (groupOf(b) === g ? (a.push(idOf(b, i)), a) : a), []);
+  const selIndices = (boxes: Box[]): number[] =>
+    boxes.reduce<number[]>((a, b, i) => (selection.has(idOf(b, i)) ? (a.push(i), a) : a), []);
+  const indexOfId = (boxes: Box[], id: string | undefined): number =>
+    boxes.findIndex((b, i) => idOf(b, i) === id);
+  const groupOf = (b: Box | undefined): string =>
+    cfg.groupField && b && b[cfg.groupField] ? String(b[cfg.groupField]) : '';
+  const groupMemberIds = (boxes: Box[], g: string): string[] =>
+    boxes.reduce<string[]>((a, b, i) => (groupOf(b) === g ? (a.push(idOf(b, i)), a) : a), []);
   // The ids selected when box `i` is clicked: its whole group (if any), unless
   // `soloBox` (Alt-click) drills in to just that one box.
   function selectionForHit(boxes: Box[], i: number, soloBox: boolean): string[] {
     const g = groupOf(boxes[i]);
-    return (soloBox || !g) ? [idOf(boxes[i], i)] : groupMemberIds(boxes, g);
+    return soloBox || !g ? [idOf(boxes[i], i)] : groupMemberIds(boxes, g);
   }
 
   /**
@@ -1707,7 +2076,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const frameBoxes = nextBoxes.filter((b) => String(b?.[cfg.kindField]) === fk);
     return nextBoxes.map((b, i) => {
       if (!touched.has(i) || !b) return b;
-      if (String(b[cfg.kindField]) === fk) return b;   // a frame keeps frame='' (no self-nesting)
+      if (String(b[cfg.kindField]) === fk) return b; // a frame keeps frame='' (no self-nesting)
       const fid = resolveFrame(b, frameBoxes);
       return String(b[ff] ?? '') === fid ? b : { ...b, [ff]: fid };
     });
@@ -1753,7 +2122,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (own) return own;
     if (frameCfg && cfg.fillField) {
       const fk = frameCfg.frameKind;
-      const fid = resolveFrame(box, boxes.filter((b) => String(b?.[cfg.kindField]) === fk));
+      const fid = resolveFrame(
+        box,
+        boxes.filter((b) => String(b?.[cfg.kindField]) === fk)
+      );
       const frame = fid ? boxes.find((b) => b && String(b[cfg.idField]) === fid) : undefined;
       const hex = frame ? inkHex(frame[cfg.fillField]) : null;
       if (hex) return hex;
@@ -1770,7 +2142,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!ground) return box;
     const ink = inkHex(box[f]);
     const wanted = contrastText(ground);
-    if (ink && contrastText(ink) !== wanted) return box;   // the seed already reads
+    if (ink && contrastText(ink) !== wanted) return box; // the seed already reads
     return { ...box, [f]: wanted };
   }
 
@@ -1809,7 +2181,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     return next.map((b, i) => {
       if (!b || selSet.has(i) || String(b[cfg.kindField]) === fk) return b;
       const d = deltas.get(String(b[ff] ?? ''));
-      return d ? withRect(b, { x: num(b[cfg.xField]) + d.dx, y: num(b[cfg.yField]) + d.dy }, cfg) : b;
+      return d
+        ? withRect(b, { x: num(b[cfg.xField]) + d.dx, y: num(b[cfg.yField]) + d.dy }, cfg)
+        : b;
     });
   }
 
@@ -1848,7 +2222,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // kept the open-panel gate, and `timelineWantOpen` stayed true - which a later
     // chunk-load would have honoured by re-opening a panel the user had dismissed.
     // On the EDGE only: a resize drag rewrites the reserve every frame.
-    if ((px > 0) !== timelineReserved) {
+    if (px > 0 !== timelineReserved) {
       timelineReserved = px > 0;
       if (!timelineReserved && timelinePanel && !timelinePanel.isOpen()) {
         timelineWantOpen = false;
@@ -1868,7 +2242,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   // The playhead's visibility, as the clock APPLIED it to the live DOM (sequence-dom's
-  // OFF_CLASS). A box the sequence currently hides must not swallow a canvas click - 
+  // OFF_CLASS). A box the sequence currently hides must not swallow a canvas click -
   // the user edits what they can see - so every pointer hit-test skips it and the
   // click falls through to the visible box below. DOM truth, not re-derived timing:
   // selection can never disagree with playback. No timeline mounted (or a box not yet
@@ -1985,7 +2359,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   let poseMo: MutationObserver | null = null;
   function watchPoses(): void {
     if (poseMo || disposed) return;
-    poseMo = new MutationObserver(() => { if (selection.size) scheduleSync(); });
+    poseMo = new MutationObserver(() => {
+      if (selection.size) scheduleSync();
+    });
     poseMo.observe(canvasEl, { attributes: true, attributeFilter: ['style'], subtree: true });
   }
 
@@ -2006,7 +2382,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!timeCfg || disposed) return;
     timelineWantOpen = open;
     if (timelinePanel) {
-      timelinePanel.setOpen(open); syncTimelineBtn();
+      timelinePanel.setOpen(open);
+      syncTimelineBtn();
       // The motion path is gated on `timelinePanel.isOpen()` (see motionIds), and this
       // is the ONE place that answer changes on an already-mounted panel - so this is
       // where the overlay is re-asked, rather than where it happens to be re-asked.
@@ -2020,74 +2397,85 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // attributes. One repaint on a toggle the user pressed is a cheap price for the
       // gate not resting on that.
       renderChrome();
-      if (open) maybePromptSequenceFrames(); else hideSeqPrompt();
+      if (open) maybePromptSequenceFrames();
+      else hideSeqPrompt();
       return;
     }
     if (!open) return;
     // A caller that arrives while the chunk is in flight (the `_t` deep link, one tick
     // after the mount-time auto-open) waits for THAT load rather than returning to a
     // panel that does not exist yet.
-    if (timelineLoading) { await timelineLoad; return; }
+    if (timelineLoading) {
+      await timelineLoad;
+      return;
+    }
     timelineLoading = true;
     timelineLoad = (async () => {
-    try {
-      // Lazy for the picker.ts reason: timeline-panel.ts imports its own CSS chunk and
-      // the sequence clock, so a static import would ship both to every editor tool.
-      // The applier's pose reader rides along in the same round trip - the panel's own
-      // graph already contains that module, so this resolves off the module cache.
-      const [{ initTimelinePanel }, seqDom] = await Promise.all([
-        import('./timeline-panel.ts'),
-        import('../bridge/sequence-dom.ts'),
-      ]);
-      if (disposed) return;   // torn down while the chunk was in flight
-      seqPoseOf = seqDom.sequencePoseOf;
-      watchPoses();           // …and start following what it reports
-      timelinePanel = initTimelinePanel({
-        stageEl, canvasEl, runtime,
-        host: host as { log?(level: string, msg: string): void },
-        blockId,
-        // The FRAME sub-field carrying a slide's own transition rides in on the time
-        // cfg (plans/179 M4). It is not part of the time model - it lives on the canvas
-        // block beside `frameField` - and without it here the panel's "a hand-set
-        // Enter/Exit on an artboard stamps `custom`" branch was unreachable in the app:
-        // the only thing that ever set the name was a test's own cfg patch, so every
-        // hand-set slide transition was still fair game for the next "Place in order".
-        cfg: { ...timeCfg, frameTransitionField: frameCfg?.transitionField || '' },
-        getBoxes, commit, onDirty,
-        // The box sub-field carrying rendered text, so the panel's generated
-        // caption boxes write cue text where the tool's template reads it.
-        textField: cv.textField,
-        // The tool's OWN add-kinds, so the panel's plus offers exactly what the rail's
-        // does (audio included) instead of hardcoding a list it cannot know.
-        addKinds,
-        // The canvas selection, adapted: read/write the same Set the overlay uses, and
-        // subscribe to the single notifier fired from paintChrome. The SAME object the
-        // Design columns are handed (see `selectionPort`).
-        selection: selectionPort,
-        reserve: reserveBottom,
-        // The export frame for a camera take (RecordOpts.frame): the active artboard's
-        // size, else the canvas - the same answer the size panel gives.
-        frameSize: () => {
-          const b = getBoxes();
-          const fi = activeFrameIndex(b);
-          return fi >= 0 ? { w: num(b[fi]![cfg.wField]), h: num(b[fi]![cfg.hField]) } : canvasWH();
-        },
-      });
-      timelinePanel.setOpen(timelineWantOpen);   // the intent may have flipped mid-load
-      // The contextual bar's "+Keyframe" asks the panel for its enabled state and had to
-      // stand in for it while the chunk was in flight (see kfCtxHtml). Now that the real
-      // rule exists, force ONE rebuild against it - the bar is otherwise only rebuilt
-      // when the selection SET changes, so a selection made before the panel loaded would
-      // keep the provisional answer for as long as it stands.
-      ctxSelKey = null;
-      renderChrome();
-      if (timelineWantOpen) maybePromptSequenceFrames(); else hideSeqPrompt();
-    } catch (err) {
-      console.error('[free-canvas] timeline panel failed to load:', err);
-    } finally {
-      timelineLoading = false;
-      syncTimelineBtn();
-    }
+      try {
+        // Lazy for the picker.ts reason: timeline-panel.ts imports its own CSS chunk and
+        // the sequence clock, so a static import would ship both to every editor tool.
+        // The applier's pose reader rides along in the same round trip - the panel's own
+        // graph already contains that module, so this resolves off the module cache.
+        const [{ initTimelinePanel }, seqDom] = await Promise.all([
+          import('./timeline-panel.ts'),
+          import('../bridge/sequence-dom.ts'),
+        ]);
+        if (disposed) return; // torn down while the chunk was in flight
+        seqPoseOf = seqDom.sequencePoseOf;
+        watchPoses(); // …and start following what it reports
+        timelinePanel = initTimelinePanel({
+          stageEl,
+          canvasEl,
+          runtime,
+          host: host as { log?(level: string, msg: string): void },
+          blockId,
+          // The FRAME sub-field carrying a slide's own transition rides in on the time
+          // cfg (plans/179 M4). It is not part of the time model - it lives on the canvas
+          // block beside `frameField` - and without it here the panel's "a hand-set
+          // Enter/Exit on an artboard stamps `custom`" branch was unreachable in the app:
+          // the only thing that ever set the name was a test's own cfg patch, so every
+          // hand-set slide transition was still fair game for the next "Place in order".
+          cfg: { ...timeCfg, frameTransitionField: frameCfg?.transitionField || '' },
+          getBoxes,
+          commit,
+          onDirty,
+          // The box sub-field carrying rendered text, so the panel's generated
+          // caption boxes write cue text where the tool's template reads it.
+          textField: cv.textField,
+          // The tool's OWN add-kinds, so the panel's plus offers exactly what the rail's
+          // does (audio included) instead of hardcoding a list it cannot know.
+          addKinds,
+          // The canvas selection, adapted: read/write the same Set the overlay uses, and
+          // subscribe to the single notifier fired from paintChrome. The SAME object the
+          // Design columns are handed (see `selectionPort`).
+          selection: selectionPort,
+          reserve: reserveBottom,
+          // The export frame for a camera take (RecordOpts.frame): the active artboard's
+          // size, else the canvas - the same answer the size panel gives.
+          frameSize: () => {
+            const b = getBoxes();
+            const fi = activeFrameIndex(b);
+            return fi >= 0
+              ? { w: num(b[fi]![cfg.wField]), h: num(b[fi]![cfg.hField]) }
+              : canvasWH();
+          },
+        });
+        timelinePanel.setOpen(timelineWantOpen); // the intent may have flipped mid-load
+        // The contextual bar's "+Keyframe" asks the panel for its enabled state and had to
+        // stand in for it while the chunk was in flight (see kfCtxHtml). Now that the real
+        // rule exists, force ONE rebuild against it - the bar is otherwise only rebuilt
+        // when the selection SET changes, so a selection made before the panel loaded would
+        // keep the provisional answer for as long as it stands.
+        ctxSelKey = null;
+        renderChrome();
+        if (timelineWantOpen) maybePromptSequenceFrames();
+        else hideSeqPrompt();
+      } catch (err) {
+        console.error('[free-canvas] timeline panel failed to load:', err);
+      } finally {
+        timelineLoading = false;
+        syncTimelineBtn();
+      }
     })();
     await timelineLoad;
   }
@@ -2096,21 +2484,24 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * The panel asks THIS module for new boxes rather than reaching into it: its plus menu
    * (and its empty-sequence "Add a clip" slot) dispatches `tl-add` with
    * `{ kind, atMs }`, which bubbles from the panel root to the stage. Arming create-mode
-   * is exactly what the rail's add menu does, so the next canvas click drops the box - 
+   * is exactly what the rail's add menu does, so the next canvas click drops the box -
    * with the one difference the panel depends on: a box added FROM the timeline lands
    * TIMED at the playhead, where the rail's plus leaves it as scenery. `pendingAddAtMs`
    * carries that single bit through to the create commit and is cleared alongside the
    * armed kind, so an abandoned arm can never time the next hand-drawn box.
    *
-   * The detail is untrusted - a CustomEvent can be dispatched by anything on the page - 
+   * The detail is untrusted - a CustomEvent can be dispatched by anything on the page -
    * so an unknown kind or a non-finite / negative / absurd `atMs` drops the whole event
    * rather than guessing: nothing reaches the model on a bad one.
    */
-  const MAX_ADD_AT_MS = 24 * 60 * 60 * 1000;   // a day of sequence; beyond that it is junk
+  const MAX_ADD_AT_MS = 24 * 60 * 60 * 1000; // a day of sequence; beyond that it is junk
   let pendingAddAtMs: number | null = null;
   function onTlAdd(e: Event): void {
     if (!timeCfg || disposed) return;
-    const d = (e as CustomEvent).detail as { kind?: unknown; atMs?: unknown; asset?: unknown; durSec?: unknown } | null | undefined;
+    const d = (e as CustomEvent).detail as
+      | { kind?: unknown; atMs?: unknown; asset?: unknown; durSec?: unknown }
+      | null
+      | undefined;
     const kind = addKinds.find((k) => k.id === (typeof d?.kind === 'string' ? d.kind : ''));
     if (!kind) return;
     const atMs = typeof d?.atMs === 'number' ? d.atMs : Number.NaN;
@@ -2120,7 +2511,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // Untrusted detail: the asset must at least be an object with a string id.
     const asset = d?.asset;
     if (asset && typeof asset === 'object' && typeof (asset as { id?: unknown }).id === 'string') {
-      const durSec = typeof d?.durSec === 'number' && Number.isFinite(d.durSec) && d.durSec > 0 ? d.durSec : null;
+      const durSec =
+        typeof d?.durSec === 'number' && Number.isFinite(d.durSec) && d.durSec > 0
+          ? d.durSec
+          : null;
       addRecordedClip(kind, asset as Box[string], durSec);
       return;
     }
@@ -2147,7 +2541,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const fi = activeFrameIndex(boxes);
     const fr = fi >= 0 ? boxes[fi]! : null;
     const rect = fr
-      ? { x: num(fr[cfg.xField]), y: num(fr[cfg.yField]), w: num(fr[cfg.wField]), h: num(fr[cfg.hField]) }
+      ? {
+          x: num(fr[cfg.xField]),
+          y: num(fr[cfg.yField]),
+          w: num(fr[cfg.wField]),
+          h: num(fr[cfg.hField]),
+        }
       : { x: 0, y: 0, ...canvasWH() };
     // After the current sequence's end - never disturb existing timing (importAsScenes).
     let at = 0;
@@ -2162,10 +2561,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const box: Box = {
       ...(kind.seed as Box | undefined),
       [cfg.idField]: id,
-      [cfg.xField]: rect.x, [cfg.yField]: rect.y, [cfg.wField]: rect.w, [cfg.hField]: rect.h,
+      [cfg.xField]: rect.x,
+      [cfg.yField]: rect.y,
+      [cfg.wField]: rect.w,
+      [cfg.hField]: rect.h,
       ...(cfg.imageField ? { [cfg.imageField]: asset } : {}),
       ...(cfg.fitField ? { [cfg.fitField]: 'cover' } : {}),
-      [tc.laneField]: 'seq', [tc.startField]: at,
+      [tc.laneField]: 'seq',
+      [tc.startField]: at,
       ...(durSec != null ? { [tc.durField]: durSec } : {}),
     };
     commit(assignFrames([...boxes, box], new Set([boxes.length])));
@@ -2203,7 +2606,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // turns it on. The layer itself lives inside `overlay` - a stage SIBLING of
   // #tool-canvas carrying [data-export-hide] - so no export path can reach it; see
   // onion-skin.ts's module doc for the three independent guarantees.
-  interface OnionTimeDetail { playing?: unknown; mode?: unknown; past?: unknown; future?: unknown; opacity?: unknown; activeIds?: unknown }
+  interface OnionTimeDetail {
+    playing?: unknown;
+    mode?: unknown;
+    past?: unknown;
+    future?: unknown;
+    opacity?: unknown;
+    activeIds?: unknown;
+  }
   let onionSkin: OnionSkinHandle | null = null;
   let onionLoading = false;
   let onionState: OnionPaintState | null = null;
@@ -2211,15 +2621,31 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function onionOff(): void {
     onionState = null;
     if (!onionSkin) return;
-    try { onionSkin.destroy(); } catch (e) { console.error(e); }
+    try {
+      onionSkin.destroy();
+    } catch (e) {
+      console.error(e);
+    }
     onionSkin = null;
   }
 
   function onionFrom(d: OnionTimeDetail | null | undefined): void {
     const mode = d?.mode === 'filled' ? 'filled' : d?.mode === 'outline' ? 'outline' : '';
-    if (!mode) { onionOff(); return; }
-    onionState = { mode, past: d?.past, future: d?.future, opacity: d?.opacity, active: d?.activeIds };
-    if (onionSkin) { onionSkin.paint(onionState); return; }
+    if (!mode) {
+      onionOff();
+      return;
+    }
+    onionState = {
+      mode,
+      past: d?.past,
+      future: d?.future,
+      opacity: d?.opacity,
+      active: d?.activeIds,
+    };
+    if (onionSkin) {
+      onionSkin.paint(onionState);
+      return;
+    }
     if (onionLoading) return;
     onionLoading = true;
     void (async () => {
@@ -2228,11 +2654,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // The mode may have been turned off again while the chunk was in flight.
         if (disposed || !onionState) return;
         onionSkin = mod.mountOnionSkin({
-          overlayEl: overlay, canvasEl, cfg, getBoxes, metricsOf: metrics,
+          overlayEl: overlay,
+          canvasEl,
+          cfg,
+          getBoxes,
+          metricsOf: metrics,
         });
         onionSkin.paint(onionState);
-      } catch (e) { console.error(e); }
-      finally { onionLoading = false; }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        onionLoading = false;
+      }
     })();
   }
 
@@ -2257,7 +2690,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   function motionOff(): void {
     if (!motionPath) return;
-    try { motionPath.destroy(); } catch (e) { console.error(e); }
+    try {
+      motionPath.destroy();
+    } catch (e) {
+      console.error(e);
+    }
     motionPath = null;
   }
 
@@ -2284,7 +2721,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function paintMotion(): void {
     if (disposed || !timeCfg?.kfField) return;
     const ids = motionIds(getBoxes());
-    if (motionPath) { motionPath.paint(ids); return; }
+    if (motionPath) {
+      motionPath.paint(ids);
+      return;
+    }
     if (!ids.length || motionLoading) return;
     motionLoading = true;
     void (async () => {
@@ -2294,33 +2734,60 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // flight, so the paint below asks the model again rather than reusing `ids`.
         if (disposed || !timeCfg) return;
         motionPath = mod.mountMotionPath({
-          overlayEl: overlay, geom: cfg, time: timeCfg,
-          getBoxes, metricsOf: metrics, canvasSize: canvasWH,
+          overlayEl: overlay,
+          geom: cfg,
+          time: timeCfg,
+          getBoxes,
+          metricsOf: metrics,
+          canvasSize: canvasWH,
         });
         motionPath.paint(motionIds(getBoxes()));
-      } catch (e) { console.error(e); }
-      finally { motionLoading = false; }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        motionLoading = false;
+      }
     })();
   }
 
   /** Open the panel (used by the rail button and after creating a timed box). */
-  function openTimeline(): void { void ensureTimeline(true); }
-  function toggleTimeline(): void { void ensureTimeline(!timelinePanel?.isOpen()); }
+  function openTimeline(): void {
+    void ensureTimeline(true);
+  }
+  function toggleTimeline(): void {
+    void ensureTimeline(!timelinePanel?.isOpen());
+  }
 
   function destroyTimeline(): void {
-    try { stageEl.removeEventListener('tl-add', onTlAdd); } catch { /* stage detached */ }
-    try { stageEl.removeEventListener('tl-time', onTlTime); } catch { /* stage detached */ }
+    try {
+      stageEl.removeEventListener('tl-add', onTlAdd);
+    } catch {
+      /* stage detached */
+    }
+    try {
+      stageEl.removeEventListener('tl-time', onTlTime);
+    } catch {
+      /* stage detached */
+    }
     // No panel means no playhead means nothing to be either side OF - and no arm, so
     // no motion path either (see motionIds).
     onionOff();
     motionOff();
-    try { timelinePanel?.destroy(); } catch (e) { console.error(e); }
+    try {
+      timelinePanel?.destroy();
+    } catch (e) {
+      console.error(e);
+    }
     timelinePanel = null;
     // Unconditional, even if destroy() above threw: a leaked reserve permanently shrinks
     // the stage for every other tool mounted in this session.
     stageEl.style.removeProperty('--stage-reserve-bottom');
     dockRailForTimeline(false);
-    try { canvasEl.dispatchEvent(new Event('canvas-resize')); } catch { /* stage detached */ }
+    try {
+      canvasEl.dispatchEvent(new Event('canvas-resize'));
+    } catch {
+      /* stage detached */
+    }
   }
 
   // ── connectors (opt-in via canvas.connect) ───────────────────────────────────
@@ -2362,12 +2829,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // so a pan/zoom/resize/auto-scroll can never leave it stale.
   let gestureMetrics: Metrics | null = null;
   function metrics(): Metrics {
-    if (gestureMetrics && gesture) return gestureMetrics;   // trust the cache only while the gesture is live
+    if (gestureMetrics && gesture) return gestureMetrics; // trust the cache only while the gesture is live
     const cr = canvasEl.getBoundingClientRect();
     const sr = stageEl.getBoundingClientRect();
     const scale = cr.width / canvasWH().w || 1;
     const m = { cr, sr, scale };
-    gestureMetrics = gesture ? m : null;   // hold for the rest of the gesture; drop when idle
+    gestureMetrics = gesture ? m : null; // hold for the rest of the gesture; drop when idle
     return m;
   }
   const clientToNative = (cx: number, cy: number): Point => {
@@ -2386,7 +2853,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // offsetTop off the live frame keeps this immune to the frame-gap constant (the frame
   // sits wherever the template laid it out). Returns {0,0} when the element isn't inside
   // a page frame - so a single-page editor (Design) is completely unaffected.
-  // A [data-pdf-page] frame's offsetLeft/offsetTop does NOT change while a BOX is dragged - 
+  // A [data-pdf-page] frame's offsetLeft/offsetTop does NOT change while a BOX is dragged -
   // only the box moves. But reading them forces a synchronous layout, and applyLiveRect +
   // the live chrome re-sync call this per box PER pointermove, so a drag with frames present
   // thrashed layout (the reported lag, even for an empty-frame drag whose chrome re-syncs).
@@ -2408,7 +2875,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!f || f === el) return { x: 0, y: 0 };
     if (frameOffCache) {
       let c = frameOffCache.get(f);
-      if (!c) { c = { x: f.offsetLeft, y: f.offsetTop }; frameOffCache.set(f, c); }
+      if (!c) {
+        c = { x: f.offsetLeft, y: f.offsetTop };
+        frameOffCache.set(f, c);
+      }
       return c;
     }
     return { x: f.offsetLeft, y: f.offsetTop };
@@ -2418,8 +2888,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // element IS the page (`.lolly-frame-page[data-frame-id]`), so fall back to it;
   // gestures then move the page directly and its frame-local children ride along.
   const liveBoxEl = (id: string): HTMLElement | null =>
-    canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(id)}"]`)
-    ?? canvasEl.querySelector<HTMLElement>(`.lolly-frame-page[data-frame-id="${cssEscape(id)}"]`);
+    canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(id)}"]`) ??
+    canvasEl.querySelector<HTMLElement>(`.lolly-frame-page[data-frame-id="${cssEscape(id)}"]`);
 
   // ── DOM: overlay + toolbar ──────────────────────────────────────────────────
   const overlay = document.createElement('div');
@@ -2526,8 +2996,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     camHud.replaceChildren(
       camHudSpan('fc-cam-hud-k', t('Tilt')),
       ...(p
-        ? [camHudSpan('fc-cam-hud-v', `X ${camHudDeg(p.rx)}`), camHudSpan('fc-cam-hud-v', `Y ${camHudDeg(p.ry)}`)]
-        : [camHudSpan('fc-cam-hud-v', t('No keyframe here'))]),
+        ? [
+            camHudSpan('fc-cam-hud-v', `X ${camHudDeg(p.rx)}`),
+            camHudSpan('fc-cam-hud-v', `Y ${camHudDeg(p.ry)}`),
+          ]
+        : [camHudSpan('fc-cam-hud-v', t('No keyframe here'))])
     );
     camHud.hidden = false;
   }
@@ -2536,7 +3009,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     camHud.replaceChildren(
       camHudSpan('fc-cam-hud-k', t('Pan')),
       camHudSpan('fc-cam-hud-v', `X ${camHudPx(dx)}`),
-      camHudSpan('fc-cam-hud-v', `Y ${camHudPx(dy)}`),
+      camHudSpan('fc-cam-hud-v', `Y ${camHudPx(dy)}`)
     );
     camHud.hidden = false;
   }
@@ -2548,7 +3021,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   /** Arm the HUD + a mode cursor at the start of a camera gesture. */
   function startCamHud(tilt: boolean): void {
     stageEl.style.cursor = tilt ? 'move' : 'grabbing';
-    if (tilt) showCamTiltHud(0, 0); else showCamPanHud(0, 0);
+    if (tilt) showCamTiltHud(0, 0);
+    else showCamPanHud(0, 0);
   }
 
   // First-run invite on an empty canvas - a blank editor is otherwise a mystery. Only
@@ -2579,7 +3053,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     flashEl.textContent = message;
     flashEl.hidden = false;
     if (flashTimer) clearTimeout(flashTimer);
-    flashTimer = setTimeout(() => { flashEl.hidden = true; flashEl.textContent = ''; flashTimer = 0; }, 5200);
+    flashTimer = setTimeout(() => {
+      flashEl.hidden = true;
+      flashEl.textContent = '';
+      flashTimer = 0;
+    }, 5200);
     announce(message, { assertive: true });
   }
 
@@ -2615,7 +3093,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // Dismissed for the REST OF THE MOUNT, not just this arm: someone who has read the
   // sentence once does not need it on every subsequent add.
   let armHintOff = false;
-  armHintX.addEventListener('click', () => { armHintOff = true; hideArmHint(); });
+  armHintX.addEventListener('click', () => {
+    armHintOff = true;
+    hideArmHint();
+  });
 
   /**
    * Kinds whose gesture ends at an ASSET PICKER rather than at a finished object - the
@@ -2630,22 +3111,33 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    */
   const assetArmHint = (id: string): string | null => {
     switch (id) {
-      case 'video': case 'clip': return t('Drag on the canvas to place a video, then choose one.');
-      case 'lottie': return t('Drag on the canvas to place an animation, then choose one.');
-      case 'tool': return t('Drag on the canvas to place a tool, then choose one.');
-      case 'image': return t('Drag on the canvas to place an image, then choose one.');
-      default: return null;
+      case 'video':
+      case 'clip':
+        return t('Drag on the canvas to place a video, then choose one.');
+      case 'lottie':
+        return t('Drag on the canvas to place an animation, then choose one.');
+      case 'tool':
+        return t('Drag on the canvas to place a tool, then choose one.');
+      case 'image':
+        return t('Drag on the canvas to place an image, then choose one.');
+      default:
+        return null;
     }
   };
 
   function showArmHint(kind: AddKind | null | undefined): void {
-    if (armHintOff || !kind) { hideArmHint(); return; }
+    if (armHintOff || !kind) {
+      hideArmHint();
+      return;
+    }
     const seedKind = kind.seed != null ? String(kind.seed[cfg.kindField] ?? '') : '';
     const asset = assetArmHint(kind.id);
     if (coarsePointer()) {
       // No cursor and no drag-to-size: a finger TAPS and the box appears at its seed size.
       const isText = kind.id === 'text' || seedKind === 'text';
-      armHintTxt.textContent = isText ? t('Tap the canvas to place text') : t('Tap the canvas to place it');
+      armHintTxt.textContent = isText
+        ? t('Tap the canvas to place text')
+        : t('Tap the canvas to place it');
     } else if (kind.id === 'audio' || seedKind === 'audio') {
       armHintTxt.textContent = t('Drag on the canvas to place a sound, then choose one.');
     } else if (asset) {
@@ -2660,8 +3152,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // German noun's capital and read the HOST locale rather than the app's.
       // tRaw, not t: this is a TEXT sink, where an escaped apostrophe in a translated
       // kind label would be shown literally as `&#39;`.
-      armHintTxt.textContent = tRaw('Drag on the canvas to draw: {kind}. Press Escape to cancel.',
-        { kind: kind.label ? t(kind.label) : kind.id });
+      armHintTxt.textContent = tRaw('Drag on the canvas to draw: {kind}. Press Escape to cancel.', {
+        kind: kind.label ? t(kind.label) : kind.id,
+      });
     }
     armHintEl.hidden = false;
   }
@@ -2701,9 +3194,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // Parsed, not assigned as HTML: the raw-HTML sink inventory is pinned (primitive-guards
   // R10), and a glyph from lib/icons.ts is an SVG document in its own right.
   {
-    const Parser = document.defaultView?.DOMParser ?? (globalThis as { DOMParser?: typeof DOMParser }).DOMParser;
-    const glyph = Parser ? new Parser().parseFromString(icon('close'), 'image/svg+xml').documentElement : null;
-    if (glyph && glyph.localName !== 'parsererror') offPlayheadX.append(document.importNode(glyph, true));
+    const Parser =
+      document.defaultView?.DOMParser ?? (globalThis as { DOMParser?: typeof DOMParser }).DOMParser;
+    const glyph = Parser
+      ? new Parser().parseFromString(icon('close'), 'image/svg+xml').documentElement
+      : null;
+    if (glyph && glyph.localName !== 'parsererror')
+      offPlayheadX.append(document.importNode(glyph, true));
   }
   offPlayheadEl.append(offPlayheadTxt, offPlayheadGo, offPlayheadX);
   overlay.appendChild(offPlayheadEl);
@@ -2713,7 +3210,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   let lastOffPlayheadKey = '';
   let dismissedOffPlayheadKey = '';
   offPlayheadGo.addEventListener('click', () => {
-    stageEl.dispatchEvent(new CustomEvent('fc-seek', { bubbles: true, detail: { atMs: offPlayheadAtMs } }));
+    stageEl.dispatchEvent(
+      new CustomEvent('fc-seek', { bubbles: true, detail: { atMs: offPlayheadAtMs } })
+    );
   });
   offPlayheadX.addEventListener('click', () => {
     dismissedOffPlayheadKey = lastOffPlayheadKey;
@@ -2730,11 +3229,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * leaving the screen is expected rather than a problem to report.
    */
   function showOffPlayhead(boxes: Box[], idx: number[]): void {
-    if (!timeCfg || !timelinePanel || tlPlaying || !idx.length) { hideOffPlayhead(); return; }
+    if (!timeCfg || !timelinePanel || tlPlaying || !idx.length) {
+      hideOffPlayhead();
+      return;
+    }
     const b = boxes[idx[0]!];
     // A field read, not arithmetic: the box's own authored start, in ms.
     offPlayheadAtMs = Math.max(0, Number(b?.[timeCfg.startField]) * 1000) || 0;
-    const key = idx.map((k) => idOf(boxes[k], k)).sort().join(',');
+    const key = idx
+      .map((k) => idOf(boxes[k], k))
+      .sort()
+      .join(',');
     if (key !== lastOffPlayheadKey) {
       lastOffPlayheadKey = key;
       announce(t('This card is not on screen at the playhead. Go to it to edit it.'));
@@ -2780,12 +3285,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   /** The frames-as-scenes field config, or null when this tool has no frames/time model. */
   function frameSeqCfg(): {
-    kindField: string; frameKind: string; startField: string; durField: string;
+    kindField: string;
+    frameKind: string;
+    startField: string;
+    durField: string;
   } | null {
     if (!frameCfg || !timeCfg) return null;
     return {
-      kindField: cfg.kindField, frameKind: frameCfg.frameKind,
-      startField: timeCfg.startField, durField: timeCfg.durField,
+      kindField: cfg.kindField,
+      frameKind: frameCfg.frameKind,
+      startField: timeCfg.startField,
+      durField: timeCfg.durField,
     };
   }
 
@@ -2797,7 +3307,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   seqPromptPlace.addEventListener('click', () => {
-    if (!frameCfg || !timeCfg) { hideSeqPrompt(); return; }
+    if (!frameCfg || !timeCfg) {
+      hideSeqPrompt();
+      return;
+    }
     // The transitions come from the DOCUMENT and from each slide's own choice (plans/179
     // M4), not from a blanket 'fade'/'fade' this button used to impose - laying a deck out
     // on the timeline had been quietly overwriting the transition the author picked.
@@ -2806,21 +3319,30 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const tr = frameCfg.transitionField;
     // commitSequenced, not commit: laying the deck out again moves every frame start, and
     // a narrated deck's clips/captions/builds have to move with them (plans/180 T7).
-    commitSequenced(sequenceFramesInOrder(getBoxes(), {
-      defaultDurMs: 3000,
-      lane: 'seq',
-      ...(tr
-        ? { transitionField: tr, docTransition: docTransitionValue() }
-        : { defaultEnter: 'fade', defaultExit: 'fade' }),
-      startField: timeCfg.startField, durField: timeCfg.durField, laneField: timeCfg.laneField,
-      enterField: timeCfg.enterField, exitField: timeCfg.exitField,
-      orderField: frameCfg.orderField || 'order',
-      kindField: cfg.kindField, frameKind: frameCfg.frameKind,
-    }));
+    commitSequenced(
+      sequenceFramesInOrder(getBoxes(), {
+        defaultDurMs: 3000,
+        lane: 'seq',
+        ...(tr
+          ? { transitionField: tr, docTransition: docTransitionValue() }
+          : { defaultEnter: 'fade', defaultExit: 'fade' }),
+        startField: timeCfg.startField,
+        durField: timeCfg.durField,
+        laneField: timeCfg.laneField,
+        enterField: timeCfg.enterField,
+        exitField: timeCfg.exitField,
+        orderField: frameCfg.orderField || 'order',
+        kindField: cfg.kindField,
+        frameKind: frameCfg.frameKind,
+      })
+    );
     hideSeqPrompt();
     announce(t('Frames placed in order. Scrub the playhead to preview your slideshow.'));
   });
-  seqPromptSkip.addEventListener('click', () => { seqPromptDismissed = true; hideSeqPrompt(); });
+  seqPromptSkip.addEventListener('click', () => {
+    seqPromptDismissed = true;
+    hideSeqPrompt();
+  });
 
   // ── Notes to voice (plans/180 M-A) ──────────────────────────────────────────
   //
@@ -2911,11 +3433,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (disposed || !frameCfg || !timeCfg || !cfg.groupField) return;
     // A second press while a run is in flight used to do nothing at all - no toast, no
     // announcement, no state change - so the button read as broken. Say what is going on.
-    if (narrateBusy) { announce(t('A narration run is already going.')); return; }
+    if (narrateBusy) {
+      announce(t('A narration run is already going.'));
+      return;
+    }
     const speech = (host as unknown as HostV1).speech;
     if (!speech?.isAvailable()) return;
     narrateBusy = true;
-    const release = (): void => { narrateBusy = false; };
+    const release = (): void => {
+      narrateBusy = false;
+    };
     try {
       // Lazy for the Script-audio reason: the whole speech path is a chunk nothing
       // else on this canvas needs until somebody asks for a voice.
@@ -2924,41 +3451,54 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         import('../i18n.ts'),
       ]);
       const fields = narrationFields();
-      if (!fields) { release(); return; }
+      if (!fields) {
+        release();
+        return;
+      }
       const docText = (id: string): string => {
         const v = runtime.getModel().find((i) => i.id === id)?.value;
         return v == null ? '' : String(v);
       };
       const tr = frameCfg.transitionField;
-      await openNarrateConsent(host as unknown as Parameters<typeof openNarrateConsent>[0], {
-        fields,
-        getBoxes,
-        commit,
-        repack: (floors) => {
-          // One commit for both halves: the frames re-flow, then every clip, caption and
-          // build fragment anchored to them follows (plans/180 T7).
-          commitSequenced(sequenceFramesInOrder(getBoxes(), {
-            defaultDurMs: 3000,
-            lane: 'seq',
-            minDurMs: floors,
-            idField: cfg.idField,
-            ...(tr
-              ? { transitionField: tr, docTransition: docTransitionValue() }
-              : { defaultEnter: 'fade', defaultExit: 'fade' }),
-            startField: timeCfg.startField, durField: timeCfg.durField, laneField: timeCfg.laneField,
-            enterField: timeCfg.enterField, exitField: timeCfg.exitField,
-            orderField: frameCfg.orderField || 'order',
-            kindField: cfg.kindField, frameKind: frameCfg.frameKind,
-          }));
+      await openNarrateConsent(
+        host as unknown as Parameters<typeof openNarrateConsent>[0],
+        {
+          fields,
+          getBoxes,
+          commit,
+          repack: (floors) => {
+            // One commit for both halves: the frames re-flow, then every clip, caption and
+            // build fragment anchored to them follows (plans/180 T7).
+            commitSequenced(
+              sequenceFramesInOrder(getBoxes(), {
+                defaultDurMs: 3000,
+                lane: 'seq',
+                minDurMs: floors,
+                idField: cfg.idField,
+                ...(tr
+                  ? { transitionField: tr, docTransition: docTransitionValue() }
+                  : { defaultEnter: 'fade', defaultExit: 'fade' }),
+                startField: timeCfg.startField,
+                durField: timeCfg.durField,
+                laneField: timeCfg.laneField,
+                enterField: timeCfg.enterField,
+                exitField: timeCfg.exitField,
+                orderField: frameCfg.orderField || 'order',
+                kindField: cfg.kindField,
+                frameKind: frameCfg.frameKind,
+              })
+            );
+          },
+          voice: docText('narrationVoice'),
+          speed: docNumInput('narrationSpeed', 1),
+          timing: narrationTiming(),
+          // Asking for ONE slide is always a deliberate re-record, so it never waits
+          // for the notes to have changed.
+          ...(frameId ? { frameIds: [frameId], force: true } : {}),
+          lang: currentLang(),
         },
-        voice: docText('narrationVoice'),
-        speed: docNumInput('narrationSpeed', 1),
-        timing: narrationTiming(),
-        // Asking for ONE slide is always a deliberate re-record, so it never waits
-        // for the notes to have changed.
-        ...(frameId ? { frameIds: [frameId], force: true } : {}),
-        lang: currentLang(),
-      }, { onDismiss: release, onSettled: release });
+        { onDismiss: release, onSettled: release }
+      );
     } catch (err) {
       (host as unknown as HostV1).log?.('warn', `narrate failed - ${String(err)}`);
       release();
@@ -2973,13 +3513,20 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function maybePromptSequenceFrames(): void {
     if (disposed || seqPromptDismissed) return;
     const sc = frameSeqCfg();
-    if (!sc || !timelinePanel?.isOpen()) { hideSeqPrompt(); return; }
+    if (!sc || !timelinePanel?.isOpen()) {
+      hideSeqPrompt();
+      return;
+    }
     const boxes = getBoxes();
     const n = frameCount(boxes);
-    if (n < 1 || framesAreSequenced(boxes, sc)) { hideSeqPrompt(); return; }
-    seqPromptTxt.textContent = n === 1
-      ? t('Play this frame in the timeline?')
-      : tRaw('Play your {n} frames in order?').replace('{n}', String(n));
+    if (n < 1 || framesAreSequenced(boxes, sc)) {
+      hideSeqPrompt();
+      return;
+    }
+    seqPromptTxt.textContent =
+      n === 1
+        ? t('Play this frame in the timeline?')
+        : tRaw('Play your {n} frames in order?').replace('{n}', String(n));
     seqPromptEl.hidden = false;
   }
 
@@ -3011,7 +3558,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   penLayer.style.display = 'none';
   overlay.appendChild(penLayer);
 
-  const chrome = document.createElement('div');   // selection outlines + handles
+  const chrome = document.createElement('div'); // selection outlines + handles
   chrome.className = 'fc-chrome';
   overlay.appendChild(chrome);
 
@@ -3025,19 +3572,20 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   penChrome.className = 'fc-pen-chrome';
   overlay.appendChild(penChrome);
   let penChromeKey: string | null = null;
-  let penChromeNodes: { nodes: HTMLElement[]; arms: HTMLElement[]; dots: HTMLElement[] } | null = null;
+  let penChromeNodes: { nodes: HTMLElement[]; arms: HTMLElement[]; dots: HTMLElement[] } | null =
+    null;
   function clearPenChrome(): void {
     penChrome.innerHTML = '';
     penChromeKey = null;
     penChromeNodes = null;
   }
 
-  const ctxbar = document.createElement('div');    // contextual controls
+  const ctxbar = document.createElement('div'); // contextual controls
   ctxbar.className = 'fc-ctxbar';
   ctxbar.hidden = true;
   ctxbar.addEventListener('pointerdown', (e) => e.stopPropagation());
   overlay.appendChild(ctxbar);
-  let ctxSelKey: string | null = null;   // sorted selected-id signature; rebuild ctxbar when it changes
+  let ctxSelKey: string | null = null; // sorted selected-id signature; rebuild ctxbar when it changes
 
   // ── the bar's ENTRANCE ────────────────────────────────────────────────────────
   // The bar is auto-hidden at rest and revealed by `.tool-stage:hover` (see .fc-ctxbar
@@ -3066,7 +3614,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // transform written at all, so the popover containing-block trap stays untouched.
     if (prefersReducedMotion()) return;
     ctxbar.classList.remove(CTX_ENTER);
-    void ctxbar.offsetWidth;             // restart the animation on a re-selection
+    void ctxbar.offsetWidth; // restart the animation on a re-selection
     ctxbar.classList.add(CTX_ENTER);
   }
   function hideCtxBar(): void {
@@ -3084,11 +3632,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // for group) so positioning can address them positionally.
   let chromeKey: string | null = null;
   let chromeNodes: {
-    outlines: HTMLElement[];              // one .fc-outline per selected box, in idx order
-    groupOutline: HTMLElement | null;     // multi-select only
-    handles: HTMLElement[];               // resize (single) / corner (group) handles
-    stem: HTMLElement | null;             // rotate stem
-    rot: HTMLElement | null;              // rotate handle
+    outlines: HTMLElement[]; // one .fc-outline per selected box, in idx order
+    groupOutline: HTMLElement | null; // multi-select only
+    handles: HTMLElement[]; // resize (single) / corner (group) handles
+    stem: HTMLElement | null; // rotate stem
+    rot: HTMLElement | null; // rotate handle
   } | null = null;
   function clearChrome(): void {
     chrome.innerHTML = '';
@@ -3175,7 +3723,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const put = (el: HTMLElement, prop: string, px: number): void => {
       const next = px > 0 ? `${px}px` : '';
       if (el.style.getPropertyValue(prop) === next) return;
-      if (next) el.style.setProperty(prop, next); else el.style.removeProperty(prop);
+      if (next) el.style.setProperty(prop, next);
+      else el.style.removeProperty(prop);
       changed = true;
     };
     put(stageEl, '--stage-reserve-left', left);
@@ -3188,7 +3737,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // <html>, not the stage: the fixed back pill insets past the dock with the app-wide
     // `--dock-w` pattern, and it is not a child of the stage.
     put(document.documentElement, '--ldock-w', railBand);
-    if (changed) { try { canvasEl.dispatchEvent(new Event('canvas-resize')); } catch { /* stage detached */ } }
+    if (changed) {
+      try {
+        canvasEl.dispatchEvent(new Event('canvas-resize'));
+      } catch {
+        /* stage detached */
+      }
+    }
   }
   /**
    * The navigator's own slot for the tool rail, present only while that column is open
@@ -3256,7 +3811,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // visible, so the old guard could never see it.
         if (el.hidden || !el.getClientRects().length) continue;
         const r = el.getBoundingClientRect();
-        if (r.height > 0 && r.bottom > sr.bottom - 4) reserve = Math.max(reserve, sr.bottom - r.top);
+        if (r.height > 0 && r.bottom > sr.bottom - 4)
+          reserve = Math.max(reserve, sr.bottom - r.top);
       }
     }
     return Math.max(0, Math.round(reserve));
@@ -3264,10 +3820,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function placeRail(want: { left: number; top: number }): void {
     const rr = toolbar.getBoundingClientRect();
     const sr = stageEl.getBoundingClientRect();
-    const pos = clampRailPos(want, { w: rr.width, h: rr.height }, { w: sr.width, h: sr.height },
+    const pos = clampRailPos(
+      want,
+      { w: rr.width, h: rr.height },
+      { w: sr.width, h: sr.height },
       // The navigator's band, never the rail's own share of the reserve (while the
       // timeline has docked the rail it IS that column and is not draggable anyway).
-      { reserveBottom: railReserveBottom(sr), reserveLeft: navReserveLeft });
+      { reserveBottom: railReserveBottom(sr), reserveLeft: navReserveLeft }
+    );
     railSession = pos;
     toolbarDock.classList.add('is-detached');
     toolbarDock.style.left = pos.left + 'px';
@@ -3360,7 +3920,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * again, so today's behaviour stands wherever there is no navigator.
    */
   function applyRailMode(): void {
-    const want = navWantsRail ? 'navigator' : (tlWantsRail ? 'timeline' : 'float');
+    const want = navWantsRail ? 'navigator' : tlWantsRail ? 'timeline' : 'float';
     if (want === railMode) {
       // Same mode, but a navigator re-render replaces the slot node under us.
       if (want === 'navigator') homeRailInNav();
@@ -3378,12 +3938,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function dockRailForTimeline(on: boolean): void {
     // Desktop only, like the right edge-dock: a fixed left column is dead space on a
     // phone OR a short touch landscape, where CSS turns this same rail into the
-    // horizontal palette above the timeline. Reserving that palette's full width
-    // as a left column can reduce the artboard to the safety floor.
+    // horizontal palette above the timeline. Reserving that palette's full 828px
+    // width as a left column reduced the artboard to the 40px safety floor.
     // Feature-detect matchMedia (absent under jsdom/CLI, where docking is harmless).
-    if (on && typeof window.matchMedia === 'function' && window.matchMedia(
-      '(pointer: coarse) and (max-width: 640px), (pointer: coarse) and (max-height: 430px)'
-    ).matches) return;
+    if (
+      on &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia(
+        '(pointer: coarse) and (max-width: 640px), (pointer: coarse) and (max-height: 430px)'
+      ).matches
+    )
+      return;
     if (on === tlWantsRail) return;
     tlWantsRail = on;
     applyRailMode();
@@ -3391,16 +3956,26 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
   const onRailDown = (e: PointerEvent): void => {
     if (e.button !== 0 || railDrag) return;
-    if (railMode !== 'float') return;   // a docked rail has a set width and place - no drag
+    if (railMode !== 'float') return; // a docked rail has a set width and place - no drag
     // Buttons/fields already stop pointerdown before it reaches here; this is the
     // belt to that pair of braces, and it keeps the colour trigger draggable-proof.
     if ((e.target as HTMLElement).closest?.('button, input, select, .fc-color-btn')) return;
     const rr = toolbar.getBoundingClientRect();
-    railDrag = { pointerId: e.pointerId, dx: e.clientX - rr.left, dy: e.clientY - rr.top, lx: e.clientX, ly: e.clientY };
+    railDrag = {
+      pointerId: e.pointerId,
+      dx: e.clientX - rr.left,
+      dy: e.clientY - rr.top,
+      lx: e.clientX,
+      ly: e.clientY,
+    };
     closePopover();
     closeMorePanel();
     toolbarDock.classList.add('is-dragging');
-    try { toolbar.setPointerCapture(e.pointerId); } catch { /* no pointer capture (jsdom) */ }
+    try {
+      toolbar.setPointerCapture(e.pointerId);
+    } catch {
+      /* no pointer capture (jsdom) */
+    }
     wobble.grab(e.clientX, e.clientY);
     e.preventDefault();
     e.stopPropagation();
@@ -3410,23 +3985,37 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // No button held any more → the pointerup was lost (a capture stolen by the export
     // shutter's `pointer-events: none`, a devtools break). Finish the drag instead of
     // letting a bare hover keep sliding the rail around the stage.
-    if (e.type === 'pointermove' && e.buttons === 0) { onRailUp(e); return; }
+    if (e.type === 'pointermove' && e.buttons === 0) {
+      onRailUp(e);
+      return;
+    }
     // Per-move deltas for the wobble (not throttled) - the dock's left/top is unchanged.
     wobble.drag(e.clientX - railDrag.lx, e.clientY - railDrag.ly);
-    railDrag.lx = e.clientX; railDrag.ly = e.clientY;
+    railDrag.lx = e.clientX;
+    railDrag.ly = e.clientY;
     const sr = stageEl.getBoundingClientRect();
     railWant = { left: e.clientX - sr.left - railDrag.dx, top: e.clientY - sr.top - railDrag.dy };
     // One style write per frame (the timeline resize grip's shape). Live-mutating
     // only - a rail position is never committed to the model.
     if (railRaf) return;
-    railRaf = requestAnimationFrame(() => { railRaf = 0; if (railWant) placeRail(railWant); });
+    railRaf = requestAnimationFrame(() => {
+      railRaf = 0;
+      if (railWant) placeRail(railWant);
+    });
   };
   const onRailUp = (e: PointerEvent): void => {
     if (!railDrag || e.pointerId !== railDrag.pointerId) return;
-    if (railRaf) { cancelAnimationFrame(railRaf); railRaf = 0; }
+    if (railRaf) {
+      cancelAnimationFrame(railRaf);
+      railRaf = 0;
+    }
     if (railWant) placeRail(railWant);
     railWant = null;
-    try { toolbar.releasePointerCapture(railDrag.pointerId); } catch { /* never captured */ }
+    try {
+      toolbar.releasePointerCapture(railDrag.pointerId);
+    } catch {
+      /* never captured */
+    }
     railDrag = null;
     toolbarDock.classList.remove('is-dragging');
     wobble.release();
@@ -3444,12 +4033,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   // ── toolbar ─────────────────────────────────────────────────────────────────
   let popover: HTMLDivElement | null = null;
-  let arrangeBtn: HTMLButtonElement | null = null;   // popover anchor (captured, not by index)
+  let arrangeBtn: HTMLButtonElement | null = null; // popover anchor (captured, not by index)
   /** The mode buttons, captured by buildToolbar - see syncModeUI. Absent ones stay null:
    *  pen and connect are opt-in, so not every tool has all four. */
-  const modeBtns: Record<'select' | 'create' | 'pen' | 'line', HTMLButtonElement | null> =
-    { select: null, create: null, pen: null, line: null };
-  let nodeToolBtn: HTMLButtonElement | null = null;   // the Node tool (opt-in, cv.pathField)
+  const modeBtns: Record<'select' | 'create' | 'pen' | 'line', HTMLButtonElement | null> = {
+    select: null,
+    create: null,
+    pen: null,
+    line: null,
+  };
+  let nodeToolBtn: HTMLButtonElement | null = null; // the Node tool (opt-in, cv.pathField)
   /** The control the open popover belongs to: it owns the trigger's `aria-expanded`,
    *  and it is where focus goes back to when the menu closes from the keyboard. */
   let popoverAnchor: HTMLElement | null = null;
@@ -3464,7 +4057,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // focus wherever the user clicked, and yanking it back would fight them.
     if (restoreFocus && anchor.isConnected) anchor.focus();
   }
-  buildToolbar();   // after arrangeBtn exists (buildToolbar assigns it)
+  buildToolbar(); // after arrangeBtn exists (buildToolbar assigns it)
   // Put the rail back where it was dragged to earlier in this page session, re-clamped
   // against THIS stage (a different tool, a resized window).
   if (railSession) placeRail(railSession);
@@ -3490,7 +4083,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     svg: string,
     onClick: (b: HTMLButtonElement, e: MouseEvent) => void,
     extraClass = '',
-    hold?: (b: HTMLButtonElement) => void,
+    hold?: (b: HTMLButtonElement) => void
   ): HTMLButtonElement {
     const b = document.createElement('button');
     b.type = 'button';
@@ -3502,32 +4095,49 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     let holdFired = false;
     let holdFrom: { x: number; y: number } | null = null;
     const cancelHold = (): void => {
-      if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; }
+      if (holdTimer) {
+        clearTimeout(holdTimer);
+        holdTimer = 0;
+      }
       holdFrom = null;
     };
     b.addEventListener('click', (e) => {
       e.stopPropagation();
       // The pointerup that ends a hold still delivers a click. Eat exactly that one.
-      if (holdFired) { holdFired = false; return; }
+      if (holdFired) {
+        holdFired = false;
+        return;
+      }
       onClick(b, e);
     });
     b.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
-      if (!hold || e.button > 0) return;          // secondary buttons take the contextmenu path
+      if (!hold || e.button > 0) return; // secondary buttons take the contextmenu path
       holdFired = false;
       holdFrom = { x: e.clientX, y: e.clientY };
       // Bare `setTimeout`/`clearTimeout`, matching `flashTimer` above - pairing
       // `window.setTimeout` with a bare `clearTimeout` cancels nothing wherever the two
       // are not the same object, which is every jsdom-hosted test in this file.
-      holdTimer = setTimeout(() => { holdTimer = 0; holdFired = true; hold(b); }, HOLD_MS);
+      holdTimer = setTimeout(() => {
+        holdTimer = 0;
+        holdFired = true;
+        hold(b);
+      }, HOLD_MS);
     });
     if (hold) {
       // A press that travels is someone scrolling the rail, not someone holding it.
       b.addEventListener('pointermove', (e) => {
-        if (holdFrom && Math.hypot(e.clientX - holdFrom.x, e.clientY - holdFrom.y) > HOLD_SLOP) cancelHold();
+        if (holdFrom && Math.hypot(e.clientX - holdFrom.x, e.clientY - holdFrom.y) > HOLD_SLOP)
+          cancelHold();
       });
-      for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) b.addEventListener(ev, cancelHold);
-      b.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); cancelHold(); hold(b); });
+      for (const ev of ['pointerup', 'pointercancel', 'pointerleave'])
+        b.addEventListener(ev, cancelHold);
+      b.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        cancelHold();
+        hold(b);
+      });
       b.setAttribute('aria-haspopup', 'true');
     }
     toolbar.appendChild(b);
@@ -3542,10 +4152,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     //
     // Export/Save still go through opts.actions (which .click() the hidden
     // #render-fab / #render-save) - no duplicated export or save logic anywhere.
-    let histUndo = false, histRedo = false;
+    let histUndo = false,
+      histRedo = false;
     if (history) {
       history.register((canUndo, canRedo) => {
-        histUndo = canUndo; histRedo = canRedo;
+        histUndo = canUndo;
+        histRedo = canRedo;
         // The pair keeps the menu open so you can step back repeatedly, so its
         // enabled state has to follow the stack live rather than freeze at open.
         // (The Cmd/Ctrl-Z shortcuts are the shell's own and never touched the rail.)
@@ -3604,61 +4216,153 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const items: PopItem[] = [];
       // Export leads - it's the star of the Lolly menu. Present is added LAST (very bottom).
       if (actions && !barMounted) {
-        items.push({ label: t('Export'), icon: icon(SVG.exportUp), key: 'export', run: () => actions.export() });
-        if (actions.canSave !== false) items.push({ label: t('Save to your library'), icon: icon(SVG.save), key: 'save', run: () => actions.save() });
+        items.push({
+          label: t('Export'),
+          icon: icon(SVG.exportUp),
+          key: 'export',
+          run: () => actions.export(),
+        });
+        if (actions.canSave !== false)
+          items.push({
+            label: t('Save to your library'),
+            icon: icon(SVG.save),
+            key: 'save',
+            run: () => actions.save(),
+          });
         // Copy + Share ride directly under Save with NO divider - the on-device outputs of
         // the same "you've made something, now get it out" moment. "Share" reads plainly now
         // that the target can be a .lolly file or a private collab, not just a URL.
-        items.push({ label: t('Copy image to clipboard'), icon: icon(SVG.dup), key: 'copy', run: () => actions.copy() });
-        items.push({ label: t('Share'), icon: icon(SVG.share), key: 'share', run: () => actions.share() });
+        items.push({
+          label: t('Copy image to clipboard'),
+          icon: icon(SVG.dup),
+          key: 'copy',
+          run: () => actions.copy(),
+        });
+        items.push({
+          label: t('Share'),
+          icon: icon(SVG.share),
+          key: 'share',
+          run: () => actions.share(),
+        });
       }
       // The one action the bar hands BACK: saving is the render pill's, and the pill is
       // hidden in editor layout, so the menu keeps the door open when the view offers it.
       if (barMounted && designChrome?.saveToLibrary) {
-        items.push({ label: t('Save to your library'), icon: icon(SVG.save), key: 'save', run: () => designChrome.saveToLibrary!() });
+        items.push({
+          label: t('Save to your library'),
+          icon: icon(SVG.save),
+          key: 'save',
+          run: () => designChrome.saveToLibrary!(),
+        });
       }
       // Share is hidden with the bar's centre under 640px, and a phone has no ⌘Z, so
       // the two rows the fold takes away come back here (see barFolded).
       if (actions && barMounted && barFolded()) {
-        items.push({ label: t('Share'), icon: icon(SVG.share), key: 'share', run: () => actions.share() });
+        items.push({
+          label: t('Share'),
+          icon: icon(SVG.share),
+          key: 'share',
+          run: () => actions.share(),
+        });
       }
       if (history && (!barMounted || barFolded())) {
         if (items.length) items.push({ sep: true });
-        items.push({ label: t('Undo - step back'), icon: icon(SVG.undo), key: 'undo', disabled: !histUndo, keepOpen: true, run: () => history.undo() });
-        items.push({ label: t('Redo - step forward'), icon: icon(SVG.redo), key: 'redo', disabled: !histRedo, keepOpen: true, run: () => history.redo() });
+        items.push({
+          label: t('Undo - step back'),
+          icon: icon(SVG.undo),
+          key: 'undo',
+          disabled: !histUndo,
+          keepOpen: true,
+          run: () => history.undo(),
+        });
+        items.push({
+          label: t('Redo - step forward'),
+          icon: icon(SVG.redo),
+          key: 'redo',
+          disabled: !histRedo,
+          keepOpen: true,
+          run: () => history.redo(),
+        });
       }
       // The inspector's toggle is folded away with the rest of the bar's centre, and
       // with nothing selected the object bar (its other door) does not exist either -
       // so the column would be unreachable on a phone. It closes from its own header.
       if (inspectorPort && barFolded()) {
-        items.push({ label: t('Inspector'), icon: icon(SVG.more), key: 'inspector', run: () => inspectorPort?.reveal('document') });
+        items.push({
+          label: t('Inspector'),
+          icon: icon(SVG.more),
+          key: 'inspector',
+          run: () => inspectorPort?.reveal('document'),
+        });
       }
       if (pages || setCanvasSize) {
         if (items.length) items.push({ sep: true });
-        if (pages) items.push({ label: t('Pages & page size'), icon: icon(SVG.pages), key: 'pages', run: () => openPagesMenu(anchorEl()) });
-        else items.push({ label: activeFrameIndex(getBoxes()) >= 0 ? t('Artboard size') : t('Canvas size'), icon: icon(SVG.size), key: 'size', run: () => openSizeMenu(anchorEl()) });
+        if (pages)
+          items.push({
+            label: t('Pages & page size'),
+            icon: icon(SVG.pages),
+            key: 'pages',
+            run: () => openPagesMenu(anchorEl()),
+          });
+        else
+          items.push({
+            label: activeFrameIndex(getBoxes()) >= 0 ? t('Artboard size') : t('Canvas size'),
+            icon: icon(SVG.size),
+            key: 'size',
+            run: () => openSizeMenu(anchorEl()),
+          });
       }
       if (info || importCfg || actions?.newFromTemplate || actions?.bulk) {
         if (items.length) items.push({ sep: true });
-        if (info) items.push({ label: t('Document info'), icon: icon(SVG.info), key: 'info', run: () => openInfoPanel(anchorEl()) });
+        if (info)
+          items.push({
+            label: t('Document info'),
+            icon: icon(SVG.info),
+            key: 'info',
+            run: () => openInfoPanel(anchorEl()),
+          });
         // Back to the Start chooser (plans/142 WP-1) - sits in the same "bring a
         // document in" group as Import. The pick applies through the tool's own
         // undoable path, so it is one ⌘Z away, never a destructive reset.
-        if (actions?.newFromTemplate) items.push({ label: t('New from template'), icon: icon(SVG.templates), key: 'templates', run: () => actions.newFromTemplate!() });
+        if (actions?.newFromTemplate)
+          items.push({
+            label: t('New from template'),
+            icon: icon(SVG.templates),
+            key: 'templates',
+            run: () => actions.newFromTemplate!(),
+          });
         // "Bulk from rows" - the same group, because it is the other way a document
         // arrives: one sheet of rows in, one render per row out (plans/147 M1).
-        if (actions?.bulk) items.push({ label: t('Bulk from rows'), icon: icon(SVG.rows), key: 'bulk', run: () => actions.bulk!() });
+        if (actions?.bulk)
+          items.push({
+            label: t('Bulk from rows'),
+            icon: icon(SVG.rows),
+            key: 'bulk',
+            run: () => actions.bulk!(),
+          });
         // keepOpen, because openImportPanel closes this menu and then assigns its own
         // panel to `popover`: without it fillPopover's trailing closePopover() would
         // tear the freshly-mounted import panel down in the same click. (The pages /
         // size / info rows are safe - those assign `morePanel`, a different variable.)
-        if (importCfg) items.push({ label: t('Import a design'), icon: icon(SVG.importFile), key: 'import', keepOpen: true, run: () => openImportPanel(anchorEl()) });
+        if (importCfg)
+          items.push({
+            label: t('Import a design'),
+            icon: icon(SVG.importFile),
+            key: 'import',
+            keepOpen: true,
+            run: () => openImportPanel(anchorEl()),
+          });
       }
       // Custom CSS (plan 112 M4): only for a tool that declares the `customCss` input
       // (Design). Opens a highlighted, auto-completing editor bound to that input.
       if (runtime.getModel().some((i) => i.id === 'customCss')) {
         if (items.length) items.push({ sep: true });
-        items.push({ label: t('Custom CSS'), icon: icon(SVG.code), key: 'css', run: () => openCssPanel(anchorEl()) });
+        items.push({
+          label: t('Custom CSS'),
+          icon: icon(SVG.code),
+          key: 'css',
+          run: () => openCssPanel(anchorEl()),
+        });
       }
       // Slide transition (plan 112 M5): one compact cycling row - Slide → Fade → Morph.
       // The menu closes on click; reopening shows the new value (no live refresh needed).
@@ -3675,7 +4379,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         const cur = String(trModel.value ?? 'slide');
         const nice = cur === 'morph' ? t('Morph') : cur === 'fade' ? t('Fade') : t('Slide');
         items.push({
-          label: `${t('Slide transition')}: ${nice}`, icon: icon(SVG.present), key: 'transition',
+          label: `${t('Slide transition')}: ${nice}`,
+          icon: icon(SVG.present),
+          key: 'transition',
           run: () => {
             const next = order[(order.indexOf(cur) + 1) % order.length]!;
             onDirty?.('transition');
@@ -3687,7 +4393,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // set off by its own separator and next to the Slide transition it uses (plan 112).
       if (actions?.present && !barMounted) {
         if (items.length) items.push({ sep: true });
-        items.push({ label: t('Present'), icon: icon(SVG.present), key: 'present', run: () => actions.present!() });
+        items.push({
+          label: t('Present'),
+          icon: icon(SVG.present),
+          key: 'present',
+          run: () => actions.present!(),
+        });
       }
       // App preferences, at the very bottom (plans/179 M1). The rows are PROXIES: the tool
       // view built the real controls and lends them here, so the theme/sound state and its
@@ -3695,10 +4406,20 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (barMounted && (designChrome?.themeToggle || designChrome?.soundToggle)) {
         if (items.length) items.push({ sep: true });
         if (designChrome.themeToggle) {
-          items.push({ label: t('Theme'), icon: icon(SVG.theme), key: 'theme', run: () => designChrome.themeToggle!.click() });
+          items.push({
+            label: t('Theme'),
+            icon: icon(SVG.theme),
+            key: 'theme',
+            run: () => designChrome.themeToggle!.click(),
+          });
         }
         if (designChrome.soundToggle) {
-          items.push({ label: t('Interface sounds'), icon: icon(SVG.sound), key: 'sound', run: () => designChrome.soundToggle!.click() });
+          items.push({
+            label: t('Interface sounds'),
+            icon: icon(SVG.sound),
+            key: 'sound',
+            run: () => designChrome.soundToggle!.click(),
+          });
         }
       }
       return items;
@@ -3710,9 +4431,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // `fc-action-primary` is kept on the trigger because it is now the editor's
       // primary action affordance - mountTool focuses it on open (tool.ts) - with
       // .fc-btn-lolly restyling it back to the mark's own colour.
-      lollyBtn = toolBtn(t('Menu - export, save, undo, canvas size'), '',
-        () => { setLollyAnchor(lollyBtn!); const items = lollyItems(); if (items.length) spawnPopover(lollyBtn!, items); },
-        'fc-action fc-action-primary fc-btn-lolly');
+      lollyBtn = toolBtn(
+        t('Menu - export, save, undo, canvas size'),
+        '',
+        () => {
+          setLollyAnchor(lollyBtn!);
+          const items = lollyItems();
+          if (items.length) spawnPopover(lollyBtn!, items);
+        },
+        'fc-action fc-action-primary fc-btn-lolly'
+      );
       // The mark is a whole <svg> (the brand swirl, root icon.svg), not a path set, so it
       // replaces toolBtn's icon(). Its three rings spin on hover only - see .fc-btn-lolly in
       // editor.css, the same interaction-only treatment as the Ask Lolly send button.
@@ -3723,19 +4451,28 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // The render pill's amber "unsaved" cue, mirrored onto the trigger - Save
         // lives inside the menu now, so the mark is what has to carry the cue.
         const mark = lollyBtn;
-        const mirror = (): void => { mark.classList.toggle('is-unsaved', ref.classList.contains('is-unsaved')); };
+        const mirror = (): void => {
+          mark.classList.toggle('is-unsaved', ref.classList.contains('is-unsaved'));
+        };
         mirror();
         dirtyObserver = new MutationObserver(mirror);
         dirtyObserver.observe(ref, { attributes: true, attributeFilter: ['class'] });
       }
-      const asep = document.createElement('div'); asep.className = 'fc-sep'; toolbar.appendChild(asep);
+      const asep = document.createElement('div');
+      asep.className = 'fc-sep';
+      toolbar.appendChild(asep);
     }
     // Pointer leads the tools, and is the way OUT of every other one. Before it existed the
     // only exit from the pen or from connect mode was clicking that same tool's own button
     // again - discoverable only if you already knew, which is what "trapped in the current
     // tool" meant. Its own click is not a no-op even when it is already lit: it also leaves
     // point editing and finishes a draft.
-    modeBtns.select = toolBtn(t('Pointer - select and move (V)'), SVG.pointer, () => pickPointer(), 'fc-btn-pointer');
+    modeBtns.select = toolBtn(
+      t('Pointer - select and move (V)'),
+      SVG.pointer,
+      () => pickPointer(),
+      'fc-btn-pointer'
+    );
     const add = toolBtn(t('Add a box'), SVG.add, () => openAddMenu(add), 'fc-btn-add');
     modeBtns.create = add;
     // Pen (opt-in via canvas.pathField - a tool with nowhere to store an authored path has
@@ -3743,12 +4480,22 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // Alt is free here because a pen click returns long before `selectionForHit`, where Alt
     // means "drill into the group".
     if (cv.pathField) {
-      modeBtns.pen = toolBtn(t('Pen - click to place points, drag to curve, Alt for a corner. Hold for the spline type'), SVG.pen,
-        () => { mode === 'pen' ? toPointer() : setMode('pen'); }, 'fc-btn-pen',
-        (b) => openPenKindMenu(b));
+      modeBtns.pen = toolBtn(
+        t('Pen - click to place points, drag to curve, Alt for a corner. Hold for the spline type'),
+        SVG.pen,
+        () => {
+          mode === 'pen' ? toPointer() : setMode('pen');
+        },
+        'fc-btn-pen',
+        (b) => openPenKindMenu(b)
+      );
       // Node tool (Inkscape's N): click a shape to edit its points directly.
-      nodeToolBtn = toolBtn(t('Edit points (N) - click a shape to edit its nodes directly'), SVG.nodes,
-        () => toggleNodeTool(), 'fc-btn-nodes');
+      nodeToolBtn = toolBtn(
+        t('Edit points (N) - click a shape to edit its nodes directly'),
+        SVG.nodes,
+        () => toggleNodeTool(),
+        'fc-btn-nodes'
+      );
       // Line - the pen's other gesture (plan 96 P2). One drag makes a two-node path box,
       // arrowhead on by default; it lives beside the Pen because it is the SAME primitive
       // drawn a different way, and it is opt-in on `pathField` for the same reason the pen
@@ -3761,26 +4508,39 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           ? t('Line - drag to draw a line or arrow. Hold to auto-arrange the connected cards')
           : t('Line - drag to draw a line or arrow'),
         SVG.line,
-        () => { mode === 'line' ? toPointer() : setMode('line'); }, 'fc-btn-line',
+        () => {
+          mode === 'line' ? toPointer() : setMode('line');
+        },
+        'fc-btn-line',
         hasBindCfg
-          ? (b) => spawnPopover(b, [{ label: t('Auto-arrange the connected cards'), icon: icon(SVG.tidy), run: () => autoLayout() }])
-          : undefined,
+          ? (b) =>
+              spawnPopover(b, [
+                {
+                  label: t('Auto-arrange the connected cards'),
+                  icon: icon(SVG.tidy),
+                  run: () => autoLayout(),
+                },
+              ])
+          : undefined
       );
     }
     // Timeline (opt-in via the canvas time-model fields - a tool with nowhere to store
     // a start/duration has no timeline). Toggles the docked panel; the panel module
     // itself is only fetched the first time it is opened.
     if (timeCfg) {
-      timelineBtn = toolBtn(t('Timeline - arrange clips over time'), SVG.timeline,
-        () => toggleTimeline(), 'fc-btn-timeline');
+      timelineBtn = toolBtn(
+        t('Timeline - arrange clips over time'),
+        SVG.timeline,
+        () => toggleTimeline(),
+        'fc-btn-timeline'
+      );
       timelineBtn.setAttribute('aria-pressed', String(!!timelinePanel?.isOpen()));
     }
     // Frames reorder (opt-in via canvas.orderField - the frame primitive's page-order
     // field). A tool with nowhere to store `order` has no frame sequence to sort, so the
     // button is absent for carousel/deck and every non-frame tool. Toggles the panel.
     if (frameCfg?.orderField) {
-      toolBtn(t('Artboards'), SVG.frame,
-        (b) => toggleFramesPanel(b), 'fc-btn-frames');
+      toolBtn(t('Artboards'), SVG.frame, (b) => toggleFramesPanel(b), 'fc-btn-frames');
     }
     // (Auto-arrange no longer has a standalone rail button - it moved to a HOLD / right-click
     // of the Line tool above, since the line tool is what creates the bindings it lays out.)
@@ -3789,7 +4549,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // so the button only appears once there is one (syncArrangeUI, from the same
     // paint that shows the object bar). The right-click menu and the keyboard keep
     // their own gating - nothing here is the only way to reach an action.
-    arrangeBtn = toolBtn(t('Arrange - align, distribute, order, group'), SVG.align, () => openArrangeMenu());
+    arrangeBtn = toolBtn(t('Arrange - align, distribute, order, group'), SVG.align, () =>
+      openArrangeMenu()
+    );
     syncArrangeUI();
     // Snap-to-grid toggle (opt-in).
     if (cv.grid) {
@@ -3803,7 +4565,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
     // Pages / canvas size, copy, share, document info and import all live in the
     // Lolly menu at the top of the rail now - see lollyItems() above.
-    const sep = document.createElement('div'); sep.className = 'fc-sep'; toolbar.appendChild(sep);
+    const sep = document.createElement('div');
+    sep.className = 'fc-sep';
+    toolbar.appendChild(sep);
     // The paint at the foot of the rail - the app's shared colour picker (swatches + hex
     // + alpha). WHAT it paints depends on the document; see paintBgField. It lives in a
     // `display:contents` slot so the field itself can be REPLACED (not mutated) on a
@@ -3812,7 +4576,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     bgSlot.style.display = 'contents';
     toolbar.appendChild(bgSlot);
     paintBgField();
-    syncModeUI();     // Pointer lit on mount; the rail is never rebuilt after this
+    syncModeUI(); // Pointer lit on mount; the rail is never rebuilt after this
   }
 
   // ── the rail's paint swatch (plans/179 A1) ───────────────────────────────────
@@ -3836,7 +4600,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const fid = hasFrames(boxes) ? activeFrameIdFor(boxes, selection, frameFields()) : '';
       if (fid) {
         const fb = boxes.find((b, i) => idOf(b, i) === fid);
-        return { frameId: fid, value: fb ? fb[cfg.fillField] ?? '' : '', tip: t('Artboard fill') };
+        return {
+          frameId: fid,
+          value: fb ? (fb[cfg.fillField] ?? '') : '',
+          tip: t('Artboard fill'),
+        };
       }
     }
     return { frameId: '', value: getBg(), tip: t('Canvas background') };
@@ -3888,13 +4656,21 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (`${tgt.frameId}|${String(tgt.value ?? '')}` === bgFieldKey) return;
     // Skipped while the picker is open: drop the key so the deferred repaint happens on
     // the next sync after it closes, whatever the model says by then.
-    if (bgSlot.querySelector('.color-popover:not([hidden])')) { bgFieldKey = ''; return; }
+    if (bgSlot.querySelector('.color-popover:not([hidden])')) {
+      bgFieldKey = '';
+      return;
+    }
     paintBgField();
   }
 
   function fillPopover(el: HTMLElement, items: PopItem[]): void {
     for (const it of items) {
-      if (it.sep) { const s = document.createElement('div'); s.className = 'fc-pop-sep'; el.appendChild(s); continue; }
+      if (it.sep) {
+        const s = document.createElement('div');
+        s.className = 'fc-pop-sep';
+        el.appendChild(s);
+        continue;
+      }
       // Icon-only grid row (e.g. align = 3 cols × 2 rows, distribute = 2 cols): each
       // action is a compact square button labelled only by its icon (title/aria carry
       // the text). `cols` drives the column count via a CSS var.
@@ -3914,7 +4690,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           // `activeElement === gb` is read AFTER run(): a row that opened a panel and
           // focused something inside it must keep that focus, and one that did not has
           // to hand the keyboard back to the trigger rather than to <body>.
-          gb.addEventListener('click', (e) => { e.stopPropagation(); if (gb.disabled) return; gi.run(); if (!gi.keepOpen) closePopover(document.activeElement === gb); });
+          gb.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (gb.disabled) return;
+            gi.run();
+            if (!gi.keepOpen) closePopover(document.activeElement === gb);
+          });
           g.appendChild(gb);
         }
         el.appendChild(g);
@@ -3930,8 +4711,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (it.on !== undefined) b.setAttribute('aria-checked', String(it.on));
       if (it.key) b.dataset.pop = it.key;
       b.disabled = it.disabled === true;
-      b.innerHTML = (it.icon ? `<span class="fc-pop-ic">${it.icon}</span>` : '') + `<span>${it.label}</span>`;
-      b.addEventListener('click', (e) => { e.stopPropagation(); if (b.disabled) return; it.run(); if (!it.keepOpen) closePopover(document.activeElement === b); });
+      b.innerHTML =
+        (it.icon ? `<span class="fc-pop-ic">${it.icon}</span>` : '') + `<span>${it.label}</span>`;
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (b.disabled) return;
+        it.run();
+        if (!it.keepOpen) closePopover(document.activeElement === b);
+      });
       el.appendChild(b);
     }
   }
@@ -3966,11 +4753,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const sr = detached
       ? { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }
       : stageEl.getBoundingClientRect();
-    const pr = popover.getBoundingClientRect();   // after append: it is laid out
+    const pr = popover.getBoundingClientRect(); // after append: it is laid out
     const pos = placePopover(
       { left: ar.left - sr.left, right: ar.right - sr.left, top: ar.top - sr.top },
       { w: pr.width, h: pr.height },
-      { w: sr.width, h: sr.height },
+      { w: sr.width, h: sr.height }
     );
     popover.style.left = pos.left + 'px';
     popover.style.top = pos.top + 'px';
@@ -3980,7 +4767,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   /** The popover's focusable rows, in order - grid cells included, disabled skipped. */
   function popoverItems(): HTMLButtonElement[] {
     if (!popover) return [];
-    return [...popover.querySelectorAll<HTMLButtonElement>('.fc-pop-item, .fc-pop-gitem')].filter((b) => !b.disabled);
+    return [...popover.querySelectorAll<HTMLButtonElement>('.fc-pop-item, .fc-pop-gitem')].filter(
+      (b) => !b.disabled
+    );
   }
 
   /**
@@ -3993,12 +4782,36 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!popover) return;
     const list = popoverItems();
     const at = list.indexOf(document.activeElement as HTMLButtonElement);
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closePopover(true); return; }
-    if (e.key === 'Tab') { closePopover(true); return; }
-    if (e.key === 'ArrowDown') { e.preventDefault(); list[(at + 1 + list.length) % list.length]?.focus(); return; }
-    if (e.key === 'ArrowUp') { e.preventDefault(); list[(at - 1 + list.length) % list.length]?.focus(); return; }
-    if (e.key === 'Home') { e.preventDefault(); list[0]?.focus(); return; }
-    if (e.key === 'End') { e.preventDefault(); list[list.length - 1]?.focus(); return; }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closePopover(true);
+      return;
+    }
+    if (e.key === 'Tab') {
+      closePopover(true);
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      list[(at + 1 + list.length) % list.length]?.focus();
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      list[(at - 1 + list.length) % list.length]?.focus();
+      return;
+    }
+    if (e.key === 'Home') {
+      e.preventDefault();
+      list[0]?.focus();
+      return;
+    }
+    if (e.key === 'End') {
+      e.preventDefault();
+      list[list.length - 1]?.focus();
+      return;
+    }
     // Everything else the canvas would have answered - a bare letter is a tool
     // shortcut, Delete deletes the selection - stops at the menu.
     if (!(e.metaKey || e.ctrlKey)) e.stopPropagation();
@@ -4011,7 +4824,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   async function importAsScenes(f: File | Blob, setStatus: (m: string) => void): Promise<number> {
     const { parseDesignScenes } = await import('./design-import.ts');
     const { DEFAULT_CLIP_S } = await import('./timeline-math.ts');
-    const res = await parseDesignScenes(f, { host: host as any, log: setStatus, interactive: true, map: importMap });
+    const res = await parseDesignScenes(f, {
+      host: host as any,
+      log: setStatus,
+      interactive: true,
+      map: importMap,
+    });
     const scenes = res.scenes;
     if (!scenes.length) throw new Error(t('Nothing importable was found in that file.'));
     const tc = timeCfg!;
@@ -4029,11 +4847,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     for (const sc of scenes) {
       const id = freshId(all);
       all.push({
-        [cfg.idField]: id, [cfg.kindField]: 'image',
-        [cfg.xField]: 0, [cfg.yField]: 0, [cfg.wField]: cw, [cfg.hField]: ch,
+        [cfg.idField]: id,
+        [cfg.kindField]: 'image',
+        [cfg.xField]: 0,
+        [cfg.yField]: 0,
+        [cfg.wField]: cw,
+        [cfg.hField]: ch,
         ...(cfg.imageField ? { [cfg.imageField]: sc.asset } : {}),
         ...(cfg.fitField ? { [cfg.fitField]: 'contain' } : {}),
-        [tc.laneField]: 'seq', [tc.startField]: at, [tc.durField]: DEFAULT_CLIP_S,
+        [tc.laneField]: 'seq',
+        [tc.startField]: at,
+        [tc.durField]: DEFAULT_CLIP_S,
         // A Penpot prototype flow carries the authored transition INTO each board;
         // scenes from a file without interactions carry neither key, so the box is
         // written exactly as it always was (enter defaults to 'none' - a cut).
@@ -4058,16 +4882,29 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * deck-or-animation stays the user's call after the import as well as before it.
    * Returns the number of artboards laid down.
    */
-  async function importAsArtboards(f: File | Blob, setStatus: (m: string) => void): Promise<number> {
+  async function importAsArtboards(
+    f: File | Blob,
+    setStatus: (m: string) => void
+  ): Promise<number> {
     if (!frameCfg) throw new Error(t('This tool has no artboards.'));
     const { parseDesignArtboards } = await import('./design-import.ts');
-    const res = await parseDesignArtboards(f, { host: host as any, log: setStatus, interactive: true, map: importMap });
+    const res = await parseDesignArtboards(f, {
+      host: host as any,
+      log: setStatus,
+      interactive: true,
+      map: importMap,
+    });
     if (!res.frames.length) throw new Error(t('Nothing importable was found in that file.'));
     const fk = frameCfg.frameKind;
-    const frameAddKind = addKinds.find((k) => k.id === 'frame' || (k.seed != null && String(k.seed[cfg.kindField]) === fk));
+    const frameAddKind = addKinds.find(
+      (k) => k.id === 'frame' || (k.seed != null && String(k.seed[cfg.kindField]) === fk)
+    );
     const rows = layoutArtboards(
       res.frames.map((fr) => ({
-        name: fr.name, width: fr.width, height: fr.height, boxes: fr.boxes as Box[],
+        name: fr.name,
+        width: fr.width,
+        height: fr.height,
+        boxes: fr.boxes as Box[],
         ...(fr.background ? { background: fr.background } : {}),
         // plans/179 P2 - a .pptx's speaker notes are parsed, normalised and capped by
         // pptx-import, and used to stop here: the re-projection dropped the field, so
@@ -4084,13 +4921,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         mintId: (used) => freshId(used),
         background: res.background,
         notesField: FRAME_NOTES_FIELD,
-      },
+      }
     );
     if (disposed) return 0;
     selection = new Set<string>();
     commit(rows);
     const first = res.frames[0]!;
-    if (setCanvasSize && first.width > 0 && first.height > 0) setCanvasSize(first.width, first.height, 'px');
+    if (setCanvasSize && first.width > 0 && first.height > 0)
+      setCanvasSize(first.width, first.height, 'px');
     return res.frames.length;
   }
   // Import a design file (Figma SVG / Penpot). The heavy DOM parser is lazy-loaded so it
@@ -4112,7 +4950,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     panel.innerHTML =
       `<div class="fc-import-title">${t('Import a design')}</div>` +
       '<p class="fc-import-hint">' +
-      t('Drop a Figma <b>.fig</b> / SVG, a Penpot <b>.penpot</b>, an Illustrator <b>.ai</b> or <b>.pdf</b>, a PowerPoint <b>.pptx</b>, or an InDesign <b>.idml</b> (File → Export → InDesign Markup). (For editable text from a Figma <b>SVG</b>, uncheck “Outline text” on export.)') +
+      t(
+        'Drop a Figma <b>.fig</b> / SVG, a Penpot <b>.penpot</b>, an Illustrator <b>.ai</b> or <b>.pdf</b>, a PowerPoint <b>.pptx</b>, or an InDesign <b>.idml</b> (File → Export → InDesign Markup). (For editable text from a Figma <b>SVG</b>, uncheck “Outline text” on export.)'
+      ) +
       '</p>' +
       // The per-import choice (plans/104 section 337, widened 2026-09-02): one page onto
       // the board, every page as an artboard, or every frame as a timed scene. Each
@@ -4152,19 +4992,26 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const tplLabel = tplRow.querySelector<HTMLElement>('span')!;
     // Wire the board / artboards / scenes choice (present only where a mode is offered).
     const modeHint = panel.querySelector<HTMLElement>('[data-import-hint]');
-    panel.querySelectorAll<HTMLInputElement>('.fc-import-mode input[name="fc-imp-mode"]').forEach((r) => {
-      r.addEventListener('change', () => {
-        if (!r.checked) return;
-        importMode = r.value === 'scenes' ? 'scenes' : r.value === 'artboards' ? 'artboards' : 'board';
-        if (modeHint) modeHint.textContent = importHint(importMode);
+    panel
+      .querySelectorAll<HTMLInputElement>('.fc-import-mode input[name="fc-imp-mode"]')
+      .forEach((r) => {
+        r.addEventListener('change', () => {
+          if (!r.checked) return;
+          importMode =
+            r.value === 'scenes' ? 'scenes' : r.value === 'artboards' ? 'artboards' : 'board';
+          if (modeHint) modeHint.textContent = importHint(importMode);
+        });
       });
-    });
     const fileEl = document.createElement('input');
     fileEl.type = 'file';
-    fileEl.accept = '.fig,.svg,.penpot,.zip,.ai,.pdf,.pptx,.idml,.indd,image/svg+xml,application/zip,application/pdf,application/illustrator,application/vnd.openxmlformats-officedocument.presentationml.presentation';
+    fileEl.accept =
+      '.fig,.svg,.penpot,.zip,.ai,.pdf,.pptx,.idml,.indd,image/svg+xml,application/zip,application/pdf,application/illustrator,application/vnd.openxmlformats-officedocument.presentationml.presentation';
     fileEl.style.display = 'none';
     panel.appendChild(fileEl);
-    chooseBtn.addEventListener('click', (e) => { e.stopPropagation(); fileEl.click(); });
+    chooseBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      fileEl.click();
+    });
     fileEl.addEventListener('change', async () => {
       const f = fileEl.files && fileEl.files[0];
       fileEl.value = '';
@@ -4183,16 +5030,22 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       try {
         if (importMode === 'scenes') {
           // The user chose "As timed scenes": frames become timed scenes (importAsScenes above).
-          const n = await importAsScenes(f, (m: string) => { status.textContent = m; });
+          const n = await importAsScenes(f, (m: string) => {
+            status.textContent = m;
+          });
           status.classList.add('is-ok');
           status.textContent = n === 1 ? t('Added 1 scene.') : t('Added {n} scenes.', { n });
         } else if (importMode === 'artboards') {
           // "As artboards": one frame per page, the parts editable (importAsArtboards above).
-          const n = await importAsArtboards(f, (m: string) => { status.textContent = m; });
+          const n = await importAsArtboards(f, (m: string) => {
+            status.textContent = m;
+          });
           status.classList.add('is-ok');
           status.textContent = n === 1 ? t('Added 1 artboard.') : t('Added {n} artboards.', { n });
         } else {
-          const { parseDesignFile, countPenpotComponents, parseDesignTemplates } = await import('./design-import.ts');
+          const { parseDesignFile, countPenpotComponents, parseDesignTemplates } = await import(
+            './design-import.ts'
+          );
           // A design system's component masters can also be saved as reusable
           // templates. The offer appears as soon as the chosen file turns out to
           // define components (a cheap peek at the zip's component records), and
@@ -4203,23 +5056,35 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           if (templateToolId) {
             componentCount = await countPenpotComponents(f);
             if (componentCount > 0) {
-              tplLabel.textContent = componentCount === 1
-                ? t('Also save 1 component as a template')
-                : t('Also save {n} components as templates', { n: componentCount });
+              tplLabel.textContent =
+                componentCount === 1
+                  ? t('Also save 1 component as a template')
+                  : t('Also save {n} components as templates', { n: componentCount });
               tplRow.hidden = false;
             }
           }
           // interactive: a multi-page PDF/.ai asks which page (shared page-picker dialog)
           // instead of silently importing the first. `map` carries this tool's font
           // vocabulary + seed colours (importMap above) into the engine's box mapper.
-          const res = await parseDesignFile(f, { host: host as any, log: (m: string) => { status.textContent = m; }, interactive: true, map: importMap });
+          const res = await parseDesignFile(f, {
+            host: host as any,
+            log: (m: string) => {
+              status.textContent = m;
+            },
+            interactive: true,
+            map: importMap,
+          });
           const boxes = (Array.isArray(res.boxes) ? res.boxes : []) as Box[];
           if (!boxes.length) throw new Error(t('Nothing importable was found in that file.'));
           selection = new Set<string>();
           commit(boxes);
-          if (setCanvasSize && res.width > 0 && res.height > 0) setCanvasSize(res.width, res.height, 'px');
+          if (setCanvasSize && res.width > 0 && res.height > 0)
+            setCanvasSize(res.width, res.height, 'px');
           status.classList.add('is-ok');
-          const imported = boxes.length === 1 ? t('Imported 1 object.') : t('Imported {n} objects.', { n: boxes.length });
+          const imported =
+            boxes.length === 1
+              ? t('Imported 1 object.')
+              : t('Imported {n} objects.', { n: boxes.length });
           status.textContent = imported;
           if (componentCount > 0 && tplBox.checked) {
             // Never let the extra pass fail an import that already succeeded.
@@ -4227,7 +5092,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
               status.textContent = `${imported} ${t('Saving templates…')}`;
               const { templates } = await parseDesignTemplates(f, {
                 host: host as any,
-                log: (m: string) => { status.textContent = `${imported} ${m}`; },
+                log: (m: string) => {
+                  status.textContent = `${imported} ${m}`;
+                },
                 // res.map carries the deck's own font families, already resolved
                 // by the board import, so nothing is fetched or warned twice.
                 map: res.map ?? importMap,
@@ -4240,11 +5107,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
                   toolVersion: info?.version,
                   boxesField: input.id,
                   format: info?.formats?.[0],
-                  warn: (m: string) => { status.textContent = `${imported} ${m}`; },
+                  warn: (m: string) => {
+                    status.textContent = `${imported} ${m}`;
+                  },
                 });
-                status.textContent = `${imported} ${filed.saved === 1
-                  ? tRaw('Saved 1 template in “{folder}”.', { folder: filed.folderName })
-                  : tRaw('Saved {n} templates in “{folder}”.', { n: filed.saved, folder: filed.folderName })}`;
+                status.textContent = `${imported} ${
+                  filed.saved === 1
+                    ? tRaw('Saved 1 template in “{folder}”.', { folder: filed.folderName })
+                    : tRaw('Saved {n} templates in “{folder}”.', {
+                        n: filed.saved,
+                        folder: filed.folderName,
+                      })
+                }`;
               } else {
                 status.textContent = `${imported} ${t('No components could be saved as templates.')}`;
               }
@@ -4253,7 +5127,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
             }
           }
         }
-        setTimeout(() => { if (popover === panel) closePopover(); }, 1400);
+        setTimeout(() => {
+          if (popover === panel) closePopover();
+        }, 1400);
       } catch (err) {
         status.classList.add('is-err');
         status.textContent = ((err as any) && (err as any).message) || t('Import failed.');
@@ -4283,49 +5159,162 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // stack item below the fold).
     const slideItems: PopItem[] = [];
     const items: PopItem[] = [
-      { label: t('Duplicate'), icon: icon(SVG.dup), run: () => duplicateSelection(), disabled: !has },
-      { label: t('Delete'), icon: icon(SVG.trash), run: () => deleteSelection(), disabled: !has, danger: true },
+      {
+        label: t('Duplicate'),
+        icon: icon(SVG.dup),
+        run: () => duplicateSelection(),
+        disabled: !has,
+      },
+      {
+        label: t('Delete'),
+        icon: icon(SVG.trash),
+        run: () => deleteSelection(),
+        disabled: !has,
+        danger: true,
+      },
       { sep: true },
-      ...(outlinableCount ? [
-        { label: t('Outline text'), icon: icon(SVG.outlineText), run: () => void outlineTextOnSelection() },
-        { sep: true } as PopItem,
-      ] : []),
+      ...(outlinableCount
+        ? [
+            {
+              label: t('Outline text'),
+              icon: icon(SVG.outlineText),
+              run: () => void outlineTextOnSelection(),
+            },
+            { sep: true } as PopItem,
+          ]
+        : []),
       // Flip (mirror) - primary direct-manipulation actions on the selection, so they sit
       // high in the menu. Present only for a tool that declares the flip sub-fields
       // (`canFlip`), disabled with nothing selected like every action above.
-      ...(canFlip ? [
-        { label: t('Flip horizontal'), icon: icon(SVG.flipH), run: () => applyFlip('h'), disabled: !has } as PopItem,
-        { label: t('Flip vertical'), icon: icon(SVG.flipV), run: () => applyFlip('v'), disabled: !has } as PopItem,
-        { sep: true } as PopItem,
-      ] : []),
+      ...(canFlip
+        ? [
+            {
+              label: t('Flip horizontal'),
+              icon: icon(SVG.flipH),
+              run: () => applyFlip('h'),
+              disabled: !has,
+            } as PopItem,
+            {
+              label: t('Flip vertical'),
+              icon: icon(SVG.flipV),
+              run: () => applyFlip('v'),
+              disabled: !has,
+            } as PopItem,
+            { sep: true } as PopItem,
+          ]
+        : []),
       // Stacking order - icons only, 2×2: columns are magnitude (one step │ all the
       // way), rows are direction (up = forward/front, down = backward/back).
-      { grid: [
-        { label: t('Bring forward'), icon: icon(SVG.forward), run: () => applyZ('forward'), disabled: !has },
-        { label: t('Bring to front'), icon: icon(SVG.front), run: () => applyZ('front'), disabled: !has },
-        { label: t('Send backward'), icon: icon(SVG.backward), run: () => applyZ('backward'), disabled: !has },
-        { label: t('Send to back'), icon: icon(SVG.back), run: () => applyZ('back'), disabled: !has },
-      ], cols: 2 },
+      {
+        grid: [
+          {
+            label: t('Bring forward'),
+            icon: icon(SVG.forward),
+            run: () => applyZ('forward'),
+            disabled: !has,
+          },
+          {
+            label: t('Bring to front'),
+            icon: icon(SVG.front),
+            run: () => applyZ('front'),
+            disabled: !has,
+          },
+          {
+            label: t('Send backward'),
+            icon: icon(SVG.backward),
+            run: () => applyZ('backward'),
+            disabled: !has,
+          },
+          {
+            label: t('Send to back'),
+            icon: icon(SVG.back),
+            run: () => applyZ('back'),
+            disabled: !has,
+          },
+        ],
+        cols: 2,
+      },
       { sep: true },
       // Align - icons only, 3 across × 2 rows (L/C/R then T/M/B).
-      { grid: [
-        { label: t('Align left'), icon: icon(SVG.alignL), run: () => applyAlign('left'), disabled: !has },
-        { label: t('Align centre'), icon: icon(SVG.alignC), run: () => applyAlign('hcentre'), disabled: !has },
-        { label: t('Align right'), icon: icon(SVG.alignR), run: () => applyAlign('right'), disabled: !has },
-        { label: t('Align top'), icon: icon(SVG.alignT), run: () => applyAlign('top'), disabled: !has },
-        { label: t('Align middle'), icon: icon(SVG.alignM), run: () => applyAlign('vcentre'), disabled: !has },
-        { label: t('Align bottom'), icon: icon(SVG.alignB), run: () => applyAlign('bottom'), disabled: !has },
-      ], cols: 3 },
+      {
+        grid: [
+          {
+            label: t('Align left'),
+            icon: icon(SVG.alignL),
+            run: () => applyAlign('left'),
+            disabled: !has,
+          },
+          {
+            label: t('Align centre'),
+            icon: icon(SVG.alignC),
+            run: () => applyAlign('hcentre'),
+            disabled: !has,
+          },
+          {
+            label: t('Align right'),
+            icon: icon(SVG.alignR),
+            run: () => applyAlign('right'),
+            disabled: !has,
+          },
+          {
+            label: t('Align top'),
+            icon: icon(SVG.alignT),
+            run: () => applyAlign('top'),
+            disabled: !has,
+          },
+          {
+            label: t('Align middle'),
+            icon: icon(SVG.alignM),
+            run: () => applyAlign('vcentre'),
+            disabled: !has,
+          },
+          {
+            label: t('Align bottom'),
+            icon: icon(SVG.alignB),
+            run: () => applyAlign('bottom'),
+            disabled: !has,
+          },
+        ],
+        cols: 3,
+      },
       // Distribute - icons only, one row of 2 (needs 3+ boxes).
-      { grid: [
-        { label: t('Distribute horizontally'), icon: icon(SVG.distH), run: () => applyDistribute('h'), disabled: selection.size < 3 },
-        { label: t('Distribute vertically'), icon: icon(SVG.distV), run: () => applyDistribute('v'), disabled: selection.size < 3 },
-      ], cols: 2 },
+      {
+        grid: [
+          {
+            label: t('Distribute horizontally'),
+            icon: icon(SVG.distH),
+            run: () => applyDistribute('h'),
+            disabled: selection.size < 3,
+          },
+          {
+            label: t('Distribute vertically'),
+            icon: icon(SVG.distV),
+            run: () => applyDistribute('v'),
+            disabled: selection.size < 3,
+          },
+        ],
+        cols: 2,
+      },
       { sep: true },
       { label: t('Group'), icon: icon(SVG.group), run: () => groupSelection(), disabled: !multi },
-      { label: t('Ungroup'), icon: icon(SVG.ungroup), run: () => ungroupSelection(), disabled: !canUngroup() },
-      { label: t('Clip to bottom shape'), icon: icon(SVG.clip), run: () => clipSelection(), disabled: !multi },
-      { label: t('Release clip'), icon: icon(SVG.unclip), run: () => releaseClip(), disabled: !selHasClip() },
+      {
+        label: t('Ungroup'),
+        icon: icon(SVG.ungroup),
+        run: () => ungroupSelection(),
+        disabled: !canUngroup(),
+      },
+      {
+        label: t('Clip to bottom shape'),
+        icon: icon(SVG.clip),
+        run: () => clipSelection(),
+        disabled: !multi,
+      },
+      {
+        label: t('Release clip'),
+        icon: icon(SVG.unclip),
+        run: () => releaseClip(),
+        disabled: !selHasClip(),
+      },
     ];
     // ── timeline ───────────────────────────────────────────────────────────────
     // Right-click parity with the panel's own timing toggle. Present for any
@@ -4349,16 +5338,22 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // resolves only once `timelinePanel` is assigned, and bails silently if the module
       // failed to load, so a broken chunk means no write rather than a half-written box.
       const withPanel = (fn: (p: NonNullable<typeof timelinePanel>) => void) => () => {
-        void ensureTimeline(true).then(() => { if (timelinePanel) fn(timelinePanel); });
+        void ensureTimeline(true).then(() => {
+          if (timelinePanel) fn(timelinePanel);
+        });
       };
       items.push({ sep: true });
       items.push({
-        label: t('Add to the timeline'), icon: icon(SVG.timeline),
-        run: withPanel((p) => p.promote(oneId)), disabled: !one || timed,
+        label: t('Add to the timeline'),
+        icon: icon(SVG.timeline),
+        run: withPanel((p) => p.promote(oneId)),
+        disabled: !one || timed,
       });
       items.push({
-        label: t('Make always on'), icon: icon(SVG.boxKind),
-        run: withPanel((p) => p.demote(oneId)), disabled: !timed,
+        label: t('Make always on'),
+        icon: icon(SVG.boxKind),
+        run: withPanel((p) => p.demote(oneId)),
+        disabled: !timed,
       });
     }
     // ── presentation (plan 112) ─────────────────────────────────────────────────
@@ -4373,7 +5368,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (one && !isFrame) {
         const img = one['image'] as { url?: string; type?: string } | undefined;
         const hasImage = !!img?.url;
-        const isVid = img?.type === 'video' || /\.(mp4|m4v|mov|webm)($|\?|#)/i.test(String(img?.url ?? ''));
+        const isVid =
+          img?.type === 'video' || /\.(mp4|m4v|mov|webm)($|\?|#)/i.test(String(img?.url ?? ''));
         const curBuild = Number(one['build']);
         const frameBoxesNow = rows.filter((b) => String(b[cfg.kindField]) === frameCfg.frameKind);
         const bgFrameId = String(one['frame'] ?? '') || resolveFrame(one, frameBoxesNow);
@@ -4387,7 +5383,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // behind its siblings - the one-click cover image/video backdrop (plan section 8). Any
         // image/video box that resolves to a frame; disabled otherwise so the row is stable.
         items.push({
-          label: t('Set as slide background'), icon: icon(SVG.image),
+          label: t('Set as slide background'),
+          icon: icon(SVG.image),
           disabled: !(hasImage && bgFrameId),
           run: () => {
             const bs = getBoxes();
@@ -4396,30 +5393,41 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
             const fid = String(bs[idx[0]!]?.['frame'] ?? '') || resolveFrame(bs[idx[0]!], fbs);
             const fb = bs.find((b) => String(b['id'] ?? '') === fid);
             if (!fb || idx.length !== 1) return;
-            const filled = bs.map((b, i) => (i === idx[0]
-              ? { ...b, x: fb['x'], y: fb['y'], w: fb['w'], h: fb['h'], fit: 'cover', frame: fid }
-              : b));
+            const filled = bs.map((b, i) =>
+              i === idx[0]
+                ? { ...b, x: fb['x'], y: fb['y'], w: fb['w'], h: fb['h'], fit: 'cover', frame: fid }
+                : b
+            );
             commit(reorderZ(filled, idx, 'back'));
           },
         });
         items.push({
-          label: t('Play sound when presenting'), icon: icon(SVG.video),
-          on: one['presentAudio'] === true, disabled: !isVid,
+          label: t('Play sound when presenting'),
+          icon: icon(SVG.video),
+          on: one['presentAudio'] === true,
+          disabled: !isVid,
           run: () => setField('presentAudio', one['presentAudio'] !== true),
         });
         // Reveal step (build): "Always visible" + steps 1–3 as radios (equal numbers
         // reveal together; a box hidden until its step is advanced to in present mode).
         items.push({
-          label: t('Always visible'), icon: icon(SVG.present),
-          on: !(curBuild >= 1), run: () => setField('build', ''),
+          label: t('Always visible'),
+          icon: icon(SVG.present),
+          on: !(curBuild >= 1),
+          run: () => setField('build', ''),
         });
         for (const n of [1, 2, 3]) {
-          items.push({ label: `${t('Reveal at step')} ${n}`, on: curBuild === n, run: () => setField('build', n) });
+          items.push({
+            label: `${t('Reveal at step')} ${n}`,
+            on: curBuild === n,
+            run: () => setField('build', n),
+          });
         }
         // Morph match (plan 112 M5's last gap): the explicit pairing tag the morph
         // transition prefers over its implicit text/image matching.
         items.push({
-          label: t('Morph match…'), icon: icon(SVG.present),
+          label: t('Morph match…'),
+          icon: icon(SVG.present),
           run: () => openMorphMatchPanel(viewEl, si[0]!),
         });
       } else if (one && isFrame) {
@@ -4427,11 +5435,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // its speaker `notes` (shown only in the speaker view, never on the slide).
         // These go into slideItems, which the tail splices in under Delete.
         slideItems.push({
-          label: t('Frame state (present)…'), icon: icon(SVG.present),
+          label: t('Frame state (present)…'),
+          icon: icon(SVG.present),
           run: () => openFrameStatePanel(viewEl, si[0]!),
         });
         slideItems.push({
-          label: t('Speaker notes…'), icon: icon(SVG.notes),
+          label: t('Speaker notes…'),
+          icon: icon(SVG.notes),
           run: () => openSpeakerNotesPanel(viewEl, si[0]!),
         });
         // Sub-slide stacks (plan 112 M5): structure disposes. Stacking writes the
@@ -4443,23 +5453,32 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           const fbs = bs2
             .map((b, i2) => ({ b, i2 }))
             .filter((e) => String(e.b[cfg.kindField]) === frameCfg?.frameKind)
-            .sort((p, q) => (Number(p.b['order']) || 0) - (Number(q.b['order']) || 0)
-              || (Number(p.b['x']) || 0) - (Number(q.b['x']) || 0));
+            .sort(
+              (p, q) =>
+                (Number(p.b['order']) || 0) - (Number(q.b['order']) || 0) ||
+                (Number(p.b['x']) || 0) - (Number(q.b['x']) || 0)
+            );
           const at = fbs.findIndex((e) => e.i2 === si[0]);
           const stacked = String(bs2[si[0]!]?.['stackOf'] ?? '') !== '';
-          const prevHead = at > 0
-            ? fbs.slice(0, at).reverse().find((e) => String(e.b['stackOf'] ?? '') === '')
-            : undefined;
+          const prevHead =
+            at > 0
+              ? fbs
+                  .slice(0, at)
+                  .reverse()
+                  .find((e) => String(e.b['stackOf'] ?? '') === '')
+              : undefined;
           if (stacked) {
             slideItems.push({
-              label: t('Unstack this slide'), icon: icon(SVG.present),
+              label: t('Unstack this slide'),
+              icon: icon(SVG.present),
               run: () => setField('stackOf', ''),
             });
           } else if (prevHead) {
             const headId = String(prevHead.b['id'] ?? '');
             if (headId) {
               slideItems.push({
-                label: t('Stack under the previous slide'), icon: icon(SVG.present),
+                label: t('Stack under the previous slide'),
+                icon: icon(SVG.present),
                 run: () => setField('stackOf', headId),
               });
             }
@@ -4473,7 +5492,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // either branch.
       if (one) {
         items.push({
-          label: t('CSS class…'), icon: icon(SVG.code),
+          label: t('CSS class…'),
+          icon: icon(SVG.code),
           run: () => openBoxClassPanel(viewEl, si[0]!),
         });
       }
@@ -4489,24 +5509,51 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // A boolean needs two operands that actually bound a region - two text boxes are
       // two selected boxes and no shapes at all.
       const boolItem = (op: BooleanOpName, label: string, ic: string): PopGridItem => ({
-        label, icon: icon(ic), disabled: regions < 2,
-        run: () => runVectorOp((ops, id) => booleanBoxes(ops, op, { cfg: vectorCfg, id }),
-          { skipNote: true, empty: boolEmptyMessage(op) }),
+        label,
+        icon: icon(ic),
+        disabled: regions < 2,
+        run: () =>
+          runVectorOp((ops, id) => booleanBoxes(ops, op, { cfg: vectorCfg, id }), {
+            skipNote: true,
+            empty: boolEmptyMessage(op),
+          }),
       });
       items.push({ sep: true });
-      items.push({ cols: 4, grid: [
-        boolItem('union', t('Union - merge into one shape'), SVG.boolUnion),
-        // Operand order is vector-ops' documented convention and Illustrator's/Figma's:
-        // the BOTTOMMOST selected shape is the base and everything above is taken away.
-        boolItem('difference', t('Subtract - remove the shapes above from the bottom one'), SVG.boolSubtract),
-        boolItem('intersect', t('Intersect - keep only where they overlap'), SVG.boolIntersect),
-        boolItem('xor', t('Exclude - keep everything but the overlap'), SVG.boolExclude),
-      ] });
-      items.push({ label: t('Outline stroke…'), icon: icon(SVG.outlineStroke), disabled: !regions, run: () => askOutlineStroke() });
-      items.push({ label: t('Offset path…'), icon: icon(SVG.offsetPath), disabled: !regions, run: () => askOffsetPath() });
       items.push({
-        label: t('Simplify'), icon: icon(SVG.simplify), disabled: !paths,
-        run: () => runVectorOp((ops, id) => simplifyBoxes(ops, SIMPLIFY_TOL, { cfg: vectorCfg, id }), { each: true }),
+        cols: 4,
+        grid: [
+          boolItem('union', t('Union - merge into one shape'), SVG.boolUnion),
+          // Operand order is vector-ops' documented convention and Illustrator's/Figma's:
+          // the BOTTOMMOST selected shape is the base and everything above is taken away.
+          boolItem(
+            'difference',
+            t('Subtract - remove the shapes above from the bottom one'),
+            SVG.boolSubtract
+          ),
+          boolItem('intersect', t('Intersect - keep only where they overlap'), SVG.boolIntersect),
+          boolItem('xor', t('Exclude - keep everything but the overlap'), SVG.boolExclude),
+        ],
+      });
+      items.push({
+        label: t('Outline stroke…'),
+        icon: icon(SVG.outlineStroke),
+        disabled: !regions,
+        run: () => askOutlineStroke(),
+      });
+      items.push({
+        label: t('Offset path…'),
+        icon: icon(SVG.offsetPath),
+        disabled: !regions,
+        run: () => askOffsetPath(),
+      });
+      items.push({
+        label: t('Simplify'),
+        icon: icon(SVG.simplify),
+        disabled: !paths,
+        run: () =>
+          runVectorOp((ops, id) => simplifyBoxes(ops, SIMPLIFY_TOL, { cfg: vectorCfg, id }), {
+            each: true,
+          }),
       });
       // NOTE: "Outline text" lives near the TOP of this menu (just under Delete), not
       // here - see the canOutlineText block at the head of openContextMenu. It is the
@@ -4524,10 +5571,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const rows = getBoxes();
       const idxs = selIndices(rows);
       const one = idxs.length === 1 ? rows[idxs[0]!]! : null;
-      const img = one ? (one[cfg.imageField] as { id?: string; url?: string } | undefined) : undefined;
+      const img = one
+        ? (one[cfg.imageField] as { id?: string; url?: string } | undefined)
+        : undefined;
       items.push({ sep: true });
       items.push({
-        label: t('Remove background'), icon: icon(SVG.scissors),
+        label: t('Remove background'),
+        icon: icon(SVG.scissors),
         run: () => void removeBackgroundOnSelection(),
         disabled: !(img?.id || img?.url),
       });
@@ -4542,7 +5592,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (canLift()) {
       items.push({ sep: true });
       items.push({
-        label: t('Lift layers'), icon: icon(SVG.liftLayers),
+        label: t('Lift layers'),
+        icon: icon(SVG.liftLayers),
         run: () => askLiftLayers(),
         disabled: liftTargetIndex(getBoxes()) < 0,
       });
@@ -4555,7 +5606,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (canChoreograph()) {
       if (!canLift()) items.push({ sep: true });
       items.push({
-        label: t('Choreograph…'), icon: icon(SVG.choreo),
+        label: t('Choreograph…'),
+        icon: icon(SVG.choreo),
         run: () => askChoreograph(),
         disabled: !canChoreographNow(),
       });
@@ -4587,10 +5639,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (editing) commitTextEdit();
     // While node editing, right-click is a NODE menu (align/distribute/continuity/delete),
     // not the object menu - and it must not re-select boxes underneath.
-    if (penEdit) { openPenNodeMenu(clientX, clientY); return; }
+    if (penEdit) {
+      openPenNodeMenu(clientX, clientY);
+      return;
+    }
     const nat = clientToNative(clientX, clientY);
     const boxes = getBoxes();
-    const hit = selectHit(boxes, nat.x, nat.y);   // artboard-aware: child over frame; frame on empty area
+    const hit = selectHit(boxes, nat.x, nat.y); // artboard-aware: child over frame; frame on empty area
     // Plan 179 C4, both halves. An UNSELECTED box is SELECTED - `new Set`, replacing what
     // was there, never adding to it: a menu that acts on "this and whatever was selected
     // before" is a menu whose verbs are aimed at something the user cannot see. A box that
@@ -4598,7 +5653,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // member of a group of five still means all five.
     if (hit >= 0 && !selection.has(idOf(boxes[hit], hit))) {
       selection = new Set(selectionForHit(boxes, hit, soloBox));
-      ctxSelKey = null;                       // the object bar re-gates for the new kind
+      ctxSelKey = null; // the object bar re-gates for the new kind
       renderChrome();
     }
     openContextMenu(clientX, clientY);
@@ -4609,9 +5664,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   const ADD_KIND_ICON: Record<string, string> = {
-    image: SVG.image, text: SVG.type, box: SVG.boxKind, lottie: SVG.anim, video: SVG.video,
+    image: SVG.image,
+    text: SVG.type,
+    box: SVG.boxKind,
+    lottie: SVG.anim,
+    video: SVG.video,
     // Sequence Studio's kinds - without these all three fell back to the generic "+".
-    clip: SVG.clipKind, card: SVG.boxKind, audio: SVG.audioKind, tool: SVG.toolKind,
+    clip: SVG.clipKind,
+    card: SVG.boxKind,
+    audio: SVG.audioKind,
+    tool: SVG.toolKind,
     // The frame primitive (plan 93) - the artboard "#" rather than a bare "+".
     frame: SVG.frame,
     // The scene camera (plans/104 section 5.4). Same glyph the timeline's add menu and the
@@ -4619,11 +5681,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     camera: SVG.camera,
   };
   function openAddMenu(anchor: HTMLElement): void {
-    spawnPopover(anchor, addKinds.map((k) => ({
-      label: k.label ? t(k.label) : k.id,
-      icon: icon(ADD_KIND_ICON[k.id] || SVG.add),
-      run: () => setMode('create', { kind: k }),
-    })));
+    spawnPopover(
+      anchor,
+      addKinds.map((k) => ({
+        label: k.label ? t(k.label) : k.id,
+        icon: icon(ADD_KIND_ICON[k.id] || SVG.add),
+        run: () => setMode('create', { kind: k }),
+      }))
+    );
   }
   function openArrangeMenu(): void {
     const has = selection.size > 0;
@@ -4631,19 +5696,35 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const canDist = selection.size >= 3;
     spawnPopover(arrangeBtn!, [
       // Align - a compact 3×2 icon grid (left/centre/right · top/middle/bottom).
-      { cols: 3, grid: [
-        { label: t('Align left'), icon: icon(SVG.alignL), run: () => applyAlign('left') },
-        { label: t('Align centre'), icon: icon(SVG.alignC), run: () => applyAlign('hcentre') },
-        { label: t('Align right'), icon: icon(SVG.alignR), run: () => applyAlign('right') },
-        { label: t('Align top'), icon: icon(SVG.alignT), run: () => applyAlign('top') },
-        { label: t('Align middle'), icon: icon(SVG.alignM), run: () => applyAlign('vcentre') },
-        { label: t('Align bottom'), icon: icon(SVG.alignB), run: () => applyAlign('bottom') },
-      ] },
+      {
+        cols: 3,
+        grid: [
+          { label: t('Align left'), icon: icon(SVG.alignL), run: () => applyAlign('left') },
+          { label: t('Align centre'), icon: icon(SVG.alignC), run: () => applyAlign('hcentre') },
+          { label: t('Align right'), icon: icon(SVG.alignR), run: () => applyAlign('right') },
+          { label: t('Align top'), icon: icon(SVG.alignT), run: () => applyAlign('top') },
+          { label: t('Align middle'), icon: icon(SVG.alignM), run: () => applyAlign('vcentre') },
+          { label: t('Align bottom'), icon: icon(SVG.alignB), run: () => applyAlign('bottom') },
+        ],
+      },
       // Distribute - needs 3+ selected, so disabled otherwise.
-      { cols: 2, grid: [
-        { label: t('Distribute horizontally'), icon: icon(SVG.distH), run: () => applyDistribute('h'), disabled: !canDist },
-        { label: t('Distribute vertically'), icon: icon(SVG.distV), run: () => applyDistribute('v'), disabled: !canDist },
-      ] },
+      {
+        cols: 2,
+        grid: [
+          {
+            label: t('Distribute horizontally'),
+            icon: icon(SVG.distH),
+            run: () => applyDistribute('h'),
+            disabled: !canDist,
+          },
+          {
+            label: t('Distribute vertically'),
+            icon: icon(SVG.distV),
+            run: () => applyDistribute('v'),
+            disabled: !canDist,
+          },
+        ],
+      },
       { sep: true },
       { label: t('Bring to front'), icon: icon(SVG.front), run: () => has && applyZ('front') },
       { label: t('Bring forward'), icon: icon(SVG.forward), run: () => has && applyZ('forward') },
@@ -4653,15 +5734,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       { label: t('Group'), icon: icon(SVG.group), run: () => multi && groupSelection() },
       { label: t('Ungroup'), icon: icon(SVG.ungroup), run: () => ungroupSelection() },
       { sep: true },
-      { label: t('Clip to bottom shape'), icon: icon(SVG.clip), run: () => multi && clipSelection() },
+      {
+        label: t('Clip to bottom shape'),
+        icon: icon(SVG.clip),
+        run: () => multi && clipSelection(),
+      },
       { label: t('Release clip'), icon: icon(SVG.unclip), run: () => releaseClip() },
     ]);
   }
 
   // ── contextual bar ───────────────────────────────────────────────────────────
 
-  /** Is every selected box a vector path box? Stroke paint only means something there - 
-   *  every other kind is a styled div, whose "border" is a different mechanism entirely - 
+  /** Is every selected box a vector path box? Stroke paint only means something there -
+   *  every other kind is a styled div, whose "border" is a different mechanism entirely -
    *  so a mixed selection gets no stroke controls rather than controls that write a field
    *  half the selection ignores. */
   function selectionAllPaths(boxes: Box[], idx: number[]): boolean {
@@ -4708,7 +5793,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    *  control only when all of it can honour the write - the `selectionAllPaths` rule.) */
   function selectionAllKinds(boxes: Box[], idx: number[], kinds: ReadonlySet<string>): boolean {
     if (!idx.length) return false;
-    return idx.every((i) => { const k = kindOf(boxes[i]); return !k || kinds.has(k); });
+    return idx.every((i) => {
+      const k = kindOf(boxes[i]);
+      return !k || kinds.has(k);
+    });
   }
   /** Does EVERY selected row's kind stay OUT of `kinds`? The deny-list twin of
    *  {@link selectionAllKinds}; the empty kind is never in a deny set, so it passes. */
@@ -4724,7 +5812,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * the id first and falls back to what the overlay was handed.
    */
   function colorScope(): Element | null {
-    return (typeof document !== 'undefined' ? document.getElementById('tool-canvas') : null) ?? canvasEl;
+    return (
+      (typeof document !== 'undefined' ? document.getElementById('tool-canvas') : null) ?? canvasEl
+    );
   }
 
   /**
@@ -4763,22 +5853,32 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * artboard's baked 2px border is finally removable from the canvas that drew it.
    */
   function paintCtxHtml(first: Box, allPaths: boolean, allStroked: boolean = allPaths): string {
-    const fillVal = cfg.fillField ? (first[cfg.fillField] || 'transparent') : '';
-    const fgVal = cfg.textColorField ? (first[cfg.textColorField] || '#0c322c') : '#0c322c';
-    const strokeVal = cfg.strokeField ? (first[cfg.strokeField] || 'transparent') : 'transparent';
+    const fillVal = cfg.fillField ? first[cfg.fillField] || 'transparent' : '';
+    const fgVal = cfg.textColorField ? first[cfg.textColorField] || '#0c322c' : '#0c322c';
+    const strokeVal = cfg.strokeField ? first[cfg.strokeField] || 'transparent' : 'transparent';
     // While a gradient is being edited on the canvas, the SAME field edits the
     // selected stop's colour instead of the flat fill - so the brand swatch palette
     // (the whole reason to reuse this control) is one click from every stop.
     const gradOn = gradEdit != null;
     const fillTitle = gradOn ? t('Gradient stop colour') : t('Fill');
     const fillShown = gradOn ? (gradStopColor(first) ?? fillVal) : fillVal;
-    return (cfg.fillField ? `<span class="fc-cfield" data-tip="${escape(fillTitle)}">${seededColorField('fc-fill', fillShown)}</span>` : '')
-      + (cfg.gradField && !allPaths
+    return (
+      (cfg.fillField
+        ? `<span class="fc-cfield" data-tip="${escape(fillTitle)}">${seededColorField('fc-fill', fillShown)}</span>`
+        : '') +
+      (cfg.gradField && !allPaths
         ? `<button type="button" class="fc-cbtn${gradOn ? ' is-on' : ''}" data-cx="grad" aria-pressed="${gradOn}" data-tip="${escape(t('Gradient - drag the stops on the canvas'))}" aria-label="${escape(t('Gradient fill'))}">${icon(SVG.gradIc)}</button>`
+        : '') +
+      (cfg.textColorField && !allPaths
+        ? `<span class="fc-cfield" data-tip="${escape(t('Text colour'))}">${seededColorField('fc-fg', fgVal)}</span>`
+        : '') +
+      (allStroked && cfg.strokeField
+        ? `<span class="fc-cfield" data-tip="${escape(t('Stroke colour'))}">${seededColorField('fc-stroke', strokeVal)}</span>`
+        : '') +
+      (allStroked
+        ? `<button type="button" class="fc-cbtn" data-cx="stroke" data-tip="${escape(t('Stroke - width, style, ends, corners, fill rule'))}" aria-label="${escape(t('Stroke options'))}">${icon(SVG.strokeIc)}</button>`
         : '')
-      + (cfg.textColorField && !allPaths ? `<span class="fc-cfield" data-tip="${escape(t('Text colour'))}">${seededColorField('fc-fg', fgVal)}</span>` : '')
-      + (allStroked && cfg.strokeField ? `<span class="fc-cfield" data-tip="${escape(t('Stroke colour'))}">${seededColorField('fc-stroke', strokeVal)}</span>` : '')
-      + (allStroked ? `<button type="button" class="fc-cbtn" data-cx="stroke" data-tip="${escape(t('Stroke - width, style, ends, corners, fill rule'))}" aria-label="${escape(t('Stroke options'))}">${icon(SVG.strokeIc)}</button>` : '');
+    );
   }
 
   /** One `wireColorField` call per bar - it binds delegated listeners on the scope, so a
@@ -4789,8 +5889,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         if (id === 'fc-fill') {
           if (gradEdit != null) setGradStopColor(unwrapColor(val));
           else setField(cfg.fillField, unwrapColor(val));
-        }
-        else if (id === 'fc-fg') setField(cfg.textColorField, unwrapColor(val));
+        } else if (id === 'fc-fg') setField(cfg.textColorField, unwrapColor(val));
         else if (id === 'fc-stroke') setField(cfg.strokeField, unwrapColor(val));
       },
     });
@@ -4825,8 +5924,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       ? timelinePanel.keyframableIds(idx.map((i) => idOf(boxes[i], i))).length
       : idx.filter((i) => String(boxes[i]?.kind ?? '') !== 'audio').length;
     const tip = n ? t('+Keyframe') : t('Sound has no pose to keyframe');
-    return `<button type="button" class="fc-cbtn" data-cx="kf" aria-disabled="${n ? 'false' : 'true'}"`
-      + ` data-tip="${escape(tip)}" aria-label="${escape(tip)}">${icon(SVG.keyframe)}</button>`;
+    return (
+      `<button type="button" class="fc-cbtn" data-cx="kf" aria-disabled="${n ? 'false' : 'true'}"` +
+      ` data-tip="${escape(tip)}" aria-label="${escape(tip)}">${icon(SVG.keyframe)}</button>`
+    );
   }
 
   /**
@@ -4841,14 +5942,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * can honestly be written at it.
    */
   function addKeyframeFromCanvas(): void {
-    void ensureTimeline(true).then(() => { timelinePanel?.addKeyframe(); });
+    void ensureTimeline(true).then(() => {
+      timelinePanel?.addKeyframe();
+    });
   }
 
   // ── camera mode (plans/104 section 8) ───────────────────────────────────────────────
   //
   // "Camera mode is entered by SELECTION, never a global toggle": with a camera
   // selected and the playhead inside its window, an empty-stage drag pans the shot and
-  // a plain wheel dollies it. There is nothing to switch on and nothing to switch off - 
+  // a plain wheel dollies it. There is nothing to switch on and nothing to switch off -
   // clicking any box hands both gestures straight back.
   //
   // The PANEL owns the answer (it owns the clock, and "inside its window" is a question
@@ -4893,7 +5996,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * use when they normalise.
    */
   const wheelPx = (e: WheelEvent): number =>
-    e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? (window.innerHeight || 800) : 1);
+    e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight || 800 : 1);
 
   function flushDolly(): void {
     dollyTimer = null;
@@ -4915,8 +6018,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * the stage keeps the wheel it has always had.
    */
   function onCameraWheel(e: WheelEvent): void {
-    if (e.ctrlKey || e.metaKey) return;          // the view's zoom, untouched
-    if (!camModeId()) return;                    // no camera armed: the view's pan
+    if (e.ctrlKey || e.metaKey) return; // the view's zoom, untouched
+    if (!camModeId()) return; // no camera armed: the view's pan
     e.preventDefault();
     e.stopPropagation();
     // AWAY FROM THE VIEWER ON A SCROLL DOWN. `eff = P/(P − (z − camZ))`, so a camera
@@ -4962,14 +6065,22 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const cut = String(ctxSelKey ?? '').indexOf('|');
       if (cut >= 0) return String(ctxSelKey).slice(cut + 1);
     }
-    const fields = [cfg.fillField, cfg.gradField, cfg.textColorField, cfg.strokeField, cfg.kindField];
+    const fields = [
+      cfg.fillField,
+      cfg.gradField,
+      cfg.textColorField,
+      cfg.strokeField,
+      cfg.kindField,
+    ];
     // Delimited, not concatenated: '#fff' + '' and '' + '#fff' are different states, and a
     // signature that cannot tell them apart is a rebuild that never happens. The two
     // separators are control characters, so no authored colour or kind can forge one.
-    return idx.map((i) => {
-      const b = boxes[i] || {};
-      return fields.map((f) => (f ? String(b[f] ?? '') : '')).join('\u0001');
-    }).join('\u0002');
+    return idx
+      .map((i) => {
+        const b = boxes[i] || {};
+        return fields.map((f) => (f ? String(b[f] ?? '') : '')).join('\u0001');
+      })
+      .join('\u0002');
   }
 
   // A box is one unified object (fill + shape + image + text), but the KINDS differ in
@@ -4987,7 +6098,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * `null` restores today's panels exactly - which is what keeps Org Chart, Carousel
    * Maker and every other editor tool (none of which mount a column) unchanged.
    */
-  let inspectorPort: { reveal(section: 'document' | 'artboard' | 'object' | 'text' | 'image' | 'motion' | 'present'): void } | null = null;
+  let inspectorPort: {
+    reveal(
+      section: 'document' | 'artboard' | 'object' | 'text' | 'image' | 'motion' | 'present'
+    ): void;
+  } | null = null;
   function setInspector(h: typeof inspectorPort): void {
     inspectorPort = h;
     // With the full Design chrome mounted the bar is the selection toolbar: it stays
@@ -5004,18 +6119,22 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    *  per sync frame, unlike a computed style. */
   function stageReserves(): { top: number; left: number; right: number } {
     const px = (p: string): number => parseFloat(stageEl.style.getPropertyValue(p)) || 0;
-    return { top: px('--stage-reserve-top'), left: px('--stage-reserve-left'), right: px('--stage-reserve-right') };
+    return {
+      top: px('--stage-reserve-top'),
+      left: px('--stage-reserve-left'),
+      right: px('--stage-reserve-right'),
+    };
   }
 
   function rebuildCtxBar(boxes: Box[], idx: number[]): void {
     // The gradient panel outlives a ctx-bar rebuild. Selecting a stop (and picking a
-    // stop colour) deliberately rebuilds the bar so its Fill field shows that stop - 
+    // stop colour) deliberately rebuilds the bar so its Fill field shows that stop -
     // and `closeMorePanel()` below would take the panel with it every time, so the
     // panel vanished the moment you touched a handle. Re-request it instead; the sync
     // that follows reopens it against the freshly built button.
     if (gradEdit != null && morePanel?.classList.contains('fc-grad-panel')) gradPanelPending = true;
     closeMorePanel();
-    const coarse = matchMedia('(pointer: coarse)').matches;   // touch → offer add-to-selection
+    const coarse = matchMedia('(pointer: coarse)').matches; // touch → offer add-to-selection
     const first: Box = boxes[idx[0]!] || {};
     const allPaths = selectionAllPaths(boxes, idx);
     // Stroke goes to every kind that renders a border (A5); text and image controls to
@@ -5044,9 +6163,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const verbsOnly = !!inspectorPort && gradEdit == null;
     ctxbar.innerHTML = `
       ${verbsOnly ? '' : paintCtxHtml(first, allPaths, allStroked)}
-      ${vectorCfg && idx.length === 1 && boxOutlineKind(first, vectorCfg) === 'path'
-        ? `<button type="button" class="fc-cbtn" data-cx="nodes" data-tip="${escape(t('Edit points (double-click)'))}" aria-label="${escape(t('Edit points'))}">${icon(SVG.nodes)}</button>`
-        : ''}
+      ${
+        vectorCfg && idx.length === 1 && boxOutlineKind(first, vectorCfg) === 'path'
+          ? `<button type="button" class="fc-cbtn" data-cx="nodes" data-tip="${escape(t('Edit points (double-click)'))}" aria-label="${escape(t('Edit points'))}">${icon(SVG.nodes)}</button>`
+          : ''
+      }
       ${canText ? `<button type="button" class="fc-cbtn" data-cx="edit" data-tip="${escape(t('Edit text (double-click)'))}" aria-label="${escape(t('Edit text'))}">${icon(SVG.pencil)}</button>` : ''}
       ${canText ? `<button type="button" class="fc-cbtn fc-cbtn-text" data-cx="text" data-tip="${escape(t('Text - size, font, weight, line height, kerning, ligatures, alignment'))}" aria-label="${escape(t('Text options'))}">Aa</button>` : ''}
       ${canImage ? `<button type="button" class="fc-cbtn" data-cx="setimg"${audioPick ? ' data-cx-audio="1"' : ''} data-tip="${escape(imgTip)}" aria-label="${escape(imgTip)}">${icon(audioPick ? SVG.audioKind : SVG.image)}</button>` : ''}
@@ -5058,22 +6179,42 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       ${coarse ? `<button type="button" class="fc-cbtn${multiTapMode ? ' is-on' : ''}" data-cx="multi" aria-pressed="${multiTapMode}" data-tip="${escape(t('Select more - tap cards to add'))}" aria-label="${escape(t('Select more cards'))}">${icon(SVG.add)}</button>` : ''}
       <button type="button" class="fc-readout" data-cx="dims" data-cx-readout data-tip="${escape(verbsOnly ? t('Edit in the inspector') : t('Edit position & size'))}" aria-label="${escape(verbsOnly ? t('Edit in the inspector') : t('Edit position and size'))}"></button>`;
     wirePaintCtx(ctxbar);
-    ctxbar.querySelectorAll<HTMLElement>('[data-cx]').forEach((b) => b.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const cx = b.dataset.cx;
-      if (cx === 'text') { if (inspectorPort) inspectorPort.reveal('text'); else openTextPanel(b); }
-      else if (cx === 'stroke') { if (inspectorPort) inspectorPort.reveal('object'); else openStrokePanel(b); }
-      else if (cx === 'nodes') { if (selection.size) startPenEdit([...selection][0]!); }
-      else if (cx === 'edit') { if (selection.size) startTextEdit([...selection][0]!, { selectAll: true }); }
-      else if (cx === 'kf') { if (b.getAttribute('aria-disabled') !== 'true') addKeyframeFromCanvas(); }
-      else if (cx === 'dup') duplicateSelection();
-      else if (cx === 'del') deleteSelection();
-      else if (cx === 'setimg') pickImage(b.dataset.cxAudio ? { pickType: 'audio' } : undefined);
-      else if (cx === 'more') { if (inspectorPort) inspectorPort.reveal('object'); else openMorePanel(b); }
-      else if (cx === 'grad') toggleGradEdit(b);
-      else if (cx === 'multi') { multiTapMode = !multiTapMode; b.classList.toggle('is-on', multiTapMode); b.setAttribute('aria-pressed', String(multiTapMode)); announce(multiTapMode ? t('Select more - tap cards to add them.') : t('Multi-select off.')); }
-      else if (cx === 'dims') { if (inspectorPort) inspectorPort.reveal('object'); else openDimsPanel(b); }
-    }));
+    ctxbar.querySelectorAll<HTMLElement>('[data-cx]').forEach((b) =>
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const cx = b.dataset.cx;
+        if (cx === 'text') {
+          if (inspectorPort) inspectorPort.reveal('text');
+          else openTextPanel(b);
+        } else if (cx === 'stroke') {
+          if (inspectorPort) inspectorPort.reveal('object');
+          else openStrokePanel(b);
+        } else if (cx === 'nodes') {
+          if (selection.size) startPenEdit([...selection][0]!);
+        } else if (cx === 'edit') {
+          if (selection.size) startTextEdit([...selection][0]!, { selectAll: true });
+        } else if (cx === 'kf') {
+          if (b.getAttribute('aria-disabled') !== 'true') addKeyframeFromCanvas();
+        } else if (cx === 'dup') duplicateSelection();
+        else if (cx === 'del') deleteSelection();
+        else if (cx === 'setimg') pickImage(b.dataset.cxAudio ? { pickType: 'audio' } : undefined);
+        else if (cx === 'more') {
+          if (inspectorPort) inspectorPort.reveal('object');
+          else openMorePanel(b);
+        } else if (cx === 'grad') toggleGradEdit(b);
+        else if (cx === 'multi') {
+          multiTapMode = !multiTapMode;
+          b.classList.toggle('is-on', multiTapMode);
+          b.setAttribute('aria-pressed', String(multiTapMode));
+          announce(
+            multiTapMode ? t('Select more - tap cards to add them.') : t('Multi-select off.')
+          );
+        } else if (cx === 'dims') {
+          if (inspectorPort) inspectorPort.reveal('object');
+          else openDimsPanel(b);
+        }
+      })
+    );
   }
 
   // ── on-canvas gradient editing ────────────────────────────────────────────────
@@ -5092,8 +6233,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // Colour picking deliberately reuses the ctx bar's Fill field: in gradient mode it
   // edits the SELECTED STOP, so the brand palette is one click from every stop rather
   // than being re-implemented here.
-  let gradEdit: string | null = null;   // box id being edited, or null
-  let gradStopIdx = 0;                  // which stop the Fill field + Delete act on
+  let gradEdit: string | null = null; // box id being edited, or null
+  let gradStopIdx = 0; // which stop the Fill field + Delete act on
   // The panel is opened by the SYNC, not by the click that asks for it. Entering
   // gradient mode resets `ctxSelKey` so the ctx bar rebuilds (its Fill field changes
   // meaning), and `rebuildCtxBar` begins with `closeMorePanel()` - so a panel opened
@@ -5127,7 +6268,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   /** The parsed spec on a box, or null when it has no (readable) gradient. */
   const gradSpecOf = (b: Box | undefined): GradientSpec | null =>
-    (b && cfg.gradField ? parseGradientSpec(String(b[cfg.gradField] ?? '')) : null);
+    b && cfg.gradField ? parseGradientSpec(String(b[cfg.gradField] ?? '')) : null;
 
   /** Index of the box being gradient-edited, or -1 (it may have been deleted). */
   function gradIndex(boxes: Box[]): number {
@@ -5144,7 +6285,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     gradLive = null;
     gradLayer.style.display = 'none';
     gradChrome.innerHTML = '';
-    ctxSelKey = '';        // force the ctx bar to rebuild without the stop-colour mode
+    ctxSelKey = ''; // force the ctx bar to rebuild without the stop-colour mode
     scheduleSync();
   }
 
@@ -5159,14 +6300,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function seedGradSpec(b: Box): GradientSpec {
     const fill = cfg.fillField ? String(b[cfg.fillField] ?? '') : '';
     const base = parseColor(fill) ? fill : '#30ba78';
-    const light = colorToHexString(interpolateColor(parseColor(base)!, parseColor('#ffffff')!, 0.7));
+    const light = colorToHexString(
+      interpolateColor(parseColor(base)!, parseColor('#ffffff')!, 0.7)
+    );
     return parseGradientSpec(`lin_90_${base.replace('#', '')}-0_${light.replace('#', '')}-100`)!;
   }
 
   /** Enter/leave gradient mode for the current selection. */
   function toggleGradEdit(anchor: HTMLElement): void {
     if (!cfg.gradField) return;
-    if (gradEdit != null) { exitGradEdit(); return; }
+    if (gradEdit != null) {
+      exitGradEdit();
+      return;
+    }
     const boxes = getBoxes();
     const idx = selIndices(boxes);
     if (idx.length !== 1) {
@@ -5176,12 +6322,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const b = boxes[idx[0]!]!;
     gradEdit = idOf(b, idx[0]!);
     gradStopIdx = 0;
-    // A box with no gradient yet gets one, in the same step that opens the editor - 
+    // A box with no gradient yet gets one, in the same step that opens the editor -
     // otherwise the handles would have nothing to sit on.
     if (!gradSpecOf(b)) writeGradSpec(seedGradSpec(b), false);
     ctxSelKey = '';
     gradPanelPending = true;
-    void anchor;              // the panel anchors on the rebuilt button, not this one
+    void anchor; // the panel anchors on the rebuilt button, not this one
     scheduleSync();
   }
 
@@ -5243,9 +6389,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const cb = parseColor(after.color);
     // Sampled through the engine in the spec's OWN space, so the new stop lands on the
     // curve the user can see rather than on the sRGB chord through it.
-    const colour = ca && cb
-      ? colorToHexString(interpolateColor(ca, cb, f, { space: spec.space, hue: spec.hue }))
-      : before.color;
+    const colour =
+      ca && cb
+        ? colorToHexString(interpolateColor(ca, cb, f, { space: spec.space, hue: spec.hue }))
+        : before.color;
     const stops = [...spec.stops];
     stops.splice(at, 0, { color: colour, pos });
     gradStopIdx = at;
@@ -5274,7 +6421,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    */
   function paintGradChrome(boxes: Box[], m: Metrics): void {
     if (gradEdit == null) {
-      if (gradLayer.style.display !== 'none') { gradLayer.style.display = 'none'; gradChrome.innerHTML = ''; }
+      if (gradLayer.style.display !== 'none') {
+        gradLayer.style.display = 'none';
+        gradChrome.innerHTML = '';
+      }
       return;
     }
     const i = gradIndex(boxes);
@@ -5306,20 +6456,24 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // Two strokes: a dark halo under a light rule, so the line stays visible over any
     // artwork (the same reason the guides layer doubles up).
     gradLayer.innerHTML =
-      `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" class="fc-grad-line-halo"/>`
-      + `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" class="fc-grad-line"/>`;
+      `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" class="fc-grad-line-halo"/>` +
+      `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" class="fc-grad-line"/>`;
 
     gradChrome.innerHTML = '';
     const lerpStage = (t: number) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
     spec.stops.forEach((st, si) => {
       const p = lerpStage(Math.min(100, Math.max(0, st.pos)) / 100);
       const h = document.createElement('div');
-      h.className = 'fc-grad-stop' + (si === Math.min(gradStopIdx, spec.stops.length - 1) ? ' is-on' : '');
+      h.className =
+        'fc-grad-stop' + (si === Math.min(gradStopIdx, spec.stops.length - 1) ? ' is-on' : '');
       h.style.left = `${p.x}px`;
       h.style.top = `${p.y}px`;
       // The handle IS its colour - a swatch you can see against the paint behind it.
       h.style.setProperty('--stop', parseColor(st.color) ? st.color : 'transparent');
-      h.setAttribute('data-tip', t('Stop {n} - {pos}%', { n: String(si + 1), pos: String(Math.round(st.pos)) }));
+      h.setAttribute(
+        'data-tip',
+        t('Stop {n} - {pos}%', { n: String(si + 1), pos: String(Math.round(st.pos)) })
+      );
       h.setAttribute('aria-label', h.getAttribute('data-tip') || '');
       h.addEventListener('pointerdown', (e) => onGradStopDown(e, si));
       gradChrome.appendChild(h);
@@ -5340,7 +6494,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   // Native (box-local) coords for a pointer event, in the edited box's own frame.
-  function gradLocal(e: PointerEvent, boxes: Box[], i: number): { x: number; y: number; w: number; h: number } {
+  function gradLocal(
+    e: PointerEvent,
+    boxes: Box[],
+    i: number
+  ): { x: number; y: number; w: number; h: number } {
     const r = boxRect(boxes[i]!, cfg);
     const off = frameOffsetOfEl(liveBoxEl(gradEdit!) ?? canvasEl);
     const n = clientToNative(e.clientX, e.clientY);
@@ -5357,7 +6515,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const spec0 = i >= 0 ? gradSpecOf(boxes[i]) : null;
     if (!spec0) return;
     gradStopIdx = si;
-    ctxSelKey = '';                    // the Fill field now shows THIS stop
+    ctxSelKey = ''; // the Fill field now shows THIS stop
     let spec = spec0;
     let moved = false;
     const move = (ev: PointerEvent) => {
@@ -5367,7 +6525,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       stops[si] = { ...stops[si]!, pos };
       spec = { ...spec, stops };
       moved = true;
-      writeGradSpec(spec, true);       // live: mutate the box's own background only
+      writeGradSpec(spec, true); // live: mutate the box's own background only
       scheduleSync();
     };
     const up = (ev: PointerEvent) => {
@@ -5438,68 +6596,105 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const p = document.createElement('div');
     p.className = 'fc-panel fc-grad-panel';
     p.innerHTML =
-      gradSegRow(t('Gradient'), segHtml('gradkind', spec.kind, [
-        ['linear', t('Linear')], ['radial', t('Radial')], ['conic', t('Conic')]]))
-      + gradSegRow(t('Blend'), segHtml('gradspace', spec.space,
-        BLEND_STYLES.map(b => [b.space, t(b.label)] as [string, string])))
-      + (polar ? gradSegRow(t('Hue route'), segHtml('gradhue', spec.hue || 'shorter',
-        HUE_ROUTES.map(r => [r.dir, t(r.label)] as [string, string]))) : '')
-      + `<div class="fc-row fc-grad-row-btns">`
-      + `<button type="button" class="fc-pop-item" data-gp="add">${t('Add stop')}</button>`
-      + `<button type="button" class="fc-pop-item" data-gp="del"${spec.stops.length <= 2 ? ' disabled' : ''}>${t('Remove stop')}</button>`
-      + `<button type="button" class="fc-pop-item fc-danger" data-gp="clear">${t('No gradient')}</button>`
-      + `</div>`;
+      gradSegRow(
+        t('Gradient'),
+        segHtml('gradkind', spec.kind, [
+          ['linear', t('Linear')],
+          ['radial', t('Radial')],
+          ['conic', t('Conic')],
+        ])
+      ) +
+      gradSegRow(
+        t('Blend'),
+        segHtml(
+          'gradspace',
+          spec.space,
+          BLEND_STYLES.map((b) => [b.space, t(b.label)] as [string, string])
+        )
+      ) +
+      (polar
+        ? gradSegRow(
+            t('Hue route'),
+            segHtml(
+              'gradhue',
+              spec.hue || 'shorter',
+              HUE_ROUTES.map((r) => [r.dir, t(r.label)] as [string, string])
+            )
+          )
+        : '') +
+      `<div class="fc-row fc-grad-row-btns">` +
+      `<button type="button" class="fc-pop-item" data-gp="add">${t('Add stop')}</button>` +
+      `<button type="button" class="fc-pop-item" data-gp="del"${spec.stops.length <= 2 ? ' disabled' : ''}>${t('Remove stop')}</button>` +
+      `<button type="button" class="fc-pop-item fc-danger" data-gp="clear">${t('No gradient')}</button>` +
+      `</div>`;
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
     wireSegs(p, (field, v) => {
       const cur = gradSpecOf(getBoxes()[gradIndex(getBoxes())]);
       if (!cur || !v) return;
       if (field === 'gradkind') writeGradSpec({ ...cur, kind: v as GradientSpec['kind'] }, false);
-      else if (field === 'gradspace') writeGradSpec({ ...cur, space: v as GradientSpec['space'] }, false);
+      else if (field === 'gradspace')
+        writeGradSpec({ ...cur, space: v as GradientSpec['space'] }, false);
       else if (field === 'gradhue') writeGradSpec({ ...cur, hue: v as GradientSpec['hue'] }, false);
-      // Reopen so a space change can show/hide the hue row against the new state - 
+      // Reopen so a space change can show/hide the hue row against the new state -
       // through the pending flag, for the same reason the first open goes that way.
-      if (field === 'gradspace') { gradPanelPending = true; scheduleSync(); }
-    });
-    p.querySelectorAll<HTMLElement>('[data-gp]').forEach((btn) => btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const cur = gradSpecOf(getBoxes()[gradIndex(getBoxes())]);
-      if (!cur) return;
-      if (btn.dataset.gp === 'add') {
-        // Halfway between the selected stop and the NEXT one. On the last stop there is
-        // no next, so go halfway back to the previous instead - the seeded gradient
-        // selects a stop at 100%, where "halfway to itself" is 100% and the button did
-        // nothing at all.
-        const at = Math.min(gradStopIdx, cur.stops.length - 1);
-        const here = cur.stops[at]!.pos;
-        const neighbour = at + 1 < cur.stops.length ? cur.stops[at + 1]!.pos : cur.stops[Math.max(0, at - 1)]!.pos;
-        const mid = (here + neighbour) / 2;
-        // Degenerate only if the neighbour sits exactly on top (a hard-edge pair):
-        // then nudge into whatever room the gradient has.
-        const pos = Math.abs(mid - here) < 0.5 ? (here >= 50 ? Math.max(0, here - 10) : Math.min(100, here + 10)) : mid;
-        writeGradSpec(insertGradStop(cur, pos), false);
-      } else if (btn.dataset.gp === 'del') {
-        deleteGradStop();
-      } else {
-        setField(cfg.gradField, '');
-        exitGradEdit();
-        closeMorePanel();
-        return;
+      if (field === 'gradspace') {
+        gradPanelPending = true;
+        scheduleSync();
       }
-      ctxSelKey = '';
-      gradPanelPending = true;
-      scheduleSync();
-    }));
+    });
+    p.querySelectorAll<HTMLElement>('[data-gp]').forEach((btn) =>
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const cur = gradSpecOf(getBoxes()[gradIndex(getBoxes())]);
+        if (!cur) return;
+        if (btn.dataset.gp === 'add') {
+          // Halfway between the selected stop and the NEXT one. On the last stop there is
+          // no next, so go halfway back to the previous instead - the seeded gradient
+          // selects a stop at 100%, where "halfway to itself" is 100% and the button did
+          // nothing at all.
+          const at = Math.min(gradStopIdx, cur.stops.length - 1);
+          const here = cur.stops[at]!.pos;
+          const neighbour =
+            at + 1 < cur.stops.length
+              ? cur.stops[at + 1]!.pos
+              : cur.stops[Math.max(0, at - 1)]!.pos;
+          const mid = (here + neighbour) / 2;
+          // Degenerate only if the neighbour sits exactly on top (a hard-edge pair):
+          // then nudge into whatever room the gradient has.
+          const pos =
+            Math.abs(mid - here) < 0.5
+              ? here >= 50
+                ? Math.max(0, here - 10)
+                : Math.min(100, here + 10)
+              : mid;
+          writeGradSpec(insertGradStop(cur, pos), false);
+        } else if (btn.dataset.gp === 'del') {
+          deleteGradStop();
+        } else {
+          setField(cfg.gradField, '');
+          exitGradEdit();
+          closeMorePanel();
+          return;
+        }
+        ctxSelKey = '';
+        gradPanelPending = true;
+        scheduleSync();
+      })
+    );
     stageEl.appendChild(p);
     morePanel = p;
     const ar = anchor.getBoundingClientRect();
     const sr = stageEl.getBoundingClientRect();
     p.style.left = Math.min(ar.left - sr.left, sr.width - p.offsetWidth - 8) + 'px';
-    p.style.top = (ar.bottom - sr.top + 8) + 'px';
+    p.style.top = ar.bottom - sr.top + 8 + 'px';
   }
 
   // ── "More" panel: shape / radius / opacity / image fit / blend ────────────────
   let morePanel: HTMLElement | null = null;
-  function closeMorePanel() { morePanel?.remove(); morePanel = null; }
+  function closeMorePanel() {
+    morePanel?.remove();
+    morePanel = null;
+  }
   /**
    * Close the innermost floating surface, and report whether there WAS one. This is rung 1
    * of the Escape ladder (see `onKey`), and the honesty of the return value is the whole
@@ -5515,7 +6710,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const colour = stageEl.querySelector<HTMLElement>('.color-popover:not([hidden])');
     if (colour) {
       const field = colour.closest<HTMLElement>('[data-color-field]');
-      if (field) { field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: false })); return true; }
+      if (field) {
+        field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: false }));
+        return true;
+      }
     }
     // A reference to a detached element is not an open panel. Drop it rather than
     // "closing" it, or it eats this press and every one after.
@@ -5536,11 +6734,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // document must reopen with the unit its author used. Geometry remains CSS px, so
   // legacy boxes and the renderer retain their exact values.
   const readDocumentUnit = (): string => {
-    const v = runtime.getModel().find(i => i.id === 'documentUnit')?.value;
+    const v = runtime.getModel().find((i) => i.id === 'documentUnit')?.value;
     return typeof v === 'string' && SIZE_UNITS.includes(v) ? v : 'px';
   };
   const readDocumentDpi = (): number => {
-    const n = Number(runtime.getModel().find(i => i.id === 'documentDpi')?.value);
+    const n = Number(runtime.getModel().find((i) => i.id === 'documentDpi')?.value);
     return Number.isFinite(n) && n >= 36 && n <= 2400 ? Math.round(n) : 300;
   };
   let sizeUnit = readDocumentUnit();
@@ -5572,7 +6770,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }) as EventListener);
   // px per 1 of a unit (96-DPI CSS convention - matches the artboard mapping).
   const pxPerUnit = (u: string): number => (u === 'px' ? 1 : toCssPx({ value: 1, unit: u as any }));
-  const toUnitVal = (n: number, from: string, to: string): number => (n > 0 ? Math.round(n * pxPerUnit(from) / pxPerUnit(to) * 100) / 100 : n);
+  const toUnitVal = (n: number, from: string, to: string): number =>
+    n > 0 ? Math.round(((n * pxPerUnit(from)) / pxPerUnit(to)) * 100) / 100 : n;
   // The artboard the size UI targets: the selected frame-kind box, else the primary
   // (lowest order, then leftmost) one. −1 when the doc has no artboards.
   function activeFrameIndex(boxes: Box[]): number {
@@ -5587,9 +6786,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     for (let i = 0; i < boxes.length; i++) {
       const b = boxes[i];
       if (!b || String(b[cfg.kindField]) !== fk) continue;
-      if (best < 0) { best = i; continue; }
+      if (best < 0) {
+        best = i;
+        continue;
+      }
       const a = boxes[best]!;
-      const cmp = (num(of ? b[of] : 0) - num(of ? a[of] : 0)) || (num(b[cfg.xField]) - num(a[cfg.xField]));
+      const cmp =
+        num(of ? b[of] : 0) - num(of ? a[of] : 0) || num(b[cfg.xField]) - num(a[cfg.xField]);
       if (cmp < 0) best = i;
     }
     return best;
@@ -5607,8 +6810,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function frameClientRect(fb: Box | undefined): DOMRect | null {
     const fid = fb?.[cfg.idField] == null ? '' : String(fb![cfg.idField]);
     if (!fid) return null;
-    const el = canvasEl.querySelector<HTMLElement>(`.lolly-frame-page[data-frame-id="${cssEscape(fid)}"]`)
-      ?? canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(fid)}"]`);
+    const el =
+      canvasEl.querySelector<HTMLElement>(`.lolly-frame-page[data-frame-id="${cssEscape(fid)}"]`) ??
+      canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(fid)}"]`);
     return el ? el.getBoundingClientRect() : null;
   }
 
@@ -5626,9 +6830,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const boxes = getBoxes();
     const r = frameClientRect(boxes.find((b, i) => idOf(b, i) === id));
     if (!r) return;
-    stageEl.dispatchEvent(new CustomEvent('fc-focus-rect', { bubbles: true, detail: {
-      x: r.left, y: r.top, w: r.width, h: r.height,
-    } }));
+    stageEl.dispatchEvent(
+      new CustomEvent('fc-focus-rect', {
+        bubbles: true,
+        detail: {
+          x: r.left,
+          y: r.top,
+          w: r.width,
+          h: r.height,
+        },
+      })
+    );
   }
 
   // With artboards in the doc the pasteboard is the world - a canvas-rect clamp
@@ -5673,14 +6885,24 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // 3508) and at 150 dpi (1240 × 1754) as px, so a board called A4 exported 656 × 928 mm.
   // design-units-contract.test.ts round-trips every paper preset through units.ts.
   const SIZE_PRESETS: Array<[string, number, number]> = [
-    ['Landscape 16:9', 1920, 1080], ['Story 9:16', 1080, 1920], ['Square', 1080, 1080],
-    ['Standard 4:3', 1440, 1080], ['Cinematic 21:9', 2520, 1080], ['Stage 32:9', 3840, 1080],
-    ['Portrait 4:5', 1080, 1350], ['Wide 1.91:1', 1200, 630], ['A4 portrait', 793.7, 1122.5],
+    ['Landscape 16:9', 1920, 1080],
+    ['Story 9:16', 1080, 1920],
+    ['Square', 1080, 1080],
+    ['Standard 4:3', 1440, 1080],
+    ['Cinematic 21:9', 2520, 1080],
+    ['Stage 32:9', 3840, 1080],
+    ['Portrait 4:5', 1080, 1350],
+    ['Wide 1.91:1', 1200, 630],
+    ['A4 portrait', 793.7, 1122.5],
   ];
   // Page-size presets for multi-page (carousel) mode. Every page shares one size.
   const PAGE_PRESETS: Array<[string, number, number]> = [
-    ['Portrait 4:5', 1080, 1350], ['Square', 1080, 1080], ['Story 9:16', 1080, 1920],
-    ['Landscape 16:9', 1920, 1080], ['A4 portrait', 793.7, 1122.5], ['Letter', 816, 1056],
+    ['Portrait 4:5', 1080, 1350],
+    ['Square', 1080, 1080],
+    ['Story 9:16', 1080, 1920],
+    ['Landscape 16:9', 1920, 1080],
+    ['A4 portrait', 793.7, 1122.5],
+    ['Letter', 816, 1056],
   ];
   const modelVal = (id: string, dflt: number): number => {
     const v = runtime.getModel().find((i) => i.id === id)?.value;
@@ -5701,13 +6923,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     p.innerHTML =
       `<div class="fc-panel-head">${t('Pages')}</div>` +
       '<div class="fc-row fc-pages-step">' +
-        `<button type="button" class="fc-step-btn" data-pg="dec" aria-label="${escape(t('Fewer pages'))}"${cur <= pages.min ? ' disabled' : ''}>${icon(SVG.minus)}</button>` +
-        `<b class="fc-pages-count" data-pg-count>${cur}</b>` +
-        `<button type="button" class="fc-step-btn" data-pg="inc" aria-label="${escape(t('More pages'))}"${cur >= pages.max ? ' disabled' : ''}>${icon(SVG.add)}</button>` +
+      `<button type="button" class="fc-step-btn" data-pg="dec" aria-label="${escape(t('Fewer pages'))}"${cur <= pages.min ? ' disabled' : ''}>${icon(SVG.minus)}</button>` +
+      `<b class="fc-pages-count" data-pg-count>${cur}</b>` +
+      `<button type="button" class="fc-step-btn" data-pg="inc" aria-label="${escape(t('More pages'))}"${cur >= pages.max ? ' disabled' : ''}>${icon(SVG.add)}</button>` +
       '</div>' +
       `<div class="fc-panel-head">${t('Page size')}</div>` +
       '<div class="fc-size-presets">' +
-        PAGE_PRESETS.map(([label, w, h]) => `<button type="button" class="fc-size-preset${w === pw && h === ph ? ' is-current' : ''}" data-w="${w}" data-h="${h}"><b>${escape(t(label))}</b><span>${w}×${h}</span></button>`).join('') +
+      PAGE_PRESETS.map(
+        ([label, w, h]) =>
+          `<button type="button" class="fc-size-preset${w === pw && h === ph ? ' is-current' : ''}" data-w="${w}" data-h="${h}"><b>${escape(t(label))}</b><span>${w}×${h}</span></button>`
+      ).join('') +
       '</div>';
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
     const setCount = (n: number): void => {
@@ -5718,14 +6943,22 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       onDirty?.(pages.countField);
       runtime.setInput(pages.countField, clamped);
     };
-    p.querySelector('[data-pg="dec"]')!.addEventListener('click', () => setCount(clampN(modelVal(pages.countField, cur), cur, pages.min, pages.max) - 1));
-    p.querySelector('[data-pg="inc"]')!.addEventListener('click', () => setCount(clampN(modelVal(pages.countField, cur), cur, pages.min, pages.max) + 1));
-    p.querySelectorAll<HTMLButtonElement>('.fc-size-preset').forEach((b) => b.addEventListener('click', () => {
-      p.querySelectorAll('.fc-size-preset').forEach((x) => x.classList.toggle('is-current', x === b));
-      onDirty?.(pages.widthField);
-      runtime.setInput(pages.widthField, +b.dataset.w!);
-      runtime.setInput(pages.heightField, +b.dataset.h!);
-    }));
+    p.querySelector('[data-pg="dec"]')!.addEventListener('click', () =>
+      setCount(clampN(modelVal(pages.countField, cur), cur, pages.min, pages.max) - 1)
+    );
+    p.querySelector('[data-pg="inc"]')!.addEventListener('click', () =>
+      setCount(clampN(modelVal(pages.countField, cur), cur, pages.min, pages.max) + 1)
+    );
+    p.querySelectorAll<HTMLButtonElement>('.fc-size-preset').forEach((b) =>
+      b.addEventListener('click', () => {
+        p.querySelectorAll('.fc-size-preset').forEach((x) =>
+          x.classList.toggle('is-current', x === b)
+        );
+        onDirty?.(pages.widthField);
+        runtime.setInput(pages.widthField, +b.dataset.w!);
+        runtime.setInput(pages.heightField, +b.dataset.h!);
+      })
+    );
     stageEl.appendChild(p);
     morePanel = p;
     positionPanelBelow(p, anchor);
@@ -5735,18 +6968,21 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // Framed docs: the panel reads/edits the ACTIVE artboard (plans/141 WP-B).
     const boxes0 = getBoxes();
     const fi = activeFrameIndex(boxes0);
-    const d = fi >= 0
-      ? { w: num(boxes0[fi]![cfg.wField]), h: num(boxes0[fi]![cfg.hField]) }
-      : canvasWH();   // always px
+    const d =
+      fi >= 0 ? { w: num(boxes0[fi]![cfg.wField]), h: num(boxes0[fi]![cfg.hField]) } : canvasWH(); // always px
     const dpi = readDocumentDpi();
     // Show the current px size expressed in the remembered unit.
-    const dispW = toUnitVal(d.w, 'px', sizeUnit), dispH = toUnitVal(d.h, 'px', sizeUnit);
+    const dispW = toUnitVal(d.w, 'px', sizeUnit),
+      dispH = toUnitVal(d.h, 'px', sizeUnit);
     const p = document.createElement('div');
     p.className = 'fc-panel fc-size-panel';
     p.innerHTML =
       `<div class="fc-panel-head">${fi >= 0 ? t('Artboard size') : t('Canvas size')}</div>` +
       '<div class="fc-size-presets">' +
-      SIZE_PRESETS.map(([label, w, h]) => `<button type="button" class="fc-size-preset${sizeUnit === 'px' && w === d.w && h === d.h ? ' is-current' : ''}" data-w="${w}" data-h="${h}"><b>${escape(t(label))}</b><span>${w}×${h}</span></button>`).join('') +
+      SIZE_PRESETS.map(
+        ([label, w, h]) =>
+          `<button type="button" class="fc-size-preset${sizeUnit === 'px' && w === d.w && h === d.h ? ' is-current' : ''}" data-w="${w}" data-h="${h}"><b>${escape(t(label))}</b><span>${w}×${h}</span></button>`
+      ).join('') +
       '</div>' +
       `<label class="fc-row"><span>${t('Units')}</span><select class="field-select field-select--sm" data-sz="unit">${SIZE_UNITS.map((u) => `<option value="${u}"${u === sizeUnit ? ' selected' : ''}>${u}</option>`).join('')}</select></label>` +
       `<label class="fc-row"><span>${t('Width')}</span><input type="number" min="1" max="30000" step="any" data-sz="w" value="${dispW}"><b data-sz-unit>${sizeUnit}</b></label>` +
@@ -5755,25 +6991,43 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
     const wIn = () => p.querySelector<HTMLInputElement>('[data-sz="w"]')!;
     const hIn = () => p.querySelector<HTMLInputElement>('[data-sz="h"]')!;
-    p.querySelectorAll<HTMLButtonElement>('.fc-size-preset').forEach((b) => b.addEventListener('click', () => {
-      // Paper presets carry their truthful physical unit; screen presets remain px.
-      const paper = b.textContent?.includes('A4') ? 'mm' : b.textContent?.includes('Letter') ? 'in' : 'px';
-      const pw = +b.dataset.w!, ph = +b.dataset.h!;
-      setDocumentUnit(paper);
-      p.querySelector<HTMLSelectElement>('[data-sz="unit"]')!.value = paper;
-      p.querySelectorAll<HTMLElement>('[data-sz-unit]').forEach((x) => (x.textContent = paper));
-      wIn().value = String(toUnitVal(pw, 'px', paper)); hIn().value = String(toUnitVal(ph, 'px', paper));
-      p.querySelectorAll('.fc-size-preset').forEach((x) => x.classList.toggle('is-current', x === b));
-      applyDocSize(+wIn().value, +hIn().value, paper);
-    }));
+    p.querySelectorAll<HTMLButtonElement>('.fc-size-preset').forEach((b) =>
+      b.addEventListener('click', () => {
+        // Paper presets carry their truthful physical unit; screen presets remain px.
+        const paper = b.textContent?.includes('A4')
+          ? 'mm'
+          : b.textContent?.includes('Letter')
+            ? 'in'
+            : 'px';
+        const pw = +b.dataset.w!,
+          ph = +b.dataset.h!;
+        setDocumentUnit(paper);
+        p.querySelector<HTMLSelectElement>('[data-sz="unit"]')!.value = paper;
+        p.querySelectorAll<HTMLElement>('[data-sz-unit]').forEach((x) => (x.textContent = paper));
+        wIn().value = String(toUnitVal(pw, 'px', paper));
+        hIn().value = String(toUnitVal(ph, 'px', paper));
+        p.querySelectorAll('.fc-size-preset').forEach((x) =>
+          x.classList.toggle('is-current', x === b)
+        );
+        applyDocSize(+wIn().value, +hIn().value, paper);
+      })
+    );
     const commitCustom = () => {
-      const w = parseFloat(wIn().value), h = parseFloat(hIn().value);
+      const w = parseFloat(wIn().value),
+        h = parseFloat(hIn().value);
       if (w > 0 && h > 0) {
         applyDocSize(w, h, sizeUnit);
-        p.querySelectorAll<HTMLButtonElement>('.fc-size-preset').forEach((x) => x.classList.toggle('is-current', sizeUnit === 'px' && +x.dataset.w! === Math.round(w) && +x.dataset.h! === Math.round(h)));
+        p.querySelectorAll<HTMLButtonElement>('.fc-size-preset').forEach((x) =>
+          x.classList.toggle(
+            'is-current',
+            sizeUnit === 'px' && +x.dataset.w! === Math.round(w) && +x.dataset.h! === Math.round(h)
+          )
+        );
       }
     };
-    p.querySelectorAll<HTMLInputElement>('input[data-sz]').forEach((i) => i.addEventListener('change', commitCustom));
+    p.querySelectorAll<HTMLInputElement>('input[data-sz]').forEach((i) =>
+      i.addEventListener('change', commitCustom)
+    );
     p.querySelector<HTMLInputElement>('[data-sz="dpi"]')!.addEventListener('change', (e) => {
       const next = Math.round(Number((e.target as HTMLInputElement).value));
       if (!(next >= 36 && next <= 2400)) return;
@@ -5792,7 +7046,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     });
     stageEl.appendChild(p);
     morePanel = p;
-    const ar = anchor.getBoundingClientRect(), sr = stageEl.getBoundingClientRect();
+    const ar = anchor.getBoundingClientRect(),
+      sr = stageEl.getBoundingClientRect();
     p.style.left = Math.min(ar.right - sr.left + 8, sr.width - p.offsetWidth - 8) + 'px';
     p.style.top = Math.max(6, Math.min(ar.top - sr.top, sr.height - p.offsetHeight - 8)) + 'px';
   }
@@ -5819,7 +7074,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // than disables, for the same reason: this panel is rebuilt per open, so a row that
     // could do nothing is simply not drawn.
     const showChoreo = canChoreograph() && idx.filter((i) => isPosable(boxes[i])).length >= 2;
-    const isFrame = !!frameCfg && idx.length === 1 && String(b[cfg.kindField]) === frameCfg.frameKind;
+    const isFrame =
+      !!frameCfg && idx.length === 1 && String(b[cfg.kindField]) === frameCfg.frameKind;
     const showClip = isFrame && !!frameCfg!.clipChildrenField;
     const clipCur = showClip ? boolOf(b[frameCfg!.clipChildrenField!], true) : true;
     const shapeCur = b[cfg.shapeField] || 'rect';
@@ -5842,10 +7098,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // two doors onto one channel with different ranges is the failure `holdTilt` names.
     // (`isPosable` also rules out a frame page and an audio clip, which is right for the
     // same reason a showcase will not pose them: neither paints a card to tilt.)
-    const tiltRx = cv.rxField || '', tiltRy = cv.ryField || '';
+    const tiltRx = cv.rxField || '',
+      tiltRy = cv.ryField || '';
     const showTilt = idx.length === 1 && !!(tiltRx || tiltRy) && isPosable(b);
-    const rxCur = showTilt ? Math.round(clampN(parseFloat(String(b[tiltRx])), 0, FC_TILT[0], FC_TILT[1])) : 0;
-    const ryCur = showTilt ? Math.round(clampN(parseFloat(String(b[tiltRy])), 0, FC_TILT[0], FC_TILT[1])) : 0;
+    const rxCur = showTilt
+      ? Math.round(clampN(parseFloat(String(b[tiltRx])), 0, FC_TILT[0], FC_TILT[1]))
+      : 0;
+    const ryCur = showTilt
+      ? Math.round(clampN(parseFloat(String(b[tiltRy])), 0, FC_TILT[0], FC_TILT[1]))
+      : 0;
     // ── what this selection can actually be asked (plan 179 C6) ────────────────
     // Image fit and Image position style an image the box does not have: on a text box
     // they were two controls that wrote a field nothing read, and they were the first
@@ -5856,10 +7117,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // EVERY selected item, not just the first: the panel reads one box and writes them
     // all, so a path beside a box still has a box to shape.
     const allPathSel = selectionAllPaths(boxes, idx);
-    const hasImg = !!cfg.imageField && idx.some((i) => {
-      const row = boxes[i] || {};
-      return kindOf(row) === 'image' || !!row[cfg.imageField];
-    });
+    const hasImg =
+      !!cfg.imageField &&
+      idx.some((i) => {
+        const row = boxes[i] || {};
+        return kindOf(row) === 'image' || !!row[cfg.imageField];
+      });
     const showImgRows = hasImg && selectionNoKinds(boxes, idx, NO_IMAGE_KINDS);
     const showShapeRows = !allPathSel;
     // Shadow targets an ARTBOARD can honour (plan 179 A4's remainder). `frameGroupsFor`
@@ -5878,39 +7141,90 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       ${cfg.shapeField && shapeChoices.length && showShapeRows ? segRow(SVG.shRounded, t('Shape'), segHtml(cfg.shapeField, shapeCur, shapeChoices)) : ''}
       ${cfg.radiusField && showShapeRows ? iconRow(SVG.radius, t('Corner radius'), `<input type="range" class="field-range" data-mp="radius" min="0" max="200" value="${radiusCur}"><b data-mp-val="radius">${radiusCur}</b>`) : ''}
       ${cfg.opacityField ? iconRow(SVG.opacity, t('Opacity'), `<input type="range" class="field-range" data-mp="opacity" min="0" max="100" value="${Number.isFinite(opacityCur) ? opacityCur : 100}"><b data-mp-val="opacity">${Number.isFinite(opacityCur) ? opacityCur : 100}</b>`) : ''}
-      ${cfg.fitField && showImgRows ? segRow(SVG.fitContain, t('Image fit'), segHtml(cfg.fitField, fitCur, [['contain', t('Contain'), SVG.fitContain], ['cover', t('Cover (crop)'), SVG.fitCover], ['fill', t('Stretch'), SVG.fitFill]])) : ''}
+      ${
+        cfg.fitField && showImgRows
+          ? segRow(
+              SVG.fitContain,
+              t('Image fit'),
+              segHtml(cfg.fitField, fitCur, [
+                ['contain', t('Contain'), SVG.fitContain],
+                ['cover', t('Cover (crop)'), SVG.fitCover],
+                ['fill', t('Stretch'), SVG.fitFill],
+              ])
+            )
+          : ''
+      }
       ${cfg.imgPosField && showImgRows ? segRow(SVG.fitPos, t('Image position'), posGridHtml(cfg.imgPosField, posCur)) : ''}
-      ${cfg.blendField ? iconRow(SVG.blend, t('Blend mode'), `<select class="field-select field-select--sm" data-mp="blend">
+      ${
+        cfg.blendField
+          ? iconRow(
+              SVG.blend,
+              t('Blend mode'),
+              `<select class="field-select field-select--sm" data-mp="blend">
         ${['normal', 'multiply', 'screen', 'overlay', 'darken', 'lighten', 'color-dodge', 'color-burn', 'hard-light', 'soft-light', 'difference', 'exclusion', 'hue', 'saturation', 'color', 'luminosity'].map((m) => opt(m, t(m[0]!.toUpperCase() + m.slice(1).replace('-', ' ')), blendCur)).join('')}
-      </select>`) : ''}
-      ${cfg.shadowField ? `<div class="fc-panel-sub">${t('Shadow')}</div>
+      </select>`
+            )
+          : ''
+      }
+      ${
+        cfg.shadowField
+          ? `<div class="fc-panel-sub">${t('Shadow')}</div>
         ${segRow(SVG.shadowIc, t('Apply to'), segHtml(cfg.shadowField, shadowCur, shadowOpts))}
         <label class="fc-row"><span class="fc-row-lbl">${t('Colour')}</span><span class="fc-cfield">${colorFieldHtml('fc-shadow', shColor, { float: true })}</span></label>
         <label class="fc-row"><span class="fc-row-lbl">${t('X')}</span><input type="range" class="field-range" data-mp="shx" min="-300" max="300" value="${shX}"><b data-mp-val="shx">${shX}</b></label>
         <label class="fc-row"><span class="fc-row-lbl">${t('Y')}</span><input type="range" class="field-range" data-mp="shy" min="-300" max="300" value="${shY}"><b data-mp-val="shy">${shY}</b></label>
-        <label class="fc-row"><span class="fc-row-lbl">${t('Blur')}</span><input type="range" class="field-range" data-mp="shblur" min="0" max="300" value="${shBlur}"><b data-mp-val="shblur">${shBlur}</b></label>` : ''}
-      ${showTilt ? `<div class="fc-panel-sub">${t('Perspective tilt')}</div>
+        <label class="fc-row"><span class="fc-row-lbl">${t('Blur')}</span><input type="range" class="field-range" data-mp="shblur" min="0" max="300" value="${shBlur}"><b data-mp-val="shblur">${shBlur}</b></label>`
+          : ''
+      }
+      ${
+        showTilt
+          ? `<div class="fc-panel-sub">${t('Perspective tilt')}</div>
         ${tiltRx ? tiltRow('rx', t('Tilt X'), rxCur) : ''}
-        ${tiltRy ? tiltRow('ry', t('Tilt Y'), ryCur) : ''}` : ''}
+        ${tiltRy ? tiltRow('ry', t('Tilt Y'), ryCur) : ''}`
+          : ''
+      }
       ${showLift ? `<div class="fc-row"><button type="button" class="fc-cbtn fc-mp-lift" data-mp-lift>${icon(SVG.liftLayers)}<span>${escape(t('Lift layers'))}</span></button></div>` : ''}
       ${showChoreo ? `<div class="fc-row"><button type="button" class="fc-cbtn fc-mp-choreo" data-mp-choreo>${icon(SVG.choreo)}<span>${escape(t('Choreograph…'))}</span></button></div>` : ''}`;
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
     // Shape is special-cased: switching to "circle" also squares the box (w = h),
     // since a circle is only an ellipse the geometry keeps 1:1. Everything else writes
     // its field straight through.
-    wireSegs(p, (field, v) => { if (field === cfg.shapeField) setShape(v); else setField(field, v); });
+    wireSegs(p, (field, v) => {
+      if (field === cfg.shapeField) setShape(v);
+      else setField(field, v);
+    });
     // `rx`/`ry` come off the CANVAS block, not the resolved FieldCfg - the tilt fields
     // live beside `zField` for the reason stated there. A falsy name makes `setField`
     // return, which is the same progressive-capability gate every other row uses.
-    const MP_FIELD: Record<string, string> = { radius: cfg.radiusField, opacity: cfg.opacityField, shx: cfg.shadowXField, shy: cfg.shadowYField, shblur: cfg.shadowBlurField, rx: tiltRx, ry: tiltRy };
-    p.querySelectorAll<HTMLSelectElement>('select[data-mp]').forEach((sel) => sel.addEventListener('change', () => setField(cfg.blendField, sel.value)));
-    p.querySelectorAll<HTMLInputElement>('input[data-mp]').forEach((rng) => rng.addEventListener('input', () => {
-      const valEl = p.querySelector<HTMLElement>(`[data-mp-val="${rng.dataset.mp}"]`);
-      if (valEl) valEl.textContent = rng.value;
-      setField(MP_FIELD[rng.dataset.mp!], Number(rng.value));
-    }));
-    if (cfg.shadowColorField) wireColorField(p, { onChange: (id, val) => { if (id === 'fc-shadow') setField(cfg.shadowColorField, unwrapColor(val)); } });
-    if (showClip) p.querySelector<HTMLInputElement>('input[data-mp-clip]')?.addEventListener('change', (e) => setField(frameCfg!.clipChildrenField, (e.currentTarget as HTMLInputElement).checked));
+    const MP_FIELD: Record<string, string> = {
+      radius: cfg.radiusField,
+      opacity: cfg.opacityField,
+      shx: cfg.shadowXField,
+      shy: cfg.shadowYField,
+      shblur: cfg.shadowBlurField,
+      rx: tiltRx,
+      ry: tiltRy,
+    };
+    p.querySelectorAll<HTMLSelectElement>('select[data-mp]').forEach((sel) =>
+      sel.addEventListener('change', () => setField(cfg.blendField, sel.value))
+    );
+    p.querySelectorAll<HTMLInputElement>('input[data-mp]').forEach((rng) =>
+      rng.addEventListener('input', () => {
+        const valEl = p.querySelector<HTMLElement>(`[data-mp-val="${rng.dataset.mp}"]`);
+        if (valEl) valEl.textContent = rng.value;
+        setField(MP_FIELD[rng.dataset.mp!], Number(rng.value));
+      })
+    );
+    if (cfg.shadowColorField)
+      wireColorField(p, {
+        onChange: (id, val) => {
+          if (id === 'fc-shadow') setField(cfg.shadowColorField, unwrapColor(val));
+        },
+      });
+    if (showClip)
+      p.querySelector<HTMLInputElement>('input[data-mp-clip]')?.addEventListener('change', (e) =>
+        setField(frameCfg!.clipChildrenField, (e.currentTarget as HTMLInputElement).checked)
+      );
     // The panel is anchored to the More button; the dialog it opens is anchored to
     // `lastMenuAt`, so point that at this button first or the confirm would land
     // wherever the last right-click happened to be.
@@ -5977,10 +7291,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function addArtboard(): void {
     if (!frameCfg) return;
     const fk = frameCfg.frameKind;
-    const frameAddKind = addKinds.find((k) => k.id === 'frame' || (k.seed != null && String(k.seed[cfg.kindField]) === fk));
+    const frameAddKind = addKinds.find(
+      (k) => k.id === 'frame' || (k.seed != null && String(k.seed[cfg.kindField]) === fk)
+    );
     if (!frameAddKind) return;
     const boxes = getBoxes();
-    const d = canvasWH();                                       // current export / page size
+    const d = canvasWH(); // current export / page size
     const gap = Math.round(d.w * 0.08);
     // The FIRST artboard sits at the origin - it coincides with the export frame (so it isn't
     // dimmed by the pasteboard scrim) and wraps any loose content that's already there. Later
@@ -5990,18 +7306,27 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       ? frames.reduce((m, b) => Math.max(m, num(b[cfg.xField]) + num(b[cfg.wField])), 0) + gap
       : 0;
     const id = freshId(boxes);
-    const made = withNewFrameOrder(boxes,
-      seedBox(cfg, {}, frameAddKind.seed || {}, { x, y: 0, w: d.w, h: d.h } as MathRect, id));
+    const made = withNewFrameOrder(
+      boxes,
+      seedBox(cfg, {}, frameAddKind.seed || {}, { x, y: 0, w: d.w, h: d.h } as MathRect, id)
+    );
     selection = new Set([id]);
-    commit(assignFrames([...made.boxes, made.box], new Set([made.boxes.length])));  // frame keeps frame='' (no self-nesting)
+    commit(assignFrames([...made.boxes, made.box], new Set([made.boxes.length]))); // frame keeps frame='' (no self-nesting)
     renderChrome();
     // Bring it into view (the doc may be panned); defer so the frame page has rendered.
     requestAnimationFrame(() => {
-      const el = canvasEl.querySelector<HTMLElement>(`.lolly-frame-page[data-frame-id="${cssEscape(id)}"]`)
-        ?? canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(id)}"]`);
+      const el =
+        canvasEl.querySelector<HTMLElement>(
+          `.lolly-frame-page[data-frame-id="${cssEscape(id)}"]`
+        ) ?? canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(id)}"]`);
       if (!el) return;
       const r = el.getBoundingClientRect();
-      stageEl.dispatchEvent(new CustomEvent('fc-focus-rect', { bubbles: true, detail: { x: r.left, y: r.top, w: r.width, h: r.height } }));
+      stageEl.dispatchEvent(
+        new CustomEvent('fc-focus-rect', {
+          bubbles: true,
+          detail: { x: r.left, y: r.top, w: r.width, h: r.height },
+        })
+      );
     });
   }
 
@@ -6015,21 +7340,39 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function makeArtboardAround(ids: readonly string[]): void {
     if (!frameCfg || !ids.length) return;
     const fk = frameCfg.frameKind;
-    const frameAddKind = addKinds.find((k) => k.id === 'frame' || (k.seed != null && String(k.seed[cfg.kindField]) === fk));
+    const frameAddKind = addKinds.find(
+      (k) => k.id === 'frame' || (k.seed != null && String(k.seed[cfg.kindField]) === fk)
+    );
     if (!frameAddKind) return;
     const boxes = getBoxes();
     const want = new Set(ids.map(String));
     const picked: number[] = [];
-    boxes.forEach((b, i) => { if (b && want.has(String(b[cfg.idField] ?? '')) && String(b[cfg.kindField]) !== fk) picked.push(i); });
+    boxes.forEach((b, i) => {
+      if (b && want.has(String(b[cfg.idField] ?? '')) && String(b[cfg.kindField]) !== fk)
+        picked.push(i);
+    });
     if (!picked.length) return;
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    let x0 = Infinity,
+      y0 = Infinity,
+      x1 = -Infinity,
+      y1 = -Infinity;
     for (const i of picked) {
       const b = boxes[i]!;
-      const x = num(b[cfg.xField]), y = num(b[cfg.yField]);
-      const w = Math.max(1, num(b[cfg.wField])), h = Math.max(1, num(b[cfg.hField]));
-      x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + w); y1 = Math.max(y1, y + h);
+      const x = num(b[cfg.xField]),
+        y = num(b[cfg.yField]);
+      const w = Math.max(1, num(b[cfg.wField])),
+        h = Math.max(1, num(b[cfg.hField]));
+      x0 = Math.min(x0, x);
+      y0 = Math.min(y0, y);
+      x1 = Math.max(x1, x + w);
+      y1 = Math.max(y1, y + h);
     }
-    const rect = { x: Math.round(x0), y: Math.round(y0), w: Math.max(1, Math.round(x1 - x0)), h: Math.max(1, Math.round(y1 - y0)) } as MathRect;
+    const rect = {
+      x: Math.round(x0),
+      y: Math.round(y0),
+      w: Math.max(1, Math.round(x1 - x0)),
+      h: Math.max(1, Math.round(y1 - y0)),
+    } as MathRect;
     const id = freshId(boxes);
     const made = withNewFrameOrder(boxes, seedBox(cfg, {}, frameAddKind.seed || {}, rect, id));
     selection = new Set([id]);
@@ -6072,7 +7415,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const els: HTMLElement[] = [];
     if (what === 'content') {
       if (!frameCfg) return null;
-      for (const el of canvasEl.querySelectorAll<HTMLElement>('.lolly-frame-page[data-frame-id]')) els.push(el);
+      for (const el of canvasEl.querySelectorAll<HTMLElement>('.lolly-frame-page[data-frame-id]'))
+        els.push(el);
     } else if (what === 'active') {
       const id = activeArtboardId();
       if (!id) return null;
@@ -6082,19 +7426,26 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (el) els.push(el);
     } else {
       for (const id of selection) {
-        const el = canvasEl.querySelector<HTMLElement>(`.lolly-frame-page[data-frame-id="${cssEscape(id)}"]`)
-          ?? canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(id)}"]`);
+        const el =
+          canvasEl.querySelector<HTMLElement>(
+            `.lolly-frame-page[data-frame-id="${cssEscape(id)}"]`
+          ) ?? canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(id)}"]`);
         if (el) els.push(el);
       }
     }
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
     for (const el of els) {
       const r = el.getBoundingClientRect();
       if (!(r.width > 0) || !(r.height > 0)) continue;
-      minX = Math.min(minX, r.left); minY = Math.min(minY, r.top);
-      maxX = Math.max(maxX, r.right); maxY = Math.max(maxY, r.bottom);
+      minX = Math.min(minX, r.left);
+      minY = Math.min(minY, r.top);
+      maxX = Math.max(maxX, r.right);
+      maxY = Math.max(maxY, r.bottom);
     }
-    if (!(maxX > minX) || !(maxY > minY)) return null;   // nothing measurable
+    if (!(maxX > minX) || !(maxY > minY)) return null; // nothing measurable
     return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
   }
   function onQueryRect(e: Event): void {
@@ -6132,15 +7483,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const of = frameCfg.orderField;
     const fk = frameCfg.frameKind;
     const xF = cfg.xField;
-    const THUMB_MAX_W = 132, THUMB_MAX_H = 90; // letterbox any aspect (landscape slide → portrait poster)
+    const THUMB_MAX_W = 132,
+      THUMB_MAX_H = 90; // letterbox any aspect (landscape slide → portrait poster)
     const p = document.createElement('div');
     p.className = 'fc-panel fc-frames-panel';
     let active = 0;
 
     // Frames in the SAME page order the hook uses: order asc, x asc tie-break.
-    const framesInOrder = (): Box[] => getBoxes()
-      .filter((b) => String(b?.[cfg.kindField]) === fk)
-      .sort((a, b) => (num(a?.[of]) - num(b?.[of])) || (num(a?.[xF]) - num(b?.[xF])));
+    const framesInOrder = (): Box[] =>
+      getBoxes()
+        .filter((b) => String(b?.[cfg.kindField]) === fk)
+        .sort((a, b) => num(a?.[of]) - num(b?.[of]) || num(a?.[xF]) - num(b?.[xF]));
 
     // The thumbnail is `frameThumb` from ./free-canvas-fields.ts now - the SAME clone the
     // navigator column's rows use, so the strip and the column can never drift on how a
@@ -6152,29 +7505,45 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       active = Math.max(0, Math.min(i, frames.length - 1));
       const fb = frames[active];
       const r = fb ? frameClientRect(fb) : null;
-      if (r) stageEl.dispatchEvent(new CustomEvent('fc-focus-rect', { bubbles: true, detail: {
-        x: r.left, y: r.top, w: r.width, h: r.height,
-      } }));
-      p.querySelectorAll('.fc-frame-cell').forEach((c, idx) => c.classList.toggle('is-active', idx === active));
-      p.querySelector<HTMLElement>(`.fc-frame-cell[data-fi="${active}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      if (r)
+        stageEl.dispatchEvent(
+          new CustomEvent('fc-focus-rect', {
+            bubbles: true,
+            detail: {
+              x: r.left,
+              y: r.top,
+              w: r.width,
+              h: r.height,
+            },
+          })
+        );
+      p.querySelectorAll('.fc-frame-cell').forEach((c, idx) =>
+        c.classList.toggle('is-active', idx === active)
+      );
+      p.querySelector<HTMLElement>(`.fc-frame-cell[data-fi="${active}"]`)?.scrollIntoView({
+        block: 'nearest',
+        inline: 'nearest',
+      });
     }
 
     // The Artboard add-kind (label "Artboard", kind === frameKind) - the same tool the
     // Add menu arms. Present on every frame-capable canvas; the empty state offers it
     // directly so "draw one with the Artboard tool" is a button, not a scavenger hunt.
-    const frameAddKind = addKinds.find((k) => k.id === 'frame' || (k.seed != null && String(k.seed[cfg.kindField]) === fk));
+    const frameAddKind = addKinds.find(
+      (k) => k.id === 'frame' || (k.seed != null && String(k.seed[cfg.kindField]) === fk)
+    );
 
     function render(): void {
       const frames = framesInOrder();
       if (!frames.length) {
         p.innerHTML =
           `<div class="fc-frames-empty">` +
-            `<span class="fc-frames-empty-msg">${escape(t('No artboards yet.'))}</span>` +
-            (frameAddKind
-              ? `<button type="button" class="fc-frames-empty-add" data-add-frame>${icon(SVG.frame)}<span>${escape(t('Draw an artboard'))}</span></button>`
-              : `<span>${escape(t('Draw one with the Artboard tool.'))}</span>`) +
+          `<span class="fc-frames-empty-msg">${escape(t('No artboards yet.'))}</span>` +
+          (frameAddKind
+            ? `<button type="button" class="fc-frames-empty-add" data-add-frame>${icon(SVG.frame)}<span>${escape(t('Draw an artboard'))}</span></button>`
+            : `<span>${escape(t('Draw one with the Artboard tool.'))}</span>`) +
           `</div>`;
-        // One click lays down a full page-size artboard (no drag) and closes the panel - 
+        // One click lays down a full page-size artboard (no drag) and closes the panel -
         // dragging to size is optional labour, and the artboard is resizable once it exists.
         p.querySelector<HTMLButtonElement>('[data-add-frame]')?.addEventListener('click', () => {
           closeMorePanel();
@@ -6185,20 +7554,31 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       active = Math.max(0, Math.min(active, frames.length - 1));
       p.innerHTML =
         `<div class="fc-frames-head">` +
-          `<span class="fc-frames-title">${escape(t('Artboards'))}</span>` +
-          `<button type="button" class="fc-cbtn fc-frames-step" data-fstep="-1" data-tip="${escape(t('Previous artboard'))}" aria-label="${escape(t('Previous artboard'))}">${icon(SVG.chevLeft)}</button>` +
-          `<button type="button" class="fc-cbtn fc-frames-step" data-fstep="1" data-tip="${escape(t('Next artboard'))}" aria-label="${escape(t('Next artboard'))}">${icon(SVG.chevRight)}</button>` +
+        `<span class="fc-frames-title">${escape(t('Artboards'))}</span>` +
+        `<button type="button" class="fc-cbtn fc-frames-step" data-fstep="-1" data-tip="${escape(t('Previous artboard'))}" aria-label="${escape(t('Previous artboard'))}">${icon(SVG.chevLeft)}</button>` +
+        `<button type="button" class="fc-cbtn fc-frames-step" data-fstep="1" data-tip="${escape(t('Next artboard'))}" aria-label="${escape(t('Next artboard'))}">${icon(SVG.chevRight)}</button>` +
         `</div>` +
         `<div class="fc-frames-strip">` +
-        frames.map((_b, i) => `<button type="button" class="fc-frame-cell${i === active ? ' is-active' : ''}" data-fi="${i}" data-tip="${escape(t('Focus artboard'))}"><span class="fc-frame-cell-slot"></span><span class="fc-frame-cell-n">${i + 1}</span></button>`).join('') +
+        frames
+          .map(
+            (_b, i) =>
+              `<button type="button" class="fc-frame-cell${i === active ? ' is-active' : ''}" data-fi="${i}" data-tip="${escape(t('Focus artboard'))}"><span class="fc-frame-cell-slot"></span><span class="fc-frame-cell-n">${i + 1}</span></button>`
+          )
+          .join('') +
         `</div>`;
       const cells = p.querySelectorAll<HTMLElement>('.fc-frame-cell');
-      cells.forEach((cell, i) => cell.querySelector('.fc-frame-cell-slot')?.replaceChildren(makeThumb(frames[i]!)));
-      cells.forEach((cell) => cell.addEventListener('click', () => goTo(num(cell.dataset.fi), frames)));
-      p.querySelectorAll<HTMLButtonElement>('[data-fstep]').forEach((btn) => btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        goTo(active + (btn.dataset.fstep === '1' ? 1 : -1), frames);
-      }));
+      cells.forEach((cell, i) =>
+        cell.querySelector('.fc-frame-cell-slot')?.replaceChildren(makeThumb(frames[i]!))
+      );
+      cells.forEach((cell) =>
+        cell.addEventListener('click', () => goTo(num(cell.dataset.fi), frames))
+      );
+      p.querySelectorAll<HTMLButtonElement>('[data-fstep]').forEach((btn) =>
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          goTo(active + (btn.dataset.fstep === '1' ? 1 : -1), frames);
+        })
+      );
     }
 
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -6215,7 +7595,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const tl = stageEl.querySelector<HTMLElement>('.tl-panel');
       const tlOpen = !!tl && getComputedStyle(tl).display !== 'none';
       const bottom = (tlOpen ? tl!.getBoundingClientRect().height : 0) + 12;
-      if (bottom !== lastBottom) { lastBottom = bottom; p.style.bottom = `${bottom}px`; }
+      if (bottom !== lastBottom) {
+        lastBottom = bottom;
+        p.style.bottom = `${bottom}px`;
+      }
       requestAnimationFrame(reposition);
     };
     reposition();
@@ -6243,7 +7626,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!text.trim()) return [];
     const viaHost = host?.connectors?.dashFit?.parse;
     if (typeof viaHost === 'function') {
-      try { return viaHost(text); } catch { /* a refusing primitive is not a reason to lose the field */ }
+      try {
+        return viaHost(text);
+      } catch {
+        /* a refusing primitive is not a reason to lose the field */
+      }
     }
     return parseDashArray(text);
   }
@@ -6260,7 +7647,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * paint, and it is what makes a hole a hole the moment anyone uses Subtract.
    *
    * Stroke ALIGNMENT (inside / centre / outside) is deliberately absent: SVG strokes on the
-   * centreline only, so inside/outside is not a paint setting but a real outline conversion - 
+   * centreline only, so inside/outside is not a paint setting but a real outline conversion -
    * which the context menu already offers, exactly, as "Outline stroke".
    *
    * Plan 96 adds three things a keyword-only stroke could not say: the two ARROWHEADS (a
@@ -6274,7 +7661,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const idx = selIndices(boxes);
     if (!idx.length) return;
     const b: Box = boxes[idx[0]!] || {};
-    const swCur = Math.max(0, Math.round(clampN(parseFloat(String(b[cfg.strokeWField])), 0, 0, 400)));
+    const swCur = Math.max(
+      0,
+      Math.round(clampN(parseFloat(String(b[cfg.strokeWField])), 0, 0, 400))
+    );
     const dashCur = String(b[cfg.strokeDashField] ?? '');
     const capCur = String(b[cfg.strokeCapField] || 'round');
     const joinCur = String(b[cfg.strokeJoinField] || 'round');
@@ -6298,18 +7688,24 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const pathOnly = selectionAllPaths(boxes, idx);
     const headSelect = (field: string, cur: string, lbl: string): string =>
       `<select class="field-select field-select--sm" data-sp-head="${escape(field)}" aria-label="${escape(lbl)}">` +
-      HEAD_CHOICES.map(([v, l]) => `<option value="${v}"${cur === v ? ' selected' : ''}>${escape(t(l))}</option>`).join('') +
+      HEAD_CHOICES.map(
+        ([v, l]) => `<option value="${v}"${cur === v ? ' selected' : ''}>${escape(t(l))}</option>`
+      ).join('') +
       '</select>';
     const p = document.createElement('div');
     p.className = 'fc-panel fc-more-panel fc-stroke-panel';
     p.innerHTML =
       `<label class="fc-row"><span class="fc-row-lbl" data-tip="${escape(t('Stroke width'))}">${icon(SVG.strokeIc)}<span>${t('Stroke width')}</span></span>` +
-        `<input type="range" class="field-range" data-sp="width" min="0" max="120" value="${swCur}"><b data-sp-val="width">${swCur}</b></label>` +
-      segRow(SVG.dashDashed, t('Stroke style'), segHtml(cfg.strokeDashField, dashCur, [
-        ['', t('Solid'), SVG.dashSolid],
-        ['dashed', t('Dashed'), SVG.dashDashed],
-        ['dotted', t('Dotted'), SVG.dashDotted],
-      ])) +
+      `<input type="range" class="field-range" data-sp="width" min="0" max="120" value="${swCur}"><b data-sp-val="width">${swCur}</b></label>` +
+      segRow(
+        SVG.dashDashed,
+        t('Stroke style'),
+        segHtml(cfg.strokeDashField, dashCur, [
+          ['', t('Solid'), SVG.dashSolid],
+          ['dashed', t('Dashed'), SVG.dashDashed],
+          ['dotted', t('Dotted'), SVG.dashDotted],
+        ])
+      ) +
       // The power-user pair, where the manifest declares them (hasDashArrayCfg). Shown when
       // a dash style is on, or whenever an array is already authored - so a pattern can
       // never become unreachable by switching the keyword back to Solid, and a solid stroke
@@ -6324,37 +7720,59 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           `<input type="checkbox" class="field-check" data-sp="dashfit"${dashFitCur ? ' checked' : ''}></label>`
         : '') +
       (pathOnly
-        ? segRow(SVG.capRound, t('Line ends'), segHtml(cfg.strokeCapField, capCur, [
-          ['round', t('Round ends'), SVG.capRound],
-          ['butt', t('Flat ends'), SVG.capButt],
-          ['square', t('Square ends'), SVG.capSquare],
-        ]))
+        ? segRow(
+            SVG.capRound,
+            t('Line ends'),
+            segHtml(cfg.strokeCapField, capCur, [
+              ['round', t('Round ends'), SVG.capRound],
+              ['butt', t('Flat ends'), SVG.capButt],
+              ['square', t('Square ends'), SVG.capSquare],
+            ])
+          )
         : '') +
       // Arrowheads. Two plain menus rather than twelve icon buttons: the six shapes are
       // named things, and the row already carries three other segmented controls. Offered
       // only where the manifest declares them - see hasHeadCfg.
       (hasHeadCfg && pathOnly
-        ? segRow(SVG.line, t('Path start'), headSelect(cfg.headStartField, headStartCur, t('Path start'))) +
+        ? segRow(
+            SVG.line,
+            t('Path start'),
+            headSelect(cfg.headStartField, headStartCur, t('Path start'))
+          ) +
           segRow(SVG.line, t('Path end'), headSelect(cfg.headEndField, headEndCur, t('Path end')))
         : '') +
       // Route - how a line with an attached end is bent between the two boxes. One plain
       // menu, beside the heads, because the three of them are the connector's whole shape.
       (routeBound
-        ? segRow(SVG.tidy, t('Route'),
-          `<select class="field-select field-select--sm" data-sp-route aria-label="${escape(t('Route'))}">` +
-          ROUTE_CHOICES.map(([v, l]) => `<option value="${v}"${routeCur === v ? ' selected' : ''}>${escape(t(l))}</option>`).join('') +
-          '</select>')
+        ? segRow(
+            SVG.tidy,
+            t('Route'),
+            `<select class="field-select field-select--sm" data-sp-route aria-label="${escape(t('Route'))}">` +
+              ROUTE_CHOICES.map(
+                ([v, l]) =>
+                  `<option value="${v}"${routeCur === v ? ' selected' : ''}>${escape(t(l))}</option>`
+              ).join('') +
+              '</select>'
+          )
         : '') +
       (pathOnly
-        ? segRow(SVG.joinRound, t('Corners'), segHtml(cfg.strokeJoinField, joinCur, [
-          ['round', t('Round corners'), SVG.joinRound],
-          ['miter', t('Sharp corners'), SVG.joinMiter],
-          ['bevel', t('Bevelled corners'), SVG.joinBevel],
-        ])) +
-          segRow(SVG.ruleEvenOdd, t('Fill rule'), segHtml(cfg.fillRuleField, ruleCur, [
-            ['nonzero', t('Fill overlaps (non-zero)'), SVG.ruleNonzero],
-            ['evenodd', t('Punch holes (even-odd)'), SVG.ruleEvenOdd],
-          ]))
+        ? segRow(
+            SVG.joinRound,
+            t('Corners'),
+            segHtml(cfg.strokeJoinField, joinCur, [
+              ['round', t('Round corners'), SVG.joinRound],
+              ['miter', t('Sharp corners'), SVG.joinMiter],
+              ['bevel', t('Bevelled corners'), SVG.joinBevel],
+            ])
+          ) +
+          segRow(
+            SVG.ruleEvenOdd,
+            t('Fill rule'),
+            segHtml(cfg.fillRuleField, ruleCur, [
+              ['nonzero', t('Fill overlaps (non-zero)'), SVG.ruleNonzero],
+              ['evenodd', t('Punch holes (even-odd)'), SVG.ruleEvenOdd],
+            ])
+          )
         : '');
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
     // The dash-style segment also decides whether the two dash rows are on screen, so it
@@ -6362,18 +7780,23 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const dashArrEl = p.querySelector<HTMLInputElement>('input[data-sp="dasharray"]');
     const syncDashRows = (styleVal: string): void => {
       const on = dashRowOn(styleVal, dashArrEl?.value ?? dashArrCur);
-      p.querySelectorAll<HTMLElement>('[data-sp-row="dasharray"], [data-sp-row="dashfit"]')
-        .forEach((row) => { row.hidden = !on; });
+      p.querySelectorAll<HTMLElement>('[data-sp-row="dasharray"], [data-sp-row="dashfit"]').forEach(
+        (row) => {
+          row.hidden = !on;
+        }
+      );
     };
     wireSegs(p, (field, v) => {
       setField(field, v);
       if (field === cfg.strokeDashField) syncDashRows(String(v ?? ''));
     });
-    p.querySelectorAll<HTMLInputElement>('input[data-sp="width"]').forEach((rng) => rng.addEventListener('input', () => {
-      const valEl = p.querySelector<HTMLElement>('[data-sp-val="width"]');
-      if (valEl) valEl.textContent = rng.value;
-      setField(cfg.strokeWField, Number(rng.value));
-    }));
+    p.querySelectorAll<HTMLInputElement>('input[data-sp="width"]').forEach((rng) =>
+      rng.addEventListener('input', () => {
+        const valEl = p.querySelector<HTMLElement>('[data-sp-val="width"]');
+        if (valEl) valEl.textContent = rng.value;
+        setField(cfg.strokeWField, Number(rng.value));
+      })
+    );
     // Dash array: validated on every keystroke, but a REFUSAL writes nothing at all rather
     // than a repaired guess. That is what keeps the hook's injection stance intact - only
     // numbers ever reach `stroke-dasharray` - and it is also the honest answer to "6 x":
@@ -6397,17 +7820,20 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       });
     }
     p.querySelectorAll<HTMLInputElement>('input[data-sp="dashfit"]').forEach((cb) =>
-      cb.addEventListener('change', () => setField(cfg.dashFitField, cb.checked)));
+      cb.addEventListener('change', () => setField(cfg.dashFitField, cb.checked))
+    );
     p.querySelectorAll<HTMLSelectElement>('select[data-sp-head]').forEach((sel) =>
-      sel.addEventListener('change', () => setField(sel.dataset.spHead, sel.value)));
+      sel.addEventListener('change', () => setField(sel.dataset.spHead, sel.value))
+    );
     p.querySelectorAll<HTMLSelectElement>('select[data-sp-route]').forEach((sel) =>
-      sel.addEventListener('change', () => setField(cfg.routeField, sel.value)));
+      sel.addEventListener('change', () => setField(cfg.routeField, sel.value))
+    );
     stageEl.appendChild(p);
     morePanel = p;
     const ar = anchor.getBoundingClientRect();
     const sr = stageEl.getBoundingClientRect();
     p.style.left = Math.min(ar.left - sr.left, Math.max(0, sr.width - p.offsetWidth - 8)) + 'px';
-    p.style.top = (ar.bottom - sr.top + 8) + 'px';
+    p.style.top = ar.bottom - sr.top + 8 + 'px';
   }
 
   // ── one-number prompt ─────────────────────────────────────────────────────────
@@ -6437,11 +7863,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       `<div class="fc-panel-head">${escape(ask.title)}</div>` +
       (ask.hint ? `<p class="fc-num-hint">${escape(ask.hint)}</p>` : '') +
       '<div class="fc-num-row">' +
-        `<input type="number" data-num step="${ask.step ?? 1}"` +
-        (ask.min != null ? ` min="${ask.min}"` : '') + (ask.max != null ? ` max="${ask.max}"` : '') +
-        ` value="${ask.value}" aria-label="${escape(ask.title)}">` +
-        `<i>${escape(ask.unit || 'px')}</i>` +
-        `<button type="button" class="btn btn--primary btn--sm fc-num-go" data-num-go>${escape(ask.confirm)}</button>` +
+      `<input type="number" data-num step="${ask.step ?? 1}"` +
+      (ask.min != null ? ` min="${ask.min}"` : '') +
+      (ask.max != null ? ` max="${ask.max}"` : '') +
+      ` value="${ask.value}" aria-label="${escape(ask.title)}">` +
+      `<i>${escape(ask.unit || 'px')}</i>` +
+      `<button type="button" class="btn btn--primary btn--sm fc-num-go" data-num-go>${escape(ask.confirm)}</button>` +
       '</div>';
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
     const inp = p.querySelector<HTMLInputElement>('[data-num]')!;
@@ -6452,13 +7879,23 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     };
     // Enter is the only keyboard commit; Escape falls through to onKey, which closes the
     // panel without applying.
-    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
-    p.querySelector<HTMLButtonElement>('[data-num-go]')!.addEventListener('click', (e) => { e.stopPropagation(); go(); });
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        go();
+      }
+    });
+    p.querySelector<HTMLButtonElement>('[data-num-go]')!.addEventListener('click', (e) => {
+      e.stopPropagation();
+      go();
+    });
     stageEl.appendChild(p);
     morePanel = p;
     const sr = stageEl.getBoundingClientRect();
-    p.style.left = Math.max(6, Math.min(ask.at.x - sr.left, Math.max(6, sr.width - p.offsetWidth - 6))) + 'px';
-    p.style.top = Math.max(6, Math.min(ask.at.y - sr.top, Math.max(6, sr.height - p.offsetHeight - 6))) + 'px';
+    p.style.left =
+      Math.max(6, Math.min(ask.at.x - sr.left, Math.max(6, sr.width - p.offsetWidth - 6))) + 'px';
+    p.style.top =
+      Math.max(6, Math.min(ask.at.y - sr.top, Math.max(6, sr.height - p.offsetHeight - 6))) + 'px';
     inp.focus();
     inp.select();
   }
@@ -6487,8 +7924,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       `<div class="fc-panel-head">${escape(ask.title)}</div>` +
       `<p class="fc-num-hint">${escape(ask.hint)}</p>` +
       '<div class="fc-num-row fc-confirm-row">' +
-        `<button type="button" class="btn btn--sm" data-confirm-no>${escape(t('Keep them'))}</button>` +
-        `<button type="button" class="btn btn--primary btn--sm" data-confirm-yes>${escape(ask.confirm)}</button>` +
+      `<button type="button" class="btn btn--sm" data-confirm-no>${escape(t('Keep them'))}</button>` +
+      `<button type="button" class="btn btn--primary btn--sm" data-confirm-yes>${escape(ask.confirm)}</button>` +
       '</div>';
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
     // Exactly one of apply/cancel runs, exactly once, whichever way the panel goes away.
@@ -6502,9 +7939,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (settled) return;
       settled = true;
       observer.disconnect();
-      if (ok) ask.apply(); else ask.cancel?.();
+      if (ok) ask.apply();
+      else ask.cancel?.();
     };
-    const observer = new MutationObserver(() => { if (!p.isConnected) settle(false); });
+    const observer = new MutationObserver(() => {
+      if (!p.isConnected) settle(false);
+    });
     p.querySelector<HTMLButtonElement>('[data-confirm-yes]')!.addEventListener('click', (e) => {
       e.stopPropagation();
       closeMorePanel();
@@ -6519,8 +7959,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     observer.observe(stageEl, { childList: true });
     morePanel = p;
     const sr = stageEl.getBoundingClientRect();
-    p.style.left = Math.max(6, Math.min(ask.at.x - sr.left, Math.max(6, sr.width - p.offsetWidth - 6))) + 'px';
-    p.style.top = Math.max(6, Math.min(ask.at.y - sr.top, Math.max(6, sr.height - p.offsetHeight - 6))) + 'px';
+    p.style.left =
+      Math.max(6, Math.min(ask.at.x - sr.left, Math.max(6, sr.width - p.offsetWidth - 6))) + 'px';
+    p.style.top =
+      Math.max(6, Math.min(ask.at.y - sr.top, Math.max(6, sr.height - p.offsetHeight - 6))) + 'px';
     p.querySelector<HTMLButtonElement>('[data-confirm-yes]')!.focus();
   }
 
@@ -6549,10 +7991,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         `<div class="fc-panel-head">${escape(t('Import pages'))}</div>` +
         `<p class="fc-num-hint">${escape(hint)}</p>` +
         '<div class="fc-num-row fc-confirm-row">' +
-          `<button type="button" class="btn btn--sm" data-import-mode="">${escape(t('Cancel'))}</button>` +
-          (importArtboardCapable ? `<button type="button" class="btn btn--primary btn--sm" data-import-mode="artboards">${escape(t('As artboards'))}</button>` : '') +
-          (importSceneCapable ? `<button type="button" class="btn ${importArtboardCapable ? '' : 'btn--primary '}btn--sm" data-import-mode="scenes">${escape(t('As timed scenes'))}</button>` : '') +
-          `<button type="button" class="btn btn--sm" data-import-mode="board">${escape(t('Just one page'))}</button>` +
+        `<button type="button" class="btn btn--sm" data-import-mode="">${escape(t('Cancel'))}</button>` +
+        (importArtboardCapable
+          ? `<button type="button" class="btn btn--primary btn--sm" data-import-mode="artboards">${escape(t('As artboards'))}</button>`
+          : '') +
+        (importSceneCapable
+          ? `<button type="button" class="btn ${importArtboardCapable ? '' : 'btn--primary '}btn--sm" data-import-mode="scenes">${escape(t('As timed scenes'))}</button>`
+          : '') +
+        `<button type="button" class="btn btn--sm" data-import-mode="board">${escape(t('Just one page'))}</button>` +
         '</div>';
       p.addEventListener('pointerdown', (e) => e.stopPropagation());
       let settled = false;
@@ -6562,13 +8008,23 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         observer.disconnect();
         resolve(mode);
       };
-      const observer = new MutationObserver(() => { if (!p.isConnected) settle(null); });
+      const observer = new MutationObserver(() => {
+        if (!p.isConnected) settle(null);
+      });
       p.querySelectorAll<HTMLButtonElement>('[data-import-mode]').forEach((b) => {
         b.addEventListener('click', (e) => {
           e.stopPropagation();
           const v = b.dataset.importMode;
           closeMorePanel();
-          settle(v === 'artboards' ? 'artboards' : v === 'scenes' ? 'scenes' : v === 'board' ? 'board' : null);
+          settle(
+            v === 'artboards'
+              ? 'artboards'
+              : v === 'scenes'
+                ? 'scenes'
+                : v === 'board'
+                  ? 'board'
+                  : null
+          );
         });
       });
       stageEl.appendChild(p);
@@ -6622,13 +8078,23 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // accepts a hand-written `data:image/svg+xml` link, and a hook patch can put
     // anything in `url`. A URIError here used to escape a naming helper into an
     // unhandled rejection; the raw tail is a perfectly good name.
-    const tail = typeof r.url === 'string' ? (r.url.split(/[?#]/)[0] || '').split('/').pop() || '' : '';
+    const tail =
+      typeof r.url === 'string' ? (r.url.split(/[?#]/)[0] || '').split('/').pop() || '' : '';
     let fromUrl = tail;
-    try { fromUrl = decodeURIComponent(tail); } catch { /* keep the raw tail */ }
+    try {
+      fromUrl = decodeURIComponent(tail);
+    } catch {
+      /* keep the raw tail */
+    }
     const raw = (named || fromUrl || 'artwork').replace(/\.[a-z0-9]+$/i, '');
     // The picker's own id sanitiser runs over the final filename anyway; keeping this
     // conservative means the derived names stay readable in the asset library.
-    return raw.replace(/[^a-z0-9 _-]/gi, '').trim().slice(0, 40) || 'artwork';
+    return (
+      raw
+        .replace(/[^a-z0-9 _-]/gi, '')
+        .trim()
+        .slice(0, 40) || 'artwork'
+    );
   }
 
   /**
@@ -6691,9 +8157,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // renderPlan / renderRefusal lands - both are the end of the work.
     p.setAttribute('aria-busy', 'true');
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
-    p.innerHTML = `<div class="fc-panel-head">${escape(t('Lift layers'))}</div>`
-      + `<p class="fc-num-hint" data-lift-msg role="status" aria-live="polite">${escape(t('Reading the artwork…'))}</p>`
-      + '<div data-lift-body></div>';
+    p.innerHTML =
+      `<div class="fc-panel-head">${escape(t('Lift layers'))}</div>` +
+      `<p class="fc-num-hint" data-lift-msg role="status" aria-live="polite">${escape(t('Reading the artwork…'))}</p>` +
+      '<div data-lift-body></div>';
     // Mounted once and only ever re-WORDED: the count sentence, the refusal and the
     // reading state are the same line of the panel, so the announcement is a change to
     // a live region that was already in the tree.
@@ -6702,8 +8169,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     stageEl.appendChild(p);
     morePanel = p;
     const sr = stageEl.getBoundingClientRect();
-    p.style.left = Math.max(6, Math.min(lastMenuAt.x - sr.left, Math.max(6, sr.width - p.offsetWidth - 6))) + 'px';
-    p.style.top = Math.max(6, Math.min(lastMenuAt.y - sr.top, Math.max(6, sr.height - p.offsetHeight - 6))) + 'px';
+    p.style.left =
+      Math.max(6, Math.min(lastMenuAt.x - sr.left, Math.max(6, sr.width - p.offsetWidth - 6))) +
+      'px';
+    p.style.top =
+      Math.max(6, Math.min(lastMenuAt.y - sr.top, Math.max(6, sr.height - p.offsetHeight - 6))) +
+      'px';
     // At OPEN, synchronously, on the gesture that asked for it - so the dialog's name
     // and its reading sentence are what gets read, and every later focus move is a move
     // WITHIN a surface the user is already in rather than a jump out of one they left.
@@ -6743,11 +8214,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // commit time, so the dialog and the write cannot disagree.
         const sboxes = getBoxes();
         const src = sboxes[indexOfId(sboxes, sourceId)];
-        const place = { viewBox: svgRootViewBox(markup), fit: String(src?.[cfg.fitField] ?? 'contain') };
+        const place = {
+          viewBox: svgRootViewBox(markup),
+          fit: String(src?.[cfg.fitField] ?? 'contain'),
+        };
         const cropToInk = !!src && liftCanCrop(src, cfg, place);
         // …and WHERE it will be cropped to. A crop is only free if the row it maps
         // to lands on the pixel grid the uncropped picture was already on, and the
-        // scale that decides that is a property of THIS box, not of the artwork - 
+        // scale that decides that is a property of THIS box, not of the artwork -
         // so the engine is told it rather than assuming 1:1 (engine 1.122).
         const cropScale = (src && liftCropScale(src, cfg, place)) || undefined;
         const { layers, warnings, viewBox } = enumerateSvgLayers(markup, { cropToInk, cropScale });
@@ -6755,7 +8229,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         if (layers.length < 2) {
           // ONE layer is not a stack, and lifting it would add a box and a group for no
           // gain. The enumerator's own warning (if any) says why in plain words.
-          renderRefusal(warnings[0] || t('This artwork is a single layer, so there is nothing to lift apart.'));
+          renderRefusal(
+            warnings[0] || t('This artwork is a single layer, so there is nothing to lift apart.')
+          );
           return;
         }
         renderPlan(layers, warnings, viewBox);
@@ -6768,8 +8244,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     function renderRefusal(message: string): void {
       p.removeAttribute('aria-busy');
       msgEl.textContent = message;
-      bodyEl.innerHTML =
-        `<div class="fc-num-row fc-confirm-row"><button type="button" class="btn btn--sm" data-lift-close>${escape(t('Close'))}</button></div>`;
+      bodyEl.innerHTML = `<div class="fc-num-row fc-confirm-row"><button type="button" class="btn btn--sm" data-lift-close>${escape(t('Close'))}</button></div>`;
       const close = bodyEl.querySelector<HTMLButtonElement>('[data-lift-close]');
       close?.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -6785,39 +8260,48 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // reader hears the finish without the dialog being rebuilt around it.
       msgEl.textContent = t('{n} layers found', { n: layers.length });
       bodyEl.innerHTML =
-        `<ul class="fc-lift-list">${layers.map((L, i) => {
-          // The label is an INDEX, never a name out of the file: the engine never
-          // reads `data-name`/`inkscape:label`, so "Layer 3" is the honest thing to
-          // print. The count beside it is what tells a stack of six real layers apart
-          // from six stray leaves the clusterer happened to group.
-          //
-          // One exception, and it is an ID rather than a name: `boxId` is the walker's
-          // `data-box-id` come back round (section 7's identity passthrough - a Lolly
-          // screenshot exported with `layerIds` carries the canvas's own box ids), so
-          // when it is there the row can say WHICH element of the original page this
-          // layer is. Minted by the canvas, never read out of a stranger's file.
-          const label = t('Layer {n}', { n: i + 1 });
-          const nodes = L.nodes === 1 ? t('1 shape') : t('{n} shapes', { n: L.nodes });
-          const from = typeof L.boxId === 'string' && L.boxId ? ` <span class="fc-lift-n">${escape(L.boxId)}</span>` : '';
-          return `<li class="fc-lift-row"><span class="fc-lift-tick" aria-hidden="true">${icon(SVG.check)}</span>`
-            + `<span class="fc-lift-name">${escape(label)}${from}</span><span class="fc-lift-n">${escape(nodes)}</span></li>`;
-        }).join('')}</ul>`
-        + (warnings.length ? `<p class="fc-num-hint fc-lift-warn">${escape(warnings.join(' '))}</p>` : '')
+        `<ul class="fc-lift-list">${layers
+          .map((L, i) => {
+            // The label is an INDEX, never a name out of the file: the engine never
+            // reads `data-name`/`inkscape:label`, so "Layer 3" is the honest thing to
+            // print. The count beside it is what tells a stack of six real layers apart
+            // from six stray leaves the clusterer happened to group.
+            //
+            // One exception, and it is an ID rather than a name: `boxId` is the walker's
+            // `data-box-id` come back round (section 7's identity passthrough - a Lolly
+            // screenshot exported with `layerIds` carries the canvas's own box ids), so
+            // when it is there the row can say WHICH element of the original page this
+            // layer is. Minted by the canvas, never read out of a stranger's file.
+            const label = t('Layer {n}', { n: i + 1 });
+            const nodes = L.nodes === 1 ? t('1 shape') : t('{n} shapes', { n: L.nodes });
+            const from =
+              typeof L.boxId === 'string' && L.boxId
+                ? ` <span class="fc-lift-n">${escape(L.boxId)}</span>`
+                : '';
+            return (
+              `<li class="fc-lift-row"><span class="fc-lift-tick" aria-hidden="true">${icon(SVG.check)}</span>` +
+              `<span class="fc-lift-name">${escape(label)}${from}</span><span class="fc-lift-n">${escape(nodes)}</span></li>`
+            );
+          })
+          .join('')}</ul>` +
+        (warnings.length
+          ? `<p class="fc-num-hint fc-lift-warn">${escape(warnings.join(' '))}</p>`
+          : '') +
         // Depth intensity (audit A5#2): how far apart the stack stands. Medium is the
         // shipped taste ceiling - an unchanged lift is byte-identical to before - with
         // Dramatic there for a sparse hero shot that reads flat at the default.
-        + '<div class="fc-num-row fc-lift-strength-row">'
-          + `<label class="field-label fc-lift-strength-lab" for="fc-lift-strength">${escape(t('Depth intensity'))}</label>`
-          + '<select class="field-select field-select--sm fc-lift-strength" id="fc-lift-strength" data-lift-strength>'
-            + `<option value="subtle">${escape(t('Subtle'))}</option>`
-            + `<option value="medium" selected>${escape(t('Medium'))}</option>`
-            + `<option value="dramatic">${escape(t('Dramatic'))}</option>`
-          + '</select>'
-        + '</div>'
-        + '<div class="fc-num-row fc-confirm-row">'
-          + `<button type="button" class="btn btn--sm" data-lift-no>${escape(t('Cancel'))}</button>`
-          + `<button type="button" class="btn btn--primary btn--sm" data-lift-yes>${escape(t('Lift layers'))}</button>`
-        + '</div>';
+        '<div class="fc-num-row fc-lift-strength-row">' +
+        `<label class="field-label fc-lift-strength-lab" for="fc-lift-strength">${escape(t('Depth intensity'))}</label>` +
+        '<select class="field-select field-select--sm fc-lift-strength" id="fc-lift-strength" data-lift-strength>' +
+        `<option value="subtle">${escape(t('Subtle'))}</option>` +
+        `<option value="medium" selected>${escape(t('Medium'))}</option>` +
+        `<option value="dramatic">${escape(t('Dramatic'))}</option>` +
+        '</select>' +
+        '</div>' +
+        '<div class="fc-num-row fc-confirm-row">' +
+        `<button type="button" class="btn btn--sm" data-lift-no>${escape(t('Cancel'))}</button>` +
+        `<button type="button" class="btn btn--primary btn--sm" data-lift-yes>${escape(t('Lift layers'))}</button>` +
+        '</div>';
       bodyEl.querySelector<HTMLButtonElement>('[data-lift-no]')?.addEventListener('click', (e) => {
         e.stopPropagation();
         closeMorePanel();
@@ -6827,7 +8311,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         e.stopPropagation();
         // Read the Depth-intensity choice at commit time - the select is the only source
         // of truth, and an unknown value maps to `medium` (1), the byte-identical default.
-        const pick = bodyEl.querySelector<HTMLSelectElement>('[data-lift-strength]')?.value ?? 'medium';
+        const pick =
+          bodyEl.querySelector<HTMLSelectElement>('[data-lift-strength]')?.value ?? 'medium';
         const strength = LIFT_STRENGTH[pick] ?? LIFT_STRENGTH.medium;
         yes.disabled = true;
         yes.textContent = t('Lifting…');
@@ -6847,7 +8332,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   /** What this file needs from an engine `SvgLayer` - structural, so no runtime import. */
   interface SvgLayerPlan {
-    markup: string; nodes: number; boxId?: string;
+    markup: string;
+    nodes: number;
+    boxId?: string;
     /** The crop the engine cropped this layer's document to (section P3.2), in source user units. */
     viewBox?: { x: number; y: number; w: number; h: number };
     /** The layer's measured ink extent - what decides which rows are peers. */
@@ -6869,8 +8356,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * click could have moved it while the assets were being written.
    */
   async function runLift(
-    sourceId: string, ref: unknown, layers: SvgLayerPlan[], viewBox: SvgSourceBox,
-    stillOpen: () => boolean, strength = 1,
+    sourceId: string,
+    ref: unknown,
+    layers: SvgLayerPlan[],
+    viewBox: SvgSourceBox,
+    stillOpen: () => boolean,
+    strength = 1
   ): Promise<void> {
     if (!cfg.imageField) return;
     try {
@@ -6886,8 +8377,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       ]);
       const refs = [] as InputValue[];
       for (let i = 0; i < layers.length; i++) {
-        const file = new File([layers[i]!.markup], `${base}-layer-${i + 1}.svg`, { type: 'image/svg+xml' });
-        refs.push(await storeUserUpload(host as unknown as Parameters<typeof storeUserUpload>[0], file) as unknown as InputValue);
+        const file = new File([layers[i]!.markup], `${base}-layer-${i + 1}.svg`, {
+          type: 'image/svg+xml',
+        });
+        refs.push(
+          (await storeUserUpload(
+            host as unknown as Parameters<typeof storeUserUpload>[0],
+            file
+          )) as unknown as InputValue
+        );
       }
       if (disposed) return;
       // Still closed here on the happy path, BEFORE the commit re-renders the
@@ -6897,7 +8395,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
       const boxes = getBoxes();
       const at = indexOfId(boxes, sourceId);
-      if (at < 0) { flash(t('That artwork is no longer on the canvas, so nothing was changed.')); return; }
+      if (at < 0) {
+        flash(t('That artwork is no longer on the canvas, so nothing was changed.'));
+        return;
+      }
       const source = boxes[at]!;
       // Ids are minted against a GROWING array, so two rows can never collide.
       let scratch = boxes;
@@ -6929,13 +8430,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           viewBox,
           fit: String(source[cfg.fitField] ?? 'contain'),
           strength,
-        },
-      // `liftRows` types the image value as a URL STRING, but this canvas's image
-      // sub-field is a declared `asset`: the engine resolves block asset sub-fields by
-      // their `.id` (runtime.ts resolveAssetRefs) and the tool hook reads `image.url`,
-      // so a bare string would render nothing and would not survive a reload. The row
-      // therefore carries the whole ref, written in the same pass - one object per row,
-      // still one commit.
+        }
+        // `liftRows` types the image value as a URL STRING, but this canvas's image
+        // sub-field is a declared `asset`: the engine resolves block asset sub-fields by
+        // their `.id` (runtime.ts resolveAssetRefs) and the tool hook reads `image.url`,
+        // so a bare string would render nothing and would not survive a reload. The row
+        // therefore carries the whole ref, written in the same pass - one object per row,
+        // still one commit.
       ).map((row, i) => ({ ...row, [cfg.imageField]: refs[i] }));
 
       selection = new Set(ids);
@@ -6981,7 +8482,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   /** The selected boxes a showcase would pose, in array order. */
   function choreoIds(boxes: Box[]): string[] {
-    return selIndices(boxes).filter((i) => isPosable(boxes[i])).map((i) => idOf(boxes[i], i));
+    return selIndices(boxes)
+      .filter((i) => isPosable(boxes[i]))
+      .map((i) => idOf(boxes[i], i));
   }
 
   /** A showcase over one box is just a keyframe, so two is the floor - and it is the same
@@ -7005,8 +8508,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // theirs, and switching cards must not quietly overwrite it.
     let secDirty = false;
     const n = choreoIds(getBoxes()).length;
-    const secOf = (id: ShowcaseId): string => String((CHOREO_SHOWCASES.find((s) => s.id === id)?.ms ?? 3000) / 1000);
-    const orderOpt = (v: string, label: string): string => `<option value="${v}">${escape(label)}</option>`;
+    const secOf = (id: ShowcaseId): string =>
+      String((CHOREO_SHOWCASES.find((s) => s.id === id)?.ms ?? 3000) / 1000);
+    const orderOpt = (v: string, label: string): string =>
+      `<option value="${v}">${escape(label)}</option>`;
 
     const p = document.createElement('div');
     p.className = 'fc-panel fc-num-panel fc-choreo-panel';
@@ -7018,56 +8523,63 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // read after the name when focus arrives.
     p.setAttribute('aria-describedby', 'fc-choreo-desc');
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
-    p.innerHTML = `<div class="fc-panel-head">${escape(t('Choreograph'))}</div>`
-      + `<p class="fc-num-hint" id="fc-choreo-desc">${escape(t('{n} boxes. One click writes a full motion arc - every keyframe stays editable afterwards.', { n }))}</p>`
-      + `<div class="fc-choreo-grid" role="radiogroup" aria-label="${escape(t('Showcase'))}">`
-        + CHOREO_SHOWCASES.map((s) =>
+    p.innerHTML =
+      `<div class="fc-panel-head">${escape(t('Choreograph'))}</div>` +
+      `<p class="fc-num-hint" id="fc-choreo-desc">${escape(t('{n} boxes. One click writes a full motion arc - every keyframe stays editable afterwards.', { n }))}</p>` +
+      `<div class="fc-choreo-grid" role="radiogroup" aria-label="${escape(t('Showcase'))}">` +
+      CHOREO_SHOWCASES.map(
+        (s) =>
           // Roving tabindex: the checked card is the group's one Tab stop, the arrows walk the rest.
-          `<button type="button" class="fc-choreo-card" role="radio" data-choreo="${s.id}" aria-checked="${s.id === showcase ? 'true' : 'false'}" tabindex="${s.id === showcase ? 0 : -1}">`
-          + `${icon(s.icon)}<span class="fc-choreo-name">${escape(s.label)}</span>`
-          + `<span class="fc-choreo-sub">${escape(s.sub)}</span></button>`).join('')
-      + '</div>'
-      + '<div class="fc-num-row">'
-        // `step="any"`, the size panel's own choice for a fractional field above: the step
-        // base is `min`, so a `step="0.5"` measured from 0.8 makes 3, 2.5, 6, 5 and 8 - the
-        // six authored lengths this field is prefilled with - each a step MISMATCH, and the
-        // spinner walks 3 to 3.3 rather than to 3.5. `min` is CHOREO_MIN_MS in seconds.
-        + `<label class="field-label fc-choreo-lab" for="fc-choreo-sec">${escape(t('Length in seconds'))}</label>`
-        + `<input type="number" class="field-input fc-choreo-num" id="fc-choreo-sec" data-choreo-sec min="0.8" step="any" value="${secOf(showcase)}">`
-      + '</div>'
-      + '<div class="fc-num-row">'
-        // 90 ms is the generator's own DEFAULT_STAGGER_MS, restated here for the same
-        // reason the six lengths are: the chunk must not be fetched to draw the picker.
-        + `<label class="field-label fc-choreo-lab" for="fc-choreo-stagger">${escape(t('Stagger ms'))}</label>`
-        + '<input type="number" class="field-input fc-choreo-num" id="fc-choreo-stagger" data-choreo-stagger min="0" step="10" value="90">'
-      + '</div>'
-      + '<div class="fc-num-row">'
-        + `<label class="field-label fc-choreo-lab" for="fc-choreo-order">${escape(t('Order'))}</label>`
-        + '<select class="field-select field-select--sm fc-choreo-order" id="fc-choreo-order" data-choreo-order>'
-          + orderOpt('', t('First to last'))
-          + orderOpt('reverse', t('Last to first'))
-          + orderOpt('center', t('From the centre'))
-          + orderOpt('depth', t('By depth'))
-          + orderOpt('random', t('Random'))
-        + '</select>'
-      + '</div>'
-      + `<label class="fc-row fc-row-toggle field-toggle"><span>${escape(t('Camera move'))}</span>`
-        + '<input type="checkbox" class="field-check" data-choreo-camera checked></label>'
-      + `<label class="fc-row fc-row-toggle field-toggle"><span>${escape(t('Float - a breath of scale'))}</span>`
-        + '<input type="checkbox" class="field-check" data-choreo-float checked></label>'
+          `<button type="button" class="fc-choreo-card" role="radio" data-choreo="${s.id}" aria-checked="${s.id === showcase ? 'true' : 'false'}" tabindex="${s.id === showcase ? 0 : -1}">` +
+          `${icon(s.icon)}<span class="fc-choreo-name">${escape(s.label)}</span>` +
+          `<span class="fc-choreo-sub">${escape(s.sub)}</span></button>`
+      ).join('') +
+      '</div>' +
+      '<div class="fc-num-row">' +
+      // `step="any"`, the size panel's own choice for a fractional field above: the step
+      // base is `min`, so a `step="0.5"` measured from 0.8 makes 3, 2.5, 6, 5 and 8 - the
+      // six authored lengths this field is prefilled with - each a step MISMATCH, and the
+      // spinner walks 3 to 3.3 rather than to 3.5. `min` is CHOREO_MIN_MS in seconds.
+      `<label class="field-label fc-choreo-lab" for="fc-choreo-sec">${escape(t('Length in seconds'))}</label>` +
+      `<input type="number" class="field-input fc-choreo-num" id="fc-choreo-sec" data-choreo-sec min="0.8" step="any" value="${secOf(showcase)}">` +
+      '</div>' +
+      '<div class="fc-num-row">' +
+      // 90 ms is the generator's own DEFAULT_STAGGER_MS, restated here for the same
+      // reason the six lengths are: the chunk must not be fetched to draw the picker.
+      `<label class="field-label fc-choreo-lab" for="fc-choreo-stagger">${escape(t('Stagger ms'))}</label>` +
+      '<input type="number" class="field-input fc-choreo-num" id="fc-choreo-stagger" data-choreo-stagger min="0" step="10" value="90">' +
+      '</div>' +
+      '<div class="fc-num-row">' +
+      `<label class="field-label fc-choreo-lab" for="fc-choreo-order">${escape(t('Order'))}</label>` +
+      '<select class="field-select field-select--sm fc-choreo-order" id="fc-choreo-order" data-choreo-order>' +
+      orderOpt('', t('First to last')) +
+      orderOpt('reverse', t('Last to first')) +
+      orderOpt('center', t('From the centre')) +
+      orderOpt('depth', t('By depth')) +
+      orderOpt('random', t('Random')) +
+      '</select>' +
+      '</div>' +
+      `<label class="fc-row fc-row-toggle field-toggle"><span>${escape(t('Camera move'))}</span>` +
+      '<input type="checkbox" class="field-check" data-choreo-camera checked></label>' +
+      `<label class="fc-row fc-row-toggle field-toggle"><span>${escape(t('Float - a breath of scale'))}</span>` +
+      '<input type="checkbox" class="field-check" data-choreo-float checked></label>' +
       // Unchecked on purpose: one tilt key moves the whole export onto the slower
       // capture tier and refuses a board holding video, so 3D is a choice, not a default.
-      + `<label class="fc-row fc-row-toggle field-toggle"><span>${escape(t('Tumble - a 3D wobble (slower to export)'))}</span>`
-        + '<input type="checkbox" class="field-check" data-choreo-tumble></label>'
-      + '<div class="fc-num-row fc-confirm-row">'
-        + `<button type="button" class="btn btn--sm" data-choreo-no>${escape(t('Cancel'))}</button>`
-        + `<button type="button" class="btn btn--primary btn--sm" data-choreo-yes>${escape(t('Choreograph'))}</button>`
-      + '</div>';
+      `<label class="fc-row fc-row-toggle field-toggle"><span>${escape(t('Tumble - a 3D wobble (slower to export)'))}</span>` +
+      '<input type="checkbox" class="field-check" data-choreo-tumble></label>' +
+      '<div class="fc-num-row fc-confirm-row">' +
+      `<button type="button" class="btn btn--sm" data-choreo-no>${escape(t('Cancel'))}</button>` +
+      `<button type="button" class="btn btn--primary btn--sm" data-choreo-yes>${escape(t('Choreograph'))}</button>` +
+      '</div>';
     stageEl.appendChild(p);
     morePanel = p;
     const sr = stageEl.getBoundingClientRect();
-    p.style.left = Math.max(6, Math.min(lastMenuAt.x - sr.left, Math.max(6, sr.width - p.offsetWidth - 6))) + 'px';
-    p.style.top = Math.max(6, Math.min(lastMenuAt.y - sr.top, Math.max(6, sr.height - p.offsetHeight - 6))) + 'px';
+    p.style.left =
+      Math.max(6, Math.min(lastMenuAt.x - sr.left, Math.max(6, sr.width - p.offsetWidth - 6))) +
+      'px';
+    p.style.top =
+      Math.max(6, Math.min(lastMenuAt.y - sr.top, Math.max(6, sr.height - p.offsetHeight - 6))) +
+      'px';
     // At OPEN, synchronously, on the gesture that asked for it - askLiftLayers' rule, and
     // the reason the dialog's own name is what a screen reader is given first.
     p.focus();
@@ -7094,28 +8606,49 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (!secDirty) secIn.value = secOf(id);
     };
     for (const c of cards) {
-      c.addEventListener('click', (e) => { e.stopPropagation(); pick(c.dataset.choreo as ShowcaseId); });
+      c.addEventListener('click', (e) => {
+        e.stopPropagation();
+        pick(c.dataset.choreo as ShowcaseId);
+      });
     }
     // Arrows walk the group, which is what calling it a radiogroup owes its keyboard users.
     p.querySelector('.fc-choreo-grid')?.addEventListener('keydown', (ev) => {
       const key = (ev as KeyboardEvent).key;
-      const step = key === 'ArrowRight' || key === 'ArrowDown' ? 1 : (key === 'ArrowLeft' || key === 'ArrowUp' ? -1 : 0);
+      const step =
+        key === 'ArrowRight' || key === 'ArrowDown'
+          ? 1
+          : key === 'ArrowLeft' || key === 'ArrowUp'
+            ? -1
+            : 0;
       if (!step) return;
       ev.preventDefault();
       const at = cards.findIndex((c) => c.getAttribute('aria-checked') === 'true');
       const next = cards[(Math.max(0, at) + step + cards.length) % cards.length];
-      if (next) { pick(next.dataset.choreo as ShowcaseId); next.focus(); }
+      if (next) {
+        pick(next.dataset.choreo as ShowcaseId);
+        next.focus();
+      }
     });
-    secIn.addEventListener('input', () => { secDirty = true; });
+    secIn.addEventListener('input', () => {
+      secDirty = true;
+    });
     // Enter in either number field commits, exactly as askNumber's does.
     for (const inp of [secIn, staggerIn]) {
-      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); void run(); } });
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          void run();
+        }
+      });
     }
     p.querySelector<HTMLButtonElement>('[data-choreo-no]')?.addEventListener('click', (e) => {
       e.stopPropagation();
       closeMorePanel();
     });
-    yes.addEventListener('click', (e) => { e.stopPropagation(); void run(); });
+    yes.addEventListener('click', (e) => {
+      e.stopPropagation();
+      void run();
+    });
 
     /**
      * Read the panel, generate, commit ONCE - the tracks, any clip promotions and the
@@ -7126,7 +8659,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // The generator floors the arc at 0.8 s; say so in the field rather than let it read
       // 0.1 while a 0.8 s arc is made.
       let sec = parseFloat(secIn.value);
-      if (secDirty && Number.isFinite(sec) && sec < 0.8) { sec = 0.8; secIn.value = '0.8'; }
+      if (secDirty && Number.isFinite(sec) && sec < 0.8) {
+        sec = 0.8;
+        secIn.value = '0.8';
+      }
       const opts = {
         showcase,
         staggerMs: Math.max(0, Math.round(parseFloat(staggerIn.value) || 0)),
@@ -7156,7 +8692,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // A frames document opts out of depth and keyframe projection wholesale, so a
         // showcase written there would render as nothing: refuse, and say which.
         if (whyNotChoreograph(boxes, ids, timeCfg) === 'frames') {
-          flash(t('Choreograph works on a single artboard - a document with frames cannot be projected.'));
+          flash(
+            t(
+              'Choreograph works on a single artboard - a document with frames cannot be projected.'
+            )
+          );
           return;
         }
         const res = applyChoreograph(boxes, ids, opts, {
@@ -7167,7 +8707,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           cameraSeed: addKinds.find((k) => k.id === 'camera')?.seed,
           mint: (rows) => freshId(rows),
         });
-        if (!res) { flash(t('Select at least two boxes to choreograph.')); return; }
+        if (!res) {
+          flash(t('Select at least two boxes to choreograph.'));
+          return;
+        }
         closeMorePanel();
         selection = new Set(res.ids);
         commit(res.rows);
@@ -7187,9 +8730,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   // Clamp a floating panel below-and-left of its anchor, inside the stage.
   function positionPanelBelow(p: HTMLElement, anchor: HTMLElement): void {
-    const ar = anchor.getBoundingClientRect(), sr = stageEl.getBoundingClientRect();
+    const ar = anchor.getBoundingClientRect(),
+      sr = stageEl.getBoundingClientRect();
     p.style.left = Math.max(6, Math.min(ar.left - sr.left, sr.width - p.offsetWidth - 8)) + 'px';
-    p.style.top = Math.max(6, Math.min(ar.bottom - sr.top + 8, sr.height - p.offsetHeight - 8)) + 'px';
+    p.style.top =
+      Math.max(6, Math.min(ar.bottom - sr.top + 8, sr.height - p.offsetHeight - 8)) + 'px';
   }
 
   // ── Dimensions panel: manual X / Y / W / H / rotation for ONE box ─────────────
@@ -7202,8 +8747,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (idx.length !== 1) return;
     const b: Box = boxes[idx[0]!] || {};
     const rd = (f: string, d: number): number => Math.round(clampN(b[f], d, -100000, 100000));
-    const x = rd(cfg.xField, 0), y = rd(cfg.yField, 0);
-    const w = Math.max(1, rd(cfg.wField, 1)), h = Math.max(1, rd(cfg.hField, 1));
+    const x = rd(cfg.xField, 0),
+      y = rd(cfg.yField, 0);
+    const w = Math.max(1, rd(cfg.wField, 1)),
+      h = Math.max(1, rd(cfg.hField, 1));
     const rot = Math.round(clampN(b[cfg.rotationField], 0, -180, 180));
     // One labelled number cell: leading axis letter · the field · trailing unit. Shared
     // with the inspector's Object section - see ./free-canvas-fields.ts's `dimsCell`.
@@ -7213,41 +8760,57 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     p.innerHTML =
       `<div class="fc-panel-head">${t('Position &amp; size')}</div>` +
       '<div class="fc-dims">' +
-        `<div class="fc-dims-row"><span class="fc-dims-ic" data-tip="${escape(t('Position'))}">${icon(SVG.move)}</span>${cell(t('X'), cfg.xField, x)}${cell(t('Y'), cfg.yField, y)}</div>` +
-        `<div class="fc-dims-row"><span class="fc-dims-ic" data-tip="${escape(t('Size'))}">${icon(SVG.size)}</span>${cell(t('W'), cfg.wField, w, true)}${cell(t('H'), cfg.hField, h, true)}</div>` +
-        (cfg.rotationField
-          ? `<div class="fc-dims-row fc-dims-rot"><span class="fc-dims-ic" data-tip="${escape(t('Rotation'))}">${icon(SVG.rotate)}</span>` +
-            `<label class="fc-dims-f"><input type="number" min="-180" max="180" data-dm="${cfg.rotationField}" value="${rot}"><i>°</i></label>` +
-            `<input type="range" class="field-range fc-dims-slider" min="-180" max="180" value="${rot}" aria-label="${escape(t('Rotation'))}" data-dm-slider></div>`
-          : '') +
+      `<div class="fc-dims-row"><span class="fc-dims-ic" data-tip="${escape(t('Position'))}">${icon(SVG.move)}</span>${cell(t('X'), cfg.xField, x)}${cell(t('Y'), cfg.yField, y)}</div>` +
+      `<div class="fc-dims-row"><span class="fc-dims-ic" data-tip="${escape(t('Size'))}">${icon(SVG.size)}</span>${cell(t('W'), cfg.wField, w, true)}${cell(t('H'), cfg.hField, h, true)}</div>` +
+      (cfg.rotationField
+        ? `<div class="fc-dims-row fc-dims-rot"><span class="fc-dims-ic" data-tip="${escape(t('Rotation'))}">${icon(SVG.rotate)}</span>` +
+          `<label class="fc-dims-f"><input type="number" min="-180" max="180" data-dm="${cfg.rotationField}" value="${rot}"><i>°</i></label>` +
+          `<input type="range" class="field-range fc-dims-slider" min="-180" max="180" value="${rot}" aria-label="${escape(t('Rotation'))}" data-dm-slider></div>`
+        : '') +
       '</div>';
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
     // Number fields commit on `change`; W/H floor at 1 and rotation clamps to ±180.
-    p.querySelectorAll<HTMLInputElement>('input[data-dm]').forEach((inp) => inp.addEventListener('change', () => {
-      const f = inp.dataset.dm;
-      let v = parseFloat(inp.value);
-      if (!Number.isFinite(v)) return;
-      if (f === cfg.wField || f === cfg.hField) v = Math.max(1, v);
-      if (f === cfg.rotationField) { v = clampN(v, 0, -180, 180); inp.value = String(v); }
-      setField(f, Math.round(v * 100) / 100);
-    }));
+    p.querySelectorAll<HTMLInputElement>('input[data-dm]').forEach((inp) =>
+      inp.addEventListener('change', () => {
+        const f = inp.dataset.dm;
+        let v = parseFloat(inp.value);
+        if (!Number.isFinite(v)) return;
+        if (f === cfg.wField || f === cfg.hField) v = Math.max(1, v);
+        if (f === cfg.rotationField) {
+          v = clampN(v, 0, -180, 180);
+          inp.value = String(v);
+        }
+        setField(f, Math.round(v * 100) / 100);
+      })
+    );
     // Rotation slider - drags live-mirror the number readout and commit once on
     // release, so a drag never floods the undo history with intermediate steps.
     if (cfg.rotationField) {
-      const rotNum = p.querySelector<HTMLInputElement>(`input[type="number"][data-dm="${cfg.rotationField}"]`);
+      const rotNum = p.querySelector<HTMLInputElement>(
+        `input[type="number"][data-dm="${cfg.rotationField}"]`
+      );
       const rotRange = p.querySelector<HTMLInputElement>('[data-dm-slider]');
       if (rotNum && rotRange) {
-        rotRange.addEventListener('input', () => { rotNum.value = rotRange.value; });
-        rotRange.addEventListener('change', () => setField(cfg.rotationField, clampN(parseFloat(rotRange.value), 0, -180, 180)));
-        rotNum.addEventListener('input', () => { rotRange.value = rotNum.value; });
+        rotRange.addEventListener('input', () => {
+          rotNum.value = rotRange.value;
+        });
+        rotRange.addEventListener('change', () =>
+          setField(cfg.rotationField, clampN(parseFloat(rotRange.value), 0, -180, 180))
+        );
+        rotNum.addEventListener('input', () => {
+          rotRange.value = rotNum.value;
+        });
       }
     }
     stageEl.appendChild(p);
     morePanel = p;
     positionPanelBelow(p, anchor);
     // Anchor the readout drops BELOW the bar (readout sits at the bar's right end).
-    const ar = anchor.getBoundingClientRect(), sr = stageEl.getBoundingClientRect();
-    p.style.left = Math.max(6, Math.min(ar.right - sr.left - p.offsetWidth, sr.width - p.offsetWidth - 8)) + 'px';
+    const ar = anchor.getBoundingClientRect(),
+      sr = stageEl.getBoundingClientRect();
+    p.style.left =
+      Math.max(6, Math.min(ar.right - sr.left - p.offsetWidth, sr.width - p.offsetWidth - 8)) +
+      'px';
   }
 
   // ── Document info panel: rename the session/file + at-a-glance details ─────────
@@ -7272,7 +8835,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       value: current,
       ariaLabel: t('Custom CSS'),
       placeholder: '.lolly-box { … }',
-      onChange: (v) => { onDirty?.('customCss'); runtime.setInput('customCss', v); },
+      onChange: (v) => {
+        onDirty?.('customCss');
+        runtime.setInput('customCss', v);
+      },
     });
   }
 
@@ -7295,7 +8861,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const input = p.querySelector<HTMLInputElement>('.fc-fstate-input');
     input?.addEventListener('change', () => {
       const boxes = getBoxes();
-      if (frameIdx < boxes.length) commit(boxes.map((b, i) => (i === frameIdx ? { ...b, state: input.value } : b)));
+      if (frameIdx < boxes.length)
+        commit(boxes.map((b, i) => (i === frameIdx ? { ...b, state: input.value } : b)));
     });
     input?.focus();
   }
@@ -7319,7 +8886,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const input = p.querySelector<HTMLInputElement>('.fc-fstate-input');
     input?.addEventListener('change', () => {
       const boxes = getBoxes();
-      if (boxIdx < boxes.length) commit(boxes.map((b, i) => (i === boxIdx ? { ...b, cls: input.value } : b)));
+      if (boxIdx < boxes.length)
+        commit(boxes.map((b, i) => (i === boxIdx ? { ...b, cls: input.value } : b)));
     });
     input?.focus();
   }
@@ -7342,7 +8910,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const input = p.querySelector<HTMLTextAreaElement>('.fc-notes-input');
     input?.addEventListener('change', () => {
       const boxes = getBoxes();
-      if (frameIdx < boxes.length) commit(boxes.map((b, i) => (i === frameIdx ? { ...b, [FRAME_NOTES_FIELD]: input.value } : b)));
+      if (frameIdx < boxes.length)
+        commit(
+          boxes.map((b, i) => (i === frameIdx ? { ...b, [FRAME_NOTES_FIELD]: input.value } : b))
+        );
     });
     input?.focus();
   }
@@ -7366,7 +8937,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const input = p.querySelector<HTMLInputElement>('.fc-fstate-input');
     input?.addEventListener('change', () => {
       const boxes = getBoxes();
-      if (boxIdx < boxes.length) commit(boxes.map((b, i) => (i === boxIdx ? { ...b, matchOf: input.value.trim() } : b)));
+      if (boxIdx < boxes.length)
+        commit(boxes.map((b, i) => (i === boxIdx ? { ...b, matchOf: input.value.trim() } : b)));
     });
     input?.focus();
   }
@@ -7381,24 +8953,30 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       `<div class="fc-panel-head">${t('Document')}</div>` +
       `<label class="fc-row"><span>${t('Name')}</span><input type="text" data-info="filename" value="${escapeHtml(fname)}" placeholder="${escapeHtml(t('Untitled'))}"></label>` +
       '<div class="fc-info-meta">' +
-        `<div class="fc-info-line"><span>${t('Last edited')}</span><b data-info-edited>…</b></div>` +
-        `<div class="fc-info-line"><span>${t('Canvas')}</span><b>${d.w} × ${d.h} px</b></div>` +
-        (info?.name ? `<div class="fc-info-line"><span>${t('Tool')}</span><b>${escapeHtml(info!.name)}${info!.version ? ' · v' + escapeHtml(info!.version) : ''}</b></div>` : '') +
-        (info?.status ? `<div class="fc-info-line"><span>${t('Status')}</span><b>${escapeHtml(info!.status)}</b></div>` : '') +
-        (info?.formats?.length ? `<div class="fc-info-line"><span>${t('Exports')}</span><b>${info!.formats!.map(escapeHtml).join(', ')}</b></div>` : '') +
+      `<div class="fc-info-line"><span>${t('Last edited')}</span><b data-info-edited>…</b></div>` +
+      `<div class="fc-info-line"><span>${t('Canvas')}</span><b>${d.w} × ${d.h} px</b></div>` +
+      (info?.name
+        ? `<div class="fc-info-line"><span>${t('Tool')}</span><b>${escapeHtml(info!.name)}${info!.version ? ' · v' + escapeHtml(info!.version) : ''}</b></div>`
+        : '') +
+      (info?.status
+        ? `<div class="fc-info-line"><span>${t('Status')}</span><b>${escapeHtml(info!.status)}</b></div>`
+        : '') +
+      (info?.formats?.length
+        ? `<div class="fc-info-line"><span>${t('Exports')}</span><b>${info!.formats!.map(escapeHtml).join(', ')}</b></div>`
+        : '') +
       '</div>' +
       // Provenance: what travels in the exported file's metadata. Read-only display +
       // an opt in/out toggle; the name/contact are edited in the profile.
-      (info?.provenance ?
-        `<div class="fc-panel-head fc-info-sub">${t('Embedded in exports')}</div>` +
-        `<label class="fc-row fc-row-toggle field-toggle"><span>${t('Credit me')}</span><input type="checkbox" class="field-check" data-info="optin" disabled></label>` +
-        '<div class="fc-info-meta">' +
+      (info?.provenance
+        ? `<div class="fc-panel-head fc-info-sub">${t('Embedded in exports')}</div>` +
+          `<label class="fc-row fc-row-toggle field-toggle"><span>${t('Credit me')}</span><input type="checkbox" class="field-check" data-info="optin" disabled></label>` +
+          '<div class="fc-info-meta">' +
           `<div class="fc-info-line"><span>${t('Made with')}</span><b>Lolly · lolly.tools</b></div>` +
           `<div class="fc-info-line" data-prov="author" hidden><span>${t('Name')}</span><b></b></div>` +
           `<div class="fc-info-line" data-prov="contact" hidden><span>${t('Contact')}</span><b></b></div>` +
           '<div class="fc-info-note" data-prov="note"></div>' +
-        '</div>'
-      : '');
+          '</div>'
+        : '');
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
     const fn = p.querySelector<HTMLInputElement>('[data-info="filename"]');
     fn?.addEventListener('input', () => info?.setFilename?.(fn!.value));
@@ -7406,10 +8984,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     morePanel = p;
     positionPanelBelow(p, anchor);
     // Last-edited resolves async (reads the saved session's timestamp).
-    Promise.resolve(info?.lastEdited?.()).then((iso) => {
-      const el = p.querySelector<HTMLElement>('[data-info-edited]');
-      if (el) el.textContent = iso ? fmtDate(iso) : t('Not saved yet');
-    }).catch(() => {});
+    Promise.resolve(info?.lastEdited?.())
+      .then((iso) => {
+        const el = p.querySelector<HTMLElement>('[data-info-edited]');
+        if (el) el.textContent = iso ? fmtDate(iso) : t('Not saved yet');
+      })
+      .catch(() => {});
     // Provenance section fills async (reads the profile) then wires the opt-in toggle.
     const prov = info?.provenance;
     if (prov) {
@@ -7418,31 +8998,49 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const contactRow = p.querySelector<HTMLElement>('[data-prov="contact"]');
       const note = p.querySelector<HTMLElement>('[data-prov="note"]');
       // nosemgrep: lolly-href-escape-is-not-scheme-validation - editHref's only caller passes the literal '#/profile?focus=use-details' (views/tool.ts)
-    const editLink = prov.editHref ? ` <a href="${escapeHtml(prov.editHref)}">${t('Edit details')}</a>` : '';
+      const editLink = prov.editHref
+        ? ` <a href="${escapeHtml(prov.editHref)}">${t('Edit details')}</a>`
+        : '';
       const paint = (optedIn: boolean, author: string, contact: string): void => {
         if (optin) optin.checked = optedIn;
-        if (authorRow) { authorRow.hidden = !(optedIn && author); authorRow.querySelector('b')!.textContent = author; }
-        if (contactRow) { contactRow.hidden = !(optedIn && contact); contactRow.querySelector('b')!.textContent = contact; }
+        if (authorRow) {
+          authorRow.hidden = !(optedIn && author);
+          authorRow.querySelector('b')!.textContent = author;
+        }
+        if (contactRow) {
+          contactRow.hidden = !(optedIn && contact);
+          contactRow.querySelector('b')!.textContent = contact;
+        }
         if (note) {
           note.innerHTML = optedIn
-            ? (author || contact
-                ? t('Baked into your PNG, PDF & SVG file metadata.')
-                : tRaw('No name on file yet -{action} to be credited.', { action: editLink || ` ${t('add your details in your profile')}` }))
+            ? author || contact
+              ? t('Baked into your PNG, PDF & SVG file metadata.')
+              : tRaw('No name on file yet -{action} to be credited.', {
+                  action: editLink || ` ${t('add your details in your profile')}`,
+                })
             : tRaw('Your name &amp; contact stay off your files.{link}', { link: editLink });
         }
       };
-      prov.get().then(({ optedIn, author, contact }) => {
-        if (optin) optin.disabled = false;
-        paint(optedIn, author, contact);
-        optin?.addEventListener('change', () => {
-          const on = optin.checked;
-          paint(on, author, contact);        // reflect immediately
-          optin.disabled = true;
-          Promise.resolve(prov.setOptIn(on))
-            .catch(() => { optin.checked = !on; paint(!on, author, contact); }) // revert on failure
-            .finally(() => { optin.disabled = false; });
-        });
-      }).catch(() => {});
+      prov
+        .get()
+        .then(({ optedIn, author, contact }) => {
+          if (optin) optin.disabled = false;
+          paint(optedIn, author, contact);
+          optin?.addEventListener('change', () => {
+            const on = optin.checked;
+            paint(on, author, contact); // reflect immediately
+            optin.disabled = true;
+            Promise.resolve(prov.setOptIn(on))
+              .catch(() => {
+                optin.checked = !on;
+                paint(!on, author, contact);
+              }) // revert on failure
+              .finally(() => {
+                optin.disabled = false;
+              });
+          });
+        })
+        .catch(() => {});
     }
   }
 
@@ -7472,33 +9070,43 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // the label would lie. Any other shape writes straight through.
   function setShape(v: string | undefined): void {
     if (!cfg.shapeField) return;
-    if (v !== 'circle' || !cfg.wField || !cfg.hField) { setField(cfg.shapeField, v); return; }
+    if (v !== 'circle' || !cfg.wField || !cfg.hField) {
+      setField(cfg.shapeField, v);
+      return;
+    }
     const boxes = getBoxes();
     const sel = new Set(selIndices(boxes));
-    commit(boxes.map((b, i) => {
-      if (!sel.has(i)) return b;
-      const w = Math.max(1, num(b[cfg.wField], 1));
-      const h = Math.max(1, num(b[cfg.hField], 1));
-      const d = Math.round(Math.min(w, h));
-      const cx = num(b[cfg.xField], 0) + w / 2;
-      const cy = num(b[cfg.yField], 0) + h / 2;
-      return {
-        ...b, [cfg.shapeField]: 'circle',
-        [cfg.wField]: d, [cfg.hField]: d,
-        [cfg.xField]: Math.round(cx - d / 2), [cfg.yField]: Math.round(cy - d / 2),
-      };
-    }));
+    commit(
+      boxes.map((b, i) => {
+        if (!sel.has(i)) return b;
+        const w = Math.max(1, num(b[cfg.wField], 1));
+        const h = Math.max(1, num(b[cfg.hField], 1));
+        const d = Math.round(Math.min(w, h));
+        const cx = num(b[cfg.xField], 0) + w / 2;
+        const cy = num(b[cfg.yField], 0) + h / 2;
+        return {
+          ...b,
+          [cfg.shapeField]: 'circle',
+          [cfg.wField]: d,
+          [cfg.hField]: d,
+          [cfg.xField]: Math.round(cx - d / 2),
+          [cfg.yField]: Math.round(cy - d / 2),
+        };
+      })
+    );
   }
   function bumpFont(delta: number): void {
     if (!cfg.fontSizeField) return;
     const boxes = getBoxes();
     const sel = new Set(selIndices(boxes));
-    commit(boxes.map((b, i) => {
-      if (!sel.has(i)) return b;
-      const cur = parseFloat(String(b[cfg.fontSizeField]));
-      const base = Number.isFinite(cur) ? cur : 48;
-      return { ...b, [cfg.fontSizeField]: Math.max(4, base + delta) };
-    }));
+    commit(
+      boxes.map((b, i) => {
+        if (!sel.has(i)) return b;
+        const cur = parseFloat(String(b[cfg.fontSizeField]));
+        const base = Number.isFinite(cur) ? cur : 48;
+        return { ...b, [cfg.fontSizeField]: Math.max(4, base + delta) };
+      })
+    );
   }
   // `segHtml`, `POS9`/`posGridHtml` and `wireSegs` used to live here as closures over
   // `setField`. They are ./free-canvas-fields.ts's now (plans/179 M3), so the Design
@@ -7535,82 +9143,159 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     p.className = 'fc-panel fc-text-panel';
     p.innerHTML =
       `<div class="fc-panel-head">${t('Text')}</div>` +
-      (cfg.fontField ? `<label class="fc-row"><span>${t('Font')}</span><select class="field-select field-select--sm" data-tp="font">${fontOptionsHtml(fontCur)}</select></label>` : '') +
+      (cfg.fontField
+        ? `<label class="fc-row"><span>${t('Font')}</span><select class="field-select field-select--sm" data-tp="font">${fontOptionsHtml(fontCur)}</select></label>`
+        : '') +
       // Size row now carries the A−/A+ steppers (moved off the object bar) around the number.
-      (cfg.fontSizeField ? `<div class="fc-row"><span>${t('Size')}</span><div class="fc-stepper">
+      (cfg.fontSizeField
+        ? `<div class="fc-row"><span>${t('Size')}</span><div class="fc-stepper">
         <button type="button" class="fc-cbtn" data-tp="smaller" data-tip="${escape(t('Smaller'))}" aria-label="${escape(t('Smaller text'))}">A−</button>
         <input type="number" min="4" max="2000" data-tp="size" value="${sizeCur}">
         <button type="button" class="fc-cbtn" data-tp="bigger" data-tip="${escape(t('Bigger'))}" aria-label="${escape(t('Bigger text'))}">A+</button>
-      </div></div>` : '') +
-      (cfg.weightField ? `<label class="fc-row"><span>${t('Weight')}</span><select class="field-select field-select--sm" data-tp="weight">${weightChoicesFor(fontCur).map(([v, l]) => opt(v, t(l), weightCur)).join('')}</select></label>` : '') +
-      (cfg.lineHeightField ? `<label class="fc-row"><span>${t('Line height')}</span><input type="range" class="field-range" min="0.7" max="3" step="0.01" data-tp="lh" value="${lhCur}"><b data-tp-val="lh">${lhCur.toFixed(2)}</b></label>` : '') +
-      (cfg.trackingField ? `<label class="fc-row"><span>${t('Letter spacing')}</span><input type="range" class="field-range" min="-20" max="100" step="0.5" data-tp="tr" value="${trCur}"><b data-tp-val="tr">${trCur}</b></label>` : '') +
-      (cfg.ligaturesField ? `<label class="fc-row fc-row-toggle field-toggle"><span>${t('Ligatures')}</span><input type="checkbox" class="field-check" data-tp="lig"${ligCur ? ' checked' : ''}></label>` : '') +
-      (cfg.alternatesField ? `<label class="fc-row fc-row-toggle field-toggle"><span>${t('Alternates')}</span><input type="checkbox" class="field-check" data-tp="alt"${altCur ? ' checked' : ''}></label>` : '') +
+      </div></div>`
+        : '') +
+      (cfg.weightField
+        ? `<label class="fc-row"><span>${t('Weight')}</span><select class="field-select field-select--sm" data-tp="weight">${weightChoicesFor(
+            fontCur
+          )
+            .map(([v, l]) => opt(v, t(l), weightCur))
+            .join('')}</select></label>`
+        : '') +
+      (cfg.lineHeightField
+        ? `<label class="fc-row"><span>${t('Line height')}</span><input type="range" class="field-range" min="0.7" max="3" step="0.01" data-tp="lh" value="${lhCur}"><b data-tp-val="lh">${lhCur.toFixed(2)}</b></label>`
+        : '') +
+      (cfg.trackingField
+        ? `<label class="fc-row"><span>${t('Letter spacing')}</span><input type="range" class="field-range" min="-20" max="100" step="0.5" data-tp="tr" value="${trCur}"><b data-tp-val="tr">${trCur}</b></label>`
+        : '') +
+      (cfg.ligaturesField
+        ? `<label class="fc-row fc-row-toggle field-toggle"><span>${t('Ligatures')}</span><input type="checkbox" class="field-check" data-tp="lig"${ligCur ? ' checked' : ''}></label>`
+        : '') +
+      (cfg.alternatesField
+        ? `<label class="fc-row fc-row-toggle field-toggle"><span>${t('Alternates')}</span><input type="checkbox" class="field-check" data-tp="alt"${altCur ? ' checked' : ''}></label>`
+        : '') +
       // Shrink-to-fit: on → the text scales down to fit the box (never up); off → the box
       // grows to the text (the default). See the hooks.js fit pass driven by data-fit.
-      (cfg.fitTextField ? `<label class="fc-row fc-row-toggle field-toggle"><span>${t('Shrink text to fit')}</span><input type="checkbox" class="field-check" data-tp="fit"${fitCur ? ' checked' : ''}></label>` : '') +
-      (cfg.alignField ? `<div class="fc-row"><span>${t('Align')}</span>${segHtml(cfg.alignField, alignCur, [['left', t('Align left'), SVG.textL], ['center', t('Align centre'), SVG.textC], ['right', t('Align right'), SVG.textR]])}</div>` : '') +
-      (cfg.valignField ? `<div class="fc-row"><span>${t('Vertical')}</span>${segHtml(cfg.valignField, valignCur, [['top', t('Align top'), SVG.textT], ['middle', t('Centre vertically'), SVG.textM], ['bottom', t('Align bottom'), SVG.textB]])}</div>` : '') +
-      (cfg.padField ? `<label class="fc-row"><span>${t('Padding')}</span><input type="range" class="field-range" min="0" max="200" data-tp="pad" value="${padCur}"><b data-tp-val="pad">${padCur}</b></label>` : '');
+      (cfg.fitTextField
+        ? `<label class="fc-row fc-row-toggle field-toggle"><span>${t('Shrink text to fit')}</span><input type="checkbox" class="field-check" data-tp="fit"${fitCur ? ' checked' : ''}></label>`
+        : '') +
+      (cfg.alignField
+        ? `<div class="fc-row"><span>${t('Align')}</span>${segHtml(cfg.alignField, alignCur, [
+            ['left', t('Align left'), SVG.textL],
+            ['center', t('Align centre'), SVG.textC],
+            ['right', t('Align right'), SVG.textR],
+          ])}</div>`
+        : '') +
+      (cfg.valignField
+        ? `<div class="fc-row"><span>${t('Vertical')}</span>${segHtml(cfg.valignField, valignCur, [
+            ['top', t('Align top'), SVG.textT],
+            ['middle', t('Centre vertically'), SVG.textM],
+            ['bottom', t('Align bottom'), SVG.textB],
+          ])}</div>`
+        : '') +
+      (cfg.padField
+        ? `<label class="fc-row"><span>${t('Padding')}</span><input type="range" class="field-range" min="0" max="200" data-tp="pad" value="${padCur}"><b data-tp-val="pad">${padCur}</b></label>`
+        : '');
     p.addEventListener('pointerdown', (e) => e.stopPropagation());
-    p.querySelector<HTMLButtonElement>('[data-tp="smaller"]')?.addEventListener('click', () => { bumpFont(-6); const s = p.querySelector<HTMLInputElement>('[data-tp="size"]'); if (s) s.value = String(Math.max(4, (parseInt(s.value, 10) || 48) - 6)); });
-    p.querySelector<HTMLButtonElement>('[data-tp="bigger"]')?.addEventListener('click', () => { bumpFont(6); const s = p.querySelector<HTMLInputElement>('[data-tp="size"]'); if (s) s.value = String((parseInt(s.value, 10) || 48) + 6); });
-    p.querySelectorAll<HTMLSelectElement>('select[data-tp]').forEach((sel) => sel.addEventListener('change', () => {
-      if (sel.dataset.tp !== 'font') { setField(cfg.weightField, sel.value); return; }
-      // Font change: mono cuts have no 900, so clamp any Black boxes to 800 in
-      // the SAME commit (one undo step), then refresh the weight menu to match.
-      const font = sel.value;
-      const bx = getBoxes();
-      const selSet = new Set(selIndices(bx));
-      commit(bx.map((row, k) => {
-        if (!selSet.has(k)) return row;
-        const nb = { ...row, [cfg.fontField]: font };
-        if (cfg.weightField && isMonoFont(font) && (parseInt(String(nb[cfg.weightField]), 10) || 700) > 800) nb[cfg.weightField] = '800';
-        return nb;
-      }));
-      const wSel = p.querySelector<HTMLSelectElement>('select[data-tp="weight"]');
-      if (wSel) {
-        const cur = Math.min(parseInt(wSel.value, 10) || 700, maxWeightFor(font));
-        wSel.innerHTML = weightChoicesFor(font).map(([v, l]) => opt(v, t(l), String(cur))).join('');
-      }
-    }));
-    p.querySelectorAll<HTMLInputElement>('input[type="number"][data-tp]').forEach((inp) => inp.addEventListener('change', () => {
-      const v = parseInt(inp.value, 10);
-      if (Number.isFinite(v) && v >= 4) setField(cfg.fontSizeField, v);
-    }));
-    p.querySelectorAll<HTMLInputElement>('input[type="range"][data-tp]').forEach((rng) => rng.addEventListener('input', () => {
-      const k = rng.dataset.tp;
-      const valEl = p.querySelector<HTMLElement>(`[data-tp-val="${k}"]`);
-      if (k === 'lh') { if (valEl) valEl.textContent = (+rng.value).toFixed(2); setField(cfg.lineHeightField, +rng.value); }
-      else if (k === 'tr') { if (valEl) valEl.textContent = rng.value; setField(cfg.trackingField, +rng.value); }
-      else { if (valEl) valEl.textContent = rng.value; setField(cfg.padField, +rng.value); }
-    }));
-    const cbField: Record<string, string> = { lig: cfg.ligaturesField, alt: cfg.alternatesField, fit: cfg.fitTextField };
-    p.querySelectorAll<HTMLInputElement>('input[type="checkbox"][data-tp]').forEach((cb) => cb.addEventListener('change', () => {
-      setField(cbField[cb.dataset.tp!], cb.checked);
-    }));
+    p.querySelector<HTMLButtonElement>('[data-tp="smaller"]')?.addEventListener('click', () => {
+      bumpFont(-6);
+      const s = p.querySelector<HTMLInputElement>('[data-tp="size"]');
+      if (s) s.value = String(Math.max(4, (parseInt(s.value, 10) || 48) - 6));
+    });
+    p.querySelector<HTMLButtonElement>('[data-tp="bigger"]')?.addEventListener('click', () => {
+      bumpFont(6);
+      const s = p.querySelector<HTMLInputElement>('[data-tp="size"]');
+      if (s) s.value = String((parseInt(s.value, 10) || 48) + 6);
+    });
+    p.querySelectorAll<HTMLSelectElement>('select[data-tp]').forEach((sel) =>
+      sel.addEventListener('change', () => {
+        if (sel.dataset.tp !== 'font') {
+          setField(cfg.weightField, sel.value);
+          return;
+        }
+        // Font change: mono cuts have no 900, so clamp any Black boxes to 800 in
+        // the SAME commit (one undo step), then refresh the weight menu to match.
+        const font = sel.value;
+        const bx = getBoxes();
+        const selSet = new Set(selIndices(bx));
+        commit(
+          bx.map((row, k) => {
+            if (!selSet.has(k)) return row;
+            const nb = { ...row, [cfg.fontField]: font };
+            if (
+              cfg.weightField &&
+              isMonoFont(font) &&
+              (parseInt(String(nb[cfg.weightField]), 10) || 700) > 800
+            )
+              nb[cfg.weightField] = '800';
+            return nb;
+          })
+        );
+        const wSel = p.querySelector<HTMLSelectElement>('select[data-tp="weight"]');
+        if (wSel) {
+          const cur = Math.min(parseInt(wSel.value, 10) || 700, maxWeightFor(font));
+          wSel.innerHTML = weightChoicesFor(font)
+            .map(([v, l]) => opt(v, t(l), String(cur)))
+            .join('');
+        }
+      })
+    );
+    p.querySelectorAll<HTMLInputElement>('input[type="number"][data-tp]').forEach((inp) =>
+      inp.addEventListener('change', () => {
+        const v = parseInt(inp.value, 10);
+        if (Number.isFinite(v) && v >= 4) setField(cfg.fontSizeField, v);
+      })
+    );
+    p.querySelectorAll<HTMLInputElement>('input[type="range"][data-tp]').forEach((rng) =>
+      rng.addEventListener('input', () => {
+        const k = rng.dataset.tp;
+        const valEl = p.querySelector<HTMLElement>(`[data-tp-val="${k}"]`);
+        if (k === 'lh') {
+          if (valEl) valEl.textContent = (+rng.value).toFixed(2);
+          setField(cfg.lineHeightField, +rng.value);
+        } else if (k === 'tr') {
+          if (valEl) valEl.textContent = rng.value;
+          setField(cfg.trackingField, +rng.value);
+        } else {
+          if (valEl) valEl.textContent = rng.value;
+          setField(cfg.padField, +rng.value);
+        }
+      })
+    );
+    const cbField: Record<string, string> = {
+      lig: cfg.ligaturesField,
+      alt: cfg.alternatesField,
+      fit: cfg.fitTextField,
+    };
+    p.querySelectorAll<HTMLInputElement>('input[type="checkbox"][data-tp]').forEach((cb) =>
+      cb.addEventListener('change', () => {
+        setField(cbField[cb.dataset.tp!], cb.checked);
+      })
+    );
     wireSegs(p, (field, v) => setField(field, v));
     stageEl.appendChild(p);
     morePanel = p;
     const ar = anchor.getBoundingClientRect();
     const sr = stageEl.getBoundingClientRect();
     p.style.left = Math.max(6, Math.min(ar.left - sr.left, sr.width - p.offsetWidth - 8)) + 'px';
-    p.style.top = Math.max(6, Math.min(ar.bottom - sr.top + 8, sr.height - p.offsetHeight - 8)) + 'px';
+    p.style.top =
+      Math.max(6, Math.min(ar.bottom - sr.top + 8, sr.height - p.offsetHeight - 8)) + 'px';
   }
   // `initialTab` is the picker pane this add-kind should OPEN on (picker.ts's
   // PickerOpts.initialTab - a default the user can leave immediately, not a lock):
   // 'tools' for the Tool kind, 'library' for the media kinds, whose `pickType` has
   // already narrowed the library to just the assets that fit.
-  async function pickImage(
-    pickOpts?: { pickType?: 'lottie' | 'video' | 'audio'; initialTab?: 'library' | 'tools' },
-  ): Promise<void> {
+  async function pickImage(pickOpts?: {
+    pickType?: 'lottie' | 'video' | 'audio';
+    initialTab?: 'library' | 'tools';
+  }): Promise<void> {
     if (!cfg.imageField || !host.assets?.pick) return;
     const pickType = pickOpts?.pickType;
     const boxes0 = getBoxes();
     const first: Box = boxes0[selIndices(boxes0)[0]!] || {};
     // The box's current image, viewed as an asset ref (the image field holds one).
-    const curImg = first[cfg.imageField] as { id?: string; meta?: { toolUrl?: string; name?: string } } | undefined;
+    const curImg = first[cfg.imageField] as
+      | { id?: string; meta?: { toolUrl?: string; name?: string } }
+      | undefined;
     // A box already filled by a live Lolly render: ask edit-or-replace before
     // opening the picker (same choice-first flow as the sidebar image slots).
     const curToolUrl = curImg?.meta?.toolUrl;
@@ -7628,17 +9313,24 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           const boxes = getBoxes();
           const sel = new Set(selIndices(boxes));
           commit(boxes.map((b, i) => (sel.has(i) ? { ...b, [cfg.imageField]: edited } : b)));
-        } catch { /* user cancelled */ }
+        } catch {
+          /* user cancelled */
+        }
         return;
       }
     }
     try {
       const ref = await host.assets!.pick({
-        title: pickType === 'video' ? t('Choose a video')
-          : pickType === 'lottie' ? t('Choose an animation')
-          : pickType === 'audio' ? t('Choose a sound')
-          : pickOpts?.initialTab === 'tools' ? t('Choose a tool')
-          : t('Choose an image'),
+        title:
+          pickType === 'video'
+            ? t('Choose a video')
+            : pickType === 'lottie'
+              ? t('Choose an animation')
+              : pickType === 'audio'
+                ? t('Choose a sound')
+                : pickOpts?.initialTab === 'tools'
+                  ? t('Choose a tool')
+                  : t('Choose an image'),
         // No type constraint by default: boxes take rasters AND vectors - logos and
         // the themable two-colour icons (with the picker's theme strip) included, plus
         // animated rasters (gif/apng/webp, which are type:'raster'). The "Animation" /
@@ -7663,7 +9355,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const boxes = getBoxes();
       const sel = new Set(selIndices(boxes));
       commit(boxes.map((b, i) => (sel.has(i) ? { ...b, [cfg.imageField]: ref } : b)));
-    } catch { /* user cancelled */ }
+    } catch {
+      /* user cancelled */
+    }
   }
 
   // Cut the background out of the single selected image box on-device (host.matte)
@@ -7684,7 +9378,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (idxs.length !== 1) return;
     const at0 = idxs[0]!;
     const box = boxes0[at0]!;
-    const cur = box[imageField] as { id?: string; url?: string; meta?: { name?: string } } | undefined;
+    const cur = box[imageField] as
+      | { id?: string; url?: string; meta?: { name?: string } }
+      | undefined;
     if (!cur || (!cur.id && !cur.url)) return; // no image to cut out
     const boxId = idOf(box, at0);
     try {
@@ -7699,11 +9395,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           commit(boxes.map((b, i) => (i === at ? { ...b, [imageField]: cutout } : b)));
         },
       });
-    } catch { /* cancelled or unavailable */ }
+    } catch {
+      /* cancelled or unavailable */
+    }
   }
 
   // ── outline text ─────────────────────────────────────────────────────────────
-  // Convert selected text boxes' glyphs into ordinary kind:'path' boxes (plan 88 - 
+  // Convert selected text boxes' glyphs into ordinary kind:'path' boxes (plan 88 -
   // the Font Outliner capability, in place). Measurement + shaping live in the lazy
   // outline-text.ts chunk, which reuses the export walk's line machinery; here is
   // only the model surgery: source box → per-fill path boxes at the same z, one
@@ -7725,8 +9423,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function paintsBesidesText(b: Box): boolean {
     const bg = cfg.fillField ? String(b[cfg.fillField] ?? '').trim() : '';
     const grad = cfg.gradField ? String(b[cfg.gradField] ?? '').trim() : '';
-    const img = cfg.imageField ? (b[cfg.imageField] as { id?: string; url?: string } | undefined) : undefined;
-    const border = num(b[cfg.strokeWField], 0) > 0 && String(b[cfg.strokeField] ?? '').trim() !== '';
+    const img = cfg.imageField
+      ? (b[cfg.imageField] as { id?: string; url?: string } | undefined)
+      : undefined;
+    const border =
+      num(b[cfg.strokeWField], 0) > 0 && String(b[cfg.strokeField] ?? '').trim() !== '';
     return Boolean(bg || grad || (img && (img.id || img.url)) || border);
   }
 
@@ -7740,8 +9441,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   async function outlineTextOnSelection(): Promise<void> {
     if (outliningInFlight) return;
     outliningInFlight = true;
-    try { await runOutlineTextOnSelection(); }
-    finally { outliningInFlight = false; }
+    try {
+      await runOutlineTextOnSelection();
+    } finally {
+      outliningInFlight = false;
+    }
   }
   async function runOutlineTextOnSelection(): Promise<void> {
     if (!vectorCfg || !cfg.textField) return;
@@ -7756,7 +9460,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const { outlineBoxText, rotatedFrameShift } = await import('./outline-text.ts');
     const rectToNative = (r: DOMRect): { x: number; y: number; w: number; h: number } => {
       const { cr, scale } = metrics();
-      return { x: (r.left - cr.left) / scale, y: (r.top - cr.top) / scale, w: r.width / scale, h: r.height / scale };
+      return {
+        x: (r.left - cr.left) / scale,
+        y: (r.top - cr.top) / scale,
+        w: r.width / scale,
+        h: r.height / scale,
+      };
     };
 
     // Settle fonts AND layout ONCE, up front - before touching any box DOM. A pending
@@ -7766,7 +9475,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // move the box between the query and the measurement, so the captured element is
     // stale and the shaped glyphs land at the wrong size/place (or a repaint drops the
     // result). After this, each box is queried fresh and measured with no await between.
-    try { await document.fonts?.ready; } catch { /* no Font Loading API */ }
+    try {
+      await document.fonts?.ready;
+    } catch {
+      /* no Font Loading API */
+    }
     await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
 
     const results = new Map<string, OutlineGroup[]>();
@@ -7774,12 +9487,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     for (const id of srcIds) {
       const el = canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(id)}"]`);
       const textEl = el?.querySelector<HTMLElement>('.lolly-box-text');
-      if (!el || !textEl) { firstRefusal ??= 'no-text'; continue; }
+      if (!el || !textEl) {
+        firstRefusal ??= 'no-text';
+        continue;
+      }
       try {
         const res = await outlineBoxText(el, textEl, textApi, rectToNative);
         if (res.ok) results.set(id, res.groups);
         else firstRefusal ??= res.reason;
-      } catch { firstRefusal ??= 'empty'; }
+      } catch {
+        firstRefusal ??= 'empty';
+      }
     }
 
     // The model may have moved while shaping - re-read and apply by id, one commit.
@@ -7790,14 +9508,30 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // `linkOf`, which is deliberately absent from this list), and the keyframe
     // channels are relative offsets, so a glyph box inherits the motion correctly
     // wherever the outlining put it.
-    const timeCarry = timeCfg ? [
-      timeCfg.startField, timeCfg.durField, timeCfg.clipInField, timeCfg.speedField,
-      timeCfg.enterField, timeCfg.exitField, timeCfg.enterMsField, timeCfg.exitMsField,
-      timeCfg.muteField, timeCfg.laneField, timeCfg.enterEaseField, timeCfg.exitEaseField,
-      timeCfg.kfField, timeCfg.zField,
-    ].filter((f): f is string => Boolean(f)) : [];
-    const shadowCarry = [cfg.shadowColorField, cfg.shadowXField, cfg.shadowYField, cfg.shadowBlurField]
-      .filter(Boolean) as string[];
+    const timeCarry = timeCfg
+      ? [
+          timeCfg.startField,
+          timeCfg.durField,
+          timeCfg.clipInField,
+          timeCfg.speedField,
+          timeCfg.enterField,
+          timeCfg.exitField,
+          timeCfg.enterMsField,
+          timeCfg.exitMsField,
+          timeCfg.muteField,
+          timeCfg.laneField,
+          timeCfg.enterEaseField,
+          timeCfg.exitEaseField,
+          timeCfg.kfField,
+          timeCfg.zField,
+        ].filter((f): f is string => Boolean(f))
+      : [];
+    const shadowCarry = [
+      cfg.shadowColorField,
+      cfg.shadowXField,
+      cfg.shadowYField,
+      cfg.shadowBlurField,
+    ].filter(Boolean) as string[];
     let next = getBoxes();
     const nextSel = new Set<string>();
     let outlined = 0;
@@ -7818,13 +9552,20 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // keep the source's own group if it had one (respect existing structure), else mint a
       // fresh shared group when there is more than one box. A lone glyph needs no group.
       const madeGroup = cfg.groupField
-        ? (src[cfg.groupField] ? String(src[cfg.groupField]) : (groups.length > 1 ? freshGroupId(next) : ''))
+        ? src[cfg.groupField]
+          ? String(src[cfg.groupField])
+          : groups.length > 1
+            ? freshGroupId(next)
+            : ''
         : '';
       for (const g of groups) {
         const pb = pathToBox(g.path, src, { cfg: vectorCfg, id: freshId(next.concat(made)) });
         // Only the node ceiling gets here (finite, non-empty geometry by construction)
         // - too much text for one encodable shape. Refuse the whole box.
-        if (!pb) { failed = true; break; }
+        if (!pb) {
+          failed = true;
+          break;
+        }
         // A path box's fill field paints the GLYPHS; the text box's fill was its
         // background. pathToBox inherited the latter - override with the run colour.
         if (cfg.fillField) pb[cfg.fillField] = g.fill;
@@ -7863,7 +9604,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         }
         made.push(pb);
       }
-      if (failed || !made.length) { firstRefusal ??= 'too-complex'; continue; }
+      if (failed || !made.length) {
+        firstRefusal ??= 'too-complex';
+        continue;
+      }
       if (keepSource) {
         next = next.map((b, i) => (i === at ? { ...b, [cfg.textField as string]: '' } : b));
         next = [...next.slice(0, at + 1), ...made, ...next.slice(at + 1)];
@@ -7875,26 +9619,39 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
 
     if (!outlined) {
-      flash(firstRefusal === 'not-visible'
-        ? t('This clip is not on screen at the current playhead. Move to it, then outline its text.')
-        : firstRefusal === 'no-font'
-          ? t('No font file could be resolved for this text, so it was left as it is.')
-          : firstRefusal === 'notdef'
-            ? t('The font cannot draw some of these characters, so the text was left as it is.')
-            : firstRefusal === 'too-complex'
-              ? t('There is too much text to outline in one shape, so it was left as it is.')
-              : t('Nothing in this selection can be outlined.'));
+      flash(
+        firstRefusal === 'not-visible'
+          ? t(
+              'This clip is not on screen at the current playhead. Move to it, then outline its text.'
+            )
+          : firstRefusal === 'no-font'
+            ? t('No font file could be resolved for this text, so it was left as it is.')
+            : firstRefusal === 'notdef'
+              ? t('The font cannot draw some of these characters, so the text was left as it is.')
+              : firstRefusal === 'too-complex'
+                ? t('There is too much text to outline in one shape, so it was left as it is.')
+                : t('Nothing in this selection can be outlined.')
+      );
       return;
     }
     selection = nextSel;
     commit(next);
     const skipped = srcIds.length - outlined;
-    flash((outlined === 1
-      ? t('Text outlined. It is now a shape and can no longer be edited as text.')
-      : t('{n} text boxes outlined. They are now shapes and can no longer be edited as text.', { n: outlined }))
-      + (skipped ? ' ' + (skipped === 1
-        ? t('One selected item could not be outlined and was left as it is.')
-        : t('{n} selected items could not be outlined and were left as they are.', { n: skipped })) : ''));
+    flash(
+      (outlined === 1
+        ? t('Text outlined. It is now a shape and can no longer be edited as text.')
+        : t('{n} text boxes outlined. They are now shapes and can no longer be edited as text.', {
+            n: outlined,
+          })) +
+        (skipped
+          ? ' ' +
+            (skipped === 1
+              ? t('One selected item could not be outlined and was left as it is.')
+              : t('{n} selected items could not be outlined and were left as they are.', {
+                  n: skipped,
+                }))
+          : '')
+    );
   }
 
   // ── grouping + clip/mask ──────────────────────────────────────────────────────
@@ -7907,7 +9664,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function freshGroupId(boxes: Box[]): string {
     const used = new Set(boxes.map((b) => groupOf(b)).filter(Boolean));
     let g: string;
-    do { g = 'g' + Date.now().toString(36).slice(-4) + (groupSeq++).toString(36); } while (used.has(g));
+    do {
+      g = 'g' + Date.now().toString(36).slice(-4) + (groupSeq++).toString(36);
+    } while (used.has(g));
     return g;
   }
   function groupSelection(): void {
@@ -7966,13 +9725,22 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!cfg.imageField || !cfg.groupField) return;
     announce(t('Ungrouping…'));
     try {
-      const [{ fetchAnimSvg }, { enumerateSvgLayers, svgRootViewBox }, { storeUserUpload }, { KF_Z_FIELD_CLAMP }] = await Promise.all([
+      const [
+        { fetchAnimSvg },
+        { enumerateSvgLayers, svgRootViewBox },
+        { storeUserUpload },
+        { KF_Z_FIELD_CLAMP },
+      ] = await Promise.all([
         import('./anim-svg-mount.ts'),
         import('../../../../engine/src/svg-layers.ts'),
         import('./picker.ts'),
         import('../../../../engine/src/keyframes.ts'),
       ]);
-      interface Part { layers: SvgLayerPlan[]; refs: InputValue[]; viewBox: SvgSourceBox }
+      interface Part {
+        layers: SvgLayerPlan[];
+        refs: InputValue[];
+        viewBox: SvgSourceBox;
+      }
       const parts = new Map<string, Part>();
       let single = 0;
       for (const id of ids) {
@@ -7983,33 +9751,54 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         if (!src || !url) continue;
         const markup = await fetchAnimSvg(url);
         if (disposed) return;
-        const place = { viewBox: svgRootViewBox(markup), fit: String(src[cfg.fitField] ?? 'contain') };
+        const place = {
+          viewBox: svgRootViewBox(markup),
+          fit: String(src[cfg.fitField] ?? 'contain'),
+        };
         const cropToInk = liftCanCrop(src, cfg, place);
         const cropScale = liftCropScale(src, cfg, place) || undefined;
         // `heroDescent: false`: an Ungroup peels ONE level of the drawing's own structure,
         // the way every vector editor's does, so it is predictable and it repeats. The
         // hero heuristic belongs to the Lift dialog, where one big layer means a
         // flythrough over a picture; here it would be a second, unasked-for peel.
-        const { layers, viewBox } = enumerateSvgLayers(markup, { heroDescent: false, cropToInk, cropScale });
-        if (layers.length < 2) { single++; continue; }
+        const { layers, viewBox } = enumerateSvgLayers(markup, {
+          heroDescent: false,
+          cropToInk,
+          cropScale,
+        });
+        if (layers.length < 2) {
+          single++;
+          continue;
+        }
         const base = liftBaseName(ref);
         const refs: InputValue[] = [];
         for (let i = 0; i < layers.length; i++) {
-          const file = new File([layers[i]!.markup], `${base}-part-${i + 1}.svg`, { type: 'image/svg+xml' });
-          refs.push(await storeUserUpload(host as unknown as Parameters<typeof storeUserUpload>[0], file) as unknown as InputValue);
+          const file = new File([layers[i]!.markup], `${base}-part-${i + 1}.svg`, {
+            type: 'image/svg+xml',
+          });
+          refs.push(
+            (await storeUserUpload(
+              host as unknown as Parameters<typeof storeUserUpload>[0],
+              file
+            )) as unknown as InputValue
+          );
         }
         if (disposed) return;
         parts.set(id, { layers, refs, viewBox });
       }
       if (!parts.size) {
-        flash(single ? t('This artwork is a single shape, so there is nothing to ungroup.') : t('That artwork could not be read.'));
+        flash(
+          single
+            ? t('This artwork is a single shape, so there is nothing to ungroup.')
+            : t('That artwork could not be read.')
+        );
         return;
       }
       let scratch = getBoxes();
       const newIds: string[] = [];
       for (const [id, part] of parts) {
         const at = indexOfId(scratch, id);
-        if (at < 0) continue;   // gone while it was being read - the others still apply
+        if (at < 0) continue; // gone while it was being read - the others still apply
         const source = scratch[at]!;
         // Ids are minted against a GROWING array, so no two rows can collide.
         const rowIds: string[] = [];
@@ -8034,14 +9823,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
             viewBox: part.viewBox,
             fit: String(source[cfg.fitField] ?? 'contain'),
             flat: true,
-          },
-        // The whole ref, not the URL string - the same reason runLift gives: the engine
-        // resolves a block's asset sub-field by `.id` and the hook reads `image.url`.
+          }
+          // The whole ref, not the URL string - the same reason runLift gives: the engine
+          // resolves a block's asset sub-field by `.id` and the hook reads `image.url`.
         ).map((row, i) => ({ ...row, [cfg.imageField]: part.refs[i] }));
         scratch = applyLift(scratch, at, rows);
         newIds.push(...rowIds);
       }
-      if (!newIds.length) { flash(t('That artwork is no longer on the canvas, so nothing was changed.')); return; }
+      if (!newIds.length) {
+        flash(t('That artwork is no longer on the canvas, so nothing was changed.'));
+        return;
+      }
       selection = new Set(newIds);
       commit(scratch);
       flash(t('Ungrouped into {n} parts.', { n: newIds.length }));
@@ -8056,29 +9848,41 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function clipSelection(): void {
     if (!cfg.clipField) return;
     const boxes = getBoxes();
-    const idx = selIndices(boxes).slice().sort((a, b) => a - b);
+    const idx = selIndices(boxes)
+      .slice()
+      .sort((a, b) => a - b);
     if (idx.length < 2) return;
     const maskId = idOf(boxes[idx[0]!], idx[0]!);
     const clipSet = new Set(idx.slice(1));
     const allSet = new Set(idx);
     const g = cfg.groupField ? freshGroupId(boxes) : '';
-    commit(boxes.map((b, i) => {
-      if (!allSet.has(i)) return b;
-      const nb = { ...b };
-      if (clipSet.has(i)) nb[cfg.clipField] = maskId;
-      if (cfg.groupField) nb[cfg.groupField] = g;
-      return nb;
-    }));
+    commit(
+      boxes.map((b, i) => {
+        if (!allSet.has(i)) return b;
+        const nb = { ...b };
+        if (clipSet.has(i)) nb[cfg.clipField] = maskId;
+        if (cfg.groupField) nb[cfg.groupField] = g;
+        return nb;
+      })
+    );
   }
   function releaseClip(): void {
     if (!cfg.clipField) return;
     const boxes = getBoxes();
     const set = new Set(selIndices(boxes));
     if (!boxes.some((b, i) => set.has(i) && b[cfg.clipField])) return;
-    commit(boxes.map((b, i) => (set.has(i) && b[cfg.clipField] ? { ...b, [cfg.clipField]: '' } : b)));
+    commit(
+      boxes.map((b, i) => (set.has(i) && b[cfg.clipField] ? { ...b, [cfg.clipField]: '' } : b))
+    );
   }
-  const selHasGroup = () => { const bx = getBoxes(); return selIndices(bx).some((i) => groupOf(bx[i])); };
-  const selHasClip = () => { const bx = getBoxes(); return cfg.clipField && selIndices(bx).some((i) => bx[i]![cfg.clipField]); };
+  const selHasGroup = () => {
+    const bx = getBoxes();
+    return selIndices(bx).some((i) => groupOf(bx[i]));
+  };
+  const selHasClip = () => {
+    const bx = getBoxes();
+    return cfg.clipField && selIndices(bx).some((i) => bx[i]![cfg.clipField]);
+  };
 
   // ── z-order / align / distribute ─────────────────────────────────────────────
   function applyZ(op: string): void {
@@ -8135,8 +9939,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    *  case where someone typed a box id as their tag; an ordinary tag ("hero") is left
    *  alone, which is what lets a slide and its duplicate morph into each other. */
   const dupRefFields = (): string[] =>
-    [cfg.clipField, cv.linkField, cfg.bindStartField, cfg.bindEndField, 'matchOf']
-      .filter((f): f is string => !!f);
+    [cfg.clipField, cv.linkField, cfg.bindStartField, cfg.bindEndField, 'matchOf'].filter(
+      (f): f is string => !!f
+    );
 
   function duplicateSelection(): void {
     const boxes = getBoxes();
@@ -8153,15 +9958,25 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const fk = frameCfg?.frameKind;
     if (frameCfg && fk && idx.length === 1 && String(boxes[idx[0]!]?.[cfg.kindField]) === fk) {
       const ff = frameFields();
-      const seeded = seedFrameOrders(boxes, ff);          // A9: legacy docs get an order first
+      const seeded = seedFrameOrders(boxes, ff); // A9: legacy docs get an order first
       const pool: Box[] = seeded.slice();
-      const res = duplicateFrameWithChildren(seeded, idOf(boxes[idx[0]!], idx[0]!), ff, {
-        // Each minted id joins the pool, so two children can never draw the same one.
-        id: () => { const id = freshId(pool); pool.push({ [cfg.idField]: id } as Box); return id; },
-        group: () => freshGroupId(pool),
-      }, { gap: FRAME_DUP_GAP, groupField: cfg.groupField, refFields: dupRefFields() });
+      const res = duplicateFrameWithChildren(
+        seeded,
+        idOf(boxes[idx[0]!], idx[0]!),
+        ff,
+        {
+          // Each minted id joins the pool, so two children can never draw the same one.
+          id: () => {
+            const id = freshId(pool);
+            pool.push({ [cfg.idField]: id } as Box);
+            return id;
+          },
+          group: () => freshGroupId(pool),
+        },
+        { gap: FRAME_DUP_GAP, groupField: cfg.groupField, refFields: dupRefFields() }
+      );
       if (res.frameId) {
-        selection = new Set([res.frameId]);               // the new PAGE, not its contents
+        selection = new Set([res.frameId]); // the new PAGE, not its contents
         commit(res.boxes);
         return;
       }
@@ -8172,7 +9987,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     for (const i of idx) {
       const id = freshId(pool.concat(clones));
       const r = boxRect(boxes[i], cfg);
-      const clone = { ...boxes[i], [cfg.idField]: id, [cfg.xField]: Math.round(r.x + 24), [cfg.yField]: Math.round(r.y + 24) };
+      const clone = {
+        ...boxes[i],
+        [cfg.idField]: id,
+        [cfg.xField]: Math.round(r.x + 24),
+        [cfg.yField]: Math.round(r.y + 24),
+      };
       clones.push(clone);
       nextSel.add(id);
     }
@@ -8186,7 +10006,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     selection = new Set<string>();
     const fk = frameCfg?.frameKind;
     const deadFrames = fk ? [...sel].filter((i) => String(boxes[i]?.[cfg.kindField]) === fk) : [];
-    if (!frameCfg || !deadFrames.length) { commit(boxes.filter((_, i) => !sel.has(i))); return; }
+    if (!frameCfg || !deadFrames.length) {
+      commit(boxes.filter((_, i) => !sel.has(i)));
+      return;
+    }
     // plans/179 A7 - deleting an artboard used to orphan its children: they kept pointing
     // at a dead frame id, stayed visible in the editor as scratch, and were absent from
     // every PNG/PDF/PPTX export (the render only walks boxes whose stored `frame` names a
@@ -8205,20 +10028,24 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // non-frame id matches no page, so widening it only narrows the tally.
     const deadIds = [...sel].map((i) => idOf(boxes[i], i)).filter(Boolean);
     const res = rehomeChildrenOfDeletedFrames(seeded, deadIds, ff);
-    const survivors = res.boxes.filter((_, i) => !sel.has(i));   // index-aligned with `boxes`
+    const survivors = res.boxes.filter((_, i) => !sel.has(i)); // index-aligned with `boxes`
     const seq = framesInPageOrder(survivors, ff).map((b) => String(b[cfg.idField] ?? ''));
     commit(renumberFrameOrder(survivors, seq, ff));
     // One sentence, and it names the outcome the user has to go looking for. With both
     // outcomes in one delete (several artboards at once, the first among them) the
     // pasteboard is the one worth saying: homed items are where you would expect them.
     if (res.orphaned) {
-      flash(res.orphaned === 1
-        ? t('Deleted artboard. Its one item is now on the pasteboard.')
-        : t('Deleted artboard. Its {n} items are now on the pasteboard.', { n: res.orphaned }));
+      flash(
+        res.orphaned === 1
+          ? t('Deleted artboard. Its one item is now on the pasteboard.')
+          : t('Deleted artboard. Its {n} items are now on the pasteboard.', { n: res.orphaned })
+      );
     } else if (res.homed) {
-      flash(res.homed === 1
-        ? t('Deleted artboard. Its one item moved to the previous artboard.')
-        : t('Deleted artboard. Its {n} items moved to the previous artboard.', { n: res.homed }));
+      flash(
+        res.homed === 1
+          ? t('Deleted artboard. Its one item moved to the previous artboard.')
+          : t('Deleted artboard. Its {n} items moved to the previous artboard.', { n: res.homed })
+      );
     }
   }
 
@@ -8257,7 +10084,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * `empty-result` is the interesting one, and it is NOT an error: an intersection of two
    * shapes that do not overlap is legitimately empty, and so is an inward offset deeper
    * than the shape's own inradius. This REFUSES AND SAYS SO rather than deleting the
-   * operands. Deleting them is defensible - Illustrator's Intersect does exactly that - 
+   * operands. Deleting them is defensible - Illustrator's Intersect does exactly that -
    * but on screen an empty result and a no-op are the same picture, so the destructive
    * reading of an ambiguous gesture would remove the user's artwork and leave nothing
    * behind to explain where it went. Stating the answer in words costs one more tap and
@@ -8268,7 +10095,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       case 'too-complex':
         // The kernel's GeomLimitError: the answer exists, the engine declines to guess it
         // rather than hand back a plausible-looking wrong shape. That has to be said.
-        return t('These shapes are too intricate to combine exactly. Simplify them first, or combine fewer at a time.');
+        return t(
+          'These shapes are too intricate to combine exactly. Simplify them first, or combine fewer at a time.'
+        );
       case 'no-outline':
         return t('Text and image boxes have no outline to work with. Select shapes or pen paths.');
       case 'needs-two':
@@ -8287,9 +10116,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   /** The empty-result sentence for each boolean. Union of non-empty regions cannot be
    *  empty, so it falls through to the generic line. */
   function boolEmptyMessage(op: BooleanOpName): string | undefined {
-    if (op === 'intersect') return t('Those shapes do not overlap, so there is nothing to keep. Nothing was changed.');
-    if (op === 'difference') return t('The shapes above cover the bottom one completely, so nothing is left. Nothing was changed.');
-    if (op === 'xor') return t('Those shapes overlap exactly, so nothing is left. Nothing was changed.');
+    if (op === 'intersect')
+      return t('Those shapes do not overlap, so there is nothing to keep. Nothing was changed.');
+    if (op === 'difference')
+      return t(
+        'The shapes above cover the bottom one completely, so nothing is left. Nothing was changed.'
+      );
+    if (op === 'xor')
+      return t('Those shapes overlap exactly, so nothing is left. Nothing was changed.');
     return undefined;
   }
 
@@ -8303,12 +10137,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     empty?: string;
   }
 
-  function runVectorOp(run: (operands: Box[], id: string) => VectorOpResult, opts: RunVectorOpts = {}): void {
+  function runVectorOp(
+    run: (operands: Box[], id: string) => VectorOpResult,
+    opts: RunVectorOpts = {}
+  ): void {
     if (!vectorCfg) return;
     const { boxes, operands, ids } = vectorOperands();
     if (!operands.length) return;
     const res = run(operands, freshId(boxes));
-    if (!res.ok) { flash(vectorFailureMessage(res, opts.empty)); return; }
+    if (!res.ok) {
+      flash(vectorFailureMessage(res, opts.empty));
+      return;
+    }
 
     const nextSel = new Set<string>();
     let next: Box[];
@@ -8323,7 +10163,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         const nb: Box = { ...res.boxes[k]! };
         // Only the first result carries the id we minted; the rest are ours to allocate
         // (checked against the array as it grows, so two results never collide).
-        const nid = nb[cfg.idField] != null && nb[cfg.idField] !== '' ? String(nb[cfg.idField]) : freshId(next);
+        const nid =
+          nb[cfg.idField] != null && nb[cfg.idField] !== ''
+            ? String(nb[cfg.idField])
+            : freshId(next);
         nb[cfg.idField] = nid;
         next = replaceBoxes(next, [ids[at]!], -1, nb, { cfg: vectorCfg });
         nextSel.add(nid);
@@ -8335,13 +10178,20 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         if (v != null && v !== '') nextSel.add(String(v));
       }
     }
-    if (!nextSel.size) { flash(vectorFailureMessage({ ok: false, reason: 'internal', message: 'no result id' })); return; }
+    if (!nextSel.size) {
+      flash(vectorFailureMessage({ ok: false, reason: 'internal', message: 'no result id' }));
+      return;
+    }
     selection = nextSel;
     commit(next);
     if (opts.skipNote && res.skipped.length) {
-      flash(res.skipped.length === 1
-        ? t('One selected item has no outline, so it was left as it is.')
-        : t('{n} selected items have no outline, so they were left as they are.', { n: res.skipped.length }));
+      flash(
+        res.skipped.length === 1
+          ? t('One selected item has no outline, so it was left as it is.')
+          : t('{n} selected items have no outline, so they were left as they are.', {
+              n: res.skipped.length,
+            })
+      );
     }
   }
 
@@ -8356,8 +10206,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       title: t('Outline stroke'),
       hint: t('Replace the stroke with a filled shape of the same outline.'),
       value: Math.round(seed * 100) / 100,
-      min: 0.1, step: 0.5, confirm: t('Outline'),
-      apply: (v) => runVectorOp((ops, id) => strokeBoxesToPath(ops, { cfg: vectorCfg, id, width: v }), { skipNote: true }),
+      min: 0.1,
+      step: 0.5,
+      confirm: t('Outline'),
+      apply: (v) =>
+        runVectorOp((ops, id) => strokeBoxesToPath(ops, { cfg: vectorCfg, id, width: v }), {
+          skipNote: true,
+        }),
     });
   }
 
@@ -8369,11 +10224,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       at: lastMenuAt,
       title: t('Offset path'),
       hint: t('Grow the shape outwards. A negative distance shrinks it inwards.'),
-      value: 8, step: 1, confirm: t('Offset'),
-      apply: (v) => runVectorOp((ops, id) => offsetBoxes(ops, v, { cfg: vectorCfg, id }), {
-        skipNote: true,
-        empty: t('Shrinking by that much removes the shape completely. Nothing was changed.'),
-      }),
+      value: 8,
+      step: 1,
+      confirm: t('Offset'),
+      apply: (v) =>
+        runVectorOp((ops, id) => offsetBoxes(ops, v, { cfg: vectorCfg, id }), {
+          skipNote: true,
+          empty: t('Shrinking by that much removes the shape completely. Nothing was changed.'),
+        }),
     });
   }
 
@@ -8396,8 +10254,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    *  module load so a language switch renames them. */
   function penKindLabels(): Record<string, string> {
     return {
-      hyperbezier: t('Smooth (auto)'), spiro: t('Spiro'), cubic: t('Bezier handles'),
-      'catmull-rom': t('Through the points'), bspline: t('B-spline'), line: t('Straight lines'),
+      hyperbezier: t('Smooth (auto)'),
+      spiro: t('Spiro'),
+      cubic: t('Bezier handles'),
+      'catmull-rom': t('Through the points'),
+      bspline: t('B-spline'),
+      line: t('Straight lines'),
     };
   }
 
@@ -8412,11 +10274,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    */
   function openPenKindMenu(anchor: HTMLElement): void {
     const labels = penKindLabels();
-    spawnPopover(anchor, PEN_KINDS.map((k) => ({
-      label: labels[k] || k,
-      on: k === penDrawKind,
-      run: () => setPenDrawKind(k),
-    })));
+    spawnPopover(
+      anchor,
+      PEN_KINDS.map((k) => ({
+        label: labels[k] || k,
+        on: k === penDrawKind,
+        run: () => setPenDrawKind(k),
+      }))
+    );
   }
 
   /** Choose the type and arm the pen, so the menu leaves you ready to draw rather than
@@ -8424,7 +10289,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    *  from the pen bar's own switcher. */
   function setPenDrawKind(to: SplineKind): void {
     penDrawKind = to;
-    if (penDraft) { penDraft = { ...penDraft, kind: to }; penWarm = null; }
+    if (penDraft) {
+      penDraft = { ...penDraft, kind: to };
+      penWarm = null;
+    }
     if (mode !== 'pen') setMode('pen');
     else renderChrome();
     announce(tRaw('Spline type: {name}', { name: penKindLabels()[to] || to }));
@@ -8439,7 +10307,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     deselectEdge();
     selection = new Set<string>();
     stageEl.classList.add('fc-penning');
-    announce(t('Pen on - click to place points, drag to curve them, click the first point to close. Enter finishes, Esc cancels.'));
+    announce(
+      t(
+        'Pen on - click to place points, drag to curve them, click the first point to close. Enter finishes, Esc cancels.'
+      )
+    );
     renderChrome();
   }
   function exitPen(): void {
@@ -8461,7 +10333,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     nodes.push({ x: at.x, y: at.y, continuity: corner ? 'corner' : defaultContinuity(kind) });
     penDraft = { kind, nodes, closed: false };
     penCursor = null;
-    penPullBroken = corner;   // Alt held at placement arms the break for the drag that follows
+    penPullBroken = corner; // Alt held at placement arms the break for the drag that follows
     beginGesture(e, { type: 'pendraw', origin: at, index: nodes.length - 1 });
     paintPen();
     syncPenChrome();
@@ -8472,9 +10344,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function penUndoNode(): void {
     if (!penDraft) return;
     const nodes = penDraft.nodes.slice(0, -1);
-    if (!nodes.length) { penDraft = null; penCursor = null; penWarm = null; renderChrome(); return; }
+    if (!nodes.length) {
+      penDraft = null;
+      penCursor = null;
+      penWarm = null;
+      renderChrome();
+      return;
+    }
     penDraft = { ...penDraft, nodes, closed: false };
-    penWarm = null;                             // the node count changed, so the warm start is stale
+    penWarm = null; // the node count changed, so the warm start is stale
     renderChrome();
   }
 
@@ -8491,7 +10369,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     penCursor = null;
     penWarm = null;
     clearGuides();
-    if (!draft) { renderChrome(); return; }
+    if (!draft) {
+      renderChrome();
+      return;
+    }
     if (!commitPathBox(draft)) renderChrome();
   }
 
@@ -8535,7 +10416,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       seed[cfg.strokeField] = drawnInkHex();
       if (cfg.strokeWField && !(Number(seed[cfg.strokeWField]) > 0)) seed[cfg.strokeWField] = 4;
     }
-    let box = seedBox(cfg, {}, seed, { x: made.x, y: made.y, w: made.w, h: made.h } as MathRect, id);
+    let box = seedBox(
+      cfg,
+      {},
+      seed,
+      { x: made.x, y: made.y, w: made.w, h: made.h } as MathRect,
+      id
+    );
     box[cfg.kindField] = 'path';
     if (cfg.shapeField) box[cfg.shapeField] = 'rect';
     box[cfg.pathField] = value;
@@ -8555,8 +10442,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    *  pure (`resolveDrawnInk`) so it can be tested without a stylesheet, which is also the one
    *  case that reaches its fallback - jsdom applies no CSS, a real browser always resolves. */
   function drawnInkHex(): string {
-    try { return resolveDrawnInk(getComputedStyle(penLayer).color); }
-    catch { return resolveDrawnInk(null); }
+    try {
+      return resolveDrawnInk(getComputedStyle(penLayer).color);
+    } catch {
+      return resolveDrawnInk(null);
+    }
   }
 
   /** Abandon the draw. Nothing was ever written, so there is nothing to undo. */
@@ -8578,9 +10468,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // descriptor that splits it back. The combined kind is the first part's - see the
   // penEdit declaration for why that is correct for every producer here.
   function penJoin(paths: AuthoredPath[]): { path: AuthoredPath; parts: PenPart[] } {
-    const parts: PenPart[] = paths.map((p) => ({ count: p.nodes.length, kind: p.kind, closed: p.closed }));
+    const parts: PenPart[] = paths.map((p) => ({
+      count: p.nodes.length,
+      kind: p.kind,
+      closed: p.closed,
+    }));
     const first = paths[0]!;
-    return { path: { kind: first.kind, closed: first.closed, nodes: paths.flatMap((p) => [...p.nodes]) }, parts };
+    return {
+      path: { kind: first.kind, closed: first.closed, nodes: paths.flatMap((p) => [...p.nodes]) },
+      parts,
+    };
   }
   // Split a flat run of nodes back into per-contour paths by the given parts. Used to turn a
   // position-op result (same node count, same parts) back into real contours for the write.
@@ -8588,7 +10485,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const out: AuthoredPath[] = [];
     let i = 0;
     for (const part of parts) {
-      out.push({ kind: part.kind, closed: part.closed, nodes: flat.nodes.slice(i, i + part.count) });
+      out.push({
+        kind: part.kind,
+        closed: part.closed,
+        nodes: flat.nodes.slice(i, i + part.count),
+      });
       i += part.count;
     }
     return out;
@@ -8601,7 +10502,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function penPartStarts(parts: PenPart[]): number[] {
     const starts: number[] = [];
     let acc = 0;
-    for (const p of parts) { starts.push(acc); acc += p.count; }
+    for (const p of parts) {
+      starts.push(acc);
+      acc += p.count;
+    }
     return starts;
   }
 
@@ -8613,7 +10517,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const i = indexOfId(boxes, id);
     if (i < 0) return;
     const decoded = decodePathContours(boxes[i]![cfg.pathField]);
-    if (!decoded.length) { flash(t('That shape has no editable path.')); return; }
+    if (!decoded.length) {
+      flash(t('That shape has no editable path.'));
+      return;
+    }
     const frame = penFrame(boxes[i], cfg);
     const local = decoded.map((p) => denormNodes(p, frame.w, frame.h));
     const joined = penJoin(local);
@@ -8623,8 +10530,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     penWarm = null;
     selection = new Set([id]);
     stageEl.classList.add('fc-node-editing');
-    closeMorePanel(); closePopover();
-    announce(t('Editing points - drag a point or its handle, click the curve to add a point, Esc to finish.'));
+    closeMorePanel();
+    closePopover();
+    announce(
+      t(
+        'Editing points - drag a point or its handle, click the curve to add a point, Esc to finish.'
+      )
+    );
     renderChrome();
   }
 
@@ -8638,7 +10550,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     stageEl.classList.remove('fc-node-editing');
     clearPenChrome();
     paintPen();
-    ctxSelKey = null;                           // force the ordinary object bar to rebuild
+    ctxSelKey = null; // force the ordinary object bar to rebuild
     scheduleSync();
   }
 
@@ -8648,9 +10560,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function penSyncFromModel(boxes: Box[]): void {
     if (!penEdit || gesture) return;
     const i = indexOfId(boxes, penEdit.id);
-    if (i < 0) { endPenEdit(); return; }
+    if (i < 0) {
+      endPenEdit();
+      return;
+    }
     const decoded = decodePathContours(boxes[i]![cfg.pathField]);
-    if (!decoded.length) { endPenEdit(); return; }
+    if (!decoded.length) {
+      endPenEdit();
+      return;
+    }
     const frame = penFrame(boxes[i], cfg);
     const local = decoded.map((p) => denormNodes(p, frame.w, frame.h));
     const joined = penJoin(local);
@@ -8698,24 +10616,42 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const frame = fit ? fit.frame : penEdit.frame;
     const paths = fit ? fit.paths : all;
     const value = encodePathFields(paths.map((p) => normNodes(p, frame.w, frame.h)));
-    if (!value) { flash(t('That edit could not be saved, so nothing was changed.')); return; }
+    if (!value) {
+      flash(t('That edit could not be saved, so nothing was changed.'));
+      return;
+    }
     const joined = penJoin(paths);
     penEdit = { ...penEdit, frame, path: joined.path, parts: joined.parts };
     const boxes = getBoxes();
     const i = indexOfId(boxes, penEdit.id);
-    if (i < 0) { endPenEdit(); return; }
-    commit(boxes.map((b, k) => (k === i
-      ? {
-        ...b, [cfg.pathField]: value,
-        [cfg.xField]: frame.x, [cfg.yField]: frame.y, [cfg.wField]: frame.w, [cfg.hField]: frame.h,
-      }
-      : b)));
+    if (i < 0) {
+      endPenEdit();
+      return;
+    }
+    commit(
+      boxes.map((b, k) =>
+        k === i
+          ? {
+              ...b,
+              [cfg.pathField]: value,
+              [cfg.xField]: frame.x,
+              [cfg.yField]: frame.y,
+              [cfg.wField]: frame.w,
+              [cfg.hField]: frame.h,
+            }
+          : b
+      )
+    );
   }
 
   /** The handle under a box-local point, or null. Handles are tested BEFORE nodes: they
    *  are smaller and sit outside the curve, so a node would otherwise shadow one that
    *  happens to be short. */
-  function penHandleAt(x: number, y: number, tol: number): { index: number; which: 'in' | 'out' } | null {
+  function penHandleAt(
+    x: number,
+    y: number,
+    tol: number
+  ): { index: number; which: 'in' | 'out' } | null {
     if (!penEdit || !kindReadsHandles(penEdit.path.kind)) return null;
     let best: { index: number; which: 'in' | 'out' } | null = null;
     let bestD = tol;
@@ -8724,7 +10660,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         const p = handlePoint(n, which);
         if (!p) continue;
         const d = Math.hypot(p.x - x, p.y - y);
-        if (d <= bestD) { bestD = d; best = { index: i, which }; }
+        if (d <= bestD) {
+          bestD = d;
+          best = { index: i, which };
+        }
       }
     });
     return best;
@@ -8745,12 +10684,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // The warm hyperbezier start belongs to a single active contour; it is only valid
       // when there IS one contour. Multi-contour boxes are cubic, which needs no warm start.
       const res = insertNodeOnCurve(contours[pi]!, x, y, contours.length === 1 ? penWarm : null);
-      if (res && (!best || res.distance < best.distance)) { best = res; bestPart = pi; }
+      if (res && (!best || res.distance < best.distance)) {
+        best = res;
+        bestPart = pi;
+      }
     }
     if (!best || bestPart < 0) return;
-    penWarm = null;                             // one more node → the warm start is stale
+    penWarm = null; // one more node → the warm start is stale
     penSel = new Set([starts[bestPart]! + best.index]);
-    penHandleSel = new Set<string>();           // indices shifted; drop stale handle picks
+    penHandleSel = new Set<string>(); // indices shifted; drop stale handle picks
     penEditWritePaths(contours.map((c, pi) => (pi === bestPart ? best!.path : c)));
   }
 
@@ -8762,7 +10704,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const perPart: Array<Set<number>> = contours.map(() => new Set<number>());
     for (const g of penSel) {
       for (let pi = contours.length - 1; pi >= 0; pi--) {
-        if (g >= starts[pi]!) { perPart[pi]!.add(g - starts[pi]!); break; }
+        if (g >= starts[pi]!) {
+          perPart[pi]!.add(g - starts[pi]!);
+          break;
+        }
       }
     }
     const out: AuthoredPath[] = [];
@@ -8770,15 +10715,27 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     for (let pi = 0; pi < contours.length; pi++) {
       const sel = perPart[pi]!;
       const c = contours[pi]!;
-      if (!sel.size) { out.push(c); continue; }
+      if (!sel.size) {
+        out.push(c);
+        continue;
+      }
       // A wholly-selected contour is dropped outright (an intentional per-glyph erase), as
       // long as another survives (`out.length` guard below). A PARTIAL selection that would
       // orphan a contour under two points keeps it whole instead - the same floor as before.
-      if (sel.size >= c.nodes.length) { anyDeleted = true; continue; }
+      if (sel.size >= c.nodes.length) {
+        anyDeleted = true;
+        continue;
+      }
       const nd = deleteNodes(c, sel);
-      if (nd) { out.push(nd); anyDeleted = true; } else out.push(c);
+      if (nd) {
+        out.push(nd);
+        anyDeleted = true;
+      } else out.push(c);
     }
-    if (!out.length || !anyDeleted) { flash(t('A path needs at least two points, so those were kept.')); return; }
+    if (!out.length || !anyDeleted) {
+      flash(t('A path needs at least two points, so those were kept.'));
+      return;
+    }
     penWarm = null;
     penSel = new Set<number>();
     penHandleSel = new Set<string>();
@@ -8814,7 +10771,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const n = penPointRefs().length;
     const align = (edge: NodeAlignEdge): void => {
       if (!penEdit) return;
-      penWarm = null;               // points moved, so a warm hyperbezier start is stale
+      penWarm = null; // points moved, so a warm hyperbezier start is stale
       penEditWrite(alignPoints(penEdit.path, penPointRefs(), edge));
     };
     const dist = (axis: 'h' | 'v'): void => {
@@ -8823,19 +10780,65 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       penEditWrite(distributePoints(penEdit.path, penPointRefs(), axis));
     };
     return [
-      { cols: 3, grid: [
-        { label: t('Align left'), icon: icon(SVG.alignL), run: () => align('left'), disabled: n < 2 },
-        { label: t('Align centre'), icon: icon(SVG.alignC), run: () => align('hcentre'), disabled: n < 2 },
-        { label: t('Align right'), icon: icon(SVG.alignR), run: () => align('right'), disabled: n < 2 },
-        { label: t('Align top'), icon: icon(SVG.alignT), run: () => align('top'), disabled: n < 2 },
-        { label: t('Align middle'), icon: icon(SVG.alignM), run: () => align('vcentre'), disabled: n < 2 },
-        { label: t('Align bottom'), icon: icon(SVG.alignB), run: () => align('bottom'), disabled: n < 2 },
-      ] },
+      {
+        cols: 3,
+        grid: [
+          {
+            label: t('Align left'),
+            icon: icon(SVG.alignL),
+            run: () => align('left'),
+            disabled: n < 2,
+          },
+          {
+            label: t('Align centre'),
+            icon: icon(SVG.alignC),
+            run: () => align('hcentre'),
+            disabled: n < 2,
+          },
+          {
+            label: t('Align right'),
+            icon: icon(SVG.alignR),
+            run: () => align('right'),
+            disabled: n < 2,
+          },
+          {
+            label: t('Align top'),
+            icon: icon(SVG.alignT),
+            run: () => align('top'),
+            disabled: n < 2,
+          },
+          {
+            label: t('Align middle'),
+            icon: icon(SVG.alignM),
+            run: () => align('vcentre'),
+            disabled: n < 2,
+          },
+          {
+            label: t('Align bottom'),
+            icon: icon(SVG.alignB),
+            run: () => align('bottom'),
+            disabled: n < 2,
+          },
+        ],
+      },
       // Evenly spacing three points needs three points.
-      { cols: 2, grid: [
-        { label: t('Distribute horizontally'), icon: icon(SVG.distH), run: () => dist('h'), disabled: n < 3 },
-        { label: t('Distribute vertically'), icon: icon(SVG.distV), run: () => dist('v'), disabled: n < 3 },
-      ] },
+      {
+        cols: 2,
+        grid: [
+          {
+            label: t('Distribute horizontally'),
+            icon: icon(SVG.distH),
+            run: () => dist('h'),
+            disabled: n < 3,
+          },
+          {
+            label: t('Distribute vertically'),
+            icon: icon(SVG.distV),
+            run: () => dist('v'),
+            disabled: n < 3,
+          },
+        ],
+      },
     ];
   }
 
@@ -8856,23 +10859,50 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const hh = penHandleAt(loc.x, loc.y, tol);
     if (hh) {
       const key = `${hh.index}:${hh.which}`;
-      if (!penHandleSel.has(key)) { penHandleSel = new Set([key]); penSel = new Set<number>(); }
+      if (!penHandleSel.has(key)) {
+        penHandleSel = new Set([key]);
+        penSel = new Set<number>();
+      }
     } else {
       const ni = nodeAt(penEdit.path, loc.x, loc.y, tol);
-      if (ni >= 0 && !penSel.has(ni)) { penSel = new Set([ni]); penHandleSel = new Set<string>(); }
+      if (ni >= 0 && !penSel.has(ni)) {
+        penSel = new Set([ni]);
+        penHandleSel = new Set<string>();
+      }
     }
     renderChrome();
     const items: PopItem[] = [...penArrangeItems()];
     if (penSel.size && kindReadsHandles(penEdit.path.kind)) {
       items.push({ sep: true });
-      items.push({ cols: 3, grid: [
-        { label: t('Corner point - handles move independently'), icon: icon(SVG.contCorner), run: () => penSetContinuity('corner') },
-        { label: t('Smooth point - handles stay in line'), icon: icon(SVG.contSmooth), run: () => penSetContinuity('smooth') },
-        { label: t('Symmetric point - handles stay in line and equal'), icon: icon(SVG.contSymmetric), run: () => penSetContinuity('symmetric') },
-      ] });
+      items.push({
+        cols: 3,
+        grid: [
+          {
+            label: t('Corner point - handles move independently'),
+            icon: icon(SVG.contCorner),
+            run: () => penSetContinuity('corner'),
+          },
+          {
+            label: t('Smooth point - handles stay in line'),
+            icon: icon(SVG.contSmooth),
+            run: () => penSetContinuity('smooth'),
+          },
+          {
+            label: t('Symmetric point - handles stay in line and equal'),
+            icon: icon(SVG.contSymmetric),
+            run: () => penSetContinuity('symmetric'),
+          },
+        ],
+      });
     }
     items.push({ sep: true });
-    items.push({ label: t('Delete the selected points'), icon: icon(SVG.trash), danger: true, disabled: !penSel.size, run: () => penDeleteSelected() });
+    items.push({
+      label: t('Delete the selected points'),
+      icon: icon(SVG.trash),
+      danger: true,
+      disabled: !penSel.size,
+      run: () => penDeleteSelected(),
+    });
     popover = document.createElement('div');
     popover.className = 'fc-popover fc-context-menu';
     // The rows carry `role="menuitem"`, so the container has to say `menu` - an orphan
@@ -8883,8 +10913,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     popover.addEventListener('keydown', onPopoverKey);
     stageEl.appendChild(popover);
     const sr = stageEl.getBoundingClientRect();
-    popover.style.left = Math.max(6, Math.min(clientX - sr.left, sr.width - popover.offsetWidth - 6)) + 'px';
-    popover.style.top = Math.max(6, Math.min(clientY - sr.top, sr.height - popover.offsetHeight - 6)) + 'px';
+    popover.style.left =
+      Math.max(6, Math.min(clientX - sr.left, sr.width - popover.offsetWidth - 6)) + 'px';
+    popover.style.top =
+      Math.max(6, Math.min(clientY - sr.top, sr.height - popover.offsetHeight - 6)) + 'px';
   }
 
   function penSetContinuity(c: Continuity): void {
@@ -8894,7 +10926,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   function penToggleClosed(): void {
     if (!penEdit) return;
-    penWarm = null;                             // open↔closed changes the segment count
+    penWarm = null; // open↔closed changes the segment count
     // Flip every contour to the SAME new state (based on the first), so a multi-contour box
     // toggles deterministically rather than leaving a mix. Single-contour is the old behaviour.
     const contours = penContours();
@@ -8918,16 +10950,28 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // Convert every contour. The warm start belongs to a single active contour, so it is
       // only passed when there is exactly one; multi-contour boxes are cubic and need none.
       const contours = penContours();
-      penEditWritePaths(contours.map((p, pi) => convertKind(p, to, (pi === 0 && contours.length === 1) ? warm : null).path));
+      penEditWritePaths(
+        contours.map(
+          (p, pi) => convertKind(p, to, pi === 0 && contours.length === 1 ? warm : null).path
+        )
+      );
     };
-    if (!penContours().some((p) => convertKind(p, to).lossy)) { apply(); return; }
+    if (!penContours().some((p) => convertKind(p, to).lossy)) {
+      apply();
+      return;
+    }
     askConfirm({
       at: penCtxAnchorPoint(),
       title: t('Discard the handles?'),
-      hint: t('This spline works out its own handle lengths, so the ones you set will be dropped. Switching back cannot bring them back.'),
+      hint: t(
+        'This spline works out its own handle lengths, so the ones you set will be dropped. Switching back cannot bring them back.'
+      ),
       confirm: t('Discard and switch'),
       apply,
-      cancel: () => { ctxSelKey = null; renderChrome(); },   // put the menu back on the old kind
+      cancel: () => {
+        ctxSelKey = null;
+        renderChrome();
+      }, // put the menu back on the old kind
     });
   }
 
@@ -8938,7 +10982,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    *  `setRealConnectorsHidden`; the commit re-renders it anyway. */
   function setPathSvgHidden(hidden: boolean): void {
     if (!penEdit) return;
-    const el = canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(penEdit.id)}"] .lolly-box-path`);
+    const el = canvasEl.querySelector<HTMLElement>(
+      `.lolly-box[data-box-id="${cssEscape(penEdit.id)}"] .lolly-box-path`
+    );
     if (el) el.style.visibility = hidden ? 'hidden' : '';
   }
 
@@ -8962,7 +11008,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function cubicsToD(cubics: Cubic[], closed: boolean): string {
     const first = cubics[0]!;
     let d = `M${cf2(first[0])} ${cf2(first[1])}`;
-    for (const k of cubics) d += `C${cf2(k[2])} ${cf2(k[3])} ${cf2(k[4])} ${cf2(k[5])} ${cf2(k[6])} ${cf2(k[7])}`;
+    for (const k of cubics)
+      d += `C${cf2(k[2])} ${cf2(k[3])} ${cf2(k[4])} ${cf2(k[5])} ${cf2(k[6])} ${cf2(k[7])}`;
     return closed ? d + 'Z' : d;
   }
 
@@ -9000,30 +11047,44 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // The same clamp `pathHeadSize` applies before the engine sizes a head, so the preview
     // head is the committed head at every stroke width, not just under 20.
     const size = Math.max(9, clampN(b[cfg.strokeWField], 2.5, 0.5, 20) * 4);
-    return (hs !== 'none' ? edgeArrowHead(tips.start, dir.start.x, dir.start.y, size, 'currentColor', hs) : '')
-      + (he !== 'none' ? edgeArrowHead(tips.end, dir.end.x, dir.end.y, size, 'currentColor', he) : '');
+    return (
+      (hs !== 'none'
+        ? edgeArrowHead(tips.start, dir.start.x, dir.start.y, size, 'currentColor', hs)
+        : '') +
+      (he !== 'none' ? edgeArrowHead(tips.end, dir.end.x, dir.end.y, size, 'currentColor', he) : '')
+    );
   }
 
   /** The pen layer: the draft (plus the segment under the cursor) while drawing, and the
    *  edited path's live outline while node-editing. */
   function paintPen(): void {
     if (!penDraft && !penEdit) {
-      if (penLayer.style.display !== 'none') { penLayer.style.display = 'none'; penLayer.innerHTML = ''; }
+      if (penLayer.style.display !== 'none') {
+        penLayer.style.display = 'none';
+        penLayer.innerHTML = '';
+      }
       return;
     }
     const m = metrics();
     placeNativeLayer(penLayer, m);
-    const sw = 1.6 / (m.scale || 1);            // constant SCREEN width at any zoom
+    const sw = 1.6 / (m.scale || 1); // constant SCREEN width at any zoom
     let body = '';
     if (penDraft) {
       // The cursor is included as a real node, so the preview is what committing here
       // would actually produce - for a hyperbezier that means the WHOLE run re-solves,
       // which is the honest picture and the reason the warm start matters.
       const preview: AuthoredPath = penCursor
-        ? { ...penDraft, nodes: [...penDraft.nodes, { x: penCursor.x, y: penCursor.y, continuity: defaultContinuity(penDraft.kind) }] }
+        ? {
+            ...penDraft,
+            nodes: [
+              ...penDraft.nodes,
+              { x: penCursor.x, y: penCursor.y, continuity: defaultContinuity(penDraft.kind) },
+            ],
+          }
         : penDraft;
       const d = penPathD(preview);
-      if (d) body += `<path d="${escape(d)}" fill="none" stroke="currentColor" stroke-width="${cf2(sw)}" stroke-linejoin="round" stroke-linecap="round"/>`;
+      if (d)
+        body += `<path d="${escape(d)}" fill="none" stroke="currentColor" stroke-width="${cf2(sw)}" stroke-linejoin="round" stroke-linecap="round"/>`;
     } else if (penEdit) {
       // Every contour is lowered and drawn (the box's own `<svg>` is hidden for the gesture,
       // so any contour left out would just vanish). A LONE contour keeps the warm hyperbezier
@@ -9031,16 +11092,22 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // solution belongs to a single run anyway. Each keeps its OWN kind + closed via penPathD/
       // the cold lower, so a curve is never drawn ACROSS a contour boundary.
       const contours = penContours();
-      const ds = contours.map((p) => {
-        if (contours.length === 1) return penPathD(p);
-        const low = lowerAuthored(p);
-        return low.cubics.length ? cubicsToD(low.cubics, p.closed) : '';
-      }).filter(Boolean);
+      const ds = contours
+        .map((p) => {
+          if (contours.length === 1) return penPathD(p);
+          const low = lowerAuthored(p);
+          return low.cubics.length ? cubicsToD(low.cubics, p.closed) : '';
+        })
+        .filter(Boolean);
       const fr = penEdit.frame;
       if (ds.length) {
-        const tf = `translate(${cf2(fr.x)} ${cf2(fr.y)})` + (fr.rot ? ` rotate(${cf2(fr.rot)} ${cf2(fr.w / 2)} ${cf2(fr.h / 2)})` : '');
-        body += `<g transform="${tf}"><path d="${escape(ds.join(' '))}" fill="none" stroke="currentColor" stroke-width="${cf2(sw)}" stroke-linejoin="round" stroke-linecap="round"/>`
-          + penEditHeadsSvg(contours) + '</g>';
+        const tf =
+          `translate(${cf2(fr.x)} ${cf2(fr.y)})` +
+          (fr.rot ? ` rotate(${cf2(fr.rot)} ${cf2(fr.w / 2)} ${cf2(fr.h / 2)})` : '');
+        body +=
+          `<g transform="${tf}"><path d="${escape(ds.join(' '))}" fill="none" stroke="currentColor" stroke-width="${cf2(sw)}" stroke-linejoin="round" stroke-linecap="round"/>` +
+          penEditHeadsSvg(contours) +
+          '</g>';
       }
     }
     penLayer.innerHTML = body;
@@ -9061,7 +11128,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function bindEndFor(indices: number[]): 'start' | 'end' | undefined {
     if (!hasBindCfg || !penEdit || indices.length !== 1) return undefined;
     if (penEdit.parts.length !== 1 || penEdit.path.closed) return undefined;
-    const i = indices[0]!, n = penEdit.path.nodes.length;
+    const i = indices[0]!,
+      n = penEdit.path.nodes.length;
     if (n < 2) return undefined;
     return i === 0 ? 'start' : i === n - 1 ? 'end' : undefined;
   }
@@ -9086,10 +11154,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function setBindHover(id: string | null): void {
     if (id === bindHover) return;
     bindHover = id;
-    if (!id) { if (!penEdit) hideConnectLayer(); else { connectLayer.innerHTML = ''; } return; }
+    if (!id) {
+      if (!penEdit) hideConnectLayer();
+      else {
+        connectLayer.innerHTML = '';
+      }
+      return;
+    }
     const boxes = getBoxes();
     const i = indexOfId(boxes, id);
-    if (i < 0) { bindHover = null; return; }
+    if (i < 0) {
+      bindHover = null;
+      return;
+    }
     const r = boxRect(boxes[i], cfg);
     placeConnectLayer(metrics());
     connectLayer.innerHTML =
@@ -9115,26 +11192,37 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const b = boxes[i] || {};
     if (String(b[field] ?? '') === to) return;
     const next: Box = { ...b, [field]: to };
-    if (to && hasHeadCfg
-      && String(b[cfg.headStartField] || 'none') === 'none'
-      && String(b[cfg.headEndField] || 'none') === 'none') {
+    if (
+      to &&
+      hasHeadCfg &&
+      String(b[cfg.headStartField] || 'none') === 'none' &&
+      String(b[cfg.headEndField] || 'none') === 'none'
+    ) {
       next[which === 'start' ? cfg.headStartField : cfg.headEndField] = 'triangle';
     }
     commit(boxes.map((row, k) => (k === i ? next : row)));
-    announce(to
-      ? t('Attached to {name}. The line routes to it now, and follows it.', { name: to })
-      : t('Detached. The line is a free shape again.'));
+    announce(
+      to
+        ? t('Attached to {name}. The line routes to it now, and follows it.', { name: to })
+        : t('Detached. The line is a free shape again.')
+    );
   }
 
   /** Every node's position in NATIVE px, in node order - the one place the two modes'
    *  coordinate spaces are reconciled. */
-  function penNodePoints(): Array<{ node: SplineNode; at: Point; hIn: Point | null; hOut: Point | null }> {
+  function penNodePoints(): Array<{
+    node: SplineNode;
+    at: Point;
+    hIn: Point | null;
+    hOut: Point | null;
+  }> {
     const p = penEdit ? penEdit.path : penDraft;
     if (!p) return [];
     const fr = penEdit ? penEdit.frame : null;
     const toNative = (x: number, y: number): Point => (fr ? localToFrame(fr, x, y) : { x, y });
     return p.nodes.map((node) => {
-      const hi = handlePoint(node, 'in'), ho = handlePoint(node, 'out');
+      const hi = handlePoint(node, 'in'),
+        ho = handlePoint(node, 'out');
       return {
         node,
         at: toNative(node.x, node.y),
@@ -9154,7 +11242,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    */
   function syncPenChrome(): void {
     const p = penEdit ? penEdit.path : penDraft;
-    if (!p) { if (penChromeKey) clearPenChrome(); return; }
+    if (!p) {
+      if (penChromeKey) clearPenChrome();
+      return;
+    }
     // Handles are drawn while DRAWING as well as while editing. A pen's click-drag is the
     // one gesture whose whole feedback is the arm you are pulling, and on the very first
     // node of a path there is no segment yet, so without the arm the drag has no visible
@@ -9216,7 +11307,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!penEdit) return null;
     const boxes = getBoxes();
     const i = indexOfId(boxes, penEdit.id);
-    return i >= 0 ? (boxes[i] || null) : null;
+    return i >= 0 ? boxes[i] || null : null;
   }
 
   function positionPenChrome(): void {
@@ -9227,12 +11318,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     for (let i = 0; i < nodes.nodes.length; i++) {
       const el = nodes.nodes[i]!;
       const pt = pts[i];
-      if (!pt) { el.hidden = true; continue; }
+      if (!pt) {
+        el.hidden = true;
+        continue;
+      }
       el.hidden = false;
       const s = nativeToStage(pt.at.x, pt.at.y, m);
       el.style.left = s.x + 'px';
       el.style.top = s.y + 'px';
-      const cont = pt.node.continuity ?? defaultContinuity(penEdit ? penEdit.path.kind : penDraft!.kind);
+      const cont =
+        pt.node.continuity ?? defaultContinuity(penEdit ? penEdit.path.kind : penDraft!.kind);
       el.classList.toggle('is-corner', cont === 'corner');
       el.classList.toggle('is-symmetric', cont === 'symmetric');
       el.classList.toggle('is-on', penSel.has(i));
@@ -9251,7 +11346,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const arm = nodes.arms[k]!;
       const pt = pts[i];
       const h = pt ? (which === 'in' ? pt.hIn : pt.hOut) : null;
-      if (!pt || !h) { dot.hidden = true; arm.hidden = true; continue; }
+      if (!pt || !h) {
+        dot.hidden = true;
+        arm.hidden = true;
+        continue;
+      }
       const a = nativeToStage(pt.at.x, pt.at.y, m);
       const b = nativeToStage(h.x, h.y, m);
       dot.hidden = false;
@@ -9262,7 +11361,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       arm.style.left = a.x + 'px';
       arm.style.top = a.y + 'px';
       arm.style.width = Math.hypot(b.x - a.x, b.y - a.y) + 'px';
-      arm.style.transform = `rotate(${Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI}deg)`;
+      arm.style.transform = `rotate(${(Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI}deg)`;
     }
   }
 
@@ -9286,7 +11385,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function penCtxBar(): void {
     const p = penEdit ? penEdit.path : penDraft;
     if (!p) return;
-    const contSig = [...penSel].sort((a, b) => a - b).map((i) => p.nodes[i]?.continuity ?? '').join(',');
+    const contSig = [...penSel]
+      .sort((a, b) => a - b)
+      .map((i) => p.nodes[i]?.continuity ?? '')
+      .join(',');
     const handleSig = [...penHandleSel].sort().join(',');
     const key = `pen:${penEdit ? penEdit.id : 'draft'}:${p.kind}:${p.closed ? 'c' : 'o'}:${p.nodes.length}:${contSig}:${handleSig}:${penSelectHandles ? 'h' : '-'}`;
     if (key !== ctxSelKey) {
@@ -9304,7 +11406,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // Align/distribute act on nodes ∪ selected control points, so the arrange button
     // enables on the COMBINED count (delete + continuity stay node-only via selN).
     const selPts = penSel.size + penHandleSel.size;
-    const cont = selN ? String(p.nodes[[...penSel][0]!]?.continuity ?? defaultContinuity(p.kind)) : '';
+    const cont = selN
+      ? String(p.nodes[[...penSel][0]!]?.continuity ?? defaultContinuity(p.kind))
+      : '';
     const kindLabel = penKindLabels();
     // Paint belongs to the BOX, so it only appears once there is one: a draft lives in JS
     // state until it commits, and its paint comes from the add-kind's seed.
@@ -9317,51 +11421,79 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     ctxbar.innerHTML =
       (painted ? paintCtxHtml(editBox, true) + '<span class="fc-sep fc-sep-v"></span>' : '') +
       `<select class="field-select field-select--sm fc-pen-kind" data-pen="kind" data-tip="${escape(t('Spline type'))}" aria-label="${escape(t('Spline type'))}">` +
-        PEN_KINDS.map((k) => `<option value="${k}"${k === p.kind ? ' selected' : ''}>${escape(kindLabel[k] || k)}</option>`).join('') +
+      PEN_KINDS.map(
+        (k) =>
+          `<option value="${k}"${k === p.kind ? ' selected' : ''}>${escape(kindLabel[k] || k)}</option>`
+      ).join('') +
       '</select>' +
-      (drawing ? '' :
-        '<span class="fc-sep fc-sep-v"></span>' +
-        segHtml('pen-cont', cont, [
-          ['corner', t('Corner point - handles move independently'), SVG.contCorner],
-          ['smooth', t('Smooth point - handles stay in line'), SVG.contSmooth],
-          ['symmetric', t('Symmetric point - handles stay in line and equal'), SVG.contSymmetric],
-        ]) +
-        `<button type="button" class="fc-cbtn${p.closed ? ' is-on' : ''}" data-pen="closed" aria-pressed="${p.closed}" data-tip="${escape(t('Closed path'))}" aria-label="${escape(t('Closed path'))}">${icon(SVG.penClose)}</button>` +
-        // Marquee selection mode: nodes only, or nodes + control points. Only meaningful
-        // where control points exist (cubic / hyperbezier).
-        (kindReadsHandles(p.kind)
-          ? `<button type="button" class="fc-cbtn${penSelectHandles ? ' is-on' : ''}" data-pen="handlesel" aria-pressed="${penSelectHandles}" data-tip="${escape(penSelectHandles ? t('Selecting nodes and control points - click for nodes only') : t('Selecting nodes only - click to include control points'))}" aria-label="${escape(t('Include control points in a marquee selection'))}">${icon(SVG.nodes)}</button>`
-          : '') +
-        `<button type="button" class="fc-cbtn" data-pen="arrange"${selPts >= 2 ? '' : ' disabled'} data-tip="${escape(t('Align and distribute the selected points'))}" aria-label="${escape(t('Align and distribute the selected points'))}">${icon(SVG.align)}</button>` +
-        `<button type="button" class="fc-cbtn fc-danger" data-pen="del"${selN ? '' : ' disabled'} data-tip="${escape(t('Delete the selected points'))}" aria-label="${escape(t('Delete the selected points'))}">${icon(SVG.trash)}</button>`) +
+      (drawing
+        ? ''
+        : '<span class="fc-sep fc-sep-v"></span>' +
+          segHtml('pen-cont', cont, [
+            ['corner', t('Corner point - handles move independently'), SVG.contCorner],
+            ['smooth', t('Smooth point - handles stay in line'), SVG.contSmooth],
+            ['symmetric', t('Symmetric point - handles stay in line and equal'), SVG.contSymmetric],
+          ]) +
+          `<button type="button" class="fc-cbtn${p.closed ? ' is-on' : ''}" data-pen="closed" aria-pressed="${p.closed}" data-tip="${escape(t('Closed path'))}" aria-label="${escape(t('Closed path'))}">${icon(SVG.penClose)}</button>` +
+          // Marquee selection mode: nodes only, or nodes + control points. Only meaningful
+          // where control points exist (cubic / hyperbezier).
+          (kindReadsHandles(p.kind)
+            ? `<button type="button" class="fc-cbtn${penSelectHandles ? ' is-on' : ''}" data-pen="handlesel" aria-pressed="${penSelectHandles}" data-tip="${escape(penSelectHandles ? t('Selecting nodes and control points - click for nodes only') : t('Selecting nodes only - click to include control points'))}" aria-label="${escape(t('Include control points in a marquee selection'))}">${icon(SVG.nodes)}</button>`
+            : '') +
+          `<button type="button" class="fc-cbtn" data-pen="arrange"${selPts >= 2 ? '' : ' disabled'} data-tip="${escape(t('Align and distribute the selected points'))}" aria-label="${escape(t('Align and distribute the selected points'))}">${icon(SVG.align)}</button>` +
+          `<button type="button" class="fc-cbtn fc-danger" data-pen="del"${selN ? '' : ' disabled'} data-tip="${escape(t('Delete the selected points'))}" aria-label="${escape(t('Delete the selected points'))}">${icon(SVG.trash)}</button>`) +
       '<span class="fc-sep fc-sep-v"></span>' +
       `<button type="button" class="fc-cbtn" data-pen="done" data-tip="${escape(drawing ? t('Finish this path (Enter)') : t('Finish editing points (Esc)'))}" aria-label="${escape(drawing ? t('Finish this path') : t('Finish editing points'))}">${icon(SVG.penDone)}</button>` +
-      `<span class="fc-readout">${escape(drawing
-        ? (p.nodes.length === 1 ? t('1 point - hold Alt for a corner') : t('{n} points - hold Alt for a corner', { n: p.nodes.length }))
-        : (selN ? t('{k} of {n} points', { k: selN, n: p.nodes.length }) : t('{n} points', { n: p.nodes.length })))}</span>`;
+      `<span class="fc-readout">${escape(
+        drawing
+          ? p.nodes.length === 1
+            ? t('1 point - hold Alt for a corner')
+            : t('{n} points - hold Alt for a corner', { n: p.nodes.length })
+          : selN
+            ? t('{k} of {n} points', { k: selN, n: p.nodes.length })
+            : t('{n} points', { n: p.nodes.length })
+      )}</span>`;
     const kindSel = ctxbar.querySelector<HTMLSelectElement>('[data-pen="kind"]');
     kindSel?.addEventListener('change', () => {
       const to = kindSel.value as SplineKind;
-      if (penDraft) { penDraft = { ...penDraft, kind: to }; penDrawKind = to; penWarm = null; renderChrome(); return; }
+      if (penDraft) {
+        penDraft = { ...penDraft, kind: to };
+        penDrawKind = to;
+        penWarm = null;
+        renderChrome();
+        return;
+      }
       penSetKind(to);
     });
-    wireSegs(ctxbar, (field, v) => { if (field === 'pen-cont' && v) penSetContinuity(v as Continuity); });
+    wireSegs(ctxbar, (field, v) => {
+      if (field === 'pen-cont' && v) penSetContinuity(v as Continuity);
+    });
     if (painted) {
       wirePaintCtx(ctxbar);
-      ctxbar.querySelectorAll<HTMLElement>('[data-cx="stroke"]').forEach((b) => b.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openStrokePanel(b);
-      }));
+      ctxbar.querySelectorAll<HTMLElement>('[data-cx="stroke"]').forEach((b) =>
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openStrokePanel(b);
+        })
+      );
     }
-    ctxbar.querySelectorAll<HTMLElement>('[data-pen]').forEach((b) => b.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const which = b.dataset.pen;
-      if (which === 'closed') penToggleClosed();
-      else if (which === 'handlesel') { penSelectHandles = !penSelectHandles; ctxSelKey = null; renderChrome(); }
-      else if (which === 'arrange') openPenArrangeMenu(b);
-      else if (which === 'del') penDeleteSelected();
-      else if (which === 'done') { if (penDraft) penFinishDraw(); else endPenEdit(); }
-    }));
+    ctxbar.querySelectorAll<HTMLElement>('[data-pen]').forEach((b) =>
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const which = b.dataset.pen;
+        if (which === 'closed') penToggleClosed();
+        else if (which === 'handlesel') {
+          penSelectHandles = !penSelectHandles;
+          ctxSelKey = null;
+          renderChrome();
+        } else if (which === 'arrange') openPenArrangeMenu(b);
+        else if (which === 'del') penDeleteSelected();
+        else if (which === 'done') {
+          if (penDraft) penFinishDraw();
+          else endPenEdit();
+        }
+      })
+    );
   }
 
   /** Pinned to the top chrome row, centred between the back pill and zoom HUD - the same
@@ -9369,10 +11501,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    *  and never sits over the path the user is shaping. */
   function positionPenCtxBar(): void {
     const m = metrics();
-    const band = ctxTopBand({ w: m.sr.width, h: m.sr.height }, ctxBarBlockers(m.sr), { reserve: stageReserves() });
+    const band = ctxTopBand({ w: m.sr.width, h: m.sr.height }, ctxBarBlockers(m.sr), {
+      reserve: stageReserves(),
+    });
     ctxbar.style.maxWidth = Math.max(0, band.hi - band.lo) + 'px';
     const bw = ctxbar.offsetWidth || 0;
-    if (bw <= 0) return;   // not laid out yet - next frame, rather than a half-width-off jump
+    if (bw <= 0) return; // not laid out yet - next frame, rather than a half-width-off jump
     const pos = centreCtxBar(bw, band);
     ctxbar.style.left = pos.left + 'px';
     ctxbar.style.top = pos.top + 'px';
@@ -9398,16 +11532,22 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * Point editing is not a mode, but it IS something the user is inside, so any tool change
    * leaves it - the same way switching tools leaves a text edit.
    */
-  function setMode(next: EditorMode, o: { kind?: AddKind; draft?: 'commit' | 'discard' } = {}): void {
+  function setMode(
+    next: EditorMode,
+    o: { kind?: AddKind; draft?: 'commit' | 'discard' } = {}
+  ): void {
     // The line tool writes a PATH BOX now (plan 96 P2), so it is gated on the same config
     // the pen is - `pathField` - and no longer on the connectors input it used to write to.
     if (next === 'line' && !cfg.pathField) return;
     if (next === 'pen' && !cfg.pathField) return;
     if (next === 'create' && !o.kind && !armedKind) return;
-    if (next !== 'select') nodeToolActive = false;   // any other tool exits the Node tool
+    if (next !== 'select') nodeToolActive = false; // any other tool exits the Node tool
     const from = mode;
     if (penEdit) endPenEdit();
-    if (from === 'pen' && penDraft) { if (o.draft === 'discard') penCancelDraw(); else penFinishDraw(); }
+    if (from === 'pen' && penDraft) {
+      if (o.draft === 'discard') penCancelDraw();
+      else penFinishDraw();
+    }
     mode = next;
     if (from !== next) {
       // A mode switch while a create/line DRAG is still in flight (Escape's discard rung, or
@@ -9429,12 +11569,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
   /** Back to the pointer, from anywhere - Escape's mode rung, and every internal "this
    *  gesture consumed the tool" exit. */
-  const toPointer = (draft: 'commit' | 'discard' = 'commit'): void => { setMode('select', { draft }); };
+  const toPointer = (draft: 'commit' | 'discard' = 'commit'): void => {
+    setMode('select', { draft });
+  };
   /** The pointer as an EXPLICIT user choice (the rail button, `V`). Announced, because the
    *  other two tools announce themselves and a mode change no screen reader hears is not a
    *  mode change; the internal exits above stay quiet, or every edge click would speak. */
   const pickPointer = (): void => {
-    nodeToolActive = false;                     // the plain pointer is NOT the Node tool
+    nodeToolActive = false; // the plain pointer is NOT the Node tool
     toPointer();
     announce(t('Pointer on - click to select, drag to move.'));
   };
@@ -9443,8 +11585,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    *  and, if exactly one path box is selected, jumps straight into editing it - the
    *  "jump straight into node editing an object" ask. */
   function toggleNodeTool(): void {
-    if (nodeToolActive) { nodeToolActive = false; if (penEdit) endPenEdit(); syncModeUI(); announce(t('Pointer on - click to select, drag to move.')); return; }
-    if (mode !== 'select') setMode('select');   // exit pen/create/connect
+    if (nodeToolActive) {
+      nodeToolActive = false;
+      if (penEdit) endPenEdit();
+      syncModeUI();
+      announce(t('Pointer on - click to select, drag to move.'));
+      return;
+    }
+    if (mode !== 'select') setMode('select'); // exit pen/create/connect
     nodeToolActive = true;
     const boxes = getBoxes();
     if (selection.size === 1) {
@@ -9470,9 +11618,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
   function exitCreate(): void {
     armedKind = null;
-    pendingAddAtMs = null;   // an abandoned arm must not time the NEXT box drawn by hand
+    pendingAddAtMs = null; // an abandoned arm must not time the NEXT box drawn by hand
     stageEl.classList.remove('fc-arming');
-    hideArmHint();   // placed, or abandoned - either way the arm is over
+    hideArmHint(); // placed, or abandoned - either way the arm is over
   }
   // `enterConnect` / `exitConnect` (plan 90) lived here. Plan 96 P4 deleted Connect mode
   // outright: clicking a card and then another card was a third way to make the one
@@ -9548,15 +11696,22 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const hasParent = new Set<string>();
     for (const b of boxes) {
       if (!b) continue;
-      const from = String(b[cfg.bindStartField] ?? ''), to = String(b[cfg.bindEndField] ?? '');
+      const from = String(b[cfg.bindStartField] ?? ''),
+        to = String(b[cfg.bindEndField] ?? '');
       if (!from || !to || !idAt.has(from) || !idAt.has(to) || from === to) continue;
       if (!children.has(from)) children.set(from, []);
       if (!children.get(from)!.includes(to)) children.get(from)!.push(to);
       hasParent.add(to);
     }
-    const roots = boxes.map((b, i) => idOf(b, i)).filter((id) => children.has(id) && !hasParent.has(id));
-    if (!roots.length) { announce(t('Connect some cards first, then Auto-arrange lays them out.')); return; }   // nothing connected → leave the canvas alone
-    const HGAP = 40, VGAP = 90;
+    const roots = boxes
+      .map((b, i) => idOf(b, i))
+      .filter((id) => children.has(id) && !hasParent.has(id));
+    if (!roots.length) {
+      announce(t('Connect some cards first, then Auto-arrange lays them out.'));
+      return;
+    } // nothing connected → leave the canvas alone
+    const HGAP = 40,
+      VGAP = 90;
     const cw = canvasWH();
     const placed = new Map<string, { x: number; y: number }>();
     const seen = new Set<string>();
@@ -9588,18 +11743,31 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       placed.set(id, { x: cx - widthOf(id) / 2, y });
       return { cx };
     }
-    for (const r of roots) { layout(r, 0); cursorX += HGAP * 2; }
+    for (const r of roots) {
+      layout(r, 0);
+      cursorX += HGAP * 2;
+    }
     // Centre the whole tree horizontally on the artboard, then snap onto the grid.
-    let minX = Infinity, maxX = -Infinity, minY = Infinity;
-    for (const [id, p] of placed) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x + widthOf(id)); minY = Math.min(minY, p.y); }
+    let minX = Infinity,
+      maxX = -Infinity,
+      minY = Infinity;
+    for (const [id, p] of placed) {
+      minX = Math.min(minX, p.x);
+      maxX = Math.max(maxX, p.x + widthOf(id));
+      minY = Math.min(minY, p.y);
+    }
     const offX = (cw.w - (maxX - minX)) / 2 - minX;
-    const offY = Math.max(40, (cw.h * 0.12)) - minY;
+    const offY = Math.max(40, cw.h * 0.12) - minY;
     const g = gridOn ? gridSize : 1;
     const next = boxes.map((b, i) => {
       const id = idOf(b, i);
       const p = placed.get(id);
       if (!p) return b;
-      return { ...b, [cfg.xField]: Math.round((p.x + offX) / g) * g, [cfg.yField]: Math.round((p.y + offY) / g) * g };
+      return {
+        ...b,
+        [cfg.xField]: Math.round((p.x + offX) / g) * g,
+        [cfg.yField]: Math.round((p.y + offY) / g) * g,
+      };
     });
     commit(next);
   }
@@ -9609,8 +11777,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // behind FC_CLIP_PREFIX, onto the OS clipboard - so the next ⌘V duplicates them
   // (see onGlobalPaste). While editing text the browser's native text copy wins;
   // this only fires on the bare canvas with a selection.
-  let objectClipboard: Box[] | null = null;   // Array<box> - the in-memory fallback
-  let lastPointer: { x: number; y: number } | null = null;       // last client {x,y} over the stage - paste placement
+  let objectClipboard: Box[] | null = null; // Array<box> - the in-memory fallback
+  let lastPointer: { x: number; y: number } | null = null; // last client {x,y} over the stage - paste placement
   function pasteAimedHere(): boolean {
     const ae = document.activeElement;
     return !(ae && ae !== document.body && !stageEl.contains(ae));
@@ -9626,26 +11794,32 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const fk = frameCfg?.frameKind;
     if (fk) {
       const ff = frameFields();
-      const pages = new Set(idx
-        .filter((i) => String(boxes[i]?.[cfg.kindField]) === fk)
-        .map((i) => idOf(boxes[i], i)));
-      if (pages.size) boxes.forEach((b, i) => { if (b && pages.has(String(b[ff.frameField] ?? ''))) take.add(i); });
+      const pages = new Set(
+        idx.filter((i) => String(boxes[i]?.[cfg.kindField]) === fk).map((i) => idOf(boxes[i], i))
+      );
+      if (pages.size)
+        boxes.forEach((b, i) => {
+          if (b && pages.has(String(b[ff.frameField] ?? ''))) take.add(i);
+        });
     }
-    return [...take].sort((a, b) => a - b)
+    return [...take]
+      .sort((a, b) => a - b)
       .map((i) => ({ ...boxes[i], [cfg.idField]: idOf(boxes[i], i) }));
   }
   function onCopy(e: ClipboardEvent): void {
-    if (disposed || editing) return;               // editing → native text copy
+    if (disposed || editing) return; // editing → native text copy
     if (typingTarget() || !pasteAimedHere()) return;
     const boxes = getBoxes();
     const idx = selIndices(boxes);
-    if (!idx.length) return;                        // nothing selected → native copy
+    if (!idx.length) return; // nothing selected → native copy
     const picked = copyRows(boxes, idx);
     objectClipboard = picked;
     try {
       e.clipboardData!.setData('text/plain', FC_CLIP_PREFIX + JSON.stringify(picked));
       e.preventDefault();
-    } catch { /* clipboard write blocked - the in-memory copy still serves ⌘V */ }
+    } catch {
+      /* clipboard write blocked - the in-memory copy still serves ⌘V */
+    }
   }
   /**
    * Duplicate a set of copied boxes at a +24,+24 offset (cascades on repeat paste),
@@ -9668,26 +11842,40 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const ff = frameCfg ? frameFields() : null;
     const isFrameRow = (s: Box): boolean => !!fk && String(s[cfg.kindField]) === fk;
     let boxes = getBoxes();
-    if (ff && rows.some(isFrameRow)) boxes = seedFrameOrders(boxes, ff);  // legacy docs get an order first
+    if (ff && rows.some(isFrameRow)) boxes = seedFrameOrders(boxes, ff); // legacy docs get an order first
     const clones: Box[] = [];
     const nextSel = new Set<string>();
-    const pageIds = new Map<string, string>();                  // pasted frame id → its copy's id
-    const pageShift = new Map<string, number>();                // …and how far right it moved
+    const pageIds = new Map<string, string>(); // pasted frame id → its copy's id
+    const pageShift = new Map<string, number>(); // …and how far right it moved
     let deckRight = fk
-      ? boxes.reduce((m, b) => (b && String(b[cfg.kindField]) === fk
-        ? Math.max(m, num(b[cfg.xField]) + num(b[cfg.wField])) : m), Number.NEGATIVE_INFINITY)
+      ? boxes.reduce(
+          (m, b) =>
+            b && String(b[cfg.kindField]) === fk
+              ? Math.max(m, num(b[cfg.xField]) + num(b[cfg.wField]))
+              : m,
+          Number.NEGATIVE_INFINITY
+        )
       : Number.NEGATIVE_INFINITY;
-    for (const src of rows) {                                   // pages first - a child needs its new page
+    for (const src of rows) {
+      // pages first - a child needs its new page
       if (!isFrameRow(src)) continue;
       const r = boxRect(src, cfg);
       const x = Math.round(Number.isFinite(deckRight) ? deckRight + FRAME_DUP_GAP : r.x);
       const id = freshId(boxes.concat(clones));
-      const clone: Box = { ...src, [cfg.idField]: id, [cfg.xField]: x, [cfg.yField]: Math.round(r.y) };
+      const clone: Box = {
+        ...src,
+        [cfg.idField]: id,
+        [cfg.xField]: x,
+        [cfg.yField]: Math.round(r.y),
+      };
       if (ff) clone[ff.orderField] = nextFrameOrder(boxes.concat(clones), ff);
       clones.push(clone);
       nextSel.add(id);
       const old = src[cfg.idField] == null ? '' : String(src[cfg.idField]);
-      if (old) { pageIds.set(old, id); pageShift.set(old, x - r.x); }
+      if (old) {
+        pageIds.set(old, id);
+        pageShift.set(old, x - r.x);
+      }
       deckRight = x + r.w;
     }
     for (const src of rows) {
@@ -9696,9 +11884,21 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const r = boxRect(src, cfg);
       const owner = ff ? String(src[ff.frameField] ?? '') : '';
       const dx = owner ? pageShift.get(owner) : undefined;
-      const clone: Box = dx == null
-        ? clampToWorkArea({ ...src, [cfg.idField]: id, [cfg.xField]: Math.round(r.x + 24), [cfg.yField]: Math.round(r.y + 24) })
-        : { ...src, [cfg.idField]: id, [cfg.xField]: Math.round(r.x + dx), [cfg.yField]: Math.round(r.y), [ff!.frameField]: pageIds.get(owner)! };
+      const clone: Box =
+        dx == null
+          ? clampToWorkArea({
+              ...src,
+              [cfg.idField]: id,
+              [cfg.xField]: Math.round(r.x + 24),
+              [cfg.yField]: Math.round(r.y + 24),
+            })
+          : {
+              ...src,
+              [cfg.idField]: id,
+              [cfg.xField]: Math.round(r.x + dx),
+              [cfg.yField]: Math.round(r.y),
+              [ff!.frameField]: pageIds.get(owner)!,
+            };
       clones.push(clone);
       nextSel.add(id);
     }
@@ -9717,12 +11917,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // round-tripping through the same rich-text model the editor uses; plain text is
   // used verbatim. The in-edit editable has its OWN paste handler (onEditPaste) and
   // stops propagation, so this only fires on the bare canvas.
-  const textAddKind = (): AddKind | undefined => addKinds.find((k) => k.id === 'text' || (k.seed && k.seed[cfg.kindField] === 'text'));
+  const textAddKind = (): AddKind | undefined =>
+    addKinds.find((k) => k.id === 'text' || (k.seed && k.seed[cfg.kindField] === 'text'));
   function sourceFromPastedHtml(html: string): string {
     try {
       const doc = new DOMParser().parseFromString(html, 'text/html');
-      return markdownFromChars(charsFromDom(doc.body)).replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '');
-    } catch { return ''; }
+      return markdownFromChars(charsFromDom(doc.body))
+        .replace(/\n{3,}/g, '\n\n')
+        .replace(/\s+$/, '');
+    } catch {
+      return '';
+    }
   }
   function createTextBoxFromSource(source: string): void {
     if (!cfg.textField) return;
@@ -9735,9 +11940,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // usually aimed there); fall back to the visible-canvas centre when the pointer
     // is stale / off-stage (e.g. a keyboard ⌘V after scrolling).
     const m = metrics();
-    const onStage = lastPointer &&
-      lastPointer.x >= m.sr.left && lastPointer.x <= m.sr.left + m.sr.width &&
-      lastPointer.y >= m.sr.top && lastPointer.y <= m.sr.top + m.sr.height;
+    const onStage =
+      lastPointer &&
+      lastPointer.x >= m.sr.left &&
+      lastPointer.x <= m.sr.left + m.sr.width &&
+      lastPointer.y >= m.sr.top &&
+      lastPointer.y <= m.sr.top + m.sr.height;
     const c = onStage
       ? clientToNative(lastPointer!.x, lastPointer!.y)
       : clientToNative(m.sr.left + m.sr.width / 2, m.sr.top + m.sr.height / 2);
@@ -9754,16 +11962,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const id = freshId(boxes);
     let box = seedBox(cfg, {}, seed, { x: c.x - w / 2, y: c.y - h / 2, w, h } as MathRect, id);
     box = clampToWorkArea(box);
-    box = withLegibleInk(box, boxes);   // same reason as the create gesture: a dark seed on a dark ground is nothing
+    box = withLegibleInk(box, boxes); // same reason as the create gesture: a dark seed on a dark ground is nothing
     selection = new Set([id]);
     commit([...boxes, box]);
     renderChrome();
   }
   function onGlobalPaste(e: ClipboardEvent): void {
     if (disposed || editing) return;
-    if (typingTarget()) return;                    // a real input owns the paste
+    if (typingTarget()) return; // a real input owns the paste
     if (!canvasEl.isConnected) return;
-    if (!pasteAimedHere()) return;                 // aimed at a modal/picker elsewhere
+    if (!pasteAimedHere()) return; // aimed at a modal/picker elsewhere
     const dt = e.clipboardData || (window as any).clipboardData;
     if (!dt) return;
     const plain = String((dt.getData && dt.getData('text/plain')) || '');
@@ -9773,10 +11981,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (plain.startsWith(FC_CLIP_PREFIX) || (objectClipboard && !plain.trim())) {
       let picked = objectClipboard;
       if (plain.startsWith(FC_CLIP_PREFIX)) {
-        try { picked = JSON.parse(plain.slice(FC_CLIP_PREFIX.length)); } catch { /* keep in-memory */ }
+        try {
+          picked = JSON.parse(plain.slice(FC_CLIP_PREFIX.length));
+        } catch {
+          /* keep in-memory */
+        }
       }
       if (Array.isArray(picked) && picked.length) {
-        e.preventDefault(); e.stopPropagation();
+        e.preventDefault();
+        e.stopPropagation();
         pasteObjects(picked);
         return;
       }
@@ -9786,7 +11999,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const html = dt.getData && dt.getData('text/html');
     let source = html && html.trim() ? sourceFromPastedHtml(html) : '';
     if (!source) source = plain.replace(/\r\n?/g, '\n').replace(/\s+$/, '');
-    if (!source.trim()) return;                    // nothing useful → let the default happen
+    if (!source.trim()) return; // nothing useful → let the default happen
     e.preventDefault();
     e.stopPropagation();
     createTextBoxFromSource(source);
@@ -9818,30 +12031,43 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // When restoring the clip at gesture end, also drop the drag-time z-index hoist
     // (applyLiveRect set it) so box paint order returns to array order. A committed edit
     // repaints the elements clean anyway; this covers a gesture that ends without a commit.
-    if (clipped) canvasEl.querySelectorAll<HTMLElement>('.lolly-box, .lolly-frame-page[data-frame-id]').forEach((el) => { el.style.zIndex = ''; });
+    if (clipped)
+      canvasEl
+        .querySelectorAll<HTMLElement>('.lolly-box, .lolly-frame-page[data-frame-id]')
+        .forEach((el) => {
+          el.style.zIndex = '';
+        });
   }
 
   // ── pointer gestures on the canvas ───────────────────────────────────────────
   function beginGesture(e: PointerEvent, g: GestureInit): void {
-    try { canvasEl.setPointerCapture(e.pointerId); } catch { /* older browsers */ }
-    gesture = { ...g, pointerId: e.pointerId, startClient: { x: e.clientX, y: e.clientY } } as Gesture;
-    setHoverEdge(null);   // drop any hover highlight/cursor when a drag begins
+    try {
+      canvasEl.setPointerCapture(e.pointerId);
+    } catch {
+      /* older browsers */
+    }
+    gesture = {
+      ...g,
+      pointerId: e.pointerId,
+      startClient: { x: e.clientX, y: e.clientY },
+    } as Gesture;
+    setHoverEdge(null); // drop any hover highlight/cursor when a drag begins
     document.body.classList.add('fc-manipulating');
     setFramesClipped(false);
-    frameOffCache = new Map();   // frame offsets are stable during a drag - cache to avoid per-move reflow
+    frameOffCache = new Map(); // frame offsets are stable during a drag - cache to avoid per-move reflow
   }
   function endGesture(): void {
     document.body.classList.remove('fc-manipulating');
     gesture = null;
     rubber.hidden = true;
-    // The camera HUD and its mode cursor die WITH the gesture, whichever way it ended - 
+    // The camera HUD and its mode cursor die WITH the gesture, whichever way it ended -
     // committed, cancelled, or a click that never moved. This one teardown covers every
     // exit path, so no branch has to remember to clear them.
     hideCamHud();
     stageEl.style.cursor = '';
     clearGuides();
     setFramesClipped(true);
-    frameOffCache = null;   // release the gesture-scoped frame-offset cache
+    frameOffCache = null; // release the gesture-scoped frame-offset cache
     // The ctx bar's live state dies WITH the gesture: the frozen placement, the cached
     // chrome rects, and - the visible one - the drag readout. Its values come from
     // `liveRects`, so without a repaint of its own the bar keeps showing the coordinates
@@ -9850,7 +12076,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // the model synchronously, so the frame after this one reads the settled numbers.
     ctxFrozen = null;
     ctxBlockers = null;
-    if (!disposed) requestAnimationFrame(() => { if (!disposed && !gesture) renderChrome(); });
+    if (!disposed)
+      requestAnimationFrame(() => {
+        if (!disposed && !gesture) renderChrome();
+      });
   }
 
   // ── inline text editing (double-click a box) ─────────────────────────────────
@@ -9864,7 +12093,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // A double-click ends an open pen path - the polyline-ending gesture every tool with a
     // multi-click primitive uses - and it never falls through to a text edit, because there
     // is no box under the cursor yet to edit.
-    if (penDraft) { e.preventDefault(); penFinishDraw(); return; }
+    if (penDraft) {
+      e.preventDefault();
+      penFinishDraw();
+      return;
+    }
     // On a committed path box it ENTERS node editing, the same way a double-click enters a
     // text edit on a text box (see startTextEdit); one mode per kind of content.
     if (vectorCfg && !penEdit) {
@@ -9877,7 +12110,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         return;
       }
     }
-    if (penEdit) return;                        // node-edit mode owns its own double-clicks
+    if (penEdit) return; // node-edit mode owns its own double-clicks
     if (!cfg.textField) return;
     // Already editing this box's text → let the browser's native double-click
     // word-selection stand. This listener is on the canvas, so a dblclick inside
@@ -9885,10 +12118,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // restart the edit and collapse the caret to the end - the reported "word
     // flashes selected then vanishes" bug. (Triple-click escaped it only because
     // its third click fires no second dblclick event.) Just refresh the bar.
-    if (editing && editing.el.contains(e.target as Node)) { refreshFmtStates(); return; }
+    if (editing && editing.el.contains(e.target as Node)) {
+      refreshFmtStates();
+      return;
+    }
     const nat = clientToNative(e.clientX, e.clientY);
     const boxes = getBoxes();
-    const hit = selectHit(boxes, nat.x, nat.y);   // artboard-aware (a frame has no editable text → startTextEdit no-ops)
+    const hit = selectHit(boxes, nat.x, nat.y); // artboard-aware (a frame has no editable text → startTextEdit no-ops)
     if (hit < 0) return;
     e.preventDefault();
     selection = new Set([idOf(boxes[hit], hit)]);
@@ -9899,13 +12135,20 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // created box needs us to wait a few frames before we can focus its text.
   function editAfterPaint(id: string, opts: { selectAll?: boolean }, tries = 8): void {
     if (disposed) return;
-    const el = canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(id)}"] .lolly-box-text`);
-    if (el) { startTextEdit(id, opts); return; }
+    const el = canvasEl.querySelector<HTMLElement>(
+      `.lolly-box[data-box-id="${cssEscape(id)}"] .lolly-box-text`
+    );
+    if (el) {
+      startTextEdit(id, opts);
+      return;
+    }
     if (tries > 0) requestAnimationFrame(() => editAfterPaint(id, opts, tries - 1));
   }
   function startTextEdit(id: string, opts: { selectAll?: boolean } = {}): void {
     if (editing) commitTextEdit();
-    const el = canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(id)}"] .lolly-box-text`);
+    const el = canvasEl.querySelector<HTMLElement>(
+      `.lolly-box[data-box-id="${cssEscape(id)}"] .lolly-box-text`
+    );
     if (!el) return;
     const boxEl = el.closest<HTMLElement>('.lolly-box');
     // WYSIWYG: edit the RENDERED rich text in place (the element already holds
@@ -9916,17 +12159,20 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // format bar mid-edit; they preview as inline styles and land in the SAME
     // commit as the text, so the whole edit stays one undo step.
     editing = {
-      id, el, boxEl,
+      id,
+      el,
+      boxEl,
       prevHtml: el.innerHTML,
       prevStyle: el.style.cssText,
       prevBoxStyle: boxEl ? boxEl.style.cssText : '',
       pending: {},
     };
     stageEl.classList.add('is-text-editing');
-    clearChrome();               // hide handles while typing (resets chrome node cache)
+    clearChrome(); // hide handles while typing (resets chrome node cache)
     hideCtxBar();
-    closeMorePanel(); closePopover();
-    boxEl?.classList.add('fc-box-editing');   // reveal overflow so typing stays visible
+    closeMorePanel();
+    closePopover();
+    boxEl?.classList.add('fc-box-editing'); // reveal overflow so typing stays visible
     el.setAttribute('contenteditable', 'true');
     el.setAttribute('role', 'textbox');
     el.setAttribute('aria-label', t('Edit text'));
@@ -9938,7 +12184,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     range.selectNodeContents(el);
     if (!opts.selectAll) range.collapse(false);
     const sel = window.getSelection();
-    sel!.removeAllRanges(); sel!.addRange(range);
+    sel!.removeAllRanges();
+    sel!.addRange(range);
     el.addEventListener('keydown', onEditKey);
     el.addEventListener('blur', onEditBlur);
     el.addEventListener('paste', onEditPaste);
@@ -9989,19 +12236,39 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const br = (boxEl || el).getBoundingClientRect();
     const h = (0.85 * sr.height) / (TOUCH_EDIT_MIN_PX / onScreen);
     const w = h * (sr.width / sr.height);
-    stageEl.dispatchEvent(new CustomEvent('fc-focus-rect', { bubbles: true, detail: {
-      x: br.left + br.width / 2 - w / 2, y: br.top + br.height / 2 - h / 2, w, h,
-    } }));
+    stageEl.dispatchEvent(
+      new CustomEvent('fc-focus-rect', {
+        bubbles: true,
+        detail: {
+          x: br.left + br.width / 2 - w / 2,
+          y: br.top + br.height / 2 - h / 2,
+          w,
+          h,
+        },
+      })
+    );
   }
   function onEditKey(e: KeyboardEvent): void {
-    if (e.key === 'Escape') { e.preventDefault(); cancelTextEdit(); }
-    else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); commitTextEdit(); }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelTextEdit();
+    } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      commitTextEdit();
+    }
     // Plain Enter inserts a literal \n (the render model is pre-wrap text) -
     // never the browser's <div> soup, which would desync the char model.
-    else if (e.key === 'Enter') { e.preventDefault(); document.execCommand('insertText', false, '\n'); }
-    else if ((e.key === 'b' || e.key === 'B') && (e.metaKey || e.ctrlKey)) { e.preventDefault(); toggleInline('b'); }
-    else if ((e.key === 'i' || e.key === 'I') && (e.metaKey || e.ctrlKey)) { e.preventDefault(); toggleInline('i'); }
-    e.stopPropagation();          // keep global Delete/nudge/undo off while typing
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      document.execCommand('insertText', false, '\n');
+    } else if ((e.key === 'b' || e.key === 'B') && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      toggleInline('b');
+    } else if ((e.key === 'i' || e.key === 'I') && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      toggleInline('i');
+    }
+    e.stopPropagation(); // keep global Delete/nudge/undo off while typing
   }
   // Paste as plain text: rich clipboard HTML would smuggle arbitrary markup into
   // the editable; \n survives fine under pre-wrap.
@@ -10022,7 +12289,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
   function finishEdit(): EditingState | null {
     if (!editing) return null;
-    const done = editing; editing = null;
+    const done = editing;
+    editing = null;
     hideFmtBar();
     done.el.removeEventListener('keydown', onEditKey);
     done.el.removeEventListener('blur', onEditBlur);
@@ -10067,16 +12335,21 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (boxNativeH && needed > boxNativeH + 1) grownH = needed;
     }
     finishEdit();
-    if (i < 0) { renderChrome(); return; }
+    if (i < 0) {
+      renderChrome();
+      return;
+    }
     if (changed) {
-      commit(boxes.map((b, k) => {
-        if (k !== i) return b;
-        const nb = { ...b, ...pending, [cfg.textField]: text };
-        if (grownH != null) nb[cfg.hField] = grownH;
-        return nb;
-      }));
+      commit(
+        boxes.map((b, k) => {
+          if (k !== i) return b;
+          const nb = { ...b, ...pending, [cfg.textField]: text };
+          if (grownH != null) nb[cfg.hField] = grownH;
+          return nb;
+        })
+      );
     } else {
-      restoreEditView(done);   // nothing changed → restore rendered view
+      restoreEditView(done); // nothing changed → restore rendered view
       renderChrome();
     }
   }
@@ -10084,7 +12357,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const done = editing;
     if (!done) return;
     finishEdit();
-    restoreEditView(done);     // discard edits, restore rendered view
+    restoreEditView(done); // discard edits, restore rendered view
     renderChrome();
   }
 
@@ -10103,8 +12376,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const walk = (node: Node): void => {
         if (found) return;
         if (node.nodeType === 3) {
-          if (node === container) { n += Math.min(offset, node.nodeValue!.length); found = true; }
-          else n += node.nodeValue!.length;
+          if (node === container) {
+            n += Math.min(offset, node.nodeValue!.length);
+            found = true;
+          } else n += node.nodeValue!.length;
           return;
         }
         if (node.nodeName === 'BR') {
@@ -10114,7 +12389,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         }
         const kids = node.childNodes;
         for (let k = 0; k < kids.length; k++) {
-          if (node === container && k === offset) { found = true; return; }
+          if (node === container && k === offset) {
+            found = true;
+            return;
+          }
           walk(kids[k]!);
           if (found) return;
         }
@@ -10128,7 +12406,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     return a <= b ? [a, b] : [b, a];
   }
   function selectOffsets(el: HTMLElement, a: number, b: number): void {
-    const idxIn = (node: Node): number => Array.prototype.indexOf.call(node.parentNode!.childNodes, node);
+    const idxIn = (node: Node): number =>
+      Array.prototype.indexOf.call(node.parentNode!.childNodes, node);
     const posOf = (target: number): { node: Node; offset: number } => {
       let n = 0;
       let out: { node: Node; offset: number } | null = null;
@@ -10136,7 +12415,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         if (out) return;
         if (node.nodeType === 3) {
           const len = node.nodeValue!.length;
-          if (n + len >= target) { out = { node, offset: target - n }; return; }
+          if (n + len >= target) {
+            out = { node, offset: target - n };
+            return;
+          }
           n += len;
           return;
         }
@@ -10145,7 +12427,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           else n += 1;
           return;
         }
-        for (const kid of node.childNodes) { walk(kid); if (out) return; }
+        for (const kid of node.childNodes) {
+          walk(kid);
+          if (out) return;
+        }
       };
       walk(el);
       return out || { node: el, offset: el.childNodes.length };
@@ -10156,7 +12441,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     range.setStart(start.node, start.offset);
     range.setEnd(end.node, end.offset);
     const sel = window.getSelection();
-    sel!.removeAllRanges(); sel!.addRange(range);
+    sel!.removeAllRanges();
+    sel!.addRange(range);
   }
   function toggleInline(flag: string): void {
     if (!editing) return;
@@ -10166,9 +12452,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!off) return;
     let [a, b] = off;
     const chars = charsFromDom(el);
-    if (a === b) [a, b] = wordRangeAt(chars, a);   // caret → the word under it
+    if (a === b) [a, b] = wordRangeAt(chars, a); // caret → the word under it
     if (a === b) return;
-    const next = setFlag(chars, a, b, flag as 'b' | 'i', !rangeHasFlag(chars, a, b, flag as 'b' | 'i'));
+    const next = setFlag(
+      chars,
+      a,
+      b,
+      flag as 'b' | 'i',
+      !rangeHasFlag(chars, a, b, flag as 'b' | 'i')
+    );
     el.innerHTML = htmlFromChars(next);
     selectOffsets(el, a, b);
     refreshFmtStates();
@@ -10179,7 +12471,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function stashRunColorRange(): void {
     if (!editing) return;
     const off = selectionOffsets(editing.el);
-    if (!off) return;                        // focus already left → keep the earlier stash
+    if (!off) return; // focus already left → keep the earlier stash
     const chars = charsFromDom(editing.el);
     let [a, b] = off;
     if (a === b) [a, b] = wordRangeAt(chars, a);
@@ -10190,7 +12482,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const [a, b] = editing.colorRange;
     const el = editing.el;
     el.innerHTML = htmlFromChars(setColor(charsFromDom(el), a, b, color || null));
-    try { selectOffsets(el, a, b); } catch { /* focus may be in the colour picker */ }
+    try {
+      selectOffsets(el, a, b);
+    } catch {
+      /* focus may be in the colour picker */
+    }
     refreshFmtStates();
   }
   // Per-selection font weight (mid-edit). Like the colour picker, the <select> steals
@@ -10211,20 +12507,28 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const [a, b] = editing.weightRange;
     const el = editing.el;
     el.innerHTML = htmlFromChars(setWeight(charsFromDom(el), a, b, weight));
-    try { selectOffsets(el, a, b); } catch { /* focus may be in the select */ }
+    try {
+      selectOffsets(el, a, b);
+    } catch {
+      /* focus may be in the select */
+    }
     refreshFmtStates();
   }
   // Toggle "•  " bullets / "1.  " numbers on every non-blank line (a text box is one
   // logical list - bullets and numbers are mutually exclusive, handled in rich-text.js).
-  function toggleBullet(): void { toggleList(toggleBullets); }
-  function toggleNumber(): void { toggleList(toggleNumbers); }
+  function toggleBullet(): void {
+    toggleList(toggleBullets);
+  }
+  function toggleNumber(): void {
+    toggleList(toggleNumbers);
+  }
   function toggleList(fn: (chars: any) => any): void {
     if (!editing) return;
     const el = editing.el;
     el.focus();
     const next = fn(charsFromDom(el));
     el.innerHTML = htmlFromChars(next);
-    selectOffsets(el, next.length, next.length);   // caret to the end
+    selectOffsets(el, next.length, next.length); // caret to the end
     refreshFmtStates();
   }
   // A field tweak from the format bar mid-edit: preview it as an inline style on
@@ -10281,7 +12585,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     editing.el.focus();
     if (cfg.ligaturesField) {
       const box: Box = getBoxes()[indexOfId(getBoxes(), editing.id)] || {};
-      if (!boolOf(pendingOr(cfg.ligaturesField, box[cfg.ligaturesField]), true)) applyPending(cfg.ligaturesField, true);
+      if (!boolOf(pendingOr(cfg.ligaturesField, box[cfg.ligaturesField]), true))
+        applyPending(cfg.ligaturesField, true);
     }
     // execCommand keeps the contenteditable's own selection model in sync (same path
     // as Enter/paste); the inserted glyphs serialise straight through on commit.
@@ -10305,7 +12610,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     refreshFmtStates();
   }
   const pendingOr = (field: string | undefined, fallback: any): any =>
-    (editing && field && field in editing.pending ? editing.pending[field] : fallback);
+    editing && field && field in editing.pending ? editing.pending[field] : fallback;
   function showFmtBar(): void {
     if (fmtbar) return;
     fmtbar = document.createElement('div') as FmtBar;
@@ -10327,12 +12632,21 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     };
     const mk = (label: string, html: string, run: () => void): HTMLButtonElement => {
       const b = document.createElement('button');
-      b.type = 'button'; b.className = 'fc-cbtn'; b.setAttribute('data-tip', label); b.setAttribute('aria-label', label);
+      b.type = 'button';
+      b.className = 'fc-cbtn';
+      b.setAttribute('data-tip', label);
+      b.setAttribute('aria-label', label);
       b.innerHTML = html;
       // preventDefault on pointerdown keeps the caret/selection in the editable
       // (focus never leaves → the toggle hits the live selection, no blur/commit).
-      b.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); });
-      b.addEventListener('click', (e) => { e.stopPropagation(); run(); });
+      b.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        run();
+      });
       curGroup.appendChild(b);
       return b;
     };
@@ -10357,12 +12671,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         applyPending(cfg.fontField, font);
         if (cfg.weightField && isMonoFont(font)) {
           const bx: Box = getBoxes()[indexOfId(getBoxes(), editing!.id)] || {};
-          if ((parseInt(pendingOr(cfg.weightField, bx[cfg.weightField]), 10) || 700) > 800) applyPending(cfg.weightField, '800');
+          if ((parseInt(pendingOr(cfg.weightField, bx[cfg.weightField]), 10) || 700) > 800)
+            applyPending(cfg.weightField, '800');
         }
-        if (refs.weight) {   // the run-weight menu's choices depend on the font
+        if (refs.weight) {
+          // the run-weight menu's choices depend on the font
           const cur = refs.weight.value;
-          refs.weight.innerHTML = `<option value="">${t('Auto')}</option>` +
-            weightChoicesFor(font).map(([v, l]) => `<option value="${v}">${escape(t(l))}</option>`).join('');
+          refs.weight.innerHTML =
+            `<option value="">${t('Auto')}</option>` +
+            weightChoicesFor(font)
+              .map(([v, l]) => `<option value="${v}">${escape(t(l))}</option>`)
+              .join('');
           refs.weight.value = weightChoicesFor(font).some(([v]) => v === cur) ? cur : '';
         }
       });
@@ -10378,13 +12697,22 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       sel.setAttribute('data-tip', t('Weight of the selected text'));
       sel.setAttribute('aria-label', t('Weight of the selected text'));
       const font = String((cfg.fontField && box[cfg.fontField]) || defaultFont);
-      sel.innerHTML = `<option value="">${t('Auto')}</option>` + weightChoicesFor(font).map(([v, l]) => `<option value="${v}">${escape(t(l))}</option>`).join('');
+      sel.innerHTML =
+        `<option value="">${t('Auto')}</option>` +
+        weightChoicesFor(font)
+          .map(([v, l]) => `<option value="${v}">${escape(t(l))}</option>`)
+          .join('');
       sel.value = '';
       // Stash the selection on engage (the select steals focus/selection when it
       // opens); no preventDefault - the select needs focus, and the onEditBlur guard
       // recognises the bar so the edit survives the round trip.
-      sel.addEventListener('pointerdown', (e) => { e.stopPropagation(); stashRunWeightRange(); });
-      sel.addEventListener('change', () => applyRunWeight(sel.value === '' ? null : parseInt(sel.value, 10)));
+      sel.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        stashRunWeightRange();
+      });
+      sel.addEventListener('change', () =>
+        applyRunWeight(sel.value === '' ? null : parseInt(sel.value, 10))
+      );
       typeGroup.appendChild(sel);
       refs.weight = sel;
     }
@@ -10393,7 +12721,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (cfg.textColorField) {
       const cw = document.createElement('span');
       cw.className = 'fc-cfield fc-fmt-color';
-      cw.innerHTML = colorFieldHtml('fc-runcolor', box[cfg.textColorField] || '#0c322c', { float: true });
+      cw.innerHTML = colorFieldHtml('fc-runcolor', box[cfg.textColorField] || '#0c322c', {
+        float: true,
+      });
       // Capture the selection before the picker takes focus (capture phase catches the
       // trigger's pointerdown; later swatch clicks find no selection and keep the stash).
       cw.addEventListener('pointerdown', () => stashRunColorRange(), true);
@@ -10407,7 +12737,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (typeGroup.childElementCount || cfg.textColorField) {
       const g = section();
       if (typeGroup.childElementCount) g.appendChild(typeGroup);
-      if (cfg.textColorField) refs.clear = mk(t('Reset text formatting'), icon(SVG.resetColor), () => clearFormattingSelection());
+      if (cfg.textColorField)
+        refs.clear = mk(t('Reset text formatting'), icon(SVG.resetColor), () =>
+          clearFormattingSelection()
+        );
     }
     // Character styles - bold / italic / bulleted + numbered lists.
     section();
@@ -10419,13 +12752,21 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // own group so the two icon-runs read apart.
     if (cfg.alignField) {
       section();
-      for (const [v, label, ic] of [['left', 'Align left', SVG.textL], ['center', 'Align centre', SVG.textC], ['right', 'Align right', SVG.textR]] as Array<[string, string, string]>) {
+      for (const [v, label, ic] of [
+        ['left', 'Align left', SVG.textL],
+        ['center', 'Align centre', SVG.textC],
+        ['right', 'Align right', SVG.textR],
+      ] as Array<[string, string, string]>) {
         refs.align[v] = mk(t(label), icon(ic), () => applyPending(cfg.alignField, v));
       }
     }
     if (cfg.valignField) {
       section();
-      for (const [v, label, ic] of [['top', 'Align to top', SVG.textT], ['middle', 'Centre vertically', SVG.textM], ['bottom', 'Align to bottom', SVG.textB]] as Array<[string, string, string]>) {
+      for (const [v, label, ic] of [
+        ['top', 'Align to top', SVG.textT],
+        ['middle', 'Centre vertically', SVG.textM],
+        ['bottom', 'Align to bottom', SVG.textB],
+      ] as Array<[string, string, string]>) {
         refs.valign[v] = mk(t(label), icon(ic), () => applyPending(cfg.valignField, v));
       }
     }
@@ -10440,8 +12781,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // the brand-ligature inserter.
     if (cfg.ligaturesField || cfg.alternatesField) {
       section();
-      if (cfg.ligaturesField) refs.lig = mk(t('Ligatures'), '<span style="font-size:13px">fi</span>', () => toggleBoxBool(cfg.ligaturesField, true));
-      if (cfg.alternatesField) refs.alt = mk(t('Stylistic alternates'), '<span style="font-size:13px">a͎</span>', () => toggleBoxBool(cfg.alternatesField, false));
+      if (cfg.ligaturesField)
+        refs.lig = mk(t('Ligatures'), '<span style="font-size:13px">fi</span>', () =>
+          toggleBoxBool(cfg.ligaturesField, true)
+        );
+      if (cfg.alternatesField)
+        refs.alt = mk(t('Stylistic alternates'), '<span style="font-size:13px">a͎</span>', () =>
+          toggleBoxBool(cfg.alternatesField, false)
+        );
       // Geeko 💚 Tux - drops the brand emoji trio at the caret and forces ligatures
       // on so the font can shape the three adjacent glyphs as one ligature. Plain
       // click inserts 🦎💚🐧; ⌥/Alt-click flips to penguin-first (🐧💚🦎). Gated on
@@ -10453,8 +12800,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         emo.setAttribute('data-tip', t('Insert 🦎💚🐧 - turns ligatures on (⌥-click for 🐧💚🦎)'));
         emo.setAttribute('aria-label', t('Insert Geeko loves Tux'));
         emo.textContent = '🦎💚🐧';
-        emo.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); });
-        emo.addEventListener('click', (e) => { e.stopPropagation(); insertBrandLigature(e.altKey ? '🐧💚🦎' : '🦎💚🐧'); });
+        emo.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        });
+        emo.addEventListener('click', (e) => {
+          e.stopPropagation();
+          insertBrandLigature(e.altKey ? '🐧💚🦎' : '🦎💚🐧');
+        });
         curGroup.appendChild(emo);
         refs.emoji = emo;
       }
@@ -10497,10 +12850,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (r.font && document.activeElement !== r.font) {
       r.font.value = String(pendingOr(cfg.fontField, box[cfg.fontField]) || defaultFont);
     }
-    r.lig?.classList.toggle('is-on', boolOf(pendingOr(cfg.ligaturesField, box[cfg.ligaturesField]), true));
-    r.alt?.classList.toggle('is-on', boolOf(pendingOr(cfg.alternatesField, box[cfg.alternatesField]), false));
+    r.lig?.classList.toggle(
+      'is-on',
+      boolOf(pendingOr(cfg.ligaturesField, box[cfg.ligaturesField]), true)
+    );
+    r.alt?.classList.toggle(
+      'is-on',
+      boolOf(pendingOr(cfg.alternatesField, box[cfg.alternatesField]), false)
+    );
   }
-  function hideFmtBar(): void { fmtbar?.remove(); fmtbar = null; }
+  function hideFmtBar(): void {
+    fmtbar?.remove();
+    fmtbar = null;
+  }
   function positionFmtBar(): void {
     if (!fmtbar || !editing) return;
     const boxes = getBoxes();
@@ -10515,7 +12877,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const bw = fmtbar.offsetWidth || 0;
     const bh = fmtbar.offsetHeight || 44;
     const GAP = 8;
-    fmtbar.style.left = Math.max(6, Math.min((tl.x + br.x) / 2 - bw / 2, m.sr.width - bw - 6)) + 'px';
+    fmtbar.style.left =
+      Math.max(6, Math.min((tl.x + br.x) / 2 - bw / 2, m.sr.width - bw - 6)) + 'px';
     // Seat the WHOLE bar above the box using its real height (the two-row
     // colour version is ~90px - a fixed offset let it dip onto the first line).
     // If there's no room above, flip below the box; clamp to the stage so a
@@ -10539,40 +12902,53 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // Nothing is taken away from it in the tap case either: stageNav's pinch dead-zone
   // swallows a sub-pixel finger spread and a zero-delta two-finger pan is a no-op.
   const TWO_TAP_MS = 500;
-  const TWO_TAP_SLOP = 14;                    // SCREEN px, per finger
-  interface TouchPt { x: number; y: number; moved: number }
+  const TWO_TAP_SLOP = 14; // SCREEN px, per finger
+  interface TouchPt {
+    x: number;
+    y: number;
+    moved: number;
+  }
   const touchPts = new Map<number, TouchPt>();
-  let twoTapStart = 0;                        // when the second finger landed (0 = not a candidate)
-  let twoTapDone = false;                     // menu already opened for this touch sequence
+  let twoTapStart = 0; // when the second finger landed (0 = not a candidate)
+  let twoTapDone = false; // menu already opened for this touch sequence
 
   // Capture phase on the STAGE, so this runs before onCanvasPointerDown (bound to the
   // canvas, a descendant) and that handler can see the second finger has arrived.
   function onStageTouchDown(e: PointerEvent): void {
     if (e.pointerType === 'mouse') return;
     touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY, moved: 0 });
-    if (touchPts.size === 2) { twoTapStart = e.timeStamp || Date.now(); twoTapDone = false; }
-    else if (touchPts.size > 2) twoTapStart = 0;   // three fingers is not a tap
+    if (touchPts.size === 2) {
+      twoTapStart = e.timeStamp || Date.now();
+      twoTapDone = false;
+    } else if (touchPts.size > 2) twoTapStart = 0; // three fingers is not a tap
   }
   function onStageTouchMove(e: PointerEvent): void {
     const p = touchPts.get(e.pointerId);
     if (!p) return;
     p.moved = Math.max(p.moved, Math.hypot(e.clientX - p.x, e.clientY - p.y));
-    if (p.moved > TWO_TAP_SLOP) twoTapStart = 0;   // a pan or a pinch, not a tap
+    if (p.moved > TWO_TAP_SLOP) twoTapStart = 0; // a pan or a pinch, not a tap
   }
   function onStageTouchUp(e: PointerEvent): void {
     if (e.pointerType === 'mouse') return;
     const pts = [...touchPts.values()];
     const when = e.timeStamp || Date.now();
-    if (twoTapStart && !twoTapDone && pts.length === 2
-      && when - twoTapStart <= TWO_TAP_MS
-      && pts.every((p) => p.moved <= TWO_TAP_SLOP)) {
-      twoTapDone = true;                      // the OTHER finger's up must not re-open it
+    if (
+      twoTapStart &&
+      !twoTapDone &&
+      pts.length === 2 &&
+      when - twoTapStart <= TWO_TAP_MS &&
+      pts.every((p) => p.moved <= TWO_TAP_SLOP)
+    ) {
+      twoTapDone = true; // the OTHER finger's up must not re-open it
       twoTapStart = 0;
-      if (gesture) endGesture();              // neither finger commits a (zero-delta) drag
+      if (gesture) endGesture(); // neither finger commits a (zero-delta) drag
       contextMenuAt((pts[0]!.x + pts[1]!.x) / 2, (pts[0]!.y + pts[1]!.y) / 2, false);
     }
     touchPts.delete(e.pointerId);
-    if (!touchPts.size) { twoTapStart = 0; twoTapDone = false; }
+    if (!touchPts.size) {
+      twoTapStart = 0;
+      twoTapDone = false;
+    }
   }
 
   // Pen-DRAW placement and armed-CREATE, factored out so BOTH the in-frame handler
@@ -10591,9 +12967,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       penFinishDraw();
       return true;
     }
-    let px = nat.x, py = nat.y;
-    if (gridOn && !e.altKey) { px = gridRound(px); py = gridRound(py); }
-    const snap = snapPoint(px, py, otherAABBs(getBoxes(), new Set<number>()) as MathAABB[], canvasWH(), snapThreshNative());
+    let px = nat.x,
+      py = nat.y;
+    if (gridOn && !e.altKey) {
+      px = gridRound(px);
+      py = gridRound(py);
+    }
+    const snap = snapPoint(
+      px,
+      py,
+      otherAABBs(getBoxes(), new Set<number>()) as MathAABB[],
+      canvasWH(),
+      snapThreshNative()
+    );
     drawGuides(snap.guides);
     penPlaceNode(e, { x: snap.x, y: snap.y }, e.altKey);
     return true;
@@ -10603,7 +12989,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // The sentence has been acted on - take it down at the START of the gesture, not at
     // its commit, or it sits over the rubber band describing something already happening.
     hideArmHint();
-    beginGesture(e, { type: 'create', origin: nat, seed: armedKind.seed || {}, others: otherAABBs(getBoxes(), new Set<number>()) });
+    beginGesture(e, {
+      type: 'create',
+      origin: nat,
+      seed: armedKind.seed || {},
+      others: otherAABBs(getBoxes(), new Set<number>()),
+    });
     rubber.hidden = false;
     return true;
   }
@@ -10622,16 +13013,29 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    *  guides, whose guide lines are drawn as a side effect - the same order tryPenDrawAt
    *  uses, so the two gestures agree about where "here" is. */
   function lineSnap(nat: Point, alt: boolean): Point {
-    let px = nat.x, py = nat.y;
-    if (gridOn && !alt) { px = gridRound(px); py = gridRound(py); }
-    if (alt) { clearGuides(); return { x: px, y: py }; }
-    const snap = snapPoint(px, py, otherAABBs(getBoxes(), new Set<number>()) as MathAABB[], canvasWH(), snapThreshNative());
+    let px = nat.x,
+      py = nat.y;
+    if (gridOn && !alt) {
+      px = gridRound(px);
+      py = gridRound(py);
+    }
+    if (alt) {
+      clearGuides();
+      return { x: px, y: py };
+    }
+    const snap = snapPoint(
+      px,
+      py,
+      otherAABBs(getBoxes(), new Set<number>()) as MathAABB[],
+      canvasWH(),
+      snapThreshNative()
+    );
     drawGuides(snap.guides);
     return { x: snap.x, y: snap.y };
   }
 
   function onCanvasPointerDown(e: PointerEvent): void {
-    if (e.button > 0) return;                 // primary button / touch only
+    if (e.button > 0) return; // primary button / touch only
     lastPointerKind = e.pointerType || '';
     // A second finger belongs to a stage gesture (pan / pinch / two-finger tap), never to
     // a box drag - and the first finger's gesture is abandoned so no drag commits.
@@ -10639,26 +13043,38 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // A node the FIRST finger placed is retracted, not just abandoned: the create gesture
       // above commits nothing until release, but a pen node is already in the draft, and a
       // two-finger pan must not litter the shape being drawn with the point it started on.
-      if (gesture?.type === 'pendraw') { endGesture(); penUndoNode(); return; }
+      if (gesture?.type === 'pendraw') {
+        endGesture();
+        penUndoNode();
+        return;
+      }
       if (gesture) endGesture();
       return;
     }
     if (editing) {
-      if (editing.el.contains(e.target as Node)) return;   // let the caret move within the text
-      commitTextEdit();                            // clicked elsewhere → commit, then select
+      if (editing.el.contains(e.target as Node)) return; // let the caret move within the text
+      commitTextEdit(); // clicked elsewhere → commit, then select
     }
     closePopover();
     const nat = clientToNative(e.clientX, e.clientY);
     const boxes = getBoxes();
 
     // Line tool: press starts a line (drag → release attaches to a card or floats free).
-    if (tryLineDrawAt(e, nat)) { e.stopPropagation(); e.preventDefault(); return; }
+    if (tryLineDrawAt(e, nat)) {
+      e.stopPropagation();
+      e.preventDefault();
+      return;
+    }
 
     // Pen - DRAWING. Click places a node; the drag that follows pulls its handles out
     // symmetrically; a click on the first node closes the path. Nothing about the box
     // selection model runs here, which is why Alt is free to mean "corner". Shared with
     // the off-frame handler so a path can be started/extended outside the artboard.
-    if (tryPenDrawAt(e, nat)) { e.stopPropagation(); e.preventDefault(); return; }
+    if (tryPenDrawAt(e, nat)) {
+      e.stopPropagation();
+      e.preventDefault();
+      return;
+    }
 
     // Pen - NODE EDITING. Handles first (smaller, and outside the curve), then nodes, then
     // the curve itself (a click on it inserts), and only then a marquee over the nodes.
@@ -10676,32 +13092,40 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           penHandleSel.has(key) ? penHandleSel.delete(key) : penHandleSel.add(key);
           ctxSelKey = null;
           renderChrome();
-          e.stopPropagation(); e.preventDefault();
+          e.stopPropagation();
+          e.preventDefault();
           return;
         }
         penHandleSel = new Set<string>();
         setPathSvgHidden(true);
         beginGesture(e, { type: 'penhandle', origin: nat, index: hh.index, which: hh.which });
-        e.stopPropagation(); e.preventDefault();
+        e.stopPropagation();
+        e.preventDefault();
         return;
       }
       const ni = nodeAt(penEdit.path, loc.x, loc.y, tol);
       if (ni >= 0) {
-        if (e.shiftKey || e.metaKey || e.ctrlKey) { penSel.has(ni) ? penSel.delete(ni) : penSel.add(ni); }
-        else if (!penSel.has(ni)) { penSel = new Set([ni]); penHandleSel = new Set<string>(); }
+        if (e.shiftKey || e.metaKey || e.ctrlKey) {
+          penSel.has(ni) ? penSel.delete(ni) : penSel.add(ni);
+        } else if (!penSel.has(ni)) {
+          penSel = new Set([ni]);
+          penHandleSel = new Set<string>();
+        }
         setPathSvgHidden(true);
         const indices = penSel.size ? [...penSel] : [ni];
         beginGesture(e, {
-          type: 'pennode', origin: nat,
+          type: 'pennode',
+          origin: nat,
           indices,
           start: penEdit.path.nodes.map((n) => ({ ...n })),
           // plan 96 P3: dragging exactly ONE of the path's two ends is the bind gesture.
           // Two nodes at once is a reshape, and an interior node has no end to attach.
           bindEnd: bindEndFor(indices),
         });
-        ctxSelKey = null;                        // the continuity control reflects the new pick
+        ctxSelKey = null; // the continuity control reflects the new pick
         renderChrome();
-        e.stopPropagation(); e.preventDefault();
+        e.stopPropagation();
+        e.preventDefault();
         return;
       }
       // Is the click on ANY contour's curve? Lower each on its own (lowering the combined run
@@ -10716,16 +13140,22 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       }
       if (hitD <= PEN_CURVE_PX / penScale()) {
         penInsertAt(loc.x, loc.y);
-        e.stopPropagation(); e.preventDefault();
+        e.stopPropagation();
+        e.preventDefault();
         return;
       }
       beginGesture(e, { type: 'penmarquee', origin: nat, additive: e.shiftKey || e.metaKey });
       rubber.hidden = false;
-      e.stopPropagation(); e.preventDefault();
+      e.stopPropagation();
+      e.preventDefault();
       return;
     }
 
-    if (tryArmedCreateAt(e, nat)) { e.stopPropagation(); e.preventDefault(); return; }
+    if (tryArmedCreateAt(e, nat)) {
+      e.stopPropagation();
+      e.preventDefault();
+      return;
+    }
 
     // Node tool: a click on a PATH box jumps straight into editing its nodes (the click
     // that would otherwise just select it). Non-path boxes fall through to normal select,
@@ -10735,17 +13165,18 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const nh = pickTopmost(boxes, nat.x, nat.y, cfg, seqHiddenSkip(boxes));
       if (nh >= 0 && boxOutlineKind(boxes[nh], vectorCfg) === 'path') {
         startPenEdit(idOf(boxes[nh], nh));
-        e.stopPropagation(); e.preventDefault();
+        e.stopPropagation();
+        e.preventDefault();
         return;
       }
     }
 
-    const hit = selectHit(boxes, nat.x, nat.y);    // artboard-aware: a child over a frame wins; the frame takes an empty-area/edge click
+    const hit = selectHit(boxes, nat.x, nat.y); // artboard-aware: a child over a frame wins; the frame takes an empty-area/edge click
     if (hit >= 0) {
-      deselectEdge();                              // picking a card drops any connector selection
+      deselectEdge(); // picking a card drops any connector selection
       const id = idOf(boxes[hit], hit);
       const additive = e.shiftKey || e.metaKey || e.ctrlKey || multiTapMode;
-      const hitSel = selectionForHit(boxes, hit, e.altKey);   // whole group, or Alt = just this box
+      const hitSel = selectionForHit(boxes, hit, e.altKey); // whole group, or Alt = just this box
       // A plain click on a box that is ALREADY in a multi-selection means "just this one"
       // (plan 179 C4) - but the same press is also the start of a drag of everything
       // selected, and narrowing here would make every group move impossible. So the
@@ -10766,7 +13197,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const sel = selIndices(boxes);
       for (const i of sel) start.set(i, boxRect(boxes[i], cfg));
       beginGesture(e, {
-        type: 'move', start, sel, narrow,
+        type: 'move',
+        start,
+        sel,
+        narrow,
         selAABB: selectionAABB(boxes, sel, cfg),
         others: otherAABBs(boxes, new Set(sel)),
       });
@@ -10777,9 +13211,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // No card under the pointer - try a connector line (they render behind the cards).
     if (connectCfg) {
       const eid = edgeAt(nat.x, nat.y);
-      if (eid) { selectEdge(eid, e.shiftKey || e.metaKey || e.ctrlKey); e.stopPropagation(); return; }
+      if (eid) {
+        selectEdge(eid, e.shiftKey || e.metaKey || e.ctrlKey);
+        e.stopPropagation();
+        return;
+      }
     }
-    deselectEdge();   // clicked empty → drop any connector selection
+    deselectEdge(); // clicked empty → drop any connector selection
 
     // Empty canvas - or the CAMERA's, when one is selected and running (plans/104 section 8).
     // The camera takes the drag the marquee would have had: there is nothing on the
@@ -10792,7 +13230,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (e.pointerType === 'mouse' && camModeId()) {
       beginGesture(e, {
         type: e.shiftKey ? 'camtilt' : 'campan',
-        client: { x: e.clientX, y: e.clientY }, dx: 0, dy: 0,
+        client: { x: e.clientX, y: e.clientY },
+        dx: 0,
+        dy: 0,
       });
       startCamHud(e.shiftKey);
       e.stopPropagation();
@@ -10804,7 +13244,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       e.stopPropagation();
     } else {
       // Let stageNav own touch pan/pinch on empty canvas; arm a tap-to-deselect.
-      gesture = { type: 'tap', pointerId: e.pointerId, startClient: { x: e.clientX, y: e.clientY } };
+      gesture = {
+        type: 'tap',
+        pointerId: e.pointerId,
+        startClient: { x: e.clientX, y: e.clientY },
+      };
     }
   }
 
@@ -10821,13 +13265,28 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // the whole stage is usable, not just the export frame. These come FIRST, before the
     // "clicking off the artboard means I'm done" fallbacks below.
     const natBd = clientToNative(e.clientX, e.clientY);
-    if (tryPenDrawAt(e, natBd)) { e.stopPropagation(); e.preventDefault(); return; }
-    if (tryArmedCreateAt(e, natBd)) { e.stopPropagation(); e.preventDefault(); return; }
-    if (tryLineDrawAt(e, natBd)) { e.stopPropagation(); e.preventDefault(); return; }
+    if (tryPenDrawAt(e, natBd)) {
+      e.stopPropagation();
+      e.preventDefault();
+      return;
+    }
+    if (tryArmedCreateAt(e, natBd)) {
+      e.stopPropagation();
+      e.preventDefault();
+      return;
+    }
+    if (tryLineDrawAt(e, natBd)) {
+      e.stopPropagation();
+      e.preventDefault();
+      return;
+    }
     // Clicking right off the artboard is the natural "I'm done" for a node-edit session,
     // and it matches what the same click already does to a selection. (A pen DRAFT is no
     // longer finished here - an off-frame click extends it, handled above.)
-    if (penEdit) { endPenEdit(); return; }
+    if (penEdit) {
+      endPenEdit();
+      return;
+    }
     closePopover();
     deselectEdge();
     // A SHIFT/⌘ drag is additive, so it must not wipe what is already selected - same
@@ -10848,7 +13307,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (camModeId()) {
       beginGesture(e, {
         type: e.shiftKey ? 'camtilt' : 'campan',
-        client: { x: e.clientX, y: e.clientY }, dx: 0, dy: 0,
+        client: { x: e.clientX, y: e.clientY },
+        dx: 0,
+        dy: 0,
       });
       startCamHud(e.shiftKey);
       return;
@@ -10859,7 +13320,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // keep receiving it even though the drag started outside.
   }
 
-  /** Right-click on the backdrop opens the SAME menu as right-click on empty artboard - 
+  /** Right-click on the backdrop opens the SAME menu as right-click on empty artboard -
    *  guarded to a direct hit so a bubbled event from a box or the toolbar can't reach it. */
   function onBackdropContextMenu(e: MouseEvent): void {
     if (e.target !== e.currentTarget) return;
@@ -10879,21 +13340,24 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   let moveRaf = 0;
   function onGestureMove(e: PointerEvent): void {
     if (!gesture || e.pointerId !== gesture.pointerId) return;
-    if (gesture.type === 'tap') return;       // stageNav owns it; only checked on up
-    e.preventDefault();                        // must be synchronous to suppress scroll/text-select
+    if (gesture.type === 'tap') return; // stageNav owns it; only checked on up
+    e.preventDefault(); // must be synchronous to suppress scroll/text-select
     pendingMove = e;
     if (!moveRaf) moveRaf = requestAnimationFrame(flushGestureMove);
   }
   function flushGestureMove(): void {
     moveRaf = 0;
-    const e = pendingMove; pendingMove = null;
+    const e = pendingMove;
+    pendingMove = null;
     if (e) applyGestureMove(e);
   }
   function applyGestureMove(e: PointerEvent): void {
     if (!gesture || e.pointerId !== gesture.pointerId) return;
     const nat = clientToNative(e.clientX, e.clientY);
-    const dxN = nat.x - (gesture.origin?.x ?? clientToNative(gesture.startClient.x, gesture.startClient.y).x);
-    const dyN = nat.y - (gesture.origin?.y ?? clientToNative(gesture.startClient.x, gesture.startClient.y).y);
+    const dxN =
+      nat.x - (gesture.origin?.x ?? clientToNative(gesture.startClient.x, gesture.startClient.y).x);
+    const dyN =
+      nat.y - (gesture.origin?.y ?? clientToNative(gesture.startClient.x, gesture.startClient.y).y);
 
     if (gesture.type === 'marquee' || gesture.type === 'penmarquee') {
       drawRubber(gesture.origin, nat);
@@ -10939,7 +13403,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const i = gesture.index;
       const n = penDraft.nodes[i];
       if (!n) return;
-      const pulled = Math.hypot(nat.x - gesture.origin.x, nat.y - gesture.origin.y) > PEN_PULL_MIN / penScale();
+      const pulled =
+        Math.hypot(nat.x - gesture.origin.x, nat.y - gesture.origin.y) > PEN_PULL_MIN / penScale();
       // A click-DRAG is the Bézier idiom: it names a direction AND a length. `hyperbezier`
       // can only honour the direction, and only within a right angle of its chord - past
       // that `hbArm`'s signed shape function puts the control arm on the far side of the
@@ -10956,8 +13421,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         renderChrome();
       }
       const nodes = penDraft.nodes.slice();
-      const cur = nodes[i] ?? n;   // re-read: the promotion above rebuilds the node array
-      const dx = nat.x - gesture.origin.x, dy = nat.y - gesture.origin.y;
+      const cur = nodes[i] ?? n; // re-read: the promotion above rebuilds the node array
+      const dx = nat.x - gesture.origin.x,
+        dy = nat.y - gesture.origin.y;
       const at = { ...cur, x: gesture.origin.x, y: gesture.origin.y };
       // Whichever branch runs owns the node's continuity outright: `pullHandles` refuses a
       // `corner` node, and `defaultContinuity` is `'corner'` for every kind except
@@ -10966,9 +13432,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // the bake left holding the segment already drawn, so "keep what is behind me, aim what
       // is ahead" needs no recomputation.
       if (e.altKey) penPullBroken = true;
-      nodes[i] = !pulled ? at
-        : penPullBroken ? { ...at, continuity: 'corner', hOutX: dx, hOutY: dy }
-        : pullHandles({ ...at, continuity: 'smooth' }, dx, dy);
+      nodes[i] = !pulled
+        ? at
+        : penPullBroken
+          ? { ...at, continuity: 'corner', hOutX: dx, hOutY: dy }
+          : pullHandles({ ...at, continuity: 'smooth' }, dx, dy);
       penDraft = { ...penDraft, nodes };
       paintPen();
       positionPenChrome();
@@ -10979,18 +13447,32 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // The pointer snaps against sibling boxes and the artboard exactly as a create/resize
       // drag does - same helper, same `.fc-guides` layer, Alt suppresses it - so a node can
       // be landed on a neighbour's edge without a second snapping system existing.
-      let sx = nat.x, sy = nat.y;
+      let sx = nat.x,
+        sy = nat.y;
       if (!e.altKey) {
-        if (gridOn) { sx = gridRound(sx); sy = gridRound(sy); }
-        const snap = snapPoint(sx, sy, otherAABBs(getBoxes(), new Set([indexOfId(getBoxes(), penEdit.id)])) as MathAABB[], canvasWH(), snapThreshNative());
-        sx = snap.x; sy = snap.y;
+        if (gridOn) {
+          sx = gridRound(sx);
+          sy = gridRound(sy);
+        }
+        const snap = snapPoint(
+          sx,
+          sy,
+          otherAABBs(getBoxes(), new Set([indexOfId(getBoxes(), penEdit.id)])) as MathAABB[],
+          canvasWH(),
+          snapThreshNative()
+        );
+        sx = snap.x;
+        sy = snap.y;
         drawGuides(snap.guides);
       } else clearGuides();
       const fr = penEdit.frame;
       const a = frameToLocal(fr, gesture.origin.x, gesture.origin.y);
       const b = frameToLocal(fr, sx, sy);
       gesture.moved = Math.hypot(sx - gesture.origin.x, sy - gesture.origin.y) > 0.01;
-      penEdit = { ...penEdit, path: moveNodes(penEdit.path, gesture.indices, b.x - a.x, b.y - a.y, gesture.start) };
+      penEdit = {
+        ...penEdit,
+        path: moveNodes(penEdit.path, gesture.indices, b.x - a.x, b.y - a.y, gesture.start),
+      };
       // plan 96 P3 - the bind affordance. The ring follows the pointer, not the node: the
       // node is under the finger and the box is what the drop acts on.
       if (gesture.bindEnd) setBindHover(bindableAt(sx, sy, penEdit.id));
@@ -11005,14 +13487,21 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // `enforceContinuity` exists for.
       const loc = frameToLocal(penEdit.frame, nat.x, nat.y);
       gesture.moved = true;
-      penEdit = { ...penEdit, path: dragHandle(penEdit.path, gesture.index, gesture.which, loc.x, loc.y) };
+      penEdit = {
+        ...penEdit,
+        path: dragHandle(penEdit.path, gesture.index, gesture.which, loc.x, loc.y),
+      };
       paintPen();
       positionPenChrome();
       return;
     }
     if (gesture.type === 'create') {
-      let px = nat.x, py = nat.y;
-      if (gridOn && !e.altKey) { px = gridRound(px); py = gridRound(py); }   // land on grid
+      let px = nat.x,
+        py = nat.y;
+      if (gridOn && !e.altKey) {
+        px = gridRound(px);
+        py = gridRound(py);
+      } // land on grid
       const snap = snapPoint(px, py, gesture.others as MathAABB[], canvasWH(), snapThreshNative());
       const corner = { x: snap.x, y: snap.y };
       drawGuides(snap.guides);
@@ -11027,21 +13516,30 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       return;
     }
     if (gesture.type === 'move') {
-      let mdx = dxN, mdy = dyN;
+      let mdx = dxN,
+        mdy = dyN;
       if (gesture.selAABB && !e.altKey) {
         // Smart guides win: snap the RAW drag to any sibling/artboard edge or centre
         // first, so dragging a card onto another's vertical/horizontal line locks it
         // into alignment (even off-grid). The grid then only rounds whichever axis
         // did NOT catch a guide, so cards stay tidy without fighting alignment.
         const cand = {
-          minX: gesture.selAABB.minX + dxN, minY: gesture.selAABB.minY + dyN,
-          maxX: gesture.selAABB.maxX + dxN, maxY: gesture.selAABB.maxY + dyN,
+          minX: gesture.selAABB.minX + dxN,
+          minY: gesture.selAABB.minY + dyN,
+          maxX: gesture.selAABB.maxX + dxN,
+          maxY: gesture.selAABB.maxY + dyN,
         };
-        const snap = snapMove(cand as MathAABB, gesture.others as MathAABB[], canvasWH(), snapThreshNative());
-        mdx = dxN + snap.dx; mdy = dyN + snap.dy;
+        const snap = snapMove(
+          cand as MathAABB,
+          gesture.others as MathAABB[],
+          canvasWH(),
+          snapThreshNative()
+        );
+        mdx = dxN + snap.dx;
+        mdy = dyN + snap.dy;
         if (gridOn) {
-          const xAligned = snap.guides.some((g) => g.x1 === g.x2);   // a vertical guide → x is aligned
-          const yAligned = snap.guides.some((g) => g.y1 === g.y2);   // a horizontal guide → y is aligned
+          const xAligned = snap.guides.some((g) => g.x1 === g.x2); // a vertical guide → x is aligned
+          const yAligned = snap.guides.some((g) => g.y1 === g.y2); // a horizontal guide → y is aligned
           if (!xAligned) mdx = gridRound(gesture.selAABB.minX + dxN) - gesture.selAABB.minX;
           if (!yAligned) mdy = gridRound(gesture.selAABB.minY + dyN) - gesture.selAABB.minY;
         }
@@ -11054,18 +13552,32 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       return;
     }
     if (gesture.type === 'resize') {
-      let sdx = dxN, sdy = dyN;
+      let sdx = dxN,
+        sdy = dyN;
       if ((gesture.startRect.rot || 0) === 0 && !e.altKey) {
-        let px = nat.x, py = nat.y;
-        if (gridOn) { px = gridRound(px); py = gridRound(py); }
-        const snap = snapPoint(px, py, gesture.others as MathAABB[], canvasWH(), snapThreshNative());
-        sdx += snap.x - nat.x; sdy += snap.y - nat.y;
+        let px = nat.x,
+          py = nat.y;
+        if (gridOn) {
+          px = gridRound(px);
+          py = gridRound(py);
+        }
+        const snap = snapPoint(
+          px,
+          py,
+          gesture.others as MathAABB[],
+          canvasWH(),
+          snapThreshNative()
+        );
+        sdx += snap.x - nat.x;
+        sdy += snap.y - nat.y;
         drawGuides(snap.guides);
       } else clearGuides();
       // A circle stays a circle: lock its aspect (1:1) through the resize, as if Shift
       // were held. Its startRect is already square, so any handle keeps w === h.
       const nr = resizeRect(gesture.startRect, gesture.handle, sdx, sdy, {
-        minSize, keepAspect: e.shiftKey || isCircle(getBoxes()[gesture.index]), fromCentre: e.altKey,
+        minSize,
+        keepAspect: e.shiftKey || isCircle(getBoxes()[gesture.index]),
+        fromCentre: e.altKey,
       });
       applyLiveRect(gesture.index, { ...nr, rot: gesture.startRect.rot });
       gesture.liveRect = { ...nr, rot: gesture.startRect.rot };
@@ -11075,8 +13587,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
     if (gesture.type === 'rotate') {
       const c = gesture.centerClient;
-      let deg = Math.atan2(e.clientY - c.y, e.clientX - c.x) * 180 / Math.PI - gesture.pointerStartDeg + gesture.startRect.rot!;
-      deg = normAngle(deg);                       // keep stored rotation in [-180, 180)
+      let deg =
+        (Math.atan2(e.clientY - c.y, e.clientX - c.x) * 180) / Math.PI -
+        gesture.pointerStartDeg +
+        gesture.startRect.rot!;
+      deg = normAngle(deg); // keep stored rotation in [-180, 180)
       if (!e.altKey) deg = snapAngle(deg, 15, 4);
       const live = { ...gesture.startRect, rot: deg };
       applyLiveRect(gesture.index, live);
@@ -11095,7 +13610,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
     if (gesture.type === 'grotate') {
       const c = gesture.centerClient;
-      let deg = Math.atan2(e.clientY - c.y, e.clientX - c.x) * 180 / Math.PI - gesture.pointerStartDeg;
+      let deg =
+        (Math.atan2(e.clientY - c.y, e.clientX - c.x) * 180) / Math.PI - gesture.pointerStartDeg;
       if (!e.altKey) deg = snapAngle(deg, 15, 4);
       const next = rotateGroup(gesture.startBoxes, gesture.sel, gesture.centre, deg, cfg);
       for (const i of gesture.sel) applyLiveRect(i, boxRect(next[i], cfg));
@@ -11111,14 +13627,29 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const g = gesture;
     // Apply any pending (coalesced) move first so the drop commits the final pointer
     // position, then drop the scheduled frame.
-    if (moveRaf) { cancelAnimationFrame(moveRaf); moveRaf = 0; }
-    if (pendingMove) { const pe = pendingMove; pendingMove = null; applyGestureMove(pe); }
-    try { canvasEl.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
-    endLiveConnectors();   // restore the tool's committed connector layer after a drag
+    if (moveRaf) {
+      cancelAnimationFrame(moveRaf);
+      moveRaf = 0;
+    }
+    if (pendingMove) {
+      const pe = pendingMove;
+      pendingMove = null;
+      applyGestureMove(pe);
+    }
+    try {
+      canvasEl.releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    endLiveConnectors(); // restore the tool's committed connector layer after a drag
 
     if (g.type === 'tap') {
       const moved = Math.hypot(e.clientX - g.startClient.x, e.clientY - g.startClient.y);
-      if (moved < 6) { selection = new Set<string>(); toPointer(); renderChrome(); }
+      if (moved < 6) {
+        selection = new Set<string>();
+        toPointer();
+        renderChrome();
+      }
       gesture = null;
       return;
     }
@@ -11132,11 +13663,21 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       clearGuides();
       // A tap is a mis-click, and a zero-length line is not a shape: neither commits - the
       // same floor `penFinishDraw` puts under a one-node draft.
-      if (moved < 6 || (Math.abs(to.x - g.origin.x) < 0.5 && Math.abs(to.y - g.origin.y) < 0.5)) { toPointer(); return; }
-      commitPathBox({
-        kind: 'line', closed: false,
-        nodes: [{ x: g.origin.x, y: g.origin.y, continuity: 'corner' }, { x: to.x, y: to.y, continuity: 'corner' }],
-      }, lineBoxSeed());
+      if (moved < 6 || (Math.abs(to.x - g.origin.x) < 0.5 && Math.abs(to.y - g.origin.y) < 0.5)) {
+        toPointer();
+        return;
+      }
+      commitPathBox(
+        {
+          kind: 'line',
+          closed: false,
+          nodes: [
+            { x: g.origin.x, y: g.origin.y, continuity: 'corner' },
+            { x: to.x, y: to.y, continuity: 'corner' },
+          ],
+        },
+        lineBoxSeed()
+      );
       toPointer();
       return;
     }
@@ -11157,8 +13698,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const next = penEdit ? penEdit.path : null;
       // plan 96 P3 - landing an end node ON a box attaches it; landing it anywhere else
       // detaches it. Read BEFORE endGesture(), which clears the hover.
-      const bindTo = g.type === 'pennode' && g.bindEnd && moved
-        ? { which: g.bindEnd, id: bindHover ?? '' } : null;
+      const bindTo =
+        g.type === 'pennode' && g.bindEnd && moved
+          ? { which: g.bindEnd, id: bindHover ?? '' }
+          : null;
       const editId = penEdit?.id ?? '';
       setPathSvgHidden(false);
       setBindHover(null);
@@ -11172,12 +13715,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const moved = Math.hypot(e.clientX - g.startClient.x, e.clientY - g.startClient.y);
       if (penEdit) {
         if (moved < 6) {
-          if (!g.additive) { penSel = new Set<number>(); penHandleSel = new Set<string>(); }
+          if (!g.additive) {
+            penSel = new Set<number>();
+            penHandleSel = new Set<string>();
+          }
         } else {
           const r = normDragRect(g.origin.x, g.origin.y, nat.x, nat.y, 0);
-          const inR = (p: Point): boolean => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+          const inR = (p: Point): boolean =>
+            p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
           const pts = penNodePoints();
-          const nodeHits = pts.reduce<number[]>((acc, pt, i) => (inR(pt.at) ? (acc.push(i), acc) : acc), []);
+          const nodeHits = pts.reduce<number[]>(
+            (acc, pt, i) => (inR(pt.at) ? (acc.push(i), acc) : acc),
+            []
+          );
           // In "nodes + control points" mode, a marquee also grabs any handle whose point
           // falls in the box - the direct-selection behaviour Illustrator/Inkscape users
           // expect. Nodes-only mode (the default) leaves handles alone.
@@ -11188,8 +13738,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
               if (pt.hOut && inR(pt.hOut)) handleHits.push(`${i}:out`);
             });
           }
-          if (g.additive) { for (const i of nodeHits) penSel.add(i); for (const k of handleHits) penHandleSel.add(k); }
-          else { penSel = new Set(nodeHits); penHandleSel = new Set(handleHits); }
+          if (g.additive) {
+            for (const i of nodeHits) penSel.add(i);
+            for (const k of handleHits) penHandleSel.add(k);
+          } else {
+            penSel = new Set(nodeHits);
+            penHandleSel = new Set(handleHits);
+          }
         }
       }
       endGesture();
@@ -11211,18 +13766,26 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (moved < 6) {
         // A tap (no drag) drops a default-sized box centred on the point.
         const cd = canvasWH();
-        const w = frameSeed ? cd.w : (circleSeed ? 400 : 320);
-        const h = frameSeed ? cd.h : (circleSeed ? 400 : 200);
+        const w = frameSeed ? cd.w : circleSeed ? 400 : 320;
+        const h = frameSeed ? cd.h : circleSeed ? 400 : 200;
         rect = { x: g.origin.x - w / 2, y: g.origin.y - h / 2, w, h };
       } else {
         const c = g.corner || nat;
         rect = normDragRect(g.origin.x, g.origin.y, c.x, c.y, minSize);
-        if (circleSeed) { const s = Math.max(minSize, Math.min(rect.w, rect.h)); rect = { x: rect.x, y: rect.y, w: s, h: s }; }
+        if (circleSeed) {
+          const s = Math.max(minSize, Math.min(rect.w, rect.h));
+          rect = { x: rect.x, y: rect.y, w: s, h: s };
+        }
       }
       const id = freshId(boxes);
       let box = seedBox(cfg, {}, g.seed, rect as MathRect, id);
       box = clampToWorkArea(box);
-      if (gridOn && !e.altKey) box = { ...box, [cfg.xField]: gridRound(num(box[cfg.xField], 0)), [cfg.yField]: gridRound(num(box[cfg.yField], 0)) };
+      if (gridOn && !e.altKey)
+        box = {
+          ...box,
+          [cfg.xField]: gridRound(num(box[cfg.xField], 0)),
+          [cfg.yField]: gridRound(num(box[cfg.yField], 0)),
+        };
       selection = new Set([id]);
       // The Animation and Video add-kinds both seed kind:'image' (they render through
       // the image field), so they also match wasImage - check them FIRST and open the
@@ -11231,7 +13794,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const wasVideo = armedKind?.id === 'video';
       // Sequence Studio's kinds. `clip` seeds kind:'image' too, so - like Animation and
       // Video - it must be recognised BEFORE wasImage or it would open the general image
-      // picker. `tool` also seeds kind:'image', and it still opens the UNTYPED picker - 
+      // picker. `tool` also seeds kind:'image', and it still opens the UNTYPED picker -
       // that is where the Lolly-link / saved-session path lives, and the picker is
       // already handed `editTool` so a chosen tool opens its inputs first - but it asks
       // for the Tools pane, so the tool grid is what the user lands on. Same idea as the
@@ -11243,12 +13806,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const wasCard = armedKind?.id === 'card';
       const wasTool = armedKind?.id === 'tool';
       const wasCamera = armedKind?.id === 'camera' || g.seed?.[cfg.kindField] === 'camera';
-      const wasImage = !wasLottie && !wasVideo && !wasClip && !wasAudio && !wasTool
-        && ((g.seed?.[cfg.kindField] === 'image') || armedKind?.id === 'image');
-      const wasText = (g.seed?.[cfg.kindField] === 'text') || armedKind?.id === 'text' || wasCard;
+      const wasImage =
+        !wasLottie &&
+        !wasVideo &&
+        !wasClip &&
+        !wasAudio &&
+        !wasTool &&
+        (g.seed?.[cfg.kindField] === 'image' || armedKind?.id === 'image');
+      const wasText = g.seed?.[cfg.kindField] === 'text' || armedKind?.id === 'text' || wasCard;
       // Read BEFORE toPointer(): exitCreate clears the pending time with the armed kind.
       const addAtMs = pendingAddAtMs;
-      toPointer();                  // the gesture consumed the armed kind - back to the pointer
+      toPointer(); // the gesture consumed the armed kind - back to the pointer
       endGesture();
       // A card is authored like text, so it takes the same legibility pass.
       if (wasText) box = withLegibleInk(box, boxes);
@@ -11278,8 +13846,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // fell through to the marquee - "tilt doesn't work" until you happened to open it.
       if (timeCfg && (wasClip || wasCard || wasAudio || wasCamera)) openTimeline();
       if (wasLottie) setTimeout(() => pickImage({ pickType: 'lottie', initialTab: 'library' }), 0);
-      else if (wasVideo || wasClip) setTimeout(() => pickImage({ pickType: 'video', initialTab: 'library' }), 0);
-      else if (wasAudio) setTimeout(() => pickImage({ pickType: 'audio', initialTab: 'library' }), 0);
+      else if (wasVideo || wasClip)
+        setTimeout(() => pickImage({ pickType: 'video', initialTab: 'library' }), 0);
+      else if (wasAudio)
+        setTimeout(() => pickImage({ pickType: 'audio', initialTab: 'library' }), 0);
       else if (wasTool) setTimeout(() => pickImage({ initialTab: 'tools' }), 0);
       else if (wasImage) setTimeout(() => pickImage({ initialTab: 'library' }), 0);
       else if (wasText && cfg.textField) editAfterPaint(id, { selectAll: true });
@@ -11316,7 +13886,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // and put the horizon where the hand did not ask for it.
       if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
         const next = timelinePanel?.cameraWrite(boxes, {
-          rx: -dy * CAM_TILT_DEG_PER_PX, ry: dx * CAM_TILT_DEG_PER_PX,
+          rx: -dy * CAM_TILT_DEG_PER_PX,
+          ry: dx * CAM_TILT_DEG_PER_PX,
         });
         if (next && next !== boxes) commit(next);
       }
@@ -11324,8 +13895,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
     if (g.type === 'marquee') {
       const moved = Math.hypot(e.clientX - g.startClient.x, e.clientY - g.startClient.y);
-      if (moved < 6) { selection = new Set<string>(); deselectEdge(); }
-      else {
+      if (moved < 6) {
+        selection = new Set<string>();
+        deselectEdge();
+      } else {
         // A marquee grabs cards AND any connector lines it crosses - a mixed selection
         // (card handles + the connector panel editing every selected line at once).
         const rect = normDragRect(g.origin.x, g.origin.y, nat.x, nat.y, 0);
@@ -11349,8 +13922,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         if (selectedEdges.size) setHoverEdge(null);
       }
       endGesture();
-      renderChrome();                                  // card chrome + edge highlights (via renderChrome)
-      if (selectedEdges.size) openEdgePanel(); else closeEdgePanel();
+      renderChrome(); // card chrome + edge highlights (via renderChrome)
+      if (selectedEdges.size) openEdgePanel();
+      else closeEdgePanel();
       return;
     }
     if (g.type === 'move') {
@@ -11369,12 +13943,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // array committed once. Refusing the whole gesture because one box in five is
         // not animated would make the feature feel like a mode, which is the thing
         // this model exists to avoid.
-        const kfIds = new Set(timelinePanel?.kfPoseIds([...sel].map((i) => idOf(boxes[i], i))) ?? []);
+        const kfIds = new Set(
+          timelinePanel?.kfPoseIds([...sel].map((i) => idOf(boxes[i], i))) ?? []
+        );
         const moveIdx = [...sel].filter((i) => !kfIds.has(idOf(boxes[i], i)));
         let next = moveIdx.length ? moveBoxes(boxes, moveIdx, d.dx, d.dy, cfg) : boxes;
-        if (kfIds.size && timelinePanel) next = timelinePanel.kfPoseWrite(next, [...kfIds], { x: d.dx, y: d.dy });
+        if (kfIds.size && timelinePanel)
+          next = timelinePanel.kfPoseWrite(next, [...kfIds], { x: d.dx, y: d.dy });
         // Containment-on-drop: the moved boxes re-bucket into the frame their centre
-        // now lands in. moveBoxes preserves index order, so g.sel indices stay valid - 
+        // now lands in. moveBoxes preserves index order, so g.sel indices stay valid -
         // and only the boxes that actually MOVED are re-bucketed: a posed box's own
         // geometry never changed, so it cannot have crossed a frame edge.
         commit(assignFrames(cascadeFrameChildren(boxes, next, moveIdx), new Set(moveIdx)));
@@ -11383,7 +13960,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         // multi-selection to the box that was clicked (plan 179 C4). `ctxSelKey` is reset
         // because the object bar's controls are gated by what is selected, and the bar
         // must not survive a selection it no longer describes.
-        if (narrow && narrow.length) { selection = new Set(narrow); ctxSelKey = null; }
+        if (narrow && narrow.length) {
+          selection = new Set(narrow);
+          ctxSelKey = null;
+        }
         renderChrome();
       }
       return;
@@ -11452,7 +14032,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       endGesture();
       // Containment-on-group-transform: every scaled/rotated box re-buckets. g.liveBoxes
       // is a full index-aligned array, so g.sel indices stay valid.
-      if (next) commit(assignFrames(cascadeFrameChildren(boxes, next, sel), new Set(sel))); else renderChrome();
+      if (next) commit(assignFrames(cascadeFrameChildren(boxes, next, sel), new Set(sel)));
+      else renderChrome();
       return;
     }
     endGesture();
@@ -11470,7 +14051,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     el.style.top = Math.round(r.y - fo.y) + 'px';
     el.style.width = Math.max(1, Math.round(r.w)) + 'px';
     el.style.height = Math.max(1, Math.round(r.h)) + 'px';
-    el.style.transform = r.rot ? `rotate(${(Math.round(r.rot * 10) / 10)}deg)` : '';
+    el.style.transform = r.rot ? `rotate(${Math.round(r.rot * 10) / 10}deg)` : '';
     // Multi-page: a box dragged toward a higher-index page spills (unclipped) into that
     // page's rectangle, but the later frame's opaque background paints OVER it (same
     // stacking context, tree order). A positive z-index hoists the live box above every
@@ -11502,10 +14083,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const c = rectCentre(startRect);
       const cs = nativeToStage(c.x, c.y, m);
       const centerClient = { x: cs.x + m.sr.left, y: cs.y + m.sr.top };
-      const pointerStartDeg = Math.atan2(e.clientY - centerClient.y, e.clientX - centerClient.x) * 180 / Math.PI;
+      const pointerStartDeg =
+        (Math.atan2(e.clientY - centerClient.y, e.clientX - centerClient.x) * 180) / Math.PI;
       beginGesture(e, { type: 'rotate', index, startRect, centerClient, pointerStartDeg });
     } else {
-      beginGesture(e, { type: 'resize', index, handle, startRect, others: otherAABBs(boxes, new Set([index])) });
+      beginGesture(e, {
+        type: 'resize',
+        index,
+        handle,
+        startRect,
+        others: otherAABBs(boxes, new Set([index])),
+      });
     }
   }
 
@@ -11531,17 +14119,20 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!list || !list.length) return;
     const m = metrics();
     for (const g of list) {
-      const a = nativeToStage(g.x1, g.y1, m), b = nativeToStage(g.x2, g.y2, m);
+      const a = nativeToStage(g.x1, g.y1, m),
+        b = nativeToStage(g.x2, g.y2, m);
       const el = document.createElement('div');
       el.className = 'fc-guide';
       el.style.left = a.x + 'px';
       el.style.top = a.y + 'px';
       el.style.width = Math.hypot(b.x - a.x, b.y - a.y) + 'px';
-      el.style.transform = `rotate(${Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI}deg)`;
+      el.style.transform = `rotate(${(Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI}deg)`;
       guidesEl.appendChild(el);
     }
   }
-  const clearGuides = (): void => { guidesEl.innerHTML = ''; };
+  const clearGuides = (): void => {
+    guidesEl.innerHTML = '';
+  };
 
   // ── bound paths (plan 96 P3) ──────────────────────────────────────────────────
   //
@@ -11557,7 +14148,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   /** Is this box a connector? ONE binding is enough - a path pinned at one end and loose at
    *  the other still routes, from the border toward the loose point. */
   const isBoundPath = (b: Box): boolean =>
-    hasBindCfg && String(b[cfg.kindField]) === 'path' && (bindOf(b, 'start') !== '' || bindOf(b, 'end') !== '');
+    hasBindCfg &&
+    String(b[cfg.kindField]) === 'path' &&
+    (bindOf(b, 'start') !== '' || bindOf(b, 'end') !== '');
 
   /**
    * A bound path as the engine's endpoint pair + decoration record, or null when it is not
@@ -11569,14 +14162,21 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * cannot import from the shell and the shell cannot call the hook, so the ONE thing that
    * has to be shared is the geometry, and that is `routedLineSvg`.
    */
-  function boundPathParts(b: Box): { from: string; to: string; decor: Parameters<typeof routedLineSvg>[2] } | null {
+  function boundPathParts(
+    b: Box
+  ): { from: string; to: string; decor: Parameters<typeof routedLineSvg>[2] } | null {
     if (!isBoundPath(b)) return null;
-    const bs = bindOf(b, 'start'), be = bindOf(b, 'end');
-    const ends = (!bs || !be) ? pathEndsNative(b) : null;
+    const bs = bindOf(b, 'start'),
+      be = bindOf(b, 'end');
+    const ends = !bs || !be ? pathEndsNative(b) : null;
     if ((!bs || !be) && !ends) return null;
     const contours = decodePathContours(b[cfg.pathField]);
     const sole = contours[0];
-    const route = pathRouteStyle(sole ? sole.kind : '', b[cfg.routeField], sole ? sole.nodes.length : 2);
+    const route = pathRouteStyle(
+      sole ? sole.kind : '',
+      b[cfg.routeField],
+      sole ? sole.nodes.length : 2
+    );
     const sw = clampN(b[cfg.strokeWField], 0, 0, 400);
     const dashKw = String(b[cfg.strokeDashField] ?? '');
     return {
@@ -11603,8 +14203,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const ns = contours[0]?.nodes;
     if (!ns || ns.length < 2) return null;
     const r = boxRect(b, cfg);
-    const w = Math.max(1, r.w), h = Math.max(1, r.h);
-    const a = ns[0]!, z = ns[ns.length - 1]!;
+    const w = Math.max(1, r.w),
+      h = Math.max(1, r.h);
+    const a = ns[0]!,
+      z = ns[ns.length - 1]!;
     return {
       start: { x: r.x + a.x * w, y: r.y + a.y * h },
       end: { x: r.x + z.x * w, y: r.y + z.y * h },
@@ -11627,8 +14229,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const o = nativeToStage(0, 0, m);
     el.style.left = o.x + 'px';
     el.style.top = o.y + 'px';
-    el.style.width = (cw.w * m.scale) + 'px';
-    el.style.height = (cw.h * m.scale) + 'px';
+    el.style.width = cw.w * m.scale + 'px';
+    el.style.height = cw.h * m.scale + 'px';
     el.setAttribute('viewBox', `0 0 ${cw.w} ${cw.h}`);
     el.setAttribute('preserveAspectRatio', 'none');
   }
@@ -11651,44 +14253,73 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const el = canvasEl.querySelector<HTMLElement>(`.lolly-box[data-box-id="${cssEscape(id)}"]`);
     if (el && el.style.left) {
       const fo = frameOffsetOfEl(el);
-      return { x: (parseFloat(el.style.left) || 0) + fo.x, y: (parseFloat(el.style.top) || 0) + fo.y, w: parseFloat(el.style.width) || 1, h: parseFloat(el.style.height) || 1 };
+      return {
+        x: (parseFloat(el.style.left) || 0) + fo.x,
+        y: (parseFloat(el.style.top) || 0) + fo.y,
+        w: parseFloat(el.style.width) || 1,
+        h: parseFloat(el.style.height) || 1,
+      };
     }
     const r = boxRect(boxes[i], cfg);
     return { x: r.x, y: r.y, w: r.w, h: r.h };
   }
-  // Pull the shaft back off an arrow end and build the head fragment(s) for the preview - 
+  // Pull the shaft back off an arrow end and build the head fragment(s) for the preview -
   // mirrors the gap + headInset logic in drawConnector() (org-chart/hooks.js) so the live
   // line matches the committed render and nothing jumps on release. Returns the (copied)
   // shaft points to draw through, plus the heads SVG to append. End direction is the last
   // shaft segment (exact for straight/elbow, a close sample for arc/curved).
-  function previewHeads(src: Point[], arrow: string, head: string, headSize: number, col: string): { pts: Point[]; heads: string } {
+  function previewHeads(
+    src: Point[],
+    arrow: string,
+    head: string,
+    headSize: number,
+    col: string
+  ): { pts: Point[]; heads: string } {
     const pts = src.map((p) => ({ x: p.x, y: p.y }));
     const n = pts.length;
     if (n < 2 || arrow === 'none' || head === 'none') return { pts, heads: '' };
     const d2 = (a: Point, b: Point): number => Math.hypot(b.x - a.x, b.y - a.y);
     const along = (from: Point, toward: Point, d: number): Point => {
-      const L = d2(from, toward); if (L < 1e-4) return { x: from.x, y: from.y };
-      const t = Math.min(d, L) / L; return { x: from.x + (toward.x - from.x) * t, y: from.y + (toward.y - from.y) * t };
+      const L = d2(from, toward);
+      if (L < 1e-4) return { x: from.x, y: from.y };
+      const t = Math.min(d, L) / L;
+      return { x: from.x + (toward.x - from.x) * t, y: from.y + (toward.y - from.y) * t };
     };
     const gap = Math.max(8, headSize * 0.8);
     const inset = edgeHeadInset(head, headSize);
-    const last = { x: pts[n - 1]!.x, y: pts[n - 1]!.y }, first = { x: pts[0]!.x, y: pts[0]!.y };
-    const lastNbr = pts[n - 2]!, firstNbr = pts[1]!;
+    const last = { x: pts[n - 1]!.x, y: pts[n - 1]!.y },
+      first = { x: pts[0]!.x, y: pts[0]!.y };
+    const lastNbr = pts[n - 2]!,
+      firstNbr = pts[1]!;
     let heads = '';
     if (arrow === 'end' || arrow === 'both') {
       const ge = Math.min(gap, d2(last, lastNbr) * 0.55);
       const endTip = along(last, lastNbr, ge);
       pts[n - 1] = along(last, lastNbr, Math.min(ge + inset, d2(last, lastNbr) * 0.9));
       const L = d2(last, lastNbr) || 1;
-      heads += edgeArrowHead(endTip, (last.x - lastNbr.x) / L, (last.y - lastNbr.y) / L, headSize, col, head);
+      heads += edgeArrowHead(
+        endTip,
+        (last.x - lastNbr.x) / L,
+        (last.y - lastNbr.y) / L,
+        headSize,
+        col,
+        head
+      );
     }
     if (arrow === 'both') {
       const gs = Math.min(gap, d2(first, firstNbr) * 0.55);
       const startTip = along(first, firstNbr, gs);
       pts[0] = along(first, firstNbr, Math.min(gs + inset, d2(first, firstNbr) * 0.9));
-      const seg = pts[1]!;   // reversed first drawn segment = direction OUT of the source
+      const seg = pts[1]!; // reversed first drawn segment = direction OUT of the source
       const L = d2(startTip, seg) || 1;
-      heads += edgeArrowHead(startTip, (startTip.x - seg.x) / L, (startTip.y - seg.y) / L, headSize, col, head);
+      heads += edgeArrowHead(
+        startTip,
+        (startTip.x - seg.x) / L,
+        (startTip.y - seg.y) / L,
+        headSize,
+        col,
+        head
+      );
     }
     return { pts, heads };
   }
@@ -11707,7 +14338,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const el = liveEls.get(id);
       if (el && el.style.left) {
         const fo = frameOffsetOfEl(el);
-        rectById.set(id, { x: (parseFloat(el.style.left) || 0) + fo.x, y: (parseFloat(el.style.top) || 0) + fo.y, w: parseFloat(el.style.width) || 1, h: parseFloat(el.style.height) || 1 });
+        rectById.set(id, {
+          x: (parseFloat(el.style.left) || 0) + fo.x,
+          y: (parseFloat(el.style.top) || 0) + fo.y,
+          w: parseFloat(el.style.width) || 1,
+          h: parseFloat(el.style.height) || 1,
+        });
       } else {
         const r = boxRect(boxes[i], cfg);
         rectById.set(id, { x: r.x, y: r.y, w: r.w, h: r.h });
@@ -11736,7 +14372,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (!parts) continue;
       const a = edgeEndRect(parts.from, rectById);
       const z = edgeEndRect(parts.to, rectById);
-      if (!a || !z) continue;                       // a dangling id draws nothing
+      if (!a || !z) continue; // a dangling id draws nothing
       if (!isEdgePoint(parts.from) && !isEdgePoint(parts.to) && edgeNested(a, z)) continue;
       body += routedLineSvg(a, z, parts.decor);
     }
@@ -11773,16 +14409,34 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // Nested pair draws no line (mirrors hooks.js) - but ONLY when both ends are nodes;
       // a free point inside a box is a deliberate endpoint, not an overlap to suppress.
       if (!isEdgePoint(fromV) && !isEdgePoint(toV) && edgeNested(a, b)) continue;
-      const style = String((connectCfg.styleField && e[connectCfg.styleField]) || connectCfg.defaultStyle);
-      const col = cAttr(String((connectCfg.colorField && e[connectCfg.colorField]) || connectCfg.defaultColor));
-      const w = Math.min(20, Math.max(0.5, Number((connectCfg.widthField && e[connectCfg.widthField]) ?? connectCfg.defaultWidth) || 2.5));
-      const arrow = String((connectCfg.arrowField && e[connectCfg.arrowField]) || connectCfg.defaultArrow || 'none');
-      const head = String((connectCfg.headField && e[connectCfg.headField]) || connectCfg.defaultHead || 'triangle');
+      const style = String(
+        (connectCfg.styleField && e[connectCfg.styleField]) || connectCfg.defaultStyle
+      );
+      const col = cAttr(
+        String((connectCfg.colorField && e[connectCfg.colorField]) || connectCfg.defaultColor)
+      );
+      const w = Math.min(
+        20,
+        Math.max(
+          0.5,
+          Number((connectCfg.widthField && e[connectCfg.widthField]) ?? connectCfg.defaultWidth) ||
+            2.5
+        )
+      );
+      const arrow = String(
+        (connectCfg.arrowField && e[connectCfg.arrowField]) || connectCfg.defaultArrow || 'none'
+      );
+      const head = String(
+        (connectCfg.headField && e[connectCfg.headField]) || connectCfg.defaultHead || 'triangle'
+      );
       const raw = edgeWaypoints(a, b, style);
       if (raw.length < 2) continue;
       const { pts, heads } = previewHeads(raw, arrow, head, Math.max(9, w * 4), col);
-      const d = style === 'curved' ? smoothEdgePath(pts) : roundedEdgePath(pts, Math.min(16, w * 4 + 6));
-      body += `<path d="${d}" fill="none" stroke="${col}" stroke-width="${cf2(w)}" stroke-linejoin="round" stroke-linecap="round"/>` + heads;
+      const d =
+        style === 'curved' ? smoothEdgePath(pts) : roundedEdgePath(pts, Math.min(16, w * 4 + 6));
+      body +=
+        `<path d="${d}" fill="none" stroke="${col}" stroke-width="${cf2(w)}" stroke-linejoin="round" stroke-linecap="round"/>` +
+        heads;
     }
     connectLayer.innerHTML = body;
     connectLayer.style.display = '';
@@ -11805,10 +14459,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function drawLineRubber(from: Point, to: Point): void {
     const col = cAttr(drawnInkHex());
     const w = lineDraftWidth();
-    const head = 'open';                          // lineBoxSeed's default headEnd
+    const head = 'open'; // lineBoxSeed's default headEnd
     const headSize = Math.max(9, w * 4);
     const dirL = Math.hypot(to.x - from.x, to.y - from.y) || 1;
-    const ux = (to.x - from.x) / dirL, uy = (to.y - from.y) / dirL;
+    const ux = (to.x - from.x) / dirL,
+      uy = (to.y - from.y) / dirL;
     // Below the head's own length there is no room for both, so the dot stands in - the
     // same "there is an endpoint here" mark the connect rubber uses.
     const showHead = dirL > headSize;
@@ -11822,7 +14477,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       tip;
     connectLayer.style.display = '';
   }
-  /** The stroke width a line draft previews at: whatever the committed box will take - 
+  /** The stroke width a line draft previews at: whatever the committed box will take -
    *  the last path paint, else the tool's own `path` seed, else `penFinishDraw`'s own 4px
    *  last resort - so the rubber is not a different weight from the shape it becomes. */
   function lineDraftWidth(): number {
@@ -11845,46 +14500,69 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // underneath before we drop it (avoids a flash), then restore + clear.
   function endLiveConnectors(): void {
     if (!liveConnectHidden) return;
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (disposed) return;
-      setRealConnectorsHidden(false);
-      if (!selectedEdges.size) hideConnectLayer();
-    }));
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (disposed) return;
+        setRealConnectorsHidden(false);
+        if (!selectedEdges.size) hideConnectLayer();
+      })
+    );
   }
 
   // ── connector inspector (click a line → edit its bend / thickness / colour) ────
   // Connectors render in the tool's #tool-canvas svg (pointer-events:none) BEHIND the
   // cards, so the overlay hit-tests them itself: on a click that misses every box, the
   // nearest connector polyline within a small screen-px band is selected.
-  const edgeById = (eid: string): Box | null => getEdges().find((e) => e && String(e[cfg.idField]) === eid) || null;
+  const edgeById = (eid: string): Box | null =>
+    getEdges().find((e) => e && String(e[cfg.idField]) === eid) || null;
   function distToSeg(px: number, py: number, a: Point, b: Point): number {
-    const vx = b.x - a.x, vy = b.y - a.y, L2 = vx * vx + vy * vy;
+    const vx = b.x - a.x,
+      vy = b.y - a.y,
+      L2 = vx * vx + vy * vy;
     const t = L2 > 0 ? Math.max(0, Math.min(1, ((px - a.x) * vx + (py - a.y) * vy) / L2)) : 0;
     return Math.hypot(px - (a.x + vx * t), py - (a.y + vy * t));
   }
   function polylineDist(px: number, py: number, pts: Point[]): number {
     let d = Infinity;
-    for (let i = 0; i < pts.length - 1; i++) d = Math.min(d, distToSeg(px, py, pts[i]!, pts[i + 1]!));
+    for (let i = 0; i < pts.length - 1; i++)
+      d = Math.min(d, distToSeg(px, py, pts[i]!, pts[i + 1]!));
     return d;
   }
   function polylineMid(pts: Point[]): Point {
     if (pts.length < 2) return pts[0] || { x: 0, y: 0 };
     let total = 0;
-    for (let i = 0; i < pts.length - 1; i++) total += Math.hypot(pts[i + 1]!.x - pts[i]!.x, pts[i + 1]!.y - pts[i]!.y);
+    for (let i = 0; i < pts.length - 1; i++)
+      total += Math.hypot(pts[i + 1]!.x - pts[i]!.x, pts[i + 1]!.y - pts[i]!.y);
     let acc = 0;
     for (let i = 0; i < pts.length - 1; i++) {
       const seg = Math.hypot(pts[i + 1]!.x - pts[i]!.x, pts[i + 1]!.y - pts[i]!.y);
-      if (acc + seg >= total / 2) { const t = seg ? (total / 2 - acc) / seg : 0; return { x: pts[i]!.x + (pts[i + 1]!.x - pts[i]!.x) * t, y: pts[i]!.y + (pts[i + 1]!.y - pts[i]!.y) * t }; }
+      if (acc + seg >= total / 2) {
+        const t = seg ? (total / 2 - acc) / seg : 0;
+        return {
+          x: pts[i]!.x + (pts[i + 1]!.x - pts[i]!.x) * t,
+          y: pts[i]!.y + (pts[i + 1]!.y - pts[i]!.y) * t,
+        };
+      }
       acc += seg;
     }
     return pts[pts.length - 1]!;
   }
-  const edgeStyleOf = (e: Box): string => String((connectCfg?.styleField && e[connectCfg.styleField]) || connectCfg?.defaultStyle || 'elbow');
-  const edgeWidthOf = (e: Box): number => clampN(connectCfg?.widthField ? e[connectCfg.widthField] : undefined, connectCfg?.defaultWidth ?? 2.5, 0.5, 20);
+  const edgeStyleOf = (e: Box): string =>
+    String(
+      (connectCfg?.styleField && e[connectCfg.styleField]) || connectCfg?.defaultStyle || 'elbow'
+    );
+  const edgeWidthOf = (e: Box): number =>
+    clampN(
+      connectCfg?.widthField ? e[connectCfg.widthField] : undefined,
+      connectCfg?.defaultWidth ?? 2.5,
+      0.5,
+      20
+    );
   function edgePts(e: Box): Point[] | null {
     if (!connectCfg) return null;
     const boxes = getBoxes();
-    const a = boxRectById(boxes, String(e[connectCfg.fromField!])), b = boxRectById(boxes, String(e[connectCfg.toField!]));
+    const a = boxRectById(boxes, String(e[connectCfg.fromField!])),
+      b = boxRectById(boxes, String(e[connectCfg.toField!]));
     return a && b ? edgeWaypoints(a, b, edgeStyleOf(e)) : null;
   }
   // The connector id nearest to a native point, within ~9 screen px. null if none.
@@ -11908,7 +14586,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // so the edgeAt hit-test never runs more than once per frame.
   function updateHover(): void {
     hoverRaf = 0;
-    if (!connectCfg || selectedEdges.size || gesture || !lastPointer) { setHoverEdge(null); return; }
+    if (!connectCfg || selectedEdges.size || gesture || !lastPointer) {
+      setHoverEdge(null);
+      return;
+    }
     const nat = clientToNative(lastPointer.x, lastPointer.y);
     setHoverEdge(edgeAt(nat.x, nat.y));
   }
@@ -11921,7 +14602,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const pts = e && edgePts(e);
       if (e && pts) {
         const w = edgeWidthOf(e);
-        const d = edgeStyleOf(e) === 'curved' ? smoothEdgePath(pts) : roundedEdgePath(pts, Math.min(16, w * 4 + 6));
+        const d =
+          edgeStyleOf(e) === 'curved'
+            ? smoothEdgePath(pts)
+            : roundedEdgePath(pts, Math.min(16, w * 4 + 6));
         placeConnectLayer(metrics());
         connectLayer.innerHTML = `<path d="${d}" fill="none" stroke="#30ba78" stroke-width="${cf2(w + 6)}" stroke-linejoin="round" stroke-linecap="round" opacity="0.18"/>`;
         connectLayer.style.display = '';
@@ -11931,20 +14615,34 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
   }
   // The "primary" selected edge - drives the panel's displayed values + placement.
-  function primaryEdgeId(): string | null { for (const id of selectedEdges) return id; return null; }
+  function primaryEdgeId(): string | null {
+    for (const id of selectedEdges) return id;
+    return null;
+  }
   // Geometry for marquee edge-hit: does a connector's polyline overlap the drag rect?
-  function pointInRect(x: number, y: number, r: Rect): boolean { return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; }
+  function pointInRect(x: number, y: number, r: Rect): boolean {
+    return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+  }
   function segsCross(p1: Point, p2: Point, p3: Point, p4: Point): boolean {
-    const d = (a: Point, b: Point, c: Point): number => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-    const d1 = d(p3, p4, p1), d2 = d(p3, p4, p2), d3 = d(p1, p2, p3), d4 = d(p1, p2, p4);
-    return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
+    const d = (a: Point, b: Point, c: Point): number =>
+      (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    const d1 = d(p3, p4, p1),
+      d2 = d(p3, p4, p2),
+      d3 = d(p1, p2, p3),
+      d4 = d(p1, p2, p4);
+    return d1 > 0 !== d2 > 0 && d3 > 0 !== d4 > 0;
   }
   function polylineInRect(pts: Point[], r: Rect): boolean {
-    for (const p of pts) if (pointInRect(p.x, p.y, r)) return true;   // an endpoint inside
-    const c = [{ x: r.x, y: r.y }, { x: r.x + r.w, y: r.y }, { x: r.x + r.w, y: r.y + r.h }, { x: r.x, y: r.y + r.h }];
+    for (const p of pts) if (pointInRect(p.x, p.y, r)) return true; // an endpoint inside
+    const c = [
+      { x: r.x, y: r.y },
+      { x: r.x + r.w, y: r.y },
+      { x: r.x + r.w, y: r.y + r.h },
+      { x: r.x, y: r.y + r.h },
+    ];
     for (let i = 0; i < pts.length - 1; i++)
       for (let j = 0; j < 4; j++)
-        if (segsCross(pts[i]!, pts[i + 1]!, c[j]!, c[(j + 1) % 4]!)) return true;   // a segment crossing a side
+        if (segsCross(pts[i]!, pts[i + 1]!, c[j]!, c[(j + 1) % 4]!)) return true; // a segment crossing a side
     return false;
   }
   function edgesInRect(r: Rect): string[] {
@@ -11959,19 +14657,23 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     return ids;
   }
   // Select a connector. `additive` (shift/⌘-click) toggles it in the current set;
-  // otherwise it becomes the sole selection. Either way it clears the card selection - 
+  // otherwise it becomes the sole selection. Either way it clears the card selection -
   // a marquee is what mixes cards + connectors (see the marquee gesture end).
   function selectEdge(eid: string, additive?: boolean): void {
     setHoverEdge(null);
     if (additive && selectedEdges.size) {
-      if (selectedEdges.has(eid)) selectedEdges.delete(eid); else selectedEdges.add(eid);
-      if (!selectedEdges.size) { deselectEdge(); return; }
+      if (selectedEdges.has(eid)) selectedEdges.delete(eid);
+      else selectedEdges.add(eid);
+      if (!selectedEdges.size) {
+        deselectEdge();
+        return;
+      }
     } else {
       selectedEdges = new Set([eid]);
     }
-    selection = new Set<string>();     // a connector and a card can't be selected by a plain click
-    renderChrome();                    // clear any card chrome + draw the highlight(s)
-    openEdgePanel();                   // rebuild (count / values may have changed)
+    selection = new Set<string>(); // a connector and a card can't be selected by a plain click
+    renderChrome(); // clear any card chrome + draw the highlight(s)
+    openEdgePanel(); // rebuild (count / values may have changed)
   }
   function deselectEdge(): void {
     if (!selectedEdges.size && !edgePanel) return;
@@ -11979,7 +14681,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     closeEdgePanel();
     hideConnectLayer();
   }
-  function closeEdgePanel(): void { edgePanel?.remove(); edgePanel = null; }
+  function closeEdgePanel(): void {
+    edgePanel?.remove();
+    edgePanel = null;
+  }
   // Redraw EVERY selected edge's highlight (native coords in the connect layer) + keep
   // the panel over the primary edge. Prunes any edge whose line/box vanished.
   function refreshEdgeChrome(): void {
@@ -11995,13 +14700,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // Match the tool hook's path choice: a dashed/dotted line is drawn as sharp
       // segments (no smooth curve), so the highlight follows suit; solid honours curved.
       const dashV = String((connectCfg.dashField && e[connectCfg.dashField]) || 'solid');
-      const d = dashV !== 'solid' ? roundedEdgePath(pts, 0)
-        : edgeStyleOf(e) === 'curved' ? smoothEdgePath(pts)
-          : roundedEdgePath(pts, Math.min(16, w * 4 + 6));
+      const d =
+        dashV !== 'solid'
+          ? roundedEdgePath(pts, 0)
+          : edgeStyleOf(e) === 'curved'
+            ? smoothEdgePath(pts)
+            : roundedEdgePath(pts, Math.min(16, w * 4 + 6));
       html += `<path d="${d}" fill="none" stroke="#30ba78" stroke-width="${cf2(w + 8)}" stroke-linejoin="round" stroke-linecap="round" opacity="0.35"/>`;
     }
-    if (alive.size !== selectedEdges.size) selectedEdges = alive;   // drop the vanished
-    if (!selectedEdges.size) { deselectEdge(); return; }
+    if (alive.size !== selectedEdges.size) selectedEdges = alive; // drop the vanished
+    if (!selectedEdges.size) {
+      deselectEdge();
+      return;
+    }
     placeConnectLayer(metrics());
     connectLayer.innerHTML = html;
     connectLayer.style.display = '';
@@ -12011,8 +14722,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function setEdgeField(field: string | undefined, value: unknown): void {
     if (!connectCfg || !selectedEdges.size || !field) return;
     const edges = getEdges();
-    commitEdges(edges.map((e) => (e && selectedEdges.has(String(e[cfg.idField])) ? { ...e, [field]: value as InputValue } : e)));
-    refreshEdgeChrome();               // bend/thickness change → re-highlight + reposition
+    commitEdges(
+      edges.map((e) =>
+        e && selectedEdges.has(String(e[cfg.idField])) ? { ...e, [field]: value as InputValue } : e
+      )
+    );
+    refreshEdgeChrome(); // bend/thickness change → re-highlight + reposition
   }
   function deleteSelectedEdge(): void {
     if (!connectCfg || !selectedEdges.size) return;
@@ -12027,8 +14742,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!pts) return;
     const s = nativeToStage(polylineMid(pts).x, polylineMid(pts).y, metrics());
     const sr = stageEl.getBoundingClientRect();
-    edgePanel.style.left = Math.max(6, Math.min(s.x + 14, sr.width - edgePanel.offsetWidth - 8)) + 'px';
-    edgePanel.style.top = Math.max(6, Math.min(s.y + 12, sr.height - edgePanel.offsetHeight - 8)) + 'px';
+    edgePanel.style.left =
+      Math.max(6, Math.min(s.x + 14, sr.width - edgePanel.offsetWidth - 8)) + 'px';
+    edgePanel.style.top =
+      Math.max(6, Math.min(s.y + 12, sr.height - edgePanel.offsetHeight - 8)) + 'px';
   }
   function openEdgePanel(): void {
     closeEdgePanel();
@@ -12036,9 +14753,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!connectCfg || !pid) return;
     const e = edgeById(pid);
     if (!e) return;
-    const nSel = selectedEdges.size;   // >1 → the panel edits them ALL; values shown are the primary's
-    const styleF = connectCfg.styleField, arrowF = connectCfg.arrowField, dashF = connectCfg.dashField;
-    const widthF = connectCfg.widthField, colorF = connectCfg.colorField, headF = connectCfg.headField;
+    const nSel = selectedEdges.size; // >1 → the panel edits them ALL; values shown are the primary's
+    const styleF = connectCfg.styleField,
+      arrowF = connectCfg.arrowField,
+      dashF = connectCfg.dashField;
+    const widthF = connectCfg.widthField,
+      colorF = connectCfg.colorField,
+      headF = connectCfg.headField;
     const styleCur = edgeStyleOf(e);
     const arrowCur = String((arrowF && e[arrowF]) || connectCfg.defaultArrow || 'end');
     const headCur = String((headF && e[headF]) || connectCfg.defaultHead || 'triangle');
@@ -12047,34 +14768,88 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const colorCur = String((colorF && e[colorF]) || connectCfg.defaultColor || '#94a3b8');
     // Arrowhead-shape glyphs for the segmented picker (a shaft + the head, pointing right).
     const HEAD_CHOICES: Array<[string, string, string]> = [
-      ['triangle', t('Triangle'), '<line x1="3" y1="12" x2="13" y2="12"/><path d="M12 8l7 4-7 4Z" fill="currentColor" stroke="none"/>'],
-      ['open', t('Open'), '<line x1="3" y1="12" x2="19" y2="12"/><path d="M14 7l6 5-6 5" fill="none"/>'],
-      ['circle', t('Circle'), '<line x1="3" y1="12" x2="13" y2="12"/><path d="M20 12a3.3 3.3 0 1 1-6.6 0 3.3 3.3 0 0 1 6.6 0Z" fill="currentColor" stroke="none"/>'],
-      ['diamond', t('Diamond'), '<line x1="3" y1="12" x2="11" y2="12"/><path d="M11 12l4.5-4 4.5 4-4.5 4Z" fill="currentColor" stroke="none"/>'],
-      ['bar', t('Bar'), '<line x1="3" y1="12" x2="18" y2="12"/><line x1="18" y1="6" x2="18" y2="18"/>'],
+      [
+        'triangle',
+        t('Triangle'),
+        '<line x1="3" y1="12" x2="13" y2="12"/><path d="M12 8l7 4-7 4Z" fill="currentColor" stroke="none"/>',
+      ],
+      [
+        'open',
+        t('Open'),
+        '<line x1="3" y1="12" x2="19" y2="12"/><path d="M14 7l6 5-6 5" fill="none"/>',
+      ],
+      [
+        'circle',
+        t('Circle'),
+        '<line x1="3" y1="12" x2="13" y2="12"/><path d="M20 12a3.3 3.3 0 1 1-6.6 0 3.3 3.3 0 0 1 6.6 0Z" fill="currentColor" stroke="none"/>',
+      ],
+      [
+        'diamond',
+        t('Diamond'),
+        '<line x1="3" y1="12" x2="11" y2="12"/><path d="M11 12l4.5-4 4.5 4-4.5 4Z" fill="currentColor" stroke="none"/>',
+      ],
+      [
+        'bar',
+        t('Bar'),
+        '<line x1="3" y1="12" x2="18" y2="12"/><line x1="18" y1="6" x2="18" y2="18"/>',
+      ],
     ];
     // Bend has many orthogonal flavours → a dropdown (kept in sync with tool.json's
     // `style` options + hooks.js waypoints()).
     const STYLE_OPTS: Array<[string, string]> = [
-      ['straight', 'Straight'], ['elbow', 'Elbow - auto'], ['elbow-v', 'Elbow - vertical'],
-      ['elbow-h', 'Elbow - horizontal'], ['elbow-src', 'Bend at start'], ['elbow-tgt', 'Bend at end'],
-      ['curved', 'Curved - auto'], ['curved-v', 'Curved - vertical'], ['curved-h', 'Curved - horizontal'],
-      ['arc', 'Arc - bow'], ['arc-wide', 'Arc - wide bow'], ['arc-flip', 'Arc - reverse bow'], ['arc-flip-wide', 'Arc - wide reverse'],
+      ['straight', 'Straight'],
+      ['elbow', 'Elbow - auto'],
+      ['elbow-v', 'Elbow - vertical'],
+      ['elbow-h', 'Elbow - horizontal'],
+      ['elbow-src', 'Bend at start'],
+      ['elbow-tgt', 'Bend at end'],
+      ['curved', 'Curved - auto'],
+      ['curved-v', 'Curved - vertical'],
+      ['curved-h', 'Curved - horizontal'],
+      ['arc', 'Arc - bow'],
+      ['arc-wide', 'Arc - wide bow'],
+      ['arc-flip', 'Arc - reverse bow'],
+      ['arc-flip-wide', 'Arc - wide reverse'],
     ];
     // `row()` below wraps controls in a <div>, not a <label>, so this select gets no
     // implicit name from its row text - it names itself.
     const styleSelect = `<select class="field-select field-select--sm" data-ep="style" aria-label="${escape(t('Connector bend'))}">${STYLE_OPTS.map(([v, l]) => `<option value="${v}"${styleCur === v ? ' selected' : ''}>${escape(t(l))}</option>`).join('')}</select>`;
-    const row = (lbl: string, ctrl: string): string => `<div class="fc-row"><span class="fc-row-lbl"><span>${lbl}</span></span>${ctrl}</div>`;
+    const row = (lbl: string, ctrl: string): string =>
+      `<div class="fc-row"><span class="fc-row-lbl"><span>${lbl}</span></span>${ctrl}</div>`;
     const p = document.createElement('div');
     p.className = 'fc-panel fc-edge-panel';
     p.innerHTML =
-      (nSel > 1 ? `<div class="fc-edge-count">${t('{n} connectors - editing all', { n: nSel })}</div>` : '') +
+      (nSel > 1
+        ? `<div class="fc-edge-count">${t('{n} connectors - editing all', { n: nSel })}</div>`
+        : '') +
       (styleF ? row(t('Bend'), styleSelect) : '') +
-      (arrowF ? row(t('Arrow'), segHtml(arrowF, arrowCur, [['none', t('None')], ['end', t('End')], ['both', t('Both')]])) : '') +
+      (arrowF
+        ? row(
+            t('Arrow'),
+            segHtml(arrowF, arrowCur, [
+              ['none', t('None')],
+              ['end', t('End')],
+              ['both', t('Both')],
+            ])
+          )
+        : '') +
       (headF ? row(t('Head'), segHtml(headF, headCur, HEAD_CHOICES)) : '') +
-      (dashF ? row(t('Line'), segHtml(dashF, dashCur, [['solid', t('Solid')], ['dashed', t('Dashed')], ['dotted', t('Dotted')]])) : '') +
-      (widthF ? `<label class="fc-row"><span class="fc-row-lbl"><span>${t('Thickness')}</span></span><input type="range" class="field-range" data-ep="width" min="0.5" max="12" step="0.5" value="${widthCur}"><b data-ep-val="width">${widthCur}</b></label>` : '') +
-      (colorF ? `<label class="fc-row"><span class="fc-row-lbl"><span>${t('Colour')}</span></span><span class="fc-cfield">${colorFieldHtml('fc-edge-color', colorCur, { float: true })}</span></label>` : '') +
+      (dashF
+        ? row(
+            t('Line'),
+            segHtml(dashF, dashCur, [
+              ['solid', t('Solid')],
+              ['dashed', t('Dashed')],
+              ['dotted', t('Dotted')],
+            ])
+          )
+        : '') +
+      (widthF
+        ? `<label class="fc-row"><span class="fc-row-lbl"><span>${t('Thickness')}</span></span><input type="range" class="field-range" data-ep="width" min="0.5" max="12" step="0.5" value="${widthCur}"><b data-ep-val="width">${widthCur}</b></label>`
+        : '') +
+      (colorF
+        ? `<label class="fc-row"><span class="fc-row-lbl"><span>${t('Colour')}</span></span><span class="fc-cfield">${colorFieldHtml('fc-edge-color', colorCur, { float: true })}</span></label>`
+        : '') +
       `<div class="fc-row fc-edge-actions"><button type="button" class="fc-cbtn fc-danger" data-ep="del">${icon(SVG.trash)}<span>${nSel > 1 ? t('Delete {n} lines', { n: nSel }) : t('Delete line')}</span></button></div>`;
     p.addEventListener('pointerdown', (ev) => ev.stopPropagation());
     wireSegs(p, (field, v) => setEdgeField(field, v));
@@ -12090,8 +14865,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         setEdgeField(widthF, Number(rng.value));
       });
     }
-    if (colorF) wireColorField(p, { onChange: (id, val) => { if (id === 'fc-edge-color') setEdgeField(colorF, unwrapColor(val)); } });
-    p.querySelector<HTMLButtonElement>('[data-ep="del"]')?.addEventListener('click', (ev) => { ev.stopPropagation(); deleteSelectedEdge(); });
+    if (colorF)
+      wireColorField(p, {
+        onChange: (id, val) => {
+          if (id === 'fc-edge-color') setEdgeField(colorF, unwrapColor(val));
+        },
+      });
+    p.querySelector<HTMLButtonElement>('[data-ep="del"]')?.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      deleteSelectedEdge();
+    });
     stageEl.appendChild(p);
     edgePanel = p;
     positionEdgePanel();
@@ -12102,7 +14885,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function scheduleSync(): void {
     if (syncScheduled || disposed) return;
     syncScheduled = true;
-    requestAnimationFrame(() => { syncScheduled = false; if (!gesture || gesture.type === 'tap') renderChrome(); });
+    requestAnimationFrame(() => {
+      syncScheduled = false;
+      if (!gesture || gesture.type === 'tap') renderChrome();
+    });
   }
 
   // During a gesture, reposition chrome from the live DOM (which we just mutated).
@@ -12114,11 +14900,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const el = liveBoxEl(id);
       // el.style.left/top are FRAME-LOCAL in multi-page mode; add the frame offset back
       // so the selection chrome (which paints in global native → stage coords) lines up.
-      if (el) { const fo = frameOffsetOfEl(el); rects.set(i, {
-        x: (parseFloat(el.style.left) || 0) + fo.x, y: (parseFloat(el.style.top) || 0) + fo.y,
-        w: parseFloat(el.style.width) || 1, h: parseFloat(el.style.height) || 1,
-        rot: rotOf(el),
-      }); }
+      if (el) {
+        const fo = frameOffsetOfEl(el);
+        rects.set(i, {
+          x: (parseFloat(el.style.left) || 0) + fo.x,
+          y: (parseFloat(el.style.top) || 0) + fo.y,
+          w: parseFloat(el.style.width) || 1,
+          h: parseFloat(el.style.height) || 1,
+          rot: rotOf(el),
+        });
+      }
     }
     paintChrome(boxes, rects);
   }
@@ -12152,7 +14943,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function notifyActiveArtboard(id: string): void {
     if (id === artboardNotifiedId) return;
     artboardNotifiedId = id;
-    for (const f of [...artboardListeners]) { try { f(id); } catch (e) { console.error(e); } }
+    for (const f of [...artboardListeners]) {
+      try {
+        f(id);
+      } catch (e) {
+        console.error(e);
+      }
+    }
   }
   function emitActiveArtboard(): void {
     // The rail's paint swatch follows the same active artboard (plans/179 A1), and this
@@ -12179,10 +14976,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // Ahead of the `activeArtboardKey` dedupe below, which also folds in the PLAYHEAD's
     // artboard and the two sizes - none of which change which board the editor is "on".
     notifyActiveArtboard(frames.length ? activeId : '');
-    const sel = activeId ? frames.find((b) => String(b[cfg.idField] ?? '') === activeId) ?? null : null;
-    const timedEl = canvasEl.querySelector<HTMLElement>('[data-pdf-page][data-t-start]:not(.seq-off)');
+    const sel = activeId
+      ? (frames.find((b) => String(b[cfg.idField] ?? '') === activeId) ?? null)
+      : null;
+    const timedEl = canvasEl.querySelector<HTMLElement>(
+      '[data-pdf-page][data-t-start]:not(.seq-off)'
+    );
     const timedId = timedEl?.getAttribute('data-frame-id') ?? '';
-    const timed = timedId ? frames.find((b) => String(b[cfg.idField] ?? '') === timedId) ?? null : null;
+    const timed = timedId
+      ? (frames.find((b) => String(b[cfg.idField] ?? '') === timedId) ?? null)
+      : null;
     const detail = { sel: info(sel), timed: info(timed) };
     const key = JSON.stringify(detail);
     if (key === activeArtboardKey) return;
@@ -12191,7 +14994,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     else delete canvasEl.dataset.fcActiveFrame;
     // Fires at mount too (renderChrome), so construct from the element's own realm -
     // a bare CustomEvent here can resolve to Node's own in a jsdom harness.
-    const Ev = (canvasEl.ownerDocument?.defaultView?.CustomEvent ?? CustomEvent) as typeof CustomEvent;
+    const Ev = (canvasEl.ownerDocument?.defaultView?.CustomEvent ??
+      CustomEvent) as typeof CustomEvent;
     canvasEl.dispatchEvent(new Ev('fc-artboard', { bubbles: true, detail }));
   }
 
@@ -12233,29 +15037,40 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const frames = boxes
       .map((b, i) => ({ b, i }))
       .filter(({ b }) => String(b?.[cfg.kindField]) === fk)
-      .sort((a, c) => (num(a.b?.[of]) - num(c.b?.[of])) || (num(a.b?.[cfg.xField]) - num(c.b?.[cfg.xField])));
+      .sort(
+        (a, c) => num(a.b?.[of]) - num(c.b?.[of]) || num(a.b?.[cfg.xField]) - num(c.b?.[cfg.xField])
+      );
     if (!frames.length) {
       if (frameLabels.childElementCount) frameLabels.replaceChildren();
       frameLabelKey = '';
       return;
     }
     // The NAME is part of the key: a rename has to repaint the tab (plans/179 A10).
-    const key = frames.map(({ b, i }, n) =>
-      `${idOf(b, i)}:${n}:${selection.has(idOf(b, i)) ? 1 : 0}:${frameLabelText(b, n)}`).join('|');
+    const key = frames
+      .map(
+        ({ b, i }, n) =>
+          `${idOf(b, i)}:${n}:${selection.has(idOf(b, i)) ? 1 : 0}:${frameLabelText(b, n)}`
+      )
+      .join('|');
     // Never rebuild under an open rename - the input lives in this container and a
     // replaceChildren would delete it mid-word.
     if (key !== frameLabelKey && !renamingFrameId) {
       frameLabelKey = key;
-      frameLabels.replaceChildren(...frames.map(({ b, i }, n) => {
-        const id = idOf(b, i);
-        const el = document.createElement('button');
-        el.type = 'button';
-        el.className = 'fc-frame-label' + (selection.has(id) ? ' is-active' : '');
-        el.dataset.frameId = id;
-        el.textContent = frameLabelText(b, n);
-        if (nameField) { el.title = t('Double-click to rename'); el.setAttribute('aria-keyshortcuts', 'F2 Enter'); }
-        return el;
-      }));
+      frameLabels.replaceChildren(
+        ...frames.map(({ b, i }, n) => {
+          const id = idOf(b, i);
+          const el = document.createElement('button');
+          el.type = 'button';
+          el.className = 'fc-frame-label' + (selection.has(id) ? ' is-active' : '');
+          el.dataset.frameId = id;
+          el.textContent = frameLabelText(b, n);
+          if (nameField) {
+            el.title = t('Double-click to rename');
+            el.setAttribute('aria-keyshortcuts', 'F2 Enter');
+          }
+          return el;
+        })
+      );
     }
     const m = metrics();
     const kids = frameLabels.children;
@@ -12272,7 +15087,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // mid-rename does not leave it behind.
       if (renamingFrameId && idOf(fb, frames[n]!.i) === renamingFrameId) {
         const inp = frameLabels.querySelector<HTMLElement>('.fc-frame-rename');
-        if (inp) { inp.style.left = left; inp.style.top = top; }
+        if (inp) {
+          inp.style.left = left;
+          inp.style.top = top;
+        }
       }
     }
   }
@@ -12335,20 +15153,26 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           commit(bs.map((b, n) => (n === j ? { ...b, [nameField]: v } : b)));
         }
       }
-      frameLabelKey = '';          // force the tab to repaint with the new name
+      frameLabelKey = ''; // force the tab to repaint with the new name
       renderChrome();
       // The repaint replaced the tab, so `el` is detached - find the new one by id.
       if (refocus) {
-        const back = [...frameLabels.querySelectorAll<HTMLElement>('.fc-frame-label')]
-          .find((l) => (l.dataset.frameId || '') === fid);
+        const back = [...frameLabels.querySelectorAll<HTMLElement>('.fc-frame-label')].find(
+          (l) => (l.dataset.frameId || '') === fid
+        );
         back?.focus();
       }
     };
     // Typing a name must not reach the canvas shortcuts (every letter is a tool).
     input.addEventListener('keydown', (e) => {
       e.stopPropagation();
-      if (e.key === 'Enter') { e.preventDefault(); finish(true, true); }
-      else if (e.key === 'Escape') { e.preventDefault(); finish(false, true); }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        finish(true, true);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        finish(false, true);
+      }
     });
     input.addEventListener('blur', () => finish(true));
     input.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -12363,7 +15187,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // M2 - reposition the frame scrim only when the artboard geometry changed (pan/
     // zoom/resize set scrimDirty); a box drag/hover/selection change never moves it.
     const movedStage = scrimDirty;
-    if (scrimDirty) { positionFrameScrim(); scrimDirty = false; }
+    if (scrimDirty) {
+      positionFrameScrim();
+      scrimDirty = false;
+    }
     // Ghosts and motion paths are both positioned in stage px from the MODEL, exactly
     // like the selection outline, so they have to be re-placed whenever the artboard's
     // geometry or the model moves. Skipped on the LIVE path (`liveRects` non-null = a
@@ -12374,7 +15201,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     //     dragged, so rebuilding it sixty times a second buys nothing;
     //   • a MOTION PATH is of the box being dragged, and skipping it is what holds the
     //     line still at the pose the drag started from. Not a compromise: no gesture
-    //     here writes the model while the pointer is down (see writeGradSpec's note - 
+    //     here writes the model while the pointer is down (see writeGradSpec's note -
     //     it is the discipline all of them follow), `getBoxes()` hands back the input's
     //     own array, and `samplePaths` memoises on that array's IDENTITY plus the
     //     selection and the artboard size. So a paint per pointermove would re-run the
@@ -12382,7 +15209,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     //     follow a live drag, and the honest picture is the authored one it is still
     //     describing. The commit at pointerup replaces the array, which is the moment
     //     the path is allowed to move.
-    if (!liveRects || movedStage) { paintOnion(); paintMotion(); }
+    if (!liveRects || movedStage) {
+      paintOnion();
+      paintMotion();
+    }
     // ── THE ONE RULE, enforcement point 2 of 3: RETENTION (see the file header) ──
     // The chrome below is positioned from the MODEL, mapped through the playhead's own
     // pose (`chromeRect`) - and a HIDDEN box has no pose, because the applier hands its
@@ -12408,7 +15238,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     hideOffPlayhead();
     // While editing text, suppress selection chrome + ctxbar; just keep the floating
     // format bar tracking the box as the stage pans/zooms.
-    if (editing) { clearChrome(); hideCtxBar(); positionFmtBar(); return; }
+    if (editing) {
+      clearChrome();
+      hideCtxBar();
+      positionFmtBar();
+      return;
+    }
     // Pen mode owns the chrome outright - no selection outline, no resize handles, and the
     // object bar replaced by the pen's own. Same suppression a text edit does, for the same
     // reason: the box's frame is not what is being manipulated.
@@ -12431,7 +15266,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const m = metrics();
     // Gradient handles sit UNDER the selection chrome in z-order but are painted here
     // so they track the same pan/zoom sync (and self-exit if their box went away).
-    // Gradient mode belongs to ONE box. If the selection moved on, leave the mode - 
+    // Gradient mode belongs to ONE box. If the selection moved on, leave the mode -
     // otherwise the ctx bar rebuilds for the new box while the Fill field and Delete
     // still write to the old one, which is silent, wrong, and very hard to spot.
     if (gradEdit != null && !(idx.length === 1 && idOf(boxes[idx[0]!], idx[0]!) === gradEdit)) {
@@ -12440,10 +15275,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     }
     paintGradChrome(boxes, m);
     // M1 - build the outline(s) + handles ONCE per selection set, then only reposition.
-    const key = idx.length ? idx.map((i) => idOf(boxes[i], i)).sort().join(',') : '';
+    const key = idx.length
+      ? idx
+          .map((i) => idOf(boxes[i], i))
+          .sort()
+          .join(',')
+      : '';
     if (key !== chromeKey) {
       chromeKey = key;
-      buildChrome(idx.length);            // (re)create nodes for the new set
+      buildChrome(idx.length); // (re)create nodes for the new set
     }
     positionChrome(boxes, idx, liveRects, m);
     // Contextual bar - rebuilt when the selection set changes OR when the VALUES it shows
@@ -12455,7 +15295,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (ctxKey !== ctxSelKey) {
       ctxSelKey = ctxKey;
       if (idx.length) rebuildCtxBar(boxes, idx);
-      else { hideCtxBar(); closeMorePanel(); multiTapMode = false; }
+      else {
+        hideCtxBar();
+        closeMorePanel();
+        multiTapMode = false;
+      }
     }
     // Now that the ctx bar exists (and cannot close the panel again this frame), honour
     // a pending request to open the gradient panel, anchored on the live button.
@@ -12488,7 +15332,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         el.setAttribute('aria-label', txt ? tRaw('Card: {text}', { text: txt }) : t('Card'));
       }
       const on = selection.has(id);
-      if ((el.getAttribute('aria-pressed') === 'true') !== on) el.setAttribute('aria-pressed', on ? 'true' : 'false');
+      if ((el.getAttribute('aria-pressed') === 'true') !== on)
+        el.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
   }
 
@@ -12506,12 +15351,14 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (count === 1) {
       const o = document.createElement('div');
       o.className = 'fc-outline';
-      outlines.push(o); chrome.appendChild(o);
+      outlines.push(o);
+      chrome.appendChild(o);
       for (const h of HANDLES) {
         const el = document.createElement('div');
         el.className = 'fc-handle fc-h-' + h;
         el.addEventListener('pointerdown', (e) => onHandlePointerDown(e, h));
-        handles.push(el); chrome.appendChild(el);
+        handles.push(el);
+        chrome.appendChild(el);
       }
       stem = document.createElement('div');
       stem.className = 'fc-rot-stem';
@@ -12525,7 +15372,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       for (let k = 0; k < count; k++) {
         const o = document.createElement('div');
         o.className = 'fc-outline';
-        outlines.push(o); chrome.appendChild(o);
+        outlines.push(o);
+        chrome.appendChild(o);
       }
       groupOutline = document.createElement('div');
       groupOutline.className = 'fc-outline fc-group-outline';
@@ -12534,7 +15382,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         const el = document.createElement('div');
         el.className = 'fc-handle fc-h-' + name;
         el.addEventListener('pointerdown', (e) => onGroupHandleDown(e, name));
-        handles.push(el); chrome.appendChild(el);
+        handles.push(el);
+        chrome.appendChild(el);
       }
       stem = document.createElement('div');
       stem.className = 'fc-rot-stem';
@@ -12581,7 +15430,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   // Reposition the (already-built) chrome nodes for the current selection. Pure style
   // writes - pixel-identical to the old build path, just no node churn.
-  function positionChrome(boxes: Box[], idx: number[], liveRects: Map<number, Rect> | null, m: Metrics): void {
+  function positionChrome(
+    boxes: Box[],
+    idx: number[],
+    liveRects: Map<number, Rect> | null,
+    m: Metrics
+  ): void {
     const nodes = chromeNodes;
     if (!nodes) return;
     // Resolved ONCE per sync: a posed rect costs a `querySelector` per box, and the
@@ -12607,13 +15461,24 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function positionHandles(r: Rect, m: Metrics): void {
     const nodes = chromeNodes;
     if (!nodes) return;
-    const box = { [cfg.xField]: r.x, [cfg.yField]: r.y, [cfg.wField]: r.w, [cfg.hField]: r.h, [cfg.rotationField]: r.rot };
+    const box = {
+      [cfg.xField]: r.x,
+      [cfg.yField]: r.y,
+      [cfg.wField]: r.w,
+      [cfg.hField]: r.h,
+      [cfg.rotationField]: r.rot,
+    };
     const corners = boxCorners(box, cfg).map((p: Point) => nativeToStage(p.x, p.y, m)); // TL,TR,BR,BL
     const mid = (a: Point, b: Point): Point => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
     const pos: Record<HandleName, Point> = {
-      nw: corners[0]!, ne: corners[1]!, se: corners[2]!, sw: corners[3]!,
-      n: mid(corners[0]!, corners[1]!), e: mid(corners[1]!, corners[2]!),
-      s: mid(corners[2]!, corners[3]!), w: mid(corners[3]!, corners[0]!),
+      nw: corners[0]!,
+      ne: corners[1]!,
+      se: corners[2]!,
+      sw: corners[3]!,
+      n: mid(corners[0]!, corners[1]!),
+      e: mid(corners[1]!, corners[2]!),
+      s: mid(corners[2]!, corners[3]!),
+      w: mid(corners[3]!, corners[0]!),
     };
     HANDLES.forEach((h, k) => {
       const el = nodes.handles[k]!;
@@ -12627,14 +15492,19 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const c = nativeToStage(r.x + r.w / 2, r.y + r.h / 2, m);
     const bottom = pos.s;
     const len = Math.hypot(bottom.x - c.x, bottom.y - c.y) || 1;
-    const ux = (bottom.x - c.x) / len, uy = (bottom.y - c.y) / len;
+    const ux = (bottom.x - c.x) / len,
+      uy = (bottom.y - c.y) / len;
     const rp = { x: bottom.x + ux * ROT_OFFSET, y: bottom.y + uy * ROT_OFFSET };
     if (nodes.stem) {
-      nodes.stem.style.left = bottom.x + 'px'; nodes.stem.style.top = bottom.y + 'px';
+      nodes.stem.style.left = bottom.x + 'px';
+      nodes.stem.style.top = bottom.y + 'px';
       nodes.stem.style.width = ROT_OFFSET + 'px';
-      nodes.stem.style.transform = `rotate(${Math.atan2(uy, ux) * 180 / Math.PI}deg)`;
+      nodes.stem.style.transform = `rotate(${(Math.atan2(uy, ux) * 180) / Math.PI}deg)`;
     }
-    if (nodes.rot) { nodes.rot.style.left = rp.x + 'px'; nodes.rot.style.top = rp.y + 'px'; }
+    if (nodes.rot) {
+      nodes.rot.style.left = rp.x + 'px';
+      nodes.rot.style.top = rp.y + 'px';
+    }
   }
 
   // Axis-aligned native AABB over already-resolved rects (rotation-aware).
@@ -12643,7 +15513,12 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     for (const r of rects) {
       for (const p of boxCorners(rectAsBox(r), cfg)) {
         a = a
-          ? { minX: Math.min(a.minX, p.x), minY: Math.min(a.minY, p.y), maxX: Math.max(a.maxX, p.x), maxY: Math.max(a.maxY, p.y) }
+          ? {
+              minX: Math.min(a.minX, p.x),
+              minY: Math.min(a.minY, p.y),
+              maxX: Math.max(a.maxX, p.x),
+              maxY: Math.max(a.maxY, p.y),
+            }
           : { minX: p.x, minY: p.y, maxX: p.x, maxY: p.y };
       }
     }
@@ -12653,7 +15528,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // The same AABB over the AUTHORED geometry - live DOM rects during a gesture, else
   // the model. This is what a group GESTURE anchors on (its scale/rotate write the
   // model), which is why it is deliberately not the posed one `positionChrome` draws.
-  function groupAABBNative(idx: number[], boxes: Box[], liveRects: Map<number, Rect> | null): Bounds {
+  function groupAABBNative(
+    idx: number[],
+    boxes: Box[],
+    liveRects: Map<number, Rect> | null
+  ): Bounds {
     return aabbOfRects(idx.map((i) => (liveRects && liveRects.get(i)) || boxRect(boxes[i], cfg)));
   }
 
@@ -12665,14 +15544,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const nodes = chromeNodes;
     if (!nodes) return;
     const corners: Record<Corner, Point> = {
-      nw: nativeToStage(a.minX, a.minY, m), ne: nativeToStage(a.maxX, a.minY, m),
-      se: nativeToStage(a.maxX, a.maxY, m), sw: nativeToStage(a.minX, a.maxY, m),
+      nw: nativeToStage(a.minX, a.minY, m),
+      ne: nativeToStage(a.maxX, a.minY, m),
+      se: nativeToStage(a.maxX, a.maxY, m),
+      sw: nativeToStage(a.minX, a.maxY, m),
     };
     if (nodes.groupOutline) {
       nodes.groupOutline.style.left = corners.nw.x + 'px';
       nodes.groupOutline.style.top = corners.nw.y + 'px';
-      nodes.groupOutline.style.width = (corners.ne.x - corners.nw.x) + 'px';
-      nodes.groupOutline.style.height = (corners.sw.y - corners.nw.y) + 'px';
+      nodes.groupOutline.style.width = corners.ne.x - corners.nw.x + 'px';
+      nodes.groupOutline.style.height = corners.sw.y - corners.nw.y + 'px';
     }
     (['nw', 'ne', 'se', 'sw'] as Corner[]).forEach((name, k) => {
       const el = nodes.handles[k]!;
@@ -12681,16 +15562,26 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     });
     const bc = { x: (corners.sw.x + corners.se.x) / 2, y: (corners.sw.y + corners.se.y) / 2 };
     if (nodes.stem) {
-      nodes.stem.style.left = bc.x + 'px'; nodes.stem.style.top = bc.y + 'px';
-      nodes.stem.style.width = '30px'; nodes.stem.style.transform = 'rotate(90deg)';
+      nodes.stem.style.left = bc.x + 'px';
+      nodes.stem.style.top = bc.y + 'px';
+      nodes.stem.style.width = '30px';
+      nodes.stem.style.transform = 'rotate(90deg)';
     }
-    if (nodes.rot) { nodes.rot.style.left = bc.x + 'px'; nodes.rot.style.top = (bc.y + 30) + 'px'; }
+    if (nodes.rot) {
+      nodes.rot.style.left = bc.x + 'px';
+      nodes.rot.style.top = bc.y + 30 + 'px';
+    }
   }
 
-  const CORNER_PT = (a: Bounds, name: Corner): Point => ({
-    nw: { x: a.minX, y: a.minY }, ne: { x: a.maxX, y: a.minY },
-    se: { x: a.maxX, y: a.maxY }, sw: { x: a.minX, y: a.maxY },
-  } as Record<Corner, Point>)[name];
+  const CORNER_PT = (a: Bounds, name: Corner): Point =>
+    (
+      ({
+        nw: { x: a.minX, y: a.minY },
+        ne: { x: a.maxX, y: a.minY },
+        se: { x: a.maxX, y: a.maxY },
+        sw: { x: a.minX, y: a.maxY },
+      }) as Record<Corner, Point>
+    )[name];
   const OPPOSITE: Record<Corner, Corner> = { nw: 'se', ne: 'sw', se: 'nw', sw: 'ne' };
 
   function onGroupHandleDown(e: PointerEvent, name: Corner | 'rotate'): void {
@@ -12705,11 +15596,20 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const m = metrics();
       const cs = nativeToStage(centre.x, centre.y, m);
       const centerClient = { x: cs.x + m.sr.left, y: cs.y + m.sr.top };
-      const pointerStartDeg = Math.atan2(e.clientY - centerClient.y, e.clientX - centerClient.x) * 180 / Math.PI;
-      beginGesture(e, { type: 'grotate', sel, startBoxes: boxes, centre, centerClient, pointerStartDeg });
+      const pointerStartDeg =
+        (Math.atan2(e.clientY - centerClient.y, e.clientX - centerClient.x) * 180) / Math.PI;
+      beginGesture(e, {
+        type: 'grotate',
+        sel,
+        startBoxes: boxes,
+        centre,
+        centerClient,
+        pointerStartDeg,
+      });
     } else {
       const anchor = CORNER_PT(a, OPPOSITE[name]);
-      const origDist = Math.hypot(CORNER_PT(a, name).x - anchor.x, CORNER_PT(a, name).y - anchor.y) || 1;
+      const origDist =
+        Math.hypot(CORNER_PT(a, name).x - anchor.x, CORNER_PT(a, name).y - anchor.y) || 1;
       beginGesture(e, { type: 'gscale', sel, startBoxes: boxes, anchor, origDist });
     }
   }
@@ -12740,24 +15640,37 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // while the TIMELINE has made it a full-height column; a floating rail is vertically
     // centred and nowhere near this row, so counting it would push the bar sideways for
     // chrome that is not actually in the way.
-    const out = stageBlockers([
-      stageEl.querySelector<HTMLElement>('.stage-nav'),
-      stageEl.querySelector<HTMLElement>('.fc-nav'),
-      railMode === 'timeline' ? toolbarDock : null,
-      ...Array.from(document.querySelectorAll<HTMLElement>('.chrome-topleft, .tools-home')),
-    ], sr);
+    const out = stageBlockers(
+      [
+        stageEl.querySelector<HTMLElement>('.stage-nav'),
+        stageEl.querySelector<HTMLElement>('.fc-nav'),
+        railMode === 'timeline' ? toolbarDock : null,
+        ...Array.from(document.querySelectorAll<HTMLElement>('.chrome-topleft, .tools-home')),
+      ],
+      sr
+    );
     ctxBlockers = gesture ? out : null;
     return out;
   }
 
-  function positionCtxBar(boxes: Box[], idx: number[], liveRects: Map<number, Rect> | null, m: Metrics): void {
-    if (editing) { hideCtxBar(); return; }   // hidden while typing in a box
+  function positionCtxBar(
+    boxes: Box[],
+    idx: number[],
+    liveRects: Map<number, Rect> | null,
+    m: Metrics
+  ): void {
+    if (editing) {
+      hideCtxBar();
+      return;
+    } // hidden while typing in a box
     showCtxBar();
     // Pinned to the top chrome row (never over the selection, whose artwork the user is
     // looking at), centred in the band between the back pill and the zoom HUD and capped
     // to it - a bar too wide for a narrow phone row scrolls inside that width (see the
     // `.fc-ctxbar` overflow) instead of dropping down over the canvas.
-    const band = ctxTopBand({ w: m.sr.width, h: m.sr.height }, ctxBarBlockers(m.sr), { reserve: stageReserves() });
+    const band = ctxTopBand({ w: m.sr.width, h: m.sr.height }, ctxBarBlockers(m.sr), {
+      reserve: stageReserves(),
+    });
     ctxbar.style.maxWidth = Math.max(0, band.hi - band.lo) + 'px';
     // Measured AFTER the bar is shown and its max-width is set, so `offsetWidth` reflects
     // a laid-out, capped bar rather than the zero a `hidden` element reports. A zero here
@@ -12777,9 +15690,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     const first = boxes[idx[0]!];
     const r = liveRects?.get(idx[0]!) || boxRect(first, cfg);
     const read = ctxbar.querySelector('[data-cx-readout]');
-    if (read) read.textContent = idx.length > 1
-      ? t('{n} selected', { n: idx.length })
-      : `${Math.round(r.x)}, ${Math.round(r.y)}  ·  ${Math.round(r.w)}×${Math.round(r.h)}${r.rot ? '  ·  ' + Math.round(r.rot) + '°' : ''}`;
+    if (read)
+      read.textContent =
+        idx.length > 1
+          ? t('{n} selected', { n: idx.length })
+          : `${Math.round(r.x)}, ${Math.round(r.y)}  ·  ${Math.round(r.w)}×${Math.round(r.h)}${r.rot ? '  ·  ' + Math.round(r.rot) + '°' : ''}`;
   }
 
   function updateToolbarState(count: number): void {
@@ -12798,7 +15713,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   }
 
   // ── helpers ───────────────────────────────────────────────────────────────────
-  const rectAsBox = (r: Rect): Box => ({ [cfg.xField]: r.x, [cfg.yField]: r.y, [cfg.wField]: r.w, [cfg.hField]: r.h, [cfg.rotationField]: r.rot });
+  const rectAsBox = (r: Rect): Box => ({
+    [cfg.xField]: r.x,
+    [cfg.yField]: r.y,
+    [cfg.wField]: r.w,
+    [cfg.hField]: r.h,
+    [cfg.rotationField]: r.rot,
+  });
   function rotOf(el: HTMLElement): number {
     const t = el.style.transform || '';
     const mm = t.match(/rotate\(([-0-9.]+)deg\)/);
@@ -12807,24 +15728,30 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   function normHex(v: any, fallback = '#ffffff'): string {
     const s = String(v == null ? '' : v).trim();
     if (/^#[0-9a-fA-F]{6}$/.test(s)) return s.toLowerCase();
-    if (/^#[0-9a-fA-F]{3}$/.test(s)) return ('#' + s[1] + s[1] + s[2] + s[2] + s[3] + s[3]).toLowerCase();
+    if (/^#[0-9a-fA-F]{3}$/.test(s))
+      return ('#' + s[1] + s[1] + s[2] + s[2] + s[3] + s[3]).toLowerCase();
     return fallback;
   }
   function cssEscape(s: any): string {
-    return (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/["\\]/g, '\\$&');
+    return window.CSS && CSS.escape ? CSS.escape(s) : String(s).replace(/["\\]/g, '\\$&');
   }
   // Finite number clamped to [lo,hi], or the default when not a number.
   function clampN(v: any, dflt: number, lo: number, hi: number): number {
     const n = typeof v === 'number' ? v : parseFloat(v);
     if (!Number.isFinite(n)) return dflt;
-    return n < lo ? lo : (n > hi ? hi : n);
+    return n < lo ? lo : n > hi ? hi : n;
   }
   // Delegates to the canonical 5-char escape (utils.ts) - this used to hand-roll a 4-char
   // (no `'`) escape, safe only by accident of every call site using double-quoted attrs.
-  function escapeHtml(s: any): string { return escape(s); }
+  function escapeHtml(s: any): string {
+    return escape(s);
+  }
   function fmtDate(iso: any): string {
-    try { return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }); }
-    catch { return String(iso); }
+    try {
+      return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+    } catch {
+      return String(iso);
+    }
   }
 
   // ── keyboard ─────────────────────────────────────────────────────────────────
@@ -12834,11 +15761,13 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     return isTypingTarget();
   }
   // Keyboard focus on a card selects it, so Tab / Shift-Tab cycle the cards and the onKey
-  // actions (Delete, arrows, duplicate, group…) apply. Pointer focus is ignored here - 
+  // actions (Delete, arrows, duplicate, group…) apply. Pointer focus is ignored here -
   // pointerdown already owns pointer selection (and would clobber shift-click multi-select).
   function onBoxFocus(e: FocusEvent): void {
     if (gesture || editing) return;
-    const el = (e.target as HTMLElement | null)?.closest?.('.lolly-box[data-box-id]') as HTMLElement | null;
+    const el = (e.target as HTMLElement | null)?.closest?.(
+      '.lolly-box[data-box-id]'
+    ) as HTMLElement | null;
     if (!el || !el.matches(':focus-visible')) return;
     const id = el.getAttribute('data-box-id');
     if (!id || (selection.size === 1 && selection.has(id))) return;
@@ -12903,7 +15832,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // The timeline panel binds its keys on its OWN root and owns them while focus is
     // inside it (deck-editor's `.deck-strip, .deck-bar…` bail). Without this, Delete /
     // arrows / ⌘A / Enter typed at a clip would also hit the canvas selection.
-    if (timelinePanel && (document.activeElement as HTMLElement | null)?.closest?.('.tl-panel')) return;
+    if (timelinePanel && (document.activeElement as HTMLElement | null)?.closest?.('.tl-panel'))
+      return;
     if (chromeKeysOff(e)) return;
     // ── Escape: ONE ladder, innermost rung first, one rung per press ───────────
     // Escape is exempt from the typing bail below on purpose: it is how you get out of a
@@ -12917,20 +15847,52 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (e.key === 'Escape') {
       // Rung 1 stays the colour popover - it is the innermost surface, and it can be
       // open over the gradient panel while picking a stop's brand swatch.
-      if (stageEl.querySelector('.color-popover:not([hidden])') && dismissFloating()) { e.preventDefault(); return; }
+      if (stageEl.querySelector('.color-popover:not([hidden])') && dismissFloating()) {
+        e.preventDefault();
+        return;
+      }
       // Gradient editing is a MODE like point editing, and its panel is part of it:
       // closing just the panel left the handles up with no way back to it (the toolbar
       // button now reads as "leave"), so Escape takes the whole mode.
-      if (gradEdit != null) { e.preventDefault(); closeMorePanel(); exitGradEdit(); return; }
-      if (dismissFloating()) { e.preventDefault(); return; }
+      if (gradEdit != null) {
+        e.preventDefault();
+        closeMorePanel();
+        exitGradEdit();
+        return;
+      }
+      if (dismissFloating()) {
+        e.preventDefault();
+        return;
+      }
       // Cancel, not commit: a draft dies here and Enter (or a tool switch) is what keeps it.
-      if (penDraft) { e.preventDefault(); penCancelDraw(); return; }
+      if (penDraft) {
+        e.preventDefault();
+        penCancelDraw();
+        return;
+      }
       // Point editing ends and the rail is already the pointer, since it never left it.
-      if (penEdit) { e.preventDefault(); endPenEdit(); return; }
-      if (mode !== 'select') { e.preventDefault(); toPointer('discard'); return; }
-      if (selectedEdges.size) { e.preventDefault(); deselectEdge(); return; }
-      if (selection.size) { e.preventDefault(); selection = new Set<string>(); renderChrome(); return; }
-      return;                       // nothing left to back out of - leave the key alone
+      if (penEdit) {
+        e.preventDefault();
+        endPenEdit();
+        return;
+      }
+      if (mode !== 'select') {
+        e.preventDefault();
+        toPointer('discard');
+        return;
+      }
+      if (selectedEdges.size) {
+        e.preventDefault();
+        deselectEdge();
+        return;
+      }
+      if (selection.size) {
+        e.preventDefault();
+        selection = new Set<string>();
+        renderChrome();
+        return;
+      }
+      return; // nothing left to back out of - leave the key alone
     }
     // ── the pen's other keys ───────────────────────────────────────────────────
     // Each already means something on a box, so the pen takes them only while it is
@@ -12942,11 +15904,27 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     //             while drawing and the selected nodes while editing, never the box.
     if ((penDraft || penEdit) && !typingTarget()) {
       if (penDraft) {
-        if (e.key === 'Enter') { e.preventDefault(); penFinishDraw(); return; }
-        if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); penUndoNode(); return; }
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          penFinishDraw();
+          return;
+        }
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault();
+          penUndoNode();
+          return;
+        }
       } else if (penEdit) {
-        if (e.key === 'Enter') { e.preventDefault(); endPenEdit(); return; }
-        if ((e.key === 'Delete' || e.key === 'Backspace') && penSel.size) { e.preventDefault(); penDeleteSelected(); return; }
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          endPenEdit();
+          return;
+        }
+        if ((e.key === 'Delete' || e.key === 'Backspace') && penSel.size) {
+          e.preventDefault();
+          penDeleteSelected();
+          return;
+        }
         if (e.key === 'a' && (e.metaKey || e.ctrlKey)) {
           e.preventDefault();
           penSel = new Set(penEdit.path.nodes.map((_, i) => i));
@@ -12974,8 +15952,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // pointer; it falls through to the pointer when nothing is selected or the tool has no flip
     // field, so that path is untouched. After `typingTarget()` above, so a field/text edit
     // types the letter instead. Cmd/Ctrl/Alt variants are left alone.
-    if (e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && canFlip && selection.size
-        && (e.key === 'h' || e.key === 'H' || e.key === 'v' || e.key === 'V')) {
+    if (
+      e.shiftKey &&
+      !e.metaKey &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      canFlip &&
+      selection.size &&
+      (e.key === 'h' || e.key === 'H' || e.key === 'v' || e.key === 'V')
+    ) {
       e.preventDefault();
       applyFlip(e.key === 'v' || e.key === 'V' ? 'v' : 'h');
       return;
@@ -12990,13 +15975,25 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       pickPointer();
       return;
     }
-    if (!e.metaKey && !e.ctrlKey && !e.altKey && (e.key === 'p' || e.key === 'P') && cfg.pathField) {
+    if (
+      !e.metaKey &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      (e.key === 'p' || e.key === 'P') &&
+      cfg.pathField
+    ) {
       e.preventDefault();
       if (mode !== 'pen') setMode('pen');
       return;
     }
     // N - the Node tool (Inkscape's key). Toggles direct node editing on the selection.
-    if (!e.metaKey && !e.ctrlKey && !e.altKey && (e.key === 'n' || e.key === 'N') && cfg.pathField) {
+    if (
+      !e.metaKey &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      (e.key === 'n' || e.key === 'N') &&
+      cfg.pathField
+    ) {
       e.preventDefault();
       toggleNodeTool();
       return;
@@ -13008,14 +16005,22 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // kinds; the keyboard has no such affordance, so it says why instead.
     // Cmd/Ctrl+Return is the tool view's Present shortcut (plans/179 M1 section 4), so a
     // held modifier is NOT a request to edit text here - it belongs to the document.
-    if ((e.key === 'Enter' || e.key === 'F2') && !(e.key === 'Enter' && (e.metaKey || e.ctrlKey))
-      && !editing && selection.size && cfg.textField) {
+    if (
+      (e.key === 'Enter' || e.key === 'F2') &&
+      !(e.key === 'Enter' && (e.metaKey || e.ctrlKey)) &&
+      !editing &&
+      selection.size &&
+      cfg.textField
+    ) {
       e.preventDefault();
       const rows = getBoxes();
       const first = [...selection][0]!;
       const at = rows.findIndex((b, n) => idOf(b, n) === first);
       const k = at >= 0 ? kindOf(rows[at]) : '';
-      if (NO_TEXT_KINDS.has(k)) { announce(t('This object has no text to edit.')); return; }
+      if (NO_TEXT_KINDS.has(k)) {
+        announce(t('This object has no text to edit.'));
+        return;
+      }
       startTextEdit(first, { selectAll: e.key === 'Enter' });
       return;
     }
@@ -13027,10 +16032,26 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (!deleteGradStop()) announce(t('A gradient needs at least two stops.'));
       return;
     }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && selectedEdges.size) { e.preventDefault(); deleteSelectedEdge(); return; }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && selection.size) { e.preventDefault(); deleteSelection(); return; }
-    if ((e.key === 'd' || e.key === 'D') && (e.metaKey || e.ctrlKey) && selection.size) { e.preventDefault(); duplicateSelection(); return; }
-    if ((e.key === 'g' || e.key === 'G') && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.shiftKey ? ungroupSelection() : groupSelection(); return; }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && selectedEdges.size) {
+      e.preventDefault();
+      deleteSelectedEdge();
+      return;
+    }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && selection.size) {
+      e.preventDefault();
+      deleteSelection();
+      return;
+    }
+    if ((e.key === 'd' || e.key === 'D') && (e.metaKey || e.ctrlKey) && selection.size) {
+      e.preventDefault();
+      duplicateSelection();
+      return;
+    }
+    if ((e.key === 'g' || e.key === 'G') && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      e.shiftKey ? ungroupSelection() : groupSelection();
+      return;
+    }
     // Stacking order (Illustrator/Figma convention): Cmd/Ctrl + ] forward, + [ back;
     // add Shift to jump all the way to front / back. (Undo/redo is handled globally
     // by tool.js's onHistoryKey - Cmd+Z / Cmd+Shift+Z / Cmd+Y - and reaches the editor
@@ -13058,11 +16079,16 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // simply panel-focus-scoped, like `k`/`s`/`e`. Alt+↑/↓ is NOT that chord: declining it
     // too (as this once did) bought nothing and left a key that did nothing anywhere, so it
     // nudges like any other arrow.
-    const nudges: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+    const nudges: Record<string, [number, number]> = {
+      ArrowLeft: [-1, 0],
+      ArrowRight: [1, 0],
+      ArrowUp: [0, -1],
+      ArrowDown: [0, 1],
+    };
     const altSeek = e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight');
     if (nudges[e.key] && selection.size && !altSeek) {
       e.preventDefault();
-      const step = (e.shiftKey ? 10 : 1);
+      const step = e.shiftKey ? 10 : 1;
       const [ux, uy] = nudges[e.key]!;
       const boxes = getBoxes();
       // Same containment+cascade path as the pointer-drag move (see g.type === 'move'):
@@ -13079,7 +16105,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       const kfIds = new Set(timelinePanel?.kfPoseIds(idx.map((i) => idOf(boxes[i], i))) ?? []);
       const moveIdx = idx.filter((i) => !kfIds.has(idOf(boxes[i], i)));
       let next = moveIdx.length ? moveBoxes(boxes, moveIdx, ux * step, uy * step, cfg) : boxes;
-      if (kfIds.size && timelinePanel) next = timelinePanel.kfPoseWrite(next, [...kfIds], { x: ux * step, y: uy * step });
+      if (kfIds.size && timelinePanel)
+        next = timelinePanel.kfPoseWrite(next, [...kfIds], { x: ux * step, y: uy * step });
       commit(assignFrames(cascadeFrameChildren(boxes, next, moveIdx), new Set(moveIdx)));
     }
   }
@@ -13092,7 +16119,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   stageEl.addEventListener('pointerup', onStageTouchUp, true);
   stageEl.addEventListener('pointercancel', onStageTouchUp, true);
   canvasEl.addEventListener('pointerdown', onCanvasPointerDown);
-  stageEl.addEventListener('pointerdown', onBackdropPointerDown);   // deselect/marquee on backdrop
+  stageEl.addEventListener('pointerdown', onBackdropPointerDown); // deselect/marquee on backdrop
   viewEl.addEventListener('pointerdown', onBackdropPointerDown);
   stageEl.addEventListener('contextmenu', onBackdropContextMenu);
   viewEl.addEventListener('contextmenu', onBackdropContextMenu);
@@ -13105,7 +16132,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   canvasEl.addEventListener('contextmenu', onContextMenu);
   canvasEl.addEventListener('focusin', onBoxFocus);
   // While the editor is mounted, un-clip the canvas (and the tool's own clipping
-  // root inside it) so boxes dragged off the artboard stay visible + selectable - 
+  // root inside it) so boxes dragged off the artboard stay visible + selectable -
   // their DOM still lives inside canvasEl, so clicks bubble to the handlers above.
   // Export semantics are unchanged: the raster capture is bounded by the canvas
   // rect, and the vector walkers' out-of-viewBox geometry never paints.
@@ -13117,7 +16144,15 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // Geometry changed (pan/zoom/resize) - invalidate the metrics cache and mark the
   // frame scrim for repositioning (M2: paintChrome only moves the scrim when this is
   // set, so drag/hover/selection syncs skip the 100vmax shadow repaint).
-  const onStageMove = (e: any): void => { gestureMetrics = null; ctxBlockers = null; scrimDirty = true; if (e && typeof e.clientX === 'number') lastPointer = { x: e.clientX, y: e.clientY }; scheduleSync(); reclampRail(); if (connectLayer.style.display !== 'none') placeConnectLayer(metrics()); };
+  const onStageMove = (e: any): void => {
+    gestureMetrics = null;
+    ctxBlockers = null;
+    scrimDirty = true;
+    if (e && typeof e.clientX === 'number') lastPointer = { x: e.clientX, y: e.clientY };
+    scheduleSync();
+    reclampRail();
+    if (connectLayer.style.display !== 'none') placeConnectLayer(metrics());
+  };
   // pointermove fires continuously while the cursor merely HOVERS the canvas. The old
   // handler rebuilt the whole selection chrome (2 getBoundingClientRect + innerHTML swap
   // + 10 handle nodes re-bound) every frame for zero visual change. Here we only track
@@ -13130,13 +16165,27 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // no gesture is running - mid-drag the pointer is pulling a handle, not proposing a
     // node. Works for `pointerType: 'touch'` too: a touch drag reports `buttons` while
     // down, so this only fires between taps and never fights stageNav's pan/pinch.
-    if (mode === 'pen' && penDraft && !gesture && e && typeof e.clientX === 'number' && !e.buttons) {
+    if (
+      mode === 'pen' &&
+      penDraft &&
+      !gesture &&
+      e &&
+      typeof e.clientX === 'number' &&
+      !e.buttons
+    ) {
       penCursor = clientToNative(e.clientX, e.clientY);
       paintPen();
       return;
     }
     // Hover affordance over connector lines (idle hover only, throttled to one rAF/frame).
-    if (connectCfg && !selectedEdges.size && !gesture && e && !e.buttons && typeof e.clientX === 'number') {
+    if (
+      connectCfg &&
+      !selectedEdges.size &&
+      !gesture &&
+      e &&
+      !e.buttons &&
+      typeof e.clientX === 'number'
+    ) {
       if (!hoverRaf) hoverRaf = requestAnimationFrame(updateHover);
     }
     if (e && e.buttons) scheduleSync();
@@ -13159,7 +16208,7 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // chrome rebuild per hover would be a real cost: only a transition on the RAIL, and only
   // of a property that can move something.
   const onStageTransitionEnd = (e: Event): void => {
-    const el = (e.target as HTMLElement | null);
+    const el = e.target as HTMLElement | null;
     if (!el?.closest?.('.fc-toolbar-dock')) return;
     const prop = (e as TransitionEvent).propertyName || '';
     if (!/^(left|top|right|bottom|width|height|transform|inset|margin|padding)/.test(prop)) return;
@@ -13170,7 +16219,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // wrapper's transform with NO pointer or wheel event - watch the wrapper's
   // style attribute so the selection chrome follows those zooms too.
   const mo = new MutationObserver(onStageMove);
-  if (canvasEl.parentElement) mo.observe(canvasEl.parentElement, { attributes: true, attributeFilter: ['style'] });
+  if (canvasEl.parentElement)
+    mo.observe(canvasEl.parentElement, { attributes: true, attributeFilter: ['style'] });
   // Re-sync after every model change (paint()).
   // A bulk external apply - picking an ANIMATED template after the blank mount - can flip
   // the doc from untimed to timed; open the timeline the first time that happens, so the
@@ -13180,7 +16230,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   let timelineAutoOpened = false;
   const unsub = runtime.subscribe(() => {
     scheduleSync();
-    if (!timelineAutoOpened && timeCfg && anyTimed(getBoxes())) { timelineAutoOpened = true; openTimeline(); }
+    if (!timelineAutoOpened && timeCfg && anyTimed(getBoxes())) {
+      timelineAutoOpened = true;
+      openTimeline();
+    }
   });
   // Hide-controls full preview (Figma/Penpot `\`, and `/` - Andy, 2026-09-03): strip the
   // editor chrome to a clean canvas so the artwork can be seen whole. Chrome-only - the
@@ -13189,12 +16242,24 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   // zeroes the stage reserves and the dock width under the class, and since the fit
   // reads computed values it only needs asking.
   const chromeRoot = (): HTMLElement | null => stageEl.closest('.tool-view');
-  const refitAfterChrome = (): void => { try { canvasEl.dispatchEvent(new Event('canvas-resize')); } catch { /* stage detached */ } };
+  const refitAfterChrome = (): void => {
+    try {
+      canvasEl.dispatchEvent(new Event('canvas-resize'));
+    } catch {
+      /* stage detached */
+    }
+  };
   function onPreviewKey(e: KeyboardEvent): void {
     if (e.defaultPrevented) return;
     const l = chromeRoot();
     if (!l) return;
-    if ((e.key === '\\' || e.key === '/') && !e.metaKey && !e.ctrlKey && !e.altKey && !isTypingTarget(e.target as Element | null)) {
+    if (
+      (e.key === '\\' || e.key === '/') &&
+      !e.metaKey &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      !isTypingTarget(e.target as Element | null)
+    ) {
       e.preventDefault();
       l.classList.toggle('is-chrome-hidden');
       refitAfterChrome();
@@ -13220,7 +16285,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // swatch. None of those are an "outside click" - treating the handles as one closed
     // the panel the instant you selected a stop.
     const companion = t.closest?.(
-      '[data-cx="more"],[data-cx="text"],[data-cx="grad"],.color-popover,[data-color-field],.fc-grad-stop,.fc-grad-dir');
+      '[data-cx="more"],[data-cx="text"],[data-cx="grad"],.color-popover,[data-color-field],.fc-grad-stop,.fc-grad-dir'
+    );
     if (morePanel && !morePanel.contains(e.target as Node) && !companion) closeMorePanel();
   };
   document.addEventListener('pointerdown', onDocDown, true);
@@ -13248,8 +16314,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // user edit, so no onDirty (no Save-pill flash) and no history entry (no ⌘Z surprise).
     if (frameCfg) next = assignFrames(next, new Set(next.map((_, i) => i)));
     // mountTool installs the un-wrapped setter; a mount without it falls back.
-    const quiet = (runtime as RuntimeApi & { setInputNoHistory?: RuntimeApi['setInput'] }).setInputNoHistory
-      ?? ((id: string, value: unknown) => runtime.setInput(id, value));
+    const quiet =
+      (runtime as RuntimeApi & { setInputNoHistory?: RuntimeApi['setInput'] }).setInputNoHistory ??
+      ((id: string, value: unknown) => runtime.setInput(id, value));
     const changed = next.length !== loaded.length || next.some((b, i) => b !== loaded[i]);
     if (changed) quiet(blockId, next);
   }
@@ -13258,7 +16325,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
 
   // A composition that already has timing opens with its timeline showing; an empty
   // (or untimed) one leaves the stage whole until the user asks for it from the rail.
-  if (timeCfg && anyTimed(getBoxes())) { timelineAutoOpened = true; openTimeline(); }
+  if (timeCfg && anyTimed(getBoxes())) {
+    timelineAutoOpened = true;
+    openTimeline();
+  }
 
   // The link's one-shot editor state (`_ui` + the `_sel`/`_t`/`_panel` shorthands,
   // lib/editor-state.ts) - and, the SAME routine, the runtime `applyUi` the handle
@@ -13278,7 +16348,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         const known = new Set(rows.map((b, i) => idOf(b, i)));
         const ids = dl.select.filter((id) => known.has(id));
         if (ids.length) {
-          selection = new Set(ids); renderChrome();
+          selection = new Set(ids);
+          renderChrome();
           // And through the panel when it is up: its selection adapter is the one it
           // shows, and a camera id - no canvas footprint - only reaches the Camera
           // inspector group via the panel's own selection path.
@@ -13292,13 +16363,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         const rows = getBoxes();
         const cr = canvasEl.getBoundingClientRect();
         const k = cr.width / Math.max(1, canvasWH().w);
-        let right = 0, top = Number.POSITIVE_INFINITY;
+        let right = 0,
+          top = Number.POSITIVE_INFINITY;
         for (const i of selIndices(rows)) {
           const r = boxRect(rows[i], cfg);
           right = Math.max(right, r.x + r.w);
           top = Math.min(top, r.y);
         }
-        lastMenuAt = { x: cr.left + right * k + 16, y: cr.top + (Number.isFinite(top) ? top : 0) * k };
+        lastMenuAt = {
+          x: cr.left + right * k + 16,
+          y: cr.top + (Number.isFinite(top) ? top : 0) * k,
+        };
         askChoreograph();
       }
     };
@@ -13332,7 +16407,10 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
           if (n !== 1) {
             const pick = await askImportPages(n);
             if (disposed) return;
-            if (!pick) { announce(t('Import cancelled.')); return; }
+            if (!pick) {
+              announce(t('Import cancelled.'));
+              return;
+            }
             mode = pick;
           }
         }
@@ -13352,17 +16430,26 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
         }
         const { parseDesignFile } = await import('./design-import.ts');
         const res = await parseDesignFile(pendingImport.file, {
-          host: host as any, log: (m: string) => announce(m), interactive: true, map: importMap,
+          host: host as any,
+          log: (m: string) => announce(m),
+          interactive: true,
+          map: importMap,
         });
         if (disposed) return;
         const boxes = (Array.isArray(res.boxes) ? res.boxes : []) as Box[];
         if (!boxes.length) throw new Error(t('Nothing importable was found in that file.'));
         selection = new Set<string>();
         commit(boxes);
-        if (setCanvasSize && res.width > 0 && res.height > 0) setCanvasSize(res.width, res.height, 'px');
-        announce(boxes.length === 1 ? t('Imported 1 object.') : t('Imported {n} objects.', { n: boxes.length }));
+        if (setCanvasSize && res.width > 0 && res.height > 0)
+          setCanvasSize(res.width, res.height, 'px');
+        announce(
+          boxes.length === 1
+            ? t('Imported 1 object.')
+            : t('Imported {n} objects.', { n: boxes.length })
+        );
       } catch (err) {
-        if (!disposed) announce(((err as Error)?.message) || t('Import failed.'), { assertive: true });
+        if (!disposed)
+          announce((err as Error)?.message || t('Import failed.'), { assertive: true });
       }
     })();
   }
@@ -13413,23 +16500,40 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    * third. One commit. Unknown id falls back to `addArtboard`'s append-at-the-end.
    */
   function addArtboardAfter(id: string): void {
-    if (!frameCfg?.orderField) { addArtboard(); return; }
+    if (!frameCfg?.orderField) {
+      addArtboard();
+      return;
+    }
     const fk = frameCfg.frameKind;
-    const frameAddKind = addKinds.find((k) => k.id === 'frame' || (k.seed != null && String(k.seed[cfg.kindField]) === fk));
+    const frameAddKind = addKinds.find(
+      (k) => k.id === 'frame' || (k.seed != null && String(k.seed[cfg.kindField]) === fk)
+    );
     if (!frameAddKind) return;
     const boxes0 = getBoxes();
     const at = indexOfId(boxes0, id);
-    if (at < 0 || String(boxes0[at]?.[cfg.kindField]) !== fk) { addArtboard(); return; }
+    if (at < 0 || String(boxes0[at]?.[cfg.kindField]) !== fk) {
+      addArtboard();
+      return;
+    }
     const ff = frameFields();
-    const seeded = seedFrameOrders(boxes0, ff);   // A9: a legacy doc gets its order first
+    const seeded = seedFrameOrders(boxes0, ff); // A9: a legacy doc gets its order first
     const src = seeded[at]!;
     const d = canvasWH();
     const w = Math.max(1, num(src[cfg.wField]) || d.w);
     const h = Math.max(1, num(src[cfg.hField]) || d.h);
     const newId = freshId(seeded);
-    const box = seedBox(cfg, {}, frameAddKind.seed || {}, {
-      x: num(src[cfg.xField]) + w + Math.round(w * 0.08), y: num(src[cfg.yField]), w, h,
-    } as MathRect, newId);
+    const box = seedBox(
+      cfg,
+      {},
+      frameAddKind.seed || {},
+      {
+        x: num(src[cfg.xField]) + w + Math.round(w * 0.08),
+        y: num(src[cfg.yField]),
+        w,
+        h,
+      } as MathRect,
+      newId
+    );
     const seq = framesInPageOrder(seeded, ff).map((b) => String(b[cfg.idField] ?? ''));
     const where = seq.indexOf(String(id));
     seq.splice(where < 0 ? seq.length : where + 1, 0, newId);
@@ -13442,7 +16546,9 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
   /** Frame a board once the render has actually put its page in the DOM (the commit only
    *  schedules one), so the focus is not a no-op on a page that does not exist yet. */
   function focusArtboardWhenPainted(id: string): void {
-    requestAnimationFrame(() => { if (!disposed) focusArtboard(id); });
+    requestAnimationFrame(() => {
+      if (!disposed) focusArtboard(id);
+    });
   }
 
   /**
@@ -13453,7 +16559,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    */
   function reorderFrameChildren(frameId: string, orderedIds: readonly string[]): void {
     if (!frameCfg || !frameId) return;
-    const ff = frameCfg.frameField, fk = frameCfg.frameKind;
+    const ff = frameCfg.frameField,
+      fk = frameCfg.frameKind;
     const boxes = getBoxes();
     const slots: number[] = [];
     for (let i = 0; i < boxes.length; i++) {
@@ -13470,14 +16577,17 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     for (const id of orderedIds) {
       const i = byId.get(String(id));
       if (i == null || seen.has(i)) continue;
-      seen.add(i); seq.push(i);
+      seen.add(i);
+      seq.push(i);
     }
     // A child the caller did not name keeps its own relative order, behind the named
     // ones - a partial list re-stacks what it mentions and loses nothing.
     for (const i of slots) if (!seen.has(i)) seq.push(i);
-    if (seq.every((src, k) => src === slots[k])) return;   // already in that order
+    if (seq.every((src, k) => src === slots[k])) return; // already in that order
     const next = boxes.slice();
-    slots.forEach((dst, k) => { next[dst] = boxes[seq[k]!]!; });
+    slots.forEach((dst, k) => {
+      next[dst] = boxes[seq[k]!]!;
+    });
     commit(next);
   }
 
@@ -13485,18 +16595,40 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
    *  not a translation table: the column speaks this overlay's own op vocabulary. */
   function runArrange(op: string): void {
     switch (op) {
-      case 'left': case 'hcentre': case 'right': case 'top': case 'vcentre': case 'bottom':
-        applyAlign(op); break;
-      case 'h': case 'v': applyDistribute(op); break;
-      case 'front': case 'forward': case 'backward': case 'back':
-        if (selection.size) applyZ(op); break;
-      case 'group': if (selection.size >= 2) groupSelection(); break;
-      case 'ungroup': ungroupSelection(); break;
+      case 'left':
+      case 'hcentre':
+      case 'right':
+      case 'top':
+      case 'vcentre':
+      case 'bottom':
+        applyAlign(op);
+        break;
+      case 'h':
+      case 'v':
+        applyDistribute(op);
+        break;
+      case 'front':
+      case 'forward':
+      case 'backward':
+      case 'back':
+        if (selection.size) applyZ(op);
+        break;
+      case 'group':
+        if (selection.size >= 2) groupSelection();
+        break;
+      case 'ungroup':
+        ungroupSelection();
+        break;
       // Not in ARRANGE_OPS today, but the same menu's other two runners - named so a
       // later column row is a string, not a second door into the model.
-      case 'clip': if (selection.size >= 2) clipSelection(); break;
-      case 'unclip': releaseClip(); break;
-      default: break;
+      case 'clip':
+        if (selection.size >= 2) clipSelection();
+        break;
+      case 'unclip':
+        releaseClip();
+        break;
+      default:
+        break;
     }
   }
 
@@ -13512,41 +16644,67 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     if (!id) return;
     // The panel may still be a chunk in flight; `selectAndReveal` is only meaningful once
     // it is mounted, so ask on the next frame as well as now.
-    const reveal = (): void => { try { timelinePanel?.selectAndReveal([id]); } catch (e) { console.error(e); } };
+    const reveal = (): void => {
+      try {
+        timelinePanel?.selectAndReveal([id]);
+      } catch (e) {
+        console.error(e);
+      }
+    };
     reveal();
-    requestAnimationFrame(() => { if (!disposed) reveal(); });
+    requestAnimationFrame(() => {
+      if (!disposed) reveal();
+    });
   }
 
   /** `model.cfg`, plus the two tilt field names that live on the CANVAS block rather than
    *  the resolved geometry config (see openMorePanel) - a column asking for `rxField`
    *  must get the same answer the panel does. */
-  const portCfg = { ...cfg, rxField: cv.rxField || undefined, ryField: cv.ryField || undefined } as unknown as ModelPort['cfg'];
+  const portCfg = {
+    ...cfg,
+    rxField: cv.rxField || undefined,
+    ryField: cv.ryField || undefined,
+  } as unknown as ModelPort['cfg'];
 
   const modelPort: ModelPort = {
-    blockId, cfg: portCfg,
-    frame: frameCfg ? {
-      frameField: frameCfg.frameField,
-      frameKind: frameCfg.frameKind,
-      orderField: frameCfg.orderField || 'order',
-      clipChildrenField: frameCfg.clipChildrenField,
-      labelField: nameField || undefined,
-      transitionField: frameCfg.transitionField,
-    } as FramePort : null,
+    blockId,
+    cfg: portCfg,
+    frame: frameCfg
+      ? ({
+          frameField: frameCfg.frameField,
+          frameKind: frameCfg.frameKind,
+          orderField: frameCfg.orderField || 'order',
+          clipChildrenField: frameCfg.clipChildrenField,
+          labelField: nameField || undefined,
+          transitionField: frameCfg.transitionField,
+        } as FramePort)
+      : null,
     getBoxes,
     commit,
     setField: (ids, field, value) => setFieldOn(ids, field, value),
     // The runtime's own subscribe may return nothing (a host that never unsubscribes);
     // a port promises an unsubscribe, so a missing one becomes a no-op rather than a
     // crash inside a column's destroy().
-    subscribe: (cb) => { const off = runtime.subscribe(cb); return typeof off === 'function' ? off : () => {}; },
+    subscribe: (cb) => {
+      const off = runtime.subscribe(cb);
+      return typeof off === 'function' ? off : () => {};
+    },
     getInput: (id) => runtime.getModel().find((i) => i.id === id)?.value,
-    setInput: (id, value) => { onDirty?.(id); runtime.setInput(id, value as InputValue); },
+    setInput: (id, value) => {
+      onDirty?.(id);
+      runtime.setInput(id, value as InputValue);
+    },
   };
 
   const artboardPort: ArtboardPort = {
     active: activeArtboardId,
     focus: focusArtboard,
-    onChange: (cb) => { artboardListeners.add(cb); return () => { artboardListeners.delete(cb); }; },
+    onChange: (cb) => {
+      artboardListeners.add(cb);
+      return () => {
+        artboardListeners.delete(cb);
+      };
+    },
   };
 
   const navigatorActions: NavigatorActions = {
@@ -13569,8 +16727,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       void pickImage(audio ? { pickType: 'audio' } : undefined);
     },
     openGradient: (ids) => {
-      if (ids.length) { selection = new Set(ids); renderChrome(); }
-      toggleGradEdit(ctxbar);   // the anchor is unused - the panel re-anchors on the rebuilt button
+      if (ids.length) {
+        selection = new Set(ids);
+        renderChrome();
+      }
+      toggleGradEdit(ctxbar); // the anchor is unused - the panel re-anchors on the rebuilt button
     },
     arrange: runArrange,
     openTimeline: openTimelineOn,
@@ -13588,22 +16749,28 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
     // Narrate control, which beats a button that cannot work.
     ...(frameCfg && timeCfg && cfg.groupField && (host as unknown as HostV1).speech?.isAvailable()
       ? {
-        narrationActions: {
-          narrateAll: () => { void narrateDeck(); },
-          narrateFrame: (id: string) => { void narrateDeck(id); },
-          status: (id: string) => narrationStatusOf(id),
-          // Busy counts as not ready: a menu built while a run is in flight greys the
-          // row rather than offering a press that can only be refused.
-          ready: () => !narrateBusy && framesWithNotes() > 0,
-          reason: () => (narrateBusy
-            ? t('A narration run is already going.')
-            : t('No slide has speaker notes yet.')),
-        },
-      }
+          narrationActions: {
+            narrateAll: () => {
+              void narrateDeck();
+            },
+            narrateFrame: (id: string) => {
+              void narrateDeck(id);
+            },
+            status: (id: string) => narrationStatusOf(id),
+            // Busy counts as not ready: a menu built while a run is in flight greys the
+            // row rather than offering a press that can only be refused.
+            ready: () => !narrateBusy && framesWithNotes() > 0,
+            reason: () =>
+              narrateBusy
+                ? t('A narration run is already going.')
+                : t('No slide has speaker notes yet.'),
+          },
+        }
       : {}),
     fonts: {
       options: () => fontOptions.map((o) => [o.value, o.label] as [string, string]),
-      weights: (font: string) => weightChoicesFor(font).map(([v, l]) => [v, t(l)] as [string, string]),
+      weights: (font: string) =>
+        weightChoicesFor(font).map(([v, l]) => [v, t(l)] as [string, string]),
     },
     fields: input.fields ?? [],
     activeFrameId: activeArtboardId,
@@ -13671,14 +16838,20 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       toolbar.removeEventListener('pointercancel', onRailUp);
       toolbar.removeEventListener('lostpointercapture', onRailUp);
       wobble.dispose();
-      if (railRaf) { cancelAnimationFrame(railRaf); railRaf = 0; }
+      if (railRaf) {
+        cancelAnimationFrame(railRaf);
+        railRaf = 0;
+      }
       document.removeEventListener('paste', onGlobalPaste);
       document.removeEventListener('copy', onCopy);
       stageEl.removeEventListener('pointermove', onStagePointerMove);
       stageEl.removeEventListener('wheel', onStageMove);
       stageEl.removeEventListener('transitionend', onStageTransitionEnd);
       canvasEl.removeEventListener('wheel', onCameraWheel as EventListener);
-      if (dollyTimer) { clearTimeout(dollyTimer); dollyTimer = null; }
+      if (dollyTimer) {
+        clearTimeout(dollyTimer);
+        dollyTimer = null;
+      }
       window.removeEventListener('resize', onStageMove);
       document.removeEventListener('pointerdown', onDocDown, true);
       document.removeEventListener('keydown', onPreviewKey);
@@ -13695,7 +16868,11 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       // would leave them behind in a node this handle no longer owns.
       tlWantsRail = navWantsRail = false;
       applyRailMode();
-      overlay.remove(); toolbarDock.remove(); closePopover(); closeMorePanel(); closeEdgePanel();
+      overlay.remove();
+      toolbarDock.remove();
+      closePopover();
+      closeMorePanel();
+      closeEdgePanel();
       document.body.classList.remove('fc-manipulating');
     },
     uiState() {
@@ -13707,6 +16884,8 @@ export function initFreeCanvas(opts: InitFreeCanvasOpts): FreeCanvasHandle {
       if (document.querySelector('.fc-choreo-panel')) st.panel = 'choreograph';
       return st;
     },
-    applyUi(state: DeepLinkState) { applyEditorState(state); },
+    applyUi(state: DeepLinkState) {
+      applyEditorState(state);
+    },
   };
 }

@@ -23,7 +23,35 @@ import '../styles/parts/design-inspector.css';
 import '../styles/parts/document.css';
 import '../styles/parts/deck-editor.css';
 import '../styles/parts/tool-chrome.css';
-import { loadTool, parseUrlState, annotateTemplate, toCssPx, normalizeTableValue, encodeTableCompact, DEFAULT_CMYK_CONDITION, isTokenValue, packQuery, expandQuery, hasPackedState, isPackAvailable, PACK_PARAM, hasEncryptedState, unpackEncrypted, ENC_PARAM, C2PA_FORMATS, DEFAULT_FILE_MAX_BYTES, isBakedRef, assetIdForUrl, blocksForUrl, HDR_DEFAULTS, serializeHdr } from '@lolly/engine';
+import {
+  loadTool,
+  parseUrlState,
+  annotateTemplate,
+  toCssPx,
+  normalizeTableValue,
+  encodeTableCompact,
+  DEFAULT_CMYK_CONDITION,
+  isTokenValue,
+  packQuery,
+  expandQuery,
+  hasPackedState,
+  isPackAvailable,
+  PACK_PARAM,
+  hasEncryptedState,
+  unpackEncrypted,
+  ENC_PARAM,
+  C2PA_FORMATS,
+  isBakedRef,
+  assetIdForUrl,
+  blocksForUrl,
+  HDR_DEFAULTS,
+  serializeHdr,
+  compileDocument,
+  inspectDocument,
+  measureDocument,
+  diffDocuments,
+} from '@lolly/engine';
+import { modelToValues } from '../../../../engine/src/inputs.js';
 import { createInteractiveToolRuntime as createRuntime } from '../lib/mount-runtime.ts';
 import type { HdrSettings, DepthSetting, VideoUrlSettings } from '@lolly/engine';
 import { hasVideoParams, VIDEO_CODEC_STRINGS } from '@lolly/engine';
@@ -48,7 +76,10 @@ import { acquireCollabSession } from '../lib/collab-session-source.ts';
 // - unlike the presence composition, which stays behind the guard's `import()`. All
 // three are inert (a comparison and a null) for every mount that is not a collab.
 import {
-  carryMountState, takeCarriedMountState, takeEphemeralState, willRemountForCollab,
+  carryMountState,
+  takeCarriedMountState,
+  takeEphemeralState,
+  willRemountForCollab,
 } from '../lib/collab-live-mount.ts';
 // The fourth such hand-off, and the smallest: which TEAM session this mount was opened
 // from, when it was opened from one (org/team-session-origin.ts, plans/100 section 7). A leaf
@@ -58,9 +89,16 @@ import { consumeTeamSessionOrigin, releaseTeamSessionOrigin } from '../org/team-
 import type { ToolCollab } from './tool-collab.ts';
 import { migrateBlockRowIds, stripHiddenRowIds } from '../lib/row-id.ts';
 import { parseEditorState, coerceUiState } from '../lib/editor-state.ts';
+import { installDocumentSurface } from '../lib/document-surface.ts';
+import { MountLifecycle } from '../lib/mount-lifecycle.ts';
+import {
+  prepareToolDesignSystemContext,
+  type ToolDesignSystemRegistry,
+} from './tool-design-system-context.ts';
 import { fpsTick, startFrameFps, stopFrameFps } from '../lib/frame-fps.ts';
 import { getToolIntegrity } from '../catalog/integrity.ts';
 import { isToolInstalled, installedFetchFile } from '../lib/installed-tools.ts';
+import { takeAutomationExportPassword } from '../lib/automation-export-secret.ts';
 import {
   DESIGN_INTENT_OPTIONS,
   designOutcome,
@@ -72,7 +110,12 @@ import { escape } from '../utils.ts';
 import { createHistory, cloneValue, describeRowChange } from './tool-history.ts';
 import { backPillHtml, backHomeHtml, mountBackPill } from '../components/back-pill.ts';
 import { mountHomeFab } from '../components/home-fab.ts';
-import { hasGuide, guideButtonHtml, showToolGuide, autoOpenToolGuide } from '../components/tool-guide.ts';
+import {
+  hasGuide,
+  guideButtonHtml,
+  showToolGuide,
+  autoOpenToolGuide,
+} from '../components/tool-guide.ts';
 import { jellyActive } from '../lib/jelly.ts';
 import { toolSupport, capabilityLabel, canBatchTool, singleFileInputId } from '../capabilities.ts';
 import { collectBulkFiles } from '../lib/bulk-files.ts';
@@ -81,7 +124,12 @@ import { announce } from '../a11y.ts';
 import { setupRecordControl } from './record-control.ts';
 import { livePalette } from '../lib/live-palette.ts';
 import { urlProfileValue } from '../lib/press-profile-embed.ts';
-import { setSwatches, colorFieldHtml, wireColorField, fixedContainingBlockOrigin } from '../components/color-field.ts';
+import {
+  setSwatches,
+  colorFieldHtml,
+  wireColorField,
+  fixedContainingBlockOrigin,
+} from '../components/color-field.ts';
 import { askLollyIntent } from './picker.ts';
 import { applyBrandVars } from '../brand-vars.ts';
 import { createThemeToggle } from '../components/theme-toggle.ts';
@@ -91,7 +139,14 @@ import { scopeCss, scopeTemplateStyles } from '../lib/scope-css.ts';
 import { setupMobileSheet, flickDirection } from '../lib/mobile-sheet.ts';
 import { wireExportPanelFloat } from '../lib/export-panel-float.ts';
 import { loadExportPrefs, mergeExportPrefs } from '../lib/export-prefs.ts';
-import { edgeDockCollapsed, isDocked, onDockChange, releaseDock, requestDock, showPanel } from '../lib/edge-dock.ts';
+import {
+  edgeDockCollapsed,
+  isDocked,
+  onDockChange,
+  releaseDock,
+  requestDock,
+  showPanel,
+} from '../lib/edge-dock.ts';
 import { runTemplateScripts, waitForQuiescence } from '../lib/render-lifecycle.ts';
 import { playSfx } from '../lib/sfx.ts';
 import { createShutter } from '../lib/shutter.ts';
@@ -100,15 +155,33 @@ import { exportFormatDriver } from './export-format.ts';
 import { neutralizeEmbeds, hydrateEmbeds } from '../bridge/embed.ts';
 import { createNetAPI } from '../bridge/net.ts';
 import { attachCanvasCommit } from '../lib/canvas-commit.ts';
-import { mountTableCellEditing, markdownSafeUrl, type TableEditOpts } from '../lib/table-canvas-edit.ts';
+import {
+  mountTableCellEditing,
+  markdownSafeUrl,
+  type TableEditOpts,
+} from '../lib/table-canvas-edit.ts';
 import { mountFilmstrip, type Filmstrip, type FilmstripSide } from '../lib/page-filmstrip.ts';
 import { openShareDialog, type ShareDialogLolly } from '../components/share-dialog.ts';
 // Above AUTO_PACK_MIN the address bar and Share dialog switch to the packed `z=` form
 // (when shorter); the cost model owns that threshold so nothing drifts from syncUrl.
-import { encodeModelParam, AUTO_PACK_MIN, costUrlState, BROWSER_TARGET, type ShareFidelity } from '../lib/url-budget.ts';
+import {
+  encodeModelParam,
+  AUTO_PACK_MIN,
+  costUrlState,
+  BROWSER_TARGET,
+  type ShareFidelity,
+} from '../lib/url-budget.ts';
 import { createUrlGauge, type UrlGauge } from '../lib/url-budget-gauge.ts';
 import { prefersReducedMotion } from '../lib/a11y-prefs.ts';
-import { buildLollyFile, creatorFromProfile, LOLLY_MIME, LOLLY_EXT, type LollyLibraryAsset, type LollyToolBundle, type LollyToolTrust } from '../lib/lolly-pack.ts';
+import {
+  buildLollyFile,
+  creatorFromProfile,
+  LOLLY_MIME,
+  LOLLY_EXT,
+  type LollyLibraryAsset,
+  type LollyToolBundle,
+  type LollyToolTrust,
+} from '../lib/lolly-pack.ts';
 import type { BeamAssetRecord } from '../lib/beam-pack.ts';
 import { ENGINE_VERSION, sha256Hex } from '@lolly/engine';
 import '../styles/vendor-flatpickr.css'; // flatpickr base CSS in the `vendor` cascade layer (see that file)
@@ -116,8 +189,18 @@ import '../styles/vendor-flatpickr.css'; // flatpickr base CSS in the `vendor` c
 // Type-only imports (erased at build). The `@lolly/engine` barrel re-exports
 // values but not these type-only names, so they come straight from the engine
 // internals - resolved by the bundler through the `.js` specifier convention.
-import type { HostV1, AssetRef, ComposeAPI, ClipboardAPI, StateAPI, Profile } from '@lolly-tools/core/host-v1';
-import type { InputModelItem, InputValue, InputSpec, BlockFieldSpec } from '../../../../engine/src/inputs.js';
+import type {
+  HostV1,
+  AssetRef,
+  ComposeAPI,
+  ClipboardAPI,
+  StateAPI,
+  Profile,
+} from '@lolly-tools/core/host-v1';
+import type {
+  InputModelItem,
+  InputValue,
+} from '../../../../engine/src/inputs.js';
 import type { LoadedTool, ToolManifest, ToolRenderSpec } from '../../../../engine/src/loader.js';
 import type { Runtime } from '../../../../engine/src/runtime.js';
 import type { Unit } from '../../../../engine/src/units.js';
@@ -127,24 +210,52 @@ import type { Unit } from '../../../../engine/src/units.js';
 import { icon } from '../lib/icons.ts';
 import { navigateTo } from '../nav.ts';
 import { asRow } from './tool-types.ts';
-import { resolveCanvasFastCfg, geometryFastPathPlan, boundEndpointIds, type FastPathCfg } from './canvas-scene.ts';
+import {
+  resolveCanvasFastCfg,
+  geometryFastPathPlan,
+  boundEndpointIds,
+  type FastPathCfg,
+} from './canvas-scene.ts';
 import type { Box } from './free-canvas-math.ts';
 import { migrateCarouselToFrames } from './free-canvas-math.ts';
 import { encodeBlocksCompact } from '../lib/blocks-url.ts';
 import { setupStageNav, type StageNav } from './tool-stage-nav.ts';
 import { isTextEditingTarget } from '../lib/typing-target.ts';
 import {
-  syncInputs, openEmbedEditor, scrollToControl, focusSidebarBlock,
-  fileToRef, fmtBytes, makeBlocksDropper, _sliderDragging, asStr, stopSlotPreview,
+  syncInputs,
+  openEmbedEditor,
+  scrollToControl,
+  focusSidebarBlock,
+  fileToRef,
+  fmtBytes,
+  makeBlocksDropper,
+  _sliderDragging,
+  asStr,
+  stopSlotPreview,
 } from './tool-inputs.ts';
-import { createLiveControls, registerLiveControls, mountSidebarLiveControls } from './live-controls.ts';
+import {
+  createLiveControls,
+  registerLiveControls,
+  mountSidebarLiveControls,
+} from './live-controls.ts';
 import { mountCaptureSignin } from './capture-signin.ts';
 import { armViewEnter } from '../view-enter.ts';
 import {
-  renderActions, captureThumbnail, extFor, isCmykFmt, isPrintFmt,
-  printEnabled, marksToCsv, c2paDefaultOn, readBleed, readMarks, exportTargetNode,
+  renderActions,
+  captureThumbnail,
+  extFor,
+  isCmykFmt,
+  isPrintFmt,
+  printEnabled,
+  marksToCsv,
+  c2paDefaultOn,
+  readBleed,
+  readMarks,
+  exportTargetNode,
 } from './tool-actions.ts';
 
+import { setupCanvasFileDrop, setupCanvasBlocksDrop } from './tool-canvas-drop.ts';
+export type { ExportUnscaled } from './tool-action-helpers.ts';
 // ── Shell-side type aliases (all erased at build; no runtime effect) ──────────
 
 /** The view root; the router reads back a `_cleanup` teardown hook off it. */
@@ -161,11 +272,18 @@ type TranscribeSpec = NonNullable<ToolRenderSpec['transcribe']>;
  * mountTool: the team-origin contract test forbids bare returns between the
  * origin consume and the teardown hook (tool-team-origin.test.ts).
  */
-function resolveTranscribeSpec(tool: { manifest: ToolManifest }, host: WebToolHost): TranscribeSpec | null {
+function resolveTranscribeSpec(
+  tool: { manifest: ToolManifest },
+  host: WebToolHost
+): TranscribeSpec | null {
   const spec = (tool.manifest.render as { transcribe?: TranscribeSpec } | undefined)?.transcribe;
   if (!spec?.source || !spec.target) return null;
   let available = false;
-  try { available = host.speech?.transcribeAvailable?.() === true; } catch { /* stays false */ }
+  try {
+    available = host.speech?.transcribeAvailable?.() === true;
+  } catch {
+    /* stays false */
+  }
   if (!available) return null;
   const ids = new Set((tool.manifest.inputs ?? []).map((i) => i.id));
   return ids.has(spec.source) && ids.has(spec.target) ? spec : null;
@@ -203,6 +321,7 @@ export type WebToolHost = HostV1 & {
   state: StateAPI & { save(slot: string, data: object, thumb?: string | null): Promise<void> };
   identity?: { status(): Promise<IdentityStatus> };
   compose?: ComposeAPI & { _describeUrl(url: string): Promise<EmbedDescribe | null> };
+  designSystems?: ToolDesignSystemRegistry;
 };
 
 /**
@@ -212,7 +331,9 @@ export type WebToolHost = HostV1 & {
 export type ToolRuntime = Runtime & { setInputNoHistory?: Runtime['setInput'] };
 
 /** The header (or editor-rail) ↶/↷ pair the history helpers drive. */
-interface HistoryControls { sync(canUndo: boolean, canRedo: boolean): void; }
+interface HistoryControls {
+  sync(canUndo: boolean, canRedo: boolean): void;
+}
 
 /** The sidebar/actions panel element with the document-level dismissers renderInputs parks on it. */
 export interface PanelEl extends HTMLElement {
@@ -229,12 +350,18 @@ export interface PanelEl extends HTMLElement {
   _inputsDispose?: () => void;
 }
 /** A flatpickr-enhanced input carries its instance for teardown. */
-export interface FlatpickrHost extends HTMLInputElement { _flatpickr?: { destroy(): void; altInput?: HTMLInputElement }; }
-
-
+export interface FlatpickrHost extends HTMLInputElement {
+  _flatpickr?: { destroy(): void; altInput?: HTMLInputElement };
+}
 
 /** The print-mark toggle map carried on the export bar and in the `marks` param. */
-export interface PrintMarks { crop: boolean; registration: boolean; bleed: boolean; colorBars: boolean; provenance: boolean; }
+export interface PrintMarks {
+  crop: boolean;
+  registration: boolean;
+  bleed: boolean;
+  colorBars: boolean;
+  provenance: boolean;
+}
 
 /** Export defaults restored from the URL / a saved session (see mountTool). */
 export interface ExportDefaults {
@@ -295,17 +422,12 @@ export interface ExportDefaults {
  * owns the AbortController whose signal it passed into the export opts, and this
  * only hands the abort to the button. Omit it and the button stays Hide.
  */
-export type ExportUnscaled = <T>(
-  fn: (report?: (done: number, total: number) => void) => Promise<T>,
-  opts?: { shutter?: boolean; detail?: string; onCancel?: () => void },
-) => Promise<T>;
-
 /** What renderActions hands back for programmatic triggering (`?copy`, Save & leave…). */
 export interface ActionsApi {
   copy?: (fmtOverride?: string) => Promise<{ method: string } | void>;
   preview?: () => Promise<void>;
   save?: (btn?: HTMLElement | null, opts?: { folderId?: string | null }) => Promise<boolean>;
-  setDims?: (dims?: { width?: number; height?: number; unit?: string }) => void;
+  setDims?: (dims?: { width?: number; height?: number; unit?: string; dpi?: number }) => void;
   setFormat?: (fmt: string) => void;
   /** Narrow the export format bar to a mode/effect select option's `formats`
    *  (see exportFormatDriver). Keeps the current pick when it survives. */
@@ -343,7 +465,9 @@ export interface ActionsExperience {
 }
 
 /** A shared monotonic bar-write guard (a holder object so shrinkUrl can share it). */
-interface BarSeq { v: number; }
+interface BarSeq {
+  v: number;
+}
 
 /** The lottie-mount module, loaded lazily and kept for reaping. */
 type LottieModule = typeof import('./lottie-mount.ts');
@@ -357,7 +481,7 @@ type AnimSvgModule = typeof import('./anim-svg-mount.ts');
 type VizModule = typeof import('../lib/viz-tool-mount.ts');
 
 /**
- * The superset of export options this view assembles and hands to runtime.export - 
+ * The superset of export options this view assembles and hands to runtime.export -
  * the engine's ExportOpts plus the web-shell timing/print/provenance extensions the
  * export bridge reads. Permissive on purpose so the spread/assignment builders below
  * typecheck without changing what's passed at runtime.
@@ -443,14 +567,27 @@ export interface RunExportOpts {
 
 function marksFromCsv(csv: string | null | undefined): PrintMarks | null {
   if (!csv) return null;
-  const s = new Set(String(csv).split(',').map(x => x.trim().toLowerCase()).filter(Boolean));
-  return { crop: s.has('crop'), registration: s.has('reg') || s.has('registration'), bleed: s.has('bleed'), colorBars: s.has('bars') || s.has('colorbars'), provenance: s.has('prov') || s.has('provenance') };
+  const s = new Set(
+    String(csv)
+      .split(',')
+      .map((x) => x.trim().toLowerCase())
+      .filter(Boolean)
+  );
+  return {
+    crop: s.has('crop'),
+    registration: s.has('reg') || s.has('registration'),
+    bleed: s.has('bleed'),
+    colorBars: s.has('bars') || s.has('colorbars'),
+    provenance: s.has('prov') || s.has('provenance'),
+  };
 }
 
 // Undo/redo glyphs for the history toast (Lucide undo-2 / redo-2). App chrome,
 // not exported, so currentColor is safe here (unlike tool-template SVGs).
-const ICON_UNDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5 5.5 5.5 0 0 1-5.5 5.5H11"/></svg>';
-const ICON_REDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5 5.5 5.5 0 0 0 9.5 20H13"/></svg>';
+const ICON_UNDO =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5 5.5 5.5 0 0 1-5.5 5.5H11"/></svg>';
+const ICON_REDO =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5 5.5 5.5 0 0 0 9.5 20H13"/></svg>';
 
 // Prompt (client-side, no server) for the password on an encrypted `zx` link and
 // return the decrypted READABLE query. Loops on a wrong password; on cancel returns
@@ -471,30 +608,43 @@ async function decryptEncryptedLink(query: string): Promise<string> {
     for (;;) {
       const pw = await promptDialog({
         title: t('Password-protected link'),
-        message: t('This Lolly link is locked. Enter its password to open it here - nothing is sent to a server.'),
+        message: t(
+          'This Lolly link is locked. Enter its password to open it here - nothing is sent to a server.'
+        ),
         confirmLabel: t('Open'),
         inputType: 'password',
         placeholder: t('Password'),
         error,
       });
-      if (pw == null) return query;                     // cancelled → load at defaults
+      if (pw == null) return query; // cancelled → load at defaults
       const decoded = await unpackEncrypted(token, pw);
       if (decoded != null) {
         const extras: string[] = [];
         params.forEach((v, k) => {
           if (k === ENC_PARAM) return;
-          extras.push(v === '' ? encodeURIComponent(k) : `${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
+          extras.push(
+            v === '' ? encodeURIComponent(k) : `${encodeURIComponent(k)}=${encodeURIComponent(v)}`
+          );
         });
         return extras.length ? `${decoded}&${extras.join('&')}` : decoded;
       }
-      error = t('Incorrect password - try again.');         // wrong → re-prompt
+      error = t('Incorrect password - try again.'); // wrong → re-prompt
     }
   })();
   zxInFlight.set(token, run);
-  try { return await run; } finally { zxInFlight.delete(token); }
+  try {
+    return await run;
+  } finally {
+    zxInFlight.delete(token);
+  }
 }
 
-export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: string, urlParams: string | null | undefined): Promise<void> {
+export async function mountTool(
+  viewEl: ViewEl,
+  host: WebToolHost,
+  toolId: string,
+  urlParams: string | null | undefined
+): Promise<void> {
   // FIRST, and before any early return: the Team-projects open stashed the instance's id
   // for the session it is navigating into, and that stash is bounded by "the next mount
   // spends it" - so a mount that 404s or fails to load must spend it too, or an unrelated
@@ -515,6 +665,9 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // (its rule 3), so each of those paths releases before it returns, and
   // `views/tool-team-origin.test.ts` fails if a new one forgets to.
   consumeTeamSessionOrigin(toolId);
+  const mountLifecycle = new MountLifecycle({
+    onDisposeError: (name, error) => console.error(`[tool] ${name} teardown:`, error),
+  });
 
   // A sideloaded tool (installed from a .lolly) lives in a device-local bucket, not the
   // catalog. When one is installed it loads from that bucket with NO signed-catalog
@@ -525,7 +678,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
 
   // If the catalog is loaded, do a fast existence check before fetching anything.
   const catalog = (window as Window & { __toolIndex?: { tools?: { id: string }[] } }).__toolIndex;
-  if (!installed && catalog?.tools && !catalog.tools.some(t => t.id === toolId)) {
+  if (!installed && catalog?.tools && !catalog.tools.some((t) => t.id === toolId)) {
     mount404(viewEl, toolId);
     releaseTeamSessionOrigin();
     return;
@@ -549,10 +702,20 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
     const LOAD_TIMEOUT_MS = 15000;
     let loadTimer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
-      loadTimer = setTimeout(() => reject(new Error('Failed to fetch tool - network timeout')), LOAD_TIMEOUT_MS);
+      loadTimer = setTimeout(
+        () => reject(new Error('Failed to fetch tool - network timeout')),
+        LOAD_TIMEOUT_MS
+      );
     });
     try {
-      tool = await Promise.race([loadTool(toolId, fetchFile, { lang: currentLang(), integrity: installed ? undefined : ((await getToolIntegrity()) ?? undefined) }), timeout]);
+      tool = await Promise.race([
+        loadTool(toolId, fetchFile, {
+          lang: currentLang(),
+          integrity: installed ? undefined : ((await getToolIntegrity()) ?? undefined),
+          trustClass: installed ? 'sideloaded-consented' : undefined,
+        }),
+        timeout,
+      ]);
     } finally {
       clearTimeout(loadTimer);
     }
@@ -566,12 +729,15 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
       return;
     }
     const errs = err.validationErrors?.length
-      ? `<ul class="error-list">${err.validationErrors.map(ve =>
-          `<li><code>${escape(ve.path)}</code> - ${escape(ve.message)}</li>`
-        ).join('')}</ul>`
+      ? `<ul class="error-list">${err.validationErrors
+          .map((ve) => `<li><code>${escape(ve.path)}</code> - ${escape(ve.message)}</li>`)
+          .join('')}</ul>`
       : '';
     const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
-    if (!err.validationErrors?.length && (offline || /fetch|network|load|failed to fetch/i.test(String(err.message || '')))) {
+    if (
+      !err.validationErrors?.length &&
+      (offline || /fetch|network|load|failed to fetch/i.test(String(err.message || '')))
+    ) {
       // Offline-first PWA: a network load failure should be recoverable, not a raw dead-end.
       viewEl.innerHTML =
         `<div class="error"><strong>${offline ? t('You’re offline') : t('Couldn’t load this tool')}</strong>` +
@@ -593,7 +759,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // "desktop only" ('unavailable').
   const sup = toolSupport(tool.manifest, host.capabilities);
   // A capture tool on a Chromium browser without the extension: MOUNT it anyway.
-  // url-shot's visual composer + recipe output need no capture - only EXPORT does - 
+  // url-shot's visual composer + recipe output need no capture - only EXPORT does -
   // so a full-screen gate would hide a core authoring surface. Mount the tool and
   // steer to the extension/desktop for the actual capture with a dismissible banner
   // (below). A genuinely unavailable capability (non-Chromium, or a non-capture
@@ -645,14 +811,18 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   try {
     const swatches = await host.tokens?.colors?.();
     if (swatches?.length) {
-      setSwatches(swatches.map(s => ({ value: s.value, label: s.name, group: s.group, ref: s.ref })));
+      setSwatches(
+        swatches.map((s) => ({ value: s.value, label: s.name, group: s.group, ref: s.ref }))
+      );
     }
-  } catch { /* keep the built-in palette */ }
+  } catch {
+    /* keep the built-in palette */
+  }
 
   // Annotate the template once so rendered nodes carry data-canvas-input attrs
   // for click-to-focus. This is purely a shell-side concern; the engine just
   // stores the modified source and hydrates it like any other template.
-  const inputIds = (tool.manifest.inputs ?? []).map(i => i.id);
+  const inputIds = (tool.manifest.inputs ?? []).map((i) => i.id);
   tool.template = annotateTemplate(tool.template, inputIds);
   document.title = tRaw('{name} - Lolly', { name: tool.manifest.name });
 
@@ -676,7 +846,31 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // A no-op for ordinary readable links. Done once so every consumer below agrees.
   urlParams = await expandQuery(urlParams ?? '');
 
-  const { values, format: urlFormat, export: autoExport, copy: autoCopy, slot: routeSlot, filename: urlFilename, width: urlWidth, height: urlHeight, unit: urlUnit, dpi: urlDpi, profile: urlProfile, password: urlPassword, bleed: urlBleed, marks: urlMarks, c2pa: urlC2pa, imprint: urlImprint, metadata: urlMetadata, durable: urlDurable, hdr: urlHdr, depth: urlDepth, video: urlVideo } = parseUrlState(urlParams, tool.manifest);
+  const {
+    values,
+    format: urlFormat,
+    export: autoExport,
+    copy: autoCopy,
+    slot: routeSlot,
+    filename: urlFilename,
+    width: urlWidth,
+    height: urlHeight,
+    unit: urlUnit,
+    dpi: urlDpi,
+    profile: urlProfile,
+    password: urlPassword,
+    bleed: urlBleed,
+    marks: urlMarks,
+    c2pa: urlC2pa,
+    imprint: urlImprint,
+    metadata: urlMetadata,
+    durable: urlDurable,
+    hdr: urlHdr,
+    depth: urlDepth,
+    video: urlVideo,
+    designSystem: urlDesignSystem,
+  } = parseUrlState(urlParams, tool.manifest);
+  const automationPassword = await takeAutomationExportPassword(Boolean(autoExport), urlPassword);
   // Starting a collab force-remounts this tool, and the route it remounts through is a
   // LOSSY encoder twice over: `buildShareParams` skips `user/` asset ids and anything
   // past 150 chars, `syncUrl` writes only dirty params, skips `file` inputs, and never
@@ -786,9 +980,26 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // practice the seed applies whole; a crafted link's own params keep priority.
   let seededDirect = false;
   {
-    const { takePendingToolSeed } = await import('../lib/drop-router.ts');
+    const { takePendingToolFile, takePendingToolSeed } = await import('../lib/drop-router.ts');
     const seed = takePendingToolSeed(toolId);
-    if (seed) { initialValues = { ...(seed as Record<string, InputValue>), ...initialValues }; seededDirect = true; }
+    if (seed) {
+      initialValues = { ...(seed as Record<string, InputValue>), ...initialValues };
+      seededDirect = true;
+    }
+    // A native file-manager utility verb already chose both the tool and file.
+    // Seed its declared file input before the runtime is born, exactly like the
+    // layered-file seed above, so onInit sees the right source and no empty-state
+    // frame flashes first. Explicit URL/session values retain precedence.
+    const directFile = takePendingToolFile(toolId);
+    const directInput = tool.manifest.inputs?.find((i) => i.type === 'file');
+    if (directFile && directInput) {
+      const ref = await fileToRef(directFile);
+      initialValues = {
+        [directInput.id]: directInput.multiple ? [ref] : ref,
+        ...initialValues,
+      } as Record<string, InputValue>;
+      seededDirect = true;
+    }
   }
 
   // ── "New from template" on-ramp (plans/94) ───────────────────────────────────
@@ -817,11 +1028,14 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // heavy `values` seed lives in each external file and is FETCHED ON DEMAND below, so it
   // never rides the index or a URL. Fall back to an inline manifest `templates[]` if a
   // tool still authors one (the optional inline shape).
-  const indexEntry = (window as Window & { __toolIndex?: { tools?: Array<{ id: string; templates?: unknown }> } })
-    .__toolIndex?.tools?.find(e => e.id === toolId);
+  const indexEntry = (
+    window as Window & { __toolIndex?: { tools?: Array<{ id: string; templates?: unknown }> } }
+  ).__toolIndex?.tools?.find((e) => e.id === toolId);
   const templateMeta: unknown = Array.isArray(indexEntry?.templates)
     ? indexEntry!.templates
-    : (Array.isArray(tool.manifest.templates) ? tool.manifest.templates : undefined);
+    : Array.isArray(tool.manifest.templates)
+      ? tool.manifest.templates
+      : undefined;
   const hasTemplates = Array.isArray(templateMeta) && templateMeta.length > 0;
   /** The chooser's pick, resolved off the mount path (see the else-branch below). */
   let templatePick: Promise<Record<string, InputValue>> | null = null;
@@ -842,9 +1056,15 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   if (templateParam && !slot && !seededDirect && Object.keys(values).length === 0) {
     const { fetchTemplateSeed, templateValuesById } = await import('./template-chooser.ts');
     let seed = await fetchTemplateSeed(toolId, templateParam, presetParam);
-    if (!seed && Array.isArray(templateMeta)) seed = templateValuesById(templateMeta, templateParam, presetParam);
+    if (!seed && Array.isArray(templateMeta))
+      seed = templateValuesById(templateMeta, templateParam, presetParam);
     if (seed) initialValues = { ...seed, ...initialValues };
-  } else if (!slot && !seededDirect && Object.keys(values).length === 0 && (!reachedViaLink || templateParam === '')) {
+  } else if (
+    !slot &&
+    !seededDirect &&
+    Object.keys(values).length === 0 &&
+    (!reachedViaLink || templateParam === '')
+  ) {
     // An EMPTY `?template=` (present, no id) is an explicit ask for the chooser - the
     // gallery card's "+ new" button navigates with it - so it overrides the
     // reachedViaLink skip that would otherwise read "?template=" as a deep link with
@@ -861,9 +1081,13 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
     if (!hasTemplates) {
       try {
         const { createUserTemplateStore } = await import('../lib/user-templates.ts');
-        const mine = await createUserTemplateStore(host as unknown as Parameters<typeof createUserTemplateStore>[0]).list(toolId);
+        const mine = await createUserTemplateStore(
+          host as unknown as Parameters<typeof createUserTemplateStore>[0]
+        ).list(toolId);
         hasUserTemplates = mine.length > 0;
-      } catch { /* user templates are best-effort - fall through to a blank open */ }
+      } catch {
+        /* user templates are best-effort - fall through to a blank open */
+      }
     }
     // A design file dropped on the front door is the document: the drop route stashed
     // it and free-canvas imports it on mount, so the chooser must not open over it - a
@@ -906,12 +1130,19 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
         // them with no fetch - a picked one seeds the doc exactly like a built-in. One chip.
         try {
           const { createUserTemplateStore } = await import('../lib/user-templates.ts');
-          const mine = await createUserTemplateStore(host as unknown as Parameters<typeof createUserTemplateStore>[0]).list(toolId);
-          for (const ut of mine) templates.push({
-            id: ut.id, name: ut.name, category: t('Your templates'),
-            values: ut.values as Record<string, InputValue>,
-          });
-        } catch { /* user templates are best-effort */ }
+          const mine = await createUserTemplateStore(
+            host as unknown as Parameters<typeof createUserTemplateStore>[0]
+          ).list(toolId);
+          for (const ut of mine)
+            templates.push({
+              id: ut.id,
+              name: ut.name,
+              category: t('Your templates'),
+              values: ut.values as Record<string, InputValue>,
+            });
+        } catch {
+          /* user templates are best-effort */
+        }
         if (!templates.length) return {};
         return openTemplateChooser({
           toolName: tool.manifest.name,
@@ -969,7 +1200,9 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
     try {
       const into = sessionStorage.getItem('lolly:fileInto');
       if (into !== null) fileIntoFolder = into || null;
-    } catch (e) { /* sessionStorage unavailable (private mode) */ }
+    } catch (e) {
+      /* sessionStorage unavailable (private mode) */
+    }
   }
 
   // Where the tool returns to when it leaves. The Projects view arms a marker (the
@@ -981,7 +1214,9 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   try {
     const back = sessionStorage.getItem('lolly:returnTo');
     if (back) returnTo = back;
-  } catch (e) { /* sessionStorage unavailable (private mode) */ }
+  } catch (e) {
+    /* sessionStorage unavailable (private mode) */
+  }
 
   // The back pill follows that same marker: a tool launched from a folder is PINNED
   // to that folder - it must land back where the session was filed even if the user
@@ -998,14 +1233,40 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
 
   // Populate inputs from user profile if they match profile field names
   const profile = await host.profile.get();
-  const profileInputIds = (tool.manifest.inputs ?? []).map(i => i.id);
+  const profileInputIds = (tool.manifest.inputs ?? []).map((i) => i.id);
   for (const inputId of profileInputIds) {
     if (inputId in profile && !(inputId in initialValues)) {
       initialValues[inputId] = (profile as Record<string, InputValue>)[inputId]!;
     }
   }
 
+  // Which design system this tool mounts under, and which one a resumed session was
+  // made with. Both feed the two notices below the sidebar: "Made with X" when they
+  // differ and X is on the device, and "Switched to X - reload" if a switch happens
+  // while this tool stays open (the switch never tears a tool down under someone).
+  const {
+    registry: dsRegistry,
+    mountedSystemId,
+    madeWith,
+  } = await prepareToolDesignSystemContext(host, urlDesignSystem, slot);
+
   const runtime: ToolRuntime = await createRuntime(tool, host, initialValues);
+  const compileForSurface = async (inputs: Record<string, unknown> = {}) =>
+    (
+      await compileDocument(tool, { ...modelToValues(runtime.getModel()), ...inputs } as never, {
+        host,
+      })
+    ).document;
+  const documentSurface = {
+    compile: compileForSurface,
+    inspect: async (document?: unknown) =>
+      inspectDocument((document ?? (await compileForSurface())) as never),
+    measure: async (document?: unknown, opts?: Record<string, unknown>) =>
+      measureDocument((document ?? (await compileForSurface())) as never, opts),
+    diff: async (a: unknown, b: unknown) => diffDocuments(a as never, b as never),
+  };
+  const removeDocumentSurface = installDocumentSurface(window, documentSurface);
+  mountLifecycle.add('document automation surface', removeDocumentSurface);
   // A NEW session appears - the soft "twinkle bloom". Only a fresh open (no resume
   // slot); resuming a saved session is not "making" one. Audible when opened via a
   // click (audio is gesture-gated); a cold direct-URL load stays silent until a gesture.
@@ -1024,14 +1285,15 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // wiring: the runtime, the toast and the button sync.
   const inputHistory = createHistory();
   let applyingHistory = false;
-  let historyControls: HistoryControls | null = null;   // ↶/↷ buttons - header pair, or the editor's toolbar pair (set on mount)
+  let historyControls: HistoryControls | null = null; // ↶/↷ buttons - header pair, or the editor's toolbar pair (set on mount)
   let historyToastEl: HTMLElement | null = null;
   let historyToastTimer: ReturnType<typeof setTimeout> | undefined;
   // Gesture continuity for coalescing, tracked SEPARATELY from stack entries: an
   // undo/redo leaves an old entry on top still carrying its original time, so if we
   // keyed coalescing off the entry the next edit could wrongly merge into it (losing
   // a state). applyHistory resets this, so a post-undo edit always starts fresh.
-  const refreshHistoryUI = () => historyControls?.sync(inputHistory.canUndo(), inputHistory.canRedo());
+  const refreshHistoryUI = () =>
+    historyControls?.sync(inputHistory.canUndo(), inputHistory.canRedo());
   const baseSetInput = runtime.setInput.bind(runtime);
   // Expose the UNWRAPPED setter on the runtime so other scopes (notably renderActions'
   // programmatic width/height px-sync) can set inputs without the change landing in the
@@ -1045,35 +1307,57 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
    * Resize, Rotate, or the one field's own label in the user's language - and answers
    * null for everything else, where the input label is the truthful answer it always was.
    */
-  const changeLabel = (item: { id: string; label?: string; fields?: Array<{ id?: string; label?: string }>; canvas?: Record<string, unknown> }, before: InputValue, after: InputValue): string => {
+  const changeLabel = (
+    item: {
+      id: string;
+      label?: string;
+      fields?: Array<{ id?: string; label?: string }>;
+      canvas?: Record<string, unknown>;
+    },
+    before: InputValue,
+    after: InputValue
+  ): string => {
     const fallback = item.label || item.id;
     const cvs = (item.canvas || {}) as Record<string, unknown>;
-    const str = (k: string): string | undefined => (typeof cvs[k] === 'string' ? cvs[k] as string : undefined);
+    const str = (k: string): string | undefined =>
+      typeof cvs[k] === 'string' ? (cvs[k] as string) : undefined;
     const ch = describeRowChange(before, after, {
-      xField: str('xField'), yField: str('yField'), wField: str('wField'),
-      hField: str('hField'), rotationField: str('rotationField'),
+      xField: str('xField'),
+      yField: str('yField'),
+      wField: str('wField'),
+      hField: str('hField'),
+      rotationField: str('rotationField'),
     });
     if (!ch) return fallback;
     switch (ch.kind) {
-      case 'add': return t('Add');
-      case 'delete': return t('Delete');
-      case 'move': return t('Move');
-      case 'resize': return t('Resize');
-      case 'rotate': return t('Rotate');
-      default: break;
+      case 'add':
+        return t('Add');
+      case 'delete':
+        return t('Delete');
+      case 'move':
+        return t('Move');
+      case 'resize':
+        return t('Resize');
+      case 'rotate':
+        return t('Rotate');
+      default:
+        break;
     }
-    const f = (item.fields || []).find(x => x?.id === ch.field);
+    const f = (item.fields || []).find((x) => x?.id === ch.field);
     return f?.label ? t(f.label) : fallback;
   };
   runtime.setInput = (id: string, value: InputValue) => {
     if (!applyingHistory) {
-      const cur = runtime.getModel().find(i => i.id === id);
+      const cur = runtime.getModel().find((i) => i.id === id);
       // `label` is what the toast shows on undo/redo - what CHANGED where we can name it.
-      if (cur && inputHistory.record(
-        { id, label: changeLabel(cur, cur.value, value), before: cur.value, after: value },
-        Date.now(),
-      ) !== 'ignored') {
-        historyToastEl?.classList.remove('is-visible');   // dismiss a now-stale undo/redo toast
+      if (
+        cur &&
+        inputHistory.record(
+          { id, label: changeLabel(cur, cur.value, value), before: cur.value, after: value },
+          Date.now()
+        ) !== 'ignored'
+      ) {
+        historyToastEl?.classList.remove('is-visible'); // dismiss a now-stale undo/redo toast
         refreshHistoryUI();
       }
     }
@@ -1082,20 +1366,29 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
 
   const applyHistory = (id: string, value: InputValue) => {
     applyingHistory = true;
-    inputHistory.endGesture();   // an undo/redo ends any gesture - the next edit starts a new step
-    try { runtime.setInput(id, cloneValue(value)); }
-    finally { applyingHistory = false; }
+    inputHistory.endGesture(); // an undo/redo ends any gesture - the next edit starts a new step
+    try {
+      runtime.setInput(id, cloneValue(value));
+    } finally {
+      applyingHistory = false;
+    }
   };
   const undoHistory = () => {
     const entry = inputHistory.undo();
-    if (!entry) { showHistoryToast({ empty: 'undo' }); return; }
+    if (!entry) {
+      showHistoryToast({ empty: 'undo' });
+      return;
+    }
     applyHistory(entry.id, entry.before);
     showHistoryToast({ kind: 'undo', label: entry.label });
     refreshHistoryUI();
   };
   const redoHistory = () => {
     const entry = inputHistory.redo();
-    if (!entry) { showHistoryToast({ empty: 'redo' }); return; }
+    if (!entry) {
+      showHistoryToast({ empty: 'redo' });
+      return;
+    }
     applyHistory(entry.id, entry.after);
     showHistoryToast({ kind: 'redo', label: entry.label });
     refreshHistoryUI();
@@ -1127,7 +1420,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // migration ran (on the blank model), and `ensureRowIds` is idempotent for the rest.
   if (templatePick) {
     void templatePick
-      .then(async chosen => {
+      .then(async (chosen) => {
         // Navigated away before the pick landed (or before the chooser even opened,
         // per the guard at its `templatePickTornDown` check above) - this runtime is
         // already torn down by _cleanup; applying a patch to it now would re-run the
@@ -1137,9 +1430,9 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
         if (templatePickTornDown) return;
         const seed: Record<string, InputValue> = {};
         for (const [k, v] of Object.entries(chosen ?? {})) if (!(k in initialValues)) seed[k] = v;
-        if (!Object.keys(seed).length) return;   // Blank canvas / Escape / close
+        if (!Object.keys(seed).length) return; // Blank canvas / Escape / close
         await runtime.applyPatch(seed);
-        if (templatePickTornDown) return;   // torn down while applyPatch was in flight
+        if (templatePickTornDown) return; // torn down while applyPatch was in flight
         await migrateBlockRowIds(runtime);
         // applyPatch resolves no refs (it's the keystroke/collab path); a template's
         // {color.*} backdrop tokens and tool-URL image stubs arrive unresolved, so do
@@ -1148,7 +1441,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
         if (templatePickTornDown) return;
         await runtime.resolveRefs();
       })
-      .catch(e => host.log?.('warn', 'template seed failed - staying blank: ' + String(e)));
+      .catch((e) => host.log?.('warn', 'template seed failed - staying blank: ' + String(e)));
   }
 
   // ── Live collab (plan 100 section 5) ──────────────────────────────────────────────
@@ -1177,7 +1470,15 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // doubles as the redo path on touch, where there's no keyboard. Reuses
   // announce() for the screen-reader side (the toast itself is aria-hidden to
   // avoid a double read). A single reused element; the timer resets on each call.
-  const showHistoryToast = ({ kind, label, empty }: { kind?: 'undo' | 'redo'; label?: string; empty?: 'undo' | 'redo' }) => {
+  const showHistoryToast = ({
+    kind,
+    label,
+    empty,
+  }: {
+    kind?: 'undo' | 'redo';
+    label?: string;
+    empty?: 'undo' | 'redo';
+  }) => {
     if (!historyToastEl) {
       historyToastEl = document.createElement('div');
       historyToastEl.className = 'toast';
@@ -1209,7 +1510,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
     }
     // Animate the slide-in only when coming from hidden; if it's already showing
     // (rapid undo/redo), just swap the content and reset the timer - no flicker.
-    if (!wasVisible) void el.offsetWidth;   // flush the base state so the transition plays
+    if (!wasVisible) void el.offsetWidth; // flush the base state so the transition plays
     el.classList.add('is-visible');
     historyToastTimer = setTimeout(() => el.classList.remove('is-visible'), empty ? 1400 : 2200);
   };
@@ -1228,10 +1529,10 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   };
   window.addEventListener('keydown', onHistoryKey);
 
-  const nativeW     = tool.manifest.render.width;
-  const nativeH     = tool.manifest.render.height;
-  const hasInputs   = (tool.manifest.inputs?.length ?? 0) > 0;
-  const noExport    = tool.manifest.render.export === false;
+  const nativeW = tool.manifest.render.width;
+  const nativeH = tool.manifest.render.height;
+  const hasInputs = (tool.manifest.inputs?.length ?? 0) > 0;
+  const noExport = tool.manifest.render.export === false;
   // Whether /batch can run this template - the batch's own admission test, kept in
   // capabilities.ts so both halves of it live next to `toolSupport` rather than being
   // restated here (views/* must not pull in the pro/ folder, which owns its stylesheet).
@@ -1251,14 +1552,17 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // Whether this tool persists a saved session - drives the Save half of the
   // render pill. Mirrors renderActions: the default action set includes 'save',
   // and an explicit empty actions list (opted-out file utilities) excludes it.
-  const canSaveSession = (tool.manifest.render.actions ?? ['copy', 'download', 'save']).includes('save');
+  const canSaveSession = (tool.manifest.render.actions ?? ['copy', 'download', 'save']).includes(
+    'save'
+  );
   // An on-device transform tool (export:false with an explicit empty actions list,
   // or no inputs) gets an EMPTY popup body from renderActions - so don't emit the
   // Export pill or the overlay shell at all; a header that expands to nothing
   // reads as broken chrome.
-  const exportUiEmpty = noExport
-    && ((Array.isArray(tool.manifest.render.actions) && tool.manifest.render.actions.length === 0)
-      || !hasInputs);
+  const exportUiEmpty =
+    noExport &&
+    ((Array.isArray(tool.manifest.render.actions) && tool.manifest.render.actions.length === 0) ||
+      !hasInputs);
   // Visitor page: `?nostage` on a NO-EXPORT tool. For these utilities the link
   // is the product (a jump page, a countdown), so a shared link opens as a plain
   // full-width webpage - normal document flow, no stage frame, no zoom HUD, no
@@ -1274,43 +1578,65 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   const editorLayout = tool.manifest.render.layout === 'editor';
   // The blocks input the editor manipulates directly (carries the `canvas` flag).
   const canvasEditInput = editorLayout
-    ? tool.manifest.inputs?.find(i => i.type === 'blocks' && i.canvas)
+    ? tool.manifest.inputs?.find((i) => i.type === 'blocks' && i.canvas)
     : null;
   // Geometry paint fast-skip (plans/98 section 9) - OFF by default, opt-in via ?canvasfastpath=1 so
   // the served-app harness proves exported-SVG byte-parity before it is enabled for everyone.
-  const fastPathOn = editorLayout && !!canvasEditInput
-    && typeof location !== 'undefined' && /[?&]canvasfastpath=1\b/.test(location.href);
-  const fastCfgPaint: FastPathCfg | null = fastPathOn && canvasEditInput?.canvas
-    ? resolveCanvasFastCfg(canvasEditInput.canvas as Record<string, unknown>)
-    : null;
+  const fastPathOn =
+    editorLayout &&
+    !!canvasEditInput &&
+    typeof location !== 'undefined' &&
+    /[?&]canvasfastpath=1\b/.test(location.href);
+  const fastCfgPaint: FastPathCfg | null =
+    fastPathOn && canvasEditInput?.canvas
+      ? resolveCanvasFastCfg(canvasEditInput.canvas as Record<string, unknown>)
+      : null;
   // Multi-page ("carousel") editor: an editor-layout tool whose canvas is a horizontal
   // strip of N same-size [data-pdf-page] frames (render.pages). The overlay places boxes
   // across all frames; export fans out to a multi-page PDF or one still image per page.
-  const pagesCfg = (editorLayout && canvasEditInput) ? tool.manifest.render.pages : undefined;
+  const pagesCfg = editorLayout && canvasEditInput ? tool.manifest.render.pages : undefined;
   const pagesMode = !!pagesCfg;
   // Frame-primitive editor (plan 93 F1b): an editor-layout tool whose canvas block
   // declares `frameField` (Design). kind:'frame' boxes render as free-placed
   // [data-pdf-page] pages and the overlay drives frame-local drag + containment-on-drop.
   // The fields live on the blocks input's `canvas`, not on render.*; null for every tool
   // without a frameField so the overlay's frame-aware paths stay dead.
-  const frameCanvas = (canvasEditInput as { canvas?: { frameField?: string; frameKind?: string; orderField?: string; clipChildrenField?: string; frameTransitionField?: string; hiddenField?: string; lockedField?: string } } | null)?.canvas;
-  const frameCfg = (editorLayout && frameCanvas?.frameField) ? {
-    frameField: frameCanvas.frameField,
-    frameKind: frameCanvas.frameKind || 'frame',
-    orderField: frameCanvas.orderField,
-    clipChildrenField: frameCanvas.clipChildrenField,
-    // The M4 declarations (plans/179): a slide's own transition to the next one, and the
-    // two layer flags. Each is optional, so a canvas that declares none keeps every
-    // frame-aware path exactly as it was.
-    transitionField: frameCanvas.frameTransitionField,
-    hiddenField: frameCanvas.hiddenField,
-    lockedField: frameCanvas.lockedField,
-  } : undefined;
+  const frameCanvas = (
+    canvasEditInput as {
+      canvas?: {
+        frameField?: string;
+        frameKind?: string;
+        orderField?: string;
+        clipChildrenField?: string;
+        frameTransitionField?: string;
+        hiddenField?: string;
+        lockedField?: string;
+      };
+    } | null
+  )?.canvas;
+  const frameCfg =
+    editorLayout && frameCanvas?.frameField
+      ? {
+          frameField: frameCanvas.frameField,
+          frameKind: frameCanvas.frameKind || 'frame',
+          orderField: frameCanvas.orderField,
+          clipChildrenField: frameCanvas.clipChildrenField,
+          // The M4 declarations (plans/179): a slide's own transition to the next one, and the
+          // two layer flags. Each is optional, so a canvas that declares none keeps every
+          // frame-aware path exactly as it was.
+          transitionField: frameCanvas.frameTransitionField,
+          hiddenField: frameCanvas.hiddenField,
+          lockedField: frameCanvas.lockedField,
+        }
+      : undefined;
   // A fixed-size editor canvas (no resize control): the canvas input opts in via
   // canvas.fixedCanvas. Connector tools (Org Chart) set this so their rendered
   // connector <svg>'s viewBox stays 1:1 with box coordinates (a resized canvas would
   // scale the lines away from the boxes). Treated like carousel mode for sizing.
-  const fixedCanvasMode = !!(canvasEditInput && (canvasEditInput as { canvas?: { fixedCanvas?: boolean } }).canvas?.fixedCanvas);
+  const fixedCanvasMode = !!(
+    canvasEditInput &&
+    (canvasEditInput as { canvas?: { fixedCanvas?: boolean } }).canvas?.fixedCanvas
+  );
   // Will the Design chrome (top bar + the two side columns, plan 179 M1-M3) mount? The
   // same predicate the overlay block below is gated on, minus the two DOM lookups that
   // cannot happen until the template has painted - so the render can already move the
@@ -1324,7 +1650,8 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // [data-pdf-page] boxes, so export / CLI / previews work without the editor.
   const documentLayout = tool.manifest.render.layout === 'document';
   const docEditInput = documentLayout
-    ? (tool.manifest.inputs?.find(i => i.id === 'content') ?? tool.manifest.inputs?.find(i => i.type === 'blocks'))
+    ? (tool.manifest.inputs?.find((i) => i.id === 'content') ??
+      tool.manifest.inputs?.find((i) => i.type === 'blocks'))
     : null;
   // The slide-deck editor layout (render.layout:'deck', e.g. Deck Builder). UNLIKE
   // editor/document it is deliberately NOT chromeless: the input sidebar stays as the home
@@ -1333,9 +1660,7 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // primary flow (edit text/colour/images in place, thumbnail-rail navigation). It edits a
   // `blocks` input whose rows are slides.
   const deckLayout = tool.manifest.render.layout === 'deck';
-  const deckEditInput = deckLayout
-    ? tool.manifest.inputs?.find(i => i.type === 'blocks')
-    : null;
+  const deckEditInput = deckLayout ? tool.manifest.inputs?.find((i) => i.type === 'blocks') : null;
   // Both chromeless full-canvas layouts drop the input aside but keep the fixed render
   // canvas + export controls; the on-canvas overlay replaces the sidebar. The 'deck' layout
   // is intentionally excluded - it keeps the sidebar.
@@ -1373,32 +1698,41 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
   // scrolling surface, no zoom HUD) but skips the zoom fit entirely: the canvas
   // fills the pane's width and REFLOWS as the pane resizes, so dragging the
   // sidebar edge is the browser-window test a visitor's device would give.
-  const webDoc = (tool.manifest.render as { webPreview?: boolean }).webPreview === true && noExport && !chromeless && !hideSidebar;
+  const webDoc =
+    (tool.manifest.render as { webPreview?: boolean }).webPreview === true &&
+    noExport &&
+    !chromeless &&
+    !hideSidebar;
   const pagedDoc = (tool.manifest.render.paged === true || webDoc) && !chromeless && !hideSidebar;
   // Which edge the slide-sorter rail runs along. Left (a vertical rail) suits tall
   // documents; "bottom" is the deck-strip shape for tools whose pages are wide and few,
   // where a left rail would eat the width the page needs. Unknown values fall back to
   // the default rather than producing a rail nothing styles.
-  const filmstripSide: FilmstripSide = tool.manifest.render.filmstrip === 'bottom' ? 'bottom' : 'left';
+  const filmstripSide: FilmstripSide =
+    tool.manifest.render.filmstrip === 'bottom' ? 'bottom' : 'left';
   // Whether the input aside is present. Chromeless modes drop it but aren't hideSidebar.
   const showAside = !hideSidebar && !chromeless && !visitorPage;
-  const noAside   = !showAside;   // no visible input aside (hidden-canvas OR editor)
+  const noAside = !showAside; // no visible input aside (hidden-canvas OR editor)
   // The one declared file input presented as a full-canvas drop zone. Canvas-layout
   // utilities have always worked this way; a sidebar tool with a `file` input (e.g.
   // redact) gets the same canvas drop IN ADDITION to its sidebar file-picker, so a
   // file can land on the big surface without hunting for the sidebar control. Click
   // still only opens the picker via an explicit [data-file-pick] affordance.
-  const canvasFileInput = tool.manifest.inputs?.find(i => i.type === 'file') ?? null;
+  const canvasFileInput = tool.manifest.inputs?.find((i) => i.type === 'file') ?? null;
   // A sidebar tool with a `dropToAdd` blocks input (e.g. logo-wall) also turns its
   // canvas into a drop zone, so a pile of images can be dropped straight onto the
   // (usually empty) preview - not only onto the sidebar list. Canvas-layout file
   // utilities use canvasFileInput above instead, so they're excluded here.
   const canvasDropInput = !canvasFileInput
-    ? tool.manifest.inputs?.find(i => i.type === 'blocks' && i.dropToAdd?.field
-        && (i.fields ?? []).some(f => f.id === i.dropToAdd!.field && f.type === 'asset'))
+    ? tool.manifest.inputs?.find(
+        (i) =>
+          i.type === 'blocks' &&
+          i.dropToAdd?.field &&
+          (i.fields ?? []).some((f) => f.id === i.dropToAdd!.field && f.type === 'asset')
+      )
     : null;
 
-  // On-device utilities (privacy:'on-device') carry an honest, prominent badge - 
+  // On-device utilities (privacy:'on-device') carry an honest, prominent badge -
   // the user's content is processed locally and never uploaded. It's the single
   // most reassuring thing on screen for someone used to handing files to strangers.
   const onDevice = tool.manifest.privacy === 'on-device';
@@ -1417,56 +1751,104 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
     if (!tool.manifest.a11yLabel) return tRaw('{name} preview', { name: tool.manifest.name });
     // Handlebars HTML-escapes {{values}}; an aria-label is plain text, so decode
     // the entities back (it's set via setAttribute, not innerHTML).
-    const custom = runtime.getHydratedString(tool.manifest.a11yLabel)
-      .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"').replace(/&#(?:39|x27);/g, "'").trim();
+    const custom = runtime
+      .getHydratedString(tool.manifest.a11yLabel)
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#(?:39|x27);/g, "'")
+      .trim();
     return custom || tRaw('{name} preview', { name: tool.manifest.name });
   };
 
   const SIDEBAR_DEFAULT = 272;
-  const SIDEBAR_MIN     = 40;
-  const savedWidth  = Number(localStorage.getItem('sidebarWidth') ?? SIDEBAR_DEFAULT);
+  const SIDEBAR_MIN = 40;
+  const savedWidth = Number(localStorage.getItem('sidebarWidth') ?? SIDEBAR_DEFAULT);
   // The desktop export panel anchors to the sidebar's bottom edge, so ?options
   // needs the sidebar open even if this device last left it collapsed (width 0).
-  const sidebarOpen = (isFull || hideSidebar || chromeless) ? false : (showExportPanel || savedWidth > 0);
-  const openWidth   = savedWidth > 0 ? savedWidth : SIDEBAR_DEFAULT;
+  const sidebarOpen =
+    isFull || hideSidebar || chromeless ? false : showExportPanel || savedWidth > 0;
+  const openWidth = savedWidth > 0 ? savedWidth : SIDEBAR_DEFAULT;
 
   // A saved design (or a shared URL) can reference an image the user has since
   // deleted from their device library. The runtime resolves those to null and
   // reports them here; tell the user the field was left blank rather than leaving
   // a silent gap. Worded by DroppedAsset.reason: a frozen (baked) image whose
   // stored data was missing reads differently from an image that no longer resolves.
-  const dropped    = runtime.droppedAssets ?? [];
-  const bakedLost  = dropped.filter(d => d.reason === 'baked-bytes-lost');
-  const unresolved = dropped.filter(d => d.reason !== 'baked-bytes-lost');
+  const dropped = runtime.droppedAssets ?? [];
+  const bakedLost = dropped.filter((d) => d.reason === 'baked-bytes-lost');
+  const unresolved = dropped.filter((d) => d.reason !== 'baked-bytes-lost');
   const fieldsWere = (n: number): string => (n > 1 ? t('fields were') : t('field was'));
   const droppedLines = [
-    unresolved.length ? t('An image used in this saved design is no longer available, so the <strong>{fields}</strong> {were} left blank.', { fields: unresolved.map(d => d.label).join(', '), were: fieldsWere(unresolved.length) }) : '',
-    bakedLost.length ? t("A frozen image's data was missing from this saved design, so the <strong>{fields}</strong> {were} left blank.", { fields: bakedLost.map(d => d.label).join(', '), were: fieldsWere(bakedLost.length) }) : '',
+    unresolved.length
+      ? t(
+          'An image used in this saved design is no longer available, so the <strong>{fields}</strong> {were} left blank.',
+          { fields: unresolved.map((d) => d.label).join(', '), were: fieldsWere(unresolved.length) }
+        )
+      : '',
+    bakedLost.length
+      ? t(
+          "A frozen image's data was missing from this saved design, so the <strong>{fields}</strong> {were} left blank.",
+          { fields: bakedLost.map((d) => d.label).join(', '), were: fieldsWere(bakedLost.length) }
+        )
+      : '',
   ].filter(Boolean);
-  const droppedNotice = droppedLines.length ? `
+  const droppedNotice = droppedLines.length
+    ? `
     <div class="tool-notice" role="status" id="dropped-assets-notice">
       <span class="tool-notice-text">${droppedLines.join(' ')}</span>
       <button type="button" class="tool-notice-close" id="dropped-assets-dismiss" aria-label="${escape(t('Dismiss this message'))}">✕</button>
-    </div>` : '';
+    </div>`
+    : '';
 
   // Capture tool without the extension (see the gate above): mounted for composition,
   // so tell the author capture-to-file needs the extension/desktop while compose works.
-  const captureNotice = captureHint ? `
+  const captureNotice = captureHint
+    ? `
     <div class="tool-notice" role="status" id="capture-hint-notice">
       ${/* nosemgrep: lolly-href-escape-is-not-scheme-validation - docsAppHref() over a build-time slug constant, always '#/docs/…' */ ''}
       <span class="tool-notice-text">${t('Compose a shot and copy its recipe here. Saving it to a file needs the desktop app or browser extension.')} <a href="${escape(docsAppHref('create/extension'))}" target="_blank" rel="noopener">${t('Get the extension')}</a></span>
       <button type="button" class="tool-notice-close" id="capture-hint-dismiss" aria-label="${escape(t('Dismiss this message'))}">✕</button>
-    </div>` : '';
+    </div>`
+    : '';
+
+  // A resumed session made under another design system (plans/186 section 3.8):
+  // say so, and offer the switch when that system is on this device. Rendering
+  // continues with the active one meanwhile - a missing ref keeps its cached hex,
+  // which is the half-rebrand the notice is warning about.
+  const madeWithOnDevice =
+    madeWith && dsRegistry ? await dsRegistry.get(madeWith.id).catch(() => null) : null;
+  const madeWithNotice = madeWith
+    ? `
+    <div class="tool-notice" role="status" id="made-with-notice">
+      <span class="tool-notice-text">${
+        madeWithOnDevice
+          ? t('Made with <strong>{name}</strong>. This design system is not the active one.', {
+              name: escape(madeWith.label),
+            })
+          : t(
+              'Made with <strong>{name}</strong>, which is not on this device. Rendering with the active design system.',
+              { name: escape(madeWith.label) }
+            )
+      }
+        ${madeWithOnDevice ? ` <button type="button" class="tool-notice-link" id="made-with-switch">${t('Switch to {name}', { name: escape(madeWith.label) })}</button>` : ''}</span>
+      <button type="button" class="tool-notice-close" id="made-with-dismiss" aria-label="${escape(t('Dismiss this message'))}">✕</button>
+    </div>`
+    : '';
 
   viewEl.innerHTML = `
-    ${/* The editor layout's Home pill moves INTO the design top bar's left slot (plan 179
+    ${
+      /* The editor layout's Home pill moves INTO the design top bar's left slot (plan 179
           M1), so the free-floating corner pill is gated off there - two pills would sit on
           top of each other. mountBackPill() scans the whole view, so the one the bar emits
-          (backHomeHtml, below) is wired by the same call, unsaved-changes intercept and all. */ ''}
+          (backHomeHtml, below) is wired by the same call, unsaved-changes intercept and all. */ ''
+    }
     ${noAside && !visitorPage && !designChrome ? backPillHtml(backPillOpts) : ''}
-    <div class="tool-layout${chromeless ? ' is-editor' : ''}${documentLayout ? ' is-document' : ''}${pagedDoc ? ' is-paged' : ''}${webDoc ? ' is-webdoc' : ''}${visitorPage ? ' is-visitor' : ''}${hideSidebar && !visitorPage ? ' is-bare' : ''}" id="tool-layout"${documentLayout ? ' data-theme="light"' : ''} data-sidebar="${noAside ? 'hidden' : (sidebarOpen ? 'open' : 'closed')}">
-      ${showAside ? `
+    <div class="tool-layout${chromeless ? ' is-editor' : ''}${documentLayout ? ' is-document' : ''}${pagedDoc ? ' is-paged' : ''}${webDoc ? ' is-webdoc' : ''}${visitorPage ? ' is-visitor' : ''}${hideSidebar && !visitorPage ? ' is-bare' : ''}" id="tool-layout"${documentLayout ? ' data-theme="light"' : ''} data-sidebar="${noAside ? 'hidden' : sidebarOpen ? 'open' : 'closed'}">
+      ${
+        showAside
+          ? `
         <aside class="sidebar" id="tool-sidebar">
           <div class="sidebar-header">
             <div class="sidebar-back-row">
@@ -1477,8 +1859,10 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
                 <span class="sidebar-title">${escape(tool.manifest.name)}</span>
                 ${hasGuide(tool.manifest) ? guideButtonHtml() : ''}
                 ${canSaveSession ? `<button type="button" class="multi-edit-btn" id="multi-edit-btn" data-tip="${escape(t('Make variants'))}" aria-label="${escape(t('Make variants'))}" aria-haspopup="menu" aria-expanded="false">${icon('grid', { className: 'multi-edit-icon' })}</button>` : ''}
-                ${/* "Bulk from rows" - the same icon-only header control as Make variants
-                      next to it, so it needs no styling of its own. */ ''}
+                ${
+                  /* "Bulk from rows" - the same icon-only header control as Make variants
+                      next to it, so it needs no styling of its own. */ ''
+                }
                 ${canBulk ? `<button type="button" class="multi-edit-btn" id="bulk-rows-btn" data-tip="${escape(t('Bulk from rows'))}" aria-label="${escape(t('Bulk from rows'))}">${icon('table', { className: 'multi-edit-icon' })}</button>` : ''}
                 ${/* "Bulk from files" (plans/147 M2) - loop this transform tool over N picked files into one zip. */ ''}
                 ${bulkFilesId ? `<button type="button" class="multi-edit-btn" id="bulk-files-btn" data-tip="${escape(t('Bulk from files'))}" aria-label="${escape(t('Bulk from files'))}">${icon('layersStack', { className: 'multi-edit-icon' })}</button>` : ''}
@@ -1490,14 +1874,19 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
             ${privacyBadge}
             ${droppedNotice}
             ${captureNotice}
+            ${madeWithNotice}
             <div id="tool-inputs" class="tool-inputs"></div>
-            ${hasInputs ? `
+            ${
+              hasInputs
+                ? `
               <div class="sidebar-utils" id="sidebar-utils">
                 ${toolId === 'darkroom' && typeof (window as { VideoDecoder?: unknown }).VideoDecoder !== 'undefined' && typeof (window as { VideoEncoder?: unknown }).VideoEncoder !== 'undefined' ? `<button type="button" id="grade-video-btn" class="clear-inputs-btn" title="${escape(t('Apply this look to a video from your library - runs on-device as a background job'))}">${t('Grade a video…')}</button>` : ''}
                 ${transcribeSpec ? `<button type="button" id="transcribe-btn" class="clear-inputs-btn" disabled title="${escape(t('Add a clip first'))}">${t('Transcribe')}</button>` : ''}
                 <button type="button" id="clear-inputs-btn" class="clear-inputs-btn" title="${escape(t('Reset all inputs to defaults'))}">${t('Clear changes')}</button>
               </div>
-            ` : ''}
+            `
+                : ''
+            }
             <div class="tool-actions" id="tool-actions"></div>
           </div>
           <div class="sidebar-drag-handle resize-grip" id="sidebar-drag-handle"></div>
@@ -1506,43 +1895,69 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
              clipped by the sheet's overflow, which must stay hidden so the form
              can't spill past the sheet's rounded edge. -->
         <button type="button" class="sheet-grip" id="sheet-grip" aria-label="${escape(t('Drag to resize controls, tap to expand'))}"></button>
-      ` : (chromeless || bareExport ? `<div class="tool-actions" id="tool-actions"></div>` : '')}
+      `
+          : chromeless || bareExport
+            ? `<div class="tool-actions" id="tool-actions"></div>`
+            : ''
+      }
       <div class="tool-stage" id="tool-stage">
         ${!exportUiEmpty && !visitorPage ? `<div class="url-budget" id="url-budget-gauge" role="button" tabindex="0" aria-label="${escape(t('URL budget'))}" title="${escape(t('URL budget'))}" hidden><span class="url-budget-fill" data-gauge-fill></span></div><div class="url-budget-toast" data-gauge-toast role="status" aria-live="polite" hidden></div>` : ''}
         ${showAside ? `<button class="fullscreen-toggle-float" id="fullscreen-toggle-float" aria-label="${escape(t('Expand sidebar'))}"></button>` : ''}
-        ${hideSidebar && onDevice ? `<div class="on-device-badge on-device-badge--float" title="${escape(t('This tool runs entirely in your browser. Your file is never uploaded.'))}">
+        ${
+          hideSidebar && onDevice
+            ? `<div class="on-device-badge on-device-badge--float" title="${escape(t('This tool runs entirely in your browser. Your file is never uploaded.'))}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           <span>${t('Runs on your device - nothing is uploaded')}</span>
-        </div>` : ''}
-        ${hideSidebar ? `<div id="tool-content" role="img" aria-label="${escape(canvasLabel())}"></div>` : `
+        </div>`
+            : ''
+        }
+        ${
+          hideSidebar
+            ? `<div id="tool-content" role="img" aria-label="${escape(canvasLabel())}"></div>`
+            : `
         <div class="tool-canvas-outer" id="tool-canvas-outer">
-          ${/* Visitor page: a real document, not a picture of one - no role="img"
+          ${
+            /* Visitor page: a real document, not a picture of one - no role="img"
                 (its links must stay in the accessibility tree) and no fixed px
-                frame (the page flows at viewport width, CSS owns the height). */ ''}
-          <div class="tool-canvas" id="tool-canvas"${visitorPage ? ' style="width: 100%;"' : ` role="img" aria-label="${escape(canvasLabel())}"
-               style="width: ${nativeW}px; height: ${nativeH}px;"`}></div>
-        </div>`}
+                frame (the page flows at viewport width, CSS owns the height). */ ''
+          }
+          <div class="tool-canvas" id="tool-canvas"${
+            visitorPage
+              ? ' style="width: 100%;"'
+              : ` role="img" aria-label="${escape(canvasLabel())}"
+               style="width: ${nativeW}px; height: ${nativeH}px;"`
+          }></div>
+        </div>`
+        }
       </div>
-      ${(!hideSidebar || bareExport) && !exportUiEmpty && !visitorPage ? `
+      ${
+        (!hideSidebar || bareExport) && !exportUiEmpty && !visitorPage
+          ? `
         <div class="render-pill" id="render-pill" role="group" aria-label="${escape(t('Export and save'))}">
           <button type="button" class="render-pill-btn render-pill-get" id="render-fab" data-sfx="hydraulicOpen" aria-label="${escape(t('Export options'))}">
             <svg class="render-pill-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
             <span>${t('Export')}</span>
           </button>
-          ${canSaveSession ? `
+          ${
+            canSaveSession
+              ? `
           <span class="render-pill-sep" aria-hidden="true"></span>
           <button type="button" class="render-pill-btn render-pill-save" id="render-save" data-sfx="save" aria-label="${escape(t('Save to your library'))}" title="${escape(t('Save to your library'))}">
             <svg class="render-pill-icon render-pill-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
             <span data-save-label>${t('Save')}</span>
-          </button>` : ''}
+          </button>`
+              : ''
+          }
         </div>
         <div class="export-overlay" id="export-overlay">
           <div class="export-overlay-scrim" data-export-close></div>
-          ${/* data-canvas-keys="off": the canvas editor binds its bare-key verbs on
+          ${
+            /* data-canvas-keys="off": the canvas editor binds its bare-key verbs on
                 `window`, so this sheet's own buttons were a live canvas surface - Delete
                 on Download removed the selected box, the arrows nudged it. The attribute
                 travels WITH the element the dock re-parents, so it covers the sheet
-                docked in the right column and floating over the stage alike. */ ''}
+                docked in the right column and floating over the stage alike. */ ''
+          }
           <div class="export-popup" role="dialog" aria-modal="true" data-canvas-keys="off" aria-label="${escape(t('Export'))}">
             <div class="export-popup-head">
               <span class="export-popup-title">${t('Export')}</span>
@@ -1551,7 +1966,9 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
             <div class="export-popup-body" id="export-popup-body"></div>
           </div>
         </div>
-      ` : ''}
+      `
+          : ''
+      }
     </div>
   `;
 
@@ -1572,17 +1989,19 @@ export async function mountTool(viewEl: ViewEl, host: WebToolHost, toolId: strin
     const toolCss = tool.styles ? scopeCss(tool.styles, canvasScope) : '';
     // The chromeless editors own their own on-canvas affordances (free-canvas.js /
     // doc-editor.js), so skip the generic click-to-focus hover outline.
-    const focusHint = chromeless ? '' : `
+    const focusHint = chromeless
+      ? ''
+      : `
 ${canvasScope} [data-canvas-input] { cursor: pointer; }
 ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,0.35); outline-offset: 3px; border-radius: 2px; }`;
     styleEl.textContent = `${toolCss}${focusHint}`;
     document.head.appendChild(styleEl);
   }
 
-  const layout    = viewEl.querySelector<HTMLElement>('#tool-layout')!;
-  const inputsEl  = viewEl.querySelector<PanelEl>('#tool-inputs');
-  const canvasEl  = hideSidebar ? null : viewEl.querySelector<HTMLElement>('#tool-canvas');
-  const outerEl   = hideSidebar ? null : viewEl.querySelector<HTMLElement>('#tool-canvas-outer');
+  const layout = viewEl.querySelector<HTMLElement>('#tool-layout')!;
+  const inputsEl = viewEl.querySelector<PanelEl>('#tool-inputs');
+  const canvasEl = hideSidebar ? null : viewEl.querySelector<HTMLElement>('#tool-canvas');
+  const outerEl = hideSidebar ? null : viewEl.querySelector<HTMLElement>('#tool-canvas-outer');
   const contentEl = (hideSidebar ? viewEl.querySelector<HTMLElement>('#tool-content') : canvasEl)!;
   // The node the export/thumbnail actions target. Normally the fixed render canvas;
   // a bareExport full-bleed tool has no #tool-canvas, so it's the mounted #tool-content
@@ -1622,18 +2041,20 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // collide with the shell's :root shadcn HSL triples (see brand-vars.ts).
   const brandVarsReady: Promise<unknown> = Promise.race([
     applyBrandVars(contentEl, host),
-    new Promise<void>(resolve => setTimeout(resolve, 3000)),
-  ]).catch(() => { /* cosmetic - never block a mount or fail an export on brand vars */ });
+    new Promise<void>((resolve) => setTimeout(resolve, 3000)),
+  ]).catch(() => {
+    /* cosmetic - never block a mount or fail an export on brand vars */
+  });
   // Always present in the template (both layouts render #tool-stage), so treat it
   // as non-null - mirrors mountTool's unguarded uses (ro.observe, fitCanvas, …).
-  const stageEl   = viewEl.querySelector<HTMLElement>('#tool-stage')!;
+  const stageEl = viewEl.querySelector<HTMLElement>('#tool-stage')!;
 
   // Undo / redo buttons in the header - the tappable counterpart to Cmd+Z/Cmd+Y,
   // and the primary way to trigger history on touch (no keyboard). Sit at the
   // right of the back-row, opposite the Tools pill. Each button stays
   // disabled while its stack is empty (refreshHistoryUI), and clicks route through
   // the same undoHistory/redoHistory the keyboard uses (so they show the toast too).
-  // Only sidebar tools get the header pair. Editor-layout tools have no back-row - 
+  // Only sidebar tools get the header pair. Editor-layout tools have no back-row -
   // their buttons live in the free-canvas toolbar rail instead (see the history
   // option passed to initFreeCanvas below). Plain hideSidebar tools (file
   // utilities with minimal inputs) stay keyboard-only.
@@ -1669,7 +2090,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       },
     };
     backRow.appendChild(group);
-    refreshHistoryUI();   // start disabled (empty history)
+    refreshHistoryUI(); // start disabled (empty history)
   }
 
   // Theme cycle toggle now lives in the canvas zoom HUD (setupStageNav below), not
@@ -1683,19 +2104,76 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // The profile avatar sits after the sound toggle - icon only, opening the same
   // consolidated menu the main views' top-right avatar opens (theme, sound/Neurospicy,
   // Language, Settings…), so a canvas tool needs no separate sidebar language/theme controls.
-  const profileToggle = createProfileControl(host as unknown as Parameters<typeof createProfileControl>[0], { className: 'stage-nav-profile' });
+  const profileToggle = createProfileControl(
+    host as unknown as Parameters<typeof createProfileControl>[0],
+    { className: 'stage-nav-profile' }
+  );
 
   // Removed-image notice: announce it (live region) and let the user dismiss it.
   if (dropped.length) {
-    announce([
-      unresolved.length ? tRaw('An image used in this saved design is no longer available; the {fields} {were} left blank.', { fields: unresolved.map(d => d.label).join(', '), were: fieldsWere(unresolved.length) }) : '',
-      bakedLost.length ? tRaw("A frozen image's data was missing; the {fields} {were} left blank.", { fields: bakedLost.map(d => d.label).join(', '), were: fieldsWere(bakedLost.length) }) : '',
-    ].filter(Boolean).join(' '), { assertive: true });
-    viewEl.querySelector('#dropped-assets-dismiss')
+    announce(
+      [
+        unresolved.length
+          ? tRaw(
+              'An image used in this saved design is no longer available; the {fields} {were} left blank.',
+              {
+                fields: unresolved.map((d) => d.label).join(', '),
+                were: fieldsWere(unresolved.length),
+              }
+            )
+          : '',
+        bakedLost.length
+          ? tRaw("A frozen image's data was missing; the {fields} {were} left blank.", {
+              fields: bakedLost.map((d) => d.label).join(', '),
+              were: fieldsWere(bakedLost.length),
+            })
+          : '',
+      ]
+        .filter(Boolean)
+        .join(' '),
+      { assertive: true }
+    );
+    viewEl
+      .querySelector('#dropped-assets-dismiss')
       ?.addEventListener('click', () => viewEl.querySelector('#dropped-assets-notice')?.remove());
   }
-  viewEl.querySelector('#capture-hint-dismiss')
+  viewEl
+    .querySelector('#capture-hint-dismiss')
     ?.addEventListener('click', () => viewEl.querySelector('#capture-hint-notice')?.remove());
+  viewEl
+    .querySelector('#made-with-dismiss')
+    ?.addEventListener('click', () => viewEl.querySelector('#made-with-notice')?.remove());
+  viewEl.querySelector('#made-with-switch')?.addEventListener('click', async () => {
+    if (!madeWith) return;
+    const { switchDesignSystem } = await import('../lib/design-system/switch.ts');
+    // The person asked for this session under its own design system: switch, then
+    // remount this very route so the render is born with it (a just-opened saved
+    // session holds no unsaved work yet).
+    await switchDesignSystem(
+      host as unknown as Parameters<typeof switchDesignSystem>[0],
+      madeWith.id,
+      { noRemount: true }
+    );
+    window.dispatchEvent(new Event('lolly:remount'));
+  });
+  // A switch while this tool is open (plans/186 section 3.4 step 6): the switch does
+  // not tear a tool down, so it is told here and offered a reload.
+  const onDesignSystemChanged = (e: Event): void => {
+    const rec = (e as CustomEvent<{ id: string; label: string }>).detail;
+    if (!rec || rec.id === mountedSystemId || viewEl.querySelector('#ds-switched-notice')) return;
+    const body = viewEl.querySelector<HTMLElement>('.sidebar-body') ?? stageEl;
+    const el = document.createElement('div');
+    el.className = 'tool-notice';
+    el.id = 'ds-switched-notice';
+    el.setAttribute('role', 'status');
+    el.innerHTML = `<span class="tool-notice-text">${t('Switched to <strong>{name}</strong>. Reload this tool to render with it.', { name: escape(rec.label) })} <button type="button" class="tool-notice-link" id="ds-switched-reload">${t('Reload')}</button></span><button type="button" class="tool-notice-close" id="ds-switched-dismiss" aria-label="${escape(t('Dismiss this message'))}">✕</button>`;
+    body.prepend(el);
+    el.querySelector('#ds-switched-reload')?.addEventListener('click', () =>
+      window.dispatchEvent(new Event('lolly:remount'))
+    );
+    el.querySelector('#ds-switched-dismiss')?.addEventListener('click', () => el.remove());
+  };
+  window.addEventListener('lolly:design-system-changed', onDesignSystemChanged);
 
   // Export shutter: a canvas camera-iris that closes over the whole stage so the
   // brief full-res resize during export (the "shake") is never seen, then opens.
@@ -1704,7 +2182,8 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   const openShutter = (): void => shutter.open();
   // Named apart from the object because `shutter` is shadowed by the boolean opt
   // inside exportUnscaledRaw, which is where the progress actually arrives.
-  const reportShutterProgress = (done: number, total: number): void => shutter.progress(done, total);
+  const reportShutterProgress = (done: number, total: number): void =>
+    shutter.progress(done, total);
   // A long export (video, a sequence, a big multi-page fan-out) seals the screen
   // for minutes - fullscreen on a phone - so it closes WITH a status block: the
   // tool name, the format, live progress and elapsed time, plus a way out. An
@@ -1713,25 +2192,32 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // underneath rather than claiming to stop it.
   // The block only appears once the export outlasts STATUS_DELAY (lib/shutter.ts),
   // which is what keeps a sub-second still export looking exactly as it did.
-  const closeShutter = (detail?: string, onCancel?: () => void): Promise<void> => shutter.close({
-    label: tool.manifest.name,
-    ...(detail ? { detail } : {}),
-    onHide: () => { openShutter(); announce(t('Exporting…')); },
-    ...(onCancel ? { onCancel } : {}),
-  });
+  const closeShutter = (detail?: string, onCancel?: () => void): Promise<void> =>
+    shutter.close({
+      label: tool.manifest.name,
+      ...(detail ? { detail } : {}),
+      onHide: () => {
+        openShutter();
+        announce(t('Exporting…'));
+      },
+      ...(onCancel ? { onCancel } : {}),
+    });
   // Standalone visual (no export gating) - used by Copy, whose clipboard write
   // must stay in the user-gesture context, so we can't await the shutter first.
-  function playShutter(): void { shutter.play(); }
-  const actionsEl  = viewEl.querySelector<PanelEl>('#tool-actions');
-  const sidebarEl  = viewEl.querySelector<HTMLElement>('#tool-sidebar');
+  function playShutter(): void {
+    shutter.play();
+  }
+  const actionsEl = viewEl.querySelector<PanelEl>('#tool-actions');
+  const sidebarEl = viewEl.querySelector<HTMLElement>('#tool-sidebar');
 
   // The tool's own walkthrough (manifest `guide`, components/tool-guide.ts): the
   // help button beside the title, plus one automatic open per device on a tool
   // the user hasn't opened before. mountModal bodies its dialog, so the handle is
   // kept to close it on teardown - a guide must not outlive the tool it explains.
   let openGuide: { close(): void } | null = null;
-  viewEl.querySelector<HTMLButtonElement>('#tool-guide-btn')
-    ?.addEventListener('click', () => { openGuide = showToolGuide(tool.manifest); });
+  viewEl.querySelector<HTMLButtonElement>('#tool-guide-btn')?.addEventListener('click', () => {
+    openGuide = showToolGuide(tool.manifest);
+  });
   // The automatic first-visit open is for someone who came to MAKE the thing.
   // Anyone arriving on a finished render - a fullscreen/auto-export share link,
   // or a chromeless editor embed - gets the button and nothing in their way.
@@ -1744,10 +2230,10 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
 
   // ── Sidebar ──────────────────────────────────────────────────────────────
 
-  const fullscreenToggle      = viewEl.querySelector<HTMLButtonElement>('#fullscreen-toggle');
+  const fullscreenToggle = viewEl.querySelector<HTMLButtonElement>('#fullscreen-toggle');
   const fullscreenToggleFloat = viewEl.querySelector<HTMLButtonElement>('#fullscreen-toggle-float');
-  const dragHandle            = viewEl.querySelector<HTMLElement>('#sidebar-drag-handle');
-  const sheetGrip             = viewEl.querySelector<HTMLElement>('#sheet-grip');
+  const dragHandle = viewEl.querySelector<HTMLElement>('#sidebar-drag-handle');
+  const sheetGrip = viewEl.querySelector<HTMLElement>('#sheet-grip');
 
   function setSidebarWidth(w: number, save = true): void {
     if (!sidebarEl) return;
@@ -1762,7 +2248,10 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     layout.dataset.sidebar = isOpen ? 'open' : 'closed';
     if (fullscreenToggle) {
       fullscreenToggle.toggleAttribute('open', isOpen);
-      fullscreenToggle.setAttribute('aria-label', isOpen ? t('Collapse sidebar') : t('Expand sidebar'));
+      fullscreenToggle.setAttribute(
+        'aria-label',
+        isOpen ? t('Collapse sidebar') : t('Expand sidebar')
+      );
     }
     if (save) localStorage.setItem('sidebarWidth', String(snapped));
   }
@@ -1790,7 +2279,8 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
 
   function updateFullParam(shouldBeFull: boolean): void {
     const sp = new URLSearchParams(currentQuery());
-    if (shouldBeFull) sp.set('full', ''); else sp.delete('full');
+    if (shouldBeFull) sp.set('full', '');
+    else sp.delete('full');
     const parts: string[] = [];
     for (const [k, v] of sp.entries()) parts.push(v ? `${k}=${encodeURIComponent(v)}` : k);
     const q = parts.join('&');
@@ -1828,7 +2318,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       let startX = 0;
       let startW = 0;
 
-      dragHandle!.addEventListener('pointerdown', e => {
+      dragHandle!.addEventListener('pointerdown', (e) => {
         dragging = true;
         startX = e.clientX;
         startW = sidebarEl!.getBoundingClientRect().width;
@@ -1838,7 +2328,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         dragHandle!.setPointerCapture(e.pointerId);
       });
 
-      dragHandle!.addEventListener('pointermove', e => {
+      dragHandle!.addEventListener('pointermove', (e) => {
         if (!dragging) return;
         const w = Math.min(600, Math.max(0, startW + (e.clientX - startX)));
         setSidebarWidth(w, false);
@@ -1870,10 +2360,16 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     if (visitorPage) return; // a visitor page flows as a document - never scaled to fit
     if (!canvasEl || !outerEl) return;
     if (stageZoom?.isZoomed()) return; // preserve pan/zoom across window/sidebar resize
-    if (pagesMode) { fitPages(); return; } // carousel: fit the page strip, not one page
-    if (pagedDoc) { fitPagedDoc(); return; } // multi-page doc: fit one page's width; the stage scrolls
-    const canvasW   = parseInt(canvasEl.style.width,  10) || nativeW;
-    const canvasH   = parseInt(canvasEl.style.height, 10) || nativeH;
+    if (pagesMode) {
+      fitPages();
+      return;
+    } // carousel: fit the page strip, not one page
+    if (pagedDoc) {
+      fitPagedDoc();
+      return;
+    } // multi-page doc: fit one page's width; the stage scrolls
+    const canvasW = parseInt(canvasEl.style.width, 10) || nativeW;
+    const canvasH = parseInt(canvasEl.style.height, 10) || nativeH;
     const stageRect = stageEl.getBoundingClientRect();
 
     // On mobile the controls sheet overlaps the top of the (static) preview stage.
@@ -1896,28 +2392,31 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // overlay is inset to the stage's padding box, so padding would drag the toolbars in with
     // it); justify-content:center then honours the margins, floating the canvas into the band.
     const cs = getComputedStyle(stageEl);
-    const reserveTop    = Math.max(0, parseFloat(cs.getPropertyValue('--stage-reserve-top'))    || 0);
-    const reserveBottom = Math.max(0, parseFloat(cs.getPropertyValue('--stage-reserve-bottom')) || 0);
+    const reserveTop = Math.max(0, parseFloat(cs.getPropertyValue('--stage-reserve-top')) || 0);
+    const reserveBottom = Math.max(
+      0,
+      parseFloat(cs.getPropertyValue('--stage-reserve-bottom')) || 0
+    );
     // Left band: the free-canvas rail docks into a fixed-width left panel while the
     // timeline is open (see dockRailForTimeline). Same margin mechanism as top/bottom -
     // centring the margin box puts the canvas exactly centred in the remaining band.
-    const reserveLeft   = Math.max(0, parseFloat(cs.getPropertyValue('--stage-reserve-left'))   || 0);
+    const reserveLeft = Math.max(0, parseFloat(cs.getPropertyValue('--stage-reserve-left')) || 0);
     // There is NO right band. The one right-hand column is the app's edge dock
     // (lib/edge-dock.ts) - the export sheet, the compact zoom bar and the Design
     // inspector all take a slot in it - and that column reserves its space by nudging
     // `#view` with `--dock-w`, so the stage this function measures is already narrower.
     // Subtracting a second right reserve on top of it took the space twice and left the
     // canvas sitting off-centre to the left of its own surface.
-    const availW    = Math.max(40, stageRect.width  - reserveLeft - 32);
-    const availH    = Math.max(40, stageRect.height - topPad - reserveTop - reserveBottom - 32);
-    const scale     = Math.min(1, availW / canvasW, availH / canvasH);
+    const availW = Math.max(40, stageRect.width - reserveLeft - 32);
+    const availH = Math.max(40, stageRect.height - topPad - reserveTop - reserveBottom - 32);
+    const scale = Math.min(1, availW / canvasW, availH / canvasH);
     canvasEl.style.transform = scale < 1 ? `scale(${scale.toFixed(4)})` : '';
-    outerEl.style.width  = Math.round(canvasW * scale) + 'px';
+    outerEl.style.width = Math.round(canvasW * scale) + 'px';
     outerEl.style.height = Math.round(canvasH * scale) + 'px';
-    outerEl.style.marginTop    = reserveTop    ? `${reserveTop}px`    : '';
+    outerEl.style.marginTop = reserveTop ? `${reserveTop}px` : '';
     outerEl.style.marginBottom = reserveBottom ? `${reserveBottom}px` : '';
-    outerEl.style.marginLeft   = reserveLeft   ? `${reserveLeft}px`   : '';
-    outerEl.style.marginRight  = '';
+    outerEl.style.marginLeft = reserveLeft ? `${reserveLeft}px` : '';
+    outerEl.style.marginRight = '';
     stageZoom?.sync(); // refresh the zoom % readout after a re-fit
   }
 
@@ -1951,12 +2450,16 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     if (!canvasEl) return;
     // A web-page preview never zooms: the canvas IS the viewport, CSS gives it
     // the pane's full width and the content reflows there like a real page.
-    if (webDoc) { canvasEl.style.zoom = ''; stageZoom?.sync(); return; }
+    if (webDoc) {
+      canvasEl.style.zoom = '';
+      stageZoom?.sync();
+      return;
+    }
     const stageRect = stageEl.getBoundingClientRect();
     // Leave the surface's side padding (24px each) PLUS room for each page's drop-shadow,
     // so the left/right shadows aren't clipped by the scroll surface.
     const availW = Math.max(40, stageRect.width - 96);
-    const zoom = Math.min(1, availW / nativeW);          // never upscale past 1:1
+    const zoom = Math.min(1, availW / nativeW); // never upscale past 1:1
     canvasEl.style.zoom = zoom < 1 ? String(Number(zoom.toFixed(4))) : '';
     stageZoom?.sync();
   }
@@ -1971,9 +2474,10 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   function pageGeom(): { count: number; pw: number; ph: number; gap: number; stripW: number } {
     const cfg = pagesCfg!;
     const gap = cfg.gap ?? 56;
-    const min = cfg.min ?? 1, max = cfg.max ?? 6;
+    const min = cfg.min ?? 1,
+      max = cfg.max ?? 6;
     const read = (id: string, dflt: number): number => {
-      const v = runtime.getModel().find(i => i.id === id)?.value;
+      const v = runtime.getModel().find((i) => i.id === id)?.value;
       const n = typeof v === 'number' ? v : parseFloat(v as string);
       return Number.isFinite(n) ? n : dflt;
     };
@@ -1994,7 +2498,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     const viewW = shown * g.pw + (shown - 1) * g.gap;
     const scale = Math.min(1, availW / viewW, availH / g.ph);
     canvasEl.style.transform = scale !== 1 ? `scale(${scale.toFixed(4)})` : '';
-    outerEl.style.width  = Math.round(g.stripW * scale) + 'px';
+    outerEl.style.width = Math.round(g.stripW * scale) + 'px';
     outerEl.style.height = Math.round(g.ph * scale) + 'px';
     stageZoom?.sync();
   }
@@ -2008,12 +2512,12 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     const key = g.stripW + 'x' + g.ph;
     if (key === prevStripKey) return;
     prevStripKey = key;
-    canvasEl.style.width  = g.stripW + 'px';
+    canvasEl.style.width = g.stripW + 'px';
     canvasEl.style.height = g.ph + 'px';
     stageZoom?.reset();
     fitPages();
   }
-  if (pagesMode) syncStrip();   // size the strip before the first fit
+  if (pagesMode) syncStrip(); // size the strip before the first fit
 
   // Re-fit after the stage (or the canvas) changed size. At Fit this is the FULL fit,
   // which since plan 179 C5 means "the canvas, then the artboard union on top of it" -
@@ -2030,7 +2534,10 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // The stage resized, so the canvas re-fits - and every remote focus ring and
   // cursor was anchored from rects that just moved. `collabReanchor` is null unless
   // a collab is live, so this stays the one-call observer it has always been.
-  const ro = new ResizeObserver(() => { refitStage(); collabReanchor?.(); });
+  const ro = new ResizeObserver(() => {
+    refitStage();
+    collabReanchor?.();
+  });
   ro.observe(stageEl);
   fitCanvas();
   if (canvasEl) canvasEl.addEventListener('canvas-resize', refitStage);
@@ -2045,11 +2552,20 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // `detail.rect` by the time it returns; with no overlay mounted (every tool but the
     // canvas editors) or no artboards in the document it stays null, and Fit then does
     // exactly what it always did.
-    const askRect = (what: 'content' | 'selection' | 'active') => (): { x: number; y: number; w: number; h: number } | null => {
-      const detail: { what: string; rect: { x: number; y: number; w: number; h: number } | null } = { what, rect: null };
-      try { stageEl.dispatchEvent(new CustomEvent('fc-query-rect', { detail })); } catch { return null; }
-      return detail.rect;
-    };
+    const askRect =
+      (what: 'content' | 'selection' | 'active') =>
+      (): { x: number; y: number; w: number; h: number } | null => {
+        const detail: {
+          what: string;
+          rect: { x: number; y: number; w: number; h: number } | null;
+        } = { what, rect: null };
+        try {
+          stageEl.dispatchEvent(new CustomEvent('fc-query-rect', { detail }));
+        } catch {
+          return null;
+        }
+        return detail.rect;
+      };
     const contentRect = askRect('content');
     // Pass fitCanvas as the "fit" action so the HUD's Fit button re-fits to the
     // CURRENT layout (e.g. the area left by the mobile sheet), not just the
@@ -2108,8 +2624,11 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       let tries = 0;
       const openFit = (): void => {
         if (!viewEl.isConnected || !stageZoom || stageZoom.isUserZoomed()) return;
-        if (contentRect()) { stageZoom.fit(); return; }
-        if (tries++ < 120) requestAnimationFrame(openFit);   // ~2s at 60fps, then give up
+        if (contentRect()) {
+          stageZoom.fit();
+          return;
+        }
+        if (tries++ < 120) requestAnimationFrame(openFit); // ~2s at 60fps, then give up
       };
       requestAnimationFrame(openFit);
     }
@@ -2132,7 +2651,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // popover itself already closes on any navigation (NAV_EVENTS).
     const cluster = document.createElement('div');
     cluster.className = 'gallery-topright';
-    cluster.appendChild(createProfileControl(host as unknown as Parameters<typeof createProfileControl>[0]));
+    cluster.appendChild(
+      createProfileControl(host as unknown as Parameters<typeof createProfileControl>[0])
+    );
     layout.appendChild(cluster);
   }
 
@@ -2201,13 +2722,20 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         sidebar: inputsEl,
       });
       if (aborted) built.teardown();
-      else { mounted = built; collabReanchor = () => built.reanchor(); }
+      else {
+        mounted = built;
+        collabReanchor = () => built.reanchor();
+      }
     } catch (e) {
       // A presence stack that fails to load costs the user their collab, never their
       // tool: the transport is closed and the mount carries on single-player.
       console.warn('[lolly:collab] presence failed to mount', e);
       collabTeardown = null;
-      try { collabHandle.close(); } catch { /* the transport's failure is not the view's */ }
+      try {
+        collabHandle.close();
+      } catch {
+        /* the transport's failure is not the view's */
+      }
     }
   }
 
@@ -2222,7 +2750,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // fitCanvas no-ops if the user has zoomed/panned, so this only fires at Fit.
     // Wait out the 0.34s height settle so it measures the final sheet position.
     setupMobileSheet(layout, sidebarEl, sheetGrip, {
-      onChange: (snap) => { if (snap === 'peek') setTimeout(fitCanvas, 360); },
+      onChange: (snap) => {
+        if (snap === 'peek') setTimeout(fitCanvas, 360);
+      },
     });
   }
 
@@ -2238,19 +2768,26 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // so the dirty-state helpers (markSessionDirty / markSessionSaved, defined later)
   // can flash and clear it from the input-change chokepoint.
   let renderSaveBtn: HTMLButtonElement | null = null;
-  const renderPill    = viewEl.querySelector<HTMLElement>('#render-pill');
+  const renderPill = viewEl.querySelector<HTMLElement>('#render-pill');
   // The ambient URL-budget gauge (plan 115 P1) - a draggable vertical bar showing the
   // share-link cost of the current edit (reads the P0 cost model, never the address bar).
   // The instance is created after actionsApi (below) so a click can open the Share dialog;
   // the holder is declared here so syncUrl + _cleanup (both above that point) can see it.
   const urlGaugeEl = viewEl.querySelector<HTMLElement>('#url-budget-gauge');
   let urlGauge: UrlGauge | null = null;
-  const renderFab     = viewEl.querySelector<HTMLButtonElement>('#render-fab');   // the "Export" half (opens export)
-  renderSaveBtn       = viewEl.querySelector<HTMLButtonElement>('#render-save');  // the "Save" half (outer-scoped)
+  const renderFab = viewEl.querySelector<HTMLButtonElement>('#render-fab'); // the "Export" half (opens export)
+  renderSaveBtn = viewEl.querySelector<HTMLButtonElement>('#render-save'); // the "Save" half (outer-scoped)
   const exportOverlay = viewEl.querySelector<HTMLElement>('#export-overlay');
-  const exportBody    = viewEl.querySelector<HTMLElement>('#export-popup-body');
-  if ((!hideSidebar || bareExport) && renderFab && exportOverlay && exportBody && actionsEl && renderPill) {
-    const mqMobile    = window.matchMedia('(max-width: 640px)');
+  const exportBody = viewEl.querySelector<HTMLElement>('#export-popup-body');
+  if (
+    (!hideSidebar || bareExport) &&
+    renderFab &&
+    exportOverlay &&
+    exportBody &&
+    actionsEl &&
+    renderPill
+  ) {
+    const mqMobile = window.matchMedia('(max-width: 640px)');
     const exportPopup = exportOverlay.querySelector<HTMLElement>('.export-popup')!;
     // The export panel is modal ONLY on mobile, where it's a full bottom sheet over a
     // scrim. On desktop it's a NON-modal panel anchored to the sidebar bottom - the
@@ -2263,7 +2800,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     const applyModality = (): void => {
       const modal = layout.classList.contains('export-open') && isModal();
       for (const child of layout.children) {
-        if (child !== exportOverlay) (child as HTMLElement).inert = modal;   // pointer + Tab blocked behind the sheet
+        if (child !== exportOverlay) (child as HTMLElement).inert = modal; // pointer + Tab blocked behind the sheet
       }
       exportPopup.setAttribute('aria-modal', modal ? 'true' : 'false');
     };
@@ -2286,13 +2823,15 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       // one string, and a rename that was normalised or reverted as the sheet closed left
       // the bar showing the value the user no longer had.
       if (wasOpen) actionsEl.dispatchEvent(new CustomEvent('lolly:export-close'));
-      applyModality();                 // un-inert before returning focus to the trigger
+      applyModality(); // un-inert before returning focus to the trigger
       // Return focus to the trigger. In editor mode the render pill is hidden, so the
       // visible Export control is the real trigger: the design top bar's when it is
       // mounted (plan 179 M1 - it is the primary now), the rail icon otherwise.
-      const focusTarget = (chromeless
-        ? (viewEl.querySelector<HTMLElement>('[data-topbar="export"]') ?? viewEl.querySelector<HTMLElement>('.fc-action-primary'))
-        : null) ?? renderFab;
+      const focusTarget =
+        (chromeless
+          ? (viewEl.querySelector<HTMLElement>('[data-topbar="export"]') ??
+            viewEl.querySelector<HTMLElement>('.fc-action-primary'))
+          : null) ?? renderFab;
       focusTarget.focus();
     };
     // Subscribers to "the sheet just opened" - today only the float wiring below, which
@@ -2309,7 +2848,13 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       // in the one right-hand column. A plain event will not do: the actions panel is a
       // DESCENDANT of the popup, so an event fired on it never reaches a listener on the
       // popup, and the sheet has to be placed before focus moves into it.
-      for (const cb of [...exportOpenHooks]) { try { cb(); } catch (e) { console.error(e); } }
+      for (const cb of [...exportOpenHooks]) {
+        try {
+          cb();
+        } catch (e) {
+          console.error(e);
+        }
+      }
       // Move focus into the dialog (its close button) for keyboard/SR users - but
       // not when auto-opened from ?options on load, where grabbing focus is jarring.
       if (focus) exportOverlay.querySelector<HTMLElement>('.export-popup-close')?.focus();
@@ -2325,33 +2870,46 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       // the sidebar. The slot only exists once the template has painted, so this is
       // re-run from paint() via placeRenderPill below.
       const exportSlot = !mqMobile.matches
-        ? contentEl.querySelector<HTMLElement>('[data-shell-slot="export"]') : null;
-      const fabDest = exportSlot
-        ?? ((mqMobile.matches || chromeless || !sidebarEl) ? layout : sidebarEl);
+        ? contentEl.querySelector<HTMLElement>('[data-shell-slot="export"]')
+        : null;
+      const fabDest =
+        exportSlot ?? (mqMobile.matches || chromeless || !sidebarEl ? layout : sidebarEl);
       if (renderPill.parentElement !== fabDest) fabDest.appendChild(renderPill);
     };
     placeRenderPill = placeActions;
     renderFab.setAttribute('aria-haspopup', 'dialog');
     renderFab.setAttribute('aria-expanded', 'false');
     renderFab.addEventListener('click', () => openExport());
-    exportOverlay.querySelectorAll('[data-export-close]')
-      .forEach(el => el.addEventListener('click', closeExport));
+    exportOverlay
+      .querySelectorAll('[data-export-close]')
+      .forEach((el) => el.addEventListener('click', closeExport));
     // Escape closes the export popup; Tab is wrapped so focus stays within the
     // sheet (a belt-and-braces companion to the inert background above - inert
     // alone can let Tab graze the browser chrome between the last and first stop).
     const onExportKey = (e: KeyboardEvent): void => {
       if (!layout.classList.contains('export-open')) return;
-      if (e.key === 'Escape') { closeExport(); return; }
-      if (e.key !== 'Tab' || !isModal()) return;   // only trap Tab in the modal (mobile) sheet
-      const focusables = [...exportOverlay.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-      )].filter(el => el.offsetParent !== null || el === document.activeElement);
+      if (e.key === 'Escape') {
+        closeExport();
+        return;
+      }
+      if (e.key !== 'Tab' || !isModal()) return; // only trap Tab in the modal (mobile) sheet
+      const focusables = [
+        ...exportOverlay.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        ),
+      ].filter((el) => el.offsetParent !== null || el === document.activeElement);
       if (focusables.length === 0) return;
-      const first = focusables[0]!, last = focusables[focusables.length - 1]!;
+      const first = focusables[0]!,
+        last = focusables[focusables.length - 1]!;
       // Only wrap when focus is already at an edge of the popup - if it's elsewhere
       // (e.g. an auto-opened panel the user hasn't tabbed into yet) leave Tab alone.
-      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener('keydown', onExportKey);
 
@@ -2359,7 +2917,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // bottom sheet away. The popup follows the finger; release past a threshold
     // (or a fast flick) closes it, otherwise it springs back. Drags from the
     // (scrollable) body only engage at the top, so the list still scrolls.
-    let py = 0, pt = 0, pdrag = false;
+    let py = 0,
+      pt = 0,
+      pdrag = false;
     const popupStart = (e: TouchEvent): void => {
       pdrag = mqMobile.matches && e.touches.length === 1;
       // Never engage the flick-to-dismiss when the touch lands on a scrubbable
@@ -2374,8 +2934,11 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     const popupMove = (e: TouchEvent): void => {
       if (!pdrag) return;
       const dy = e.touches[0]!.clientY - py;
-      if (dy <= 0) { exportPopup.style.transform = ''; return; } // upward → ignore
-      e.preventDefault();                       // claim the gesture from scroll
+      if (dy <= 0) {
+        exportPopup.style.transform = '';
+        return;
+      } // upward → ignore
+      e.preventDefault(); // claim the gesture from scroll
       exportPopup.classList.add('is-popup-dragging');
       exportPopup.style.transform = `translateY(${dy}px)`;
     };
@@ -2384,7 +2947,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       pdrag = false;
       const dy = (e.changedTouches[0]?.clientY ?? py) - py;
       exportPopup.classList.remove('is-popup-dragging');
-      exportPopup.style.transform = '';          // hand back to the CSS transition
+      exportPopup.style.transform = ''; // hand back to the CSS transition
       if (dy > 0 && flickDirection(dy, e.timeStamp - pt) === 1) closeExport();
     };
     exportPopup.addEventListener('touchstart', popupStart, { passive: true });
@@ -2399,29 +2962,51 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     const exportHead = exportPopup.querySelector<HTMLElement>('.export-popup-head');
     const floatTeardown = exportHead
       ? wireExportPanelFloat({
-          overlay: exportOverlay, popup: exportPopup, head: exportHead,
+          overlay: exportOverlay,
+          popup: exportPopup,
+          head: exportHead,
           isMobile: () => mqMobile.matches,
           freeLayout: chromeless || !sidebarEl,
           editorLayout,
-          onOpen: (cb) => { exportOpenHooks.add(cb); return () => { exportOpenHooks.delete(cb); }; },
+          onOpen: (cb) => {
+            exportOpenHooks.add(cb);
+            return () => {
+              exportOpenHooks.delete(cb);
+            };
+          },
         })
       : null;
 
     placeActions();
     // ?options share-links land with the export panel already open (no focus grab).
     if (showExportPanel) openExport({ focus: false });
-    const onBreakpoint = (): void => { placeActions(); applyModality(); };
+    const onBreakpoint = (): void => {
+      placeActions();
+      applyModality();
+    };
     mqMobile.addEventListener('change', onBreakpoint);
-    exportTeardown = () => { mqMobile.removeEventListener('change', onBreakpoint); document.removeEventListener('keydown', onExportKey); floatTeardown?.(); };
+    exportTeardown = () => {
+      mqMobile.removeEventListener('change', onBreakpoint);
+      document.removeEventListener('keydown', onExportKey);
+      floatTeardown?.();
+    };
   }
 
   // Cleanup: remove injected <style>, disconnect observer, tear down canvas nav + export.
   viewEl._cleanup = () => {
+    // Abort late continuations and release scope-owned resources before dismantling
+    // the DOM they are allowed to address. The scope is idempotent and failure-isolated.
+    mountLifecycle.dispose();
+    window.removeEventListener('lolly:design-system-changed', onDesignSystemChanged);
     // Release the live camera FIRST and guarded: it's the one teardown step whose failure
     // leaves hardware running, and a throw anywhere in this teardown used to abort the whole
     // navigation (the scanner trap - see the router guard in main.ts). Idempotent, so the
     // ordered call below re-runs harmlessly.
-    try { runtime.stopLive?.(); } catch (e) { console.error('[tool] stopLive on teardown:', e); }
+    try {
+      runtime.stopLive?.();
+    } catch (e) {
+      console.error('[tool] stopLive on teardown:', e);
+    }
     urlGauge?.dispose(); // cancel any pending pack-refine timer so it can't fire post-teardown
     // FIRST, because everything below destroys the thing it reads. Starting a collab
     // remounts this tool through a route that cannot carry an uploaded asset, a picked
@@ -2434,55 +3019,70 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       // `undefined` is skipped rather than carried: the carry is applied ON TOP of the
       // route, so a value the model does not hold would otherwise blank one the route
       // (or the resumed slot) did.
-      for (const item of runtime.getModel()) if (item.value !== undefined) live[item.id] = item.value;
+      for (const item of runtime.getModel())
+        if (item.value !== undefined) live[item.id] = item.value;
       carryMountState(toolId, slot ?? null, live);
     }
     // Latch first: the template chooser is un-awaited and outlives nothing else here,
     // so this is the ONLY thing that stops it landing on a torn-down runtime. Closing
-    // takes the modal itself down with the view (it was never inside viewEl's subtree - 
+    // takes the modal itself down with the view (it was never inside viewEl's subtree -
     // it's appended to document.body - so nothing below would otherwise touch it) and
     // resolves its promise blank; the latch then short-circuits the pick handler even
     // if a fetch already in flight resolves with a real (now-irrelevant) selection.
     templatePickTornDown = true;
-    templatePickClose?.(); templatePickClose = null;
+    templatePickClose?.();
+    templatePickClose = null;
     runtime.stopLive?.(); // release the camera if a live session is running
     (host.media as unknown as { armAnimSource?: (m: string | null) => void }).armAnimSource?.(null); // drop any armed anim source
     stopFrameFps(); // stop the dev fps meter if it was running
-    runtime.stopMeter?.(); runtime.cancelRecording?.(); // release the mic / abort any take
+    runtime.stopMeter?.();
+    runtime.cancelRecording?.(); // release the mic / abort any take
     runtime.destroy?.(); // release per-mount executor resources (a Worker-isolated tool's run)
     (stageEl as (HTMLElement & { _recordCleanup?: () => void }) | null)?._recordCleanup?.(); // viewfinder + timers
     (stageEl as (HTMLElement & { _animCleanup?: () => void }) | null)?._animCleanup?.(); // animation transport bar + its rAF poll
     actionsApi?.stopAudioPreview?.(); // a detached <audio> keeps playing - stop it on navigation
-    stopSlotPreview();                // and the sidebar slot's own sound preview (also a detached <audio>)
-    actionsApi?.dispose?.();          // unsubscribe the cost-authoring registry listener + tear down its extension
+    stopSlotPreview(); // and the sidebar slot's own sound preview (also a detached <audio>)
+    actionsApi?.dispose?.(); // unsubscribe the cost-authoring registry listener + tear down its extension
     lottieModule?.destroyLottiePlayers(); // else animationManager ticks detached trees
-    videoModule?.destroyVideoPlayers();   // drop remembered <video> positions
-    vizModule?.destroyToolViz();          // else a WebGL2 context stays pinned per visited tool
+    videoModule?.destroyVideoPlayers(); // drop remembered <video> positions
+    vizModule?.destroyToolViz(); // else a WebGL2 context stays pinned per visited tool
     if (onFocusRect && stageEl) stageEl.removeEventListener('fc-focus-rect', onFocusRect);
-    styleEl.remove(); shutter.destroy(); ro.disconnect(); stageZoom?.destroy(); exportTeardown?.();
-    framingTeardown?.(); framingTeardown = null;   // framing overlay: listeners + its layer
+    styleEl.remove();
+    shutter.destroy();
+    ro.disconnect();
+    stageZoom?.destroy();
+    exportTeardown?.();
+    framingTeardown?.();
+    framingTeardown = null; // framing overlay: listeners + its layer
     filmstrip?.destroy();
     window.removeEventListener('keydown', onHistoryKey);
     // Presence chrome first, transport last: the pill/rings/cursors come down, then
     // the session says goodbye and closes the channel (see the block's own note).
     // Null unless a collab was live, and idempotent when it was.
-    collabTeardown?.(); collabTeardown = null;
-    collab?.detach();                 // restore the un-wrapped setInput; drop any queued remote ops
+    collabTeardown?.();
+    collabTeardown = null;
+    collab?.detach(); // restore the un-wrapped setInput; drop any queued remote ops
     // The team-session id belongs to THIS mount and dies with it: the Share dialog can be
     // opened again from the Projects view over a LOCAL session of the same tool, and an
     // origin that outlived its mount would key a room on the wrong session. A remount
     // (the collab adoption path) re-earns it or does without - it is never resurrected.
     releaseTeamSessionOrigin();
-    clearTimeout(historyToastTimer); historyToastEl?.remove();
-    if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+    clearTimeout(historyToastTimer);
+    historyToastEl?.remove();
+    if (rafId) {
+      cancelAnimationFrame(rafId);
+      rafId = 0;
+    }
     // Everything renderInputs parked outside the sidebar's subtree - the document-
     // level capture dismissers + body-mounted flatpickr calendars - in one call, so
     // a detached sidebar tree isn't pinned alive across tool navigation.
     inputsEl?._inputsDispose?.();
     // The export popup (actionsEl) wires its own help tip for the C2PA card
     // (renderActions, not renderInputs - outside the disposer's remit).
-    if (actionsEl?._helpTipDismiss)     document.removeEventListener('click', actionsEl._helpTipDismiss, true);
-    openGuide?.close(); openGuide = null;
+    if (actionsEl?._helpTipDismiss)
+      document.removeEventListener('click', actionsEl._helpTipDismiss, true);
+    openGuide?.close();
+    openGuide = null;
   };
 
   // Temporarily remove the CSS scale so dom-to-image sees native dimensions.
@@ -2493,14 +3093,26 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // prevTransform and the later one restore a stale '', leaving the canvas unscaled.
   let exportChain: Promise<unknown> = Promise.resolve();
   type ExportReport = (done: number, total: number) => void;
-  function exportUnscaled<T>(fn: (report?: ExportReport) => Promise<T>, opts: { shutter?: boolean; detail?: string; onCancel?: () => void } = {}): Promise<T> {
+  function exportUnscaled<T>(
+    fn: (report?: ExportReport) => Promise<T>,
+    opts: { shutter?: boolean; detail?: string; onCancel?: () => void } = {}
+  ): Promise<T> {
     const run = exportChain.catch(() => {}).then(() => exportUnscaledRaw(fn, opts));
     exportChain = run.catch(() => {});
     return run;
   }
-  async function exportUnscaledRaw<T>(fn: (report?: ExportReport) => Promise<T>, { shutter = false, detail, onCancel }: { shutter?: boolean; detail?: string; onCancel?: () => void } = {}): Promise<T> {
+  async function exportUnscaledRaw<T>(
+    fn: (report?: ExportReport) => Promise<T>,
+    {
+      shutter = false,
+      detail,
+      onCancel,
+    }: { shutter?: boolean; detail?: string; onCancel?: () => void } = {}
+  ): Promise<T> {
     // Drives the shutter's status block; inert when this export runs without one.
-    const report: ExportReport = (done, total) => { if (shutter) reportShutterProgress(done, total); };
+    const report: ExportReport = (done, total) => {
+      if (shutter) reportShutterProgress(done, total);
+    };
     // Renders are coalesced behind rAF (see the subscriber below); an export reads
     // the canvas DOM directly, so force any pending paint to land first - otherwise
     // we'd capture the frame before the latest keystroke.
@@ -2529,32 +3141,37 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // path the preview generator's __lollyCaptureThumb hook takes to vector-capture them.
     if (!canvasEl || !outerEl) {
       if (shutter) await closeShutter(detail, onCancel);
-      try { return await fn(report); }
-      finally { if (shutter) openShutter(); }
+      try {
+        return await fn(report);
+      } finally {
+        if (shutter) openShutter();
+      }
     }
     const annotated = [...canvasEl.querySelectorAll<HTMLElement>('[data-canvas-input]')];
-    const saved = annotated.map(el => ({ el, id: el.dataset.canvasInput }));
-    annotated.forEach(el => el.removeAttribute('data-canvas-input'));
+    const saved = annotated.map((el) => ({ el, id: el.dataset.canvasInput }));
+    annotated.forEach((el) => el.removeAttribute('data-canvas-input'));
 
     // Close the shutter BEFORE the resize so the shake happens fully hidden.
     if (shutter) await closeShutter(detail, onCancel);
 
     const prevTransform = canvasEl!.style.transform;
-    const prevZoom = canvasEl!.style.zoom;                 // paged docs fit-to-width via zoom
+    const prevZoom = canvasEl!.style.zoom; // paged docs fit-to-width via zoom
     const prevW = outerEl!.style.width;
     const prevH = outerEl!.style.height;
     canvasEl!.style.transform = '';
-    canvasEl!.style.zoom = '';                             // export reads pages at true page size
-    outerEl!.style.width  = canvasEl!.style.width;
+    canvasEl!.style.zoom = ''; // export reads pages at true page size
+    outerEl!.style.width = canvasEl!.style.width;
     outerEl!.style.height = canvasEl!.style.height;
     try {
       return await fn(report);
     } finally {
       canvasEl!.style.transform = prevTransform;
       canvasEl!.style.zoom = prevZoom;
-      outerEl!.style.width  = prevW;
+      outerEl!.style.width = prevW;
       outerEl!.style.height = prevH;
-      saved.forEach(({ el, id }) => { if (el.isConnected && id != null) el.dataset.canvasInput = id; });
+      saved.forEach(({ el, id }) => {
+        if (el.isConnected && id != null) el.dataset.canvasInput = id;
+      });
       if (shutter) openShutter();
     }
   }
@@ -2566,7 +3183,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // defaults from the initially-selected option (URL / saved state still win).
   const sizeDriver = exportSizeDriver(tool.manifest);
   const sizeDims = sizeDriver
-    ? sizeDriver.dims[String(runtime.getModel().find(i => i.id === sizeDriver.id)?.value)]
+    ? sizeDriver.dims[String(runtime.getModel().find((i) => i.id === sizeDriver.id)?.value)]
     : null;
   // A mode-style select (its options carry `formats`) narrows the export format bar
   // to the selected option's formats - a vector effect offers svg/pdf/emf, a raster
@@ -2586,56 +3203,65 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     designOutcome(designIntent, runtime.getModel().find((i) => i.id === 'boxes')?.value);
   const explicitExportFormat = urlFormat || (initialValues.__export_format as string | undefined);
 
-  const exportDefaults: ExportDefaults = mergeExportPrefs({
-    filename: urlFilename || (initialValues.__export_filename as string | undefined),
-    // A named Design outcome is stronger than a generic per-tool remembered format,
-    // but never stronger than this link/session's explicit choice.
-    format:   explicitExportFormat ||
-      (toolId === 'design' ? currentDesignOutcome().defaultFormat : undefined),
-    width:    urlWidth  || Number(initialValues.__export_width)  || sizeDims?.width  || undefined,
-    height:   urlHeight || Number(initialValues.__export_height) || sizeDims?.height || undefined,
-    unit:     urlUnit || (initialValues.__export_unit as string | undefined) || sizeDims?.unit || 'px',
-    dpi:      urlDpi || Number(initialValues.__export_dpi) || 300,
-    profile:  urlProfile || (initialValues.__export_profile as string | undefined) || undefined,
-    // Password comes from the URL only - never restored from saved state (we don't
-    // persist passwords at rest in the library; see performSave's __export_* snapshot).
-    password: urlPassword || undefined,
-    // Print prep (pdf / pdf-cmyk / cmyk-tiff): bleed dimension string + a marks toggle map.
-    // Present (from URL or saved state) ⇒ the Print marks card opens pre-filled.
-    bleed:    urlBleed || (initialValues.__export_bleed as string | undefined) || undefined,
-    marks:    (urlMarks || marksFromCsv(initialValues.__export_marks as string | null | undefined)) as PrintMarks | null,
-    // Full-page HTML export ("no stage"). URL-driven - like `password`, it isn't
-    // persisted to the library at rest, only round-tripped through the URL.
-    nostage:  urlNostage || undefined,
-    // Content Credentials from ?c2pa= ({ on, days } or undefined) - an explicit
-    // link setting beats the tool's render.c2pa default in the popup.
-    c2pa:     urlC2pa || undefined,
-    // Pixel watermark from ?imprint= - on by default (like c2pa). Preserve an
-    // explicit `imprint=0`/`off` as false rather than collapsing it to
-    // undefined (`false || undefined` would silently re-default it to on).
-    imprint:  urlImprint === false ? false : urlImprint === true ? true : undefined,
-    // Generator-metadata strip from ?meta=off - on by default; preserve an explicit
-    // opt-out as false (the vector writers drop their source field when false).
-    metadata: urlMetadata === false ? false : undefined,
-    // Durable credential from ?durable=1 - opt-in, OFF by default (performance: a
-    // neural encode + a one-time model fetch), so it's simply true/undefined.
-    durable:  urlDurable || undefined,
-    // HDR (Rec.2100 PQ) raster export from ?hdr=1 - opt-in, OFF by default; the
-    // tuned form (`hdr=1600-60-0-50`) seeds the slider dials.
-    hdr:      urlHdr ? true : undefined,
-    hdrTune:  urlHdr ?? undefined,
-    // Requested export bit depth from ?depth= - 'auto' (the default) carries
-    // nothing, so only an explicit 8/16/float request travels.
-    depth:    urlDepth !== 'auto' ? urlDepth : undefined,
-    // Video controls from the URL (fps/seconds/wait/codec/vq): seed the panel so a
-    // manual export honours a pasted link the way `format=` does.
-    video:    hasVideoParams(urlVideo) ? urlVideo : undefined,
-    // The deck state address from ?s= (plan 112). Read from the BOOT url, like every
-    // other export default: presentation mode writes `s=` live while presenting and
-    // clears it on exit, so the live query is the wrong thing to photograph. A still
-    // export of a framed doc then renders just that slide (tool-actions' fan-out).
-    slide:    presentAddress || undefined,
-  }, rememberedExport, tool.manifest.render?.formats ?? []);
+  const exportDefaults: ExportDefaults = mergeExportPrefs(
+    {
+      filename: urlFilename || (initialValues.__export_filename as string | undefined),
+      // A named Design outcome is stronger than a generic per-tool remembered format,
+      // but never stronger than this link/session's explicit choice.
+      format:
+        explicitExportFormat ||
+        (toolId === 'design' ? currentDesignOutcome().defaultFormat : undefined),
+      width: urlWidth || Number(initialValues.__export_width) || sizeDims?.width || undefined,
+      height: urlHeight || Number(initialValues.__export_height) || sizeDims?.height || undefined,
+      unit:
+        urlUnit || (initialValues.__export_unit as string | undefined) || sizeDims?.unit || 'px',
+      dpi: urlDpi || Number(initialValues.__export_dpi) || 300,
+      profile: urlProfile || (initialValues.__export_profile as string | undefined) || undefined,
+      // Never restored from saved state. Browser automation supplies its one-time
+      // value over a Playwright binding, so it does not enter URL/history/logs.
+      password: urlPassword || automationPassword || undefined,
+      // Print prep (pdf / pdf-cmyk / cmyk-tiff): bleed dimension string + a marks toggle map.
+      // Present (from URL or saved state) ⇒ the Print marks card opens pre-filled.
+      bleed: urlBleed || (initialValues.__export_bleed as string | undefined) || undefined,
+      marks: (urlMarks ||
+        marksFromCsv(
+          initialValues.__export_marks as string | null | undefined
+        )) as PrintMarks | null,
+      // Full-page HTML export ("no stage"). URL-driven - like `password`, it isn't
+      // persisted to the library at rest, only round-tripped through the URL.
+      nostage: urlNostage || undefined,
+      // Content Credentials from ?c2pa= ({ on, days } or undefined) - an explicit
+      // link setting beats the tool's render.c2pa default in the popup.
+      c2pa: urlC2pa || undefined,
+      // Pixel watermark from ?imprint= - on by default (like c2pa). Preserve an
+      // explicit `imprint=0`/`off` as false rather than collapsing it to
+      // undefined (`false || undefined` would silently re-default it to on).
+      imprint: urlImprint === false ? false : urlImprint === true ? true : undefined,
+      // Generator-metadata strip from ?meta=off - on by default; preserve an explicit
+      // opt-out as false (the vector writers drop their source field when false).
+      metadata: urlMetadata === false ? false : undefined,
+      // Durable credential from ?durable=1 - opt-in, OFF by default (performance: a
+      // neural encode + a one-time model fetch), so it's simply true/undefined.
+      durable: urlDurable || undefined,
+      // HDR (Rec.2100 PQ) raster export from ?hdr=1 - opt-in, OFF by default; the
+      // tuned form (`hdr=1600-60-0-50`) seeds the slider dials.
+      hdr: urlHdr ? true : undefined,
+      hdrTune: urlHdr ?? undefined,
+      // Requested export bit depth from ?depth= - 'auto' (the default) carries
+      // nothing, so only an explicit 8/16/float request travels.
+      depth: urlDepth !== 'auto' ? urlDepth : undefined,
+      // Video controls from the URL (fps/seconds/wait/codec/vq): seed the panel so a
+      // manual export honours a pasted link the way `format=` does.
+      video: hasVideoParams(urlVideo) ? urlVideo : undefined,
+      // The deck state address from ?s= (plan 112). Read from the BOOT url, like every
+      // other export default: presentation mode writes `s=` live while presenting and
+      // clears it on exit, so the live query is the wrong thing to photograph. A still
+      // export of a framed doc then renders just that slide (tool-actions' fan-out).
+      slide: presentAddress || undefined,
+    },
+    rememberedExport,
+    tool.manifest.render?.formats ?? []
+  );
   // Rewrite the URL hash query string to reflect the current tool state so the
   // page is shareable and bookmarkable. Uses replaceState - no history entry.
   // Params the user has explicitly touched - only these are written to the URL.
@@ -2655,12 +3281,12 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // animation is restarted by removing+re-adding the class (a no-op re-add wouldn't
   // replay it), so it fires again after each subsequent save→edit cycle.
   function markSessionDirty(): void {
-    exportedSinceEdit = false;               // a fresh edit re-arms the leave guard
-    if (userHasMadeChanges) return;          // already dirty - keep the resting amber
+    exportedSinceEdit = false; // a fresh edit re-arms the leave guard
+    if (userHasMadeChanges) return; // already dirty - keep the resting amber
     userHasMadeChanges = true;
     if (renderSaveBtn) {
       renderSaveBtn.classList.remove('is-unsaved');
-      void renderSaveBtn.offsetWidth;        // force reflow so the flash animation restarts
+      void renderSaveBtn.offsetWidth; // force reflow so the flash animation restarts
       renderSaveBtn.classList.add('is-unsaved');
     }
   }
@@ -2690,9 +3316,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       urlGauge.update(
         costUrlState(
           { model: runtime.getModel(), exportParts: collectExportParams(actionsEl) },
-          { base: gaugeBase, target: BROWSER_TARGET },
+          { base: gaugeBase, target: BROWSER_TARGET }
         ),
-        gaugeBase,
+        gaugeBase
       );
     }
 
@@ -2755,7 +3381,8 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         if (value && typeof value === 'object') {
           const vv = asRow(value);
           for (const f of entry.fields ?? []) {
-            if (vv[f.id] !== undefined && vv[f.id] !== null) params.set(`${key}.${f.id}`, String(vv[f.id]));
+            if (vv[f.id] !== undefined && vv[f.id] !== null)
+              params.set(`${key}.${f.id}`, String(vv[f.id]));
           }
         }
         continue;
@@ -2771,7 +3398,8 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         // compresses the bar to the `z=` form. An empty grid writes nothing, so a
         // blank tool keeps a bare URL. URLSearchParams applies its own encode layer.
         const tbl = normalizeTableValue(value);
-        if (tbl && (tbl.columns.length || tbl.rows.length)) params.set(key, encodeTableCompact(tbl));
+        if (tbl && (tbl.columns.length || tbl.rows.length))
+          params.set(key, encodeTableCompact(tbl));
         continue;
       }
       if (value == null || value === '') continue;
@@ -2789,11 +3417,15 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
 
     if (dirtyParams.has('w')) {
       // As typed, not truncated: `8.5in` must survive a share link (plans/184 R12).
-      const w = parseFloat(actionsEl?.querySelector<HTMLInputElement>('[data-action="export-width"]')?.value ?? '');
+      const w = parseFloat(
+        actionsEl?.querySelector<HTMLInputElement>('[data-action="export-width"]')?.value ?? ''
+      );
       if (w > 0) params.set('w', String(w));
     }
     if (dirtyParams.has('h')) {
-      const h = parseFloat(actionsEl?.querySelector<HTMLInputElement>('[data-action="export-height"]')?.value ?? '');
+      const h = parseFloat(
+        actionsEl?.querySelector<HTMLInputElement>('[data-action="export-height"]')?.value ?? ''
+      );
       if (h > 0) params.set('h', String(h));
     }
     if (dirtyParams.has('unit')) {
@@ -2801,7 +3433,10 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       if (u && u !== 'px') params.set('unit', u);
     }
     if (dirtyParams.has('dpi')) {
-      const d = parseInt(actionsEl?.querySelector<HTMLInputElement>('[data-action="export-dpi"]')?.value ?? '', 10);
+      const d = parseInt(
+        actionsEl?.querySelector<HTMLInputElement>('[data-action="export-dpi"]')?.value ?? '',
+        10
+      );
       const u = actionsEl?.querySelector<HTMLSelectElement>('[data-action="export-unit"]')?.value;
       if (d > 0 && u && u !== 'px') params.set('dpi', String(d));
     }
@@ -2810,7 +3445,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       if (fmt) params.set('format', fmt);
     }
     if (dirtyParams.has('filename')) {
-      const filename = actionsEl?.querySelector<HTMLInputElement>('[data-action="filename"]')?.value?.trim();
+      const filename = actionsEl
+        ?.querySelector<HTMLInputElement>('[data-action="filename"]')
+        ?.value?.trim();
       if (filename) params.set('filename', filename);
     }
     if (dirtyParams.has('profile')) {
@@ -2818,7 +3455,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       // when one is selected and it isn't the default condition (keeps links clean).
       const fmt = actionsEl?.querySelector<HTMLSelectElement>('[data-action="format"]')?.value;
       // `own:<digest>` is device-local - urlProfileValue flattens it to bare `own`.
-      const prof = urlProfileValue(actionsEl?.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.value);
+      const prof = urlProfileValue(
+        actionsEl?.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.value
+      );
       if (isCmykFmt(fmt) && prof && prof !== DEFAULT_CMYK_CONDITION) params.set('profile', prof);
     }
     if (dirtyParams.has('password')) {
@@ -2827,7 +3466,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       // transactional material). Empty value → omitted.
       const fmt = actionsEl?.querySelector<HTMLSelectElement>('[data-action="format"]')?.value;
       const pw = actionsEl?.querySelector<HTMLInputElement>('[data-action="pdf-password"]')?.value;
-      const strong = actionsEl?.querySelector<HTMLSelectElement>('[data-action="pdf-lock-tier"]')?.value === 'strong';
+      const strong =
+        actionsEl?.querySelector<HTMLSelectElement>('[data-action="pdf-lock-tier"]')?.value ===
+        'strong';
       // Only the standard lock rides in the URL. The strong (AES-256) tier is never
       // serialized - its password is typed at export/open only.
       if ((fmt === 'pdf' || fmt === 'zip') && pw && !strong) params.set('password', pw);
@@ -2836,16 +3477,23 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       // Print marks & bleed - print formats (pdf / pdf-cmyk / cmyk-tiff) only, and
       // only when the card is on.
       const fmt = actionsEl?.querySelector<HTMLSelectElement>('[data-action="format"]')?.value;
-      const on  = actionsEl?.querySelector<HTMLInputElement>('[data-action="print-enable"]')?.checked;
+      const on = actionsEl?.querySelector<HTMLInputElement>(
+        '[data-action="print-enable"]'
+      )?.checked;
       if (isPrintFmt(fmt) && on) {
-        const mm = parseFloat(actionsEl?.querySelector<HTMLInputElement>('[data-action="print-bleed"]')?.value ?? '');
+        const mm = parseFloat(
+          actionsEl?.querySelector<HTMLInputElement>('[data-action="print-bleed"]')?.value ?? ''
+        );
         if (mm > 0) params.set('bleed', `${mm}mm`);
         const csv = marksToCsv({
-          crop:         actionsEl?.querySelector<HTMLInputElement>('[data-action="mark-crop"]')?.checked,
-          registration: actionsEl?.querySelector<HTMLInputElement>('[data-action="mark-reg"]')?.checked,
-          bleed:        actionsEl?.querySelector<HTMLInputElement>('[data-action="mark-bleed"]')?.checked,
-          colorBars:    actionsEl?.querySelector<HTMLInputElement>('[data-action="mark-bars"]')?.checked,
-          provenance:   actionsEl?.querySelector<HTMLInputElement>('[data-action="mark-prov"]')?.checked,
+          crop: actionsEl?.querySelector<HTMLInputElement>('[data-action="mark-crop"]')?.checked,
+          registration: actionsEl?.querySelector<HTMLInputElement>('[data-action="mark-reg"]')
+            ?.checked,
+          bleed: actionsEl?.querySelector<HTMLInputElement>('[data-action="mark-bleed"]')?.checked,
+          colorBars: actionsEl?.querySelector<HTMLInputElement>('[data-action="mark-bars"]')
+            ?.checked,
+          provenance: actionsEl?.querySelector<HTMLInputElement>('[data-action="mark-prov"]')
+            ?.checked,
         });
         if (csv) params.set('marks', csv);
       }
@@ -2854,7 +3502,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       // Full-page HTML export - a presence flag, written only while HTML is the
       // selected format and the toggle is on (so it drops off other formats).
       const fmt = actionsEl?.querySelector<HTMLSelectElement>('[data-action="format"]')?.value;
-      const on  = actionsEl?.querySelector<HTMLInputElement>('[data-action="full-page"]')?.checked;
+      const on = actionsEl?.querySelector<HTMLInputElement>('[data-action="full-page"]')?.checked;
       if (fmt === 'html' && on) params.set('nostage', '');
     }
     if (dirtyParams.has('imprint')) {
@@ -2862,13 +3510,15 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       // unchecking the popup toggle writes the explicit `imprint=0` opt-out;
       // checking it back on returns to the default, so the param drops out.
       const on = actionsEl?.querySelector<HTMLInputElement>('[data-action="imprint"]')?.checked;
-      if (on) params.delete('imprint'); else params.set('imprint', '0');
+      if (on) params.delete('imprint');
+      else params.set('imprint', '0');
     }
     if (dirtyParams.has('durable')) {
       // Durable credential - OFF by default (opt-in, performance cost): checking
       // writes durable=1; unchecking drops the param so a plain link stays clean.
       const on = actionsEl?.querySelector<HTMLInputElement>('[data-action="durable"]')?.checked;
-      if (on) params.set('durable', '1'); else params.delete('durable');
+      if (on) params.set('durable', '1');
+      else params.delete('durable');
     }
     if (dirtyParams.has('hdr')) {
       // HDR - OFF by default (opt-in): checking writes hdr=1 (or the compact tuned
@@ -2877,15 +3527,20 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       const on = actionsEl?.querySelector<HTMLInputElement>('[data-action="hdr"]')?.checked;
       if (on) {
         const dial = (a: string, d: number) => {
-          const v = Number(actionsEl?.querySelector<HTMLInputElement>(`[data-action="${a}"]`)?.value);
+          const v = Number(
+            actionsEl?.querySelector<HTMLInputElement>(`[data-action="${a}"]`)?.value
+          );
           return Number.isFinite(v) ? v : d;
         };
-        params.set('hdr', serializeHdr({
-          peakNits: dial('hdr-peak', HDR_DEFAULTS.peakNits),
-          reach:    dial('hdr-reach', HDR_DEFAULTS.reach),
-          lift:     dial('hdr-lift', HDR_DEFAULTS.lift),
-          richness: dial('hdr-focus', HDR_DEFAULTS.richness),
-        }));
+        params.set(
+          'hdr',
+          serializeHdr({
+            peakNits: dial('hdr-peak', HDR_DEFAULTS.peakNits),
+            reach: dial('hdr-reach', HDR_DEFAULTS.reach),
+            lift: dial('hdr-lift', HDR_DEFAULTS.lift),
+            richness: dial('hdr-focus', HDR_DEFAULTS.richness),
+          })
+        );
       } else params.delete('hdr');
     }
 
@@ -2899,21 +3554,25 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
 
     // Auto-switch to the packed form once the readable query gets long enough to
     // risk the ~2000-char URL ceiling. The readable write above already landed, so
-    // simple links stay readable/editable and only large states get compressed - 
+    // simple links stay readable/editable and only large states get compressed -
     // and only if packing is available AND genuinely shorter. Async + seq-guarded so
     // a slow pack from an older keystroke can never clobber a newer bar.
     if (qs.length >= AUTO_PACK_MIN && isPackAvailable()) {
-      packQuery(qs).then(token => {
-        if (token == null || seq !== barSeq.v) return;      // unavailable, or superseded
-        const packed = `${PACK_PARAM}=${token}`;
-        if (packed.length >= qs.length) return;             // packing didn't help - keep readable
-        history.replaceState(null, '', `${TOOL_URL_BASE}?${packed}`);
-      }).catch(() => { /* keep the readable URL already written */ });
+      packQuery(qs)
+        .then((token) => {
+          if (token == null || seq !== barSeq.v) return; // unavailable, or superseded
+          const packed = `${PACK_PARAM}=${token}`;
+          if (packed.length >= qs.length) return; // packing didn't help - keep readable
+          history.replaceState(null, '', `${TOOL_URL_BASE}?${packed}`);
+        })
+        .catch(() => {
+          /* keep the readable URL already written */
+        });
     }
   }
 
   function markUserDirty(id?: string): void {
-    markSessionDirty();   // sets userHasMadeChanges + flashes the Save pill on the first edit
+    markSessionDirty(); // sets userHasMadeChanges + flashes the Save pill on the first edit
     // Just record the param as dirty - the coalesced render's syncUrl() (folded
     // into the rAF below) writes the URL for every dirty param, so calling it here
     // too would replaceState twice per keystroke for no benefit.
@@ -2946,22 +3605,22 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     refreshDesignExperience = (pickDefault = false): void => {
       const outcome = currentDesignOutcome();
       actionsApi?.setExperience?.(outcome);
+      // Choosing a new outcome is an explicit request for its natural deliverable.
+      // A URL/session format remains authoritative on initial mount; a later template
+      // or intent switch may deliberately move the picker.
       if (pickDefault && outcome.defaultFormat) actionsApi?.setFormat?.(outcome.defaultFormat);
       if (pickDefault) applyDesignIntentLayout(outcome);
       syncDesignIntentChrome();
     };
     const offOutcome = runtime.subscribe(() => refreshDesignExperience(false));
-    if (typeof offOutcome === 'function') {
-      const prevOutcomeCleanup = viewEl._cleanup;
-      viewEl._cleanup = () => {
-        offOutcome();
-        prevOutcomeCleanup?.();
-      };
-    }
+    if (typeof offOutcome === 'function')
+      mountLifecycle.add('Design outcome subscription', offOutcome);
   }
   // renderActions announces every completed download/copy/save - see
   // exportedSinceEdit above for why that quiets the unsaved-changes guards.
-  actionsEl?.addEventListener('lolly:export-complete', () => { exportedSinceEdit = true; });
+  actionsEl?.addEventListener('lolly:export-complete', () => {
+    exportedSinceEdit = true;
+  });
 
   // "Bulk from rows" - hand this template to /batch, where a sheet of rows renders the
   // whole set in one run. Deliberately NOT an export option (like Make variants, it is a
@@ -2971,9 +3630,19 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // button for the sidebar layouts, the Lolly menu item for the chromeless editors.
   const openBulk = (): void => {
     const go = (): void => navigateTo(`#/batch?tool=${encodeURIComponent(toolId)}`);
-    if (!hasInputs || !userHasMadeChanges || exportedSinceEdit) { go(); return; }
+    if (!hasInputs || !userHasMadeChanges || exportedSinceEdit) {
+      go();
+      return;
+    }
     const canSave = !!actionsEl?.querySelector('[data-action="save"]') && !!actionsApi?.save;
-    showUnsavedDialog(canSave ? async () => { if (await actionsApi!.save!()) go(); } : null, go);
+    showUnsavedDialog(
+      canSave
+        ? async () => {
+            if (await actionsApi!.save!()) go();
+          }
+        : null,
+      go
+    );
   };
   viewEl.querySelector<HTMLButtonElement>('#bulk-rows-btn')?.addEventListener('click', openBulk);
 
@@ -2982,7 +3651,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // foreground by design (it drives the mounted runtime), so progress rides the icon
   // button - a background/navigate-away job would need a fresh runtime per file.
   if (bulkFilesId) {
-    const fileSpec = tool.manifest.inputs.find((i) => i.id === bulkFilesId) as { accept?: string[] } | undefined;
+    const fileSpec = tool.manifest.inputs.find((i) => i.id === bulkFilesId) as
+      | { accept?: string[] }
+      | undefined;
     const picker = document.createElement('input');
     picker.type = 'file';
     picker.multiple = true;
@@ -2991,8 +3662,13 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     viewEl.appendChild(picker);
     const bulkBtn = viewEl.querySelector<HTMLButtonElement>('#bulk-files-btn');
     const idleTip = bulkBtn?.getAttribute('data-tip') ?? '';
-    const tip = (s: string): void => { if (bulkBtn) bulkBtn.dataset.tip = s; };
-    bulkBtn?.addEventListener('click', () => { picker.value = ''; picker.click(); });
+    const tip = (s: string): void => {
+      if (bulkBtn) bulkBtn.dataset.tip = s;
+    };
+    bulkBtn?.addEventListener('click', () => {
+      picker.value = '';
+      picker.click();
+    });
     picker.addEventListener('change', async () => {
       const picked = Array.from(picker.files ?? []);
       if (!picked.length || !bulkBtn || bulkBtn.dataset.busy) return;
@@ -3009,12 +3685,15 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
             const res = await runtime.exportFile();
             return Array.isArray(res) ? res : [res];
           },
-          (done, total) => tip(`${t('Converting')} ${done}/${total}…`),
+          (done, total) => tip(`${t('Converting')} ${done}/${total}…`)
         );
-        if (!entries.length) throw new Error(t('Every file failed to convert - try different files.'));
+        if (!entries.length)
+          throw new Error(t('Every file failed to convert - try different files.'));
         const { storeZip } = await import('@lolly/engine');
         const zip = storeZip(entries);
-        await host.export.file(new Blob([zip as BlobPart], { type: 'application/zip' }), { filename: `${toolId}-bulk.zip` });
+        await host.export.file(new Blob([zip as BlobPart], { type: 'application/zip' }), {
+          filename: `${toolId}-bulk.zip`,
+        });
         tip(failed.length ? `${failed.length} ${t('skipped')}` : idleTip);
       } catch (err) {
         console.error('bulk-from-files failed:', err);
@@ -3024,7 +3703,10 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         await runtime.setInput(bulkFilesId, prevFile).catch(() => {});
         bulkBtn.disabled = false;
         delete bulkBtn.dataset.busy;
-        window.setTimeout(() => { bulkBtn.classList.remove('is-error'); tip(idleTip); }, 4000);
+        window.setTimeout(() => {
+          bulkBtn.classList.remove('is-error');
+          tip(idleTip);
+        }, 4000);
       }
     });
   }
@@ -3038,17 +3720,28 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       {
         used: (pct) => `${t('URL budget')}: ${pct}%`,
         // Shown from the meter the first time a link fills the bar - reassurance, not a warning.
-        reassure: t("It's okay - keep going. You can always share the whole thing as a .lolly file."),
+        reassure: t(
+          "It's okay - keep going. You can always share the whole thing as a .lolly file."
+        ),
       },
       prefersReducedMotion,
-      () => showShareDialog(runtime, actionsEl, tool.manifest, makeLollyVehicle(host, toolId, tool.manifest, actionsApi?.sessionState, contentEl)),
+      () =>
+        showShareDialog(
+          runtime,
+          actionsEl,
+          tool.manifest,
+          makeLollyVehicle(host, toolId, tool.manifest, actionsApi?.sessionState, contentEl)
+        )
     );
     // Render once now so the bar shows on mount - not only after the first syncUrl (a
     // free-canvas tool may not write the URL on load, which would leave it hidden).
     const gaugeBase = `${location.origin}${TOOL_URL_BASE}?`;
     urlGauge.update(
-      costUrlState({ model: runtime.getModel(), exportParts: collectExportParams(actionsEl) }, { base: gaugeBase, target: BROWSER_TARGET }),
-      gaugeBase,
+      costUrlState(
+        { model: runtime.getModel(), exportParts: collectExportParams(actionsEl) },
+        { base: gaugeBase, target: BROWSER_TARGET }
+      ),
+      gaugeBase
     );
   }
 
@@ -3061,8 +3754,10 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // Uses contentEl (the universal canvas node) rather than canvasEl - the latter is null for
   // hideSidebar/full-bleed tools (export:false utilities, editor layouts), which are exactly
   // the ones without a Save button that this hook exists to cover.
-  (globalThis as { __lollyCaptureThumb?: (fmt?: string) => Promise<string | null> }).__lollyCaptureThumb =
-    (fmt = 'svg') => captureThumbnail(tool.manifest, contentEl, runtime, exportUnscaled, fmt);
+  (
+    globalThis as { __lollyCaptureThumb?: (fmt?: string) => Promise<string | null> }
+  ).__lollyCaptureThumb = (fmt = 'svg') =>
+    captureThumbnail(tool.manifest, contentEl, runtime, exportUnscaled, fmt);
 
   // Canvas → input setter for THIS mounted tool. A template/canvas script can drive
   // any declared input by id - including custom controls (sliders, colour fields)
@@ -3071,8 +3766,17 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // by url-shot's visual composer to apply its crop/scroll/css back to the tool.
   // Re-bound to the live runtime each mount; last-mounted wins (a single tool at a
   // time on the tool route - /multi drives inputs its own way).
-  (globalThis as { __lollySetInput?: (id: string, value: InputValue) => void }).__lollySetInput =
-    (id, value) => { try { runtime.setInput(id, value); markUserDirty(id); } catch { /* unknown id - ignore */ } };
+  (globalThis as { __lollySetInput?: (id: string, value: InputValue) => void }).__lollySetInput = (
+    id,
+    value
+  ) => {
+    try {
+      runtime.setInput(id, value);
+      markUserDirty(id);
+    } catch {
+      /* unknown id - ignore */
+    }
+  };
 
   // Deep-link an overlay open on load, so a share link OR a screenshot recipe can
   // reproduce a state that otherwise lives only in a click. `?share` opens the Share
@@ -3088,36 +3792,65 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // app's OWN export path (runtime.export → the shell's renderApng/renderGif), so a
   // generated APNG is byte-faithful to a real user export - no second capture path to drift.
   // Returns a base64 data-URL, or null on failure. Build-tool only; no in-app UI calls it.
-  type MotionCaptureOpts = { width?: number; height?: number; duration?: number; wait?: number; repeat?: number; fps?: number };
-  (globalThis as { __lollyCaptureMotion?: (fmt?: string, opts?: MotionCaptureOpts) => Promise<string | null> }).__lollyCaptureMotion =
-    async (fmt = 'apng', opts = {}) => {
-      try {
-        const nw = opts.width  ?? tool.manifest.render.width  ?? 600;
-        const nh = opts.height ?? tool.manifest.render.height ?? 600;
-        // wait/duration/fps/repeat are the de-facto motion-timing opts the engine passes
-        // through untouched (not in RuntimeExportOpts, like render-export.ts's exportOpts) - 
-        // build a typed local so the excess-property check doesn't trip at the call site.
-        const exportOpts: { width: number; height: number; embedMeta: boolean; watermark: boolean; thumbnail: boolean; duration?: number; wait?: number; repeat?: number; fps?: number } =
-          { width: nw, height: nh, embedMeta: false, watermark: false, thumbnail: true };
-        if (opts.duration !== undefined) exportOpts.duration = opts.duration;
-        if (opts.wait     !== undefined) exportOpts.wait     = opts.wait;
-        if (opts.repeat   !== undefined) exportOpts.repeat   = opts.repeat;
-        if (opts.fps      !== undefined) exportOpts.fps      = opts.fps;
-        const blob = await exportUnscaled(() => runtime.export(contentEl, fmt, exportOpts), { shutter: false });
-        return await new Promise<string | null>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload  = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-      } catch { return null; }
-    };
+  type MotionCaptureOpts = {
+    width?: number;
+    height?: number;
+    duration?: number;
+    wait?: number;
+    repeat?: number;
+    fps?: number;
+  };
+  (
+    globalThis as {
+      __lollyCaptureMotion?: (fmt?: string, opts?: MotionCaptureOpts) => Promise<string | null>;
+    }
+  ).__lollyCaptureMotion = async (fmt = 'apng', opts = {}) => {
+    try {
+      const nw = opts.width ?? tool.manifest.render.width ?? 600;
+      const nh = opts.height ?? tool.manifest.render.height ?? 600;
+      // wait/duration/fps/repeat are the de-facto motion-timing opts the engine passes
+      // through untouched (not in RuntimeExportOpts, like render-export.ts's exportOpts) -
+      // build a typed local so the excess-property check doesn't trip at the call site.
+      const exportOpts: {
+        width: number;
+        height: number;
+        embedMeta: boolean;
+        watermark: boolean;
+        thumbnail: boolean;
+        duration?: number;
+        wait?: number;
+        repeat?: number;
+        fps?: number;
+      } = { width: nw, height: nh, embedMeta: false, watermark: false, thumbnail: true };
+      if (opts.duration !== undefined) exportOpts.duration = opts.duration;
+      if (opts.wait !== undefined) exportOpts.wait = opts.wait;
+      if (opts.repeat !== undefined) exportOpts.repeat = opts.repeat;
+      if (opts.fps !== undefined) exportOpts.fps = opts.fps;
+      const blob = await exportUnscaled(() => runtime.export(contentEl, fmt, exportOpts), {
+        shutter: false,
+      });
+      return await new Promise<string | null>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      return null;
+    }
+  };
 
   // Copy-URL now lives in the actions bar (renderActions), alongside the export
   // buttons - its format/filename/dimension inputs are in the same element. The Share
   // dialog also offers a `.lolly` download (plans/114) when the tool has a session.
   if (actionsEl) {
-    const lolly = makeLollyVehicle(host, toolId, tool.manifest, actionsApi?.sessionState, contentEl);
+    const lolly = makeLollyVehicle(
+      host,
+      toolId,
+      tool.manifest,
+      actionsApi?.sessionState,
+      contentEl
+    );
     wireUpCopyUrl(actionsEl, runtime, actionsEl, tool.manifest, lolly);
   }
 
@@ -3134,7 +3867,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     const flashSaved = (): void => {
       delete renderSaveBtn!.dataset.saving;
       renderSaveBtn!.disabled = false;
-      markSessionSaved();                                 // drop the amber unsaved cue
+      markSessionSaved(); // drop the amber unsaved cue
       renderSaveBtn!.classList.add('is-just-saved');
       setTimeout(() => {
         if (saveLabel) saveLabel.textContent = t('Save');
@@ -3145,18 +3878,30 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // doc as a reusable TEMPLATE / VARIATION for this tool. Everything the dialog does is
     // injected here, where host / runtime / stores / the Share vehicle are all in scope.
     renderSaveBtn.addEventListener('click', async () => {
-      if (renderSaveBtn!.dataset.saving) return;                    // mid-save
-      if (document.querySelector('dialog.save-dialog')) return;     // already open
-      const [{ openSaveDialog }, { createFolderStore }, { createUserTemplateStore }, { createUserToolStore }, { parseTemplates }] = await Promise.all([
+      if (renderSaveBtn!.dataset.saving) return; // mid-save
+      if (document.querySelector('dialog.save-dialog')) return; // already open
+      const [
+        { openSaveDialog },
+        { createFolderStore },
+        { createUserTemplateStore },
+        { createUserToolStore },
+        { parseTemplates },
+      ] = await Promise.all([
         import('../lib/save-dialog.ts'),
         import('../folders.ts'),
         import('../lib/user-templates.ts'),
         import('../lib/user-tools.ts'),
         import('./template-chooser.ts'),
       ]);
-      const folderStore = createFolderStore(host as unknown as Parameters<typeof createFolderStore>[0]);
-      const tplStore = createUserTemplateStore(host as unknown as Parameters<typeof createUserTemplateStore>[0]);
-      const userToolStore = createUserToolStore(host as unknown as Parameters<typeof createUserToolStore>[0]);
+      const folderStore = createFolderStore(
+        host as unknown as Parameters<typeof createFolderStore>[0]
+      );
+      const tplStore = createUserTemplateStore(
+        host as unknown as Parameters<typeof createUserTemplateStore>[0]
+      );
+      const userToolStore = createUserToolStore(
+        host as unknown as Parameters<typeof createUserToolStore>[0]
+      );
       // "Create a tool" turns a saved Design doc into the user's own listed tool - shown only
       // for a tool that can BE a user tool's base (Design today). See lib/user-tools.ts.
       const canCreateTool = toolId === 'design';
@@ -3165,9 +3910,11 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       try {
         for (const tv of parseTemplates(templateMeta)) bases.push({ id: tv.id, name: tv.name });
         for (const ut of await tplStore.list(toolId)) bases.push({ id: ut.id, name: ut.name });
-      } catch { /* bases are best-effort - the variation card just offers fewer options */ }
+      } catch {
+        /* bases are best-effort - the variation card just offers fewer options */
+      }
       const plainValues = (): Record<string, unknown> =>
-        Object.fromEntries(runtime.getModel().map(i => [i.id, i.value]));
+        Object.fromEntries(runtime.getModel().map((i) => [i.id, i.value]));
       // The project this session is already filed in, so the dialog's picker can
       // tell the truth on a re-save (plans/142 W1). Best-effort: an unfiled or
       // never-saved session resolves null and the picker falls back to the
@@ -3177,14 +3924,17 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       try {
         const slot = actionsApi?.getSlot?.();
         if (slot) currentFolderId = folderStore.folderOfRef(await folderStore.list(), slot);
-      } catch { currentFolderId = null; }
+      } catch {
+        currentFolderId = null;
+      }
       openSaveDialog({
         toolName: tool.manifest.name,
         hasTemplates,
         bases,
         currentFolderId,
-        listFolders: () => folderStore.list().then(fs => fs.map(f => ({ id: f.id, name: f.name }))),
-        createFolder: (name) => folderStore.create(name).then(f => ({ id: f.id, name: f.name })),
+        listFolders: () =>
+          folderStore.list().then((fs) => fs.map((f) => ({ id: f.id, name: f.name }))),
+        createFolder: (name) => folderStore.create(name).then((f) => ({ id: f.id, name: f.name })),
         saveToLibrary: async (folderId) => {
           const ok = await actionsApi!.save!(renderSaveBtn, { folderId });
           if (ok) flashSaved();
@@ -3196,10 +3946,23 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         canCreateTool,
         toolFormats: tool.manifest.render?.formats,
         createTool: async ({ title, description, icon, formats }) => {
-          await userToolStore.save({ title, description, icon, formats, baseToolId: toolId, values: plainValues() });
+          await userToolStore.save({
+            title,
+            description,
+            icon,
+            formats,
+            baseToolId: toolId,
+            values: plainValues(),
+          });
         },
         shareLolly: () => {
-          const lolly = makeLollyVehicle(host, toolId, tool.manifest, actionsApi?.sessionState, contentEl);
+          const lolly = makeLollyVehicle(
+            host,
+            toolId,
+            tool.manifest,
+            actionsApi?.sessionState,
+            contentEl
+          );
           showShareDialog(runtime, actionsEl, tool.manifest, lolly);
         },
         announce: (m) => announce(m),
@@ -3223,13 +3986,19 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         if (!picked) return;
         let cube = '';
         try {
-          const look = JSON.parse(runtime.getHydratedText('{{videoLook}}')) as { v?: number; on?: number; cube?: string };
+          const look = JSON.parse(runtime.getHydratedText('{{videoLook}}')) as {
+            v?: number;
+            on?: number;
+            cube?: string;
+          };
           // The envelope's `on` flag is the tool's own colour-identity test: an
           // untouched darkroom publishes an identity cube, and grading a clip
           // through it would re-encode for nothing AND stamp a colour-grade
           // credential the pixels don't earn. Only an active look counts.
           if (look?.v === 1 && look.on === 1 && typeof look.cube === 'string') cube = look.cube;
-        } catch { /* no look authored yet - texture params may still make a grade */ }
+        } catch {
+          /* no look authored yet - texture params may still make a grade */
+        }
         const num = (id: string, dflt: number): number => {
           const v = Number(runtime.getModel().find((i) => i.id === id)?.value);
           return Number.isFinite(v) ? v : dflt;
@@ -3243,43 +4012,62 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         const { runVideoJobAsJob, videoJobRefusal } = await import('../lib/video-jobs.ts');
         // A metadata-only probe so the caps refuse BEFORE a doomed decode starts -
         // the same check the catalog's inline mode shows next to Apply.
-        const meta = await new Promise<{ w: number; h: number; durationSec: number } | null>((resolve) => {
-          const v = document.createElement('video');
-          v.preload = 'metadata';
-          v.muted = true;
-          v.onloadedmetadata = () => resolve({ w: v.videoWidth, h: v.videoHeight, durationSec: Number.isFinite(v.duration) ? v.duration : 0 });
-          v.onerror = () => resolve(null);
-          v.src = picked.url;
-        });
-        if (!meta) { announce(t("Couldn't read this video.")); return; }
+        const meta = await new Promise<{ w: number; h: number; durationSec: number } | null>(
+          (resolve) => {
+            const v = document.createElement('video');
+            v.preload = 'metadata';
+            v.muted = true;
+            v.onloadedmetadata = () =>
+              resolve({
+                w: v.videoWidth,
+                h: v.videoHeight,
+                durationSec: Number.isFinite(v.duration) ? v.duration : 0,
+              });
+            v.onerror = () => resolve(null);
+            v.src = picked.url;
+          }
+        );
+        if (!meta) {
+          announce(t("Couldn't read this video."));
+          return;
+        }
         const refusal = videoJobRefusal('grade', {
           longEdge: Math.max(meta.w, meta.h),
           durationSec: meta.durationSec,
           bytes: Number(picked.meta?.bytes ?? 0),
         });
-        if (refusal) { announce(refusal); return; }
+        if (refusal) {
+          announce(refusal);
+          return;
+        }
         const sourceName = String(picked.meta?.name ?? picked.id);
-        runVideoJobAsJob(host as unknown as import('../lib/video-jobs.ts').VideoJobHost, {
-          op: 'grade',
-          source: picked,
-          sourceName,
-          grade: {
-            cubeText: cube,
-            lutLabel: t('Darkroom look'),
-            lutIntensity: 1, // the baked cube already carries the LUT at its authored strength
-            grain,
-            grainSize: Math.min(4, Math.max(1, num('grainSize', 1.6))),
-            vignette,
-            seed: Math.round(num('seed', 7)),
-            fps: 0, // source fps - a colour edit must not re-time the clip
-            bitrate: 8_000_000,
+        runVideoJobAsJob(
+          host as unknown as import('../lib/video-jobs.ts').VideoJobHost,
+          {
+            op: 'grade',
+            source: picked,
+            sourceName,
+            grade: {
+              cubeText: cube,
+              lutLabel: t('Darkroom look'),
+              lutIntensity: 1, // the baked cube already carries the LUT at its authored strength
+              grain,
+              grainSize: Math.min(4, Math.max(1, num('grainSize', 1.6))),
+              vignette,
+              seed: Math.round(num('seed', 7)),
+              fps: 0, // source fps - a colour edit must not re-time the clip
+              bitrate: 8_000_000,
+            },
+            ...(picked.meta?.aiGenerated === 'full' || picked.meta?.aiGenerated === 'partial'
+              ? { aiGeneratedSource: picked.meta.aiGenerated as 'full' | 'partial' }
+              : {}),
           },
-          ...(picked.meta?.aiGenerated === 'full' || picked.meta?.aiGenerated === 'partial'
-            ? { aiGeneratedSource: picked.meta.aiGenerated as 'full' | 'partial' } : {}),
-        }, {
-          onComplete: () => announce(t('Graded video saved to your uploads.')),
-          onError: (err) => host.log('error', 'Video grade failed', { id: picked.id, error: String(err) }),
-        });
+          {
+            onComplete: () => announce(t('Graded video saved to your uploads.')),
+            onError: (err) =>
+              host.log('error', 'Video grade failed', { id: picked.id, error: String(err) }),
+          }
+        );
         announce(t('Grading in the background - watch the progress toast.'));
       } finally {
         delete gradeVideoBtn.dataset.busy;
@@ -3308,12 +4096,16 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // Wire up the remaining sidebar utility buttons (Shrink URL, Clear changes).
   const sidebarUtilsEl = viewEl.querySelector<HTMLElement>('#sidebar-utils');
   if (sidebarUtilsEl) {
-    sidebarUtilsEl.querySelector<HTMLButtonElement>('#shrink-url-btn')?.addEventListener('click', function (this: HTMLButtonElement) {
-      shrinkUrl(runtime, tool.manifest, barSeq);
-      const prev = this.textContent;
-      this.textContent = t('Shrunk!');
-      setTimeout(() => { this.textContent = prev; }, 1500);
-    });
+    sidebarUtilsEl
+      .querySelector<HTMLButtonElement>('#shrink-url-btn')
+      ?.addEventListener('click', function (this: HTMLButtonElement) {
+        shrinkUrl(runtime, tool.manifest, barSeq);
+        const prev = this.textContent;
+        this.textContent = t('Shrunk!');
+        setTimeout(() => {
+          this.textContent = prev;
+        }, 1500);
+      });
   }
 
   // WYSIWYG editor overlay (render.layout:'editor'): mount the direct-manipulation
@@ -3322,7 +4114,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // untouched. It reads/writes the flat `boxes` array through runtime.setInput.
   if (editorLayout && canvasEditInput && canvasEl && stageEl) {
     // The artboard is a resizable document. Restore its size from the URL's
-    // reserved width/height (px) if present, then re-fit. Skipped in carousel mode - 
+    // reserved width/height (px) if present, then re-fit. Skipped in carousel mode -
     // the strip size is owned by syncStrip (from the page count/size inputs), and a
     // reserved ?width/?height must not overwrite it.
     if (!pagesMode && !fixedCanvasMode) {
@@ -3341,7 +4133,8 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       canvasEl.style.width = pxW + 'px';
       canvasEl.style.height = pxH + 'px';
       actionsApi?.setDims?.({ width: w, height: h, unit });
-      markUserDirty('w'); markUserDirty('h');
+      markUserDirty('w');
+      markUserDirty('h');
       resetView();
     };
 
@@ -3365,15 +4158,21 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     };
     const flushPresentAddress = (): void => {
       if (sPending == null) return;
-      const s = sPending; sPending = null;
+      const s = sPending;
+      sPending = null;
       writePresentUrl((sp) => {
-        sp.set('present', ''); if (presentLoop) sp.set('kiosk', ''); sp.set('s', s);
+        sp.set('present', '');
+        if (presentLoop) sp.set('kiosk', '');
+        sp.set('s', s);
       });
     };
     const writePresentAddress = (frameId: string): void => {
       sPending = frameId;
-      if (sTimer) return;                       // a write is already scheduled this window
-      sTimer = setTimeout(() => { sTimer = null; flushPresentAddress(); }, 1100);
+      if (sTimer) return; // a write is already scheduled this window
+      sTimer = setTimeout(() => {
+        sTimer = null;
+        flushPresentAddress();
+      }, 1100);
     };
     /**
      * Open the deck. `at` starts on one frame (the top bar's "Present from this slide" and
@@ -3395,20 +4194,30 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       // this is one microtask - the promise settled during mount, long before the click -
       // and it carries brandVarsReady's own 3s cap, so a stalled fetch cannot wedge it.
       await brandVarsReady;
-      if (presenter || !viewEl.isConnected) return;   // re-check after the awaits
+      if (presenter || !viewEl.isConnected) return; // re-check after the awaits
       // Present from the ENGINE's render (nested frame pages WITH their children), not the
       // editor's live DOM: the free-canvas editor flattens boxes to siblings of empty
       // frame-page backgrounds for editing, so cloning those pages would show blank frames.
       // getHydrated() reflects the current committed model as the template renders it.
       const presentSource = document.createElement('div');
       presentSource.innerHTML = runtime.getHydrated();
-      const transitionVal = String(runtime.getModel().find((i) => i.id === 'transition')?.value ?? 'slide');
+      const transitionVal = String(
+        runtime.getModel().find((i) => i.id === 'transition')?.value ?? 'slide'
+      );
       // Derived from the manifest so an option added to the select can never be
       // silently downgraded to a push here (that is how `flight` was lost once).
-      const deckTransitionOptions = (): Set<string> => new Set(
-        ((tool.manifest.inputs.find((i) => i.id === 'transition') as { options?: Array<string | { value?: unknown }> } | undefined)?.options ?? [])
-          .map((o) => String(typeof o === 'string' ? o : o?.value ?? '')).filter(Boolean),
-      );
+      const deckTransitionOptions = (): Set<string> =>
+        new Set(
+          (
+            (
+              tool.manifest.inputs.find((i) => i.id === 'transition') as
+                | { options?: Array<string | { value?: unknown }> }
+                | undefined
+            )?.options ?? []
+          )
+            .map((o) => String(typeof o === 'string' ? o : (o?.value ?? '')))
+            .filter(Boolean)
+        );
       presenter = openPresentMode({
         source: presentSource,
         // A frame id IS an `s=` address (present-mode resolves position / id / `h.f`), so
@@ -3427,14 +4236,24 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         // the sidebar, written to the model, honoured by the .pptx and mp4 exports, and
         // downgraded on the way into the one player that can actually fly it. Anything
         // unrecognised still falls back to the manifest's own default.
-        transition: deckTransitionOptions().has(transitionVal) ? transitionVal as 'slide' | 'fade' | 'morph' | 'flight' : 'slide',
-        onAddress: (frameId, _index, build) => writePresentAddress(build > 0 ? `${frameId}.${build}` : frameId),
+        transition: deckTransitionOptions().has(transitionVal)
+          ? (transitionVal as 'slide' | 'fade' | 'morph' | 'flight')
+          : 'slide',
+        onAddress: (frameId, _index, build) =>
+          writePresentAddress(build > 0 ? `${frameId}.${build}` : frameId),
         onClose: () => {
           presenter = null;
-          if (sTimer) { clearTimeout(sTimer); sTimer = null; }
+          if (sTimer) {
+            clearTimeout(sTimer);
+            sTimer = null;
+          }
           sPending = null;
           // Leave the editor's own URL clean: drop the present params on exit.
-          writePresentUrl((sp) => { sp.delete('present'); sp.delete('kiosk'); sp.delete('s'); });
+          writePresentUrl((sp) => {
+            sp.delete('present');
+            sp.delete('kiosk');
+            sp.delete('s');
+          });
         },
       });
       // "Speaker view" opens the deck AND its notes panel in one gesture. Done here rather
@@ -3457,12 +4276,19 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         const templates = parseTemplates(templateMeta);
         try {
           const { createUserTemplateStore } = await import('../lib/user-templates.ts');
-          const mine = await createUserTemplateStore(host as unknown as Parameters<typeof createUserTemplateStore>[0]).list(toolId);
-          for (const ut of mine) templates.push({
-            id: ut.id, name: ut.name, category: t('Your templates'),
-            values: ut.values as Record<string, InputValue>,
-          });
-        } catch { /* user templates are best-effort */ }
+          const mine = await createUserTemplateStore(
+            host as unknown as Parameters<typeof createUserTemplateStore>[0]
+          ).list(toolId);
+          for (const ut of mine)
+            templates.push({
+              id: ut.id,
+              name: ut.name,
+              category: t('Your templates'),
+              values: ut.values as Record<string, InputValue>,
+            });
+        } catch {
+          /* user templates are best-effort */
+        }
         if (!templates.length) return;
         // Held in a local first: the mount-gate contract test (tool-template-mount.
         // test.ts) forbids the literal `await openTemplateChooser(` file-wide, so the
@@ -3497,17 +4323,23 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         }
       } catch (e) {
         host.log?.('warn', 'template chooser failed: ' + String(e));
-      } finally { templateChooserBusy = false; }
+      } finally {
+        templateChooserBusy = false;
+      }
     };
 
     // The document name lives in ONE place - the export sheet's filename field - and three
     // surfaces read and write it (the Document-info panel, the top bar, the save snapshot's
     // `__label`). Hoisted out of the `info` literal below so the bar shares the exact same
     // pair rather than a second copy of the selector.
-    const getFilename = (): string => viewEl.querySelector<HTMLInputElement>('[data-action="filename"]')?.value || '';
+    const getFilename = (): string =>
+      viewEl.querySelector<HTMLInputElement>('[data-action="filename"]')?.value || '';
     const setFilename = (v: string): void => {
       const fn = viewEl.querySelector<HTMLInputElement>('[data-action="filename"]');
-      if (fn) { fn.value = v; fn.dispatchEvent(new Event('input', { bubbles: true })); }
+      if (fn) {
+        fn.value = v;
+        fn.dispatchEvent(new Event('input', { bubbles: true }));
+      }
     };
 
     // History is a SINGLE-SLOT contract (`historyControls`), and this layout now has two
@@ -3517,7 +4349,11 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     const historySyncs: Array<(canUndo: boolean, canRedo: boolean) => void> = [];
     const registerHistory = (sync: (canUndo: boolean, canRedo: boolean) => void): void => {
       historySyncs.push(sync);
-      historyControls = { sync: (canUndo, canRedo) => { for (const s of historySyncs) s(canUndo, canRedo); } };
+      historyControls = {
+        sync: (canUndo, canRedo) => {
+          for (const s of historySyncs) s(canUndo, canRedo);
+        },
+      };
       refreshHistoryUI();
     };
 
@@ -3538,475 +4374,608 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         const v = localStorage.getItem(key);
         if (v === 'open') return true;
         if (v === 'closed') return false;
-      } catch { /* private mode / blocked storage: fall through to the width default */ }
+      } catch {
+        /* private mode / blocked storage: fall through to the width default */
+      }
       return window.innerWidth > 1180;
     };
     const writeColumnPref = (key: string, open: boolean): void => {
-      try { localStorage.setItem(key, open ? 'open' : 'closed'); } catch { /* best-effort */ }
+      try {
+        localStorage.setItem(key, open ? 'open' : 'closed');
+      } catch {
+        /* best-effort */
+      }
     };
 
-    import('./free-canvas.ts').then(({ initFreeCanvas }) => {
-      if (!viewEl.isConnected) return;   // navigated away before the chunk loaded
-      // The host-UI profile setter is a web-shell extension (WebProfileAPI), not on
-      // the engine's read-only ProfileAPI - surface it via a narrow cast so the
-      // Document-info panel can toggle the provenance opt-in.
-      const profileApi = host.profile as (typeof host.profile) & { set?: (p: Profile) => Promise<void> };
-      const fc = initFreeCanvas({
-        viewEl, stageEl, canvasEl, outerEl, runtime, host,
-        input: canvasEditInput, nativeW, nativeH,
-        onDirty: markUserDirty,
-        // In carousel mode the strip size is owned by syncStrip (page count/size inputs);
-        // withholding setCanvasSize stops the artboard-resize + design-import paths from
-        // clobbering the strip. (The rail's size control is the page-size picker instead.)
-        setCanvasSize: (pagesMode || fixedCanvasMode) ? undefined : setCanvasSize,
-        // Multi-page (carousel) mode: gives the overlay the page-count + page-size input
-        // ids so its rail exposes a page stepper / size picker, and so it translates box
-        // gestures by each frame's offset. Absent for single-page editors.
-        pages: pagesCfg ? {
-          countField: pagesCfg.count, widthField: pagesCfg.width, heightField: pagesCfg.height,
-          min: pagesCfg.min ?? 1, max: pagesCfg.max ?? 6,
-        } : undefined,
-        // Frame-primitive mode (plan 93 F1b): frame field names so the overlay renders
-        // frame-local + re-buckets on drop. Absent unless the canvas declares frameField.
-        frame: frameCfg,
-        // One-shot EDITOR state off the link (docs/url-mode.md "On a tool route"): the
-        // `_ui` object param plus the `_sel`/`_t`/`_panel` shorthands, which win on
-        // conflict. All in the `_` namespace the engine reserves outright (parseUrlState
-        // skips it), so none can ever shadow a tool input; syncUrl drops them on the
-        // first edit.
-        deepLink: parseEditorState(urlFlags),
-        // Document-info panel: read/write the export/save name, plus at-a-glance
-        // details. Name binds to the export bar's filename field (the canonical
-        // save name); last-edited reads the resumed session's timestamp if any.
-        info: {
-          id: tool.manifest.id,
-          name: tool.manifest.name,
-          version: tool.manifest.version,
-          status: tool.manifest.status,
-          formats: tool.manifest.render.formats,
-          getFilename,
-          setFilename,
-          lastEdited: (async () => {
-            if (!slot) return null;
-            try { return (await host.state.list()).find(s => s.slot === slot)?.updatedAt || null; }
-            catch { return null; }
-          }) as () => string | Promise<string> | null | undefined,
-          // Export provenance - a read-only view of the name/contact baked into the
-          // file's metadata (see engine metadata.ts buildExportMeta) + the opt in/out
-          // toggle. Only offered where the shell can persist the profile (host.profile.set).
-          provenance: typeof profileApi.set === 'function' ? {
-            editHref: '#/profile?focus=use-details',
-            get: async () => {
-              const pr = await host.profile.get();
-              const join = (a?: string, b?: string, sep = ' '): string =>
-                [a, b].map(s => (s ?? '').trim()).filter(Boolean).join(sep);
-              return {
-                optedIn: pr.useDetails === true,
-                author: join(pr.firstname, pr.lastname),
-                contact: join(pr.email, pr.phone, ' · '),
-              };
+    import('./free-canvas.ts')
+      .then(({ initFreeCanvas }) => {
+        if (!viewEl.isConnected) return; // navigated away before the chunk loaded
+        // The host-UI profile setter is a web-shell extension (WebProfileAPI), not on
+        // the engine's read-only ProfileAPI - surface it via a narrow cast so the
+        // Document-info panel can toggle the provenance opt-in.
+        const profileApi = host.profile as typeof host.profile & {
+          set?: (p: Profile) => Promise<void>;
+        };
+        const fc = initFreeCanvas({
+          viewEl,
+          stageEl,
+          canvasEl,
+          outerEl,
+          runtime,
+          host,
+          input: canvasEditInput,
+          nativeW,
+          nativeH,
+          onDirty: markUserDirty,
+          // In carousel mode the strip size is owned by syncStrip (page count/size inputs);
+          // withholding setCanvasSize stops the artboard-resize + design-import paths from
+          // clobbering the strip. (The rail's size control is the page-size picker instead.)
+          setCanvasSize: pagesMode || fixedCanvasMode ? undefined : setCanvasSize,
+          setDocumentSettings: ({ unit, dpi, width, height }) => {
+            // Design owns a document-level unit/DPI.  The export panel remains the
+            // physical-output surface, but it mirrors that document state rather than
+            // maintaining a competing temporary unit preference.
+            actionsApi?.setDims?.({ unit, dpi, width, height });
+          },
+          // Multi-page (carousel) mode: gives the overlay the page-count + page-size input
+          // ids so its rail exposes a page stepper / size picker, and so it translates box
+          // gestures by each frame's offset. Absent for single-page editors.
+          pages: pagesCfg
+            ? {
+                countField: pagesCfg.count,
+                widthField: pagesCfg.width,
+                heightField: pagesCfg.height,
+                min: pagesCfg.min ?? 1,
+                max: pagesCfg.max ?? 6,
+              }
+            : undefined,
+          // Frame-primitive mode (plan 93 F1b): frame field names so the overlay renders
+          // frame-local + re-buckets on drop. Absent unless the canvas declares frameField.
+          frame: frameCfg,
+          // One-shot EDITOR state off the link (docs/url-mode.md "On a tool route"): the
+          // `_ui` object param plus the `_sel`/`_t`/`_panel` shorthands, which win on
+          // conflict. All in the `_` namespace the engine reserves outright (parseUrlState
+          // skips it), so none can ever shadow a tool input; syncUrl drops them on the
+          // first edit.
+          deepLink: parseEditorState(urlFlags),
+          // Document-info panel: read/write the export/save name, plus at-a-glance
+          // details. Name binds to the export bar's filename field (the canonical
+          // save name); last-edited reads the resumed session's timestamp if any.
+          info: {
+            id: tool.manifest.id,
+            name: tool.manifest.name,
+            version: tool.manifest.version,
+            status: tool.manifest.status,
+            formats: tool.manifest.render.formats,
+            getFilename,
+            setFilename,
+            lastEdited: (async () => {
+              if (!slot) return null;
+              try {
+                return (await host.state.list()).find((s) => s.slot === slot)?.updatedAt || null;
+              } catch {
+                return null;
+              }
+            }) as () => string | Promise<string> | null | undefined,
+            // Export provenance - a read-only view of the name/contact baked into the
+            // file's metadata (see engine metadata.ts buildExportMeta) + the opt in/out
+            // toggle. Only offered where the shell can persist the profile (host.profile.set).
+            provenance:
+              typeof profileApi.set === 'function'
+                ? {
+                    editHref: '#/profile?focus=use-details',
+                    get: async () => {
+                      const pr = await host.profile.get();
+                      const join = (a?: string, b?: string, sep = ' '): string =>
+                        [a, b]
+                          .map((s) => (s ?? '').trim())
+                          .filter(Boolean)
+                          .join(sep);
+                      return {
+                        optedIn: pr.useDetails === true,
+                        author: join(pr.firstname, pr.lastname),
+                        contact: join(pr.email, pr.phone, ' · '),
+                      };
+                    },
+                    setOptIn: async (on: boolean) => {
+                      const cur = await host.profile.get();
+                      await profileApi.set!({ ...cur, useDetails: on });
+                    },
+                  }
+                : undefined,
+          },
+          // Picking a Lolly link / saved session for a box image opens its inputs
+          // first (configure → insert), same as the sidebar asset slots. The picker
+          // passes mode 'edit' when re-opening the box's current Lolly render.
+          editTool: (toolUrl: string, mode = 'insert') =>
+            openEmbedEditor(host, { editUrl: toolUrl, slotLabel: t('image'), mode }),
+          // The editor is chromeless (no sidebar header), so the free-canvas rail
+          // hosts a pair of visible undo/redo buttons. Since plan 179 M1 the design
+          // top bar hosts a second pair, so `registerHistory` fans the single-slot
+          // contract out to both rather than letting the later mount silence the
+          // earlier one (the header pair can't exist in this layout, so no conflict).
+          history: {
+            undo: undoHistory,
+            redo: redoHistory,
+            register: registerHistory,
+          },
+          // Chrome the tool view owns and the overlay's trimmed Lolly menu now hosts: the
+          // theme cycle and sound toggles the retired zoom HUD used to carry (see the
+          // setupStageNav call above), the profile avatar, and "Save to your library".
+          // The elements are ADOPTED, not cloned - the HUD is not built in this layout,
+          // so nothing else holds a claim on them.
+          chrome: {
+            themeToggle: themeToggle ?? undefined,
+            soundToggle: soundToggle ?? undefined,
+            saveToLibrary: canSaveSession
+              ? () => {
+                  renderSaveBtn?.click();
+                }
+              : undefined,
+          },
+          // Primary actions as prominent rail icons (the chromeless editor has no
+          // bottom pill). Each delegates to the tool's existing handler/button so
+          // the export/save/copy/share logic isn't duplicated: Export opens the
+          // export popup, Save is the in-place checkpoint save, Copy writes the
+          // rendered output, Share copies a shareable link. dirtyRef lets the rail
+          // Save icon mirror the render pill's amber "unsaved" cue.
+          actions: {
+            export: () => renderFab?.click(),
+            save: () => renderSaveBtn?.click(),
+            copy: () => viewEl.querySelector<HTMLButtonElement>('[data-action="copy"]')?.click(),
+            share: () =>
+              viewEl.querySelector<HTMLButtonElement>('[data-action="copy-url"]')?.click(),
+            // Present the frames as a fullscreen deck (plan 112). Fire-and-forget: the
+            // presenter module is lazily imported on first use. An optional frame id starts
+            // the deck there - what the navigator's "Present from here" row spends.
+            present: (atFrameId?: string) => {
+              void openPresenter(atFrameId ? { at: atFrameId } : undefined);
             },
-            setOptIn: async (on: boolean) => {
-              const cur = await host.profile.get();
-              await profileApi.set!({ ...cur, useDetails: on });
-            },
-          } : undefined,
-        },
-        // Picking a Lolly link / saved session for a box image opens its inputs
-        // first (configure → insert), same as the sidebar asset slots. The picker
-        // passes mode 'edit' when re-opening the box's current Lolly render.
-        editTool: (toolUrl: string, mode = 'insert') => openEmbedEditor(host, { editUrl: toolUrl, slotLabel: t('image'), mode }),
-        // The editor is chromeless (no sidebar header), so the free-canvas rail
-        // hosts a pair of visible undo/redo buttons. Since plan 179 M1 the design
-        // top bar hosts a second pair, so `registerHistory` fans the single-slot
-        // contract out to both rather than letting the later mount silence the
-        // earlier one (the header pair can't exist in this layout, so no conflict).
-        history: {
-          undo: undoHistory,
-          redo: redoHistory,
-          register: registerHistory,
-        },
-        // Chrome the tool view owns and the overlay's trimmed Lolly menu now hosts: the
-        // theme cycle and sound toggles the retired zoom HUD used to carry (see the
-        // setupStageNav call above), the profile avatar, and "Save to your library".
-        // The elements are ADOPTED, not cloned - the HUD is not built in this layout,
-        // so nothing else holds a claim on them.
-        chrome: {
-          themeToggle: themeToggle ?? undefined,
-          soundToggle: soundToggle ?? undefined,
-          saveToLibrary: canSaveSession ? () => { renderSaveBtn?.click(); } : undefined,
-        },
-        // Primary actions as prominent rail icons (the chromeless editor has no
-        // bottom pill). Each delegates to the tool's existing handler/button so
-        // the export/save/copy/share logic isn't duplicated: Export opens the
-        // export popup, Save is the in-place checkpoint save, Copy writes the
-        // rendered output, Share copies a shareable link. dirtyRef lets the rail
-        // Save icon mirror the render pill's amber "unsaved" cue.
-        actions: {
-          export: () => renderFab?.click(),
-          save: () => renderSaveBtn?.click(),
-          copy: () => viewEl.querySelector<HTMLButtonElement>('[data-action="copy"]')?.click(),
-          share: () => viewEl.querySelector<HTMLButtonElement>('[data-action="copy-url"]')?.click(),
-          // Present the frames as a fullscreen deck (plan 112). Fire-and-forget: the
-          // presenter module is lazily imported on first use. An optional frame id starts
-          // the deck there - what the navigator's "Present from here" row spends.
-          present: (atFrameId?: string) => { void openPresenter(atFrameId ? { at: atFrameId } : undefined); },
-          // Only offered when the tool ships templates (index metadata / inline
-          // manifest); a tool with only user-saved templates reaches them via a
-          // fresh open, which the chooser gate already covers.
-          newFromTemplate: hasTemplates ? () => { void openTemplatesMidSession(); } : undefined,
-          // The chromeless editor's home for "Bulk from rows" - the sidebar header
-          // button that carries it everywhere else does not exist in this layout.
-          bulk: canBulk ? () => { openBulk(); } : undefined,
-          canSave: canSaveSession,
-          dirtyRef: renderSaveBtn,
-        },
-      } as Parameters<typeof initFreeCanvas>[0]);
+            // Only offered when the tool ships templates (index metadata / inline
+            // manifest); a tool with only user-saved templates reaches them via a
+            // fresh open, which the chooser gate already covers.
+            newFromTemplate: hasTemplates
+              ? () => {
+                  void openTemplatesMidSession();
+                }
+              : undefined,
+            // The chromeless editor's home for "Bulk from rows" - the sidebar header
+            // button that carries it everywhere else does not exist in this layout.
+            bulk: canBulk
+              ? () => {
+                  openBulk();
+                }
+              : undefined,
+            canSave: canSaveSession,
+            dirtyRef: renderSaveBtn,
+          },
+        } as Parameters<typeof initFreeCanvas>[0]);
 
-      // ── The Design chrome: top bar + navigator + inspector (plan 179 M1-M3) ──────
-      //
-      // Lazily imported alongside the overlay, not statically, so a tool that never
-      // mounts an editor pays nothing for three modules it cannot use. Each is mounted
-      // through the ports on `fc.design` (see design-ports.ts) - none of them import
-      // free-canvas, and none of them reach the model except through those ports, which
-      // is why they are unit-testable and why this wiring is the only place that knows
-      // both halves. Order matters: the bar measures its own height into
-      // `--stage-reserve-top` before the columns report their widths, so the first fit
-      // the canvas performs already accounts for all three bands.
-      void Promise.all([
-        import('./design-topbar.ts'), import('./design-navigator.ts'), import('./design-inspector.ts'),
-      ]).then(([{ mountDesignTopbar }, { initDesignNavigator }, { initDesignInspector }]) => {
-        if (!viewEl.isConnected) return;
-        const design = fc.design;
-        openDesignMarkMenu = (anchor: HTMLElement) => design.openLollyMenu(anchor);
+        // ── The Design chrome: top bar + navigator + inspector (plan 179 M1-M3) ──────
+        //
+        // Lazily imported alongside the overlay, not statically, so a tool that never
+        // mounts an editor pays nothing for three modules it cannot use. Each is mounted
+        // through the ports on `fc.design` (see design-ports.ts) - none of them import
+        // free-canvas, and none of them reach the model except through those ports, which
+        // is why they are unit-testable and why this wiring is the only place that knows
+        // both halves. Order matters: the bar measures its own height into
+        // `--stage-reserve-top` before the columns report their widths, so the first fit
+        // the canvas performs already accounts for all three bands.
+        void Promise.all([
+          import('./design-topbar.ts'),
+          import('./design-navigator.ts'),
+          import('./design-inspector.ts'),
+        ])
+          .then(([{ mountDesignTopbar }, { initDesignNavigator }, { initDesignInspector }]) => {
+            if (!viewEl.isConnected) return;
+            const design = fc.design;
+            openDesignMarkMenu = (anchor: HTMLElement) => design.openLollyMenu(anchor);
 
-        // The navigator is the only writer of a stage side reserve, and it writes through
-        // the overlay's arbiter - which also owns the docked rail's share of the left
-        // band, so a navigator and an open timeline cannot each claim the same edge.
-        //
-        // The RIGHT number is always 0: the inspector is not a stage child any more but an
-        // occupant of the app's one right-hand column (lib/edge-dock.ts), and that column
-        // reserves its width by nudging `#view` with `--dock-w`. Passing its width here as
-        // well would take the same space twice.
-        let navW = 0;
-        const pushWidths = (): void => { design.setColumnWidths(navW, 0); };
+            // The navigator is the only writer of a stage side reserve, and it writes through
+            // the overlay's arbiter - which also owns the docked rail's share of the left
+            // band, so a navigator and an open timeline cannot each claim the same edge.
+            //
+            // The RIGHT number is always 0: the inspector is not a stage child any more but an
+            // occupant of the app's one right-hand column (lib/edge-dock.ts), and that column
+            // reserves its width by nudging `#view` with `--dock-w`. Passing its width here as
+            // well would take the same space twice.
+            let navW = 0;
+            const pushWidths = (): void => {
+              design.setColumnWidths(navW, 0);
+            };
 
-        // ── One right-hand panel (Andy, 2026-09-02: "a single left sidebar and a single
-        // right sidebar") ───────────────────────────────────────────────────────────
-        //
-        // The inspector used to append itself to the stage, which put a second right-hand
-        // panel INSIDE the canvas surface, beside the edge dock the export sheet was
-        // already using - two columns over the artwork, one of them clipping it. It is now
-        // an occupant of that one column (lib/edge-dock.ts) like everything else, so
-        // "the inspector is open" means "the inspector is docked", and `setInspectorOpen`
-        // is the single writer of that fact.
-        //
-        // The column is the app's, not this view's: it can hand a panel back on its own
-        // (the user undocks it, or the window drops below the mobile breakpoint, where the
-        // whole dock is inert). That is why the release path - not just the bar's toggle -
-        // is what records the state and re-syncs the bar.
-        const INSP_KEY = 'lolly-design-inspector';
-        let inspectorOpen = false;
-        const setInspectorOpen = (open: boolean): void => {
-          if (open) {
-            const insp = designInspector;
-            if (!insp) return;                    // the column has not mounted yet
-            if (!isDocked('inspector')) {
-              inspectorOpen = requestDock('inspector', insp.el, {
-                icon: icon('sliders'),
-                label: t('Inspector'),
-                // WHY THE PANEL LEFT decides whether a preference is written. A route
-                // change and the mobile-breakpoint undock both hand the panel back, and
-                // recording "closed" for either meant leaving the editor once turned the
-                // inspector off for every session after it.
-                onRelease: (reason) => {
-                  inspectorOpen = false;
-                  if (reason === 'user') writeColumnPref(INSP_KEY, false);
-                  designTopbar?.sync();
+            // ── One right-hand panel (Andy, 2026-09-02: "a single left sidebar and a single
+            // right sidebar") ───────────────────────────────────────────────────────────
+            //
+            // The inspector used to append itself to the stage, which put a second right-hand
+            // panel INSIDE the canvas surface, beside the edge dock the export sheet was
+            // already using - two columns over the artwork, one of them clipping it. It is now
+            // an occupant of that one column (lib/edge-dock.ts) like everything else, so
+            // "the inspector is open" means "the inspector is docked", and `setInspectorOpen`
+            // is the single writer of that fact.
+            //
+            // The column is the app's, not this view's: it can hand a panel back on its own
+            // (the user undocks it, or the window drops below the mobile breakpoint, where the
+            // whole dock is inert). That is why the release path - not just the bar's toggle -
+            // is what records the state and re-syncs the bar.
+            const INSP_KEY = 'lolly-design-inspector';
+            let inspectorOpen = false;
+            const setInspectorOpen = (open: boolean): void => {
+              if (open) {
+                const insp = designInspector;
+                if (!insp) return; // the column has not mounted yet
+                if (!isDocked('inspector')) {
+                  inspectorOpen = requestDock('inspector', insp.el, {
+                    icon: icon('sliders'),
+                    label: t('Inspector'),
+                    // WHY THE PANEL LEFT decides whether a preference is written. A route
+                    // change and the mobile-breakpoint undock both hand the panel back, and
+                    // recording "closed" for either meant leaving the editor once turned the
+                    // inspector off for every session after it.
+                    onRelease: (reason) => {
+                      inspectorOpen = false;
+                      if (reason === 'user') writeColumnPref(INSP_KEY, false);
+                      designTopbar?.sync();
+                    },
+                  });
+                } else {
+                  // Already in the column, which is not the same as on the screen: it can be
+                  // behind a tab, or inside a collapsed rail. Asking for it again means show it.
+                  showPanel('inspector');
+                  inspectorOpen = true;
+                }
+              } else if (isDocked('inspector')) {
+                releaseDock('inspector'); // its onRelease records + syncs
+                return;
+              } else {
+                inspectorOpen = false;
+              }
+              // An ask the dock could not honour (below the mobile breakpoint the column does
+              // not exist) must NOT overwrite a desktop preference with "closed" - the user
+              // asked for it, the host simply had nowhere to put it.
+              if (inspectorOpen === open) writeColumnPref(INSP_KEY, open);
+              designTopbar?.sync();
+            };
+
+            // (a) The top bar. Every port is a live read off the overlay or this view; the
+            // bar holds no state of its own beyond its own open menu.
+            designTopbar = mountDesignTopbar({
+              stageEl,
+              canvasEl,
+              // The Home pill moved out of the view's corner and into the bar's left slot
+              // (see the render gate above), so the bar emits it and we wire it here.
+              backPillHtml: backHomeHtml(backPillOpts),
+              history: { undo: undoHistory, redo: redoHistory, register: registerHistory },
+              name: {
+                get: getFilename,
+                set: setFilename,
+                // The export field's own placeholder IS the auto-filename (tool-actions keeps
+                // it fresh on every `lolly:export-open`), so reading it here needs no second
+                // implementation of the naming rules.
+                placeholder: () =>
+                  viewEl.querySelector<HTMLInputElement>('[data-action="filename"]')?.placeholder ||
+                  '',
+              },
+              intent: {
+                get: () => designIntent,
+                set: (value) => {
+                  const next = DESIGN_INTENT_OPTIONS.find(
+                    (option) => option.value === value
+                  )?.value;
+                  if (next) setDesignIntent(next, true);
                 },
-              });
-            } else {
-              // Already in the column, which is not the same as on the screen: it can be
-              // behind a tab, or inside a collapsed rail. Asking for it again means show it.
-              showPanel('inspector');
-              inspectorOpen = true;
+                options: DESIGN_INTENT_OPTIONS,
+              },
+              zoom: {
+                fitAll: () => {
+                  stageZoom?.fit();
+                },
+                // Deliberately the overlay's own focus path (`fc-focus-rect`), not a rect this
+                // view converts: the overlay owns the canvas→client mapping, and the navigator
+                // and the timeline already frame artboards through exactly this door.
+                fitArtboard: () => {
+                  const id = design.activeFrameId();
+                  if (id) design.artboard.focus(id);
+                },
+                zoomBy: (f) => {
+                  stageZoom?.zoomBy(f);
+                },
+                zoomTo: (abs) => {
+                  stageZoom?.zoomTo(abs);
+                },
+                actual: () => stageZoom?.actual() ?? 0,
+                subscribe: (cb) =>
+                  stageZoom?.subscribe(cb) ??
+                  (() => {
+                    /* no stage nav: nothing to follow */
+                  }),
+              },
+              timeline: {
+                toggle: () => design.toggleTimeline(),
+                isOpen: () => design.isTimelineOpen(),
+              },
+              navigator: {
+                toggle: () => {
+                  const n = designNav;
+                  if (n) n.setOpen(!n.isOpen());
+                },
+                isOpen: () => !!designNav?.isOpen(),
+              },
+              // The inspector's only show/hide control from outside the column (it carries a
+              // close button of its own, and nothing else could re-open it). The toggle is a
+              // dock request now, not a `setOpen` on the column: whether the panel is on
+              // screen is the one right-hand column's answer, not the panel's.
+              inspector: {
+                toggle: () => setInspectorOpen(!inspectorOpen),
+                isOpen: () => inspectorOpen,
+              },
+              // …and the same column's other occupant the bar has to know about: while the
+              // compact zoom bar is docked it carries Fit / NN% / ±, so the bar drops its own
+              // copy of them rather than showing the five verbs twice.
+              dock: {
+                // Docked AND on screen: a collapsed column hides its body, so a bar that read
+                // occupancy alone dropped Fit / NN% / ± (and the mark, and the avatar) for a
+                // compact zoom bar nobody could see.
+                zoomDocked: () => isDocked('zoom') && !edgeDockCollapsed(),
+                subscribe: (cb) => onDockChange(cb),
+              },
+              share: () => {
+                viewEl.querySelector<HTMLButtonElement>('[data-action="copy-url"]')?.click();
+              },
+              present: (o) => {
+                void openPresenter(o);
+              },
+              exportSheet: (o) => {
+                if (o?.format) actionsApi?.setFormat?.(o.format);
+                renderFab?.click();
+              },
+              // The deck-wide Narrate row (plans/180 section 8). Undefined where the overlay
+              // offers no narration - no speech bridge, no frames - and then there is no row.
+              narrate: design.narrationActions,
+              narrationEnabled: () => designIntent !== 'carousel',
+              model: {
+                getInput: (id) => runtime.getModel().find((i) => i.id === id)?.value,
+                // Caught, not floated: the bar writes doc-level inputs the MANIFEST declares
+                // (`autoAdvance`), and a tool that has not declared one yet must leave a log
+                // line rather than an unhandled rejection on the page.
+                setInput: (id, v) => {
+                  markUserDirty(id);
+                  void Promise.resolve(runtime.setInput(id, v as InputValue)).catch((e: unknown) =>
+                    host.log?.('warn', `top bar could not set "${id}": ${String(e)}`)
+                  );
+                },
+              },
+              // Loop is the reserved `?kiosk` flag, not a model field: it describes how the
+              // deck is PLAYED, and a shared link is how that travels.
+              loop: {
+                get: () => presentLoop,
+                set: (v) => {
+                  presentLoop = v;
+                  writePresentUrl((sp) => {
+                    if (v) sp.set('kiosk', '');
+                    else sp.delete('kiosk');
+                  });
+                },
+              },
+              onMarkMenu: (anchor) => design.openLollyMenu(anchor),
+              // The avatar is ADOPTED (moved), so exactly one surface holds it at a time. The
+              // bar is its home while the right column is closed; when the compact zoom bar
+              // takes the column the bar hands the avatar to that bar instead (profileDock
+              // below), so the profile menu is always reachable and never doubled.
+              profileEl: profileToggle ?? undefined,
+              // The docked compact zoom bar is the stage nav's own pill, so its element is
+              // where the avatar goes while the column holds it. Null before the pill exists
+              // (or on a layout that builds none), which the bar reads as "keep it".
+              profileDock: () => stageZoom?.profileHome() ?? null,
+              // A document can only be presented (or have an artboard framed) if the tool
+              // declares a frame primitive AND the document actually holds one.
+              hasFrames: () => {
+                if (!frameCfg) return false;
+                if (design.activeFrameId()) return true;
+                const kindField = (design.model.cfg as { kindField?: string }).kindField || 'kind';
+                const frameKind = design.model.frame?.frameKind || frameCfg.frameKind || 'frame';
+                return design.model
+                  .getBoxes()
+                  .some((b) => String(b[kindField] ?? '') === frameKind);
+              },
+              activeFrameId: () => design.activeFrameId(),
+            });
+            syncDesignIntentChrome = () => {
+              designTopbar?.sync();
+              designInspector?.sync();
+            };
+            applyDesignIntentLayout = (outcome) => {
+              if (outcome.openNavigator && !designNav?.isOpen()) designNav?.setOpen(true);
+              if (!outcome.openNavigator && designNav?.isOpen()) designNav.setOpen(false);
+              if (outcome.openTimeline !== design.isTimelineOpen()) design.toggleTimeline();
+            };
+            refreshDesignExperience(Boolean(templateParam));
+            // No frame primitive at all: there is no deck here and never will be, so the
+            // Present split is not disabled - it is not offered.
+            if (!frameCfg) {
+              const split = designTopbar.el.querySelector<HTMLElement>('.dtb-split');
+              if (split) split.hidden = true;
             }
-          } else if (isDocked('inspector')) {
-            releaseDock('inspector');             // its onRelease records + syncs
-            return;
-          } else {
-            inspectorOpen = false;
-          }
-          // An ask the dock could not honour (below the mobile breakpoint the column does
-          // not exist) must NOT overwrite a desktop preference with "closed" - the user
-          // asked for it, the host simply had nowhere to put it.
-          if (inspectorOpen === open) writeColumnPref(INSP_KEY, open);
-          designTopbar?.sync();
-        };
+            // The bar's Home pill is not in the DOM when the view-wide mountBackPill() runs
+            // (this callback is a dynamic import behind it), so wire the bar's own subtree.
+            mountBackPill(designTopbar.el, { intercept: backPillIntercept });
+            mountHomeFab(designTopbar.el);
+            // An edit made to the filename in the export sheet must show up in the bar. The
+            // event is dispatched on the actions panel and does not bubble, so listen there.
+            // Both edges of the sheet: it can open on one name and close on another (the field
+            // normalises, or an unsaved edit is dropped), and a bar left on the stale one
+            // writes it straight back over the sheet's at the next keystroke.
+            const onExportOpen = (): void => designTopbar?.sync();
+            actionsEl?.addEventListener('lolly:export-open', onExportOpen);
+            actionsEl?.addEventListener('lolly:export-close', onExportOpen);
+            // …and the OPEN event is not enough: it fires when the sheet opens, so a name
+            // typed into the Filename field while it is open left the bar showing the old
+            // one for the rest of the session - and the next keystroke in the bar wrote that
+            // stale value straight back over the sheet's. `input` bubbles up to the panel, so
+            // one delegated listener covers the field however it is rebuilt; the bar's own
+            // `sync()` skips an unchanged value, so this is inert while typing in the bar.
+            const onFilenameInput = (e: Event): void => {
+              if ((e.target as HTMLElement | null)?.closest?.('[data-action="filename"]'))
+                designTopbar?.sync();
+            };
+            actionsEl?.addEventListener('input', onFilenameInput);
 
-        // (a) The top bar. Every port is a live read off the overlay or this view; the
-        // bar holds no state of its own beyond its own open menu.
-        designTopbar = mountDesignTopbar({
-          stageEl, canvasEl,
-          // The Home pill moved out of the view's corner and into the bar's left slot
-          // (see the render gate above), so the bar emits it and we wire it here.
-          backPillHtml: backHomeHtml(backPillOpts),
-          history: { undo: undoHistory, redo: redoHistory, register: registerHistory },
-          name: {
-            get: getFilename,
-            set: setFilename,
-            // The export field's own placeholder IS the auto-filename (tool-actions keeps
-            // it fresh on every `lolly:export-open`), so reading it here needs no second
-            // implementation of the naming rules.
-            placeholder: () => viewEl.querySelector<HTMLInputElement>('[data-action="filename"]')?.placeholder || '',
-          },
-          intent: {
-            get: () => designIntent,
-            set: (value) => {
-              const next = DESIGN_INTENT_OPTIONS.find((option) => option.value === value)?.value;
-              if (next) setDesignIntent(next, true);
-            },
-            options: DESIGN_INTENT_OPTIONS,
-          },
-          zoom: {
-            fitAll: () => { stageZoom?.fit(); },
-            // Deliberately the overlay's own focus path (`fc-focus-rect`), not a rect this
-            // view converts: the overlay owns the canvas→client mapping, and the navigator
-            // and the timeline already frame artboards through exactly this door.
-            fitArtboard: () => { const id = design.activeFrameId(); if (id) design.artboard.focus(id); },
-            zoomBy: (f) => { stageZoom?.zoomBy(f); },
-            zoomTo: (abs) => { stageZoom?.zoomTo(abs); },
-            actual: () => stageZoom?.actual() ?? 0,
-            subscribe: (cb) => stageZoom?.subscribe(cb) ?? (() => { /* no stage nav: nothing to follow */ }),
-          },
-          timeline: { toggle: () => design.toggleTimeline(), isOpen: () => design.isTimelineOpen() },
-          navigator: {
-            toggle: () => { const n = designNav; if (n) n.setOpen(!n.isOpen()); },
-            isOpen: () => !!designNav?.isOpen(),
-          },
-          // The inspector's only show/hide control from outside the column (it carries a
-          // close button of its own, and nothing else could re-open it). The toggle is a
-          // dock request now, not a `setOpen` on the column: whether the panel is on
-          // screen is the one right-hand column's answer, not the panel's.
-          inspector: {
-            toggle: () => setInspectorOpen(!inspectorOpen),
-            isOpen: () => inspectorOpen,
-          },
-          // …and the same column's other occupant the bar has to know about: while the
-          // compact zoom bar is docked it carries Fit / NN% / ±, so the bar drops its own
-          // copy of them rather than showing the five verbs twice.
-          dock: {
-            // Docked AND on screen: a collapsed column hides its body, so a bar that read
-            // occupancy alone dropped Fit / NN% / ± (and the mark, and the avatar) for a
-            // compact zoom bar nobody could see.
-            zoomDocked: () => isDocked('zoom') && !edgeDockCollapsed(),
-            subscribe: (cb) => onDockChange(cb),
-          },
-          share: () => { viewEl.querySelector<HTMLButtonElement>('[data-action="copy-url"]')?.click(); },
-          present: (o) => { void openPresenter(o); },
-          exportSheet: (o) => { if (o?.format) actionsApi?.setFormat?.(o.format); renderFab?.click(); },
-          // The deck-wide Narrate row (plans/180 section 8). Undefined where the overlay
-          // offers no narration - no speech bridge, no frames - and then there is no row.
-          narrate: design.narrationActions,
-          narrationEnabled: () => designIntent !== 'carousel',
-          model: {
-            getInput: (id) => runtime.getModel().find(i => i.id === id)?.value,
-            // Caught, not floated: the bar writes doc-level inputs the MANIFEST declares
-            // (`autoAdvance`), and a tool that has not declared one yet must leave a log
-            // line rather than an unhandled rejection on the page.
-            setInput: (id, v) => {
-              markUserDirty(id);
-              void Promise.resolve(runtime.setInput(id, v as InputValue))
-                .catch((e: unknown) => host.log?.('warn', `top bar could not set "${id}": ${String(e)}`));
-            },
-          },
-          // Loop is the reserved `?kiosk` flag, not a model field: it describes how the
-          // deck is PLAYED, and a shared link is how that travels.
-          loop: {
-            get: () => presentLoop,
-            set: (v) => {
-              presentLoop = v;
-              writePresentUrl((sp) => { if (v) sp.set('kiosk', ''); else sp.delete('kiosk'); });
-            },
-          },
-          onMarkMenu: (anchor) => design.openLollyMenu(anchor),
-          // The avatar is ADOPTED (moved), so exactly one surface holds it at a time. The
-          // bar is its home while the right column is closed; when the compact zoom bar
-          // takes the column the bar hands the avatar to that bar instead (profileDock
-          // below), so the profile menu is always reachable and never doubled.
-          profileEl: profileToggle ?? undefined,
-          // The docked compact zoom bar is the stage nav's own pill, so its element is
-          // where the avatar goes while the column holds it. Null before the pill exists
-          // (or on a layout that builds none), which the bar reads as "keep it".
-          profileDock: () => stageZoom?.profileHome() ?? null,
-          // A document can only be presented (or have an artboard framed) if the tool
-          // declares a frame primitive AND the document actually holds one.
-          hasFrames: () => {
-            if (!frameCfg) return false;
-            if (design.activeFrameId()) return true;
-            const kindField = (design.model.cfg as { kindField?: string }).kindField || 'kind';
-            const frameKind = design.model.frame?.frameKind || frameCfg.frameKind || 'frame';
-            return design.model.getBoxes().some(b => String(b[kindField] ?? '') === frameKind);
-          },
-          activeFrameId: () => design.activeFrameId(),
-        });
-        syncDesignIntentChrome = () => {
-          designTopbar?.sync();
-          designInspector?.sync();
-        };
-        applyDesignIntentLayout = (outcome) => {
-          if (outcome.openNavigator && !designNav?.isOpen()) designNav?.setOpen(true);
-          if (!outcome.openNavigator && designNav?.isOpen()) designNav.setOpen(false);
-          if (outcome.openTimeline !== design.isTimelineOpen()) design.toggleTimeline();
-        };
-        refreshDesignExperience(Boolean(templateParam));
-        // No frame primitive at all: there is no deck here and never will be, so the
-        // Present split is not disabled - it is not offered.
-        if (!frameCfg) {
-          const split = designTopbar.el.querySelector<HTMLElement>('.dtb-split');
-          if (split) split.hidden = true;
-        }
-        // The bar's Home pill is not in the DOM when the view-wide mountBackPill() runs
-        // (this callback is a dynamic import behind it), so wire the bar's own subtree.
-        mountBackPill(designTopbar.el, { intercept: backPillIntercept });
-        mountHomeFab(designTopbar.el);
-        // An edit made to the filename in the export sheet must show up in the bar. The
-        // event is dispatched on the actions panel and does not bubble, so listen there.
-        // Both edges of the sheet: it can open on one name and close on another (the field
-        // normalises, or an unsaved edit is dropped), and a bar left on the stale one
-        // writes it straight back over the sheet's at the next keystroke.
-        const onExportOpen = (): void => designTopbar?.sync();
-        actionsEl?.addEventListener('lolly:export-open', onExportOpen);
-        actionsEl?.addEventListener('lolly:export-close', onExportOpen);
-        // …and the OPEN event is not enough: it fires when the sheet opens, so a name
-        // typed into the Filename field while it is open left the bar showing the old
-        // one for the rest of the session - and the next keystroke in the bar wrote that
-        // stale value straight back over the sheet's. `input` bubbles up to the panel, so
-        // one delegated listener covers the field however it is rebuilt; the bar's own
-        // `sync()` skips an unchanged value, so this is inert while typing in the bar.
-        const onFilenameInput = (e: Event): void => {
-          if ((e.target as HTMLElement | null)?.closest?.('[data-action="filename"]')) designTopbar?.sync();
-        };
-        actionsEl?.addEventListener('input', onFilenameInput);
+            // (b) The navigator column (slides / artboards + the active frame's layers).
+            const NAV_KEY = 'lolly-design-nav';
+            designNav = initDesignNavigator({
+              stageEl,
+              canvasEl,
+              skin: window.matchMedia?.(
+                '(pointer: coarse) and (max-width: 640px), (pointer: coarse) and (max-height: 430px)'
+              ).matches
+                ? 'strip'
+                : 'column',
+              model: design.model,
+              selection: design.selection,
+              artboard: design.artboard,
+              thumb: design.thumb,
+              actions: design.navigatorActions,
+              // Notes to voice (plans/180): undefined on a host with no speech bridge, and
+              // then the row's dot is the speaker-notes mark it has always been.
+              narration: design.narrationActions,
+              initiallyOpen: readColumnPref(NAV_KEY),
+              onOpenChange: (open) => {
+                writeColumnPref(NAV_KEY, open);
+                designTopbar?.sync();
+              },
+              onWidthChange: (px) => {
+                navW = px;
+                pushWidths();
+              },
+            });
+            if (!slot && templateParam) applyDesignIntentLayout(currentDesignOutcome());
 
-        // (b) The navigator column (slides / artboards + the active frame's layers).
-        const NAV_KEY = 'lolly-design-nav';
-        designNav = initDesignNavigator({
-          stageEl, canvasEl,
-          skin: window.matchMedia?.(
-            '(pointer: coarse) and (max-width: 640px), (pointer: coarse) and (max-height: 430px)'
-          ).matches ? 'strip' : 'column',
-          model: design.model,
-          selection: design.selection,
-          artboard: design.artboard,
-          thumb: design.thumb,
-          actions: design.navigatorActions,
-          // Notes to voice (plans/180): undefined on a host with no speech bridge, and
-          // then the row's dot is the speaker-notes mark it has always been.
-          narration: design.narrationActions,
-          initiallyOpen: readColumnPref(NAV_KEY),
-          onOpenChange: (open) => { writeColumnPref(NAV_KEY, open); designTopbar?.sync(); },
-          onWidthChange: (px) => { navW = px; pushWidths(); },
-        });
-        if (!slot && templateParam) applyDesignIntentLayout(currentDesignOutcome());
+            // (c) The inspector column, then hand it to the overlay so the object bar's
+            // Text / More / Dims / Stroke buttons reveal its sections instead of opening
+            // the one-slot popovers.
+            //
+            // It is built DETACHED and never appended to the stage: `setInspectorOpen` puts
+            // it in the one right-hand column, which is also what takes it back out. Its own
+            // header close button comes back here through `onClose` for the same reason - so
+            // the panel and the bar's toggle can never disagree about where it is.
+            designInspector = initDesignInspector({
+              stageEl,
+              canvasEl,
+              model: design.model,
+              selection: design.selection,
+              artboard: design.artboard,
+              actions: design.inspectorActions,
+              // The Narrate button under the Speaker notes, and the document's own narration
+              // settings. Absent means neither is drawn (plans/180 section 8).
+              narration: design.narrationActions,
+              narrationEnabled: () => designIntent !== 'carousel',
+              fonts: design.fonts,
+              voices: host.speech?.voices ? () => host.speech!.voices() : undefined,
+              fields: design.fields,
+              // The panel skips its whole render while closed, and it is built DETACHED - so
+              // without this it was constructed "open" and rebuilt its full property column on
+              // every selection change and every commit, for a node that was never in the
+              // document. The dock's own setOpen(true) forces a fresh sync on the way in.
+              initiallyOpen: readColumnPref(INSP_KEY),
+              // The close button removes the column from the page, which drops focus to
+              // <body>; the bar's toggle is the only way back in, so it takes the keyboard.
+              onClose: () => {
+                setInspectorOpen(false);
+                designTopbar?.focusInspectorToggle();
+              },
+            });
+            // The object bar's Text / More / Dims / Stroke buttons reveal a section, and that
+            // can arrive while the column is out of the dock - so the handle the overlay gets
+            // asks for a slot FIRST and then scrolls. Wrapped here rather than inside the
+            // column, because taking a dock slot is this view's job, not the panel's.
+            design.setInspector({
+              reveal: (section) => {
+                setInspectorOpen(true);
+                designInspector?.reveal(section);
+              },
+            });
+            // Docked from the device-local preference, which defaults to open above 1180px -
+            // the same rule the navigator reads on the other edge.
+            if (readColumnPref(INSP_KEY)) setInspectorOpen(true);
+            // BOTH columns are mounted after the bar, and neither announces its state at
+            // mount: the navigator fires `onOpenChange` only from its own setOpen, and the
+            // inspector's is now a dock request this view makes. So the bar's own `sync()`
+            // (which ran inside mountDesignTopbar, when both handles were still null) had
+            // every toggle reading `aria-pressed="false"` over an open column: a screen
+            // reader told the panel was off while it was on, and the pressed styling never
+            // painted. One sync here, once all three exist, with the real state.
+            syncDesignIntentChrome();
 
-        // (c) The inspector column, then hand it to the overlay so the object bar's
-        // Text / More / Dims / Stroke buttons reveal its sections instead of opening
-        // the one-slot popovers.
-        //
-        // It is built DETACHED and never appended to the stage: `setInspectorOpen` puts
-        // it in the one right-hand column, which is also what takes it back out. Its own
-        // header close button comes back here through `onClose` for the same reason - so
-        // the panel and the bar's toggle can never disagree about where it is.
-        designInspector = initDesignInspector({
-          stageEl, canvasEl,
-          model: design.model,
-          selection: design.selection,
-          artboard: design.artboard,
-          actions: design.inspectorActions,
-          // The Narrate button under the Speaker notes, and the document's own narration
-          // settings. Absent means neither is drawn (plans/180 section 8).
-          narration: design.narrationActions,
-          narrationEnabled: () => designIntent !== 'carousel',
-          fonts: design.fonts,
-          voices: host.speech?.voices ? () => host.speech!.voices() : undefined,
-          fields: design.fields,
-          // The panel skips its whole render while closed, and it is built DETACHED - so
-          // without this it was constructed "open" and rebuilt its full property column on
-          // every selection change and every commit, for a node that was never in the
-          // document. The dock's own setOpen(true) forces a fresh sync on the way in.
-          initiallyOpen: readColumnPref(INSP_KEY),
-          // The close button removes the column from the page, which drops focus to
-          // <body>; the bar's toggle is the only way back in, so it takes the keyboard.
-          onClose: () => { setInspectorOpen(false); designTopbar?.focusInspectorToggle(); },
-        });
-        // The object bar's Text / More / Dims / Stroke buttons reveal a section, and that
-        // can arrive while the column is out of the dock - so the handle the overlay gets
-        // asks for a slot FIRST and then scrolls. Wrapped here rather than inside the
-        // column, because taking a dock slot is this view's job, not the panel's.
-        design.setInspector({
-          reveal: (section) => { setInspectorOpen(true); designInspector?.reveal(section); },
-        });
-        // Docked from the device-local preference, which defaults to open above 1180px -
-        // the same rule the navigator reads on the other edge.
-        if (readColumnPref(INSP_KEY)) setInspectorOpen(true);
-        // BOTH columns are mounted after the bar, and neither announces its state at
-        // mount: the navigator fires `onOpenChange` only from its own setOpen, and the
-        // inspector's is now a dock request this view makes. So the bar's own `sync()`
-        // (which ran inside mountDesignTopbar, when both handles were still null) had
-        // every toggle reading `aria-pressed="false"` over an open column: a screen
-        // reader told the panel was off while it was on, and the pressed styling never
-        // painted. One sync here, once all three exist, with the real state.
-        syncDesignIntentChrome();
+            const prevChromeCleanup = viewEl._cleanup;
+            viewEl._cleanup = () => {
+              actionsEl?.removeEventListener('lolly:export-open', onExportOpen);
+              actionsEl?.removeEventListener('lolly:export-close', onExportOpen);
+              actionsEl?.removeEventListener('input', onFilenameInput);
+              // Unregister the inspector BEFORE destroying it, so a late object-bar rebuild
+              // cannot reveal a section on a column that is already gone - and take it out of
+              // the shared right-hand column, which outlives this view and would otherwise
+              // keep a slot for an element nobody owns any more.
+              try {
+                design.setInspector(null);
+              } catch (e) {
+                console.error(e);
+              }
+              // 'host': the view is being torn down, which is not the user closing the panel.
+              // The default reason would write "closed" to the device preference on every
+              // route change, so the inspector never came back on the next visit.
+              try {
+                if (isDocked('inspector')) releaseDock('inspector', 'host');
+              } catch (e) {
+                console.error(e);
+              }
+              for (const part of [designInspector, designNav, designTopbar]) {
+                try {
+                  part?.destroy();
+                } catch (e) {
+                  console.error(e);
+                }
+              }
+              designInspector = designNav = designTopbar = null;
+              syncDesignIntentChrome = () => {};
+              applyDesignIntentLayout = () => {};
+              prevChromeCleanup?.();
+            };
+          })
+          .catch((err: unknown) => console.error('[design] chrome failed to load:', err));
 
-        const prevChromeCleanup = viewEl._cleanup;
+        // The runtime half of the editor-state API (plans/176 v1): the same wire object
+        // a link's `_ui` carries, readable and writable while a canvas editor is mounted.
+        // `apply` routes through the exact DeepLinkState routine the mount-time deep link
+        // runs, and the message listener gives /embed pages the same door with zero new
+        // semantics. Editor state only - selection, playhead, an open panel - so an
+        // unvetted sender can wiggle the view but never touch the document.
+        const ui = {
+          getState: () => ({ v: 1 as const, ...fc.uiState() }),
+          apply: (state: unknown) => {
+            const s = coerceUiState(state);
+            if (s) fc.applyUi(s);
+          },
+        };
+        const w = window as unknown as { lolly?: { ui?: typeof ui } };
+        w.lolly = { ...w.lolly, ui };
+        const onUiMessage = (e: MessageEvent): void => {
+          const d = e.data as { type?: unknown; state?: unknown } | null;
+          if (d && d.type === 'lolly:ui') ui.apply(d.state);
+        };
+        window.addEventListener('message', onUiMessage);
+        const prevCleanup = viewEl._cleanup;
         viewEl._cleanup = () => {
-          actionsEl?.removeEventListener('lolly:export-open', onExportOpen);
-          actionsEl?.removeEventListener('lolly:export-close', onExportOpen);
-          actionsEl?.removeEventListener('input', onFilenameInput);
-          // Unregister the inspector BEFORE destroying it, so a late object-bar rebuild
-          // cannot reveal a section on a column that is already gone - and take it out of
-          // the shared right-hand column, which outlives this view and would otherwise
-          // keep a slot for an element nobody owns any more.
-          try { design.setInspector(null); } catch (e) { console.error(e); }
-          // 'host': the view is being torn down, which is not the user closing the panel.
-          // The default reason would write "closed" to the device preference on every
-          // route change, so the inspector never came back on the next visit.
-          try { if (isDocked('inspector')) releaseDock('inspector', 'host'); } catch (e) { console.error(e); }
-          for (const part of [designInspector, designNav, designTopbar]) {
-            try { part?.destroy(); } catch (e) { console.error(e); }
+          window.removeEventListener('message', onUiMessage);
+          if (w.lolly?.ui === ui) delete w.lolly.ui;
+          try {
+            fc.destroy();
+          } catch (e) {
+            console.error(e);
           }
-          designInspector = designNav = designTopbar = null;
-          syncDesignIntentChrome = () => {};
-          applyDesignIntentLayout = () => {};
-          prevChromeCleanup?.();
+          prevCleanup?.();
         };
-      }).catch((err: unknown) => console.error('[design] chrome failed to load:', err));
-
-      // The runtime half of the editor-state API (plans/176 v1): the same wire object
-      // a link's `_ui` carries, readable and writable while a canvas editor is mounted.
-      // `apply` routes through the exact DeepLinkState routine the mount-time deep link
-      // runs, and the message listener gives /embed pages the same door with zero new
-      // semantics. Editor state only - selection, playhead, an open panel - so an
-      // unvetted sender can wiggle the view but never touch the document.
-      const ui = {
-        getState: () => ({ v: 1 as const, ...fc.uiState() }),
-        apply: (state: unknown) => { const s = coerceUiState(state); if (s) fc.applyUi(s); },
-      };
-      const w = window as unknown as { lolly?: { ui?: typeof ui } };
-      w.lolly = { ...w.lolly, ui };
-      const onUiMessage = (e: MessageEvent): void => {
-        const d = e.data as { type?: unknown; state?: unknown } | null;
-        if (d && d.type === 'lolly:ui') ui.apply(d.state);
-      };
-      window.addEventListener('message', onUiMessage);
-      const prevCleanup = viewEl._cleanup;
-      viewEl._cleanup = () => {
-        window.removeEventListener('message', onUiMessage);
-        if (w.lolly?.ui === ui) delete w.lolly.ui;
-        try { fc.destroy(); } catch (e) { console.error(e); } prevCleanup?.();
-      };
-    }).catch((err: unknown) => console.error('[design] editor overlay failed to load:', err));
+      })
+      .catch((err: unknown) => console.error('[design] editor overlay failed to load:', err));
 
     // `?present` auto-entry: open the deck once the canvas has rendered its frame pages
     // (the runtime paints on mount asynchronously, so poll a few frames for them).
@@ -4014,8 +4983,11 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       let tries = 0;
       const tryOpen = (): void => {
         if (!viewEl.isConnected || presenter) return;
-        if (contentEl.querySelector('.lolly-frame-page')) { void openPresenter(); return; }
-        if (tries++ < 120) requestAnimationFrame(tryOpen);   // ~2s at 60fps, then give up
+        if (contentEl.querySelector('.lolly-frame-page')) {
+          void openPresenter();
+          return;
+        }
+        if (tries++ < 120) requestAnimationFrame(tryOpen); // ~2s at 60fps, then give up
       };
       requestAnimationFrame(tryOpen);
     }
@@ -4036,9 +5008,20 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
       if (isTextEditing()) return;
       const k = e.key.toLowerCase();
-      if (k === 's') { e.preventDefault(); renderSaveBtn?.click(); return; }
-      if (k === 'e') { e.preventDefault(); renderFab?.click(); return; }
-      if (e.key === 'Enter') { e.preventDefault(); void openPresenter(); }
+      if (k === 's') {
+        e.preventDefault();
+        renderSaveBtn?.click();
+        return;
+      }
+      if (k === 'e') {
+        e.preventDefault();
+        renderFab?.click();
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        void openPresenter();
+      }
     };
     window.addEventListener('keydown', onDocKey);
 
@@ -4046,7 +5029,11 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     const prevCleanupPresent = viewEl._cleanup;
     viewEl._cleanup = () => {
       window.removeEventListener('keydown', onDocKey);
-      try { presenter?.close(); } catch (e) { console.error(e); }
+      try {
+        presenter?.close();
+      } catch (e) {
+        console.error(e);
+      }
       prevCleanupPresent?.();
     };
   }
@@ -4065,33 +5052,53 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       canvasEl.style.width = pxW + 'px';
       canvasEl.style.height = pxH + 'px';
       actionsApi?.setDims?.({ width: w, height: h, unit });
-      markUserDirty('w'); markUserDirty('h');
+      markUserDirty('w');
+      markUserDirty('h');
       resetView();
     };
-    import('./doc-editor.ts').then(({ initDocEditor }) => {
-      if (!viewEl.isConnected) return;   // navigated away before the chunk loaded
-      const dc = initDocEditor({
-        viewEl, stageEl, canvasEl, runtime, host,
-        input: docEditInput, inputs: tool.manifest.inputs ?? [],
-        nativeW, nativeH,
-        onDirty: markUserDirty,
-        setCanvasSize,
-        editTool: (toolUrl: string, mode = 'insert') => openEmbedEditor(host, { editUrl: toolUrl, slotLabel: t('image'), mode }),
-        history: {
-          undo: undoHistory,
-          redo: redoHistory,
-          register: (sync: (canUndo: boolean, canRedo: boolean) => void) => { historyControls = { sync }; refreshHistoryUI(); },
-        },
-        actions: {
-          export: () => renderFab?.click(),
-          save: () => renderSaveBtn?.click(),
-          canSave: canSaveSession,
-          dirtyRef: renderSaveBtn,
-        },
-      } as Parameters<typeof initDocEditor>[0]);
-      const prevCleanup = viewEl._cleanup;
-      viewEl._cleanup = () => { try { dc.destroy(); } catch (e) { console.error(e); } prevCleanup?.(); };
-    }).catch((err: unknown) => console.error('[doc-studio] document editor failed to load:', err));
+    import('./doc-editor.ts')
+      .then(({ initDocEditor }) => {
+        if (!viewEl.isConnected) return; // navigated away before the chunk loaded
+        const dc = initDocEditor({
+          viewEl,
+          stageEl,
+          canvasEl,
+          runtime,
+          host,
+          input: docEditInput,
+          inputs: tool.manifest.inputs ?? [],
+          nativeW,
+          nativeH,
+          onDirty: markUserDirty,
+          setCanvasSize,
+          editTool: (toolUrl: string, mode = 'insert') =>
+            openEmbedEditor(host, { editUrl: toolUrl, slotLabel: t('image'), mode }),
+          history: {
+            undo: undoHistory,
+            redo: redoHistory,
+            register: (sync: (canUndo: boolean, canRedo: boolean) => void) => {
+              historyControls = { sync };
+              refreshHistoryUI();
+            },
+          },
+          actions: {
+            export: () => renderFab?.click(),
+            save: () => renderSaveBtn?.click(),
+            canSave: canSaveSession,
+            dirtyRef: renderSaveBtn,
+          },
+        } as Parameters<typeof initDocEditor>[0]);
+        const prevCleanup = viewEl._cleanup;
+        viewEl._cleanup = () => {
+          try {
+            dc.destroy();
+          } catch (e) {
+            console.error(e);
+          }
+          prevCleanup?.();
+        };
+      })
+      .catch((err: unknown) => console.error('[doc-studio] document editor failed to load:', err));
   }
 
   // Slide-deck editor (render.layout:'deck', e.g. Deck Builder). Mounts an on-canvas overlay
@@ -4100,29 +5107,48 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // imported so it's only pulled in for deck-layout tools. The sidebar stays (deck is NOT
   // chromeless), so this ADDS to the sidebar rather than replacing it.
   if (deckLayout && deckEditInput && canvasEl && stageEl) {
-    import('./deck-editor.ts').then(({ initDeckEditor }) => {
-      if (!viewEl.isConnected) return;   // navigated away before the chunk loaded
-      const de = initDeckEditor({
-        viewEl, stageEl, canvasEl, runtime, host,
-        input: deckEditInput, inputs: tool.manifest.inputs ?? [],
-        nativeW, nativeH,
-        onDirty: markUserDirty,
-        editTool: (toolUrl: string, mode = 'insert') => openEmbedEditor(host, { editUrl: toolUrl, slotLabel: t('image'), mode }),
-        history: {
-          undo: undoHistory,
-          redo: redoHistory,
-          register: (sync: (canUndo: boolean, canRedo: boolean) => void) => { historyControls = { sync }; refreshHistoryUI(); },
-        },
-        actions: {
-          export: () => renderFab?.click(),
-          save: () => renderSaveBtn?.click(),
-          canSave: canSaveSession,
-          dirtyRef: renderSaveBtn,
-        },
-      } as Parameters<typeof initDeckEditor>[0]);
-      const prevCleanup = viewEl._cleanup;
-      viewEl._cleanup = () => { try { de.destroy(); } catch (e) { console.error(e); } prevCleanup?.(); };
-    }).catch((err: unknown) => console.error('[deck-builder] deck editor failed to load:', err));
+    import('./deck-editor.ts')
+      .then(({ initDeckEditor }) => {
+        if (!viewEl.isConnected) return; // navigated away before the chunk loaded
+        const de = initDeckEditor({
+          viewEl,
+          stageEl,
+          canvasEl,
+          runtime,
+          host,
+          input: deckEditInput,
+          inputs: tool.manifest.inputs ?? [],
+          nativeW,
+          nativeH,
+          onDirty: markUserDirty,
+          editTool: (toolUrl: string, mode = 'insert') =>
+            openEmbedEditor(host, { editUrl: toolUrl, slotLabel: t('image'), mode }),
+          history: {
+            undo: undoHistory,
+            redo: redoHistory,
+            register: (sync: (canUndo: boolean, canRedo: boolean) => void) => {
+              historyControls = { sync };
+              refreshHistoryUI();
+            },
+          },
+          actions: {
+            export: () => renderFab?.click(),
+            save: () => renderSaveBtn?.click(),
+            canSave: canSaveSession,
+            dirtyRef: renderSaveBtn,
+          },
+        } as Parameters<typeof initDeckEditor>[0]);
+        const prevCleanup = viewEl._cleanup;
+        viewEl._cleanup = () => {
+          try {
+            de.destroy();
+          } catch (e) {
+            console.error(e);
+          }
+          prevCleanup?.();
+        };
+      })
+      .catch((err: unknown) => console.error('[deck-builder] deck editor failed to load:', err));
   }
 
   // Wire the back pill(s) - the full-screen one and/or the sidebar one. When the
@@ -4143,14 +5169,23 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // If the session carries heavy embedded bytes (a recorded clip stamps meta.bytes),
     // tell the user how big the save is - the recording is what makes a Record session
     // large, and it's stored on-device.
-    const heavy = runtime.getModel()
-      .map(i => (i.value as { meta?: { bytes?: number } } | undefined)?.meta?.bytes)
+    const heavy = runtime
+      .getModel()
+      .map((i) => (i.value as { meta?: { bytes?: number } } | undefined)?.meta?.bytes)
       .find((b): b is number => typeof b === 'number' && b > 0);
-    const detail = heavy ? t('Includes a {size} video clip, stored on this device.', { size: fmtBytes(heavy) }) : undefined;
+    const detail = heavy
+      ? t('Includes a {size} video clip, stored on this device.', { size: fmtBytes(heavy) })
+      : undefined;
     showUnsavedDialog(
-      canSave ? async () => { if (await actionsApi!.save!()) go(); } : null,
-      () => { go(); },
-      detail,
+      canSave
+        ? async () => {
+            if (await actionsApi!.save!()) go();
+          }
+        : null,
+      () => {
+        go();
+      },
+      detail
     );
     return true;
   }
@@ -4159,8 +5194,8 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
 
   // Mark model inputs dirty the first time the user touches them.
   // The listener lives on the container so it survives renderInputs re-renders.
-  (['change', 'input'] as const).forEach(evt =>
-    inputsEl?.addEventListener(evt, e => {
+  (['change', 'input'] as const).forEach((evt) =>
+    inputsEl?.addEventListener(evt, (e) => {
       const id = (e.target as HTMLElement).closest<HTMLElement>('[data-input-id]')?.dataset.inputId;
       if (id) markUserDirty(id);
     })
@@ -4200,7 +5235,8 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     const blockRef = /^(.+):(\d+):(.+)$/.exec(key);
     const el = canvasEl?.querySelector<HTMLElement>(`[data-framing="${CSS.escape(key)}"]`);
     if (!el) return;
-    const frameW = el.offsetWidth, frameH = el.offsetHeight;
+    const frameW = el.offsetWidth,
+      frameH = el.offsetHeight;
 
     // Read the framing values, the fit, and the asset slot to replace - the same
     // two shapes the overlay resolves, kept here rather than exported from it
@@ -4213,13 +5249,16 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     let apply: (next: AssetRef) => Promise<void>;
 
     if (!blockRef) {
-      const input = model.find(i => i.id === key);
+      const input = model.find((i) => i.id === key);
       const assetId = (input as { framingFor?: string } | undefined)?.framingFor;
-      const assetInput = assetId ? model.find(i => i.id === assetId) : undefined;
+      const assetInput = assetId ? model.find((i) => i.id === assetId) : undefined;
       ref = (assetInput?.value ?? null) as AssetRef | null;
       if (!input || !ref?.url) return;
       framing = { ...(input.value as Record<string, number>) };
-      fit = String(model.find(i => i.id === key.replace(/Framing$/, '') + 'Fit')?.value) === 'contain' ? 'contain' : 'cover';
+      fit =
+        String(model.find((i) => i.id === key.replace(/Framing$/, '') + 'Fit')?.value) === 'contain'
+          ? 'contain'
+          : 'cover';
       const defaults: Record<string, number> = {};
       for (const f of input.fields ?? []) defaults[f.id] = f.default ?? 0;
       apply = async (next) => {
@@ -4228,13 +5267,16 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       };
     } else {
       const [, blocksId, idxStr, base] = blockRef as unknown as [string, string, string, string];
-      const input = model.find(i => i.id === blocksId);
+      const input = model.find((i) => i.id === blocksId);
       const index = Number(idxStr);
-      const rows = Array.isArray(input?.value) ? (input!.value as Array<Record<string, unknown>>) : [];
+      const rows = Array.isArray(input?.value)
+        ? (input!.value as Array<Record<string, unknown>>)
+        : [];
       const row = rows[index];
       if (!input || !row) return;
-      const assetField = ((input.fields ?? []) as Array<{ id: string; type?: string; framingFor?: string }>)
-        .find(f => f.framingFor === base || (f.type === 'asset' && f.id === base));
+      const assetField = (
+        (input.fields ?? []) as Array<{ id: string; type?: string; framingFor?: string }>
+      ).find((f) => f.framingFor === base || (f.type === 'asset' && f.id === base));
       ref = (assetField ? row[assetField.id] : null) as AssetRef | null;
       if (!ref?.url) return;
       for (const f of ['zoom', 'x', 'y', 'rotate', 'pitch', 'yaw']) {
@@ -4243,15 +5285,19 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       }
       fit = String(row[`${base}Fit`]) === 'contain' ? 'contain' : 'cover';
       apply = async (next) => {
-        const live = runtime.getModel().find(i => i.id === blocksId);
+        const live = runtime.getModel().find((i) => i.id === blocksId);
         const out = Array.isArray(live?.value) ? [...(live!.value as unknown[])] : [];
         const cur = out[index];
         if (!cur || typeof cur !== 'object') return;
         const merged: Record<string, unknown> = { ...(cur as Record<string, unknown>) };
         if (assetField) merged[assetField.id] = next;
         for (const f of ['zoom', 'x', 'y', 'rotate', 'pitch', 'yaw']) {
-          const spec = ((input.fields ?? []) as Array<{ id: string; default?: number }>).find(s => s.id === `${base}${cap(f)}`);
-          if (spec) merged[spec.id] = spec.default ?? (f === 'zoom' ? 100 : f === 'x' || f === 'y' ? 50 : 0);
+          const spec = ((input.fields ?? []) as Array<{ id: string; default?: number }>).find(
+            (s) => s.id === `${base}${cap(f)}`
+          );
+          if (spec)
+            merged[spec.id] =
+              spec.default ?? (f === 'zoom' ? 100 : f === 'x' || f === 'y' ? 50 : 0);
         }
         out[index] = merged;
         await runtime.setInput(blocksId, out as unknown as InputValue);
@@ -4261,29 +5307,43 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     try {
       const { bakeFraming: bake } = await import('../lib/framing-bake.ts');
       const baked = await bake(host as never, ref.url, framing, fit, frameW, frameH, ref.format);
-      if (!baked) { announce(t('This image can’t be baked here.'), { assertive: true }); return; }
+      if (!baked) {
+        announce(t('This image can’t be baked here.'), { assertive: true });
+        return;
+      }
       const { saveDerivedAsset, derivedName } = await import('../lib/derived-asset.ts');
       // The honest edit history for THIS derivation: a crop (the framing's own
       // window) plus an orientation change whenever it rolled or tilted.
       const tilted = Number(framing.rotate) || Number(framing.pitch) || Number(framing.yaw);
       const saved = await saveDerivedAsset(
-        host as never, ref, baked.blob, baked.format, 'frame',
+        host as never,
+        ref,
+        baked.blob,
+        baked.format,
+        'frame',
         {
           edits: [
             { action: 'c2pa.cropped' },
             ...(tilted ? [{ action: 'c2pa.orientation' }] : []),
             { action: 'c2pa.resized' },
           ],
-          detail: Object.fromEntries(Object.entries(framing).map(([k, v]) => [`framing.${k}`, String(v)])),
+          detail: Object.fromEntries(
+            Object.entries(framing).map(([k, v]) => [`framing.${k}`, String(v)])
+          ),
           dims: `${baked.width}x${baked.height}`,
         },
-        derivedName(ref, t('framed')),
+        derivedName(ref, t('framed'))
       );
-      if (!saved) { announce(t('This image can’t be saved to your library here.'), { assertive: true }); return; }
+      if (!saved) {
+        announce(t('This image can’t be saved to your library here.'), { assertive: true });
+        return;
+      }
       await apply(saved);
       markUserDirty(key);
       markSessionDirty();
-      announce(tRaw('Saved as "{name}" in your uploads.', { name: String(saved.meta?.name ?? saved.id) }));
+      announce(
+        tRaw('Saved as "{name}" in your uploads.', { name: String(saved.meta?.name ?? saved.id) })
+      );
     } catch (e) {
       host.log?.('warn', 'framing bake failed', { key, error: String(e) });
       announce(t('That image couldn’t be saved. The framing is unchanged.'), { assertive: true });
@@ -4291,7 +5351,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   }
 
   // Colour: a temporary, otherwise-invisible instance of the shared colour-field
-  // component, positioned over the clicked swatch and opened programmatically - 
+  // component, positioned over the clicked swatch and opened programmatically -
   // so the popover it opens (float mode) is byte-for-byte the sidebar's own
   // widget, just anchored at the click instead of docked under a sidebar row.
   // Removed the moment its popover closes (Escape / outside click), detected via
@@ -4300,20 +5360,34 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   function openColorPopover(anchor: HTMLElement, input: InputModelItem): void {
     const box = document.createElement('div');
     box.className = 'canvas-color-popover-host';
-    box.innerHTML = colorFieldHtml(input.id, input.value, { swatchesOnly: input.swatchesOnly === true, float: true });
+    box.innerHTML = colorFieldHtml(input.id, input.value, {
+      swatchesOnly: input.swatchesOnly === true,
+      float: true,
+    });
     document.body.appendChild(box);
     const trigger = box.querySelector<HTMLElement>('.color-trigger');
     const popover = box.querySelector<HTMLElement>('.color-popover');
-    if (!trigger || !popover) { box.remove(); return; }
+    if (!trigger || !popover) {
+      box.remove();
+      return;
+    }
     const ar = anchor.getBoundingClientRect();
     box.style.cssText = `position:fixed;left:${Math.round(ar.left)}px;top:${Math.round(ar.top)}px;width:${Math.round(ar.width)}px;height:${Math.round(ar.height)}px;`;
     wireColorField(box, {
-      onChange: (fieldId, value) => { runtime.setInput(fieldId, value); markUserDirty(fieldId); },
+      onChange: (fieldId, value) => {
+        runtime.setInput(fieldId, value);
+        markUserDirty(fieldId);
+      },
     });
     trigger.style.opacity = '0';
     trigger.style.pointerEvents = 'none';
     trigger.click(); // opens the popover via the component's own (tested) logic
-    const observer = new MutationObserver(() => { if (popover.hidden) { observer.disconnect(); box.remove(); } });
+    const observer = new MutationObserver(() => {
+      if (popover.hidden) {
+        observer.disconnect();
+        box.remove();
+      }
+    });
     observer.observe(popover, { attributes: true, attributeFilter: ['hidden'] });
   }
 
@@ -4329,10 +5403,16 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     box.className = 'canvas-input-popover';
     box.setAttribute('role', 'listbox');
     box.setAttribute('aria-label', input.label ?? input.id);
-    box.innerHTML = options.map((o, i) => `<button type="button" class="canvas-input-popover-opt${o.value === input.value ? ' is-current' : ''}" role="option" aria-selected="${o.value === input.value}" data-i="${i}">${escape(o.label ?? String(o.value))}</button>`).join('');
+    box.innerHTML = options
+      .map(
+        (o, i) =>
+          `<button type="button" class="canvas-input-popover-opt${o.value === input.value ? ' is-current' : ''}" role="option" aria-selected="${o.value === input.value}" data-i="${i}">${escape(o.label ?? String(o.value))}</button>`
+      )
+      .join('');
     box.style.cssText = 'position:fixed;visibility:hidden;left:-9999px;top:0;';
     document.body.appendChild(box);
-    const w = box.offsetWidth, h = box.offsetHeight;
+    const w = box.offsetWidth,
+      h = box.offsetHeight;
     const ar = anchor.getBoundingClientRect();
     const cb = fixedContainingBlockOrigin(box);
     const left = Math.max(6, Math.min(ar.left - cb.x, window.innerWidth - w - 8));
@@ -4344,20 +5424,28 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       document.removeEventListener('pointerdown', onDocDown, true);
       document.removeEventListener('keydown', onKey, true);
     };
-    box.querySelectorAll<HTMLElement>('[data-i]').forEach(btn => btn.addEventListener('click', () => {
-      const opt = options[Number(btn.dataset.i)];
-      if (!opt) return;
-      runtime.setInput(input.id, opt.value);
-      markUserDirty(input.id);
-      close();
-    }));
-    const onDocDown = (e: PointerEvent): void => { if (!box.contains(e.target as Node | null)) close(); };
-    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') close(); };
+    box.querySelectorAll<HTMLElement>('[data-i]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const opt = options[Number(btn.dataset.i)];
+        if (!opt) return;
+        runtime.setInput(input.id, opt.value);
+        markUserDirty(input.id);
+        close();
+      })
+    );
+    const onDocDown = (e: PointerEvent): void => {
+      if (!box.contains(e.target as Node | null)) close();
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') close();
+    };
     setTimeout(() => {
       document.addEventListener('pointerdown', onDocDown, true);
       document.addEventListener('keydown', onKey, true);
     }, 0);
-    (box.querySelector<HTMLElement>('.is-current') ?? box.querySelector<HTMLElement>('button'))?.focus();
+    (
+      box.querySelector<HTMLElement>('.is-current') ?? box.querySelector<HTMLElement>('button')
+    )?.focus();
   }
 
   // Asset: host.assets.pick is already a self-contained modal picker (input-
@@ -4370,29 +5458,42 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     const curVal = input.value as AssetRef | null;
     const curToolUrl = asStr(asRow(curVal?.meta as InputValue | undefined).toolUrl);
     if (curToolUrl && host.compose?.renderUrl) {
-      const intent = await askLollyIntent(asStr(asRow(curVal?.meta as InputValue | undefined).name));
+      const intent = await askLollyIntent(
+        asStr(asRow(curVal?.meta as InputValue | undefined).name)
+      );
       if (!intent) return;
       if (intent === 'edit') {
-        const edited = await openEmbedEditor(host, { editUrl: curToolUrl, slotLabel: input.label ?? input.id });
-        if (edited) { runtime.setInput(input.id, edited); markUserDirty(input.id); }
+        const edited = await openEmbedEditor(host, {
+          editUrl: curToolUrl,
+          slotLabel: input.label ?? input.id,
+        });
+        if (edited) {
+          runtime.setInput(input.id, edited);
+          markUserDirty(input.id);
+        }
         return;
       }
     }
     const ref = await host.assets.pick({
       title: tRaw('Choose {name}', { name: input.label ?? input.id }),
-      type: input.assetType === 'any' ? undefined : (input.assetType as AssetRef['type'] | undefined),
+      type:
+        input.assetType === 'any' ? undefined : (input.assetType as AssetRef['type'] | undefined),
       // Same capability-driven widening as the sidebar picker (tool-inputs.ts):
       // an onFrame tool's image slot also offers the user's video uploads.
       motion: runtime.hasFrameHook === true,
-      tags: (input.filter?.tags as string[] | undefined),
-      namespace: (input.filter?.namespace as string | undefined),
+      tags: input.filter?.tags as string[] | undefined,
+      namespace: input.filter?.namespace as string | undefined,
       allowUpload: input.allowUpload === true,
       current: curVal?.id,
       currentToolUrl: curToolUrl,
       currentToolName: asStr(asRow(curVal?.meta as InputValue | undefined).name),
-      editTool: (toolUrl: string, mode = 'insert') => openEmbedEditor(host, { editUrl: toolUrl, slotLabel: input.label ?? input.id, mode }),
+      editTool: (toolUrl: string, mode = 'insert') =>
+        openEmbedEditor(host, { editUrl: toolUrl, slotLabel: input.label ?? input.id, mode }),
     } as Parameters<WebToolHost['assets']['pick']>[0]);
-    if (ref) { runtime.setInput(input.id, ref); markUserDirty(input.id); }
+    if (ref) {
+      runtime.setInput(input.id, ref);
+      markUserDirty(input.id);
+    }
   }
 
   function openInlineInputEditor(anchor: HTMLElement, input: InputModelItem): void {
@@ -4405,60 +5506,66 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // focuses the corresponding sidebar control. Tools can suppress this per-element
   // with pointer-events:none. The handler is added once; annotations are re-applied
   // via resolveCanvasAnnotations() after each innerHTML update.
-  if (canvasEl) canvasEl.addEventListener('click', e => {
-    if (hideSidebar || !inputsEl) return;
-    const target = (e.target as HTMLElement).closest<HTMLElement>('[data-canvas-input]');
-    if (!target) return;
-    const id = target.dataset.canvasInput!;
+  if (canvasEl)
+    canvasEl.addEventListener('click', (e) => {
+      if (hideSidebar || !inputsEl) return;
+      const target = (e.target as HTMLElement).closest<HTMLElement>('[data-canvas-input]');
+      if (!target) return;
+      const id = target.dataset.canvasInput!;
 
-    // A FRAMED image belongs to the framing overlay (plans/148): a tap there arms
-    // pan/zoom/tilt. It usually also carries data-canvas-input for its asset slot
-    // (annotateTemplate tags the tag's first referenced input, which is the src),
-    // and that would open the asset picker on top of the arm - two editors from
-    // one tap. The overlay wins on its own element; the sidebar row is still one
-    // more tap away, and the picker stays reachable from there.
-    if ((e.target as HTMLElement).closest('[data-framing]')) return;
+      // A FRAMED image belongs to the framing overlay (plans/148): a tap there arms
+      // pan/zoom/tilt. It usually also carries data-canvas-input for its asset slot
+      // (annotateTemplate tags the tag's first referenced input, which is the src),
+      // and that would open the asset picker on top of the arm - two editors from
+      // one tap. The overlay wins on its own element; the sidebar row is still one
+      // more tap away, and the picker stays reachable from there.
+      if ((e.target as HTMLElement).closest('[data-framing]')) return;
 
-    // A plain top-level input (never a "<blocksId>:<index>" block reference -
-    // that never matches a top-level model item's id) whose control has an
-    // in-place editor opens it right here instead of falling through to the
-    // sidebar-focus path below.
-    const inlineInput = runtime.getModel().find(i => i.id === id);
-    if (inlineInput && INLINE_EDIT_CONTROLS.has(inlineInput.control)) {
-      openInlineInputEditor(target, inlineInput);
-      return;
-    }
-
-    // Most ids map straight to a sidebar row. A "<blocksInputId>:<index>" id
-    // (emitted per rendered block, e.g. data-canvas-input="blocks:0") points at
-    // one block inside a blocks input - focus that block and fold the rest.
-    let control = inputsEl.querySelector<HTMLElement>(`[data-input-id="${id}"]`);
-    let blockIndex: string | null = null;
-    const blockRef = !control && id.match(/^(.+):(\d+)$/);
-    if (blockRef) {
-      const blocksEl = inputsEl.querySelector<HTMLElement>(`.blocks-input[data-input-id="${blockRef[1]}"]`);
-      if (blocksEl) { control = blocksEl; blockIndex = blockRef[2]!; }
-    }
-    if (!control) return;
-
-    const focus = () => {
-      // Reveal the control if it lives inside a collapsed section (mirrors the
-      // scrollToInput path), so the focused input is actually visible.
-      control!.closest('details.input-section')?.setAttribute('open', '');
-      if (blockIndex != null) {
-        focusSidebarBlock(control!, blockIndex);
-      } else {
-        control!.focus();              // lights the CSS :focus-within spotlight
-        scrollToControl(control!);     // header-aware, reduce-motion-safe, with arrival pulse
+      // A plain top-level input (never a "<blocksId>:<index>" block reference -
+      // that never matches a top-level model item's id) whose control has an
+      // in-place editor opens it right here instead of falling through to the
+      // sidebar-focus path below.
+      const inlineInput = runtime.getModel().find((i) => i.id === id);
+      if (inlineInput && INLINE_EDIT_CONTROLS.has(inlineInput.control)) {
+        openInlineInputEditor(target, inlineInput);
+        return;
       }
-    };
-    if (layout.dataset.sidebar === 'closed') {
-      setSidebarWidth(getRestoreWidth());
-      requestAnimationFrame(focus);
-    } else {
-      focus();
-    }
-  });
+
+      // Most ids map straight to a sidebar row. A "<blocksInputId>:<index>" id
+      // (emitted per rendered block, e.g. data-canvas-input="blocks:0") points at
+      // one block inside a blocks input - focus that block and fold the rest.
+      let control = inputsEl.querySelector<HTMLElement>(`[data-input-id="${id}"]`);
+      let blockIndex: string | null = null;
+      const blockRef = !control && id.match(/^(.+):(\d+)$/);
+      if (blockRef) {
+        const blocksEl = inputsEl.querySelector<HTMLElement>(
+          `.blocks-input[data-input-id="${blockRef[1]}"]`
+        );
+        if (blocksEl) {
+          control = blocksEl;
+          blockIndex = blockRef[2]!;
+        }
+      }
+      if (!control) return;
+
+      const focus = () => {
+        // Reveal the control if it lives inside a collapsed section (mirrors the
+        // scrollToInput path), so the focused input is actually visible.
+        control!.closest('details.input-section')?.setAttribute('open', '');
+        if (blockIndex != null) {
+          focusSidebarBlock(control!, blockIndex);
+        } else {
+          control!.focus(); // lights the CSS :focus-within spotlight
+          scrollToControl(control!); // header-aware, reduce-motion-safe, with arrival pulse
+        }
+      };
+      if (layout.dataset.sidebar === 'closed') {
+        setSidebarWidth(getRestoreWidth());
+        requestAnimationFrame(focus);
+      } else {
+        focus();
+      }
+    });
 
   // Deferred-preview tools (manifest.render.preview): the live canvas is only a
   // placeholder until an explicit, expensive render runs - e.g. url-shot, which
@@ -4466,7 +5573,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // control; here we drive it (busy/error state) and run the render into the frame.
   // Wired by delegation on the canvas so it survives the innerHTML rebuild that the
   // runtime subscriber does on every input change.
-  const previewCfg = tool.manifest.render.preview as { auto?: boolean; format?: string } | undefined;
+  const previewCfg = tool.manifest.render.preview as
+    | { auto?: boolean; format?: string }
+    | undefined;
   // Drive a [data-preview] control through a capture. `btn` is the control the user
   // actually clicked (auto-preview passes none → the first control, the placeholder
   // button). Busy/error land on THAT control, and a PERSISTENT control (e.g. a
@@ -4478,7 +5587,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     const target = btn ?? contentEl.querySelector<HTMLElement>('[data-preview]');
     const iconOnly = Boolean(target?.dataset.iconOnly);
     if (target) {
-      if (target.dataset.busy) return;                  // re-entrancy guard
+      if (target.dataset.busy) return; // re-entrancy guard
       target.dataset.busy = '1';
       target.dataset.idleLabel ??= (target.textContent ?? '').trim();
       target.classList.remove('is-error');
@@ -4501,17 +5610,19 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       if (b) {
         b.classList.remove('is-busy');
         b.classList.add('is-error');
-        if (!b.dataset.iconOnly) b.textContent = (err as { message?: string })?.message || t('Preview failed - tap to retry');
+        if (!b.dataset.iconOnly)
+          b.textContent =
+            (err as { message?: string })?.message || t('Preview failed - tap to retry');
         delete b.dataset.busy;
       }
       throw err;
     }
   }
   if (previewCfg && canvasEl) {
-    canvasEl.addEventListener('click', e => {
+    canvasEl.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest<HTMLElement>('[data-preview]');
       if (!b) return;
-      runPreview(b).catch(err => console.error('Preview failed:', err));
+      runPreview(b).catch((err) => console.error('Preview failed:', err));
     });
   }
 
@@ -4548,11 +5659,20 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
             let name = r.filename || `file-${i + 1}`;
             const n = used.get(name) ?? 0;
             used.set(name, n + 1);
-            if (n) { const dot = name.lastIndexOf('.'); name = dot > 0 ? `${name.slice(0, dot)}-${n + 1}${name.slice(dot)}` : `${name}-${n + 1}`; }
-            return { name, bytes: r.bytes instanceof Uint8Array ? r.bytes : new Uint8Array(r.bytes) };
+            if (n) {
+              const dot = name.lastIndexOf('.');
+              name =
+                dot > 0 ? `${name.slice(0, dot)}-${n + 1}${name.slice(dot)}` : `${name}-${n + 1}`;
+            }
+            return {
+              name,
+              bytes: r.bytes instanceof Uint8Array ? r.bytes : new Uint8Array(r.bytes),
+            };
           });
           const zip = storeZip(entries);
-          await host.export.file(new Blob([zip as BlobPart], { type: 'application/zip' }), { filename: 'embed-imprint-track.zip' });
+          await host.export.file(new Blob([zip as BlobPart], { type: 'application/zip' }), {
+            filename: 'embed-imprint-track.zip',
+          });
         }
         btn.classList.remove('is-busy');
         btn.textContent = btn.dataset.idleLabel!;
@@ -4583,7 +5703,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   let prevInputsModel: InputModelItem[] | null = null;
   // Track the size-driving select's value so a change pushes the option's physical
   // dimensions to the export bar (see exportSizeDriver / actionsApi.setDims).
-  let lastDimsSizeVal: InputValue | null | undefined = sizeDriver ? runtime.getModel().find(i => i.id === sizeDriver.id)?.value : null;
+  let lastDimsSizeVal: InputValue | null | undefined = sizeDriver
+    ? runtime.getModel().find((i) => i.id === sizeDriver.id)?.value
+    : null;
 
   // Inline canvas error, shown when a template script throws mid-render. Lives on
   // the stage as a sibling of the canvas, so the per-render innerHTML rebuild
@@ -4636,21 +5758,31 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // path a sidebar keystroke rides. Re-wired each paint (the innerHTML swap
   // discards listeners, like every other canvas enhancer).
   const paginateSource = tool.manifest.render.paginate?.source;
-  const tableEditOpts: TableEditOpts | null = paginateSource ? {
-    getTable: () => normalizeTableValue(runtime.getModel().find(i => i.id === paginateSource)?.value)
-      ?? { columns: [], rows: [] },
-    commit: (next) => { void runtime.setInput(paginateSource, next); },
-    pickImage: async (tag) => {
-      const ref = await host.assets.pick({ tags: tag ? [tag] : undefined, title: t('Pick an image') });
-      if (!ref?.url) return null;
-      // A user-upload's blob: URL dies with the session - inline small ones as
-      // data: so the markdown ref survives reloads and the table's Copy button.
-      const url = await markdownSafeUrl(ref.url);
-      const meta = ref.meta as { name?: unknown } | undefined;
-      return { url, alt: typeof meta?.name === 'string' ? meta.name : ref.id };
-    },
-    pickLabel: t('Pick an image'),
-  } : null;
+  const tableEditOpts: TableEditOpts | null = paginateSource
+    ? {
+        getTable: () =>
+          normalizeTableValue(runtime.getModel().find((i) => i.id === paginateSource)?.value) ?? {
+            columns: [],
+            rows: [],
+          },
+        commit: (next) => {
+          void runtime.setInput(paginateSource, next);
+        },
+        pickImage: async (tag) => {
+          const ref = await host.assets.pick({
+            tags: tag ? [tag] : undefined,
+            title: t('Pick an image'),
+          });
+          if (!ref?.url) return null;
+          // A user-upload's blob: URL dies with the session - inline small ones as
+          // data: so the markdown ref remains across reloads and the table's Copy button.
+          const url = await markdownSafeUrl(ref.url);
+          const meta = ref.meta as { name?: unknown } | undefined;
+          return { url, alt: typeof meta?.name === 'string' ? meta.name : ref.id };
+        },
+        pickLabel: t('Pick an image'),
+      }
+    : null;
 
   // The RENDER half of the subscriber is coalesced behind requestAnimationFrame:
   // a full canvas rebuild swaps innerHTML, re-walks annotations, and re-executes
@@ -4660,9 +5792,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // no lag. The trailing emit is always the one we paint, so the final keystroke
   // never gets dropped; flushRender() forces it out synchronously before exports.
   let rafId = 0;
-  let pendingFrame: { model: InputModelItem[]; hydrated: string } | null = null;   // latest { model, hydrated } awaiting paint
-  let lastPainted: string | null = null;   // hydrated source of the last CLEAN paint - skip an identical canvas rebuild
-  let lastPaintedBoxes: Box[] | null = null;   // baseline for the geometry fast-skip diff (plans/98 section 9)
+  let pendingFrame: { model: InputModelItem[]; hydrated: string } | null = null; // latest { model, hydrated } awaiting paint
+  let lastPainted: string | null = null; // hydrated source of the last CLEAN paint - skip an identical canvas rebuild
+  let lastPaintedBoxes: Box[] | null = null; // baseline for the geometry fast-skip diff (plans/98 section 9)
 
   function paint(): void {
     rafId = 0;
@@ -4690,28 +5822,37 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // the last cleanly-painted boxes and a later move still diffs against it (catching the
     // un-healed change and forcing a full repaint), preserving the throwing-render self-heal.
     const prevBoxes = lastPaintedBoxes;
-    const curBoxes: Box[] | null = fastCfgPaint && canvasEditInput
-      ? ((model.find(i => i.id === canvasEditInput.id)?.value as Box[] | undefined) ?? null)
-      : null;
+    const curBoxes: Box[] | null =
+      fastCfgPaint && canvasEditInput
+        ? ((model.find((i) => i.id === canvasEditInput.id)?.value as Box[] | undefined) ?? null)
+        : null;
     let geomSkipped = false;
     if (fastCfgPaint && prevBoxes && curBoxes) {
       const plan = geometryFastPathPlan(prevBoxes, curBoxes, {
         ...fastCfgPaint,
         connectorEndpointIds: boundEndpointIds(curBoxes, {
-          idField: fastCfgPaint.field.idField, bindStartField: fastCfgPaint.bindStartField,
-          bindEndField: fastCfgPaint.bindEndField, kindField: fastCfgPaint.kindField,
+          idField: fastCfgPaint.field.idField,
+          bindStartField: fastCfgPaint.bindStartField,
+          bindEndField: fastCfgPaint.bindEndField,
+          kindField: fastCfgPaint.kindField,
         }),
       });
-      const esc = (id: string): string => (typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id);
-      if (plan && plan.every((pt) => {
-        // A frame patch targets the artboard PAGE element - its inline left/top are
-        // global, exactly what the live drag wrote (plans/141 WP-A item 6). Members
-        // that rode the frame have no patch: their frame-local style is unchanged.
-        const el = contentEl.querySelector(pt.frame
-          ? '.lolly-frame-page[data-frame-id="' + esc(pt.id) + '"]'
-          : '.lolly-box[data-box-id="' + esc(pt.id) + '"]') as HTMLElement | null;
-        return !!el && parseFloat(el.style.left) === pt.x && parseFloat(el.style.top) === pt.y;
-      })) {
+      const esc = (id: string): string =>
+        typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id;
+      if (
+        plan &&
+        plan.every((pt) => {
+          // A frame patch targets the artboard PAGE element - its inline left/top are
+          // global, exactly what the live drag wrote (plans/141 WP-A item 6). Members
+          // that rode the frame have no patch: their frame-local style is unchanged.
+          const el = contentEl.querySelector(
+            pt.frame
+              ? '.lolly-frame-page[data-frame-id="' + esc(pt.id) + '"]'
+              : '.lolly-box[data-box-id="' + esc(pt.id) + '"]'
+          ) as HTMLElement | null;
+          return !!el && parseFloat(el.style.left) === pt.x && parseFloat(el.style.top) === pt.y;
+        })
+      ) {
         lastPainted = hydrated;
         lastPaintedBoxes = curBoxes;
         geomSkipped = true;
@@ -4750,56 +5891,75 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         // data-only). Once the module has loaded, run the pass even on marker-less
         // paints so players orphaned by the innerHTML swap get reaped.
         if (lottieModule || contentEl.querySelector('[data-lottie-src]')) {
-          lottiePending = (lottieModule
-            ? Promise.resolve(lottieModule)
-            : import('./lottie-mount.ts').then(m => (lottieModule = m)))
-            .then(m => m.mountLottiePlayers(contentEl, { isCurrent: () => gen === renderGen }))
-            .catch(err => console.warn('lottie mount failed:', err));
+          lottiePending = (
+            lottieModule
+              ? Promise.resolve(lottieModule)
+              : import('./lottie-mount.ts').then((m) => (lottieModule = m))
+          )
+            .then((m) => m.mountLottiePlayers(contentEl, { isCurrent: () => gen === renderGen }))
+            .catch((err) => console.warn('lottie mount failed:', err));
         }
         // Split text's glyph tier (plans/175 WP-D): shape each letter-tier word through
         // host.text and replace its letter spans with per-cluster glyph groups, so the
         // animation keeps kerning, ligatures and Arabic joining. Progressive - a box
         // whose font resolves to no file keeps the span tier.
-        if (contentEl.querySelector('.lolly-box[data-t-split="letter"] .lly-w, .lolly-box[data-t-split-want="letter"] .lly-u')) {
-          glyphPending = (glyphModule
-            ? Promise.resolve(glyphModule)
-            : import('./glyph-split-mount.ts').then(m => (glyphModule = m)))
-            .then(m => m.mountGlyphSplits(contentEl, { isCurrent: () => gen === renderGen, textApi: host.text }))
-            .catch(err => console.warn('glyph split mount failed:', err));
+        if (
+          contentEl.querySelector(
+            '.lolly-box[data-t-split="letter"] .lly-w, .lolly-box[data-t-split-want="letter"] .lly-u'
+          )
+        ) {
+          glyphPending = (
+            glyphModule
+              ? Promise.resolve(glyphModule)
+              : import('./glyph-split-mount.ts').then((m) => (glyphModule = m))
+          )
+            .then((m) =>
+              m.mountGlyphSplits(contentEl, {
+                isCurrent: () => gen === renderGen,
+                textApi: host.text,
+              })
+            )
+            .catch((err) => console.warn('glyph split mount failed:', err));
         }
         // Animated-SVG markers, mounted by the shell like Lottie: inline a live,
         // seekable <svg> so a catalog or uploaded animation actually plays in the
         // preview (and can be sampled/exported frame-accurately).
         if (contentEl.querySelector('[data-anim-src]')) {
-          animSvgPending = (animSvgModule
-            ? Promise.resolve(animSvgModule)
-            : import('./anim-svg-mount.ts').then(m => (animSvgModule = m)))
-            .then(m => m.mountAnimSvgPlayers(contentEl, { isCurrent: () => gen === renderGen }))
-            .catch(err => console.warn('anim-svg mount failed:', err));
+          animSvgPending = (
+            animSvgModule
+              ? Promise.resolve(animSvgModule)
+              : import('./anim-svg-mount.ts').then((m) => (animSvgModule = m))
+          )
+            .then((m) => m.mountAnimSvgPlayers(contentEl, { isCurrent: () => gen === renderGen }))
+            .catch((err) => console.warn('anim-svg mount failed:', err));
         }
         // Video position-keeper: restore each placed clip to where it was before this
         // rebuild (so it doesn't restart at 0), and settle once frames have decoded so
         // an export reads a real frame. Only paints with a keyed <video> load it.
         if (videoModule || contentEl.querySelector('video[data-video-key]')) {
-          videoPending = (videoModule
-            ? Promise.resolve(videoModule)
-            : import('./video-mount.ts').then(m => (videoModule = m)))
-            .then(m => m.mountVideoPlayers(contentEl, { isCurrent: () => gen === renderGen }))
-            .catch(err => console.warn('video mount failed:', err));
+          videoPending = (
+            videoModule
+              ? Promise.resolve(videoModule)
+              : import('./video-mount.ts').then((m) => (videoModule = m))
+          )
+            .then((m) => m.mountVideoPlayers(contentEl, { isCurrent: () => gen === renderGen }))
+            .catch((err) => console.warn('video mount failed:', err));
         }
         // MilkDrop placeholders. Run the pass on marker-less paints too once the module
         // is loaded, so switching the style away gives the WebGL context back instead of
         // leaving it parked on a canvas nothing is drawing into.
         if (vizModule || contentEl.querySelector('[data-lolly-viz]')) {
-          vizPending = (vizModule
-            ? Promise.resolve(vizModule)
-            : import('../lib/viz-tool-mount.ts').then(m => (vizModule = m)))
-            .then(m => m.mountToolViz(contentEl, { isCurrent: () => gen === renderGen }))
-            .catch(err => console.warn('viz mount failed:', err));
+          vizPending = (
+            vizModule
+              ? Promise.resolve(vizModule)
+              : import('../lib/viz-tool-mount.ts').then((m) => (vizModule = m))
+          )
+            .then((m) => m.mountToolViz(contentEl, { isCurrent: () => gen === renderGen }))
+            .catch((err) => console.warn('viz mount failed:', err));
         }
         clearCanvasError();
         lastPainted = hydrated;
-        if (curBoxes) lastPaintedBoxes = curBoxes;   // clean full paint refreshes the baseline (throw-safe: after the render body)
+        if (curBoxes) lastPaintedBoxes = curBoxes; // clean full paint refreshes the baseline (throw-safe: after the render body)
         if (fastPathOn && typeof window !== 'undefined') {
           const w = window as unknown as { __lollyGeomFastPath?: { skips: number; fulls: number } };
           (w.__lollyGeomFastPath ??= { skips: 0, fulls: 0 }).fulls++;
@@ -4831,7 +5991,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // When a size-driving select changes, set the export dimensions to the chosen
     // option - so picking "A6 landscape" actually exports an A6-landscape page.
     if (sizeDriver) {
-      const v = model.find(i => i.id === sizeDriver.id)?.value;
+      const v = model.find((i) => i.id === sizeDriver.id)?.value;
       if (v !== lastDimsSizeVal) {
         lastDimsSizeVal = v;
         const d = sizeDriver.dims[String(v)];
@@ -4840,7 +6000,12 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         // the card at A4 landscape (calendar-ics, the one partially
         // dimensioned size select; E13 review).
         if (d) actionsApi?.setDims?.(d);
-        else actionsApi?.setDims?.({ width: tool.manifest.render.width, height: tool.manifest.render.height, unit: 'px' });
+        else
+          actionsApi?.setDims?.({
+            width: tool.manifest.render.width,
+            height: tool.manifest.render.height,
+            unit: 'px',
+          });
       }
     }
 
@@ -4848,7 +6013,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     // export format bar to that option's formats. Runs on the initial emit too, so
     // the bar opens already scoped to the starting effect.
     if (formatDriver) {
-      const v = model.find(i => i.id === formatDriver.id)?.value;
+      const v = model.find((i) => i.id === formatDriver.id)?.value;
       if (v !== lastFmtDriveVal) {
         lastFmtDriveVal = v;
         const f = formatDriver.formats[String(v)];
@@ -4863,104 +6028,134 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       // a deep-link export captures the branded canvas, not the fallbacks. The live
       // palette (for CMYK ink substitution) is the same tokens fetch, so it rides
       // along rather than adding its own wait.
-      Promise.all([waitForQuiescence(contentEl), brandVarsReady, livePalette(host)]).then(([, , palette]) => {
-        const name = urlFilename || tool.manifest.id;
-        // Honour ?unit=/?dpi= so a deep link (or CLI) renders the right physical size.
-        const u = urlUnit || 'px';
-        const dim = (v: number | null, native: number): string | number => ((v ?? 0) > 0 ? (u !== 'px' ? `${v}${u}` : v!) : native);
-        const expOpts: RunExportOpts = { width: dim(urlWidth, nativeW), height: dim(urlHeight, nativeH) };
-        if (u !== 'px') expOpts.dpi = urlDpi || 300;
-        // CMYK print formats: carry the chosen press condition (recorded in the
-        // PDF's output intent / the TIFF's metadata). The Print PDF also carries the
-        // brand palette for exact ink matches; the TIFF does a flat per-pixel pass.
-        if (isCmykFmt(fmt)) {
-          expOpts.colorProfile = urlProfile || DEFAULT_CMYK_CONDITION;
-          if (fmt === 'pdf-cmyk') expOpts.palette = palette;
-        }
-        // HTML: honour ?nostage so a deep link auto-exports the full-page document
-        // (no fixed-size canvas frame) - mirrors the panel's "Full page" toggle.
-        if (fmt === 'html' && urlNostage) expOpts.fullPage = true;
-        // Standard lock: honour ?password= so a deep link can auto-export a locked
-        // PDF or ZIP bundle (basic lock; clear-text in the URL by design - see pdfPassRow).
-        if ((fmt === 'pdf' || fmt === 'zip') && urlPassword) expOpts.password = urlPassword;
-        // Content Credentials: ?c2pa= wins (on/off + ephemeral-cert lifetime,
-        // e.g. c2pa=90 or c2pa=off - see url-mode.js); absent it falls back to
-        // a render.c2pa tool's popup default. Never stamped alongside a
-        // password (the same exclusion the popup enforces; the bridge would
-        // skip it anyway).
-        const wantC2pa = urlC2pa ? urlC2pa.on : c2paDefaultOn(tool.manifest);
-        if (wantC2pa && C2PA_FORMATS.includes(fmt) && !expOpts.password) {
-          expOpts.c2pa = true;
-          if (urlC2pa?.days) expOpts.c2paDays = urlC2pa.days;
-        }
-        // Pixel watermark (?imprint=): on by default for imprint-capable formats,
-        // like C2PA - independent of the C2PA credential itself. Covers still rasters
-        // AND the container formats (pdf/pdf-cmyk/pptx), whose Lolly-rendered rasters
-        // are imprinted as they're composited in (a pure-vector page marks nothing).
-        // Only an explicit `imprint=0`/`off` link suppresses it (see url-mode.ts
-        // parseImprint; list mirrors tool-actions.ts's isImprintFmt).
-        if (urlImprint !== false && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff', 'bmp', 'pdf', 'pdf-cmyk', 'pptx'].includes(fmt)) expOpts.imprint = true;
-        // Opt-in durable Content Credential (?durable=1): a neural TrustMark mark
-        // carrying Lolly's id. Raster-only (no container rasters yet) and a no-op
-        // until the encoder model is on-device. See plans/28-durable-content-credentials.md.
-        if (urlDurable && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff'].includes(fmt)) expOpts.durable = true;
-        // Opt-in HDR (?hdr=1): Rec.2100 PQ export with brand-colour glow. Raster
-        // (PNG/JPEG/AVIF/TIFF - WebP excluded, no working HDR decode) plus the 10-bit
-        // video containers (mp4/webm, plan 154 WP-2). urlHdr is null for ?hdr=0, so
-        // ?hdr=0 forces SDR and ?hdr=1 forces HDR (tri-state via parseHdr). See engine/src/hdr.ts.
-        if (urlHdr && ['png', 'jpg', 'jpeg', 'avif', 'tiff', 'mp4', 'webm'].includes(fmt)) {
-          expOpts.hdr = true;
-          expOpts.hdrPeakNits = urlHdr.peakNits;
-          expOpts.hdrReach = urlHdr.reach;
-          expOpts.hdrLift = urlHdr.lift;
-          expOpts.hdrRichness = urlHdr.richness;
-        }
-        // Requested bit depth (?depth=): passed through as-is for every format - 
-        // 'auto' is the default and carries nothing. NO consumer logic here: the
-        // export bridge decides what the provenance chain can honestly carry.
-        if (urlDepth !== 'auto') expOpts.depth = urlDepth;
-        // Video controls (?fps= ?seconds= ?wait= ?codec= ?vq=): the URL form of the export
-        // panel's fields, so `?export=mp4&fps=60&seconds=6` renders the clip the panel
-        // would - and the CLI, which is this path under another transport, gets the same
-        // knobs. `seconds` is a deliberate length (durationUserSet), so a tool hook that
-        // lengthens a clip to its material (the audiogram's analysed bed) stands down.
-        if (['mp4', 'webm', 'gif', 'apng', 'webp-anim'].includes(fmt) && hasVideoParams(urlVideo)) {
-          if (urlVideo.fps != null) expOpts.fps = urlVideo.fps;
-          if (urlVideo.seconds != null) { expOpts.duration = urlVideo.seconds; expOpts.durationUserSet = true; }
-          if (urlVideo.wait != null) expOpts.wait = urlVideo.wait;
-          if (urlVideo.codec) expOpts.videoCodec = VIDEO_CODEC_STRINGS[urlVideo.codec];
-          if (urlVideo.quality) expOpts.videoQuality = urlVideo.quality;
-        }
-        // Print prep: honour ?bleed= / ?marks= so a deep link auto-exports a
-        // print-ready file. Applied only when the link asks for it (never default).
-        if (isPrintFmt(fmt) && (urlBleed || urlMarks)) {
-          if (urlBleed) expOpts.bleed = urlBleed;
-          if (urlMarks) {
-            expOpts.cropMarks = urlMarks.crop;
-            expOpts.registrationMarks = urlMarks.registration;
-            expOpts.bleedMarks = urlMarks.bleed;
-            expOpts.colorBars = urlMarks.colorBars;
-            expOpts.provenance = urlMarks.provenance;
+      Promise.all([waitForQuiescence(contentEl), brandVarsReady, livePalette(host)]).then(
+        ([, , palette]) => {
+          const name = urlFilename || tool.manifest.id;
+          // Honour ?unit=/?dpi= so a deep link (or CLI) renders the right physical size.
+          const u = urlUnit || 'px';
+          const dim = (v: number | null, native: number): string | number =>
+            (v ?? 0) > 0 ? (u !== 'px' ? `${v}${u}` : v!) : native;
+          const expOpts: RunExportOpts = {
+            width: dim(urlWidth, nativeW),
+            height: dim(urlHeight, nativeH),
+          };
+          if (u !== 'px') expOpts.dpi = urlDpi || 300;
+          // CMYK print formats: carry the chosen press condition (recorded in the
+          // PDF's output intent / the TIFF's metadata). The Print PDF also carries the
+          // brand palette for exact ink matches; the TIFF does a flat per-pixel pass.
+          if (isCmykFmt(fmt)) {
+            expOpts.colorProfile = urlProfile || DEFAULT_CMYK_CONDITION;
+            if (fmt === 'pdf-cmyk') expOpts.palette = palette;
           }
+          // HTML: honour ?nostage so a deep link auto-exports the full-page document
+          // (no fixed-size canvas frame) - mirrors the panel's "Full page" toggle.
+          if (fmt === 'html' && urlNostage) expOpts.fullPage = true;
+          // Standard lock: honour ?password= so a deep link can auto-export a locked
+          // PDF or ZIP bundle (basic lock; clear-text in the URL by design - see pdfPassRow).
+          if ((fmt === 'pdf' || fmt === 'zip') && urlPassword) expOpts.password = urlPassword;
+          // Content Credentials: ?c2pa= wins (on/off + ephemeral-cert lifetime,
+          // e.g. c2pa=90 or c2pa=off - see url-mode.js); absent it falls back to
+          // a render.c2pa tool's popup default. Never stamped alongside a
+          // password (the same exclusion the popup enforces; the bridge would
+          // skip it anyway).
+          const wantC2pa = urlC2pa ? urlC2pa.on : c2paDefaultOn(tool.manifest);
+          if (wantC2pa && C2PA_FORMATS.includes(fmt) && !expOpts.password) {
+            expOpts.c2pa = true;
+            if (urlC2pa?.days) expOpts.c2paDays = urlC2pa.days;
+          }
+          // Pixel watermark (?imprint=): on by default for imprint-capable formats,
+          // like C2PA - independent of the C2PA credential itself. Covers still rasters
+          // AND the container formats (pdf/pdf-cmyk/pptx), whose Lolly-rendered rasters
+          // are imprinted as they're composited in (a pure-vector page marks nothing).
+          // Only an explicit `imprint=0`/`off` link suppresses it (see url-mode.ts
+          // parseImprint; list mirrors tool-actions.ts's isImprintFmt).
+          if (
+            urlImprint !== false &&
+            [
+              'png',
+              'jpg',
+              'jpeg',
+              'webp',
+              'avif',
+              'tiff',
+              'bmp',
+              'pdf',
+              'pdf-cmyk',
+              'pptx',
+            ].includes(fmt)
+          )
+            expOpts.imprint = true;
+          // Opt-in durable Content Credential (?durable=1): a neural TrustMark mark
+          // carrying Lolly's id. Raster-only (no container rasters yet) and a no-op
+          // until the encoder model is on-device. See plans/28-durable-content-credentials.md.
+          if (urlDurable && ['png', 'jpg', 'jpeg', 'webp', 'avif', 'tiff'].includes(fmt))
+            expOpts.durable = true;
+          // Opt-in HDR (?hdr=1): Rec.2100 PQ export with brand-colour glow. Raster
+          // (PNG/JPEG/AVIF/TIFF - WebP excluded, no working HDR decode) plus the 10-bit
+          // video containers (mp4/webm, plan 154 WP-2). urlHdr is null for ?hdr=0, so
+          // ?hdr=0 forces SDR and ?hdr=1 forces HDR (tri-state via parseHdr). See engine/src/hdr.ts.
+          if (urlHdr && ['png', 'jpg', 'jpeg', 'avif', 'tiff', 'mp4', 'webm'].includes(fmt)) {
+            expOpts.hdr = true;
+            expOpts.hdrPeakNits = urlHdr.peakNits;
+            expOpts.hdrReach = urlHdr.reach;
+            expOpts.hdrLift = urlHdr.lift;
+            expOpts.hdrRichness = urlHdr.richness;
+          }
+          // Requested bit depth (?depth=): passed through as-is for every format -
+          // 'auto' is the default and carries nothing. NO consumer logic here: the
+          // export bridge decides what the provenance chain can honestly carry.
+          if (urlDepth !== 'auto') expOpts.depth = urlDepth;
+          // Video controls (?fps= ?seconds= ?wait= ?codec= ?vq=): the URL form of the export
+          // panel's fields, so `?export=mp4&fps=60&seconds=6` renders the clip the panel
+          // would - and the CLI, which is this path under another transport, gets the same
+          // knobs. `seconds` is a deliberate length (durationUserSet), so a tool hook that
+          // lengthens a clip to its material (the audiogram's analysed bed) stands down.
+          if (
+            ['mp4', 'webm', 'gif', 'apng', 'webp-anim'].includes(fmt) &&
+            hasVideoParams(urlVideo)
+          ) {
+            if (urlVideo.fps != null) expOpts.fps = urlVideo.fps;
+            if (urlVideo.seconds != null) {
+              expOpts.duration = urlVideo.seconds;
+              expOpts.durationUserSet = true;
+            }
+            if (urlVideo.wait != null) expOpts.wait = urlVideo.wait;
+            if (urlVideo.codec) expOpts.videoCodec = VIDEO_CODEC_STRINGS[urlVideo.codec];
+            if (urlVideo.quality) expOpts.videoQuality = urlVideo.quality;
+          }
+          // Print prep: honour ?bleed= / ?marks= so a deep link auto-exports a
+          // print-ready file. Applied only when the link asks for it (never default).
+          if (isPrintFmt(fmt) && (urlBleed || urlMarks)) {
+            if (urlBleed) expOpts.bleed = urlBleed;
+            if (urlMarks) {
+              expOpts.cropMarks = urlMarks.crop;
+              expOpts.registrationMarks = urlMarks.registration;
+              expOpts.bleedMarks = urlMarks.bleed;
+              expOpts.colorBars = urlMarks.colorBars;
+              expOpts.provenance = urlMarks.provenance;
+            }
+          }
+          exportUnscaled(() =>
+            runtime
+              .export(exportTargetNode(exportSourceNode), fmt, expOpts)
+              .then((blob) => host.export.download(blob, `${name}.${extFor(fmt, blob)}`))
+              .catch((err) => console.error('Auto-export failed:', err))
+          );
         }
-        exportUnscaled(() =>
-          runtime.export(exportTargetNode(exportSourceNode), fmt, expOpts)
-            .then(blob => host.export.download(blob, `${name}.${extFor(fmt, blob)}`))
-            .catch(err => console.error('Auto-export failed:', err))
-        );
-      });
+      );
     }
 
     if (pendingAutoCopy) {
       pendingAutoCopy = false;
-      Promise.all([waitForQuiescence(contentEl), brandVarsReady])
-        .then(() => armAutoCopy(actionsEl, actionsApi, urlFormat || undefined));
+      Promise.all([waitForQuiescence(contentEl), brandVarsReady]).then(() =>
+        armAutoCopy(actionsEl, actionsApi, urlFormat || undefined)
+      );
     }
 
     if (pendingAutoPreview) {
       pendingAutoPreview = false;
       Promise.all([waitForQuiescence(contentEl), brandVarsReady]).then(() =>
-        runPreview().catch(err => console.error('Auto-preview failed:', err))
+        runPreview().catch((err) => console.error('Auto-preview failed:', err))
       );
     }
   }
@@ -4969,7 +6164,11 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // exportUnscaled so a capture reads the latest keystroke, and harmless if no
   // frame is pending.
   function flushRender(): void {
-    if (rafId) { cancelAnimationFrame(rafId); rafId = 0; paint(); }
+    if (rafId) {
+      cancelAnimationFrame(rafId);
+      rafId = 0;
+      paint();
+    }
   }
 
   // Live frame sources (engine v1.4 camera / v1.113 animated asset): ONE
@@ -4986,7 +6185,10 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // Created BEFORE runtime.subscribe so the callback below can never hit the
   // binding in its temporal dead zone.
   const liveControls = createLiveControls({
-    runtime, host, t, announce,
+    runtime,
+    host,
+    t,
+    announce,
     onStart: () => startFrameFps(runtime.manifest.id), // dev-only fps meter (gated)
     onStop: stopFrameFps,
   });
@@ -5026,7 +6228,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
 
   // Authenticated capture (desktop only): a tool declaring the `capture` capability
   // gets a "Sign in to a site" panel so a login/session set up once is ridden by every
-  // later screenshot. Self-gating - no-op on the web PWA and for non-capture tools - 
+  // later screenshot. Self-gating - no-op on the web PWA and for non-capture tools -
   // and mounted as a sidebar sibling so input rebuilds never drop it.
   if (inputsEl && !canvasLayout) mountCaptureSignin({ inputsEl, runtime, t, announce });
 
@@ -5036,7 +6238,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // tools get a host.media framing viewfinder, then the clip feeds the top-&-tail
   // compositor. The runtime owns startMeter/startRecording/stopRecording; here we only
   // drive the UI and route the finished blob.
-  const captureMode = (runtime.manifest.render as { capture?: 'audio' | 'video' | 'av' | 'screen' } | undefined)?.capture;
+  const captureMode = (
+    runtime.manifest.render as { capture?: 'audio' | 'video' | 'av' | 'screen' } | undefined
+  )?.capture;
   if (stageEl && captureMode === 'screen') {
     // Display capture (v1.54) has its own control: the browser's picker replaces the
     // viewfinder + framing + level coaching a camera take needs, so none of that applies.
@@ -5046,12 +6250,21 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     if (host.recorder?.isAvailable?.('screen')) {
       const { setupScreenCaptureControl } = await import('./screen-capture-control.ts');
       setupScreenCaptureControl({
-        stageEl, runtime, host, markSessionDirty,
-        canvasEl, actionsApi,
+        stageEl,
+        runtime,
+        host,
+        markSessionDirty,
+        canvasEl,
+        actionsApi,
         sizeExplicit: Boolean(urlWidth || urlHeight),
       });
     }
-  } else if (stageEl && captureMode && captureMode !== 'screen' && host.recorder?.isAvailable?.(captureMode === 'audio' ? 'audio' : 'video')) {
+  } else if (
+    stageEl &&
+    captureMode &&
+    captureMode !== 'screen' &&
+    host.recorder?.isAvailable?.(captureMode === 'audio' ? 'audio' : 'video')
+  ) {
     setupRecordControl({ stageEl, runtime, host, mode: captureMode, markSessionDirty });
   }
 
@@ -5065,7 +6278,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
     const { hasFramingInputs, setupFramingOverlay } = await import('./framing-overlay.ts');
     if (hasFramingInputs(runtime.getModel())) {
       framingTeardown = setupFramingOverlay({
-        stageEl, canvasEl, runtime,
+        stageEl,
+        canvasEl,
+        runtime,
         onDirty: markUserDirty,
         onBake: (key) => bakeFraming(key),
       });
@@ -5078,7 +6293,9 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // boot critical path; torn down via stageEl._animCleanup in _cleanup above.
   if (stageEl && (runtime.manifest.render as { video?: unknown } | undefined)?.video) {
     const { setupAnimTransport } = await import('./anim-transport.ts');
-    (stageEl as HTMLElement & { _animCleanup?: () => void })._animCleanup = setupAnimTransport({ stageEl });
+    (stageEl as HTMLElement & { _animCleanup?: () => void })._animCleanup = setupAnimTransport({
+      stageEl,
+    });
   }
 
   // File-input tools: the whole canvas accepts a dropped file - drag-and-drop, or
@@ -5087,10 +6304,32 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   // file-picker. The picked file still flows through the normal input model +
   // exportFile hook, so CLI/URL mode are unaffected.
   if (canvasFileInput && contentEl) {
-    setupCanvasFileDrop({ viewEl, contentEl, runtime, input: canvasFileInput, onDirty: markUserDirty });
+    mountLifecycle.add(
+      'canvas file drop',
+      setupCanvasFileDrop({
+        viewEl,
+        contentEl,
+        runtime,
+        input: canvasFileInput,
+        onDirty: markUserDirty,
+        fileToRef,
+        formatBytes: fmtBytes,
+      })
+    );
   }
   if (canvasDropInput && contentEl) {
-    setupCanvasBlocksDrop({ viewEl, contentEl, runtime, host, input: canvasDropInput, onDirty: markUserDirty });
+    mountLifecycle.add(
+      'canvas blocks drop',
+      setupCanvasBlocksDrop({
+        viewEl,
+        contentEl,
+        runtime,
+        host,
+        input: canvasDropInput,
+        onDirty: markUserDirty,
+        makeDropper: makeBlocksDropper,
+      })
+    );
   }
 
   // Canvas tools can also expose interactive SETTINGS in the template (e.g. a
@@ -5106,9 +6345,12 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       if (!ctl) return;
       const id = ctl.dataset.inputId;
       if (!id) return;
-      const value = ctl.type === 'checkbox' ? ctl.checked
-        : ctl.type === 'number' ? Number(ctl.value)
-          : ctl.value;
+      const value =
+        ctl.type === 'checkbox'
+          ? ctl.checked
+          : ctl.type === 'number'
+            ? Number(ctl.value)
+            : ctl.value;
       runtime.setInput(id, value);
       markUserDirty(id);
     });
@@ -5119,7 +6361,7 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
   if (clearBtn && utils) {
     const resetToDefaults = async () => {
       dirtyParams.clear();
-      markSessionDirty();   // clearing is an edit - flag unsaved + flash the Save pill
+      markSessionDirty(); // clearing is an edit - flag unsaved + flash the Save pill
       for (const input of runtime.getModel()) {
         // Revoke a picked file's preview URL before clearing it (avoid a leak).
         const prevUrl = asRow(input.value).url;
@@ -5130,12 +6372,18 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
         // declared default (files never have one). Previously every non-scalar was
         // forced blank regardless of its default.
         const dflt = input.default as InputValue | undefined;
-        const value: InputValue = dflt !== undefined && dflt !== null ? dflt
-          : input.type === 'boolean' ? false
-          : input.type === 'asset' ? null
-          : input.type === 'file' ? null
-          : input.type === 'blocks' ? []
-          : '';
+        const value: InputValue =
+          dflt !== undefined && dflt !== null
+            ? dflt
+            : input.type === 'boolean'
+              ? false
+              : input.type === 'asset'
+                ? null
+                : input.type === 'file'
+                  ? null
+                  : input.type === 'blocks'
+                    ? []
+                    : '';
         await runtime.setInput(input.id, value);
       }
     };
@@ -5153,14 +6401,24 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       if (disarmTimer) clearTimeout(disarmTimer);
       utils.replaceChildren(clearBtn);
     };
-    const onOutside = (e: PointerEvent) => { if (!utils.contains(e.target as Node | null)) restore(); };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); restore(); } };
+    const onOutside = (e: PointerEvent) => {
+      if (!utils.contains(e.target as Node | null)) restore();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        restore();
+      }
+    };
     clearBtn.addEventListener('click', () => {
       utils.classList.add('is-confirming');
       utils.innerHTML =
         `<button type="button" class="clear-inputs-confirm">${t('Reset to defaults')}</button>` +
         `<button type="button" class="clear-inputs-cancel">${t('Cancel')}</button>`;
-      utils.querySelector('.clear-inputs-confirm')!.addEventListener('click', async () => { restore(); await resetToDefaults(); });
+      utils.querySelector('.clear-inputs-confirm')!.addEventListener('click', async () => {
+        restore();
+        await resetToDefaults();
+      });
       utils.querySelector('.clear-inputs-cancel')!.addEventListener('click', restore);
       (utils.querySelector('.clear-inputs-cancel') as HTMLElement | null)?.focus();
       setTimeout(() => document.addEventListener('pointerdown', onOutside, true), 0); // skip the arming click
@@ -5168,151 +6426,6 @@ ${canvasScope} [data-canvas-input]:hover { outline: 2px dashed rgba(128,128,128,
       disarmTimer = setTimeout(restore, 6000);
     });
   }
-}
-
-
-
-/**
- * Canvas-as-drop-zone for render.layout:"canvas" file utilities. The whole canvas
- * accepts a drag-and-drop file; a click opens the native picker only via an explicit
- * [data-file-pick] affordance (the empty-state drop zone and the Replace button both
- * carry it). Listeners live on the stable contentEl container and a hidden <input>
- * parked in viewEl, so they survive the per-render innerHTML swaps of the canvas
- * content. The picked file is written straight into the normal input model - no
- * special-casing downstream.
- */
-function setupCanvasFileDrop({ viewEl, contentEl, runtime, input, onDirty }: {
-  viewEl: HTMLElement; contentEl: HTMLElement; runtime: Runtime; input: InputSpec; onDirty?: (id: string) => void;
-}): void {
-  const id = input.id;
-  const accept = Array.isArray(input.accept) ? input.accept.join(',') : '';
-  const multiple = Boolean(input.multiple);
-
-  const native = document.createElement('input');
-  native.type = 'file';
-  if (multiple) native.multiple = true;
-  if (accept) native.accept = accept;
-  native.style.display = 'none';
-  viewEl.appendChild(native);
-
-  const cap = input.maxSize ?? DEFAULT_FILE_MAX_BYTES;
-  const withinCap = (file: File): boolean => {
-    if (file.size > cap) { announce(t('That file is too large (max {size}).', { size: fmtBytes(cap) }), { assertive: true }); return false; }
-    return true;
-  };
-  const revokePrev = () => {
-    const prev = runtime.getModel().find(i => i.id === id)?.value;
-    const prevUrl = asRow(prev).url;
-    if (prevUrl) URL.revokeObjectURL(prevUrl as string);
-  };
-  // A `multiple` file input APPENDS every accepted drop to its array; a single one
-  // replaces (revoking the previous preview URL). Shared by the picker + drop paths.
-  const load = async (files: FileList | File[] | null | undefined) => {
-    const list = files ? Array.from(files) : [];
-    if (!list.length) return;
-    if (multiple) {
-      const accepted = list.filter(withinCap);
-      const refs = await Promise.all(accepted.map(fileToRef));
-      if (!refs.length) return;
-      const cur = runtime.getModel().find(i => i.id === id)?.value;
-      const existing = Array.isArray(cur) ? cur : [];
-      runtime.setInput(id, [...existing, ...refs] as never);
-      onDirty?.(id);
-      return;
-    }
-    const file = list[0];
-    if (!file || !withinCap(file)) return;
-    const ref = await fileToRef(file);
-    revokePrev();
-    runtime.setInput(id, ref);
-    onDirty?.(id);
-  };
-
-  native.addEventListener('change', () => { load(native.files); native.value = ''; });
-
-  // Click to pick: only an explicit [data-file-pick] affordance opens the picker (the
-  // empty-state drop zone and the Replace button both carry it). We deliberately do
-  // NOT treat a click on bare canvas as a pick - the canvas is full-bleed, so the dead
-  // space around the centred drop zone would swallow stray clicks (including near-misses
-  // on the fixed "Tools" return button in the corner) and surprise the user with a file
-  // dialog. Drag-and-drop still covers the whole canvas.
-  contentEl.addEventListener('click', (e) => {
-    if ((e.target as HTMLElement).closest('[data-file-pick]')) native.click();
-  });
-
-  // Drag-and-drop over the whole canvas. A depth counter tracks enter/leave across
-  // child nodes so the highlight doesn't flicker as the pointer crosses them. Only
-  // real file drags count (same guard as setupCanvasBlocksDrop) - a dragged text
-  // selection or in-app drag must not flash the drop highlight.
-  let depth = 0;
-  const setDrag = (on: boolean) => contentEl.classList.toggle('is-file-dragover', on);
-  const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types || []).includes('Files');
-  contentEl.addEventListener('dragenter', (e) => { if (!hasFiles(e)) return; e.preventDefault(); depth++; setDrag(true); });
-  contentEl.addEventListener('dragover', (e) => {
-    if (!hasFiles(e)) return;
-    e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
-  });
-  contentEl.addEventListener('dragleave', (e) => {
-    e.preventDefault();
-    if (--depth <= 0) { depth = 0; setDrag(false); }
-  });
-  contentEl.addEventListener('drop', (e) => {
-    e.preventDefault();
-    depth = 0;
-    setDrag(false);
-    // A multiple input takes the whole drop; a single one takes the first file.
-    load(multiple ? e.dataTransfer?.files : (e.dataTransfer?.files && [e.dataTransfer.files[0]!]));
-  });
-}
-
-/**
- * Canvas-as-drop-zone for a sidebar tool that declares a `dropToAdd` blocks input
- * (e.g. logo-wall). The whole canvas - most usefully its empty state - accepts a
- * drag-and-drop of several files and appends one block per file, exactly like
- * dropping onto the sidebar list (shared committer + _dropChains serialisation), so
- * the template's "Drop your logos here" invite actually works and a populated wall
- * still grows by dropping more. A click on an explicit [data-file-pick] affordance
- * (the empty-state invite carries one) opens the multi-file native picker. Bare-canvas
- * clicks are left alone so the full-bleed dead space can't surprise the user with a
- * file dialog, and so per-cell click-to-focus (data-canvas-input) keeps working.
- * Listeners live on the stable contentEl, so they survive the per-render innerHTML
- * swaps of the canvas content.
- */
-function setupCanvasBlocksDrop({ viewEl, contentEl, runtime, host, input, onDirty }: {
-  viewEl: HTMLElement; contentEl: HTMLElement; runtime: Runtime; host: WebToolHost; input: InputSpec; onDirty?: (id: string) => void;
-}): void {
-  const { accept, addFiles } = makeBlocksDropper({ runtime, host, input, onDirty });
-
-  const native = document.createElement('input');
-  native.type = 'file';
-  native.multiple = true;
-  if (accept) native.accept = accept;
-  native.style.display = 'none';
-  viewEl.appendChild(native);
-  native.addEventListener('change', () => { addFiles(native.files); native.value = ''; });
-
-  contentEl.addEventListener('click', (e) => {
-    if ((e.target as HTMLElement).closest('[data-file-pick]')) native.click();
-  });
-  contentEl.addEventListener('keydown', (e) => {
-    if ((e.key === 'Enter' || e.key === ' ') && (e.target as HTMLElement).closest('[data-file-pick]')) {
-      e.preventDefault();
-      // Stop Space from also reaching setupStageNav's window-level keydown, which
-      // would arm Space-to-pan; the file dialog steals focus before the keyup, so
-      // it'd otherwise stay stuck on.
-      e.stopPropagation();
-      native.click();
-    }
-  });
-
-  let depth = 0;
-  const setDrag = (on: boolean) => contentEl.classList.toggle('is-file-dragover', on);
-  const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types || []).includes('Files');
-  contentEl.addEventListener('dragenter', (e) => { if (!hasFiles(e)) return; e.preventDefault(); depth++; setDrag(true); });
-  contentEl.addEventListener('dragover', (e) => { if (!hasFiles(e)) return; e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; });
-  contentEl.addEventListener('dragleave', (e) => { e.preventDefault(); if (--depth <= 0) { depth = 0; setDrag(false); } });
-  contentEl.addEventListener('drop', (e) => { e.preventDefault(); depth = 0; setDrag(false); addFiles(e.dataTransfer?.files); });
 }
 
 // True only when focus is in a genuinely text-editable field (so Cmd+Z falls
@@ -5329,7 +6442,8 @@ function makeFetchFile(toolId: string): (path: string) => Promise<string> {
     // SPA servers return index.html for unknown paths with a 200. Detect that.
     const ct = resp.headers.get('content-type') ?? '';
     // SPA fallback check - but skip for .html files since template.html legitimately returns text/html.
-    if (!resp.ok || (ct.includes('text/html') && !path.endsWith('.html'))) throw new Error('tool-not-found');
+    if (!resp.ok || (ct.includes('text/html') && !path.endsWith('.html')))
+      throw new Error('tool-not-found');
     return await resp.text();
   };
 }
@@ -5341,7 +6455,7 @@ function mount404(viewEl: HTMLElement, toolId: string): void {
       <div class="not-found-inner">
         <p class="not-found-code">404</p>
         <h1 class="not-found-title">${t('Tool not found')}</h1>
-        <p class="not-found-desc">${t('There\'s no tool at <code>{id}</code>.', { id: toolId })}</p>
+        <p class="not-found-desc">${t("There's no tool at <code>{id}</code>.", { id: toolId })}</p>
         <a href="/" class="not-found-home">${t('Browse all tools')}</a>
       </div>
     </div>
@@ -5350,7 +6464,11 @@ function mount404(viewEl: HTMLElement, toolId: string): void {
 
 // Shown when a tool is opened in a shell that can't fulfil its capabilities
 // (e.g. a 'capture' tool in the web PWA). Mirrors the 404 layout.
-function mountUnavailable(viewEl: HTMLElement, manifest: ToolManifest, unmet: readonly string[]): void {
+function mountUnavailable(
+  viewEl: HTMLElement,
+  manifest: ToolManifest,
+  unmet: readonly string[]
+): void {
   document.title = tRaw('{name} - Desktop only', { name: manifest.name });
   const why = unmet.map(capabilityLabel).join(', ');
   viewEl.innerHTML = `
@@ -5386,9 +6504,13 @@ function mountInstallPrompt(viewEl: HTMLElement, manifest: ToolManifest): void {
 // Arms the `?copy` URL action. Clipboard writes require a user gesture
 // (navigator.clipboard.write rejects otherwise, and the image path would fall
 // back to a surprise download), so we can't copy silently on load. Instead we
-// highlight the Copy button and perform the copy on the user's first click - 
+// highlight the Copy button and perform the copy on the user's first click -
 // which carries the transient activation the clipboard API needs.
-function armAutoCopy(actionsEl: HTMLElement | null, actionsApi: ActionsApi | undefined, fmt?: string): void {
+function armAutoCopy(
+  actionsEl: HTMLElement | null,
+  actionsApi: ActionsApi | undefined,
+  fmt?: string
+): void {
   const copyBtn = actionsEl?.querySelector<HTMLElement>('[data-action="copy"]');
   if (!copyBtn || !actionsApi?.copy) {
     console.warn('[copy] ?copy requested but this tool has no copy action');
@@ -5412,10 +6534,10 @@ function armAutoCopy(actionsEl: HTMLElement | null, actionsApi: ActionsApi | und
 
   const onGesture = (e: PointerEvent) => {
     disarm();
-    // If the click landed on the Copy button, its own handler runs the copy - 
+    // If the click targeted the Copy button, its own handler runs the copy -
     // don't double up. Any other first interaction triggers it here.
     if (copyBtn.contains(e.target as Node)) return;
-    actionsApi!.copy!(fmt).catch(err => console.error('Auto-copy failed:', err));
+    actionsApi!.copy!(fmt).catch((err) => console.error('Auto-copy failed:', err));
   };
 
   document.addEventListener('pointerdown', onGesture, true);
@@ -5423,14 +6545,14 @@ function armAutoCopy(actionsEl: HTMLElement | null, actionsApi: ActionsApi | und
   jellyArmed(true);
 }
 
-
 function matchesDefault(input: { default?: InputValue; type: string }, paramVal: string): boolean {
   const def = input.default;
   if (def == null) return false;
   if (input.type === 'blocks') return false;
   if (input.type === 'boolean') return (paramVal === '1' || paramVal === 'true') === !!def;
-  if (input.type === 'number')  return Number(paramVal) === Number(def);
-  if (input.type === 'color')   return paramVal.replace(/^#/, '').toLowerCase() === String(def).replace(/^#/, '').toLowerCase();
+  if (input.type === 'number') return Number(paramVal) === Number(def);
+  if (input.type === 'color')
+    return paramVal.replace(/^#/, '').toLowerCase() === String(def).replace(/^#/, '').toLowerCase();
   return paramVal === String(def);
 }
 
@@ -5438,12 +6560,19 @@ function matchesDefault(input: { default?: InputValue; type: string }, paramVal:
  * Remove URL params from the live address bar that already equal the tool's defaults.
  * Operates on the raw query string to preserve compact encodings (e.g. ~,).
  */
-async function shrinkUrl(runtime: Runtime, manifest: ToolManifest, barSeq: BarSeq | null): Promise<void> {
+async function shrinkUrl(
+  runtime: Runtime,
+  manifest: ToolManifest,
+  barSeq: BarSeq | null
+): Promise<void> {
   // The bar is normally the path form /t/<id>?… by now; tolerate the boot-time hash
   // form too. Keep the route part, rewrite only the query.
   const hashQ = window.location.hash.indexOf('?');
-  const rawQs = window.location.search ? window.location.search.slice(1)
-           : (hashQ >= 0 ? window.location.hash.slice(hashQ + 1) : '');
+  const rawQs = window.location.search
+    ? window.location.search.slice(1)
+    : hashQ >= 0
+      ? window.location.hash.slice(hashQ + 1)
+      : '';
   if (!rawQs) return;
   const base = window.location.pathname + window.location.hash.split('?')[0]!;
 
@@ -5462,17 +6591,33 @@ async function shrinkUrl(runtime: Runtime, manifest: ToolManifest, barSeq: BarSe
   // here so signage links (`?present&kiosk`) stay whole. See plan 112 and the
   // RESERVED note in engine/src/url-mode.ts (plan 171 renamed the flag from the
   // never-reservable `loop`).
-  const RESERVED_KEEP = new Set(['format', 'export', 'copy', 'slot', 'output', 'full', '_v', 'nostage', 'lang', 'present', 's', 'kiosk']);
+  const RESERVED_KEEP = new Set([
+    'format',
+    'export',
+    'copy',
+    'slot',
+    'output',
+    'full',
+    '_v',
+    'nostage',
+    'lang',
+    'present',
+    's',
+    'kiosk',
+  ]);
 
   const kept: string[] = [];
   for (const part of qs.split('&')) {
     if (!part) continue;
-    const eqIdx  = part.indexOf('=');
-    const key    = eqIdx < 0 ? part : part.slice(0, eqIdx);
+    const eqIdx = part.indexOf('=');
+    const key = eqIdx < 0 ? part : part.slice(0, eqIdx);
     const rawVal = eqIdx < 0 ? '' : part.slice(eqIdx + 1);
-    const val    = decodeURIComponent(rawVal.replace(/\+/g, ' '));
+    const val = decodeURIComponent(rawVal.replace(/\+/g, ' '));
 
-    if (RESERVED_KEEP.has(key)) { kept.push(part); continue; }
+    if (RESERVED_KEEP.has(key)) {
+      kept.push(part);
+      continue;
+    }
 
     if (key === 'w' || key === 'width') {
       if (parseFloat(val) !== manifest.render.width) kept.push(part);
@@ -5499,7 +6644,7 @@ async function shrinkUrl(runtime: Runtime, manifest: ToolManifest, barSeq: BarSe
   // packing actually wins; otherwise leave the readable form (shorter and editable).
   if (newQs.length >= AUTO_PACK_MIN && isPackAvailable()) {
     const token = await packQuery(newQs);
-    if (barSeq && seq !== barSeq.v) return;             // a newer bar write happened mid-pack
+    if (barSeq && seq !== barSeq.v) return; // a newer bar write happened mid-pack
     const packed = token && `${PACK_PARAM}=${token}`;
     if (packed && packed.length < newQs.length) {
       history.replaceState(null, '', `${base}?${packed}`);
@@ -5514,13 +6659,21 @@ async function shrinkUrl(runtime: Runtime, manifest: ToolManifest, barSeq: BarSe
 
 // btnScopeEl - element containing the copy-url button (the actions bar)
 // exportScopeEl - element containing format/filename/w/h inputs (actionsEl); optional
-function wireUpCopyUrl(btnScopeEl: HTMLElement, runtime: Runtime, exportScopeEl: HTMLElement | null, manifest: ToolManifest, lolly?: ShareDialogLolly): void {
-  btnScopeEl.querySelector<HTMLButtonElement>('[data-action="copy-url"]')?.addEventListener('click', () => {
-    showShareDialog(runtime, exportScopeEl ?? btnScopeEl, manifest, lolly);
-  });
+function wireUpCopyUrl(
+  btnScopeEl: HTMLElement,
+  runtime: Runtime,
+  exportScopeEl: HTMLElement | null,
+  manifest: ToolManifest,
+  lolly?: ShareDialogLolly
+): void {
+  btnScopeEl
+    .querySelector<HTMLButtonElement>('[data-action="copy-url"]')
+    ?.addEventListener('click', () => {
+      showShareDialog(runtime, exportScopeEl ?? btnScopeEl, manifest, lolly);
+    });
 }
 
-/** The internal assets-bridge methods the `.lolly` builder needs, typed structurally - 
+/** The internal assets-bridge methods the `.lolly` builder needs, described by shape -
  *  they are web-only (not on the public HostV1.AssetsAPI), the same reason
  *  data-transfer.ts declares its own `BackupHost`. */
 interface LollyAssetsSlice {
@@ -5566,22 +6719,28 @@ async function coarseToolTrust(toolId: string): Promise<LollyToolTrust> {
  * every covered file matched with no tamper, else `custom`. Returns null when the two files
  * a tool cannot open without (tool.json + template.html) can't be fetched.
  */
-async function resolveToolBundle(toolId: string, manifest: ToolManifest): Promise<LollyToolBundle | null> {
+async function resolveToolBundle(
+  toolId: string,
+  manifest: ToolManifest
+): Promise<LollyToolBundle | null> {
   const integ = await getToolIntegrity().catch(() => null);
   const signed = integ?.envelope?.files ?? null;
 
   const rels = new Set<string>(['tool.json', 'template.html', 'styles.css', 'icon.svg']);
   const hooks = manifest.hooks as { module?: boolean } | undefined;
   if (hooks && hooks.module !== true) rels.add('hooks.js');
-  for (const ext of ['ics', 'vcf', 'csv', 'md']) if ((manifest.render?.formats ?? []).includes(ext)) rels.add(`template.${ext}`);
+  for (const ext of ['ics', 'vcf', 'csv', 'md'])
+    if ((manifest.render?.formats ?? []).includes(ext)) rels.add(`template.${ext}`);
   const lang = currentLang();
   if (lang && lang !== 'en') rels.add(`i18n/${lang}.json`);
-  if (signed) for (const key of Object.keys(signed)) if (key.startsWith(`${toolId}/`)) rels.add(key.slice(toolId.length + 1));
+  if (signed)
+    for (const key of Object.keys(signed))
+      if (key.startsWith(`${toolId}/`)) rels.add(key.slice(toolId.length + 1));
 
   const fetchText = makeFetchFile(toolId);
   const files: Record<string, Uint8Array> = {};
-  let covered = 0;      // carried files the signed catalog also lists
-  let matched = 0;      // …of those, how many hashed identically
+  let covered = 0; // carried files the signed catalog also lists
+  let matched = 0; // …of those, how many hashed identically
   for (const rel of rels) {
     let bytes: Uint8Array | null = null;
     try {
@@ -5592,21 +6751,38 @@ async function resolveToolBundle(toolId: string, manifest: ToolManifest): Promis
         const ct = resp.headers.get('content-type') ?? '';
         if (resp.ok && !ct.includes('text/html')) bytes = new Uint8Array(await resp.arrayBuffer());
       }
-    } catch { bytes = null; }   // an optional file that isn't there
+    } catch {
+      bytes = null;
+    } // an optional file that isn't there
     if (!bytes) continue;
     files[rel] = bytes;
     const digest = signed?.[`${toolId}/${rel}`];
-    if (digest) { covered++; if ((await sha256Hex(bytes)) === digest) matched++; }
+    if (digest) {
+      covered++;
+      if ((await sha256Hex(bytes)) === digest) matched++;
+    }
   }
   if (!files['tool.json'] || !files['template.html']) return null;
 
   const trust: LollyToolTrust =
     signed && Object.hasOwn(signed, `${toolId}/tool.json`) && covered > 0 && matched === covered
-      ? 'signed-catalog' : 'custom';
-  return { id: toolId, ...(manifest.version != null ? { version: String(manifest.version) } : {}), trust, files };
+      ? 'signed-catalog'
+      : 'custom';
+  return {
+    id: toolId,
+    ...(manifest.version != null ? { version: String(manifest.version) } : {}),
+    trust,
+    files,
+  };
 }
 
-function makeLollyVehicle(host: WebToolHost, toolId: string, manifest: ToolManifest, sessionState: (() => unknown) | undefined, canvasEl?: Element | null): ShareDialogLolly | undefined {
+function makeLollyVehicle(
+  host: WebToolHost,
+  toolId: string,
+  manifest: ToolManifest,
+  sessionState: (() => unknown) | undefined,
+  canvasEl?: Element | null
+): ShareDialogLolly | undefined {
   if (typeof sessionState !== 'function') return undefined;
   const assets = host.assets as unknown as LollyAssetsSlice;
   const appVersion = `Lolly ${ENGINE_VERSION}`;
@@ -5626,17 +6802,25 @@ function makeLollyVehicle(host: WebToolHost, toolId: string, manifest: ToolManif
         label: typeof meta.name === 'string' ? meta.name : id,
         licensed,
       };
-    } catch { return null; }
+    } catch {
+      return null;
+    }
   };
 
-  const build = async ({ includeLicensed = false, includeTool = false }: { includeLicensed?: boolean; includeTool?: boolean } = {}) => {
+  const build = async ({
+    includeLicensed = false,
+    includeTool = false,
+  }: {
+    includeLicensed?: boolean;
+    includeTool?: boolean;
+  } = {}) => {
     const session = sessionState() ?? null;
     const profile = await host.profile.get().catch(() => null);
     const userAssets = await assets._exportUserAssets();
     const creator = creatorFromProfile(profile, { appVersion });
     // Carry the tool's own files only on request - resolving them fetches every file.
     // A resolve failure (missing core files) degrades to a tool-less .lolly, never an error.
-    const tool = includeTool ? (await resolveToolBundle(toolId, manifest).catch(() => null)) : null;
+    const tool = includeTool ? await resolveToolBundle(toolId, manifest).catch(() => null) : null;
     // A raster thumbnail rides in the manifest so an importer - and the desktop
     // file managers' thumbnailer (plans/174 #3) - has a tile without rendering.
     // This closure has no canvas access, so the tile is the newest SAVED slot's
@@ -5646,7 +6830,9 @@ function makeLollyVehicle(host: WebToolHost, toolId: string, manifest: ToolManif
       ? await host.state
           .list()
           .then((rows) => {
-            const mine = (rows as unknown as { toolId: string; thumb: string | null; updatedAt?: string }[])
+            const mine = (
+              rows as unknown as { toolId: string; thumb: string | null; updatedAt?: string }[]
+            )
               .filter((r) => r.toolId === toolId && typeof r.thumb === 'string')
               .sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')));
             return mine[0]?.thumb ?? null;
@@ -5657,23 +6843,30 @@ function makeLollyVehicle(host: WebToolHost, toolId: string, manifest: ToolManif
     // font half of the reproducibility receipt. Strictly best-effort: no font bytes travel,
     // and a walk that fails costs the receipt its font list, never the share.
     const fonts = await import('../lib/session-fonts.ts')
-      .then(m => m.collectSessionFonts(canvasEl))
+      .then((m) => m.collectSessionFonts(canvasEl))
       .catch(() => []);
     // The design system this session wore, so the receiving studio's "Add from a
     // file" can install the same look (bridge/tokens.ts readUserDesignSystem).
     const designSystem = await import('../bridge/tokens.ts')
-      .then(m => m.readUserDesignSystem(host as unknown as Parameters<typeof m.readUserDesignSystem>[0]))
+      .then((m) =>
+        m.readUserDesignSystem(host as unknown as Parameters<typeof m.readUserDesignSystem>[0])
+      )
       .catch(() => null);
     const { blob, filename, summary } = await buildLollyFile({
-      session, toolId,
+      session,
+      toolId,
       ...(designSystem ? { designSystem } : {}),
       ...(fonts.length ? { fonts } : {}),
       ...(typeof thumb === 'string' && thumb.startsWith('data:image/') ? { thumb } : {}),
       toolVersion: manifest.version != null ? String(manifest.version) : undefined,
       name: String((manifest as { name?: unknown }).name ?? toolId),
-      userAssets, resolveLibrary, includeLicensed, creator,
+      userAssets,
+      resolveLibrary,
+      includeLicensed,
+      creator,
       ...(tool ? { tool } : {}),
-      appVersion, engineVersion: ENGINE_VERSION,
+      appVersion,
+      engineVersion: ENGINE_VERSION,
     });
     return { blob, filename, summary };
   };
@@ -5690,12 +6883,19 @@ function makeLollyVehicle(host: WebToolHost, toolId: string, manifest: ToolManif
   // probes the shell (web: navigator.canShare for the .lolly type, which Chromium's fixed
   // safelist rejects → hidden there; Tauri mobile: the native ACTION_SEND bridge present).
   // So the button never silently degrades to a download while claiming a share.
-  const canOsShare = typeof host.export.canShare === 'function'
-    && host.export.canShare({ mime: LOLLY_MIME, filename: `share${LOLLY_EXT}` });
+  const canOsShare =
+    typeof host.export.canShare === 'function' &&
+    host.export.canShare({ mime: LOLLY_MIME, filename: `share${LOLLY_EXT}` });
   const share = canOsShare
-    ? (blob: Blob, filename: string) => host.export.share!(blob, { filename, mime: LOLLY_MIME, title: filename })
+    ? (blob: Blob, filename: string) =>
+        host.export.share!(blob, { filename, mime: LOLLY_MIME, title: filename })
     : undefined;
-  return { build, toolOffer, save: (blob: Blob, filename: string) => host.export.file(blob, { filename }), share };
+  return {
+    build,
+    toolOffer,
+    save: (blob: Blob, filename: string) => host.export.file(blob, { filename }),
+    share,
+  };
 }
 
 // Reads the export-panel controls (format, dimensions, colour profile, password, print
@@ -5708,28 +6908,43 @@ function collectExportParams(exportScope: HTMLElement | null): string[] {
   const parts: string[] = [];
   const fmtEl = exportScope?.querySelector<HTMLSelectElement>('[data-action="format"]');
   if (fmtEl?.value) parts.push(`format=${encodeURIComponent(fmtEl.value)}`);
-  const fname = exportScope?.querySelector<HTMLInputElement>('[data-action="filename"]')?.value?.trim();
+  const fname = exportScope
+    ?.querySelector<HTMLInputElement>('[data-action="filename"]')
+    ?.value?.trim();
   if (fname) parts.push(`filename=${encodeURIComponent(fname)}`);
-  const w = parseFloat(exportScope?.querySelector<HTMLInputElement>('[data-action="export-width"]')?.value ?? '');
-  const h = parseFloat(exportScope?.querySelector<HTMLInputElement>('[data-action="export-height"]')?.value ?? '');
+  const w = parseFloat(
+    exportScope?.querySelector<HTMLInputElement>('[data-action="export-width"]')?.value ?? ''
+  );
+  const h = parseFloat(
+    exportScope?.querySelector<HTMLInputElement>('[data-action="export-height"]')?.value ?? ''
+  );
   if (w > 0) parts.push(`w=${w}`);
   if (h > 0) parts.push(`h=${h}`);
   const u = exportScope?.querySelector<HTMLSelectElement>('[data-action="export-unit"]')?.value;
   if (u && u !== 'px') {
     parts.push(`unit=${u}`);
-    const d = parseInt(exportScope?.querySelector<HTMLInputElement>('[data-action="export-dpi"]')?.value ?? '', 10);
+    const d = parseInt(
+      exportScope?.querySelector<HTMLInputElement>('[data-action="export-dpi"]')?.value ?? '',
+      10
+    );
     if (d > 0) parts.push(`dpi=${d}`);
   }
   // Colour profile is only meaningful for the CMYK print formats (Print PDF / Print
   // TIFF); carry it only when one is selected and it isn't the default condition.
-  const prof = urlProfileValue(exportScope?.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.value);
+  const prof = urlProfileValue(
+    exportScope?.querySelector<HTMLSelectElement>('[data-action="cmyk-profile"]')?.value
+  );
   if (isCmykFmt(fmtEl?.value) && prof && prof !== DEFAULT_CMYK_CONDITION) {
     parts.push(`profile=${encodeURIComponent(prof)}`);
   }
   // Open-password - standard-tier lock only (PDF or ZIP), only when set. Clear-text by
   // design so a shared link can carry the lock; never used for confidential files.
-  const pdfPass = exportScope?.querySelector<HTMLInputElement>('[data-action="pdf-password"]')?.value;
-  const pdfStrong = exportScope?.querySelector<HTMLSelectElement>('[data-action="pdf-lock-tier"]')?.value === 'strong';
+  const pdfPass = exportScope?.querySelector<HTMLInputElement>(
+    '[data-action="pdf-password"]'
+  )?.value;
+  const pdfStrong =
+    exportScope?.querySelector<HTMLSelectElement>('[data-action="pdf-lock-tier"]')?.value ===
+    'strong';
   if ((fmtEl?.value === 'pdf' || fmtEl?.value === 'zip') && pdfPass && !pdfStrong) {
     parts.push(`password=${encodeURIComponent(pdfPass)}`);
   }
@@ -5770,12 +6985,16 @@ function collectExportParams(exportScope: HTMLElement | null): string[] {
       const v = Number(exportScope?.querySelector<HTMLInputElement>(`[data-action="${a}"]`)?.value);
       return Number.isFinite(v) ? v : d;
     };
-    parts.push(`hdr=${encodeURIComponent(serializeHdr({
-      peakNits: dial('hdr-peak', HDR_DEFAULTS.peakNits),
-      reach:    dial('hdr-reach', HDR_DEFAULTS.reach),
-      lift:     dial('hdr-lift', HDR_DEFAULTS.lift),
-      richness: dial('hdr-focus', HDR_DEFAULTS.richness),
-    }))}`);
+    parts.push(
+      `hdr=${encodeURIComponent(
+        serializeHdr({
+          peakNits: dial('hdr-peak', HDR_DEFAULTS.peakNits),
+          reach: dial('hdr-reach', HDR_DEFAULTS.reach),
+          lift: dial('hdr-lift', HDR_DEFAULTS.lift),
+          richness: dial('hdr-focus', HDR_DEFAULTS.richness),
+        })
+      )}`
+    );
   }
   return parts;
 }
@@ -5783,7 +7002,10 @@ function collectExportParams(exportScope: HTMLElement | null): string[] {
 // Builds the base share-link query parts (tool inputs + the chosen export
 // settings) - WITHOUT the on-visit behaviour flags (full/options/export/copy/_v),
 // which the share dialog appends per the user's toggles.
-function buildShareParams(runtime: Runtime, exportScope: HTMLElement | null): { parts: string[]; fidelity: ShareFidelity } {
+function buildShareParams(
+  runtime: Runtime,
+  exportScope: HTMLElement | null
+): { parts: string[]; fidelity: ShareFidelity } {
   const parts: string[] = [];
   // What a URL can't carry, recorded as we drop it, so the Share dialog can tell the
   // user what won't travel instead of dropping it silently (the "link has no content"
@@ -5793,7 +7015,7 @@ function buildShareParams(runtime: Runtime, exportScope: HTMLElement | null): { 
   const excludedAssets: { id: string; label: string }[] = [];
 
   // The per-param share-link encoding lives in lib/url-budget.ts (encodeModelParam),
-  // so the copied link and the URL-budget gauge are the SAME bytes by construction - 
+  // so the copied link and the URL-budget gauge are the SAME bytes by construction -
   // one decision primitive, two consumers. The fidelity RECORDING stays here (literal,
   // and visible to the share-parity guard); the encoding DECISION (the 150/8000 caps,
   // the user/* and default skips, the hex-strip) lives in the primitive, unit-tested
@@ -5812,7 +7034,8 @@ function buildShareParams(runtime: Runtime, exportScope: HTMLElement | null): { 
   parts.push(...collectExportParams(exportScope));
 
   const fidelity: ShareFidelity = {
-    faithful: excludedAssets.length === 0 && droppedScalars.length === 0 && droppedBlocks.length === 0,
+    faithful:
+      excludedAssets.length === 0 && droppedScalars.length === 0 && droppedBlocks.length === 0,
     droppedScalars,
     droppedBlocks,
     excludedAssets,
@@ -5820,22 +7043,27 @@ function buildShareParams(runtime: Runtime, exportScope: HTMLElement | null): { 
   return { parts, fidelity };
 }
 
-
 // The Share button opens the shared dialog (components/share-dialog.js): a ready-to-copy
 // link plus the on-visit behaviour toggles. This thin wrapper feeds it the live tool
 // state; the Projects view reuses the same dialog for a saved session.
-function showShareDialog(runtime: Runtime, exportScope: HTMLElement | null, manifest: ToolManifest, lolly?: ShareDialogLolly): void {
+function showShareDialog(
+  runtime: Runtime,
+  exportScope: HTMLElement | null,
+  manifest: ToolManifest,
+  lolly?: ShareDialogLolly
+): void {
   // Resolve the tool id from the address bar (path or hash form) so the link is the
   // crawler-visible /t/<id> shape. The dialog itself lives in components/share-dialog.js,
   // shared with the Projects view's per-session "Share link". buildShareParams stays here
   // (it reads the live runtime + export-panel DOM); the session path passes its own parts.
-  const toolId = window.location.pathname.match(/^\/t\/([^/?]+)/)?.[1]
-              ?? window.location.hash.match(/^#\/tool\/([^/?]+)/)?.[1];
-  const currentFormat = exportScope?.querySelector<HTMLSelectElement>('[data-action="format"]')?.value || '';
+  const toolId =
+    window.location.pathname.match(/^\/t\/([^/?]+)/)?.[1] ??
+    window.location.hash.match(/^#\/tool\/([^/?]+)/)?.[1];
+  const currentFormat =
+    exportScope?.querySelector<HTMLSelectElement>('[data-action="format"]')?.value || '';
   const { parts, fidelity } = buildShareParams(runtime, exportScope);
   openShareDialog({ toolId, baseParts: parts, manifest, currentFormat, fidelity, lolly });
 }
-
 
 // Re-create <script> elements so the browser executes them.
 // Walk the canvas DOM for HTML comment markers left by annotateTemplate, convert
@@ -5868,7 +7096,7 @@ function resolveCanvasAnnotations(canvasEl: HTMLElement): void {
       cur = cur.nextSibling;
     }
 
-    const elements = between.filter(n => n.nodeType === Node.ELEMENT_NODE);
+    const elements = between.filter((n) => n.nodeType === Node.ELEMENT_NODE);
     if (elements.length > 0) {
       for (const el of elements) (el as HTMLElement).dataset.canvasInput = id;
     } else {
@@ -5891,7 +7119,11 @@ function resolveCanvasAnnotations(canvasEl: HTMLElement): void {
 // trusting a fire-and-forget click + timer. Built on the shared mountModal
 // lifecycle (components/modal.ts) - Escape and a backdrop click dismiss as
 // Cancel like every other app dialog.
-function showUnsavedDialog(onSave: (() => Promise<void> | void) | null, onLeave: () => void, detail?: string): void {
+function showUnsavedDialog(
+  onSave: (() => Promise<void> | void) | null,
+  onLeave: () => void,
+  detail?: string
+): void {
   // Under the jelly flag the three actions become soft-body buttons (accent
   // "Save & leave", neutral platinum for the two exits), mirroring the confirm-
   // dialog.ts actionBtn mapping. The jelly host must NOT carry the box-painting
@@ -5899,7 +7131,9 @@ function showUnsavedDialog(onSave: (() => Promise<void> | void) | null, onLeave:
   // delegated [data-act] click handler retargets composed shadow clicks to the
   // host, so it fires unchanged; a layout-only .unsaved-btn-jelly class stays.
   const btn = (act: 'save' | 'leave' | 'cancel', label: string): string => {
-    const nativeClass = { save: 'unsaved-save', leave: 'unsaved-leave', cancel: 'unsaved-cancel' }[act];
+    const nativeClass = { save: 'unsaved-save', leave: 'unsaved-leave', cancel: 'unsaved-cancel' }[
+      act
+    ];
     return jellyActive()
       ? `<jelly-button class="unsaved-btn-jelly"${act === 'save' ? '' : ' variant="platinum"'} data-act="${act}">${label}</jelly-button>`
       : `<button type="button" class="${nativeClass}" data-act="${act}">${label}</button>`;
@@ -5927,7 +7161,10 @@ function showUnsavedDialog(onSave: (() => Promise<void> | void) | null, onLeave:
   modal.el.dataset.sfxClose = 'off'; // this dialog owns its dismiss cue ('land' on Cancel), not the generic shoo
   playSfx('crystal'); // a light glass-elevator lift as the save decision rises up
   modal.el.addEventListener('click', (e) => {
-    const act = e.target instanceof Element ? e.target.closest<HTMLElement>('[data-act]')?.dataset.act : undefined;
+    const act =
+      e.target instanceof Element
+        ? e.target.closest<HTMLElement>('[data-act]')?.dataset.act
+        : undefined;
     if (act === 'save') modal.close('save');
     else if (act === 'leave') modal.close('leave');
     else if (act === 'cancel') modal.close(undefined);

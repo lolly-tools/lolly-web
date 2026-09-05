@@ -26,7 +26,7 @@ import { resolve } from 'node:path';
 const SRC = readFileSync(resolve(import.meta.dirname, 'tool-inputs.ts'), 'utf8');
 
 test('liveInput reads the runtime model first, snapshot only as fallback', () => {
-  assert.match(SRC, /const liveInput = \(id: string \| undefined\)[\s\S]{0,200}?runtime\.getModel\(\)\.find\(i => i\.id === id\) \?\? panelModel\.find\(i => i\.id === id\)/,
+  assert.match(SRC, /const liveInput = \(id: string \| undefined\)[\s\S]{0,240}?runtime\.getModel\(\)\.find\(\(?i\)? => i\.id === id\)\s*\?\?\s*panelModel\.find\(\(?i\)? => i\.id === id\)/,
     'liveInput must resolve against runtime.getModel() before the render-time snapshot');
 });
 

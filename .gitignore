@@ -10,6 +10,10 @@ public/info/*.md
 # The markdown twins moved beside their doored HTML (plans/177 P1) - build output, like the html.
 public/info/**/*.md
 public/info/llms.txt
+# The agent-facing set beside it (docs/agents-pages.ts): full-text twin, agent guide, OpenAPI, well-known.
+public/info/llms-full.txt
+public/info/openapi.json
+public/info/well-known-lolly.json
 public/info/sitemap.xml
 public/info/logos/
 public/info/og/

@@ -1,11 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
-// Capability probes for format availability. These are tiny, stateless (bar one
-// memo) DOM/navigator/MediaRecorder feature checks the tool view calls at mount to
-// gate the format picker. They live HERE, not in export.ts, so importing them does
-// NOT drag the ~95 KB rasteriser onto the tool-open path - export.ts stays lazy
-// (loaded only on an actual Get/Save). export.ts re-exports these for its dynamic
-// callers, and imports canRecord for videoMimeType.
+// Capability probes for format availability. These are tiny, mostly stateless (a
+// few memoised probes) DOM/navigator/MediaRecorder feature checks the tool view
+// calls at mount to gate the format picker. They live HERE, not in export.ts, so
+// importing them does NOT drag the ~95 KB rasteriser onto the tool-open path -
+// export.ts stays lazy (loaded only on an actual Get/Save). export.ts re-exports
+// these for its dynamic callers, and imports canRecord for videoMimeType.
+//
+// The only imports allowed here are PURE DATA modules for the same reason: the
+// codec lists, the models base, and the durable model's file identity. Anything
+// that opens a database or a runtime is reached by dynamic import from inside an
+// async probe.
 import { WEBM_CODECS, MP4_CODECS } from './video-mime.ts';
+import { MODELS_BASE } from '../lib/models-base.ts';
+import { DURABLE_ENCODER_BYTES, DURABLE_ENCODER_PATH } from '../lib/durable-model.ts';
 
 // Production needs canvas pixel readback (blocked by Tor / Firefox RFP, which
 // breaks every raster export). Delivery is the TIFF-specific catch: the browser
@@ -76,18 +83,94 @@ export function liveCaptureSupport(): boolean {
 
 // The durable credential (opt-in TrustMark embed - tool-actions.ts, export.ts's
 // durableEmbedCanvas) is a neural ONNX encode that lazily fetches a ~33 MB encoder
-// model from the deploy origin. Under Tauri (desktop/mobile) that model isn't
-// bundled and there's no origin server to pull it from, so the embed simply CAN'T
-// work offline there - hide the toggle rather than offer a silent no-op. The web
-// PWA fetches it from its own origin (then caches it in IndexedDB, so it keeps
-// working offline once primed), so the toggle is offered there. Also requires
-// WebAssembly for onnxruntime-web. If a Tauri build ever bundles the encoder under
-// /models/trustmark/, revisit this gate (a bundled model would work offline).
+// model (lib/trustmark-embed.ts). It needs WebAssembly for onnxruntime-web, and it
+// needs a ROUTE to those bytes. There are three, and this pair of functions asks
+// for them in that order:
+//   1. already in the IndexedDB model cache - works with no connection;
+//   2. same-origin /models/trustmark/ - the web PWA and any self-serving deploy;
+//   3. the models base (MODELS_BASE, VITE_MODELS_BASE) - what the Tauri desktop
+//      and mobile builds set to https://lolli.li for every other model family.
+// Route 3 is why this is no longer a flat `!tauri`: the desktop build has a model
+// host, so hiding the toggle there hid a feature that works. It stays hidden where
+// no route exists, and a 404 on the model host reads as NO ROUTE - the toggle must
+// never appear and then fail at export time.
+//
+// durableSupport() is the SYNC gate the export panel renders from. On the web it
+// answers true exactly as before (same-origin first, the models base after - the
+// fetcher's own order, unchanged). Under Tauri it answers false until
+// probeDurableSupport() has confirmed a route, so the toggle appears on the probe's
+// resolution the way the WebCodecs options do - never wrongly offered.
+let _durableRoute: boolean | null = null;
+
+function isTauriWebview(): boolean {
+  return typeof window !== 'undefined' &&
+    typeof (window as { __TAURI_INTERNALS__?: { invoke?: unknown } }).__TAURI_INTERNALS__?.invoke === 'function';
+}
+
 export function durableSupport(): boolean {
   if (typeof WebAssembly === 'undefined') return false;
-  const tauri = typeof window !== 'undefined' &&
-    typeof (window as { __TAURI_INTERNALS__?: { invoke?: unknown } }).__TAURI_INTERNALS__?.invoke === 'function';
-  return !tauri;
+  if (!isTauriWebview()) return true;
+  return _durableRoute === true;
+}
+
+/** What the durable probe learned: whether a route exists at all, whether the
+ *  bytes are already on device (so the first export starts immediately), and how
+ *  big the one-time download is - the three things the export toggle's consent
+ *  line states. */
+export interface DurableRoute { available: boolean; cached: boolean; bytes: number }
+
+let _durablePending: Promise<DurableRoute> | null = null;
+
+/**
+ * Resolve the durable route. Cheap and offline-safe: the IndexedDB check comes
+ * first and a cached model short-circuits it, so a primed device never touches the
+ * network. Only a Tauri shell with no cached model does a HEAD against the models
+ * base - metadata only, no model bytes move without the export's own consent - and
+ * only when a models base is configured at all.
+ *
+ * NOTHING is memoised across calls, deliberately: both answers can change inside a
+ * session. The model arrives (a durable export, or Profile -> Available offline ->
+ * Durable credential) and `cached` has to flip, or the file appears on the model
+ * host and the toggle should turn up on the next panel open rather than after a
+ * restart. Each call is one IndexedDB key read, plus - only on a Tauri shell that
+ * has no model yet - one HEAD. Concurrent calls share the one in-flight run.
+ */
+export function probeDurableSupport(opts: {
+  base?: string;
+  cached?: () => Promise<boolean>;
+  reachable?: (url: string) => Promise<boolean>;
+} = {}): Promise<DurableRoute> {
+  if (_durablePending) return _durablePending;
+  const base = opts.base ?? MODELS_BASE;
+  const cached = opts.cached ?? (async () => {
+    const { durableModelCached } = await import('../lib/model-prefetch.ts');
+    return durableModelCached();
+  });
+  const reachable = opts.reachable ?? (async (url: string) => {
+    try {
+      const resp = await fetch(url, { method: 'HEAD' });
+      return resp.ok;
+    } catch { return false; }
+  });
+  const pending = (async (): Promise<DurableRoute> => {
+    const result: DurableRoute = { available: false, cached: false, bytes: DURABLE_ENCODER_BYTES };
+    if (typeof WebAssembly === 'undefined') return result;
+    result.cached = await cached().catch(() => false);
+    if (result.cached) { result.available = true; return result; }
+    if (!isTauriWebview()) { result.available = true; return result; } // same-origin, then the models base
+    if (!base) return result;                                          // a Tauri build with no model host
+    result.available = await reachable(`${base}${DURABLE_ENCODER_PATH}`);
+    return result;
+  })();
+  _durablePending = pending;
+  const settle = (available: boolean): void => {
+    // Only the Tauri answer is recorded: off Tauri the sync gate is already true and
+    // must stay byte-identical to the pre-probe behaviour.
+    if (isTauriWebview()) _durableRoute = available;
+    _durablePending = null;
+  };
+  void pending.then((r) => settle(r.available), () => settle(false));
+  return pending;
 }
 
 // WebCodecs half of the video gate. renderVideo tries a VideoEncoder encode FIRST,

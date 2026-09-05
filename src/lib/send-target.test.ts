@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { registerSendTarget, unregisterSendTarget, sendTargetsFor } from './send-target.ts';
+import { registerSendTarget, sendTargetId, unregisterSendTarget, sendTargetsFor } from './send-target.ts';
 import type { SendTarget } from './send-target.ts';
 
 const mk = (kind: string, over: Partial<SendTarget> = {}): SendTarget => ({
@@ -43,4 +43,29 @@ test('last registration per kind wins (an instance replacing a built-in), and un
     unregisterSendTarget('gdrive');
   }
   assert.deepEqual(sendTargetsFor('emf'), []);
+});
+
+test('organisation and personal targets of the same provider coexist by stable id', () => {
+  registerSendTarget(mk('s3', { label: 'My S3' }));
+  registerSendTarget(mk('s3', { id: 'org:press', scope: 'organization', label: 'Press bucket' }));
+  try {
+    const got = sendTargetsFor('png');
+    assert.deepEqual(got.map(sendTargetId), ['s3', 'org:press']);
+    assert.deepEqual(got.map(t => t.label), ['My S3', 'Press bucket']);
+  } finally {
+    unregisterSendTarget('s3');
+    unregisterSendTarget('org:press');
+  }
+});
+
+test('source gates keep export-only organisation routes off stored asset surfaces', () => {
+  registerSendTarget(mk('s3', {
+    id: 'org:publish', scope: 'organization', sources: ['export'], label: 'Publish',
+  }));
+  try {
+    assert.deepEqual(sendTargetsFor('png', 'export').map(sendTargetId), ['org:publish']);
+    assert.deepEqual(sendTargetsFor('png', 'asset'), []);
+  } finally {
+    unregisterSendTarget('org:publish');
+  }
 });

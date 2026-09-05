@@ -68,11 +68,11 @@
      carries its own scroller, so opening this up costs nothing and lets a tooltip
      float over the canvas where it belongs. */
   overflow: visible;
-  color: hsl(var(--card-foreground));
-  background: hsl(var(--card) / 0.96);
-  border-top: 1px solid hsl(var(--border));
-  box-shadow: 0 -10px 30px rgb(0 0 0 / 0.18);
-  font-size: var(--fs-sm);
+  color: var(--ui-color-text-default);
+  background: color-mix(in srgb, var(--ui-color-surface-raised) 96%, transparent);
+  border-top: 1px solid var(--ui-color-border-default);
+  box-shadow: var(--ui-elevation-sheet);
+  font-size: var(--ui-type-label);
   user-select: none;
   touch-action: none;         /* the panel owns its own pointer gestures */
 }
@@ -95,12 +95,12 @@
 .tl-handle::after {
   content: "";
   width: 46px; height: 3px;
-  border-radius: 2px;
-  background: hsl(var(--border));
-  transition: background-color 0.14s ease, width 0.14s ease;
+  border-radius: var(--ui-radius-choice);
+  background: var(--ui-color-border-default);
+  transition: background-color var(--ui-motion-feedback) var(--ui-motion-standard), width var(--ui-motion-feedback) var(--ui-motion-standard);
 }
-.tl-handle:hover::after { background: hsl(var(--muted-foreground)); width: 64px; }
-.tl-handle:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; border-radius: 4px; }
+.tl-handle:hover::after { background: var(--ui-color-text-muted); width: 64px; }
+.tl-handle:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: -2px; border-radius: var(--ui-radius-choice); }
 
 /* ─── Top strip: transport | tools | inspector ───────────────────────────────*/
 .tl-bar {
@@ -120,11 +120,11 @@
 }
 .tl-transport { gap: 6px; }
 .tl-time {
-  font-family: var(--font-mono);
+  font-family: var(--ui-type-mono-family);
   font-size: calc(11.5px * var(--a11y-fs));
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   white-space: nowrap;
 }
 
@@ -135,11 +135,11 @@
   width: calc(30px * var(--a11y-fs)); height: calc(30px * var(--a11y-fs)); padding: 0;
   display: inline-flex; align-items: center; justify-content: center;
   flex: 0 0 auto;
-  border: 0; border-radius: 9px;
+  border: 0; border-radius: var(--ui-radius-control);
   background: transparent;
-  color: hsl(var(--foreground));
+  color: var(--ui-color-text-default);
   cursor: pointer;
-  transition: background-color 0.14s ease, color 0.14s ease;
+  transition: background-color var(--ui-motion-feedback) var(--ui-motion-standard), color var(--ui-motion-feedback) var(--ui-motion-standard);
 }
 /* `display: inline-flex` above beats the base sheet's `[hidden] { display: none }`
    (later layer wins), leaving a hidden button INVISIBLE BUT STILL LAID OUT - a 30px
@@ -147,9 +147,9 @@
    no addKinds, so restate it, exactly as `.tl-scenery[hidden]` does further down. */
 .tl-btn[hidden] { display: none; }
 .tl-btn svg { width: var(--fs-xl); height: var(--fs-xl); }
-.tl-btn:hover:not(:disabled):not([aria-disabled="true"]) { background: hsl(var(--muted)); }
+.tl-btn:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--ui-color-surface-muted); }
 .tl-btn:active:not(:disabled):not([aria-disabled="true"]) { filter: brightness(0.92); }
-.tl-btn:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.tl-btn:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 2px; }
 /* `aria-disabled` gets the same greying as the real property. The split blade uses the
    attribute rather than `disabled` precisely so it stays FOCUSABLE while inert - a
    focused control that becomes `disabled` is unfocused by the browser, which would drop
@@ -158,17 +158,17 @@
 .tl-btn[aria-disabled="true"] { opacity: 0.35; cursor: default; }
 .tl-btn.is-active,
 .tl-btn[aria-pressed="true"] {
-  background: var(--brand-primary, hsl(var(--primary)));
-  color: var(--brand-on-primary, hsl(var(--primary-foreground)));
+  background: var(--ui-color-action-primary);
+  color: var(--ui-color-action-on-primary);
 }
 .tl-screen.is-recording {
   background: hsl(var(--destructive));
-  color: hsl(var(--primary-foreground));
+  color: var(--ui-color-action-on-primary);
 }
 .tl-mobile-tools { display: none; }
-.tl-play { width: calc(34px * var(--a11y-fs)); height: calc(34px * var(--a11y-fs)); border-radius: 11px; background: hsl(var(--muted)); }
+.tl-play { width: calc(34px * var(--a11y-fs)); height: calc(34px * var(--a11y-fs)); border-radius: var(--ui-radius-control); background: var(--ui-color-surface-muted); }
 .tl-play svg { width: calc(17px * var(--a11y-fs)); height: calc(17px * var(--a11y-fs)); }
-.tl-play:hover:not(:disabled) { background: hsl(var(--accent)); }
+.tl-play:hover:not(:disabled) { background: var(--ui-color-selection-surface); }
 
 /* Every panel glyph is now a registry icon (lib/icons.ts) rendered as an <svg>,
    sized by the `.tl-btn svg` / `.tl-play svg` rules above. The CSS-drawn
@@ -186,12 +186,12 @@
    documented on `.tl-panel` applies to every ancestor in between. */
 .tl-mic.is-recording {
   background: hsl(var(--destructive));
-  color: hsl(var(--primary-foreground));
+  color: var(--ui-color-action-on-primary);
 }
 .tl-mic.is-recording:hover:not(:disabled) { background: hsl(var(--destructive) / 0.85); }
 .tl-cam.is-recording {
   background: hsl(var(--destructive));
-  color: hsl(var(--primary-foreground));
+  color: var(--ui-color-action-on-primary);
 }
 .tl-cam.is-recording:hover:not(:disabled) { background: hsl(var(--destructive) / 0.85); }
 
@@ -212,6 +212,8 @@
     gap: 5px;
     overflow: hidden;
   }
+  /* More specific than the later all-coarse rule: a short/phone workspace gets
+     the full 44px target even though an ordinary touch laptop keeps 36px. */
   .tl-panel .tl-btn,
   .tl-panel .tl-play { width: 44px; height: 44px; }
   .tl-time { max-width: 62px; overflow: hidden; text-overflow: ellipsis; }
@@ -235,10 +237,10 @@
   top: 14px;
   width: min(240px, 34%);
   aspect-ratio: 16 / 9;
-  border-radius: var(--radius-md, 10px);
+  border-radius: var(--ui-radius-panel);
   overflow: hidden;
   background: #000;
-  box-shadow: var(--shadow-4), 0 0 0 2px hsl(var(--destructive) / 0.8);
+  box-shadow: var(--ui-elevation-overlay), 0 0 0 2px hsl(var(--destructive) / 0.8);
   z-index: 30;
   pointer-events: none;
 }
@@ -256,20 +258,20 @@
   gap: 7px;
   flex: 0 0 auto;
   padding: 3px 9px 3px 7px;
-  border-radius: var(--radius-pill);
-  background: hsl(var(--muted));
-  color: hsl(var(--foreground));
+  border-radius: var(--ui-radius-pill);
+  background: var(--ui-color-surface-muted);
+  color: var(--ui-color-text-default);
 }
 .tl-rec[hidden] { display: none; }
 .tl-rec-dot {
   width: 8px; height: 8px;
-  border-radius: var(--radius-round);
+  border-radius: var(--ui-radius-choice-round);
   background: hsl(var(--destructive));
   animation: tl-rec-pulse 1.4s ease-in-out infinite;
 }
 .tl-rec.is-countin .tl-rec-dot { animation: none; opacity: 0.45; }
 .tl-rec-time {
-  font-family: var(--font-mono);
+  font-family: var(--ui-type-mono-family);
   font-size: calc(11.5px * var(--a11y-fs));
   font-variant-numeric: tabular-nums;
   min-width: 34px;
@@ -281,8 +283,8 @@
 .tl-rec-meter {
   position: relative;
   width: 64px; height: 6px;
-  border-radius: var(--radius-xs);
-  background: hsl(var(--border));
+  border-radius: var(--ui-radius-choice);
+  background: var(--ui-color-border-default);
   overflow: hidden;
 }
 .tl-rec-fill {
@@ -290,7 +292,7 @@
   width: 0%;
   height: 100%;
   border-radius: inherit;
-  background: var(--brand-primary, hsl(var(--primary)));
+  background: var(--ui-color-action-primary);
   transition: width 0.06s linear;
 }
 .tl-rec.is-hot .tl-rec-fill { background: hsl(var(--destructive)); }
@@ -300,7 +302,7 @@
   flex: 0 1 auto;
   min-width: 0;
   font-size: calc(11.5px * var(--a11y-fs));
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -326,7 +328,7 @@
 .tl-menu-stack { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .tl-menu-sub {
   max-width: 26ch;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   font-size: var(--fs-xs);
   line-height: 1.35;
   white-space: normal;
@@ -348,7 +350,7 @@
 .tl-onion-desc {
   margin: 0 0 2px;
   max-width: 30ch;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   font-size: var(--fs-xs);
   line-height: 1.4;
   text-wrap: pretty;
@@ -414,7 +416,7 @@
   font-size: calc(10.5px * var(--a11y-fs));
   text-transform: uppercase;
   letter-spacing: 0.045em;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   white-space: nowrap;
 }
 .tl-num  { width: 68px; font-size: var(--fs-sm); padding: 5px 7px; font-variant-numeric: tabular-nums; }
@@ -465,7 +467,7 @@
   margin: 0;
   padding: 4px 7px;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: var(--ui-radius-control);
   background: none;
   color: inherit;
   font: inherit;
@@ -477,18 +479,18 @@
    in a popover either way. The cap is on the SEGMENT (the chips ellipsis inside it),
    so a long summary cannot push its neighbours off the fold. */
 .tl-group-head { max-width: 22em; }
-.tl-group-head:hover { background: hsl(var(--muted) / 0.6); }
-.tl-group-head:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.tl-group-head:hover { background: color-mix(in srgb, var(--ui-color-surface-muted) 60%, transparent); }
+.tl-group-head:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 2px; }
 .tl-group.is-open > .tl-group-head {
-  background: hsl(var(--muted) / 0.5);
-  border-color: hsl(var(--border));
+  background: var(--ui-color-selection-surface);
+  border-color: var(--ui-color-selection-border);
 }
 /* Icon box AND paint ride the type multiplier, per the a11y `largeText` contract:
    a header that grows its word and keeps a 14px glyph reads as a broken pair. */
 .tl-group-icon {
   display: inline-flex;
   flex: 0 0 auto;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
 }
 .tl-group-icon svg {
   width: var(--fs-lg);
@@ -498,7 +500,7 @@
   font-size: calc(10.5px * var(--a11y-fs));
   text-transform: uppercase;
   letter-spacing: 0.045em;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
 }
 .tl-group-chips { display: inline-flex; align-items: center; gap: 6px; }
 /* The collapsed reading. Tabular figures so a scrub does not make the row jitter as
@@ -506,7 +508,7 @@
 .tl-group-chip {
   font-size: calc(11.5px * var(--a11y-fs));
   font-variant-numeric: tabular-nums;
-  color: hsl(var(--card-foreground));
+  color: var(--ui-color-text-default);
   max-width: 22ch;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -514,12 +516,12 @@
 }
 .tl-group-chip + .tl-group-chip {
   padding-inline-start: 6px;
-  border-inline-start: 1px solid hsl(var(--border));
+  border-inline-start: 1px solid var(--ui-color-border-default);
 }
 .tl-group-caret {
   display: inline-flex;
   flex: 0 0 auto;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
 }
 .tl-group-caret svg {
   width: var(--fs-sm);
@@ -603,13 +605,13 @@
 .tl-kf-state {
   font-size: calc(11.5px * var(--a11y-fs));
   font-variant-numeric: tabular-nums;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   white-space: nowrap;
 }
 /* ON a diamond. A colour and a weight, never a border on one side - a one-sided
    accent rule is the pattern this shell does not use. */
 .tl-kf-state.is-on {
-  color: var(--brand-primary, hsl(var(--primary)));
+  color: var(--ui-color-action-primary);
   font-weight: 600;
 }
 /* An action that says what it does in words, with the glyph beside the text. */
@@ -643,10 +645,10 @@
   align-items: center;
   gap: 4px;
   padding: 1px 3px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--ui-radius-control);
 }
 /* The row the playhead is parked on. A tinted BACKGROUND, not an edge stripe. */
-.tl-kf-row.is-current { background: hsl(var(--primary) / 0.14); }
+.tl-kf-row.is-current { background: var(--ui-color-selection-surface); }
 .tl-kf-time { width: 5.5em; }
 .tl-kf-ease { max-width: 11ch; }
 
@@ -668,7 +670,7 @@
 .tl-kf-slider {
   flex: 1 1 90px;
   min-width: 72px;
-  accent-color: var(--brand-primary, hsl(var(--primary)));
+  accent-color: var(--ui-color-action-primary);
 }
 .tl-kf-slider:disabled { opacity: 0.5; }
 
@@ -685,7 +687,7 @@
 .tl-alab {
   display: inline-flex;
   align-items: center;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   flex: 0 0 auto;
 }
 .tl-alab svg { width: calc(14px * var(--a11y-fs)); height: calc(14px * var(--a11y-fs)); }
@@ -715,7 +717,7 @@
   width: 22px;
   height: 150px;
   min-width: 0;
-  accent-color: var(--brand-primary, hsl(var(--primary)));
+  accent-color: var(--ui-color-action-primary);
 }
 .tl-hfader {
   width: 150px;
@@ -723,7 +725,7 @@
   min-width: 0;
   /* .tl-kf-slider's flex-basis is 90px, which a COLUMN container reads as height. */
   flex: 0 0 auto;
-  accent-color: var(--brand-primary, hsl(var(--primary)));
+  accent-color: var(--ui-color-action-primary);
 }
 /* 8ch, not a tighter fit: a number input reserves spinner space inside its box,
    so 6ch showed "100" as "10" - the worst possible clip on a level control. */
@@ -742,7 +744,7 @@
 .tl-eq-db {
   font-size: var(--fs-2xs);
   font-variant-numeric: tabular-nums;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
 }
 .tl-group-pop .tl-kf-pose-row .tl-kf-pose-num { flex: 0 0 auto; }
 
@@ -756,12 +758,12 @@
   flex-direction: column;
   gap: 6px;
   padding-top: 8px;
-  border-top: 1px solid hsl(var(--border));
+  border-top: 1px solid var(--ui-color-border-default);
 }
 .tl-kf-dock-note {
   margin: 0;
   font-size: calc(11.5px * var(--a11y-fs));
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
 }
 
 /* ─── The Camera group (plans/104 section 8) ────────────────────────────────────────
@@ -789,12 +791,12 @@
 .tl-cam-chip {
   flex: 0 0 auto;
   padding: 1px 5px;
-  border: 1px solid hsl(var(--border));
-  border-radius: 5px;
+  border: 1px solid var(--ui-color-border-default);
+  border-radius: var(--ui-radius-choice);
   font-size: calc(9.5px * var(--a11y-fs));
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
 }
 
 /* ─── Diamonds on the bars (plans/104 section 8) ────────────────────────────────────
@@ -822,22 +824,22 @@
   height: 10px;
   pointer-events: auto;
   cursor: ew-resize;
-  background: hsl(var(--card));
-  box-shadow: 0 0 0 1px hsl(var(--foreground) / 0.55);
+  background: var(--ui-color-surface-raised);
+  box-shadow: var(--ui-edge-strong);
   clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
 }
-.tl-kf-dot:hover { background: hsl(var(--foreground) / 0.85); }
+.tl-kf-dot:hover { background: color-mix(in srgb, var(--ui-color-text-default) 85%, transparent); }
 /* The SELECTED diamond draws large - the state section 3 records from the reference tool.
    Size and paint only: growing it must not move it, so the margin grows with it. */
 .tl-kf-dot.is-selected {
   margin: -7px 0 0 -7px;
   width: 14px;
   height: 14px;
-  background: var(--brand-primary, hsl(var(--primary)));
-  box-shadow: 0 0 0 1px hsl(var(--background));
+  background: var(--ui-color-action-primary);
+  box-shadow: 0 0 0 1px var(--ui-color-surface-canvas);
 }
 /* Alt is held: this drag will COPY rather than move. */
-.tl-kf-dot.is-duplicating { background: var(--brand-primary, hsl(var(--primary))); opacity: 0.75; }
+.tl-kf-dot.is-duplicating { background: var(--ui-color-action-primary); opacity: 0.75; }
 
 /* ─── Ruler ──────────────────────────────────────────────────────────────────
    The inner strip is TRANSLATED to follow the tracks' scrollLeft (never
@@ -849,26 +851,26 @@
   height: 19px;
   overflow: hidden;
   cursor: ew-resize;
-  border-top: 1px solid hsl(var(--border) / 0.7);
-  border-bottom: 1px solid hsl(var(--border) / 0.7);
-  background: hsl(var(--muted) / 0.4);
+  border-top: 1px solid color-mix(in srgb, var(--ui-color-border-default) 70%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--ui-color-border-default) 70%, transparent);
+  background: color-mix(in srgb, var(--ui-color-surface-muted) 40%, transparent);
 }
-.tl-ruler:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }
+.tl-ruler:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: -2px; }
 .tl-ruler-inner { position: relative; height: 100%; }
 .tl-tick {
   position: absolute;
   top: 0; bottom: 0;
   width: 1px;
-  background: hsl(var(--border));
+  background: var(--ui-color-border-default);
 }
 .tl-tick-label {
   position: absolute;
   left: 4px; top: 2px;
-  font-family: var(--font-mono);
+  font-family: var(--ui-type-mono-family);
   font-size: calc(9.5px * var(--a11y-fs));
   font-variant-numeric: tabular-nums;
   line-height: 1;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   white-space: nowrap;
   pointer-events: none;
 }
@@ -904,20 +906,20 @@
 .tl-lane {
   position: relative;
   height: 34px;
-  border-radius: 8px;
+  border-radius: var(--ui-radius-control);
   background:
-    repeating-linear-gradient(90deg, hsl(var(--border) / 0.28) 0 1px, transparent 1px 100%) 0 0 / 40px 100%,
-    hsl(var(--muted) / 0.35);
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--ui-color-border-default) 28%, transparent) 0 1px, transparent 1px 100%) 0 0 / 40px 100%,
+    color-mix(in srgb, var(--ui-color-surface-muted) 35%, transparent);
 }
 /* The magnetic sequence row reads as the spine: taller, a touch more present. */
-.tl-lane-seq { height: 46px; background-color: hsl(var(--muted) / 0.6); }
+.tl-lane-seq { height: 46px; background-color: color-mix(in srgb, var(--ui-color-surface-muted) 60%, transparent); }
 /* The row a vertically-dragged bar would land on (plans/165 Slice C-tracks): the
    same brand ring the selected bar wears, on the ROW, so "drop here to share this
    layer" reads before the pointer lifts. Solid, never dashed - dashed is reserved
    for file-drop areas throughout this shell. */
 .tl-lane.is-drop-target {
-  box-shadow: inset 0 0 0 2px var(--brand-primary, hsl(var(--primary)));
-  background-color: hsl(var(--muted) / 0.55);
+  box-shadow: inset 0 0 0 2px var(--ui-color-selection-border);
+  background-color: color-mix(in srgb, var(--ui-color-surface-muted) 55%, transparent);
 }
 
 /* A generated-caption row (overlay boxes sharing a `captions:` group collapse onto
@@ -931,7 +933,7 @@
   padding: 0 4px;
   font-size: var(--fs-2xs);
   line-height: 1.4;
-  color: hsl(var(--muted-foreground) / 0.8);
+  color: color-mix(in srgb, var(--ui-color-text-muted) 80%, transparent);
   pointer-events: none;
   user-select: none;
 }
@@ -941,16 +943,16 @@
   position: absolute;
   inset: 4px;
   display: flex; align-items: center; justify-content: center;
-  border: 1px dashed hsl(var(--border));
-  border-radius: 8px;
+  border: 1px dashed var(--ui-color-border-default);
+  border-radius: var(--ui-radius-control);
   background: transparent;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   font: inherit;
   font-size: calc(11.5px * var(--a11y-fs));
   cursor: pointer;
 }
-.tl-dropslot:hover { color: hsl(var(--foreground)); border-color: hsl(var(--muted-foreground)); background: hsl(var(--muted) / 0.5); }
-.tl-dropslot:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.tl-dropslot:hover { color: var(--ui-color-text-default); border-color: var(--ui-color-text-muted); background: color-mix(in srgb, var(--ui-color-surface-muted) 50%, transparent); }
+.tl-dropslot:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 2px; }
 
 /* ─── Clips ──────────────────────────────────────────────────────────────────
    left/width are written inline (timeToPx). Hue comes from the brand-derived
@@ -964,12 +966,12 @@
   display: flex;
   align-items: flex-end;
   overflow: hidden;
-  border-radius: 7px;
+  border-radius: var(--ui-radius-control);
   background: hsl(var(--tl-hue) / 0.34);
   box-shadow: inset 0 0 0 1px hsl(var(--tl-hue) / 0.6);
-  color: hsl(var(--foreground));
+  color: var(--ui-color-text-default);
   cursor: grab;
-  transition: box-shadow var(--dur-1) ease, background-color var(--dur-1) ease;
+  transition: box-shadow var(--ui-motion-feedback) var(--ui-motion-standard), background-color var(--ui-motion-feedback) var(--ui-motion-standard);
 }
 .tl-clip[data-kind="clip"]    { --tl-hue: var(--store-1); }
 .tl-clip[data-kind="video"]   { --tl-hue: var(--store-2); }
@@ -983,16 +985,16 @@
 .tl-clip-seq { top: 4px; bottom: 4px; }
 
 .tl-clip:hover { background: hsl(var(--tl-hue) / 0.44); }
-.tl-clip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.tl-clip:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 1px; }
 .tl-clip.is-selected {
   /* The selection ring is the ACTIVE BRAND's accent (secondary), so it stands apart from
      the clip's own kind-hue and the brand-primary chrome - never a hardcoded colour. Falls
      back to brand-primary, then the theme ring token, when a brand declares no secondary. */
-  box-shadow: inset 0 0 0 2px var(--brand-secondary, var(--brand-secondary, hsl(var(--ring)))), 0 2px 10px rgb(0 0 0 / 0.25);
+  box-shadow: inset 0 0 0 2px var(--ui-color-selection-border), var(--ui-elevation-control);
   background: hsl(var(--tl-hue) / 0.5);
 }
 .tl-clip.is-dragging { cursor: grabbing; opacity: 0.85; z-index: 3; }
-.tl-clip.is-drop-target { box-shadow: inset 0 0 0 2px hsl(var(--muted-foreground)); }
+.tl-clip.is-drop-target { box-shadow: inset 0 0 0 2px var(--ui-color-text-muted); }
 /* Muted: keep it legible, just visibly "off" - dimmed and hatched, so the state
    survives a greyscale/colour-blind read rather than relying on tint alone. */
 .tl-clip.is-muted { opacity: 0.62; }
@@ -1000,7 +1002,7 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: repeating-linear-gradient(135deg, hsl(var(--foreground) / 0.16) 0 3px, transparent 3px 8px);
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--ui-color-text-default) 16%, transparent) 0 3px, transparent 3px 8px);
   pointer-events: none;
 }
 
@@ -1013,7 +1015,7 @@
   position: absolute;
   left: 4px; right: 4px; top: 50%;
   height: 1px;
-  background: hsl(var(--foreground) / 0.65);
+  background: color-mix(in srgb, var(--ui-color-text-default) 65%, transparent);
   pointer-events: none;
 }
 
@@ -1028,8 +1030,8 @@
   display: flex;
   padding: 1px;
   border-radius: 4px;
-  color: hsl(var(--background));
-  background: hsl(var(--foreground) / 0.6);
+  color: var(--ui-color-surface-canvas);
+  background: color-mix(in srgb, var(--ui-color-text-default) 60%, transparent);
   pointer-events: none;
 }
 .tl-clip-link svg { width: calc(9px * var(--a11y-fs)); height: calc(9px * var(--a11y-fs)); }
@@ -1051,7 +1053,7 @@
 }
 .tl-clip.has-thumbs .tl-clip-thumbs { opacity: 0.85; }
 /* With a filmstrip behind it the label needs its own scrim to stay readable. */
-.tl-clip.has-thumbs .tl-clip-label { background: hsl(var(--background) / 0.72); border-radius: 5px; }
+.tl-clip.has-thumbs .tl-clip-label { background: color-mix(in srgb, var(--ui-color-surface-canvas) 72%, transparent); border-radius: var(--ui-radius-choice); }
 
 .tl-clip-label {
   position: relative;
@@ -1076,10 +1078,10 @@
   font: inherit;
   font-size: calc(10.5px * var(--a11y-fs));
   line-height: 1.3;
-  color: hsl(var(--foreground));
-  background: hsl(var(--background));
-  border: 1px solid hsl(var(--primary));
-  border-radius: 4px;
+  color: var(--ui-color-text-default);
+  background: var(--ui-color-surface-canvas);
+  border: 1px solid var(--ui-color-action-primary);
+  border-radius: var(--ui-radius-choice);
   outline: none;
 }
 /* Speed badge - only present when the clip is not ×1. */
@@ -1089,11 +1091,11 @@
   top: 2px; right: 4px;
   padding: 0 3px;
   border-radius: 4px;
-  font-family: var(--font-mono);
+  font-family: var(--ui-type-mono-family);
   font-size: calc(9px * var(--a11y-fs));
   line-height: 1.5;
-  color: hsl(var(--background));
-  background: hsl(var(--foreground) / 0.7);
+  color: var(--ui-color-surface-canvas);
+  background: color-mix(in srgb, var(--ui-color-text-default) 70%, transparent);
   pointer-events: none;
 }
 
@@ -1128,19 +1130,19 @@
   left: calc(50% - 1.5px);
   width: 3px;
   border-radius: 2px;
-  background: hsl(var(--foreground) / 0.55);
+  background: color-mix(in srgb, var(--ui-color-text-default) 55%, transparent);
 }
 .tl-edge.is-active::after {
   left: calc(50% - 2px);
   width: 4px;
-  background: var(--brand-primary, hsl(var(--primary)));
+  background: var(--ui-color-action-primary);
 }
 .tl-edge.is-limit::after { background: hsl(var(--destructive)); }
 /* A trim always selects the clip first, so this rule LANDS ON TOP of `.is-selected`'s
    ring (same specificity, declared later). It therefore has to be at least as strong as
    that ring, or starting a trim would visibly downgrade the clip's outline. */
 .tl-clip.is-trimming {
-  box-shadow: inset 0 0 0 2px var(--brand-primary, hsl(var(--primary))), 0 2px 10px rgb(0 0 0 / 0.25);
+  box-shadow: inset 0 0 0 2px var(--ui-color-selection-border), var(--ui-elevation-control);
 }
 /* Too narrow to carry two zones (MIN_TRIM_BAR_PX): the hit test already refuses, so
    the affordance must not promise one. The clip's title says where to trim instead. */
@@ -1152,9 +1154,9 @@
 .tl-clip-extent {
   position: absolute;
   z-index: 2;
-  border-radius: 7px;
-  outline: 1px solid hsl(var(--foreground) / 0.4);
-  background: hsl(var(--foreground) / 0.12);
+  border-radius: var(--ui-radius-control);
+  outline: 1px solid color-mix(in srgb, var(--ui-color-text-default) 40%, transparent);
+  background: color-mix(in srgb, var(--ui-color-text-default) 12%, transparent);
   pointer-events: none;
 }
 .tl-clip-extent[hidden] { display: none; }
@@ -1168,12 +1170,12 @@
   margin-top: -4px;
   padding: 1px 5px;
   border-radius: 4px;
-  font-family: var(--font-mono);
+  font-family: var(--ui-type-mono-family);
   font-size: var(--fs-2xs);
   line-height: 1.5;
   white-space: pre;
-  color: hsl(var(--background));
-  background: hsl(var(--foreground) / 0.85);
+  color: var(--ui-color-surface-canvas);
+  background: color-mix(in srgb, var(--ui-color-text-default) 85%, transparent);
   pointer-events: none;
 }
 /* First lane: there is no room above, so it hangs below the bar instead. */
@@ -1191,10 +1193,10 @@
   z-index: 4;
   display: flex; align-items: center; justify-content: center;
   padding: 0;
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius-round);
-  background: hsl(var(--card));
-  color: hsl(var(--muted-foreground));
+  border: 1px solid var(--ui-color-border-default);
+  border-radius: var(--ui-radius-choice-round);
+  background: var(--ui-color-surface-raised);
+  color: var(--ui-color-text-muted);
   cursor: pointer;
 }
 .tl-seam::before {
@@ -1204,8 +1206,8 @@
   background: currentColor;
 }
 .tl-seam.is-fade {
-  border-color: var(--brand-primary, hsl(var(--primary)));
-  color: var(--brand-primary, hsl(var(--primary)));
+  border-color: var(--ui-color-action-primary);
+  color: var(--ui-color-action-primary);
 }
 .tl-seam.is-fade::before {
   width: 10px; height: 8px; border-radius: 2px;
@@ -1217,16 +1219,16 @@
    of a real one. NOT dashed on the BORDER - dashed borders in this shell mean drop
    area; the treatment lives on the ::before mark instead. */
 .tl-seam.is-through {
-  background: hsl(var(--background) / 0.85);
+  background: color-mix(in srgb, var(--ui-color-surface-canvas) 85%, transparent);
   border-style: solid;
-  border-color: hsl(var(--muted-foreground) / 0.6);
+  border-color: color-mix(in srgb, var(--ui-color-text-muted) 60%, transparent);
 }
 .tl-seam.is-through::before {
   width: 10px; height: 2px;
   background: repeating-linear-gradient(90deg, currentColor 0 2px, transparent 2px 4px);
 }
-.tl-seam:hover { color: hsl(var(--foreground)); border-color: hsl(var(--muted-foreground)); }
-.tl-seam:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.tl-seam:hover { color: var(--ui-color-text-default); border-color: var(--ui-color-text-muted); }
+.tl-seam:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 2px; }
 
 /* ─── Playhead + snap line ───────────────────────────────────────────────────*/
 .tl-playhead {
@@ -1235,7 +1237,7 @@
   width: 2px;
   margin-left: -1px;
   z-index: 5;
-  background: var(--brand-primary, hsl(var(--primary)));
+  background: var(--ui-color-action-primary);
   pointer-events: none;
 }
 .tl-playhead::before {
@@ -1243,7 +1245,7 @@
   position: absolute;
   top: -4px; left: -4px;
   width: 10px; height: 10px;
-  border-radius: var(--radius-round);
+  border-radius: var(--ui-radius-choice-round);
   background: inherit;
 }
 .tl-snapline {
@@ -1251,7 +1253,7 @@
   top: 0; bottom: 0;
   width: 1px;
   z-index: 5;
-  background: repeating-linear-gradient(180deg, hsl(var(--foreground) / 0.8) 0 4px, transparent 4px 8px);
+  background: repeating-linear-gradient(180deg, color-mix(in srgb, var(--ui-color-text-default) 80%, transparent) 0 4px, transparent 4px 8px);
   pointer-events: none;
 }
 .tl-snapline[hidden] { display: none; }
@@ -1265,8 +1267,8 @@
   /* Brand-driven, matching the selection accent: the border is the active brand's
      secondary (→ primary → theme ring). The faint wash stays a theme token because a
      brand colour is a whole value that cannot take an inline alpha. No hardcoded colour. */
-  background: hsl(var(--ring) / 0.1);
-  border: 1px solid var(--brand-secondary, var(--brand-primary, hsl(var(--ring))));
+  background: var(--ui-color-selection-surface);
+  border: 1px solid var(--ui-color-selection-border);
 }
 .tl-marquee[hidden] { display: none; }
 
@@ -1279,14 +1281,14 @@
   gap: 5px;
   margin-top: 8px;
   padding-top: 7px;
-  border-top: 1px dashed hsl(var(--border));
+  border-top: 1px dashed var(--ui-color-border-default);
 }
 .tl-scenery[hidden] { display: none; }
 .tl-scenery-label {
   font-size: var(--fs-2xs);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   white-space: nowrap;
 }
 /* Each entry is a PILL OF TWO BUTTONS: the label (selects the box, which opens the
@@ -1302,11 +1304,11 @@
   display: inline-flex;
   align-items: stretch;
   max-width: 210px;
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius-pill);
-  background: hsl(var(--muted) / 0.6);
+  border: 1px solid var(--ui-color-border-default);
+  border-radius: var(--ui-radius-pill);
+  background: color-mix(in srgb, var(--ui-color-surface-muted) 60%, transparent);
 }
-.tl-chip-group:hover { border-color: hsl(var(--muted-foreground)); }
+.tl-chip-group:hover { border-color: var(--ui-color-text-muted); }
 .tl-chip {
   min-width: 0;
   max-width: 160px;
@@ -1317,7 +1319,7 @@
   border-start-start-radius: 999px;
   border-end-start-radius: 999px;
   background: transparent;
-  color: hsl(var(--foreground));
+  color: var(--ui-color-text-default);
   font: inherit;
   font-size: var(--fs-xs);
   white-space: nowrap;
@@ -1325,12 +1327,12 @@
   text-overflow: ellipsis;
   cursor: pointer;
 }
-.tl-chip:hover { background: hsl(var(--accent)); }
-.tl-chip:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }
+.tl-chip:hover { background: var(--ui-color-surface-muted); }
+.tl-chip:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: -2px; }
 /* Selected: the chip is the only on-screen anchor for an untimed box, so it has to
    show selection as plainly as a bar's ring does. */
 .tl-chip.is-selected {
-  background: color-mix(in srgb, var(--brand-primary, hsl(var(--primary))) 20%, transparent);
+  background: var(--ui-color-selection-surface);
   font-weight: 600;
 }
 
@@ -1344,20 +1346,20 @@
   display: inline-flex; align-items: center; justify-content: center;
   padding: 0;
   border: 0;
-  border-inline-start: 1px solid hsl(var(--border));
+  border-inline-start: 1px solid var(--ui-color-border-default);
   border-radius: 0;
   border-start-end-radius: 999px;
   border-end-end-radius: 999px;
   background: transparent;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   cursor: pointer;
 }
 .tl-chip-add svg { width: var(--fs-xs); height: var(--fs-xs); }
 .tl-chip-add:hover {
-  background: var(--brand-primary, hsl(var(--primary)));
-  color: var(--brand-on-primary, hsl(var(--primary-foreground)));
+  background: var(--ui-color-action-primary);
+  color: var(--ui-color-action-on-primary);
 }
-.tl-chip-add:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: -2px; }
+.tl-chip-add:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: -2px; }
 
 /* ─── The timed ⇄ always-on switch (inspector tail) ──────────────────────────
    A labelled pill rather than an icon: there is no glyph that says "this box has
@@ -1366,22 +1368,22 @@
 .tl-timing {
   flex: 0 0 auto;
   padding: 5px 10px;
-  border: 1px solid hsl(var(--border));
-  border-radius: var(--radius-pill);
+  border: 1px solid var(--ui-color-border-default);
+  border-radius: var(--ui-radius-pill);
   background: transparent;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   font: inherit;
   font-size: var(--fs-xs);
   white-space: nowrap;
   cursor: pointer;
-  transition: background-color 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+  transition: background-color var(--ui-motion-feedback) var(--ui-motion-standard), color var(--ui-motion-feedback) var(--ui-motion-standard), border-color var(--ui-motion-feedback) var(--ui-motion-standard);
 }
 .tl-timing:hover {
-  color: hsl(var(--foreground));
-  border-color: hsl(var(--muted-foreground));
-  background: hsl(var(--muted) / 0.6);
+  color: var(--ui-color-text-default);
+  border-color: var(--ui-color-text-muted);
+  background: color-mix(in srgb, var(--ui-color-surface-muted) 60%, transparent);
 }
-.tl-timing:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; }
+.tl-timing:focus-visible { outline: 2px solid var(--ui-color-focus-ring); outline-offset: 2px; }
 
 /* ─── Junction modal ─────────────────────────────────────────────────────────
    Mounted through components/modal.ts, so the dialog chrome is already there -
@@ -1398,8 +1400,8 @@
 /* Selected kind: the brand fill lives in buttons.css (.btn--primary); this is the
    lighter "chosen of two" state, so it tints rather than fills. */
 .tl-junction-kind.is-active {
-  box-shadow: inset 0 0 0 2px var(--brand-primary, hsl(var(--primary)));
-  background: color-mix(in srgb, var(--brand-primary, hsl(var(--primary))) 14%, transparent);
+  box-shadow: var(--ui-effect-selected);
+  background: var(--ui-color-selection-surface);
 }
 .tl-junction-dial { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0; }
 .tl-junction-dial .tl-num { width: 92px; }
@@ -1414,8 +1416,8 @@
    (lib/stt-job.ts), so the sheet consents and closes, and the global job toast
    paints the download and the inference. */
 .tl-stt { max-width: 340px; }
-.tl-stt-note { margin: 0; font-size: calc(12.5px * var(--a11y-fs)); color: hsl(var(--muted-foreground)); }
-.tl-stt-note-dl { color: hsl(var(--foreground)); }
+.tl-stt-note { margin: 0; font-size: calc(12.5px * var(--a11y-fs)); color: var(--ui-color-text-muted); }
+.tl-stt-note-dl { color: var(--ui-color-text-default); }
 
 /* ─── Keyboard shortcuts sheet ───────────────────────────────────────────────
    Same modal chrome as the junction; only the two-column table is ours. The rows
@@ -1446,20 +1448,20 @@
 .tl-keys-keys kbd {
   display: inline-block;
   padding: 2px 7px;
-  border-radius: 5px;
-  border: 1px solid hsl(var(--border));
-  background: hsl(var(--muted) / 0.6);
-  font-family: var(--font-mono, ui-monospace, monospace);
+  border-radius: var(--ui-radius-choice);
+  border: 1px solid var(--ui-color-border-default);
+  background: color-mix(in srgb, var(--ui-color-surface-muted) 60%, transparent);
+  font-family: var(--ui-type-mono-family);
   font-size: var(--fs-sm);
   line-height: 1.5;
   white-space: nowrap;
 }
-.tl-keys-what { color: hsl(var(--foreground)); }
+.tl-keys-what { color: var(--ui-color-text-default); }
 /* The modifier line sits UNDER its row rather than beside it: it is a variation on
    the same keys, not a second shortcut, and a third column would imply otherwise. */
 .tl-keys-hint {
   display: block;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   font-size: var(--fs-sm);
 }
 .tl-keys-actions { display: flex; justify-content: flex-end; gap: 8px; }
@@ -1544,7 +1546,7 @@ html[data-a11y-motion="reduce"] .tl-inspector.is-entering { animation-name: tl-i
   display: flex;
   flex-direction: column;
   gap: 4px;
-  color: hsl(var(--muted-foreground));
+  color: var(--ui-color-text-muted);
   font-size: var(--fs-xs);
 }
 .tl-stagger-label .tl-num { width: 9ch; }

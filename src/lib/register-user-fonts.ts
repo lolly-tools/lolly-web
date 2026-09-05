@@ -24,15 +24,30 @@
  * boot populated the other copy, and removeUserFont would fail to unload faces.
  */
 
-/** Asset-id prefix every stored user font shares. */
+import { designMaterialOf } from '../../../../engine/src/design-system.ts';
+
+/** Asset-id prefix every stored user font of the DEFAULT design system shares.
+ *  A namespaced system's fonts live at `user/ds/<id>/fonts/...` (plans/186
+ *  section 3.2); `designMaterialOf` reads both shapes. */
 export const USER_FONT_PREFIX = 'user/fonts/';
 
 /** The minimum a host must expose for the font paths here. Structurally
- *  compatible with user-fonts.ts's fuller UserFontsHost. */
+ *  compatible with user-fonts.ts's fuller UserFontsHost. `designSystems` is
+ *  optional: with it only the ACTIVE system's faces are registered (and the
+ *  others unloaded); without it every stored face loads, as before. */
 export interface RegisterFontsHost {
   assets: {
     _exportUserAssets: () => Promise<Array<{ id: string; type: string; blob?: Blob; meta?: Record<string, unknown> }>>;
   };
+  designSystems?: { active(): Promise<{ id: string }> };
+}
+
+/** True when `id` is a font row of the design system `systemId` - or, with no
+ *  system given, any user font row at all (the pre-registry behaviour). */
+export function isFontOf(id: string, systemId: string | null): boolean {
+  const m = designMaterialOf(id);
+  if (!m || m.kind !== 'font') return false;
+  return systemId === null || m.systemId === systemId;
 }
 
 // ── Brand-font family cache (for tool selectors that list every added font) ────
@@ -81,6 +96,11 @@ async function registerFace(
  * best-effort) and after a backup import. Idempotent per document.
  */
 export async function registerUserFonts(host: RegisterFontsHost): Promise<void> {
+  // Which design system's faces belong in document.fonts (plans/186 section 3.4
+  // step 3). The shipped system owns no user rows, so under it nothing registers
+  // and every previously loaded face is unloaded below.
+  let systemId: string | null = null;
+  try { systemId = (await host.designSystems?.active())?.id ?? null; } catch { systemId = null; }
   // The installed set may have just changed (install, brand pack, backup restore
   // - every path funnels through here), so the vector-export font registry must
   // re-read it rather than serve a stale family map. See bridge/font-registry.ts.
@@ -100,11 +120,19 @@ export async function registerUserFonts(host: RegisterFontsHost): Promise<void> 
   // to a font-picking tool) already sees the installed brand fonts in its select,
   // instead of racing the parse. Covers boot, install (installGoogleFont calls us)
   // and backup import; one store read for both.
-  setBrandFontFamilyCache(records
-    .filter(r => r.type === 'font' && r.id.startsWith(USER_FONT_PREFIX))
-    .map(r => String(r.meta?.family ?? r.meta?.name ?? '')));
-  await Promise.all(records
-    .filter(r => r.type === 'font' && r.id.startsWith(USER_FONT_PREFIX) && r.blob)
+  const wanted = records.filter(r => r.type === 'font' && isFontOf(r.id, systemId));
+  setBrandFontFamilyCache(wanted.map(r => String(r.meta?.family ?? r.meta?.name ?? '')));
+  // The unregister pass: a face loaded for another design system (or one whose
+  // row is gone) leaves document.fonts, or the CSS font matcher would keep
+  // answering with the outgoing system's bytes for a family name both share.
+  const keep = new Set(wanted.map(r => r.id));
+  for (const [assetId, face] of REGISTERED) {
+    if (keep.has(assetId)) continue;
+    try { (document.fonts as unknown as { delete: (f: FontFace) => boolean }).delete(face); } catch { /* already gone */ }
+    REGISTERED.delete(assetId);
+  }
+  await Promise.all(wanted
+    .filter(r => r.blob)
     .map(r => registerFace(r.id, String(r.meta?.family ?? r.meta?.name ?? ''), r.blob!, {
       weight: typeof r.meta?.weight === 'string' ? r.meta.weight : undefined,
       style: typeof r.meta?.style === 'string' ? r.meta.style : undefined,

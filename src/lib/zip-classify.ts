@@ -20,7 +20,7 @@
  * unrecognised / non-zip / unreadable input returns null.
  */
 
-import { readZip, sniffContainer } from '@lolly/engine';
+import { readZip, sniffContainer, type ZipEntry } from '@lolly/engine';
 
 /** What a PK-zip upload actually is. Only 'archive' is safe to explode to members. */
 export type ZipKind = 'pptx' | 'xlsx' | 'docx' | 'epub' | 'odt' | 'lottie' | 'archive';
@@ -68,12 +68,21 @@ const dec = new TextDecoder();
  */
 export function classifyZipBytes(bytes: Uint8Array): ZipKind | null {
   if (sniffContainer(bytes) !== 'zip') return null;
-  let entries: { name: string; bytes: Uint8Array }[];
+  let entries: ZipEntry[];
   try {
     entries = readZip(bytes);
   } catch {
     return null; // a malformed / unsupported (ZIP64, encrypted) zip - not safe to explode
   }
+  return classifyZipEntries(entries);
+}
+
+/**
+ * Classify entries that a caller has already extracted under its own budgets.
+ * This avoids inflating a dropped archive twice merely to distinguish it from an
+ * OOXML/OCF container before import.
+ */
+export function classifyZipEntries(entries: readonly ZipEntry[]): ZipKind | null {
   const byName = new Map(entries.map((e) => [e.name, e.bytes]));
 
   // OCF: the first entry is an uncompressed `mimetype`. Trust its value.

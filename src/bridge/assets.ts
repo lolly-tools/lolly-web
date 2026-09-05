@@ -39,6 +39,7 @@ import { isZzfxmRef, parseZzfxmRef, formatZzfxmRef } from '../../../../engine/sr
 // The engine leaf, like the imports above: the web bridge, the MCP server and
 // the CLI all apply this one predicate instead of each writing the rule out.
 import { pickHeadAssetId } from '../../../../engine/src/design-version.ts';
+import { designMaterialOf } from '../../../../engine/src/design-system.ts';
 // Where copy-on-write parks bytes a published version pins. Imported (not
 // re-spelled) so the listing filter below and the preserver that writes them can
 // never disagree about which rows are machine-owned.
@@ -267,6 +268,19 @@ export interface AssetsApiOptions {
 
 export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
   const api = {
+    async resolveProvider(ref: { provider: string; scope: string; path: string }): Promise<AssetRef | null> {
+      if (ref.provider === 'catalog' || ref.provider === 'library') {
+        try { return await api.get([ref.scope, ref.path].filter(Boolean).join('/')); } catch { return null; }
+      }
+      if (ref.provider === 'image' && ref.scope === 'brand') {
+        const slot = ref.path || 'logo';
+        const matches = await api.query({ tags: [slot] });
+        const picked = matches[0] ?? (slot === 'logo' ? (await api.query({ tags: ['logo'] }))[0] : undefined);
+        if (!picked) return null;
+        try { return await api.get(picked.id); } catch { return null; }
+      }
+      return null;
+    },
     async get(id: string, opts: { format?: string; version?: string } = {}): Promise<AssetRef> {
       // A PROCEDURAL asset: `zzfxm:<seed>[:<style>]` names a song that is
       // synthesised on demand, not a file anything stores. There are no bytes
@@ -689,6 +703,21 @@ export function createAssetsAPI(db: AssetsDb, opts: AssetsApiOptions = {}) {
     async _userAssetsSize(): Promise<number> {
       const all = await db.getAll('user-assets');
       return all.reduce((sum, r) => sum + (r?.blob?.size ?? 0), 0);
+    },
+
+    /** Internal: bytes of design material per design system (plans/186 section
+     *  3.9), keyed by system id - the tokens head, its versions, fonts and logos.
+     *  Personal uploads and shared frozen bytes belong to no system and are not
+     *  counted here; the storage UI shows them in their own rows. */
+    async _designMaterialSizes(): Promise<Record<string, number>> {
+      const all = await db.getAll('user-assets');
+      const out: Record<string, number> = {};
+      for (const r of all) {
+        const material = designMaterialOf(String(r?.id ?? ''));
+        if (!material) continue;
+        out[material.systemId] = (out[material.systemId] ?? 0) + (r?.blob?.size ?? 0);
+      }
+      return out;
     },
 
     /** Internal: delete one user image and revoke its cached object URL. */
