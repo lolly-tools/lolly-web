@@ -1553,7 +1553,7 @@ export function initTimelinePanel(opts: TimelinePanelOpts): TimelinePanel {
   // the mic (canRecordVideo).
   const camBtn = btn('tl-cam', t('Record a video'), icon('camera'));
   camBtn.hidden = true;
-  // Screen capture lands through the same clip-creation seam as a camera take.
+  // Screen capture uses the same clip-creation seam as a camera take.
   // The browser-native picker chooses a screen/window/tab; no fake pre-picker UI.
   const screenBtn = btn('tl-screen', t('Record screen'), icon('monitor'));
   screenBtn.hidden = true;
